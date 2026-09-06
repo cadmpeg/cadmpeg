@@ -15,11 +15,14 @@ use crate::ids::{
     self, native_stream, neutral_sketch_curve_id, neutral_sketch_id, neutral_sketch_point_id,
     neutral_sketch_record_id, neutral_spatial_sketch_curve_id, neutral_spatial_sketch_id,
 };
+use crate::records::feature::DesignParameterScope;
+use crate::records::topology::{
+    DesignConstructionOperandGroup, DesignEntitySelectionOperand, DesignExtrudeSelectionGroup,
+    DesignExtrudeSelectionMember, DesignSketchProfileOperand, DesignSketchProfileRegionMember,
+};
 use crate::records::{
-    DesignConstructionOperandGroup, DesignEntityHeader, DesignEntitySelectionOperand,
-    DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignParameterScope,
-    DesignRecordHeader, DesignSketchPlacement, DesignSketchProfileOperand,
-    DesignSketchProfileRegionMember, SketchCurveIdentity, SketchRelationOperand,
+    DesignEntityHeader, DesignRecordHeader, DesignSketchPlacement, SketchCurveIdentity,
+    SketchRelationOperand,
 };
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_core::CodecError;
@@ -715,11 +718,11 @@ fn historical_face_profile_selection(
 }
 
 pub(crate) fn historical_profile_face_candidates(
-    kind: Option<crate::records::AsmHistoricalEntityKind>,
+    kind: Option<crate::records::topology::AsmHistoricalEntityKind>,
     entity_ref: i64,
     topology: &crate::history_records::AsmHistoricalTopology,
 ) -> HashSet<i64> {
-    use crate::records::AsmHistoricalEntityKind;
+    use crate::records::topology::AsmHistoricalEntityKind;
 
     let kinds = match kind {
         Some(kind) => vec![kind],

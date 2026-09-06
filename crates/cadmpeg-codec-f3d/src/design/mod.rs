@@ -65,9 +65,9 @@ pub(crate) enum DesignFeatureFamily {
 /// Return the canonical operation family while preserving `kind` verbatim on
 /// the native scope. Fusion serializes this field through its UI localization.
 pub(crate) fn design_feature_family(
-    kind: &crate::records::DesignFeatureKind,
+    kind: &crate::records::feature::DesignFeatureKind,
 ) -> Option<DesignFeatureFamily> {
-    use crate::records::DesignFeatureKind as Kind;
+    use crate::records::feature::DesignFeatureKind as Kind;
     match kind {
         Kind::Sketch | Kind::Esquisse | Kind::Skizze | Kind::Esboco => {
             Some(DesignFeatureFamily::Sketch)
@@ -140,8 +140,10 @@ pub(crate) fn design_feature_family(
 ///
 /// Canonical Fillet and Chamfer scopes require every selection to use a
 /// counted construction-operand group. Their localized spellings do not.
-pub(crate) fn is_localized_edge_treatment_kind(kind: &crate::records::DesignFeatureKind) -> bool {
-    use crate::records::DesignFeatureKind as Kind;
+pub(crate) fn is_localized_edge_treatment_kind(
+    kind: &crate::records::feature::DesignFeatureKind,
+) -> bool {
+    use crate::records::feature::DesignFeatureKind as Kind;
     matches!(
         design_feature_family(kind),
         Some(DesignFeatureFamily::Fillet | DesignFeatureFamily::Chamfer)

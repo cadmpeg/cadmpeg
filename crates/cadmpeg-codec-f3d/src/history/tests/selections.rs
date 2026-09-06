@@ -80,15 +80,17 @@ fn entity_selection_face_proofs_preserve_history_namespaces() {
 
     assert_eq!(
         entity_selection_face_candidates(18044, &[unrelated, selected]),
-        [crate::records::DesignEntitySelectionFaceCandidate {
-            history_id: "selected".into(),
-            historical: crate::records::HistoricalBinding {
-                kind: AsmHistoricalEntityKind::Pcurve,
-                entity_ref: 18044,
-                state_ids: vec![2],
-            },
-            face_slot: 30,
-        }]
+        [
+            crate::records::topology::DesignEntitySelectionFaceCandidate {
+                history_id: "selected".into(),
+                historical: crate::records::topology::HistoricalBinding {
+                    kind: AsmHistoricalEntityKind::Pcurve,
+                    entity_ref: 18044,
+                    state_ids: vec![2],
+                },
+                face_slot: 30,
+            }
+        ]
     );
 }
 
@@ -138,7 +140,7 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
         projection_finalized: false,
         states: vec![state],
     };
-    let face_selection = crate::records::DesignHoleFaceSelection {
+    let face_selection = crate::records::feature::DesignHoleFaceSelection {
         record_index: 100,
         byte_offset: 0,
         class_tag: "333".into(),
@@ -155,7 +157,7 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
         next_record_index: 104,
         next_byte_offset: 0,
     };
-    let construction = crate::records::DesignHoleConstruction {
+    let construction = crate::records::feature::DesignHoleConstruction {
         point_record_index: 55,
         point_record_byte_offset: 0,
         position: [0.0; 3],
@@ -173,12 +175,12 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
         }],
         face_selection: Some(face_selection),
     };
-    let mut scope = crate::records::DesignParameterScope::empty(
+    let mut scope = crate::records::feature::DesignParameterScope::empty(
         "f3d:scope#42",
-        crate::records::DesignFeatureKind::Hole,
+        crate::records::feature::DesignFeatureKind::Hole,
         42,
     );
-    if let crate::records::DesignScopePayload::Hole(slot) = &mut scope.payload {
+    if let crate::records::feature::DesignScopePayload::Hole(slot) = &mut scope.payload {
         *slot = Some(construction);
     }
 
@@ -190,15 +192,17 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
             .and_then(|construction| construction.face_selection.as_ref())
             .map(|selection| selection.historical_face_candidates.as_slice()),
         Some(
-            &[crate::records::DesignEntitySelectionFaceCandidate {
-                history_id: "selected".into(),
-                historical: crate::records::HistoricalBinding {
-                    kind: AsmHistoricalEntityKind::Pcurve,
-                    entity_ref: 18044,
-                    state_ids: vec![2],
-                },
-                face_slot: 30,
-            }][..]
+            &[
+                crate::records::topology::DesignEntitySelectionFaceCandidate {
+                    history_id: "selected".into(),
+                    historical: crate::records::topology::HistoricalBinding {
+                        kind: AsmHistoricalEntityKind::Pcurve,
+                        entity_ref: 18044,
+                        state_ids: vec![2],
+                    },
+                    face_slot: 30,
+                }
+            ][..]
         )
     );
 }
@@ -216,27 +220,28 @@ fn compact_edge_treatment_deletions_require_exact_cardinality() {
 
 #[test]
 fn compact_transition_fallback_is_scoped_to_each_operand_group() {
-    let scope: crate::records::DesignParameterScope = serde_json::from_value(serde_json::json!({
-        "id": "f3d:test:scope",
-        "byte_offset": 0,
-        "class_tag": "300",
-        "record_index": 1,
-        "frame_length": 200,
-        "kind": "Fillet",
-        "kind_offset": 0,
-        "feature_ordinal": 1,
-        "feature_ordinal_offset": 0,
-        "history_state_id": 8,
-        "history_state_id_offset": 0,
-        "previous_history_state_id": 7,
-        "previous_history_state_id_offset": 0,
-        "reference_count_offset": 0,
-        "reference_members": [],
-        "reference_member_offsets": [],
-        "paired_class_tag": "261",
-        "paired_byte_offset": 200
-    }))
-    .expect("Fillet scope");
+    let scope: crate::records::feature::DesignParameterScope =
+        serde_json::from_value(serde_json::json!({
+            "id": "f3d:test:scope",
+            "byte_offset": 0,
+            "class_tag": "300",
+            "record_index": 1,
+            "frame_length": 200,
+            "kind": "Fillet",
+            "kind_offset": 0,
+            "feature_ordinal": 1,
+            "feature_ordinal_offset": 0,
+            "history_state_id": 8,
+            "history_state_id_offset": 0,
+            "previous_history_state_id": 7,
+            "previous_history_state_id_offset": 0,
+            "reference_count_offset": 0,
+            "reference_members": [],
+            "reference_member_offsets": [],
+            "paired_class_tag": "261",
+            "paired_byte_offset": 200
+        }))
+        .expect("Fillet scope");
     let identity = |group_record_index, group_member_ordinal, record_index| {
         serde_json::from_value::<DesignEdgeIdentityOperand>(serde_json::json!({
             "id": format!("f3d:test:identity#{record_index}"),
@@ -442,10 +447,10 @@ fn pattern_combine_tool_set_requires_target_membership_and_exact_cardinality() {
 
 #[test]
 fn combine_recipe_family_proves_unordered_generated_tools() {
-    use crate::records::{
-        ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector,
+    use crate::records::topology::{
         DesignBodyRecipeOperand, DesignBodyRecipeReference, DesignOperandOwner,
     };
+    use crate::records::{ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector};
 
     let stream = "f3d:Design/BulkStream.dat";
     let recipe = |record_index, design_id: &str, selector| ConstructionRecipe {
@@ -563,43 +568,45 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
 fn combine_external_tools_retain_complete_occurrence_local_identities() {
     use cadmpeg_ir::features::BodySelection;
 
-    let identity = |occurrence_reference| crate::records::DesignCombineExternalBodyIdentity {
-        selector_asset_id: "11111111-1111-4111-8111-111111111111".into(),
-        selector_asset_id_offset: 0,
-        selector_context_id: "22222222-2222-4222-8222-222222222222".into(),
-        selector_context_id_offset: 0,
-        occurrence_reference,
-        occurrence_reference_offset: 0,
-        external_body_reference: 700,
-        external_body_reference_offset: 0,
-        external_segment: 2,
-        external_segment_offset: 0,
-        external_asset_id: "11111111-1111-4111-8111-111111111111".into(),
-        external_asset_id_offset: 0,
-        external_link_name: "component-body-link".into(),
-        external_link_name_offset: 0,
-        external_version: None,
-        tail_values: [0, 0],
-        tail_value_offsets: [0, 12],
-    };
-    let tool = |record_index, occurrence_reference| crate::records::DesignCombineBodySelection {
-        record_index,
-        external_identity: Some(identity(occurrence_reference)),
-    };
-    let mut scope = crate::records::DesignParameterScope::empty(
+    let identity =
+        |occurrence_reference| crate::records::feature::DesignCombineExternalBodyIdentity {
+            selector_asset_id: "11111111-1111-4111-8111-111111111111".into(),
+            selector_asset_id_offset: 0,
+            selector_context_id: "22222222-2222-4222-8222-222222222222".into(),
+            selector_context_id_offset: 0,
+            occurrence_reference,
+            occurrence_reference_offset: 0,
+            external_body_reference: 700,
+            external_body_reference_offset: 0,
+            external_segment: 2,
+            external_segment_offset: 0,
+            external_asset_id: "11111111-1111-4111-8111-111111111111".into(),
+            external_asset_id_offset: 0,
+            external_link_name: "component-body-link".into(),
+            external_link_name_offset: 0,
+            external_version: None,
+            tail_values: [0, 0],
+            tail_value_offsets: [0, 12],
+        };
+    let tool =
+        |record_index, occurrence_reference| crate::records::feature::DesignCombineBodySelection {
+            record_index,
+            external_identity: Some(identity(occurrence_reference)),
+        };
+    let mut scope = crate::records::feature::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#10",
-        crate::records::DesignFeatureKind::Combine,
+        crate::records::feature::DesignFeatureKind::Combine,
         10,
     );
-    if let crate::records::DesignScopePayload::Combine(slot) = &mut scope.payload {
-        *slot = Some(crate::records::DesignCombineOperation {
-            form: crate::records::DesignCombineForm::ExtendedReference,
+    if let crate::records::feature::DesignScopePayload::Combine(slot) = &mut scope.payload {
+        *slot = Some(crate::records::feature::DesignCombineOperation {
+            form: crate::records::feature::DesignCombineForm::ExtendedReference,
             operation: cadmpeg_ir::features::BooleanKind::Join,
             operation_offset: 0,
             keep_tools: false,
             keep_tools_offset: 0,
             target_record_index: 11,
-            tools: crate::records::DesignCombineTools {
+            tools: crate::records::feature::DesignCombineTools {
                 first: tool(12, 500),
                 additional: vec![tool(13, 501)],
             },
@@ -1236,7 +1243,7 @@ fn profile_face_group_cardinality_requires_one_changed_surface_family() {
 
 #[test]
 fn grouped_face_reference_selects_one_changed_topology_face() {
-    use crate::records::DesignFaceOperand;
+    use crate::records::topology::DesignFaceOperand;
 
     let mut prefix = vec![0; 10];
     prefix.extend_from_slice(&1u32.to_le_bytes());
@@ -1318,7 +1325,8 @@ fn grouped_face_reference_selects_one_changed_topology_face() {
 
 #[test]
 fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
-    use crate::records::{DesignConstructionOperandGroup, DesignFaceOperand, DesignParameterScope};
+    use crate::records::feature::DesignParameterScope;
+    use crate::records::topology::{DesignConstructionOperandGroup, DesignFaceOperand};
     use cadmpeg_ir::features::ProfileRef;
 
     let group = |record_index, scope_reference_ordinal, members: Vec<u32>| {
@@ -1407,7 +1415,7 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#42",
-        crate::records::DesignFeatureKind::Extrude,
+        crate::records::feature::DesignFeatureKind::Extrude,
         42,
     );
     scope.history_state_id = Some(2);
@@ -1570,16 +1578,17 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
 
 #[test]
 fn mirror_plane_candidate_uses_unique_primary_when_persistent_identity_is_absent() {
-    let candidate =
-        |history_id: &str, face_slot| crate::records::DesignEntitySelectionFaceCandidate {
+    let candidate = |history_id: &str, face_slot| {
+        crate::records::topology::DesignEntitySelectionFaceCandidate {
             history_id: history_id.into(),
-            historical: crate::records::HistoricalBinding {
-                kind: crate::records::AsmHistoricalEntityKind::Loop,
+            historical: crate::records::topology::HistoricalBinding {
+                kind: crate::records::topology::AsmHistoricalEntityKind::Loop,
                 entity_ref: face_slot + 100,
                 state_ids: vec![2, 1],
             },
             face_slot,
-        };
+        }
+    };
     let primary = candidate("history-a", 10);
     assert_eq!(
         super::super::unique_mirror_plane_candidate(vec![primary.clone()], Vec::new()),
@@ -1614,15 +1623,15 @@ fn mirror_plane_candidate_uses_unique_primary_when_persistent_identity_is_absent
 fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
     use crate::history_records::AsmHistoricalPlane;
     use cadmpeg_ir::math::{Point3, Vector3};
-    let mut scope = crate::records::DesignParameterScope::empty(
+    let mut scope = crate::records::feature::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#42",
-        crate::records::DesignFeatureKind::Mirror,
+        crate::records::feature::DesignFeatureKind::Mirror,
         42,
     );
     scope.history_state_id = Some(2);
     scope.previous_history_state_id = Some(1);
-    if let crate::records::DesignScopePayload::Mirror(slot)
-    | crate::records::DesignScopePayload::SymetrieMiroir(slot) = &mut scope.payload
+    if let crate::records::feature::DesignScopePayload::Mirror(slot)
+    | crate::records::feature::DesignScopePayload::SymetrieMiroir(slot) = &mut scope.payload
     {
         *slot = Some(
             serde_json::from_value(serde_json::json!({
@@ -1635,7 +1644,7 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
             .expect("mirror construction"),
         );
     }
-    let group: crate::records::DesignConstructionOperandGroup =
+    let group: crate::records::topology::DesignConstructionOperandGroup =
         serde_json::from_value(serde_json::json!({
             "id": "f3d:Design/BulkStream.dat:group#30", "scope_record_index": 42,
             "scope_reference_ordinal": 0, "record_index": 30, "byte_offset": 0,
@@ -1647,7 +1656,7 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
             "paired_class_tag": "261", "paired_byte_offset": 0
         }))
         .expect("mirror plane group");
-    let mut operand: crate::records::DesignEntitySelectionOperand =
+    let mut operand: crate::records::topology::DesignEntitySelectionOperand =
         serde_json::from_value(serde_json::json!({
             "id": "f3d:Design/BulkStream.dat:operand#40", "scope_record_index": 42,
             "group_record_index": 30, "group_member_ordinal": 0, "record_index": 40,
@@ -1724,7 +1733,7 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
     let construction = scope.mirror_construction().expect("mirror construction");
     assert_eq!(
         construction.plane,
-        Some(crate::records::DesignPlane {
+        Some(crate::records::feature::DesignPlane {
             origin: Point3::new(1.0, 2.0, 3.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
         })
@@ -1743,7 +1752,7 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
     let construction = scope.mirror_construction().expect("mirror construction");
     assert_eq!(
         construction.plane,
-        Some(crate::records::DesignPlane {
+        Some(crate::records::feature::DesignPlane {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(1.0, 0.0, 0.0),
         })
@@ -1873,9 +1882,9 @@ fn historical_mirror_plane_requires_one_exact_plane_in_the_selected_state() {
         topology_cache: crate::history_records::AsmTopologyCache::Complete(topology),
         transition: None,
     };
-    let candidate = crate::records::DesignEntitySelectionFaceCandidate {
+    let candidate = crate::records::topology::DesignEntitySelectionFaceCandidate {
         history_id: "history".into(),
-        historical: crate::records::HistoricalBinding {
+        historical: crate::records::topology::HistoricalBinding {
             kind: AsmHistoricalEntityKind::Face,
             entity_ref: 69,
             state_ids: vec![2, 1],

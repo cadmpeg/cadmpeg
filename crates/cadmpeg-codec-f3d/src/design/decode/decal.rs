@@ -11,10 +11,9 @@ use crate::ids;
 use crate::layout::design_decal_image_asset_record as decal_asset;
 use crate::layout::design_decal_image_name_prefix as decal_name;
 use crate::layout::design_decal_scope_prefix as decal_scope;
-use crate::records::{
-    DesignBodyRecipeOperand, DesignConstructionOperandGroup, DesignDecalAsset, DesignDecalImage,
-    DesignParameterScope,
-};
+use crate::records::feature::DesignParameterScope;
+use crate::records::topology::{DesignBodyRecipeOperand, DesignConstructionOperandGroup};
+use crate::records::{DesignDecalAsset, DesignDecalImage};
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::Asset;
@@ -39,7 +38,7 @@ pub fn decode_decal_images(
             scopes
                 .iter()
                 .filter(|scope| {
-                    scope.kind() == crate::records::DesignFeatureKind::Decal
+                    scope.kind() == crate::records::feature::DesignFeatureKind::Decal
                         && ids::native_stream(&scope.id) == Some(stream.as_str())
                 })
                 .filter_map(|scope| parse_decal_image(bytes, &entry.name, scope)),

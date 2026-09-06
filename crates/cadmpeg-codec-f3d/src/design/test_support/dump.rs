@@ -46,10 +46,9 @@ pub(crate) use crate::design::decode::scopes::{
     exact_draft_operation_with_owners, exact_fixed_chamfer_parameters,
     exact_fixed_extrude_parameters, exact_fixed_fillet_parameters, exact_joint_origin_frame,
     exact_path_feature_construction, exact_rectangular_pattern_construction, exact_scale_operation,
-    exact_solid_primitive, exact_surface_extend_operation, exact_surface_offset_operation,
-    exact_thread_construction, exact_work_axis_construction, exact_work_plane_frame,
-    exact_work_point_construction, parse_parameter_scope, parse_thread_payload,
-    select_circular_pattern_axis,
+    exact_surface_extend_operation, exact_surface_offset_operation, exact_thread_construction,
+    exact_work_axis_construction, exact_work_plane_frame, exact_work_point_construction,
+    parse_parameter_scope, parse_thread_payload, select_circular_pattern_axis,
 };
 pub(crate) use crate::design::decode::sketch::{
     bind_sketch_graph, decode_pattern_definition, identity_matrix, next_indexed_record_offset,
@@ -100,31 +99,38 @@ pub(crate) use crate::ids::{
     neutral_dimension_constraint_id, neutral_feature_id_parts, neutral_parameter_id_parts,
     neutral_sketch_curve_id, neutral_sketch_id, neutral_sketch_point_id, neutral_spatial_sketch_id,
 };
-pub(crate) use crate::records::{
-    ConstructionRecipe, ConstructionRecipeKind, DesignAssemblyAlignment,
-    DesignAssemblyAxialOperandTarget, DesignAssemblyLimitKind, DesignAssemblyOperandFrame,
-    DesignBaseFeatureConstruction, DesignBodyRecipeOperand, DesignBodyRecipeReference,
-    DesignCircularPatternConstruction, DesignCoilExtent, DesignCoilSection,
-    DesignCoilSectionPlacement, DesignCombineBodySelection, DesignCombineForm,
-    DesignCombineOperation, DesignComponentInsertConstruction, DesignConstructionOperandGroup,
+pub(crate) use crate::records::feature::{
+    DesignAssemblyAlignment, DesignAssemblyAxialOperandTarget, DesignAssemblyLimitKind,
+    DesignAssemblyOperandFrame, DesignBaseFeatureConstruction, DesignCircularPatternConstruction,
+    DesignCoilExtent, DesignCoilSection, DesignCoilSectionPlacement, DesignCombineBodySelection,
+    DesignCombineForm, DesignCombineOperation, DesignComponentInsertConstruction,
+    DesignDirectFaceOperation, DesignDraftOperation, DesignExtrudeExtent, DesignExtrudeOperation,
+    DesignExtrudePrologue, DesignExtrudeStart, DesignExtrudeTargetOrdinal,
+    DesignFixedChamferParameters, DesignFixedExtrudeDistance, DesignFixedExtrudeParameters,
+    DesignFixedExtrudeScalar, DesignFixedFilletParameters, DesignHoleConstruction,
+    DesignParameterScope, DesignPathFeatureConstruction, DesignRuledSurfaceCorner,
+    DesignRuledSurfaceMethod, DesignScaleOperation, DesignScopePayload, DesignSolidPrimitive,
+    DesignSurfaceExtendMethod, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
+    DesignSurfaceOffsetSupport, DesignSurfaceStitchOperation, DesignThreadConstruction,
+    DesignThreadForm,
+};
+pub(crate) use crate::records::topology::{
+    DesignBodyRecipeOperand, DesignBodyRecipeReference, DesignConstructionOperandGroup,
     DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity,
-    DesignDimensionAnnotationFrame, DesignDimensionAnnotationOperand, DesignDimensionLocus,
-    DesignDimensionLocusGroup, DesignDimensionLocusPair, DesignDimensionRecipeRecord,
-    DesignDirectFaceOperation, DesignDraftOperation, DesignEdgeIdentityOperand, DesignEntityHeader,
-    DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
-    DesignExtrudePrologue, DesignExtrudeSelectionGroup, DesignExtrudeStart,
-    DesignExtrudeTargetOrdinal, DesignFaceOperand, DesignFaceRecipeNode, DesignFaceRecipeStructure,
-    DesignFeatureTimeline, DesignFixedChamferParameters, DesignFixedExtrudeDistance,
-    DesignFixedExtrudeParameters, DesignFixedExtrudeScalar, DesignFixedFilletParameters,
-    DesignHoleConstruction, DesignOperandOwner, DesignParameter, DesignParameterCompanion,
-    DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
-    DesignRecipeReference, DesignRecordHeader, DesignRuledSurfaceCorner, DesignRuledSurfaceMethod,
-    DesignScaleOperation, DesignScopePayload, DesignSketchPlacement, DesignSketchProfileOperand,
-    DesignSolidPrimitive, DesignSurfaceExtendMethod, DesignSurfaceExtendOperation,
-    DesignSurfaceOffsetOperation, DesignSurfaceOffsetSupport, DesignSurfaceStitchOperation,
-    DesignThreadConstruction, DesignThreadForm, DesignTopologyRecipeSide, LostEdgeReference,
-    PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
-    SketchPoint, SketchRelation, SketchRelationOperand, SketchSurface, DESIGN_MODULE_SKETCH,
+    DesignEdgeIdentityOperand, DesignExtrudeFaceRole, DesignExtrudeOperandRole,
+    DesignExtrudeSelectionGroup, DesignFaceOperand, DesignFaceRecipeNode,
+    DesignFaceRecipeStructure, DesignOperandOwner, DesignSketchProfileOperand,
+    DesignTopologyRecipeSide,
+};
+pub(crate) use crate::records::{
+    ConstructionRecipe, ConstructionRecipeKind, DesignDimensionAnnotationFrame,
+    DesignDimensionAnnotationOperand, DesignDimensionLocus, DesignDimensionLocusGroup,
+    DesignDimensionLocusPair, DesignDimensionRecipeRecord, DesignEntityHeader,
+    DesignFeatureTimeline, DesignParameter, DesignParameterCompanion, DesignParameterKind,
+    DesignParameterOwner, DesignRecipeReference, DesignRecordHeader, DesignSketchPlacement,
+    LostEdgeReference, PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry,
+    SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand, SketchSurface,
+    DESIGN_MODULE_SKETCH,
 };
 pub(crate) use cadmpeg_core::decode::WorkBudget;
 pub(crate) use cadmpeg_ir::attributes::AttributeTarget;
@@ -141,3 +147,5 @@ pub(crate) use cadmpeg_ir::sketches::{
     SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchId, SpatialSketchProfile,
 };
 pub(crate) use std::collections::{BTreeMap, HashMap, HashSet};
+
+pub(crate) use crate::design::decode::scopes::solid_primitive::exact_solid_primitive;

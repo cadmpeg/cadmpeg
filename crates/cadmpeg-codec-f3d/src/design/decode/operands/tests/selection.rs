@@ -189,7 +189,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
             offset: 1026,
         }],
         lost_edge_references: Vec::new(),
-        frame: crate::records::DesignConstructionOperandGroupFrame {
+        frame: crate::records::topology::DesignConstructionOperandGroupFrame {
             member_count_offset: 1021,
             auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
@@ -323,7 +323,7 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
             offset: 926,
         }],
         lost_edge_references: Vec::new(),
-        frame: crate::records::DesignConstructionOperandGroupFrame {
+        frame: crate::records::topology::DesignConstructionOperandGroupFrame {
             member_count_offset: 921,
             auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
@@ -518,7 +518,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             "reference_members",
         )
         .unwrap(),
-        payload: crate::records::DesignFeatureKind::Extrude.into(),
+        payload: crate::records::feature::DesignFeatureKind::Extrude.into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "261".into(),
         paired_byte_offset: 1200,
@@ -656,7 +656,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     let identity = DesignConstructionOperandIdentity {
         id: "f3d:Design/BulkStream.dat:operand-identity#50".into(),
         group_record_index: 50,
-        wrappers: vec![crate::records::DesignIdentityWrapper {
+        wrappers: vec![crate::records::topology::DesignIdentityWrapper {
             record_index: 150,
             byte_offset: 50,
             class_tag: "289".into(),
@@ -684,9 +684,9 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     );
     assert_eq!(member.operand_identity_ids, [identity.id]);
     let mut owning_scope = scope;
-    if let crate::records::DesignScopePayload::Extrude(slot)
-    | crate::records::DesignScopePayload::Extrusion(slot)
-    | crate::records::DesignScopePayload::Extrusao(slot) = &mut owning_scope.payload
+    if let crate::records::feature::DesignScopePayload::Extrude(slot)
+    | crate::records::feature::DesignScopePayload::Extrusion(slot)
+    | crate::records::feature::DesignScopePayload::Extrusao(slot) = &mut owning_scope.payload
     {
         slot.get_or_insert_with(Default::default).extrude_profile =
             Some(DesignSketchProfileOperand {

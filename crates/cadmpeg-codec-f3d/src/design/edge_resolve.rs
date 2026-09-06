@@ -2,9 +2,9 @@
 //! Resolve edge-selection operands to stable edge identities.
 
 use crate::ids::{self, native_stream, neutral_feature_id};
-use crate::records::{
+use crate::records::feature::{DesignEdgeTreatmentVertexOperand, DesignParameterScope};
+use crate::records::topology::{
     DesignConstructionOperandGroup, DesignEdgeIdentityOperand, DesignEdgeOperand,
-    DesignEdgeTreatmentVertexOperand, DesignParameterScope,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -1412,7 +1412,7 @@ pub(crate) enum EdgeAssignmentCandidates {
 // candidate. `Context` means the recipe has no edge-assignment proof and the
 // record only contributes topology context to its neighboring operands.
 pub(crate) fn edge_group_assignment_candidates<'a>(
-    selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
+    selector_contexts: &[crate::records::topology::DesignEdgeRecipeSelectorContext],
     reference_edge_sets: impl IntoIterator<Item = &'a [i64]>,
 ) -> Option<EdgeAssignmentCandidates> {
     let reference_edge_sets = reference_edge_sets
@@ -1529,7 +1529,7 @@ pub(crate) fn unique_edge_assignment_with_context(
 }
 
 pub(crate) fn edge_assignment_candidates<'a>(
-    selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
+    selector_contexts: &[crate::records::topology::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
 ) -> Option<Vec<i64>> {
     let shared_edge_sets = shared_edge_sets.into_iter().collect::<Vec<_>>();
@@ -1934,7 +1934,7 @@ pub(crate) fn result_boundary_reference_edge_group_candidates(
 }
 
 pub(crate) fn changed_boundary_count_edge_group_candidates<'a>(
-    members: impl IntoIterator<Item = &'a [crate::records::DesignEdgeRecipeSelectorContext]>,
+    members: impl IntoIterator<Item = &'a [crate::records::topology::DesignEdgeRecipeSelectorContext]>,
 ) -> Option<Vec<i64>> {
     let members = members.into_iter().collect::<Vec<_>>();
     if members.is_empty() || members.iter().any(|selectors| selectors.is_empty()) {
@@ -2038,7 +2038,7 @@ pub(crate) fn edge_operand_reference_edge_sets(operand: &DesignEdgeOperand) -> V
 }
 
 pub(crate) fn resolved_edge_candidate_intersection<'a>(
-    selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
+    selector_contexts: &[crate::records::topology::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
 ) -> Option<i64> {
     resolved_edge_candidate_intersection_with_extra_proofs(
@@ -2050,7 +2050,7 @@ pub(crate) fn resolved_edge_candidate_intersection<'a>(
 }
 
 pub(crate) fn unique_incidence_edge_shared_by_reference_faces<'a>(
-    selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
+    selector_contexts: &[crate::records::topology::DesignEdgeRecipeSelectorContext],
     reference_edge_sets: impl IntoIterator<Item = &'a [i64]>,
 ) -> Option<i64> {
     let mut incidence = selector_contexts
@@ -2090,7 +2090,7 @@ pub(crate) fn unique_incidence_edge_shared_by_reference_faces<'a>(
 }
 
 fn resolved_edge_candidate_intersection_with_extra_proofs<'a, const N: usize>(
-    selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
+    selector_contexts: &[crate::records::topology::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
     extra_proofs: [Option<i64>; N],
     disjoint_reference_proof: Option<i64>,
@@ -2151,7 +2151,7 @@ fn resolved_edge_candidate_intersection_with_extra_proofs<'a, const N: usize>(
 }
 
 fn corroborated_common_triplet_intersection(
-    selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
+    selector_contexts: &[crate::records::topology::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: &[&[i64]],
 ) -> Option<i64> {
     let edge_sets = selector_contexts.iter().flat_map(|selector| {
@@ -2169,7 +2169,7 @@ fn corroborated_common_triplet_intersection(
 }
 
 fn corroborated_cross_clause_triplet_intersection(
-    selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
+    selector_contexts: &[crate::records::topology::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: &[&[i64]],
 ) -> Option<i64> {
     let edge_sets = selector_contexts.iter().flat_map(|selector| {
@@ -2235,7 +2235,7 @@ fn edge_set_intersection(edge_sets: &[&[i64]]) -> Vec<i64> {
 }
 
 fn corroborated_edge_intersection(
-    selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
+    selector_contexts: &[crate::records::topology::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: &[&[i64]],
     boundary_counts_only: bool,
 ) -> Option<i64> {
@@ -2251,7 +2251,7 @@ fn corroborated_edge_intersection(
 }
 
 fn corroborated_edge_candidates<'a>(
-    selector_contexts: &[crate::records::DesignEdgeRecipeSelectorContext],
+    selector_contexts: &[crate::records::topology::DesignEdgeRecipeSelectorContext],
     shared_edge_sets: impl IntoIterator<Item = &'a [i64]>,
     boundary_counts_only: bool,
 ) -> Option<Vec<i64>> {
@@ -2283,7 +2283,7 @@ fn corroborated_edge_candidates<'a>(
 }
 
 fn selector_candidate_edges(
-    selector: &crate::records::DesignEdgeRecipeSelectorContext,
+    selector: &crate::records::topology::DesignEdgeRecipeSelectorContext,
     boundary_counts_only: bool,
 ) -> &[i64] {
     if boundary_counts_only {
@@ -2324,13 +2324,12 @@ pub(crate) fn project_fixed_fillet_with_corners(
 
     let fixed = scope.fixed_fillet_parameters()?;
     let stream = native_stream(&scope.id)?;
-    let radius_spec = |group: &crate::records::DesignFixedFilletGroup| match &group.law {
-        crate::records::DesignFixedFilletLaw::Constant(radius) => {
-            (radius.value > 0.0).then_some(RadiusSpec::Constant {
+    let radius_spec = |group: &crate::records::feature::DesignFixedFilletGroup| match &group.law {
+        crate::records::feature::DesignFixedFilletLaw::Constant(radius) => (radius.value > 0.0)
+            .then_some(RadiusSpec::Constant {
                 radius: Length(radius.value * 10.0),
-            })
-        }
-        crate::records::DesignFixedFilletLaw::Variable {
+            }),
+        crate::records::feature::DesignFixedFilletLaw::Variable {
             start,
             end,
             intermediate,

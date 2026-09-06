@@ -3,7 +3,7 @@
 
 use crate::bytes::{f64s_at, is_guid_relaxed, lp_utf16_bounded};
 use crate::layout::legacy_class_397_symmetric_extrude_frame as symmetric;
-use crate::records::{
+use crate::records::feature::{
     DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart,
 };
 use cadmpeg_core::decode::View;

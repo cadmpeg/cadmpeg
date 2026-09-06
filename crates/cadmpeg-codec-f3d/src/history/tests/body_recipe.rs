@@ -49,10 +49,10 @@ fn form33_without_unique_body_proof_remains_unresolved() {
             free_vertices: Vec::new(),
         },
     ];
-    let operand = crate::records::DesignBodyRecipeOperand {
+    let operand = crate::records::topology::DesignBodyRecipeOperand {
         id: "f3d:Design/BulkStream.dat:body-recipe#1".into(),
         scope_record_index: 10,
-        owner: crate::records::DesignOperandOwner::ScopeReference {
+        owner: crate::records::topology::DesignOperandOwner::ScopeReference {
             scope_reference_ordinal: 0,
         },
         record_index: 1,
@@ -64,7 +64,7 @@ fn form33_without_unique_body_proof_remains_unresolved() {
         context_id_offset: 0,
         selector_tail: None,
 
-        references: vec![crate::records::DesignBodyRecipeReference {
+        references: vec![crate::records::topology::DesignBodyRecipeReference {
             design_reference: 301,
             design_reference_offset: 0,
             form: 33,
@@ -92,9 +92,9 @@ fn form33_without_unique_body_proof_remains_unresolved() {
         None
     );
 
-    let scope = crate::records::DesignParameterScope::empty(
+    let scope = crate::records::feature::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#10",
-        crate::records::DesignFeatureKind::Combine,
+        crate::records::feature::DesignFeatureKind::Combine,
         10,
     );
     let native = "f3d:Design/BulkStream.dat:design-record#1".to_owned();

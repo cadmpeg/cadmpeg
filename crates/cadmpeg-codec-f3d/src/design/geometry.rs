@@ -2,7 +2,8 @@
 //! Sketch-arrangement and profile-containment computational geometry.
 
 use crate::design::profile_select::historical_face_points;
-use crate::records::{DesignExtrudeSelectionMember, SketchRelationOperand};
+use crate::records::topology::DesignExtrudeSelectionMember;
+use crate::records::SketchRelationOperand;
 use cadmpeg_core::decode::{alloc_filled, WorkBudget};
 use cadmpeg_ir::geometry::{knots_nondecreasing, PcurveNurbs};
 use cadmpeg_ir::math::{Point2, Point3};
@@ -2356,7 +2357,7 @@ pub(crate) fn historical_member_points_in_state(
     member: &DesignExtrudeSelectionMember,
     topology: &crate::history_records::AsmHistoricalTopology,
 ) -> Option<Vec<Point3>> {
-    use crate::records::AsmHistoricalEntityKind;
+    use crate::records::topology::AsmHistoricalEntityKind;
 
     let (kind, entity_ref) = match &member.historical {
         Some(binding) => (binding.kind, binding.entity_ref),
@@ -2375,11 +2376,11 @@ pub(crate) fn historical_member_points_in_state(
 }
 
 pub(crate) fn historical_entity_positions(
-    kind: crate::records::AsmHistoricalEntityKind,
+    kind: crate::records::topology::AsmHistoricalEntityKind,
     local_id: i64,
     topology: &crate::history_records::AsmHistoricalTopology,
 ) -> Option<Vec<Point3>> {
-    use crate::records::AsmHistoricalEntityKind;
+    use crate::records::topology::AsmHistoricalEntityKind;
 
     let mut positions = Vec::new();
     let edge_refs = match kind {
@@ -2474,11 +2475,11 @@ pub(crate) fn historical_entity_positions(
 }
 
 pub(crate) fn historical_owned_faces(
-    kind: crate::records::AsmHistoricalEntityKind,
+    kind: crate::records::topology::AsmHistoricalEntityKind,
     local_id: i64,
     topology: &crate::history_records::AsmHistoricalTopology,
 ) -> Option<Vec<i64>> {
-    use crate::records::AsmHistoricalEntityKind;
+    use crate::records::topology::AsmHistoricalEntityKind;
 
     let relation_members = |relations: &[crate::history_records::AsmHistoricalRelation], owner| {
         let mut matches = relations

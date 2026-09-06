@@ -12,7 +12,7 @@ use crate::design::decode::scopes::exact_derived_instance_construction;
 use crate::layout::{
     derived_instance_relation_310_57 as relation_310, derived_instance_scope_279_261 as scope_279,
 };
-use crate::records::{DesignComponentOccurrence, DesignParameterScope};
+use crate::records::feature::{DesignComponentOccurrence, DesignParameterScope};
 
 const COMPONENT: &str = "3ad5b67c-2bc5-4ccd-bac9-26ac75616116";
 const OCCURRENCE: &str = "f867facf-edec-4109-9553-b3703c4e0caf";
@@ -108,7 +108,7 @@ fn fixture() -> (Vec<u8>, DesignParameterScope, DesignComponentOccurrence) {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#425",
-        crate::records::DesignFeatureKind::DerivedInstance,
+        crate::records::feature::DesignFeatureKind::DerivedInstance,
         385,
     );
     scope.byte_offset = SCOPE_AT as u64;
@@ -127,7 +127,7 @@ fn fixture() -> (Vec<u8>, DesignParameterScope, DesignComponentOccurrence) {
         component_guid_offset: 0,
         occurrence_guid: OCCURRENCE.into(),
         occurrence_guid_offset: 0,
-        placement: crate::records::DesignComponentOccurrencePlacement::Explicit {
+        placement: crate::records::feature::DesignComponentOccurrencePlacement::Explicit {
             ordinal: std::num::NonZeroU32::MIN,
             transform: crate::records::Located {
                 value: transform,

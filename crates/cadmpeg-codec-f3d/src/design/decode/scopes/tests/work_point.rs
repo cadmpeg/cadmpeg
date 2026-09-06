@@ -172,7 +172,7 @@ fn work_point_input_count_frames_the_rule_inputs() {
     assert_eq!(work_point_input_indices(&frame.rule), [56]);
 }
 
-fn work_point_input_indices(rule: &crate::records::DesignWorkPointRule) -> Vec<u32> {
+fn work_point_input_indices(rule: &crate::records::feature::DesignWorkPointRule) -> Vec<u32> {
     rule.inputs()
         .iter()
         .map(|input| input.record_index)

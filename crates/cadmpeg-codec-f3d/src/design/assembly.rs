@@ -10,7 +10,7 @@ use cadmpeg_ir::products::{
 };
 
 use crate::ids::native_stream;
-use crate::records::{
+use crate::records::feature::{
     DesignAssemblyAxialOperandTarget, DesignAssemblyLimitKind, DesignAssemblyOperandQualifier,
     DesignComponentOccurrence, DesignParameterScope,
 };
@@ -284,7 +284,7 @@ pub(crate) fn project_assembly_joints(
             continue;
         };
         let (frames, operands, limits) = match alignment.form.as_ref() {
-            Some(crate::records::DesignAssemblyAlignmentForm::LegacyAsBuilt421 {
+            Some(crate::records::feature::DesignAssemblyAlignmentForm::LegacyAsBuilt421 {
                 carriers,
                 solved_frame,
                 limits,
@@ -299,7 +299,7 @@ pub(crate) fn project_assembly_joints(
                 }),
                 limits.as_ref(),
             ),
-            Some(crate::records::DesignAssemblyAlignmentForm::Qualified(operands)) => {
+            Some(crate::records::feature::DesignAssemblyAlignmentForm::Qualified(operands)) => {
                 let Some(projected) = project_qualified_operands(
                     operands.each_ref().map(|operand| &operand.qualifier),
                     stream,
@@ -411,7 +411,7 @@ fn project_qualified_operands(
                     scopes,
                     stream,
                     *component_insert_scope_record_index,
-                    &crate::records::DesignFeatureKind::ComponentInsert,
+                    &crate::records::feature::DesignFeatureKind::ComponentInsert,
                 )?;
                 let feature = unique_feature(features, &target_scope.id)?;
                 let FeatureDefinition::InsertComponent { occurrence } = &feature.definition else {
@@ -445,7 +445,7 @@ fn project_joint_origin_operand(
         scopes,
         stream,
         scope_record_index,
-        &crate::records::DesignFeatureKind::JointOrigin,
+        &crate::records::feature::DesignFeatureKind::JointOrigin,
     )?;
     if let Some(feature) = unique_feature(features, &target_scope.id) {
         if !matches!(
@@ -467,7 +467,7 @@ fn unique_scope<'a>(
     scopes: &'a [DesignParameterScope],
     stream: &str,
     record_index: u32,
-    kind: &crate::records::DesignFeatureKind,
+    kind: &crate::records::feature::DesignFeatureKind,
 ) -> Option<&'a DesignParameterScope> {
     let mut matches = scopes.iter().filter(|scope| {
         native_stream(&scope.id) == Some(stream)
@@ -495,14 +495,14 @@ fn neutral_transform(mut transform: [[f64; 4]; 4]) -> cadmpeg_ir::transform::Tra
 
 #[cfg(test)]
 mod tests {
-    use crate::records::DesignAssemblyOperandQualifier;
+    use crate::records::feature::DesignAssemblyOperandQualifier;
     use std::collections::BTreeMap;
 
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
     use cadmpeg_ir::ids::OccurrenceId;
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    use crate::records::{
+    use crate::records::feature::{
         DesignAssemblyAxialOperandTarget, DesignAssemblyAxialSelectorIdentity,
         DesignAssemblyLimitKind, DesignParameterScope,
     };
@@ -859,12 +859,12 @@ mod tests {
     fn axial_operands_project_component_and_document_root_qualifiers() {
         let component_scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:component-insert#200",
-            crate::records::DesignFeatureKind::ComponentInsert,
+            crate::records::feature::DesignFeatureKind::ComponentInsert,
             200,
         );
         let origin_scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:joint-origin#80",
-            crate::records::DesignFeatureKind::JointOrigin,
+            crate::records::feature::DesignFeatureKind::JointOrigin,
             80,
         );
         let mut origin_scope = origin_scope;

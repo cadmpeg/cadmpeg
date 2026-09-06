@@ -102,8 +102,8 @@ fn test_history() -> AsmHistory {
     }
 }
 
-fn hole_scope() -> crate::records::DesignParameterScope {
-    let face_selection = crate::records::DesignHoleFaceSelection {
+fn hole_scope() -> crate::records::feature::DesignParameterScope {
+    let face_selection = crate::records::feature::DesignHoleFaceSelection {
         record_index: 1,
         byte_offset: 0,
         class_tag: "375".into(),
@@ -120,7 +120,7 @@ fn hole_scope() -> crate::records::DesignParameterScope {
         next_record_index: 3,
         next_byte_offset: 0,
     };
-    let construction = crate::records::DesignHoleConstruction {
+    let construction = crate::records::feature::DesignHoleConstruction {
         point_record_index: 4,
         point_record_byte_offset: 0,
         position: [0.0, 0.0, 0.0],
@@ -138,14 +138,14 @@ fn hole_scope() -> crate::records::DesignParameterScope {
         }],
         face_selection: Some(face_selection),
     };
-    let mut scope = crate::records::DesignParameterScope::empty(
+    let mut scope = crate::records::feature::DesignParameterScope::empty(
         "f3d:scope#5",
-        crate::records::DesignFeatureKind::Hole,
+        crate::records::feature::DesignFeatureKind::Hole,
         5,
     );
     scope.history_state_id = Some(2);
     scope.previous_history_state_id = Some(1);
-    if let crate::records::DesignScopePayload::Hole(slot) = &mut scope.payload {
+    if let crate::records::feature::DesignScopePayload::Hole(slot) = &mut scope.payload {
         *slot = Some(construction);
     }
     scope
@@ -164,15 +164,17 @@ fn edge_backed_hole_selection_uses_the_oriented_updated_support_plane() {
             .and_then(|construction| construction.face_selection.as_ref())
             .map(|selection| selection.historical_face_candidates.as_slice()),
         Some(
-            &[crate::records::DesignEntitySelectionFaceCandidate {
-                history_id: "history".into(),
-                historical: crate::records::HistoricalBinding {
-                    kind: AsmHistoricalEntityKind::Edge,
-                    entity_ref: 7,
-                    state_ids: vec![1],
-                },
-                face_slot: 20,
-            }][..]
+            &[
+                crate::records::topology::DesignEntitySelectionFaceCandidate {
+                    history_id: "history".into(),
+                    historical: crate::records::topology::HistoricalBinding {
+                        kind: AsmHistoricalEntityKind::Edge,
+                        entity_ref: 7,
+                        state_ids: vec![1],
+                    },
+                    face_slot: 20,
+                }
+            ][..]
         )
     );
 }

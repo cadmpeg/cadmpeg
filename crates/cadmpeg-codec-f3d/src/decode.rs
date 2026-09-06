@@ -3430,7 +3430,7 @@ fn mesh_texture_assignments(
 /// tessellation identities.
 fn bind_mesh_feature_definitions(
     features: &mut [cadmpeg_ir::features::Feature],
-    scopes: &[crate::records::DesignParameterScope],
+    scopes: &[crate::records::feature::DesignParameterScope],
     projection: &MeshProjection,
 ) {
     for feature in features {

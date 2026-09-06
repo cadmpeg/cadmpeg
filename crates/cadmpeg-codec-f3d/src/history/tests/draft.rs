@@ -6,7 +6,8 @@ use super::super::*;
 #[test]
 fn face_transition_requires_one_changed_surface_geometry() {
     use crate::history_records::{AsmHistoricalCarrierBinding, AsmHistoricalPlane};
-    use crate::records::{ConstructionRecipeKind, DesignFaceOperand, DesignRecipeReference};
+    use crate::records::topology::DesignFaceOperand;
+    use crate::records::{ConstructionRecipeKind, DesignRecipeReference};
     use cadmpeg_ir::ids::FaceId;
     use cadmpeg_ir::math::{Point3, Vector3};
 

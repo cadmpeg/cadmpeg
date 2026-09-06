@@ -818,13 +818,13 @@ fn component_insert_selection_uses_stream_and_role_not_class_tag() {
         [0.0, 0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0, 1.0],
     ];
-    let selected_construction = crate::records::DesignComponentInsertConstruction {
+    let selected_construction = crate::records::feature::DesignComponentInsertConstruction {
         relation_record_index: 1,
         carrier_record_index: 2,
         occurrence_identity: None,
         neutron_role: "role".into(),
         neutron_role_offset: 0,
-        placement: Some(crate::records::DesignComponentInsertMatrix {
+        placement: Some(crate::records::feature::DesignComponentInsertMatrix {
             scope: crate::records::Located {
                 value: selected,
                 offset: 0,
@@ -832,9 +832,9 @@ fn component_insert_selection_uses_stream_and_role_not_class_tag() {
             carrier_offset: Some(0),
         }),
     };
-    let ignored_construction = crate::records::DesignComponentInsertConstruction {
+    let ignored_construction = crate::records::feature::DesignComponentInsertConstruction {
         neutron_role: "other".into(),
-        placement: Some(crate::records::DesignComponentInsertMatrix {
+        placement: Some(crate::records::feature::DesignComponentInsertMatrix {
             scope: crate::records::Located {
                 value: ignored,
                 offset: 0,

@@ -349,7 +349,7 @@ pub(crate) struct AsmHistoricalTopology {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub(crate) struct AsmHistoricalPersistentSubentityTag {
-    pub entity_kind: crate::records::AsmHistoricalEntityKind,
+    pub entity_kind: crate::records::topology::AsmHistoricalEntityKind,
     pub entity_ref: i64,
     pub selector: i64,
     pub token: String,

@@ -11,10 +11,11 @@ use super::prelude::*;
 
 #[test]
 fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
-    use crate::records::{
-        DesignBendPosition, DesignEdgeFlangeOperation, DesignParameterKind, DesignParameterScope,
+    use crate::records::feature::{
+        DesignBendPosition, DesignEdgeFlangeOperation, DesignParameterScope,
         DesignSheetMetalHeightDatum,
     };
+    use crate::records::DesignParameterKind;
     use cadmpeg_ir::features::{
         FeatureDefinition, SheetMetalBendPosition, SheetMetalFlangeTwoSidedWidth,
         SheetMetalFlangeWidth, SheetMetalHeightDatum,
@@ -23,16 +24,16 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     let stream = "f3d:FusionAssetName[Active]/FusionDesignSegmentType1/BulkStream.dat";
     let mut scope = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#900"),
-        crate::records::DesignFeatureKind::EdgeFlange,
+        crate::records::feature::DesignFeatureKind::EdgeFlange,
         382,
     );
     scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![
         383, 385, 388, 393, 396, 399, 402, 404, 407, 411,
     ]);
-    if let crate::records::DesignScopePayload::EdgeFlange(slot) = &mut scope.payload {
+    if let crate::records::feature::DesignScopePayload::EdgeFlange(slot) = &mut scope.payload {
         *slot = Some(DesignEdgeFlangeOperation {
-            shape: crate::records::DesignEdgeFlangeShape::TwoSides {
-                edges: vec![crate::records::DesignEdgeFlangeEdge {
+            shape: crate::records::feature::DesignEdgeFlangeShape::TwoSides {
+                edges: vec![crate::records::feature::DesignEdgeFlangeEdge {
                     wrapper_record_index: 383,
                     group_record_index: 385,
                     operand_record_index: 388,
@@ -45,7 +46,8 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
             angle_owner_record_index: 402,
             auxiliary_reference_record_indices: Vec::new(),
             settings_record_index: 411,
-            bend_radius: crate::records::DesignBendRadius::new(0.25).expect("positive bend radius"),
+            bend_radius: crate::records::feature::DesignBendRadius::new(0.25)
+                .expect("positive bend radius"),
             bend_radius_offset: 156,
 
             height_datum: DesignSheetMetalHeightDatum::InnerFaces,
@@ -105,7 +107,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         parameter(398, "FlangeHeight", "mm", 2.5),
         parameter(401, "FlangeAngle", "deg", std::f64::consts::FRAC_PI_2),
     ];
-    let group = crate::records::DesignConstructionOperandGroup {
+    let group = crate::records::topology::DesignConstructionOperandGroup {
         id: format!("{stream}:design-construction-operand-group#385"),
         scope_record_index: 382,
         scope_reference_ordinal: 1,
@@ -117,7 +119,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
             offset: 0,
         }],
         lost_edge_references: Vec::new(),
-        frame: crate::records::DesignConstructionOperandGroupFrame {
+        frame: crate::records::topology::DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
             auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
@@ -192,19 +194,20 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         .edge_flange_operation()
         .cloned()
         .expect("single-edge operation fixture");
-    offset_operation.shape = crate::records::DesignEdgeFlangeShape::TwoSidesPerEdge {
+    offset_operation.shape = crate::records::feature::DesignEdgeFlangeShape::TwoSidesPerEdge {
         edges: offset_operation
             .shape
             .edges()
             .copied()
-            .map(|edge| crate::records::DesignFlangeEdgeWidth {
+            .map(|edge| crate::records::feature::DesignFlangeEdgeWidth {
                 edge,
                 owners: [393, 396],
             })
             .collect(),
-        source: crate::records::DesignEdgeFlangeWidthParameterSource::EdgeOffset,
+        source: crate::records::feature::DesignEdgeFlangeWidthParameterSource::EdgeOffset,
     };
-    if let crate::records::DesignScopePayload::EdgeFlange(slot) = &mut offset_scope.payload {
+    if let crate::records::feature::DesignScopePayload::EdgeFlange(slot) = &mut offset_scope.payload
+    {
         *slot = Some(offset_operation);
     }
     let mut offset_parameters = parameters.clone();
@@ -266,17 +269,18 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         .edge_flange_operation()
         .cloned()
         .expect("single-edge operation fixture");
-    if let crate::records::DesignEdgeFlangeShape::TwoSides { edges, .. } =
+    if let crate::records::feature::DesignEdgeFlangeShape::TwoSides { edges, .. } =
         &mut multi_operation.shape
     {
-        edges.push(crate::records::DesignEdgeFlangeEdge {
+        edges.push(crate::records::feature::DesignEdgeFlangeEdge {
             wrapper_record_index: edges[0].wrapper_record_index,
             group_record_index: 415,
             operand_record_index: 418,
             aggregate_operand_record_index: 420,
         });
     }
-    if let crate::records::DesignScopePayload::EdgeFlange(slot) = &mut multi_scope.payload {
+    if let crate::records::feature::DesignScopePayload::EdgeFlange(slot) = &mut multi_scope.payload
+    {
         *slot = Some(multi_operation.clone());
     }
     let mut second_group = group.clone();
@@ -333,16 +337,17 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     .unwrap();
     per_edge_parameters[1].evaluated_value = 3.0;
     let mut per_edge_operation = multi_operation;
-    per_edge_operation.shape = crate::records::DesignEdgeFlangeShape::SymmetricPerEdge(
+    per_edge_operation.shape = crate::records::feature::DesignEdgeFlangeShape::SymmetricPerEdge(
         per_edge_operation
             .shape
             .edges()
             .copied()
             .zip(per_edge_operation.shape.owner_indices().copied())
-            .map(|(edge, owners)| crate::records::DesignFlangeEdgeWidth { edge, owners })
+            .map(|(edge, owners)| crate::records::feature::DesignFlangeEdgeWidth { edge, owners })
             .collect(),
     );
-    if let crate::records::DesignScopePayload::EdgeFlange(slot) = &mut multi_scope.payload {
+    if let crate::records::feature::DesignScopePayload::EdgeFlange(slot) = &mut multi_scope.payload
+    {
         *slot = Some(per_edge_operation);
     }
     let per_edge_inputs = crate::design::feature_project::ProjectInputs {
@@ -409,17 +414,24 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         .edge_flange_operation()
         .cloned()
         .expect("per-edge width operation fixture");
-    two_sided_per_edge_operation.shape = crate::records::DesignEdgeFlangeShape::TwoSidesPerEdge {
-        edges: two_sided_per_edge_operation
-            .shape
-            .edges()
-            .copied()
-            .zip([[393, 396], [414, 417]])
-            .map(|(edge, owners)| crate::records::DesignFlangeEdgeWidth { edge, owners })
-            .collect(),
-        source: crate::records::DesignEdgeFlangeWidthParameterSource::EdgeWidth,
-    };
-    if let crate::records::DesignScopePayload::EdgeFlange(slot) = &mut multi_scope.payload {
+    two_sided_per_edge_operation.shape =
+        crate::records::feature::DesignEdgeFlangeShape::TwoSidesPerEdge {
+            edges: two_sided_per_edge_operation
+                .shape
+                .edges()
+                .copied()
+                .zip([[393, 396], [414, 417]])
+                .map(
+                    |(edge, owners)| crate::records::feature::DesignFlangeEdgeWidth {
+                        edge,
+                        owners,
+                    },
+                )
+                .collect(),
+            source: crate::records::feature::DesignEdgeFlangeWidthParameterSource::EdgeWidth,
+        };
+    if let crate::records::feature::DesignScopePayload::EdgeFlange(slot) = &mut multi_scope.payload
+    {
         *slot = Some(two_sided_per_edge_operation);
     }
     let mut two_sided_owners = owners.to_vec();
@@ -474,10 +486,11 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
 
 #[test]
 fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
-    use crate::records::{
+    use crate::records::feature::{
         DesignBendPosition, DesignEdgeFlangeHeightExtent, DesignEdgeFlangeOperation,
-        DesignParameterKind, DesignParameterScope, DesignSheetMetalHeightDatum,
+        DesignParameterScope, DesignSheetMetalHeightDatum,
     };
+    use crate::records::DesignParameterKind;
     use cadmpeg_ir::features::{
         FeatureDefinition, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
     };
@@ -485,13 +498,13 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
     let stream = "f3d:FusionAssetName[Active]/FusionDesignSegmentType1/BulkStream.dat";
     let mut scope = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#910"),
-        crate::records::DesignFeatureKind::EdgeFlange,
+        crate::records::feature::DesignFeatureKind::EdgeFlange,
         382,
     );
-    if let crate::records::DesignScopePayload::EdgeFlange(slot) = &mut scope.payload {
+    if let crate::records::feature::DesignScopePayload::EdgeFlange(slot) = &mut scope.payload {
         *slot = Some(DesignEdgeFlangeOperation {
-            shape: crate::records::DesignEdgeFlangeShape::FullEdge {
-                edges: vec![crate::records::DesignEdgeFlangeEdge {
+            shape: crate::records::feature::DesignEdgeFlangeShape::FullEdge {
+                edges: vec![crate::records::feature::DesignEdgeFlangeEdge {
                     wrapper_record_index: 383,
                     group_record_index: 385,
                     operand_record_index: 388,
@@ -509,7 +522,8 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
             angle_owner_record_index: 402,
             auxiliary_reference_record_indices: Vec::new(),
             settings_record_index: 411,
-            bend_radius: crate::records::DesignBendRadius::new(0.25).expect("positive bend radius"),
+            bend_radius: crate::records::feature::DesignBendRadius::new(0.25)
+                .expect("positive bend radius"),
             bend_radius_offset: 156,
 
             height_datum: DesignSheetMetalHeightDatum::OuterFaces,
@@ -563,7 +577,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         parameter(429, "ToObjectOffset", "mm", 1.5),
     ];
 
-    let edge_group = crate::records::DesignConstructionOperandGroup {
+    let edge_group = crate::records::topology::DesignConstructionOperandGroup {
         id: format!("{stream}:design-construction-operand-group#385"),
         scope_record_index: 382,
         scope_reference_ordinal: 1,
@@ -575,7 +589,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
             offset: 0,
         }],
         lost_edge_references: Vec::new(),
-        frame: crate::records::DesignConstructionOperandGroupFrame {
+        frame: crate::records::topology::DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
             auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
@@ -605,7 +619,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
     }];
     target_group.role = 0x0000_0021_0000_0000;
 
-    let target_selection = crate::records::DesignEntitySelectionOperand {
+    let target_selection = crate::records::topology::DesignEntitySelectionOperand {
         id: format!("{stream}:design-entity-selection-operand#424"),
         scope_record_index: 382,
         group_record_index: 421,
@@ -630,7 +644,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
     };
     let mut target_scope = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#920"),
-        crate::records::DesignFeatureKind::WorkPlane,
+        crate::records::feature::DesignFeatureKind::WorkPlane,
         320,
     );
     target_scope.with_work_plane_transform([
@@ -680,7 +694,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
 
 #[test]
 fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
-    use crate::records::{
+    use crate::records::feature::{
         DesignBendPosition, DesignEdgeFlangeOperation, DesignParameterScope,
         DesignSheetMetalHeightDatum,
     };
@@ -688,15 +702,15 @@ fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
     let stream = "f3d:FusionAssetName[Active]/FusionDesignSegmentType1/BulkStream.dat";
     let mut scope = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#901"),
-        crate::records::DesignFeatureKind::EdgeFlange,
+        crate::records::feature::DesignFeatureKind::EdgeFlange,
         317,
     );
     scope.reference_members =
         crate::records::ReferenceRun::Unlocated(vec![318, 320, 323, 328, 331, 334, 336, 339, 343]);
-    if let crate::records::DesignScopePayload::EdgeFlange(slot) = &mut scope.payload {
+    if let crate::records::feature::DesignScopePayload::EdgeFlange(slot) = &mut scope.payload {
         *slot = Some(DesignEdgeFlangeOperation {
-            shape: crate::records::DesignEdgeFlangeShape::Symmetric {
-                edges: vec![crate::records::DesignEdgeFlangeEdge {
+            shape: crate::records::feature::DesignEdgeFlangeShape::Symmetric {
+                edges: vec![crate::records::feature::DesignEdgeFlangeEdge {
                     wrapper_record_index: 318,
                     group_record_index: 320,
                     operand_record_index: 323,
@@ -709,7 +723,8 @@ fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
             angle_owner_record_index: 334,
             auxiliary_reference_record_indices: Vec::new(),
             settings_record_index: 343,
-            bend_radius: crate::records::DesignBendRadius::new(0.25).expect("positive bend radius"),
+            bend_radius: crate::records::feature::DesignBendRadius::new(0.25)
+                .expect("positive bend radius"),
             bend_radius_offset: 156,
 
             height_datum: DesignSheetMetalHeightDatum::OuterFaces,
@@ -742,7 +757,9 @@ fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
 
 #[test]
 fn surface_patch_continuity_needs_every_boundary_to_agree() {
-    use crate::records::{DesignParameterScope, DesignPatchContinuity, DesignSurfacePatchBoundary};
+    use crate::records::feature::{
+        DesignParameterScope, DesignPatchContinuity, DesignSurfacePatchBoundary,
+    };
     use cadmpeg_ir::features::SurfaceContinuity;
 
     let boundary = |continuity: DesignPatchContinuity| DesignSurfacePatchBoundary {
@@ -757,10 +774,11 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
     let scope_with = |boundaries: Vec<DesignSurfacePatchBoundary>| {
         let mut scope = DesignParameterScope::empty(
             "f3d:test:scope#1",
-            crate::records::DesignFeatureKind::SurfacePatch,
+            crate::records::feature::DesignFeatureKind::SurfacePatch,
             1,
         );
-        if let crate::records::DesignScopePayload::SurfacePatch(slot) = &mut scope.payload {
+        if let crate::records::feature::DesignScopePayload::SurfacePatch(slot) = &mut scope.payload
+        {
             *slot = boundaries;
         }
         scope
@@ -812,22 +830,24 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
 
 #[test]
 fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint() {
-    use crate::records::{
-        DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame, DesignParameterScope,
-        DesignPatchContinuity, DesignSurfacePatchBoundary,
+    use crate::records::feature::{
+        DesignParameterScope, DesignPatchContinuity, DesignSurfacePatchBoundary,
+    };
+    use crate::records::topology::{
+        DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
     };
     use cadmpeg_ir::features::{FeatureDefinition, SurfaceContinuity};
 
     let mut scope = DesignParameterScope::empty(
         "f3d:test:scope#1",
-        crate::records::DesignFeatureKind::SurfacePatch,
+        crate::records::feature::DesignFeatureKind::SurfacePatch,
         1,
     );
     scope.frame_length = 442;
     scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![
         900, 100, 101, 102, 110, 111, 112, 120, 121, 122,
     ]);
-    if let crate::records::DesignScopePayload::SurfacePatch(slot) = &mut scope.payload {
+    if let crate::records::feature::DesignScopePayload::SurfacePatch(slot) = &mut scope.payload {
         *slot = vec![
             DesignSurfacePatchBoundary {
                 scope_reference_ordinal: 3,
@@ -913,7 +933,8 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
     scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![
         100, 101, 102, 110, 111, 112, 120, 121, 122, 900,
     ]);
-    let crate::records::DesignScopePayload::SurfacePatch(boundaries) = &mut scope.payload else {
+    let crate::records::feature::DesignScopePayload::SurfacePatch(boundaries) = &mut scope.payload
+    else {
         panic!("SurfacePatch fixture");
     };
     for (boundary, ordinal) in boundaries.iter_mut().zip([2_u32, 5, 8]) {
@@ -941,11 +962,13 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
 
 #[test]
 fn hem_scope_projects_each_decoded_owner_layout() {
-    use crate::records::{
-        DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame, DesignHemOperation,
-        DesignHemParameterOwners, DesignParameter, DesignParameterKind, DesignParameterOwner,
-        DesignParameterScope,
+    use crate::records::feature::{
+        DesignHemOperation, DesignHemParameterOwners, DesignParameterScope,
     };
+    use crate::records::topology::{
+        DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
+    };
+    use crate::records::{DesignParameter, DesignParameterKind, DesignParameterOwner};
     use cadmpeg_ir::features::{FeatureDefinition, SheetMetalHemDirection, SheetMetalHemForm};
 
     let stream = "f3d:FusionAssetName[Active]/FusionDesignSegmentType1/BulkStream.dat";
@@ -1033,7 +1056,8 @@ fn hem_scope_projects_each_decoded_owner_layout() {
         aggregate_operand_record_index: 720,
         parameter_owners,
         settings_record_index: 724,
-        bend_radius: crate::records::DesignBendRadius::new(0.25).expect("positive bend radius"),
+        bend_radius: crate::records::feature::DesignBendRadius::new(0.25)
+            .expect("positive bend radius"),
         bend_radius_offset: 100,
     };
     let project = |record_index: u32,
@@ -1042,10 +1066,10 @@ fn hem_scope_projects_each_decoded_owner_layout() {
                    parameters: Vec<DesignParameter>| {
         let mut scope = DesignParameterScope::empty(
             &format!("{stream}:design-parameter-scope#{record_index}"),
-            crate::records::DesignFeatureKind::Hem,
+            crate::records::feature::DesignFeatureKind::Hem,
             record_index,
         );
-        if let crate::records::DesignScopePayload::Hem(slot) = &mut scope.payload {
+        if let crate::records::feature::DesignScopePayload::Hem(slot) = &mut scope.payload {
             *slot = Some(operation);
         }
         let groups = vec![

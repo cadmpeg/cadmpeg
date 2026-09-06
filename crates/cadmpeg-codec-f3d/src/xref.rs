@@ -27,9 +27,8 @@ use crate::bytes::{
 };
 use crate::container::ContainerScan;
 use crate::layout::component_insert_grouped_identity_carrier as grouped_identity_layout;
-use crate::records::{
-    DesignComponentInsertConstruction, DesignParameterScope, XrefDesign, XrefReference,
-};
+use crate::records::feature::{DesignComponentInsertConstruction, DesignParameterScope};
+use crate::records::{XrefDesign, XrefReference};
 
 const EPS_XREF_DECODE_RIGID_MATRIX_E8: f64 = 1.0e-8;
 

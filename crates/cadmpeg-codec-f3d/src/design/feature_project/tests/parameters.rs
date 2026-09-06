@@ -207,7 +207,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         record_index: 12,
         frame_length: 200,
         kind_offset: 210,
-        payload: DesignScopePayload::Extrude(Some(crate::records::DesignExtrudeScope {
+        payload: DesignScopePayload::Extrude(Some(crate::records::feature::DesignExtrudeScope {
             extrude_prologue: Some(DesignExtrudePrologue::ReferenceAware {
                 reference: None,
                 operation: DesignExtrudeOperation::NewBody,
@@ -225,7 +225,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
                 start: DesignExtrudeStart::ProfilePlane,
                 start_offset: 142,
             }),
-            ..crate::records::DesignExtrudeScope::default()
+            ..crate::records::feature::DesignExtrudeScope::default()
         })),
         feature_ordinal: std::num::NonZeroU32::MIN,
         feature_ordinal_offset: 0,
@@ -373,7 +373,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
             "reference_members",
         )
         .unwrap(),
-        payload: crate::records::DesignFeatureKind::CustomFeature.into(),
+        payload: crate::records::feature::DesignFeatureKind::CustomFeature.into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "302".into(),
         paired_byte_offset: u64::from(record_index) + 100,
@@ -514,7 +514,7 @@ fn parameter_expressions_project_feature_dependencies() {
             "reference_members",
         )
         .unwrap(),
-        payload: crate::records::DesignFeatureKind::try_from(kind.to_owned())
+        payload: crate::records::feature::DesignFeatureKind::try_from(kind.to_owned())
             .expect("nonempty family name")
             .into(),
         unclosed_construction_operand_groups: Vec::new(),

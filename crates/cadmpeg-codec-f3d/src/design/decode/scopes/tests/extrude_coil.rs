@@ -208,7 +208,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     assert_eq!(
         referenced.extrude_prologue(),
         Some(DesignExtrudePrologue::ReferenceAware {
-            reference: Some(crate::records::DesignExtrudePrologueReference {
+            reference: Some(crate::records::feature::DesignExtrudePrologueReference {
                 record_index: 77,
                 record_index_offset: 26,
                 trailing_zero_count: 8,
@@ -310,7 +310,10 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         None,
         None,
     );
-    assert_eq!(to_face.kind(), crate::records::DesignFeatureKind::Extrusion);
+    assert_eq!(
+        to_face.kind(),
+        crate::records::feature::DesignFeatureKind::Extrusion
+    );
     let Some(prologue) = to_face.extrude_prologue() else {
         panic!("to-face Extrude prologue");
     };
@@ -374,7 +377,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         Some(DesignExtrudePrologue::ReferenceAware {
             side_extent_discriminators: [2, 0],
             side_extent_discriminator_offsets: [92, 176],
-            first_side_target_ordinal: Some(crate::records::DesignExtrudeTargetOrdinal {
+            first_side_target_ordinal: Some(crate::records::feature::DesignExtrudeTargetOrdinal {
                 scope_reference_ordinal: 0,
                 scope_reference_ordinal_offset: 87,
             }),
@@ -671,7 +674,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     let unrecognized = scope("Extrude", 2, (3, 0), 0, 1, 0, None, false, None, None, None);
     assert_eq!(
         unrecognized.kind(),
-        crate::records::DesignFeatureKind::Extrude
+        crate::records::feature::DesignFeatureKind::Extrude
     );
     assert_eq!(unrecognized.extrude_prologue(), None);
     assert_eq!(
@@ -1418,7 +1421,7 @@ fn compact_coil_new_body_scope_accepts_unlinked_state_trailer() {
     assert_eq!(scope.frame_length, 442);
     assert_eq!(
         scope.kind(),
-        crate::records::DesignFeatureKind::CoilPrimitive
+        crate::records::feature::DesignFeatureKind::CoilPrimitive
     );
     assert_eq!(
         scope.coil_operation(),

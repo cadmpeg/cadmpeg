@@ -5,7 +5,7 @@ use crate::bytes::f64s_at;
 use crate::layout::legacy_class_415_one_sided_distance_extrude_prefix as distance;
 use crate::layout::legacy_class_415_one_sided_to_face_extrude_prefix as to_face;
 use crate::layout::legacy_class_415_symmetric_extrude_prefix as symmetric;
-use crate::records::{DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart};
+use crate::records::feature::{DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart};
 use cadmpeg_core::decode::View;
 
 #[derive(Clone, Copy)]

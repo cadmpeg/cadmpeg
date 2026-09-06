@@ -29,7 +29,7 @@ fn group(
             .map(|value| crate::records::Located { value, offset: 0 })
             .collect(),
         lost_edge_references: Vec::new(),
-        frame: crate::records::DesignConstructionOperandGroupFrame {
+        frame: crate::records::topology::DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
             auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
@@ -56,7 +56,7 @@ fn class_277_258_compact_split_face_frame_projects() {
     let scope_record_index = 77;
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#77",
-        crate::records::DesignFeatureKind::SplitFace,
+        crate::records::feature::DesignFeatureKind::SplitFace,
         scope_record_index,
     );
     scope.class_tag = "277".into();
@@ -100,7 +100,7 @@ fn direct_single_identity_split_face_member_projects_historical_edge_path() {
     let scope_record_index = 77;
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#77",
-        crate::records::DesignFeatureKind::SplitFace,
+        crate::records::feature::DesignFeatureKind::SplitFace,
         scope_record_index,
     );
     scope.class_tag = "277".into();
@@ -119,7 +119,7 @@ fn direct_single_identity_split_face_member_projects_historical_edge_path() {
             0x0000_0010_0000_0000,
         ),
     ];
-    let selections = [crate::records::DesignEntitySelectionOperand {
+    let selections = [crate::records::topology::DesignEntitySelectionOperand {
         id: "f3d:Design/BulkStream.dat:entity-selection#101".into(),
         scope_record_index,
         group_record_index: 100,

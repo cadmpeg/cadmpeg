@@ -10,9 +10,9 @@
 use super::prelude::*;
 
 use super::project_mirror;
-use crate::records::{
-    DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame, DesignMirrorConstruction,
-    DesignParameterScope,
+use crate::records::feature::{DesignMirrorConstruction, DesignParameterScope};
+use crate::records::topology::{
+    DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
 };
 use cadmpeg_ir::features::{
     BodySelection, FaceSelection, FeatureDefinition, PatternKind, PatternSeed,
@@ -57,18 +57,18 @@ fn group(scope_record_index: u32, record_index: u32, role: u64) -> DesignConstru
 fn mirror_scope(seed_group_record_index: u32) -> DesignParameterScope {
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#10",
-        crate::records::DesignFeatureKind::Mirror,
+        crate::records::feature::DesignFeatureKind::Mirror,
         10,
     );
-    if let crate::records::DesignScopePayload::Mirror(slot)
-    | crate::records::DesignScopePayload::SymetrieMiroir(slot) = &mut scope.payload
+    if let crate::records::feature::DesignScopePayload::Mirror(slot)
+    | crate::records::feature::DesignScopePayload::SymetrieMiroir(slot) = &mut scope.payload
     {
         *slot = Some(DesignMirrorConstruction {
             count_record_index: 11,
             count_offset: 0,
             stitch_tolerance: 0.001,
             stitch_tolerance_offset: 0,
-            tolerance_source: crate::records::DesignMirrorToleranceSource::Owner {
+            tolerance_source: crate::records::feature::DesignMirrorToleranceSource::Owner {
                 record_index: 12,
             },
             seed_group_record_index,
@@ -76,7 +76,7 @@ fn mirror_scope(seed_group_record_index: u32) -> DesignParameterScope {
             seed_feature_scope_record_index: None,
             plane_scope_record_index: None,
             plane_selection_record_index: None,
-            plane: Some(crate::records::DesignPlane {
+            plane: Some(crate::records::feature::DesignPlane {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(0.0, 0.0, 1.0),
             }),

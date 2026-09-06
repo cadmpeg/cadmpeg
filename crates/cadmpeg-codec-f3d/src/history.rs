@@ -17,10 +17,10 @@ use crate::history_records::{
     AsmHistoricalRelation, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
     AsmHistoricalTransition, AsmHistory, AsmHistoryRecord, AsmPreamble,
 };
-use crate::records::{
-    AsmHistoricalEntityKind, DesignBodyBinding, DesignComponentNamingSpace,
-    DesignEdgeIdentityOperand, DesignExtrudeSelectionMember,
+use crate::records::topology::{
+    AsmHistoricalEntityKind, DesignEdgeIdentityOperand, DesignExtrudeSelectionMember,
 };
+use crate::records::{DesignBodyBinding, DesignComponentNamingSpace};
 use cadmpeg_asm::kernel_header::RefWidth;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -777,7 +777,7 @@ fn entity_delta(
 
 pub(crate) fn bind_feature_outputs(
     features: &mut [cadmpeg_ir::features::Feature],
-    scopes: &[crate::records::DesignParameterScope],
+    scopes: &[crate::records::feature::DesignParameterScope],
     histories: &[AsmHistory],
     active_bodies: &[cadmpeg_ir::topology::Body],
 ) {
@@ -902,11 +902,11 @@ pub(crate) fn bind_sweep_result_modes(
 /// Native history and neutral topology used to resolve feature body operands.
 pub(crate) struct FeatureBodySelectionInputs<'a> {
     /// Decoded Design feature scopes.
-    pub scopes: &'a [crate::records::DesignParameterScope],
+    pub scopes: &'a [crate::records::feature::DesignParameterScope],
     /// Counted Design construction-operand groups.
-    pub groups: &'a [crate::records::DesignConstructionOperandGroup],
+    pub groups: &'a [crate::records::topology::DesignConstructionOperandGroup],
     /// Whole-body recipe operands.
-    pub body_recipe_operands: &'a [crate::records::DesignBodyRecipeOperand],
+    pub body_recipe_operands: &'a [crate::records::topology::DesignBodyRecipeOperand],
     /// Construction recipes backing whole-body operands.
     pub construction_recipes: &'a [crate::records::ConstructionRecipe],
     /// Persistent body identities in the active solved B-rep.
@@ -1081,7 +1081,7 @@ pub(crate) fn bind_feature_body_selections(
                         && operand.scope_record_index == scope.record_index
                         && matches!(
                             operand.owner,
-                            crate::records::DesignOperandOwner::ScopeReference { .. }
+                            crate::records::topology::DesignOperandOwner::ScopeReference { .. }
                         )
                         && operand.record_index == record_index
                 });
@@ -1332,7 +1332,7 @@ fn combine_recipe_family_tool_slots(
     tool_record_indices: &[u32],
     previous_state_id: i64,
     target_body: i64,
-    operands: &[crate::records::DesignBodyRecipeOperand],
+    operands: &[crate::records::topology::DesignBodyRecipeOperand],
     recipes: &[crate::records::ConstructionRecipe],
 ) -> Option<Vec<i64>> {
     type FamilyKey = (String, String, u64, u32, String);
@@ -1360,7 +1360,7 @@ fn combine_recipe_family_tool_slots(
                 && operand.scope_record_index == scope_record_index
                 && matches!(
                     operand.owner,
-                    crate::records::DesignOperandOwner::ScopeReference { .. }
+                    crate::records::topology::DesignOperandOwner::ScopeReference { .. }
                 )
                 && operand.record_index == *record_index
         });
@@ -1437,7 +1437,7 @@ fn combine_recipe_family_tool_slots(
 }
 
 fn combine_external_local_tools(
-    scope: &crate::records::DesignParameterScope,
+    scope: &crate::records::feature::DesignParameterScope,
 ) -> Option<cadmpeg_ir::features::BodySelection> {
     let operation = scope.combine_operation()?;
     let bodies = operation
@@ -1530,7 +1530,7 @@ fn bind_pattern_body_selections(
 }
 
 fn unique_external_body_candidate(
-    operand: &crate::records::DesignBodyRecipeOperand,
+    operand: &crate::records::topology::DesignBodyRecipeOperand,
     current_history_source: Option<&str>,
     bodies: &[cadmpeg_ir::topology::Body],
     regions: &[cadmpeg_ir::topology::Region],
@@ -1596,9 +1596,9 @@ fn bind_body_recipe_body_selection(
     selection: &mut cadmpeg_ir::features::BodySelection,
     feature_id: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
-    scope: &crate::records::DesignParameterScope,
-    groups: &[crate::records::DesignConstructionOperandGroup],
-    operands: &[crate::records::DesignBodyRecipeOperand],
+    scope: &crate::records::feature::DesignParameterScope,
+    groups: &[crate::records::topology::DesignConstructionOperandGroup],
+    operands: &[crate::records::topology::DesignBodyRecipeOperand],
 ) {
     use cadmpeg_ir::features::BodySelection;
 
@@ -1660,7 +1660,7 @@ fn bind_body_recipe_body_selection(
 
 fn bind_direct_body_recipe_body_selection(
     selection: &mut cadmpeg_ir::features::BodySelection,
-    scope: &crate::records::DesignParameterScope,
+    scope: &crate::records::feature::DesignParameterScope,
     inputs: &FeatureBodySelectionInputs<'_>,
 ) {
     use cadmpeg_ir::features::BodySelection;
@@ -1758,7 +1758,7 @@ fn bind_direct_body_recipe_body_selection(
                 && operand.scope_record_index == scope.record_index
                 && matches!(
                     operand.owner,
-                    crate::records::DesignOperandOwner::ScopeReference { .. }
+                    crate::records::topology::DesignOperandOwner::ScopeReference { .. }
                 )
                 && operand.record_index == record_index
         });
@@ -1790,7 +1790,7 @@ fn bind_direct_body_recipe_body_selection(
 }
 
 fn direct_body_recipe_candidate(
-    operand: &crate::records::DesignBodyRecipeOperand,
+    operand: &crate::records::topology::DesignBodyRecipeOperand,
     construction_recipes: &[crate::records::ConstructionRecipe],
     persistent_design_links: &[crate::records::PersistentDesignLink],
     bodies: &[cadmpeg_ir::topology::Body],
@@ -1813,7 +1813,7 @@ fn direct_body_recipe_candidate(
 }
 
 fn body_recipe_link_candidate(
-    operand: &crate::records::DesignBodyRecipeOperand,
+    operand: &crate::records::topology::DesignBodyRecipeOperand,
     construction_recipes: &[crate::records::ConstructionRecipe],
     persistent_design_links: &[crate::records::PersistentDesignLink],
     bodies: &[cadmpeg_ir::topology::Body],
@@ -1849,7 +1849,7 @@ fn body_recipe_link_candidate(
 }
 
 fn body_recipe_face_body_candidates(
-    operand: &crate::records::DesignBodyRecipeOperand,
+    operand: &crate::records::topology::DesignBodyRecipeOperand,
     bodies: &[cadmpeg_ir::topology::Body],
     regions: &[cadmpeg_ir::topology::Region],
     shells: &[cadmpeg_ir::topology::Shell],
@@ -1990,11 +1990,11 @@ fn body_revision_without_topology_change(
 pub(crate) fn bind_feature_face_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
-    scopes: &[crate::records::DesignParameterScope],
-    groups: &[crate::records::DesignConstructionOperandGroup],
-    operands: &[crate::records::DesignFaceOperand],
-    entity_operands: &[crate::records::DesignEntitySelectionOperand],
-    body_recipe_operands: &[crate::records::DesignBodyRecipeOperand],
+    scopes: &[crate::records::feature::DesignParameterScope],
+    groups: &[crate::records::topology::DesignConstructionOperandGroup],
+    operands: &[crate::records::topology::DesignFaceOperand],
+    entity_operands: &[crate::records::topology::DesignEntitySelectionOperand],
+    body_recipe_operands: &[crate::records::topology::DesignBodyRecipeOperand],
     histories: &[AsmHistory],
 ) {
     for feature in features {
@@ -2166,9 +2166,9 @@ fn bind_entity_face_selection(
     feature_id: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
     operation_history_id: &str,
-    scope: &crate::records::DesignParameterScope,
-    groups: &[crate::records::DesignConstructionOperandGroup],
-    operands: &[crate::records::DesignEntitySelectionOperand],
+    scope: &crate::records::feature::DesignParameterScope,
+    groups: &[crate::records::topology::DesignConstructionOperandGroup],
+    operands: &[crate::records::topology::DesignEntitySelectionOperand],
     input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
 ) {
     use cadmpeg_ir::features::FaceSelection;
@@ -2210,9 +2210,9 @@ fn bind_surface_stitch_face_selection(
     feature_id: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
     operation_history_id: &str,
-    scope: &crate::records::DesignParameterScope,
-    groups: &[crate::records::DesignConstructionOperandGroup],
-    operands: &[crate::records::DesignEntitySelectionOperand],
+    scope: &crate::records::feature::DesignParameterScope,
+    groups: &[crate::records::topology::DesignConstructionOperandGroup],
+    operands: &[crate::records::topology::DesignEntitySelectionOperand],
     input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
 ) {
     let native_id = match selection {
@@ -2285,9 +2285,9 @@ fn bind_entity_face_groups(
     feature_id: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
     operation_history_id: &str,
-    scope: &crate::records::DesignParameterScope,
-    groups: &[&crate::records::DesignConstructionOperandGroup],
-    operands: &[crate::records::DesignEntitySelectionOperand],
+    scope: &crate::records::feature::DesignParameterScope,
+    groups: &[&crate::records::topology::DesignConstructionOperandGroup],
+    operands: &[crate::records::topology::DesignEntitySelectionOperand],
     input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
 ) {
     use cadmpeg_ir::features::FaceSelection;
@@ -2372,7 +2372,7 @@ fn bind_hole_face_selection(
     feature_id: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
     operation_history_id: &str,
-    scope: &crate::records::DesignParameterScope,
+    scope: &crate::records::feature::DesignParameterScope,
     input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
 ) {
     use cadmpeg_ir::features::FaceSelection;
@@ -2424,9 +2424,9 @@ fn bind_hole_face_selection(
 
 pub(crate) fn bind_feature_path_selections(
     features: &mut [cadmpeg_ir::features::Feature],
-    scopes: &[crate::records::DesignParameterScope],
-    groups: &[crate::records::DesignConstructionOperandGroup],
-    operands: &[crate::records::DesignEntitySelectionOperand],
+    scopes: &[crate::records::feature::DesignParameterScope],
+    groups: &[crate::records::topology::DesignConstructionOperandGroup],
+    operands: &[crate::records::topology::DesignEntitySelectionOperand],
 ) {
     use cadmpeg_ir::features::{FeatureDefinition, SurfaceBoundary};
 
@@ -2502,9 +2502,9 @@ fn bind_entity_selection_path(
     path: &mut cadmpeg_ir::features::PathRef,
     feature_id: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
-    scope: &crate::records::DesignParameterScope,
-    groups: &[crate::records::DesignConstructionOperandGroup],
-    operands: &[crate::records::DesignEntitySelectionOperand],
+    scope: &crate::records::feature::DesignParameterScope,
+    groups: &[crate::records::topology::DesignConstructionOperandGroup],
+    operands: &[crate::records::topology::DesignEntitySelectionOperand],
 ) {
     use cadmpeg_ir::features::PathRef;
 
@@ -2561,9 +2561,9 @@ fn bind_entity_selection_path(
 
 pub(crate) fn project_feature_input_topologies(
     features: &[cadmpeg_ir::features::Feature],
-    scopes: &[crate::records::DesignParameterScope],
+    scopes: &[crate::records::feature::DesignParameterScope],
     histories: &[AsmHistory],
-    edge_operands: &[crate::records::DesignEdgeOperand],
+    edge_operands: &[crate::records::topology::DesignEdgeOperand],
 ) -> Vec<cadmpeg_ir::features::FeatureInputTopology> {
     use cadmpeg_ir::features::FeatureInputTopology;
 
@@ -2629,7 +2629,7 @@ pub(crate) fn project_feature_input_topologies(
 /// Resolve persistent vertex recipes in the last history-bearing feature state
 /// that precedes their owning construction in authored timeline order.
 pub(crate) fn bind_vertex_recipe_history(
-    scopes: &mut [crate::records::DesignParameterScope],
+    scopes: &mut [crate::records::feature::DesignParameterScope],
     timelines: &[crate::records::DesignFeatureTimeline],
     histories: &[AsmHistory],
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -2640,8 +2640,8 @@ pub(crate) fn bind_vertex_recipe_history(
         .filter(|scope| {
             matches!(
                 scope.kind(),
-                crate::records::DesignFeatureKind::WorkPlane
-                    | crate::records::DesignFeatureKind::WorkPoint
+                crate::records::feature::DesignFeatureKind::WorkPlane
+                    | crate::records::feature::DesignFeatureKind::WorkPoint
             )
         })
         .filter_map(|scope| {
@@ -2669,7 +2669,7 @@ pub(crate) fn bind_vertex_recipe_history(
 
     for scope in scopes
         .iter_mut()
-        .filter(|scope| scope.kind() == crate::records::DesignFeatureKind::WorkPoint)
+        .filter(|scope| scope.kind() == crate::records::feature::DesignFeatureKind::WorkPoint)
     {
         let scope_id = scope.id.clone();
         let Some(construction) = scope.work_point_construction_mut() else {
@@ -2697,17 +2697,18 @@ pub(crate) fn bind_vertex_recipe_history(
             if !point_matches(position, solved_position) {
                 continue;
             }
-            recipe.resolution = crate::records::DesignVertexResolution::new(state_id, vertex);
+            recipe.resolution =
+                crate::records::feature::DesignVertexResolution::new(state_id, vertex);
         }
     }
 
     for scope in scopes
         .iter_mut()
-        .filter(|scope| scope.kind() == crate::records::DesignFeatureKind::WorkPlane)
+        .filter(|scope| scope.kind() == crate::records::feature::DesignFeatureKind::WorkPlane)
     {
         let transform = scope.work_plane_transform();
         let scope_id = scope.id.clone();
-        let Some(crate::records::DesignWorkPlaneConstruction { inputs, .. }) =
+        let Some(crate::records::feature::DesignWorkPlaneConstruction { inputs, .. }) =
             scope.work_plane_construction_mut()
         else {
             continue;
@@ -2744,7 +2745,8 @@ pub(crate) fn bind_vertex_recipe_history(
             continue;
         }
         for (recipe, (vertex, _)) in inputs.iter_mut().zip(candidates) {
-            recipe.resolution = crate::records::DesignVertexResolution::new(state_id, vertex);
+            recipe.resolution =
+                crate::records::feature::DesignVertexResolution::new(state_id, vertex);
         }
     }
     Ok(())
@@ -2752,8 +2754,8 @@ pub(crate) fn bind_vertex_recipe_history(
 
 /// Resolve edge-treatment corner recipes in their bound feature-input state.
 pub(crate) fn bind_edge_treatment_vertex_history(
-    operands: &mut [crate::records::DesignEdgeTreatmentVertexOperand],
-    scopes: &[crate::records::DesignParameterScope],
+    operands: &mut [crate::records::feature::DesignEdgeTreatmentVertexOperand],
+    scopes: &[crate::records::feature::DesignParameterScope],
     histories: &[AsmHistory],
     scope_histories: &HashMap<String, String>,
 ) {
@@ -2795,12 +2797,12 @@ pub(crate) fn bind_edge_treatment_vertex_history(
             continue;
         };
         operand.recipe.resolution =
-            crate::records::DesignVertexResolution::new(previous_state_id, vertex);
+            crate::records::feature::DesignVertexResolution::new(previous_state_id, vertex);
     }
 }
 
 fn vertex_recipe_candidate(
-    recipe: &crate::records::DesignVertexRecipe,
+    recipe: &crate::records::feature::DesignVertexRecipe,
     topology: &AsmHistoricalTopology,
 ) -> Option<(i64, cadmpeg_ir::math::Point3)> {
     let face_slots = recipe
@@ -2899,7 +2901,7 @@ fn common_face_vertex(face_slots: &[i64], topology: &AsmHistoricalTopology) -> O
 }
 
 fn recipe_reference_common_vertex(
-    recipe: &crate::records::DesignVertexRecipe,
+    recipe: &crate::records::feature::DesignVertexRecipe,
     topology: &AsmHistoricalTopology,
 ) -> Option<i64> {
     let boundary_edges = face_boundary_edge_index(topology);
@@ -3013,7 +3015,7 @@ fn unique_history_state_in(history: &AsmHistory, state_id: i64) -> bool {
 /// omit the preceding state identity even though the current ASM delta state
 /// carries the direct transition predecessor.
 pub(crate) fn effective_scope_previous_history_state_id(
-    scope: &crate::records::DesignParameterScope,
+    scope: &crate::records::feature::DesignParameterScope,
     histories: &[AsmHistory],
 ) -> Option<i64> {
     scope.previous_history_state_id.or_else(|| {
@@ -3057,7 +3059,7 @@ pub(crate) struct HemGeometrySemantics {
 /// transition. The source operation's fixed fields do not carry these
 /// meanings; the selected edge and the inserted coaxial cylinders do.
 pub(crate) fn hem_geometry_semantics(
-    scope: &crate::records::DesignParameterScope,
+    scope: &crate::records::feature::DesignParameterScope,
     edge_slot: i64,
     histories: &[AsmHistory],
 ) -> HemGeometrySemantics {
@@ -3308,9 +3310,9 @@ fn bound_history_state_pair<'a>(
 }
 
 pub(crate) fn bind_scope_histories(
-    scopes: &[crate::records::DesignParameterScope],
+    scopes: &[crate::records::feature::DesignParameterScope],
     body_bindings: &[crate::records::DesignBodyBinding],
-    body_recipe_operands: &[crate::records::DesignBodyRecipeOperand],
+    body_recipe_operands: &[crate::records::topology::DesignBodyRecipeOperand],
     histories: &[AsmHistory],
 ) -> HashMap<String, String> {
     let candidates = scopes
@@ -3553,10 +3555,10 @@ fn history_state_index(history: &AsmHistory) -> HashMap<i64, Option<&AsmDeltaSta
 }
 
 fn exact_face_selection_group<'a>(
-    operand: &crate::records::DesignFaceOperand,
-    scope: &crate::records::DesignParameterScope,
-    operand_groups: &'a [crate::records::DesignConstructionOperandGroup],
-) -> Option<&'a crate::records::DesignConstructionOperandGroup> {
+    operand: &crate::records::topology::DesignFaceOperand,
+    scope: &crate::records::feature::DesignParameterScope,
+    operand_groups: &'a [crate::records::topology::DesignConstructionOperandGroup],
+) -> Option<&'a crate::records::topology::DesignConstructionOperandGroup> {
     let stream = crate::ids::native_stream(&operand.id)?;
     if crate::ids::native_stream(&scope.id) != Some(stream) {
         return None;
@@ -3662,9 +3664,9 @@ fn direct_face_recipe_candidates(
 }
 
 pub(crate) fn bind_face_operand_history_candidates(
-    operands: &mut [crate::records::DesignFaceOperand],
-    scopes: &[crate::records::DesignParameterScope],
-    operand_groups: &[crate::records::DesignConstructionOperandGroup],
+    operands: &mut [crate::records::topology::DesignFaceOperand],
+    scopes: &[crate::records::feature::DesignParameterScope],
+    operand_groups: &[crate::records::topology::DesignConstructionOperandGroup],
     recipes: &[crate::records::ConstructionRecipe],
     histories: &[AsmHistory],
     scope_histories: &HashMap<String, String>,
@@ -3771,7 +3773,7 @@ pub(crate) fn bind_face_operand_history_candidates(
         })
         .flatten();
         let nested_split_face_candidates = (scope.kind()
-            == crate::records::DesignFeatureKind::SplitFace)
+            == crate::records::feature::DesignFeatureKind::SplitFace)
             .then(|| {
                 exact_face_selection_group(operand, scope, operand_groups)?;
                 crate::design::face_resolve::nested_bounded_face_history_candidates(operand)
@@ -3796,7 +3798,10 @@ pub(crate) fn bind_face_operand_history_candidates(
                     && group.scope_record_index == scope.record_index
                     && group.record_index == group_record_index
                     && group.extrude_role.is_some_and(|role| {
-                        matches!(role, crate::records::DesignExtrudeOperandRole::Faces(_))
+                        matches!(
+                            role,
+                            crate::records::topology::DesignExtrudeOperandRole::Faces(_)
+                        )
                     })
                     && group.extrude_face_role().is_some()
             });
@@ -3858,11 +3863,11 @@ pub(crate) fn bind_face_operand_history_candidates(
                     };
                     groups.next().is_none()
                         && group.extrude_face_role()
-                            == Some(crate::records::DesignExtrudeFaceRole::Termination)
+                            == Some(crate::records::topology::DesignExtrudeFaceRole::Termination)
                 });
         operand.resolved_face_slots = match &scope.payload {
-            crate::records::DesignScopePayload::OffsetFaces(Some(_))
-            | crate::records::DesignScopePayload::DecalerLesFaces(Some(_)) => {
+            crate::records::feature::DesignScopePayload::OffsetFaces(Some(_))
+            | crate::records::feature::DesignScopePayload::DecalerLesFaces(Some(_)) => {
                 let direct = resolve_direct_face_recipe_clauses(
                     &operand.recipe_references,
                     topology,
@@ -3881,7 +3886,9 @@ pub(crate) fn bind_face_operand_history_candidates(
                     crate::design::face_resolve::resolve_face_operand_history_candidates(operand);
                 if let Some(direct) = direct {
                     vec![direct]
-                } else if scope.kind() == crate::records::DesignFeatureKind::SurfaceDeleteFace {
+                } else if scope.kind()
+                    == crate::records::feature::DesignFeatureKind::SurfaceDeleteFace
+                {
                     crate::design::face_resolve::resolve_surface_delete_face_history_set(operand)
                         .unwrap_or_default()
                 } else if preserves_stable_face_set {
@@ -3972,7 +3979,7 @@ pub(crate) fn bind_face_operand_history_candidates(
             }
         }
         if operand.resolved_face_slots.is_empty()
-            && scope.kind() == crate::records::DesignFeatureKind::Draft
+            && scope.kind() == crate::records::feature::DesignFeatureKind::Draft
         {
             if let Some(result) = state.topology() {
                 if let Some(face) =
@@ -4089,7 +4096,7 @@ fn draft_surface_geometry(
 }
 
 fn resolve_draft_face_by_surface_transition(
-    operand: &crate::records::DesignFaceOperand,
+    operand: &crate::records::topology::DesignFaceOperand,
     preceding: &crate::history_records::AsmHistoricalTopology,
     result: &crate::history_records::AsmHistoricalTopology,
 ) -> Option<i64> {
@@ -4215,7 +4222,7 @@ fn resolve_pattern_face_by_surface_radius(
 }
 
 fn resolve_split_tool_face(
-    operand: &crate::records::DesignFaceOperand,
+    operand: &crate::records::topology::DesignFaceOperand,
     topology: &crate::history_records::AsmHistoricalTopology,
 ) -> Option<i64> {
     if operand.group_record_index().is_some()
@@ -4247,7 +4254,7 @@ fn effective_faces(
 }
 
 fn resolve_thread_face_by_transition(
-    scope: &crate::records::DesignParameterScope,
+    scope: &crate::records::feature::DesignParameterScope,
     candidates: &[cadmpeg_ir::ids::FaceId],
     history: &AsmHistory,
     topology: &AsmHistoricalTopology,
@@ -4306,7 +4313,7 @@ fn resolve_thread_face_by_transition(
 }
 
 fn grouped_reference_face_candidate(
-    operand: &crate::records::DesignFaceOperand,
+    operand: &crate::records::topology::DesignFaceOperand,
     topology: &AsmHistoricalTopology,
     changed_faces: &HashSet<i64>,
 ) -> Option<cadmpeg_ir::ids::FaceId> {
@@ -4346,7 +4353,7 @@ fn relation_members(
 }
 
 fn resolve_bounded_face_recipe_target(
-    operand: &crate::records::DesignFaceOperand,
+    operand: &crate::records::topology::DesignFaceOperand,
     preceding: &crate::history_records::AsmHistoricalTopology,
     result: &crate::history_records::AsmHistoricalTopology,
     inserted_bodies: &[i64],
@@ -4417,7 +4424,9 @@ fn resolve_bounded_face_recipe_target(
         let [loop_] = context.loops.as_slice() else {
             return None;
         };
-        let crate::records::DesignHistoricalLoopBoundary::Positions(rows) = &loop_.boundary else {
+        let crate::records::topology::DesignHistoricalLoopBoundary::Positions(rows) =
+            &loop_.boundary
+        else {
             return None;
         };
         (!rows.is_empty()).then(|| {
@@ -4490,9 +4499,9 @@ fn cyclic_point_subsequence(
 }
 
 pub(crate) fn bind_body_recipe_operand_history_candidates(
-    operands: &mut [crate::records::DesignBodyRecipeOperand],
+    operands: &mut [crate::records::topology::DesignBodyRecipeOperand],
     recipes: &[crate::records::ConstructionRecipe],
-    scopes: &[crate::records::DesignParameterScope],
+    scopes: &[crate::records::feature::DesignParameterScope],
     histories: &[AsmHistory],
 ) {
     if projection_was_finalized(histories) {
@@ -4583,7 +4592,7 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
             .and_modify(|recipe| *recipe = None)
             .or_insert(Some(recipe));
     }
-    let identity = |operand: &crate::records::DesignBodyRecipeOperand| {
+    let identity = |operand: &crate::records::topology::DesignBodyRecipeOperand| {
         let stream = crate::ids::native_stream(&operand.id)?.to_owned();
         let recipe = recipes_by_id
             .get(operand.recipe_id.as_str())
@@ -4642,8 +4651,8 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
 }
 
 fn body_recipe_operand_history_pair<'a>(
-    operand: &crate::records::DesignBodyRecipeOperand,
-    scopes: &[crate::records::DesignParameterScope],
+    operand: &crate::records::topology::DesignBodyRecipeOperand,
+    scopes: &[crate::records::feature::DesignParameterScope],
     histories: &'a [AsmHistory],
 ) -> Option<(&'a AsmHistory, &'a AsmDeltaState, &'a AsmDeltaState)> {
     let stream = crate::ids::native_stream(&operand.id)?;
@@ -4879,9 +4888,9 @@ fn resolve_direct_face_recipe_clauses(
 }
 
 fn bind_profile_face_group_cardinality(
-    operands: &mut [crate::records::DesignFaceOperand],
-    scopes: &[crate::records::DesignParameterScope],
-    operand_groups: &[crate::records::DesignConstructionOperandGroup],
+    operands: &mut [crate::records::topology::DesignFaceOperand],
+    scopes: &[crate::records::feature::DesignParameterScope],
+    operand_groups: &[crate::records::topology::DesignConstructionOperandGroup],
     histories: &[AsmHistory],
     scope_histories: &HashMap<String, String>,
 ) {
@@ -5073,7 +5082,7 @@ fn historical_face_support_contexts(
     history: &AsmHistory,
     preceding_topology: &AsmHistoricalTopology,
     changed_faces: &HashSet<i64>,
-) -> Vec<crate::records::DesignHistoricalFaceSupportContext> {
+) -> Vec<crate::records::topology::DesignHistoricalFaceSupportContext> {
     let preceding_faces = preceding_topology
         .faces
         .iter()
@@ -5138,16 +5147,18 @@ fn historical_face_support_contexts(
                 .copied()
                 .filter(|face| changed_faces.contains(face))
                 .collect();
-            Some(crate::records::DesignHistoricalFaceSupportContext {
-                active_face_slot,
-                surface_slot,
-                preceding_face_boundaries: face_boundary_contexts_for_slots(
-                    &preceding_face_slots,
-                    preceding_topology,
-                ),
-                preceding_face_slots,
-                changed_preceding_face_slots,
-            })
+            Some(
+                crate::records::topology::DesignHistoricalFaceSupportContext {
+                    active_face_slot,
+                    surface_slot,
+                    preceding_face_boundaries: face_boundary_contexts_for_slots(
+                        &preceding_face_slots,
+                        preceding_topology,
+                    ),
+                    preceding_face_slots,
+                    changed_preceding_face_slots,
+                },
+            )
         })
         .collect()
 }
@@ -5186,7 +5197,7 @@ fn face_boundary_edges(
 fn face_boundary_contexts(
     faces: &[cadmpeg_ir::ids::FaceId],
     topology: &AsmHistoricalTopology,
-) -> Vec<crate::records::DesignHistoricalFaceBoundaryContext> {
+) -> Vec<crate::records::topology::DesignHistoricalFaceBoundaryContext> {
     let face_slots = faces
         .iter()
         .filter_map(|face| stable_ref(face.as_str()))
@@ -5197,7 +5208,7 @@ fn face_boundary_contexts(
 fn face_boundary_contexts_for_slots(
     face_slots: &[i64],
     topology: &AsmHistoricalTopology,
-) -> Vec<crate::records::DesignHistoricalFaceBoundaryContext> {
+) -> Vec<crate::records::topology::DesignHistoricalFaceBoundaryContext> {
     face_slots
         .iter()
         .filter_map(|face_slot| {
@@ -5231,7 +5242,7 @@ fn face_boundary_contexts_for_slots(
                                 .filter(|coedge| coedge.coedge == *coedge_slot);
                             let edge_slot = matches.next()?.edge;
                             matches.next().is_none().then_some(
-                                crate::records::DesignHistoricalLoopCoedge {
+                                crate::records::topology::DesignHistoricalLoopCoedge {
                                     coedge_slot: *coedge_slot,
                                     edge_slot,
                                 },
@@ -5239,25 +5250,27 @@ fn face_boundary_contexts_for_slots(
                         })
                         .collect::<Option<Vec<_>>>()?;
                     let boundary = historical_loop_boundary(coedges, topology);
-                    Some(crate::records::DesignHistoricalFaceLoopContext {
+                    Some(crate::records::topology::DesignHistoricalFaceLoopContext {
                         loop_slot: *loop_slot,
                         boundary,
                     })
                 })
                 .collect::<Option<Vec<_>>>()?;
-            Some(crate::records::DesignHistoricalFaceBoundaryContext {
-                face_slot: *face_slot,
-                loops,
-            })
+            Some(
+                crate::records::topology::DesignHistoricalFaceBoundaryContext {
+                    face_slot: *face_slot,
+                    loops,
+                },
+            )
         })
         .collect()
 }
 
 fn historical_loop_boundary(
-    coedges: Vec<crate::records::DesignHistoricalLoopCoedge>,
+    coedges: Vec<crate::records::topology::DesignHistoricalLoopCoedge>,
     topology: &AsmHistoricalTopology,
-) -> crate::records::DesignHistoricalLoopBoundary {
-    use crate::records::{
+) -> crate::records::topology::DesignHistoricalLoopBoundary {
+    use crate::records::topology::{
         DesignHistoricalLoopBoundary, DesignHistoricalLoopPoint, DesignHistoricalLoopPosition,
         DesignHistoricalLoopVertex,
     };
@@ -5386,7 +5399,7 @@ fn edge_recipe_reference_context(
     preceding_topology: &AsmHistoricalTopology,
     preceding_boundary_edges: &[i64],
     changed_edges: &HashSet<i64>,
-) -> crate::records::DesignEdgeRecipeReferenceContext {
+) -> crate::records::topology::DesignEdgeRecipeReferenceContext {
     let candidate_faces = if reference.candidate_faces.is_empty() {
         reference.alternate_selector_faces.as_slice()
     } else {
@@ -5434,7 +5447,7 @@ fn edge_recipe_reference_context(
         .collect::<Vec<_>>();
     changed_reference_edge_slots.sort_unstable();
     changed_reference_edge_slots.dedup();
-    crate::records::DesignEdgeRecipeReferenceContext {
+    crate::records::topology::DesignEdgeRecipeReferenceContext {
         reference_ordinal,
         result_faces,
         result_face_boundaries,
@@ -5452,9 +5465,9 @@ fn edge_recipe_reference_context(
 /// Resolve the unique candidate edge shared by the non-null face references
 /// in the first side of a standard edge recipe.
 fn side_one_recipe_edge(
-    structure: Option<&crate::records::DesignEdgeRecipeStructure>,
-    reference_contexts: &[crate::records::DesignEdgeRecipeReferenceContext],
-    selectors: &[crate::records::DesignEdgeRecipeSelectorContext],
+    structure: Option<&crate::records::topology::DesignEdgeRecipeStructure>,
+    reference_contexts: &[crate::records::topology::DesignEdgeRecipeReferenceContext],
+    selectors: &[crate::records::topology::DesignEdgeRecipeSelectorContext],
     candidate_edges: &[i64],
 ) -> Option<i64> {
     let side = structure?.sides.first()?;
@@ -5492,8 +5505,8 @@ fn side_one_recipe_edge(
 }
 
 pub(crate) fn bind_edge_operand_history_candidates(
-    operands: &mut [crate::records::DesignEdgeOperand],
-    scopes: &[crate::records::DesignParameterScope],
+    operands: &mut [crate::records::topology::DesignEdgeOperand],
+    scopes: &[crate::records::feature::DesignParameterScope],
     recipes: &[crate::records::ConstructionRecipe],
     histories: &[AsmHistory],
     scope_histories: &HashMap<String, String>,
@@ -5682,7 +5695,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
                 ))
             })
             .collect();
-        if scope.kind() == crate::records::DesignFeatureKind::SurfacePatch
+        if scope.kind() == crate::records::feature::DesignFeatureKind::SurfacePatch
             && operand.surface_patch_recipe_structure.is_some()
         {
             operand.resolved_edge_slot = surface_patch_edge_operand_slot(
@@ -5752,7 +5765,8 @@ pub(crate) fn bind_edge_operand_history_candidates(
                 .resolved_edge_slot
                 .and_then(|edge| historical_edge_axis(edge, topology))
             {
-                operand.resolved_axis = Some(crate::records::DesignAxis { origin, direction });
+                operand.resolved_axis =
+                    Some(crate::records::feature::DesignAxis { origin, direction });
             }
             continue;
         }
@@ -5810,12 +5824,12 @@ fn historical_edge_axis(
 }
 
 fn bind_active_edge_operand_for_scope(
-    operand: &mut crate::records::DesignEdgeOperand,
-    scope: &crate::records::DesignParameterScope,
+    operand: &mut crate::records::topology::DesignEdgeOperand,
+    scope: &crate::records::feature::DesignParameterScope,
     terminal_topologies: &[(i64, &AsmHistoricalTopology)],
 ) {
     bind_active_edge_operand_candidates(operand, terminal_topologies);
-    if scope.kind() == crate::records::DesignFeatureKind::SurfacePatch
+    if scope.kind() == crate::records::feature::DesignFeatureKind::SurfacePatch
         && operand.surface_patch_recipe_structure.is_some()
     {
         operand.recipe_state_id = None;
@@ -5851,13 +5865,13 @@ fn bind_active_edge_operand_for_scope(
             .zip(topology)
             .and_then(|(edge, topology)| historical_edge_axis(edge, topology))
         {
-            operand.resolved_axis = Some(crate::records::DesignAxis { origin, direction });
+            operand.resolved_axis = Some(crate::records::feature::DesignAxis { origin, direction });
         }
     }
 }
 
 fn surface_patch_edge_operand_slot(
-    structure: Option<&crate::records::DesignSurfacePatchRecipeStructure>,
+    structure: Option<&crate::records::topology::DesignSurfacePatchRecipeStructure>,
     recipe_references: &[crate::records::DesignRecipeReference],
     topology: &AsmHistoricalTopology,
 ) -> Option<i64> {
@@ -5909,7 +5923,7 @@ fn common_surface_patch_reference(left: [u32; 2], right: [u32; 2]) -> Option<u32
 }
 
 fn bind_active_edge_operand_candidates(
-    operand: &mut crate::records::DesignEdgeOperand,
+    operand: &mut crate::records::topology::DesignEdgeOperand,
     topologies: &[(i64, &AsmHistoricalTopology)],
 ) {
     let mut matches = topologies.iter().filter_map(|(state_id, topology)| {
@@ -6019,7 +6033,7 @@ fn treatment_radius_candidates(
     result: &AsmHistoricalTopology,
     preceding: &AsmHistoricalTopology,
     deleted_edges: &[i64],
-) -> Vec<crate::records::DesignEdgeTreatmentRadiusCandidate> {
+) -> Vec<crate::records::topology::DesignEdgeTreatmentRadiusCandidate> {
     treatment_edge_candidates(
         result_candidate_faces,
         inserted_faces,
@@ -6037,7 +6051,7 @@ fn treatment_edge_candidates(
     preceding: &AsmHistoricalTopology,
     deleted_edges: &[i64],
 ) -> (
-    Vec<crate::records::DesignEdgeTreatmentRadiusCandidate>,
+    Vec<crate::records::topology::DesignEdgeTreatmentRadiusCandidate>,
     Vec<i64>,
 ) {
     let result_boundaries = face_boundary_edge_index(result);
@@ -6083,10 +6097,12 @@ fn treatment_edge_candidates(
                 {
                     transitions_out.push(*edge);
                     if let Some(radius) = radius {
-                        radii_out.push(crate::records::DesignEdgeTreatmentRadiusCandidate {
-                            edge_slot: *edge,
-                            radius,
-                        });
+                        radii_out.push(
+                            crate::records::topology::DesignEdgeTreatmentRadiusCandidate {
+                                edge_slot: *edge,
+                                radius,
+                            },
+                        );
                     }
                 }
             }
@@ -6228,9 +6244,9 @@ fn boundary_edges_in_changes(boundary_edges: &[i64], changes: &[i64]) -> Vec<i64
 }
 
 fn recipe_selector_candidates(
-    structure: Option<&crate::records::DesignEdgeRecipeStructure>,
-    contexts: &[crate::records::DesignHistoricalEdgeContext],
-) -> Vec<crate::records::DesignEdgeRecipeSelectorContext> {
+    structure: Option<&crate::records::topology::DesignEdgeRecipeStructure>,
+    contexts: &[crate::records::topology::DesignHistoricalEdgeContext],
+) -> Vec<crate::records::topology::DesignEdgeRecipeSelectorContext> {
     let Some(structure) = structure else {
         return Vec::new();
     };
@@ -6269,7 +6285,7 @@ fn recipe_selector_candidates(
                                         .map(|context| context.edge_slot)
                                         .collect()
                                 });
-                            crate::records::DesignEdgeRecipeSelectorClause {
+                            crate::records::topology::DesignEdgeRecipeSelectorClause {
                                 entry: entry.clone(),
                                 triplet_edge_slots,
                             }
@@ -6314,7 +6330,7 @@ fn recipe_selector_candidates(
                 })
                 .map(|context| context.edge_slot)
                 .collect::<Vec<_>>();
-            crate::records::DesignEdgeRecipeSelectorContext {
+            crate::records::topology::DesignEdgeRecipeSelectorContext {
                 selector: *selector,
                 clauses,
                 incidence_matching_edge_slots,
@@ -6327,7 +6343,7 @@ fn recipe_selector_candidates(
 fn historical_edge_context(
     edge: i64,
     topology: &AsmHistoricalTopology,
-) -> crate::records::DesignHistoricalEdgeContext {
+) -> crate::records::topology::DesignHistoricalEdgeContext {
     let mut incident_loops = topology
         .coedge_topology
         .iter()
@@ -6361,7 +6377,7 @@ fn historical_edge_context(
                 .iter()
                 .find(|relation| relation.member_refs.contains(&coedge.owner_loop))?
                 .owner_ref;
-            Some(crate::records::DesignHistoricalEdgeLoopContext {
+            Some(crate::records::topology::DesignHistoricalEdgeLoopContext {
                 coedge_slot: coedge.coedge,
                 loop_slot: coedge.owner_loop,
                 face_slot,
@@ -6373,7 +6389,7 @@ fn historical_edge_context(
         })
         .collect::<Vec<_>>();
     incident_loops.sort_by_key(|context| context.coedge_slot);
-    crate::records::DesignHistoricalEdgeContext {
+    crate::records::topology::DesignHistoricalEdgeContext {
         edge_slot: edge,
         incident_loops,
     }
@@ -6392,9 +6408,9 @@ fn incident_loop_counts_satisfy_sides(counts: &[i64], required: &[Option<i64>]) 
 
 fn bind_face_selection(
     selection: &mut cadmpeg_ir::features::FaceSelection,
-    scope: &crate::records::DesignParameterScope,
-    groups: &[crate::records::DesignConstructionOperandGroup],
-    operands: &[crate::records::DesignFaceOperand],
+    scope: &crate::records::feature::DesignParameterScope,
+    groups: &[crate::records::topology::DesignConstructionOperandGroup],
+    operands: &[crate::records::topology::DesignFaceOperand],
     updated_face_slots: &[i64],
 ) {
     let cadmpeg_ir::features::FaceSelection::Native(native) = selection else {
@@ -6478,9 +6494,9 @@ fn bind_body_recipe_face_selection(
     selection: &mut cadmpeg_ir::features::FaceSelection,
     feature_id: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
-    scope: &crate::records::DesignParameterScope,
-    groups: &[crate::records::DesignConstructionOperandGroup],
-    operands: &[crate::records::DesignBodyRecipeOperand],
+    scope: &crate::records::feature::DesignParameterScope,
+    groups: &[crate::records::topology::DesignConstructionOperandGroup],
+    operands: &[crate::records::topology::DesignBodyRecipeOperand],
 ) {
     use cadmpeg_ir::features::FaceSelection;
 
@@ -6874,7 +6890,7 @@ pub(crate) fn bind_extrude_selection_history(
             body_bindings,
             histories,
         ) {
-            member.historical = Some(crate::records::HistoricalBinding {
+            member.historical = Some(crate::records::topology::HistoricalBinding {
                 kind,
                 entity_ref,
                 state_ids: states,
@@ -6886,8 +6902,8 @@ pub(crate) fn bind_extrude_selection_history(
 /// Resolve both identities in nested entity-selection operands against the
 /// owning feature's exact input topology.
 pub(crate) fn bind_entity_selection_history(
-    operands: &mut [crate::records::DesignEntitySelectionOperand],
-    scopes: &[crate::records::DesignParameterScope],
+    operands: &mut [crate::records::topology::DesignEntitySelectionOperand],
+    scopes: &[crate::records::feature::DesignParameterScope],
     histories: &[AsmHistory],
 ) {
     let identities = HistoricalIdentityIndex::build(
@@ -6958,7 +6974,7 @@ pub(crate) fn bind_entity_selection_history(
 
 /// Resolve direct persistent face selections carried by Hole constructions.
 pub(crate) fn bind_hole_selection_history(
-    scopes: &mut [crate::records::DesignParameterScope],
+    scopes: &mut [crate::records::feature::DesignParameterScope],
     histories: &[AsmHistory],
 ) {
     for scope in scopes {
@@ -7006,8 +7022,8 @@ fn hole_transition_face_candidate(
     state_id: Option<i64>,
     previous_state_id: Option<i64>,
     histories: &[AsmHistory],
-) -> Option<crate::records::DesignEntitySelectionFaceCandidate> {
-    use crate::records::{AsmHistoricalEntityKind, DesignEntitySelectionFaceCandidate};
+) -> Option<crate::records::topology::DesignEntitySelectionFaceCandidate> {
+    use crate::records::topology::{AsmHistoricalEntityKind, DesignEntitySelectionFaceCandidate};
 
     if secondary_identity.is_some() {
         return None;
@@ -7128,7 +7144,7 @@ fn hole_transition_face_candidate(
     };
     Some(DesignEntitySelectionFaceCandidate {
         history_id: history.id.clone(),
-        historical: crate::records::HistoricalBinding {
+        historical: crate::records::topology::HistoricalBinding {
             kind: kind,
             entity_ref: entity_ref,
             state_ids: vec![previous_state_id],
@@ -7139,11 +7155,11 @@ fn hole_transition_face_candidate(
 
 /// Resolve persistent circular-pattern axis identities in the feature input topology.
 pub(crate) fn bind_circular_pattern_axes(
-    scopes: &mut [crate::records::DesignParameterScope],
+    scopes: &mut [crate::records::feature::DesignParameterScope],
     histories: &[AsmHistory],
     scope_histories: &HashMap<String, String>,
 ) {
-    use crate::records::DesignCircularPatternAxis;
+    use crate::records::feature::DesignCircularPatternAxis;
     for scope in scopes {
         let matching_histories = if let Some(history_id) = scope_histories.get(&scope.id) {
             histories
@@ -7187,7 +7203,7 @@ pub(crate) fn bind_circular_pattern_axes(
         if axes.any(|candidate| !same_axis_line((origin, direction), candidate)) {
             continue;
         }
-        *resolved = Some(crate::records::DesignAxis { origin, direction });
+        *resolved = Some(crate::records::feature::DesignAxis { origin, direction });
     }
 }
 
@@ -7370,11 +7386,11 @@ pub(crate) fn same_axis_line(
 /// Bind persistent Mirror plane selections to exact planes in the selected
 /// historical topology.
 pub(crate) fn bind_mirror_selection_planes(
-    scopes: &mut [crate::records::DesignParameterScope],
-    groups: &[crate::records::DesignConstructionOperandGroup],
-    operands: &[crate::records::DesignEntitySelectionOperand],
-    face_operands: &[crate::records::DesignFaceOperand],
-    identities: &[crate::records::DesignConstructionOperandIdentity],
+    scopes: &mut [crate::records::feature::DesignParameterScope],
+    groups: &[crate::records::topology::DesignConstructionOperandGroup],
+    operands: &[crate::records::topology::DesignEntitySelectionOperand],
+    face_operands: &[crate::records::topology::DesignFaceOperand],
+    identities: &[crate::records::topology::DesignConstructionOperandIdentity],
     histories: &[AsmHistory],
 ) {
     for scope in scopes {
@@ -7480,7 +7496,7 @@ pub(crate) fn bind_mirror_selection_planes(
         if !norm.is_finite() || (norm - 1.0).abs() > EPS_HISTORY_BIND_MIRROR_SELECTION_PLANES_E9 {
             continue;
         }
-        construction.plane = Some(crate::records::DesignPlane {
+        construction.plane = Some(crate::records::feature::DesignPlane {
             origin: plane.origin,
             normal: plane.normal,
         });
@@ -7488,7 +7504,7 @@ pub(crate) fn bind_mirror_selection_planes(
 }
 
 fn historical_mirror_face_operand_plane(
-    operand: &crate::records::DesignFaceOperand,
+    operand: &crate::records::topology::DesignFaceOperand,
     history: &AsmHistory,
     previous_state_id: i64,
 ) -> Option<HistoricalMirrorPlane> {
@@ -7521,9 +7537,9 @@ fn historical_mirror_face_operand_plane(
 }
 
 fn unique_mirror_plane_candidate(
-    mut primary: Vec<crate::records::DesignEntitySelectionFaceCandidate>,
-    persistent: Vec<crate::records::DesignEntitySelectionFaceCandidate>,
-) -> Option<crate::records::DesignEntitySelectionFaceCandidate> {
+    mut primary: Vec<crate::records::topology::DesignEntitySelectionFaceCandidate>,
+    persistent: Vec<crate::records::topology::DesignEntitySelectionFaceCandidate>,
+) -> Option<crate::records::topology::DesignEntitySelectionFaceCandidate> {
     primary.sort_by(|left, right| left.history_id.cmp(&right.history_id));
     primary.dedup();
     let context_histories = primary
@@ -7572,7 +7588,7 @@ fn design_geometry_mirror_plane(primary_identity: u64) -> Option<HistoricalMirro
 }
 
 fn historical_mirror_plane(
-    candidate: &crate::records::DesignEntitySelectionFaceCandidate,
+    candidate: &crate::records::topology::DesignEntitySelectionFaceCandidate,
     preferred_state_id: i64,
     histories: &[AsmHistory],
 ) -> Option<HistoricalMirrorPlane> {
@@ -7601,7 +7617,7 @@ fn mirror_planes_coincident(left: &HistoricalMirrorPlane, right: &HistoricalMirr
 }
 
 fn historical_mirror_plane_in_state(
-    candidate: &crate::records::DesignEntitySelectionFaceCandidate,
+    candidate: &crate::records::topology::DesignEntitySelectionFaceCandidate,
     state_id: i64,
     histories: &[AsmHistory],
 ) -> Option<HistoricalMirrorPlane> {
@@ -7849,8 +7865,8 @@ fn historical_mirror_coedge_plane(
 fn entity_selection_face_candidates(
     local_id: u64,
     histories: &[AsmHistory],
-) -> Vec<crate::records::DesignEntitySelectionFaceCandidate> {
-    use crate::records::DesignEntitySelectionFaceCandidate;
+) -> Vec<crate::records::topology::DesignEntitySelectionFaceCandidate> {
+    use crate::records::topology::DesignEntitySelectionFaceCandidate;
 
     histories
         .iter()
@@ -7878,7 +7894,7 @@ fn entity_selection_face_candidates(
             }
             Some(DesignEntitySelectionFaceCandidate {
                 history_id: history.id.clone(),
-                historical: crate::records::HistoricalBinding {
+                historical: crate::records::topology::HistoricalBinding {
                     kind: kind,
                     entity_ref: entity_ref,
                     state_ids: state_ids,
@@ -7894,8 +7910,8 @@ fn entity_selection_edge_candidates(
     previous_state_id: i64,
     history_identities: &HistoricalIdentityIndex,
     topology: &AsmHistoricalTopology,
-) -> Vec<crate::records::DesignEntitySelectionEdgeCandidate> {
-    use crate::records::DesignEntitySelectionEdgeCandidate;
+) -> Vec<crate::records::topology::DesignEntitySelectionEdgeCandidate> {
+    use crate::records::topology::DesignEntitySelectionEdgeCandidate;
 
     identities
         .iter()
@@ -7922,7 +7938,7 @@ fn entity_selection_edge_candidates(
 }
 
 fn unique_entity_selection_edge(
-    candidates: &[crate::records::DesignEntitySelectionEdgeCandidate],
+    candidates: &[crate::records::topology::DesignEntitySelectionEdgeCandidate],
 ) -> Option<i64> {
     let first = candidates.first()?;
     let mut intersection = first.edge_slots.iter().copied().collect::<BTreeSet<_>>();
@@ -7936,13 +7952,13 @@ fn unique_entity_selection_edge(
 
 pub(crate) fn bind_edge_identity_history(
     operands: &mut [DesignEdgeIdentityOperand],
-    identities: &[crate::records::DesignConstructionOperandIdentity],
-    scopes: &[crate::records::DesignParameterScope],
+    identities: &[crate::records::topology::DesignConstructionOperandIdentity],
+    scopes: &[crate::records::feature::DesignParameterScope],
     histories: &[AsmHistory],
     scope_histories: &HashMap<String, String>,
 ) {
     struct EdgeTreatmentTransitionCandidates {
-        radii: Vec<crate::records::DesignEdgeTreatmentRadiusCandidate>,
+        radii: Vec<crate::records::topology::DesignEdgeTreatmentRadiusCandidate>,
         treatment_edges: Vec<i64>,
         deleted_edges: Vec<i64>,
     }
@@ -8023,7 +8039,7 @@ pub(crate) fn bind_edge_identity_history(
             .selection_identity_kind(operand.local_id)
             .filter(|(_, _, states)| states.contains(&previous_state_id))
         {
-            operand.historical = Some(crate::records::HistoricalBinding {
+            operand.historical = Some(crate::records::topology::HistoricalBinding {
                 kind,
                 entity_ref,
                 state_ids: states,
@@ -8182,7 +8198,7 @@ fn complete_compact_edge_treatment_deletions(
 /// deleted treatment edge on the recipe's exact preceding support face.
 pub(crate) fn bind_edge_identity_bounded_face_rules(
     operands: &mut [DesignEdgeIdentityOperand],
-    face_operands: &[crate::records::DesignFaceOperand],
+    face_operands: &[crate::records::topology::DesignFaceOperand],
 ) {
     use crate::records::ConstructionRecipeKind;
 

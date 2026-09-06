@@ -77,7 +77,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
             "reference_members",
         )
         .unwrap(),
-        payload: crate::records::DesignFeatureKind::ComponentInsert.into(),
+        payload: crate::records::feature::DesignFeatureKind::ComponentInsert.into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "259".into(),
         paired_byte_offset: (scope_at + 399) as u64,
@@ -377,7 +377,7 @@ fn compact_component_insert_identity_form_joins_grouped_carrier() {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#30",
-        crate::records::DesignFeatureKind::ComponentInsert,
+        crate::records::feature::DesignFeatureKind::ComponentInsert,
         30,
     );
     scope.byte_offset = scope_at as u64;
@@ -481,7 +481,7 @@ fn class_410_component_insert_identity_form_joins_class_380_carrier() {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#169",
-        crate::records::DesignFeatureKind::ComponentInsert,
+        crate::records::feature::DesignFeatureKind::ComponentInsert,
         169,
     );
     scope.byte_offset = scope_at as u64;
@@ -594,7 +594,7 @@ fn class_434_component_insert_identity_form_joins_variable_role_class_341_carrie
 
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#169",
-        crate::records::DesignFeatureKind::ComponentInsert,
+        crate::records::feature::DesignFeatureKind::ComponentInsert,
         169,
     );
     scope.byte_offset = scope_at as u64;
@@ -713,7 +713,7 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#30",
-        crate::records::DesignFeatureKind::ComponentInsert,
+        crate::records::feature::DesignFeatureKind::ComponentInsert,
         30,
     );
     scope.byte_offset = scope_at as u64;
@@ -859,7 +859,7 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
 
         let mut scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:design-parameter-scope#30",
-            crate::records::DesignFeatureKind::ComponentInsert,
+            crate::records::feature::DesignFeatureKind::ComponentInsert,
             30,
         );
         scope.byte_offset = scope_at as u64;

@@ -2541,8 +2541,10 @@ fn legacy_edge_flange_operation_at(
         &mut unclaimed,
     )?;
     let bend_radius_offset = start.checked_add(layout.bend_radius_offset)?;
-    let bend_radius =
-        crate::records::DesignBendRadius::new(View::f64_le_at(bytes, bend_radius_offset)?)?;
+    let bend_radius = crate::records::feature::DesignBendRadius::new(View::f64_le_at(
+        bytes,
+        bend_radius_offset,
+    )?)?;
     if View::u32_le_at(bytes, start.checked_add(layout.result_count_offset)?)?
         != u32::try_from(layout.result_trailers.len()).ok()?
         || View::u32_le_at(bytes, start.checked_add(layout.result_separator_offset)?)? != 1
@@ -2614,7 +2616,7 @@ fn legacy_edge_flange_operation_at(
         } else {
             Vec::new()
         };
-    let edges = crate::records::DesignEdgeFlangeEdge::from_columns(
+    let edges = crate::records::feature::DesignEdgeFlangeEdge::from_columns(
         edge_wrapper_record_indices,
         edge_group_record_indices,
         edge_operand_record_indices,
@@ -2622,7 +2624,7 @@ fn legacy_edge_flange_operation_at(
     )
     .ok()?;
     Some(DesignEdgeFlangeOperation {
-        shape: crate::records::DesignEdgeFlangeShape::from_wire(
+        shape: crate::records::feature::DesignEdgeFlangeShape::from_wire(
             edges,
             Some(layout.width_mode),
             width_distance_owner_record_indices,
@@ -2694,8 +2696,10 @@ fn edge_flange_operation_at(
     cursor = common.checked_add(edge_flange::HEIGHT_OWNER_REFERENCE)?;
     let height_owner_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
     let bend_radius_offset = common.checked_add(edge_flange::INSIDE_BEND_RADIUS)?;
-    let bend_radius =
-        crate::records::DesignBendRadius::new(View::f64_le_at(bytes, bend_radius_offset)?)?;
+    let bend_radius = crate::records::feature::DesignBendRadius::new(View::f64_le_at(
+        bytes,
+        bend_radius_offset,
+    )?)?;
     let result_count =
         usize::try_from(View::u32_le_at(bytes, bend_radius_offset.checked_add(14)?)?).ok()?;
     // The aggregate-group and role-`0x08` group slots close the section after the
@@ -2729,8 +2733,8 @@ fn edge_flange_operation_at(
         return None;
     }
     Some(DesignEdgeFlangeOperation {
-        shape: crate::records::DesignEdgeFlangeShape::from_wire(
-            vec![crate::records::DesignEdgeFlangeEdge {
+        shape: crate::records::feature::DesignEdgeFlangeShape::from_wire(
+            vec![crate::records::feature::DesignEdgeFlangeEdge {
                 wrapper_record_index: edge_wrapper_record_index,
                 group_record_index: edge_group_record_index,
                 operand_record_index: edge_operand_record_index,
@@ -2795,8 +2799,10 @@ fn edge_flange_to_object_operation_at(
     cursor = common.checked_add(edge_flange::HEIGHT_OWNER_REFERENCE)?;
     let height_owner_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
     let bend_radius_offset = common.checked_add(edge_flange::INSIDE_BEND_RADIUS)?;
-    let bend_radius =
-        crate::records::DesignBendRadius::new(View::f64_le_at(bytes, bend_radius_offset)?)?;
+    let bend_radius = crate::records::feature::DesignBendRadius::new(View::f64_le_at(
+        bytes,
+        bend_radius_offset,
+    )?)?;
     let result_count = View::u32_le_at(bytes, bend_radius_offset.checked_add(14)?)?;
     if result_count != 1
         || bytes.get(bend_radius_offset.checked_add(18)?..bend_radius_offset.checked_add(22)?)?
@@ -2884,8 +2890,8 @@ fn edge_flange_to_object_operation_at(
         return None;
     }
     Some(DesignEdgeFlangeOperation {
-        shape: crate::records::DesignEdgeFlangeShape::FullEdge {
-            edges: vec![crate::records::DesignEdgeFlangeEdge {
+        shape: crate::records::feature::DesignEdgeFlangeShape::FullEdge {
+            edges: vec![crate::records::feature::DesignEdgeFlangeEdge {
                 wrapper_record_index: edge_wrapper_record_index,
                 group_record_index: edge_group_record_index,
                 operand_record_index: edge_operand_record_index,
@@ -2995,7 +3001,7 @@ pub(super) fn bind_hem_operation_from_parameters(
     parameters: &[DesignParameter],
     parameter_owners: &[DesignParameterOwner],
 ) {
-    if scope.kind() != crate::records::DesignFeatureKind::Hem {
+    if scope.kind() != crate::records::feature::DesignFeatureKind::Hem {
         return;
     }
     let Some(stream) = native_stream(&scope.id) else {
@@ -3035,7 +3041,7 @@ pub(super) fn bind_hem_operation_from_parameters(
             scope.reference_members.values().copied(),
             &parameter_source_kinds,
         );
-        if let crate::records::DesignScopePayload::Hem(slot) = &mut scope.payload {
+        if let crate::records::feature::DesignScopePayload::Hem(slot) = &mut scope.payload {
             *slot = construction;
         }
     }
@@ -3085,8 +3091,10 @@ fn hem_gap_length_operation_at(
     let length_owner_record_index = slot(hem_gap::LENGTH_OWNER_REFERENCE, &mut unclaimed)?;
 
     let bend_radius_offset = common.checked_add(hem_gap::INSIDE_BEND_RADIUS)?;
-    let bend_radius =
-        crate::records::DesignBendRadius::new(View::f64_le_at(bytes, bend_radius_offset)?)?;
+    let bend_radius = crate::records::feature::DesignBendRadius::new(View::f64_le_at(
+        bytes,
+        bend_radius_offset,
+    )?)?;
 
     let aggregate_group_record_index = slot(108, &mut unclaimed)?;
     let edge_group_record_index = slot(135, &mut unclaimed)?;
@@ -3155,8 +3163,10 @@ fn hem_radius_angle_operation_at(
     let angle_owner_record_index = slot(hem_rolled::ANGLE_OWNER_REFERENCE, &mut unclaimed)?;
     let radius_owner_record_index = slot(hem_rolled::RADIUS_OWNER_REFERENCE, &mut unclaimed)?;
     let bend_radius_offset = common.checked_add(hem_rolled::INSIDE_BEND_RADIUS)?;
-    let bend_radius =
-        crate::records::DesignBendRadius::new(View::f64_le_at(bytes, bend_radius_offset)?)?;
+    let bend_radius = crate::records::feature::DesignBendRadius::new(View::f64_le_at(
+        bytes,
+        bend_radius_offset,
+    )?)?;
     let aggregate_group_record_index = slot(108, &mut unclaimed)?;
     let edge_group_record_index = slot(135, &mut unclaimed)?;
     let aggregate_operand_record_index =
@@ -3220,8 +3230,10 @@ fn hem_gap_length_radius_operation_at(
     let length_owner_record_index = slot(hem_teardrop::LENGTH_OWNER_REFERENCE, &mut unclaimed)?;
     let radius_owner_record_index = slot(hem_teardrop::RADIUS_OWNER_REFERENCE, &mut unclaimed)?;
     let bend_radius_offset = common.checked_add(hem_teardrop::INSIDE_BEND_RADIUS)?;
-    let bend_radius =
-        crate::records::DesignBendRadius::new(View::f64_le_at(bytes, bend_radius_offset)?)?;
+    let bend_radius = crate::records::feature::DesignBendRadius::new(View::f64_le_at(
+        bytes,
+        bend_radius_offset,
+    )?)?;
     let aggregate_group_record_index = slot(118, &mut unclaimed)?;
     let edge_group_record_index = slot(145, &mut unclaimed)?;
     let aggregate_operand_record_index =

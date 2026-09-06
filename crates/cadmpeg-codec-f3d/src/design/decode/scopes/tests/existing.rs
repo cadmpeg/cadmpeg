@@ -19,11 +19,11 @@ use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::layout::coil_compact_persistent_selection_prefix as coil_persist_selection;
 use crate::layout::coil_legacy_placement_identity_frame as coil_legacy_identity;
 use crate::layout::coil_modern_placement_matrix_frame as coil_modern_matrix;
-use crate::records::{
-    ConstructionRecipe, ConstructionRecipeKind, DesignCoilExtent, DesignCoilSelection,
-    DesignExtrudeOperation, DesignParameterScope, DesignPathFeatureConstruction,
-    DesignRecordHeader, DesignWorkPointInputCarrier, DesignWorkPointRule,
+use crate::records::feature::{
+    DesignCoilExtent, DesignCoilSelection, DesignExtrudeOperation, DesignParameterScope,
+    DesignPathFeatureConstruction, DesignWorkPointInputCarrier, DesignWorkPointRule,
 };
+use crate::records::{ConstructionRecipe, ConstructionRecipeKind, DesignRecordHeader};
 use std::collections::HashMap;
 
 const EPS_HOLE_TEST_VALUE: f64 = 1.0e-12;
@@ -120,7 +120,7 @@ fn compact_loft_prefix_reads_operation_at_offset_25_for_any_dynamic_class_tag() 
 
         let mut scope = DesignParameterScope::empty(
             "generated:loft#20",
-            crate::records::DesignFeatureKind::Loft,
+            crate::records::feature::DesignFeatureKind::Loft,
             20,
         );
         scope.class_tag = class_tag.into();
@@ -134,7 +134,7 @@ fn compact_loft_prefix_reads_operation_at_offset_25_for_any_dynamic_class_tag() 
         .expect("compact Loft operation");
         assert_eq!(
             construction,
-            DesignPathFeatureConstruction::Loft(crate::records::DesignLoftConstruction {
+            DesignPathFeatureConstruction::Loft(crate::records::feature::DesignLoftConstruction {
                 operation: DesignExtrudeOperation::Join,
                 operation_offset: 25,
             })
@@ -196,7 +196,7 @@ fn compact_coil_placement_fixture(
 
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#42",
-        crate::records::DesignFeatureKind::CoilPrimitive,
+        crate::records::feature::DesignFeatureKind::CoilPrimitive,
         42,
     );
     scope.frame_length = 442;
@@ -402,8 +402,8 @@ fn compact_coil_spiral_placement_fixture() -> (Vec<u8>, DesignParameterScope, us
         values.pop();
         crate::records::ReferenceRun::Unlocated(values)
     };
-    if let crate::records::DesignScopePayload::SpirePrimitive(slot)
-    | crate::records::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
+    if let crate::records::feature::DesignScopePayload::SpirePrimitive(slot)
+    | crate::records::feature::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
     {
         slot.get_or_insert_with(Default::default).coil_extent =
             Some(crate::records::RecordedValue {
@@ -460,7 +460,7 @@ fn compact_coil_face_selection_fixture() -> (Vec<u8>, DesignParameterScope, Vec<
     let stream = "f3d:Design/BulkStream.dat";
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#42",
-        crate::records::DesignFeatureKind::CoilPrimitive,
+        crate::records::feature::DesignFeatureKind::CoilPrimitive,
         42,
     );
     scope.frame_length = 432;
@@ -678,8 +678,8 @@ fn compact_coil_spiral_placement_accepts_seven_reference_form() {
 #[test]
 fn compact_coil_seven_reference_form_requires_spiral_extent() {
     let (bytes, mut scope, _) = compact_coil_spiral_placement_fixture();
-    if let crate::records::DesignScopePayload::SpirePrimitive(slot)
-    | crate::records::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
+    if let crate::records::feature::DesignScopePayload::SpirePrimitive(slot)
+    | crate::records::feature::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
     {
         slot.get_or_insert_with(Default::default).coil_extent =
             Some(crate::records::RecordedValue {
@@ -741,7 +741,7 @@ fn compact_coil_placement_accepts_face_recipe_selection() {
             recipe_record_index: 103,
             recipe_record_byte_offset: recipes[0].byte_offset - 15,
             recipe_id: recipes[0].id.clone(),
-            recipe_kind: crate::records::DesignFaceRecipeKind::Face,
+            recipe_kind: crate::records::feature::DesignFaceRecipeKind::Face,
             design: Some(crate::records::ConstructionRecipeDesign {
                 id: "body".into(),
                 selector: None
@@ -933,7 +933,7 @@ fn hole_point_stream_version(version: u32) -> (Vec<u8>, DesignParameterScope, us
 
     let mut scope = DesignParameterScope::empty(
         "generated:hole#0",
-        crate::records::DesignFeatureKind::Hole,
+        crate::records::feature::DesignFeatureKind::Hole,
         12,
     );
     scope.reference_members = {
@@ -1074,7 +1074,7 @@ fn hole_face_selection_reads_the_direct_persistent_identity_envelope() {
 
     let mut scope = DesignParameterScope::empty(
         "generated:hole#0",
-        crate::records::DesignFeatureKind::Hole,
+        crate::records::feature::DesignFeatureKind::Hole,
         12,
     );
     scope.reference_members = {
@@ -1290,16 +1290,18 @@ fn work_point_rule_codes_select_typed_input_arities() {
         assert_eq!(frame.rule.reference_type(), reference_type);
         assert_eq!(u32::try_from(frame.rule.inputs().len()).unwrap(), arity);
         assert!(match frame.rule.form() {
-            crate::records::DesignWorkPointRuleForm::CircleCenter { .. } => reference_type == 5,
-            crate::records::DesignWorkPointRuleForm::TwoEdgeIntersection { .. } =>
+            crate::records::feature::DesignWorkPointRuleForm::CircleCenter { .. } =>
+                reference_type == 5,
+            crate::records::feature::DesignWorkPointRuleForm::TwoEdgeIntersection { .. } =>
                 reference_type == 7,
-            crate::records::DesignWorkPointRuleForm::ThreePlaneIntersection { .. } =>
+            crate::records::feature::DesignWorkPointRuleForm::ThreePlaneIntersection { .. } =>
                 reference_type == 8,
-            crate::records::DesignWorkPointRuleForm::Vertex { .. } => reference_type == 10,
-            crate::records::DesignWorkPointRuleForm::EdgePlaneIntersection { .. } =>
+            crate::records::feature::DesignWorkPointRuleForm::Vertex { .. } => reference_type == 10,
+            crate::records::feature::DesignWorkPointRuleForm::EdgePlaneIntersection { .. } =>
                 reference_type == 14,
-            crate::records::DesignWorkPointRuleForm::DistanceOnEdge { .. } => reference_type == 20,
-            crate::records::DesignWorkPointRuleForm::Native { .. } => false,
+            crate::records::feature::DesignWorkPointRuleForm::DistanceOnEdge { .. } =>
+                reference_type == 20,
+            crate::records::feature::DesignWorkPointRuleForm::Native { .. } => false,
         });
     }
 }
@@ -1317,7 +1319,7 @@ fn work_point_rule_code_with_wrong_arity_remains_native() {
 
     assert!(matches!(
         frame.rule.form(),
-        crate::records::DesignWorkPointRuleForm::Native {
+        crate::records::feature::DesignWorkPointRuleForm::Native {
             reference_type: 5,
             ref inputs,
         } if inputs.len() == 2

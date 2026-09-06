@@ -87,7 +87,7 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
         history("BREP.a.smbh", 1, AsmHistoricalEntityKind::Edge),
         history("BREP.b.smbh", 2, AsmHistoricalEntityKind::Loop),
     ];
-    let mut members = vec![crate::records::DesignExtrudeSelectionMember {
+    let mut members = vec![crate::records::topology::DesignExtrudeSelectionMember {
         id: crate::ids::native_scoped_id(design_stream, "extrude-selection-member", 400),
         group_record_index: 1,
         group_member_ordinal: 0,
@@ -288,7 +288,7 @@ fn corner_recipe_intersects_vertex_sets_across_fragment_unions() {
         alternate_selector_faces: Vec::new(),
         alternate_selector_edges: Vec::new(),
     };
-    let recipe = crate::records::DesignVertexRecipe {
+    let recipe = crate::records::feature::DesignVertexRecipe {
         record_index: 1,
         byte_offset: 0,
         class_tag: "264".into(),

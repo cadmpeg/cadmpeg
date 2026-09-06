@@ -4,11 +4,11 @@
 //! Segment vocabulary, separators, ordering, escaping, and `#{len}:{key}`
 //! length-prefixes. Callers build IDs through the named functions below.
 
-use crate::records::{
+use crate::records::feature::{
     DesignAssemblyAxialSelectorIdentity, DesignAssemblyLegacySelection,
-    DesignCombineExternalBodyIdentity, DesignParameter, DesignParameterScope,
-    DesignSketchPlacement,
+    DesignCombineExternalBodyIdentity, DesignParameterScope,
 };
+use crate::records::{DesignParameter, DesignSketchPlacement};
 
 /// The scheme prefix shared by every `f3d:` URN. Used to strip or test the
 /// scheme when parsing an identity key back into its stream and tail.
@@ -157,7 +157,7 @@ pub(crate) fn neutral_component_insert_occurrence_id(
 
 /// Neutral assembly-joint key projected from one Design parameter scope.
 pub(crate) fn neutral_assembly_joint_id(
-    scope: &crate::records::DesignParameterScope,
+    scope: &crate::records::feature::DesignParameterScope,
 ) -> cadmpeg_ir::products::JointId {
     let stream = identity_key_component(native_stream(&scope.id).unwrap_or(DEFAULT_STREAM));
     cadmpeg_ir::products::JointId(format!(
@@ -888,7 +888,8 @@ mod tests {
         neutral_face_appearance_binding_id, neutral_sketch_record_id, neutral_sketch_text_id,
         same_native_occurrence, SCHEME_PREFIX,
     };
-    use crate::records::{ConstructionRecipeKind, DesignAssemblyLegacySelection};
+    use crate::records::feature::DesignAssemblyLegacySelection;
+    use crate::records::ConstructionRecipeKind;
 
     #[test]
     fn design_segment_joins_sibling_meta_and_bulk_stream_ids() {

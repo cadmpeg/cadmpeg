@@ -86,7 +86,7 @@ fn legacy_work_plane_325_byte_frames_decode_their_matrix() {
 
         let mut scope = DesignParameterScope::empty(
             "f3d:test:scope#1",
-            crate::records::DesignFeatureKind::WorkPlane,
+            crate::records::feature::DesignFeatureKind::WorkPlane,
             1,
         );
         scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![record_index]);

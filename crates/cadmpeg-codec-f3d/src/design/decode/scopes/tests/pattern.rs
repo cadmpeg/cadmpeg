@@ -12,10 +12,10 @@ use super::prelude::*;
 
 #[test]
 fn circular_pattern_axis_prefers_one_inline_carrier() {
-    use crate::records::DesignCircularPatternAxis;
+    use crate::records::feature::DesignCircularPatternAxis;
 
     let historical = DesignCircularPatternAxis::HistoricalEdge {
-        wrappers: vec![crate::records::DesignPatternAxisWrapper {
+        wrappers: vec![crate::records::feature::DesignPatternAxisWrapper {
             record_index: 11,
             identity_offset: 23,
         }],
@@ -195,7 +195,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             "reference_members",
         )
         .unwrap(),
-        payload: crate::records::DesignFeatureKind::CPattern.into(),
+        payload: crate::records::feature::DesignFeatureKind::CPattern.into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "258".into(),
         paired_byte_offset: 329,
@@ -214,7 +214,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             angle: std::f64::consts::TAU,
             angle_record_index,
             angle_offset: (angle_start + 40) as u64,
-            axis: crate::records::DesignCircularPatternAxis::Inline {
+            axis: crate::records::feature::DesignCircularPatternAxis::Inline {
                 origin: [1.0, 2.0, 3.0],
                 origin_offset: (axis_start + 25) as u64,
                 direction: [-1.0, 0.0, 0.0],
@@ -236,7 +236,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         &[],
     )
     .expect("non-unit axis displacement is normalized");
-    let crate::records::DesignCircularPatternAxis::Inline { direction, .. } = normalized.axis
+    let crate::records::feature::DesignCircularPatternAxis::Inline { direction, .. } =
+        normalized.axis
     else {
         panic!("inline axis expected");
     };
@@ -335,7 +336,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         None
     );
 
-    scope.payload = crate::records::DesignFeatureKind::RPattern.into();
+    scope.payload = crate::records::feature::DesignFeatureKind::RPattern.into();
     let rectangular_owners = [
         owner(50, 0, 3.0, 501),
         owner(51, 1, 1.0, 502),
@@ -424,7 +425,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         None
     );
 
-    scope.payload = crate::records::DesignFeatureKind::Assemble.into();
+    scope.payload = crate::records::feature::DesignFeatureKind::Assemble.into();
     scope.frame_length = 627;
     scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![50, 51, 52, 53]);
     let alignment = exact_assembly_alignment(
@@ -730,14 +731,14 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(short_axial_frames[1].transform_offset, 178);
 
     let mut first_joint_origin = scope.clone();
-    first_joint_origin.payload = crate::records::DesignFeatureKind::JointOrigin.into();
+    first_joint_origin.payload = crate::records::feature::DesignFeatureKind::JointOrigin.into();
     first_joint_origin.record_index = 70;
     first_joint_origin.reference_members = crate::records::ReferenceRun::Unlocated(Vec::new());
     let mut second_joint_origin = first_joint_origin.clone();
     second_joint_origin.record_index = 80;
     let mut linked_assembly = axial_assembly_scope.clone();
-    if let crate::records::DesignScopePayload::Assemble(slot)
-    | crate::records::DesignScopePayload::AsBuilt(slot) = &mut linked_assembly.payload
+    if let crate::records::feature::DesignScopePayload::Assemble(slot)
+    | crate::records::feature::DesignScopePayload::AsBuilt(slot) = &mut linked_assembly.payload
     {
         *slot = Some(axial_alignment.clone());
     }
@@ -779,13 +780,15 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             .map(|owner| owner.record_index)
             .collect(),
     );
-    if let crate::records::DesignScopePayload::Assemble(slot)
-    | crate::records::DesignScopePayload::AsBuilt(slot) = &mut single_frame_assembly.payload
+    if let crate::records::feature::DesignScopePayload::Assemble(slot)
+    | crate::records::feature::DesignScopePayload::AsBuilt(slot) =
+        &mut single_frame_assembly.payload
     {
         *slot = Some(datum_envelope_alignment);
     }
     let mut single_frame_joint_origin = scope.clone();
-    single_frame_joint_origin.payload = crate::records::DesignFeatureKind::JointOrigin.into();
+    single_frame_joint_origin.payload =
+        crate::records::feature::DesignFeatureKind::JointOrigin.into();
     single_frame_joint_origin.record_index = 91;
     single_frame_joint_origin.reference_members =
         crate::records::ReferenceRun::Unlocated(Vec::new());
@@ -829,7 +832,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
 
     single_frame_bytes[175..179].copy_from_slice(&2_u32.to_le_bytes());
     let mut invalid_joint_origin = single_frame_scopes[1].clone();
-    if let crate::records::DesignScopePayload::JointOrigin(slot) = &mut invalid_joint_origin.payload
+    if let crate::records::feature::DesignScopePayload::JointOrigin(slot) =
+        &mut invalid_joint_origin.payload
     {
         *slot = None;
     }

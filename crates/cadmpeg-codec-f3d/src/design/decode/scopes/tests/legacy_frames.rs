@@ -69,7 +69,7 @@ fn class_369_shell_scope_uses_ordered_scalar_and_body_group() {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:test:shell-369#42",
-        crate::records::DesignFeatureKind::Shell,
+        crate::records::feature::DesignFeatureKind::Shell,
         42,
     );
     scope.byte_offset = 0;
@@ -80,7 +80,7 @@ fn class_369_shell_scope_uses_ordered_scalar_and_body_group() {
     let records = IndexedRecordOffsets::build(&bytes);
     assert!(matches!(
         exact_direct_face_operation(&bytes, &records, &scope),
-        Some(DesignDirectFaceOperation::Shell(crate::records::DesignShellOperation {
+        Some(DesignDirectFaceOperation::Shell(crate::records::feature::DesignShellOperation {
             thickness: 0.25,
             thickness_record_index: 9_000,
             outward: false,
@@ -120,7 +120,7 @@ fn class_322_261_work_plane_332_byte_frame_decodes_its_matrix_only_for_that_pair
 
     let mut scope = DesignParameterScope::empty(
         "f3d:test:scope#322",
-        crate::records::DesignFeatureKind::WorkPlane,
+        crate::records::feature::DesignFeatureKind::WorkPlane,
         1,
     );
     scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![85]);
@@ -170,7 +170,7 @@ fn legacy_work_plane_class_350_frame_decodes_its_matrix() {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:test:scope#1",
-        crate::records::DesignFeatureKind::WorkPlane,
+        crate::records::feature::DesignFeatureKind::WorkPlane,
         1,
     );
     scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![76]);
@@ -207,7 +207,7 @@ fn legacy_work_plane_class_400_frame_decodes_its_matrix() {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:test:scope#1",
-        crate::records::DesignFeatureKind::WorkPlane,
+        crate::records::feature::DesignFeatureKind::WorkPlane,
         1,
     );
     scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![72]);
@@ -255,7 +255,7 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
 
         let mut scope = DesignParameterScope::empty(
             &format!("f3d:test:legacy-move#{record_index}"),
-            crate::records::DesignFeatureKind::Move,
+            crate::records::feature::DesignFeatureKind::Move,
             1_000 + u32::try_from(ordinal).expect("small test ordinal"),
         );
         scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![record_index]);
@@ -347,7 +347,7 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
 
         let mut scope = DesignParameterScope::empty(
             "f3d:test:work-axis#1",
-            crate::records::DesignFeatureKind::WorkAxis,
+            crate::records::feature::DesignFeatureKind::WorkAxis,
             1,
         );
         scope.class_tag = scope_class.into();
@@ -364,12 +364,14 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
         assert_eq!(construction.displacement_offset, 49);
         assert!(matches!(
             construction.source,
-            Some(crate::records::DesignWorkAxisSource::DirectCarrier {
-                carrier_record_index: 100,
-                support_record_index: 200,
-            })
+            Some(
+                crate::records::feature::DesignWorkAxisSource::DirectCarrier {
+                    carrier_record_index: 100,
+                    support_record_index: 200,
+                }
+            )
         ));
-        if let crate::records::DesignScopePayload::WorkAxis(slot) = &mut scope.payload {
+        if let crate::records::feature::DesignScopePayload::WorkAxis(slot) = &mut scope.payload {
             *slot = Some(construction);
         }
         let (features, _) = project_parameter_design(
@@ -452,13 +454,13 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
 
     let mut scope = DesignParameterScope::empty(
         "generated:scope#12",
-        crate::records::DesignFeatureKind::Extrude,
+        crate::records::feature::DesignFeatureKind::Extrude,
         12,
     );
     scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![80, 82]);
-    if let crate::records::DesignScopePayload::Extrude(slot)
-    | crate::records::DesignScopePayload::Extrusion(slot)
-    | crate::records::DesignScopePayload::Extrusao(slot) = &mut scope.payload
+    if let crate::records::feature::DesignScopePayload::Extrude(slot)
+    | crate::records::feature::DesignScopePayload::Extrusion(slot)
+    | crate::records::feature::DesignScopePayload::Extrusao(slot) = &mut scope.payload
     {
         slot.get_or_insert_with(Default::default).extrude_prologue =
             Some(DesignExtrudePrologue::ReferenceAware {

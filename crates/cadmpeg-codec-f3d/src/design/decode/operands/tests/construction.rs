@@ -12,7 +12,7 @@ use crate::design::decode::operands::parse_loft_legacy_body_carrier;
 
 #[test]
 fn localized_edge_treatment_group_retention_is_language_independent() {
-    use crate::records::DesignFeatureKind as Kind;
+    use crate::records::feature::DesignFeatureKind as Kind;
     for kind in [
         Kind::Conge,
         Kind::Abrundung,
@@ -61,7 +61,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             "reference_members",
         )
         .unwrap(),
-        payload: crate::records::DesignFeatureKind::Extrude.into(),
+        payload: crate::records::feature::DesignFeatureKind::Extrude.into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "261".into(),
         paired_byte_offset: 1200,
@@ -190,9 +190,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(retained_role_five.extrude_role, None);
 
     let mut from_face_scope = scope.clone();
-    if let crate::records::DesignScopePayload::Extrude(slot)
-    | crate::records::DesignScopePayload::Extrusion(slot)
-    | crate::records::DesignScopePayload::Extrusao(slot) = &mut from_face_scope.payload
+    if let crate::records::feature::DesignScopePayload::Extrude(slot)
+    | crate::records::feature::DesignScopePayload::Extrusion(slot)
+    | crate::records::feature::DesignScopePayload::Extrusao(slot) = &mut from_face_scope.payload
     {
         slot.get_or_insert_with(Default::default).extrude_prologue =
             Some(DesignExtrudePrologue::ReferenceAware {
@@ -224,9 +224,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     );
 
     let mut to_face_scope = from_face_scope.clone();
-    if let crate::records::DesignScopePayload::Extrude(slot)
-    | crate::records::DesignScopePayload::Extrusion(slot)
-    | crate::records::DesignScopePayload::Extrusao(slot) = &mut to_face_scope.payload
+    if let crate::records::feature::DesignScopePayload::Extrude(slot)
+    | crate::records::feature::DesignScopePayload::Extrusion(slot)
+    | crate::records::feature::DesignScopePayload::Extrusao(slot) = &mut to_face_scope.payload
     {
         slot.get_or_insert_with(Default::default).extrude_prologue =
             Some(DesignExtrudePrologue::ReferenceAware {
@@ -385,7 +385,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(auxiliary.paired_byte_offset, auxiliary_paired_at as u64);
 
     let mut split_scope = scope.clone();
-    split_scope.payload = crate::records::DesignFeatureKind::SplitFace.into();
+    split_scope.payload = crate::records::feature::DesignFeatureKind::SplitFace.into();
     split_scope.frame_length = 334;
     split_scope.reference_members = crate::records::ReferenceRun::from_columns(
         vec![100, 200, 201, 400, 500],
@@ -447,7 +447,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
 
     let mut first_plane = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#601",
-        crate::records::DesignFeatureKind::WorkPlane,
+        crate::records::feature::DesignFeatureKind::WorkPlane,
         601,
     );
     first_plane.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
@@ -459,7 +459,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     ]);
     let mut second_plane = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#701",
-        crate::records::DesignFeatureKind::WorkPlane,
+        crate::records::feature::DesignFeatureKind::WorkPlane,
         701,
     );
     second_plane.feature_ordinal = std::num::NonZeroU32::new(2).expect("nonzero ordinal");
@@ -471,7 +471,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     ]);
     compact_split_scope.feature_ordinal = std::num::NonZeroU32::new(3).expect("nonzero ordinal");
     let plane_selection = |record_index, group_member_ordinal, primary_identity| {
-        crate::records::DesignEntitySelectionOperand {
+        crate::records::topology::DesignEntitySelectionOperand {
             id: format!("f3d:Design/BulkStream.dat:design-entity-selection-operand#{record_index}"),
             scope_record_index: compact_split_scope.record_index,
             group_record_index: split_groups[0].record_index,
@@ -571,7 +571,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     ));
 
     let mut split_body_scope = scope.clone();
-    split_body_scope.payload = crate::records::DesignFeatureKind::Split.into();
+    split_body_scope.payload = crate::records::feature::DesignFeatureKind::Split.into();
     split_body_scope.frame_length = 325;
     split_body_scope.reference_members = crate::records::ReferenceRun::from_columns(
         vec![100, 200, 400, 500],
@@ -601,7 +601,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         id: "f3d:Design/BulkStream.dat:face-operand#200".into(),
         scope_record_index: split_body_scope.record_index,
         scope_reference_ordinal: 1,
-        group: Some(crate::records::DesignOperandGroup {
+        group: Some(crate::records::topology::DesignOperandGroup {
             group_record_index: 100,
             group_member_ordinal: 0,
         }),
@@ -774,7 +774,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     .is_none());
 
     let mut delete_scope = scope.clone();
-    delete_scope.payload = crate::records::DesignFeatureKind::DeleteFace.into();
+    delete_scope.payload = crate::records::feature::DesignFeatureKind::DeleteFace.into();
     delete_scope.frame_length = 258;
     delete_scope.kind_offset = 1161;
     delete_scope.reference_members = crate::records::ReferenceRun::from_columns(
@@ -794,7 +794,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     delete_face_operand.id = "f3d:Design/BulkStream.dat:face-operand#200".into();
     delete_face_operand.scope_record_index = delete_scope.record_index;
     delete_face_operand.scope_reference_ordinal = 1;
-    delete_face_operand.group = Some(crate::records::DesignOperandGroup {
+    delete_face_operand.group = Some(crate::records::topology::DesignOperandGroup {
         group_record_index: delete_group.record_index,
         group_member_ordinal: 0,
     });
@@ -874,7 +874,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
 
     let mut surface_scope = delete_scope.clone();
     let reference_bytes = 11 * surface_scope.reference_members.len() as u64;
-    surface_scope.payload = crate::records::DesignFeatureKind::SurfaceDeleteFace.into();
+    surface_scope.payload = crate::records::feature::DesignFeatureKind::SurfaceDeleteFace.into();
     surface_scope.frame_length = 250 + reference_bytes;
     surface_scope.kind_offset = surface_scope.byte_offset + 140 + reference_bytes;
     let (features, _) = project_parameter_design(
@@ -1003,7 +1003,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     ));
 
     for (class_tag, paired_class_tag) in [("264", "262"), ("383", "263")] {
-        delete_scope.payload = crate::records::DesignFeatureKind::DeleteFace.into();
+        delete_scope.payload = crate::records::feature::DesignFeatureKind::DeleteFace.into();
         delete_scope.class_tag = class_tag.into();
         delete_scope.paired_class_tag = paired_class_tag.into();
         delete_scope.frame_length = 232 + reference_bytes;
@@ -1045,7 +1045,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     ));
 
     let mut remove_scope = scope.clone();
-    remove_scope.payload = crate::records::DesignFeatureKind::RemoveBody.into();
+    remove_scope.payload = crate::records::feature::DesignFeatureKind::RemoveBody.into();
     let mut remove_group = group;
     remove_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
     remove_group.role = 0x0000_0004_0000_0000;
@@ -1061,10 +1061,12 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     );
 
     let mut stitch_scope = scope;
-    stitch_scope.payload = crate::records::DesignFeatureKind::SurfaceStitch.into();
+    stitch_scope.payload = crate::records::feature::DesignFeatureKind::SurfaceStitch.into();
     stitch_scope.reference_members =
         crate::records::ReferenceRun::Unlocated(vec![100, 200, 300, 301]);
-    if let crate::records::DesignScopePayload::SurfaceStitch(slot) = &mut stitch_scope.payload {
+    if let crate::records::feature::DesignScopePayload::SurfaceStitch(slot) =
+        &mut stitch_scope.payload
+    {
         *slot = Some(DesignSurfaceStitchOperation {
             gap_tolerance: 0.01,
             gap_tolerance_offset: 40,
@@ -1107,12 +1109,15 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
     }
 
     for (ordinal, (class_tag, scope_kind)) in [
-        ("323", crate::records::DesignFeatureKind::Move),
-        ("328", crate::records::DesignFeatureKind::Move),
-        ("257", crate::records::DesignFeatureKind::Move),
-        ("338", crate::records::DesignFeatureKind::RemoveBody),
-        ("282", crate::records::DesignFeatureKind::Move),
-        ("302", crate::records::DesignFeatureKind::Move),
+        ("323", crate::records::feature::DesignFeatureKind::Move),
+        ("328", crate::records::feature::DesignFeatureKind::Move),
+        ("257", crate::records::feature::DesignFeatureKind::Move),
+        (
+            "338",
+            crate::records::feature::DesignFeatureKind::RemoveBody,
+        ),
+        ("282", crate::records::feature::DesignFeatureKind::Move),
+        ("302", crate::records::feature::DesignFeatureKind::Move),
     ]
     .into_iter()
     .enumerate()
@@ -1201,7 +1206,7 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
 fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scope() {
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#296536",
-        crate::records::DesignFeatureKind::Extrude,
+        crate::records::feature::DesignFeatureKind::Extrude,
         296_536,
     );
     scope.byte_offset = 1000;
@@ -1211,9 +1216,9 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
     scope.reference_count_offset = 1291;
     scope.reference_members =
         crate::records::ReferenceRun::Unlocated((0..13).map(|index| 296_500 + index).collect());
-    if let crate::records::DesignScopePayload::Extrude(slot)
-    | crate::records::DesignScopePayload::Extrusion(slot)
-    | crate::records::DesignScopePayload::Extrusao(slot) = &mut scope.payload
+    if let crate::records::feature::DesignScopePayload::Extrude(slot)
+    | crate::records::feature::DesignScopePayload::Extrusion(slot)
+    | crate::records::feature::DesignScopePayload::Extrusao(slot) = &mut scope.payload
     {
         slot.get_or_insert_with(Default::default).extrude_prologue =
             Some(DesignExtrudePrologue::LegacyShifted {
@@ -1434,10 +1439,12 @@ fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
     assert_eq!(expanded.entity_ref, 174);
     assert_eq!(
         expanded.placement,
-        crate::records::DesignConstructionPathPlacement::Transform(crate::records::Located {
-            value: transform,
-            offset: 33
-        })
+        crate::records::topology::DesignConstructionPathPlacement::Transform(
+            crate::records::Located {
+                value: transform,
+                offset: 33
+            }
+        )
     );
     assert_eq!(expanded.scope_record_index_offset, 163);
     assert_eq!(expanded.nested_record_index, 102);
@@ -1461,7 +1468,7 @@ fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
     assert_eq!(compact.entity_ref, 18_064);
     assert_eq!(
         compact.placement,
-        crate::records::DesignConstructionPathPlacement::Compact(true)
+        crate::records::topology::DesignConstructionPathPlacement::Compact(true)
     );
     assert_eq!(compact.scope_record_index_offset, 35);
     assert_eq!(compact.nested_record_index_offset, 46);
@@ -1593,18 +1600,20 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
         bytes
     }
 
-    let mut scope = crate::records::DesignParameterScope::empty(
+    let mut scope = crate::records::feature::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat",
-        crate::records::DesignFeatureKind::Loft,
+        crate::records::feature::DesignFeatureKind::Loft,
         12,
     );
     {
-        let value = Some(crate::records::DesignPathFeatureConstruction::Loft(
-            crate::records::DesignLoftConstruction {
-                operation: crate::records::DesignExtrudeOperation::Cut,
-                operation_offset: 0,
-            },
-        ));
+        let value = Some(
+            crate::records::feature::DesignPathFeatureConstruction::Loft(
+                crate::records::feature::DesignLoftConstruction {
+                    operation: crate::records::feature::DesignExtrudeOperation::Cut,
+                    operation_offset: 0,
+                },
+            ),
+        );
         scope.payload = value.map_or_else(|| scope.kind().into(), Into::into);
     }
 

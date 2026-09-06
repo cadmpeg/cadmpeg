@@ -84,36 +84,37 @@ fn mirror_face_recipe_accepts_coincident_preceding_plane_faces() {
     };
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    let operand: crate::records::DesignFaceOperand = serde_json::from_value(serde_json::json!({
-        "id": "f3d:Design/BulkStream.dat:design-face-operand#40",
-        "scope_record_index": 42,
-        "scope_reference_ordinal": 5,
-        "group_record_index": 30,
-        "group_member_ordinal": 0,
-        "record_index": 40,
-        "byte_offset": 0,
-        "class_tag": "276",
-        "paired_byte_offset": 0,
-        "paired_class_tag": "262",
-        "recipe_record_index": 43,
-        "recipe_record_byte_offset": 0,
-        "recipe_id": "f3d:Design/BulkStream.dat:construction-recipe#43",
-        "recipe_prefix_offset": 0,
-        "recipe_prefix_bytes": "",
-        "recipe_references": [],
-        "recipe_kind": "face",
-        "recipe_program_offset": 0,
-        "recipe_program": [0, -1],
-        "recipe_node_offsets": [],
-        "recipe_nodes": [],
-        "preceding_candidate_faces": [
-            "f3d:brep:entity#10",
-            "f3d:brep:entity#11"
-        ],
-        "next_record_index": 44,
-        "next_byte_offset": 0
-    }))
-    .expect("face-recipe operand");
+    let operand: crate::records::topology::DesignFaceOperand =
+        serde_json::from_value(serde_json::json!({
+            "id": "f3d:Design/BulkStream.dat:design-face-operand#40",
+            "scope_record_index": 42,
+            "scope_reference_ordinal": 5,
+            "group_record_index": 30,
+            "group_member_ordinal": 0,
+            "record_index": 40,
+            "byte_offset": 0,
+            "class_tag": "276",
+            "paired_byte_offset": 0,
+            "paired_class_tag": "262",
+            "recipe_record_index": 43,
+            "recipe_record_byte_offset": 0,
+            "recipe_id": "f3d:Design/BulkStream.dat:construction-recipe#43",
+            "recipe_prefix_offset": 0,
+            "recipe_prefix_bytes": "",
+            "recipe_references": [],
+            "recipe_kind": "face",
+            "recipe_program_offset": 0,
+            "recipe_program": [0, -1],
+            "recipe_node_offsets": [],
+            "recipe_nodes": [],
+            "preceding_candidate_faces": [
+                "f3d:brep:entity#10",
+                "f3d:brep:entity#11"
+            ],
+            "next_record_index": 44,
+            "next_byte_offset": 0
+        }))
+        .expect("face-recipe operand");
     let topology = AsmHistoricalTopology {
         faces: vec![10, 11],
         face_surfaces: vec![
@@ -279,9 +280,9 @@ fn mirror_coedge_plane_uses_unique_planar_face_in_radial_cycle() {
             transition: None,
         }],
     };
-    let candidate = crate::records::DesignEntitySelectionFaceCandidate {
+    let candidate = crate::records::topology::DesignEntitySelectionFaceCandidate {
         history_id: "history".into(),
-        historical: crate::records::HistoricalBinding {
+        historical: crate::records::topology::HistoricalBinding {
             kind: AsmHistoricalEntityKind::Coedge,
             entity_ref: 30,
             state_ids: vec![1],

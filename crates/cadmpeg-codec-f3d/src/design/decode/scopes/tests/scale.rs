@@ -72,7 +72,7 @@ fn modern_scale_fixture() -> (Vec<u8>, DesignParameterScope, usize) {
     let position_at = append_point_data(&mut bytes, 105, [104, 103]);
     let mut scope = DesignParameterScope::empty(
         "generated:scale#100",
-        crate::records::DesignFeatureKind::Massstab,
+        crate::records::feature::DesignFeatureKind::Massstab,
         100,
     );
     scope.frame_length = 317;
@@ -101,7 +101,7 @@ fn legacy_scale_fixture(extra_reference: bool) -> (Vec<u8>, DesignParameterScope
     let position_at = append_point_data(&mut bytes, 105, [104, 103]);
     let mut scope = DesignParameterScope::empty(
         "generated:scale#100",
-        crate::records::DesignFeatureKind::Scale,
+        crate::records::feature::DesignFeatureKind::Scale,
         100,
     );
     scope.frame_length = frame_length as u64;

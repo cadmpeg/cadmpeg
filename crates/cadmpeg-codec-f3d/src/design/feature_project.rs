@@ -34,16 +34,20 @@ use crate::layout::{
     form_class_350_member_owner_tail as form_350_tail, form_compact_one_cage_list as form_cage,
     form_legacy_one_cage_owner as legacy_form_cage, form_serializer_frame_132 as form_serializer,
 };
+use crate::records::feature::{
+    DesignCoilExtent, DesignCoilSection, DesignCoilSectionPlacement,
+    DesignEdgeTreatmentVertexOperand, DesignExtrudeExtent, DesignExtrudeOperation,
+    DesignExtrudePrologue, DesignExtrudeStart, DesignFixedExtrudeDistance, DesignParameterScope,
+    DesignSurfaceOffsetOperation, DesignSurfaceOffsetSupport, DesignSurfaceTrimOperation,
+};
+use crate::records::topology::{
+    DesignBodyRecipeOperand, DesignConstructionOperandGroup, DesignEdgeIdentityOperand,
+    DesignEdgeOperand, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignFaceOperand,
+    DesignFilletRadiusGroup, DesignFilletRadiusLaw, DesignLoftLegacyBodyCarrier,
+};
 use crate::records::{
-    ConstructionRecipeKind, DesignBodyBinding, DesignBodyRecipeOperand, DesignCoilExtent,
-    DesignCoilSection, DesignCoilSectionPlacement, DesignConstructionOperandGroup,
-    DesignEdgeIdentityOperand, DesignEdgeOperand, DesignEdgeTreatmentVertexOperand,
-    DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
-    DesignExtrudePrologue, DesignExtrudeStart, DesignFaceOperand, DesignFeatureTimeline,
-    DesignFilletRadiusGroup, DesignFilletRadiusLaw, DesignFixedExtrudeDistance,
-    DesignLoftLegacyBodyCarrier, DesignParameter, DesignParameterKind, DesignParameterOwner,
-    DesignParameterScope, DesignSketchPlacement, DesignSurfaceOffsetOperation,
-    DesignSurfaceOffsetSupport, DesignSurfaceTrimOperation, SketchCurveGeometry,
+    ConstructionRecipeKind, DesignBodyBinding, DesignFeatureTimeline, DesignParameter,
+    DesignParameterKind, DesignParameterOwner, DesignSketchPlacement, SketchCurveGeometry,
     SketchCurveIdentity,
 };
 use cadmpeg_core::decode::{bounded_len, View};
@@ -72,7 +76,8 @@ pub struct ProjectInputs<'a> {
     pub(crate) edge_operands: &'a [DesignEdgeOperand],
     pub(crate) edge_identity_operands: &'a [DesignEdgeIdentityOperand],
     pub(crate) edge_treatment_vertex_operands: &'a [DesignEdgeTreatmentVertexOperand],
-    pub(crate) entity_selection_operands: &'a [crate::records::DesignEntitySelectionOperand],
+    pub(crate) entity_selection_operands:
+        &'a [crate::records::topology::DesignEntitySelectionOperand],
     pub(crate) curve_identities: &'a [SketchCurveIdentity],
     pub(crate) face_operands: &'a [DesignFaceOperand],
     pub(crate) body_recipe_operands: &'a [DesignBodyRecipeOperand],
@@ -161,8 +166,8 @@ fn authored_scope_ordinals_for_stream<'a>(
                 "Design assembly datum envelope has no JointOrigin target".into(),
             ));
         };
-        if scope.kind() != crate::records::DesignFeatureKind::Assemble
-            || target.kind() != crate::records::DesignFeatureKind::JointOrigin
+        if scope.kind() != crate::records::feature::DesignFeatureKind::Assemble
+            || target.kind() != crate::records::feature::DesignFeatureKind::JointOrigin
             || target.joint_origin_transform().is_none()
         {
             return Err(CodecError::Malformed(
@@ -659,8 +664,8 @@ pub fn project_parameter_design_with_edge_identities(
                         matches!(
                             alignment.form,
                             Some(
-                                crate::records::DesignAssemblyAlignmentForm::LegacyAsBuilt421 { .. }
-                                    | crate::records::DesignAssemblyAlignmentForm::Qualified(_)
+                                crate::records::feature::DesignAssemblyAlignmentForm::LegacyAsBuilt421 { .. }
+                                    | crate::records::feature::DesignAssemblyAlignmentForm::Qualified(_)
                             )
                         )
                     })
@@ -833,7 +838,7 @@ pub fn project_parameter_design_with_edge_identities(
                             parameters: BTreeMap::new(),
                         },
                         |operation| {
-                            use crate::records::DesignSurfaceExtendMethod;
+                            use crate::records::feature::DesignSurfaceExtendMethod;
                             use cadmpeg_ir::features::{FaceSelection, SurfaceExtension};
 
                             let method = match operation.method {
@@ -1146,7 +1151,7 @@ pub fn project_parameter_design_with_edge_identities(
                 None => {
                     if let Some(primitive) = project_solid_primitive(scope) {
                         primitive
-                    } else if scope.kind() == crate::records::DesignFeatureKind::JointOrigin {
+                    } else if scope.kind() == crate::records::feature::DesignFeatureKind::JointOrigin {
                         scope.joint_origin_transform().map_or_else(
                             || FeatureDefinition::Native {
                                 kind: scope.kind_name().into(),
@@ -1180,7 +1185,7 @@ pub fn project_parameter_design_with_edge_identities(
                                 ),
                             },
                         )
-                    } else if scope.kind() == crate::records::DesignFeatureKind::WorkPlane {
+                    } else if scope.kind() == crate::records::feature::DesignFeatureKind::WorkPlane {
                         scope.work_plane_transform().map_or_else(
                             || FeatureDefinition::Native {
                                 kind: scope.kind_name().into(),
@@ -1193,7 +1198,7 @@ pub fn project_parameter_design_with_edge_identities(
                             },
                             |transform| project_work_plane(scope, transform),
                         )
-                    } else if scope.kind() == crate::records::DesignFeatureKind::WorkAxis {
+                    } else if scope.kind() == crate::records::feature::DesignFeatureKind::WorkAxis {
                         scope
                             .work_axis_construction()
                             .and_then(|construction| {
@@ -1223,7 +1228,7 @@ pub fn project_parameter_design_with_edge_identities(
                                     direction,
                                 },
                             )
-                    } else if scope.kind() == crate::records::DesignFeatureKind::WorkPoint {
+                    } else if scope.kind() == crate::records::feature::DesignFeatureKind::WorkPoint {
                         scope.work_point_construction().map_or_else(
                             || FeatureDefinition::Native {
                                 kind: scope.kind_name().into(),
@@ -1250,28 +1255,28 @@ pub fn project_parameter_design_with_edge_identities(
                                 .map(Box::new),
                             },
                         )
-                    } else if scope.kind() == crate::records::DesignFeatureKind::BaseFlange {
+                    } else if scope.kind() == crate::records::feature::DesignFeatureKind::BaseFlange {
                         project_base_flange(scope, construction_groups, placements).unwrap_or_else(
                             || FeatureDefinition::Native {
                                 kind: scope.kind_name().into(),
                                 parameters: BTreeMap::new(),
                             },
                         )
-                    } else if scope.kind() == crate::records::DesignFeatureKind::RemoveBody {
+                    } else if scope.kind() == crate::records::feature::DesignFeatureKind::RemoveBody {
                         project_remove_body(scope, construction_groups).unwrap_or_else(|| {
                             FeatureDefinition::Native {
                                 kind: scope.kind_name().into(),
                                 parameters: BTreeMap::new(),
                             }
                         })
-                    } else if scope.kind() == crate::records::DesignFeatureKind::SurfaceStitch {
+                    } else if scope.kind() == crate::records::feature::DesignFeatureKind::SurfaceStitch {
                         project_surface_stitch(scope, construction_groups).unwrap_or_else(|| {
                             FeatureDefinition::Native {
                                 kind: scope.kind_name().into(),
                                 parameters: BTreeMap::new(),
                             }
                         })
-                    } else if scope.kind() == crate::records::DesignFeatureKind::SplitFace {
+                    } else if scope.kind() == crate::records::feature::DesignFeatureKind::SplitFace {
                         project_split_face(
                             scope,
                             scopes,
@@ -1286,15 +1291,15 @@ pub fn project_parameter_design_with_edge_identities(
                         })
                     } else if matches!(
                         scope.kind(),
-                        crate::records::DesignFeatureKind::DeleteFace
-                            | crate::records::DesignFeatureKind::SurfaceDeleteFace
+                        crate::records::feature::DesignFeatureKind::DeleteFace
+                            | crate::records::feature::DesignFeatureKind::SurfaceDeleteFace
                     ) {
                         project_delete_face(scope, construction_groups, face_operands)
                             .unwrap_or_else(|| FeatureDefinition::Native {
                                 kind: scope.kind_name().into(),
                                 parameters: BTreeMap::new(),
                             })
-                    } else if scope.kind() == crate::records::DesignFeatureKind::CopyPasteBodies {
+                    } else if scope.kind() == crate::records::feature::DesignFeatureKind::CopyPasteBodies {
                         scope.copy_paste_bodies_operation().map_or_else(
                             || FeatureDefinition::Native {
                                 kind: scope.kind_name().into(),
@@ -1311,7 +1316,7 @@ pub fn project_parameter_design_with_edge_identities(
                                 ),
                             },
                         )
-                    } else if scope.kind() == crate::records::DesignFeatureKind::CopyPaste {
+                    } else if scope.kind() == crate::records::feature::DesignFeatureKind::CopyPaste {
                         scope.copy_paste_component_operation().map_or_else(
                             || FeatureDefinition::Native {
                                 kind: scope.kind_name().into(),
@@ -1323,7 +1328,7 @@ pub fn project_parameter_design_with_edge_identities(
                                 ),
                             },
                         )
-                    } else if scope.kind() == crate::records::DesignFeatureKind::BaseFeature {
+                    } else if scope.kind() == crate::records::feature::DesignFeatureKind::BaseFeature {
                         scope.base_feature_construction().map_or_else(
                             || FeatureDefinition::Native {
                                 kind: scope.kind_name().into(),
@@ -1705,8 +1710,8 @@ fn project_solid_primitive(
         DesignExtrudeOperation::NewBody => cadmpeg_ir::features::BooleanOp::NewBody,
     };
     Some(match &scope.payload {
-        crate::records::DesignScopePayload::BoxPrimitive(Some(
-            crate::records::DesignBoxPrimitive {
+        crate::records::feature::DesignScopePayload::BoxPrimitive(Some(
+            crate::records::feature::DesignBoxPrimitive {
                 length,
                 width,
                 height,
@@ -1731,8 +1736,8 @@ fn project_solid_primitive(
                 op: operation(*result),
             }
         }
-        crate::records::DesignScopePayload::CylinderPrimitive(Some(
-            crate::records::DesignCylinderPrimitive {
+        crate::records::feature::DesignScopePayload::CylinderPrimitive(Some(
+            crate::records::feature::DesignCylinderPrimitive {
                 height,
                 diameter,
                 operation: result,
@@ -1746,8 +1751,8 @@ fn project_solid_primitive(
             },
             op: operation(*result),
         },
-        crate::records::DesignScopePayload::SpherePrimitive(Some(
-            crate::records::DesignSpherePrimitive {
+        crate::records::feature::DesignScopePayload::SpherePrimitive(Some(
+            crate::records::feature::DesignSpherePrimitive {
                 transform,
                 diameter,
                 operation: result,
@@ -1762,8 +1767,8 @@ fn project_solid_primitive(
             radius: Length(*diameter * 5.0),
             op: operation(*result),
         },
-        crate::records::DesignScopePayload::TorusPrimitive(Some(
-            crate::records::DesignTorusPrimitive {
+        crate::records::feature::DesignScopePayload::TorusPrimitive(Some(
+            crate::records::feature::DesignTorusPrimitive {
                 transform,
                 major_diameter,
                 minor_diameter,
@@ -1787,10 +1792,10 @@ fn project_solid_primitive(
 
 fn work_point_edge_operand<'a>(
     scope: &DesignParameterScope,
-    input: &crate::records::DesignWorkPointInput,
+    input: &crate::records::feature::DesignWorkPointInput,
     edge_operands: &'a [DesignEdgeOperand],
 ) -> Option<&'a DesignEdgeOperand> {
-    let crate::records::DesignWorkPointInputCarrier::EdgeRecipe { operand_id } =
+    let crate::records::feature::DesignWorkPointInputCarrier::EdgeRecipe { operand_id } =
         input.carrier.as_deref()?
     else {
         return None;
@@ -1808,18 +1813,18 @@ fn work_point_edge_operand<'a>(
 
 pub(crate) fn work_point_input_history_state_id(
     scope: &DesignParameterScope,
-    input: &crate::records::DesignWorkPointInput,
+    input: &crate::records::feature::DesignWorkPointInput,
     edge_operands: &[DesignEdgeOperand],
 ) -> Option<i64> {
     match input.carrier.as_deref()? {
-        crate::records::DesignWorkPointInputCarrier::EdgeRecipe { .. } => {
+        crate::records::feature::DesignWorkPointInputCarrier::EdgeRecipe { .. } => {
             work_point_edge_operand(scope, input, edge_operands)?.recipe_state_id
         }
-        crate::records::DesignWorkPointInputCarrier::VertexRecipe { recipe } => {
+        crate::records::feature::DesignWorkPointInputCarrier::VertexRecipe { recipe } => {
             recipe.resolution.map(|resolution| resolution.state_id)
         }
-        crate::records::DesignWorkPointInputCarrier::WorkPlane { .. }
-        | crate::records::DesignWorkPointInputCarrier::SketchPoint { .. } => None,
+        crate::records::feature::DesignWorkPointInputCarrier::WorkPlane { .. }
+        | crate::records::feature::DesignWorkPointInputCarrier::SketchPoint { .. } => None,
     }
 }
 
@@ -1838,7 +1843,7 @@ pub(crate) fn work_point_recipe_state_id(
 }
 
 pub(crate) fn work_plane_recipe_state_id(scope: &DesignParameterScope) -> Option<i64> {
-    let crate::records::DesignWorkPlaneConstruction { inputs, .. } =
+    let crate::records::feature::DesignWorkPlaneConstruction { inputs, .. } =
         scope.work_plane_construction()?;
     let state = inputs[0].resolution?.state_id;
     inputs
@@ -1853,12 +1858,12 @@ pub(crate) fn work_plane_recipe_state_id(scope: &DesignParameterScope) -> Option
 
 fn project_work_point_construction(
     scope: &DesignParameterScope,
-    construction: &crate::records::DesignWorkPointConstruction,
+    construction: &crate::records::feature::DesignWorkPointConstruction,
     parameters: &[(u32, &DesignParameter)],
     edge_operands: &[DesignEdgeOperand],
     scope_ids: &HashMap<(&str, u32), cadmpeg_ir::features::FeatureId>,
 ) -> Option<cadmpeg_ir::features::DatumPointConstruction> {
-    use crate::records::{
+    use crate::records::feature::{
         DesignWorkPointInput, DesignWorkPointInputCarrier, DesignWorkPointRuleForm,
     };
     use cadmpeg_ir::features::{
@@ -1963,7 +1968,7 @@ fn project_work_plane(
     scope: &DesignParameterScope,
     transform: [[f64; 4]; 4],
 ) -> cadmpeg_ir::features::FeatureDefinition {
-    use crate::records::DesignWorkPlaneConstruction;
+    use crate::records::feature::DesignWorkPlaneConstruction;
     use cadmpeg_ir::features::{FeatureDefinition, VertexSelection};
 
     let origin = Point3::new(
@@ -2724,9 +2729,9 @@ pub fn bind_work_point_sketch_point_constructions(
         let Some(point) = scope.work_point_construction() else {
             continue;
         };
-        let crate::records::DesignWorkPointRuleForm::Vertex {
+        let crate::records::feature::DesignWorkPointRuleForm::Vertex {
             input:
-                crate::records::DesignWorkPointInput {
+                crate::records::feature::DesignWorkPointInput {
                     carrier: Some(carrier),
                     record_index,
                     ..
@@ -2735,7 +2740,7 @@ pub fn bind_work_point_sketch_point_constructions(
         else {
             continue;
         };
-        let crate::records::DesignWorkPointInputCarrier::SketchPoint { selection } =
+        let crate::records::feature::DesignWorkPointInputCarrier::SketchPoint { selection } =
             carrier.as_ref()
         else {
             continue;
@@ -2853,7 +2858,7 @@ fn project_draft(
     scope: &DesignParameterScope,
     scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
-    entity_selection_operands: &[crate::records::DesignEntitySelectionOperand],
+    entity_selection_operands: &[crate::records::topology::DesignEntitySelectionOperand],
     face_operands: &[DesignFaceOperand],
     histories: &[crate::history_records::AsmHistory],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
@@ -2986,7 +2991,7 @@ fn project_draft(
 fn selected_historical_face_selection(
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
-    entity_selection_operands: &[crate::records::DesignEntitySelectionOperand],
+    entity_selection_operands: &[crate::records::topology::DesignEntitySelectionOperand],
     histories: &[crate::history_records::AsmHistory],
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
     let previous_state_id =
@@ -3088,7 +3093,7 @@ fn project_draft_face_selection(
 fn group_has_entity_selection(
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
-    entity_selection_operands: &[crate::records::DesignEntitySelectionOperand],
+    entity_selection_operands: &[crate::records::topology::DesignEntitySelectionOperand],
 ) -> bool {
     let Some(stream) = native_stream(&scope.id) else {
         return false;
@@ -3115,7 +3120,7 @@ fn group_has_entity_selection(
 fn selected_work_plane<'a>(
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
-    entity_selection_operands: &[crate::records::DesignEntitySelectionOperand],
+    entity_selection_operands: &[crate::records::topology::DesignEntitySelectionOperand],
     scopes: &'a [DesignParameterScope],
 ) -> Option<&'a DesignParameterScope> {
     let planes = selected_work_planes(scope, group, entity_selection_operands, scopes)?;
@@ -3128,7 +3133,7 @@ fn selected_work_plane<'a>(
 fn selected_work_planes<'a>(
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
-    entity_selection_operands: &[crate::records::DesignEntitySelectionOperand],
+    entity_selection_operands: &[crate::records::topology::DesignEntitySelectionOperand],
     scopes: &'a [DesignParameterScope],
 ) -> Option<Vec<&'a DesignParameterScope>> {
     let stream = native_stream(&scope.id)?;
@@ -3164,7 +3169,7 @@ fn selected_work_planes<'a>(
         let mut target_scopes = scopes.iter().filter(|candidate| {
             native_stream(&candidate.id) == Some(stream)
                 && candidate.record_index == target_record_index
-                && candidate.kind() == crate::records::DesignFeatureKind::WorkPlane
+                && candidate.kind() == crate::records::feature::DesignFeatureKind::WorkPlane
                 && candidate.work_plane_transform().is_some()
         });
         let target = target_scopes.next()?;
@@ -3179,7 +3184,7 @@ fn selected_work_planes<'a>(
 fn resolved_split_face_path(
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
-    entity_selection_operands: &[crate::records::DesignEntitySelectionOperand],
+    entity_selection_operands: &[crate::records::topology::DesignEntitySelectionOperand],
     histories: &[crate::history_records::AsmHistory],
 ) -> Option<cadmpeg_ir::features::PathRef> {
     use cadmpeg_ir::features::PathRef;
@@ -3259,8 +3264,8 @@ pub(crate) fn project_offset_faces(
         _ => return None,
     };
     let fixed_distance = match &scope.payload {
-        crate::records::DesignScopePayload::OffsetFaces(value)
-        | crate::records::DesignScopePayload::DecalerLesFaces(value) => {
+        crate::records::feature::DesignScopePayload::OffsetFaces(value)
+        | crate::records::feature::DesignScopePayload::DecalerLesFaces(value) => {
             value.as_ref().map(|value| Length(value.distance * 10.0))
         }
         _ => return None,
@@ -3293,10 +3298,11 @@ pub(crate) fn project_thicken(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length, ThickenSide};
 
-    let crate::records::DesignScopePayload::Thicken(Some(crate::records::DesignThickenOperation {
-        signed_thickness,
-        ..
-    })) = &scope.payload
+    let crate::records::feature::DesignScopePayload::Thicken(Some(
+        crate::records::feature::DesignThickenOperation {
+            signed_thickness, ..
+        },
+    )) = &scope.payload
     else {
         return None;
     };
@@ -3331,16 +3337,16 @@ pub(crate) fn project_shell(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition, Length};
 
-    let (crate::records::DesignScopePayload::Shell(Some(crate::records::DesignShellOperation {
-        thickness,
-        outward,
-        ..
-    }))
-    | crate::records::DesignScopePayload::Schale(Some(crate::records::DesignShellOperation {
-        thickness,
-        outward,
-        ..
-    }))) = &scope.payload
+    let (crate::records::feature::DesignScopePayload::Shell(Some(
+        crate::records::feature::DesignShellOperation {
+            thickness, outward, ..
+        },
+    ))
+    | crate::records::feature::DesignScopePayload::Schale(Some(
+        crate::records::feature::DesignShellOperation {
+            thickness, outward, ..
+        },
+    ))) = &scope.payload
     else {
         return None;
     };
@@ -3453,7 +3459,7 @@ pub(crate) fn project_edge_flange(
     scope: &DesignParameterScope,
     inputs: &ProjectInputs<'_>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use crate::records::{
+    use crate::records::feature::{
         DesignBendPosition, DesignEdgeFlangeHeightExtent, DesignEdgeFlangeWidthParameterSource,
         DesignSheetMetalHeightDatum,
     };
@@ -3542,8 +3548,8 @@ pub(crate) fn project_edge_flange(
                         && candidate.record_index == target_record_index
                         && matches!(
                             candidate.kind(),
-                            crate::records::DesignFeatureKind::WorkPlane
-                                | crate::records::DesignFeatureKind::WorkPoint
+                            crate::records::feature::DesignFeatureKind::WorkPlane
+                                | crate::records::feature::DesignFeatureKind::WorkPoint
                         )
                 })
                 .collect::<Vec<_>>();
@@ -3564,13 +3570,15 @@ pub(crate) fn project_edge_flange(
     )?)?;
 
     let width = match &operation.shape {
-        crate::records::DesignEdgeFlangeShape::FullEdge { .. } => SheetMetalFlangeWidth::FullEdge,
-        crate::records::DesignEdgeFlangeShape::Symmetric { owner, .. } => {
+        crate::records::feature::DesignEdgeFlangeShape::FullEdge { .. } => {
+            SheetMetalFlangeWidth::FullEdge
+        }
+        crate::records::feature::DesignEdgeFlangeShape::Symmetric { owner, .. } => {
             SheetMetalFlangeWidth::Symmetric {
                 width: design_length(parameter(*owner, "EdgeWidth")?)?,
             }
         }
-        crate::records::DesignEdgeFlangeShape::SymmetricPerEdge(edges) => {
+        crate::records::feature::DesignEdgeFlangeShape::SymmetricPerEdge(edges) => {
             let widths = edges
                 .iter()
                 .map(|row| design_length(parameter(row.owners, "EdgeWidth")?))
@@ -3583,7 +3591,7 @@ pub(crate) fn project_edge_flange(
             }
             SheetMetalFlangeWidth::Symmetric { width: *first }
         }
-        crate::records::DesignEdgeFlangeShape::TwoSidesPerEdge { edges, source } => {
+        crate::records::feature::DesignEdgeFlangeShape::TwoSidesPerEdge { edges, source } => {
             let (first_kind, second_kind) = match source {
                 DesignEdgeFlangeWidthParameterSource::EdgeWidth => ("EdgeWidth_1", "EdgeWidth_2"),
                 DesignEdgeFlangeWidthParameterSource::EdgeOffset => {
@@ -3610,7 +3618,7 @@ pub(crate) fn project_edge_flange(
                 widths: cadmpeg_ir::features::SheetMetalFlangeEdgeWidths::new(widths).ok()?,
             }
         }
-        crate::records::DesignEdgeFlangeShape::TwoSides {
+        crate::records::feature::DesignEdgeFlangeShape::TwoSides {
             owners: [first, second],
             ..
         } => SheetMetalFlangeWidth::TwoSides {
@@ -3690,7 +3698,7 @@ pub(crate) fn project_hem(
     scope: &DesignParameterScope,
     inputs: &ProjectInputs<'_>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use crate::records::DesignHemParameterOwners;
+    use crate::records::feature::DesignHemParameterOwners;
     use cadmpeg_ir::features::{
         FeatureDefinition, Length, SheetMetalHemDirection, SheetMetalHemForm,
     };
@@ -3893,7 +3901,7 @@ pub(crate) fn project_ruled_surface(
     edge_operands: &[DesignEdgeOperand],
     edge_identity_operands: &[DesignEdgeIdentityOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use crate::records::{DesignRuledSurfaceCorner, DesignRuledSurfaceMethod};
+    use crate::records::feature::{DesignRuledSurfaceCorner, DesignRuledSurfaceMethod};
     use cadmpeg_ir::features::{
         FaceSelection, FeatureDefinition, RuledSurfaceCorner, RuledSurfaceMode,
     };
@@ -4160,7 +4168,7 @@ pub(crate) fn bind_form_cages(
 ) -> Result<(), CodecError> {
     for scope in scopes
         .iter()
-        .filter(|scope| scope.kind() == crate::records::DesignFeatureKind::Form)
+        .filter(|scope| scope.kind() == crate::records::feature::DesignFeatureKind::Form)
     {
         let Some(stream) =
             native_stream(&scope.id).and_then(|stream| stream.strip_prefix(ids::SCHEME_PREFIX))
@@ -4244,7 +4252,9 @@ pub(crate) fn bind_form_cages(
         if scope.class_tag == "328"
             && scopes
                 .iter()
-                .filter(|candidate| candidate.kind() == crate::records::DesignFeatureKind::Form)
+                .filter(|candidate| {
+                    candidate.kind() == crate::records::feature::DesignFeatureKind::Form
+                })
                 .count()
                 == 1
             && form_class_328_envelope(bytes, &records, scope)
@@ -4293,7 +4303,9 @@ pub(crate) fn bind_form_cages(
         }
         if scopes
             .iter()
-            .filter(|candidate| candidate.kind() == crate::records::DesignFeatureKind::Form)
+            .filter(|candidate| {
+                candidate.kind() == crate::records::feature::DesignFeatureKind::Form
+            })
             .count()
             == 1
             && cages.len() == 1
@@ -5546,12 +5558,12 @@ fn project_fixed_chamfer(
         return None;
     };
     let spec = match fixed {
-        crate::records::DesignFixedChamferParameters::EqualDistance { distance } => {
+        crate::records::feature::DesignFixedChamferParameters::EqualDistance { distance } => {
             ChamferSpec::Distance {
                 distance: Length(distance.value * 10.0),
             }
         }
-        crate::records::DesignFixedChamferParameters::TwoDistances { first, second } => {
+        crate::records::feature::DesignFixedChamferParameters::TwoDistances { first, second } => {
             ChamferSpec::TwoDistances {
                 first: Length(first.value * 10.0),
                 second: Length(second.value * 10.0),
@@ -5590,8 +5602,8 @@ pub(crate) fn project_fixed_revolve_with_entities(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
     edge_operands: &[DesignEdgeOperand],
-    entity_selection_operands: &[crate::records::DesignEntitySelectionOperand],
-    face_operands: &[crate::records::DesignFaceOperand],
+    entity_selection_operands: &[crate::records::topology::DesignEntitySelectionOperand],
+    face_operands: &[crate::records::topology::DesignFaceOperand],
     placements: &[DesignSketchPlacement],
     curve_identities: &[SketchCurveIdentity],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
@@ -5600,8 +5612,8 @@ pub(crate) fn project_fixed_revolve_with_entities(
         RevolveConstruction, RevolveExtent,
     };
 
-    let crate::records::DesignScopePayload::Revolve(Some(
-        crate::records::DesignRevolveConstruction {
+    let crate::records::feature::DesignScopePayload::Revolve(Some(
+        crate::records::feature::DesignRevolveConstruction {
             operation, angle, ..
         },
     )) = &scope.payload
@@ -5704,7 +5716,7 @@ fn unresolved_historical_face_axis_selection(
     scope: &DesignParameterScope,
     axis_group: &DesignConstructionOperandGroup,
     axis_member: u32,
-    entity_selection_operands: &[crate::records::DesignEntitySelectionOperand],
+    entity_selection_operands: &[crate::records::topology::DesignEntitySelectionOperand],
 ) -> bool {
     let stream = native_stream(&scope.id);
     let selections = entity_selection_operands
@@ -5724,8 +5736,8 @@ fn revolve_face_axis_operand<'a>(
     scope: &DesignParameterScope,
     axis_group: &DesignConstructionOperandGroup,
     axis_member: u32,
-    face_operands: &'a [crate::records::DesignFaceOperand],
-) -> Option<&'a crate::records::DesignFaceOperand> {
+    face_operands: &'a [crate::records::topology::DesignFaceOperand],
+) -> Option<&'a crate::records::topology::DesignFaceOperand> {
     let stream = native_stream(&scope.id);
     let operands = face_operands
         .iter()
@@ -5749,8 +5761,8 @@ pub(crate) fn bind_revolve_face_axes(
     features: &mut [cadmpeg_ir::features::Feature],
     scopes: &[DesignParameterScope],
     construction_groups: &[DesignConstructionOperandGroup],
-    entity_selection_operands: &[crate::records::DesignEntitySelectionOperand],
-    face_operands: &[crate::records::DesignFaceOperand],
+    entity_selection_operands: &[crate::records::topology::DesignEntitySelectionOperand],
+    face_operands: &[crate::records::topology::DesignFaceOperand],
     faces: &[cadmpeg_ir::topology::Face],
     surfaces: &[cadmpeg_ir::geometry::Surface],
 ) {
@@ -5902,7 +5914,7 @@ fn resolve_sketch_axis_selection(
     scope: &DesignParameterScope,
     axis_group: &DesignConstructionOperandGroup,
     axis_member: u32,
-    entity_selection_operands: &[crate::records::DesignEntitySelectionOperand],
+    entity_selection_operands: &[crate::records::topology::DesignEntitySelectionOperand],
     placements: &[DesignSketchPlacement],
     curve_identities: &[SketchCurveIdentity],
 ) -> Option<cadmpeg_ir::features::RevolutionAxis> {
@@ -5997,10 +6009,9 @@ pub(crate) fn project_fixed_loft(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{FeatureDefinition, LoftPointSection, LoftSection, ProfileRef};
 
-    let crate::records::DesignScopePayload::Loft(Some(crate::records::DesignLoftConstruction {
-        operation,
-        ..
-    })) = &scope.payload
+    let crate::records::feature::DesignScopePayload::Loft(Some(
+        crate::records::feature::DesignLoftConstruction { operation, .. },
+    )) = &scope.payload
     else {
         return None;
     };
@@ -6373,9 +6384,9 @@ pub(crate) fn project_circular_pattern(
 }
 
 fn circular_pattern_axis(
-    axis: &crate::records::DesignCircularPatternAxis,
+    axis: &crate::records::feature::DesignCircularPatternAxis,
 ) -> Option<(Point3, Vector3)> {
-    use crate::records::DesignCircularPatternAxis;
+    use crate::records::feature::DesignCircularPatternAxis;
 
     match axis {
         DesignCircularPatternAxis::Inline {
@@ -6439,12 +6450,12 @@ fn project_rectangular_pattern_scalars(
         .instances
         .as_ref()
         .and_then(|instances| match instances {
-            crate::records::DesignRectangularPatternInstances::Bodies(_) => None,
-            crate::records::DesignRectangularPatternInstances::Components { seed, .. } => {
-                Some(PatternSeed::Occurrences(vec![
-                    crate::ids::neutral_component_occurrence_id(&seed.occurrence_guid),
-                ]))
-            }
+            crate::records::feature::DesignRectangularPatternInstances::Bodies(_) => None,
+            crate::records::feature::DesignRectangularPatternInstances::Components {
+                seed, ..
+            } => Some(PatternSeed::Occurrences(vec![
+                crate::ids::neutral_component_occurrence_id(&seed.occurrence_guid),
+            ])),
         });
     let group_seed = native_stream(&scope.id).and_then(|stream| {
         let matching_groups = groups
@@ -6564,7 +6575,7 @@ pub(crate) fn project_mirror(
                 .filter(|candidate| {
                     native_stream(&candidate.id) == Some(stream)
                         && candidate.record_index == plane_scope_record_index
-                        && candidate.kind() == crate::records::DesignFeatureKind::WorkPlane
+                        && candidate.kind() == crate::records::feature::DesignFeatureKind::WorkPlane
                         && candidate.work_plane_transform().is_some()
                 })
                 .collect::<Vec<_>>();
@@ -6598,7 +6609,7 @@ pub(crate) fn project_fixed_sweep(
     construction_groups: &[DesignConstructionOperandGroup],
     edge_operands: &[DesignEdgeOperand],
     edge_identity_operands: &[DesignEdgeIdentityOperand],
-    entity_selection_operands: &[crate::records::DesignEntitySelectionOperand],
+    entity_selection_operands: &[crate::records::topology::DesignEntitySelectionOperand],
     face_operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
@@ -6606,13 +6617,15 @@ pub(crate) fn project_fixed_sweep(
         SweepOrientation, SweepPathExtent,
     };
 
-    let crate::records::DesignScopePayload::Sweep(Some(crate::records::DesignSweepScope {
-        construction:
-            Some(crate::records::DesignSweepConstruction {
-                operation, values, ..
-            }),
-        ..
-    })) = &scope.payload
+    let crate::records::feature::DesignScopePayload::Sweep(Some(
+        crate::records::feature::DesignSweepScope {
+            construction:
+                Some(crate::records::feature::DesignSweepConstruction {
+                    operation, values, ..
+                }),
+            ..
+        },
+    )) = &scope.payload
     else {
         return None;
     };
@@ -6779,19 +6792,21 @@ fn project_fixed_pipe(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{FeatureDefinition, GeneratedSweepSection, SweepMode, SweepSection};
 
-    let crate::records::DesignScopePayload::Pipe(Some(crate::records::DesignPipeConstruction {
-        operation,
-        section_shape,
-        filled,
-        values,
-        record_indexes,
-        ..
-    })) = &scope.payload
+    let crate::records::feature::DesignScopePayload::Pipe(Some(
+        crate::records::feature::DesignPipeConstruction {
+            operation,
+            section_shape,
+            filled,
+            values,
+            record_indexes,
+            ..
+        },
+    )) = &scope.payload
     else {
         return None;
     };
     if *operation != DesignExtrudeOperation::NewBody
-        || *section_shape != crate::records::DesignPipeSectionShape::Circular
+        || *section_shape != crate::records::feature::DesignPipeSectionShape::Circular
         || values[0..2] != [1.0, 1.0]
         || values[2] <= 0.0
         || values[3] <= 0.0
@@ -6933,15 +6948,19 @@ fn project_fixed_pipe(
 }
 
 fn surface_patch_boundary_continuity(
-    continuity: crate::records::DesignPatchContinuity,
+    continuity: crate::records::feature::DesignPatchContinuity,
 ) -> Option<cadmpeg_ir::features::SurfaceContinuity> {
     use cadmpeg_ir::features::SurfaceContinuity;
 
     match continuity {
-        crate::records::DesignPatchContinuity::Connected => Some(SurfaceContinuity::Contact),
-        crate::records::DesignPatchContinuity::Tangent => Some(SurfaceContinuity::Tangent),
-        crate::records::DesignPatchContinuity::Curvature => Some(SurfaceContinuity::Curvature),
-        crate::records::DesignPatchContinuity::Unknown(_) => None,
+        crate::records::feature::DesignPatchContinuity::Connected => {
+            Some(SurfaceContinuity::Contact)
+        }
+        crate::records::feature::DesignPatchContinuity::Tangent => Some(SurfaceContinuity::Tangent),
+        crate::records::feature::DesignPatchContinuity::Curvature => {
+            Some(SurfaceContinuity::Curvature)
+        }
+        crate::records::feature::DesignPatchContinuity::Unknown(_) => None,
     }
 }
 
@@ -6968,7 +6987,7 @@ pub(crate) fn project_surface_patch(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, SurfaceBoundary};
 
-    if scope.kind() != crate::records::DesignFeatureKind::SurfacePatch {
+    if scope.kind() != crate::records::feature::DesignFeatureKind::SurfacePatch {
         return None;
     }
     let stream = native_stream(&scope.id)?;
@@ -7119,7 +7138,7 @@ pub(crate) fn project_boundary_fill(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
 
-    if scope.kind() != crate::records::DesignFeatureKind::BoundaryFill
+    if scope.kind() != crate::records::feature::DesignFeatureKind::BoundaryFill
         || scope.reference_members.len() < 5
     {
         return None;
@@ -7177,7 +7196,8 @@ fn project_hole(
         FaceSelection, FeatureDefinition, HoleBottom, HoleKind, LinearTermination,
     };
 
-    if scope.kind() != crate::records::DesignFeatureKind::Hole || !matches!(parameters.len(), 3 | 5)
+    if scope.kind() != crate::records::feature::DesignFeatureKind::Hole
+        || !matches!(parameters.len(), 3 | 5)
     {
         return None;
     }
@@ -7280,7 +7300,7 @@ fn project_replace_face(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::FeatureDefinition;
 
-    if scope.kind() != crate::records::DesignFeatureKind::ReplaceFace
+    if scope.kind() != crate::records::feature::DesignFeatureKind::ReplaceFace
         || scope.class_tag != "301"
         || scope.paired_class_tag != "258"
         || scope.frame_length != 290
@@ -7350,7 +7370,7 @@ pub(crate) fn project_surface_trim(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{FeatureDefinition, PathRef, TrimRegion};
 
-    if scope.kind() != crate::records::DesignFeatureKind::SurfaceTrim
+    if scope.kind() != crate::records::feature::DesignFeatureKind::SurfaceTrim
         || scope.reference_members.len() != 4
     {
         return None;
@@ -7447,7 +7467,8 @@ pub(crate) fn project_split(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition};
 
-    if scope.kind() != crate::records::DesignFeatureKind::Split || scope.reference_members.len() < 4
+    if scope.kind() != crate::records::feature::DesignFeatureKind::Split
+        || scope.reference_members.len() < 4
     {
         return None;
     }
@@ -7538,14 +7559,15 @@ fn project_split_face(
     scope: &DesignParameterScope,
     scopes: &[DesignParameterScope],
     construction_groups: &[DesignConstructionOperandGroup],
-    entity_selection_operands: &[crate::records::DesignEntitySelectionOperand],
+    entity_selection_operands: &[crate::records::topology::DesignEntitySelectionOperand],
     face_operands: &[DesignFaceOperand],
     histories: &[crate::history_records::AsmHistory],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, PathRef, SplitFaceTool};
 
     let reference_count = scope.reference_members.len();
-    if scope.kind() != crate::records::DesignFeatureKind::SplitFace || reference_count < 4 {
+    if scope.kind() != crate::records::feature::DesignFeatureKind::SplitFace || reference_count < 4
+    {
         return None;
     }
     let reference_tail_length =

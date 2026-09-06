@@ -10,7 +10,7 @@ use crate::bytes::{is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded};
 use crate::container::ContainerScan;
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::ids;
-use crate::records::DesignComponentOccurrence;
+use crate::records::feature::DesignComponentOccurrence;
 
 const BASE_FRAME_LENGTH: usize = 229;
 const PLACED_FRAME_LENGTH: usize = 357;
@@ -87,7 +87,7 @@ pub(crate) fn exact_component_occurrence(
             {
                 return None;
             }
-            crate::records::DesignComponentOccurrencePlacement::Base
+            crate::records::feature::DesignComponentOccurrencePlacement::Base
         }
         PLACED_FRAME_LENGTH => {
             if (class_tag == "256" && occurrence_ordinal.get() < 2)
@@ -99,7 +99,7 @@ pub(crate) fn exact_component_occurrence(
                 return None;
             }
             let transform = super::scopes::rigid_transform_at(bytes, start + 209)?;
-            crate::records::DesignComponentOccurrencePlacement::Explicit {
+            crate::records::feature::DesignComponentOccurrencePlacement::Explicit {
                 ordinal: occurrence_ordinal,
                 transform: crate::records::Located {
                     value: transform,

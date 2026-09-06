@@ -10,14 +10,16 @@ use crate::design::decode::meta::{decode_types, stream_types_by_entity};
 use crate::design::decode::sketch::{indexed_record_offsets, next_indexed_record_offset};
 use crate::ids::{self, native_stream};
 use crate::layout::grouped_recipe_reference_prefix as grouped_recipe;
+use crate::records::feature::DesignParameterScope;
+use crate::records::topology::DesignEdgeOperand;
 use crate::records::{
     ConstructionRecipe, DesignDimensionAnnotationFrame, DesignDimensionAnnotationOperand,
     DesignDimensionLocus, DesignDimensionLocusGroup, DesignDimensionLocusPair,
     DesignDimensionNullLocusPair, DesignDimensionPresentationFrame,
-    DesignDimensionPresentationOperand, DesignDimensionRecipeRecord, DesignEdgeOperand,
-    DesignEntityHeader, DesignParameter, DesignParameterCompanion, DesignParameterKind,
-    DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
-    PersistentSubentityTag, SketchCurveIdentity, SketchPoint,
+    DesignDimensionPresentationOperand, DesignDimensionRecipeRecord, DesignEntityHeader,
+    DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
+    DesignRecordHeader, DesignSketchPlacement, PersistentSubentityTag, SketchCurveIdentity,
+    SketchPoint,
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;

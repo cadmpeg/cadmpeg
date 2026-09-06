@@ -8,10 +8,11 @@
 )]
 use super::prelude::*;
 
-use crate::records::{
-    ConstructionRecipeKind, DesignBodyRecipeReference, DesignConstructionOperandGroupFrame,
-    DesignOperandOwner, DesignSurfaceTrimCellEntry, DesignSurfaceTrimOperation,
+use crate::records::feature::{DesignSurfaceTrimCellEntry, DesignSurfaceTrimOperation};
+use crate::records::topology::{
+    DesignBodyRecipeReference, DesignConstructionOperandGroupFrame, DesignOperandOwner,
 };
+use crate::records::ConstructionRecipeKind;
 use cadmpeg_ir::features::{FaceSelection, FeatureDefinition};
 
 fn group(
@@ -59,7 +60,7 @@ fn group(
 fn replace_face_projects_role_order_and_historical_inputs() {
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#1129",
-        crate::records::DesignFeatureKind::ReplaceFace,
+        crate::records::feature::DesignFeatureKind::ReplaceFace,
         1129,
     );
     scope.class_tag = "301".into();
@@ -109,7 +110,7 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         id: "f3d:Design/BulkStream.dat:face-operand#1140".into(),
         scope_record_index: 1129,
         scope_reference_ordinal: 3,
-        group: Some(crate::records::DesignOperandGroup {
+        group: Some(crate::records::topology::DesignOperandGroup {
             group_record_index: 1137,
             group_member_ordinal: 0,
         }),
@@ -178,7 +179,7 @@ fn replace_face_projects_role_order_and_historical_inputs() {
 fn surface_trim_projects_body_target_and_curve_tool() {
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#1200",
-        crate::records::DesignFeatureKind::SurfaceTrim,
+        crate::records::feature::DesignFeatureKind::SurfaceTrim,
         1200,
     );
     scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![1201, 1202, 1203, 1204]);
@@ -241,7 +242,7 @@ fn surface_trim_projects_body_target_and_curve_tool() {
 fn surface_trim_binds_selected_cells_without_inventing_a_side() {
     let scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#1200",
-        crate::records::DesignFeatureKind::SurfaceTrim,
+        crate::records::feature::DesignFeatureKind::SurfaceTrim,
         1200,
     );
     let mut feature = cadmpeg_ir::features::Feature::new(

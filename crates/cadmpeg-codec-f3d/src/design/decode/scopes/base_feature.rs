@@ -2,10 +2,11 @@ use crate::bytes::{is_guid_relaxed, lp_utf16_bounded};
 use crate::layout::base_feature_class_377_prefix as class_377;
 use crate::layout::base_feature_class_452_262_compact as class_452_compact;
 use crate::layout::base_feature_class_452_262_expanded as class_452_expanded;
-use crate::records::{
+use crate::records::feature::{
     DesignBaseFeatureBodyReferenceForm, DesignBaseFeatureConstruction, DesignBaseFeatureEntry,
-    DesignLegacyBaseFeatureBody, DesignParameterScope, Located,
+    DesignLegacyBaseFeatureBody, DesignParameterScope,
 };
+use crate::records::Located;
 use cadmpeg_core::decode::View;
 
 use super::marked_record_reference;
@@ -173,7 +174,7 @@ fn exact_base_feature_legacy_compact(
         start,
         class_452_compact::TAG_BODY_BASED_ON_FACES_MARKER,
     )?;
-    let mode = crate::records::DesignBaseFeatureCompactMode::try_from(
+    let mode = crate::records::feature::DesignBaseFeatureCompactMode::try_from(
         *bytes.get(start + class_452_compact::MODE)?,
     )
     .ok()?;

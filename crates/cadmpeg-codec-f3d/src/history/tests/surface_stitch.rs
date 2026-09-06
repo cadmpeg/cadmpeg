@@ -15,10 +15,11 @@ use super::super::*;
 
 #[test]
 fn surface_stitch_binds_all_unique_entity_face_candidates() {
-    use crate::records::{
+    use crate::records::feature::DesignParameterScope;
+    use crate::records::topology::{
         AsmHistoricalEntityKind, DesignConstructionOperandGroup,
         DesignConstructionOperandGroupFrame, DesignEntitySelectionFaceCandidate,
-        DesignEntitySelectionOperand, DesignParameterScope,
+        DesignEntitySelectionOperand,
     };
     use cadmpeg_ir::features::{
         FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureInputTopology,
@@ -29,7 +30,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     let history_id = format!("{stream}/BREP.surface:asm-1");
     let mut scope = DesignParameterScope::empty(
         &scope_id,
-        crate::records::DesignFeatureKind::SurfaceStitch,
+        crate::records::feature::DesignFeatureKind::SurfaceStitch,
         42,
     );
     scope.history_state_id = Some(2);
@@ -89,7 +90,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         historical_edge_candidates: Vec::new(),
         historical_face_candidates: vec![DesignEntitySelectionFaceCandidate {
             history_id: history_id.clone(),
-            historical: crate::records::HistoricalBinding {
+            historical: crate::records::topology::HistoricalBinding {
                 kind: AsmHistoricalEntityKind::Coedge,
                 entity_ref: face_slot,
                 state_ids: vec![1],
@@ -166,7 +167,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         .historical_face_candidates
         .push(DesignEntitySelectionFaceCandidate {
             history_id: "other-history/BREP.other:asm-1".into(),
-            historical: crate::records::HistoricalBinding {
+            historical: crate::records::topology::HistoricalBinding {
                 kind: AsmHistoricalEntityKind::Coedge,
                 entity_ref: 99,
                 state_ids: vec![1],

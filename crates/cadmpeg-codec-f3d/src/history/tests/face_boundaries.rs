@@ -88,11 +88,11 @@ fn bounded_face_copy_matches_cyclic_boundary_with_split_vertices() {
 
 #[test]
 fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
-    use crate::records::{
-        ConstructionRecipeKind, DesignEdgeIdentityOperand, DesignFaceOperand,
-        DesignHistoricalFaceBoundaryContext, DesignHistoricalFaceLoopContext,
-        DesignHistoricalFaceSupportContext,
+    use crate::records::topology::{
+        DesignEdgeIdentityOperand, DesignFaceOperand, DesignHistoricalFaceBoundaryContext,
+        DesignHistoricalFaceLoopContext, DesignHistoricalFaceSupportContext,
     };
+    use crate::records::ConstructionRecipeKind;
 
     let mut identities = vec![DesignEdgeIdentityOperand {
         id: "f3d:Design/BulkStream.dat:edge-identity#10".into(),
@@ -120,7 +120,7 @@ fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
         id: "f3d:Design/BulkStream.dat:design-face-operand#10".into(),
         scope_record_index: 1,
         scope_reference_ordinal: 0,
-        group: Some(crate::records::DesignOperandGroup {
+        group: Some(crate::records::topology::DesignOperandGroup {
             group_record_index: 2,
             group_member_ordinal: 0,
         }),
@@ -153,20 +153,22 @@ fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
                 face_slot: 50,
                 loops: vec![DesignHistoricalFaceLoopContext {
                     loop_slot: 60,
-                    boundary: crate::records::DesignHistoricalLoopBoundary::Coedges(vec![
-                        crate::records::DesignHistoricalLoopCoedge {
-                            coedge_slot: 70,
-                            edge_slot: 8,
-                        },
-                        crate::records::DesignHistoricalLoopCoedge {
-                            coedge_slot: 71,
-                            edge_slot: 6,
-                        },
-                        crate::records::DesignHistoricalLoopCoedge {
-                            coedge_slot: 72,
-                            edge_slot: 7,
-                        },
-                    ]),
+                    boundary: crate::records::topology::DesignHistoricalLoopBoundary::Coedges(
+                        vec![
+                            crate::records::topology::DesignHistoricalLoopCoedge {
+                                coedge_slot: 70,
+                                edge_slot: 8,
+                            },
+                            crate::records::topology::DesignHistoricalLoopCoedge {
+                                coedge_slot: 71,
+                                edge_slot: 6,
+                            },
+                            crate::records::topology::DesignHistoricalLoopCoedge {
+                                coedge_slot: 72,
+                                edge_slot: 7,
+                            },
+                        ],
+                    ),
                 }],
             }],
             changed_preceding_face_slots: vec![50],

@@ -7,18 +7,19 @@
 )]
 
 use super::prelude::*;
-use crate::records::DesignPathFeatureConstruction;
+use crate::records::feature::DesignPathFeatureConstruction;
 
 #[test]
 fn legacy_pipe_projects_only_the_exact_path_reference_form() {
-    use crate::records::{DesignConstructionOperandGroupFrame, DesignParameterKind};
+    use crate::records::topology::DesignConstructionOperandGroupFrame;
+    use crate::records::DesignParameterKind;
     use cadmpeg_ir::features::{
         FeatureDefinition, GeneratedSweepSection, Length, PathRef, SweepSection,
     };
 
     let mut scope = DesignParameterScope::empty(
         "f3d:test:pipe-scope#1",
-        crate::records::DesignFeatureKind::Pipe,
+        crate::records::feature::DesignFeatureKind::Pipe,
         1,
     );
     scope.class_tag = "405".into();
@@ -27,10 +28,10 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         crate::records::ReferenceRun::Unlocated(vec![10, 11, 12, 13, 20, 21, 22]);
     {
         let value = Some(DesignPathFeatureConstruction::Pipe(
-            crate::records::DesignPipeConstruction {
+            crate::records::feature::DesignPipeConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: 26,
-                section_shape: crate::records::DesignPipeSectionShape::Circular,
+                section_shape: crate::records::feature::DesignPipeSectionShape::Circular,
                 section_shape_offset: 30,
                 filled: true,
                 filled_offset: 31,
@@ -131,10 +132,10 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
 
     {
         let value = Some(DesignPathFeatureConstruction::Pipe(
-            crate::records::DesignPipeConstruction {
+            crate::records::feature::DesignPipeConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: 26,
-                section_shape: crate::records::DesignPipeSectionShape::Circular,
+                section_shape: crate::records::feature::DesignPipeSectionShape::Circular,
                 section_shape_offset: 30,
                 filled: false,
                 filled_offset: 31,
@@ -173,10 +174,10 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         .collect::<Vec<_>>();
     {
         let value = Some(DesignPathFeatureConstruction::Pipe(
-            crate::records::DesignPipeConstruction {
+            crate::records::feature::DesignPipeConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: 26,
-                section_shape: crate::records::DesignPipeSectionShape::Circular,
+                section_shape: crate::records::feature::DesignPipeSectionShape::Circular,
                 section_shape_offset: 30,
                 filled: false,
                 filled_offset: 31,
@@ -198,10 +199,10 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
 
     {
         let value = Some(DesignPathFeatureConstruction::Pipe(
-            crate::records::DesignPipeConstruction {
+            crate::records::feature::DesignPipeConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: 26,
-                section_shape: crate::records::DesignPipeSectionShape::Circular,
+                section_shape: crate::records::feature::DesignPipeSectionShape::Circular,
                 section_shape_offset: 30,
                 filled: true,
                 filled_offset: 31,
@@ -247,10 +248,10 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     scope.paired_class_tag = "257".into();
     {
         let value = Some(DesignPathFeatureConstruction::Pipe(
-            crate::records::DesignPipeConstruction {
+            crate::records::feature::DesignPipeConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: 25,
-                section_shape: crate::records::DesignPipeSectionShape::Circular,
+                section_shape: crate::records::feature::DesignPipeSectionShape::Circular,
                 section_shape_offset: 29,
                 filled: true,
                 filled_offset: 30,

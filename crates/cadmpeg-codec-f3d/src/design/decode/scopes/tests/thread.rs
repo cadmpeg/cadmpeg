@@ -37,7 +37,7 @@ fn thread_scope_decodes_standard_size_and_face_group() {
         form: DesignThreadForm::Standard,
         designation_offset: 38,
         designation: "M30x3.5".into(),
-        nominal_size: crate::records::DesignThreadNominalSize::try_from("30.0".to_owned())
+        nominal_size: crate::records::feature::DesignThreadNominalSize::try_from("30.0".to_owned())
             .expect("nominal size"),
         profile: "ISO Metric profile".into(),
         major_diameter: 2.97345,
@@ -64,7 +64,7 @@ fn thread_scope_decodes_standard_size_and_face_group() {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:scope#standard-thread",
-        crate::records::DesignFeatureKind::Thread,
+        crate::records::feature::DesignFeatureKind::Thread,
         987,
     );
     scope.class_tag = "901".into();
@@ -120,7 +120,7 @@ fn thread_scope_decodes_class_334_legacy_standard_tail() {
         form: DesignThreadForm::StandardLegacy,
         designation_offset: 38,
         designation: "M7x1".into(),
-        nominal_size: crate::records::DesignThreadNominalSize::try_from("7.0".to_owned())
+        nominal_size: crate::records::feature::DesignThreadNominalSize::try_from("7.0".to_owned())
             .expect("nominal size"),
         profile: "ISO Metric profile".into(),
         major_diameter: 0.71472,
@@ -136,7 +136,7 @@ fn thread_scope_decodes_class_334_legacy_standard_tail() {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:scope#legacy-thread",
-        crate::records::DesignFeatureKind::Thread,
+        crate::records::feature::DesignFeatureKind::Thread,
         987,
     );
     scope.class_tag = "334".into();
@@ -205,7 +205,7 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
         form: DesignThreadForm::Compact(None),
         designation_offset: 38,
         designation: "M3.5x0.6".into(),
-        nominal_size: crate::records::DesignThreadNominalSize::try_from("3.5".to_owned())
+        nominal_size: crate::records::feature::DesignThreadNominalSize::try_from("3.5".to_owned())
             .expect("nominal size"),
         profile: "GB Metric profile".into(),
         major_diameter: 0.35995,
@@ -234,7 +234,7 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:scope#compact-thread",
-        crate::records::DesignFeatureKind::Thread,
+        crate::records::feature::DesignFeatureKind::Thread,
         987,
     );
     scope.class_tag = "903".into();
@@ -292,8 +292,10 @@ fn thread_scope_decodes_class_414_legacy_compact_tail() {
         form: DesignThreadForm::CompactLegacy,
         designation_offset: 38,
         designation: "M190x8".into(),
-        nominal_size: crate::records::DesignThreadNominalSize::try_from("190.0".to_owned())
-            .expect("nominal size"),
+        nominal_size: crate::records::feature::DesignThreadNominalSize::try_from(
+            "190.0".to_owned(),
+        )
+        .expect("nominal size"),
         profile: "ISO Metric profile".into(),
         major_diameter: 19.08149,
         minor_diameter: 18.18397,
@@ -308,7 +310,7 @@ fn thread_scope_decodes_class_414_legacy_compact_tail() {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:scope#legacy-compact-thread",
-        crate::records::DesignFeatureKind::Thread,
+        crate::records::feature::DesignFeatureKind::Thread,
         987,
     );
     scope.class_tag = "414".into();
@@ -353,7 +355,10 @@ fn localized_sketch_scope_retains_its_generic_reference_table() {
 
     let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
         .expect("localized Sketch scope");
-    assert_eq!(scope.kind(), crate::records::DesignFeatureKind::Esquisse);
+    assert_eq!(
+        scope.kind(),
+        crate::records::feature::DesignFeatureKind::Esquisse
+    );
     assert_eq!(
         scope
             .reference_members

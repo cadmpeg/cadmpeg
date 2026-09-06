@@ -8,11 +8,11 @@ use crate::layout::assembly_as_built_421_frame_327 as as_built_421_frame_327;
 use crate::layout::assembly_as_built_421_frame_376 as as_built_421_frame_376;
 use crate::layout::assembly_as_built_421_frame_448 as as_built_421_frame_448;
 use crate::layout::assembly_as_built_421_scope as as_built_421;
-use crate::records::{
-    ConstructionRecipe, DesignAssemblyLegacyOperand, DesignAssemblyLegacyOperands,
-    DesignAssemblyLegacySelection, DesignAssemblyLimits, DesignAssemblySolvedFrame,
-    DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignWorkPointRule,
+use crate::records::feature::{
+    DesignAssemblyLegacyOperand, DesignAssemblyLegacyOperands, DesignAssemblyLegacySelection,
+    DesignAssemblyLimits, DesignAssemblySolvedFrame, DesignParameterScope, DesignWorkPointRule,
 };
+use crate::records::{ConstructionRecipe, DesignParameterOwner, DesignRecordHeader};
 use cadmpeg_core::decode::View;
 use std::collections::HashMap;
 
@@ -42,7 +42,7 @@ pub(crate) fn exact_legacy_as_built_421_alignment(
     let crate::records::ReferenceRun::Located(references) = &scope.reference_members else {
         return None;
     };
-    if scope.kind() != crate::records::DesignFeatureKind::AsBuilt
+    if scope.kind() != crate::records::feature::DesignFeatureKind::AsBuilt
         || lanes.len() != 6
         || references.len() != 11
     {
@@ -168,7 +168,7 @@ pub(crate) fn exact_legacy_as_built_421_solved_frame(
     let [_, _, _, _, _, _, _, _, frame_reference, _, _] = references.as_slice() else {
         return None;
     };
-    if scope.kind() != crate::records::DesignFeatureKind::AsBuilt {
+    if scope.kind() != crate::records::feature::DesignFeatureKind::AsBuilt {
         return None;
     }
     let frame_record_index = frame_reference.value;
@@ -257,7 +257,7 @@ pub(crate) fn exact_legacy_as_built_421_operands(
     else {
         return None;
     };
-    if scope.kind() != crate::records::DesignFeatureKind::AsBuilt
+    if scope.kind() != crate::records::feature::DesignFeatureKind::AsBuilt
         || solved_frame.reference_record_index != frame_reference.value
     {
         return None;
@@ -268,7 +268,7 @@ pub(crate) fn exact_legacy_as_built_421_operands(
     let second_selection_record_index = second_selection_reference.value;
     let point = exact_point_data_construction(bytes, records, &[point_record_index], stream_types)?;
     let mut hole_scope = scope.clone();
-    hole_scope.payload = crate::records::DesignFeatureKind::Hole.into();
+    hole_scope.payload = crate::records::feature::DesignFeatureKind::Hole.into();
     let hole = exact_hole_construction(bytes, records, &hole_scope, stream_types)?;
     if hole.point_record_index != hole_record_index
         || !hole

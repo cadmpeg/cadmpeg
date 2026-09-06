@@ -14,10 +14,10 @@ const EPS_SURFACE_DISTANCE_MM: f64 = 1.0e-12;
 fn dispatcher_projects_perpendicular_surface_extend() {
     let mut scope = DesignParameterScope::empty(
         "f3d:native:parameter-scope#surface-extend",
-        crate::records::DesignFeatureKind::SurfaceExtend,
+        crate::records::feature::DesignFeatureKind::SurfaceExtend,
         12,
     );
-    if let crate::records::DesignScopePayload::SurfaceExtend(slot) = &mut scope.payload {
+    if let crate::records::feature::DesignScopePayload::SurfaceExtend(slot) = &mut scope.payload {
         *slot = Some(DesignSurfaceExtendOperation {
             distance: 0.04,
             distance_offset: 40,

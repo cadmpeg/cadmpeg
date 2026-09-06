@@ -5,11 +5,13 @@ use crate::design::dimensions::{planar_point, sketch_normal_sign};
 use crate::design::edge_resolve::feature_input_topology_id;
 use crate::design::feature_project::design_angle_unit;
 use crate::ids::{self, native_stream, neutral_feature_id};
-use crate::records::{
+use crate::records::feature::{DesignExtrudeExtent, DesignExtrudePrologue, DesignParameterScope};
+use crate::records::topology::{
     DesignBodyRecipeOperand, DesignConstructionOperandGroup, DesignEdgeOperand,
-    DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudePrologue, DesignFaceOperand,
-    DesignParameter, DesignParameterScope, DesignSketchPlacement, SketchCurveGeometry,
-    SketchCurveIdentity, SketchPoint,
+    DesignExtrudeFaceRole, DesignFaceOperand,
+};
+use crate::records::{
+    DesignParameter, DesignSketchPlacement, SketchCurveGeometry, SketchCurveIdentity, SketchPoint,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{HashMap, HashSet};
@@ -290,7 +292,7 @@ pub(crate) fn extrude_profile_group_roots<'a>(
     scope: &DesignParameterScope,
     groups: &'a [DesignConstructionOperandGroup],
 ) -> Option<Vec<&'a DesignConstructionOperandGroup>> {
-    use crate::records::DesignExtrudeOperandRole;
+    use crate::records::topology::DesignExtrudeOperandRole;
 
     let stream = native_stream(&scope.id)?;
     let mut profile_groups = groups
@@ -379,7 +381,7 @@ pub(crate) fn extrude_profile_group_operand_indices(
     groups: &[DesignConstructionOperandGroup],
     operands: &[DesignFaceOperand],
 ) -> Option<Vec<usize>> {
-    use crate::records::DesignExtrudeOperandRole;
+    use crate::records::topology::DesignExtrudeOperandRole;
 
     let stream = native_stream(&root.id)?;
     let profile_groups = groups
@@ -467,7 +469,8 @@ pub(crate) fn is_paired_extrude_profile_aggregate(
     groups: &[DesignConstructionOperandGroup],
     operands: &[DesignFaceOperand],
 ) -> bool {
-    use crate::records::{ConstructionRecipeKind, DesignExtrudeOperandRole};
+    use crate::records::topology::DesignExtrudeOperandRole;
+    use crate::records::ConstructionRecipeKind;
 
     let Some(stream) = native_stream(&root.id) else {
         return false;
@@ -607,7 +610,7 @@ pub(crate) fn resolved_loft_edge_profile_group(
     group: &DesignConstructionOperandGroup,
     operands: &[DesignEdgeOperand],
 ) -> Option<cadmpeg_ir::features::ProfileRef> {
-    if scope.kind() != crate::records::DesignFeatureKind::Loft
+    if scope.kind() != crate::records::feature::DesignFeatureKind::Loft
         || !matches!(group.role, 0x41_0000_0000 | 0x43_0000_0000)
         || group.members.is_empty()
         || !group.lost_edge_references.is_empty()
@@ -893,7 +896,7 @@ pub(crate) fn resolved_historical_split_face_target_group(
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
-    if scope.kind() != crate::records::DesignFeatureKind::SplitFace
+    if scope.kind() != crate::records::feature::DesignFeatureKind::SplitFace
         || group.role != 0x0000_0010_0000_0000
     {
         return None;
@@ -918,7 +921,7 @@ pub(crate) fn resolved_historical_split_face_target_group_with_updated_faces(
     operands: &[DesignFaceOperand],
     updated_face_slots: &[i64],
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
-    if scope.kind() != crate::records::DesignFeatureKind::SplitFace
+    if scope.kind() != crate::records::feature::DesignFeatureKind::SplitFace
         || group.role != 0x0000_0010_0000_0000
     {
         return None;
@@ -938,7 +941,7 @@ fn split_face_updated_target_slots(
     operands: &[DesignFaceOperand],
     updated_face_slots: &[i64],
 ) -> Option<Vec<i64>> {
-    if scope.kind() != crate::records::DesignFeatureKind::SplitFace
+    if scope.kind() != crate::records::feature::DesignFeatureKind::SplitFace
         || group.role != 0x0000_0010_0000_0000
         || updated_face_slots.is_empty()
         || updated_face_slots.len() != group.members.len()
@@ -1396,7 +1399,7 @@ fn counted_face_recipe_frame(operand: &DesignFaceOperand) -> Option<usize> {
 
 fn stable_face_support_set(
     active_faces: &[i64],
-    contexts: &[crate::records::DesignHistoricalFaceSupportContext],
+    contexts: &[crate::records::topology::DesignHistoricalFaceSupportContext],
 ) -> Option<Vec<i64>> {
     if active_faces.is_empty()
         || contexts.len() != active_faces.len()
@@ -1435,7 +1438,7 @@ fn convergent_effective_face_support(operand: &DesignFaceOperand) -> Option<Vec<
 /// operand's candidate lane.
 fn effective_historical_face_slots(
     candidates: &[cadmpeg_ir::ids::FaceId],
-    contexts: &[crate::records::DesignHistoricalFaceSupportContext],
+    contexts: &[crate::records::topology::DesignHistoricalFaceSupportContext],
 ) -> Option<Vec<i64>> {
     let mut candidate_slots = candidates
         .iter()
@@ -1459,7 +1462,7 @@ fn effective_historical_face_slots(
 
 fn convergent_face_support(
     active_faces: &[i64],
-    support_contexts: &[crate::records::DesignHistoricalFaceSupportContext],
+    support_contexts: &[crate::records::topology::DesignHistoricalFaceSupportContext],
 ) -> Option<Vec<i64>> {
     if active_faces.is_empty() {
         return None;
@@ -1489,7 +1492,7 @@ fn convergent_face_support(
 
 fn bounded_face_candidate_by_boundary_cardinality(
     header_value: usize,
-    contexts: &[crate::records::DesignHistoricalFaceSupportContext],
+    contexts: &[crate::records::topology::DesignHistoricalFaceSupportContext],
 ) -> Option<Vec<i64>> {
     let mut candidates = contexts
         .iter()
@@ -1522,8 +1525,8 @@ fn bounded_face_candidate_by_boundary_cardinality(
 }
 
 fn valid_preceding_face_boundaries(
-    context: &crate::records::DesignHistoricalFaceSupportContext,
-) -> Option<Vec<&crate::records::DesignHistoricalFaceBoundaryContext>> {
+    context: &crate::records::topology::DesignHistoricalFaceSupportContext,
+) -> Option<Vec<&crate::records::topology::DesignHistoricalFaceBoundaryContext>> {
     let mut expected_faces = context.preceding_face_slots.clone();
     expected_faces.sort_unstable();
     expected_faces.dedup();
@@ -1550,8 +1553,8 @@ fn valid_preceding_face_boundaries(
 }
 
 fn unique_preceding_face_boundaries(
-    contexts: &[crate::records::DesignHistoricalFaceSupportContext],
-) -> Option<Vec<&crate::records::DesignHistoricalFaceBoundaryContext>> {
+    contexts: &[crate::records::topology::DesignHistoricalFaceSupportContext],
+) -> Option<Vec<&crate::records::topology::DesignHistoricalFaceBoundaryContext>> {
     let mut active_faces = HashSet::new();
     let mut boundaries_by_face = HashMap::new();
     for context in contexts {
@@ -1572,7 +1575,7 @@ fn unique_preceding_face_boundaries(
 }
 
 fn boundary_edge_count(
-    boundaries: &[&crate::records::DesignHistoricalFaceBoundaryContext],
+    boundaries: &[&crate::records::topology::DesignHistoricalFaceBoundaryContext],
 ) -> Option<usize> {
     boundaries.iter().try_fold(0usize, |total, boundary| {
         boundary.loops.iter().try_fold(total, |total, loop_| {
@@ -2187,12 +2190,13 @@ pub(crate) fn sketch_point_depth(point: &SketchPoint) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::records::{
+    use crate::records::feature::DesignParameterScope;
+    use crate::records::topology::{
         DesignConstructionOperandGroup, DesignEdgeOperand, DesignEdgeRecipeReferenceContext,
         DesignEdgeRecipeStructure, DesignFaceRecipeNode, DesignHistoricalFaceBoundaryContext,
-        DesignHistoricalFaceLoopContext, DesignHistoricalFaceSupportContext, DesignParameterScope,
-        DesignRecipeReference,
+        DesignHistoricalFaceLoopContext, DesignHistoricalFaceSupportContext,
     };
+    use crate::records::DesignRecipeReference;
 
     use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
     use cadmpeg_ir::ids::FaceId;
@@ -2291,7 +2295,7 @@ mod tests {
                 native: group.id.clone(),
             })
         );
-        group.extrude_role = Some(crate::records::DesignExtrudeOperandRole::Profile);
+        group.extrude_role = Some(crate::records::topology::DesignExtrudeOperandRole::Profile);
         let scope: DesignParameterScope = serde_json::from_value(serde_json::json!({
             "id": "f3d:test:scope#100",
             "byte_offset": 0,
@@ -2514,11 +2518,11 @@ mod tests {
             face_slot: slot,
             loops: vec![DesignHistoricalFaceLoopContext {
                 loop_slot: slot + 1_000,
-                boundary: crate::records::DesignHistoricalLoopBoundary::Coedges(
+                boundary: crate::records::topology::DesignHistoricalLoopBoundary::Coedges(
                     (0..edge_count)
                         .map(|ordinal| {
                             let coedge_slot = i64::try_from(ordinal).expect("test ordinal");
-                            crate::records::DesignHistoricalLoopCoedge {
+                            crate::records::topology::DesignHistoricalLoopCoedge {
                                 coedge_slot,
                                 edge_slot: coedge_slot + 2_000,
                             }
@@ -2715,11 +2719,11 @@ mod tests {
                     face_slot: *face,
                     loops: vec![DesignHistoricalFaceLoopContext {
                         loop_slot: face + 2_000,
-                        boundary: crate::records::DesignHistoricalLoopBoundary::Coedges(
+                        boundary: crate::records::topology::DesignHistoricalLoopBoundary::Coedges(
                             (0..*edge_count)
                                 .map(|ordinal| {
                                     let coedge_slot = i64::try_from(ordinal).expect("test ordinal");
-                                    crate::records::DesignHistoricalLoopCoedge {
+                                    crate::records::topology::DesignHistoricalLoopCoedge {
                                         coedge_slot,
                                         edge_slot: coedge_slot + 10_000,
                                     }

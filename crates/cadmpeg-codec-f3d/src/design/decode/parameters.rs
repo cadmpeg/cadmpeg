@@ -16,9 +16,10 @@ use crate::layout::design_parameter_owner_legacy_88 as legacy_owner_88;
 use crate::layout::design_parameter_owner_prefix as owner_prefix;
 use crate::layout::indexed_companion_record_prefix as companion_prefix;
 use crate::layout::indexed_design_record_header as indexed_header;
+use crate::records::feature::DesignParameterScope;
 use crate::records::{
     ConstructionRecipe, DesignEntityHeader, DesignParameter, DesignParameterCompanion,
-    DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
+    DesignParameterOwner, DesignRecordHeader,
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;

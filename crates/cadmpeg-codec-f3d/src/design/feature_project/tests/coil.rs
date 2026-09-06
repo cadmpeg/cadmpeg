@@ -10,10 +10,11 @@
 use super::prelude::*;
 
 use super::project_coil;
-use crate::records::{
+use crate::records::feature::{
     DesignCoilExtent, DesignCoilSection, DesignCoilSectionPlacement, DesignCoilTransform,
-    DesignExtrudeOperation, DesignParameter, DesignParameterKind, DesignParameterScope,
+    DesignExtrudeOperation, DesignParameterScope,
 };
+use crate::records::{DesignParameter, DesignParameterKind};
 use cadmpeg_ir::features::{CoilPlacement, FeatureDefinition};
 
 fn parameter(
@@ -49,11 +50,11 @@ fn parameter(
 fn long_coil_matrix_projects_as_explicit_placement() {
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#40",
-        crate::records::DesignFeatureKind::CoilPrimitive,
+        crate::records::feature::DesignFeatureKind::CoilPrimitive,
         40,
     );
-    if let crate::records::DesignScopePayload::SpirePrimitive(slot)
-    | crate::records::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
+    if let crate::records::feature::DesignScopePayload::SpirePrimitive(slot)
+    | crate::records::feature::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
     {
         slot.get_or_insert_with(Default::default).coil_operation =
             Some(crate::records::RecordedValue {
@@ -61,8 +62,8 @@ fn long_coil_matrix_projects_as_explicit_placement() {
                 offset: None,
             });
     }
-    if let crate::records::DesignScopePayload::SpirePrimitive(slot)
-    | crate::records::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
+    if let crate::records::feature::DesignScopePayload::SpirePrimitive(slot)
+    | crate::records::feature::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
     {
         slot.get_or_insert_with(Default::default).coil_extent =
             Some(crate::records::RecordedValue {
@@ -70,8 +71,8 @@ fn long_coil_matrix_projects_as_explicit_placement() {
                 offset: None,
             });
     }
-    if let crate::records::DesignScopePayload::SpirePrimitive(slot)
-    | crate::records::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
+    if let crate::records::feature::DesignScopePayload::SpirePrimitive(slot)
+    | crate::records::feature::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
     {
         slot.get_or_insert_with(Default::default).coil_section =
             Some(crate::records::RecordedValue {
@@ -81,8 +82,8 @@ fn long_coil_matrix_projects_as_explicit_placement() {
     }
     {
         let value = Some(DesignCoilSectionPlacement::Inside);
-        if let crate::records::DesignScopePayload::SpirePrimitive(slot)
-        | crate::records::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
+        if let crate::records::feature::DesignScopePayload::SpirePrimitive(slot)
+        | crate::records::feature::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
         {
             slot.get_or_insert_with(Default::default)
                 .coil_section_placement = value.map(|value| crate::records::RecordedValue {
@@ -93,8 +94,8 @@ fn long_coil_matrix_projects_as_explicit_placement() {
     }
     {
         let value = Some(false);
-        if let crate::records::DesignScopePayload::SpirePrimitive(slot)
-        | crate::records::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
+        if let crate::records::feature::DesignScopePayload::SpirePrimitive(slot)
+        | crate::records::feature::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
         {
             slot.get_or_insert_with(Default::default).coil_clockwise =
                 value.map(|value| crate::records::RecordedValue {
@@ -103,8 +104,8 @@ fn long_coil_matrix_projects_as_explicit_placement() {
                 });
         }
     }
-    if let crate::records::DesignScopePayload::SpirePrimitive(slot)
-    | crate::records::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
+    if let crate::records::feature::DesignScopePayload::SpirePrimitive(slot)
+    | crate::records::feature::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
     {
         slot.get_or_insert_with(Default::default).coil_transform = Some(DesignCoilTransform {
             transform: [

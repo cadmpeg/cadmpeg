@@ -56,7 +56,7 @@ fn hem_scope_binds_parameters_edge_groups_and_rule_radius() {
         assert_eq!(operation.settings_record_index, 311);
         assert_eq!(
             operation.parameter_owners,
-            crate::records::DesignHemParameterOwners::GapLength {
+            crate::records::feature::DesignHemParameterOwners::GapLength {
                 gap_owner_record_index: 301,
                 length_owner_record_index: 304,
             }
@@ -124,7 +124,7 @@ fn hem_scope_reads_the_rolled_owner_layout() {
     .expect("rolled Hem operation");
     assert_eq!(
         operation.parameter_owners,
-        crate::records::DesignHemParameterOwners::RadiusAngle {
+        crate::records::feature::DesignHemParameterOwners::RadiusAngle {
             radius_owner_record_index: 775,
             angle_owner_record_index: 788,
         }
@@ -147,7 +147,7 @@ fn hem_scope_reads_the_teardrop_owner_layout() {
     .expect("teardrop Hem operation");
     assert_eq!(
         operation.parameter_owners,
-        crate::records::DesignHemParameterOwners::GapLengthRadius {
+        crate::records::feature::DesignHemParameterOwners::GapLengthRadius {
             gap_owner_record_index: 703,
             length_owner_record_index: 706,
             radius_owner_record_index: 775,

@@ -11,13 +11,13 @@ use crate::ids::{
     neutral_sketch_curve_id, neutral_sketch_id, neutral_spatial_sketch_curve_id,
     neutral_spatial_sketch_id,
 };
-use crate::records::{
+use crate::records::topology::{
     DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
     DesignEntitySelectionOperand, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
-    DesignSketchPlacement, DesignSketchProfileOperand, DesignSketchProfileRegion,
-    DesignSketchProfileRegionMember, DesignSketchProfileRegionSelection, SketchCurveIdentity,
-    SketchRelationOperand,
+    DesignSketchProfileOperand, DesignSketchProfileRegion, DesignSketchProfileRegionMember,
+    DesignSketchProfileRegionSelection,
 };
+use crate::records::{DesignSketchPlacement, SketchCurveIdentity, SketchRelationOperand};
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::features::{Angle, Length, PathRef, ProfileRef, SketchProfileRegion};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -167,7 +167,7 @@ fn profile_region_member(curve_primary_id: u32) -> DesignSketchProfileRegionMemb
         curve_primary_id: std::num::NonZeroU32::new(curve_primary_id).expect("curve identity"),
         curve_primary_id_offset: 0,
         incidence_flag: false,
-        incidence_values: [crate::records::DesignRegionIncidence::One; 2],
+        incidence_values: [crate::records::topology::DesignRegionIncidence::One; 2],
         incidence_words_offset: 0,
     }
 }
@@ -1313,7 +1313,7 @@ fn historical_profile_members_resolve_through_topology_ownership() {
         AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalOptionalCarrierBinding,
         AsmHistoricalRelation, AsmHistoricalTopology,
     };
-    use crate::records::AsmHistoricalEntityKind;
+    use crate::records::topology::AsmHistoricalEntityKind;
 
     let topology = AsmHistoricalTopology {
         faces: vec![10, 20],

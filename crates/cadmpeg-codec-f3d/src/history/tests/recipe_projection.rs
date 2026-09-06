@@ -74,20 +74,21 @@ fn projection_caches_end_after_history_consumers() {
 
 #[test]
 fn side_one_edge_uses_nonzero_references_and_ignores_second_side() {
-    let side = |header_value, scalars: Vec<i32>| crate::records::DesignTopologyRecipeSide {
-        field_count: std::num::NonZeroU32::new(3).unwrap(),
-        header_value,
-        scalars,
-        payload_prefix: vec![0],
-        payload_entry_count: 0,
-        entries: Vec::new(),
-    };
-    let structure = crate::records::DesignEdgeRecipeStructure {
+    let side =
+        |header_value, scalars: Vec<i32>| crate::records::topology::DesignTopologyRecipeSide {
+            field_count: std::num::NonZeroU32::new(3).unwrap(),
+            header_value,
+            scalars,
+            payload_prefix: vec![0],
+            payload_entry_count: 0,
+            entries: Vec::new(),
+        };
+    let structure = crate::records::topology::DesignEdgeRecipeStructure {
         root: 2,
         sides: vec![side(1, vec![0, 2]), side(3, vec![0, 0])],
     };
-    let context =
-        |reference_ordinal, shared_edge_slots| crate::records::DesignEdgeRecipeReferenceContext {
+    let context = |reference_ordinal, shared_edge_slots| {
+        crate::records::topology::DesignEdgeRecipeReferenceContext {
             reference_ordinal,
             result_faces: Vec::new(),
             result_face_boundaries: Vec::new(),
@@ -99,7 +100,8 @@ fn side_one_edge_uses_nonzero_references_and_ignores_second_side() {
             shared_edge_slots,
             changed_shared_edge_slots: Vec::new(),
             changed_reference_edge_slots: Vec::new(),
-        };
+        }
+    };
     let contexts = vec![
         context(0, vec![40, 41]),
         context(1, vec![41, 42]),
@@ -116,7 +118,7 @@ fn side_one_edge_uses_nonzero_references_and_ignores_second_side() {
         context(1, vec![40, 41]),
         context(2, vec![99]),
     ];
-    let selector = crate::records::DesignEdgeRecipeSelectorContext {
+    let selector = crate::records::topology::DesignEdgeRecipeSelectorContext {
         selector: 0,
         clauses: vec![None, None],
         incidence_matching_edge_slots: vec![41],

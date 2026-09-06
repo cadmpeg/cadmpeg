@@ -13,15 +13,15 @@ fn move_body_selection_uses_unique_owning_history() {
     };
     use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureId};
 
-    let mut scope = crate::records::DesignParameterScope::empty(
+    let mut scope = crate::records::feature::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#10",
-        crate::records::DesignFeatureKind::Move,
+        crate::records::feature::DesignFeatureKind::Move,
         10,
     );
     scope.history_state_id = Some(42);
     scope.previous_history_state_id = Some(41);
     let group_id = "f3d:Design/BulkStream.dat:design-construction-operand-group#20";
-    let group = crate::records::DesignConstructionOperandGroup {
+    let group = crate::records::topology::DesignConstructionOperandGroup {
         id: group_id.into(),
         scope_record_index: 10,
         scope_reference_ordinal: 0,
@@ -33,7 +33,7 @@ fn move_body_selection_uses_unique_owning_history() {
             offset: 0,
         }],
         lost_edge_references: Vec::new(),
-        frame: crate::records::DesignConstructionOperandGroupFrame {
+        frame: crate::records::topology::DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
             auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),

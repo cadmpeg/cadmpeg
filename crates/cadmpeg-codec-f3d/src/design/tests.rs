@@ -29,7 +29,7 @@ use std::collections::HashSet;
 
 #[test]
 fn feature_family_tokens_are_localized() {
-    use crate::records::DesignFeatureKind;
+    use crate::records::feature::DesignFeatureKind;
     let family = |token: &str| {
         design_feature_family(
             &DesignFeatureKind::try_from(token.to_owned()).expect("nonempty family name"),

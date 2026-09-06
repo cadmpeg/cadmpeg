@@ -12,13 +12,14 @@ use crate::container::ContainerScan;
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::layout::sketch_container_visibility_member_prefix as visibility_member;
+use crate::records::feature::DesignParameterScope;
 use crate::records::{
-    DesignEntityHeader, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
-    DesignSketchVisibility, LostEdgeReference, PersistentReference, PersistentReferenceKind,
-    SketchCurveGeometry, SketchCurveIdentity, SketchGlyphTransform, SketchPoint,
-    SketchPointClosure, SketchPointCompanion, SketchPointCompanionReferenceEncoding,
-    SketchPointRecordForm, SketchRelation, SketchRelationOperand, SketchSurface, SketchText,
-    SketchTextAlignment, SketchTextLayout, DESIGN_MODULE_SKETCH,
+    DesignEntityHeader, DesignRecordHeader, DesignSketchPlacement, DesignSketchVisibility,
+    LostEdgeReference, PersistentReference, PersistentReferenceKind, SketchCurveGeometry,
+    SketchCurveIdentity, SketchGlyphTransform, SketchPoint, SketchPointClosure,
+    SketchPointCompanion, SketchPointCompanionReferenceEncoding, SketchPointRecordForm,
+    SketchRelation, SketchRelationOperand, SketchSurface, SketchText, SketchTextAlignment,
+    SketchTextLayout, DESIGN_MODULE_SKETCH,
 };
 use cadmpeg_core::bytes::find_from;
 use cadmpeg_core::decode::View;

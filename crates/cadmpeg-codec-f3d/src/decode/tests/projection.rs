@@ -20,11 +20,12 @@ use super::super::{
 };
 use crate::loss::F3dLossCode;
 use crate::native::F3dNative;
+use crate::records::feature::DesignParameterScope;
 use crate::records::{
     DesignBodyBinding, DesignDimensionLocusPair, DesignDimensionNullLocusPair,
     DesignDimensionRecipeRecord, DesignFeatureTimeline, DesignParameter, DesignParameterCompanion,
-    DesignParameterOwner, DesignParameterScope, DesignSketchPlacement, LostEdgeReference,
-    SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationKind,
+    DesignParameterOwner, DesignSketchPlacement, LostEdgeReference, SketchCurveIdentity,
+    SketchPoint, SketchRelation, SketchRelationKind,
 };
 
 #[test]
@@ -83,7 +84,7 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
     let scope_id = "f3d:Design/BulkStream.dat:design-parameter-scope#10";
     let mut scope = DesignParameterScope::empty(
         scope_id,
-        crate::records::DesignFeatureKind::BaseMeshFeature,
+        crate::records::feature::DesignFeatureKind::BaseMeshFeature,
         10,
     );
     // The feature's owning entity reference is distinct from its scope index.
@@ -1379,7 +1380,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             "reference_members",
         )
         .unwrap(),
-        payload: crate::records::DesignFeatureKind::try_from("Unsupported".to_owned())
+        payload: crate::records::feature::DesignFeatureKind::try_from("Unsupported".to_owned())
             .expect("native family name")
             .into(),
         unclosed_construction_operand_groups: Vec::new(),
@@ -1546,7 +1547,7 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
             "reference_members",
         )
         .unwrap(),
-        payload: crate::records::DesignFeatureKind::try_from("Unsupported".to_owned())
+        payload: crate::records::feature::DesignFeatureKind::try_from("Unsupported".to_owned())
             .expect("native family name")
             .into(),
         unclosed_construction_operand_groups: Vec::new(),
@@ -1598,20 +1599,20 @@ fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scop
     let stream = "f3d:Design/BulkStream.dat";
     let mut predecessor = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#100"),
-        crate::records::DesignFeatureKind::Extrude,
+        crate::records::feature::DesignFeatureKind::Extrude,
         100,
     );
     predecessor.history_state_id = Some(7);
     let mut internal = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#150"),
-        crate::records::DesignFeatureKind::BaseFeature,
+        crate::records::feature::DesignFeatureKind::BaseFeature,
         150,
     );
     internal.history_state_id = Some(8);
     internal.previous_history_state_id = Some(7);
     let mut successor = DesignParameterScope::empty(
         &format!("{stream}:design-parameter-scope#200"),
-        crate::records::DesignFeatureKind::Fillet,
+        crate::records::feature::DesignFeatureKind::Fillet,
         200,
     );
     successor.history_state_id = Some(9);

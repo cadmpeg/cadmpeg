@@ -52,7 +52,7 @@ fn class_347_thicken_frame_admits_group_before_scalar() {
 
     let mut scope = DesignParameterScope::empty(
         "f3d:test:thicken#1",
-        crate::records::DesignFeatureKind::Thicken,
+        crate::records::feature::DesignFeatureKind::Thicken,
         1,
     );
     scope.class_tag = "347".into();
@@ -62,7 +62,7 @@ fn class_347_thicken_frame_admits_group_before_scalar() {
     assert!(matches!(
         exact_direct_face_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &scope),
         Some(DesignDirectFaceOperation::Thicken(
-            crate::records::DesignThickenOperation {
+            crate::records::feature::DesignThickenOperation {
                 signed_thickness: -1.0,
                 thickness_record_index: 74,
                 ..
