@@ -481,9 +481,15 @@ fn fixed_reference_groups_preserve_wire_and_check_each_token() {
         >(invalid)
         .is_err());
     }
-    let fset = r#"{"id":"g","operation_label":"o","selector":"s","first_object_indices":[1,2],"raw_first_object_indices":[[144,0,1],[144,0,2]],"first_data_blocks":["a",null],"second_object_indices":[3,4,5],"raw_second_object_indices":[[144,0,3],[144,0,4],[144,0,5]],"second_data_blocks":[null,"d","e"],"source_offset":10,"first_source_offsets":[11,14],"second_source_offsets":[17,20,23]}"#;
-    check::<super::FeatureFsetReferenceGraph>(fset, "raw_first_object_indices");
-    check::<super::FeatureFsetReferenceGraph>(fset, "raw_second_object_indices");
+    let fset = r#"{"id":"g","operation_label":"o","selector":"s","first_object_indices":[1,2],"raw_first_object_indices":[[144,0,1],[144,0,2]],"first_data_blocks":["a",null],"second_object_indices":[3,4,5],"raw_second_object_indices":[[144,0,3],[144,0,4],[144,0,5]],"second_data_blocks":[null,"d","e"],"source_offset":10,"first_source_offsets":[14,17],"second_source_offsets":[21,24,27]}"#;
+    check::<crate::native::features::fset::FeatureFsetReferenceGraph>(
+        fset,
+        "raw_first_object_indices",
+    );
+    check::<crate::native::features::fset::FeatureFsetReferenceGraph>(
+        fset,
+        "raw_second_object_indices",
+    );
 }
 
 #[test]

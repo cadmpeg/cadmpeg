@@ -1060,42 +1060,45 @@ fn om_fset_reference_graph_requires_exact_groups_and_bounds() {
         0x19, 0x40, 0x90, 0x19, 0x41, 0x3e, 0x90, 0x19, 0x30, 0x90, 0x19, 0x31, 0x90, 0x19, 0x32,
         0x00, 0x03, 0x00,
     ];
-    let graph = super::fset_payload_reference_graph(record(&payload)).unwrap();
-    assert_eq!(graph.selector, "T;:S567R893");
-    assert_eq!(graph.offset, 100);
+    let graph = crate::om::fset_references::FsetReferences::read(record(&payload)).unwrap();
+    assert_eq!(graph.selector(), "T;:S567R893");
+    assert_eq!(graph.offset(), 100);
     assert_eq!(
         graph
-            .first
+            .first()
             .each_ref()
-            .map(|reference| reference.token.value()),
+            .map(|(index, ())| u32::from(*index)),
         [6464, 6465]
     );
     assert_eq!(
         graph
-            .second
+            .second()
             .each_ref()
-            .map(|reference| reference.token.value()),
+            .map(|(index, ())| u32::from(*index)),
         [6448, 6449, 6450]
     );
+    let raw = graph
+        .first()
+        .each_ref()
+        .map(|(index, ())| crate::om::fset_references::word_reference_bytes(*index));
     assert_eq!(
-        graph
-            .first
-            .each_ref()
-            .map(|reference| reference.token.raw()),
+        raw.each_ref().map(|raw| raw.as_slice()),
         [[0x90, 0x19, 0x40].as_slice(), [0x90, 0x19, 0x41].as_slice(),]
     );
 
     let mut wrong_length = payload;
     wrong_length[1] -= 1;
-    assert!(super::fset_payload_reference_graph(record(&wrong_length)).is_none());
+    assert!(crate::om::fset_references::FsetReferences::read(record(&wrong_length)).is_none());
     let mut wrong_suffix = payload;
     wrong_suffix[31] = 0x04;
-    assert!(super::fset_payload_reference_graph(record(&wrong_suffix)).is_none());
+    assert!(crate::om::fset_references::FsetReferences::read(record(&wrong_suffix)).is_none());
     let mut wrong_reference_form = payload;
     wrong_reference_form[14] = 0xf1;
-    assert!(super::fset_payload_reference_graph(record(&wrong_reference_form)).is_none());
+    assert!(
+        crate::om::fset_references::FsetReferences::read(record(&wrong_reference_form)).is_none()
+    );
     let duplicate = [payload.as_slice(), payload.as_slice()].concat();
-    assert!(super::fset_payload_reference_graph(record(&duplicate)).is_none());
+    assert!(crate::om::fset_references::FsetReferences::read(record(&duplicate)).is_none());
 }
 
 #[test]

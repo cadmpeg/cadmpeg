@@ -2798,8 +2798,8 @@ fn attach_feature_operations(
                 continue;
             };
             let group = match group {
-                crate::native::features::FeatureFsetReferenceGroup::First => "first",
-                crate::native::features::FeatureFsetReferenceGroup::Second => "second",
+                crate::native::features::fset::FeatureFsetReferenceGroup::First => "first",
+                crate::native::features::fset::FeatureFsetReferenceGroup::Second => "second",
             };
             source_properties.insert(
                 format!("fset_construction_payload.{group}"),

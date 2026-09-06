@@ -82,6 +82,7 @@ use state_tagged_value::StateTaggedValue;
 pub(crate) mod projected_references;
 pub(crate) mod pattern_references;
 pub(crate) mod counted_pattern_references;
+pub(crate) mod fset_references;
 pub(crate) mod pattern;
 use pattern::{PatternRow, PatternRows, PatternTerminal, PatternValue, PatternWideValues};
 pub(crate) mod scalar;
@@ -669,19 +670,6 @@ pub struct PayloadObjectReference<T = ReferenceIndexToken, O = usize> {
     pub offset: O,
     /// Checked token retaining the exact marker and width.
     pub token: T,
-}
-
-/// Exact two-group reference graph in an `FSET` payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FsetPayloadReferenceGraph {
-    /// Printable selector preceding the reference groups.
-    pub selector: String,
-    /// Two references before the group separator.
-    pub first: [PayloadObjectReference; 2],
-    /// Three references after the group separator.
-    pub second: [PayloadObjectReference; 3],
-    /// Absolute offset of the graph prefix.
-    pub offset: usize,
 }
 
 /// One nullable object-index slot in a counted `DELETE` payload field.
@@ -1894,65 +1882,6 @@ pub fn sketch_payload_references(record: OperationPayload<'_>) -> Option<SketchR
 fn payload_object_index(bytes: &[u8]) -> Option<(ReferenceIndexToken, usize)> {
     let token = ReferenceIndexToken::read_payload(bytes)?;
     Some((token, token.raw().len()))
-}
-
-/// Decode the unique exactly bounded two-group reference graph in an `FSET`
-/// payload without assigning selection roles to either group.
-pub fn fset_payload_reference_graph(
-    record: OperationPayload<'_>,
-) -> Option<FsetPayloadReferenceGraph> {
-    const SUFFIX: [u8; 3] = [0x00, 0x03, 0x00];
-    if record.name() != "FSET" {
-        return None;
-    }
-    let decode_reference = |at: &mut usize| {
-        let offset = *at;
-        (record.payload().get(offset) == Some(&0x90)).then_some(())?;
-        let object_index = ReferenceIndexToken::read_feature(record.payload().get(offset..)?)?;
-        let width = 3;
-        *at += width;
-        Some(PayloadObjectReference {
-            offset: record.payload_offset() + offset,
-            token: object_index,
-        })
-    };
-    let decode = |start: usize| {
-        (record.payload().get(start) == Some(&0x01)).then_some(())?;
-        let declared_len = usize::from(*record.payload().get(start + 1)?);
-        let body_start = start.checked_add(2)?;
-        let body_end = body_start.checked_add(declared_len)?;
-        (declared_len >= 9
-            && record.payload().get(body_start) == Some(&0x3c)
-            && record.payload().get(body_end.checked_sub(1)?) == Some(&0x3e))
-        .then_some(())?;
-        let (selector, first) =
-            unique_candidate((body_start + 2..body_end - 1).filter_map(|selector_end| {
-                let selector = record.payload().get(body_start + 1..selector_end)?;
-                (!selector.is_empty()
-                    && selector
-                        .iter()
-                        .all(|byte| byte.is_ascii_graphic() && *byte != 0x3e))
-                .then_some(())?;
-                let mut at = selector_end;
-                let first = [decode_reference(&mut at)?, decode_reference(&mut at)?];
-                (at == body_end - 1)
-                    .then_some((std::str::from_utf8(selector).ok()?.to_string(), first))
-            }))?;
-        let mut at = body_end;
-        let second = [
-            decode_reference(&mut at)?,
-            decode_reference(&mut at)?,
-            decode_reference(&mut at)?,
-        ];
-        (record.payload().get(at..at + SUFFIX.len()) == Some(&SUFFIX)).then_some(())?;
-        Some(FsetPayloadReferenceGraph {
-            selector,
-            first,
-            second,
-            offset: record.payload_offset() + start,
-        })
-    };
-    unique_candidate((0..record.payload().len().saturating_sub(1)).filter_map(decode))
 }
 
 /// Decode the exactly counted nullable construction-reference field at the

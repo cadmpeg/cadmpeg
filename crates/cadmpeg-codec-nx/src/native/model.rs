@@ -5,16 +5,15 @@
 //! record vectors into domain sub-structs. Extraction is infallible: malformed
 //! data is omitted, never surfaced as an error.
 
-use crate::native::om::roll_forward::OmRollForwardStateGroup;
-use crate::native::om::state_slot_lane::OmOperationStateSlotLane;
-use crate::native::om::state_status::OmOperationStateStatus;
-use crate::native::om::journal_group::OmOperationStateJournalGroup;
 use super::features::operation_record::FeatureOperationRecord;
 use super::features::unlabeled_record::FeatureUnlabeledOperationRecord;
 use crate::container::Container;
 use crate::native::features::block_reference::FeatureBlockConstructionReference;
 use crate::native::features::datum_plane_header::{
     feature_datum_plane_headers, FeatureDatumPlaneHeader,
+};
+use crate::native::features::fset::{
+    feature_fset_construction_payloads, feature_fset_reference_graphs, FeatureFsetReferenceGraph,
 };
 use crate::native::features::object_frame::DataBlockObjectFrame;
 use crate::native::features::payload_name::FeaturePayloadName;
@@ -31,8 +30,12 @@ use crate::native::om::creation_display::{
     rm_creation_display_data_relations, RmCreationDisplayDataRelation,
 };
 use crate::native::om::display_color::{rm_display_color_assignments, RmDisplayColorAssignment};
+use crate::native::om::journal_group::OmOperationStateJournalGroup;
 use crate::native::om::material_texture::{material_texture_assets, MaterialTextureAsset};
 use crate::native::om::object_uuid::{object_uuid_values, ObjectUuidValue};
+use crate::native::om::roll_forward::OmRollForwardStateGroup;
+use crate::native::om::state_slot_lane::OmOperationStateSlotLane;
+use crate::native::om::state_status::OmOperationStateStatus;
 use crate::parasolid::Stream;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::ids::BodyId;
