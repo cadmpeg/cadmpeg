@@ -1256,22 +1256,22 @@ struct IndexedDefinitionLayout {
     registry_tail: IndexedByteRange,
 }
 
-/// One cached entity-record range in an indexed section.
+/// One cached entity-record range with a required fixed-table identity.
 #[derive(Debug, Clone, Copy)]
-struct IndexedRecordLayout {
-    object_id: Option<(u32, u64)>,
+struct FixedIndexedRecordLayout {
+    object_id: (u32, u64),
     bytes: IndexedByteRange,
 }
 
 #[derive(Debug, Clone)]
 enum IndexedStoreLayout {
     Fixed {
-        records: Vec<IndexedRecordLayout>,
+        records: Vec<FixedIndexedRecordLayout>,
     },
     OffsetOnly {
-        control: IndexedRecordLayout,
+        control: IndexedByteRange,
         column_storage: IndexedByteRange,
-        records: Vec<IndexedRecordLayout>,
+        records: Vec<IndexedByteRange>,
     },
 }
 
@@ -1290,20 +1290,17 @@ impl IndexedSectionLayout {
     fn from_section(section: &IndexedSection<'_>) -> Self {
         let types = registry::type_definition_layouts(&section.types);
         let fields = registry::field_definition_layouts(&section.fields);
-        let record_layout =
-            |offset: usize, bytes: &[u8], object_id: Option<(u32, u64)>| IndexedRecordLayout {
-                object_id,
-                bytes: IndexedByteRange {
-                    start: offset,
-                    end: offset + bytes.len(),
-                },
-            };
+        let record_range = |offset: usize, bytes: &[u8]| IndexedByteRange {
+            start: offset,
+            end: offset + bytes.len(),
+        };
         let store = match &section.store {
             IndexedStore::Fixed { records } => IndexedStoreLayout::Fixed {
                 records: records
                     .iter()
-                    .map(|record| {
-                        record_layout(record.offset, record.bytes, Some(record.object_id))
+                    .map(|record| FixedIndexedRecordLayout {
+                        object_id: record.object_id,
+                        bytes: record_range(record.offset, record.bytes),
                     })
                     .collect(),
             },
@@ -1312,19 +1309,16 @@ impl IndexedSectionLayout {
                 column_storage,
                 records,
             } => {
-                let start = records
-                    .first()
-                    .expect("offset-only indexed section has records")
-                    .offset;
+                let start = control.offset + control.bytes.len();
                 IndexedStoreLayout::OffsetOnly {
-                    control: record_layout(control.offset, control.bytes, None),
+                    control: record_range(control.offset, control.bytes),
                     column_storage: IndexedByteRange {
                         start,
                         end: start + column_storage.len(),
                     },
                     records: records
                         .iter()
-                        .map(|record| record_layout(record.offset, record.bytes, None))
+                        .map(|record| record_range(record.offset, record.bytes))
                         .collect(),
                 }
             }
@@ -1340,13 +1334,12 @@ impl IndexedSectionLayout {
     }
 
     pub(crate) fn materialize<'a>(&self, bytes: &'a [u8]) -> IndexedSection<'a> {
-        let materialize_payload = |layout: &IndexedRecordLayout| {
+        let materialize_payload = |range: &IndexedByteRange| {
             (
-                layout.bytes.start,
+                range.start,
                 bytes
-                    .get(layout.bytes.start..layout.bytes.end)
+                    .get(range.start..range.end)
                     .expect("cached indexed record remains in source"),
-                layout.object_id,
             )
         };
         let store = match &self.store {
@@ -1354,9 +1347,9 @@ impl IndexedSectionLayout {
                 records: records
                     .iter()
                     .map(|layout| {
-                        let (offset, payload, object_id) = materialize_payload(layout);
+                        let (offset, payload) = materialize_payload(&layout.bytes);
                         FixedEntityRecord {
-                            object_id: object_id.expect("fixed indexed record has object id"),
+                            object_id: layout.object_id,
                             offset,
                             bytes: payload,
                         }
@@ -1369,7 +1362,7 @@ impl IndexedSectionLayout {
                 column_storage,
                 records,
             } => {
-                let (offset, payload, _) = materialize_payload(control);
+                let (offset, payload) = materialize_payload(control);
                 IndexedStore::OffsetOnly {
                     control: EntityRecord {
                         offset,
@@ -1381,7 +1374,7 @@ impl IndexedSectionLayout {
                     records: records
                         .iter()
                         .map(|layout| {
-                            let (offset, payload, _) = materialize_payload(layout);
+                            let (offset, payload) = materialize_payload(layout);
                             EntityRecord {
                                 offset,
                                 bytes: payload,
