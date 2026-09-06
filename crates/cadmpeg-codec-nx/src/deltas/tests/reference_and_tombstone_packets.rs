@@ -74,7 +74,7 @@ fn deltas_reference_state_packets_decode_compact_and_extended_references() {
     assert_eq!(
         census.reference_state_packets[0].frames,
         [crate::deltas::ReferenceStateFrame {
-            references: [2, 3, 40_000, 1],
+            references: [2, 3, 40_000, 1].try_into().unwrap(),
             state_words: [34, 6, 11, 22_362, 1],
             state_byte: 65,
         }]
@@ -140,7 +140,7 @@ fn deltas_reference_marker_packets_decode_extended_references_atomically() {
     let census = crate::deltas::walk(&packet);
 
     assert_eq!(census.reference_marker_packets.len(), 1);
-    assert_eq!(census.reference_marker_packets[0].reference, 40_000);
+    assert_eq!(u32::from(census.reference_marker_packets[0].reference), 40_000);
     assert_eq!(u8::from(census.reference_marker_packets[0].marker), 0x56);
     assert_eq!(census.reference_marker_packets[0].offset, 0);
     assert_eq!(census.reference_marker_packets[0].end, packet.len());
@@ -191,7 +191,7 @@ fn deltas_region_schema_declaration_exposes_a_following_marker_packet() {
     assert_eq!(declaration.end, declaration_end);
     assert_eq!(census.reference_marker_packets.len(), 1);
     assert_eq!(census.reference_marker_packets[0].offset, declaration_end);
-    assert_eq!(census.reference_marker_packets[0].reference, 7);
+    assert_eq!(u32::from(census.reference_marker_packets[0].reference), 7);
     assert_eq!(census.bytes_decoded, bytes.len());
 
     let mut truncated = bytes[..declaration_end - 1].to_vec();

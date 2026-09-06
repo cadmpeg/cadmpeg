@@ -6,6 +6,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) mod record_kind;
 pub(crate) mod packet_marker;
+pub(crate) mod xmt_reference;
+pub(crate) mod state_references;
+use state_references::StateReferences;
+use xmt_reference::NonNullXmt;
 pub(crate) mod preamble_state;
 use preamble_state::PreambleState;
 pub(crate) mod type150_state;
@@ -568,10 +572,10 @@ pub struct ReferenceTypeMap {
 }
 
 /// One four-reference frame in a deltas state packet.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ReferenceStateFrame {
     /// Four ordered stream-local XMT references.
-    pub references: [u32; 4],
+    pub references: StateReferences,
     /// Five ordered big-endian state words.
     pub state_words: [u32; 5],
     /// Terminal serialized state byte.
@@ -605,7 +609,7 @@ pub struct SchemaReferencePreamble {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReferenceMarkerPacket {
     /// Non-null stream-local XMT reference.
-    pub reference: u32,
+    pub reference: NonNullXmt,
     /// Serialized marker byte.
     pub marker: ReferenceMarker,
     /// First byte of the packet.
@@ -1627,11 +1631,7 @@ fn reference_state_frame(
         at = at.checked_add(consumed)?;
         *reference = value;
     }
-    let leading_non_null =
-        references[..3].iter().all(|reference| *reference > 1) && references[3] >= 1;
-    let interleaved_null =
-        references[0] > 1 && references[1] == 1 && references[2] > 1 && references[3] == 1;
-    (leading_non_null || interleaved_null).then_some(())?;
+    let references = StateReferences::try_from(references).ok()?;
     (View::u16_be_at(stream, at) == Some(1)).then_some(())?;
     at = at.checked_add(2)?;
     let mut state_words = [0; 5];
@@ -2332,7 +2332,7 @@ fn reference_marker_packet(
     expected_end: usize,
 ) -> Option<ReferenceMarkerPacket> {
     let (reference, consumed) = read_xmt(stream, offset)?;
-    (reference > 1).then_some(())?;
+    let reference = NonNullXmt::try_from(reference).ok()?;
     let mut at = offset.checked_add(consumed)?;
     (stream.get(at) == Some(&1)).then_some(())?;
     at = at.checked_add(1)?;
