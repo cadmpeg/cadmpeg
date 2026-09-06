@@ -8,6 +8,7 @@ use reference_value::{DirectReference, LocatedReference, RecordReference, Tagged
 
 pub(crate) mod draft_identity;
 pub(crate) mod draft_terminal;
+pub(crate) mod draft_leading;
 pub(crate) mod datum_index;
 pub(crate) mod plane_descriptor;
 pub(crate) mod csys_descriptor;
@@ -36,7 +37,7 @@ use cadmpeg_core::decode::{alloc_filled, View};
 use crate::printable_string::PrintableString;
 
 pub(crate) mod compact;
-use compact::{CompactIndexAtom, WrappedCompactIndex, LocatedCompactIndex, NullableCompactIndex, CountedIndexMembers};
+use compact::{CompactIndexAtom, WrappedCompactIndex, LocatedCompactIndex, NullableCompactIndex};
 pub(crate) mod color;
 use color::{ColorComponent, PaletteIndex, PALETTE_SIZE, BACKGROUND_NAME};
 pub(crate) mod branch_items;
@@ -1059,13 +1060,6 @@ impl PointFeatureScalarLane {
 pub struct DraftFeaturePayloadReferenceField {
     /// Four construction references in serialized order.
     pub references: [PayloadObjectReference; 4],
-}
-
-/// Counted compact-index lane preceding a draft-feature construction graph.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DraftFeatureLeadingIndexLane {
-    /// Non-null compact indices in serialized order with absolute token offsets.
-    pub indices: CountedIndexMembers<LocatedCompactIndex, 1>,
 }
 
 /// Exact common construction references in a surface-feature payload.
@@ -2920,38 +2914,6 @@ pub fn draft_feature_payload_references(
             })
             .filter_map(decode),
     )
-}
-
-/// Decode the exactly positioned counted compact-index lane preceding a `DRAFT` graph.
-pub fn draft_feature_leading_index_lane(
-    record: OperationPayload<'_>,
-) -> Option<DraftFeatureLeadingIndexLane> {
-    const PREFIX: [u8; 22] = [
-        0x67, 0x00, 0x00, 0x01, 0x00, 0x2f, 0xa4, 0x7a, 0xe1, 0x47, 0xae, 0x14, 0x7b, 0x03, 0xff,
-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-    ];
-    if record.name() != "DRAFT" || record.payload().get(..PREFIX.len()) != Some(&PREFIX) {
-        return None;
-    }
-    let mut at = PREFIX.len();
-    (record.payload().get(at) == Some(&0x01)).then_some(())?;
-    let declared_count = *record.payload().get(at + 1)?;
-    (declared_count >= 2).then_some(())?;
-    at += 2;
-    let mut indices = Vec::with_capacity(usize::from(declared_count - 1));
-    for _ in 1..declared_count {
-        let token = LocatedCompactIndex::read(record.payload(), at)?;
-        at += token.atom.raw().len();
-        indices.push(LocatedCompactIndex {
-            atom: token.atom,
-            offset: record.payload_offset() + token.offset,
-        });
-    }
-    (record.payload().get(at..at + 2) == Some(&[0x01, 0x02])).then_some(())?;
-
-    Some(DraftFeatureLeadingIndexLane {
-        indices: CountedIndexMembers::new(indices).ok()?,
-    })
 }
 
 /// Decode the exact common construction-reference envelope in a bounded
