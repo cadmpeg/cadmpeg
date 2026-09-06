@@ -44,6 +44,7 @@ pub(crate) mod branch_items;
 pub(crate) mod discriminators;
 use branch_items::BranchItems;
 pub(crate) mod parameter_name;
+pub(crate) mod name_field;
 pub(crate) mod scalar_pair;
 pub(crate) mod binary64_pair;
 use scalar_pair::{SketchPairForm, DatumPairForm};
@@ -422,33 +423,6 @@ pub fn construction_payload_scalar_fields(bytes: &[u8]) -> Vec<ConstructionPaylo
     fields
 }
 
-/// Compact type code on a construction payload name that is not payload-leading.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConstructionPayloadTypeCode {
-    /// Exact non-null compact type-code token.
-    pub atom: compact::CompactIndexAtom,
-    /// Payload-relative compact type-code offset.
-    pub offset: usize,
-}
-
-/// One compact-code string field in a reconstructed construction payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConstructionPayloadNamedField<'a> {
-    /// Payload-relative offset of the `66` marker.
-    pub offset: usize,
-    /// Compact type code, absent for the type-free payload-leading form.
-    pub type_code: Option<ConstructionPayloadTypeCode>,
-    /// Exact nonempty printable ASCII value.
-    pub value: &'a str,
-}
-
-impl ConstructionPayloadNamedField<'_> {
-    /// Whether the field uses the type-free payload-leading form.
-    pub fn payload_leading(&self) -> bool {
-        self.type_code.is_none()
-    }
-}
-
 /// Exact type-free named point record spanning consecutive store blocks.
 #[derive(Debug, Clone, PartialEq)]
 pub struct OffsetStoreNamedPoint {
@@ -469,26 +443,26 @@ pub(crate) fn offset_store_named_point<'a>(
     for (block_ordinal, block) in blocks.into_iter().enumerate() {
         // A later type-free name starts the next bounded data-block object.
         if !bytes.is_empty()
-            && construction_payload_named_fields(block)
+            && name_field::scan(block)
                 .first()
-                .is_some_and(|name| name.payload_leading())
+                .is_some_and(|name| name.code().is_none())
         {
             return candidate;
         }
         bytes.extend_from_slice(block);
-        let names = construction_payload_named_fields(&bytes);
+        let names = name_field::scan(&bytes);
         let name = names.first()?;
-        if !name.payload_leading() || parse_positive_decimal_suffix(name.value, "Point").is_none() {
+        if name.code().is_some() || parse_positive_decimal_suffix(name.value(), "Point").is_none() {
             return None;
         }
         let next_name = names
             .iter()
-            .find(|next| !next.payload_leading() && next.offset > name.offset);
-        let interval_end = next_name.map_or(bytes.len(), |next| next.offset);
+            .find(|next| next.code().is_some() && next.offset() > name.offset());
+        let interval_end = next_name.map_or(bytes.len(), |next| next.offset());
         let scalars = construction_payload_scalar_fields(&bytes)
             .into_iter()
             .filter(|scalar| {
-                scalar.offset > name.offset
+                scalar.offset > name.offset()
                     && scalar
                         .offset
                         .checked_add(SHIFTED_BINARY64_SCALAR_FRAME_LEN)
@@ -499,7 +473,7 @@ pub(crate) fn offset_store_named_point<'a>(
             [] | [_] => {}
             [first_scalar, second_scalar] => {
                 candidate.get_or_insert_with(|| OffsetStoreNamedPoint {
-                    name: name.value.to_string(),
+                    name: name.value().to_string(),
                     values: [first_scalar, second_scalar].map(|field| LocatedBinary64 {
                         scalar: field.scalar,
                         offset: field.offset,
@@ -523,60 +497,6 @@ fn parse_positive_decimal_suffix(value: &str, prefix: &str) -> Option<u32> {
     }
     let ordinal = suffix.parse::<u32>().ok()?;
     (ordinal != 0).then_some(ordinal)
-}
-
-/// Decode exact `66, compact_type, 03, declared_len, text, 00` fields.
-pub fn construction_payload_named_fields(bytes: &[u8]) -> Vec<ConstructionPayloadNamedField<'_>> {
-    let mut fields = Vec::new();
-    if bytes.first() == Some(&0x03) {
-        if let Some(value) = construction_payload_name_text(bytes, 1) {
-            fields.push(ConstructionPayloadNamedField {
-                offset: 0,
-                type_code: None,
-                value,
-            });
-        }
-    }
-    for start in 0..bytes.len().saturating_sub(5) {
-        if bytes[start] != 0x66 {
-            continue;
-        }
-        let Some(atom) =
-            bytes.get(start + 1..).and_then(compact::CompactIndexAtom::read)
-        else {
-            continue;
-        };
-        let marker = start + 1 + atom.raw().len();
-        if bytes.get(marker) != Some(&0x03) {
-            continue;
-        }
-        let Some(value) = construction_payload_name_text(bytes, marker + 1) else {
-            continue;
-        };
-        fields.push(ConstructionPayloadNamedField {
-            offset: start,
-            type_code: Some(ConstructionPayloadTypeCode {
-                atom,
-                offset: start + 1,
-            }),
-            value,
-        });
-    }
-    fields
-}
-
-fn construction_payload_name_text(bytes: &[u8], length_offset: usize) -> Option<&str> {
-    let text_len = usize::from(bytes.get(length_offset).copied()?.checked_sub(2)?);
-    let text_start = length_offset.checked_add(1)?;
-    let text_end = text_start.checked_add(text_len)?;
-    let text = bytes.get(text_start..text_end)?;
-    if text.is_empty()
-        || !text.iter().all(u8::is_ascii_graphic)
-        || bytes.get(text_end) != Some(&0x00)
-    {
-        return None;
-    }
-    std::str::from_utf8(text).ok()
 }
 
 /// Unit declared by an NX numeric-expression serialization.

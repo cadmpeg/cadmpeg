@@ -650,3 +650,39 @@ fn payload_names_reject_inconsistent_compact_type_codes() {
         }
     }
 }
+
+#[test]
+fn payload_name_wire_enforces_frame_positions_and_leading_form() {
+    use crate::native::features::{FeatureBlockPayloadName, FeatureSketchPayloadName};
+
+    for json in [
+        r#"{"id":"name","operation_label":"operation","construction_payload":"payload","ordinal":0,"payload_leading":true,"value":"Point1","payload_offset":0,"source_offset":100}"#,
+        r#"{"id":"name","operation_label":"operation","construction_payload":"payload","ordinal":0,"type_code":131,"raw_type_code":[128,131],"type_code_payload_offset":11,"type_code_source_offset":20,"payload_leading":false,"value":"Point1","payload_offset":10,"source_offset":100}"#,
+    ] {
+        let sketch: FeatureSketchPayloadName = serde_json::from_str(json).unwrap();
+        let block: FeatureBlockPayloadName = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_string(&sketch).unwrap(), json);
+        assert_eq!(serde_json::to_string(&block).unwrap(), json);
+        let wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        for (field, replacement) in [
+            ("payload_offset", serde_json::json!(1)),
+            ("type_code_payload_offset", serde_json::json!(12)),
+            ("value", serde_json::json!("A B")),
+        ] {
+            let mut invalid = wire.clone();
+            invalid[field] = replacement;
+            assert!(serde_json::from_value::<FeatureSketchPayloadName>(invalid.clone()).is_err());
+            assert!(serde_json::from_value::<FeatureBlockPayloadName>(invalid).is_err());
+        }
+    }
+    let overflowing = serde_json::json!({
+        "id": "name", "operation_label": "operation", "construction_payload": "payload",
+        "ordinal": 0, "type_code": 1, "raw_type_code": [1],
+        "type_code_payload_offset": u64::MAX, "payload_leading": false,
+        "value": "A", "payload_offset": u64::MAX - 1, "source_offset": 100,
+    });
+    let sketch = serde_json::from_value::<FeatureSketchPayloadName>(overflowing.clone()).unwrap_err();
+    let block = serde_json::from_value::<FeatureBlockPayloadName>(overflowing).unwrap_err();
+    assert!(sketch.to_string().contains("payload_offset"));
+    assert!(block.to_string().contains("payload_offset"));
+}

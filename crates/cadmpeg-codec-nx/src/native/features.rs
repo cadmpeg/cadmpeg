@@ -2351,59 +2351,30 @@ impl TryFrom<FeatureSketchPayloadScalarLaneWire> for FeatureSketchPayloadScalarL
     }
 }
 
-/// Compact type code on a reconstructed payload name that is not payload-leading.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeaturePayloadTypeCode {
-    /// Exact non-null compact type-code token.
-    pub atom: crate::om::compact::CompactIndexAtom,
-    /// Payload-relative offset of the compact type-code token.
-    pub payload_offset: u64,
-    /// Absolute source offset of the compact type-code token, when mapped.
-    pub source_offset: Option<u64>,
-}
-
-fn feature_payload_type_code_from_wire(
+fn payload_name_from_wire(
     type_code: Option<u32>,
     raw_type_code: Option<Vec<u8>>,
     type_code_payload_offset: Option<u64>,
     type_code_source_offset: Option<u64>,
     payload_leading: bool,
-) -> Result<Option<FeaturePayloadTypeCode>, String> {
-    match (
-        type_code,
-        raw_type_code,
-        type_code_payload_offset,
-        type_code_source_offset,
-        payload_leading,
-    ) {
-        (None, None, None, None, true) => Ok(None),
-        (Some(value), Some(raw), Some(payload_offset), source_offset, false) => {
-            Ok(Some(FeaturePayloadTypeCode {
+    value: String,
+    payload_offset: u64,
+) -> Result<crate::om::name_field::NameField<String>, String> {
+    let code = match (type_code, raw_type_code, type_code_payload_offset, type_code_source_offset, payload_leading) {
+        (None, None, None, None, true) => None,
+        (Some(value), Some(raw), Some(offset), source_offset, false) => {
+            if payload_offset.checked_add(1) != Some(offset) {
+                return Err("type_code_payload_offset: expected payload_offset + 1".to_owned());
+            }
+            Some(crate::om::compact::CompactIndexTarget {
                 atom: crate::om::compact::CompactIndexAtom::from_wire(value, &raw)
                     .map_err(|error| format!("type_code/raw_type_code: {error}"))?,
-                payload_offset,
-                source_offset,
-            }))
+                target: source_offset,
+            })
         }
-        _ => Err(
-            "payload name type code is present exactly when payload_leading is false".to_owned(),
-        ),
-    }
-}
-
-fn feature_payload_type_code_to_wire(
-    type_code: Option<FeaturePayloadTypeCode>,
-) -> (Option<u32>, Option<Vec<u8>>, Option<u64>, Option<u64>, bool) {
-    match type_code {
-        None => (None, None, None, None, true),
-        Some(code) => (
-            Some(code.atom.value()),
-            Some(code.atom.raw().to_vec()),
-            Some(code.payload_offset),
-            code.source_offset,
-            false,
-        ),
-    }
+        _ => return Err("payload name type code is present exactly when payload_leading is false".to_owned()),
+    };
+    crate::om::name_field::NameField::new(value, payload_offset, code).map_err(str::to_owned)
 }
 
 /// Exact framed name retained from one reconstructed sketch payload.
@@ -2421,12 +2392,8 @@ pub struct FeatureSketchPayloadName {
     pub construction_payload: String,
     /// Zero-based name-field order within the reconstructed payload.
     pub ordinal: u32,
-    /// Compact type code, absent for the type-free payload-leading form.
-    pub type_code: Option<FeaturePayloadTypeCode>,
-    /// Exact printable field value.
-    pub value: String,
-    /// Byte offset of the opening `66` or payload-leading `03` marker.
-    pub payload_offset: u64,
+    /// Checked name text and its leading or compact-typed frame.
+    pub frame: crate::om::name_field::NameField<String>,
     /// Absolute file offset of the opening marker.
     pub source_offset: u64,
 }
@@ -2453,25 +2420,19 @@ struct FeatureSketchPayloadNameWire {
 
 impl From<FeatureSketchPayloadName> for FeatureSketchPayloadNameWire {
     fn from(value: FeatureSketchPayloadName) -> Self {
-        let (
-            type_code,
-            raw_type_code,
-            type_code_payload_offset,
-            type_code_source_offset,
-            payload_leading,
-        ) = feature_payload_type_code_to_wire(value.type_code);
+        let code = value.frame.code();
         Self {
             id: value.id,
             operation_label: value.operation_label,
             construction_payload: value.construction_payload,
             ordinal: value.ordinal,
-            type_code,
-            raw_type_code,
-            type_code_payload_offset,
-            type_code_source_offset,
-            payload_leading,
-            value: value.value,
-            payload_offset: value.payload_offset,
+            type_code: code.as_ref().map(|code| code.atom.value()),
+            raw_type_code: code.as_ref().map(|code| code.atom.raw().to_vec()),
+            type_code_payload_offset: code.as_ref().map(|code| code.offset),
+            type_code_source_offset: code.and_then(|code| *code.target),
+            payload_leading: value.frame.code().is_none(),
+            value: value.frame.value().to_owned(),
+            payload_offset: value.frame.offset(),
             source_offset: value.source_offset,
         }
     }
@@ -2486,15 +2447,15 @@ impl TryFrom<FeatureSketchPayloadNameWire> for FeatureSketchPayloadName {
             operation_label: wire.operation_label,
             construction_payload: wire.construction_payload,
             ordinal: wire.ordinal,
-            type_code: feature_payload_type_code_from_wire(
+            frame: payload_name_from_wire(
                 wire.type_code,
                 wire.raw_type_code,
                 wire.type_code_payload_offset,
                 wire.type_code_source_offset,
                 wire.payload_leading,
+                wire.value,
+                wire.payload_offset,
             )?,
-            value: wire.value,
-            payload_offset: wire.payload_offset,
             source_offset: wire.source_offset,
         })
     }
@@ -5652,12 +5613,8 @@ pub struct FeatureBlockPayloadName {
     pub construction_payload: String,
     /// Zero-based name order in the reconstructed payload.
     pub ordinal: u32,
-    /// Compact type code, absent for the type-free payload-leading form.
-    pub type_code: Option<FeaturePayloadTypeCode>,
-    /// Exact printable field value.
-    pub value: String,
-    /// Payload-relative opening `66` or payload-leading `03` marker offset.
-    pub payload_offset: u64,
+    /// Checked name text and its leading or compact-typed frame.
+    pub frame: crate::om::name_field::NameField<String>,
     /// Absolute source offset of the opening marker.
     pub source_offset: u64,
 }
@@ -5684,25 +5641,19 @@ struct FeatureBlockPayloadNameWire {
 
 impl From<FeatureBlockPayloadName> for FeatureBlockPayloadNameWire {
     fn from(value: FeatureBlockPayloadName) -> Self {
-        let (
-            type_code,
-            raw_type_code,
-            type_code_payload_offset,
-            type_code_source_offset,
-            payload_leading,
-        ) = feature_payload_type_code_to_wire(value.type_code);
+        let code = value.frame.code();
         Self {
             id: value.id,
             operation_label: value.operation_label,
             construction_payload: value.construction_payload,
             ordinal: value.ordinal,
-            type_code,
-            raw_type_code,
-            type_code_payload_offset,
-            type_code_source_offset,
-            payload_leading,
-            value: value.value,
-            payload_offset: value.payload_offset,
+            type_code: code.as_ref().map(|code| code.atom.value()),
+            raw_type_code: code.as_ref().map(|code| code.atom.raw().to_vec()),
+            type_code_payload_offset: code.as_ref().map(|code| code.offset),
+            type_code_source_offset: code.and_then(|code| *code.target),
+            payload_leading: value.frame.code().is_none(),
+            value: value.frame.value().to_owned(),
+            payload_offset: value.frame.offset(),
             source_offset: value.source_offset,
         }
     }
@@ -5717,15 +5668,15 @@ impl TryFrom<FeatureBlockPayloadNameWire> for FeatureBlockPayloadName {
             operation_label: wire.operation_label,
             construction_payload: wire.construction_payload,
             ordinal: wire.ordinal,
-            type_code: feature_payload_type_code_from_wire(
+            frame: payload_name_from_wire(
                 wire.type_code,
                 wire.raw_type_code,
                 wire.type_code_payload_offset,
                 wire.type_code_source_offset,
                 wire.payload_leading,
+                wire.value,
+                wire.payload_offset,
             )?,
-            value: wire.value,
-            payload_offset: wire.payload_offset,
             source_offset: wire.source_offset,
         })
     }
@@ -8631,11 +8582,11 @@ pub fn feature_sketch_payload_names(
                 "sketch-construction-payload",
                 1,
             );
-            crate::om::construction_payload_named_fields(joined.bytes())
+            crate::om::name_field::scan(joined.bytes())
                 .into_iter()
                 .enumerate()
                 .filter_map(|(ordinal, field)| {
-                    let relative = field.offset as u64;
+                    let relative = field.offset() as u64;
                     let source_offset = joined.source_offset(relative)?;
                     Some(FeatureSketchPayloadName {
                         id: format!(
@@ -8647,13 +8598,7 @@ pub fn feature_sketch_payload_names(
                         operation_label: construction.operation_label.clone(),
                         construction_payload: construction_payload.clone(),
                         ordinal: ordinal as u32,
-                        type_code: field.type_code.map(|code| FeaturePayloadTypeCode {
-                            atom: code.atom,
-                            payload_offset: code.offset as u64,
-                            source_offset: joined.source_offset(code.offset as u64),
-                        }),
-                        value: field.value.to_string(),
-                        payload_offset: relative,
+                        frame: field.into_native(|offset| joined.source_offset(offset))?,
                         source_offset,
                     })
                 })
@@ -8676,16 +8621,16 @@ pub fn feature_sketch_payload_named_records(
             .iter()
             .filter(|name| name.construction_payload == payload.id)
             .collect::<Vec<_>>();
-        payload_names.sort_by_key(|name| name.payload_offset);
+        payload_names.sort_by_key(|name| name.frame.offset());
         for (ordinal, name) in payload_names.iter().enumerate() {
             let end = payload_names
                 .get(ordinal + 1)
-                .map_or(payload.content.byte_len(), |next| next.payload_offset);
+                .map_or(payload.content.byte_len(), |next| next.frame.offset());
             let mut scalar_fields = scalars
                 .iter()
                 .filter(|scalar| {
                     scalar.payload.id() == payload.id
-                        && scalar.payload_offset > name.payload_offset
+                        && scalar.payload_offset > name.frame.offset()
                         && scalar.payload_offset < end
                 })
                 .collect::<Vec<_>>();
@@ -8694,7 +8639,7 @@ pub fn feature_sketch_payload_named_records(
                 .iter()
                 .filter(|pair| {
                     pair.construction_payload == payload.id
-                        && pair.position.offset() > name.payload_offset
+                        && pair.position.offset() > name.frame.offset()
                         && pair.position.offset() < end
                 })
                 .collect::<Vec<_>>();
@@ -8703,7 +8648,7 @@ pub fn feature_sketch_payload_named_records(
                 .iter()
                 .filter(|pair| {
                     pair.construction_payload == payload.id
-                        && pair.position.offset() > name.payload_offset
+                        && pair.position.offset() > name.frame.offset()
                         && pair.position.offset() < end
                 })
                 .collect::<Vec<_>>();
@@ -8731,7 +8676,7 @@ pub fn feature_sketch_payload_named_records(
                     .into_iter()
                     .map(|pair| pair.id.clone())
                     .collect(),
-                payload_start_offset: name.payload_offset,
+                payload_start_offset: name.frame.offset(),
                 payload_end_offset: end,
             });
         }
@@ -8762,7 +8707,7 @@ pub fn feature_sketch_points(
             {
                 return None;
             }
-            parse_sketch_point_name(&name.value)?;
+            parse_sketch_point_name(name.frame.value())?;
             let [first_id, second_id] = record.scalar_fields.as_slice() else {
                 return None;
             };
@@ -8781,7 +8726,7 @@ pub fn feature_sketch_points(
                 ),
                 operation_label: record.operation_label.clone(),
                 named_record: record.id.clone(),
-                name: name.value.clone(),
+                name: name.frame.value().to_owned(),
                 scalar_fields: [first.id.clone(), second.id.clone()],
                 coordinates: [first.scalar.value(), second.scalar.value()],
             })
@@ -8827,7 +8772,7 @@ pub fn feature_sketch_fixed_points(
             {
                 return None;
             }
-            parse_sketch_point_name(&name.value)?;
+            parse_sketch_point_name(name.frame.value())?;
             let pair = fixed_pairs.get(fixed_pair_id.as_str())?;
             if pair.operation_label != record.operation_label
                 || pair.construction_payload != record.construction_payload
@@ -8840,7 +8785,7 @@ pub fn feature_sketch_fixed_points(
                     .replacen("sketch-payload-record", "sketch-fixed-point", 1),
                 operation_label: record.operation_label.clone(),
                 named_record: record.id.clone(),
-                name: name.value.clone(),
+                name: name.frame.value().to_owned(),
                 fixed_pair: pair.id.clone(),
                 values: pair.values.map(SketchScaledAtom::value),
                 source_offset: pair.source_offset,
@@ -11314,23 +11259,17 @@ pub fn feature_block_payload_names(
             else {
                 return Vec::new();
             };
-            crate::om::construction_payload_named_fields(joined.bytes())
+            crate::om::name_field::scan(joined.bytes())
                 .into_iter()
                 .enumerate()
                 .filter_map(|(ordinal, field)| {
-                    let source_offset = joined.source_offset(field.offset as u64)?;
+                    let source_offset = joined.source_offset(field.offset() as u64)?;
                     Some(FeatureBlockPayloadName {
                         id: format!("{}-name-{ordinal}", payload.id),
                         operation_label: payload.operation_label.clone(),
                         construction_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
-                        type_code: field.type_code.map(|code| FeaturePayloadTypeCode {
-                            atom: code.atom,
-                            payload_offset: code.offset as u64,
-                            source_offset: joined.source_offset(code.offset as u64),
-                        }),
-                        value: field.value.to_string(),
-                        payload_offset: field.offset as u64,
+                        frame: field.into_native(|offset| joined.source_offset(offset))?,
                         source_offset,
                     })
                 })
@@ -11351,16 +11290,16 @@ pub fn feature_block_payload_named_records(
             .iter()
             .filter(|name| name.construction_payload == payload.id)
             .collect::<Vec<_>>();
-        payload_names.sort_by_key(|name| name.payload_offset);
+        payload_names.sort_by_key(|name| name.frame.offset());
         for (ordinal, name) in payload_names.iter().enumerate() {
             let end = payload_names
                 .get(ordinal + 1)
-                .map_or(payload.content.byte_len(), |next| next.payload_offset);
+                .map_or(payload.content.byte_len(), |next| next.frame.offset());
             let mut scalar_fields = scalars
                 .iter()
                 .filter(|scalar| {
                     scalar.payload.id() == payload.id
-                        && scalar.payload_offset > name.payload_offset
+                        && scalar.payload_offset > name.frame.offset()
                         && scalar.payload_offset < end
                 })
                 .collect::<Vec<_>>();
@@ -11374,7 +11313,7 @@ pub fn feature_block_payload_named_records(
                     .into_iter()
                     .map(|scalar| scalar.id.clone())
                     .collect(),
-                payload_start_offset: name.payload_offset,
+                payload_start_offset: name.frame.offset(),
                 payload_end_offset: end,
             });
         }
@@ -11400,7 +11339,7 @@ pub fn feature_block_payload_points(
         .iter()
         .filter_map(|record| {
             let name = names.get(record.name_field.as_str())?;
-            parse_sketch_point_name(&name.value)?;
+            parse_sketch_point_name(name.frame.value())?;
             let [first_id, second_id] = record.scalar_fields.as_slice() else {
                 return None;
             };
@@ -11410,7 +11349,7 @@ pub fn feature_block_payload_points(
                 id: format!("{}-point", record.id),
                 operation_label: record.operation_label.clone(),
                 named_record: record.id.clone(),
-                name: name.value.clone(),
+                name: name.frame.value().to_owned(),
                 scalar_fields: [first.id.clone(), second.id.clone()],
                 coordinates: [first.scalar.value(), second.scalar.value()],
             })

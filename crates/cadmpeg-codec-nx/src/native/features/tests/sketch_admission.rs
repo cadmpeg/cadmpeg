@@ -11,13 +11,11 @@ fn sketch_fixed_points_require_one_owned_finite_point_pair() {
         operation_label: "sketch".to_string(),
         construction_payload: "payload".to_string(),
         ordinal: 0,
-        type_code: Some(FeaturePayloadTypeCode {
-            atom: crate::om::compact::CompactIndexAtom::from_wire(1, &[1]).unwrap(),
-            payload_offset: 1,
-            source_offset: Some(1001),
-        }),
-        value: "Point1".to_string(),
-        payload_offset: 0,
+        frame: crate::om::name_field::NameField::new(
+            "Point1".to_string(), 0, Some(crate::om::compact::CompactIndexTarget {
+                atom: crate::om::compact::CompactIndexAtom::from_wire(1, &[1]).unwrap(), target: Some(1001),
+            }),
+        ).unwrap(),
         source_offset: 1000,
     };
     let record = FeatureSketchPayloadNamedRecord {
@@ -68,13 +66,11 @@ fn sketch_points_require_owned_finite_scalar_fields() {
         operation_label: "sketch".to_string(),
         construction_payload: "payload".to_string(),
         ordinal: 0,
-        type_code: Some(FeaturePayloadTypeCode {
-            atom: crate::om::compact::CompactIndexAtom::from_wire(1, &[1]).unwrap(),
-            payload_offset: 1,
-            source_offset: Some(1001),
-        }),
-        value: "Point1".to_string(),
-        payload_offset: 0,
+        frame: crate::om::name_field::NameField::new(
+            "Point1".to_string(), 0, Some(crate::om::compact::CompactIndexTarget {
+                atom: crate::om::compact::CompactIndexAtom::from_wire(1, &[1]).unwrap(), target: Some(1001),
+            }),
+        ).unwrap(),
         source_offset: 1000,
     };
     let record = FeatureSketchPayloadNamedRecord {

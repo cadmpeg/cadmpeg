@@ -843,7 +843,7 @@ fn nx_hole_package_group_uses_require_one_exact_lane_and_group() {
 fn nx_block_payload_points_require_exactly_two_named_scalars() {
     use super::{
         FeatureBlockPayloadName, FeatureBlockPayloadNamedRecord, FeaturePayloadScalar,
-        FeaturePayloadTypeCode, feature_block_payload_point_groups, feature_block_payload_points,
+        feature_block_payload_point_groups, feature_block_payload_points,
     };
 
     let operation_label = "operation".to_string();
@@ -853,13 +853,11 @@ fn nx_block_payload_points_require_exactly_two_named_scalars() {
         operation_label: operation_label.clone(),
         construction_payload: construction_payload.clone(),
         ordinal: 0,
-        type_code: Some(FeaturePayloadTypeCode {
-            atom: crate::om::compact::CompactIndexAtom::from_wire(131, &[0x80, 0x83]).unwrap(),
-            payload_offset: 11,
-            source_offset: Some(101),
-        }),
-        value: "Point7".to_string(),
-        payload_offset: 10,
+        frame: crate::om::name_field::NameField::new(
+            "Point7".to_string(), 10, Some(crate::om::compact::CompactIndexTarget {
+                atom: crate::om::compact::CompactIndexAtom::from_wire(131, &[0x80, 0x83]).unwrap(), target: Some(101),
+            }),
+        ).unwrap(),
         source_offset: 100,
     };
     let scalar = |id: &str, ordinal: u32, value: f64| {
@@ -917,7 +915,12 @@ fn nx_block_payload_points_require_exactly_two_named_scalars() {
             .is_empty()
     );
     let mut malformed = name;
-    malformed.value = "Point0".to_string();
+    malformed.frame = crate::om::name_field::NameField::new(
+        "Point0".to_string(), 10, Some(crate::om::compact::CompactIndexTarget {
+            atom: crate::om::compact::CompactIndexAtom::from_wire(131, &[0x80, 0x83]).unwrap(),
+            target: Some(101),
+        }),
+    ).unwrap();
     assert!(feature_block_payload_points(&[record], &[malformed], &scalars).is_empty());
 }
 
