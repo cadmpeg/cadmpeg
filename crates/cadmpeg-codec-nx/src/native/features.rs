@@ -2202,8 +2202,7 @@ pub struct FeatureSketchPayloadScalarLane {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FeaturePayloadScalarToken {
-    pub value: f64,
-    pub raw: Vec<u8>,
+    pub scalar: ShiftedScalar,
     pub payload_offset: u64,
     pub source_offset: u64,
 }
@@ -2244,8 +2243,8 @@ impl From<FeatureSketchPayloadScalarLane> for FeatureSketchPayloadScalarLaneWire
             construction_payload: lane.construction_payload,
             ordinal: lane.ordinal,
             discriminator: lane.discriminator,
-            values: lane.values.iter().map(|token| token.value).collect(),
-            raw_values: lane.values.iter().map(|token| token.raw.clone()).collect(),
+            values: lane.values.iter().map(|token| token.scalar.value()).collect(),
+            raw_values: lane.values.iter().map(|token| token.scalar.raw().to_vec()).collect(),
             value_payload_offsets: lane
                 .values
                 .iter()
@@ -2286,14 +2285,13 @@ impl TryFrom<FeatureSketchPayloadScalarLaneWire> for FeatureSketchPayloadScalarL
                 .zip(wire.value_payload_offsets)
                 .zip(wire.value_source_offsets)
                 .map(
-                    |(((value, raw), payload_offset), source_offset)| FeaturePayloadScalarToken {
-                        value,
-                        raw,
+                    |(((value, raw), payload_offset), source_offset)| Ok(FeaturePayloadScalarToken {
+                        scalar: ShiftedScalar::from_wire(value, &raw)?,
                         payload_offset,
                         source_offset,
-                    },
+                    }),
                 )
-                .collect(),
+                .collect::<Result<Vec<_>, String>>()?,
             terminator_payload_offset: wire.terminator_payload_offset,
             source_offset: wire.source_offset,
             terminator_source_offset: wire.terminator_source_offset,
@@ -8945,8 +8943,7 @@ pub fn feature_sketch_payload_scalar_lanes(
                 .into_iter()
                 .map(|token| {
                     Some(FeaturePayloadScalarToken {
-                        value: token.value,
-                        raw: token.raw,
+                        scalar: token.scalar,
                         payload_offset: token.offset as u64,
                         source_offset: source_offset(token.offset)?,
                     })

@@ -15,7 +15,7 @@ pub(crate) mod pattern;
 use pattern::{PatternRow, PatternRows, PatternTerminal, PatternValue, PatternWideValues};
 pub(crate) mod swp104_state;
 pub(crate) mod scalar;
-use scalar::{LocatedBinary64, PayloadScalarAtom, PayloadScalarEncoding, ShiftedBinary32, ShiftedBinary64, ShiftedScalar, shifted_ieee_f64, is_shifted_ieee_f64_marker};
+use scalar::{LocatedBinary64, PayloadScalarAtom, ShiftedBinary32, ShiftedBinary64, ShiftedScalar, shifted_ieee_f64, is_shifted_ieee_f64_marker};
 pub(crate) mod thru_curve_endings;
 pub(crate) mod thru_curve_controls;
 use thru_curve_controls::ThruCurveControls;
@@ -2476,7 +2476,7 @@ pub struct SketchPayloadScalarLane {
     /// Exact discriminator selecting the scalar-lane form.
     pub discriminator: Vec<u8>,
     /// Ordered finite scalar values after the discriminator.
-    pub values: Vec<LaneToken<f64>>,
+    pub values: Vec<scalar::LocatedShiftedScalar>,
     /// Payload-relative offset of the terminating zero atom.
     pub terminator_offset: usize,
 }
@@ -6055,16 +6055,9 @@ pub fn sketch_payload_scalar_lanes(bytes: &[u8]) -> Vec<SketchPayloadScalarLane>
                         if bytes.get(at) == Some(&0x00) {
                             break;
                         }
-                        let atom = PayloadScalarAtom::read(bytes.get(at..)?)?;
-                        let (value, encoding, width) = (atom.value(), atom.encoding(), atom.raw().len());
-                        if encoding == PayloadScalarEncoding::Zero {
-                            return None;
-                        }
-                        values.push(LaneToken {
-                            value,
-                            raw: bytes.get(at..at + width)?.to_vec(),
-                            offset: at,
-                        });
+                        let scalar = ShiftedScalar::read(bytes.get(at..)?)?;
+                        let width = scalar.raw().len();
+                        values.push(scalar::LocatedShiftedScalar { scalar, offset: at });
                         at += width;
                     }
                     if values.is_empty() {

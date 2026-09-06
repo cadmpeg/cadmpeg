@@ -52,7 +52,7 @@ fn input_identity_group_preserves_parallel_wire_and_requires_complete_members() 
 #[test]
 fn sketch_scalar_lane_preserves_parallel_wire_and_requires_complete_tokens() {
     check_lane_wire::<FeatureSketchPayloadScalarLane>(
-        r#"{"id":"lane","operation_label":"operation","construction_payload":"payload","ordinal":0,"discriminator":[1,2],"values":[2.5,4.0],"raw_values":[[1,2,3,4],[5,6,7,8]],"value_payload_offsets":[2,6],"terminator_payload_offset":10,"source_offset":100,"value_source_offsets":[102,106],"terminator_source_offset":110}"#,
+        r#"{"id":"lane","operation_label":"operation","construction_payload":"payload","ordinal":0,"discriminator":[1,2],"values":[2.5,4.0],"raw_values":[[80,32,0,0],[80,128,0,0]],"value_payload_offsets":[2,6],"terminator_payload_offset":10,"source_offset":100,"value_source_offsets":[102,106],"terminator_source_offset":110}"#,
         &[
             "values",
             "raw_values",
@@ -261,4 +261,21 @@ fn pattern_rows_reject_scalar_families_outside_their_layout() {
     wrong_terminal["raw_values"][4] = serde_json::json!([47,240,0,0,0,0,0,0]);
     assert!(serde_json::from_value::<FeaturePatternTransformLane>(wrong_terminal).is_err());
     assert!(serde_json::from_str::<FeaturePatternTransformLane>(&wide.replace("\"row_schema_index\":3", "\"row_schema_index\":0")).is_err());
+}
+
+#[test]
+fn sketch_scalar_lane_rejects_inconsistent_or_zero_atoms() {
+    let json = r#"{"id":"lane","operation_label":"operation","construction_payload":"payload","ordinal":0,"discriminator":[1,2],"values":[2.5],"raw_values":[[80,32,0,0]],"value_payload_offsets":[2],"terminator_payload_offset":6,"source_offset":100,"value_source_offsets":[102],"terminator_source_offset":106}"#;
+    let original: serde_json::Value = serde_json::from_str(json).unwrap();
+    for (value, raw) in [
+        (4.0, vec![80,32,0,0]),
+        (2.5, vec![80,32,0,0,0]),
+        (0.0, vec![0]),
+    ] {
+        let mut invalid = original.clone();
+        invalid["values"][0] = serde_json::json!(value);
+        invalid["raw_values"][0] = serde_json::json!(raw);
+        let error = serde_json::from_value::<FeatureSketchPayloadScalarLane>(invalid).unwrap_err();
+        assert!(error.to_string().contains("raw_values"));
+    }
 }

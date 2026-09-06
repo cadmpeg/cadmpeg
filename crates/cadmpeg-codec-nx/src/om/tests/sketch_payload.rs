@@ -171,7 +171,7 @@ fn sketch_scalar_lane_parser_reads_mixed_nonzero_scalar_atoms() {
         lanes[0]
             .values
             .iter()
-            .map(|token| token.value)
+            .map(|token| token.scalar.value())
             .collect::<Vec<_>>(),
         [1.5, 3.25]
     );
@@ -179,7 +179,7 @@ fn sketch_scalar_lane_parser_reads_mixed_nonzero_scalar_atoms() {
         lanes[0]
             .values
             .iter()
-            .map(|token| token.raw.clone())
+            .map(|token| token.scalar.raw().to_vec())
             .collect::<Vec<_>>(),
         [shifted_f64.to_vec(), shifted_f32.to_vec()]
     );
@@ -209,7 +209,7 @@ fn sketch_scalar_lane_parser_reads_mixed_nonzero_scalar_atoms() {
         long_lanes[0]
             .values
             .iter()
-            .map(|token| token.value)
+            .map(|token| token.scalar.value())
             .collect::<Vec<_>>(),
         [1.5, 3.25]
     );

@@ -86,6 +86,12 @@ impl ShiftedBinary32 {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct LocatedShiftedScalar {
+    pub(crate) scalar: ShiftedScalar,
+    pub(crate) offset: usize,
+}
+
 /// One shifted binary32 or binary64 atom.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ShiftedScalar {
@@ -94,6 +100,14 @@ pub(crate) enum ShiftedScalar {
 }
 
 impl ShiftedScalar {
+    pub(crate) fn from_wire(value: f64, raw: &[u8]) -> Result<Self, &'static str> {
+        let scalar = Self::read(raw).ok_or("raw_values must contain shifted scalar atoms")?;
+        if scalar.raw().len() != raw.len() || scalar.value().to_bits() != value.to_bits() {
+            return Err("values must match exact raw_values atoms");
+        }
+        Ok(scalar)
+    }
+
     pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
         match PayloadScalarAtom::read(bytes)? {
             PayloadScalarAtom::Zero => None,
