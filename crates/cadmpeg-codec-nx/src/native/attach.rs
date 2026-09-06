@@ -5539,7 +5539,7 @@ pub(crate) fn feature_source_content(
         .map(|value| {
             (
                 value.source_offset,
-                FeatureSourceContent::Text(value.value.clone()),
+                FeatureSourceContent::Text(value.value.as_str().to_owned()),
             )
         })
         .collect::<Vec<_>>();

@@ -406,7 +406,7 @@ pub struct FeaturePayloadString {
     /// Zero-based string order within the post-label payload.
     pub ordinal: u32,
     /// Exact UTF-8 string value.
-    pub value: String,
+    pub value: crate::payload_text::PayloadText<String>,
     /// Absolute file offset of the `04` marker.
     pub source_offset: u64,
 }
@@ -422,7 +422,7 @@ pub struct FeatureSymbolicThreadTextFrame {
     /// Zero-based order among the operation's type-`03` text frames.
     pub ordinal: u32,
     /// Exact UTF-8 text value.
-    pub value: String,
+    pub value: crate::payload_text::PayloadText<String>,
     /// Absolute file offset of the text-frame marker.
     pub source_offset: u64,
 }
@@ -433,7 +433,7 @@ struct FeatureSymbolicThreadTextFrameWire {
     symbolic_thread: String,
     ordinal: u32,
     marker: u8,
-    value: String,
+    value: crate::payload_text::PayloadText<String>,
     source_offset: u64,
 }
 
@@ -4544,7 +4544,7 @@ pub struct FeatureSurfaceConstructionString {
     /// Zero-based string order within the payload.
     pub ordinal: u32,
     /// Exact printable value.
-    pub value: String,
+    pub value: crate::payload_text::PayloadText<String>,
     /// Payload-relative offset of the `66 1b 03` marker.
     pub payload_offset: u64,
     /// Absolute source offset of the marker.
@@ -6860,7 +6860,7 @@ pub fn feature_payload_strings(container: &Container) -> Vec<FeaturePayloadStrin
                         ),
                         operation_record: operation_record.clone(),
                         ordinal: ordinal as u32,
-                        value: value.value.to_string(),
+                        value: value.value.into_owned(),
                         source_offset: entry_offset + value.offset as u64,
                     }),
             );
@@ -6907,7 +6907,7 @@ pub fn feature_symbolic_threads(container: &Container) -> Vec<FeatureSymbolicThr
                     ),
                     symbolic_thread: id.clone(),
                     ordinal: ordinal as u32,
-                    value: frame.value.to_string(),
+                    value: frame.value.into_owned(),
                     source_offset: entry_offset + frame.offset as u64,
                 })
                 .collect();
@@ -6948,7 +6948,7 @@ pub fn feature_simple_hole_templates(
         if !matches!(
             label.value.as_str(),
             "SIMPLE HOLE" | "CBORE_HOLE" | "CSUNK_HOLE"
-        ) || !string.value.starts_with("Hole_")
+        ) || !string.value.as_str().starts_with("Hole_")
         {
             continue;
         }
@@ -6964,7 +6964,7 @@ pub fn feature_simple_hole_templates(
                 return None;
             };
             let (family, form, extent, start_treatment, end_treatment) =
-                parse_simple_hole_template(&string.value)?;
+                parse_simple_hole_template(string.value.as_str())?;
             Some(FeatureSimpleHoleTemplate {
                 id: string
                     .id
@@ -7003,7 +7003,7 @@ pub fn feature_threaded_hole_templates(
         let Some(label) = labels_by_id.get(record.operation_label.as_str()) else {
             continue;
         };
-        if label.value != "SIMPLE HOLE" || !string.value.starts_with("Hole_") {
+        if label.value != "SIMPLE HOLE" || !string.value.as_str().starts_with("Hole_") {
             continue;
         }
         templates_by_operation
@@ -7017,7 +7017,7 @@ pub fn feature_threaded_hole_templates(
             let [(string, label)] = candidates.as_slice() else {
                 return None;
             };
-            let (family, extent) = parse_threaded_hole_template(&string.value)?;
+            let (family, extent) = parse_threaded_hole_template(string.value.as_str())?;
             Some(FeatureThreadedHoleTemplate {
                 id: string
                     .id
@@ -10896,7 +10896,7 @@ pub fn feature_surface_construction_strings(
                         operation_label: payload.operation_label.clone(),
                         surface_construction_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
-                        value: value.value.to_string(),
+                        value: value.value.into_owned(),
                         payload_offset,
                         source_offset: joined.source_offset(payload_offset)?,
                     })

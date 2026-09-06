@@ -41,9 +41,9 @@ fn om_surface_payload_strings_require_exact_length_utf8_and_terminator() {
     let strings = super::super::surface_payload_strings(bytes);
     assert_eq!(strings.len(), 2);
     assert_eq!(strings[0].offset, 0);
-    assert_eq!(strings[0].value, "Steel");
+    assert_eq!(strings[0].value.as_str(), "Steel");
     assert_eq!(strings[1].offset, 11);
-    assert_eq!(strings[1].value, "×");
+    assert_eq!(strings[1].value.as_str(), "×");
 
     let truncated = b"\x66\x1b\x03\x05Steel";
     assert!(super::super::surface_payload_strings(truncated).is_empty());

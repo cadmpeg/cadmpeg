@@ -129,7 +129,7 @@ pub struct SurfacePayloadString<'a> {
     /// Payload-relative offset of the `66 1b 03` marker.
     pub offset: usize,
     /// Exact non-empty string value.
-    pub value: &'a str,
+    pub value: crate::payload_text::PayloadText<&'a str>,
 }
 
 /// Self-framed NX product/version marker in an OM store root.
@@ -1844,7 +1844,7 @@ pub struct OperationPayloadString<'a> {
     /// Absolute offset of the `04` marker.
     pub offset: usize,
     /// Exact non-empty string value.
-    pub value: &'a str,
+    pub value: crate::payload_text::PayloadText<&'a str>,
 }
 
 /// Marker selecting a bounded operation text frame.
@@ -1862,7 +1862,7 @@ pub struct OperationPayloadTextFrame<'a> {
     /// Absolute offset of the marker.
     pub offset: usize,
     /// Exact non-empty text value.
-    pub value: &'a str,
+    pub value: crate::payload_text::PayloadText<&'a str>,
 }
 
 /// One canonical variable-width object index in an operation payload.
@@ -3199,9 +3199,7 @@ pub fn operation_payload_text_frames(
             at += 1;
             continue;
         };
-        let Some(value) = std::str::from_utf8(raw).ok().filter(|value| {
-            !value.is_empty() && value.chars().all(|character| !character.is_control())
-        }) else {
+        let Some(value) = std::str::from_utf8(raw).ok().and_then(|value| crate::payload_text::PayloadText::new(value).ok()) else {
             at += 1;
             continue;
         };
@@ -3240,7 +3238,7 @@ pub fn simple_hole_repeated_scalar_lane(
     }
     let templates = operation_payload_strings(record)
         .into_iter()
-        .filter(|value| value.value.starts_with("Hole_"))
+        .filter(|value| value.value.as_str().starts_with("Hole_"))
         .collect::<Vec<_>>();
     let [template] = templates.as_slice() else {
         return None;
@@ -8057,10 +8055,8 @@ pub fn surface_payload_strings(bytes: &[u8]) -> Vec<SurfacePayloadString<'_>> {
             let start = offset.checked_add(MARKER.len() + 1)?;
             let end = start.checked_add(text_len)?;
             let raw = bytes.get(start..end)?;
-            let value = std::str::from_utf8(raw).ok()?;
-            (!value.is_empty()
-                && value.chars().all(|character| !character.is_control())
-                && bytes.get(end) == Some(&0))
+            let value = crate::payload_text::PayloadText::new(std::str::from_utf8(raw).ok()?).ok()?;
+            (bytes.get(end) == Some(&0))
             .then_some(SurfacePayloadString { offset, value })
         })
         .collect()

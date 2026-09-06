@@ -1687,8 +1687,8 @@ fn om_operation_payload_strings_require_complete_utf8_frames() {
     let strings = super::operation_payload_strings(record);
     assert_eq!(strings.len(), 2);
     assert_eq!(strings[0].offset, 201);
-    assert_eq!(strings[0].value, "BLOCK");
-    assert_eq!(strings[1].value, "×");
+    assert_eq!(strings[0].value.as_str(), "BLOCK");
+    assert_eq!(strings[1].value.as_str(), "×");
 }
 
 #[test]
@@ -1714,17 +1714,17 @@ fn om_operation_payload_text_frames_retain_marker_and_order() {
             super::OperationPayloadTextFrame {
                 marker: super::OperationTextMarker::Text,
                 offset: 200,
-                value: "CUT",
+                value: crate::payload_text::PayloadText::new("CUT").unwrap(),
             },
             super::OperationPayloadTextFrame {
                 marker: super::OperationTextMarker::String,
                 offset: 206,
-                value: "DONE",
+                value: crate::payload_text::PayloadText::new("DONE").unwrap(),
             },
             super::OperationPayloadTextFrame {
                 marker: super::OperationTextMarker::Text,
                 offset: 213,
-                value: "M Profile",
+                value: crate::payload_text::PayloadText::new("M Profile").unwrap(),
             },
         ]
     );
