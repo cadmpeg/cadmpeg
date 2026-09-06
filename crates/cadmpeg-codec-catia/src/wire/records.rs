@@ -205,16 +205,22 @@ impl From<ConsolidatedFrameWidth> for u8 {
     }
 }
 
+impl ConsolidatedFrameWidth {
+    fn from_byte(value: u8) -> Option<Self> {
+        match value {
+            0x01 => Some(Self::One),
+            0x02 => Some(Self::Two),
+            0x03 => Some(Self::Three),
+            _ => None,
+        }
+    }
+}
+
 impl TryFrom<u8> for ConsolidatedFrameWidth {
     type Error = String;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            1 => Ok(Self::One),
-            2 => Ok(Self::Two),
-            3 => Ok(Self::Three),
-            other => Err(format!("width {other} is not 1..=3")),
-        }
+        Self::from_byte(value).ok_or_else(|| format!("width {value} is not 1..=3"))
     }
 }
 
@@ -241,16 +247,22 @@ impl From<ConsolidatedFrameFlag> for u8 {
     }
 }
 
+impl ConsolidatedFrameFlag {
+    fn from_byte(value: u8) -> Option<Self> {
+        match value {
+            0x03 => Some(Self::Flag03),
+            0x13 => Some(Self::Flag13),
+            0x83 => Some(Self::Flag83),
+            _ => None,
+        }
+    }
+}
+
 impl TryFrom<u8> for ConsolidatedFrameFlag {
     type Error = String;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0x03 => Ok(Self::Flag03),
-            0x13 => Ok(Self::Flag13),
-            0x83 => Ok(Self::Flag83),
-            other => Err(format!("flag {other:#x} is not 0x03, 0x13, or 0x83")),
-        }
+        Self::from_byte(value).ok_or_else(|| format!("flag {value:#x} is not 0x03, 0x13, or 0x83"))
     }
 }
 
@@ -500,7 +512,7 @@ fn parse_spanning_consolidated_record(
     let first = source_byte(source_start)?;
     let (family, width, header_len, length) = if let Some(width) = first
         .checked_sub(0xa4)
-        .and_then(|width| ConsolidatedFrameWidth::try_from(width).ok())
+        .and_then(ConsolidatedFrameWidth::from_byte)
     {
         let length_bytes = [
             source_byte(source_start.checked_add(3)?)?,
@@ -514,7 +526,7 @@ fn parse_spanning_consolidated_record(
     } else {
         let width = first
             .checked_sub(0xb1)
-            .and_then(|width| ConsolidatedFrameWidth::try_from(width).ok())?;
+            .and_then(ConsolidatedFrameWidth::from_byte)?;
         (
             ConsolidatedFamily::B,
             width,
@@ -525,8 +537,7 @@ fn parse_spanning_consolidated_record(
         )
     };
     let flag =
-        ConsolidatedFrameFlag::try_from(source_byte(source_start.checked_add(a_frame::FLAG)?)?)
-            .ok()?;
+        ConsolidatedFrameFlag::from_byte(source_byte(source_start.checked_add(a_frame::FLAG)?)?)?;
     let class = source_byte(source_start.checked_add(a_frame::CLASS)?)?;
     let token_at = source_start.checked_add(header_len)?;
     let payload_start = token_at.checked_add(usize::from(u8::from(width)))?;
@@ -580,7 +591,7 @@ fn parse_consolidated_record(
     let (family, width, token_at, length) = if let Some(width) = data
         .get(pos)
         .and_then(|byte| byte.checked_sub(0xa4))
-        .and_then(|width| ConsolidatedFrameWidth::try_from(width).ok())
+        .and_then(ConsolidatedFrameWidth::from_byte)
     {
         let length = View::u32_le_at(data, pos.checked_add(a_frame::PAYLOAD_LEN)?)
             .and_then(|value| usize::try_from(value).ok())?;
@@ -594,7 +605,7 @@ fn parse_consolidated_record(
         let width = data
             .get(pos)
             .and_then(|byte| byte.checked_sub(0xb1))
-            .and_then(|width| ConsolidatedFrameWidth::try_from(width).ok())?;
+            .and_then(ConsolidatedFrameWidth::from_byte)?;
         (
             ConsolidatedFamily::B,
             width,
@@ -602,7 +613,7 @@ fn parse_consolidated_record(
             usize::from(*data.get(pos.checked_add(b_frame::PAYLOAD_LEN)?)?),
         )
     };
-    let flag = ConsolidatedFrameFlag::try_from(*data.get(pos.checked_add(a_frame::FLAG)?)?).ok()?;
+    let flag = ConsolidatedFrameFlag::from_byte(*data.get(pos.checked_add(a_frame::FLAG)?)?)?;
     let class = *data.get(pos.checked_add(a_frame::CLASS)?)?;
     let payload_start = token_at.checked_add(usize::from(u8::from(width)))?;
     let end = payload_start.checked_add(length)?;
