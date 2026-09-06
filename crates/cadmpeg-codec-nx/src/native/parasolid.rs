@@ -495,6 +495,22 @@ mod deltas_record_wire_tests {
         }
     }
 
+
+    #[test]
+    fn attdef_list_references_preserve_the_active_and_null_slots() {
+        for references in [vec![1, 1], vec![1, 20], vec![1, 20, 21, 1]] {
+            let json = format!(r#"{{"id":"slots","stream_ordinal":0,"family":"ATTDEF_LIST","kind":74,"xmt":20,"node_id":null,"references":{},"position":null,"byte_len":32,"inflated_offset":0}}"#, serde_json::to_string(&references).unwrap());
+            let record: ParasolidDeltasRecord = serde_json::from_str(&json).unwrap();
+            assert_eq!(serde_json::to_string(&record).unwrap(), json);
+            for invalid in [vec![], vec![1], vec![0,20], vec![1,0], vec![1,20,1,21]] {
+                let mut wire: serde_json::Value = serde_json::from_str(&json).unwrap();
+                wire["references"] = serde_json::json!(invalid);
+                assert!(serde_json::from_value::<ParasolidDeltasRecord>(wire)
+                    .unwrap_err().to_string().contains("references"));
+            }
+        }
+    }
+
 }
 
 /// One compact deletion in a Parasolid deltas stream.

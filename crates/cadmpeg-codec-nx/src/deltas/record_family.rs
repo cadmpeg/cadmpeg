@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Admitted delta record layouts and their native-wire projections.
 
+use super::attdef_state::AttdefSlots;
 use super::group::{GroupReferenceStatus, GroupSelector};
 use super::record_kind::RecordKind;
 use crate::framing::xmt_reference::NonNullXmt;
@@ -101,7 +102,7 @@ pub enum RecordFamily {
         trailing_reference: NonNullXmt,
         node_id: u32,
     },
-    AttdefList { references: Vec<u32> },
+    AttdefList { slots: AttdefSlots },
     Entity51 { leading_references: [u32; 5], trailing_references: EntityReferences },
     Entity52,
     Entity53,
@@ -312,7 +313,7 @@ impl RecordFamily {
             Self::Type67 { references, .. } => references.to_vec(),
             Self::Type70 { references, trailing_reference, .. } => references.iter().copied()
                 .chain([u32::from(*trailing_reference); 2]).collect(),
-            Self::AttdefList { references, .. } => references.to_vec(),
+            Self::AttdefList { slots } => std::iter::once(1).chain(slots.references()).collect(),
             Self::Entity51 { leading_references, trailing_references } => leading_references.iter().copied()
                 .chain(trailing_references.values().iter().copied()).collect(),
             Self::Group { references, .. } => references.to_vec(),
@@ -412,7 +413,7 @@ impl RecordFamily {
                     node_id: node_id?,
                 }
             },
-            "ATTDEF_LIST" => Self::AttdefList { references },
+            "ATTDEF_LIST" => Self::AttdefList { slots: AttdefSlots::from_delta_references(references).ok()? },
             "ENTITY_51" => {
                 let leading_references = references.get(..5)?.try_into().ok()?;
                 let trailing_references = EntityReferences::new(references.into_iter().skip(5).collect()).ok()?;

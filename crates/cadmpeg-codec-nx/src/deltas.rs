@@ -2466,14 +2466,15 @@ fn consume_group(stream: &[u8], offset: usize) -> Option<Record> {
 
 fn consume_attdef_list(stream: &[u8], offset: usize) -> Option<Record> {
     (View::u16_be_at(stream, offset) == Some(74)).then_some(())?;
-    let direct = attdef_list_layout(stream, offset, 0);
+    let direct = attdef_list_body(stream, offset.checked_add(2)?);
     let escaped_marker = stream.get(offset + 2) == Some(&0xff);
     let escaped = escaped_marker
-        .then(|| attdef_list_layout(stream, offset, 1))
+        .then(|| attdef_list_body(stream, offset.checked_add(3)?))
         .flatten();
-    let (xmt, references, end) = select_enveloped_layout(escaped_marker, direct, escaped)?;
+    let (state, end) = select_enveloped_layout(escaped_marker, direct, escaped)?;
+    let xmt = state.xmt();
     Some(Record {
-        family: RecordFamily::AttdefList { references },
+        family: RecordFamily::AttdefList { slots: state.into_slots() },
         xmt,
         canonical_bytes: stream.get(offset..end)?.to_vec(),
         offset,
@@ -2582,17 +2583,6 @@ fn read_status_one_reference(stream: &[u8], at: &mut usize) -> Option<u32> {
     (stream.get(*at) == Some(&1)).then_some(())?;
     *at += 1;
     Some(reference)
-}
-
-fn attdef_list_layout(
-    stream: &[u8],
-    offset: usize,
-    envelope_len: usize,
-) -> Option<(u32, Vec<u32>, usize)> {
-    let body = offset.checked_add(2 + envelope_len)?;
-    let (state, end) = attdef_list_body(stream, body)?;
-    let references = std::iter::once(1).chain(state.references()).collect();
-    Some((state.xmt(), references, end))
 }
 
 fn attdef_list_body(stream: &[u8], body: usize) -> Option<(AttdefState, usize)> {
