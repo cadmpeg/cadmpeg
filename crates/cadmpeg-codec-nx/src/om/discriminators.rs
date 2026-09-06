@@ -233,3 +233,8 @@ impl TryFrom<u8> for IndexRowMode {
         }
     }
 }
+
+impl super::scalar_run::ScalarFrame for DraftBinary32Branch {
+    type Atom = super::scalar::ShiftedBinary32;
+    fn prefix_len(self) -> u64 { self.discriminator().len() as u64 }
+}

@@ -113,30 +113,7 @@ impl SketchScalarLaneForm {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct SketchScalarLane<O> {
-    form: SketchScalarLaneForm,
-    run: super::scalar_run::ScalarRun<super::scalar::ShiftedScalar, O>,
-}
-
-impl<O> SketchScalarLane<O> {
-    pub(crate) fn new(
-        form: SketchScalarLaneForm,
-        offset: u64,
-        values: super::nonempty::NonEmpty<(super::scalar::ShiftedScalar, O)>,
-    ) -> Result<Self, &'static str> {
-        let start = offset.checked_add(form.discriminator().len() as u64)
-            .ok_or("value_payload_offsets overflow the discriminator")?;
-        Ok(Self { form, run: super::scalar_run::ScalarRun::new(start, values)? })
-    }
-
-    pub(crate) fn offset(&self) -> u64 { self.run.start() - self.form.discriminator().len() as u64 }
-
-    pub(crate) fn discriminator(&self) -> &'static [u8] { self.form.discriminator() }
-
-    pub(crate) fn run(&self) -> &super::scalar_run::ScalarRun<super::scalar::ShiftedScalar, O> { &self.run }
-
-    pub(crate) fn try_map_locations<P>(self, map: impl FnMut(u64, O) -> Option<P>) -> Option<SketchScalarLane<P>> {
-        Some(SketchScalarLane { form: self.form, run: self.run.try_map_locations(map)? })
-    }
+impl super::scalar_run::ScalarFrame for SketchScalarLaneForm {
+    type Atom = super::scalar::ShiftedScalar;
+    fn prefix_len(self) -> u64 { self.discriminator().len() as u64 }
 }

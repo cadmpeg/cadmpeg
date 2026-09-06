@@ -68,3 +68,18 @@ pub(crate) mod pair_wire {
         Ok([a.map_err(serde::de::Error::custom)?, b.map_err(serde::de::Error::custom)?])
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Q155LaneFrame;
+
+impl Q155LaneFrame {
+    pub(crate) const DISCRIMINATOR: [u8; 18] = [
+        0x25, 0x25, 0x41, 0x00, 0x04, 0x01, 0x07, 0x01, 0xc0, 0x45, 0x10, 0x00, 0x80, 0x86, 0x02,
+        0x00, 0x01, 0x00,
+    ];
+}
+
+impl super::scalar_run::ScalarFrame for Q155LaneFrame {
+    type Atom = Q155Atom;
+    fn prefix_len(self) -> u64 { Self::DISCRIMINATOR.len() as u64 }
+}

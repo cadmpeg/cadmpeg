@@ -958,28 +958,25 @@ fn om_draft_fixed_lanes_require_complete_discriminator_atoms_and_terminator() {
     bytes.push(0);
     let lanes = super::draft_construction_fixed_lanes(&bytes);
     assert_eq!(lanes.len(), 1);
-    assert_eq!(lanes[0].offset, 1);
+    assert_eq!(lanes[0].offset(), 1);
     assert_eq!(
         lanes[0]
-            .values
             .iter()
-            .map(|token| token.atom.scalar.value())
+            .map(|(_, atom, _)| atom.scalar.value())
             .collect::<Vec<_>>(),
         [0.5, -0.5]
     );
     assert_eq!(
         lanes[0]
-            .values
             .iter()
-            .map(|token| token.atom.marker.byte())
+            .map(|(_, atom, _)| atom.marker.byte())
             .collect::<Vec<_>>(),
         [0x30, 0xb0]
     );
     assert_eq!(
         lanes[0]
-            .values
             .iter()
-            .map(|token| token.offset)
+            .map(|(offset, _, _)| offset)
             .collect::<Vec<_>>(),
         [19, 27]
     );
@@ -1004,22 +1001,20 @@ fn om_draft_binary32_lanes_require_complete_typed_atoms_and_terminator() {
     bytes.push(0);
     let lanes = super::draft_construction_binary32_lanes(&bytes);
     assert_eq!(lanes.len(), 1);
-    assert_eq!(lanes[0].offset, 1);
-    assert_eq!(lanes[0].branch.discriminator(), discriminator);
-    assert_eq!(u8::from(lanes[0].branch), 4);
+    assert_eq!(lanes[0].offset(), 1);
+    assert_eq!(lanes[0].form().discriminator(), discriminator);
+    assert_eq!(u8::from(lanes[0].form()), 4);
     assert_eq!(
         lanes[0]
-            .values
             .iter()
-            .map(|token| token.scalar.value())
+            .map(|(_, scalar, _)| scalar.value())
             .collect::<Vec<_>>(),
         [1.0, -1.0]
     );
     assert_eq!(
         lanes[0]
-            .values
             .iter()
-            .map(|token| token.offset)
+            .map(|(offset, _, _)| offset)
             .collect::<Vec<_>>(),
         [19, 23]
     );

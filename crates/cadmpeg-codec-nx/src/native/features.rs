@@ -15,8 +15,10 @@ use crate::om::swp104_state::Swp104StateLane;
 use crate::om::scalar::{LocatedBinary64, PayloadScalarAtom, PayloadScalarEncoding, RepeatedScalar, ShiftedBinary32, ShiftedBinary64, ShiftedScalar};
 use crate::om::branch_items::BranchItems;
 use crate::om::nonempty::NonEmpty;
-use crate::om::sketch_scalar::{SketchScaledAtom, SketchMixedScalars, SketchScalarLane, SketchScalarLaneForm};
-use crate::om::fixed::{Q155, Q155Atom, Q155Marker};
+use crate::om::sketch_scalar::{SketchScaledAtom, SketchMixedScalars, SketchScalarLaneForm};
+use crate::om::fixed::{Q155, Q155Atom, Q155Marker, Q155LaneFrame};
+use crate::om::scalar_run::FramedScalarRun;
+use crate::om::discriminators::DraftBinary32Branch;
 use crate::om::pattern::{PatternRow, PatternRows, PatternScalarEncoding, PatternTerminal, PatternValue, PatternWideValues};
 use crate::om::thru_curve_state::ThruCurveBranchItems;
 use crate::om::thru_curve_controls::ThruCurveControls;
@@ -2173,7 +2175,7 @@ pub struct FeatureSketchPayloadScalarLane {
     /// Zero-based lane order within the reconstructed payload.
     pub ordinal: u32,
     /// Typed lane form and contiguous atoms with their absolute source locations.
-    pub lane: SketchScalarLane<u64>,
+    pub lane: FramedScalarRun<SketchScalarLaneForm, u64>,
     /// Absolute source offset of the discriminator.
     pub source_offset: u64,
     /// Absolute source offset of the terminating zero atom.
@@ -2215,13 +2217,13 @@ impl From<FeatureSketchPayloadScalarLane> for FeatureSketchPayloadScalarLaneWire
             operation_label: record.operation_label,
             construction_payload: record.construction_payload,
             ordinal: record.ordinal,
-            discriminator: record.lane.discriminator().to_vec(),
-            values: record.lane.run().iter().map(|(_, scalar, _)| scalar.value()).collect(),
-            raw_values: record.lane.run().iter().map(|(_, scalar, _)| scalar.raw().to_vec()).collect(),
-            value_payload_offsets: record.lane.run().iter().map(|(offset, _, _)| offset).collect(),
-            terminator_payload_offset: record.lane.run().end(),
+            discriminator: record.lane.form().discriminator().to_vec(),
+            values: record.lane.iter().map(|(_, scalar, _)| scalar.value()).collect(),
+            raw_values: record.lane.iter().map(|(_, scalar, _)| scalar.raw().to_vec()).collect(),
+            value_payload_offsets: record.lane.iter().map(|(offset, _, _)| offset).collect(),
+            terminator_payload_offset: record.lane.end(),
             source_offset: record.source_offset,
-            value_source_offsets: record.lane.run().iter().map(|(_, _, source)| *source).collect(),
+            value_source_offsets: record.lane.iter().map(|(_, _, source)| *source).collect(),
             terminator_source_offset: record.terminator_source_offset,
         }
     }
@@ -2245,11 +2247,11 @@ impl TryFrom<FeatureSketchPayloadScalarLaneWire> for FeatureSketchPayloadScalarL
         let values = wire.values.into_iter().zip(wire.raw_values).zip(wire.value_source_offsets)
             .map(|((value, raw), source)| Ok((ShiftedScalar::from_wire(value, &raw)?, source)))
             .collect::<Result<Vec<_>, String>>()?;
-        let lane = SketchScalarLane::new(form, offset, NonEmpty::new(values).ok_or("values must contain a sketch scalar atom")?)?;
-        if !lane.run().iter().map(|(offset, _, _)| offset).eq(wire.value_payload_offsets) {
+        let lane = FramedScalarRun::new(form, offset, NonEmpty::new(values).ok_or("values must contain a sketch scalar atom")?)?;
+        if !lane.iter().map(|(offset, _, _)| offset).eq(wire.value_payload_offsets) {
             return Err("value_payload_offsets must follow the contiguous scalar atoms".into());
         }
-        if lane.run().end() != wire.terminator_payload_offset {
+        if lane.end() != wire.terminator_payload_offset {
             return Err("terminator_payload_offset must follow the last scalar atom".into());
         }
         Ok(Self {
@@ -3041,20 +3043,6 @@ pub struct FeaturePatternConstructionString {
     pub source_offset: u64,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct FeatureFixedScalarToken {
-    pub atom: Q155Atom,
-    pub payload_offset: u64,
-    pub source_offset: u64,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct FeatureBinary32ScalarToken {
-    pub scalar: ShiftedBinary32,
-    pub payload_offset: u64,
-    pub source_offset: u64,
-}
-
 /// Complete signed Q1.55 lane in a reconstructed pattern payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(
@@ -3070,10 +3058,8 @@ pub struct FeaturePatternConstructionFixedLane {
     pub construction_payload: String,
     /// Zero-based lane order within the payload.
     pub ordinal: u32,
-    /// Ordered scalar tokens with their source locations.
-    pub values: NonEmpty<FeatureFixedScalarToken>,
-    /// Payload-relative offset of the fixed discriminator.
-    pub payload_offset: u64,
+    /// Framed scalar run with absolute source locations.
+    pub lane: FramedScalarRun<Q155LaneFrame, u64>,
     /// Absolute source offset of the fixed discriminator.
     pub source_offset: u64,
 }
@@ -3105,27 +3091,19 @@ struct FeaturePatternConstructionFixedLaneWire {
 }
 
 impl From<FeaturePatternConstructionFixedLane> for FeaturePatternConstructionFixedLaneWire {
-    fn from(lane: FeaturePatternConstructionFixedLane) -> Self {
+    fn from(record: FeaturePatternConstructionFixedLane) -> Self {
         Self {
-            id: lane.id,
-            operation_label: lane.operation_label,
-            construction_payload: lane.construction_payload,
-            ordinal: lane.ordinal,
-            payload_offset: lane.payload_offset,
-            source_offset: lane.source_offset,
-            values: lane.values.iter().map(|token| token.atom.scalar.value()).collect(),
-            markers: lane.values.iter().map(|token| token.atom.marker.byte()).collect(),
-            raw_values: lane.values.iter().map(|token| token.atom.scalar.raw()).collect(),
-            value_payload_offsets: lane
-                .values
-                .iter()
-                .map(|token| token.payload_offset)
-                .collect(),
-            value_source_offsets: lane
-                .values
-                .iter()
-                .map(|token| token.source_offset)
-                .collect(),
+            id: record.id,
+            operation_label: record.operation_label,
+            construction_payload: record.construction_payload,
+            ordinal: record.ordinal,
+            values: record.lane.iter().map(|(_, atom, _)| atom.scalar.value()).collect(),
+            markers: record.lane.iter().map(|(_, atom, _)| atom.marker.byte()).collect(),
+            raw_values: record.lane.iter().map(|(_, atom, _)| atom.scalar.raw()).collect(),
+            payload_offset: record.lane.offset(),
+            value_payload_offsets: record.lane.iter().map(|(offset, _, _)| offset).collect(),
+            source_offset: record.source_offset,
+            value_source_offsets: record.lane.iter().map(|(_, _, source)| *source).collect(),
         }
     }
 }
@@ -3143,24 +3121,22 @@ impl TryFrom<FeaturePatternConstructionFixedLaneWire> for FeaturePatternConstruc
                 "FeaturePatternConstructionFixedLane scalar columns must have equal lengths".into(),
             );
         }
-        let values = wire.values.into_iter().zip(wire.markers).zip(wire.raw_values)
-            .zip(wire.value_payload_offsets).zip(wire.value_source_offsets)
-            .map(|((((value, marker), raw), payload_offset), source_offset)| Ok(FeatureFixedScalarToken {
-                atom: Q155Atom {
-                    marker: Q155Marker::read(marker).ok_or("markers must contain 48 or 176")?,
-                    scalar: Q155::from_wire(value, raw)?,
-                },
-                payload_offset,
-                source_offset,
-            })).collect::<Result<Vec<_>, String>>()?;
+        let values = wire.values.into_iter().zip(wire.markers).zip(wire.raw_values).zip(wire.value_source_offsets)
+            .map(|(((value, marker), raw), source)| Ok((Q155Atom {
+                marker: Q155Marker::read(marker).ok_or("markers must contain 48 or 176")?,
+                scalar: Q155::from_wire(value, raw)?,
+            }, source))).collect::<Result<Vec<_>, String>>()?;
+        let lane = FramedScalarRun::new(Q155LaneFrame, wire.payload_offset, NonEmpty::new(values).ok_or("values must contain a Q1.55 atom")?)?;
+        if !lane.iter().map(|(offset, _, _)| offset).eq(wire.value_payload_offsets) {
+            return Err("value_payload_offsets must follow the contiguous Q1.55 atoms".into());
+        }
         Ok(Self {
             id: wire.id,
             operation_label: wire.operation_label,
             construction_payload: wire.construction_payload,
             ordinal: wire.ordinal,
-            payload_offset: wire.payload_offset,
+            lane,
             source_offset: wire.source_offset,
-            values: NonEmpty::new(values).ok_or("values must contain a Q1.55 atom")?,
         })
     }
 }
@@ -3902,10 +3878,8 @@ pub struct FeatureDraftConstructionFixedLane {
     pub graph_payload: String,
     /// Zero-based lane order in the reconstructed payload.
     pub ordinal: u32,
-    /// Ordered scalar tokens with their source locations.
-    pub values: NonEmpty<FeatureFixedScalarToken>,
-    /// Payload-relative offset of the fixed discriminator.
-    pub payload_offset: u64,
+    /// Framed scalar run with absolute source locations.
+    pub lane: FramedScalarRun<Q155LaneFrame, u64>,
     /// Absolute source offset of the fixed discriminator.
     pub source_offset: u64,
 }
@@ -3937,27 +3911,19 @@ struct FeatureDraftConstructionFixedLaneWire {
 }
 
 impl From<FeatureDraftConstructionFixedLane> for FeatureDraftConstructionFixedLaneWire {
-    fn from(lane: FeatureDraftConstructionFixedLane) -> Self {
+    fn from(record: FeatureDraftConstructionFixedLane) -> Self {
         Self {
-            id: lane.id,
-            operation_label: lane.operation_label,
-            graph_payload: lane.graph_payload,
-            ordinal: lane.ordinal,
-            payload_offset: lane.payload_offset,
-            source_offset: lane.source_offset,
-            values: lane.values.iter().map(|token| token.atom.scalar.value()).collect(),
-            markers: lane.values.iter().map(|token| token.atom.marker.byte()).collect(),
-            raw_values: lane.values.iter().map(|token| token.atom.scalar.raw()).collect(),
-            value_payload_offsets: lane
-                .values
-                .iter()
-                .map(|token| token.payload_offset)
-                .collect(),
-            value_source_offsets: lane
-                .values
-                .iter()
-                .map(|token| token.source_offset)
-                .collect(),
+            id: record.id,
+            operation_label: record.operation_label,
+            graph_payload: record.graph_payload,
+            ordinal: record.ordinal,
+            values: record.lane.iter().map(|(_, atom, _)| atom.scalar.value()).collect(),
+            markers: record.lane.iter().map(|(_, atom, _)| atom.marker.byte()).collect(),
+            raw_values: record.lane.iter().map(|(_, atom, _)| atom.scalar.raw()).collect(),
+            payload_offset: record.lane.offset(),
+            value_payload_offsets: record.lane.iter().map(|(offset, _, _)| offset).collect(),
+            source_offset: record.source_offset,
+            value_source_offsets: record.lane.iter().map(|(_, _, source)| *source).collect(),
         }
     }
 }
@@ -3975,24 +3941,22 @@ impl TryFrom<FeatureDraftConstructionFixedLaneWire> for FeatureDraftConstruction
                 "FeatureDraftConstructionFixedLane scalar columns must have equal lengths".into(),
             );
         }
-        let values = wire.values.into_iter().zip(wire.markers).zip(wire.raw_values)
-            .zip(wire.value_payload_offsets).zip(wire.value_source_offsets)
-            .map(|((((value, marker), raw), payload_offset), source_offset)| Ok(FeatureFixedScalarToken {
-                atom: Q155Atom {
-                    marker: Q155Marker::read(marker).ok_or("markers must contain 48 or 176")?,
-                    scalar: Q155::from_wire(value, raw)?,
-                },
-                payload_offset,
-                source_offset,
-            })).collect::<Result<Vec<_>, String>>()?;
+        let values = wire.values.into_iter().zip(wire.markers).zip(wire.raw_values).zip(wire.value_source_offsets)
+            .map(|(((value, marker), raw), source)| Ok((Q155Atom {
+                marker: Q155Marker::read(marker).ok_or("markers must contain 48 or 176")?,
+                scalar: Q155::from_wire(value, raw)?,
+            }, source))).collect::<Result<Vec<_>, String>>()?;
+        let lane = FramedScalarRun::new(Q155LaneFrame, wire.payload_offset, NonEmpty::new(values).ok_or("values must contain a Q1.55 atom")?)?;
+        if !lane.iter().map(|(offset, _, _)| offset).eq(wire.value_payload_offsets) {
+            return Err("value_payload_offsets must follow the contiguous Q1.55 atoms".into());
+        }
         Ok(Self {
             id: wire.id,
             operation_label: wire.operation_label,
             graph_payload: wire.graph_payload,
             ordinal: wire.ordinal,
-            payload_offset: wire.payload_offset,
+            lane,
             source_offset: wire.source_offset,
-            values: NonEmpty::new(values).ok_or("values must contain a Q1.55 atom")?,
         })
     }
 }
@@ -4012,12 +3976,8 @@ pub struct FeatureDraftConstructionBinary32Lane {
     pub graph_payload: String,
     /// Zero-based lane order in the reconstructed payload.
     pub ordinal: u32,
-    /// Branch selecting the complete lane discriminator.
-    pub branch: crate::om::discriminators::DraftBinary32Branch,
-    /// Ordered scalar tokens with their source locations.
-    pub values: Vec<FeatureBinary32ScalarToken>,
-    /// Payload-relative offset of the discriminator.
-    pub payload_offset: u64,
+    /// Typed branch and contiguous atoms with absolute source locations.
+    pub lane: FramedScalarRun<DraftBinary32Branch, u64>,
     /// Absolute source offset of the discriminator.
     pub source_offset: u64,
 }
@@ -4051,28 +4011,20 @@ struct FeatureDraftConstructionBinary32LaneWire {
 }
 
 impl From<FeatureDraftConstructionBinary32Lane> for FeatureDraftConstructionBinary32LaneWire {
-    fn from(lane: FeatureDraftConstructionBinary32Lane) -> Self {
+    fn from(record: FeatureDraftConstructionBinary32Lane) -> Self {
         Self {
-            id: lane.id,
-            operation_label: lane.operation_label,
-            graph_payload: lane.graph_payload,
-            ordinal: lane.ordinal,
-            discriminator: lane.branch.discriminator(),
-            branch: u8::from(lane.branch),
-            payload_offset: lane.payload_offset,
-            source_offset: lane.source_offset,
-            values: lane.values.iter().map(|token| token.scalar.value()).collect(),
-            raw_values: lane.values.iter().map(|token| token.scalar.raw()).collect(),
-            value_payload_offsets: lane
-                .values
-                .iter()
-                .map(|token| token.payload_offset)
-                .collect(),
-            value_source_offsets: lane
-                .values
-                .iter()
-                .map(|token| token.source_offset)
-                .collect(),
+            id: record.id,
+            operation_label: record.operation_label,
+            graph_payload: record.graph_payload,
+            ordinal: record.ordinal,
+            discriminator: record.lane.form().discriminator(),
+            branch: u8::from(record.lane.form()),
+            values: record.lane.iter().map(|(_, scalar, _)| scalar.value()).collect(),
+            raw_values: record.lane.iter().map(|(_, scalar, _)| scalar.raw()).collect(),
+            payload_offset: record.lane.offset(),
+            value_payload_offsets: record.lane.iter().map(|(offset, _, _)| offset).collect(),
+            source_offset: record.source_offset,
+            value_source_offsets: record.lane.iter().map(|(_, _, source)| *source).collect(),
         }
     }
 }
@@ -4080,11 +4032,9 @@ impl From<FeatureDraftConstructionBinary32Lane> for FeatureDraftConstructionBina
 impl TryFrom<FeatureDraftConstructionBinary32LaneWire> for FeatureDraftConstructionBinary32Lane {
     type Error = String;
     fn try_from(wire: FeatureDraftConstructionBinary32LaneWire) -> Result<Self, Self::Error> {
-        let branch = crate::om::discriminators::DraftBinary32Branch::try_from(wire.branch)?;
+        let branch = DraftBinary32Branch::try_from(wire.branch)?;
         if wire.discriminator != branch.discriminator() {
-            return Err(
-                "FeatureDraftConstructionBinary32Lane.discriminator disagrees with branch".into(),
-            );
+            return Err("discriminator must match branch".into());
         }
         let count = wire.values.len();
         if wire.raw_values.len() != count
@@ -4096,28 +4046,20 @@ impl TryFrom<FeatureDraftConstructionBinary32LaneWire> for FeatureDraftConstruct
                     .into(),
             );
         }
+        let values = wire.values.into_iter().zip(wire.raw_values).zip(wire.value_source_offsets)
+            .map(|((value, raw), source)| Ok((ShiftedBinary32::from_wire(value, &raw)?, source)))
+            .collect::<Result<Vec<_>, String>>()?;
+        let lane = FramedScalarRun::new(branch, wire.payload_offset, NonEmpty::new(values).ok_or("values must contain a binary32 atom")?)?;
+        if !lane.iter().map(|(offset, _, _)| offset).eq(wire.value_payload_offsets) {
+            return Err("value_payload_offsets must follow the contiguous binary32 atoms".into());
+        }
         Ok(Self {
             id: wire.id,
             operation_label: wire.operation_label,
             graph_payload: wire.graph_payload,
             ordinal: wire.ordinal,
-            branch,
-            payload_offset: wire.payload_offset,
+            lane,
             source_offset: wire.source_offset,
-            values: wire
-                .values
-                .into_iter()
-                .zip(wire.raw_values)
-                .zip(wire.value_payload_offsets)
-                .zip(wire.value_source_offsets)
-                .map(
-                    |(((value, raw), payload_offset), source_offset)| Ok(FeatureBinary32ScalarToken {
-                        scalar: ShiftedBinary32::from_wire(value, &raw)?,
-                        payload_offset,
-                        source_offset,
-                    }),
-                )
-                .collect::<Result<Vec<_>, String>>()?,
         })
     }
 }
@@ -8878,7 +8820,7 @@ pub fn feature_sketch_payload_scalar_lanes(
         crate::om::sketch_payload_scalar_lanes,
         |payload, ordinal, lane, source_offset| {
             let header_source = source_offset(lane.offset() as usize)?;
-            let terminator_source = source_offset(lane.run().end() as usize)?;
+            let terminator_source = source_offset(lane.end() as usize)?;
             let lane = lane.try_map_locations(|offset, ()| source_offset(offset as usize))?;
             Some(FeatureSketchPayloadScalarLane {
                 id: format!("{}-scalar-lane-{ordinal:010}", payload.id),
@@ -10231,29 +10173,14 @@ pub fn feature_pattern_construction_fixed_lanes(
                 .into_iter()
                 .enumerate()
                 .filter_map(|(ordinal, lane)| {
-                    let payload_offset = lane.offset as u64;
-                    let values = lane
-                        .values
-                        .map(|token| {
-                            Some(FeatureFixedScalarToken {
-                                atom: token.atom,
-                                payload_offset: token.offset as u64,
-                                source_offset: joined_payload_source_offset(
-                                    token.offset as u64,
-                                    &starts,
-                                    &lengths,
-                                    &sources,
-                                )?,
-                            })
-                        })
-                        .transpose()?;
+                    let payload_offset = lane.offset();
+                    let lane = lane.try_map_locations(|offset, ()| joined_payload_source_offset(offset, &starts, &lengths, &sources))?;
                     Some(FeaturePatternConstructionFixedLane {
                         id: format!("{}-fixed-lane-{ordinal:010}", payload.id),
                         operation_label: payload.operation_label.clone(),
                         construction_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
-                        values,
-                        payload_offset,
+                        lane,
                         source_offset: joined_payload_source_offset(
                             payload_offset,
                             &starts,
@@ -10654,29 +10581,14 @@ pub fn feature_draft_construction_fixed_lanes(
                 .into_iter()
                 .enumerate()
                 .filter_map(|(ordinal, lane)| {
-                    let payload_offset = lane.offset as u64;
-                    let values = lane
-                        .values
-                        .map(|token| {
-                            Some(FeatureFixedScalarToken {
-                                atom: token.atom,
-                                payload_offset: token.offset as u64,
-                                source_offset: joined_payload_source_offset(
-                                    token.offset as u64,
-                                    &starts,
-                                    &lengths,
-                                    &sources,
-                                )?,
-                            })
-                        })
-                        .transpose()?;
+                    let payload_offset = lane.offset();
+                    let lane = lane.try_map_locations(|offset, ()| joined_payload_source_offset(offset, &starts, &lengths, &sources))?;
                     Some(FeatureDraftConstructionFixedLane {
                         id: format!("{}-fixed-lane-{ordinal:010}", payload.id),
                         operation_label: payload.operation_label.clone(),
                         graph_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
-                        values,
-                        payload_offset,
+                        lane,
                         source_offset: joined_payload_source_offset(
                             payload_offset,
                             &starts,
@@ -10708,31 +10620,14 @@ pub fn feature_draft_construction_binary32_lanes(
                 .into_iter()
                 .enumerate()
                 .filter_map(|(ordinal, lane)| {
-                    let payload_offset = lane.offset as u64;
-                    let values = lane
-                        .values
-                        .into_iter()
-                        .map(|token| {
-                            Some(FeatureBinary32ScalarToken {
-                                scalar: token.scalar,
-                                payload_offset: token.offset as u64,
-                                source_offset: joined_payload_source_offset(
-                                    token.offset as u64,
-                                    &starts,
-                                    &lengths,
-                                    &sources,
-                                )?,
-                            })
-                        })
-                        .collect::<Option<Vec<_>>>()?;
+                    let payload_offset = lane.offset();
+                    let lane = lane.try_map_locations(|offset, ()| joined_payload_source_offset(offset, &starts, &lengths, &sources))?;
                     Some(FeatureDraftConstructionBinary32Lane {
                         id: format!("{}-binary32-lane-{ordinal:010}", payload.id),
                         operation_label: payload.operation_label.clone(),
                         graph_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
-                        branch: lane.branch,
-                        values,
-                        payload_offset,
+                        lane,
                         source_offset: joined_payload_source_offset(
                             payload_offset,
                             &starts,

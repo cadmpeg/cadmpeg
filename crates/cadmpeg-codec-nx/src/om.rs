@@ -12,10 +12,11 @@ pub(crate) mod discriminators;
 use branch_items::BranchItems;
 pub(crate) mod parameter_name;
 pub(crate) mod scalar_run;
+use scalar_run::FramedScalarRun;
 pub(crate) mod sketch_scalar;
-use sketch_scalar::{SketchScaledAtom, SketchMixedScalars, SketchScalarLane, SketchScalarLaneForm};
+use sketch_scalar::{SketchScaledAtom, SketchMixedScalars, SketchScalarLaneForm};
 pub(crate) mod fixed;
-use fixed::{Q155, Q155Atom, Q155Marker};
+use fixed::{Q155, Q155Atom, Q155Marker, Q155LaneFrame};
 pub(crate) mod nonempty;
 use nonempty::NonEmpty;
 pub(crate) mod pattern;
@@ -2546,33 +2547,6 @@ pub enum DraftConstructionIdentityFrameForm {
         /// Nullable compact index.
         index: Option<u32>,
     },
-}
-
-/// One signed Q1.55 atom and its source encoding.
-#[derive(Debug, Clone, PartialEq)]
-pub struct FixedScalarToken {
-    pub atom: Q155Atom,
-    pub offset: usize,
-}
-
-/// Complete signed Q1.55 lane in a reconstructed draft graph payload.
-#[derive(Debug, Clone, PartialEq)]
-pub struct DraftConstructionFixedLane {
-    /// Payload-relative offset of the fixed discriminator.
-    pub offset: usize,
-    /// Ordered scalar atoms with exact source encodings.
-    pub values: NonEmpty<FixedScalarToken>,
-}
-
-/// Complete shifted-binary32 lane in a reconstructed draft graph payload.
-#[derive(Debug, Clone, PartialEq)]
-pub struct DraftConstructionBinary32Lane {
-    /// Payload-relative offset of the discriminator.
-    pub offset: usize,
-    /// Branch selecting the complete lane discriminator.
-    pub branch: DraftBinary32Branch,
-    /// Ordered scalar atoms with exact source encodings.
-    pub values: Vec<scalar::LocatedBinary32>,
 }
 
 /// Compact object frame in a bounded offset-store block.
@@ -5989,7 +5963,7 @@ pub fn sketch_payload_scalar_pairs(bytes: &[u8]) -> Vec<ObjectPayloadScalarPair>
 
 /// Decode every complete scalar-vector frame in a reconstructed sketch
 /// payload.
-pub fn sketch_payload_scalar_lanes(bytes: &[u8]) -> Vec<SketchScalarLane<()>> {
+pub fn sketch_payload_scalar_lanes(bytes: &[u8]) -> Vec<FramedScalarRun<SketchScalarLaneForm, ()>> {
     let mut lanes = [SketchScalarLaneForm::Form03, SketchScalarLaneForm::Form07]
         .into_iter()
         .flat_map(|form| {
@@ -6007,11 +5981,11 @@ pub fn sketch_payload_scalar_lanes(bytes: &[u8]) -> Vec<SketchScalarLane<()>> {
                         at += scalar.raw().len();
                         values.push((scalar, ()));
                     }
-                    SketchScalarLane::new(form, offset as u64, NonEmpty::new(values)?).ok()
+                    FramedScalarRun::new(form, offset as u64, NonEmpty::new(values)?).ok()
                 })
         })
         .collect::<Vec<_>>();
-    lanes.sort_by_key(SketchScalarLane::offset);
+    lanes.sort_by_key(FramedScalarRun::offset);
     lanes
 }
 
@@ -6157,36 +6131,29 @@ pub fn datum_csys_payload_fixed_pairs(bytes: &[u8]) -> Vec<DatumCsysPayloadFixed
 }
 
 /// Decode every complete signed Q1.55 lane in a reconstructed draft graph payload.
-pub fn draft_construction_fixed_lanes(bytes: &[u8]) -> Vec<DraftConstructionFixedLane> {
-    const DISCRIMINATOR: [u8; 18] = [
-        0x25, 0x25, 0x41, 0x00, 0x04, 0x01, 0x07, 0x01, 0xc0, 0x45, 0x10, 0x00, 0x80, 0x86, 0x02,
-        0x00, 0x01, 0x00,
-    ];
+pub fn draft_construction_fixed_lanes(bytes: &[u8]) -> Vec<FramedScalarRun<Q155LaneFrame, ()>> {
     bytes
-        .windows(DISCRIMINATOR.len())
+        .windows(Q155LaneFrame::DISCRIMINATOR.len())
         .enumerate()
         .filter_map(|(offset, window)| {
-            (window == DISCRIMINATOR).then_some(())?;
-            let mut at = offset + DISCRIMINATOR.len();
+            (window == Q155LaneFrame::DISCRIMINATOR).then_some(())?;
+            let mut at = offset + Q155LaneFrame::DISCRIMINATOR.len();
             let mut values = Vec::new();
             while let Some(marker) = bytes.get(at).copied().and_then(Q155Marker::read) {
                 let raw = bytes.get(at + 1..at + 8)?.try_into().ok()?;
-                values.push(FixedScalarToken {
-                    atom: Q155Atom { marker, scalar: Q155::from_raw(raw) },
-                    offset: at,
-                });
+                values.push((Q155Atom { marker, scalar: Q155::from_raw(raw) }, ()));
                 at += 8;
             }
             if bytes.get(at) != Some(&0x00) {
                 return None;
             }
-            Some(DraftConstructionFixedLane { offset, values: NonEmpty::new(values)? })
+            FramedScalarRun::new(Q155LaneFrame, offset as u64, NonEmpty::new(values)?).ok()
         })
         .collect()
 }
 
 /// Decode every complete shifted-binary32 lane in a reconstructed draft graph payload.
-pub fn draft_construction_binary32_lanes(bytes: &[u8]) -> Vec<DraftConstructionBinary32Lane> {
+pub fn draft_construction_binary32_lanes(bytes: &[u8]) -> Vec<FramedScalarRun<DraftBinary32Branch, ()>> {
     let mut lanes = [DraftBinary32Branch::Form04, DraftBinary32Branch::Form03]
         .into_iter()
         .flat_map(|branch| {
@@ -6200,22 +6167,18 @@ pub fn draft_construction_binary32_lanes(bytes: &[u8]) -> Vec<DraftConstructionB
                     let mut values = Vec::new();
                     while matches!(bytes.get(at), Some(0x40..=0x5f | 0xc0..=0xdf)) {
                         let scalar = ShiftedBinary32::read(bytes.get(at..at + 4)?)?;
-                        values.push(scalar::LocatedBinary32 { scalar, offset: at });
+                        values.push((scalar, ()));
                         at += 4;
                     }
-                    if values.is_empty() || bytes.get(at) != Some(&0x00) {
+                    if bytes.get(at) != Some(&0x00) {
                         return None;
                     }
-                    Some(DraftConstructionBinary32Lane {
-                        offset,
-                        branch,
-                        values,
-                    })
+                    FramedScalarRun::new(branch, offset as u64, NonEmpty::new(values)?).ok()
                 })
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
-    lanes.sort_by_key(|lane| lane.offset);
+    lanes.sort_by_key(FramedScalarRun::offset);
     lanes
 }
 
