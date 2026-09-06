@@ -2,8 +2,8 @@
 //! Feature-output lineage from operation body-write frames.
 
 use super::*;
-use crate::test_support::{composed_feature_history_payload, prt_with_named_payloads};
 use crate::NxCodec;
+use crate::test_support::{composed_feature_history_payload, prt_with_named_payloads};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use std::io::Cursor;
 
@@ -270,7 +270,7 @@ fn group_partition_witness_projects_every_write_of_the_bound_body_identity() {
 
 fn group_member(
     id: &str,
-    family: &str,
+    family: crate::native::parasolid::GroupMemberFamily,
     current_member_xmt: Option<u32>,
 ) -> crate::native::parasolid::ParasolidGroupMember {
     crate::native::parasolid::ParasolidGroupMember {
@@ -281,7 +281,7 @@ fn group_member(
         ordinal: 0,
         list_record_xmt: 20,
         member_xmt: 30,
-        member_family: family.into(),
+        member_family: family,
         member_node_id: Some(50),
         current_member_xmt,
     }
@@ -318,11 +318,31 @@ fn direct_group_use(
 fn result_topology_uses_only_unique_current_group_members() {
     let use_ = group_use(&["face", "edge", "vertex", "historical", "shell"]);
     let members = [
-        group_member("face", "FACE", Some(40)),
-        group_member("edge", "EDGE", Some(41)),
-        group_member("vertex", "VERTEX", Some(42)),
-        group_member("historical", "FACE", None),
-        group_member("shell", "SHELL", Some(43)),
+        group_member(
+            "face",
+            crate::native::parasolid::GroupMemberFamily::Face,
+            Some(40),
+        ),
+        group_member(
+            "edge",
+            crate::native::parasolid::GroupMemberFamily::Edge,
+            Some(41),
+        ),
+        group_member(
+            "vertex",
+            crate::native::parasolid::GroupMemberFamily::Vertex,
+            Some(42),
+        ),
+        group_member(
+            "historical",
+            crate::native::parasolid::GroupMemberFamily::Face,
+            None,
+        ),
+        group_member(
+            "shell",
+            crate::native::parasolid::GroupMemberFamily::Shell,
+            Some(43),
+        ),
     ];
     let result = super::feature_result_group_members(
         use_.partition_stream_ordinal,
@@ -335,8 +355,16 @@ fn result_topology_uses_only_unique_current_group_members() {
     assert_eq!(result.vertices, ["nx:s4:vertex#42"]);
 
     let duplicate_members = [
-        group_member("face", "FACE", Some(40)),
-        group_member("face", "FACE", Some(40)),
+        group_member(
+            "face",
+            crate::native::parasolid::GroupMemberFamily::Face,
+            Some(40),
+        ),
+        group_member(
+            "face",
+            crate::native::parasolid::GroupMemberFamily::Face,
+            Some(40),
+        ),
     ];
     assert!(
         super::feature_result_group_members(4, &["face".into()], &duplicate_members)
@@ -348,8 +376,16 @@ fn result_topology_uses_only_unique_current_group_members() {
 #[test]
 fn result_topology_accepts_either_partition_witness_and_rejects_disagreement() {
     let members = [
-        group_member("face", "FACE", Some(40)),
-        group_member("edge", "EDGE", Some(41)),
+        group_member(
+            "face",
+            crate::native::parasolid::GroupMemberFamily::Face,
+            Some(40),
+        ),
+        group_member(
+            "edge",
+            crate::native::parasolid::GroupMemberFamily::Edge,
+            Some(41),
+        ),
     ];
     let image = group_use(&["face"]);
     let direct = direct_group_use(&["face"]);

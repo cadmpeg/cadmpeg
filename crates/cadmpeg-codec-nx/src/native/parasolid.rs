@@ -42,6 +42,50 @@ pub struct ParasolidGroupRecord {
     pub inflated_offset: u64,
 }
 
+/// Topology families admitted as members of a closed GROUP chain.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum GroupMemberFamily {
+    Body,
+    Shell,
+    Face,
+    Loop,
+    Fin,
+    Edge,
+    Vertex,
+    Region,
+}
+
+impl GroupMemberFamily {
+    fn from_record(family: crate::deltas::RecordFamily) -> Option<Self> {
+        use crate::deltas::RecordFamily;
+        Some(match family {
+            RecordFamily::Body { .. } => Self::Body,
+            RecordFamily::Shell { .. } => Self::Shell,
+            RecordFamily::Face { .. } => Self::Face,
+            RecordFamily::Loop { .. } => Self::Loop,
+            RecordFamily::Fin => Self::Fin,
+            RecordFamily::Edge { .. } => Self::Edge,
+            RecordFamily::Vertex { .. } => Self::Vertex,
+            RecordFamily::Region { .. } => Self::Region,
+            _ => return None,
+        })
+    }
+
+    fn kind(self) -> u8 {
+        match self {
+            Self::Body => 12,
+            Self::Shell => 13,
+            Self::Face => 14,
+            Self::Loop => 15,
+            Self::Fin => 17,
+            Self::Edge => 16,
+            Self::Vertex => 18,
+            Self::Region => 19,
+        }
+    }
+}
+
 /// One topology member in a fully closed current Parasolid GROUP chain.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParasolidGroupMember {
@@ -60,7 +104,7 @@ pub struct ParasolidGroupMember {
     /// Member record XMT identity.
     pub member_xmt: u32,
     /// Parasolid topology family of the member record.
-    pub member_family: String,
+    pub member_family: GroupMemberFamily,
     /// Kernel node identity when the member family carries one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub member_node_id: Option<u32>,
@@ -156,13 +200,6 @@ pub(crate) fn parasolid_group_records(
     groups
 }
 
-fn is_group_member_family(family: &str) -> bool {
-    matches!(
-        family,
-        "BODY" | "SHELL" | "FACE" | "LOOP" | "FIN" | "EDGE" | "VERTEX" | "REGION"
-    )
-}
-
 fn group_members_from_records(
     partition_stream_ordinal: u32,
     records: &[crate::deltas::Record],
@@ -220,11 +257,10 @@ fn group_members_from_records(
                 complete = false;
                 break;
             };
-            let member_family = crate::deltas::record_family_name(member_record);
-            if !is_group_member_family(member_family) {
+            let Some(member_family) = GroupMemberFamily::from_record(member_record.family) else {
                 complete = false;
                 break;
-            }
+            };
             reverse_chain.push((current, member_xmt, member_family, member_record.node_id()));
             expected_next = current;
             current = list_record.references[4];
@@ -249,7 +285,7 @@ fn group_members_from_records(
                     ordinal: u32::try_from(ordinal).ok()?,
                     list_record_xmt,
                     member_xmt,
-                    member_family: member_family.to_string(),
+                    member_family,
                     member_node_id,
                     current_member_xmt: None,
                 })
@@ -314,31 +350,17 @@ pub(crate) fn parasolid_group_members(
         .flat_map(|(stream_ordinal, records)| group_members_from_records(stream_ordinal, &records))
         .collect::<Vec<_>>();
     for member in &mut members {
-        let (Some(kind), Some(node_id), Ok(partition)) = (
-            group_member_kind(&member.member_family),
+        let (Some(node_id), Ok(partition)) = (
             member.member_node_id,
             usize::try_from(member.partition_stream_ordinal),
         ) else {
             continue;
         };
         let graph = parsed.stream(partition).view_for_geometry().graph.as_ref();
-        member.current_member_xmt = resolved_current_member_xmt(graph, member, kind, node_id);
+        member.current_member_xmt =
+            resolved_current_member_xmt(graph, member, member.member_family.kind(), node_id);
     }
     members
-}
-
-fn group_member_kind(family: &str) -> Option<u8> {
-    Some(match family {
-        "BODY" => 12,
-        "SHELL" => 13,
-        "FACE" => 14,
-        "LOOP" => 15,
-        "FIN" => 17,
-        "EDGE" => 16,
-        "VERTEX" => 18,
-        "REGION" => 19,
-        _ => return None,
-    })
 }
 
 /// Resolve a GROUP member against the current merged topology graph.
@@ -3510,11 +3532,17 @@ mod tests {
 
         assert_eq!(members.len(), 2);
         assert_eq!(members[0].list_record_xmt, 20);
-        assert_eq!(members[0].member_family, "EDGE");
+        assert_eq!(
+            serde_json::to_value(members[0].member_family).unwrap(),
+            "EDGE"
+        );
         assert_eq!(members[0].member_node_id, Some(51));
         assert_eq!(members[0].current_member_xmt, None);
         assert_eq!(members[1].list_record_xmt, 30);
-        assert_eq!(members[1].member_family, "FACE");
+        assert_eq!(
+            serde_json::to_value(members[1].member_family).unwrap(),
+            "FACE"
+        );
         assert_eq!(members[1].member_node_id, Some(50));
 
         let mut broken = records;
@@ -3533,7 +3561,7 @@ mod tests {
             ordinal: 0,
             list_record_xmt: 20,
             member_xmt: 300,
-            member_family: "FACE".into(),
+            member_family: GroupMemberFamily::Face,
             member_node_id: Some(1_000),
             current_member_xmt: None,
         };

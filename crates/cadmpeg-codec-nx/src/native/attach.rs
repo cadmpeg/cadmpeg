@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! IR-writing attachment of the native object model.
 
-use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, btree_map::Entry};
 
-use cadmpeg_core::decode::{alloc_filled, DecodeContext};
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{DecodeContext, alloc_filled};
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
@@ -45,14 +45,14 @@ const MIN_ANGULAR_TOLERANCE: f64 = 1.0e-12;
 use crate::container::EntryContent;
 use crate::decode::Scan;
 use crate::native::history::{
-    active_feature_closure, BodyWriterHistory, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS,
-    NATIVE_PRIMARY_BODY_OBJECT_INDEX,
+    BodyWriterHistory, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS, NATIVE_PRIMARY_BODY_OBJECT_INDEX,
+    active_feature_closure,
 };
 use crate::native::segments::BooleanOffsetStoreResolution;
 use crate::native::vector::{cross_vector, dot_vector, unit_vector};
 
 use super::catalogue::NATIVE_CATALOGUE;
-use super::display_jt::{display_jt_tessellations, DisplayJtTessellationInputs};
+use super::display_jt::{DisplayJtTessellationInputs, display_jt_tessellations};
 use super::has_complete_saved_toggle_stream;
 use cadmpeg_ir::native::catalogue::NotePhase;
 
@@ -3794,14 +3794,14 @@ fn feature_result_group_members(
         let Some(xmt) = member.current_member_xmt else {
             continue;
         };
-        match member.member_family.as_str() {
-            "FACE" => result
+        match member.member_family {
+            crate::native::parasolid::GroupMemberFamily::Face => result
                 .faces
                 .push(format!("nx:s{partition_stream_ordinal}:face#{xmt}")),
-            "EDGE" => result
+            crate::native::parasolid::GroupMemberFamily::Edge => result
                 .edges
                 .push(format!("nx:s{partition_stream_ordinal}:edge#{xmt}")),
-            "VERTEX" => result
+            crate::native::parasolid::GroupMemberFamily::Vertex => result
                 .vertices
                 .push(format!("nx:s{partition_stream_ordinal}:vertex#{xmt}")),
             _ => {}
