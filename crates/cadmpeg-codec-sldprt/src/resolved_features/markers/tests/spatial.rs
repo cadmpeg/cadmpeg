@@ -62,7 +62,7 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
         name: "name".into(),
         value: 1.0,
         role: FeatureInputScalarRole::Driving,
-        entity_indices: Vec::new(),
+
         operands: vec![reference(143), reference(287)],
     }];
     let classes = [FeatureInputClass {
@@ -646,7 +646,7 @@ fn relation_binding_requires_family_operand_signature() {
         name: "name".into(),
         value: 1.0,
         role: FeatureInputScalarRole::Driving,
-        entity_indices: vec![0, 1],
+
         operands: vec![operand(kind, 0), operand(kind, 1)],
     };
 
@@ -694,7 +694,7 @@ fn relation_binding_with_ambiguous_declarations_is_withheld() {
         name: "name".into(),
         value: 1.0,
         role: FeatureInputScalarRole::Driving,
-        entity_indices: vec![0, 1],
+
         operands: vec![operand(0), operand(1)],
     };
 
@@ -733,7 +733,7 @@ fn scoped_relation_binding_does_not_cross_feature_interval() {
         name: "name".into(),
         value: 1.0,
         role: FeatureInputScalarRole::Driving,
-        entity_indices: vec![0, 1],
+
         operands: vec![operand(0), operand(1)],
     };
 

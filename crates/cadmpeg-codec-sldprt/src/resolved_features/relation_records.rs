@@ -491,7 +491,7 @@ mod relation_records_tests {
             name: "dimension".into(),
             value: 1.0,
             role,
-            entity_indices: vec![0, 1],
+
             operands,
         }
     }
@@ -512,7 +512,7 @@ mod relation_records_tests {
             name: name.into(),
             value: 1.0,
             role,
-            entity_indices: vec![0],
+
             operands: vec![FeatureInputOperand {
                 offset: offset + 1,
                 reference_ref: format!("reference-{offset}"),
@@ -685,7 +685,7 @@ mod relation_records_tests {
         let relation_class = class(10, "sgPntPntHorDist");
         let mut native = scalar(20, FeatureInputScalarRole::Native);
         native.operands.clear();
-        native.entity_indices.clear();
+
         let driving = scalar(40, FeatureInputScalarRole::Driving);
         let lane = lane(vec![relation_class], vec![native, driving.clone()]);
 
@@ -1083,7 +1083,7 @@ mod relation_records_tests {
     ) -> FeatureInputScalar {
         let mut scalar = scalar(offset, FeatureInputScalarRole::Driving);
         scalar.value = value;
-        scalar.entity_indices = indices.to_vec();
+
         scalar.operands = indices
             .iter()
             .enumerate()

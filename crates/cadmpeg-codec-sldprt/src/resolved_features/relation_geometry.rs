@@ -2811,7 +2811,7 @@ mod relation_geometry_tests {
                 name: "distance".into(),
                 value,
                 role: FeatureInputScalarRole::Driving,
-                entity_indices: Vec::new(),
+
                 operands,
             };
         let relation = FeatureInputRelationInstance {
@@ -3053,7 +3053,7 @@ mod relation_geometry_tests {
                 name: "distance".into(),
                 value: 0.005,
                 role: FeatureInputScalarRole::Driving,
-                entity_indices: vec![0, 1],
+
                 operands: relation.operands.clone(),
             }],
             relation_bindings: Vec::new(),
@@ -3103,7 +3103,7 @@ mod relation_geometry_tests {
         let fallback_scalar = fallback_lane.scalars.first_mut().expect("synthetic scalar");
         fallback_scalar.id = "fallback-scalar".into();
         fallback_scalar.offset = 31;
-        fallback_scalar.entity_indices = vec![1, 2];
+
         fallback_scalar.operands = fallback_operands;
         for marker in &mut fallback_lane.sketch_entities {
             match marker.id.as_str() {
@@ -3336,7 +3336,7 @@ mod relation_geometry_tests {
             name: "distance".into(),
             value: 0.0065,
             role: FeatureInputScalarRole::Driving,
-            entity_indices: Vec::new(),
+
             operands: Vec::new(),
         };
         let operand = |entity_index| FeatureInputOperand {

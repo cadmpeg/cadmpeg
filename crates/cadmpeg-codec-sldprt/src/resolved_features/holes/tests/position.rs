@@ -1281,7 +1281,7 @@ fn source_intervals_supply_legacy_hole_profiles() {
         name: "depth-name".into(),
         value: 0.0068,
         role: FeatureInputScalarRole::Native,
-        entity_indices: Vec::new(),
+
         operands: Vec::new(),
     });
     let mut histories = [history];
@@ -1504,7 +1504,7 @@ fn parameter_class_supplies_an_operandless_scalar_unit() {
         name: "angle-name".into(),
         value: std::f64::consts::TAU,
         role: FeatureInputScalarRole::Native,
-        entity_indices: Vec::new(),
+
         operands: Vec::new(),
     });
 

@@ -448,7 +448,7 @@ mod tests {
                 name: "d1-name".into(),
                 value: 0.005,
                 role: FeatureInputScalarRole::Driving,
-                entity_indices: Vec::new(),
+
                 operands: Vec::new(),
             }],
             relation_bindings: Vec::new(),

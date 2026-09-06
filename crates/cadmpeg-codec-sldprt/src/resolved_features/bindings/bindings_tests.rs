@@ -92,7 +92,7 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         name: name.into(),
         value: 0.001,
         role: FeatureInputScalarRole::Driving,
-        entity_indices: Vec::new(),
+
         operands: Vec::new(),
     };
     let mut lane = FeatureInputLane {
@@ -821,7 +821,7 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         name: format!("name-{index}"),
         value,
         role: FeatureInputScalarRole::Driving,
-        entity_indices: Vec::new(),
+
         operands: Vec::new(),
     };
     let entity = |id: &str, offset| SketchInputEntity {

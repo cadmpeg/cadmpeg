@@ -590,12 +590,69 @@ pub struct FeatureInputScalar {
     pub value: f64,
     /// Function of this scalar in the dimension record.
     pub role: FeatureInputScalarRole,
-    /// Local sketch-entity indices used as dimension operands.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub entity_indices: Vec<u16>,
     /// Typed native operand cells attached to this scalar.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(flatten, with = "scalar_operands_wire")]
+    #[cfg_attr(feature = "schema", schemars(with = "scalar_operands_wire::Wire"))]
     pub operands: Vec<FeatureInputOperand>,
+}
+
+impl FeatureInputScalar {
+    /// Local sketch-entity indices carried by D6 dimension operands.
+    pub fn entity_indices(&self) -> Vec<u16> {
+        scalar_operands_wire::entity_indices(&self.operands)
+    }
+}
+
+mod scalar_operands_wire {
+    use super::{FeatureInputOperand, FeatureInputOperandKind};
+    use serde::{ser::SerializeMap, Deserialize, Deserializer, Serializer};
+
+    #[derive(Deserialize)]
+    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+    pub(super) struct Wire {
+        #[serde(default)]
+        entity_indices: Option<Vec<u16>>,
+        #[serde(default)]
+        operands: Vec<FeatureInputOperand>,
+    }
+
+    pub(super) fn entity_indices(operands: &[FeatureInputOperand]) -> Vec<u16> {
+        operands
+            .iter()
+            .filter(|operand| operand.kind == FeatureInputOperandKind::D6)
+            .map(|operand| operand.entity_index)
+            .collect()
+    }
+
+    pub(super) fn serialize<S: Serializer>(
+        operands: &[FeatureInputOperand],
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(None)?;
+        let indices = entity_indices(operands);
+        if !indices.is_empty() {
+            map.serialize_entry("entity_indices", &indices)?;
+        }
+        if !operands.is_empty() {
+            map.serialize_entry("operands", operands)?;
+        }
+        map.end()
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Vec<FeatureInputOperand>, D::Error> {
+        let wire = Wire::deserialize(deserializer)?;
+        if wire
+            .entity_indices
+            .is_some_and(|indices| indices != entity_indices(&wire.operands))
+        {
+            return Err(serde::de::Error::custom(
+                "entity_indices must match the D6 operands",
+            ));
+        }
+        Ok(wire.operands)
+    }
 }
 
 /// One native entity-reference cell attached to a feature-input scalar.
@@ -1260,6 +1317,29 @@ impl SketchRelationKind {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn scalar_wire_derives_indices_from_d6_operands() {
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct Operands {
+            #[serde(flatten, with = "super::scalar_operands_wire")]
+            operands: Vec<super::FeatureInputOperand>,
+        }
+        let wire = serde_json::json!({
+            "entity_indices": [7],
+            "operands": [
+                {"offset": 0, "reference_ref": "a", "kind": "d6", "entity_index": 7},
+                {"offset": 12, "reference_ref": "b", "kind": "e1", "entity_index": 9}
+            ]
+        });
+        let operands: Operands = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(operands).unwrap(), wire);
+        let mut inconsistent = wire;
+        inconsistent["entity_indices"] = serde_json::json!([7, 9]);
+        assert!(serde_json::from_value::<Operands>(inconsistent).is_err());
+        let empty: Operands = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(serde_json::to_value(empty).unwrap(), serde_json::json!({}));
+    }
+
     #[test]
     fn tree_parent_preserves_record_and_source_wire_forms() {
         #[derive(serde::Serialize, serde::Deserialize)]

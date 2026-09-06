@@ -243,7 +243,7 @@ fn explicit_sketch_dimension_scalar_preserves_display_outside_object_range() {
             name: "d1-name".into(),
             value: 0.007_137_4,
             role: FeatureInputScalarRole::Driving,
-            entity_indices: Vec::new(),
+
             operands: Vec::new(),
         }],
         relation_bindings: Vec::new(),

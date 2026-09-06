@@ -698,7 +698,7 @@ fn driving_point_distances_resolve_omitted_solver_points() {
             name: "name".into(),
             value,
             role: FeatureInputScalarRole::Driving,
-            entity_indices: Vec::new(),
+
             operands,
         };
         let lane = FeatureInputLane {
@@ -777,7 +777,7 @@ fn ambiguous_driving_point_distance_does_not_assign_solver_points() {
             name: "name".into(),
             value: 1.0,
             role: FeatureInputScalarRole::Driving,
-            entity_indices: Vec::new(),
+
             operands: vec![operand(12), operand(13)],
         }],
         relation_bindings: Vec::new(),

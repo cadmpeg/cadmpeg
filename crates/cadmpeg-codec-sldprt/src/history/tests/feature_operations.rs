@@ -929,7 +929,7 @@ fn decode_retains_e1_feature_input_operands() {
         .references
         .iter()
         .all(|reference| reference.kind == crate::records::FeatureInputOperandKind::E1));
-    assert!(scalar.entity_indices.is_empty());
+    assert!(scalar.entity_indices().is_empty());
     assert_eq!(
         scalar
             .operands
