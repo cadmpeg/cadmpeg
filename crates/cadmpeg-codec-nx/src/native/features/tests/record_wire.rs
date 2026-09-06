@@ -341,3 +341,21 @@ fn delete_reference_fields_preserve_wire_and_reject_invalid_null_slots() {
         assert!(serde_json::from_value::<super::super::FeatureDeleteReferenceField>(invalid).is_err());
     }
 }
+
+#[test]
+fn body_11_continuation_preserves_wire_and_checks_both_token_grammars() {
+    let wire = r#"{"id":"continuation","operation_label":"operation","body_reference_ordinal":0,"body_object_index":114,"continuation_index":67,"raw_continuation_index":[128,67],"continuation_source_offset":126,"terminal_object_index":113,"raw_terminal_object_index":[113],"terminal_source_offset":131}"#;
+    let record: super::super::FeatureOperationBody11Continuation = serde_json::from_str(wire).unwrap();
+    assert_eq!(serde_json::to_string(&record).unwrap(), wire);
+    for field in ["continuation_index", "terminal_object_index"] {
+        let mut invalid: serde_json::Value = serde_json::from_str(wire).unwrap();
+        invalid[field] = serde_json::json!(999);
+        let error = serde_json::from_value::<super::super::FeatureOperationBody11Continuation>(invalid).unwrap_err();
+        assert!(error.to_string().contains(field));
+    }
+    for field in ["raw_continuation_index", "raw_terminal_object_index"] {
+        let mut invalid: serde_json::Value = serde_json::from_str(wire).unwrap();
+        invalid[field] = serde_json::json!([255]);
+        assert!(serde_json::from_value::<super::super::FeatureOperationBody11Continuation>(invalid).is_err());
+    }
+}

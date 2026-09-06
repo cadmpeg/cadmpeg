@@ -1971,18 +1971,10 @@ pub struct OperationBody11Continuation {
     pub body_reference_ordinal: u32,
     /// Serialized body object index.
     pub body_object_index: u32,
-    /// Compact index in the single-entry continuation lane.
-    pub continuation_index: u32,
-    /// Exact compact-index token in the continuation lane.
-    pub raw_continuation_index: Vec<u8>,
-    /// Absolute offset of the continuation compact-index marker.
-    pub continuation_offset: usize,
-    /// Object index in the terminal field.
-    pub terminal_object_index: u32,
-    /// Exact serialized terminal object-index token.
-    pub raw_terminal_object_index: Vec<u8>,
-    /// Absolute offset of the terminal object-index marker.
-    pub terminal_offset: usize,
+    /// Exact compact continuation index and its absolute source offset.
+    pub continuation: LocatedCompactIndex,
+    /// Exact required terminal reference and its absolute source offset.
+    pub terminal: PayloadObjectReference,
 }
 
 /// Homogeneous value encoding in an operation body-reference lane.
@@ -2035,12 +2027,8 @@ pub struct ExtrudePayload32Branch {
     pub first_indices: Vec<LaneToken<u32>>,
     /// Ordered values in the second compact-index lane.
     pub second_indices: Vec<LaneToken<u32>>,
-    /// Object index in the terminal field.
-    pub terminal_object_index: u32,
-    /// Exact serialized terminal object-index token.
-    pub raw_terminal_object_index: Vec<u8>,
-    /// Absolute offset of the terminal object-index token.
-    pub terminal_offset: usize,
+    /// Exact required terminal reference and its absolute source offset.
+    pub terminal: PayloadObjectReference,
 }
 
 /// Ordered construction-reference field at the start of a `BLOCK` payload.
@@ -4635,35 +4623,27 @@ pub fn operation_body_11_continuations(
                 return None;
             }
             at += 2;
-            let continuation_at = at;
-            let (CompactIndex::Value(continuation_index), width) =
-                compact_index(record.bytes.get(at..)?)?
-            else {
-                return None;
-            };
-            at += width;
+            let mut continuation = LocatedCompactIndex::read(record.bytes, at)?;
+            at += continuation.atom.raw().len();
+            continuation.offset += record.offset();
             if record.bytes.get(at..at + 3) != Some(&[0x00, 0x00, 0x01]) {
                 return None;
             }
             at += 3;
             let terminal_at = at;
-            let (Some(terminal_object_index), next) = feature_object_index(record.bytes, at)?
-            else {
-                return None;
-            };
+            let terminal_token = ReferenceIndexToken::read_feature(record.bytes.get(at..)?)?;
+            let next = at + terminal_token.raw().len();
             if record.bytes.get(next..next + 2) != Some(&[0x00, 0x00]) {
                 return None;
             }
             Some(OperationBody11Continuation {
                 body_reference_ordinal: body_ordinal as u32,
                 body_object_index: reference.object_index,
-                continuation_index,
-                raw_continuation_index: record.bytes[continuation_at..continuation_at + width]
-                    .to_vec(),
-                continuation_offset: record.offset() + continuation_at,
-                terminal_object_index,
-                raw_terminal_object_index: record.bytes[terminal_at..next].to_vec(),
-                terminal_offset: record.offset() + terminal_at,
+                continuation,
+                terminal: PayloadObjectReference {
+                    token: terminal_token,
+                    offset: record.offset() + terminal_at,
+                },
             })
         })
         .collect()
@@ -4808,9 +4788,9 @@ pub fn extrude_payload_32_branch(record: OperationRecord<'_>) -> Option<ExtrudeP
     if record.bytes.get(at..at + 2) != Some(&[0x00, 0x01]) {
         return None;
     }
-    let (terminal_object_index, next) = feature_object_index(record.bytes, at + 2)?;
-    let terminal_object_index = terminal_object_index?;
-    if terminal_object_index != reference.object_index
+    let terminal_token = ReferenceIndexToken::read_feature(record.bytes.get(at + 2..)?)?;
+    let next = at + 2 + terminal_token.raw().len();
+    if terminal_token.value() != reference.object_index
         || record.bytes.get(next..next + 2) != Some(&[0x00, 0x00])
     {
         return None;
@@ -4821,9 +4801,10 @@ pub fn extrude_payload_32_branch(record: OperationRecord<'_>) -> Option<ExtrudeP
         atoms,
         first_indices: first,
         second_indices: second,
-        terminal_object_index,
-        raw_terminal_object_index: record.bytes[at + 2..next].to_vec(),
-        terminal_offset: record.offset() + at + 2,
+        terminal: PayloadObjectReference {
+            token: terminal_token,
+            offset: record.offset() + at + 2,
+        },
     })
 }
 

@@ -5190,6 +5190,7 @@ impl FeatureOperationBodyOperand {
 
 /// Exact continuation following a `TRIM BODY` branch-`11` member lane.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "reference::Body11ContinuationWire", into = "reference::Body11ContinuationWire")]
 pub struct FeatureOperationBody11Continuation {
     /// Globally unique continuation identity.
     pub id: String,
@@ -5199,16 +5200,10 @@ pub struct FeatureOperationBody11Continuation {
     pub body_reference_ordinal: u32,
     /// Serialized body object index.
     pub body_object_index: u32,
-    /// Compact index in the single-entry continuation lane.
-    pub continuation_index: u32,
-    /// Exact compact-index token in the continuation lane.
-    pub raw_continuation_index: Vec<u8>,
-    /// Absolute file offset of the continuation compact-index marker.
-    pub continuation_source_offset: u64,
-    /// Object index in the terminal field.
-    pub terminal_object_index: u32,
-    /// Exact serialized terminal object-index token.
-    pub raw_terminal_object_index: Vec<u8>,
+    /// Exact compact continuation index and its absolute file offset.
+    pub continuation: crate::om::compact::LocatedCompactIndex<u64>,
+    /// Exact required terminal reference.
+    pub terminal: crate::om::reference_index::ReferenceIndexToken,
     /// Absolute file offset of the terminal object-index marker.
     pub terminal_source_offset: u64,
 }
@@ -11319,13 +11314,12 @@ pub fn feature_operation_body_11_continuations(
                         ),
                         body_reference_ordinal: continuation.body_reference_ordinal,
                         body_object_index: continuation.body_object_index,
-                        continuation_index: continuation.continuation_index,
-                        raw_continuation_index: continuation.raw_continuation_index,
-                        continuation_source_offset: entry_offset
-                            + continuation.continuation_offset as u64,
-                        terminal_object_index: continuation.terminal_object_index,
-                        raw_terminal_object_index: continuation.raw_terminal_object_index,
-                        terminal_source_offset: entry_offset + continuation.terminal_offset as u64,
+                        continuation: crate::om::compact::LocatedCompactIndex {
+                            atom: continuation.continuation.atom,
+                            offset: entry_offset + continuation.continuation.offset as u64,
+                        },
+                        terminal: continuation.terminal.token,
+                        terminal_source_offset: entry_offset + continuation.terminal.offset as u64,
                     }),
             );
         },
@@ -11460,9 +11454,9 @@ pub fn feature_extrude_payload_32_branches(
                     data_block: unique_offset_data_block(&indexed, token.value),
                 }).collect(),
                 terminal: FeatureIndexToken {
-                    value: branch.terminal_object_index,
-                    raw: branch.raw_terminal_object_index,
-                    source_offset: entry_offset + branch.terminal_offset as u64,
+                    value: branch.terminal.token.value(),
+                    raw: branch.terminal.token.raw().to_vec(),
+                    source_offset: entry_offset + branch.terminal.offset as u64,
                 },
                 source_offset: entry_offset + branch.offset as u64,
             });

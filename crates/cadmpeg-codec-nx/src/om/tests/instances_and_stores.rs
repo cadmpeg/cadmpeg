@@ -1148,12 +1148,12 @@ fn om_trim_body_branch_11_decodes_terminal_continuation_atomically() {
     let continuation = &continuations[0];
     assert_eq!(continuation.body_reference_ordinal, 0);
     assert_eq!(continuation.body_object_index, 114);
-    assert_eq!(continuation.continuation_index, 67);
-    assert_eq!(continuation.raw_continuation_index, [0x80, 0x43]);
-    assert_eq!(continuation.continuation_offset, 126);
-    assert_eq!(continuation.terminal_object_index, 114);
-    assert_eq!(continuation.raw_terminal_object_index, [0x72]);
-    assert_eq!(continuation.terminal_offset, 131);
+    assert_eq!(continuation.continuation.atom.value(), 67);
+    assert_eq!(continuation.continuation.atom.raw(), [0x80, 0x43]);
+    assert_eq!(continuation.continuation.offset, 126);
+    assert_eq!(continuation.terminal.token.value(), 114);
+    assert_eq!(continuation.terminal.token.raw(), [0x72]);
+    assert_eq!(continuation.terminal.offset, 131);
 
     let mut distinct_terminal = bytes.to_vec();
     distinct_terminal[31] = 0x71;
@@ -1163,7 +1163,7 @@ fn om_trim_body_branch_11_decodes_terminal_continuation_atomically() {
             payload: &distinct_terminal,
             ..record
         })[0]
-            .terminal_object_index,
+            .terminal.token.value(),
         113
     );
 
@@ -1294,7 +1294,7 @@ fn om_extrude_body_32_branch_decodes_counted_lanes() {
     };
     let branch = super::extrude_payload_32_branch(record).unwrap();
     assert_eq!(branch.offset, 105);
-    assert_eq!(branch.terminal_object_index, 115);
+    assert_eq!(branch.terminal.token.value(), 115);
     assert!(branch.scalar.value().is_finite());
     assert_eq!(branch.scalar.raw(), bytes[8..16]);
     assert_eq!(
@@ -1369,9 +1369,9 @@ fn om_extrude_body_32_branch_decodes_counted_lanes() {
             .collect::<Vec<_>>(),
         [136, 138]
     );
-    assert_eq!(branch.terminal_object_index, 115);
-    assert_eq!(branch.raw_terminal_object_index, [0x73]);
-    assert_eq!(branch.terminal_offset, 142);
+    assert_eq!(branch.terminal.token.value(), 115);
+    assert_eq!(branch.terminal.token.raw(), [0x73]);
+    assert_eq!(branch.terminal.offset, 142);
 
     let mut invalid = bytes.to_vec();
     invalid[36] = 0xff;
