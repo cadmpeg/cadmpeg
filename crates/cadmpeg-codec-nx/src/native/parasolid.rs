@@ -6,6 +6,9 @@ use super::*;
 
 use crate::deltas::Census;
 
+pub(crate) mod topology_attribute_kind;
+use topology_attribute_kind::TopologyAttributeKind;
+
 mod entity51_wire;
 use entity51_wire::Entity51Wire;
 use crate::parasolid::entity_references::EntityReferences;
@@ -1810,7 +1813,7 @@ pub struct ParasolidTopologyAttributeListReference {
     /// Zero-based inflated Parasolid stream ordinal.
     pub stream_ordinal: u32,
     /// Parasolid topology record type.
-    pub topology_type: u8,
+    pub topology_type: TopologyAttributeKind,
     /// Stream-local topology-record identity.
     pub topology_xmt: u32,
     /// Stream-local attribute-list identity.
@@ -2384,16 +2387,15 @@ pub(crate) fn parasolid_topology_attribute_list_references(
     let mut references = Vec::new();
     for (stream_ordinal, stream) in parsed.iter() {
         let graph = &stream.view_for_records().graph;
-        for topology_type in [13, 14, 15, 16, 17, 18] {
-            for node in graph.of_kind(topology_type) {
+        for topology_type in TopologyAttributeKind::ALL {
+            for node in graph.of_kind(topology_type.code()) {
                 let attribute_list_xmt = match topology_type {
-                    13 => node.shell_fields().map(|fields| fields.attributes),
-                    14 => node.face_fields().map(|fields| fields.attributes),
-                    15 => node.loop_fields().map(|fields| fields.attributes),
-                    16 => node.edge_fields().map(|fields| fields.attributes),
-                    17 => node.fin_fields().map(|fields| fields.attributes),
-                    18 => node.vertex_fields().map(|fields| fields.attributes),
-                    _ => unreachable!("bounded topology family"),
+                    TopologyAttributeKind::Shell => node.shell_fields().map(|fields| fields.attributes),
+                    TopologyAttributeKind::Face => node.face_fields().map(|fields| fields.attributes),
+                    TopologyAttributeKind::Loop => node.loop_fields().map(|fields| fields.attributes),
+                    TopologyAttributeKind::Edge => node.edge_fields().map(|fields| fields.attributes),
+                    TopologyAttributeKind::Fin => node.fin_fields().map(|fields| fields.attributes),
+                    TopologyAttributeKind::Vertex => node.vertex_fields().map(|fields| fields.attributes),
                 };
                 let Some(attribute_list_xmt) = attribute_list_xmt.filter(|value| *value > 1) else {
                     continue;
@@ -2403,8 +2405,8 @@ pub(crate) fn parasolid_topology_attribute_list_references(
                 };
                 references.push(ParasolidTopologyAttributeListReference {
                     id: format!(
-                        "nx:s{stream_ordinal}:topology-attribute-list-reference#{topology_type}-{}",
-                        node.xmt
+                        "nx:s{stream_ordinal}:topology-attribute-list-reference#{}-{}",
+                        topology_type.code(), node.xmt
                     ),
                     stream_ordinal: stream_ordinal as u32,
                     topology_type,
@@ -2862,7 +2864,7 @@ pub fn parasolid_topology_attribute_class_uses(
 
         let base_id = format!(
             "nx:s{}:topology-attribute-class-use#{}-{}",
-            reference.stream_ordinal, reference.topology_type, reference.topology_xmt
+            reference.stream_ordinal, reference.topology_type.code(), reference.topology_xmt
         );
         let mut member_xmt_counts = BTreeMap::<u32, usize>::new();
         for member in members {
@@ -4190,7 +4192,7 @@ mod tests {
         let topology_reference = ParasolidTopologyAttributeListReference {
             id: "topology-reference".into(),
             stream_ordinal: 0,
-            topology_type: 14,
+            topology_type: TopologyAttributeKind::Face,
             topology_xmt: 50,
             attribute_list_xmt: entity.xmt,
             attribute_list_record: Some(entity.id.clone()),
@@ -4496,7 +4498,7 @@ mod tests {
             )
             .expect("required invariant");
         assert_eq!(references.len(), 5);
-        assert_eq!(references[0].topology_type, 14);
+        assert_eq!(references[0].topology_type.code(), 14);
         assert_eq!(references[0].topology_xmt, 4);
         assert_eq!(references[0].attribute_list_xmt, 41);
         assert!(references[0].attribute_list_record.is_some());
@@ -4556,7 +4558,7 @@ mod tests {
         let reference = ParasolidTopologyAttributeListReference {
             id: "topology-reference".into(),
             stream_ordinal: 3,
-            topology_type: 14,
+            topology_type: TopologyAttributeKind::Face,
             topology_xmt: 60,
             attribute_list_xmt: 50,
             attribute_list_record: Some(entity.id.clone()),
@@ -4643,7 +4645,7 @@ mod tests {
         let reference = ParasolidTopologyAttributeListReference {
             id: "topology-reference".into(),
             stream_ordinal: 0,
-            topology_type: 14,
+            topology_type: TopologyAttributeKind::Face,
             topology_xmt: 40,
             attribute_list_xmt: 30,
             attribute_list_record: Some(head.id.clone()),

@@ -6,6 +6,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{BodyId, SurfaceId};
 
 use crate::test_support::*;
+use crate::native::parasolid::topology_attribute_kind::TopologyAttributeKind;
 
 use super::*;
 
@@ -1206,9 +1207,13 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
     ir.model.shells[0].id = ShellId::mint("nx:s3:shell#58").expect("identity grammar");
     ir.model.faces[0].id = FaceId::mint("nx:s3:face#60").expect("identity grammar");
     ir.model.loops[0].id = LoopId::mint("nx:s3:loop#59").expect("identity grammar");
-    let references = [(13, 58), (14, 60), (15, 59)].map(|(topology_type, topology_xmt)| {
+    let references = [
+        (TopologyAttributeKind::Shell, 58),
+        (TopologyAttributeKind::Face, 60),
+        (TopologyAttributeKind::Loop, 59),
+    ].map(|(topology_type, topology_xmt)| {
         ParasolidTopologyAttributeListReference {
-            id: format!("topology-reference-{topology_type}"),
+            id: format!("topology-reference-{}", topology_type.code()),
             stream_ordinal: 3,
             topology_type,
             topology_xmt,
@@ -1361,7 +1366,7 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
     let reference = ParasolidTopologyAttributeListReference {
         id: "topology-reference".into(),
         stream_ordinal: 3,
-        topology_type: 14,
+        topology_type: TopologyAttributeKind::Face,
         topology_xmt: 60,
         attribute_list_xmt: 50,
         attribute_list_record: Some("entity".into()),
@@ -1512,7 +1517,7 @@ fn topology_attribute_fields_use_declared_ordinal_and_type_for_every_class() {
     let reference = ParasolidTopologyAttributeListReference {
         id: "topology-reference".into(),
         stream_ordinal: 3,
-        topology_type: 14,
+        topology_type: TopologyAttributeKind::Face,
         topology_xmt: 60,
         attribute_list_xmt: 50,
         attribute_list_record: Some("entity".into()),
@@ -1610,7 +1615,7 @@ fn topology_attribute_index_retains_linked_type_81_records() {
     let reference = ParasolidTopologyAttributeListReference {
         id: "topology-reference".into(),
         stream_ordinal: 3,
-        topology_type: 14,
+        topology_type: TopologyAttributeKind::Face,
         topology_xmt: 60,
         attribute_list_xmt: 50,
         attribute_list_record: Some("head".into()),
@@ -1800,7 +1805,7 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
     let reference = ParasolidTopologyAttributeListReference {
         id: "topology-reference".into(),
         stream_ordinal: 3,
-        topology_type: 14,
+        topology_type: TopologyAttributeKind::Face,
         topology_xmt: 60,
         attribute_list_xmt: 50,
         attribute_list_record: Some("entity".into()),

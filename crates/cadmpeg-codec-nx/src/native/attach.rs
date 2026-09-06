@@ -4491,18 +4491,6 @@ fn parasolid_topology_attribute_class_names<'a>(
         .collect()
 }
 
-fn parasolid_topology_kind(topology_type: u8) -> Option<&'static str> {
-    match topology_type {
-        13 => Some("shell"),
-        14 => Some("face"),
-        15 => Some("loop"),
-        16 => Some("edge"),
-        17 => Some("fin"),
-        18 => Some("vertex"),
-        _ => None,
-    }
-}
-
 fn parasolid_topology_attribute_targets(ir: &CadIr) -> BTreeMap<String, AttributeTarget> {
     ir.model
         .shells
@@ -4591,9 +4579,7 @@ fn parasolid_topology_attribute_contexts<'a>(
     }
     let mut references_by_target = BTreeMap::<String, Vec<_>>::new();
     for reference in topology_references {
-        let Some(kind) = parasolid_topology_kind(reference.topology_type) else {
-            continue;
-        };
+        let kind = reference.topology_type.as_str();
         references_by_target
             .entry(format!(
                 "nx:s{}:{kind}#{}",
@@ -4644,7 +4630,7 @@ fn topology_attribute_id(
     AttributeId::mint(format!(
         "nx:s{}:{family}#{}-{}-{}{}",
         reference.stream_ordinal,
-        reference.topology_type,
+        reference.topology_type.code(),
         reference.topology_xmt,
         reference_ordinal,
         entity_suffix
