@@ -2549,14 +2549,6 @@ impl StandardSurfaceEvidence {
         }
     }
 
-    fn geometry(geometry: SurfaceGeometry) -> Self {
-        Self::Geometry(geometry)
-    }
-
-    fn procedure(procedure: StandardSurfaceProcedure) -> Self {
-        Self::Procedure(procedure)
-    }
-
     fn geometry_ref(&self) -> Option<&SurfaceGeometry> {
         match self {
             Self::Geometry(geometry) | Self::Both(geometry, _) => Some(geometry),
@@ -2714,11 +2706,11 @@ pub(crate) fn standard_object_evidence_from_streams(
                         .map(|carrier| match carrier {
                             crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(
                                 geometry,
-                            ) => StandardSurfaceEvidence::geometry(geometry),
+                            ) => StandardSurfaceEvidence::Geometry(geometry),
                             crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall {
                                 carrier_object_id,
                                 definition,
-                            } => StandardSurfaceEvidence::procedure(
+                            } => StandardSurfaceEvidence::Procedure(
                                 StandardSurfaceProcedure::RollingBall {
                                     carrier_object_id,
                                     definition: *definition,
