@@ -3070,25 +3070,26 @@ fn attach_feature_operations(
             .into_iter()
             .flatten()
         {
-            for member in branch.members.as_slice() {
+            for (ordinal, (token, data_block)) in
+                branch.references.members().as_slice().iter().enumerate()
+            {
                 source_properties.insert(
                     format!(
                         "surface_construction_branch.{}.member.{}",
-                        branch.ordinal, member.ordinal
+                        branch.ordinal(),
+                        ordinal
                     ),
-                    member
-                        .data_block
+                    data_block
                         .clone()
-                        .unwrap_or_else(|| member.token.value().to_string()),
+                        .unwrap_or_else(|| token.value().to_string()),
                 );
             }
+            let (token, data_block) = branch.references.terminal();
             source_properties.insert(
-                format!("surface_construction_branch.{}.terminal", branch.ordinal),
-                branch
-                    .terminal
-                    .data_block
+                format!("surface_construction_branch.{}.terminal", branch.ordinal()),
+                data_block
                     .clone()
-                    .unwrap_or_else(|| branch.terminal.token.value().to_string()),
+                    .unwrap_or_else(|| token.value().to_string()),
             );
         }
         for (ordinal, block_use) in sketch_named_point_uses_by_operation

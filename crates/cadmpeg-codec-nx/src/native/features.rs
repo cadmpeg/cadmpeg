@@ -21,6 +21,7 @@ mod body_write_wire;
 mod common_frame_wire;
 pub(crate) mod object_frame;
 pub(crate) mod operation_record;
+pub(crate) mod surface_branches;
 pub(crate) mod swp104_branch;
 pub(crate) mod unlabeled_record;
 use crate::native::om::column_row::{
@@ -2841,94 +2842,6 @@ pub struct FeatureSurfaceBranchReference {
     pub data_block: Option<String>,
     /// Absolute file offset of the width marker.
     pub source_offset: u64,
-}
-
-/// One exact counted branch in a bounded surface-feature payload.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureSurfaceConstructionBranchWire",
-    into = "FeatureSurfaceConstructionBranchWire"
-)]
-pub struct FeatureSurfaceConstructionBranch {
-    /// Globally unique branch identity.
-    pub id: String,
-    /// Owning `SKIN` or `Studio Surface` operation label.
-    pub operation_label: String,
-    /// Zero-based branch order.
-    pub ordinal: u32,
-    /// Serialized construction family byte following `a0 5a`.
-    pub family: crate::om::surface_branches::SurfaceFamily,
-    /// Serialized branch-group header code.
-    pub header_code: u8,
-    /// Serialized `16` or `40` branch mode.
-    pub mode: crate::om::discriminators::SurfaceBranchMode,
-    /// Whether the payload repeats the declared count before its zero lane.
-    pub witnessed: bool,
-    /// Ordered nonterminal references.
-    pub members: BranchItems<FeatureSurfaceBranchReference>,
-    /// Terminal reference.
-    pub terminal: FeatureSurfaceBranchReference,
-    /// Opaque bytes separating the terminal from the next branch or terminator.
-    pub suffix: crate::om::surface_branches::SurfaceSuffix,
-    /// Absolute file offset of the branch mode byte.
-    pub source_offset: u64,
-}
-
-#[derive(Serialize, Deserialize)]
-struct FeatureSurfaceConstructionBranchWire {
-    id: String,
-    operation_label: String,
-    ordinal: u32,
-    family: crate::om::surface_branches::SurfaceFamily,
-    header_code: u8,
-    mode: crate::om::discriminators::SurfaceBranchMode,
-    declared_count: u8,
-    witnessed: bool,
-    members: BranchItems<FeatureSurfaceBranchReference>,
-    terminal: FeatureSurfaceBranchReference,
-    suffix: Vec<u8>,
-    source_offset: u64,
-}
-
-impl From<FeatureSurfaceConstructionBranch> for FeatureSurfaceConstructionBranchWire {
-    fn from(value: FeatureSurfaceConstructionBranch) -> Self {
-        Self {
-            id: value.id,
-            operation_label: value.operation_label,
-            ordinal: value.ordinal,
-            family: value.family,
-            header_code: value.header_code,
-            mode: value.mode,
-            declared_count: value.members.declared_count(),
-            witnessed: value.witnessed,
-            members: value.members,
-            terminal: value.terminal,
-            suffix: value.suffix.into_vec(),
-            source_offset: value.source_offset,
-        }
-    }
-}
-
-impl TryFrom<FeatureSurfaceConstructionBranchWire> for FeatureSurfaceConstructionBranch {
-    type Error = String;
-    fn try_from(wire: FeatureSurfaceConstructionBranchWire) -> Result<Self, Self::Error> {
-        if wire.declared_count != wire.members.declared_count() {
-            return Err("declared_count must equal members length plus one".to_owned());
-        }
-        Ok(Self {
-            id: wire.id,
-            operation_label: wire.operation_label,
-            ordinal: wire.ordinal,
-            family: wire.family,
-            header_code: wire.header_code,
-            mode: wire.mode,
-            witnessed: wire.witnessed,
-            members: wire.members,
-            terminal: wire.terminal,
-            suffix: crate::om::surface_branches::SurfaceSuffix::new(wire.suffix)?,
-            source_offset: wire.source_offset,
-        })
-    }
 }
 
 /// Ordered profile reference carried by a bounded extrusion payload.
@@ -7778,54 +7691,6 @@ pub fn feature_surface_construction_strings(
                 .collect()
         })
         .collect()
-}
-
-/// Decode and resolve exact counted surface-construction branches without
-/// assigning section or guide semantics to their members.
-pub fn feature_surface_construction_branches(
-    container: &Container,
-) -> Vec<FeatureSurfaceConstructionBranch> {
-    let indexed = container.indexed_om_sections();
-    let mut branches = Vec::new();
-    visit_feature_history_operation_records(
-        container,
-        |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(group) = crate::om::surface_feature_payload_branches(record.payload_view())
-            else {
-                return;
-            };
-            let operation_label =
-                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
-            branches.extend(group.branches.into_iter().enumerate().map(|(ordinal, branch)| {
-                let resolve = |ordinal: usize, reference: crate::om::PayloadObjectReference| {
-                    FeatureSurfaceBranchReference {
-                        ordinal: ordinal as u32,
-                        token: reference.token,
-                        data_block: unique_offset_data_block(&indexed, reference.token.value()),
-                        source_offset: entry_offset + reference.offset as u64,
-                    }
-                };
-                let members = branch.members.map_indexed(&resolve);
-                let terminal = resolve(members.len(), branch.terminal);
-                FeatureSurfaceConstructionBranch {
-                    id: format!(
-                        "nx:feature-history:surface-construction-branch#{section_key}-{operation_ordinal:010}-{ordinal:010}"
-                    ),
-                    operation_label: operation_label.clone(),
-                    ordinal: ordinal as u32,
-                    family: group.family,
-                    header_code: group.header_code,
-                    mode: branch.mode,
-                    witnessed: branch.witnessed,
-                    members,
-                    terminal,
-                    suffix: branch.suffix,
-                    source_offset: entry_offset + branch.offset as u64,
-                }
-            }));
-        },
-    );
-    branches
 }
 
 /// Decode and resolve the witnessed ordered profile list in extrusion payloads.

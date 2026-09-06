@@ -205,18 +205,22 @@ fn surface_branch_counts_are_derived_on_the_wire() {
             .to_string()
             .contains("declared_count")
     );
+    let member = r#"{"ordinal":0,"object_index":1,"raw_object_index":[240,1],"source_offset":8}"#;
+    let terminal =
+        r#"{"ordinal":1,"object_index":2,"raw_object_index":[240,2],"source_offset":18}"#;
     let surface = format!(
         r#"{{"id":"branch","operation_label":"operation","ordinal":0,"family":20,"header_code":19,"mode":64,"declared_count":2,"witnessed":false,"members":[{member}],"terminal":{terminal},"suffix":[129,88],"source_offset":5}}"#
     );
-    let decoded: super::FeatureSurfaceConstructionBranch = serde_json::from_str(&surface).unwrap();
+    let decoded: crate::native::features::surface_branches::FeatureSurfaceConstructionBranch =
+        serde_json::from_str(&surface).unwrap();
     assert_eq!(serde_json::to_string(&decoded).unwrap(), surface);
     let invalid = surface.replace("\"declared_count\":2", "\"declared_count\":3");
-    assert!(
-        serde_json::from_str::<super::FeatureSurfaceConstructionBranch>(&invalid)
-            .unwrap_err()
-            .to_string()
-            .contains("declared_count")
-    );
+    assert!(serde_json::from_str::<
+        crate::native::features::surface_branches::FeatureSurfaceConstructionBranch,
+    >(&invalid)
+    .unwrap_err()
+    .to_string()
+    .contains("declared_count"));
 }
 
 #[test]
