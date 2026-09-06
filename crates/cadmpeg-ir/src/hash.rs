@@ -166,7 +166,7 @@ fn reduced_unknowns(ir: &CadIr, format: &str, source_image_id: &str) -> Vec<Nati
             "unknowns",
             ir.native_unknowns_iter(format)
                 .map_while(|record| record.inspect_err(|_| unreadable = true).ok())
-                .filter(|record| record.id.0 != source_image_id),
+                .filter(|record| record.id.as_str() != source_image_id),
         )
         .expect("unknown records serialize");
     if unreadable {
@@ -624,7 +624,7 @@ mod tests {
             .native_unknowns(format)
             .unwrap_or_default()
             .into_iter()
-            .filter(|record| record.id.0 != source_image_id)
+            .filter(|record| record.id.as_str() != source_image_id)
             .collect::<Vec<_>>();
         normalized.set_native_unknowns(format, &unknowns).unwrap();
         crate::hash::sha256_hex(normalized.to_canonical_json().unwrap().as_bytes())
@@ -662,7 +662,7 @@ mod tests {
                 [
                     source_image,
                     UnknownRecord::retained(
-                        UnknownId("synthetic:record#1".into()),
+                        UnknownId::mint("synthetic:model:record#1").expect("valid identity"),
                         8,
                         vec![4, 5],
                         vec!["cube:body#0".into()],
@@ -681,7 +681,7 @@ mod tests {
 
     fn local_digest_fixture() -> (CadIr, crate::SourceFidelity) {
         local_digest_fixture_with_source_image(UnknownRecord::retained(
-            UnknownId("synthetic:file:source-image#0".into()),
+            UnknownId::mint("synthetic:file:source-image#0").expect("valid identity"),
             0,
             vec![1, 2, 3],
             Vec::new(),
@@ -722,7 +722,7 @@ mod tests {
 
         let (repacked, _source_fidelity) =
             local_digest_fixture_with_source_image(UnknownRecord::retained(
-                UnknownId(source_image.into()),
+                UnknownId::mint(source_image).expect("valid identity"),
                 4,
                 vec![9],
                 vec!["cube:body#0".into()],

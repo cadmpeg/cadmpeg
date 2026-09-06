@@ -253,18 +253,18 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         .model
         .vertices
         .iter()
-        .map(|entity| (&entity.id.0, entity.tolerance))
+        .map(|entity| (entity.id.as_str(), entity.tolerance))
         .chain(
             ir.model
                 .edges
                 .iter()
-                .map(|entity| (&entity.id.0, entity.tolerance)),
+                .map(|entity| (entity.id.as_str(), entity.tolerance)),
         )
         .chain(
             ir.model
                 .faces
                 .iter()
-                .map(|entity| (&entity.id.0, entity.tolerance)),
+                .map(|entity| (entity.id.as_str(), entity.tolerance)),
         )
     {
         if tolerance.is_some_and(nonpositive) {
@@ -272,14 +272,14 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 check: Check::Tolerances,
                 severity: Severity::Error,
                 message: "topology tolerance is not positive and finite".into(),
-                entity: Some(id.clone()),
+                entity: Some(id.to_owned()),
             });
         } else if tolerance.is_some_and(|value| value > 1.0e6) {
             findings.push(Finding {
                 check: Check::Tolerances,
                 severity: Severity::Warning,
                 message: "topology tolerance is outside a sane canonical range".into(),
-                entity: Some(id.clone()),
+                entity: Some(id.to_owned()),
             });
         }
     }
@@ -291,10 +291,10 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 u_axis,
             } => {
                 if !point3_finite(origin) {
-                    bounds_err(findings, &s.id.0, "plane origin is not finite");
+                    bounds_err(findings, s.id.as_str(), "plane origin is not finite");
                 }
                 if !orthonormal(normal, u_axis) {
-                    bounds_err(findings, &s.id.0, "plane frame is not orthonormal");
+                    bounds_err(findings, s.id.as_str(), "plane frame is not orthonormal");
                 }
             }
             SurfaceGeometry::Cylinder {
@@ -304,13 +304,13 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 radius,
             } => {
                 if !point3_finite(origin) {
-                    bounds_err(findings, &s.id.0, "cylinder origin is not finite");
+                    bounds_err(findings, s.id.as_str(), "cylinder origin is not finite");
                 }
                 if !orthonormal(axis, ref_direction) {
-                    bounds_err(findings, &s.id.0, "cylinder frame is not orthonormal");
+                    bounds_err(findings, s.id.as_str(), "cylinder frame is not orthonormal");
                 }
                 if nonpositive(*radius) {
-                    bounds_err(findings, &s.id.0, "cylinder radius is not positive");
+                    bounds_err(findings, s.id.as_str(), "cylinder radius is not positive");
                 }
             }
             SurfaceGeometry::Cone {
@@ -322,19 +322,27 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 half_angle,
             } => {
                 if !point3_finite(origin) {
-                    bounds_err(findings, &s.id.0, "cone origin is not finite");
+                    bounds_err(findings, s.id.as_str(), "cone origin is not finite");
                 }
                 if !orthonormal(axis, ref_direction) {
-                    bounds_err(findings, &s.id.0, "cone frame is not orthonormal");
+                    bounds_err(findings, s.id.as_str(), "cone frame is not orthonormal");
                 }
                 if !radius.is_finite() || *radius < 0.0 {
-                    bounds_err(findings, &s.id.0, "cone radius is negative or not finite");
+                    bounds_err(
+                        findings,
+                        s.id.as_str(),
+                        "cone radius is negative or not finite",
+                    );
                 }
                 if !ratio.is_finite() || *ratio <= 0.0 {
-                    bounds_err(findings, &s.id.0, "cone ratio is not positive and finite");
+                    bounds_err(
+                        findings,
+                        s.id.as_str(),
+                        "cone ratio is not positive and finite",
+                    );
                 }
                 if !half_angle.is_finite() {
-                    bounds_err(findings, &s.id.0, "cone half-angle is not finite");
+                    bounds_err(findings, s.id.as_str(), "cone half-angle is not finite");
                 }
             }
             SurfaceGeometry::Sphere {
@@ -344,13 +352,17 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 radius,
             } => {
                 if !point3_finite(center) {
-                    bounds_err(findings, &s.id.0, "sphere center is not finite");
+                    bounds_err(findings, s.id.as_str(), "sphere center is not finite");
                 }
                 if !orthonormal(axis, ref_direction) {
-                    bounds_err(findings, &s.id.0, "sphere frame is not orthonormal");
+                    bounds_err(findings, s.id.as_str(), "sphere frame is not orthonormal");
                 }
                 if !radius.is_finite() || *radius == 0.0 {
-                    bounds_err(findings, &s.id.0, "sphere radius is zero or not finite");
+                    bounds_err(
+                        findings,
+                        s.id.as_str(),
+                        "sphere radius is zero or not finite",
+                    );
                 }
             }
             SurfaceGeometry::Torus {
@@ -361,15 +373,15 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 minor_radius,
             } => {
                 if !point3_finite(center) {
-                    bounds_err(findings, &s.id.0, "torus center is not finite");
+                    bounds_err(findings, s.id.as_str(), "torus center is not finite");
                 }
                 if !orthonormal(axis, ref_direction) {
-                    bounds_err(findings, &s.id.0, "torus frame is not orthonormal");
+                    bounds_err(findings, s.id.as_str(), "torus frame is not orthonormal");
                 }
                 if nonpositive(*major_radius) || !minor_radius.is_finite() || *minor_radius == 0.0 {
                     bounds_err(
                         findings,
-                        &s.id.0,
+                        s.id.as_str(),
                         "torus major radius is not positive or minor radius is zero",
                     );
                 }
@@ -380,17 +392,21 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 if !valid {
                     bounds_err(
                         findings,
-                        &s.id.0,
+                        s.id.as_str(),
                         "NURBS surface poles or weights are invalid",
                     );
                 }
-                check_knots(findings, &s.id.0, n.u_knots(), "u");
-                check_knots(findings, &s.id.0, n.v_knots(), "v");
+                check_knots(findings, s.id.as_str(), n.u_knots(), "u");
+                check_knots(findings, s.id.as_str(), n.v_knots(), "v");
             }
             SurfaceGeometry::Procedural { .. } => {}
             SurfaceGeometry::Polygonal(surface) => {
                 if !valid_polygonal_surface(surface) {
-                    bounds_err(findings, &s.id.0, "polygonal surface payload is invalid");
+                    bounds_err(
+                        findings,
+                        s.id.as_str(),
+                        "polygonal surface payload is invalid",
+                    );
                 }
             }
             SurfaceGeometry::Transformed {
@@ -398,7 +414,11 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 transform: _,
             } => {
                 if !valid_surface_basis(basis) {
-                    bounds_err(findings, &s.id.0, "transformed surface basis is invalid");
+                    bounds_err(
+                        findings,
+                        s.id.as_str(),
+                        "transformed surface basis is invalid",
+                    );
                 }
             }
             // An unknown surface carries no numeric geometry to bounds-check; its
@@ -425,7 +445,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "extrusion interval, direction, or native position is non-finite",
                 );
             }
@@ -437,14 +457,22 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 .all(f64::is_finite)
                 || degenerate(direction)
             {
-                bounds_err(findings, &procedural.id.0, "invalid linear-sweep direction");
+                bounds_err(
+                    findings,
+                    procedural.id.as_str(),
+                    "invalid linear-sweep direction",
+                );
             }
         }
         if let ProceduralSurfaceDefinition::ParallelOffset { distance, .. } =
             procedural.definition()
         {
             if !distance.is_finite() {
-                bounds_err(findings, &procedural.id.0, "non-finite parallel offset");
+                bounds_err(
+                    findings,
+                    procedural.id.as_str(),
+                    "non-finite parallel offset",
+                );
             }
         }
         if let ProceduralSurfaceDefinition::Exact { spline } = procedural.definition() {
@@ -461,7 +489,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             if !valid {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "exact spline surface parameter fields are invalid",
                 );
             }
@@ -470,7 +498,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             if components.iter().any(|item| !item.parameter.is_finite()) {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "compound surface parameters and components are inconsistent",
                 );
             }
@@ -486,7 +514,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "sub-surface parameter interval is not finite",
                 );
             }
@@ -527,7 +555,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             if !parameter.is_finite() || !tail_finite {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "taper surface parameter or subtype tail is not finite",
                 );
             }
@@ -569,7 +597,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             if !parameters_valid || !sections_valid || !bridge_valid {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "loft construction payload is invalid",
                 );
             }
@@ -626,7 +654,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             if !leading_scale_shape_valid || !tail_valid || !scales_valid {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "compound loft construction payload is invalid",
                 );
             }
@@ -701,7 +729,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "scaled compound loft construction payload is invalid",
                 );
             }
@@ -794,7 +822,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             if !valid {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "law surface construction payload is invalid",
                 );
             }
@@ -875,7 +903,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             if !layout_valid || !formula_valid || !scalars_valid {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "skin surface construction payload is invalid",
                 );
             }
@@ -950,7 +978,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             if !sections_valid || !formulas_valid || !scalars_valid {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "net surface construction payload is invalid",
                 );
             }
@@ -1134,7 +1162,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             if !scalars_valid {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "sweep surface construction payload is invalid",
                 );
             }
@@ -1161,7 +1189,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             if !ranges_valid || !source_valid {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "T-spline surface construction payload is invalid",
                 );
             }
@@ -1206,7 +1234,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             if !finite || !circular_path || !profile_valid {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "helix surface construction payload is invalid",
                 );
             }
@@ -1306,7 +1334,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "deformable surface construction payload is invalid",
                 );
             }
@@ -1354,7 +1382,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "G2 blend construction payload is invalid",
                 );
             }
@@ -1408,7 +1436,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             if !ranges_valid || !sides_valid || !values_valid || !scalar_tail_valid {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "variable blend construction payload is invalid",
                 );
             }
@@ -1462,7 +1490,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "vertex blend construction payload is invalid",
                 );
             }
@@ -1508,7 +1536,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             if !ranges_valid || !selector_valid || !scalars_valid || !sides_valid || !third_valid {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "rolling-ball blend construction payload is invalid",
                 );
             }
@@ -1575,7 +1603,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "rolling-ball jet payload is invalid",
                 );
             }
@@ -1584,7 +1612,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             if !distance.is_finite() {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "offset spline surface distance is invalid",
                 );
             }
@@ -1599,7 +1627,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "surface subset ranges are not finite and non-zero",
                 );
             }
@@ -1609,10 +1637,10 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         match c.geometry.wire_geometry() {
             CurveGeometry::Line { origin, direction } => {
                 if !point3_finite(origin) {
-                    bounds_err(findings, &c.id.0, "line origin is not finite");
+                    bounds_err(findings, c.id.as_str(), "line origin is not finite");
                 }
                 if !unit_vector(direction) {
-                    bounds_err(findings, &c.id.0, "line direction is not unit length");
+                    bounds_err(findings, c.id.as_str(), "line direction is not unit length");
                 }
             }
             CurveGeometry::Circle {
@@ -1622,13 +1650,13 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 radius,
             } => {
                 if !point3_finite(center) {
-                    bounds_err(findings, &c.id.0, "circle center is not finite");
+                    bounds_err(findings, c.id.as_str(), "circle center is not finite");
                 }
                 if !orthonormal(axis, ref_direction) {
-                    bounds_err(findings, &c.id.0, "circle frame is not orthonormal");
+                    bounds_err(findings, c.id.as_str(), "circle frame is not orthonormal");
                 }
                 if nonpositive(*radius) {
-                    bounds_err(findings, &c.id.0, "circle radius is not positive");
+                    bounds_err(findings, c.id.as_str(), "circle radius is not positive");
                 }
             }
             CurveGeometry::Ellipse {
@@ -1639,17 +1667,17 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 minor_radius,
             } => {
                 if !point3_finite(center) {
-                    bounds_err(findings, &c.id.0, "ellipse center is not finite");
+                    bounds_err(findings, c.id.as_str(), "ellipse center is not finite");
                 }
                 if !orthonormal(axis, major_direction) {
-                    bounds_err(findings, &c.id.0, "ellipse frame is not orthonormal");
+                    bounds_err(findings, c.id.as_str(), "ellipse frame is not orthonormal");
                 }
                 if nonpositive(*major_radius) || nonpositive(*minor_radius) {
-                    bounds_err(findings, &c.id.0, "ellipse radius is not positive");
+                    bounds_err(findings, c.id.as_str(), "ellipse radius is not positive");
                 } else if major_radius < minor_radius {
                     bounds_err(
                         findings,
-                        &c.id.0,
+                        c.id.as_str(),
                         "ellipse major radius is smaller than its minor radius",
                     );
                 }
@@ -1661,13 +1689,17 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 focal_distance,
             } => {
                 if !point3_finite(vertex) {
-                    bounds_err(findings, &c.id.0, "parabola vertex is not finite");
+                    bounds_err(findings, c.id.as_str(), "parabola vertex is not finite");
                 }
                 if !orthonormal(axis, major_direction) {
-                    bounds_err(findings, &c.id.0, "parabola frame is not orthonormal");
+                    bounds_err(findings, c.id.as_str(), "parabola frame is not orthonormal");
                 }
                 if nonpositive(*focal_distance) {
-                    bounds_err(findings, &c.id.0, "parabola focal distance is not positive");
+                    bounds_err(
+                        findings,
+                        c.id.as_str(),
+                        "parabola focal distance is not positive",
+                    );
                 }
             }
             CurveGeometry::Hyperbola {
@@ -1678,23 +1710,31 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 minor_radius,
             } => {
                 if !point3_finite(center) {
-                    bounds_err(findings, &c.id.0, "hyperbola center is not finite");
+                    bounds_err(findings, c.id.as_str(), "hyperbola center is not finite");
                 }
                 if !orthonormal(axis, major_direction) {
-                    bounds_err(findings, &c.id.0, "hyperbola frame is not orthonormal");
+                    bounds_err(
+                        findings,
+                        c.id.as_str(),
+                        "hyperbola frame is not orthonormal",
+                    );
                 }
                 if nonpositive(*major_radius) || nonpositive(*minor_radius) {
-                    bounds_err(findings, &c.id.0, "hyperbola radius is not positive");
+                    bounds_err(findings, c.id.as_str(), "hyperbola radius is not positive");
                 }
             }
             CurveGeometry::Degenerate { point } => {
                 if !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite() {
-                    bounds_err(findings, &c.id.0, "degenerate curve point is not finite");
+                    bounds_err(
+                        findings,
+                        c.id.as_str(),
+                        "degenerate curve point is not finite",
+                    );
                 }
             }
             CurveGeometry::Composite { segments, .. } => {
                 if segments.is_empty() {
-                    bounds_err(findings, &c.id.0, "composite curve has no segments");
+                    bounds_err(findings, c.id.as_str(), "composite curve has no segments");
                 }
             }
             CurveGeometry::Nurbs(n) => {
@@ -1703,16 +1743,16 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 if !valid {
                     bounds_err(
                         findings,
-                        &c.id.0,
+                        c.id.as_str(),
                         "NURBS curve poles or weights are invalid",
                     );
                 }
-                check_knots(findings, &c.id.0, n.knots(), "");
+                check_knots(findings, c.id.as_str(), n.knots(), "");
             }
             CurveGeometry::Procedural { .. } => {}
             CurveGeometry::Polyline(polyline) => {
                 if !valid_polyline(polyline) {
-                    bounds_err(findings, &c.id.0, "polyline payload is invalid");
+                    bounds_err(findings, c.id.as_str(), "polyline payload is invalid");
                 }
             }
             CurveGeometry::Transformed {
@@ -1720,7 +1760,11 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 transform: _,
             } => {
                 if !valid_curve_basis(basis) {
-                    bounds_err(findings, &c.id.0, "transformed curve basis is invalid");
+                    bounds_err(
+                        findings,
+                        c.id.as_str(),
+                        "transformed curve basis is invalid",
+                    );
                 }
             }
             CurveGeometry::Unknown { .. } => {}
@@ -1863,7 +1907,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             } => pcurve_basis_is_valid(basis),
         };
         if !valid {
-            bounds_err(findings, &pcurve.id.0, "pcurve geometry is invalid");
+            bounds_err(findings, pcurve.id.as_str(), "pcurve geometry is invalid");
         }
         let nurbs_knots = match &pcurve.geometry {
             crate::geometry::PcurveGeometry::Nurbs { nurbs } => Some(nurbs.knots()),
@@ -1872,15 +1916,19 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         };
         if let Some(knots) = nurbs_knots {
             if knots.iter().any(|knot| !knot.is_finite()) {
-                bounds_err(findings, &pcurve.id.0, "pcurve knots must be finite");
+                bounds_err(findings, pcurve.id.as_str(), "pcurve knots must be finite");
             }
-            check_knots(findings, &pcurve.id.0, knots, "");
+            check_knots(findings, pcurve.id.as_str(), knots, "");
         }
         if pcurve
             .parameter_range()
             .is_some_and(|range| range.into_iter().any(|value| !value.is_finite()))
         {
-            bounds_err(findings, &pcurve.id.0, "pcurve parameter range is invalid");
+            bounds_err(
+                findings,
+                pcurve.id.as_str(),
+                "pcurve parameter range is invalid",
+            );
         }
     }
     for procedural in &ir.model.procedural_curves {
@@ -1945,7 +1993,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             if !distance.is_finite() || !side_valid || !range_valid || !law_valid {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "curve offset distance, side, range, or law is invalid",
                 );
             }
@@ -1967,7 +2015,11 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 .all(f64::is_finite)
                 || (reference_direction.norm() - 1.0).abs() > EPS_SPATIAL_CURVE_DIRECTION
             {
-                bounds_err(findings, &procedural.id.0, "invalid spatial curve offset");
+                bounds_err(
+                    findings,
+                    procedural.id.as_str(),
+                    "invalid spatial curve offset",
+                );
             }
         }
         if let ProceduralCurveDefinition::Deformable {
@@ -2018,7 +2070,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             if !payload_finite || !range_valid {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "deformable curve payload is not finite",
                 );
             }
@@ -2051,7 +2103,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             if !support_context_is_finite(&context) || !inline_ranges_finite {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "spring context or null-support ranges are invalid",
                 );
             }
@@ -2079,7 +2131,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "surface-offset fields are not finite and ordered",
                 );
             }
@@ -2105,7 +2157,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "silhouette fields are not finite or the light direction is degenerate",
                 );
             }
@@ -2115,7 +2167,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             if !support_context_is_finite(family.context()) {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "surface-curve context is not finite and ordered",
                 );
             }
@@ -2131,7 +2183,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "three-surface intersection context is not finite and ordered",
                 );
             }
@@ -2151,7 +2203,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             if !support_context_is_finite(context) || !tail_finite {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "projection fields are not finite and ordered",
                 );
             }
@@ -2161,7 +2213,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             if !support_context_is_finite(context) {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "intersection support context is not finite and ordered",
                 );
             }
@@ -2193,7 +2245,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "tolerant intersection supports or endpoint bounds are invalid",
                 );
             }
@@ -2208,7 +2260,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             if !finite {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "two-sided offset fields are not finite and ordered",
                 );
             }
@@ -2220,7 +2272,11 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         } = procedural.definition()
         {
             if components.is_empty() {
-                bounds_err(findings, &procedural.id.0, "compound components are empty");
+                bounds_err(
+                    findings,
+                    procedural.id.as_str(),
+                    "compound components are empty",
+                );
             }
             if parameters
                 .iter()
@@ -2229,7 +2285,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "compound parameters are not finite",
                 );
             }
@@ -2244,7 +2300,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "subset-curve range is not finite and ordered",
                 );
             }
@@ -2267,7 +2323,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             {
                 bounds_err(
                     findings,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     "vector-offset fields are not finite and ordered",
                 );
             }
@@ -2297,17 +2353,21 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         if !finite || angle_range[0] > angle_range[1] {
             bounds_err(
                 findings,
-                &procedural.id.0,
+                procedural.id.as_str(),
                 "helix fields are not finite and ordered",
             );
         }
         if degenerate(major) || degenerate(minor) || degenerate(axis) {
-            bounds_err(findings, &procedural.id.0, "helix frame is degenerate");
+            bounds_err(
+                findings,
+                procedural.id.as_str(),
+                "helix frame is degenerate",
+            );
         }
         if (major.norm() - minor.norm()).abs() > EPS_HELIX_RADIUS {
             bounds_err(
                 findings,
-                &procedural.id.0,
+                procedural.id.as_str(),
                 "helix major and minor radii differ",
             );
         }

@@ -189,7 +189,8 @@ mod tests {
         check_products(&ir, &mut findings);
         assert!(findings.is_empty(), "{findings:?}");
 
-        let occurrence = OccurrenceId("test:model:occurrence#placed".into());
+        let occurrence =
+            OccurrenceId::mint("test:model:occurrence#placed").expect("valid identity");
         ir.model.occurrences.push(Occurrence {
             id: occurrence.clone(),
             prototype: PrototypeReference::Unresolved,
@@ -204,7 +205,7 @@ mod tests {
             native_ref: None,
         });
         let mut wire = serde_json::to_value(&ir.model.assembly_joints[0]).expect("joint wire");
-        wire["operands"][0]["occurrence"] = serde_json::json!(occurrence.0);
+        wire["operands"][0]["occurrence"] = serde_json::json!(occurrence.as_str());
         wire["operands"][0]["external_document"] = serde_json::json!({
             "path": "external.f3d",
             "resolution": "unresolved"

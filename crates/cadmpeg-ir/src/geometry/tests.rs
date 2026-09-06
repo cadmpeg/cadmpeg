@@ -11,9 +11,9 @@ use crate::unknown::NativeUnknownRecord;
 /// surface id. Leaves every loop/coedge/edge of the face intact.
 fn make_first_face_surface_unknown(ir: &mut crate::CadIr, record: Option<UnknownId>) -> String {
     let face = &ir.model.faces[0];
-    let surface_id = face.surface.0.clone();
+    let surface_id = face.surface.as_str().to_owned();
     for s in &mut ir.model.surfaces {
-        if s.id.0 == surface_id {
+        if s.id.as_str() == surface_id {
             s.geometry = SurfaceGeometry::Unknown { record };
             break;
         }
@@ -24,7 +24,7 @@ fn make_first_face_surface_unknown(ir: &mut crate::CadIr, record: Option<Unknown
 #[test]
 fn unknown_surface_json_round_trips() {
     let mut ir = unit_cube();
-    let rec = UnknownId("synthetic:cube:unknown#0".into());
+    let rec = UnknownId::mint("synthetic:cube:unknown#0").expect("valid identity");
     ir.set_native_unknowns(
         "synthetic",
         &[NativeUnknownRecord {
@@ -44,12 +44,12 @@ fn unknown_surface_json_round_trips() {
 fn ordered_pcurve_uses_round_trip_with_isoparametric_state() {
     let uses = vec![
         crate::topology::PcurveUse {
-            pcurve: crate::ids::PcurveId("test:model:pcurve#first".into()),
+            pcurve: crate::ids::PcurveId::mint("test:model:pcurve#first").expect("valid identity"),
             isoparametric: Some(true),
             parameter_range: None,
         },
         crate::topology::PcurveUse {
-            pcurve: crate::ids::PcurveId("test:model:pcurve#second".into()),
+            pcurve: crate::ids::PcurveId::mint("test:model:pcurve#second").expect("valid identity"),
             isoparametric: Some(false),
             parameter_range: Some([0.0, 1.0]),
         },
@@ -64,7 +64,7 @@ fn ordered_pcurve_uses_round_trip_with_isoparametric_state() {
 #[test]
 fn asm_inline_pcurve_metadata_keeps_the_flat_wire_shape() {
     let pcurve = crate::geometry::Pcurve {
-        id: crate::ids::PcurveId("test:model:pcurve#inline".into()),
+        id: crate::ids::PcurveId::mint("test:model:pcurve#inline").expect("valid identity"),
         geometry: crate::geometry::PcurveGeometry::Line {
             origin: crate::math::Point2::new(1.0, 2.0),
             direction: crate::math::Point2::new(3.0, 4.0),
@@ -118,7 +118,8 @@ fn incomplete_asm_inline_pcurve_metadata_is_rejected() {
 fn g2_full_support_keeps_the_flat_wire_shape() {
     let shape = crate::geometry::G2BlendFirstShape::Full {
         support: Some(crate::geometry::G2BlendFullSupport {
-            surface: crate::ids::SurfaceId("test:model:surface#support".into()),
+            surface: crate::ids::SurfaceId::mint("test:model:surface#support")
+                .expect("valid identity"),
             tolerance: 0.02,
         }),
     };
@@ -159,7 +160,7 @@ struct RevisionCompoundLoftDirectionWireTest {
 fn revision_compound_loft_direction_keeps_the_flat_wire_shape() {
     let value = RevisionCompoundLoftDirectionWireTest {
         direction: crate::geometry::CompoundLoftDirection::Curve {
-            curve: crate::ids::CurveId("test:model:curve#direction".into()),
+            curve: crate::ids::CurveId::mint("test:model:curve#direction").expect("valid identity"),
             selector: std::num::NonZeroI64::new(4).unwrap(),
         },
     };
@@ -366,12 +367,14 @@ fn loft_subdata_type_211_preserves_headers_independent_of_payload_size() {
 fn loft_member_form_keeps_the_nested_wire_shape() {
     let member = crate::geometry::LoftProfileMember {
         curve: crate::geometry::LoftPathCurve {
-            id: crate::ids::CurveId("test:model:curve#loft".into()),
+            id: crate::ids::CurveId::mint("test:model:curve#loft").expect("valid identity"),
             endpoints: Some([Some(0.0), Some(1.0)]),
         },
         form: crate::geometry::LoftMemberForm::Support {
             type_code: 3,
-            surface: Some(crate::ids::SurfaceId("test:model:surface#loft".into())),
+            surface: Some(
+                crate::ids::SurfaceId::mint("test:model:surface#loft").expect("valid identity"),
+            ),
             support_bounds: [Some(-1.0), Some(1.0), None, None],
             pcurve: None,
             first_flag: true,
@@ -395,7 +398,7 @@ fn loft_member_form_keeps_the_nested_wire_shape() {
 fn loft_member_form_rejects_a_payload_that_disagrees_with_its_type() {
     let pair = crate::geometry::LoftProfileMember {
         curve: crate::geometry::LoftPathCurve {
-            id: crate::ids::CurveId("test:model:curve#loft".into()),
+            id: crate::ids::CurveId::mint("test:model:curve#loft").expect("valid identity"),
             endpoints: Some([None, None]),
         },
         form: crate::geometry::LoftMemberForm::PcurvePair {
@@ -416,7 +419,7 @@ fn loft_member_form_rejects_a_payload_that_disagrees_with_its_type() {
 
     let mut support_wire = serde_json::to_value(crate::geometry::LoftProfileMember {
         curve: crate::geometry::LoftPathCurve {
-            id: crate::ids::CurveId("test:model:curve#loft".into()),
+            id: crate::ids::CurveId::mint("test:model:curve#loft").expect("valid identity"),
             endpoints: None,
         },
         form: crate::geometry::LoftMemberForm::Support {
@@ -443,7 +446,7 @@ fn loft_member_form_rejects_a_payload_that_disagrees_with_its_type() {
 fn loft_path_rejects_endpoints_without_a_curve() {
     let path = crate::geometry::LoftPath {
         curve: Some(crate::geometry::LoftPathCurve {
-            id: crate::ids::CurveId("test:model:curve#path".into()),
+            id: crate::ids::CurveId::mint("test:model:curve#path").expect("valid identity"),
             endpoints: Some([Some(0.0), Some(1.0)]),
         }),
         auxiliaries: Vec::new(),
@@ -467,7 +470,7 @@ fn loft_path_rejects_endpoints_without_a_curve() {
 fn law_edge_keeps_its_flat_curve_and_endpoints_wire_shape() {
     let expression = crate::geometry::LawExpression::Edge {
         curve: crate::geometry::LoftPathCurve {
-            id: crate::ids::CurveId("test:model:curve#law".into()),
+            id: crate::ids::CurveId::mint("test:model:curve#law").expect("valid identity"),
             endpoints: Some([None, Some(2.0)]),
         },
         parameters: [-1.0, 3.0],
@@ -598,7 +601,7 @@ fn projection_role_keeps_the_native_string_wire_shape() {
 #[test]
 fn vector_offset_roles_keep_the_fixed_flat_wire_shape() {
     let definition = crate::geometry::ProceduralCurveDefinition::VectorOffset {
-        source: crate::ids::CurveId("test:model:curve#source".into()),
+        source: crate::ids::CurveId::mint("test:model:curve#source").expect("valid identity"),
         parameter_range: [-1.0, 2.0],
         offset: crate::math::Vector3::new(3.0, 4.0, 5.0),
         roles: crate::geometry::VectorOffsetRoles {
@@ -627,7 +630,9 @@ fn vector_offset_roles_keep_the_fixed_flat_wire_shape() {
 fn procedural_carrier_serialization_preserves_checked_solved_cache() {
     use crate::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
     let curve = CurveGeometry::Procedural {
-        construction: "test:model:procedural_curve#0".into(),
+        construction: "test:model:procedural_curve#0"
+            .try_into()
+            .expect("valid identity"),
         cache: Some(
             SolvedCurveGeometry::new(CurveGeometry::Degenerate {
                 point: crate::math::Point3::new(1.0, 2.0, 3.0),
@@ -636,7 +641,9 @@ fn procedural_carrier_serialization_preserves_checked_solved_cache() {
         ),
     };
     let surface = SurfaceGeometry::Procedural {
-        construction: "test:model:procedural_surface#0".into(),
+        construction: "test:model:procedural_surface#0"
+            .try_into()
+            .expect("valid identity"),
         cache: Some(SolvedSurfaceGeometry::new(SurfaceGeometry::Unknown { record: None }).unwrap()),
     };
     let curve_wire = serde_json::to_value(&curve).unwrap();
@@ -657,11 +664,15 @@ fn procedural_carrier_serialization_preserves_checked_solved_cache() {
 fn solved_caches_reject_procedural_carriers_below_transform_chains() {
     use crate::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
     let mut curve = CurveGeometry::Procedural {
-        construction: "test:model:procedural_curve#0".into(),
+        construction: "test:model:procedural_curve#0"
+            .try_into()
+            .expect("valid identity"),
         cache: None,
     };
     let mut surface = SurfaceGeometry::Procedural {
-        construction: "test:model:procedural_surface#0".into(),
+        construction: "test:model:procedural_surface#0"
+            .try_into()
+            .expect("valid identity"),
         cache: None,
     };
     for _ in 0..3 {

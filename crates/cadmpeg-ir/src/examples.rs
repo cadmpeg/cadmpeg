@@ -9,7 +9,7 @@ use crate::geometry::{
     ProceduralSurfaceDefinition, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use crate::ids::{
-    CoedgeId, CurveId, EdgeId, PointId, ProceduralSurfaceId, SubdId, SurfaceId, VertexId,
+    CoedgeId, CurveId, EdgeId, FaceId, PointId, ProceduralSurfaceId, SubdId, SurfaceId, VertexId,
 };
 use crate::math::{Point3, Vector3};
 use crate::subd::{
@@ -110,13 +110,13 @@ pub fn unit_cube() -> CadIr {
     // Points + vertices.
     for (i, (x, y, z)) in corners.iter().enumerate() {
         ir.model.points.push(Point {
-            id: PointId(format!("synthetic:cube:point#{i}")),
+            id: PointId::mint(format!("synthetic:cube:point#{i}")).expect("valid identity"),
             position: Point3::new(*x, *y, *z),
             source_object: None,
         });
         ir.model.vertices.push(Vertex {
-            id: VertexId(format!("synthetic:cube:vertex#{i}")),
-            point: PointId(format!("synthetic:cube:point#{i}")),
+            id: VertexId::mint(format!("synthetic:cube:vertex#{i}")).expect("valid identity"),
+            point: PointId::mint(format!("synthetic:cube:point#{i}")).expect("valid identity"),
             tolerance: None,
         });
     }
@@ -129,7 +129,7 @@ pub fn unit_cube() -> CadIr {
         let len = dir.norm();
         let unit = Vector3::new(dir.x / len, dir.y / len, dir.z / len);
         ir.model.curves.push(Curve {
-            id: CurveId(format!("synthetic:cube:curve#{i}")),
+            id: CurveId::mint(format!("synthetic:cube:curve#{i}")).expect("valid identity"),
             geometry: CurveGeometry::Line {
                 origin: Point3::new(ax, ay, az),
                 direction: unit,
@@ -137,10 +137,12 @@ pub fn unit_cube() -> CadIr {
             source_object: None,
         });
         ir.model.edges.push(Edge {
-            id: EdgeId(format!("synthetic:cube:edge#{i}")),
-            curve: Some(CurveId(format!("synthetic:cube:curve#{i}"))),
-            start: VertexId(format!("synthetic:cube:vertex#{a}")),
-            end: VertexId(format!("synthetic:cube:vertex#{b}")),
+            id: EdgeId::mint(format!("synthetic:cube:edge#{i}")).expect("valid identity"),
+            curve: Some(
+                CurveId::mint(format!("synthetic:cube:curve#{i}")).expect("valid identity"),
+            ),
+            start: VertexId::mint(format!("synthetic:cube:vertex#{a}")).expect("valid identity"),
+            end: VertexId::mint(format!("synthetic:cube:vertex#{b}")).expect("valid identity"),
             param_range: Some([0.0, len]),
             tolerance: None,
         });
@@ -151,7 +153,7 @@ pub fn unit_cube() -> CadIr {
     for (name, normal, origin, ring) in &face_defs {
         let surf_id = format!("synthetic:cube:surface#{name}");
         ir.model.surfaces.push(Surface {
-            id: SurfaceId(surf_id.clone()),
+            id: SurfaceId::mint(surf_id.clone()).expect("valid identity"),
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(origin.0, origin.1, origin.2),
                 normal: Vector3::new(normal.0, normal.1, normal.2),
@@ -167,10 +169,11 @@ pub fn unit_cube() -> CadIr {
 
         for (i, (edge_index, forward)) in ring.iter().enumerate() {
             ir.model.coedges.push(Coedge {
-                id: CoedgeId(coedge_ids[i].clone()),
-                owner_loop: loop_id.clone().into(),
-                edge: EdgeId(format!("synthetic:cube:edge#{edge_index}")),
-                radial_next: CoedgeId(coedge_ids[i].clone()),
+                id: CoedgeId::mint(coedge_ids[i].clone()).expect("valid identity"),
+                owner_loop: loop_id.clone().try_into().expect("valid identity"),
+                edge: EdgeId::mint(format!("synthetic:cube:edge#{edge_index}"))
+                    .expect("valid identity"),
+                radial_next: CoedgeId::mint(coedge_ids[i].clone()).expect("valid identity"),
                 sense: if *forward {
                     Sense::Forward
                 } else {
@@ -186,19 +189,24 @@ pub fn unit_cube() -> CadIr {
         }
 
         ir.model.loops.push(Loop {
-            id: loop_id.clone().into(),
-            face: format!("synthetic:cube:face#{name}").into(),
+            id: loop_id.clone().try_into().expect("valid identity"),
+            face: FaceId::mint(format!("synthetic:cube:face#{name}"))
+                .expect("fixed namespace and face name"),
             boundary: crate::topology::LoopBoundary::Ring {
-                coedges: coedge_ids.iter().map(|c| CoedgeId(c.clone())).collect(),
+                coedges: coedge_ids
+                    .iter()
+                    .map(|c| CoedgeId::mint(c.clone()).expect("valid identity"))
+                    .collect(),
                 vertex_uses: Vec::new(),
             },
         });
         ir.model.faces.push(Face {
-            id: format!("synthetic:cube:face#{name}").into(),
-            shell: "synthetic:cube:shell#0".into(),
-            surface: SurfaceId(surf_id),
+            id: FaceId::mint(format!("synthetic:cube:face#{name}"))
+                .expect("fixed namespace and face name"),
+            shell: "synthetic:cube:shell#0".try_into().expect("valid identity"),
+            surface: SurfaceId::mint(surf_id).expect("valid identity"),
             sense: Sense::Forward,
-            loops: vec![loop_id.into()].into(),
+            loops: vec![loop_id.try_into().expect("valid identity")].into(),
             name: Some(format!("{name} face")),
             color: None,
             tolerance: None,
@@ -212,31 +220,40 @@ pub fn unit_cube() -> CadIr {
         .flat_map(|v| [(v[0].clone(), v[1].clone()), (v[1].clone(), v[0].clone())])
         .collect();
     for ce in &mut ir.model.coedges {
-        if let Some(p) = partner_of.get(&ce.id.0) {
-            ce.radial_next = CoedgeId(p.clone());
+        if let Some(p) = partner_of.get(ce.id.as_str()) {
+            ce.radial_next = CoedgeId::mint(p.clone()).expect("valid identity");
         }
     }
 
     // Shell, region, body.
     ir.model.shells.push(Shell {
-        id: "synthetic:cube:shell#0".into(),
-        region: "synthetic:cube:region#0".into(),
+        id: "synthetic:cube:shell#0".try_into().expect("valid identity"),
+        region: "synthetic:cube:region#0"
+            .try_into()
+            .expect("valid identity"),
         faces: face_defs
             .iter()
-            .map(|(name, ..)| format!("synthetic:cube:face#{name}").into())
+            .map(|(name, ..)| {
+                FaceId::mint(format!("synthetic:cube:face#{name}"))
+                    .expect("fixed namespace and face name")
+            })
             .collect(),
         wire_edges: Vec::new(),
         free_vertices: Vec::new(),
     });
     ir.model.regions.push(Region {
-        id: "synthetic:cube:region#0".into(),
-        body: "synthetic:cube:body#0".into(),
-        shells: vec!["synthetic:cube:shell#0".into()],
+        id: "synthetic:cube:region#0"
+            .try_into()
+            .expect("valid identity"),
+        body: "synthetic:cube:body#0".try_into().expect("valid identity"),
+        shells: vec!["synthetic:cube:shell#0".try_into().expect("valid identity")],
     });
     ir.model.bodies.push(Body {
-        id: "synthetic:cube:body#0".into(),
+        id: "synthetic:cube:body#0".try_into().expect("valid identity"),
         kind: BodyKind::Solid,
-        regions: vec!["synthetic:cube:region#0".into()],
+        regions: vec!["synthetic:cube:region#0"
+            .try_into()
+            .expect("valid identity")],
         transform: None,
         name: Some("unit cube".into()),
         color: None,
@@ -253,7 +270,7 @@ pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::CacheFitToleranceEr
     let mut ir = CadIr::empty();
     ir.model.curves = vec![
         Curve {
-            id: CurveId("synthetic:v2:curve#u".into()),
+            id: CurveId::mint("synthetic:v2:curve#u").expect("valid identity"),
             geometry: CurveGeometry::Line {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 direction: Vector3::new(1.0, 0.0, 0.0),
@@ -261,7 +278,7 @@ pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::CacheFitToleranceEr
             source_object: None,
         },
         Curve {
-            id: CurveId("synthetic:v2:curve#v".into()),
+            id: CurveId::mint("synthetic:v2:curve#v").expect("valid identity"),
             geometry: CurveGeometry::Line {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 direction: Vector3::new(0.0, 1.0, 0.0),
@@ -269,9 +286,10 @@ pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::CacheFitToleranceEr
             source_object: None,
         },
     ];
-    let construction = ProceduralSurfaceId("synthetic:v2:procedural-surface#sum".into());
+    let construction =
+        ProceduralSurfaceId::mint("synthetic:v2:procedural-surface#sum").expect("valid identity");
     ir.model.surfaces.push(Surface {
-        id: SurfaceId("synthetic:v2:surface#sum-cache".into()),
+        id: SurfaceId::mint("synthetic:v2:surface#sum-cache").expect("valid identity"),
         geometry: SurfaceGeometry::Procedural {
             construction: construction.clone(),
             cache: Some(
@@ -290,8 +308,8 @@ pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::CacheFitToleranceEr
         .push(ProceduralSurface::try_new(
             construction,
             ProceduralSurfaceDefinition::Sum {
-                first: CurveId("synthetic:v2:curve#u".into()),
-                second: CurveId("synthetic:v2:curve#v".into()),
+                first: CurveId::mint("synthetic:v2:curve#u").expect("valid identity"),
+                second: CurveId::mint("synthetic:v2:curve#v").expect("valid identity"),
                 basepoint: Vector3::new(0.0, 0.0, 0.0),
                 revision_form: None,
             },
@@ -299,7 +317,7 @@ pub fn directed_subd_sum() -> Result<CadIr, crate::geometry::CacheFitToleranceEr
             None,
         )?);
     ir.model.subds.push(SubdSurface {
-        id: SubdId("synthetic:v2:subd#directed".into()),
+        id: SubdId::mint("synthetic:v2:subd#directed").expect("valid identity"),
         scheme: SubdScheme::CatmullClark,
         symmetries: Vec::new(),
         vertices: vec![

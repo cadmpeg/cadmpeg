@@ -25,7 +25,7 @@ where
 fn byte_payloads_use_nonempty_base64_and_reject_invalid_text() {
     assert_base64_round_trip_and_rejection(
         &UnknownRecord::retained(
-            UnknownId("synthetic:test:unknown#0".into()),
+            UnknownId::mint("synthetic:test:unknown#0").expect("valid identity"),
             0,
             vec![1, 2, 3],
             Vec::new(),

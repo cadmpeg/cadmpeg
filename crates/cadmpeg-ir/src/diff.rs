@@ -707,7 +707,7 @@ mod tests {
         assert!(!result.is_empty());
         assert_eq!(
             modified(&result, "points"),
-            [left.model.points[index].id.0.clone()]
+            [left.model.points[index].id.as_str().to_owned()]
         );
     }
 
@@ -720,7 +720,7 @@ mod tests {
         use crate::math::Point3;
 
         let nurbs = |degree: u32| Curve {
-            id: CurveId("synthetic:tolerance:curve#nurbs".into()),
+            id: CurveId::mint("synthetic:tolerance:curve#nurbs").expect("valid identity"),
             geometry: CurveGeometry::Nurbs(
                 NurbsCurve::new(
                     degree,

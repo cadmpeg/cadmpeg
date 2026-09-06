@@ -18,8 +18,8 @@ pub fn accepted_empty() -> CadIr {
 pub fn rejected_missing_point(prefix: &str) -> CadIr {
     let mut ir = CadIr::empty();
     ir.model.vertices.push(Vertex {
-        id: VertexId(format!("{prefix}:vertex#0")),
-        point: PointId(format!("{prefix}:point#missing")),
+        id: VertexId::mint(format!("{prefix}:vertex#0")).expect("valid identity"),
+        point: PointId::mint(format!("{prefix}:point#missing")).expect("valid identity"),
         tolerance: None,
     });
     ir
@@ -29,8 +29,8 @@ pub fn rejected_missing_point(prefix: &str) -> CadIr {
 pub fn rejected_missing_region(prefix: &str) -> CadIr {
     let mut ir = CadIr::empty();
     ir.model.shells.push(Shell {
-        id: ShellId(format!("{prefix}:shell#0")),
-        region: RegionId(format!("{prefix}:region#missing")),
+        id: ShellId::mint(format!("{prefix}:shell#0")).expect("valid identity"),
+        region: RegionId::mint(format!("{prefix}:region#missing")).expect("valid identity"),
         faces: Vec::new(),
         wire_edges: Vec::new(),
         free_vertices: Vec::new(),

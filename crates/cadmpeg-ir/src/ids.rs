@@ -132,7 +132,7 @@ macro_rules! id_type {
         #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
         #[cfg_attr(feature = "schema", derive(JsonSchema))]
         #[serde(transparent)]
-        pub struct $name(#[serde(deserialize_with = "deserialize_entity_id")] pub String);
+        pub struct $name(#[serde(deserialize_with = "deserialize_entity_id")] String);
 
         impl Serialize for $name {
             fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -153,7 +153,14 @@ macro_rules! id_type {
                 Ok(Self(value))
             }
 
+            /// Return the underlying id string.
+            #[must_use]
+            pub fn into_string(self) -> String {
+                self.0
+            }
+
             /// Borrow the underlying id string.
+            #[must_use]
             pub fn as_str(&self) -> &str {
                 &self.0
             }
@@ -165,9 +172,19 @@ macro_rules! id_type {
             }
         }
 
-        impl<S: Into<String>> From<S> for $name {
-            fn from(value: S) -> Self {
-                Self::mint(value.into()).unwrap_or_else(|error| panic!("{error}"))
+        impl TryFrom<String> for $name {
+            type Error = IdentityError;
+
+            fn try_from(value: String) -> Result<Self, Self::Error> {
+                Self::mint(value)
+            }
+        }
+
+        impl TryFrom<&str> for $name {
+            type Error = IdentityError;
+
+            fn try_from(value: &str) -> Result<Self, Self::Error> {
+                Self::mint(value)
             }
         }
     };
@@ -179,7 +196,7 @@ macro_rules! local_id_type {
         #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
         #[cfg_attr(feature = "schema", derive(JsonSchema))]
         #[serde(transparent)]
-        pub struct $name(#[serde(deserialize_with = "deserialize_local_id")] pub String);
+        pub struct $name(#[serde(deserialize_with = "deserialize_local_id")] String);
 
         impl $name {
             /// Mint a non-empty state-local identity.
@@ -191,7 +208,14 @@ macro_rules! local_id_type {
                 Ok(Self(value))
             }
 
+            /// Return the underlying id string.
+            #[must_use]
+            pub fn into_string(self) -> String {
+                self.0
+            }
+
             /// Borrow the underlying id string.
+            #[must_use]
             pub fn as_str(&self) -> &str {
                 &self.0
             }
@@ -203,9 +227,19 @@ macro_rules! local_id_type {
             }
         }
 
-        impl<S: Into<String>> From<S> for $name {
-            fn from(value: S) -> Self {
-                Self::mint(value.into()).unwrap_or_else(|error| panic!("{error}"))
+        impl TryFrom<String> for $name {
+            type Error = IdentityError;
+
+            fn try_from(value: String) -> Result<Self, Self::Error> {
+                Self::mint(value)
+            }
+        }
+
+        impl TryFrom<&str> for $name {
+            type Error = IdentityError;
+
+            fn try_from(value: &str) -> Result<Self, Self::Error> {
+                Self::mint(value)
             }
         }
     };

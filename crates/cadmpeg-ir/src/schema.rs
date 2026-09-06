@@ -474,26 +474,12 @@ pub(crate) fn visit_typed_references<T: EntitySchema>(
 }
 
 macro_rules! impl_entity_schema {
-    ($type:ty, $kind:ident, $identity:ident . 0; $($field:ident),+ $(,)?) => {
+    ($type:ty, $kind:ident, $identity:ident $(.$inner:tt)?; $($field:ident),+ $(,)?) => {
         impl EntitySchema for $type {
             const KIND: EntityKind = EntityKind::$kind;
 
             fn identity(&self) -> &str {
-                self.$identity.0.as_str()
-            }
-
-            fn visit_references(&self, visitor: &mut dyn FnMut(Reference)) {
-                let Self { $($field: _),+ } = self;
-                visit_typed_references(self, visitor);
-            }
-        }
-    };
-    ($type:ty, $kind:ident, $identity:ident; $($field:ident),+ $(,)?) => {
-        impl EntitySchema for $type {
-            const KIND: EntityKind = EntityKind::$kind;
-
-            fn identity(&self) -> &str {
-                self.$identity.as_str()
+                self.$identity $(.$inner)?.as_str()
             }
 
             fn visit_references(&self, visitor: &mut dyn FnMut(Reference)) {
@@ -504,24 +490,24 @@ macro_rules! impl_entity_schema {
     };
 }
 
-impl_entity_schema!(crate::topology::Body, Body, id.0; id, kind, regions, transform, name, color, visible);
-impl_entity_schema!(crate::topology::Region, Region, id.0; id, body, shells);
-impl_entity_schema!(crate::topology::Shell, Shell, id.0; id, region, faces, wire_edges, free_vertices);
-impl_entity_schema!(crate::topology::Face, Face, id.0; id, shell, surface, sense, loops, name, color, tolerance);
-impl_entity_schema!(crate::topology::Loop, Loop, id.0; id, face, boundary);
-impl_entity_schema!(crate::topology::Coedge, Coedge, id.0; id, owner_loop, edge, radial_next, sense, pcurves, use_curve);
-impl_entity_schema!(crate::topology::Edge, Edge, id.0; id, curve, start, end, param_range, tolerance);
-impl_entity_schema!(crate::topology::Vertex, Vertex, id.0; id, point, tolerance);
-impl_entity_schema!(crate::topology::Point, Point, id.0; id, position, source_object);
-impl_entity_schema!(crate::geometry::Surface, Surface, id.0; id, geometry, source_object);
-impl_entity_schema!(crate::geometry::Curve, Curve, id.0; id, geometry, source_object);
-impl_entity_schema!(crate::subd::SubdSurface, SubdSurface, id.0; id, scheme, vertices, edges, faces, symmetries, source_object);
-impl_entity_schema!(crate::geometry::Pcurve, Pcurve, id.0; id, geometry, metadata);
+impl_entity_schema!(crate::topology::Body, Body, id; id, kind, regions, transform, name, color, visible);
+impl_entity_schema!(crate::topology::Region, Region, id; id, body, shells);
+impl_entity_schema!(crate::topology::Shell, Shell, id; id, region, faces, wire_edges, free_vertices);
+impl_entity_schema!(crate::topology::Face, Face, id; id, shell, surface, sense, loops, name, color, tolerance);
+impl_entity_schema!(crate::topology::Loop, Loop, id; id, face, boundary);
+impl_entity_schema!(crate::topology::Coedge, Coedge, id; id, owner_loop, edge, radial_next, sense, pcurves, use_curve);
+impl_entity_schema!(crate::topology::Edge, Edge, id; id, curve, start, end, param_range, tolerance);
+impl_entity_schema!(crate::topology::Vertex, Vertex, id; id, point, tolerance);
+impl_entity_schema!(crate::topology::Point, Point, id; id, position, source_object);
+impl_entity_schema!(crate::geometry::Surface, Surface, id; id, geometry, source_object);
+impl_entity_schema!(crate::geometry::Curve, Curve, id; id, geometry, source_object);
+impl_entity_schema!(crate::subd::SubdSurface, SubdSurface, id; id, scheme, vertices, edges, faces, symmetries, source_object);
+impl_entity_schema!(crate::geometry::Pcurve, Pcurve, id; id, geometry, metadata);
 impl EntitySchema for crate::geometry::ProceduralSurface {
     const KIND: EntityKind = EntityKind::ProceduralSurface;
 
     fn identity(&self) -> &str {
-        self.id.0.as_str()
+        self.id.as_str()
     }
 
     fn visit_references(&self, visitor: &mut dyn FnMut(Reference)) {
@@ -533,7 +519,7 @@ impl EntitySchema for crate::geometry::ProceduralCurve {
     const KIND: EntityKind = EntityKind::ProceduralCurve;
 
     fn identity(&self) -> &str {
-        self.id.0.as_str()
+        self.id.as_str()
     }
 
     fn visit_references(&self, visitor: &mut dyn FnMut(Reference)) {
@@ -545,13 +531,13 @@ impl_entity_schema!(crate::features::Feature, Feature, id.0; id, ordinal, name, 
 impl_entity_schema!(
     crate::features::FeatureInputTopology,
     FeatureInputTopology,
-    id.0;
+    id;
     id, input_of, bodies, faces, edges, vertices, native_ref
 );
 impl_entity_schema!(
     crate::features::FeatureResultTopology,
     FeatureResultTopology,
-    id.0;
+    id;
     id, output_of, bodies, faces, edges, vertices, native_ref
 );
 impl_entity_schema!(
@@ -594,8 +580,8 @@ impl_entity_schema!(
     id, sketch, definition, native_ref
 );
 impl_entity_schema!(crate::spreadsheets::Spreadsheet, Spreadsheet, id.0; id, feature, cells, column_widths, row_heights, merged_ranges, native_ref);
-impl_entity_schema!(crate::products::ProductDefinition, ProductDefinition, id.0; id, kind, source_name, label, description, part_number, bom_properties, bodies, native_ref);
-impl_entity_schema!(crate::products::Occurrence, Occurrence, id.0; id, prototype, parent, ordinal, transform, linked_prototype, scale, name, visible, link, native_ref);
+impl_entity_schema!(crate::products::ProductDefinition, ProductDefinition, id; id, kind, source_name, label, description, part_number, bom_properties, bodies, native_ref);
+impl_entity_schema!(crate::products::Occurrence, Occurrence, id; id, prototype, parent, ordinal, transform, linked_prototype, scale, name, visible, link, native_ref);
 impl EntitySchema for crate::products::AssemblyJoint {
     const KIND: EntityKind = EntityKind::AssemblyJoint;
 
@@ -629,14 +615,14 @@ impl_entity_schema!(
     point_size, properties, native_ref
 );
 impl_entity_schema!(crate::tessellation::Tessellation, Tessellation, id; id, body, faces, chordal_deflection, source_object, vertices, triangles, feature_edges, topology, shading, triangle_groups, texture_assignments, channels);
-impl_entity_schema!(crate::appearance::Appearance, Appearance, id.0; id, name, asset_guid, library_id, visual_guid, physical_token, schema, category, base_color, properties, textures);
-impl_entity_schema!(crate::appearance::AppearanceBinding, AppearanceBinding, id.0; id, target, appearance, source_entity_id, object_type, visible, channels);
-impl_entity_schema!(crate::attributes::SourceAttribute, SourceAttribute, id.0; id, target, name, values);
-impl_entity_schema!(crate::pmi::PmiAnnotation, PmiAnnotation, id.0; id, name, visible, targets, definition);
+impl_entity_schema!(crate::appearance::Appearance, Appearance, id; id, name, asset_guid, library_id, visual_guid, physical_token, schema, category, base_color, properties, textures);
+impl_entity_schema!(crate::appearance::AppearanceBinding, AppearanceBinding, id; id, target, appearance, source_entity_id, object_type, visible, channels);
+impl_entity_schema!(crate::attributes::SourceAttribute, SourceAttribute, id; id, target, name, values);
+impl_entity_schema!(crate::pmi::PmiAnnotation, PmiAnnotation, id; id, name, visible, targets, definition);
 impl_entity_schema!(
     crate::presentation::PresentationLayer,
     PresentationLayer,
-    id.0;
+    id;
     id, name, description, visible, items
 );
 

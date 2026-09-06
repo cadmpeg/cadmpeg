@@ -144,14 +144,14 @@ macro_rules! define_model_index {
                     HashMap::with_capacity(ir.model.procedural_surfaces.len());
                 for procedural in &ir.model.procedural_surfaces {
                     procedural_surfaces_by_id
-                        .entry(procedural.id.0.as_str())
+                        .entry(procedural.id.as_str())
                         .or_insert(procedural);
                 }
                 let mut procedural_curves_by_id =
                     HashMap::with_capacity(ir.model.procedural_curves.len());
                 for procedural in &ir.model.procedural_curves {
                     procedural_curves_by_id
-                        .entry(procedural.id.0.as_str())
+                        .entry(procedural.id.as_str())
                         .or_insert(procedural);
                 }
                 for carrier in &ir.model.surfaces {
@@ -159,12 +159,12 @@ macro_rules! define_model_index {
                         .geometry
                         .procedural_construction()
                         .and_then(|construction| {
-                            procedural_surfaces_by_id.get(construction.0.as_str())
+                            procedural_surfaces_by_id.get(construction.as_str())
                         })
                         .copied()
                     {
                         procedural_surface_by_surface
-                            .insert(carrier.id.0.as_str(), procedural);
+                            .insert(carrier.id.as_str(), procedural);
                     }
                 }
                 for carrier in &ir.model.curves {
@@ -172,12 +172,12 @@ macro_rules! define_model_index {
                         .geometry
                         .procedural_construction()
                         .and_then(|construction| {
-                            procedural_curves_by_id.get(construction.0.as_str())
+                            procedural_curves_by_id.get(construction.as_str())
                         })
                         .copied()
                     {
                         procedural_curves_by_curve
-                            .entry(carrier.id.0.as_str())
+                            .entry(carrier.id.as_str())
                             .or_default()
                             .push(procedural);
                     }
@@ -415,8 +415,11 @@ mod tests {
     #[test]
     fn procedural_carrier_index_follows_the_owning_geometry() {
         let mut ir = CadIr::empty();
-        let exact_surface = crate::ids::SurfaceId("test:surface#exact".to_string());
-        let exact_construction = crate::ids::ProceduralSurfaceId("test:procedural#exact".into());
+        let exact_surface = crate::ids::SurfaceId::mint("test:model:surface#exact".to_string())
+            .expect("valid identity");
+        let exact_construction =
+            crate::ids::ProceduralSurfaceId::mint("test:model:procedural#exact")
+                .expect("valid identity");
         ir.model.surfaces.push(Surface {
             id: exact_surface.clone(),
             geometry: SurfaceGeometry::Procedural {
@@ -432,7 +435,8 @@ mod tests {
             record_bounds: None,
         });
 
-        let cached_surface = crate::ids::SurfaceId("test:surface#cached".to_string());
+        let cached_surface = crate::ids::SurfaceId::mint("test:model:surface#cached".to_string())
+            .expect("valid identity");
         ir.model.surfaces.push(Surface {
             id: cached_surface.clone(),
             geometry: SurfaceGeometry::Plane {
@@ -446,7 +450,7 @@ mod tests {
             .add_procedural_surface(
                 cached_surface.clone(),
                 procedural_surface! {
-                    id: crate::ids::ProceduralSurfaceId("test:procedural#cached".into()),
+                    id: crate::ids::ProceduralSurfaceId::mint("test:model:procedural#cached").expect("valid identity"),
                     definition: ProceduralSurfaceDefinition::Unknown { record: None },
                     cache_fit_tolerance: Some(0.01),
                     record_bounds: None,
@@ -457,15 +461,15 @@ mod tests {
         let index = ModelIndex::new_model_only(&ir);
         assert_eq!(
             index
-                .procedural_surface_for_carrier(exact_surface.0.as_str())
-                .map(|surface| surface.id.0.as_str()),
-            Some("test:procedural#exact")
+                .procedural_surface_for_carrier(exact_surface.as_str())
+                .map(|surface| surface.id.as_str()),
+            Some("test:model:procedural#exact")
         );
         assert_eq!(
             index
-                .procedural_surface_for_carrier(cached_surface.0.as_str())
-                .map(|surface| surface.id.0.as_str()),
-            Some("test:procedural#cached")
+                .procedural_surface_for_carrier(cached_surface.as_str())
+                .map(|surface| surface.id.as_str()),
+            Some("test:model:procedural#cached")
         );
 
         assert!(ir
@@ -473,7 +477,7 @@ mod tests {
             .add_procedural_surface(
                 cached_surface,
                 procedural_surface! {
-                    id: crate::ids::ProceduralSurfaceId("test:procedural#cached-duplicate".into()),
+                    id: crate::ids::ProceduralSurfaceId::mint("test:model:procedural#cached-duplicate").expect("valid identity"),
                     definition: ProceduralSurfaceDefinition::Unknown { record: None },
                     cache_fit_tolerance: Some(0.02),
                     record_bounds: None,

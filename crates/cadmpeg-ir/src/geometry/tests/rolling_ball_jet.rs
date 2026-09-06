@@ -57,7 +57,9 @@ fn rolling_ball_jet_station_rows_preserve_the_flat_wire() {
 fn rolling_ball_jet_extreme_degree_reports_invalid_payload_without_overflow() {
     let mut ir = crate::CadIr::empty();
     ir.model.procedural_surfaces.push(ProceduralSurface::new(
-        "test:model:procedural_surface#jet".into(),
+        "test:model:procedural_surface#jet"
+            .try_into()
+            .expect("valid identity"),
         ProceduralSurfaceDefinition::RollingBallJet {
             degree: u32::MAX,
             stations: vec![station(2.0, u32::MAX), station(8.0, u32::MAX)],

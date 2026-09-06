@@ -12,7 +12,7 @@ fn direction_selector_round_trips_without_duplicate_state() {
             }
         } else {
             CompoundLoftDirection::Curve {
-                curve: "test:model:curve#0".into(),
+                curve: "test:model:curve#0".try_into().expect("valid identity"),
                 selector: std::num::NonZeroI64::new(selector).unwrap(),
             }
         };
@@ -38,7 +38,7 @@ fn scaled_direction_selector_preserves_exact_nonzero_value() {
     let branch = ScaledCompoundLoftBranch::Direct {
         flag: true,
         direction: CompoundLoftDirection::Curve {
-            curve: "test:model:curve#0".into(),
+            curve: "test:model:curve#0".try_into().expect("valid identity"),
             selector: std::num::NonZeroI64::new(-4).unwrap(),
         },
     };

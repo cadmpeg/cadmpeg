@@ -319,8 +319,9 @@ fn budgeted_nurbs_surface_evaluation_charges_degree_work() {
 
 #[test]
 fn budgeted_model_surface_charges_nurbs_directrix_work() {
-    let directrix_id = CurveId("budgeted-directrix".into());
-    let surface_id = SurfaceId("budgeted-sweep".into());
+    let directrix_id =
+        CurveId::mint("test:model:entity#budgeted-directrix").expect("valid identity");
+    let surface_id = SurfaceId::mint("test:model:entity#budgeted-sweep").expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
@@ -345,7 +346,7 @@ fn budgeted_model_surface_charges_nurbs_directrix_work() {
         .add_procedural_surface(
             surface_id.clone(),
             procedural_surface! {
-                id: ProceduralSurfaceId("budgeted-sweep-construction".into()),
+                id: ProceduralSurfaceId::mint("test:model:entity#budgeted-sweep-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::LinearSweep {
                     directrix: directrix_id,
                     direction: Vector3::new(0.0, 0.0, 1.0),
@@ -588,7 +589,7 @@ fn direct_analytic_curve_inverses_preserve_native_parameters() {
             0.7
         };
         let point = curve_point(&geometry, parameter).expect("analytic curve evaluates");
-        let id = CurveId(format!("test:inverse:{index}"));
+        let id = CurveId::mint(format!("test:inverse:curve#{index}")).expect("valid identity");
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
             id: id.clone(),
@@ -657,7 +658,8 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
         ),
     ];
     for (index, (geometry, point, seed, expected)) in cases.into_iter().enumerate() {
-        let id = CurveId(format!("test:polyline-inverse:{index}"));
+        let id =
+            CurveId::mint(format!("test:polyline-inverse:curve#{index}")).expect("valid identity");
         let mut ir = CadIr::empty();
         ir.model.curves.push(Curve {
             id: id.clone(),
@@ -672,7 +674,7 @@ fn polyline_inverse_searches_every_segment_in_native_parameter_space() {
 
 #[test]
 fn indexed_curve_inverse_uses_the_caller_tolerance() {
-    let id = CurveId("test:inverse-tolerance".into());
+    let id = CurveId::mint("test:model:entity#test:inverse-tolerance").expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: id.clone(),
@@ -713,7 +715,7 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
     };
     let parameter = 0.7 + std::f64::consts::TAU;
     let point = curve_point(&geometry, parameter).expect("transformed curve evaluates");
-    let id = CurveId("test:transformed-inverse".into());
+    let id = CurveId::mint("test:model:entity#test:transformed-inverse").expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: id.clone(),
@@ -743,7 +745,7 @@ fn transformed_curve_inverse_uses_the_basis_parameterization() {
 #[test]
 fn degenerate_curve_inverse_preserves_the_selected_parameter() {
     let point = Point3::new(2.0, 3.0, 4.0);
-    let id = CurveId("test:degenerate-inverse".into());
+    let id = CurveId::mint("test:model:entity#test:degenerate-inverse").expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: id.clone(),
@@ -881,11 +883,13 @@ fn quadratic_surface_second_partials_follow_stored_parameterization() {
 
 #[test]
 fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
-    let support_id = SurfaceId("support".into());
-    let first_id = SurfaceId("first-offset".into());
-    let second_id = SurfaceId("second-offset".into());
-    let first_construction = ProceduralSurfaceId("first-construction".into());
-    let second_construction = ProceduralSurfaceId("second-construction".into());
+    let support_id = SurfaceId::mint("test:model:entity#support").expect("valid identity");
+    let first_id = SurfaceId::mint("test:model:entity#first-offset").expect("valid identity");
+    let second_id = SurfaceId::mint("test:model:entity#second-offset").expect("valid identity");
+    let first_construction =
+        ProceduralSurfaceId::mint("test:model:entity#first-construction").expect("valid identity");
+    let second_construction =
+        ProceduralSurfaceId::mint("test:model:entity#second-construction").expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.surfaces = vec![
         Surface {
@@ -969,9 +973,10 @@ fn recursive_offsets_use_exact_support_normals_at_large_parameters() {
 
 #[test]
 fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
-    let support_id = SurfaceId("support".into());
-    let offset_id = SurfaceId("offset".into());
-    let construction = ProceduralSurfaceId("offset-construction".into());
+    let support_id = SurfaceId::mint("test:model:entity#support").expect("valid identity");
+    let offset_id = SurfaceId::mint("test:model:entity#offset").expect("valid identity");
+    let construction =
+        ProceduralSurfaceId::mint("test:model:entity#offset-construction").expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.surfaces = vec![
         Surface {
@@ -1036,9 +1041,10 @@ fn linear_offset_support_extension_uses_the_boundary_tangent_plane() {
 
 #[test]
 fn offset_uses_the_nurbs_carrier_normal_orientation() {
-    let support_id = SurfaceId("support".into());
-    let offset_id = SurfaceId("offset".into());
-    let construction = ProceduralSurfaceId("offset-construction".into());
+    let support_id = SurfaceId::mint("test:model:entity#support").expect("valid identity");
+    let offset_id = SurfaceId::mint("test:model:entity#offset").expect("valid identity");
+    let construction =
+        ProceduralSurfaceId::mint("test:model:entity#offset-construction").expect("valid identity");
     let mut support = bilinear_surface();
     support.set_normal_reversed(true);
     let mut ir = CadIr::empty();
@@ -1084,11 +1090,13 @@ fn offset_uses_the_nurbs_carrier_normal_orientation() {
 
 #[test]
 fn offset_of_reversed_subset_uses_the_local_surface_normal() {
-    let base_id = SurfaceId("base".into());
-    let subset_id = SurfaceId("subset".into());
-    let offset_id = SurfaceId("offset".into());
-    let subset_construction = ProceduralSurfaceId("subset-construction".into());
-    let offset_construction = ProceduralSurfaceId("offset-construction".into());
+    let base_id = SurfaceId::mint("test:model:entity#base").expect("valid identity");
+    let subset_id = SurfaceId::mint("test:model:entity#subset").expect("valid identity");
+    let offset_id = SurfaceId::mint("test:model:entity#offset").expect("valid identity");
+    let subset_construction =
+        ProceduralSurfaceId::mint("test:model:entity#subset-construction").expect("valid identity");
+    let offset_construction =
+        ProceduralSurfaceId::mint("test:model:entity#offset-construction").expect("valid identity");
     let plane = SurfaceGeometry::Plane {
         origin: Point3::new(0.0, 0.0, 0.0),
         normal: Vector3::new(0.0, 0.0, 1.0),
@@ -1161,8 +1169,9 @@ fn offset_of_reversed_subset_uses_the_local_surface_normal() {
 
 #[test]
 fn curve_bounded_surface_delegates_evaluation_to_its_support() {
-    let support_id = SurfaceId("curve-bounded-support".into());
-    let bounded_id = SurfaceId("curve-bounded".into());
+    let support_id =
+        SurfaceId::mint("test:model:entity#curve-bounded-support").expect("valid identity");
+    let bounded_id = SurfaceId::mint("test:model:entity#curve-bounded").expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.surfaces = vec![
         Surface {
@@ -1184,7 +1193,7 @@ fn curve_bounded_surface_delegates_evaluation_to_its_support() {
         .add_procedural_surface(
             bounded_id.clone(),
             procedural_surface! {
-                id: ProceduralSurfaceId("curve-bounded-construction".into()),
+                id: ProceduralSurfaceId::mint("test:model:entity#curve-bounded-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::CurveBounded {
                     support: support_id,
                     boundaries: Vec::new(),
@@ -1211,8 +1220,8 @@ fn curve_bounded_surface_delegates_evaluation_to_its_support() {
 
 #[test]
 fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
-    let directrix_id = CurveId("directrix".into());
-    let surface_id = SurfaceId("sweep".into());
+    let directrix_id = CurveId::mint("test:model:entity#directrix").expect("valid identity");
+    let surface_id = SurfaceId::mint("test:model:entity#sweep").expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
@@ -1231,7 +1240,7 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
         .add_procedural_surface(
             surface_id.clone(),
             procedural_surface! {
-                id: ProceduralSurfaceId("sweep-construction".into()),
+                id: ProceduralSurfaceId::mint("test:model:entity#sweep-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::LinearSweep {
                     directrix: directrix_id,
                     direction: Vector3::new(0.0, 0.0, 1.0),
@@ -1260,9 +1269,13 @@ fn linear_sweep_surface_evaluation_uses_directrix_and_sweep_parameters() {
 
 #[test]
 fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
-    let directrix_id = CurveId("reversed-directrix".into());
-    let surface_id = SurfaceId("cacheless-extrusion".into());
-    let construction_id = ProceduralSurfaceId("cacheless-extrusion-construction".into());
+    let directrix_id =
+        CurveId::mint("test:model:entity#reversed-directrix").expect("valid identity");
+    let surface_id =
+        SurfaceId::mint("test:model:entity#cacheless-extrusion").expect("valid identity");
+    let construction_id =
+        ProceduralSurfaceId::mint("test:model:entity#cacheless-extrusion-construction")
+            .expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
@@ -1321,9 +1334,9 @@ fn cacheless_revision_extrusion_uses_the_directrix_sense_chart() {
 
 #[test]
 fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
-    let profile_id = CurveId("profile".into());
-    let spine_id = CurveId("spine".into());
-    let surface_id = SurfaceId("cacheless-sweep".into());
+    let profile_id = CurveId::mint("test:model:entity#profile").expect("valid identity");
+    let spine_id = CurveId::mint("test:model:entity#spine").expect("valid identity");
+    let surface_id = SurfaceId::mint("test:model:entity#cacheless-sweep").expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.curves = vec![
         Curve {
@@ -1346,13 +1359,16 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Procedural {
-            construction: ProceduralSurfaceId("cacheless-sweep-construction".into()),
+            construction: ProceduralSurfaceId::mint(
+                "test:model:entity#cacheless-sweep-construction",
+            )
+            .expect("valid identity"),
             cache: None,
         },
         source_object: None,
     });
     ir.model.procedural_surfaces.push(procedural_surface! {
-        id: ProceduralSurfaceId("cacheless-sweep-construction".into()),
+        id: ProceduralSurfaceId::mint("test:model:entity#cacheless-sweep-construction").expect("valid identity"),
         definition: ProceduralSurfaceDefinition::Sweep {
             profile: profile_id,
             spine: spine_id,
@@ -1422,8 +1438,8 @@ fn cacheless_law_sweep_evaluation_uses_text_law_and_identity_rail() {
 
 #[test]
 fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
-    let directrix_id = CurveId("profile".into());
-    let surface_id = SurfaceId("revolution".into());
+    let directrix_id = CurveId::mint("test:model:entity#profile").expect("valid identity");
+    let surface_id = SurfaceId::mint("test:model:entity#revolution").expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
@@ -1445,7 +1461,7 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
         .add_procedural_surface(
             surface_id.clone(),
             procedural_surface! {
-                id: ProceduralSurfaceId("revolution-construction".into()),
+                id: ProceduralSurfaceId::mint("test:model:entity#revolution-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::AxisRevolution {
                     directrix: directrix_id,
                     axis_origin: Point3::new(0.0, 0.0, 0.0),
@@ -1479,8 +1495,9 @@ fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
 
 #[test]
 fn revolution_surface_maps_its_angular_parameter_interval() {
-    let directrix_id = CurveId("mapped-profile".into());
-    let surface_id = SurfaceId("mapped-revolution".into());
+    let directrix_id = CurveId::mint("test:model:entity#mapped-profile").expect("valid identity");
+    let surface_id =
+        SurfaceId::mint("test:model:entity#mapped-revolution").expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
@@ -1499,7 +1516,7 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
         .add_procedural_surface(
             surface_id.clone(),
             procedural_surface! {
-                id: ProceduralSurfaceId("mapped-revolution-construction".into()),
+                id: ProceduralSurfaceId::mint("test:model:entity#mapped-revolution-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::Revolution {
                     directrix: directrix_id,
                     axis_origin: Point3::new(0.0, 0.0, 0.0),
@@ -1532,12 +1549,18 @@ fn revolution_surface_maps_its_angular_parameter_interval() {
 
 #[test]
 fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
-    let directrix_id = CurveId("normalized-profile".into());
-    let surface_id = SurfaceId("normalized-revolution".into());
-    let start_point_id = PointId("normalized-profile-start-point".into());
-    let end_point_id = PointId("normalized-profile-end-point".into());
-    let start_vertex_id = VertexId("normalized-profile-start-vertex".into());
-    let end_vertex_id = VertexId("normalized-profile-end-vertex".into());
+    let directrix_id =
+        CurveId::mint("test:model:entity#normalized-profile").expect("valid identity");
+    let surface_id =
+        SurfaceId::mint("test:model:entity#normalized-revolution").expect("valid identity");
+    let start_point_id =
+        PointId::mint("test:model:entity#normalized-profile-start-point").expect("valid identity");
+    let end_point_id =
+        PointId::mint("test:model:entity#normalized-profile-end-point").expect("valid identity");
+    let start_vertex_id = VertexId::mint("test:model:entity#normalized-profile-start-vertex")
+        .expect("valid identity");
+    let end_vertex_id =
+        VertexId::mint("test:model:entity#normalized-profile-end-vertex").expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: directrix_id.clone(),
@@ -1572,7 +1595,7 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
         },
     ]);
     ir.model.edges.push(Edge {
-        id: EdgeId("normalized-profile-edge".into()),
+        id: EdgeId::mint("test:model:entity#normalized-profile-edge").expect("valid identity"),
         curve: Some(directrix_id.clone()),
         start: start_vertex_id,
         end: end_vertex_id,
@@ -1588,7 +1611,7 @@ fn revolution_surface_maps_a_normalized_line_domain_to_its_distance_carrier() {
         .add_procedural_surface(
             surface_id.clone(),
             procedural_surface! {
-                id: ProceduralSurfaceId("normalized-revolution-construction".into()),
+                id: ProceduralSurfaceId::mint("test:model:entity#normalized-revolution-construction").expect("valid identity"),
                 definition: ProceduralSurfaceDefinition::Revolution {
                     directrix: directrix_id,
                     axis_origin: Point3::new(0.0, 0.0, 0.0),

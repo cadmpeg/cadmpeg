@@ -109,7 +109,9 @@ fn tessellation_counts_must_be_consistent() {
             Vec::new(),
         )
         .expect("valid tessellation")
-        .with_faces(vec![FaceId("synthetic:test:face#missing".into())])
+        .with_faces(vec![
+            FaceId::mint("synthetic:test:face#missing").expect("valid identity")
+        ])
         .with_chordal_deflection(Some(-1.0)),
     );
     ir.finalize();
@@ -293,10 +295,10 @@ fn degenerate_plane_normal_is_flagged() {
 #[test]
 fn topology_tolerance_and_new_conics_are_bounds_checked() {
     let mut ir = unit_cube();
-    let edge_id = ir.model.edges[0].id.0.clone();
+    let edge_id = ir.model.edges[0].id.as_str().to_owned();
     ir.model.edges[0].tolerance = Some(-1.0);
     ir.model.curves.push(Curve {
-        id: CurveId("synthetic:test:curve#bad-parabola".into()),
+        id: CurveId::mint("synthetic:test:curve#bad-parabola").expect("valid identity"),
         geometry: CurveGeometry::Parabola {
             vertex: Point3::new(0.0, 0.0, 0.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -306,7 +308,7 @@ fn topology_tolerance_and_new_conics_are_bounds_checked() {
         source_object: None,
     });
     ir.model.curves.push(Curve {
-        id: CurveId("synthetic:test:curve#bad-hyperbola".into()),
+        id: CurveId::mint("synthetic:test:curve#bad-hyperbola").expect("valid identity"),
         geometry: CurveGeometry::Hyperbola {
             center: Point3::new(0.0, 0.0, 0.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -341,7 +343,8 @@ fn revolution_rejects_equal_intervals() {
         .add_procedural_surface(
             owner,
             ProceduralSurface::new(
-                ProceduralSurfaceId("synthetic:test:procedural-surface#equal".into()),
+                ProceduralSurfaceId::mint("synthetic:test:procedural-surface#equal")
+                    .expect("valid identity"),
                 ProceduralSurfaceDefinition::Revolution {
                     directrix: ir.model.curves[0].id.clone(),
                     axis_origin: Point3::new(0.0, 0.0, 0.0),

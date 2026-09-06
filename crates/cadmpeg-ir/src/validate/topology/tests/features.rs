@@ -60,23 +60,24 @@ fn unresolved_composite_count_can_feed_a_cartesian_stage() {
 fn historical_body_overlap_ignores_set_ordering_form() {
     use crate::ids::{FeatureInputTopologyId, HistoricalBodyId};
 
-    let state = FeatureInputTopologyId("test:input".into());
+    let state =
+        FeatureInputTopologyId::mint("test:model:entity#test:input").expect("valid identity");
     let target = BodySelection::Historical {
         state: state.clone(),
-        bodies: vec![HistoricalBodyId("test:body:4".into())],
+        bodies: vec![HistoricalBodyId::mint("test:body:4").expect("valid identity")],
         native: "target".into(),
     };
     let overlapping = BodySelection::HistoricalUnorderedSet {
         state: state.clone(),
         bodies: vec![
-            HistoricalBodyId("test:body:2".into()),
-            HistoricalBodyId("test:body:4".into()),
+            HistoricalBodyId::mint("test:body:2").expect("valid identity"),
+            HistoricalBodyId::mint("test:body:4").expect("valid identity"),
         ],
         native: vec!["tool-a".into(), "tool-b".into()],
     };
     let disjoint = BodySelection::HistoricalSet {
         state,
-        bodies: vec![HistoricalBodyId("test:body:5".into())],
+        bodies: vec![HistoricalBodyId::mint("test:body:5").expect("valid identity")],
         native: vec!["tool".into()],
     };
 
@@ -94,8 +95,10 @@ fn historical_vertex_selection_requires_input_state_membership() {
     use crate::schema::EntitySchema;
 
     let feature_id = FeatureId("test:model:feature#datum-point".into());
-    let state_id = FeatureInputTopologyId("test:model:feature-input#datum-point".into());
-    let historical_vertex = HistoricalVertexId("test:model:historical-vertex#local".into());
+    let state_id = FeatureInputTopologyId::mint("test:model:feature-input#datum-point")
+        .expect("valid identity");
+    let historical_vertex =
+        HistoricalVertexId::mint("test:model:historical-vertex#local").expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model
         .feature_input_topologies
@@ -134,7 +137,7 @@ fn historical_vertex_selection_requires_input_state_membership() {
 
     let mut references = Vec::new();
     ir.model.features[0].visit_references(&mut |reference| references.push(reference.target));
-    assert_eq!(references, vec![state_id.0]);
+    assert_eq!(references, vec![state_id.as_str()]);
 
     assert!(!validate_neutral(&ir, Vec::new())
         .findings
@@ -155,7 +158,7 @@ fn historical_vertex_selection_requires_input_state_membership() {
     else {
         unreachable!("test datum point uses a historical vertex")
     };
-    *vertex = HistoricalVertexId(missing.into());
+    *vertex = HistoricalVertexId::mint(missing).expect("valid identity");
     assert!(validate_neutral(&ir, Vec::new())
         .findings
         .iter()
@@ -174,15 +177,17 @@ fn three_point_datum_plane_requires_distinct_vertices_from_one_input_topology() 
     use crate::ids::{FeatureInputTopologyId, HistoricalVertexId};
 
     let feature_id = FeatureId("test:model:feature#three-point-plane".into());
-    let first_state = FeatureInputTopologyId("test:model:feature-input#three-point-plane-a".into());
-    let second_state =
-        FeatureInputTopologyId("test:model:feature-input#three-point-plane-b".into());
+    let first_state = FeatureInputTopologyId::mint("test:model:feature-input#three-point-plane-a")
+        .expect("valid identity");
+    let second_state = FeatureInputTopologyId::mint("test:model:feature-input#three-point-plane-b")
+        .expect("valid identity");
     let vertices = [
-        HistoricalVertexId("test:model:historical-vertex#1".into()),
-        HistoricalVertexId("test:model:historical-vertex#2".into()),
-        HistoricalVertexId("test:model:historical-vertex#3".into()),
+        HistoricalVertexId::mint("test:model:historical-vertex#1").expect("valid identity"),
+        HistoricalVertexId::mint("test:model:historical-vertex#2").expect("valid identity"),
+        HistoricalVertexId::mint("test:model:historical-vertex#3").expect("valid identity"),
     ];
-    let other_vertex = HistoricalVertexId("test:model:historical-vertex#4".into());
+    let other_vertex =
+        HistoricalVertexId::mint("test:model:historical-vertex#4").expect("valid identity");
     let historical = |state: &FeatureInputTopologyId, vertex: &HistoricalVertexId, native: &str| {
         VertexSelection::Historical {
             state: state.clone(),
@@ -376,17 +381,20 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
             FeatureSourceContent::Parameter(ParameterId("synthetic:test:parameter#missing".into())),
             FeatureSourceContent::Feature(feature_id.clone()),
         ],
-        outputs: vec![BodyId("synthetic:test:body#missing".into())],
+        outputs: vec![BodyId::mint("synthetic:test:body#missing").expect("valid identity")],
         definition: FeatureDefinition::Extrude {
-            profile: ProfileRef::Faces(vec![FaceId("synthetic:test:face#profile-missing".into())]),
+            profile: ProfileRef::Faces(vec![
+                FaceId::mint("synthetic:test:face#profile-missing").expect("valid identity")
+            ]),
             direction: ExtrudeDirection::ProfileNormal,
             start: crate::features::ExtrudeStart::ProfilePlane,
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: LinearTermination::ToFace {
-                        face: FaceSelection::Faces(vec![FaceId(
-                            "synthetic:test:face#termination-missing".into(),
-                        )]),
+                        face: FaceSelection::Faces(vec![FaceId::mint(
+                            "synthetic:test:face#termination-missing",
+                        )
+                        .expect("valid identity")]),
                         offset: None,
                     },
                     draft: None,
@@ -995,7 +1003,7 @@ fn body_combine_requires_exactly_one_resolved_target() {
         definition: FeatureDefinition::Combine {
             target: BodySelection::Bodies(vec![
                 body.clone(),
-                BodyId("synthetic:test:body#other-target".into()),
+                BodyId::mint("synthetic:test:body#other-target").expect("valid identity"),
             ]),
             tools: BodySelection::Bodies(vec![body]),
             op: BooleanKind::Join,
@@ -1021,7 +1029,7 @@ fn feature_operand_roles_must_be_disjoint() {
 
     let mut ir = unit_cube();
     let body = ir.model.bodies[0].id.clone();
-    let body_key = body.0.clone();
+    let body_key = body.as_str().to_owned();
     let face = ir.model.faces[0].id.clone();
     for (ordinal, definition) in [
         FeatureDefinition::FaceBlend {
@@ -1570,7 +1578,8 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
     ir.model
         .feature_result_topologies
         .push(FeatureResultTopology {
-            id: FeatureResultTopologyId("synthetic:test:feature-result-topology#producer".into()),
+            id: FeatureResultTopologyId::mint("synthetic:test:feature-result-topology#producer")
+                .expect("valid identity"),
             output_of: producer.clone(),
             bodies: vec!["body#declared".into()],
             faces: Vec::new(),

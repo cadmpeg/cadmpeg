@@ -5755,3 +5755,409 @@ crate = "cadmpeg-ir"
 kind = "variant"
 item = "cadmpeg_ir::features::SheetMetalFlangeWidth::TwoSidesPerEdge"
 reason = "IR-85: require a nonempty per-edge width roster at construction and decoding; preserve the array wire and expose only length-preserving mutable access."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::ids::BodyId"
+reason = "IR-77: make identifier storage private; construction and deserialization enforce the identity grammar, with immutable string access and owned extraction."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "cadmpeg_ir::ids::BodyId"
+reason = "IR-77: replace the panicking blanket From conversion with fallible TryFrom<String> and TryFrom<&str>."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::ids::FeatureInputTopologyId"
+reason = "IR-77: make identifier storage private; construction and deserialization enforce the identity grammar, with immutable string access and owned extraction."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "cadmpeg_ir::ids::FeatureInputTopologyId"
+reason = "IR-77: replace the panicking blanket From conversion with fallible TryFrom<String> and TryFrom<&str>."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::ids::FeatureResultTopologyId"
+reason = "IR-77: make identifier storage private; construction and deserialization enforce the identity grammar, with immutable string access and owned extraction."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "cadmpeg_ir::ids::FeatureResultTopologyId"
+reason = "IR-77: replace the panicking blanket From conversion with fallible TryFrom<String> and TryFrom<&str>."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::ids::HistoricalBodyId"
+reason = "IR-77: make identifier storage private; construction and deserialization enforce the identity grammar, with immutable string access and owned extraction."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "cadmpeg_ir::ids::HistoricalBodyId"
+reason = "IR-77: replace the panicking blanket From conversion with fallible TryFrom<String> and TryFrom<&str>."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::ids::HistoricalFaceId"
+reason = "IR-77: make identifier storage private; construction and deserialization enforce the identity grammar, with immutable string access and owned extraction."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "cadmpeg_ir::ids::HistoricalFaceId"
+reason = "IR-77: replace the panicking blanket From conversion with fallible TryFrom<String> and TryFrom<&str>."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::ids::HistoricalEdgeId"
+reason = "IR-77: make identifier storage private; construction and deserialization enforce the identity grammar, with immutable string access and owned extraction."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "cadmpeg_ir::ids::HistoricalEdgeId"
+reason = "IR-77: replace the panicking blanket From conversion with fallible TryFrom<String> and TryFrom<&str>."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::ids::HistoricalVertexId"
+reason = "IR-77: make identifier storage private; construction and deserialization enforce the identity grammar, with immutable string access and owned extraction."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "cadmpeg_ir::ids::HistoricalVertexId"
+reason = "IR-77: replace the panicking blanket From conversion with fallible TryFrom<String> and TryFrom<&str>."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::ids::RegionId"
+reason = "IR-77: make identifier storage private; construction and deserialization enforce the identity grammar, with immutable string access and owned extraction."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "cadmpeg_ir::ids::RegionId"
+reason = "IR-77: replace the panicking blanket From conversion with fallible TryFrom<String> and TryFrom<&str>."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::ids::ShellId"
+reason = "IR-77: make identifier storage private; construction and deserialization enforce the identity grammar, with immutable string access and owned extraction."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "cadmpeg_ir::ids::ShellId"
+reason = "IR-77: replace the panicking blanket From conversion with fallible TryFrom<String> and TryFrom<&str>."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::ids::FaceId"
+reason = "IR-77: make identifier storage private; construction and deserialization enforce the identity grammar, with immutable string access and owned extraction."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "cadmpeg_ir::ids::FaceId"
+reason = "IR-77: replace the panicking blanket From conversion with fallible TryFrom<String> and TryFrom<&str>."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::ids::LoopId"
+reason = "IR-77: make identifier storage private; construction and deserialization enforce the identity grammar, with immutable string access and owned extraction."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "cadmpeg_ir::ids::LoopId"
+reason = "IR-77: replace the panicking blanket From conversion with fallible TryFrom<String> and TryFrom<&str>."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::ids::CoedgeId"
+reason = "IR-77: make identifier storage private; construction and deserialization enforce the identity grammar, with immutable string access and owned extraction."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "cadmpeg_ir::ids::CoedgeId"
+reason = "IR-77: replace the panicking blanket From conversion with fallible TryFrom<String> and TryFrom<&str>."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::ids::EdgeId"
+reason = "IR-77: make identifier storage private; construction and deserialization enforce the identity grammar, with immutable string access and owned extraction."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "cadmpeg_ir::ids::EdgeId"
+reason = "IR-77: replace the panicking blanket From conversion with fallible TryFrom<String> and TryFrom<&str>."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::ids::VertexId"
+reason = "IR-77: make identifier storage private; construction and deserialization enforce the identity grammar, with immutable string access and owned extraction."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "cadmpeg_ir::ids::VertexId"
+reason = "IR-77: replace the panicking blanket From conversion with fallible TryFrom<String> and TryFrom<&str>."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::ids::SurfaceId"
+reason = "IR-77: make identifier storage private; construction and deserialization enforce the identity grammar, with immutable string access and owned extraction."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "cadmpeg_ir::ids::SurfaceId"
+reason = "IR-77: replace the panicking blanket From conversion with fallible TryFrom<String> and TryFrom<&str>."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::ids::CurveId"
+reason = "IR-77: make identifier storage private; construction and deserialization enforce the identity grammar, with immutable string access and owned extraction."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "cadmpeg_ir::ids::CurveId"
+reason = "IR-77: replace the panicking blanket From conversion with fallible TryFrom<String> and TryFrom<&str>."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::ids::PcurveId"
+reason = "IR-77: make identifier storage private; construction and deserialization enforce the identity grammar, with immutable string access and owned extraction."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "cadmpeg_ir::ids::PcurveId"
+reason = "IR-77: replace the panicking blanket From conversion with fallible TryFrom<String> and TryFrom<&str>."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::ids::ProceduralSurfaceId"
+reason = "IR-77: make identifier storage private; construction and deserialization enforce the identity grammar, with immutable string access and owned extraction."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "cadmpeg_ir::ids::ProceduralSurfaceId"
+reason = "IR-77: replace the panicking blanket From conversion with fallible TryFrom<String> and TryFrom<&str>."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::ids::ProceduralCurveId"
+reason = "IR-77: make identifier storage private; construction and deserialization enforce the identity grammar, with immutable string access and owned extraction."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "cadmpeg_ir::ids::ProceduralCurveId"
+reason = "IR-77: replace the panicking blanket From conversion with fallible TryFrom<String> and TryFrom<&str>."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::ids::SubdId"
+reason = "IR-77: make identifier storage private; construction and deserialization enforce the identity grammar, with immutable string access and owned extraction."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "cadmpeg_ir::ids::SubdId"
+reason = "IR-77: replace the panicking blanket From conversion with fallible TryFrom<String> and TryFrom<&str>."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::ids::PointId"
+reason = "IR-77: make identifier storage private; construction and deserialization enforce the identity grammar, with immutable string access and owned extraction."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "cadmpeg_ir::ids::PointId"
+reason = "IR-77: replace the panicking blanket From conversion with fallible TryFrom<String> and TryFrom<&str>."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::ids::UnknownId"
+reason = "IR-77: make identifier storage private; construction and deserialization enforce the identity grammar, with immutable string access and owned extraction."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "cadmpeg_ir::ids::UnknownId"
+reason = "IR-77: replace the panicking blanket From conversion with fallible TryFrom<String> and TryFrom<&str>."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::ids::AppearanceId"
+reason = "IR-77: make identifier storage private; construction and deserialization enforce the identity grammar, with immutable string access and owned extraction."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "cadmpeg_ir::ids::AppearanceId"
+reason = "IR-77: replace the panicking blanket From conversion with fallible TryFrom<String> and TryFrom<&str>."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::ids::AppearanceBindingId"
+reason = "IR-77: make identifier storage private; construction and deserialization enforce the identity grammar, with immutable string access and owned extraction."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "cadmpeg_ir::ids::AppearanceBindingId"
+reason = "IR-77: replace the panicking blanket From conversion with fallible TryFrom<String> and TryFrom<&str>."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::ids::AttributeId"
+reason = "IR-77: make identifier storage private; construction and deserialization enforce the identity grammar, with immutable string access and owned extraction."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "cadmpeg_ir::ids::AttributeId"
+reason = "IR-77: replace the panicking blanket From conversion with fallible TryFrom<String> and TryFrom<&str>."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::ids::ProductDefinitionId"
+reason = "IR-77: make identifier storage private; construction and deserialization enforce the identity grammar, with immutable string access and owned extraction."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "cadmpeg_ir::ids::ProductDefinitionId"
+reason = "IR-77: replace the panicking blanket From conversion with fallible TryFrom<String> and TryFrom<&str>."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::ids::OccurrenceId"
+reason = "IR-77: make identifier storage private; construction and deserialization enforce the identity grammar, with immutable string access and owned extraction."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "cadmpeg_ir::ids::OccurrenceId"
+reason = "IR-77: replace the panicking blanket From conversion with fallible TryFrom<String> and TryFrom<&str>."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::ids::PmiId"
+reason = "IR-77: make identifier storage private; construction and deserialization enforce the identity grammar, with immutable string access and owned extraction."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "cadmpeg_ir::ids::PmiId"
+reason = "IR-77: replace the panicking blanket From conversion with fallible TryFrom<String> and TryFrom<&str>."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::ids::LayerId"
+reason = "IR-77: make identifier storage private; construction and deserialization enforce the identity grammar, with immutable string access and owned extraction."
+
+[[change]]
+commit = "228fcdffb958f6a8c820494a7214513c5900aece"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "cadmpeg_ir::ids::LayerId"
+reason = "IR-77: replace the panicking blanket From conversion with fallible TryFrom<String> and TryFrom<&str>."

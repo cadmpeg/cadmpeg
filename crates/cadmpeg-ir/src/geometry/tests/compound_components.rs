@@ -9,11 +9,11 @@ fn compound_surface_wire_pairs_each_scalar_with_its_surface() {
         components: vec![
             CompoundComponent {
                 parameter: -0.5,
-                component: "test:model:surface#0".into(),
+                component: "test:model:surface#0".try_into().expect("valid identity"),
             },
             CompoundComponent {
                 parameter: 1.5,
-                component: "test:model:surface#1".into(),
+                component: "test:model:surface#1".try_into().expect("valid identity"),
             },
         ],
     };
@@ -45,11 +45,11 @@ fn compound_curve_wire_pairs_each_scalar_with_its_curve() {
         components: vec![
             CompoundComponent {
                 parameter: -2.0,
-                component: "test:model:curve#0".into(),
+                component: "test:model:curve#0".try_into().expect("valid identity"),
             },
             CompoundComponent {
                 parameter: 4.0,
-                component: "test:model:curve#1".into(),
+                component: "test:model:curve#1".try_into().expect("valid identity"),
             },
         ],
     };

@@ -169,8 +169,9 @@ fn feature_parent_wire_rejects_disagreement_with_tree_children() {
 #[test]
 fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
     let mut ir = CadIr::empty();
-    let surface = SurfaceId("test:model:surface#cache".into());
-    let surface_construction = ProceduralSurfaceId("test:model:surface-construction#cache".into());
+    let surface = SurfaceId::mint("test:model:surface#cache").expect("valid identity");
+    let surface_construction =
+        ProceduralSurfaceId::mint("test:model:surface-construction#cache").expect("valid identity");
     ir.model.surfaces.push(Surface {
         id: surface.clone(),
         geometry: SurfaceGeometry::Plane {
@@ -191,8 +192,9 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
         )
         .unwrap();
 
-    let curve = CurveId("test:model:curve#direct".into());
-    let curve_construction = ProceduralCurveId("test:model:curve-construction#direct".into());
+    let curve = CurveId::mint("test:model:curve#direct").expect("valid identity");
+    let curve_construction =
+        ProceduralCurveId::mint("test:model:curve-construction#direct").expect("valid identity");
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Procedural {
@@ -212,10 +214,10 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
     let model = value["model"].as_object().unwrap();
     assert_eq!(model["surfaces"][0]["geometry"]["kind"], "plane");
     assert!(model["surfaces"][0]["geometry"].get("cache").is_none());
-    assert_eq!(model["procedural_surfaces"][0]["surface"], surface.0);
+    assert_eq!(model["procedural_surfaces"][0]["surface"], surface.as_str());
     assert_eq!(model["curves"][0]["geometry"]["kind"], "procedural");
     assert!(model["curves"][0]["geometry"].get("cache").is_none());
-    assert_eq!(model["procedural_curves"][0]["curve"], curve.0);
+    assert_eq!(model["procedural_curves"][0]["curve"], curve.as_str());
     assert_eq!(serde_json::from_value::<CadIr>(value).unwrap(), ir);
 
     let mut rewritten = Model::default();

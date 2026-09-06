@@ -189,7 +189,7 @@ mod tests {
     #[test]
     fn retained_record_derives_extent_and_digest() {
         let record = UnknownRecord::retained(
-            UnknownId("synthetic:model:unknown#0".into()),
+            UnknownId::mint("synthetic:model:unknown#0").expect("valid identity"),
             7,
             vec![1, 2, 3],
             vec!["synthetic:model:point#0".into()],

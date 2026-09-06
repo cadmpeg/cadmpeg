@@ -66,10 +66,13 @@ fn cacheless_law_differential_rejects_undefined_domains() {
 
 #[test]
 fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
-    let profile_id = CurveId("profile-frame-profile".into());
-    let spine_id = CurveId("profile-frame-spine".into());
-    let surface_id = SurfaceId("profile-frame-sweep".into());
-    let construction_id = ProceduralSurfaceId("profile-frame-construction".into());
+    let profile_id =
+        CurveId::mint("test:model:entity#profile-frame-profile").expect("valid identity");
+    let spine_id = CurveId::mint("test:model:entity#profile-frame-spine").expect("valid identity");
+    let surface_id =
+        SurfaceId::mint("test:model:entity#profile-frame-sweep").expect("valid identity");
+    let construction_id = ProceduralSurfaceId::mint("test:model:entity#profile-frame-construction")
+        .expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.curves = vec![
         Curve {

@@ -528,7 +528,7 @@ mod tests {
 
     #[test]
     fn datum_system_references_resolve_with_precedence() {
-        let datum_id = PmiId("test:model:pmi#datum-a".into());
+        let datum_id = PmiId::mint("test:model:pmi#datum-a").expect("valid identity");
         let mut ir = CadIr::empty();
         ir.model.pmi.push(PmiAnnotation {
             id: datum_id.clone(),
@@ -542,7 +542,7 @@ mod tests {
             },
         });
         ir.model.pmi.push(PmiAnnotation {
-            id: PmiId("test:model:pmi#system".into()),
+            id: PmiId::mint("test:model:pmi#system").expect("valid identity"),
             name: None,
             visible: None,
             targets: Vec::new(),
@@ -641,7 +641,7 @@ mod tests {
         let mut ir = crate::examples::unit_cube();
         let curve = ir.model.curves[0].id.clone();
         ir.model.pmi.push(PmiAnnotation {
-            id: PmiId("synthetic:model:pmi#curve-target".into()),
+            id: PmiId::mint("synthetic:model:pmi#curve-target").expect("valid identity"),
             name: Some("curve target".into()),
             visible: None,
             targets: vec![PmiTarget::Curve { curve }],
@@ -663,14 +663,14 @@ mod tests {
     fn unresolved_semantic_reference_is_invalid() {
         let mut ir = CadIr::empty();
         ir.model.pmi.push(PmiAnnotation {
-            id: PmiId("test:model:pmi#graphic".into()),
+            id: PmiId::mint("test:model:pmi#graphic").expect("valid identity"),
             name: None,
             visible: None,
             targets: Vec::new(),
             definition: PmiDefinition::Presentation {
                 text: None,
                 placement: None,
-                semantics: vec![PmiId("test:model:pmi#missing".into())],
+                semantics: vec![PmiId::mint("test:model:pmi#missing").expect("valid identity")],
             },
         });
 
@@ -684,7 +684,7 @@ mod tests {
     #[test]
     fn datum_references_are_type_checked_and_common_groups_are_explicit() {
         let mut ir = CadIr::empty();
-        let dimension_id = PmiId("test:model:pmi#dimension".into());
+        let dimension_id = PmiId::mint("test:model:pmi#dimension").expect("valid identity");
         ir.model.pmi.push(PmiAnnotation {
             id: dimension_id.clone(),
             name: None,
@@ -700,7 +700,7 @@ mod tests {
             },
         });
         ir.model.pmi.push(PmiAnnotation {
-            id: PmiId("test:model:pmi#system".into()),
+            id: PmiId::mint("test:model:pmi#system").expect("valid identity"),
             name: None,
             visible: None,
             targets: Vec::new(),
@@ -714,7 +714,7 @@ mod tests {
             },
         });
         ir.model.pmi.push(PmiAnnotation {
-            id: PmiId("test:model:pmi#tolerance".into()),
+            id: PmiId::mint("test:model:pmi#tolerance").expect("valid identity"),
             name: None,
             visible: None,
             targets: Vec::new(),

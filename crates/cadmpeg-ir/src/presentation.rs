@@ -347,7 +347,7 @@ mod tests {
     fn source_layer_items_validate_without_fabricated_geometry() {
         let mut ir = CadIr::empty();
         ir.model.presentation_layers.push(PresentationLayer {
-            id: LayerId("test:presentation:layer#construction".into()),
+            id: LayerId::mint("test:presentation:layer#construction").expect("valid identity"),
             name: "construction".into(),
             description: None,
             visible: None,
@@ -363,7 +363,7 @@ mod tests {
     fn empty_layer_name_is_valid() {
         let mut ir = CadIr::empty();
         ir.model.presentation_layers.push(PresentationLayer {
-            id: LayerId("test:presentation:layer#unnamed".into()),
+            id: LayerId::mint("test:presentation:layer#unnamed").expect("valid identity"),
             name: String::new(),
             description: None,
             visible: None,
@@ -379,12 +379,12 @@ mod tests {
     fn missing_typed_layer_item_is_invalid() {
         let mut ir = CadIr::empty();
         ir.model.presentation_layers.push(PresentationLayer {
-            id: LayerId("test:presentation:layer#missing".into()),
+            id: LayerId::mint("test:presentation:layer#missing").expect("valid identity"),
             name: "missing".into(),
             description: None,
             visible: None,
             items: vec![PresentationItem::Face {
-                face: FaceId("test:model:face#missing".into()),
+                face: FaceId::mint("test:model:face#missing").expect("valid identity"),
             }],
         });
 

@@ -5,8 +5,11 @@ use crate::geometry::{Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefi
 use crate::ids::{CurveId, ProceduralCurveId};
 
 fn helix_fixture() -> (CadIr, CurveId) {
-    let curve_id = CurveId("helix-evaluation-curve".into());
-    let construction_id = ProceduralCurveId("helix-evaluation-construction".into());
+    let curve_id =
+        CurveId::mint("test:model:entity#helix-evaluation-curve").expect("valid identity");
+    let construction_id =
+        ProceduralCurveId::mint("test:model:entity#helix-evaluation-construction")
+            .expect("valid identity");
     let definition = ProceduralCurveDefinition::Helix {
         angle_range: [0.25, 2.0],
         center: Point3::new(1.0, -2.0, 3.0),

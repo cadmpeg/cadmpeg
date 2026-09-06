@@ -18,7 +18,7 @@ use crate::CadIr;
 fn subd_rejects_short_rings_and_negative_sharpness() {
     let mut ir = CadIr::empty();
     ir.model.subds.push(SubdSurface {
-        id: SubdId("synthetic:subd:surface#short".into()),
+        id: SubdId::mint("synthetic:subd:surface#short").expect("valid identity"),
         scheme: SubdScheme::CatmullClark,
         symmetries: Vec::new(),
         vertices: vec![
@@ -67,7 +67,7 @@ fn subd_rejects_short_rings_and_negative_sharpness() {
 fn subd_rejects_invalid_secondary_grip_sector_arity() {
     let mut ir = CadIr::empty();
     ir.model.subds.push(SubdSurface {
-        id: SubdId("synthetic:subd:surface#grips".into()),
+        id: SubdId::mint("synthetic:subd:surface#grips").expect("valid identity"),
         scheme: SubdScheme::CatmullClark,
         symmetries: Vec::new(),
         vertices: vec![
@@ -114,7 +114,7 @@ fn subd_rejects_invalid_secondary_grip_sector_arity() {
 fn subd_rejects_secondary_grip_edge_not_incident_to_owner() {
     let mut ir = CadIr::empty();
     ir.model.subds.push(SubdSurface {
-        id: SubdId("synthetic:subd:surface#grip-incidence".into()),
+        id: SubdId::mint("synthetic:subd:surface#grip-incidence").expect("valid identity"),
         scheme: SubdScheme::CatmullClark,
         symmetries: Vec::new(),
         vertices: vec![
@@ -170,7 +170,7 @@ fn subd_rejects_secondary_grip_sector_face_not_incident_to_owner() {
     };
     let mut ir = CadIr::empty();
     ir.model.subds.push(SubdSurface {
-        id: SubdId("synthetic:subd:surface#grip-sector-incidence".into()),
+        id: SubdId::mint("synthetic:subd:surface#grip-sector-incidence").expect("valid identity"),
         scheme: SubdScheme::CatmullClark,
         symmetries: Vec::new(),
         vertices: (0..4)
@@ -220,7 +220,7 @@ fn subd_rejects_secondary_grip_sector_face_not_incident_to_owner() {
 fn subd_rejects_invalid_symmetry_carriers() {
     let mut ir = CadIr::empty();
     ir.model.subds.push(SubdSurface {
-        id: SubdId("synthetic:subd:surface#symmetry".into()),
+        id: SubdId::mint("synthetic:subd:surface#symmetry").expect("valid identity"),
         scheme: SubdScheme::CatmullClark,
         symmetries: vec![SubdSymmetry {
             kind: SubdSymmetryKind::Radial {
@@ -311,7 +311,7 @@ fn subd_rejects_invalid_symmetry_carriers() {
 fn source_association_is_a_free_carrier_root() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
-        id: CurveId("synthetic:source:curve#0".into()),
+        id: CurveId::mint("synthetic:source:curve#0").expect("valid identity"),
         geometry: CurveGeometry::Unknown { record: None },
         source_object: Some(SourceObjectAssociation {
             format: crate::CodecFormat::Rhino,
@@ -333,7 +333,7 @@ fn source_association_is_a_free_carrier_root() {
 fn source_association_rejects_out_of_range_color() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
-        id: CurveId("synthetic:source:curve#color".into()),
+        id: CurveId::mint("synthetic:source:curve#color").expect("valid identity"),
         geometry: CurveGeometry::Unknown { record: None },
         source_object: Some(SourceObjectAssociation {
             format: crate::CodecFormat::Rhino,

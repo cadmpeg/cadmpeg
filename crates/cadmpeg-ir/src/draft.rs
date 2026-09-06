@@ -584,7 +584,7 @@ mod tests {
 
     fn point(id: &str) -> Point {
         Point {
-            id: PointId(id.into()),
+            id: PointId::mint(id).expect("valid identity"),
             position: Point3::new(0.0, 0.0, 0.0),
             source_object: None,
         }
@@ -600,8 +600,8 @@ mod tests {
         let mut draft = ModelDraft::new();
         draft
             .insert(Vertex {
-                id: id.into(),
-                point: point.into(),
+                id: id.try_into().expect("valid identity"),
+                point: point.try_into().expect("valid identity"),
                 tolerance: None,
             })
             .expect("insert vertex into draft");
@@ -651,8 +651,8 @@ mod tests {
         let target = "test:model:point#direct-missing";
         let mut draft = ModelDraft::new();
         draft.model_mut().vertices.push(Vertex {
-            id: owner.into(),
-            point: target.into(),
+            id: owner.try_into().expect("valid identity"),
+            point: target.try_into().expect("valid identity"),
             tolerance: None,
         });
         let mut ir = CadIr::empty();
@@ -830,8 +830,10 @@ mod tests {
         let mut rejected = ModelDraft::new();
         rejected
             .insert(Vertex {
-                id: rejected_identity.into(),
-                point: "test:model:point#missing".into(),
+                id: rejected_identity.try_into().expect("valid identity"),
+                point: "test:model:point#missing"
+                    .try_into()
+                    .expect("valid identity"),
                 tolerance: None,
             })
             .expect("insert rejected vertex");

@@ -8,10 +8,12 @@ fn variable_blend_eval_fixture(
     radii: [f64; 2],
     cross_section: Option<VariableBlendCrossSection>,
 ) -> (CadIr, SurfaceId) {
-    let first_surface = SurfaceId("first-support".into());
-    let second_surface = SurfaceId("second-support".into());
-    let blend_surface = SurfaceId("cacheless-variable-blend".into());
-    let slice = CurveId("blend-slice".into());
+    let first_surface = SurfaceId::mint("test:model:entity#first-support").expect("valid identity");
+    let second_surface =
+        SurfaceId::mint("test:model:entity#second-support").expect("valid identity");
+    let blend_surface =
+        SurfaceId::mint("test:model:entity#cacheless-variable-blend").expect("valid identity");
+    let slice = CurveId::mint("test:model:entity#blend-slice").expect("valid identity");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: slice.clone(),
@@ -43,7 +45,10 @@ fn variable_blend_eval_fixture(
         Surface {
             id: blend_surface.clone(),
             geometry: SurfaceGeometry::Procedural {
-                construction: ProceduralSurfaceId("variable-blend-construction".into()),
+                construction: ProceduralSurfaceId::mint(
+                    "test:model:entity#variable-blend-construction",
+                )
+                .expect("valid identity"),
                 cache: None,
             },
             source_object: None,
@@ -72,7 +77,7 @@ fn variable_blend_eval_fixture(
         },
     };
     ir.model.procedural_surfaces.push(procedural_surface! {
-        id: ProceduralSurfaceId("variable-blend-construction".into()),
+        id: ProceduralSurfaceId::mint("test:model:entity#variable-blend-construction").expect("valid identity"),
         definition: ProceduralSurfaceDefinition::VariableBlend {
             construction: Box::new(VariableBlendConstruction {
                 subtype: VariableBlendSurfaceSubtype::VariableBlend,
@@ -426,8 +431,11 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
     assert!((partials.dv.y - 1.0).abs() <= tolerance);
     assert!(partials.dv.z.abs() <= tolerance);
 
-    let replica_surface = SurfaceId("cacheless-rolling-ball-replica".into());
-    let replica_construction = ProceduralSurfaceId("cacheless-rolling-ball-replica-def".into());
+    let replica_surface = SurfaceId::mint("test:model:entity#cacheless-rolling-ball-replica")
+        .expect("valid identity");
+    let replica_construction =
+        ProceduralSurfaceId::mint("test:model:entity#cacheless-rolling-ball-replica-def")
+            .expect("valid identity");
     ir.model.surfaces.push(Surface {
         id: replica_surface.clone(),
         geometry: SurfaceGeometry::Procedural {

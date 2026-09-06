@@ -14,7 +14,7 @@ fn appearance_asset_and_binding_round_trip() {
     let mut ir = unit_cube();
     let body = ir.model.bodies[0].id.clone();
     ir.model.appearances.push(Appearance {
-        id: AppearanceId("synthetic:test:appearance#prism-001".into()),
+        id: AppearanceId::mint("synthetic:test:appearance#prism-001").expect("valid identity"),
         name: Some("Prism-001".into()),
         asset_guid: Some("visual-guid".into()),
         library_id: None,
@@ -58,27 +58,36 @@ fn appearance_asset_and_binding_round_trip() {
         }],
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
-        id: "synthetic:test:appearance-binding#0".into(),
+        id: "synthetic:test:appearance-binding#0"
+            .try_into()
+            .expect("valid identity"),
         target: AppearanceTarget::Body(body),
-        appearance: AppearanceId("synthetic:test:appearance#prism-001".into()),
+        appearance: AppearanceId::mint("synthetic:test:appearance#prism-001")
+            .expect("valid identity"),
         source_entity_id: Some("0_1".into()),
         object_type: Some("Body".into()),
         visible: Some(false),
         channels: std::collections::BTreeMap::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
-        id: "synthetic:test:appearance-binding#edge".into(),
+        id: "synthetic:test:appearance-binding#edge"
+            .try_into()
+            .expect("valid identity"),
         target: AppearanceTarget::Edge(ir.model.edges[0].id.clone()),
-        appearance: AppearanceId("synthetic:test:appearance#prism-001".into()),
+        appearance: AppearanceId::mint("synthetic:test:appearance#prism-001")
+            .expect("valid identity"),
         source_entity_id: Some("0_1".into()),
         object_type: Some("Edge".into()),
         visible: None,
         channels: std::collections::BTreeMap::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
-        id: "synthetic:test:appearance-binding#vertex".into(),
+        id: "synthetic:test:appearance-binding#vertex"
+            .try_into()
+            .expect("valid identity"),
         target: AppearanceTarget::Vertex(ir.model.vertices[0].id.clone()),
-        appearance: AppearanceId("synthetic:test:appearance#prism-001".into()),
+        appearance: AppearanceId::mint("synthetic:test:appearance#prism-001")
+            .expect("valid identity"),
         source_entity_id: Some("0_1".into()),
         object_type: Some("Vertex".into()),
         visible: None,

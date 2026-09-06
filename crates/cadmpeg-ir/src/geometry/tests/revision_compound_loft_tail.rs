@@ -13,7 +13,7 @@ struct TailWire {
 
 #[test]
 fn revision_compound_loft_tail_preserves_all_four_wire_forms() {
-    let id = CurveId("test:model:curve#tail".into());
+    let id = CurveId::mint("test:model:curve#tail").expect("valid identity");
     for (tail, expected) in [
         (
             RevisionCompoundLoftTail::Unbounded,

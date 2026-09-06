@@ -11,7 +11,7 @@ use std::collections::HashSet;
 #[test]
 fn model_entity_wins_when_native_id_collides() {
     let mut ir = unit_cube();
-    let id = ir.model.points[0].id.0.clone();
+    let id = ir.model.points[0].id.as_str().to_owned();
     let mut namespace = NativeNamespace::new(std::num::NonZeroU32::MIN);
     namespace.arenas.insert(
         "records".into(),
@@ -33,7 +33,7 @@ fn annotation_keys_and_field_paths_are_checked() {
     let mut annotations = crate::AnnotationBuilder::new();
     let stream = annotations.stream("test:source");
     annotations.note("missing", stream, 0);
-    annotations.derived(&ir.model.edges[0].id.0, "not_a_serialized_field");
+    annotations.derived(ir.model.edges[0].id.as_str(), "not_a_serialized_field");
     source_fidelity.annotations = annotations.build();
     let findings =
         crate::validate_neutral_with_source_fidelity(&ir, &source_fidelity, Vec::new()).findings;
@@ -114,7 +114,7 @@ fn unresolved_unknown_record_link_is_reported_once() {
     ir.set_native_unknowns(
         "test",
         &[crate::NativeUnknownRecord {
-            id: crate::ids::UnknownId("test:unknown#0".into()),
+            id: crate::ids::UnknownId::mint("test:model:unknown#0").expect("valid identity"),
             links: vec!["test:missing#0".into()],
         }],
     )
@@ -128,5 +128,5 @@ fn unresolved_unknown_record_link_is_reported_once() {
         })
         .collect::<Vec<_>>();
     assert_eq!(reported.len(), 1);
-    assert_eq!(reported[0].entity.as_deref(), Some("test:unknown#0"));
+    assert_eq!(reported[0].entity.as_deref(), Some("test:model:unknown#0"));
 }

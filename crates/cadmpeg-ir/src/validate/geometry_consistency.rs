@@ -48,7 +48,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
         .model
         .curves
         .iter()
-        .map(|curve| (curve.id.0.as_str(), &curve.geometry))
+        .map(|curve| (curve.id.as_str(), &curve.geometry))
         .collect::<HashMap<_, _>>();
     for procedural in &ir.model.procedural_curves {
         let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
@@ -70,7 +70,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
                     severity: Severity::Error,
                     message: "charted tolerant intersection does not evaluate at both endpoints"
                         .into(),
-                    entity: Some(procedural.id.0.clone()),
+                    entity: Some(procedural.id.as_str().to_owned()),
                 });
                 continue;
             };
@@ -83,7 +83,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
                         "charted tolerant intersection misses its endpoint witnesses by \
                          {mismatch:.6}"
                     ),
-                    entity: Some(procedural.id.0.clone()),
+                    entity: Some(procedural.id.as_str().to_owned()),
                 });
             }
             continue;
@@ -96,7 +96,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             ..
         } = procedural.definition()
         {
-            let Some(solved) = curves.get(owner.0.as_str()) else {
+            let Some(solved) = curves.get(owner.as_str()) else {
                 continue;
             };
             let solved = context
@@ -109,7 +109,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
                 ir.tolerances.linear,
                 procedural.cache_fit_tolerance(),
             );
-            let Some(base) = curves.get(base.0.as_str()) else {
+            let Some(base) = curves.get(base.as_str()) else {
                 continue;
             };
             let base = base_endpoints
@@ -124,7 +124,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
                     },
                     &index,
                     bound,
-                    &procedural.id.0,
+                    procedural.id.as_str(),
                     findings,
                 );
                 continue;
@@ -140,7 +140,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
                         "surface-offset solved curve misses its base offset distance by \
                          {offset_mismatch:.6}"
                     ),
-                    entity: Some(procedural.id.0.clone()),
+                    entity: Some(procedural.id.as_str().to_owned()),
                 });
             }
             check_support_sides(
@@ -149,7 +149,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
                 SupportEndpointContract::Coincident([base_start, base_end]),
                 &index,
                 bound,
-                &procedural.id.0,
+                procedural.id.as_str(),
                 findings,
             );
             continue;
@@ -175,7 +175,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             } => (std::borrow::Cow::Borrowed(context), Some(third)),
             _ => continue,
         };
-        let Some(curve) = curves.get(owner.0.as_str()) else {
+        let Some(curve) = curves.get(owner.as_str()) else {
             continue;
         };
         let solved = context
@@ -192,7 +192,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             SupportEndpointContract::Coincident([solved_start, solved_end]),
             &index,
             bound,
-            &procedural.id.0,
+            procedural.id.as_str(),
             findings,
         );
     }
@@ -260,14 +260,14 @@ fn vertex_positions(ir: &CadIr) -> HashMap<&str, (Point3, Option<f64>)> {
         .model
         .points
         .iter()
-        .map(|point| (point.id.0.as_str(), point.position))
+        .map(|point| (point.id.as_str(), point.position))
         .collect::<HashMap<_, _>>();
     ir.model
         .vertices
         .iter()
         .filter_map(|vertex| {
-            let position = points.get(vertex.point.0.as_str())?;
-            Some((vertex.id.0.as_str(), (*position, vertex.tolerance)))
+            let position = points.get(vertex.point.as_str())?;
+            Some((vertex.id.as_str(), (*position, vertex.tolerance)))
         })
         .collect()
 }
@@ -280,7 +280,7 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
         .model
         .curves
         .iter()
-        .map(|curve| (curve.id.0.as_str(), &curve.geometry))
+        .map(|curve| (curve.id.as_str(), &curve.geometry))
         .collect::<HashMap<_, _>>();
     let curve_cache_tolerances = ir
         .model
@@ -288,7 +288,7 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
         .iter()
         .filter_map(|curve| {
             Some((
-                ir.model.procedural_curve_owner(&curve.id)?.0.as_str(),
+                ir.model.procedural_curve_owner(&curve.id)?.as_str(),
                 curve
                     .cache_fit_tolerance()
                     .filter(|value| value.is_finite()),
@@ -303,13 +303,13 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
         let Some((curve_id, geometry)) = edge
             .curve
             .as_ref()
-            .and_then(|id| curves.get(id.0.as_str()).map(|geometry| (id, geometry)))
+            .and_then(|id| curves.get(id.as_str()).map(|geometry| (id, geometry)))
         else {
             continue;
         };
         let (Some((start, start_tol)), Some((end, end_tol))) = (
-            vertices.get(edge.start.0.as_str()),
-            vertices.get(edge.end.0.as_str()),
+            vertices.get(edge.start.as_str()),
+            vertices.get(edge.end.as_str()),
         ) else {
             continue;
         };
@@ -325,7 +325,7 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
                 *start_tol,
                 *end_tol,
                 curve_cache_tolerances
-                    .get(curve_id.0.as_str())
+                    .get(curve_id.as_str())
                     .copied()
                     .flatten(),
             ],
@@ -338,7 +338,7 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
                 message: format!(
                     "edge curve endpoints miss the edge's vertex positions by {mismatch:.6}"
                 ),
-                entity: Some(edge.id.0.clone()),
+                entity: Some(edge.id.as_str().to_owned()),
             });
         }
     }
@@ -346,7 +346,7 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
         .model
         .edges
         .iter()
-        .map(|edge| (edge.id.0.as_str(), edge))
+        .map(|edge| (edge.id.as_str(), edge))
         .collect::<HashMap<_, _>>();
     for coedge in &ir.model.coedges {
         let Some(use_curve) = &coedge.use_curve else {
@@ -354,10 +354,10 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
         };
         let [start_t, end_t] = use_curve.parameter_range;
         let curve_id = &use_curve.curve;
-        let Some(geometry) = curves.get(curve_id.0.as_str()) else {
+        let Some(geometry) = curves.get(curve_id.as_str()) else {
             continue;
         };
-        let Some(edge) = edges.get(coedge.edge.0.as_str()) else {
+        let Some(edge) = edges.get(coedge.edge.as_str()) else {
             continue;
         };
         let (first_vertex, last_vertex) = match coedge.sense {
@@ -365,8 +365,8 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
             Sense::Reversed => (&edge.end, &edge.start),
         };
         let (Some((start, start_tol)), Some((end, end_tol))) = (
-            vertices.get(first_vertex.0.as_str()),
-            vertices.get(last_vertex.0.as_str()),
+            vertices.get(first_vertex.as_str()),
+            vertices.get(last_vertex.as_str()),
         ) else {
             continue;
         };
@@ -382,7 +382,7 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
                 *start_tol,
                 *end_tol,
                 curve_cache_tolerances
-                    .get(curve_id.0.as_str())
+                    .get(curve_id.as_str())
                     .copied()
                     .flatten(),
             ],
@@ -395,7 +395,7 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
                 message: format!(
                     "coedge use-curve endpoints miss the traversal vertices by {mismatch:.6}"
                 ),
-                entity: Some(coedge.id.0.clone()),
+                entity: Some(coedge.id.as_str().to_owned()),
             });
         }
     }
@@ -412,13 +412,13 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         .model
         .curves
         .iter()
-        .map(|curve| (curve.id.0.as_str(), &curve.geometry))
+        .map(|curve| (curve.id.as_str(), &curve.geometry))
         .collect::<HashMap<_, _>>();
     let surfaces = ir
         .model
         .surfaces
         .iter()
-        .map(|surface| (surface.id.0.as_str(), &surface.geometry))
+        .map(|surface| (surface.id.as_str(), &surface.geometry))
         .collect::<HashMap<_, _>>();
     let procedurally_parameterized_surfaces = ir
         .model
@@ -433,32 +433,32 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         .filter_map(|surface| {
             ir.model
                 .procedural_surface_owner(&surface.id)
-                .map(|owner| owner.0.as_str())
+                .map(|owner| owner.as_str())
         })
         .collect::<HashSet<_>>();
     let pcurves = ir
         .model
         .pcurves
         .iter()
-        .map(|pcurve| (pcurve.id.0.as_str(), pcurve))
+        .map(|pcurve| (pcurve.id.as_str(), pcurve))
         .collect::<HashMap<_, _>>();
     let edges = ir
         .model
         .edges
         .iter()
-        .map(|edge| (edge.id.0.as_str(), edge))
+        .map(|edge| (edge.id.as_str(), edge))
         .collect::<HashMap<_, _>>();
     let faces = ir
         .model
         .faces
         .iter()
-        .map(|face| (face.id.0.as_str(), face))
+        .map(|face| (face.id.as_str(), face))
         .collect::<HashMap<_, _>>();
     let loops = ir
         .model
         .loops
         .iter()
-        .map(|lp| (lp.id.0.as_str(), lp))
+        .map(|lp| (lp.id.as_str(), lp))
         .collect::<HashMap<_, _>>();
     let vertices = vertex_positions(ir);
 
@@ -467,33 +467,33 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
             continue;
         };
         let (Some(first), Some(last)) = (
-            pcurves.get(first_use.pcurve.0.as_str()),
-            pcurves.get(last_use.pcurve.0.as_str()),
+            pcurves.get(first_use.pcurve.as_str()),
+            pcurves.get(last_use.pcurve.as_str()),
         ) else {
             continue;
         };
         let Some(face) = loops
-            .get(coedge.owner_loop.0.as_str())
-            .and_then(|lp| faces.get(lp.face.0.as_str()))
+            .get(coedge.owner_loop.as_str())
+            .and_then(|lp| faces.get(lp.face.as_str()))
         else {
             continue;
         };
-        let Some(geometry) = surfaces.get(face.surface.0.as_str()) else {
+        let Some(geometry) = surfaces.get(face.surface.as_str()) else {
             continue;
         };
         // A procedural construction defines its own UV space. Its solved
         // surface is a model-space cache, not the carrier of that UV
         // parameterization, so mapping the pcurve through the cache is not a
         // valid consistency test.
-        if procedurally_parameterized_surfaces.contains(face.surface.0.as_str()) {
+        if procedurally_parameterized_surfaces.contains(face.surface.as_str()) {
             continue;
         }
-        let Some(edge) = edges.get(coedge.edge.0.as_str()) else {
+        let Some(edge) = edges.get(coedge.edge.as_str()) else {
             continue;
         };
         let (Some((start, start_tol)), Some((end, end_tol))) = (
-            vertices.get(edge.start.0.as_str()),
-            vertices.get(edge.end.0.as_str()),
+            vertices.get(edge.start.as_str()),
+            vertices.get(edge.end.as_str()),
         ) else {
             continue;
         };
@@ -504,7 +504,7 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         let curve_geometry = edge
             .curve
             .as_ref()
-            .and_then(|curve| curves.get(curve.0.as_str()).copied());
+            .and_then(|curve| curves.get(curve.as_str()).copied());
         let bound = allowance(
             ir.tolerances.linear,
             &[
@@ -594,7 +594,7 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
                     "pcurve mapped through the face surface misses the edge's vertex positions \
                      by {mismatch:.6}"
                 ),
-                entity: Some(coedge.id.0.clone()),
+                entity: Some(coedge.id.as_str().to_owned()),
             });
         }
     }

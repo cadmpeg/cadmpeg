@@ -615,7 +615,7 @@ mod tests {
 
     fn occurrence(id: &str, parent: OccurrenceParent, x: f64) -> Occurrence {
         Occurrence {
-            id: OccurrenceId(id.into()),
+            id: OccurrenceId::mint(id).expect("valid identity"),
             prototype: PrototypeReference::Unresolved,
             parent,
             ordinal: 0,
@@ -631,9 +631,9 @@ mod tests {
 
     #[test]
     fn resolves_parent_chains_and_conditional_prototype_placement() {
-        let root = occurrence("root", OccurrenceParent::Root, 1.0);
+        let root = occurrence("test:model:entity#root", OccurrenceParent::Root, 1.0);
         let mut child = occurrence(
-            "child",
+            "test:model:entity#child",
             OccurrenceParent::Occurrence {
                 occurrence: root.id.clone(),
             },
@@ -644,7 +644,9 @@ mod tests {
         let graph = AssemblyGraph::new(&occurrences).expect("valid graph");
         assert_eq!(
             graph
-                .resolved_transform(&OccurrenceId("child".into()))
+                .resolved_transform(
+                    &OccurrenceId::mint("test:model:entity#child").expect("valid identity")
+                )
                 .expect("resolved child")
                 .rows()[0][3],
             13.0
@@ -686,12 +688,18 @@ mod tests {
         let mut linked = occurrence("test:model:occurrence#link", OccurrenceParent::Root, 1.0);
         linked.link = Some(LinkState {
             linked_subelements: vec!["Face1".into()],
-            element_component: Some(ProductDefinitionId("test:model:product#element".into())),
+            element_component: Some(
+                ProductDefinitionId::mint("test:model:product#element").expect("valid identity"),
+            ),
             claim_child: Some(true),
             copy_on_change: Some(CopyOnChange {
                 policy: CopyOnChangePolicy::Owned,
-                source: Some(ProductDefinitionId("test:model:product#source".into())),
-                group: Some(ProductDefinitionId("test:model:product#group".into())),
+                source: Some(
+                    ProductDefinitionId::mint("test:model:product#source").expect("valid identity"),
+                ),
+                group: Some(
+                    ProductDefinitionId::mint("test:model:product#group").expect("valid identity"),
+                ),
                 touched: Some(true),
             }),
         });
@@ -715,16 +723,17 @@ mod tests {
 
     #[test]
     fn rejects_duplicate_missing_and_cyclic_parent_links() {
-        let duplicate = occurrence("same", OccurrenceParent::Root, 0.0);
+        let duplicate = occurrence("test:model:entity#same", OccurrenceParent::Root, 0.0);
         assert!(matches!(
             AssemblyGraph::new(&[duplicate.clone(), duplicate]),
             Err(AssemblyGraphError::DuplicateOccurrence(_))
         ));
 
         let missing = occurrence(
-            "child",
+            "test:model:entity#child",
             OccurrenceParent::Occurrence {
-                occurrence: OccurrenceId("missing".into()),
+                occurrence: OccurrenceId::mint("test:model:entity#missing")
+                    .expect("valid identity"),
             },
             0.0,
         );
@@ -734,16 +743,16 @@ mod tests {
         ));
 
         let first = occurrence(
-            "first",
+            "test:model:entity#first",
             OccurrenceParent::Occurrence {
-                occurrence: OccurrenceId("second".into()),
+                occurrence: OccurrenceId::mint("test:model:entity#second").expect("valid identity"),
             },
             0.0,
         );
         let second = occurrence(
-            "second",
+            "test:model:entity#second",
             OccurrenceParent::Occurrence {
-                occurrence: OccurrenceId("first".into()),
+                occurrence: OccurrenceId::mint("test:model:entity#first").expect("valid identity"),
             },
             0.0,
         );

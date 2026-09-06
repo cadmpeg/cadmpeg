@@ -3233,12 +3233,12 @@ fn model_curve_differential_by_id_inner(
     if depth > 256 || !parameter.is_finite() {
         return None;
     }
-    let curve = index.curves(&curve_id.0)?;
+    let curve = index.curves(curve_id.as_str())?;
     if let Some(budget) = budget {
         budget.charge().then_some(())?;
     }
     if let Some(procedural) = index
-        .procedural_curves_for_curve(curve_id.0.as_str())
+        .procedural_curves_for_curve(curve_id.as_str())
         .and_then(|procedurals| procedurals.first().copied())
     {
         match procedural.definition() {
@@ -3477,7 +3477,7 @@ fn construction_curve_parameter(
         }
         (None, None) => (parameter, 1.0),
     };
-    let curve = index.curves(&directrix.0)?;
+    let curve = index.curves(directrix.as_str())?;
     let Some([surface_start, surface_end]) = surface_interval else {
         return if reversed {
             Some((-parameter, -surface_derivative))
@@ -3667,12 +3667,12 @@ fn model_curve_point_by_id_inner(
     if depth > 256 {
         return None;
     }
-    let curve = index.curves(&curve_id.0)?;
+    let curve = index.curves(curve_id.as_str())?;
     if let Some(budget) = budget {
         budget.charge().then_some(())?;
     }
     let Some(procedural) = index
-        .procedural_curves_for_curve(curve_id.0.as_str())
+        .procedural_curves_for_curve(curve_id.as_str())
         .and_then(|procedurals| procedurals.first().copied())
     else {
         return budget.map_or_else(
@@ -3829,9 +3829,9 @@ fn model_curve_parameter_near_point_with_tolerance(
     if depth > 256 {
         return None;
     }
-    let curve = index.curves(&curve_id.0)?;
+    let curve = index.curves(curve_id.as_str())?;
     if let Some(procedural) = index
-        .procedural_curves_for_curve(curve_id.0.as_str())
+        .procedural_curves_for_curve(curve_id.as_str())
         .and_then(|procedurals| procedurals.first().copied())
     {
         match procedural.definition() {
@@ -3907,7 +3907,7 @@ fn model_curve_parameter_near_point_with_tolerance(
         return curve_parameter_near_point(&curve.geometry, point, seed, tolerance);
     }
     let construction = curve.geometry.procedural_construction()?;
-    let procedural = index.procedural_curves(&construction.0)?;
+    let procedural = index.procedural_curves(construction.as_str())?;
     let crate::geometry::ProceduralCurveDefinition::TolerantIntersection {
         supports,
         tolerance,
@@ -3923,7 +3923,7 @@ fn model_curve_parameter_near_point_with_tolerance(
     }
     let mut candidates = Vec::new();
     for (support_id, pcurve) in supports.iter().zip(&parameterization.pcurves) {
-        let Some(surface) = index.surfaces(&support_id.0) else {
+        let Some(surface) = index.surfaces(support_id.as_str()) else {
             continue;
         };
         let PcurveGeometry::Line { origin, direction } = pcurve else {
@@ -5513,7 +5513,7 @@ fn straight_sweep_path_origin(
     index: &crate::index::ModelIndex<'_>,
     spine: &crate::ids::CurveId,
 ) -> Option<Point3> {
-    let curve = index.curves(&spine.0)?;
+    let curve = index.curves(spine.as_str())?;
     match &curve.geometry {
         CurveGeometry::Line { origin, .. } => Some(*origin),
         CurveGeometry::Nurbs(nurbs)
@@ -5581,7 +5581,7 @@ fn sweep_profile_differential(
     if !profile_span.is_finite() || profile_span <= 0.0 {
         return None;
     }
-    let curve = index.curves(&profile.0)?;
+    let curve = index.curves(profile.as_str())?;
     let (native_parameter, parameter_scale) = match &curve.geometry {
         CurveGeometry::Nurbs(nurbs) => {
             let [native_start, native_end] = nurbs_curve_parameter_domain(nurbs)?;
@@ -6549,7 +6549,7 @@ fn model_surface_point_by_id_inner(
         v: f64,
         budget: Option<&WorkBudget<'_>>,
     ) -> Option<SurfaceEvaluation> {
-        let support = index.surfaces(&support.0)?;
+        let support = index.surfaces(support.as_str())?;
         let SurfaceGeometry::Nurbs(nurbs) = &support.geometry else {
             return None;
         };
@@ -6613,8 +6613,8 @@ fn model_surface_point_by_id_inner(
             return None;
         }
         visiting.push(surface_id.clone());
-        let surface = index.surfaces(&surface_id.0)?;
-        let procedural = index.procedural_surface_for_surface(&surface_id.0);
+        let surface = index.surfaces(surface_id.as_str())?;
+        let procedural = index.procedural_surface_for_surface(surface_id.as_str());
         let carrier_interval =
             procedural.and_then(|procedural| record_u_interval(procedural.record_bounds));
         let result = match procedural.map(|procedural| procedural.definition()) {
@@ -6907,10 +6907,13 @@ fn model_surface_point_by_id_inner(
     }
 
     if let Some(budget) = budget {
-        if index.procedural_surface_for_surface(&surface.0).is_none() {
+        if index
+            .procedural_surface_for_surface(surface.as_str())
+            .is_none()
+        {
             budget.charge().then_some(())?;
             return index
-                .surfaces(&surface.0)
+                .surfaces(surface.as_str())
                 .and_then(|surface| surface_point_with_budget(&surface.geometry, u, v, budget));
         }
     }
@@ -6936,7 +6939,7 @@ pub fn model_surface_partials_by_id(
         native: Some(native),
         ..
     }) = index
-        .procedural_surface_for_surface(&surface.0)
+        .procedural_surface_for_surface(surface.as_str())
         .map(|procedural| procedural.definition())
     {
         if let Some(partials) = cacheless_constant_rolling_ball_partials(
@@ -6955,7 +6958,7 @@ pub fn model_surface_partials_by_id(
         }
     }
     if let Some(ProceduralSurfaceDefinition::VariableBlend { construction }) = index
-        .procedural_surface_for_surface(&surface.0)
+        .procedural_surface_for_surface(surface.as_str())
         .map(|procedural| procedural.definition())
     {
         if let Some(partials) = cacheless_ruled_variable_blend_partials(index, construction, u, v) {
@@ -6975,7 +6978,7 @@ pub fn model_surface_partials_by_id(
         spine,
         native: Some(construction),
     }) = index
-        .procedural_surface_for_surface(&surface.0)
+        .procedural_surface_for_surface(surface.as_str())
         .map(|procedural| procedural.definition())
     {
         if let Some(partials) =
@@ -7073,8 +7076,8 @@ fn model_surface_mapping(
         return None;
     }
     visiting.push(surface.clone());
-    let carrier = index.surfaces(&surface.0)?;
-    let procedural = index.procedural_surface_for_surface(&surface.0);
+    let carrier = index.surfaces(surface.as_str())?;
+    let procedural = index.procedural_surface_for_surface(surface.as_str());
     let carrier_interval =
         procedural.and_then(|procedural| record_u_interval(procedural.record_bounds));
     let result = match procedural.map(|procedural| procedural.definition()) {

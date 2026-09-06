@@ -948,7 +948,7 @@ impl Serialize for Coedge {
             .ok_or_else(|| {
                 serde::ser::Error::custom(format!(
                     "coedge {} is absent from its owning loop ring",
-                    self.id.0
+                    self.id.as_str()
                 ))
             })?;
         CoedgeWriteWire {
@@ -1095,13 +1095,13 @@ mod tests {
         assert_eq!(
             coedge.use_curve,
             Some(CoedgeUseCurve {
-                curve: "test:model:curve#0".into(),
+                curve: "test:model:curve#0".try_into().expect("valid identity"),
                 parameter_range: [0.25, 0.75],
             })
         );
         let loop_ = Loop {
             id: coedge.owner_loop.clone(),
-            face: "test:model:face#0".into(),
+            face: "test:model:face#0".try_into().expect("valid identity"),
             boundary: LoopBoundary::Ring {
                 coedges: vec![coedge.id.clone()],
                 vertex_uses: Vec::new(),
@@ -1186,7 +1186,7 @@ mod tests {
         assert!(matches!(
             loop_.boundary,
             LoopBoundary::Vertex { ref vertex, ref pcurves }
-                if vertex.0 == "test:model:vertex#0" && pcurves.is_empty()
+                if vertex.as_str() == "test:model:vertex#0" && pcurves.is_empty()
         ));
         assert_eq!(serde_json::to_value(loop_).unwrap(), json);
     }

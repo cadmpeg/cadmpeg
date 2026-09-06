@@ -16,7 +16,9 @@ fn feature_operation_geometry_is_validated() {
     let definitions = vec![
         FeatureDefinition::Form { cages: Vec::new() },
         FeatureDefinition::Form {
-            cages: vec![crate::ids::SubdId("synthetic:test:subd#missing".into())],
+            cages: vec![
+                crate::ids::SubdId::mint("synthetic:test:subd#missing").expect("valid identity")
+            ],
         },
         FeatureDefinition::Fillet {
             groups: vec![FilletGroup {
