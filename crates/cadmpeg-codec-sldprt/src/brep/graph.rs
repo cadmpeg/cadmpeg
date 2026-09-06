@@ -35,7 +35,7 @@ use super::blend::BlendSupportRef;
 use super::entity;
 use super::offset::OffsetCarrier;
 use super::sweep::{self, SweepKind};
-use super::topology::{self, Record};
+use super::topology;
 use super::typed;
 use super::{scan_carriers, Carrier, CarrierGeometry, CarrierIndex, LEN_TO_MM};
 use crate::parasolid::StreamHeader;
@@ -499,7 +499,7 @@ fn id_closed_vertex(edge: u16) -> String {
 struct WalkedFace {
     bridge_attr: u16,
     surface_attr: u16,
-    marker: u8,
+    sense: Sense,
     /// `(loop_attr, ordered_coedge_attrs)` in sibling order.
     loops: Vec<(u16, Vec<u16>)>,
 }
@@ -540,19 +540,15 @@ fn resolve_sweep_surface(
             let mut point_hi = f64::NEG_INFINITY;
             for (_, ring) in &face.loops {
                 for ce_attr in ring {
-                    let Some(vuse) = tables
-                        .coedges
-                        .get(ce_attr)
-                        .and_then(|ce| ce.refs.get(4).copied())
-                    else {
+                    let Some(vuse) = tables.coedges.get(ce_attr).map(|ce| ce.refs[4]) else {
                         continue;
                     };
                     let Some(coordinates) = tables
                         .vertex_uses
                         .get(&vuse)
-                        .and_then(|vu| vu.refs.get(4).copied())
+                        .map(|vu| vu.refs[4])
                         .and_then(|pa| tables.points.get(&pa))
-                        .and_then(|p| p.xyz_m)
+                        .map(|p| p.xyz_m)
                     else {
                         continue;
                     };
@@ -746,16 +742,16 @@ fn ensure_surface_support(
     result
 }
 
-fn walk_face(bridge: &Record, t: &topology::Tables) -> WalkedFace {
-    let surface_attr = *bridge.refs.get(4).unwrap_or(&0);
+fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
+    let surface_attr = bridge.refs[4];
     let mut loops = Vec::new();
-    let mut loop_ref = *bridge.refs.get(2).unwrap_or(&0);
+    let mut loop_ref = bridge.refs[2];
     let mut loop_guard = HashSet::new();
     while loop_ref != 0 && loop_guard.insert(loop_ref) {
         let Some(lp) = t.loops.get(&loop_ref) else {
             break;
         };
-        let owner_bridge = lp.refs.get(2).copied().unwrap_or(0);
+        let owner_bridge = lp.refs[2];
         let same_face_use = owner_bridge == bridge.attr
             || bridge.owner.is_some_and(|owner| {
                 t.bridges
@@ -766,7 +762,7 @@ fn walk_face(bridge: &Record, t: &topology::Tables) -> WalkedFace {
         if !same_face_use {
             break;
         }
-        let first = *lp.refs.get(1).unwrap_or(&0);
+        let first = lp.refs[1];
         let mut ring = Vec::new();
         let mut ce_ref = first;
         let mut ce_guard = HashSet::new();
@@ -775,11 +771,11 @@ fn walk_face(bridge: &Record, t: &topology::Tables) -> WalkedFace {
             let Some(ce) = t.coedges.get(&ce_ref) else {
                 break;
             };
-            if ce.refs.get(1).copied() != Some(loop_ref) {
+            if ce.refs[1] != loop_ref {
                 break;
             }
             ring.push(ce_ref);
-            ce_ref = *ce.refs.get(3).unwrap_or(&0);
+            ce_ref = ce.refs[3];
             if ce_ref == first {
                 ring_closed = true;
                 break;
@@ -788,21 +784,13 @@ fn walk_face(bridge: &Record, t: &topology::Tables) -> WalkedFace {
         if ring_closed {
             loops.push((loop_ref, ring));
         }
-        loop_ref = *lp.refs.get(3).unwrap_or(&0);
+        loop_ref = lp.refs[3];
     }
     WalkedFace {
         bridge_attr: bridge.attr,
         surface_attr,
-        marker: bridge.marker.unwrap_or(0x2b),
+        sense: bridge.sense,
         loops,
-    }
-}
-
-fn sense_of(marker: u8) -> Sense {
-    if marker == 0x2d {
-        Sense::Reversed
-    } else {
-        Sense::Forward
     }
 }
 
@@ -851,34 +839,33 @@ fn edge_parameter_range(
 /// Resolve the coedge that defines an edge's stored direction.
 ///
 /// Bare records carry an explicit coedge attr in `refs[0]`. Prefixed records
-/// carry no such slot, so a zero/sentinel slot is resolved only when exactly
+/// carry no such slot. An absent or source-null slot is resolved only when exactly
 /// one same-edge forward coedge exists. A non-sentinel explicit reference is
 /// authoritative: a dangling, cross-edge, or reversed reference is rejected.
 fn canonical_coedge_attr(
     edge_attr: u16,
-    edge_use: Option<&topology::Record>,
-    coedges: &HashMap<u16, topology::Record>,
+    edge_use: Option<&topology::EdgeUse>,
+    coedges: &HashMap<u16, topology::Coedge>,
 ) -> Option<u16> {
     if let Some(explicit) = edge_use
-        .and_then(|record| record.refs.first().copied())
+        .and_then(|record| record.references.canonical())
         .filter(|attr| *attr > 1)
     {
         let coedge = coedges.get(&explicit)?;
-        return (coedge.refs.get(6) == Some(&edge_attr) && coedge.marker == Some(0x2b))
-            .then_some(explicit);
+        return (coedge.refs[6] == edge_attr && coedge.sense == Sense::Forward).then_some(explicit);
     }
 
-    let mut candidates = coedges.iter().filter(|(_, coedge)| {
-        coedge.refs.get(6) == Some(&edge_attr) && coedge.marker == Some(0x2b)
-    });
+    let mut candidates = coedges
+        .iter()
+        .filter(|(_, coedge)| coedge.refs[6] == edge_attr && coedge.sense == Sense::Forward);
     let (&attr, _) = candidates.next()?;
     candidates.next().is_none().then_some(attr)
 }
 
-fn edge_end_vuse(canonical: u16, ring_end: u16, coedges: &HashMap<u16, topology::Record>) -> u16 {
+fn edge_end_vuse(canonical: u16, ring_end: u16, coedges: &HashMap<u16, topology::Coedge>) -> u16 {
     let Some(twin) = coedges
         .get(&canonical)
-        .and_then(|coedge| coedge.refs.get(5).copied())
+        .map(|coedge| coedge.refs[5])
         .filter(|twin| *twin != canonical)
     else {
         return ring_end;
@@ -886,14 +873,14 @@ fn edge_end_vuse(canonical: u16, ring_end: u16, coedges: &HashMap<u16, topology:
     let Some(twin_record) = coedges.get(&twin) else {
         return ring_end;
     };
-    if twin_record.refs.get(5) != Some(&canonical) {
+    if twin_record.refs[5] != canonical {
         return ring_end;
     }
-    twin_record.refs.get(4).copied().unwrap_or(ring_end)
+    twin_record.refs[4]
 }
 
-fn surface_sense(marker: u8, orientation_reversed: bool) -> Sense {
-    match (sense_of(marker), orientation_reversed) {
+fn surface_sense(sense: Sense, orientation_reversed: bool) -> Sense {
+    match (sense, orientation_reversed) {
         (Sense::Forward, true) => Sense::Reversed,
         (Sense::Reversed, true) => Sense::Forward,
         (sense, false) => sense,
@@ -1182,25 +1169,21 @@ fn decode_graph(
     let mut face_bridge_sequences = t
         .bridges
         .values()
-        .filter_map(|bridge| bridge.sequence.map(|sequence| (sequence, bridge.attr)))
+        .map(|bridge| (bridge.sequence, bridge.attr))
         .collect::<Vec<_>>();
     face_bridge_sequences.sort_unstable();
     face_bridge_sequences.dedup();
     let mut edge_use_sequences = t
         .edge_uses
         .values()
-        .filter_map(|edge_use| edge_use.sequence.map(|sequence| (sequence, edge_use.attr)))
+        .map(|edge_use| (edge_use.sequence, edge_use.attr))
         .collect::<Vec<_>>();
     edge_use_sequences.sort_unstable();
     edge_use_sequences.dedup();
     let mut vertex_use_sequences = t
         .vertex_uses
         .values()
-        .filter_map(|vertex_use| {
-            vertex_use
-                .sequence
-                .map(|sequence| (sequence, vertex_use.attr))
-        })
+        .map(|vertex_use| (vertex_use.sequence, vertex_use.attr))
         .collect::<Vec<_>>();
     vertex_use_sequences.sort_unstable();
     vertex_use_sequences.dedup();
@@ -1230,7 +1213,7 @@ fn decode_graph(
     // face identity. Equivalent bridge payloads are duplicate uses; distinct
     // payloads have no source selector and must remain unresolved together.
     let mut faces = Vec::new();
-    let mut owned_faces = HashMap::<u16, Vec<(&topology::Record, WalkedFace)>>::new();
+    let mut owned_faces = HashMap::<u16, Vec<(&topology::Bridge, WalkedFace)>>::new();
     for bridge in t.bridges.values() {
         let face = walk_face(bridge, t);
         if let Some(owner) = bridge.owner {
@@ -1247,9 +1230,9 @@ fn decode_graph(
         };
         let equivalent = uses.iter().skip(1).all(|(bridge, face)| {
             bridge.refs == first_bridge.refs
-                && bridge.marker == first_bridge.marker
+                && bridge.sense == first_bridge.sense
                 && face.surface_attr == first_face.surface_attr
-                && face.marker == first_face.marker
+                && face.sense == first_face.sense
                 && face.loops == first_face.loops
         });
         if equivalent {
@@ -1274,13 +1257,13 @@ fn decode_graph(
                     continue;
                 };
                 let next_attr = ring[(i + 1) % k];
-                let start_vuse = ce.refs.get(4).copied().unwrap_or(0);
+                let start_vuse = ce.refs[4];
                 let next_vuse = t
                     .coedges
                     .get(&next_attr)
-                    .and_then(|next| next.refs.get(4).copied())
+                    .map(|next| next.refs[4])
                     .unwrap_or(0);
-                let edge_attr = ce.refs.get(6).copied().unwrap_or(0);
+                let edge_attr = ce.refs[6];
                 if edge_attr != 0 {
                     edge_incidence
                         .entry(edge_attr)
@@ -1312,7 +1295,7 @@ fn decode_graph(
         let curve_attr = t
             .edge_uses
             .get(&edge_attr)
-            .and_then(|edge_use| edge_use.refs.get(3).copied())
+            .map(|edge_use| edge_use.references.curve())
             .unwrap_or(0);
         edge_ends.insert(edge_attr, (*start_vuse, end_vuse, curve_attr));
         for vuse in [*start_vuse, end_vuse] {
@@ -1320,7 +1303,7 @@ fn decode_graph(
                 continue;
             }
             if let Some(vu) = t.vertex_uses.get(&vuse) {
-                let point_attr = vu.refs.get(4).copied().unwrap_or(0);
+                let point_attr = vu.refs[4];
                 if t.points.contains_key(&point_attr) {
                     kept_vertices.insert(vuse);
                     kept_points.insert(point_attr);
@@ -1337,7 +1320,7 @@ fn decode_graph(
         annotations
             .note(id_point(a), source_stream, rec.offset as u64)
             .tag("00_1d");
-        let [x, y, z] = rec.xyz_m.unwrap_or([0.0, 0.0, 0.0]);
+        let [x, y, z] = rec.xyz_m;
         out.points.push(Point {
             id: PointId::mint(id_point(a)).expect("identity grammar"),
             position: cadmpeg_ir::math::Point3::new(x * LEN_TO_MM, y * LEN_TO_MM, z * LEN_TO_MM),
@@ -1350,7 +1333,7 @@ fn decode_graph(
     vuse_attrs.sort_unstable();
     for a in vuse_attrs {
         let rec = &t.vertex_uses[&a];
-        let point_attr = *rec.refs.get(4).unwrap_or(&0);
+        let point_attr = rec.refs[4];
         annotations
             .note(id_vertex(a), source_stream, rec.offset as u64)
             .tag("00_12");
@@ -1423,8 +1406,8 @@ fn decode_graph(
         };
         if resolved_endpoints {
             let position = |vertex_use: u16| {
-                let point_attr = t.vertex_uses.get(&vertex_use)?.refs.get(4)?;
-                let [x, y, z] = t.points.get(point_attr)?.xyz_m?;
+                let point_attr = &t.vertex_uses.get(&vertex_use)?.refs[4];
+                let [x, y, z] = t.points.get(point_attr)?.xyz_m;
                 Some(cadmpeg_ir::math::Point3::new(
                     x * LEN_TO_MM,
                     y * LEN_TO_MM,
@@ -1522,7 +1505,7 @@ fn decode_graph(
                 && ring.iter().all(|c| {
                     t.coedges
                         .get(c)
-                        .is_some_and(|ce| edge_set.contains(ce.refs.get(6).unwrap_or(&0)))
+                        .is_some_and(|ce| edge_set.contains(&ce.refs[6]))
                 });
             if ok {
                 kept_loops.insert(*loop_attr);
@@ -1545,12 +1528,12 @@ fn decode_graph(
             }
             for &ce_attr in ring {
                 let ce = &t.coedges[&ce_attr];
-                let edge_attr = *ce.refs.get(6).unwrap_or(&0);
-                let twin = *ce.refs.get(5).unwrap_or(&0);
+                let edge_attr = ce.refs[6];
+                let twin = ce.refs[5];
                 let partner = t
                     .coedges
                     .get(&twin)
-                    .filter(|tw| tw.refs.get(5) == Some(&ce_attr))
+                    .filter(|tw| tw.refs[5] == ce_attr)
                     .filter(|_| emitted_coedges.contains(&twin))
                     .map(|_| CoedgeId::mint(id_coedge(twin)).expect("identity grammar"));
                 annotations
@@ -1609,7 +1592,7 @@ fn decode_graph(
                         }])
                     })
                     .unwrap_or_default();
-                let mut sense = sense_of(ce.marker.unwrap_or(0x2b));
+                let mut sense = ce.sense;
                 if reversed_edge_orientation.contains(&edge_attr) {
                     sense = match sense {
                         Sense::Forward => Sense::Reversed,
@@ -1701,7 +1684,7 @@ fn decode_graph(
             .iter()
             .flat_map(|(_, ring)| ring)
             .filter_map(|coedge| t.coedges.get(coedge))
-            .filter_map(|coedge| coedge.refs.get(6).copied())
+            .map(|coedge| coedge.refs[6])
             .filter(|edge| *edge != 0)
             .collect();
         face_edges_by_surface_carrier
@@ -1774,7 +1757,7 @@ fn decode_graph(
                         .iter()
                         .flat_map(|(_, ring)| ring)
                         .filter_map(|coedge| t.coedges.get(coedge))
-                        .filter_map(|coedge| coedge.refs.get(6).copied())
+                        .map(|coedge| coedge.refs[6])
                         .filter(|edge| *edge != 0)
                         .collect();
                     let [Some(first_attr), Some(second_attr)] =
@@ -1932,7 +1915,7 @@ fn decode_graph(
             ))
             .expect("identity grammar"),
             surface: SurfaceId::mint(id_surf(f.bridge_attr)).expect("identity grammar"),
-            sense: surface_sense(f.marker, surface_orientation_reversed),
+            sense: surface_sense(f.sense, surface_orientation_reversed),
             loops: loops.into(),
             name: None,
             color: t
@@ -5360,8 +5343,9 @@ fn emit_curve(out: &mut Brep, carrier: &Carrier) {
 mod tests {
     use super::unique_face_colors;
     use crate::brep::entity;
-    use crate::brep::topology::{Record, Tables};
+    use crate::brep::topology::{Bridge, Coedge, EdgeReferences, EdgeUse, Loop, Tables};
     use cadmpeg_ir::topology::Color;
+    use cadmpeg_ir::topology::Sense;
 
     fn test_nurbs_curve(
         degree: u32,
@@ -5428,29 +5412,42 @@ mod tests {
         );
     }
 
-    fn topology_record(attr: u16, refs: Vec<u16>) -> Record {
-        Record {
+    fn bridge_record(attr: u16, refs: [u16; 5]) -> Bridge {
+        Bridge {
             attr,
-            sequence: None,
+            sequence: 0,
             refs,
-            marker: None,
-            xyz_m: None,
-            xyz_offset: None,
+            sense: Sense::Forward,
             owner: None,
+            offset: 0,
+        }
+    }
+
+    fn loop_record(attr: u16, refs: [u16; 4]) -> Loop {
+        Loop {
+            attr,
+            refs,
+            offset: 0,
+        }
+    }
+
+    fn coedge_record(attr: u16, refs: [u16; 9]) -> Coedge {
+        Coedge {
+            attr,
+            refs,
+            sense: Sense::Forward,
             offset: 0,
         }
     }
 
     #[test]
     fn face_walk_rejects_a_loop_owned_by_another_bridge() {
-        let bridge = topology_record(10, vec![0, 0, 20, 0, 30]);
+        let bridge = bridge_record(10, [0, 0, 20, 0, 30]);
         let mut tables = Tables::default();
-        tables
-            .loops
-            .insert(20, topology_record(20, vec![0, 40, 11, 0]));
+        tables.loops.insert(20, loop_record(20, [0, 40, 11, 0]));
         tables
             .coedges
-            .insert(40, topology_record(40, vec![0, 0, 0, 40]));
+            .insert(40, coedge_record(40, [0, 0, 0, 40, 0, 0, 0, 0, 0]));
 
         let face = super::walk_face(&bridge, &tables);
 
@@ -5459,14 +5456,12 @@ mod tests {
 
     #[test]
     fn face_walk_rejects_a_ring_owned_by_another_loop() {
-        let bridge = topology_record(10, vec![0, 0, 20, 0, 30]);
+        let bridge = bridge_record(10, [0, 0, 20, 0, 30]);
         let mut tables = Tables::default();
-        tables
-            .loops
-            .insert(20, topology_record(20, vec![0, 40, 10, 0]));
+        tables.loops.insert(20, loop_record(20, [0, 40, 10, 0]));
         tables
             .coedges
-            .insert(40, topology_record(40, vec![0, 21, 0, 40]));
+            .insert(40, coedge_record(40, [0, 21, 0, 40, 0, 0, 0, 0, 0]));
 
         let face = super::walk_face(&bridge, &tables);
 
@@ -5810,46 +5805,57 @@ mod tests {
     fn canonical_edge_direction_uses_explicit_or_unique_forward_coedge() {
         use std::collections::HashMap;
 
-        let record = |attr, refs, marker| super::Record {
+        let record = |attr, refs, sense| Coedge {
             attr,
-            sequence: None,
             refs,
-            marker,
-            xyz_m: None,
-            xyz_offset: None,
-            owner: None,
+            sense,
+            offset: 0,
+        };
+        let edge = |attr, references| EdgeUse {
+            attr,
+            references,
+            sequence: 0,
             offset: 0,
         };
         let mut coedges = HashMap::from([
-            (10, record(10, vec![0, 0, 0, 0, 101, 0, 7], Some(0x2d))),
-            (11, record(11, vec![0, 0, 0, 0, 102, 10, 7], Some(0x2b))),
+            (
+                10,
+                record(10, [0, 0, 0, 0, 101, 0, 7, 0, 0], Sense::Reversed),
+            ),
+            (
+                11,
+                record(11, [0, 0, 0, 0, 102, 10, 7, 0, 0], Sense::Forward),
+            ),
         ]);
-        let prefixed_edge = record(7, vec![0, 0, 0, 300, 0, 0], None);
+        let prefixed_edge = edge(7, EdgeReferences::Compact { curve: 300 });
 
         assert_eq!(
             super::canonical_coedge_attr(7, Some(&prefixed_edge), &coedges),
             Some(11)
         );
 
-        let bare_edge = record(7, vec![11, 0, 0, 300, 0, 0], None);
+        let bare_edge = edge(7, EdgeReferences::Bare([11, 0, 0, 300, 0, 0]));
         assert_eq!(
             super::canonical_coedge_attr(7, Some(&bare_edge), &coedges),
             Some(11)
         );
 
-        let sentinel_edge = record(7, vec![1, 0, 0, 300, 0, 0], None);
+        let sentinel_edge = edge(7, EdgeReferences::Bare([1, 0, 0, 300, 0, 0]));
         assert_eq!(
             super::canonical_coedge_attr(7, Some(&sentinel_edge), &coedges),
             Some(11)
         );
 
-        let reversed_edge = record(7, vec![10, 0, 0, 300, 0, 0], None);
+        let reversed_edge = edge(7, EdgeReferences::Bare([10, 0, 0, 300, 0, 0]));
         assert_eq!(
             super::canonical_coedge_attr(7, Some(&reversed_edge), &coedges),
             None
         );
 
-        coedges.insert(12, record(12, vec![0, 0, 0, 0, 103, 0, 7], Some(0x2b)));
+        coedges.insert(
+            12,
+            record(12, [0, 0, 0, 0, 103, 0, 7, 0, 0], Sense::Forward),
+        );
         assert_eq!(
             super::canonical_coedge_attr(7, Some(&prefixed_edge), &coedges),
             None
@@ -5860,22 +5866,18 @@ mod tests {
     fn boundary_coedge_uses_ring_endpoint_but_reciprocal_twin_supplies_edge_end() {
         use std::collections::HashMap;
 
-        let record = |attr, refs| super::Record {
+        let record = |attr, refs| Coedge {
             attr,
-            sequence: None,
             refs,
-            marker: Some(0x2b),
-            xyz_m: None,
-            xyz_offset: None,
-            owner: None,
+            sense: Sense::Forward,
             offset: 0,
         };
-        let boundary = HashMap::from([(10, record(10, vec![0, 0, 0, 0, 101, 10, 7]))]);
+        let boundary = HashMap::from([(10, record(10, [0, 0, 0, 0, 101, 10, 7, 0, 0]))]);
         assert_eq!(super::edge_end_vuse(10, 102, &boundary), 102);
 
         let reciprocal = HashMap::from([
-            (10, record(10, vec![0, 0, 0, 0, 101, 11, 7])),
-            (11, record(11, vec![0, 0, 0, 0, 102, 10, 7])),
+            (10, record(10, [0, 0, 0, 0, 101, 11, 7, 0, 0])),
+            (11, record(11, [0, 0, 0, 0, 102, 10, 7, 0, 0])),
         ]);
         assert_eq!(super::edge_end_vuse(10, 103, &reciprocal), 102);
     }
@@ -5884,10 +5886,13 @@ mod tests {
     fn normalized_surface_parameter_reversal_toggles_face_sense() {
         use cadmpeg_ir::topology::Sense;
 
-        assert_eq!(super::surface_sense(0x2b, false), Sense::Forward);
-        assert_eq!(super::surface_sense(0x2d, false), Sense::Reversed);
-        assert_eq!(super::surface_sense(0x2b, true), Sense::Reversed);
-        assert_eq!(super::surface_sense(0x2d, true), Sense::Forward);
+        assert_eq!(super::surface_sense(Sense::Forward, false), Sense::Forward);
+        assert_eq!(
+            super::surface_sense(Sense::Reversed, false),
+            Sense::Reversed
+        );
+        assert_eq!(super::surface_sense(Sense::Forward, true), Sense::Reversed);
+        assert_eq!(super::surface_sense(Sense::Reversed, true), Sense::Forward);
     }
 
     #[test]
@@ -6012,13 +6017,11 @@ mod tests {
         let mut tables = Tables::default();
         tables.bridges.insert(
             100,
-            Record {
+            Bridge {
                 attr: 100,
-                sequence: None,
-                refs: vec![1, 1, 49, 7, 8],
-                marker: Some(0x2b),
-                xyz_m: None,
-                xyz_offset: None,
+                sequence: 0,
+                refs: [1, 1, 49, 7, 8],
+                sense: Sense::Forward,
                 owner: None,
                 offset: 11,
             },
@@ -6041,13 +6044,11 @@ mod tests {
 
     #[test]
     fn ambiguous_face_owner_stats_survive_when_all_uses_are_withheld() {
-        let bridge = |attr, surface, offset| super::Record {
+        let bridge = |attr, surface, offset| Bridge {
             attr,
-            sequence: None,
-            refs: vec![0, 0, 0, 0, surface],
-            marker: Some(0x2b),
-            xyz_m: None,
-            xyz_offset: None,
+            sequence: 0,
+            refs: [0, 0, 0, 0, surface],
+            sense: Sense::Forward,
             owner: Some(700),
             offset,
         };

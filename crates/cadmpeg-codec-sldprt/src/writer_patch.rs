@@ -384,7 +384,7 @@ fn patch_points(
             .points
             .values()
             .find(|point| point.offset == offset)?;
-        let values = body_start.checked_add(point.xyz_offset?)?;
+        let values = body_start.checked_add(point.xyz_offset)?;
         let old_xyz_m = [
             old.position.x * 0.001,
             old.position.y * 0.001,
