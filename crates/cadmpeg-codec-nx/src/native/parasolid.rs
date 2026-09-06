@@ -2518,7 +2518,7 @@ pub(crate) fn parasolid_entity_value_records(
             }
             StreamKind::Preview => unreachable!("preview streams were filtered out"),
         };
-        let values = crate::parasolid::entity_value_records_at(&stream.inflated, owned_offsets);
+        let values = crate::parasolid::value_records::entity_value_records_at(&stream.inflated, owned_offsets);
         for record in values.integers {
             records.integers.push(ParasolidEntity52IntegerRecord {
                 id: format!(
@@ -2527,7 +2527,7 @@ pub(crate) fn parasolid_entity_value_records(
                 ),
                 stream_ordinal: stream_ordinal as u32,
                 xmt: record.xmt,
-                values: record.values,
+                values: record.value,
                 byte_len: record.byte_len as u64,
                 inflated_offset: record.offset as u64,
             });
@@ -2540,7 +2540,7 @@ pub(crate) fn parasolid_entity_value_records(
                 ),
                 stream_ordinal: stream_ordinal as u32,
                 xmt: record.xmt,
-                values: record.values,
+                values: record.value,
                 byte_len: record.byte_len as u64,
                 inflated_offset: record.offset as u64,
             });
@@ -2576,7 +2576,7 @@ pub(crate) fn parasolid_entity_value_records(
                 record.xmt,
                 record.offset,
                 record.byte_len,
-                record.values,
+                record.value,
             );
         }
         for record in values.vectors {
@@ -2586,7 +2586,7 @@ pub(crate) fn parasolid_entity_value_records(
                 record.xmt,
                 record.offset,
                 record.byte_len,
-                record.values,
+                record.value,
             );
         }
         for record in values.directions {
@@ -2596,7 +2596,7 @@ pub(crate) fn parasolid_entity_value_records(
                 record.xmt,
                 record.offset,
                 record.byte_len,
-                record.values,
+                record.value,
             );
         }
         for record in values.axes {
@@ -2607,7 +2607,7 @@ pub(crate) fn parasolid_entity_value_records(
                 ),
                 stream_ordinal: stream_ordinal as u32,
                 xmt: record.xmt,
-                values: record.values,
+                values: record.value,
                 byte_len: record.byte_len as u64,
                 inflated_offset: record.offset as u64,
             });
@@ -2620,7 +2620,7 @@ pub(crate) fn parasolid_entity_value_records(
                 ),
                 stream_ordinal: stream_ordinal as u32,
                 xmt: record.xmt,
-                values: record.values,
+                values: record.value,
                 byte_len: record.byte_len as u64,
                 inflated_offset: record.offset as u64,
             });
