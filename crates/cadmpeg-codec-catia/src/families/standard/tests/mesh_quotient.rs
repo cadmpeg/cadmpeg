@@ -1396,7 +1396,6 @@ fn mesh_selection_declines_when_its_work_budget_is_exhausted() {
     search.search_with_limit(&quotient, 0);
 
     assert!(matches!(search.outcome, SearchOutcome::Exhausted));
-    assert!(matches!(search.outcome, SearchOutcome::Open));
 }
 
 #[test]

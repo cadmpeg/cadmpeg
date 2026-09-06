@@ -6,7 +6,7 @@ use cadmpeg_ir::document::{CadIr, EntityRewrite, Model};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, NurbsSurface,
     Pcurve, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
@@ -359,11 +359,14 @@ fn bind_consolidated_revolution_faces_and_seams(
         let Some(&curve_index) = curve_indices.get(curve_id) else {
             continue;
         };
-        if !matches!(
-            ir.model.curves[curve_index].geometry,
-            CurveGeometry::Unknown { .. }
-        ) || curve_edge_counts.get(curve_id) != Some(&1)
-        {
+        let unresolved = match &ir.model.curves[curve_index].geometry {
+            CurveGeometry::Unknown { .. } => true,
+            CurveGeometry::Procedural { cache, .. } => cache.as_ref().is_none_or(|cache| {
+                matches!(cache.as_geometry(), CurveGeometry::Unknown { .. })
+            }),
+            _ => false,
+        };
+        if !unresolved || curve_edge_counts.get(curve_id) != Some(&1) {
             continue;
         }
         let Some(Some(binding)) = procedural_bindings.get(curve_id) else {
@@ -383,7 +386,12 @@ fn bind_consolidated_revolution_faces_and_seams(
         ) else {
             continue;
         };
-        ir.model.curves[curve_index].geometry = geometry;
+        match &mut ir.model.curves[curve_index].geometry {
+            CurveGeometry::Procedural { cache, .. } => {
+                *cache = Some(SolvedCurveGeometry::new(geometry).expect("meridian arc is solved"));
+            }
+            carrier => *carrier = geometry,
+        }
         edge.param_range = Some(parameter_range);
         annotations
             .derived(&ir.model.curves[curve_index].id, "geometry")
@@ -414,8 +422,8 @@ mod consolidated_revolution_binding_tests {
     fn one_revolution_torus_closes_face_aliases_and_meridian_seam() {
         let mut ir = CadIr::empty();
         let surface_ids = [
-            SurfaceId::mint("face-surface#0".to_string()).expect("identity grammar"),
-            SurfaceId::mint("face-surface#1".to_string()).expect("identity grammar"),
+            SurfaceId::mint("catia:test:surface#face-surface%230".to_string()).expect("identity grammar"),
+            SurfaceId::mint("catia:test:surface#face-surface%231".to_string()).expect("identity grammar"),
         ];
         for id in &surface_ids {
             ir.model.surfaces.push(Surface {
@@ -437,39 +445,39 @@ mod consolidated_revolution_binding_tests {
             Point3::new(2.0 + 3.0 * profile_end.cos(), 0.0, 3.0 * profile_end.sin()),
         ];
         for (index, position) in positions.into_iter().enumerate() {
-            let point = PointId::mint(format!("point#{index}")).expect("identity grammar");
+            let point = PointId::mint(format!("catia:test:point#point%23{index}")).expect("identity grammar");
             ir.model.points.push(Point {
                 id: point.clone(),
                 position,
                 source_object: None,
             });
             ir.model.vertices.push(Vertex {
-                id: VertexId::mint(format!("vertex#{index}")).expect("identity grammar"),
+                id: VertexId::mint(format!("catia:test:vertex#vertex%23{index}")).expect("identity grammar"),
                 point,
                 tolerance: None,
             });
         }
-        let curve_id = CurveId::mint("seam-curve".to_string()).expect("identity grammar");
+        let curve_id = CurveId::mint("catia:test:curve#seam-curve".to_string()).expect("identity grammar");
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry: CurveGeometry::Unknown { record: None },
             source_object: None,
         });
         ir.model.edges.push(Edge {
-            id: EdgeId::mint("seam-edge".to_string()).expect("identity grammar"),
+            id: EdgeId::mint("catia:test:edge#seam-edge".to_string()).expect("identity grammar"),
             curve: Some(curve_id.clone()),
-            start: VertexId::mint("vertex#0".to_string()).expect("identity grammar"),
-            end: VertexId::mint("vertex#1".to_string()).expect("identity grammar"),
+            start: VertexId::mint("catia:test:vertex#vertex%230".to_string()).expect("identity grammar"),
+            end: VertexId::mint("catia:test:vertex#vertex%231".to_string()).expect("identity grammar"),
             param_range: Some([0.0, 1.0]),
             tolerance: None,
         });
         for (side, surface) in surface_ids.iter().enumerate() {
-            let face = FaceId::mint(format!("face#{side}")).expect("identity grammar");
-            let loop_id = LoopId::mint(format!("loop#{side}")).expect("identity grammar");
-            let coedge = CoedgeId::mint(format!("coedge#{side}")).expect("identity grammar");
+            let face = FaceId::mint(format!("catia:test:face#face%23{side}")).expect("identity grammar");
+            let loop_id = LoopId::mint(format!("catia:test:loop#loop%23{side}")).expect("identity grammar");
+            let coedge = CoedgeId::mint(format!("catia:test:coedge#coedge%23{side}")).expect("identity grammar");
             ir.model.faces.push(Face {
                 id: face.clone(),
-                shell: ShellId::mint("shell".to_string()).expect("identity grammar"),
+                shell: ShellId::mint("catia:test:shell#shell".to_string()).expect("identity grammar"),
                 surface: surface.clone(),
                 sense: Sense::Forward,
                 loops: vec![loop_id.clone()].into(),
@@ -488,8 +496,8 @@ mod consolidated_revolution_binding_tests {
             ir.model.coedges.push(Coedge {
                 id: coedge.clone(),
                 owner_loop: loop_id,
-                edge: EdgeId::mint("seam-edge".to_string()).expect("identity grammar"),
-                radial_next: CoedgeId::mint(format!("coedge#{}", 1 - side))
+                edge: EdgeId::mint("catia:test:edge#seam-edge".to_string()).expect("identity grammar"),
+                radial_next: CoedgeId::mint(format!("catia:test:coedge#coedge%23{}", 1 - side))
                     .expect("identity grammar"),
                 sense: if side == 0 {
                     Sense::Forward
@@ -504,7 +512,7 @@ mod consolidated_revolution_binding_tests {
             .add_procedural_curve(
                 curve_id.clone(),
                 ProceduralCurve::new(
-                    ProceduralCurveId::mint("seam-construction".to_string())
+                    ProceduralCurveId::mint("catia:test:proceduralcurve#seam-construction".to_string())
                         .expect("identity grammar"),
                     ProceduralCurveDefinition::Intersection {
                         context: IntcurveSupportContext {
@@ -520,7 +528,7 @@ mod consolidated_revolution_binding_tests {
                     },
                 ),
             )
-            .unwrap();
+            .expect("attach construction to its fixture carrier");
 
         assert_eq!(
             bind_consolidated_revolution_faces_and_seams(
@@ -539,8 +547,8 @@ mod consolidated_revolution_binding_tests {
             .iter()
             .all(|surface| surface.geometry == geometry));
         assert!(matches!(
-            ir.model.curves[0].geometry,
-            CurveGeometry::Circle { radius: 3.0, .. }
+            ir.model.curves[0].geometry.solved_cache(),
+            Some(CurveGeometry::Circle { radius: 3.0, .. })
         ));
         assert_eq!(ir.model.edges[0].param_range, Some([0.0, 0.5]));
     }

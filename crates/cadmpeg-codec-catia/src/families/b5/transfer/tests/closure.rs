@@ -388,7 +388,7 @@ fn incomplete_graph_excludes_a_face_whose_members_have_no_vertex_loci() {
         &mut ir,
         &mut AnnotationBuilder::new(),
         graph,
-        &UnknownId::mint("catia:test-payload".to_string()).expect("identity grammar"),
+        &UnknownId::mint("catia:test:unknown#catia:test-payload".to_string()).expect("identity grammar"),
     ));
     assert_eq!(
         ir.model
@@ -530,7 +530,7 @@ fn repeated_source_pcurve_retains_occurrence_ranges_and_directions() {
         &mut ir,
         &mut AnnotationBuilder::new(),
         graph,
-        &UnknownId::mint("catia:test-payload".to_string()).expect("identity grammar"),
+        &UnknownId::mint("catia:test:unknown#catia:test-payload".to_string()).expect("identity grammar"),
     ));
     assert_eq!(ir.model.pcurves.len(), 3);
     assert_eq!(ir.model.coedges.len(), 3);
@@ -609,11 +609,11 @@ fn edge_supports_preserve_one_sided_and_intersection_constructions() {
     let surfaces = HashMap::from([
         (
             10,
-            SurfaceId::mint("surface-10".to_string()).expect("identity grammar"),
+            SurfaceId::mint("catia:test:surface#surface-10".to_string()).expect("identity grammar"),
         ),
         (
             11,
-            SurfaceId::mint("surface-11".to_string()).expect("identity grammar"),
+            SurfaceId::mint("catia:test:surface#surface-11".to_string()).expect("identity grammar"),
         ),
     ]);
     let pcurve_20 = PcurveGeometry::Line {

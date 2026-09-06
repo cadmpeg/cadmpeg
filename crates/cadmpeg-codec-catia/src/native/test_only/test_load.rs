@@ -1,3 +1,4 @@
+use crate::test_support::NativeRecordTestExt;
 use super::test_consolidated::{
     validate_consolidated_circles, validate_consolidated_class5b5c_records,
     validate_consolidated_class61_records, validate_consolidated_cone_faces,
@@ -89,7 +90,33 @@ impl CatiaNative {
                     .or_else(|| roles.owner_literal.map(CatiaObjectOwner::UnassignedLiteral));
             }
         }
-        let mut entity_records: Vec<CatiaEntityRecord> = namespace.arena_as("entity_records")?;
+        let migrate_relation_program = namespace.version() < CATIA_RELATION_PROGRAM_INSTANCE_VERSION
+            || namespace.version() < CATIA_RELATION_PROGRAM_CONTEXT_VERSION
+            || namespace.version() < CATIA_TYPED_INCIDENCE_CLASS_VERSION
+            || namespace.version() < CATIA_RELATION_TYPED_REFERENCE_VERSION
+            || namespace.version() < CATIA_TYPED_INCIDENCE_NULL_VERSION
+            || namespace.version() < CATIA_RELATION_PROGRAM_REFERENCE_INCIDENCE_VERSION
+            || namespace.version() < CATIA_RELATION_PROGRAM_DEPENDENCY_VERSION
+            || namespace.version() < CATIA_RELATION_PROGRAM_INPUT_VERSION
+            || namespace.version() < CATIA_RELATION_PROGRAM_OUTPUT_VERSION
+            || namespace.version() < CATIA_RELATION_DEPENDENCY_OFFSET_VERSION
+            || namespace.version() < CATIA_RELATION_REFERENCE_OFFSET_VERSION
+            || namespace.version() < CATIA_RELATION_STRING_LITERAL_DEPENDENCY_VERSION
+            || namespace.version() < CATIA_RELATION_SIGNATURE_WHITESPACE_VERSION;
+        let mut entity_namespace = namespace.clone();
+        if let Some(records) = entity_namespace.arenas.get_mut("entity_records") {
+            for record in records {
+                let mut fields = record.fields_mut();
+                if namespace.version() < CATIA_REFERENCE_SIGNATURE_ENTITY_VERSION {
+                    fields.remove("reference_signature");
+                }
+                if migrate_relation_program {
+                    fields.remove("relation_program_instance");
+                }
+            }
+        }
+        let mut entity_records: Vec<CatiaEntityRecord> =
+            entity_namespace.arena_as("entity_records")?;
         if namespace.version() < CATIA_NUMERIC_PAIR_VERSION {
             for entity in &mut entity_records {
                 entity.numeric_pair = entity_table::parse_numeric_pair(entity.value_payload());
@@ -274,9 +301,9 @@ impl CatiaNative {
                 terminal_nulls: &terminal_nulls_by_graph,
             };
             for entity in &mut entity_records {
-                if let Some(signature) = entity.reference_signature.take() {
+                if let Some(production) = entity_table::parse_reference_signature(entity.value_payload()) {
                     entity.reference_signature = Some(reference_signature(
-                        signature.production,
+                        production,
                         &entity.object_graph,
                         &entity_references,
                     ));
@@ -373,19 +400,7 @@ impl CatiaNative {
                     });
             }
         }
-        if namespace.version() < CATIA_RELATION_PROGRAM_INSTANCE_VERSION
-            || namespace.version() < CATIA_RELATION_PROGRAM_CONTEXT_VERSION
-            || namespace.version() < CATIA_TYPED_INCIDENCE_CLASS_VERSION
-            || namespace.version() < CATIA_RELATION_TYPED_REFERENCE_VERSION
-            || namespace.version() < CATIA_TYPED_INCIDENCE_NULL_VERSION
-            || namespace.version() < CATIA_RELATION_PROGRAM_REFERENCE_INCIDENCE_VERSION
-            || namespace.version() < CATIA_RELATION_PROGRAM_DEPENDENCY_VERSION
-            || namespace.version() < CATIA_RELATION_PROGRAM_INPUT_VERSION
-            || namespace.version() < CATIA_RELATION_PROGRAM_OUTPUT_VERSION
-            || namespace.version() < CATIA_RELATION_DEPENDENCY_OFFSET_VERSION
-            || namespace.version() < CATIA_RELATION_REFERENCE_OFFSET_VERSION
-            || namespace.version() < CATIA_RELATION_STRING_LITERAL_DEPENDENCY_VERSION
-            || namespace.version() < CATIA_RELATION_SIGNATURE_WHITESPACE_VERSION
+        if migrate_relation_program
         {
             let records_by_id = records
                 .iter()

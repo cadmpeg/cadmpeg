@@ -139,19 +139,20 @@ fn append_oriented_wire_curve(
         annotations
             .derived(&construction_id, "curve")
             .derived(&construction_id, "definition");
-        match (
-            ProceduralCurve::try_new(construction_id.clone(), definition, cache_fit_tolerance),
-            SolvedCurveGeometry::new(geometry),
-        ) {
-            (Ok(procedural), Ok(cache)) => {
+        match ProceduralCurve::try_new(construction_id.clone(), definition, cache_fit_tolerance) {
+            Ok(procedural) => {
+                let cache = match geometry {
+                    CurveGeometry::Procedural { cache, .. } => cache,
+                    CurveGeometry::Unknown { .. } => None,
+                    geometry => SolvedCurveGeometry::new(geometry).ok(),
+                };
                 ir.model.procedural_curves.push(procedural);
                 CurveGeometry::Procedural {
                     construction: construction_id,
-                    cache: Some(cache),
+                    cache,
                 }
             }
-            (_, Err(geometry)) => geometry,
-            (Err(_), Ok(cache)) => cache.as_geometry().clone(),
+            Err(_) => geometry,
         }
     } else {
         geometry

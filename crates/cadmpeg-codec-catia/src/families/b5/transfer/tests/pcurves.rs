@@ -202,7 +202,7 @@ fn revolution_isocurve_keeps_its_native_trim_range() {
     ));
     let plan = build_plan(
         &graph,
-        &UnknownId::mint("catia:test-payload".to_string()).expect("identity grammar"),
+        &UnknownId::mint("catia:test:unknown#catia:test-payload".to_string()).expect("identity grammar"),
     )
     .expect("closed revolution graph");
     let curve = plan.edge_curve_plan.get(&30).expect("revolution isocurve");
@@ -950,7 +950,7 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
         vertex_tolerances: BTreeMap::new(),
         profiles: BTreeMap::new(),
     };
-    let payload = UnknownId::mint("catia:test-payload".to_string()).expect("identity grammar");
+    let payload = UnknownId::mint("catia:test:unknown#catia:test-payload".to_string()).expect("identity grammar");
 
     assert!(ownership_plan(&graph).is_some());
     assert!(loop_chain_closes(&graph.loops[&3], &graph.edge_vertices));

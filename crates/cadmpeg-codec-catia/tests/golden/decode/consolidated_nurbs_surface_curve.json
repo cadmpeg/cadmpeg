@@ -1261,11 +1261,7 @@
     "annotations": {
       "exactness": {
         "catia:consolidated:construction#0": {
-          "entity": "derived",
-          "fields": {
-            "curve": "derived",
-            "definition": "derived"
-          }
+          "entity": "derived"
         },
         "catia:consolidated:curve#1": {
           "entity": "unknown"

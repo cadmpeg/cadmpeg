@@ -631,7 +631,11 @@ pub(crate) fn b2_topology_edge_run_stream() -> Vec<u8> {
     let mut bytes = b2_edge_block_stream();
     bytes.extend_from_slice(&[0xb2, 0x03, 0x06, 0x04, 0x05, 0x82, 5, 9, 0x84]);
     bytes.extend_from_slice(&[0xb2, 0x03, 0x06, 0x04, 0x05, 0x82, 9, 13, 0x88]);
-    bytes.extend_from_slice(&b2_edge_node_stream());
+    // Curve 3 follows use references (1, 2), (2, 3); endpoint selectors are (2, 1).
+    bytes.extend_from_slice(&[
+        0xb2, 0x03, 0x5e, 0x0a, 0x05, 0x0d, 0x08, 0x79, 0x03, 0x08, 0x7f, 0x03,
+        0x09, 0x05, 0x21,
+    ]);
     bytes
 }
 

@@ -1231,7 +1231,8 @@ fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
         [B5IncidenceLane {
             curve: 2,
             parameter,
-            control: 1,
+            // The compact token 0x01 encodes 4 * 0 + 1.
+            control: 0,
         }]
     );
     assert!(

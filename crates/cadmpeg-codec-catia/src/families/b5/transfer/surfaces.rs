@@ -826,11 +826,11 @@ mod tests {
         let support_ids = HashMap::from([
             (
                 10,
-                SurfaceId::mint("support-10".to_string()).expect("identity grammar"),
+                SurfaceId::mint("catia:test:surface#support-10".to_string()).expect("identity grammar"),
             ),
             (
                 20,
-                SurfaceId::mint("support-20".to_string()).expect("identity grammar"),
+                SurfaceId::mint("catia:test:surface#support-20".to_string()).expect("identity grammar"),
             ),
         ]);
         let pcurve = |x| PcurveGeometry::Nurbs {
@@ -878,19 +878,27 @@ mod tests {
             },
         };
         let mut ir = CadIr::empty();
+        let surface_id = SurfaceId::mint("catia:test:surface#result-30").expect("identity grammar");
+        ir.model.surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry: SurfaceGeometry::Unknown { record: None },
+            source_object: None,
+        });
 
         emit_extrusion_procedure(
             &mut ir,
             &mut AnnotationBuilder::new(),
             &support_ids,
-            SurfaceId::mint("result-30".to_string()).expect("identity grammar"),
+            surface_id,
             30,
             extrusion,
         );
 
         assert!(matches!(
-            ir.model.curves[0].geometry,
-            CurveGeometry::Unknown { record: None }
+            &ir.model.curves[0].geometry,
+            CurveGeometry::Procedural { construction, cache: Some(cache) }
+                if *construction == ir.model.procedural_curves[0].id
+                    && matches!(cache.as_geometry(), CurveGeometry::Unknown { record: None })
         ));
         let ProceduralCurveDefinition::Intersection { context, .. } =
             ir.model.procedural_curves[0].definition()
