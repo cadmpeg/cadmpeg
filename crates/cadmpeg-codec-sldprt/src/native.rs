@@ -234,30 +234,52 @@ const SLDPRT_CATALOGUE: Catalogue<'static, SldprtNative, (), cadmpeg_ir::NativeN
     Catalogue::new(SLDPRT_FAMILIES, Some(SLDPRT_VERSION_CONTRACT));
 
 /// SOLIDWORKS records retained outside the format-neutral model.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "SldprtNativeWire")]
 pub struct SldprtNative {
-    /// Schema version this namespace was written under; see [`SLDPRT_NATIVE_VERSION`].
-    pub version: u32,
     /// Parametric construction-history timelines decoded from the source part.
-    #[serde(default)]
     pub feature_histories: Vec<FeatureHistory>,
     /// Native feature-input byte streams retained for parametric replay and rewrite.
-    #[serde(default)]
     pub feature_input_lanes: Vec<FeatureInputLane>,
     /// Semantic dimensions decoded from `PMISemanticDataDB`.
-    #[serde(default)]
     pub pmi_dimensions: Vec<PmiDimension>,
 }
 
-impl Default for SldprtNative {
-    fn default() -> Self {
-        Self {
-            version: SLDPRT_NATIVE_VERSION,
-            feature_histories: Vec::new(),
-            feature_input_lanes: Vec::new(),
-            pmi_dimensions: Vec::new(),
-        }
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SldprtNativeWire {
+    version: u32,
+    #[serde(default)]
+    feature_histories: Vec<FeatureHistory>,
+    #[serde(default)]
+    feature_input_lanes: Vec<FeatureInputLane>,
+    #[serde(default)]
+    pmi_dimensions: Vec<PmiDimension>,
+}
+
+impl Serialize for SldprtNative {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut record = serializer.serialize_struct("SldprtNative", 4)?;
+        record.serialize_field("version", &SLDPRT_NATIVE_VERSION)?;
+        record.serialize_field("feature_histories", &self.feature_histories)?;
+        record.serialize_field("feature_input_lanes", &self.feature_input_lanes)?;
+        record.serialize_field("pmi_dimensions", &self.pmi_dimensions)?;
+        record.end()
+    }
+}
+
+impl TryFrom<SldprtNativeWire> for SldprtNative {
+    type Error = cadmpeg_ir::NativeConvertError;
+
+    fn try_from(wire: SldprtNativeWire) -> Result<Self, Self::Error> {
+        SLDPRT_CATALOGUE.check_version(wire.version)?;
+        Ok(Self {
+            feature_histories: wire.feature_histories,
+            feature_input_lanes: wire.feature_input_lanes,
+            pmi_dimensions: wire.pmi_dimensions,
+        })
     }
 }
 
@@ -267,7 +289,6 @@ impl SldprtNative {
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
         SLDPRT_CATALOGUE.check_version(namespace.version())?;
         let mut native = Self {
-            version: SLDPRT_NATIVE_VERSION,
             feature_histories: namespace.arena_as("feature_histories")?,
             feature_input_lanes: namespace.arena_as("feature_input_lanes")?,
             pmi_dimensions: namespace.arena_as("pmi_dimensions")?,

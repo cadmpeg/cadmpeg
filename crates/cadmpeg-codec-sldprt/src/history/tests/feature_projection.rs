@@ -1051,7 +1051,6 @@ fn custom_properties_are_document_attributes_not_model_features() {
     );
 
     let mut native = Some(crate::native::SldprtNative {
-        version: crate::native::SLDPRT_NATIVE_VERSION,
         feature_histories: vec![history],
         feature_input_lanes: Vec::new(),
         pmi_dimensions: Vec::new(),

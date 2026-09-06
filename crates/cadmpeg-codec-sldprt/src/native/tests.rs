@@ -80,7 +80,10 @@ fn native_version_one_migrates_the_body_selection_arena() {
     legacy.arenas.remove("feature_input_body_selections");
 
     let migrated = crate::native::SldprtNative::load(&legacy).unwrap();
-    assert_eq!(migrated.version, crate::native::SLDPRT_NATIVE_VERSION);
+    assert_eq!(
+        serde_json::to_value(&migrated).unwrap()["version"],
+        crate::native::SLDPRT_NATIVE_VERSION
+    );
     assert!(migrated
         .feature_input_lanes
         .iter()
@@ -116,7 +119,10 @@ fn native_version_two_migrates_the_edge_selection_arena() {
     legacy.arenas.remove("feature_input_edge_selections");
 
     let migrated = crate::native::SldprtNative::load(&legacy).unwrap();
-    assert_eq!(migrated.version, crate::native::SLDPRT_NATIVE_VERSION);
+    assert_eq!(
+        serde_json::to_value(&migrated).unwrap()["version"],
+        crate::native::SLDPRT_NATIVE_VERSION
+    );
     assert!(migrated
         .feature_input_lanes
         .iter()
@@ -531,4 +537,19 @@ fn native_store_accepts_duplicate_local_ids_for_scalar_ordinals() {
 
     let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native.store(&mut namespace).unwrap();
+}
+
+#[test]
+fn native_aggregate_stamps_and_checks_the_wire_version() {
+    let wire = serde_json::to_value(SldprtNative::default()).unwrap();
+    assert_eq!(wire["version"], SLDPRT_NATIVE_VERSION);
+    assert_eq!(
+        serde_json::from_value::<SldprtNative>(wire.clone()).unwrap(),
+        SldprtNative::default()
+    );
+    for version in [0, SLDPRT_NATIVE_VERSION + 1] {
+        let mut unsupported = wire.clone();
+        unsupported["version"] = serde_json::json!(version);
+        assert!(serde_json::from_value::<SldprtNative>(unsupported).is_err());
+    }
 }

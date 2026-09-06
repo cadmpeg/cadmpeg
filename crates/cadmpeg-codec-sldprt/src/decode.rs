@@ -2432,7 +2432,6 @@ fn build_geometry_ir(
     attributes.extend(crate::history::custom_property_attributes(&histories));
     lanes.extend(supplemental_config_lanes);
     let mut native = crate::native::SldprtNative {
-        version: crate::native::SLDPRT_NATIVE_VERSION,
         feature_histories: histories.clone(),
         feature_input_lanes: lanes,
         pmi_dimensions,
@@ -3567,7 +3566,6 @@ fn build_metadata_ir(
     stamp_feature_baseline(&mut ir);
     lanes.extend(supplemental_config_lanes);
     let native = crate::native::SldprtNative {
-        version: crate::native::SLDPRT_NATIVE_VERSION,
         feature_histories: histories.clone(),
         feature_input_lanes: lanes,
         pmi_dimensions,

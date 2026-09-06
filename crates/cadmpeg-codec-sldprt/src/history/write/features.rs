@@ -140,7 +140,6 @@ pub fn sync_neutral_features(
     }
     if native.is_none() {
         *native = Some(crate::native::SldprtNative {
-            version: crate::native::SLDPRT_NATIVE_VERSION,
             feature_histories: vec![FeatureHistory {
                 id: "sldprt:generated:feature-history#0".into(),
                 part_name: None,
