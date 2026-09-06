@@ -368,7 +368,6 @@ mod tests {
                 xml_tag: "Feature".into(),
                 tree_parent: None,
                 source_id: Some("7".into()),
-                parent_source_id: None,
                 ordinal: 0,
                 name: "Move Face".into(),
                 kind: "Move Face".into(),

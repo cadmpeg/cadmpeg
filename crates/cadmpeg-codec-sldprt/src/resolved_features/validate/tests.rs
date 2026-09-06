@@ -36,7 +36,11 @@ fn native_validation_rejects_broken_feature_graph() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
-        native.feature_histories[0].features[1].tree_parent = Some("missing-record".into());
+        native.feature_histories[0].features[1].tree_parent =
+            Some(crate::records::TreeParent::Record {
+                record_id: "missing-record".into(),
+                source_id: None,
+            });
     });
     assert!(crate::validate_native(decoded.ir())
         .iter()

@@ -2682,7 +2682,6 @@ mod detached_legacy_sketch_tests {
             xml_tag: "Sketch".into(),
             tree_parent: None,
             source_id: Some("30".into()),
-            parent_source_id: None,
             ordinal: 30,
             name: "profile".into(),
             kind: "ProfileFeature".into(),

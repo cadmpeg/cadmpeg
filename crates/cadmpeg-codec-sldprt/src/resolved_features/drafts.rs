@@ -397,7 +397,6 @@ mod tests {
             xml_tag: "Draft".into(),
             tree_parent: None,
             source_id: Some("7".into()),
-            parent_source_id: None,
             ordinal: 0,
             name: "Draft1".into(),
             kind: "Draft".into(),

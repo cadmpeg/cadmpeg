@@ -1479,11 +1479,11 @@ fn semantic_writer_preserves_idless_feature_tree_nodes() {
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let native = &sldprt_native(decoded.ir()).feature_histories[0].features;
     assert_eq!(
-        native[1].tree_parent.as_deref(),
+        native[1].tree_parent_record_id(),
         Some(native[0].id.as_str())
     );
     assert_eq!(
-        native[2].tree_parent.as_deref(),
+        native[2].tree_parent_record_id(),
         Some(native[1].id.as_str())
     );
     assert_eq!(
@@ -1518,11 +1518,11 @@ fn semantic_writer_preserves_idless_feature_tree_nodes() {
     assert_eq!(native[1].xml_tag, "Folder");
     assert_eq!(native[2].xml_tag, "Sketch");
     assert_eq!(
-        native[1].tree_parent.as_deref(),
+        native[1].tree_parent_record_id(),
         Some(native[0].id.as_str())
     );
     assert_eq!(
-        native[2].tree_parent.as_deref(),
+        native[2].tree_parent_record_id(),
         Some(native[1].id.as_str())
     );
     assert_eq!(native[2].name, "Edited Profile");

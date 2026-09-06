@@ -121,13 +121,11 @@ pub(crate) fn project_feature_model(histories: &[FeatureHistory]) -> FeatureProj
                 .filter(|feature| !is_history_metadata_record(feature, &history.features))
                 .map(move |feature| {
                     let parent = feature
-                        .tree_parent
-                        .as_deref()
+                        .tree_parent_record_id()
                         .and_then(|parent| by_native.get(parent).cloned())
                         .or_else(|| {
                             feature
-                                .parent_source_id
-                                .as_deref()
+                                .parent_source_id()
                                 .and_then(|source| by_source.get(source).cloned())
                         });
                     (
@@ -786,15 +784,12 @@ pub(crate) fn incomplete_history_reference_features(histories: &[FeatureHistory]
                         .source_id
                         .as_deref()
                         .is_some_and(|source| sources.get(source).is_some_and(Option::is_none));
-                    let parent_requested =
-                        feature.tree_parent.is_some() || feature.parent_source_id.is_some();
+                    let parent_requested = feature.tree_parent.is_some();
                     let parent_resolved = feature
-                        .tree_parent
-                        .as_deref()
+                        .tree_parent_record_id()
                         .is_some_and(|parent| native_ids.contains(parent))
                         || feature
-                            .parent_source_id
-                            .as_deref()
+                            .parent_source_id()
                             .is_some_and(|source| sources.get(source).is_some_and(Option::is_some));
                     let incomplete_content = feature.content.iter().any(|item| match item {
                         FeatureContent::Feature(child) => !native_ids.contains(child.as_str()),

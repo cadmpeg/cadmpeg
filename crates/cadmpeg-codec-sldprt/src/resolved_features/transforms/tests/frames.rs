@@ -1123,7 +1123,6 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         xml_tag: "Feature".into(),
         tree_parent: None,
         source_id: Some("7".into()),
-        parent_source_id: None,
         ordinal: 7,
         name: "Sketch1".into(),
         kind: String::new(),

@@ -171,7 +171,6 @@ fn offset_plane_frame_translates_its_reference_frame() {
         xml_tag: "Feature".into(),
         tree_parent: None,
         source_id: Some(source.into()),
-        parent_source_id: None,
         ordinal: source.parse().expect("required invariant"),
         name: id.into(),
         kind: String::new(),

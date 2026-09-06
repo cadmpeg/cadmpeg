@@ -555,7 +555,6 @@ mod relation_records_tests {
                 xml_tag: "Sketch".into(),
                 tree_parent: None,
                 source_id: None,
-                parent_source_id: None,
                 ordinal: 0,
                 name: "Sketch".into(),
                 kind: "Sketch".into(),

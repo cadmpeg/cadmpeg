@@ -81,9 +81,7 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
             let root_features = history
                 .features
                 .iter()
-                .filter(|feature| {
-                    feature.tree_parent.is_none() && feature.parent_source_id.is_none()
-                })
+                .filter(|feature| feature.tree_parent.is_none())
                 .map(|feature| feature.id.as_str())
                 .collect::<std::collections::HashSet<_>>();
             let all_features = history

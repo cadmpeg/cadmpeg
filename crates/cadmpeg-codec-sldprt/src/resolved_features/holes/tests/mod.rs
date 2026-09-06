@@ -87,7 +87,6 @@ fn native_history() -> FeatureHistory {
             xml_tag: "HoleWizard".into(),
             tree_parent: None,
             source_id: Some("7".into()),
-            parent_source_id: None,
             ordinal: 0,
             name: "Hole".into(),
             kind: "HoleWizard".into(),

@@ -11,7 +11,6 @@ fn feature(id: &str, source_id: Option<&str>, ordinal: u32) -> Feature {
         xml_tag: "Feature".into(),
         tree_parent: None,
         source_id: source_id.map(str::to_string),
-        parent_source_id: None,
         ordinal,
         name: id.into(),
         kind: "Custom".into(),

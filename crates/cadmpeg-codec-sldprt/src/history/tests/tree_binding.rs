@@ -37,7 +37,7 @@ fn decode_extracts_parametric_history() {
     assert_eq!(history.features[0].xml_tag, "Extrusion");
     assert_eq!(history.features[0].parameters["Depth"], "12.5mm");
     assert_eq!(history.features[0].properties["Scope"], "Body1");
-    assert_eq!(history.features[1].parent_source_id.as_deref(), Some("7"));
+    assert_eq!(history.features[1].parent_source_id(), Some("7"));
     assert_eq!(history.features[1].xml_tag, "EquationDrivenCurve");
     assert_eq!(result.ir().model.features.len(), 2);
     let neutral = &result.ir().model.features[0];
@@ -486,7 +486,7 @@ fn keywords_root_id_does_not_create_feature_parentage() {
     let native = sldprt_native(decoded.ir());
     let history = &native.feature_histories[0];
     assert_eq!(history.properties["id"], "document");
-    assert_eq!(history.features[0].parent_source_id, None);
-    assert_eq!(history.features[1].parent_source_id.as_deref(), Some("1"));
+    assert_eq!(history.features[0].parent_source_id(), None);
+    assert_eq!(history.features[1].parent_source_id(), Some("1"));
     assert!(crate::validate_native(decoded.ir()).is_empty());
 }

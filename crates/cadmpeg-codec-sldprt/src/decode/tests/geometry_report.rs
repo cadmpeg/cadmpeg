@@ -311,7 +311,6 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
             xml_tag: "Extrusion".into(),
             tree_parent: None,
             source_id: Some("42".into()),
-            parent_source_id: None,
             ordinal: 0,
             name: "Boss".into(),
             kind: "Extrusion".into(),

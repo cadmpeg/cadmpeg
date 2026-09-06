@@ -26,7 +26,6 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         xml_tag: "Feature".into(),
         tree_parent: None,
         source_id: Some(source_id.into()),
-        parent_source_id: None,
         ordinal: 0,
         name: name.into(),
         kind: String::new(),

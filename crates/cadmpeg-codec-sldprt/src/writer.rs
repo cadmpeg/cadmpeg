@@ -1751,7 +1751,7 @@ fn history_payload(history: &crate::records::FeatureHistory) -> Result<Vec<u8>, 
     let mut roots = history
         .features
         .iter()
-        .filter(|feature| feature.tree_parent.is_none() && feature.parent_source_id.is_none())
+        .filter(|feature| feature.tree_parent.is_none())
         .collect::<Vec<_>>();
     roots.sort_by_key(|feature| feature.ordinal);
     let mut emitted_configurations = HashSet::new();
@@ -1823,7 +1823,7 @@ pub(crate) fn validate_feature_graph(
     }
     for feature in features {
         let mut seen = HashSet::new();
-        let mut parent = feature.parent_source_id.as_deref();
+        let mut parent = feature.parent_source_id();
         while let Some(id) = parent {
             if !seen.insert(id) {
                 return Err(CodecError::Malformed("feature parent cycle".into()));
@@ -1831,10 +1831,10 @@ pub(crate) fn validate_feature_graph(
             let node = by_id
                 .get(id)
                 .ok_or_else(|| CodecError::Malformed("feature references missing parent".into()))?;
-            parent = node.parent_source_id.as_deref();
+            parent = node.parent_source_id();
         }
         let mut seen = HashSet::new();
-        let mut parent = feature.tree_parent.as_deref();
+        let mut parent = feature.tree_parent_record_id();
         while let Some(id) = parent {
             if !seen.insert(id) {
                 return Err(CodecError::Malformed("feature tree cycle".into()));
@@ -1842,7 +1842,7 @@ pub(crate) fn validate_feature_graph(
             let node = by_record.get(id).ok_or_else(|| {
                 CodecError::Malformed("feature references missing tree parent".into())
             })?;
-            parent = node.tree_parent.as_deref();
+            parent = node.tree_parent_record_id();
         }
     }
     Ok(())
@@ -1891,9 +1891,9 @@ fn write_feature_xml(
     let mut children = features
         .iter()
         .filter(|child| {
-            child.tree_parent.as_deref() == Some(feature.id.as_str())
-                || (child.tree_parent.is_none()
-                    && child.parent_source_id.as_deref() == feature.source_id.as_deref()
+            child.tree_parent_record_id() == Some(feature.id.as_str())
+                || (child.tree_parent_record_id().is_none()
+                    && child.parent_source_id() == feature.source_id.as_deref()
                     && feature.source_id.is_some())
         })
         .collect::<Vec<_>>();

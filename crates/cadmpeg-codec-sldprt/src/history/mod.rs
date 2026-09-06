@@ -134,19 +134,16 @@ pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Fea
                         id,
                         parent: parent.clone(),
                         xml_tag: node.tag_name().name().into(),
-                        tree_parent: node
-                            .ancestors()
-                            .skip(1)
-                            .find_map(|ancestor| feature_ids.get(&ancestor.range().start).cloned()),
+                        tree_parent: node.ancestors().skip(1).find_map(|ancestor| {
+                            let record_id = feature_ids.get(&ancestor.range().start)?.clone();
+                            Some(crate::records::TreeParent::Record {
+                                record_id,
+                                source_id: ancestor.attribute("id").map(str::to_string),
+                            })
+                        }),
                         source_id: node
                             .attribute("id")
                             .filter(|value| !value.is_empty())
-                            .map(str::to_string),
-                        parent_source_id: node
-                            .ancestors()
-                            .skip(1)
-                            .find(|ancestor| feature_ids.contains_key(&ancestor.range().start))
-                            .and_then(|parent| parent.attribute("id"))
                             .map(str::to_string),
                         ordinal: ordinal as u32,
                         name: node.attribute("Name").unwrap_or("").into(),

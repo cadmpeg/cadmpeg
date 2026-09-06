@@ -495,7 +495,6 @@ mod tests {
             xml_tag: xml_tag.into(),
             tree_parent: None,
             source_id: None,
-            parent_source_id: None,
             ordinal: 0,
             name: name.into(),
             kind: kind.into(),

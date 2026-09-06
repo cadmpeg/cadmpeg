@@ -973,7 +973,6 @@ fn revolution_consumes_the_preceding_profile_object() {
         xml_tag: "Feature".into(),
         tree_parent: None,
         source_id: Some(source.into()),
-        parent_source_id: None,
         ordinal: 0,
         name: id.into(),
         kind: String::new(),

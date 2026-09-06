@@ -94,6 +94,86 @@ fn default_feature_xml_tag() -> String {
     "Feature".into()
 }
 
+/// A construction-tree parent reference.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TreeParent {
+    Record {
+        record_id: String,
+        source_id: Option<String>,
+    },
+    Source(String),
+}
+
+impl TreeParent {
+    pub fn record_id(&self) -> Option<&str> {
+        match self {
+            Self::Record { record_id, .. } => Some(record_id),
+            Self::Source(_) => None,
+        }
+    }
+
+    pub fn source_id(&self) -> Option<&str> {
+        match self {
+            Self::Record { source_id, .. } => source_id.as_deref(),
+            Self::Source(source_id) => Some(source_id),
+        }
+    }
+}
+
+mod tree_parent_wire {
+    use super::TreeParent;
+    use serde::{ser::SerializeMap, Deserialize, Deserializer, Serializer};
+
+    #[derive(Deserialize)]
+    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+    pub(super) struct Wire {
+        #[serde(default)]
+        tree_parent: Option<String>,
+        #[serde(default)]
+        parent_source_id: Option<String>,
+    }
+
+    pub(super) fn serialize<S: Serializer>(
+        parent: &Option<TreeParent>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(None)?;
+        if let Some(parent) = parent {
+            if let Some(record) = parent.record_id() {
+                map.serialize_entry("tree_parent", record)?;
+            }
+            if let Some(source) = parent.source_id() {
+                map.serialize_entry("parent_source_id", source)?;
+            }
+        }
+        map.end()
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<TreeParent>, D::Error> {
+        let wire = Wire::deserialize(deserializer)?;
+        Ok(match (wire.tree_parent, wire.parent_source_id) {
+            (Some(record_id), source_id) => Some(TreeParent::Record {
+                record_id,
+                source_id,
+            }),
+            (None, Some(source_id)) => Some(TreeParent::Source(source_id)),
+            (None, None) => None,
+        })
+    }
+}
+
+impl Feature {
+    pub fn tree_parent_record_id(&self) -> Option<&str> {
+        self.tree_parent.as_ref().and_then(TreeParent::record_id)
+    }
+
+    pub fn parent_source_id(&self) -> Option<&str> {
+        self.tree_parent.as_ref().and_then(TreeParent::source_id)
+    }
+}
+
 /// One parametric construction-history feature (e.g. an extrude or fillet operation).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -105,16 +185,13 @@ pub struct Feature {
     /// XML element name carrying this feature record.
     #[serde(default = "default_feature_xml_tag")]
     pub xml_tag: String,
-    /// Native record id of the containing feature element.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tree_parent: Option<String>,
+    /// Containing feature, identified by its record or legacy source id.
+    #[serde(flatten, with = "tree_parent_wire")]
+    #[cfg_attr(feature = "schema", schemars(with = "tree_parent_wire::Wire"))]
+    pub tree_parent: Option<TreeParent>,
     /// Native identifier of this feature, when the source assigned one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_id: Option<String>,
-    /// Native identifier of this feature's parent in the construction tree, when
-    /// the source recorded parent/child feature dependency.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parent_source_id: Option<String>,
     /// Position of this feature in the construction-history timeline, in
     /// regeneration order.
     pub ordinal: u32,
@@ -1183,6 +1260,28 @@ impl SketchRelationKind {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn tree_parent_preserves_record_and_source_wire_forms() {
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct Parent {
+            #[serde(flatten, with = "super::tree_parent_wire")]
+            parent: Option<super::TreeParent>,
+        }
+        for wire in [
+            serde_json::json!({}),
+            serde_json::json!({"tree_parent": "record"}),
+            serde_json::json!({"parent_source_id": "7"}),
+            serde_json::json!({"tree_parent": "record", "parent_source_id": "7"}),
+        ] {
+            let parent: Parent = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(
+                parent.parent.is_none(),
+                wire.as_object().unwrap().is_empty()
+            );
+            assert_eq!(serde_json::to_value(parent).unwrap(), wire);
+        }
+    }
+
     #[test]
     fn sketch_links_preserve_flat_wire_and_reject_split_pairs() {
         use super::{SketchInputEntity, SketchInputLinks};

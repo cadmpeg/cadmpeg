@@ -412,7 +412,6 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
         xml_tag: "Sketch".into(),
         tree_parent: None,
         source_id: None,
-        parent_source_id: None,
         ordinal: 0,
         name: name.into(),
         kind: "Sketch".into(),

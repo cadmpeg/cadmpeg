@@ -191,7 +191,6 @@ fn conflicting_pmi_metadata_do_not_enrich_history() {
             xml_tag: "Feature".into(),
             tree_parent: None,
             source_id: None,
-            parent_source_id: None,
             ordinal: 0,
             name: "Pattern1".into(),
             kind: "StoredGeometry".into(),

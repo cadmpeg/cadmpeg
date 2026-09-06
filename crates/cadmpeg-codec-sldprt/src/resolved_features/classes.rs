@@ -32,7 +32,6 @@ fn idless_legacy_startup_shape(records: &[crate::records::Feature]) -> bool {
         record.input_class.is_none()
             && record.source_id.is_none()
             && record.tree_parent.is_none()
-            && record.parent_source_id.is_none()
             && record.xml_tag.eq_ignore_ascii_case("Feature")
             && record.properties.is_empty()
     };
@@ -573,7 +572,6 @@ mod idless_history_binding_tests {
             xml_tag: "Feature".into(),
             tree_parent: None,
             source_id: None,
-            parent_source_id: None,
             ordinal,
             name: format!("name-{ordinal}"),
             kind: kind.into(),

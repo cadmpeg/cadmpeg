@@ -408,7 +408,6 @@ pub(crate) fn principal_plane_in_history(
                     }
                     && record.source_id.is_none()
                     && record.tree_parent.is_none()
-                    && record.parent_source_id.is_none()
             }) || front.kind != top.kind
                 || front.kind != right.kind
                 || top.ordinal != front.ordinal + 1
@@ -422,7 +421,6 @@ pub(crate) fn principal_plane_in_history(
                 })
                 || successor.source_id.is_some()
                 || successor.tree_parent.is_some()
-                || successor.parent_source_id.is_some()
                 || successor.ordinal != right.ordinal + 1
                 || successor.kind == front.kind
             {

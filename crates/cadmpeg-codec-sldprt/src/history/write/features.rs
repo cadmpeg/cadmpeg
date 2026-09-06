@@ -371,12 +371,16 @@ pub fn sync_neutral_features(
         }
         let ordinal = u32::try_from(feature.ordinal)
             .map_err(|_| CodecError::Malformed("feature ordinal exceeds u32".into()))?;
-        let parent_source_id = model
-            .feature_parent(&feature.id)
-            .and_then(|parent| structural_parent_sources.get(parent).cloned().flatten());
-        let tree_parent = model
-            .feature_parent(&feature.id)
-            .and_then(|parent| record_ids.get(parent).cloned());
+        let tree_parent = model.feature_parent(&feature.id).and_then(|parent| {
+            let source_id = structural_parent_sources.get(parent).cloned().flatten();
+            match record_ids.get(parent) {
+                Some(record_id) => Some(crate::records::TreeParent::Record {
+                    record_id: record_id.clone(),
+                    source_id,
+                }),
+                None => source_id.map(crate::records::TreeParent::Source),
+            }
+        });
         if let Some(existing) = existing.as_mut() {
             if let Some(tag) = &feature.source_tag {
                 existing.xml_tag.clone_from(tag);
@@ -385,7 +389,6 @@ pub fn sync_neutral_features(
             existing.name = feature.name.clone().unwrap_or_default();
             existing.kind = kind;
             existing.suppressed = suppressed;
-            existing.parent_source_id = parent_source_id;
             existing.tree_parent = tree_parent;
             existing.parameters = parameters;
             existing.properties = properties;
@@ -410,7 +413,6 @@ pub fn sync_neutral_features(
                 xml_tag: feature_xml_tag(feature),
                 tree_parent,
                 source_id: generated_sources.get(&feature.id).cloned(),
-                parent_source_id,
                 ordinal,
                 name: feature.name.clone().unwrap_or_default(),
                 kind,
@@ -557,7 +559,7 @@ pub(crate) fn synchronize_history_content_order(native: &mut crate::native::Sldp
         let mut features = history
             .features
             .iter()
-            .filter(|feature| feature.tree_parent.is_none() && feature.parent_source_id.is_none())
+            .filter(|feature| feature.tree_parent.is_none())
             .map(|feature| (feature.ordinal, feature.id.clone()))
             .collect::<Vec<_>>();
         let mut configurations = configurations;
@@ -604,9 +606,9 @@ pub(crate) fn synchronize_feature_content_order(native: &mut crate::native::Sldp
     for history in &mut native.feature_histories {
         let mut children = HashMap::<String, Vec<(u32, String)>>::new();
         for feature in &history.features {
-            if let Some(parent) = &feature.tree_parent {
+            if let Some(parent) = feature.tree_parent_record_id() {
                 children
-                    .entry(parent.clone())
+                    .entry(parent.to_owned())
                     .or_default()
                     .push((feature.ordinal, feature.id.clone()));
             }

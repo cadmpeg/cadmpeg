@@ -308,7 +308,7 @@ fn ambiguous_and_missing_history_references_do_not_bind_arbitrarily() {
     let mut dependent = feature("dependent", Some("2"), 2);
     dependent.properties.insert("Dependency".into(), "1".into());
     let mut malformed = feature("malformed", Some("3"), 3);
-    malformed.parent_source_id = Some("missing".into());
+    malformed.tree_parent = Some(crate::records::TreeParent::Source("missing".into()));
     malformed
         .content
         .push(FeatureContent::Feature("missing-child".into()));
