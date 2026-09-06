@@ -499,8 +499,8 @@ fn decode_resolves_trimmed_edge_to_its_basis_curve_and_range() {
         .arena_as::<super::super::ParasolidTrimmedCurveRecord>("parasolid_trimmed_curve_records")
         .expect("required invariant");
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].basis_xmt, 9);
-    assert_eq!(records[0].points, [[0.0; 3]; 2]);
-    assert_eq!(records[0].parameters, [0.000_25, 0.000_75]);
+    assert_eq!(records[0].state.basis(), 9);
+    assert_eq!(records[0].state.points(), [[0.0; 3]; 2]);
+    assert_eq!(records[0].state.parameters(), [0.000_25, 0.000_75]);
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }

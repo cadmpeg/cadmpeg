@@ -813,22 +813,22 @@ pub(crate) fn try_decode_geometry(
         loop {
             let mapped = curves_by_xmt.len() + pcurves_by_xmt.len() + pcurve_supports_by_xmt.len();
             for trim in trimmed_curves {
-                if let Some(basis) = curves_by_xmt.get(&trim.basis).cloned() {
+                if let Some(basis) = curves_by_xmt.get(&trim.state.basis()).cloned() {
                     let parameters = curve_indices
                         .get(&basis)
                         .and_then(|index| ir.model.curves.get(*index))
-                        .and_then(|curve| canonical_trim_range(&curve.geometry, trim.parameters));
+                        .and_then(|curve| canonical_trim_range(&curve.geometry, trim.state.parameters()));
                     curves_by_xmt.insert(trim.xmt, basis);
                     if let Some(parameters) = parameters {
                         trim_ranges.insert(trim.xmt, parameters);
                     }
                 }
-                if let Some(pcurve) = pcurves_by_xmt.get(&trim.basis).cloned() {
+                if let Some(pcurve) = pcurves_by_xmt.get(&trim.state.basis()).cloned() {
                     pcurves_by_xmt.insert(trim.xmt, pcurve);
-                    if let Some(support) = pcurve_supports_by_xmt.get(&trim.basis).cloned() {
+                    if let Some(support) = pcurve_supports_by_xmt.get(&trim.state.basis()).cloned() {
                         pcurve_supports_by_xmt.insert(trim.xmt, support);
                     }
-                    trim_ranges.insert(trim.xmt, trim.parameters);
+                    trim_ranges.insert(trim.xmt, trim.state.parameters());
                 }
             }
             for surface_curve in surface_curves {

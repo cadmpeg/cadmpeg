@@ -17,6 +17,8 @@ use crate::framing::{
     read_and_advance, read_sequence_at, read_xmt, skip_sequence_at,
 };
 use crate::vec3_at::vec3_be_at;
+pub(crate) mod trimmed_curve_state;
+use trimmed_curve_state::TrimmedCurveState;
 pub(crate) mod surface_curve_state;
 use surface_curve_state::SurfaceCurveState;
 
@@ -426,12 +428,7 @@ enum ReferenceRole {
 pub struct TrimmedCurve {
     /// Cross-reference index (XMT) of the tag-133 record.
     pub xmt: u32,
-    /// Cross-reference index of the untrimmed basis curve record.
-    pub basis: u32,
-    /// Stored start and end points in millimetres.
-    pub points: [[f64; 3]; 2],
-    /// `[start, end]` parameter range of the trim, in the basis curve's own parameterization.
-    pub parameters: [f64; 2],
+    pub state: TrimmedCurveState,
     /// Record type-tag offset in the inflated stream.
     pub pos: usize,
 }
@@ -760,23 +757,13 @@ impl Graph {
             .filter_map(|node| {
                 let mut at = node.compact_tail_offset()?;
                 let basis = read_and_advance(&node.bytes, &mut at)?;
-                let mut point_0 = vec3_be_at(&node.bytes, at)?;
-                let mut point_1 = vec3_be_at(&node.bytes, at + 24)?;
-                if point_0.iter().chain(point_1.iter()).any(|coordinate| {
-                    !coordinate.is_finite() || !(*coordinate * 1000.0).is_finite()
-                }) {
-                    return None;
-                }
-                for coordinate in point_0.iter_mut().chain(point_1.iter_mut()) {
-                    *coordinate *= 1000.0;
-                }
+                let point_0 = vec3_be_at(&node.bytes, at)?;
+                let point_1 = vec3_be_at(&node.bytes, at + 24)?;
                 let p0 = View::f64_be_at(&node.bytes, at + 48)?;
                 let p1 = View::f64_be_at(&node.bytes, at + 56)?;
-                (basis > 1 && p0.is_finite() && p1.is_finite()).then_some(TrimmedCurve {
+                Some(TrimmedCurve {
                     xmt: node.xmt,
-                    basis,
-                    points: [point_0, point_1],
-                    parameters: [p0, p1],
+                    state: TrimmedCurveState::from_metres(basis, [point_0, point_1], [p0, p1]).ok()?,
                     pos: node.pos,
                 })
             })

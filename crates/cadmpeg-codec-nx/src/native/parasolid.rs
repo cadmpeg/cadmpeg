@@ -1217,12 +1217,8 @@ pub struct ParasolidTrimmedCurveRecord {
     pub stream_ordinal: u32,
     /// Cross-reference index of the trimmed curve.
     pub xmt: u32,
-    /// Cross-reference index of the basis curve.
-    pub basis_xmt: u32,
-    /// Stored start and end points in millimetres.
-    pub points: [[f64; 3]; 2],
-    /// Stored start and end parameters in basis-curve units.
-    pub parameters: [f64; 2],
+    #[serde(flatten)]
+    pub state: crate::topology::trimmed_curve_state::TrimmedCurveState,
     /// Record tag offset in the inflated stream.
     pub inflated_offset: u64,
 }
@@ -1249,9 +1245,7 @@ impl ParasolidStreamRecords for ParasolidTrimmedCurveRecord {
             id,
             stream_ordinal,
             xmt: row.xmt,
-            basis_xmt: row.basis,
-            points: row.points,
-            parameters: row.parameters,
+            state: row.state,
             inflated_offset: row.pos as u64,
         }
     }
