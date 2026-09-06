@@ -1663,8 +1663,6 @@ pub struct OperationTerminalFrame {
 pub enum OperationStateIndex<'a> {
     /// The `ff` null token.
     Null {
-        /// Exact serialized token.
-        raw: &'a [u8],
         /// Absolute byte offset of the token.
         offset: usize,
     },
@@ -1672,8 +1670,6 @@ pub enum OperationStateIndex<'a> {
     Value {
         /// Decoded value.
         value: u32,
-        /// Serialized token width in bytes.
-        width: usize,
         /// Exact serialized token.
         raw: &'a [u8],
         /// Absolute byte offset of the token.
@@ -1693,7 +1689,8 @@ impl<'a> OperationStateIndex<'a> {
     /// Exact serialized token.
     pub const fn raw(self) -> &'a [u8] {
         match self {
-            Self::Null { raw, .. } | Self::Value { raw, .. } => raw,
+            Self::Null { .. } => &[0xff],
+            Self::Value { raw, .. } => raw,
         }
     }
 
@@ -1710,8 +1707,6 @@ impl<'a> OperationStateIndex<'a> {
 pub struct NonNullStateIndex<'a> {
     /// Decoded value.
     pub value: u32,
-    /// Serialized token width in bytes.
-    pub width: usize,
     /// Exact serialized token.
     pub raw: &'a [u8],
     /// Absolute byte offset of the token.
@@ -1721,17 +1716,7 @@ pub struct NonNullStateIndex<'a> {
 impl<'a> NonNullStateIndex<'a> {
     fn from_index(index: OperationStateIndex<'a>) -> Option<Self> {
         match index {
-            OperationStateIndex::Value {
-                value,
-                width,
-                raw,
-                offset,
-            } => Some(Self {
-                value,
-                width,
-                raw,
-                offset,
-            }),
+            OperationStateIndex::Value { value, raw, offset } => Some(Self { value, raw, offset }),
             OperationStateIndex::Null { .. } => None,
         }
     }
@@ -7186,12 +7171,6 @@ fn operation_relation_object_index(bytes: &[u8], at: usize) -> Option<(Option<u3
     Some((token.value(), at + token.raw().len()))
 }
 
-/// Decode one object-index token used by the operation-state block.
-#[allow(dead_code)] // Direct byte-slice parser entry point retained for focused tests.
-pub fn operation_state_index(bytes: &[u8], at: usize) -> Option<OperationStateIndex<'_>> {
-    operation_state_index_at(bytes, at, 0)
-}
-
 fn operation_state_index_at(
     bytes: &[u8],
     at: usize,
@@ -7216,23 +7195,9 @@ fn operation_state_index_at(
     let raw = bytes.get(at..at + width)?;
     let offset = base_offset.checked_add(at)?;
     Some(match value {
-        None => OperationStateIndex::Null { raw, offset },
-        Some(value) => OperationStateIndex::Value {
-            value,
-            width,
-            raw,
-            offset,
-        },
+        None => OperationStateIndex::Null { offset },
+        Some(value) => OperationStateIndex::Value { value, raw, offset },
     })
-}
-
-/// Decode one tagged integer used by an operation-state row.
-#[allow(dead_code)] // Direct byte-slice parser entry point retained for focused tests.
-pub fn operation_state_tagged_value(
-    bytes: &[u8],
-    at: usize,
-) -> Option<OperationStateTaggedValue<'_>> {
-    operation_state_tagged_value_at(bytes, at, 0)
 }
 
 fn operation_state_tagged_value_at(
@@ -7295,7 +7260,6 @@ fn operation_state_counter_row(
 /// state, state, 4e` rows whose remaining bounded tail is small enough to be
 /// an area footer. This end anchor prevents a syntactically valid short lane in
 /// an operation payload from becoming a state map.
-#[allow(dead_code)] // Direct byte-slice parser entry point retained for focused tests.
 pub fn operation_state_counter_map(
     bytes: &[u8],
     base_offset: usize,

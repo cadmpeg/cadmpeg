@@ -16,7 +16,7 @@ fn operation_state_indices_retain_each_admitted_form() {
 
     let mut at = 0;
     for (value, width) in expected {
-        let token = super::operation_state_index(&bytes, at).expect("complete state index");
+        let token = super::operation_state_index_at(&bytes, at, 0).expect("complete state index");
         assert_eq!(token.value(), value);
         assert_eq!(token.raw(), &bytes[at..at + width]);
         assert_eq!(token.offset(), at);
@@ -35,7 +35,8 @@ fn operation_state_tagged_values_retain_width_and_value() {
     ];
 
     for (raw, value, width) in cases {
-        let token = super::operation_state_tagged_value(&raw, 0).expect("complete tagged value");
+        let token =
+            super::operation_state_tagged_value_at(&raw, 0, 0).expect("complete tagged value");
         assert_eq!(token.value, value);
         assert_eq!(token.marker(), raw[0]);
         assert_eq!(token.raw, &raw[..width]);
