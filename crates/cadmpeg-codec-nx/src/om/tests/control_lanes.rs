@@ -14,7 +14,7 @@ fn product_anchored_control_lane_crosses_the_first_column_boundary() {
         offset_store_control_form(&control, Some(&first_record)),
         Some(OffsetStoreControlForm::ProductAnchored {
             leading_value: Some(crate::om::control_leading_value::ControlLeadingValue::from_wire(3, 0x111).unwrap()),
-            values: vec![0x0001_38e0, 7],
+            values: crate::om::nonempty::NonEmpty::new([0x0001_38e0, 7]).unwrap(),
         })
     );
 
@@ -34,7 +34,7 @@ fn product_anchored_control_lane_crosses_the_first_column_boundary() {
         offset_store_control_form(&zero_prefixed_control, Some(&continued_record)),
         Some(OffsetStoreControlForm::ProductAnchored {
             leading_value: Some(crate::om::control_leading_value::ControlLeadingValue::from_wire(1, 0).unwrap()),
-            values: vec![594, 7],
+            values: crate::om::nonempty::NonEmpty::new([594, 7]).unwrap(),
         })
     );
 }

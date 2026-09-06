@@ -17,6 +17,8 @@ impl<T> NonEmpty<T> {
         std::iter::once(&self.first).chain(&self.rest)
     }
 
+    pub(crate) fn len(&self) -> usize { 1 + self.rest.len() }
+
     pub(crate) fn last(&self) -> &T {
         self.rest.last().unwrap_or(&self.first)
     }
@@ -30,4 +32,10 @@ impl<T> NonEmpty<Option<T>> {
     pub(crate) fn transpose(self) -> Option<NonEmpty<T>> {
         Some(NonEmpty { first: self.first?, rest: self.rest.into_iter().collect::<Option<Vec<_>>>()? })
     }
+}
+
+impl<T> IntoIterator for NonEmpty<T> {
+    type Item = T;
+    type IntoIter = std::iter::Chain<std::iter::Once<T>, std::vec::IntoIter<T>>;
+    fn into_iter(self) -> Self::IntoIter { std::iter::once(self.first).chain(self.rest) }
 }

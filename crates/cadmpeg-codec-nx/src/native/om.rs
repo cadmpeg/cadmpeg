@@ -1886,7 +1886,7 @@ pub struct DataBlockControlValue {
     /// Zero-based word order in the complete control block.
     pub ordinal: u32,
     /// Unsigned 24-bit value serialized after the zero byte.
-    pub value: u32,
+    pub value: crate::om::control_word::ControlWord24,
     /// Absolute file offset of the four-byte word.
     pub source_offset: u64,
 }
@@ -6497,7 +6497,7 @@ mod tests {
             crate::om::offset_store_control_form(&bytes, None),
             Some(crate::om::OffsetStoreControlForm::ProductAnchored {
                 leading_value: Some(crate::om::control_leading_value::ControlLeadingValue::from_wire(2, 0).unwrap()),
-                values: vec![7, 0x1020],
+                values: crate::om::nonempty::NonEmpty::new([7, 0x1020]).unwrap(),
             })
         );
 
@@ -6508,7 +6508,7 @@ mod tests {
             crate::om::offset_store_control_form(&nonzero_leading, None),
             Some(crate::om::OffsetStoreControlForm::ProductAnchored {
                 leading_value: Some(crate::om::control_leading_value::ControlLeadingValue::from_wire(3, 0x1234).unwrap()),
-                values: vec![7],
+                values: crate::om::nonempty::NonEmpty::new([7]).unwrap(),
             })
         );
 
@@ -6546,8 +6546,8 @@ mod tests {
         assert_eq!(control_values.len(), 2);
         assert_eq!(control_values[0].data_block, blocks[0].id);
         assert_eq!(control_values[0].ordinal, 0);
-        assert_eq!(control_values[0].value, 0);
-        assert_eq!(control_values[1].value, 1);
+        assert_eq!(control_values[0].value.value(), 0);
+        assert_eq!(control_values[1].value.value(), 1);
         let classes = super::data_block_control_class_references(&container);
         assert_eq!(classes.len(), 1);
         assert_eq!(classes[0].data_block, blocks[0].id);

@@ -4,6 +4,8 @@
 pub(crate) mod draft_identity;
 pub(crate) mod plane_descriptor;
 pub(crate) mod csys_descriptor;
+pub(crate) mod control_word;
+use control_word::ControlWord24;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -7702,16 +7704,11 @@ pub fn store_version(bytes: &[u8], base_offset: usize) -> Option<StoreVersion<'_
 /// Decode the zero-prefixed offset-store control form as ordered 24-bit values.
 ///
 /// Each word is serialized `00, value:u24 LE`. The complete form is atomic.
-pub fn offset_store_control_values(bytes: &[u8]) -> Option<Vec<u32>> {
-    (!bytes.is_empty() && bytes.len().is_multiple_of(4)).then_some(())?;
-    bytes
-        .chunks_exact(4)
-        .map(|word| {
-            (word[0] == 0).then(|| {
-                u32::from(word[1]) | (u32::from(word[2]) << 8) | (u32::from(word[3]) << 16)
-            })
-        })
-        .collect()
+pub fn offset_store_control_values(bytes: &[u8]) -> Option<NonEmpty<ControlWord24>> {
+    bytes.len().is_multiple_of(4).then_some(())?;
+    NonEmpty::new(bytes.chunks_exact(4).map(|word| {
+        (word[0] == 0).then(|| ControlWord24::new([word[1], word[2], word[3]]))
+    }))?.transpose()
 }
 
 /// Decode the distinct leading class-registry identities in an offset-store
@@ -7722,7 +7719,7 @@ pub fn offset_store_control_values(bytes: &[u8]) -> Option<Vec<u32>> {
 /// instead the unique nonempty prefix whose identities are distinct and all
 /// smaller than every following metadata value.
 pub fn offset_store_control_class_ordinals(bytes: &[u8]) -> Option<Vec<u32>> {
-    let values = offset_store_control_values(bytes)?;
+    let values = offset_store_control_values(bytes)?.into_iter().map(ControlWord24::value).collect::<Vec<_>>();
     let mut suffix_minima =
         alloc_filled(values.len(), u32::MAX, "nx offset-store suffix minima").ok()?;
     for index in (0..values.len().saturating_sub(1)).rev() {
@@ -7742,9 +7739,6 @@ pub fn offset_store_control_class_ordinals(bytes: &[u8]) -> Option<Vec<u32>> {
         }
     }
     let boundary = boundary?;
-    if boundary == values.len() {
-        return None;
-    }
     Some(values[..boundary].to_vec())
 }
 
@@ -7779,7 +7773,6 @@ fn offset_store_product_anchored_form(
             ),
     )?;
     let leading_width = product_offset % 4;
-    (product_offset > leading_width).then_some(())?;
     if product_offset >= control.len() {
         let control_array_bytes = control.len().checked_sub(leading_width)?;
         (!control_array_bytes.is_multiple_of(4)).then_some(())?;
@@ -7789,9 +7782,8 @@ fn offset_store_product_anchored_form(
     } else {
         Some(ControlLeadingValue::read(leading_width, control.iter().chain(first_record).copied())?)
     };
-    let values = (0..(product_offset - leading_width) / 4)
-        .map(|index| joined_control_u32_le(control, first_record, leading_width + index * 4))
-        .collect::<Option<Vec<_>>>()?;
+    let values = NonEmpty::new((0..(product_offset - leading_width) / 4)
+        .map(|index| joined_control_u32_le(control, first_record, leading_width + index * 4)))?.transpose()?;
     Some(OffsetStoreControlForm::ProductAnchored {
         leading_value,
         values,
@@ -7804,7 +7796,7 @@ pub enum OffsetStoreControlForm {
     /// Complete `00 + value:u24 LE` word array.
     ZeroPrefixed {
         /// Ordered values decoded from the complete control block.
-        values: Vec<u32>,
+        values: NonEmpty<ControlWord24>,
     },
     /// Compact leading value and aligned `u32 LE` array preceding one
     /// self-framed product record.
@@ -7812,7 +7804,7 @@ pub enum OffsetStoreControlForm {
         /// Width and value of the compact leading little-endian integer.
         leading_value: Option<ControlLeadingValue>,
         /// Ordered values preceding the product record.
-        values: Vec<u32>,
+        values: NonEmpty<u32>,
     },
 }
 

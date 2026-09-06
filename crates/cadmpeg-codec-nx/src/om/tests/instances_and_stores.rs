@@ -1689,7 +1689,7 @@ fn om_offset_only_index_requires_one_supported_product_record() {
 #[test]
 fn om_offset_store_control_values_require_complete_zero_prefixed_words() {
     assert_eq!(
-        super::offset_store_control_values(&[0, 0x34, 0x12, 0, 0, 0xff, 0xff, 0xff]),
+        super::offset_store_control_values(&[0, 0x34, 0x12, 0, 0, 0xff, 0xff, 0xff]).map(|values| values.into_iter().map(crate::om::control_word::ControlWord24::value).collect::<Vec<_>>()),
         Some(vec![0x1234, 0x00ff_ffff])
     );
     assert!(super::offset_store_control_values(&[]).is_none());
@@ -1702,7 +1702,7 @@ fn om_offset_store_control_form_requires_one_complete_grammar() {
     assert_eq!(
         super::offset_store_control_form(&[0, 0x34, 0x12, 0, 0, 0xff, 0xff, 0xff], None),
         Some(super::OffsetStoreControlForm::ZeroPrefixed {
-            values: vec![0x1234, 0x00ff_ffff],
+            values: crate::om::nonempty::NonEmpty::new([0x1234, 0x00ff_ffff].map(|value| crate::om::control_word::ControlWord24::try_from(value).unwrap())).unwrap(),
         })
     );
 
@@ -1714,7 +1714,7 @@ fn om_offset_store_control_form_requires_one_complete_grammar() {
         super::offset_store_control_form(&product, None),
         Some(super::OffsetStoreControlForm::ProductAnchored {
             leading_value: Some(crate::om::control_leading_value::ControlLeadingValue::from_wire(2, 0).unwrap()),
-            values: vec![7, 0x1020],
+            values: crate::om::nonempty::NonEmpty::new([7, 0x1020]).unwrap(),
         })
     );
 
