@@ -100,11 +100,19 @@ fn om_offset_store_counted_index_lane_requires_complete_non_null_members() {
     assert_eq!(lanes[0].raw_anchor, [0x42]);
     assert_eq!(lanes[0].anchor_offset, 3);
     assert_eq!(
-        lanes[0].members,
+        lanes[0]
+            .members
+            .iter()
+            .map(|token| (token.value, token.offset))
+            .collect::<Vec<_>>(),
         vec![(0x62, 4), (0x48, 5), (0x50, 7), (0x7c, 9)]
     );
     assert_eq!(
-        lanes[0].raw_members,
+        lanes[0]
+            .members
+            .iter()
+            .map(|token| token.raw.clone())
+            .collect::<Vec<_>>(),
         [vec![0x62], vec![0x80, 0x48], vec![0x80, 0x50], vec![0x7c]]
     );
 
@@ -131,18 +139,21 @@ fn om_offset_store_abr_lane_requires_sixteen_slots_and_exact_terminator() {
     assert_eq!(lanes.len(), 1);
     assert_eq!(lanes[0].offset, 1);
     assert_eq!(lanes[0].slots.len(), 16);
-    assert_eq!(lanes[0].slots[6], (Some(643), 8));
-    assert_eq!(lanes[0].raw_slots[6], [0x82, 0x83]);
-    assert!(lanes[0]
-        .raw_slots
-        .iter()
-        .enumerate()
-        .all(|(slot, raw)| slot == 6 || raw == &[0xff]));
+    assert_eq!(
+        (lanes[0].slots[6].value, lanes[0].slots[6].offset),
+        (Some(643), 8)
+    );
+    assert_eq!(lanes[0].slots[6].raw, [0x82, 0x83]);
     assert!(lanes[0]
         .slots
         .iter()
         .enumerate()
-        .all(|(slot, (value, _))| slot == 6 || value.is_none()));
+        .all(|(slot, token)| slot == 6 || token.raw == [0xff]));
+    assert!(lanes[0]
+        .slots
+        .iter()
+        .enumerate()
+        .all(|(slot, token)| slot == 6 || token.value.is_none()));
 
     bytes[23] = b'X';
     assert!(super::offset_store_abr_reference_lanes(&bytes).is_empty());
@@ -367,10 +378,23 @@ fn om_simple_hole_lane_requires_two_identical_nonempty_scalar_runs() {
         label,
     };
     let lane = super::simple_hole_repeated_scalar_lane(record).unwrap();
-    assert_eq!(lane.values[0], 508.0);
-    assert!((lane.values[1] - 38.1).abs() < 2.0e-12);
-    assert_eq!(lane.raw_values, [shifted(508.0), shifted(38.1)]);
-    assert_eq!(lane.witness_offsets, [vec![200, 209], vec![218, 227]]);
+    assert_eq!(lane.values[0].value, 508.0);
+    assert!((lane.values[1].value - 38.1).abs() < 2.0e-12);
+    assert_eq!(
+        lane.values
+            .iter()
+            .map(|token| token.raw)
+            .collect::<Vec<_>>(),
+        [shifted(508.0), shifted(38.1)]
+    );
+    assert_eq!(
+        [0, 1].map(|i| lane
+            .values
+            .iter()
+            .map(|token| token.witness_offsets[i])
+            .collect::<Vec<_>>()),
+        [vec![200, 209], vec![218, 227]]
+    );
 
     let mut mismatched = payload.clone();
     mismatched[18 + 7] ^= 1;
@@ -406,9 +430,28 @@ fn om_simple_hole_lane_accepts_one_repeated_scalar() {
         },
     };
     let lane = super::simple_hole_repeated_scalar_lane(record).unwrap();
-    assert_eq!(lane.values, [25.4]);
-    assert_eq!(lane.raw_values, [scalar]);
-    assert_eq!(lane.witness_offsets, [vec![200], vec![209]]);
+    assert_eq!(
+        lane.values
+            .iter()
+            .map(|token| token.value)
+            .collect::<Vec<_>>(),
+        [25.4]
+    );
+    assert_eq!(
+        lane.values
+            .iter()
+            .map(|token| token.raw)
+            .collect::<Vec<_>>(),
+        [scalar]
+    );
+    assert_eq!(
+        [0, 1].map(|i| lane
+            .values
+            .iter()
+            .map(|token| token.witness_offsets[i])
+            .collect::<Vec<_>>()),
+        [vec![200], vec![209]]
+    );
 }
 
 #[test]
@@ -751,8 +794,22 @@ fn om_datum_plane_object_index_lane_ends_at_logical_payload_boundary() {
     assert_eq!(lanes.len(), 1);
     assert_eq!(lanes[0].offset, 2);
     assert_eq!(lanes[0].declared_count, 4);
-    assert_eq!(lanes[0].indices, [(257, 4), (1, 6), (1, 7)]);
-    assert_eq!(lanes[0].raw_indices, [vec![0x81, 0x01], vec![1], vec![1]]);
+    assert_eq!(
+        lanes[0]
+            .indices
+            .iter()
+            .map(|token| (token.value, token.offset))
+            .collect::<Vec<_>>(),
+        [(257, 4), (1, 6), (1, 7)]
+    );
+    assert_eq!(
+        lanes[0]
+            .indices
+            .iter()
+            .map(|token| token.raw.clone())
+            .collect::<Vec<_>>(),
+        [vec![0x81, 0x01], vec![1], vec![1]]
+    );
     assert_eq!(lanes[0].trailer, 0x1234_5678);
 
     let mut trailing = bytes.to_vec();
@@ -901,9 +958,30 @@ fn om_draft_fixed_lanes_require_complete_discriminator_atoms_and_terminator() {
     let lanes = super::draft_construction_fixed_lanes(&bytes);
     assert_eq!(lanes.len(), 1);
     assert_eq!(lanes[0].offset, 1);
-    assert_eq!(lanes[0].values, [0.5, -0.5]);
-    assert_eq!(lanes[0].markers, [0x30, 0xb0]);
-    assert_eq!(lanes[0].value_offsets, [19, 27]);
+    assert_eq!(
+        lanes[0]
+            .values
+            .iter()
+            .map(|token| token.value)
+            .collect::<Vec<_>>(),
+        [0.5, -0.5]
+    );
+    assert_eq!(
+        lanes[0]
+            .values
+            .iter()
+            .map(|token| token.marker)
+            .collect::<Vec<_>>(),
+        [0x30, 0xb0]
+    );
+    assert_eq!(
+        lanes[0]
+            .values
+            .iter()
+            .map(|token| token.offset)
+            .collect::<Vec<_>>(),
+        [19, 27]
+    );
 
     bytes.pop();
     assert!(super::draft_construction_fixed_lanes(&bytes).is_empty());
@@ -928,8 +1006,22 @@ fn om_draft_binary32_lanes_require_complete_typed_atoms_and_terminator() {
     assert_eq!(lanes[0].offset, 1);
     assert_eq!(lanes[0].discriminator, discriminator);
     assert_eq!(lanes[0].branch, 4);
-    assert_eq!(lanes[0].values, [1.0, -1.0]);
-    assert_eq!(lanes[0].value_offsets, [19, 23]);
+    assert_eq!(
+        lanes[0]
+            .values
+            .iter()
+            .map(|token| token.value)
+            .collect::<Vec<_>>(),
+        [1.0, -1.0]
+    );
+    assert_eq!(
+        lanes[0]
+            .values
+            .iter()
+            .map(|token| token.offset)
+            .collect::<Vec<_>>(),
+        [19, 23]
+    );
 
     bytes.pop();
     assert!(super::draft_construction_binary32_lanes(&bytes).is_empty());

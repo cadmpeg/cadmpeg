@@ -3853,15 +3853,23 @@ pub fn feature_boolean_operations(container: &Container) -> Vec<FeatureBooleanOp
                 id: format!("nx:feature-history:boolean#{section_key}-{operation_ordinal:010}"),
                 operation_label,
                 kind,
-                target_object_index: operation.target,
-                raw_target_object_index: operation.raw_target,
-                target_source_offset: entry_offset + operation.target_offset as u64,
-                tool_object_indices: operation.tools,
-                raw_tool_object_indices: operation.raw_tools,
+                target_object_index: operation.target.object_index,
+                raw_target_object_index: operation.target.raw_object_index,
+                target_source_offset: entry_offset + operation.target.offset as u64,
+                tool_object_indices: operation
+                    .tools
+                    .iter()
+                    .map(|tool| tool.object_index)
+                    .collect(),
+                raw_tool_object_indices: operation
+                    .tools
+                    .iter()
+                    .map(|tool| tool.raw_object_index.clone())
+                    .collect(),
                 tool_source_offsets: operation
-                    .tool_offsets
-                    .into_iter()
-                    .map(|offset| entry_offset + offset as u64)
+                    .tools
+                    .iter()
+                    .map(|tool| entry_offset + tool.offset as u64)
                     .collect(),
                 source_offset: entry_offset + operation.offset as u64,
             });
@@ -4749,15 +4757,15 @@ pub fn feature_simple_hole_repeated_scalar_lanes(
                 operation_label: format!(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
-                values: pair.values,
-                raw_values: pair.raw_values,
-                first_witness_offsets: pair.witness_offsets[0]
+                values: pair.values.iter().map(|token| token.value).collect(),
+                raw_values: pair.values.iter().map(|token| token.raw).collect(),
+                first_witness_offsets: pair.values
                     .iter()
-                    .map(|offset| entry_offset + *offset as u64)
+                    .map(|token| entry_offset + token.witness_offsets[0] as u64)
                     .collect(),
-                second_witness_offsets: pair.witness_offsets[1]
+                second_witness_offsets: pair.values
                     .iter()
-                    .map(|offset| entry_offset + *offset as u64)
+                    .map(|token| entry_offset + token.witness_offsets[1] as u64)
                     .collect(),
             });
         },
@@ -5921,24 +5929,19 @@ pub fn feature_datum_plane_payloads(
                 block_payload_offsets,
                 block_byte_lengths,
                 block_source_offsets,
-                index_lane: lane.and_then(|lane| {
-                    (lane.indices.len() == lane.raw_indices.len()).then(|| {
-                        FeatureDatumPlaneIndexLane {
-                            offset: lane.offset as u64,
-                            declared_count: lane.declared_count,
-                            trailer: lane.trailer,
-                            entries: lane
-                                .indices
-                                .iter()
-                                .zip(lane.raw_indices.iter())
-                                .map(|((value, offset), raw)| FeatureDatumPlaneIndexLaneEntry {
-                                    value: *value,
-                                    raw: raw.clone(),
-                                    offset: *offset as u64,
-                                })
-                                .collect(),
-                        }
-                    })
+                index_lane: lane.map(|lane| FeatureDatumPlaneIndexLane {
+                    offset: lane.offset as u64,
+                    declared_count: lane.declared_count,
+                    trailer: lane.trailer,
+                    entries: lane
+                        .indices
+                        .iter()
+                        .map(|token| FeatureDatumPlaneIndexLaneEntry {
+                            value: token.value,
+                            raw: token.raw.clone(),
+                            offset: token.offset as u64,
+                        })
+                        .collect(),
                 }),
             })
         })
@@ -6666,14 +6669,14 @@ pub fn feature_sketch_payload_scalar_lanes(
         crate::om::sketch_payload_scalar_lanes,
         |payload, ordinal, lane, source_offset| {
             let value_payload_offsets = lane
-                .value_offsets
+                .values
                 .iter()
-                .map(|offset| *offset as u64)
+                .map(|token| token.offset as u64)
                 .collect::<Vec<_>>();
             let value_source_offsets = lane
-                .value_offsets
+                .values
                 .iter()
-                .map(|offset| source_offset(*offset))
+                .map(|token| source_offset(token.offset))
                 .collect::<Option<Vec<_>>>()?;
             Some(FeatureSketchPayloadScalarLane {
                 id: format!("{}-scalar-lane-{ordinal:010}", payload.id),
@@ -6681,8 +6684,8 @@ pub fn feature_sketch_payload_scalar_lanes(
                 construction_payload: payload.id.clone(),
                 ordinal: ordinal as u32,
                 discriminator: lane.discriminator,
-                values: lane.values,
-                raw_values: lane.raw_values,
+                values: lane.values.iter().map(|token| token.value).collect(),
+                raw_values: lane.values.into_iter().map(|token| token.raw).collect(),
                 value_payload_offsets,
                 terminator_payload_offset: lane.terminator_offset as u64,
                 source_offset: source_offset(lane.offset)?,
@@ -8065,9 +8068,9 @@ pub fn feature_pattern_construction_fixed_lanes(
                 .filter_map(|(ordinal, lane)| {
                     let payload_offset = lane.offset as u64;
                     let value_payload_offsets = lane
-                        .value_offsets
-                        .into_iter()
-                        .map(|offset| offset as u64)
+                        .values
+                        .iter()
+                        .map(|token| token.offset as u64)
                         .collect::<Vec<_>>();
                     let value_source_offsets = value_payload_offsets
                         .iter()
@@ -8080,9 +8083,9 @@ pub fn feature_pattern_construction_fixed_lanes(
                         operation_label: payload.operation_label.clone(),
                         construction_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
-                        values: lane.values,
-                        markers: lane.markers,
-                        raw_values: lane.raw_values,
+                        values: lane.values.iter().map(|token| token.value).collect(),
+                        markers: lane.values.iter().map(|token| token.marker).collect(),
+                        raw_values: lane.values.iter().map(|token| token.raw).collect(),
                         payload_offset,
                         value_payload_offsets,
                         source_offset: joined_payload_source_offset(
@@ -8116,7 +8119,7 @@ pub fn feature_pattern_transform_lanes(container: &Container) -> Vec<FeaturePatt
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
                 row_schema_index: lane.row_schema_index,
-                layout: match lane.layout {
+                layout: match lane.layout() {
                     crate::om::PatternTransformLayout::ScalarRows => {
                         FeaturePatternTransformLayout::ScalarRows
                     }
@@ -8126,9 +8129,9 @@ pub fn feature_pattern_transform_lanes(container: &Container) -> Vec<FeaturePatt
                 },
                 declared_count: lane.declared_count,
                 encodings: lane
-                    .encodings
-                    .into_iter()
-                    .map(|encoding| match encoding {
+                    .rows()
+                    .flat_map(|(values, _)| values)
+                    .map(|token| match token.encoding {
                         crate::om::PatternTransformEncoding::ExactOne => {
                             FeaturePatternTransformEncoding::ExactOne
                         }
@@ -8140,20 +8143,20 @@ pub fn feature_pattern_transform_lanes(container: &Container) -> Vec<FeaturePatt
                         }
                     })
                     .collect(),
-                values: lane.values,
-                raw_values: lane.raw_values,
-                selectors: lane.selectors,
-                raw_selectors: lane.raw_selectors,
+                values: lane.rows().flat_map(|(values, _)| values).map(|token| token.value).collect(),
+                raw_values: lane.rows().flat_map(|(values, _)| values).map(|token| token.raw.clone()).collect(),
+                selectors: lane.rows().map(|(_, selector)| selector).map(|token| token.value).collect(),
+                raw_selectors: lane.rows().map(|(_, selector)| selector).map(|token| token.raw.clone()).collect(),
                 source_offset: entry_offset + lane.offset as u64,
                 value_source_offsets: lane
-                    .value_offsets
-                    .into_iter()
-                    .map(|offset| entry_offset + offset as u64)
+                    .rows()
+                    .flat_map(|(values, _)| values)
+                    .map(|token| entry_offset + token.offset as u64)
                     .collect(),
                 selector_source_offsets: lane
-                    .selector_offsets
-                    .into_iter()
-                    .map(|offset| entry_offset + offset as u64)
+                    .rows()
+                    .map(|(_, selector)| selector)
+                    .map(|token| entry_offset + token.offset as u64)
                     .collect(),
             });
         },
@@ -8180,10 +8183,10 @@ pub fn feature_multi_instance_output_lanes(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
                 declared_count: lane.declared_count,
-                selectors: lane.selectors,
-                raw_selectors: lane.raw_selectors,
-                ordinals: lane.ordinals,
-                row_indices: lane.row_indices,
+                selectors: lane.rows.iter().map(|row| row.selector.value).collect(),
+                raw_selectors: lane.rows.iter().map(|row| row.selector.raw.clone()).collect(),
+                ordinals: lane.rows.iter().map(|row| row.ordinal).collect(),
+                row_indices: lane.rows.iter().map(|row| row.row_index).collect(),
                 instance_count: lane.instance_count,
                 trailing_object_indices: lane
                     .trailing_references
@@ -8197,9 +8200,9 @@ pub fn feature_multi_instance_output_lanes(
                     .collect(),
                 source_offset: entry_offset + lane.offset as u64,
                 selector_source_offsets: lane
-                    .selector_offsets
-                    .into_iter()
-                    .map(|offset| entry_offset + offset as u64)
+                    .rows
+                    .iter()
+                    .map(|row| entry_offset + row.selector.offset as u64)
                     .collect(),
                 trailing_object_index_source_offsets: lane
                     .trailing_references
@@ -8235,13 +8238,13 @@ pub fn feature_identical_instance_output_lanes(
                 count_schema_index: lane.count_schema_index,
                 row_schema_indices: lane.row_schema_indices,
                 declared_count: lane.declared_count,
-                selectors: lane.selectors,
-                raw_selectors: lane.raw_selectors,
+                selectors: lane.selectors.iter().map(|row| row.value).collect(),
+                raw_selectors: lane.selectors.iter().map(|row| row.raw.clone()).collect(),
                 source_offset: entry_offset + lane.offset as u64,
                 selector_source_offsets: lane
-                    .selector_offsets
-                    .into_iter()
-                    .map(|offset| entry_offset + offset as u64)
+                    .selectors
+                    .iter()
+                    .map(|row| entry_offset + row.offset as u64)
                     .collect(),
             });
         },
@@ -8391,7 +8394,7 @@ pub fn feature_draft_construction_index_lanes(
             let indices = lane
                 .indices
                 .iter()
-                .map(|(value, _)| *value)
+                .map(|token| token.value)
                 .collect::<Vec<_>>();
             let data_blocks =
                 crate::om::draft_feature_payload_references(record).and_then(|graph| {
@@ -8420,12 +8423,12 @@ pub fn feature_draft_construction_index_lanes(
                 ),
                 declared_count: lane.declared_count,
                 indices,
-                raw_indices: lane.raw_indices,
+                raw_indices: lane.indices.iter().map(|token| token.raw.clone()).collect(),
                 data_blocks,
                 source_offsets: lane
                     .indices
                     .iter()
-                    .map(|(_, offset)| entry_offset + *offset as u64)
+                    .map(|token| entry_offset + token.offset as u64)
                     .collect(),
             });
         },
@@ -8539,9 +8542,9 @@ pub fn feature_draft_construction_fixed_lanes(
                 .filter_map(|(ordinal, lane)| {
                     let payload_offset = lane.offset as u64;
                     let value_payload_offsets = lane
-                        .value_offsets
-                        .into_iter()
-                        .map(|offset| offset as u64)
+                        .values
+                        .iter()
+                        .map(|token| token.offset as u64)
                         .collect::<Vec<_>>();
                     let value_source_offsets = value_payload_offsets
                         .iter()
@@ -8554,9 +8557,9 @@ pub fn feature_draft_construction_fixed_lanes(
                         operation_label: payload.operation_label.clone(),
                         graph_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
-                        values: lane.values,
-                        markers: lane.markers,
-                        raw_values: lane.raw_values,
+                        values: lane.values.iter().map(|token| token.value).collect(),
+                        markers: lane.values.iter().map(|token| token.marker).collect(),
+                        raw_values: lane.values.iter().map(|token| token.raw).collect(),
                         payload_offset,
                         value_payload_offsets,
                         source_offset: joined_payload_source_offset(
@@ -8593,9 +8596,9 @@ pub fn feature_draft_construction_binary32_lanes(
                 .filter_map(|(ordinal, lane)| {
                     let payload_offset = lane.offset as u64;
                     let value_payload_offsets = lane
-                        .value_offsets
-                        .into_iter()
-                        .map(|offset| offset as u64)
+                        .values
+                        .iter()
+                        .map(|token| token.offset as u64)
                         .collect::<Vec<_>>();
                     let value_source_offsets = value_payload_offsets
                         .iter()
@@ -8610,8 +8613,8 @@ pub fn feature_draft_construction_binary32_lanes(
                         ordinal: ordinal as u32,
                         discriminator: lane.discriminator,
                         branch: lane.branch,
-                        values: lane.values,
-                        raw_values: lane.raw_values,
+                        values: lane.values.iter().map(|token| token.value).collect(),
+                        raw_values: lane.values.iter().map(|token| token.raw).collect(),
                         payload_offset,
                         value_payload_offsets,
                         source_offset: joined_payload_source_offset(
@@ -9225,12 +9228,12 @@ pub fn feature_operation_terminal_discriminators(
                     .type_index_offsets
                     .map(|offset| entry_offset + offset as u64),
                 flags: lane.flags,
-                trailing_indices: lane.trailing_indices,
-                raw_trailing_indices: lane.raw_trailing_indices,
+                trailing_indices: lane.trailing_indices.iter().map(|token| token.value).collect(),
+                raw_trailing_indices: lane.trailing_indices.iter().map(|token| token.raw.clone()).collect(),
                 trailing_index_source_offsets: lane
-                    .trailing_index_offsets
-                    .into_iter()
-                    .map(|offset| entry_offset + offset as u64)
+                    .trailing_indices
+                    .iter()
+                    .map(|token| entry_offset + token.offset as u64)
                     .collect(),
                 source_offset: entry_offset + lane.offset as u64,
             });
@@ -9577,15 +9580,21 @@ pub fn feature_extrude_payload_32_branches(
             let Some(branch) = crate::om::extrude_payload_32_branch(record) else {
                 return;
             };
-            let resolve = |indices: &[u32]| {
-                indices
-                    .iter()
-                    .map(|index| unique_offset_data_block(&indexed, *index))
-                    .collect::<Vec<_>>()
-            };
-            let atom_data_blocks = resolve(&branch.atom_indices);
-            let first_data_blocks = resolve(&branch.first_indices);
-            let second_data_blocks = resolve(&branch.second_indices);
+            let atom_data_blocks = branch
+                .atoms
+                .iter()
+                .map(|token| unique_offset_data_block(&indexed, token.value))
+                .collect();
+            let first_data_blocks = branch
+                .first_indices
+                .iter()
+                .map(|token| unique_offset_data_block(&indexed, token.value))
+                .collect();
+            let second_data_blocks = branch
+                .second_indices
+                .iter()
+                .map(|token| unique_offset_data_block(&indexed, token.value))
+                .collect();
             branches.push(FeatureExtrudePayload32Branch {
                 id: format!(
                     "nx:feature-history:extrude-payload-32-branch#{section_key}-{operation_ordinal:010}"
@@ -9596,28 +9605,28 @@ pub fn feature_extrude_payload_32_branches(
                 body_object_index: branch.body_object_index,
                 scalar: branch.scalar,
                 raw_scalar: branch.raw_scalar,
-                atoms_be: branch.atoms_be,
+                atoms_be: branch.atoms.iter().map(|token| token.raw).collect(),
                 atom_source_offsets: branch
-                    .atom_offsets
-                    .into_iter()
-                    .map(|offset| entry_offset + offset as u64)
+                    .atoms
+                    .iter()
+                    .map(|token| entry_offset + token.offset as u64)
                     .collect(),
-                atom_indices: branch.atom_indices,
+                atom_indices: branch.atoms.iter().map(|token| token.value).collect(),
                 atom_data_blocks,
-                first_indices: branch.first_indices,
-                raw_first_indices: branch.raw_first_indices,
+                first_indices: branch.first_indices.iter().map(|token| token.value).collect(),
+                raw_first_indices: branch.first_indices.iter().map(|token| token.raw.clone()).collect(),
                 first_index_source_offsets: branch
-                    .first_index_offsets
-                    .into_iter()
-                    .map(|offset| entry_offset + offset as u64)
+                    .first_indices
+                    .iter()
+                    .map(|token| entry_offset + token.offset as u64)
                     .collect(),
                 first_data_blocks,
-                second_indices: branch.second_indices,
-                raw_second_indices: branch.raw_second_indices,
+                second_indices: branch.second_indices.iter().map(|token| token.value).collect(),
+                raw_second_indices: branch.second_indices.iter().map(|token| token.raw.clone()).collect(),
                 second_index_source_offsets: branch
-                    .second_index_offsets
-                    .into_iter()
-                    .map(|offset| entry_offset + offset as u64)
+                    .second_indices
+                    .iter()
+                    .map(|token| entry_offset + token.offset as u64)
                     .collect(),
                 second_data_blocks,
                 terminal_object_index: branch.terminal_object_index,

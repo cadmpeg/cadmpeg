@@ -229,22 +229,55 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
     assert_eq!(lane.offset, 201);
     assert_eq!(lane.row_schema_index, 0x60);
     assert_eq!(
-        lane.layout,
+        lane.layout(),
         super::super::PatternTransformLayout::ScalarRows
     );
     assert_eq!(lane.declared_count, 3);
     assert_eq!(
-        lane.encodings,
+        lane.rows()
+            .flat_map(|(values, _)| values)
+            .map(|token| token.encoding)
+            .collect::<Vec<_>>(),
         [
             super::super::PatternTransformEncoding::Binary32,
             super::super::PatternTransformEncoding::Binary32,
         ]
     );
-    assert_eq!(lane.values, [3.3125, -3.3125]);
-    assert_eq!(lane.value_offsets, [207, 237]);
-    assert_eq!(lane.selectors, [2, 8190]);
-    assert_eq!(lane.raw_selectors, [vec![0x02], vec![0x9f, 0xfe]]);
-    assert_eq!(lane.selector_offsets, [225, 255]);
+    assert_eq!(
+        lane.rows()
+            .flat_map(|(values, _)| values)
+            .map(|token| token.value)
+            .collect::<Vec<_>>(),
+        [3.3125, -3.3125]
+    );
+    assert_eq!(
+        lane.rows()
+            .flat_map(|(values, _)| values)
+            .map(|token| token.offset)
+            .collect::<Vec<_>>(),
+        [207, 237]
+    );
+    assert_eq!(
+        lane.rows()
+            .map(|(_, selector)| selector)
+            .map(|token| token.value)
+            .collect::<Vec<_>>(),
+        [2, 8190]
+    );
+    assert_eq!(
+        lane.rows()
+            .map(|(_, selector)| selector)
+            .map(|token| token.raw.clone())
+            .collect::<Vec<_>>(),
+        [vec![0x02], vec![0x9f, 0xfe]]
+    );
+    assert_eq!(
+        lane.rows()
+            .map(|(_, selector)| selector)
+            .map(|token| token.offset)
+            .collect::<Vec<_>>(),
+        [225, 255]
+    );
 
     let geometry_payload = b"\x01\x03\x60\x01\x00\x00\x00\x00\x01\x00\x30\x60\x80\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x02\x01\x01\x00\x00\xff\x00\x00\x60\x01\x00\x00\x00\x00\x01\x00\x30\x70\x80\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x03\x01\x02\x00\x00\xff\x00\x00\x5f\x00\x00\x01";
     let geometry_record = super::super::OperationRecord {
@@ -260,20 +293,47 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
         super::super::pattern_payload_transform_lane(geometry_record).expect("geometry lane");
     assert_eq!(lane.row_schema_index, 0x60);
     assert_eq!(
-        lane.layout,
+        lane.layout(),
         super::super::PatternTransformLayout::ScalarRows
     );
     assert_eq!(
-        lane.encodings,
+        lane.rows()
+            .flat_map(|(values, _)| values)
+            .map(|token| token.encoding)
+            .collect::<Vec<_>>(),
         [
             super::super::PatternTransformEncoding::Binary64,
             super::super::PatternTransformEncoding::Binary64,
         ]
     );
-    assert_eq!(lane.values, [132.0, 264.0]);
-    assert_eq!(lane.selectors, [2, 3]);
-    assert_eq!(lane.raw_selectors, [vec![0x02], vec![0x03]]);
-    assert_eq!(lane.selector_offsets, [228, 262]);
+    assert_eq!(
+        lane.rows()
+            .flat_map(|(values, _)| values)
+            .map(|token| token.value)
+            .collect::<Vec<_>>(),
+        [132.0, 264.0]
+    );
+    assert_eq!(
+        lane.rows()
+            .map(|(_, selector)| selector)
+            .map(|token| token.value)
+            .collect::<Vec<_>>(),
+        [2, 3]
+    );
+    assert_eq!(
+        lane.rows()
+            .map(|(_, selector)| selector)
+            .map(|token| token.raw.clone())
+            .collect::<Vec<_>>(),
+        [vec![0x02], vec![0x03]]
+    );
+    assert_eq!(
+        lane.rows()
+            .map(|(_, selector)| selector)
+            .map(|token| token.offset)
+            .collect::<Vec<_>>(),
+        [228, 262]
+    );
 
     let schema_relative_payload = b"\x01\x04\
         \x3d\x01\x00\x00\x50\x9e\x00\x00\x00\x01\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x02\x01\x01\x00\x00\xff\x00\x00\
@@ -289,19 +349,30 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
         .expect("schema-relative feature lane");
     assert_eq!(relative_lane.row_schema_index, 0x3d);
     assert_eq!(
-        relative_lane.layout,
+        relative_lane.layout(),
         super::super::PatternTransformLayout::ScalarRows
     );
     assert_eq!(relative_lane.declared_count, 4);
     assert_eq!(
-        relative_lane.encodings,
+        relative_lane
+            .rows()
+            .flat_map(|(values, _)| values)
+            .map(|token| token.encoding)
+            .collect::<Vec<_>>(),
         [
             super::super::PatternTransformEncoding::Binary32,
             super::super::PatternTransformEncoding::Binary32,
             super::super::PatternTransformEncoding::Binary64,
         ]
     );
-    assert_eq!(relative_lane.selectors, [2, 3, 4]);
+    assert_eq!(
+        relative_lane
+            .rows()
+            .map(|(_, selector)| selector)
+            .map(|token| token.value)
+            .collect::<Vec<_>>(),
+        [2, 3, 4]
+    );
 
     let wide_payload = b"\x01\x03\
         \x35\x2f\xf3\xc6\xef\x37\x2f\xe9\x60\xb0\x0e\x6f\x0e\x13\x44\x54\xfd\x00\x00\x30\x0e\x6f\x0e\x13\x44\x54\xfd\x2f\xf3\xc6\xef\x37\x2f\xe9\x60\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x02\x01\x01\x00\x00\xff\x00\x00\
@@ -315,13 +386,23 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
     .expect("wide feature lane");
     assert_eq!(wide_lane.row_schema_index, 0x35);
     assert_eq!(
-        wide_lane.layout,
+        wide_lane.layout(),
         super::super::PatternTransformLayout::WideRows
     );
     assert_eq!(wide_lane.declared_count, 3);
-    assert_eq!(wide_lane.values.len(), 10);
     assert_eq!(
-        wide_lane.encodings,
+        wide_lane
+            .rows()
+            .map(|(values, _)| values.len())
+            .sum::<usize>(),
+        10
+    );
+    assert_eq!(
+        wide_lane
+            .rows()
+            .flat_map(|(values, _)| values)
+            .map(|token| token.encoding)
+            .collect::<Vec<_>>(),
         [
             super::super::PatternTransformEncoding::Binary64,
             super::super::PatternTransformEncoding::Binary64,
@@ -335,7 +416,14 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
             super::super::PatternTransformEncoding::Binary32,
         ]
     );
-    assert_eq!(wide_lane.selectors, [2, 3]);
+    assert_eq!(
+        wide_lane
+            .rows()
+            .map(|(_, selector)| selector)
+            .map(|token| token.value)
+            .collect::<Vec<_>>(),
+        [2, 3]
+    );
 
     let mut zero_terminal_value = wide_payload.to_vec();
     let terminal_value = zero_terminal_value

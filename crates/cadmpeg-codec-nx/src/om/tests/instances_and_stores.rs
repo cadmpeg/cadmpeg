@@ -68,11 +68,32 @@ fn om_multi_instance_output_lane_requires_consistent_counts_and_groups() {
     let lane = super::multi_instance_output_payload_lane(record).expect("complete output lane");
     assert_eq!(lane.offset, 209);
     assert_eq!(lane.declared_count, 7);
-    assert_eq!(lane.selectors, [2, 2, 3, 3, 4, 4]);
-    assert_eq!(lane.ordinals, [2, 3, 2, 3, 2, 3]);
-    assert_eq!(lane.row_indices, [2, 3, 4, 5, 6, 7]);
+    assert_eq!(
+        lane.rows
+            .iter()
+            .map(|row| row.selector.value)
+            .collect::<Vec<_>>(),
+        [2, 2, 3, 3, 4, 4]
+    );
+    assert_eq!(
+        lane.rows.iter().map(|row| row.ordinal).collect::<Vec<_>>(),
+        [2, 3, 2, 3, 2, 3]
+    );
+    assert_eq!(
+        lane.rows
+            .iter()
+            .map(|row| row.row_index)
+            .collect::<Vec<_>>(),
+        [2, 3, 4, 5, 6, 7]
+    );
     assert_eq!(lane.instance_count, 3);
-    assert_eq!(lane.selector_offsets, [219, 230, 241, 252, 263, 274]);
+    assert_eq!(
+        lane.rows
+            .iter()
+            .map(|row| row.selector.offset)
+            .collect::<Vec<_>>(),
+        [219, 230, 241, 252, 263, 274]
+    );
     assert_eq!(
         lane.trailing_references
             .iter()
@@ -143,12 +164,27 @@ fn om_identical_instance_output_lane_requires_complete_ordered_rows() {
     assert_eq!(lane.count_schema_index, 0x13);
     assert_eq!(lane.row_schema_indices, [0x14, 0x15, 0x16]);
     assert_eq!(lane.declared_count, 4);
-    assert_eq!(lane.selectors, [0x20, 0x0f, 0x123]);
     assert_eq!(
-        lane.raw_selectors,
+        lane.selectors
+            .iter()
+            .map(|row| row.value)
+            .collect::<Vec<_>>(),
+        [0x20, 0x0f, 0x123]
+    );
+    assert_eq!(
+        lane.selectors
+            .iter()
+            .map(|row| row.raw.clone())
+            .collect::<Vec<_>>(),
         [vec![0x80, 0x20], vec![0x0f], vec![0x81, 0x23]]
     );
-    assert_eq!(lane.selector_offsets, [210, 219, 227]);
+    assert_eq!(
+        lane.selectors
+            .iter()
+            .map(|row| row.offset)
+            .collect::<Vec<_>>(),
+        [210, 219, 227]
+    );
 
     let mut wrong_ordinal = payload.to_vec();
     wrong_ordinal[21] = 4;
@@ -335,8 +371,20 @@ fn om_draft_feature_references_require_one_complete_graph() {
     );
     let lane = super::draft_feature_leading_index_lane(record).expect("complete index lane");
     assert_eq!(lane.declared_count, 3);
-    assert_eq!(lane.indices, vec![(148, 224), (585, 226)]);
-    assert_eq!(lane.raw_indices, vec![vec![0x80, 0x94], vec![0x82, 0x49]]);
+    assert_eq!(
+        lane.indices
+            .iter()
+            .map(|token| (token.value, token.offset))
+            .collect::<Vec<_>>(),
+        vec![(148, 224), (585, 226)]
+    );
+    assert_eq!(
+        lane.indices
+            .iter()
+            .map(|token| token.raw.clone())
+            .collect::<Vec<_>>(),
+        vec![vec![0x80, 0x94], vec![0x82, 0x49]]
+    );
     let terminal_lane = super::draft_feature_terminal_lane(record).expect("complete terminal lane");
     assert_eq!(terminal_lane.indices, [350, 184]);
     assert_eq!(terminal_lane.raw_indices, [[0x81, 0x5e], [0x80, 0xb8]]);
@@ -923,9 +971,27 @@ fn om_operation_terminal_discriminator_requires_one_complete_lane() {
     assert_eq!(lane.raw_type_indices, [vec![0x81, 0x5f], vec![0x80, 0xab]]);
     assert_eq!(lane.type_index_offsets, [203, 205]);
     assert_eq!(lane.flags, [1, 2, 1, 1]);
-    assert_eq!(lane.trailing_indices, [5, 255]);
-    assert_eq!(lane.raw_trailing_indices, [vec![0x05], vec![0x80, 0xff]]);
-    assert_eq!(lane.trailing_index_offsets, [220, 221]);
+    assert_eq!(
+        lane.trailing_indices
+            .iter()
+            .map(|token| token.value)
+            .collect::<Vec<_>>(),
+        [5, 255]
+    );
+    assert_eq!(
+        lane.trailing_indices
+            .iter()
+            .map(|token| token.raw.clone())
+            .collect::<Vec<_>>(),
+        [vec![0x05], vec![0x80, 0xff]]
+    );
+    assert_eq!(
+        lane.trailing_indices
+            .iter()
+            .map(|token| token.offset)
+            .collect::<Vec<_>>(),
+        [220, 221]
+    );
 
     let subtract = super::OperationRecord {
         label: super::OperationLabel {
@@ -1227,21 +1293,78 @@ fn om_extrude_body_32_branch_decodes_counted_lanes() {
     assert_eq!(branch.body_object_index, 115);
     assert!(branch.scalar.is_finite());
     assert_eq!(branch.raw_scalar, bytes[8..16]);
-    assert_eq!(branch.atoms_be, [0x3d82_5600, 0x3d82_5700]);
-    assert_eq!(branch.atom_offsets, [118, 122]);
-    assert_eq!(branch.atom_indices, [598, 599]);
-    assert_eq!(branch.first_indices, [43, 45, 44]);
     assert_eq!(
-        branch.raw_first_indices,
+        branch
+            .atoms
+            .iter()
+            .map(|token| token.raw)
+            .collect::<Vec<_>>(),
+        [0x3d82_5600, 0x3d82_5700]
+    );
+    assert_eq!(
+        branch
+            .atoms
+            .iter()
+            .map(|token| token.offset)
+            .collect::<Vec<_>>(),
+        [118, 122]
+    );
+    assert_eq!(
+        branch
+            .atoms
+            .iter()
+            .map(|token| token.value)
+            .collect::<Vec<_>>(),
+        [598, 599]
+    );
+    assert_eq!(
+        branch
+            .first_indices
+            .iter()
+            .map(|token| token.value)
+            .collect::<Vec<_>>(),
+        [43, 45, 44]
+    );
+    assert_eq!(
+        branch
+            .first_indices
+            .iter()
+            .map(|token| token.raw.clone())
+            .collect::<Vec<_>>(),
         [vec![0x80, 0x2b], vec![0x80, 0x2d], vec![0x80, 0x2c]]
     );
-    assert_eq!(branch.first_index_offsets, [128, 130, 132]);
-    assert_eq!(branch.second_indices, [46, 119]);
     assert_eq!(
-        branch.raw_second_indices,
+        branch
+            .first_indices
+            .iter()
+            .map(|token| token.offset)
+            .collect::<Vec<_>>(),
+        [128, 130, 132]
+    );
+    assert_eq!(
+        branch
+            .second_indices
+            .iter()
+            .map(|token| token.value)
+            .collect::<Vec<_>>(),
+        [46, 119]
+    );
+    assert_eq!(
+        branch
+            .second_indices
+            .iter()
+            .map(|token| token.raw.clone())
+            .collect::<Vec<_>>(),
         [vec![0x80, 0x2e], vec![0x80, 0x77]]
     );
-    assert_eq!(branch.second_index_offsets, [136, 138]);
+    assert_eq!(
+        branch
+            .second_indices
+            .iter()
+            .map(|token| token.offset)
+            .collect::<Vec<_>>(),
+        [136, 138]
+    );
     assert_eq!(branch.terminal_object_index, 115);
     assert_eq!(branch.raw_terminal_object_index, [0x73]);
     assert_eq!(branch.terminal_offset, 142);
@@ -1323,18 +1446,29 @@ fn om_boolean_operations_decode_counted_target_and_tools() {
     let operations = super::boolean_operations(bytes, 100);
     assert_eq!(operations.len(), 1);
     assert_eq!(operations[0].kind, super::BooleanOperationKind::Subtract);
-    assert_eq!(operations[0].target, 6494);
-    assert_eq!(operations[0].raw_target, [0x90, 0x19, 0x5e]);
+    assert_eq!(operations[0].target.object_index, 6494);
+    assert_eq!(operations[0].target.raw_object_index, [0x90, 0x19, 0x5e]);
     assert_eq!(
-        operations[0].target_offset,
+        operations[0].target.offset,
         100 + bytes
             .windows(3)
             .position(|window| window == [0x90, 0x19, 0x5e])
             .unwrap()
     );
-    assert_eq!(operations[0].tools, [6495, 6468, 6467, 6496]);
     assert_eq!(
-        operations[0].raw_tools,
+        operations[0]
+            .tools
+            .iter()
+            .map(|token| token.object_index)
+            .collect::<Vec<_>>(),
+        [6495, 6468, 6467, 6496]
+    );
+    assert_eq!(
+        operations[0]
+            .tools
+            .iter()
+            .map(|token| token.raw_object_index.clone())
+            .collect::<Vec<_>>(),
         [
             vec![0x90, 0x19, 0x5f],
             vec![0x90, 0x19, 0x44],
@@ -1343,7 +1477,11 @@ fn om_boolean_operations_decode_counted_target_and_tools() {
         ]
     );
     assert_eq!(
-        operations[0].tool_offsets,
+        operations[0]
+            .tools
+            .iter()
+            .map(|token| token.offset)
+            .collect::<Vec<_>>(),
         [0x5f, 0x44, 0x43, 0x60].map(|low| {
             100 + bytes
                 .windows(3)

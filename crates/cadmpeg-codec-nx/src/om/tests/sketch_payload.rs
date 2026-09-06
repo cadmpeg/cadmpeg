@@ -167,12 +167,30 @@ fn sketch_scalar_lane_parser_reads_mixed_nonzero_scalar_atoms() {
     assert_eq!(lanes.len(), 1);
     assert_eq!(lanes[0].offset, 0);
     assert_eq!(lanes[0].discriminator, discriminator);
-    assert_eq!(lanes[0].values, [1.5, 3.25]);
     assert_eq!(
-        lanes[0].raw_values,
+        lanes[0]
+            .values
+            .iter()
+            .map(|token| token.value)
+            .collect::<Vec<_>>(),
+        [1.5, 3.25]
+    );
+    assert_eq!(
+        lanes[0]
+            .values
+            .iter()
+            .map(|token| token.raw.clone())
+            .collect::<Vec<_>>(),
         [shifted_f64.to_vec(), shifted_f32.to_vec()]
     );
-    assert_eq!(lanes[0].value_offsets, [18, 26]);
+    assert_eq!(
+        lanes[0]
+            .values
+            .iter()
+            .map(|token| token.offset)
+            .collect::<Vec<_>>(),
+        [18, 26]
+    );
     assert_eq!(lanes[0].terminator_offset, 30);
 
     let long_discriminator = vec![
@@ -187,8 +205,22 @@ fn sketch_scalar_lane_parser_reads_mixed_nonzero_scalar_atoms() {
     let long_lanes = sketch_payload_scalar_lanes(&long_bytes);
     assert_eq!(long_lanes.len(), 1);
     assert_eq!(long_lanes[0].discriminator, long_discriminator);
-    assert_eq!(long_lanes[0].values, [1.5, 3.25]);
-    assert_eq!(long_lanes[0].value_offsets, [19, 27]);
+    assert_eq!(
+        long_lanes[0]
+            .values
+            .iter()
+            .map(|token| token.value)
+            .collect::<Vec<_>>(),
+        [1.5, 3.25]
+    );
+    assert_eq!(
+        long_lanes[0]
+            .values
+            .iter()
+            .map(|token| token.offset)
+            .collect::<Vec<_>>(),
+        [19, 27]
+    );
     assert_eq!(long_lanes[0].terminator_offset, 31);
 
     let mut missing_terminator = bytes[..bytes.len() - 1].to_vec();

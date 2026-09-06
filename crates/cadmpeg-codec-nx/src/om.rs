@@ -176,8 +176,8 @@ pub fn compact_indices(bytes: &[u8]) -> Option<Vec<CompactIndex>> {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct CompactToken {
-    value: CompactIndex,
+struct CompactToken<T = CompactIndex> {
+    value: T,
     offset: usize,
     width: usize,
 }
@@ -203,13 +203,28 @@ fn compact_token(bytes: &[u8], offset: usize) -> Option<CompactToken> {
     })
 }
 
-fn compact_value_token(bytes: &[u8], offset: usize) -> Option<CompactToken> {
+fn compact_value_token(bytes: &[u8], offset: usize) -> Option<CompactToken<u32>> {
     let token = compact_token(bytes, offset)?;
-    matches!(token.value, CompactIndex::Value(_)).then_some(token)
+    let CompactIndex::Value(value) = token.value else {
+        return None;
+    };
+    Some(CompactToken {
+        value,
+        offset: token.offset,
+        width: token.width,
+    })
 }
 
-fn raw_compact_token(bytes: &[u8], token: CompactToken) -> Vec<u8> {
+fn raw_compact_token<T>(bytes: &[u8], token: CompactToken<T>) -> Vec<u8> {
     bytes[token.offset..token.offset + token.width].to_vec()
+}
+
+/// One decoded value with its exact source token.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaneToken<T, R = Vec<u8>> {
+    pub value: T,
+    pub offset: usize,
+    pub raw: R,
 }
 
 /// One counted compact-index lane ending in the exact `01 11` marker.
@@ -226,9 +241,7 @@ pub struct OffsetStoreCountedIndexLane {
     /// Byte offset of the anchor compact index.
     pub anchor_offset: usize,
     /// Ordered non-null compact indices preceding the terminator.
-    pub members: Vec<(u32, usize)>,
-    /// Exact serialized member tokens in lane order.
-    pub raw_members: Vec<Vec<u8>>,
+    pub members: Vec<LaneToken<u32>>,
 }
 
 /// Fixed-width nullable block-index lane terminated by the literal `ABR` tag.
@@ -237,9 +250,7 @@ pub struct OffsetStoreAbrReferenceLane {
     /// Byte offset of the opening `11` marker.
     pub offset: usize,
     /// Sixteen ordered nullable compact indices and their byte offsets.
-    pub slots: Vec<(Option<u32>, usize)>,
-    /// Exact compact-index tokens in slot order.
-    pub raw_slots: Vec<Vec<u8>>,
+    pub slots: [LaneToken<Option<u32>>; 16],
 }
 
 /// One self-framed index row in contiguous offset-store column storage.
@@ -635,9 +646,7 @@ pub fn offset_store_index_rows(bytes: &[u8]) -> Vec<OffsetStoreIndexRow> {
             start += 1;
             continue;
         };
-        let CompactIndex::Value(first_index) = first_token.value else {
-            unreachable!("compact value token is non-null")
-        };
+        let first_index = first_token.value;
         let marker = first_token.offset + first_token.width;
         if bytes.get(marker..marker + 2) != Some(&MIDDLE[..2]) {
             start += 1;
@@ -649,7 +658,7 @@ pub fn offset_store_index_rows(bytes: &[u8]) -> Vec<OffsetStoreIndexRow> {
         };
         let mut at = marker + 3;
         let mut index_tokens = [CompactToken {
-            value: CompactIndex::Null,
+            value: 0,
             offset: 0,
             width: 0,
         }; 4];
@@ -681,9 +690,7 @@ pub fn offset_store_index_rows(bytes: &[u8]) -> Vec<OffsetStoreIndexRow> {
             first_index_offset,
             flag,
             indices: index_tokens.map(|token| {
-                let CompactIndex::Value(index) = token.value else {
-                    unreachable!("compact value token is non-null")
-                };
+                let index = token.value;
                 (index, token.offset)
             }),
             raw_indices: index_tokens.map(|token| raw_compact_token(bytes, token)),
@@ -709,9 +716,7 @@ pub fn offset_store_linked_index_rows(bytes: &[u8]) -> Vec<OffsetStoreLinkedInde
             start += 1;
             continue;
         };
-        let CompactIndex::Value(first_index) = first_token.value else {
-            unreachable!("compact value token is non-null")
-        };
+        let first_index = first_token.value;
         let marker = first_token.offset + first_token.width;
         if bytes.get(marker..marker + 2) != Some(&[0x93, 0x8c]) {
             start += 1;
@@ -726,9 +731,7 @@ pub fn offset_store_linked_index_rows(bytes: &[u8]) -> Vec<OffsetStoreLinkedInde
             start += 1;
             continue;
         };
-        let CompactIndex::Value(target_index) = target_token.value else {
-            unreachable!("compact value token is non-null")
-        };
+        let target_index = target_token.value;
         let mut at = target_token.offset + target_token.width;
         if bytes.get(at..at + MIDDLE.len()) != Some(&MIDDLE) {
             start += 1;
@@ -736,7 +739,7 @@ pub fn offset_store_linked_index_rows(bytes: &[u8]) -> Vec<OffsetStoreLinkedInde
         }
         at += MIDDLE.len();
         let mut index_tokens = [CompactToken {
-            value: CompactIndex::Null,
+            value: 0,
             offset: 0,
             width: 0,
         }; 3];
@@ -781,9 +784,7 @@ pub fn offset_store_linked_index_rows(bytes: &[u8]) -> Vec<OffsetStoreLinkedInde
             target_index: (target_index, target_offset),
             raw_target_index: raw_compact_token(bytes, target_token),
             indices: index_tokens.map(|token| {
-                let CompactIndex::Value(index) = token.value else {
-                    unreachable!("compact value token is non-null")
-                };
+                let index = token.value;
                 (index, token.offset)
             }),
             raw_indices: index_tokens.map(|token| raw_compact_token(bytes, token)),
@@ -812,9 +813,7 @@ pub fn offset_store_target_index_rows(bytes: &[u8]) -> Vec<OffsetStoreTargetInde
             start += 1;
             continue;
         };
-        let CompactIndex::Value(target_index) = target_token.value else {
-            unreachable!("compact value token is non-null")
-        };
+        let target_index = target_token.value;
         let mut at = target_token.offset + target_token.width;
         if bytes.get(at..at + MIDDLE.len()) != Some(&MIDDLE) {
             start += 1;
@@ -822,7 +821,7 @@ pub fn offset_store_target_index_rows(bytes: &[u8]) -> Vec<OffsetStoreTargetInde
         }
         at += MIDDLE.len();
         let mut index_tokens = [CompactToken {
-            value: CompactIndex::Null,
+            value: 0,
             offset: 0,
             width: 0,
         }; 3];
@@ -860,9 +859,7 @@ pub fn offset_store_target_index_rows(bytes: &[u8]) -> Vec<OffsetStoreTargetInde
             target_index: (target_index, target_offset),
             raw_target_index: raw_compact_token(bytes, target_token),
             indices: index_tokens.map(|token| {
-                let CompactIndex::Value(index) = token.value else {
-                    unreachable!("compact value token is non-null")
-                };
+                let index = token.value;
                 (index, token.offset)
             }),
             raw_indices: index_tokens.map(|token| raw_compact_token(bytes, token)),
@@ -906,22 +903,14 @@ pub fn offset_store_abr_reference_lanes(bytes: &[u8]) -> Vec<OffsetStoreAbrRefer
         if complete && bytes.get(at..end) == Some(&TERMINATOR) {
             lanes.push(OffsetStoreAbrReferenceLane {
                 offset: start,
-                slots: tokens
-                    .map(|token| {
-                        (
-                            match token.value {
-                                CompactIndex::Null => None,
-                                CompactIndex::Value(value) => Some(value),
-                            },
-                            token.offset,
-                        )
-                    })
-                    .into_iter()
-                    .collect(),
-                raw_slots: tokens
-                    .map(|token| raw_compact_token(bytes, token))
-                    .into_iter()
-                    .collect(),
+                slots: tokens.map(|token| LaneToken {
+                    value: match token.value {
+                        CompactIndex::Null => None,
+                        CompactIndex::Value(value) => Some(value),
+                    },
+                    offset: token.offset,
+                    raw: raw_compact_token(bytes, token),
+                }),
             });
             start = end;
         } else {
@@ -937,61 +926,47 @@ pub fn offset_store_abr_reference_lanes(bytes: &[u8]) -> Vec<OffsetStoreAbrRefer
 /// `count >= 3`. Compact indices use the ordinary direct/extended encoding;
 /// null indices reject the candidate atomically.
 pub fn offset_store_counted_index_lanes(bytes: &[u8]) -> Vec<OffsetStoreCountedIndexLane> {
+    let decode = |start: usize| {
+        (bytes.get(start) == Some(&0x01)).then_some(())?;
+        let declared_count = *bytes.get(start + 1)?;
+        (declared_count >= 3).then_some(())?;
+        let anchor = compact_value_token(bytes, start + 2)?;
+        let members_start = anchor.offset + anchor.width;
+        let mut at = members_start;
+        for _ in 0..usize::from(declared_count) - 2 {
+            at += compact_value_token(bytes, at)?.width;
+        }
+        let end = at.checked_add(2)?;
+        (bytes.get(at..end) == Some(&[0x01, 0x11])).then_some(())?;
+        at = members_start;
+        let members = (0..usize::from(declared_count) - 2)
+            .map(|_| {
+                let token = compact_value_token(bytes, at)?;
+                at += token.width;
+                Some(LaneToken {
+                    value: token.value,
+                    offset: token.offset,
+                    raw: raw_compact_token(bytes, token),
+                })
+            })
+            .collect::<Option<Vec<_>>>()?;
+        Some((
+            OffsetStoreCountedIndexLane {
+                offset: start,
+                declared_count,
+                anchor: anchor.value,
+                raw_anchor: raw_compact_token(bytes, anchor),
+                anchor_offset: anchor.offset,
+                members,
+            },
+            end,
+        ))
+    };
     let mut lanes = Vec::new();
     let mut start = 0;
     while start + 4 <= bytes.len() {
-        if bytes[start] != 0x01 {
-            start += 1;
-            continue;
-        }
-        let declared_count = bytes[start + 1];
-        if declared_count < 3 {
-            start += 1;
-            continue;
-        }
-        let Some(anchor_token) = compact_value_token(bytes, start + 2) else {
-            start += 1;
-            continue;
-        };
-        let mut at = anchor_token.offset + anchor_token.width;
-        let mut complete = true;
-        for _ in 0..usize::from(declared_count) - 2 {
-            let Some(member_token) = compact_value_token(bytes, at) else {
-                complete = false;
-                break;
-            };
-            at += member_token.width;
-        }
-        let Some(end) = at.checked_add(2) else {
-            start += 1;
-            continue;
-        };
-        if complete && bytes.get(at..end) == Some(&[0x01, 0x11]) {
-            let CompactIndex::Value(anchor) = anchor_token.value else {
-                unreachable!("compact value token is non-null")
-            };
-            let mut member_at = anchor_token.offset + anchor_token.width;
-            let mut members = Vec::with_capacity(usize::from(declared_count) - 2);
-            let mut raw_members = Vec::with_capacity(usize::from(declared_count) - 2);
-            for _ in 0..usize::from(declared_count) - 2 {
-                let member_token = compact_value_token(bytes, member_at)
-                    .expect("validated counted lane member remains readable");
-                let CompactIndex::Value(value) = member_token.value else {
-                    unreachable!("compact value token is non-null")
-                };
-                members.push((value, member_token.offset));
-                raw_members.push(raw_compact_token(bytes, member_token));
-                member_at += member_token.width;
-            }
-            lanes.push(OffsetStoreCountedIndexLane {
-                offset: start,
-                declared_count,
-                anchor,
-                raw_anchor: raw_compact_token(bytes, anchor_token),
-                anchor_offset: anchor_token.offset,
-                members,
-                raw_members,
-            });
+        if let Some((lane, end)) = decode(start) {
+            lanes.push(lane);
             start = end;
         } else {
             start += 1;
@@ -2188,6 +2163,29 @@ pub enum PatternTransformLayout {
     WideRows,
 }
 
+/// One pattern-transform scalar and its source encoding.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PatternScalarToken {
+    pub encoding: PatternTransformEncoding,
+    pub value: f64,
+    pub raw: Vec<u8>,
+    pub offset: usize,
+}
+
+/// One pattern row with a fixed number of scalar atoms and one selector.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PatternTransformRow<const N: usize> {
+    pub values: [PatternScalarToken; N],
+    pub selector: LaneToken<u32>,
+}
+
+/// Uniform scalar or wide rows selected by the terminal mode.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PatternTransformRows {
+    Scalar(Vec<PatternTransformRow<1>>),
+    Wide(Vec<PatternTransformRow<5>>),
+}
+
 /// One exact counted transform lane in a pattern operation payload.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PatternPayloadTransformLane {
@@ -2195,24 +2193,41 @@ pub struct PatternPayloadTransformLane {
     pub offset: usize,
     /// Schema index framing every row in the lane.
     pub row_schema_index: u8,
-    /// Row byte layout selected by the terminal mode.
-    pub layout: PatternTransformLayout,
     /// Count including the implicit seed row.
     pub declared_count: u8,
-    /// Scalar encodings in row-major order.
-    pub encodings: Vec<PatternTransformEncoding>,
-    /// Finite scalars in row-major order.
-    pub values: Vec<f64>,
-    /// Absolute offsets of the scalar encodings.
-    pub value_offsets: Vec<usize>,
-    /// Exact scalar bytes in row order.
-    pub raw_values: Vec<Vec<u8>>,
-    /// Ordered non-null compact selectors.
-    pub selectors: Vec<u32>,
-    /// Exact compact-index selector tokens in row order.
-    pub raw_selectors: Vec<Vec<u8>>,
-    /// Absolute offsets of the compact-index selector tokens.
-    pub selector_offsets: Vec<usize>,
+    pub rows: PatternTransformRows,
+}
+
+impl PatternPayloadTransformLane {
+    pub fn layout(&self) -> PatternTransformLayout {
+        match self.rows {
+            PatternTransformRows::Scalar(_) => PatternTransformLayout::ScalarRows,
+            PatternTransformRows::Wide(_) => PatternTransformLayout::WideRows,
+        }
+    }
+
+    pub fn rows(&self) -> impl Iterator<Item = (&[PatternScalarToken], &LaneToken<u32>)> {
+        let (scalar, wide): (&[PatternTransformRow<1>], &[PatternTransformRow<5>]) =
+            match &self.rows {
+                PatternTransformRows::Scalar(rows) => (rows, &[]),
+                PatternTransformRows::Wide(rows) => (&[], rows),
+            };
+        scalar
+            .iter()
+            .map(|row| (row.values.as_slice(), &row.selector))
+            .chain(
+                wide.iter()
+                    .map(|row| (row.values.as_slice(), &row.selector)),
+            )
+    }
+}
+
+/// One multi-instance output row and its compact selector token.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MultiInstanceOutputRow {
+    pub selector: LaneToken<u32>,
+    pub ordinal: u8,
+    pub row_index: u8,
 }
 
 /// Exact counted instance-output lane in a multi-instance operation payload.
@@ -2222,16 +2237,8 @@ pub struct MultiInstanceOutputPayloadLane {
     pub offset: usize,
     /// Count including the implicit seed row.
     pub declared_count: u8,
-    /// Ordered non-null compact selectors.
-    pub selectors: Vec<u32>,
-    /// Exact compact-index selector tokens in row order.
-    pub raw_selectors: Vec<Vec<u8>>,
-    /// Absolute offsets of the compact-index selector tokens.
-    pub selector_offsets: Vec<usize>,
-    /// Ordered serialized instance ordinals.
-    pub ordinals: Vec<u8>,
-    /// Ordered serialized row indices.
-    pub row_indices: Vec<u8>,
+    /// Serialized output rows.
+    pub rows: Vec<MultiInstanceOutputRow>,
     /// Count including the implicit seed instance.
     pub instance_count: u8,
     /// Ordered non-null trailing object references.
@@ -2251,12 +2258,8 @@ pub struct IdenticalInstanceOutputPayloadLane {
     pub row_schema_indices: [u8; 3],
     /// Count including the implicit owner row.
     pub declared_count: u8,
-    /// Ordered non-null compact selectors.
-    pub selectors: Vec<u32>,
-    /// Exact compact-index selector tokens in row order.
-    pub raw_selectors: Vec<Vec<u8>>,
-    /// Absolute offsets of the compact-index selector tokens.
-    pub selector_offsets: Vec<usize>,
+    /// Ordered non-null compact selectors with their exact source tokens.
+    pub selectors: Vec<LaneToken<u32>>,
 }
 
 /// Exact construction header in a point-feature payload.
@@ -2292,9 +2295,7 @@ pub struct DraftFeatureLeadingIndexLane {
     /// Serialized count including the omitted lane owner.
     pub declared_count: u8,
     /// Non-null compact indices in serialized order with absolute token offsets.
-    pub indices: Vec<(u32, usize)>,
-    /// Exact compact-index tokens in serialized order.
-    pub raw_indices: Vec<Vec<u8>>,
+    pub indices: Vec<LaneToken<u32>>,
 }
 
 /// End-anchored compact-index lane in a draft-feature payload.
@@ -2488,9 +2489,7 @@ pub struct DatumPlaneObjectIndexLane {
     /// Serialized count.
     pub declared_count: u8,
     /// Ordered non-null compact indices and their payload-relative offsets.
-    pub indices: Vec<(u32, usize)>,
-    /// Exact compact-index tokens in serialized order.
-    pub raw_indices: Vec<Vec<u8>>,
+    pub indices: Vec<LaneToken<u32>>,
     /// Big-endian trailer word after the zero separator.
     pub trailer: u32,
 }
@@ -2559,11 +2558,7 @@ pub struct SketchPayloadScalarLane {
     /// Exact discriminator selecting the scalar-lane form.
     pub discriminator: Vec<u8>,
     /// Ordered finite scalar values after the discriminator.
-    pub values: Vec<f64>,
-    /// Exact nonzero scalar atoms in serialized order.
-    pub raw_values: Vec<Vec<u8>>,
-    /// Payload-relative offsets of the scalar atoms.
-    pub value_offsets: Vec<usize>,
+    pub values: Vec<LaneToken<f64>>,
     /// Payload-relative offset of the terminating zero atom.
     pub terminator_offset: usize,
 }
@@ -2649,19 +2644,22 @@ pub enum DraftConstructionIdentityFrameForm {
     },
 }
 
+/// One signed Q1.55 atom and its source encoding.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FixedScalarToken {
+    pub value: f64,
+    pub marker: u8,
+    pub raw: [u8; 7],
+    pub offset: usize,
+}
+
 /// Complete signed Q1.55 lane in a reconstructed draft graph payload.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DraftConstructionFixedLane {
     /// Payload-relative offset of the fixed discriminator.
     pub offset: usize,
-    /// Ordered dimensionless Q1.55 values.
-    pub values: Vec<f64>,
-    /// Exact atom markers in value order.
-    pub markers: Vec<u8>,
-    /// Exact seven-byte two's-complement payloads.
-    pub raw_values: Vec<[u8; 7]>,
-    /// Payload-relative offsets of the atom markers.
-    pub value_offsets: Vec<usize>,
+    /// Ordered scalar atoms with exact source encodings.
+    pub values: Vec<FixedScalarToken>,
 }
 
 /// Complete shifted-binary32 lane in a reconstructed draft graph payload.
@@ -2673,12 +2671,8 @@ pub struct DraftConstructionBinary32Lane {
     pub discriminator: [u8; 18],
     /// Exact `03` or `04` branch byte.
     pub branch: u8,
-    /// Ordered finite shifted-IEEE binary32 values.
-    pub values: Vec<f64>,
-    /// Exact four-byte shifted encodings.
-    pub raw_values: Vec<[u8; 4]>,
-    /// Payload-relative offsets of the scalar encodings.
-    pub value_offsets: Vec<usize>,
+    /// Ordered scalar atoms with exact source encodings.
+    pub values: Vec<LaneToken<f64, [u8; 4]>>,
 }
 
 /// Compact object frame in a bounded offset-store block.
@@ -2716,23 +2710,22 @@ pub struct OperationTerminalDiscriminator {
     pub type_index_offsets: [usize; 2],
     /// Four serialized one-byte flags.
     pub flags: [u8; 4],
-    /// Compact values between `29 29` and the terminal zero.
-    pub trailing_indices: Vec<u32>,
-    /// Exact compact-index tokens in the trailing lane.
-    pub raw_trailing_indices: Vec<Vec<u8>>,
-    /// Absolute offsets of the trailing compact-index tokens.
-    pub trailing_index_offsets: Vec<usize>,
+    /// Compact values between `29 29` and the terminal zero, with source tokens.
+    pub trailing_indices: Vec<LaneToken<u32>>,
+}
+
+/// One scalar with the exact encoding and offsets of both witnesses.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RepeatedScalarToken {
+    pub value: f64,
+    pub raw: [u8; 8],
+    pub witness_offsets: [usize; 2],
 }
 
 /// Nonempty scalar lane serialized twice in a simple-hole payload.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SimpleHoleRepeatedScalarLane {
-    /// Ordered finite shifted-binary64 values.
-    pub values: Vec<f64>,
-    /// Exact scalar encodings shared by both witnesses.
-    pub raw_values: Vec<[u8; 8]>,
-    /// Absolute offsets of the first and repeated scalar lanes.
-    pub witness_offsets: [Vec<usize>; 2],
+    pub values: Vec<RepeatedScalarToken>,
 }
 
 /// Two tagged offset-store indices following each repeated scalar-lane witness.
@@ -2884,24 +2877,12 @@ pub struct ExtrudePayload32Branch {
     pub scalar: f64,
     /// Exact shifted-binary64 scalar encoding.
     pub raw_scalar: [u8; 8],
-    /// Ordered fixed-width big-endian atoms in the first counted lane.
-    pub atoms_be: Vec<u32>,
-    /// Absolute offsets of the fixed-width atoms in lane order.
-    pub atom_offsets: Vec<usize>,
-    /// Compact indices wrapped by the fixed-width atoms.
-    pub atom_indices: Vec<u32>,
+    /// Fixed-width wrapped compact indices with their source words and offsets.
+    pub atoms: Vec<LaneToken<u32, u32>>,
     /// Ordered values in the first compact-index lane.
-    pub first_indices: Vec<u32>,
-    /// Exact compact-index tokens in the first lane.
-    pub raw_first_indices: Vec<Vec<u8>>,
-    /// Absolute offsets of the first-lane compact-index tokens.
-    pub first_index_offsets: Vec<usize>,
+    pub first_indices: Vec<LaneToken<u32>>,
     /// Ordered values in the second compact-index lane.
-    pub second_indices: Vec<u32>,
-    /// Exact compact-index tokens in the second lane.
-    pub raw_second_indices: Vec<Vec<u8>>,
-    /// Absolute offsets of the second-lane compact-index tokens.
-    pub second_index_offsets: Vec<usize>,
+    pub second_indices: Vec<LaneToken<u32>>,
     /// Object index in the terminal field.
     pub terminal_object_index: u32,
     /// Exact serialized terminal object-index token.
@@ -3037,18 +3018,10 @@ pub struct BooleanOperation {
     pub offset: usize,
     /// Boolean operation kind.
     pub kind: BooleanOperationKind,
-    /// Object index of the target body.
-    pub target: u32,
-    /// Exact serialized target object-index token.
-    pub raw_target: Vec<u8>,
-    /// Absolute offset of the target object-index token.
-    pub target_offset: usize,
-    /// Ordered object indices of the tool bodies.
-    pub tools: Vec<u32>,
-    /// Exact serialized tool object-index tokens in tool order.
-    pub raw_tools: Vec<Vec<u8>>,
-    /// Absolute offsets of the tool object-index tokens in tool order.
-    pub tool_offsets: Vec<usize>,
+    /// Target body reference and its exact source token.
+    pub target: PayloadObjectReference,
+    /// Ordered tool body references and their exact source tokens.
+    pub tools: Vec<PayloadObjectReference>,
 }
 
 impl<'a> IndexedSection<'a> {
@@ -3657,12 +3630,15 @@ pub fn simple_hole_repeated_scalar_lane(
         return None;
     }
     Some(SimpleHoleRepeatedScalarLane {
-        values: first.iter().map(|scalar| scalar.1).collect(),
-        raw_values: first.iter().map(|scalar| scalar.0).collect(),
-        witness_offsets: [
-            first.iter().map(|scalar| scalar.2).collect(),
-            second.iter().map(|scalar| scalar.2).collect(),
-        ],
+        values: first
+            .iter()
+            .zip(second)
+            .map(|(left, right)| RepeatedScalarToken {
+                value: left.1,
+                raw: left.0,
+                witness_offsets: [left.2, right.2],
+            })
+            .collect(),
     })
 }
 
@@ -3701,9 +3677,9 @@ pub fn simple_hole_repeated_scalar_lane_block_references(
         ))
     };
     let (first, first_offsets, first_prefix) =
-        decode_pair(*pair.witness_offsets[0].last()?, FIRST_PREFIX)?;
+        decode_pair(pair.values.last()?.witness_offsets[0], FIRST_PREFIX)?;
     let (second, second_offsets, second_prefix) =
-        decode_pair(*pair.witness_offsets[1].last()?, SECOND_PREFIX)?;
+        decode_pair(pair.values.last()?.witness_offsets[1], SECOND_PREFIX)?;
     Some(SimpleHoleRepeatedScalarLaneBlockReferences {
         first,
         second,
@@ -4344,27 +4320,24 @@ pub fn pattern_payload_transform_lane(
         let (declared_count, row_schema_index) = validate_scalar(start)?;
         let row_count = usize::from(declared_count - 1);
         let mut at = start + 2;
-        let mut encodings = Vec::with_capacity(row_count);
-        let mut values = Vec::with_capacity(row_count);
-        let mut value_offsets = Vec::with_capacity(row_count);
-        let mut raw_values = Vec::with_capacity(row_count);
-        let mut selectors = Vec::with_capacity(row_count);
-        let mut raw_selectors = Vec::with_capacity(row_count);
-        let mut selector_offsets = Vec::with_capacity(row_count);
+        let mut rows = Vec::with_capacity(row_count);
         for ordinal in 1..declared_count {
             (record.payload.get(at) == Some(&row_schema_index)).then_some(())?;
             (record.payload.get(at + 1..at + 1 + prefix_tail.len()) == Some(prefix_tail))
                 .then_some(())?;
             at += 1 + prefix_tail.len();
             let (value, actual_encoding, width) = payload_scalar(record.payload.get(at..)?)?;
-            encodings.push(match actual_encoding {
+            let encoding = match actual_encoding {
                 PayloadScalarEncoding::Zero => return None,
                 PayloadScalarEncoding::Binary32 => PatternTransformEncoding::Binary32,
                 PayloadScalarEncoding::Binary64 => PatternTransformEncoding::Binary64,
-            });
-            values.push(value);
-            value_offsets.push(record.payload_offset + at);
-            raw_values.push(record.payload.get(at..at + width)?.to_vec());
+            };
+            let value = PatternScalarToken {
+                encoding,
+                value,
+                offset: record.payload_offset + at,
+                raw: record.payload.get(at..at + width)?.to_vec(),
+            };
             at += width;
             (record.payload.get(at..at + scalar_suffix.len()) == Some(scalar_suffix))
                 .then_some(())?;
@@ -4374,9 +4347,15 @@ pub fn pattern_payload_transform_lane(
             let CompactIndex::Value(selector) = selector else {
                 return None;
             };
-            selectors.push(selector);
-            raw_selectors.push(record.payload[at..at + width].to_vec());
-            selector_offsets.push(record.payload_offset + selector_offset);
+            let selector = LaneToken {
+                value: selector,
+                raw: record.payload[at..at + width].to_vec(),
+                offset: record.payload_offset + selector_offset,
+            };
+            rows.push(PatternTransformRow {
+                values: [value],
+                selector,
+            });
             at += width;
             (record.payload.get(at) == Some(&0x01)).then_some(())?;
             (record.payload.get(at + 1) == Some(&ordinal)).then_some(())?;
@@ -4391,45 +4370,41 @@ pub fn pattern_payload_transform_lane(
         Some(PatternPayloadTransformLane {
             offset: record.payload_offset + start,
             row_schema_index,
-            layout: PatternTransformLayout::ScalarRows,
             declared_count,
-            encodings,
-            values,
-            value_offsets,
-            raw_values,
-            selectors,
-            raw_selectors,
-            selector_offsets,
+            rows: PatternTransformRows::Scalar(rows),
         })
     };
     let decode_wide = |start: usize| {
         let (declared_count, row_schema_index) = validate_wide(start)?;
         let row_count = usize::from(declared_count - 1);
         let mut at = start + 2;
-        let mut encodings = Vec::with_capacity(row_count * 5);
-        let mut values = Vec::with_capacity(row_count * 5);
-        let mut value_offsets = Vec::with_capacity(row_count * 5);
-        let mut raw_values = Vec::with_capacity(row_count * 5);
-        let mut selectors = Vec::with_capacity(row_count);
-        let mut raw_selectors = Vec::with_capacity(row_count);
-        let mut selector_offsets = Vec::with_capacity(row_count);
+        let mut rows = Vec::with_capacity(row_count);
         for ordinal in 1..declared_count {
             (record.payload.get(at) == Some(&row_schema_index)).then_some(())?;
             at += 1;
-            for value_ordinal in 0..4 {
+            let mut decode_value = |value_ordinal| {
                 let value_offset = at;
                 let (value, encoding, width) = payload_scalar(record.payload.get(at..)?)?;
                 (encoding == PayloadScalarEncoding::Binary64 && width == 8).then_some(())?;
-                values.push(value);
-                encodings.push(PatternTransformEncoding::Binary64);
-                value_offsets.push(record.payload_offset + value_offset);
-                raw_values.push(record.payload.get(at..at + width)?.to_vec());
+                let value = PatternScalarToken {
+                    encoding: PatternTransformEncoding::Binary64,
+                    value,
+                    offset: record.payload_offset + value_offset,
+                    raw: record.payload.get(at..at + width)?.to_vec(),
+                };
                 at += width;
                 if value_ordinal == 1 {
                     (record.payload.get(at..at + 2) == Some(&[0x00, 0x00])).then_some(())?;
                     at += 2;
                 }
-            }
+                Some(value)
+            };
+            let first = [
+                decode_value(0)?,
+                decode_value(1)?,
+                decode_value(2)?,
+                decode_value(3)?,
+            ];
             (record.payload.get(at..at + 4) == Some(&[0x00; 4])).then_some(())?;
             at += 4;
             let terminal_value_offset = at;
@@ -4443,10 +4418,12 @@ pub fn pattern_payload_transform_lane(
                 };
                 (value, encoding, width)
             };
-            values.push(terminal_value);
-            encodings.push(encoding);
-            value_offsets.push(record.payload_offset + terminal_value_offset);
-            raw_values.push(record.payload.get(at..at + width)?.to_vec());
+            let terminal = PatternScalarToken {
+                encoding,
+                value: terminal_value,
+                offset: record.payload_offset + terminal_value_offset,
+                raw: record.payload.get(at..at + width)?.to_vec(),
+            };
             at += width;
             (record.payload.get(at..at + 7) == Some(&[0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x03]))
                 .then_some(())?;
@@ -4456,9 +4433,16 @@ pub fn pattern_payload_transform_lane(
             let CompactIndex::Value(selector) = selector else {
                 return None;
             };
-            selectors.push(selector);
-            raw_selectors.push(record.payload.get(at..at + width)?.to_vec());
-            selector_offsets.push(record.payload_offset + selector_offset);
+            let selector = LaneToken {
+                value: selector,
+                raw: record.payload.get(at..at + width)?.to_vec(),
+                offset: record.payload_offset + selector_offset,
+            };
+            let [a, b, c, d] = first;
+            rows.push(PatternTransformRow {
+                values: [a, b, c, d, terminal],
+                selector,
+            });
             at += width;
             (record.payload.get(at) == Some(&0x01)).then_some(())?;
             (record.payload.get(at + 1) == Some(&ordinal)).then_some(())?;
@@ -4472,15 +4456,8 @@ pub fn pattern_payload_transform_lane(
         Some(PatternPayloadTransformLane {
             offset: record.payload_offset + start,
             row_schema_index,
-            layout: PatternTransformLayout::WideRows,
             declared_count,
-            encodings,
-            values,
-            value_offsets,
-            raw_values,
-            selectors,
-            raw_selectors,
-            selector_offsets,
+            rows: PatternTransformRows::Wide(rows),
         })
     };
     unique_candidate(
@@ -4538,11 +4515,7 @@ pub fn multi_instance_output_payload_lane(
         let (declared_count, instance_count) = validate(start)?;
         let row_count = usize::from(declared_count - 1);
         let mut at = start + ENVELOPE.len() + 1;
-        let mut selectors = Vec::with_capacity(row_count);
-        let mut raw_selectors = Vec::with_capacity(row_count);
-        let mut selector_offsets = Vec::with_capacity(row_count);
-        let mut ordinals = Vec::with_capacity(row_count);
-        let mut row_indices = Vec::with_capacity(row_count);
+        let mut rows = Vec::with_capacity(row_count);
         for expected_row_index in 2..=declared_count {
             (record.payload.get(at..at + ROW_PREFIX.len()) == Some(&ROW_PREFIX)).then_some(())?;
             at += ROW_PREFIX.len();
@@ -4551,31 +4524,35 @@ pub fn multi_instance_output_payload_lane(
             let CompactIndex::Value(selector) = selector else {
                 return None;
             };
-            selectors.push(selector);
-            raw_selectors.push(record.payload[at..at + width].to_vec());
-            selector_offsets.push(record.payload_offset + selector_offset);
+            let selector = LaneToken {
+                value: selector,
+                raw: record.payload[at..at + width].to_vec(),
+                offset: record.payload_offset + selector_offset,
+            };
             at += width;
             (record.payload.get(at) == Some(&ROW_ORDINAL_MARKER)).then_some(())?;
             let ordinal = *record.payload.get(at + 1)?;
             (ordinal >= 2).then_some(())?;
-            ordinals.push(ordinal);
             (record.payload.get(at + 2) == Some(&expected_row_index)).then_some(())?;
-            row_indices.push(expected_row_index);
+            rows.push(MultiInstanceOutputRow {
+                selector,
+                ordinal,
+                row_index: expected_row_index,
+            });
             at += 3;
         }
-        (ordinals.iter().copied().max() == Some(instance_count)).then_some(())?;
+        (rows.iter().map(|row| row.ordinal).max() == Some(instance_count)).then_some(())?;
         let expected_ordinals = (2..=instance_count).collect::<Vec<_>>();
         let mut distinct_selectors = Vec::new();
-        for selector in &selectors {
-            if !distinct_selectors.contains(selector) {
-                distinct_selectors.push(*selector);
+        for row in &rows {
+            if !distinct_selectors.contains(&row.selector.value) {
+                distinct_selectors.push(row.selector.value);
             }
         }
         for selector in distinct_selectors {
-            let actual = selectors
+            let actual = rows
                 .iter()
-                .zip(&ordinals)
-                .filter_map(|(candidate, ordinal)| (*candidate == selector).then_some(*ordinal))
+                .filter_map(|row| (row.selector.value == selector).then_some(row.ordinal))
                 .collect::<Vec<_>>();
             (actual == expected_ordinals).then_some(())?;
         }
@@ -4600,11 +4577,7 @@ pub fn multi_instance_output_payload_lane(
         Some(MultiInstanceOutputPayloadLane {
             offset: record.payload_offset + start + 8,
             declared_count,
-            selectors,
-            raw_selectors,
-            selector_offsets,
-            ordinals,
-            row_indices,
+            rows,
             instance_count,
             trailing_references,
         })
@@ -4667,8 +4640,6 @@ pub fn identical_instance_output_payload_lane(
         ) = validate(start)?;
         let mut at = start + 4;
         let mut selectors = Vec::with_capacity(usize::from(declared_count - 1));
-        let mut raw_selectors = Vec::with_capacity(usize::from(declared_count - 1));
-        let mut selector_offsets = Vec::with_capacity(usize::from(declared_count - 1));
         for ordinal in 2..=declared_count {
             (record.payload.get(at) == Some(&first_schema_index)).then_some(())?;
             (record.payload.get(at + 1) == Some(&second_schema_index)).then_some(())?;
@@ -4680,9 +4651,11 @@ pub fn identical_instance_output_payload_lane(
             let CompactIndex::Value(selector) = selector else {
                 return None;
             };
-            selectors.push(selector);
-            raw_selectors.push(record.payload[at..at + width].to_vec());
-            selector_offsets.push(record.payload_offset + selector_offset);
+            selectors.push(LaneToken {
+                value: selector,
+                raw: record.payload[at..at + width].to_vec(),
+                offset: record.payload_offset + selector_offset,
+            });
             at += width;
             (record.payload.get(at) == Some(&0x00)).then_some(())?;
             (record.payload.get(at + 1) == Some(&ordinal)).then_some(())?;
@@ -4699,8 +4672,6 @@ pub fn identical_instance_output_payload_lane(
             row_schema_indices: [first_schema_index, second_schema_index, third_schema_index],
             declared_count,
             selectors,
-            raw_selectors,
-            selector_offsets,
         })
     };
     unique_candidate((0..record.payload.len().saturating_sub(3)).filter_map(decode))
@@ -4854,32 +4825,24 @@ pub fn draft_feature_leading_index_lane(
     let declared_count = *record.payload.get(at + 1)?;
     (declared_count >= 2).then_some(())?;
     at += 2;
-    let indices_start = at;
-    let mut scan_at = indices_start;
-    for _ in 1..declared_count {
-        let (CompactIndex::Value(_), width) = compact_index(record.payload.get(scan_at..)?)? else {
-            return None;
-        };
-        scan_at += width;
-    }
-    (record.payload.get(scan_at..scan_at + 2) == Some(&[0x01, 0x02])).then_some(())?;
-
     let mut indices = Vec::with_capacity(usize::from(declared_count - 1));
-    let mut raw_indices = Vec::with_capacity(usize::from(declared_count - 1));
-    at = indices_start;
     for _ in 1..declared_count {
         let offset = at;
         let (CompactIndex::Value(value), width) = compact_index(record.payload.get(at..)?)? else {
             return None;
         };
         at += width;
-        indices.push((value, record.payload_offset + offset));
-        raw_indices.push(record.payload[offset..offset + width].to_vec());
+        indices.push(LaneToken {
+            value,
+            offset: record.payload_offset + offset,
+            raw: record.payload[offset..at].to_vec(),
+        });
     }
+    (record.payload.get(at..at + 2) == Some(&[0x01, 0x02])).then_some(())?;
+
     Some(DraftFeatureLeadingIndexLane {
         declared_count,
         indices,
-        raw_indices,
     })
 }
 
@@ -5493,7 +5456,7 @@ pub fn operation_terminal_discriminator(
         }
         let mut at = start + 3;
         let mut type_tokens = [CompactToken {
-            value: CompactIndex::Null,
+            value: 0,
             offset: 0,
             width: 0,
         }; 2];
@@ -5501,10 +5464,7 @@ pub fn operation_terminal_discriminator(
         let mut type_index_offsets = [0; 2];
         for slot in 0..2 {
             let token = compact_value_token(record.payload, at)?;
-            type_indices[slot] = match token.value {
-                CompactIndex::Value(value) => value,
-                CompactIndex::Null => return None,
-            };
+            type_indices[slot] = token.value;
             type_index_offsets[slot] = record.payload_offset + at;
             type_tokens[slot] = token;
             at += token.width;
@@ -5537,18 +5497,15 @@ pub fn operation_terminal_discriminator(
         // representation. A terminal candidate is tested at every payload
         // offset, so malformed prefixes must remain allocation-free.
         let mut trailing_indices = Vec::with_capacity(trailing_count);
-        let mut raw_trailing_indices = Vec::with_capacity(trailing_count);
-        let mut trailing_index_offsets = Vec::with_capacity(trailing_count);
         trailing_at = at;
         while trailing_at < trailing_end {
             let token = compact_value_token(record.payload, trailing_at)?;
-            let value = match token.value {
-                CompactIndex::Value(value) => value,
-                CompactIndex::Null => return None,
-            };
-            trailing_indices.push(value);
-            raw_trailing_indices.push(raw_compact_token(record.payload, token));
-            trailing_index_offsets.push(record.payload_offset + trailing_at);
+            let value = token.value;
+            trailing_indices.push(LaneToken {
+                value,
+                raw: raw_compact_token(record.payload, token),
+                offset: record.payload_offset + trailing_at,
+            });
             trailing_at += token.width;
         }
 
@@ -5561,8 +5518,6 @@ pub fn operation_terminal_discriminator(
             type_index_offsets,
             flags,
             trailing_indices,
-            raw_trailing_indices,
-            trailing_index_offsets,
         })
     };
 
@@ -5922,19 +5877,15 @@ pub fn extrude_payload_32_branch(record: OperationRecord<'_>) -> Option<ExtrudeP
     let raw_scalar = <[u8; 8]>::try_from(record.bytes.get(end + 4..end + 12)?).ok()?;
     let scalar = shifted_ieee_f64(&raw_scalar)?;
     let mut at = end + 12;
-    let (atoms_be, atom_offsets) = counted_u32_atoms(record.bytes, &mut at)?;
-    let atom_indices = atoms_be
-        .iter()
-        .map(|atom| {
-            let bytes = atom.to_be_bytes();
-            if bytes[0] != 0x3d || bytes[3] != 0x00 || !(0x80..=0xfe).contains(&bytes[1]) {
-                return None;
-            }
-            Some(u32::from(bytes[1] - 0x80) * 256 + u32::from(bytes[2]))
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let first = counted_compact_values(record.bytes, &mut at)?;
-    let second = counted_compact_values(record.bytes, &mut at)?;
+    let mut atoms = counted_u32_atoms(record.bytes, &mut at)?;
+    for token in &mut atoms {
+        token.offset += record.offset();
+    }
+    let mut first = counted_compact_values(record.bytes, &mut at)?;
+    let mut second = counted_compact_values(record.bytes, &mut at)?;
+    for token in first.iter_mut().chain(&mut second) {
+        token.offset += record.offset();
+    }
     if record.bytes.get(at..at + 2) != Some(&[0x00, 0x01]) {
         return None;
     }
@@ -5950,26 +5901,9 @@ pub fn extrude_payload_32_branch(record: OperationRecord<'_>) -> Option<ExtrudeP
         body_object_index: reference.object_index,
         scalar,
         raw_scalar,
-        atoms_be,
-        atom_offsets: atom_offsets
-            .into_iter()
-            .map(|offset| record.offset() + offset)
-            .collect(),
-        atom_indices,
-        first_indices: first.values,
-        raw_first_indices: first.raw_values,
-        first_index_offsets: first
-            .offsets
-            .into_iter()
-            .map(|offset| record.offset() + offset)
-            .collect(),
-        second_indices: second.values,
-        raw_second_indices: second.raw_values,
-        second_index_offsets: second
-            .offsets
-            .into_iter()
-            .map(|offset| record.offset() + offset)
-            .collect(),
+        atoms,
+        first_indices: first,
+        second_indices: second,
         terminal_object_index,
         raw_terminal_object_index: record.bytes[at + 2..next].to_vec(),
         terminal_offset: record.offset() + at + 2,
@@ -6209,15 +6143,34 @@ pub fn datum_plane_object_index_lanes(bytes: &[u8]) -> Vec<DatumPlaneObjectIndex
         if declared_count < 2 {
             continue;
         }
-        let indices_start = start + 2;
-        let mut at = indices_start;
+        let mut scan_at = start + 2;
         let mut complete = true;
         for _ in 1..declared_count {
-            let Some((CompactIndex::Value(_), width)) = bytes.get(at..).and_then(compact_index)
+            let Some((CompactIndex::Value(_), width)) =
+                bytes.get(scan_at..).and_then(compact_index)
             else {
                 complete = false;
                 break;
             };
+            scan_at += width;
+        }
+        if !complete || bytes.get(scan_at) != Some(&0x00) || scan_at + 5 != bytes.len() {
+            continue;
+        }
+        let mut at = start + 2;
+        let mut indices = Vec::with_capacity(usize::from(declared_count) - 1);
+        let mut complete = true;
+        for _ in 1..declared_count {
+            let Some((CompactIndex::Value(value), width)) = bytes.get(at..).and_then(compact_index)
+            else {
+                complete = false;
+                break;
+            };
+            indices.push(LaneToken {
+                value,
+                offset: at,
+                raw: bytes[at..at + width].to_vec(),
+            });
             at += width;
         }
         if !complete || bytes.get(at) != Some(&0x00) || at + 5 != bytes.len() {
@@ -6226,27 +6179,10 @@ pub fn datum_plane_object_index_lanes(bytes: &[u8]) -> Vec<DatumPlaneObjectIndex
         let Some(trailer) = View::u32_be_at(bytes, at + 1) else {
             continue;
         };
-        let mut indices = Vec::with_capacity(usize::from(declared_count) - 1);
-        let mut raw_indices = Vec::with_capacity(usize::from(declared_count) - 1);
-        at = indices_start;
-        for _ in 1..declared_count {
-            let Some((CompactIndex::Value(value), width)) = bytes.get(at..).and_then(compact_index)
-            else {
-                complete = false;
-                break;
-            };
-            indices.push((value, at));
-            raw_indices.push(bytes[at..at + width].to_vec());
-            at += width;
-        }
-        if !complete {
-            continue;
-        }
         lanes.push(DatumPlaneObjectIndexLane {
             offset: start,
             declared_count,
             indices,
-            raw_indices,
             trailer,
         });
     }
@@ -6447,8 +6383,6 @@ pub fn sketch_payload_scalar_lanes(bytes: &[u8]) -> Vec<SketchPayloadScalarLane>
                     (window == discriminator).then_some(())?;
                     let mut at = offset + discriminator.len();
                     let mut values = Vec::new();
-                    let mut raw_values = Vec::new();
-                    let mut value_offsets = Vec::new();
                     loop {
                         if bytes.get(at) == Some(&0x00) {
                             break;
@@ -6457,9 +6391,11 @@ pub fn sketch_payload_scalar_lanes(bytes: &[u8]) -> Vec<SketchPayloadScalarLane>
                         if encoding == PayloadScalarEncoding::Zero {
                             return None;
                         }
-                        values.push(value);
-                        raw_values.push(bytes.get(at..at + width)?.to_vec());
-                        value_offsets.push(at);
+                        values.push(LaneToken {
+                            value,
+                            raw: bytes.get(at..at + width)?.to_vec(),
+                            offset: at,
+                        });
                         at += width;
                     }
                     if values.is_empty() {
@@ -6469,8 +6405,6 @@ pub fn sketch_payload_scalar_lanes(bytes: &[u8]) -> Vec<SketchPayloadScalarLane>
                         offset,
                         discriminator: discriminator.to_vec(),
                         values,
-                        raw_values,
-                        value_offsets,
                         terminator_offset: at,
                     })
                 })
@@ -6661,27 +6595,21 @@ pub fn draft_construction_fixed_lanes(bytes: &[u8]) -> Vec<DraftConstructionFixe
         .filter_map(|(offset, window)| {
             (window == DISCRIMINATOR).then_some(())?;
             let mut at = offset + DISCRIMINATOR.len();
-            let mut markers = Vec::new();
-            let mut raw_values = Vec::new();
-            let mut value_offsets = Vec::new();
+            let mut values = Vec::new();
             while matches!(bytes.get(at), Some(0x30 | 0xb0)) {
                 let raw = bytes.get(at + 1..at + 8)?.try_into().ok()?;
-                markers.push(bytes[at]);
-                raw_values.push(raw);
-                value_offsets.push(at);
+                values.push(FixedScalarToken {
+                    value: decode_q1_55(raw),
+                    marker: bytes[at],
+                    raw,
+                    offset: at,
+                });
                 at += 8;
             }
-            if raw_values.is_empty() || bytes.get(at) != Some(&0x00) {
+            if values.is_empty() || bytes.get(at) != Some(&0x00) {
                 return None;
             }
-            let values = raw_values.iter().copied().map(decode_q1_55).collect();
-            Some(DraftConstructionFixedLane {
-                offset,
-                values,
-                markers,
-                raw_values,
-                value_offsets,
-            })
+            Some(DraftConstructionFixedLane { offset, values })
         })
         .collect()
 }
@@ -6706,8 +6634,6 @@ pub fn draft_construction_binary32_lanes(bytes: &[u8]) -> Vec<DraftConstructionB
                     (window == discriminator).then_some(())?;
                     let mut at = offset + discriminator.len();
                     let mut values = Vec::new();
-                    let mut raw_values = Vec::new();
-                    let mut value_offsets = Vec::new();
                     while matches!(bytes.get(at), Some(0x40..=0x5f | 0xc0..=0xdf)) {
                         let raw: [u8; 4] = bytes.get(at..at + 4)?.try_into().ok()?;
                         let Some((value, PayloadScalarEncoding::Binary32, 4)) =
@@ -6715,9 +6641,11 @@ pub fn draft_construction_binary32_lanes(bytes: &[u8]) -> Vec<DraftConstructionB
                         else {
                             return None;
                         };
-                        values.push(value);
-                        raw_values.push(raw);
-                        value_offsets.push(at);
+                        values.push(LaneToken {
+                            value,
+                            raw,
+                            offset: at,
+                        });
                         at += 4;
                     }
                     if values.is_empty() || bytes.get(at) != Some(&0x00) {
@@ -6728,8 +6656,6 @@ pub fn draft_construction_binary32_lanes(bytes: &[u8]) -> Vec<DraftConstructionB
                         discriminator,
                         branch: discriminator[6],
                         values,
-                        raw_values,
-                        value_offsets,
                     })
                 })
                 .collect::<Vec<_>>()
@@ -6874,7 +6800,7 @@ pub fn data_block_object_frames(bytes: &[u8]) -> Vec<DataBlockObjectFrame> {
     references
 }
 
-fn counted_u32_atoms(bytes: &[u8], at: &mut usize) -> Option<(Vec<u32>, Vec<usize>)> {
+fn counted_u32_atoms(bytes: &[u8], at: &mut usize) -> Option<Vec<LaneToken<u32, u32>>> {
     if bytes.get(*at) != Some(&0x01) {
         return None;
     }
@@ -6891,23 +6817,24 @@ fn counted_u32_atoms(bytes: &[u8], at: &mut usize) -> Option<(Vec<u32>, Vec<usiz
     }
 
     let mut values = Vec::with_capacity(count - 1);
-    let mut offsets = Vec::with_capacity(count - 1);
     *at = values_start;
     for _ in 1..count {
-        offsets.push(*at);
-        values.push(View::u32_be_at(bytes, *at)?);
+        let raw = View::u32_be_at(bytes, *at)?;
+        let word = raw.to_be_bytes();
+        if word[0] != 0x3d || word[3] != 0x00 || !(0x80..=0xfe).contains(&word[1]) {
+            return None;
+        }
+        values.push(LaneToken {
+            value: u32::from(word[1] - 0x80) * 256 + u32::from(word[2]),
+            raw,
+            offset: *at,
+        });
         *at += 4;
     }
-    Some((values, offsets))
+    Some(values)
 }
 
-struct CountedCompactValues {
-    values: Vec<u32>,
-    raw_values: Vec<Vec<u8>>,
-    offsets: Vec<usize>,
-}
-
-fn counted_compact_values(bytes: &[u8], at: &mut usize) -> Option<CountedCompactValues> {
+fn counted_compact_values(bytes: &[u8], at: &mut usize) -> Option<Vec<LaneToken<u32>>> {
     if bytes.get(*at) != Some(&0x01) {
         return None;
     }
@@ -6926,24 +6853,20 @@ fn counted_compact_values(bytes: &[u8], at: &mut usize) -> Option<CountedCompact
     }
 
     let mut values = Vec::with_capacity(count - 1);
-    let mut raw_values = Vec::with_capacity(count - 1);
-    let mut offsets = Vec::with_capacity(count - 1);
     *at = values_start;
     for _ in 1..count {
         let value_at = *at;
         let (CompactIndex::Value(value), width) = compact_index(bytes.get(*at..)?)? else {
             return None;
         };
-        values.push(value);
-        raw_values.push(bytes[value_at..value_at + width].to_vec());
-        offsets.push(value_at);
+        values.push(LaneToken {
+            value,
+            raw: bytes[value_at..value_at + width].to_vec(),
+            offset: value_at,
+        });
         *at += width;
     }
-    Some(CountedCompactValues {
-        values,
-        raw_values,
-        offsets,
-    })
+    Some(values)
 }
 
 fn payload_scalar(bytes: &[u8]) -> Option<(f64, PayloadScalarEncoding, usize)> {
@@ -8670,15 +8593,8 @@ fn boolean_operations_with_labels(
             Some(BooleanOperation {
                 offset: label.offset,
                 kind,
-                target: target.object_index,
-                raw_target: target.raw_object_index,
-                target_offset: target.offset,
-                tools: tools.iter().map(|tool| tool.object_index).collect(),
-                raw_tools: tools
-                    .iter()
-                    .map(|tool| tool.raw_object_index.clone())
-                    .collect(),
-                tool_offsets: tools.iter().map(|tool| tool.offset).collect(),
+                target,
+                tools,
             })
         })
         .collect()

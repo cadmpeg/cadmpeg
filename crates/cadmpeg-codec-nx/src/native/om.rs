@@ -1200,7 +1200,7 @@ impl TryFrom<ObjectRecordWire> for ObjectRecord {
                 return Err(
                     "object record object_id and object_id_source_offset are present together"
                         .to_owned(),
-                )
+                );
             }
         };
         Ok(Self {
@@ -1552,7 +1552,7 @@ impl TryFrom<DataBlockControlFormWire> for DataBlockControlForm {
                 return Err(
                     "control-form leading value is present only for product-anchored forms"
                         .to_owned(),
-                )
+                );
             }
         };
         Ok(Self {
@@ -1668,7 +1668,7 @@ impl TryFrom<DataBlockControlClassReferenceWire> for DataBlockControlClassRefere
             _ => {
                 return Err(
                     "control class reference definition and name are present together".to_owned(),
-                )
+                );
             }
         };
         Ok(Self {
@@ -4135,11 +4135,11 @@ pub fn data_block_counted_index_lanes(container: &Container) -> Vec<DataBlockCou
                             let member_data_blocks = lane
                                 .members
                                 .iter()
-                                .map(|(value, _)| {
+                                .map(|token| {
                                     control_index_data_block(
                                         section_ordinal,
                                         block_count,
-                                        *value,
+                                        token.value,
                                     )
                                 })
                                 .collect::<Option<Vec<_>>>()?;
@@ -4166,16 +4166,16 @@ pub fn data_block_counted_index_lanes(container: &Container) -> Vec<DataBlockCou
                                 member_indices: lane
                                     .members
                                     .iter()
-                                    .map(|(value, _)| *value)
+                                    .map(|token| token.value)
                                     .collect(),
-                                raw_member_indices: lane.raw_members,
+                                raw_member_indices: lane.members.iter().map(|token| token.raw.clone()).collect(),
                                 member_data_blocks,
                                 source_offset: source_base + lane.offset as u64,
                                 anchor_source_offset: source_base + lane.anchor_offset as u64,
                                 member_source_offsets: lane
                                     .members
                                     .iter()
-                                    .map(|(_, offset)| source_base + *offset as u64)
+                                    .map(|token| source_base + token.offset as u64)
                                     .collect(),
                             },
                         )
@@ -4208,8 +4208,8 @@ pub fn data_block_abr_reference_lanes(container: &Container) -> Vec<DataBlockAbr
                     let slot_data_blocks = lane
                         .slots
                         .iter()
-                        .map(|(value, _)| {
-                            value.map_or(Some(None), |value| {
+                        .map(|token| {
+                            token.value.map_or(Some(None), |value| {
                                 control_index_data_block(section_ordinal, block_count, value)
                                     .map(Some)
                             })
@@ -4225,13 +4225,17 @@ pub fn data_block_abr_reference_lanes(container: &Container) -> Vec<DataBlockAbr
                         ),
                         section_ordinal: section_ordinal as u32,
                         ordinal: ordinal as u32,
-                        slot_indices: lane.slots.iter().map(|(value, _)| *value).collect(),
-                        raw_slot_indices: lane.raw_slots,
+                        slot_indices: lane.slots.iter().map(|token| token.value).collect(),
+                        raw_slot_indices: lane
+                            .slots
+                            .iter()
+                            .map(|token| token.raw.clone())
+                            .collect(),
                         slot_data_blocks,
                         slot_source_offsets: lane
                             .slots
                             .iter()
-                            .map(|(_, offset)| source_base + *offset as u64)
+                            .map(|token| source_base + token.offset as u64)
                             .collect(),
                         source_entry: entry.name.clone(),
                         source_offset: source_base + lane.offset as u64,
