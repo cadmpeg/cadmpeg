@@ -4,21 +4,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::parasolid::attribute_field::AttributeField;
+use crate::parasolid::entity_references::FieldPosition;
 
 use super::{ParasolidAttributeFieldUse, ParasolidAttributeFieldValueKind};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct FieldPosition(u32);
-
-impl FieldPosition {
-    pub(crate) fn from_reference(reference_ordinal: u32) -> Option<Self> {
-        (reference_ordinal >= 5).then_some(Self(reference_ordinal))
-    }
-
-    pub(crate) fn reference_ordinal(self) -> u32 { self.0 }
-
-    pub(crate) fn field_ordinal(self) -> u32 { self.0 - 5 }
-}
 
 #[derive(Serialize, Deserialize)]
 pub(super) struct FieldUseWire {
@@ -71,8 +59,7 @@ impl TryFrom<FieldUseWire> for ParasolidAttributeFieldUse {
     type Error = &'static str;
 
     fn try_from(wire: FieldUseWire) -> Result<Self, Self::Error> {
-        let position = FieldPosition::from_reference(wire.reference_ordinal)
-            .ok_or("reference_ordinal must follow the five leading references")?;
+        let position = FieldPosition::try_from(wire.reference_ordinal)?;
         if position.field_ordinal() != wire.field_ordinal {
             return Err("field_ordinal disagrees with reference_ordinal");
         }
@@ -96,7 +83,7 @@ impl TryFrom<FieldUseWire> for ParasolidAttributeFieldUse {
 
 #[cfg(test)]
 mod tests {
-    use super::{FieldPosition, ParasolidAttributeFieldUse};
+    use super::ParasolidAttributeFieldUse;
 
     #[test]
     fn field_use_wire_preserves_and_checks_derived_fields() {
@@ -110,7 +97,5 @@ mod tests {
         ] {
             assert!(serde_json::from_str::<ParasolidAttributeFieldUse>(&invalid).is_err());
         }
-        assert!(FieldPosition::from_reference(4).is_none());
-        assert_eq!(FieldPosition::from_reference(u32::MAX).unwrap().field_ordinal(), u32::MAX - 5);
     }
 }

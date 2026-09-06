@@ -4,6 +4,8 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
+use crate::parasolid::name_references::NameReferences;
+
 use crate::deltas::Census;
 use crate::parasolid::attribute_field::AttributeField;
 use crate::parasolid::attribute_action::AttributeAction;
@@ -12,16 +14,17 @@ use std::num::NonZeroU32;
 pub(crate) mod structured_value_kind;
 use structured_value_kind::StructuredValueKind;
 
-pub(crate) mod field_use_wire;
-use field_use_wire::{FieldPosition, FieldUseWire};
+mod field_use_wire;
+use field_use_wire::FieldUseWire;
 
 pub(crate) mod topology_attribute_kind;
 use topology_attribute_kind::TopologyAttributeKind;
 
 mod entity51_wire;
 use entity51_wire::Entity51Wire;
-use crate::parasolid::entity_references::EntityReferences;
-use crate::parasolid::finite_values::FiniteValues;
+use crate::parasolid::entity_references::{EntityReferences, FieldPosition};
+use crate::parasolid::counted_values::CountedValues;
+use crate::parasolid::unicode_value::UnicodeValue;
 use crate::parasolid::printable_string::PrintableString;
 pub(crate) mod named_fields;
 use named_fields::NamedField;
@@ -1789,9 +1792,9 @@ pub struct ParasolidFieldNamesRecord {
     /// Zero-based embedded stream ordinal.
     pub stream_ordinal: u32,
     /// Stream-local record identity.
-    pub xmt: u32,
+    pub xmt: NonNullXmt,
     /// Ordered stream-local character or Unicode value references.
-    pub name_xmts: Vec<u32>,
+    pub name_xmts: NameReferences,
     /// Exact framed record length.
     pub byte_len: u64,
     /// Offset of the record tag in the inflated stream.
@@ -1866,7 +1869,7 @@ pub struct ParasolidEntity54StringRecord {
     /// Zero-based inflated Parasolid stream ordinal.
     pub stream_ordinal: u32,
     /// Stream-local record identity.
-    pub xmt: u32,
+    pub xmt: NonNullXmt,
     /// Exact nonempty printable value.
     pub value: PrintableString<String>,
     /// Exact framed record length.
@@ -1883,9 +1886,9 @@ pub struct ParasolidEntity52IntegerRecord {
     /// Zero-based inflated Parasolid stream ordinal.
     pub stream_ordinal: u32,
     /// Stream-local record identity.
-    pub xmt: u32,
+    pub xmt: NonNullXmt,
     /// Ordered big-endian unsigned values.
-    pub values: Vec<u32>,
+    pub values: CountedValues<u32>,
     /// Exact framed record length.
     pub byte_len: u64,
     /// Offset of the record tag in the inflated stream.
@@ -1900,9 +1903,9 @@ pub struct ParasolidEntity53DoubleRecord {
     /// Zero-based inflated Parasolid stream ordinal.
     pub stream_ordinal: u32,
     /// Stream-local record identity.
-    pub xmt: u32,
+    pub xmt: NonNullXmt,
     /// Ordered finite big-endian binary64 values.
-    pub values: FiniteValues<f64>,
+    pub values: CountedValues<f64>,
     /// Exact framed record length.
     pub byte_len: u64,
     /// Offset of the record tag in the inflated stream.
@@ -1931,9 +1934,9 @@ pub struct ParasolidEntityVectorRecord {
     /// Exact value family.
     pub kind: ParasolidVectorValueKind,
     /// Stream-local record identity.
-    pub xmt: u32,
+    pub xmt: NonNullXmt,
     /// Ordered finite xyz values.
-    pub values: FiniteValues<[f64; 3]>,
+    pub values: CountedValues<[f64; 3]>,
     /// Exact framed record length.
     pub byte_len: u64,
     /// Offset of the record tag in the inflated stream.
@@ -1948,9 +1951,9 @@ pub struct ParasolidEntity57AxisRecord {
     /// Zero-based inflated Parasolid stream ordinal.
     pub stream_ordinal: u32,
     /// Stream-local record identity.
-    pub xmt: u32,
+    pub xmt: NonNullXmt,
     /// Ordered axes, each retaining its two serialized xyz vectors.
-    pub values: FiniteValues<[[f64; 3]; 2]>,
+    pub values: CountedValues<[[f64; 3]; 2]>,
     /// Exact framed record length.
     pub byte_len: u64,
     /// Offset of the record tag in the inflated stream.
@@ -1965,9 +1968,9 @@ pub struct ParasolidEntity58TagRecord {
     /// Zero-based inflated Parasolid stream ordinal.
     pub stream_ordinal: u32,
     /// Stream-local record identity.
-    pub xmt: u32,
+    pub xmt: NonNullXmt,
     /// Ordered exact tag values.
-    pub values: Vec<u32>,
+    pub values: CountedValues<u32>,
     /// Exact framed record length.
     pub byte_len: u64,
     /// Offset of the record tag in the inflated stream.
@@ -1986,9 +1989,9 @@ pub struct ParasolidEntity62UnicodeRecord {
     /// Zero-based inflated Parasolid stream ordinal.
     pub stream_ordinal: u32,
     /// Stream-local record identity.
-    pub xmt: u32,
+    pub xmt: NonNullXmt,
     /// Validated Unicode scalar string.
-    pub value: String,
+    pub value: UnicodeValue,
     /// Exact framed record length.
     pub byte_len: u64,
     /// Offset of the record tag in the inflated stream.
@@ -1999,16 +2002,16 @@ pub struct ParasolidEntity62UnicodeRecord {
 struct ParasolidEntity62UnicodeRecordWire {
     id: String,
     stream_ordinal: u32,
-    xmt: u32,
+    xmt: NonNullXmt,
     code_units: Vec<u16>,
-    value: String,
+    value: UnicodeValue,
     byte_len: u64,
     inflated_offset: u64,
 }
 
 impl From<ParasolidEntity62UnicodeRecord> for ParasolidEntity62UnicodeRecordWire {
     fn from(value: ParasolidEntity62UnicodeRecord) -> Self {
-        let code_units = value.value.encode_utf16().collect();
+        let code_units = value.value.as_str().encode_utf16().collect();
         Self {
             id: value.id,
             stream_ordinal: value.stream_ordinal,
@@ -2026,6 +2029,7 @@ impl TryFrom<ParasolidEntity62UnicodeRecordWire> for ParasolidEntity62UnicodeRec
     fn try_from(wire: ParasolidEntity62UnicodeRecordWire) -> Result<Self, Self::Error> {
         if !wire
             .value
+            .as_str()
             .encode_utf16()
             .eq(wire.code_units.iter().copied())
         {
@@ -2073,7 +2077,8 @@ pub struct ParasolidEntity51NumericUse {
     /// Owning type-81 record.
     pub entity_51_record: String,
     /// Zero-based position in the type-81 reference lane.
-    pub reference_ordinal: u32,
+    #[serde(rename = "reference_ordinal")]
+    pub position: FieldPosition,
     /// Stream-local referenced xmt.
     pub referenced_xmt: u32,
     /// Numeric record family.
@@ -2094,7 +2099,8 @@ pub struct ParasolidEntity51StringUse {
     /// Owning type-81 record.
     pub entity_51_record: String,
     /// Zero-based position in the type-81 reference lane.
-    pub reference_ordinal: u32,
+    #[serde(rename = "reference_ordinal")]
+    pub position: FieldPosition,
     /// Stream-local referenced xmt.
     pub referenced_xmt: u32,
     /// Uniquely resolved type-84 string record.
@@ -2113,7 +2119,8 @@ pub struct ParasolidEntity51StructuredUse {
     /// Owning type-81 record.
     pub entity_51_record: String,
     /// Zero-based position in the type-81 reference lane.
-    pub reference_ordinal: u32,
+    #[serde(rename = "reference_ordinal")]
+    pub position: FieldPosition,
     /// Stream-local referenced xmt.
     pub referenced_xmt: u32,
     /// Structured value-record family.
@@ -2265,7 +2272,7 @@ pub fn parasolid_field_names_records(streams: &[Stream]) -> Vec<ParasolidFieldNa
                 .map(move |record| ParasolidFieldNamesRecord {
                     id: format!(
                         "nx:s{stream_ordinal}:field-names#{}-{}",
-                        record.xmt, record.offset
+                        u32::from(record.xmt), record.offset
                     ),
                     stream_ordinal: stream_ordinal as u32,
                     xmt: record.xmt,
@@ -2297,20 +2304,20 @@ pub fn parasolid_attribute_field_names(
     let mut lists = BTreeMap::<(u32, u32), Vec<&ParasolidFieldNamesRecord>>::new();
     for list in field_names {
         lists
-            .entry((list.stream_ordinal, list.xmt))
+            .entry((list.stream_ordinal, u32::from(list.xmt)))
             .or_default()
             .push(list);
     }
     let mut names_by_xmt = BTreeMap::<(u32, u32), Vec<(&str, &str)>>::new();
     for string in strings {
         names_by_xmt
-            .entry((string.stream_ordinal, string.xmt))
+            .entry((string.stream_ordinal, u32::from(string.xmt)))
             .or_default()
             .push((string.id.as_str(), string.value.as_str()));
     }
     for value in unicode {
         names_by_xmt
-            .entry((value.stream_ordinal, value.xmt))
+            .entry((value.stream_ordinal, u32::from(value.xmt)))
             .or_default()
             .push((value.id.as_str(), value.value.as_str()));
     }
@@ -2330,13 +2337,14 @@ pub fn parasolid_attribute_field_names(
             else {
                 return None;
             };
-            (list.name_xmts.len() == definition.field_codes.len()).then_some(())?;
+            (list.name_xmts.as_slice().len() == definition.field_codes.len()).then_some(())?;
             let resolved = list
                 .name_xmts
+                .as_slice()
                 .iter()
                 .map(|xmt| {
                     let [name] = names_by_xmt
-                        .get(&(definition.stream_ordinal, *xmt))?
+                        .get(&(definition.stream_ordinal, u32::from(*xmt)))?
                         .as_slice()
                     else {
                         return None;
@@ -2513,16 +2521,16 @@ pub(crate) fn parasolid_entity_value_records(
             }
             StreamKind::Preview => unreachable!("preview streams were filtered out"),
         };
-        let values = crate::parasolid::entity_value_records_at(&stream.inflated, owned_offsets);
+        let values = crate::parasolid::value_records::entity_value_records_at(&stream.inflated, owned_offsets);
         for record in values.integers {
             records.integers.push(ParasolidEntity52IntegerRecord {
                 id: format!(
                     "nx:s{stream_ordinal}:entity-52-integers#{}-{}",
-                    record.xmt, record.offset
+                    u32::from(record.xmt), record.offset
                 ),
                 stream_ordinal: stream_ordinal as u32,
                 xmt: record.xmt,
-                values: record.values,
+                values: record.value,
                 byte_len: record.byte_len as u64,
                 inflated_offset: record.offset as u64,
             });
@@ -2531,11 +2539,11 @@ pub(crate) fn parasolid_entity_value_records(
             records.doubles.push(ParasolidEntity53DoubleRecord {
                 id: format!(
                     "nx:s{stream_ordinal}:entity-53-doubles#{}-{}",
-                    record.xmt, record.offset
+                    u32::from(record.xmt), record.offset
                 ),
                 stream_ordinal: stream_ordinal as u32,
                 xmt: record.xmt,
-                values: record.values,
+                values: record.value,
                 byte_len: record.byte_len as u64,
                 inflated_offset: record.offset as u64,
             });
@@ -2544,7 +2552,7 @@ pub(crate) fn parasolid_entity_value_records(
             records.strings.push(ParasolidEntity54StringRecord {
                 id: format!(
                     "nx:s{stream_ordinal}:entity-54-string#{}-{}",
-                    record.xmt, record.offset
+                    u32::from(record.xmt), record.offset
                 ),
                 stream_ordinal: stream_ordinal as u32,
                 xmt: record.xmt,
@@ -2555,7 +2563,7 @@ pub(crate) fn parasolid_entity_value_records(
         }
         let mut retain_vector = |kind, family: &str, xmt, offset, byte_len, values| {
             records.vectors.push(ParasolidEntityVectorRecord {
-                id: format!("nx:s{stream_ordinal}:entity-{family}#{xmt}-{offset}"),
+                id: format!("nx:s{stream_ordinal}:entity-{family}#{}-{offset}", u32::from(xmt)),
                 stream_ordinal: stream_ordinal as u32,
                 kind,
                 xmt,
@@ -2571,7 +2579,7 @@ pub(crate) fn parasolid_entity_value_records(
                 record.xmt,
                 record.offset,
                 record.byte_len,
-                record.values,
+                record.value,
             );
         }
         for record in values.vectors {
@@ -2581,7 +2589,7 @@ pub(crate) fn parasolid_entity_value_records(
                 record.xmt,
                 record.offset,
                 record.byte_len,
-                record.values,
+                record.value,
             );
         }
         for record in values.directions {
@@ -2591,18 +2599,18 @@ pub(crate) fn parasolid_entity_value_records(
                 record.xmt,
                 record.offset,
                 record.byte_len,
-                record.values,
+                record.value,
             );
         }
         for record in values.axes {
             records.axes.push(ParasolidEntity57AxisRecord {
                 id: format!(
                     "nx:s{stream_ordinal}:entity-57-axes#{}-{}",
-                    record.xmt, record.offset
+                    u32::from(record.xmt), record.offset
                 ),
                 stream_ordinal: stream_ordinal as u32,
                 xmt: record.xmt,
-                values: record.values,
+                values: record.value,
                 byte_len: record.byte_len as u64,
                 inflated_offset: record.offset as u64,
             });
@@ -2611,11 +2619,11 @@ pub(crate) fn parasolid_entity_value_records(
             records.tags.push(ParasolidEntity58TagRecord {
                 id: format!(
                     "nx:s{stream_ordinal}:entity-58-tags#{}-{}",
-                    record.xmt, record.offset
+                    u32::from(record.xmt), record.offset
                 ),
                 stream_ordinal: stream_ordinal as u32,
                 xmt: record.xmt,
-                values: record.values,
+                values: record.value,
                 byte_len: record.byte_len as u64,
                 inflated_offset: record.offset as u64,
             });
@@ -2624,7 +2632,7 @@ pub(crate) fn parasolid_entity_value_records(
             records.unicode.push(ParasolidEntity62UnicodeRecord {
                 id: format!(
                     "nx:s{stream_ordinal}:entity-62-unicode#{}-{}",
-                    record.xmt, record.offset
+                    u32::from(record.xmt), record.offset
                 ),
                 stream_ordinal: stream_ordinal as u32,
                 xmt: record.xmt,
@@ -2667,22 +2675,20 @@ pub fn parasolid_entity_51_numeric_uses(
     let mut values = BTreeMap::<(u32, u32), Vec<(ParasolidEntity51NumericKind, &str)>>::new();
     for record in integers {
         values
-            .entry((record.stream_ordinal, record.xmt))
+            .entry((record.stream_ordinal, u32::from(record.xmt)))
             .or_default()
             .push((ParasolidEntity51NumericKind::UnsignedIntegers, &record.id));
     }
     for record in doubles {
         values
-            .entry((record.stream_ordinal, record.xmt))
+            .entry((record.stream_ordinal, u32::from(record.xmt)))
             .or_default()
             .push((ParasolidEntity51NumericKind::Doubles, &record.id));
     }
     let mut uses = Vec::new();
     for entity in entities {
-        for (trailing_ordinal, referenced_xmt) in
-            entity.trailing_references.values().iter().copied().enumerate()
-        {
-            let reference_ordinal = trailing_ordinal + 5;
+        for (position, &referenced_xmt) in entity.trailing_references.fields() {
+            let reference_ordinal = position.reference_ordinal();
             let Some([(kind, value_record)]) = values
                 .get(&(entity.stream_ordinal, referenced_xmt))
                 .map(Vec::as_slice)
@@ -2696,7 +2702,7 @@ pub fn parasolid_entity_51_numeric_uses(
                 ),
                 stream_ordinal: entity.stream_ordinal,
                 entity_51_record: entity.id.clone(),
-                reference_ordinal: reference_ordinal as u32,
+                position,
                 referenced_xmt,
                 kind: *kind,
                 value_record: (*value_record).to_string(),
@@ -2716,16 +2722,14 @@ pub fn parasolid_entity_51_string_uses(
     let mut strings_by_identity = BTreeMap::<(u32, u32), Vec<&str>>::new();
     for string in strings {
         strings_by_identity
-            .entry((string.stream_ordinal, string.xmt))
+            .entry((string.stream_ordinal, u32::from(string.xmt)))
             .or_default()
             .push(string.id.as_str());
     }
     let mut uses = Vec::new();
     for entity in entities {
-        for (trailing_ordinal, referenced_xmt) in
-            entity.trailing_references.values().iter().copied().enumerate()
-        {
-            let reference_ordinal = trailing_ordinal + 5;
+        for (position, &referenced_xmt) in entity.trailing_references.fields() {
+            let reference_ordinal = position.reference_ordinal();
             let Some([string]) = strings_by_identity
                 .get(&(entity.stream_ordinal, referenced_xmt))
                 .map(Vec::as_slice)
@@ -2739,7 +2743,7 @@ pub fn parasolid_entity_51_string_uses(
                 ),
                 stream_ordinal: entity.stream_ordinal,
                 entity_51_record: entity.id.clone(),
-                reference_ordinal: reference_ordinal as u32,
+                position,
                 referenced_xmt,
                 string_record: (*string).to_string(),
                 inflated_offset: entity.inflated_offset,
@@ -2766,7 +2770,7 @@ pub fn parasolid_entity_51_structured_uses(
             ParasolidVectorValueKind::Directions => StructuredValueKind::Directions,
         };
         values
-            .entry((record.stream_ordinal, record.xmt))
+            .entry((record.stream_ordinal, u32::from(record.xmt)))
             .or_default()
             .push((kind, record.id.as_str()));
     }
@@ -2798,16 +2802,14 @@ pub fn parasolid_entity_51_structured_uses(
         }))
     {
         values
-            .entry((stream_ordinal, xmt))
+            .entry((stream_ordinal, u32::from(xmt)))
             .or_default()
             .push((kind, id));
     }
     let mut uses = Vec::new();
     for entity in entities {
-        for (trailing_ordinal, referenced_xmt) in
-            entity.trailing_references.values().iter().copied().enumerate()
-        {
-            let reference_ordinal = trailing_ordinal + 5;
+        for (position, &referenced_xmt) in entity.trailing_references.fields() {
+            let reference_ordinal = position.reference_ordinal();
             let Some([(kind, value_record)]) = values
                 .get(&(entity.stream_ordinal, referenced_xmt))
                 .map(Vec::as_slice)
@@ -2821,7 +2823,7 @@ pub fn parasolid_entity_51_structured_uses(
                 ),
                 stream_ordinal: entity.stream_ordinal,
                 entity_51_record: entity.id.clone(),
-                reference_ordinal: reference_ordinal as u32,
+                position,
                 referenced_xmt,
                 kind: *kind,
                 value_record: (*value_record).to_string(),
@@ -2981,7 +2983,7 @@ pub fn parasolid_attribute_field_uses(
             .or_default()
             .push(definition);
     }
-    let mut candidates = BTreeMap::<(&str, u32), Vec<_>>::new();
+    let mut candidates = BTreeMap::<(&str, FieldPosition), Vec<_>>::new();
     for numeric_use in numeric_uses {
         let value_kind = match numeric_use.kind {
             ParasolidEntity51NumericKind::UnsignedIntegers => {
@@ -2992,7 +2994,7 @@ pub fn parasolid_attribute_field_uses(
         candidates
             .entry((
                 numeric_use.entity_51_record.as_str(),
-                numeric_use.reference_ordinal,
+                numeric_use.position,
             ))
             .or_default()
             .push((
@@ -3007,7 +3009,7 @@ pub fn parasolid_attribute_field_uses(
         candidates
             .entry((
                 string_use.entity_51_record.as_str(),
-                string_use.reference_ordinal,
+                string_use.position,
             ))
             .or_default()
             .push((
@@ -3022,7 +3024,7 @@ pub fn parasolid_attribute_field_uses(
         candidates
             .entry((
                 structured_use.entity_51_record.as_str(),
-                structured_use.reference_ordinal,
+                structured_use.position,
             ))
             .or_default()
             .push((
@@ -3035,7 +3037,7 @@ pub fn parasolid_attribute_field_uses(
     }
     let mut uses = candidates
         .into_iter()
-        .filter_map(|((entity_51_record, reference_ordinal), candidates)| {
+        .filter_map(|((entity_51_record, position), candidates)| {
             let [(stream_ordinal, value_kind, value_use, value_record, inflated_offset)] =
                 candidates.as_slice()
             else {
@@ -3053,7 +3055,6 @@ pub fn parasolid_attribute_field_uses(
             else {
                 return None;
             };
-            let position = FieldPosition::from_reference(reference_ordinal)?;
             let field_ordinal = position.field_ordinal();
             let field_code = *definition.field_codes.get(field_ordinal as usize)?;
             (field_code == value_kind.field_code()).then_some(())?;
@@ -3150,7 +3151,7 @@ pub fn parasolid_topology_attribute_fields_have_untransferred_values(
 mod tests {
     #[test]
     fn unicode_record_wire_derives_exact_utf16_and_rejects_disagreement() {
-        let wire = r#"{"id":"unicode","stream_ordinal":0,"xmt":1,"code_units":[78,88,55357,56960],"value":"NX🚀","byte_len":8,"inflated_offset":0}"#;
+        let wire = r#"{"id":"unicode","stream_ordinal":0,"xmt":2,"code_units":[78,88,55357,56960],"value":"NX🚀","byte_len":8,"inflated_offset":0}"#;
         let record: super::ParasolidEntity62UnicodeRecord = serde_json::from_str(wire).unwrap();
         assert_eq!(serde_json::to_string(&record).unwrap(), wire);
         let inconsistent = wire.replace("[78,88,55357,56960]", "[78,88,55357]");
@@ -3237,7 +3238,7 @@ mod tests {
         let records = super::parasolid_entity_value_records(&streams, &events.records);
 
         assert_eq!(records.integers.len(), 1);
-        assert_eq!(records.integers[0].values.len(), 4);
+        assert_eq!(records.integers[0].values.as_slice().len(), 4);
         assert!(records.doubles.is_empty());
     }
 
@@ -3904,7 +3905,7 @@ mod tests {
             id: "numeric-use".into(),
             stream_ordinal: 2,
             entity_51_record: "entity".into(),
-            reference_ordinal: 5,
+            position: crate::parasolid::entity_references::FieldPosition::try_from(5).unwrap(),
             referenced_xmt: 12,
             kind: ParasolidEntity51NumericKind::UnsignedIntegers,
             value_record: "integers".into(),
@@ -3912,7 +3913,7 @@ mod tests {
         };
         let double_use = ParasolidEntity51NumericUse {
             id: "double-use".into(),
-            reference_ordinal: 6,
+            position: crate::parasolid::entity_references::FieldPosition::try_from(6).unwrap(),
             kind: ParasolidEntity51NumericKind::Doubles,
             value_record: "doubles".into(),
             ..numeric_use.clone()
@@ -3921,7 +3922,7 @@ mod tests {
             id: "string-use".into(),
             stream_ordinal: 2,
             entity_51_record: "entity".into(),
-            reference_ordinal: 7,
+            position: crate::parasolid::entity_references::FieldPosition::try_from(7).unwrap(),
             referenced_xmt: 14,
             string_record: "string".into(),
             inflated_offset: 48,
@@ -4006,7 +4007,7 @@ mod tests {
         .is_empty());
 
         let ambiguous_string = ParasolidEntity51StringUse {
-            reference_ordinal: 5,
+            position: crate::parasolid::entity_references::FieldPosition::try_from(5).unwrap(),
             ..string_use
         };
         assert!(parasolid_attribute_field_uses(
@@ -4036,8 +4037,8 @@ mod tests {
             id: "point".into(),
             stream_ordinal: 2,
             kind: ParasolidVectorValueKind::Points,
-            xmt: 12,
-            values: crate::parasolid::finite_values::FiniteValues::new(vec![[1.0, 2.0, 3.0]]).unwrap(),
+            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(12).unwrap(),
+            values: crate::parasolid::counted_values::CountedValues::new(vec![[1.0, 2.0, 3.0]]).unwrap(),
             byte_len: 36,
             inflated_offset: 80,
         };
@@ -4049,15 +4050,15 @@ mod tests {
             &[],
         );
         assert_eq!(uses.len(), 1);
-        assert_eq!(uses[0].reference_ordinal, 5);
+        assert_eq!(uses[0].position.reference_ordinal(), 5);
         assert_eq!(uses[0].kind, StructuredValueKind::Points);
         assert_eq!(uses[0].value_record, "point");
 
         let colliding_tag = ParasolidEntity58TagRecord {
             id: "tag".into(),
             stream_ordinal: 2,
-            xmt: 12,
-            values: vec![7],
+            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(12).unwrap(),
+            values: crate::parasolid::counted_values::CountedValues::new(vec![7]).unwrap(),
             byte_len: 16,
             inflated_offset: 90,
         };
@@ -4120,7 +4121,7 @@ mod tests {
                 id: format!("use-{ordinal}"),
                 stream_ordinal: 2,
                 entity_51_record: "entity".into(),
-                reference_ordinal: u32::try_from(ordinal).expect("test ordinal fits u32") + 5,
+                position: crate::parasolid::entity_references::FieldPosition::try_from(u32::try_from(ordinal).expect("test ordinal fits u32") + 5).unwrap(),
                 referenced_xmt: u32::try_from(ordinal).expect("test ordinal fits u32") + 20,
                 kind: *kind,
                 value_record: format!("value-{ordinal}"),
@@ -4190,7 +4191,7 @@ mod tests {
             attribute_class_use: class_use.id.clone(),
             entity_51_record: entity.id.clone(),
             attribute_definition: "definition".into(),
-            position: crate::native::parasolid::field_use_wire::FieldPosition::from_reference(5).unwrap(),
+            position: crate::parasolid::entity_references::FieldPosition::try_from(5).unwrap(),
             value_kind: ParasolidAttributeFieldValueKind::Points,
             value_use: "point-use".into(),
             value_record: "points".into(),
@@ -4302,15 +4303,15 @@ mod tests {
         let list = ParasolidFieldNamesRecord {
             id: "field-names".into(),
             stream_ordinal: 3,
-            xmt: 25,
-            name_xmts: vec![28, 29, 30],
+            xmt: NonNullXmt::try_from(25).unwrap(),
+            name_xmts: NameReferences::try_from([28, 29, 30].map(|xmt| NonNullXmt::try_from(xmt).unwrap()).to_vec()).unwrap(),
             byte_len: 15,
             inflated_offset: 30,
         };
         let strings = [28, 30].map(|xmt| ParasolidEntity54StringRecord {
             id: format!("string-{xmt}"),
             stream_ordinal: 3,
-            xmt,
+            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(xmt).unwrap(),
             value: PrintableString::new((xmt - 27).to_string()).unwrap(),
             byte_len: 10,
             inflated_offset: u64::from(xmt),
@@ -4318,8 +4319,8 @@ mod tests {
         let unicode = ParasolidEntity62UnicodeRecord {
             id: "unicode-29".into(),
             stream_ordinal: 3,
-            xmt: 29,
-            value: "μ".into(),
+            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(29).unwrap(),
+            value: crate::parasolid::unicode_value::UnicodeValue::new("μ".into()).unwrap(),
             byte_len: 12,
             inflated_offset: 29,
         };
@@ -4334,7 +4335,7 @@ mod tests {
         assert_eq!(relations[0].fields.iter().map(|field| field.name.as_str()).collect::<Vec<_>>(), ["1", "μ", "3"]);
 
         let mut incomplete = list.clone();
-        incomplete.name_xmts.pop();
+        incomplete.name_xmts = NameReferences::try_from(incomplete.name_xmts.as_slice()[..2].to_vec()).unwrap();
         assert!(parasolid_attribute_field_names(
             std::slice::from_ref(&definition),
             &[incomplete],
@@ -4351,7 +4352,7 @@ mod tests {
         .is_empty());
 
         let ambiguous = ParasolidEntity62UnicodeRecord {
-            xmt: 28,
+            xmt: NonNullXmt::try_from(28).unwrap(),
             ..unicode.clone()
         };
         assert!(parasolid_attribute_field_names(
@@ -4359,8 +4360,8 @@ mod tests {
             &[ParasolidFieldNamesRecord {
                 id: "field-names".into(),
                 stream_ordinal: 3,
-                xmt: 25,
-                name_xmts: vec![28, 29, 30],
+                xmt: NonNullXmt::try_from(25).unwrap(),
+                name_xmts: NameReferences::try_from([28, 29, 30].map(|xmt| NonNullXmt::try_from(xmt).unwrap()).to_vec()).unwrap(),
                 byte_len: 15,
                 inflated_offset: 30,
             }],
@@ -4695,15 +4696,15 @@ mod tests {
         let integers = [ParasolidEntity52IntegerRecord {
             id: "integers".into(),
             stream_ordinal: 3,
-            xmt: 70,
-            values: vec![1],
+            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
+            values: crate::parasolid::counted_values::CountedValues::new(vec![1]).unwrap(),
             byte_len: 12,
             inflated_offset: 300,
         }];
         let strings = [ParasolidEntity54StringRecord {
             id: "string".into(),
             stream_ordinal: 3,
-            xmt: 71,
+            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(71).unwrap(),
             value: PrintableString::new("value".to_owned()).unwrap(),
             byte_len: 14,
             inflated_offset: 400,
@@ -4712,14 +4713,15 @@ mod tests {
         let numeric_uses =
             super::parasolid_entity_51_numeric_uses(std::slice::from_ref(&entity), &integers, &[]);
         assert_eq!(numeric_uses.len(), 1);
-        assert_eq!(numeric_uses[0].reference_ordinal, 5);
+        assert_eq!(numeric_uses[0].position.reference_ordinal(), 5);
         assert_eq!(numeric_uses[0].referenced_xmt, 70);
 
         let string_uses =
             super::parasolid_entity_51_string_uses(std::slice::from_ref(&entity), &strings);
         assert_eq!(string_uses.len(), 1);
-        assert_eq!(string_uses[0].reference_ordinal, 6);
+        assert_eq!(string_uses[0].position.reference_ordinal(), 6);
         assert_eq!(string_uses[0].referenced_xmt, 71);
     }
     mod carrier_and_attribute_resolution;
+mod attribute_wire;
 }

@@ -1129,7 +1129,7 @@ pub fn walk(stream: &[u8]) -> Census {
                 .contains(&offset);
         if !value_owned {
             if let Some((parsed_kind, _, byte_len)) =
-                crate::parasolid::entity_value_record_identity_at(stream, offset)
+                crate::parasolid::value_records::entity_value_record_identity_at(stream, offset)
             {
                 if parsed_kind == kind {
                     offset += byte_len;
@@ -2862,7 +2862,7 @@ fn consume_variable(stream: &[u8], offset: usize, kind: u16) -> Option<Record> {
         }
         82..=89 | 98 => {
             let (parsed_kind, xmt, byte_len) =
-                crate::parasolid::entity_value_record_identity_at(stream, offset)?;
+                crate::parasolid::value_records::entity_value_record_identity_at(stream, offset)?;
             (parsed_kind == kind).then_some(())?;
             (xmt, byte_len, Vec::new())
         }

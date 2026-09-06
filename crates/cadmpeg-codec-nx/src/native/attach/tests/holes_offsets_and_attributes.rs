@@ -1227,16 +1227,16 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
     let integer = ParasolidEntity52IntegerRecord {
         id: "integers".into(),
         stream_ordinal: 3,
-        xmt: 70,
-        values: vec![4, u32::MAX],
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
+        values: crate::parasolid::counted_values::CountedValues::new(vec![4, u32::MAX]).unwrap(),
         byte_len: 18,
         inflated_offset: 400,
     };
     let double = ParasolidEntity53DoubleRecord {
         id: "doubles".into(),
         stream_ordinal: 3,
-        xmt: 71,
-        values: crate::parasolid::finite_values::FiniteValues::new(vec![0.25, 7.5]).unwrap(),
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(71).unwrap(),
+        values: crate::parasolid::counted_values::CountedValues::new(vec![0.25, 7.5]).unwrap(),
         byte_len: 26,
         inflated_offset: 500,
     };
@@ -1245,7 +1245,7 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
             id: "double-use".into(),
             stream_ordinal: 3,
             entity_51_record: "entity".into(),
-            reference_ordinal: 4,
+            position: crate::parasolid::entity_references::FieldPosition::try_from(6).unwrap(),
             referenced_xmt: 71,
             kind: ParasolidEntity51NumericKind::Doubles,
             value_record: double.id.clone(),
@@ -1255,7 +1255,7 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
             id: "integer-use".into(),
             stream_ordinal: 3,
             entity_51_record: "entity".into(),
-            reference_ordinal: 3,
+            position: crate::parasolid::entity_references::FieldPosition::try_from(5).unwrap(),
             referenced_xmt: 70,
             kind: ParasolidEntity51NumericKind::UnsignedIntegers,
             value_record: integer.id.clone(),
@@ -1321,10 +1321,10 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
         attributes[0].target,
         AttributeTarget::Shell(ShellId::mint("nx:s3:shell#58").expect("identity grammar"))
     );
-    assert_eq!(attributes[0].name, "parasolid_type_integer_reference_3");
+    assert_eq!(attributes[0].name, "parasolid_type_integer_reference_5");
     assert_eq!(
         attributes[4].name,
-        "SDL/TYSA_DENSITY.parasolid_type_integer_reference_3"
+        "SDL/TYSA_DENSITY.parasolid_type_integer_reference_5"
     );
     assert_eq!(
         attributes[0].values,
@@ -1404,7 +1404,7 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
         attribute_class_use: "attribute-class-use".into(),
         entity_51_record: "entity".into(),
         attribute_definition: definition.id.clone(),
-        position: crate::native::parasolid::field_use_wire::FieldPosition::from_reference(5).unwrap(),
+        position: crate::parasolid::entity_references::FieldPosition::try_from(5).unwrap(),
         value_kind: ParasolidAttributeFieldValueKind::Doubles,
         value_use: "double-use".into(),
         value_record: "double-record".into(),
@@ -1425,7 +1425,7 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
     );
 
     let units = ParasolidAttributeFieldUse {
-        position: crate::native::parasolid::field_use_wire::FieldPosition::from_reference(6).unwrap(),
+        position: crate::parasolid::entity_references::FieldPosition::try_from(6).unwrap(),
         value_kind: ParasolidAttributeFieldValueKind::String,
         value_use: "string-use".into(),
         value_record: "string-record".into(),
@@ -1551,7 +1551,7 @@ fn topology_attribute_fields_use_declared_ordinal_and_type_for_every_class() {
         attribute_class_use: class_use.attribute_class_use.clone(),
         entity_51_record: class_use.entity_51_record.clone(),
         attribute_definition: definition.id.clone(),
-        position: crate::native::parasolid::field_use_wire::FieldPosition::from_reference(5).unwrap(),
+        position: crate::parasolid::entity_references::FieldPosition::try_from(5).unwrap(),
         value_kind: ParasolidAttributeFieldValueKind::String,
         value_use: "text-use".into(),
         value_record: "text-record".into(),
@@ -1559,7 +1559,7 @@ fn topology_attribute_fields_use_declared_ordinal_and_type_for_every_class() {
     };
     let numeric_field = ParasolidAttributeFieldUse {
         id: "numeric-field-use".into(),
-        position: crate::native::parasolid::field_use_wire::FieldPosition::from_reference(6).unwrap(),
+        position: crate::parasolid::entity_references::FieldPosition::try_from(6).unwrap(),
         value_kind: ParasolidAttributeFieldValueKind::Doubles,
         value_use: "numeric-use".into(),
         value_record: "numeric-record".into(),
@@ -1656,7 +1656,7 @@ fn topology_attribute_index_retains_linked_type_81_records() {
             attribute_class_use: "head-class-use".into(),
             entity_51_record: "head".into(),
             attribute_definition: definition.id.clone(),
-            position: crate::native::parasolid::field_use_wire::FieldPosition::from_reference(5).unwrap(),
+            position: crate::parasolid::entity_references::FieldPosition::try_from(5).unwrap(),
             value_kind: ParasolidAttributeFieldValueKind::Doubles,
             value_use: "head-use".into(),
             value_record: "head-value".into(),
@@ -1668,7 +1668,7 @@ fn topology_attribute_index_retains_linked_type_81_records() {
             attribute_class_use: "child-class-use".into(),
             entity_51_record: "child".into(),
             attribute_definition: definition.id.clone(),
-            position: crate::native::parasolid::field_use_wire::FieldPosition::from_reference(5).unwrap(),
+            position: crate::parasolid::entity_references::FieldPosition::try_from(5).unwrap(),
             value_kind: ParasolidAttributeFieldValueKind::Doubles,
             value_use: "child-use".into(),
             value_record: "child-value".into(),
@@ -1680,7 +1680,7 @@ fn topology_attribute_index_retains_linked_type_81_records() {
             id: "head-use".into(),
             stream_ordinal: 3,
             entity_51_record: "head".into(),
-            reference_ordinal: 5,
+            position: crate::parasolid::entity_references::FieldPosition::try_from(5).unwrap(),
             referenced_xmt: 70,
             kind: ParasolidEntity51NumericKind::Doubles,
             value_record: "head-value".into(),
@@ -1690,7 +1690,7 @@ fn topology_attribute_index_retains_linked_type_81_records() {
             id: "child-use".into(),
             stream_ordinal: 3,
             entity_51_record: "child".into(),
-            reference_ordinal: 5,
+            position: crate::parasolid::entity_references::FieldPosition::try_from(5).unwrap(),
             referenced_xmt: 71,
             kind: ParasolidEntity51NumericKind::Doubles,
             value_record: "child-value".into(),
@@ -1701,16 +1701,16 @@ fn topology_attribute_index_retains_linked_type_81_records() {
         ParasolidEntity53DoubleRecord {
             id: "head-value".into(),
             stream_ordinal: 3,
-            xmt: 70,
-            values: crate::parasolid::finite_values::FiniteValues::new(vec![1.0]).unwrap(),
+            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
+            values: crate::parasolid::counted_values::CountedValues::new(vec![1.0]).unwrap(),
             byte_len: 18,
             inflated_offset: 400,
         },
         ParasolidEntity53DoubleRecord {
             id: "child-value".into(),
             stream_ordinal: 3,
-            xmt: 71,
-            values: crate::parasolid::finite_values::FiniteValues::new(vec![2.0]).unwrap(),
+            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(71).unwrap(),
+            values: crate::parasolid::counted_values::CountedValues::new(vec![2.0]).unwrap(),
             byte_len: 18,
             inflated_offset: 410,
         },
@@ -1815,16 +1815,16 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
         id: id.into(),
         stream_ordinal: 3,
         kind,
-        xmt: 70,
-        values: crate::parasolid::finite_values::FiniteValues::new(vec![value]).unwrap(),
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
+        values: crate::parasolid::counted_values::CountedValues::new(vec![value]).unwrap(),
         byte_len: 36,
         inflated_offset: 400,
     });
     let axis = ParasolidEntity57AxisRecord {
         id: "axis".into(),
         stream_ordinal: 3,
-        xmt: 73,
-        values: crate::parasolid::finite_values::FiniteValues::new(vec![
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(73).unwrap(),
+        values: crate::parasolid::counted_values::CountedValues::new(vec![
             [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
         ]).unwrap(),
         byte_len: 60,
@@ -1833,16 +1833,16 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
     let tag = ParasolidEntity58TagRecord {
         id: "tag".into(),
         stream_ordinal: 3,
-        xmt: 74,
-        values: vec![u32::MAX],
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(74).unwrap(),
+        values: crate::parasolid::counted_values::CountedValues::new(vec![u32::MAX]).unwrap(),
         byte_len: 16,
         inflated_offset: 440,
     };
     let unicode = ParasolidEntity62UnicodeRecord {
         id: "unicode".into(),
         stream_ordinal: 3,
-        xmt: 75,
-        value: "μ".into(),
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(75).unwrap(),
+        value: crate::parasolid::unicode_value::UnicodeValue::new("μ".into()).unwrap(),
         byte_len: 14,
         inflated_offset: 450,
     };
@@ -1860,7 +1860,7 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
         id: format!("use-{ordinal}"),
         stream_ordinal: 3,
         entity_51_record: "entity".into(),
-        reference_ordinal: u32::try_from(ordinal).expect("test ordinal fits u32") + 5,
+        position: crate::parasolid::entity_references::FieldPosition::try_from(u32::try_from(ordinal).expect("test ordinal fits u32") + 5).unwrap(),
         referenced_xmt: u32::try_from(ordinal).expect("test ordinal fits u32") + 70,
         kind,
         value_record: record.into(),

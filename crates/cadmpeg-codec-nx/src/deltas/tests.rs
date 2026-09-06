@@ -266,9 +266,9 @@ fn deltas_walks_complete_entity_value_records() {
     let residual = crate::deltas::semantic_residual(&stream);
     assert!(residual[..decoded_len].iter().all(|byte| *byte == 0xff));
     assert_eq!(&residual[decoded_len..stream.len()], &[0xfe, 0xdc, 0xba]);
-    let value_records = crate::parasolid::entity_value_records(&residual);
-    assert_eq!(value_records.integers[0].values, [u32::MAX]);
-    assert_eq!(value_records.doubles[0].values.as_slice(), [0.25]);
+    let value_records = crate::parasolid::value_records::entity_value_records(&residual);
+    assert_eq!(value_records.integers[0].value.as_slice(), [u32::MAX]);
+    assert_eq!(value_records.doubles[0].value.as_slice(), [0.25]);
     assert_eq!(value_records.strings[0].value.as_str(), "abc");
 }
 
@@ -314,11 +314,11 @@ fn deltas_walks_every_transformable_value_family() {
     }
     assert_eq!(census.full_counts["ENTITY_62"], 1);
 
-    let values = crate::parasolid::entity_value_records_at(
+    let values = crate::parasolid::value_records::entity_value_records_at(
         &stream,
         census.records.iter().map(|record| record.offset),
     );
-    assert_eq!(values.unicode[0].value, "NX");
+    assert_eq!(values.unicode[0].value.as_str(), "NX");
 }
 
 #[test]
