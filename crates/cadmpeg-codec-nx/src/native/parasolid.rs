@@ -10,10 +10,13 @@ mod support_uv_wire;
 mod chart_wire;
 mod tail_wire;
 mod body_revision_wire;
+mod transmit_header_wire;
+use transmit_header_wire::TransmitHeaderWire;
 use body_revision_wire::RevisionLengths;
 use crate::deltas::packet_marker::ReferenceMarker;
 use crate::deltas::xmt_reference::NonNullXmt;
 use crate::deltas::state_frame::StateFrames;
+use crate::deltas::transmit_state::TransmitState;
 use crate::deltas::preamble_state::PreambleState;
 use crate::deltas::type150_state::Type150State;
 use crate::deltas::tails::{NullTailForm, NumericTailValues};
@@ -497,23 +500,17 @@ pub struct ParasolidDeltasBodyRevision {
 
 /// Parasolid transmit header at the start of a deltas stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "TransmitHeaderWire", into = "TransmitHeaderWire")]
 pub struct ParasolidDeltasTransmitHeader {
     /// Globally unique header identity.
     pub id: String,
     /// Zero-based source stream ordinal.
     pub stream_ordinal: u32,
-    /// Printable transmit-file description.
-    pub description: String,
-    /// Declared Parasolid schema token.
-    pub schema: String,
-    /// Consecutive stream-local header identities.
-    pub references: [u32; 2],
+    pub state: TransmitState,
     /// Exact header byte length.
     pub byte_len: u64,
     /// SHA-256 of the exact header bytes.
     pub sha256: String,
-    /// First header byte offset in the inflated stream.
-    pub inflated_offset: u64,
 }
 
 /// Null references at the boundary of a Parasolid deltas stream.
@@ -898,12 +895,9 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
             events.transmit_headers.push(ParasolidDeltasTransmitHeader {
                 id: format!("nx:s{stream_ordinal}:deltas-transmit-header#0"),
                 stream_ordinal: stream_ordinal as u32,
-                description: header.description,
-                schema: header.schema,
-                references: header.references,
+                state: header.state,
                 byte_len: bytes.len() as u64,
                 sha256: cadmpeg_ir::hash::sha256_hex(bytes),
-                inflated_offset: 0,
             });
         }
         if let Some(trailer) = census.terminal_null_references {
@@ -3784,9 +3778,9 @@ mod tests {
         assert_eq!(events.transmit_headers.len(), 1);
         let header = &events.transmit_headers[0];
         assert_eq!(header.id, "nx:s0:deltas-transmit-header#0");
-        assert_eq!(header.description.as_bytes(), description);
-        assert_eq!(header.schema.as_bytes(), schema);
-        assert_eq!(header.references, [1063, 1064]);
+        assert_eq!(header.state.description().as_bytes(), description);
+        assert_eq!(header.state.schema().as_bytes(), schema);
+        assert_eq!(header.state.references(), [1063, 1064]);
         assert_eq!(header.byte_len, header_end as u64);
         assert_eq!(
             header.sha256,

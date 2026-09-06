@@ -535,7 +535,7 @@ impl StreamNoted for ParasolidChartRecord {
 }
 impl StreamNoted for ParasolidDeltasTransmitHeader {
     fn stream_note(&self) -> (&str, u32, u64) {
-        (&self.id, self.stream_ordinal, self.inflated_offset)
+        (&self.id, self.stream_ordinal, 0)
     }
 }
 impl StreamNoted for ParasolidDeltasTerminalNullReferences {

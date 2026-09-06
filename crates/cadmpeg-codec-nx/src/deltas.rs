@@ -9,6 +9,8 @@ pub(crate) mod packet_marker;
 pub(crate) mod xmt_reference;
 pub(crate) mod state_references;
 pub(crate) mod state_frame;
+pub(crate) mod transmit_state;
+use transmit_state::TransmitState;
 use state_frame::{ReferenceStateFrame, StateFrames};
 use state_references::StateReferences;
 use xmt_reference::NonNullXmt;
@@ -539,12 +541,7 @@ pub struct BodyRevision {
 /// Framed Parasolid transmit header at the start of a deltas stream.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TransmitHeader {
-    /// Printable transmit-file description.
-    pub description: String,
-    /// Declared Parasolid schema token.
-    pub schema: String,
-    /// Consecutive stream-local header identities.
-    pub references: [u32; 2],
+    pub state: TransmitState,
     /// First byte following the header.
     pub end: usize,
 }
@@ -1352,30 +1349,13 @@ fn populate_gap_events(stream: &[u8], census: &mut Census) {
 fn transmit_header(stream: &[u8]) -> Option<TransmitHeader> {
     (stream.get(..2) == Some(b"PS")).then_some(())?;
     let description_len = usize::try_from(View::u32_be_at(stream, 2)?).ok()?;
-    (description_len > 0).then_some(())?;
     let description_start = 6usize;
     let description_end = description_start.checked_add(description_len)?;
     let description_bytes = stream.get(description_start..description_end)?;
-    description_bytes
-        .iter()
-        .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
-        .then_some(())?;
-    description_bytes
-        .windows(b"(deltas)".len())
-        .any(|window| window == b"(deltas)")
-        .then_some(())?;
-
     let schema_len = usize::try_from(View::u32_be_at(stream, description_end)?).ok()?;
-    (schema_len > 4).then_some(())?;
     let schema_start = description_end.checked_add(4)?;
     let schema_end = schema_start.checked_add(schema_len)?;
     let schema_bytes = stream.get(schema_start..schema_end)?;
-    (schema_bytes.starts_with(b"SCH_")
-        && schema_bytes
-            .iter()
-            .all(|byte| byte.is_ascii_alphanumeric() || *byte == b'_'))
-    .then_some(())?;
-
     let mut at = schema_end;
     (stream.get(at..at.checked_add(2)?) == Some([0x00, 0xe7].as_slice())).then_some(())?;
     at = at.checked_add(2)?;
@@ -1386,18 +1366,14 @@ fn transmit_header(stream: &[u8]) -> Option<TransmitHeader> {
     (stream.get(at) == Some(&0xff)).then_some(())?;
     at = at.checked_add(1)?;
     let (first, consumed) = read_xmt(stream, at)?;
-    (first > 1).then_some(())?;
     at = at.checked_add(consumed)?;
     let (second, consumed) = read_xmt(stream, at)?;
-    (second == first.checked_add(1)?).then_some(())?;
     at = at.checked_add(consumed)?;
     (View::u16_be_at(stream, at) == Some(0)).then_some(())?;
     at = at.checked_add(2)?;
 
     Some(TransmitHeader {
-        description: String::from_utf8(description_bytes.to_vec()).ok()?,
-        schema: String::from_utf8(schema_bytes.to_vec()).ok()?,
-        references: [first, second],
+        state: TransmitState::new(String::from_utf8(description_bytes.to_vec()).ok()?, String::from_utf8(schema_bytes.to_vec()).ok()?, [first, second]).ok()?,
         end: at,
     })
 }
@@ -5036,8 +5012,8 @@ mod transmit_header_tests {
             let bytes = header(references);
             let census = walk(&bytes);
             let parsed = census.transmit_header.expect("complete transmit header");
-            assert_eq!(parsed.references, expected);
-            assert_eq!(parsed.schema, "SCH_3501171_35102_13006");
+            assert_eq!(parsed.state.references(), expected);
+            assert_eq!(parsed.state.schema(), "SCH_3501171_35102_13006");
             assert_eq!(parsed.end, bytes.len());
             assert_eq!(census.bytes_decoded, bytes.len());
             assert!(census.records.is_empty());
