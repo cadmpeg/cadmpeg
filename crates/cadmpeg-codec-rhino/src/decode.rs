@@ -2,7 +2,6 @@
 //! Decode Rhino metadata and retain object records for later geometry phases.
 
 use cadmpeg_core::decode::alloc_filled;
-use cadmpeg_ir::SourceProvenance;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{ModelCheckpoint, ModelDraft};
@@ -21,6 +20,7 @@ use cadmpeg_ir::topology::{
 };
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::unknown::{NativeUnknownRecord, UnknownRecord};
+use cadmpeg_ir::SourceProvenance;
 use cadmpeg_ir::{AnnotationBuilder, Annotations};
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
@@ -4711,15 +4711,18 @@ fn stage_curve_tree(
     let parameters = curve.compound_parameters();
     let mut component_ids = Vec::new();
     if let crate::curves::DecodedCurve::Compound { children, .. } = &curve {
-        for (index, (_, child)) in children.iter().cloned().enumerate() {
-            component_ids.push(stage_curve_tree(
-                staged,
-                child,
-                key,
-                &format!("{path}.component-{index}"),
-                association,
-                unknown,
-            ));
+        for (index, (parameter, child)) in children.iter().cloned().enumerate() {
+            component_ids.push(cadmpeg_ir::geometry::CompoundComponent {
+                parameter,
+                component: stage_curve_tree(
+                    staged,
+                    child,
+                    key,
+                    &format!("{path}.component-{index}"),
+                    association,
+                    unknown,
+                ),
+            });
         }
     }
     let id: cadmpeg_ir::ids::CurveId = format!("rhino:object:curve#{key}.{path}").into();
@@ -4749,7 +4752,6 @@ fn stage_curve_tree(
             ProceduralCurve::new(
                 procedure_id,
                 ProceduralCurveDefinition::Compound {
-                    component_parameters: parameters[..parameters.len() - 1].to_vec(),
                     parameters,
                     components: component_ids,
                 },
@@ -5147,17 +5149,20 @@ fn commit_curve_tree(
     let parameters = curve.compound_parameters();
     let mut component_ids = Vec::new();
     if let crate::curves::DecodedCurve::Compound { children, .. } = &curve {
-        for (index, (_, child)) in children.iter().cloned().enumerate() {
+        for (index, (parameter, child)) in children.iter().cloned().enumerate() {
             let child_path = format!("{path}.component-{index}");
-            component_ids.push(commit_curve_tree(
-                ir,
-                annotations,
-                child,
-                key,
-                association,
-                None,
-                &child_path,
-            ));
+            component_ids.push(cadmpeg_ir::geometry::CompoundComponent {
+                parameter,
+                component: commit_curve_tree(
+                    ir,
+                    annotations,
+                    child,
+                    key,
+                    association,
+                    None,
+                    &child_path,
+                ),
+            });
         }
     }
     let id: cadmpeg_ir::ids::CurveId = if path == "root" {
@@ -5187,7 +5192,6 @@ fn commit_curve_tree(
             ProceduralCurve::new(
                 procedure_id,
                 ProceduralCurveDefinition::Compound {
-                    component_parameters: parameters[..parameters.len() - 1].to_vec(),
                     parameters,
                     components: component_ids,
                 },

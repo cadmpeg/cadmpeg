@@ -599,7 +599,11 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 }
             }
             ProceduralCurveDefinition::Compound { components, .. } => {
-                curves.extend(components.iter().map(|component| component.0.as_str()));
+                curves.extend(
+                    components
+                        .iter()
+                        .map(|component| component.component.0.as_str()),
+                );
             }
             ProceduralCurveDefinition::Intersection { context, .. } => {
                 for side in &context.sides {

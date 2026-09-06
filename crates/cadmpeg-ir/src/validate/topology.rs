@@ -1166,8 +1166,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
             }
             ProceduralCurveDefinition::Compound { components, .. } => {
                 for component in components {
-                    if ids.curves(&component.0).is_none() {
-                        ref_error(findings, &procedural.id.0, "curve", &component.0);
+                    if ids.curves(&component.component.0).is_none() {
+                        ref_error(findings, &procedural.id.0, "curve", &component.component.0);
                     }
                 }
             }

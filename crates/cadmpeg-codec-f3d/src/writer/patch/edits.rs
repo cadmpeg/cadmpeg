@@ -814,7 +814,11 @@ pub(crate) fn validate_material_assignment_appearances(
             let selected =
                 crate::materials::appearance_for_assignment(&target.model.appearances, assignment)?;
             if selected.is_some_and(|appearance| appearance.id == after.id)
-                && after.physical_token.as_deref() == assignment.physical_token.as_ref().map(|field| field.value.as_str())
+                && after.physical_token.as_deref()
+                    == assignment
+                        .physical_token
+                        .as_ref()
+                        .map(|field| field.value.as_str())
             {
                 synchronized = true;
                 break;
@@ -835,8 +839,14 @@ pub(crate) fn validate_material_assignment_appearances(
         };
         let selected =
             crate::materials::appearance_for_assignment(&target.model.appearances, after)?;
-        let before_token = before.physical_token.as_ref().map(|field| field.value.as_str());
-        let after_token = after.physical_token.as_ref().map(|field| field.value.as_str());
+        let before_token = before
+            .physical_token
+            .as_ref()
+            .map(|field| field.value.as_str());
+        let after_token = after
+            .physical_token
+            .as_ref()
+            .map(|field| field.value.as_str());
         if after_token != before_token
             && selected.is_none_or(|appearance| appearance.physical_token.as_deref() != after_token)
         {
@@ -885,14 +895,22 @@ pub(crate) fn validate_material_assignment_edits(
         }
         let mut normalized = after.clone();
         normalized.visual_guid.clone_from(&before.visual_guid);
-        normalized.physical_token = before.physical_token.as_ref().map(|field| crate::records::RecordedValue {
-            value: field.value.clone(),
-            offset: after.physical_token.as_ref().and_then(|field| field.offset),
-        });
-        normalized.visual_preset = before.visual_preset.as_ref().map(|field| crate::records::RecordedValue {
-            value: field.value.clone(),
-            offset: after.visual_preset.as_ref().and_then(|field| field.offset),
-        });
+        normalized.physical_token =
+            before
+                .physical_token
+                .as_ref()
+                .map(|field| crate::records::RecordedValue {
+                    value: field.value.clone(),
+                    offset: after.physical_token.as_ref().and_then(|field| field.offset),
+                });
+        normalized.visual_preset =
+            before
+                .visual_preset
+                .as_ref()
+                .map(|field| crate::records::RecordedValue {
+                    value: field.value.clone(),
+                    offset: after.visual_preset.as_ref().and_then(|field| field.offset),
+                });
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
                 "F3D material-assignment edit changes fields outside writable strings: {id}"
@@ -904,13 +922,25 @@ pub(crate) fn validate_material_assignment_edits(
         validate_utf16_replacement(id, &before.visual_guid, &after.visual_guid)?;
         validate_optional_utf16_replacement(
             id,
-            before.physical_token.as_ref().map(|field| field.value.as_str()),
-            after.physical_token.as_ref().map(|field| field.value.as_str()),
+            before
+                .physical_token
+                .as_ref()
+                .map(|field| field.value.as_str()),
+            after
+                .physical_token
+                .as_ref()
+                .map(|field| field.value.as_str()),
         )?;
         validate_optional_utf16_replacement(
             id,
-            before.visual_preset.as_ref().map(|field| field.value.as_str()),
-            after.visual_preset.as_ref().map(|field| field.value.as_str()),
+            before
+                .visual_preset
+                .as_ref()
+                .map(|field| field.value.as_str()),
+            after
+                .visual_preset
+                .as_ref()
+                .map(|field| field.value.as_str()),
         )?;
         edits
             .entry(native_stream(id, ":material-assignment#")?)
@@ -1063,16 +1093,25 @@ pub(crate) fn validate_act_appearance_bindings(
             .as_deref()
             .and_then(|source| baseline_entities_by_source.get(source))
             .and_then(|entities| {
-                entities
-                    .iter()
-                    .copied()
-                    .find(|entity| before.channels.iter().map(|(name, guid)| (name, guid.as_str())).eq(act_channel_values(entity)))
+                entities.iter().copied().find(|entity| {
+                    before
+                        .channels
+                        .iter()
+                        .map(|(name, guid)| (name, guid.as_str()))
+                        .eq(act_channel_values(entity))
+                })
             });
         let after_entity = before_entity.and_then(|before_entity| {
             target_entities_by_id
                 .get(before_entity.id.as_str())
                 .copied()
-                .filter(|entity| after.channels.iter().map(|(name, guid)| (name, guid.as_str())).eq(act_channel_values(entity)))
+                .filter(|entity| {
+                    after
+                        .channels
+                        .iter()
+                        .map(|(name, guid)| (name, guid.as_str()))
+                        .eq(act_channel_values(entity))
+                })
         });
         if before_entity.is_none() || after_entity.is_none() {
             return Err(CodecError::NotImplemented(format!(
@@ -1116,9 +1155,12 @@ pub(crate) fn validate_act_appearance_bindings(
     for (before, after) in baseline_entities.iter().zip(target_entities) {
         let matching_bindings = derived_bindings.get(&before.entity_id);
         let derived_binding = matching_bindings.is_some_and(|bindings| {
-            bindings
-                .iter()
-                .any(|(channels, _)| channels.iter().map(|(name, guid)| (name, guid.as_str())).eq(act_channel_values(before)))
+            bindings.iter().any(|(channels, _)| {
+                channels
+                    .iter()
+                    .map(|(name, guid)| (name, guid.as_str()))
+                    .eq(act_channel_values(before))
+            })
         });
         let assignment_synchronized = assignment_entities.contains(after.entity_id.as_str());
         if before.entity_id != after.entity_id && derived_binding && !assignment_synchronized {
@@ -1136,11 +1178,16 @@ pub(crate) fn validate_act_appearance_bindings(
                     ))
                     .is_some_and(|binding| {
                         binding.source_entity_id.as_deref() == Some(after.entity_id.as_str())
-                            && binding.channels.iter().map(|(name, guid)| (name, guid.as_str())).eq(act_channel_values(after))
+                            && binding
+                                .channels
+                                .iter()
+                                .map(|(name, guid)| (name, guid.as_str()))
+                                .eq(act_channel_values(after))
                     })
             })
         });
-        if (before.entity_id != after.entity_id || act_channel_values(before).ne(act_channel_values(after)))
+        if (before.entity_id != after.entity_id
+            || act_channel_values(before).ne(act_channel_values(after)))
             && derived_binding
             && !synchronized
         {
@@ -1154,7 +1201,10 @@ pub(crate) fn validate_act_appearance_bindings(
 }
 
 fn act_channel_values(entity: &ActEntity) -> impl Iterator<Item = (&String, &str)> {
-    entity.channel_group().into_iter().flat_map(|group| &group.channels)
+    entity
+        .channel_group()
+        .into_iter()
+        .flat_map(|group| &group.channels)
         .map(|(name, guid)| (name, guid.value.as_str()))
 }
 
@@ -1360,9 +1410,13 @@ pub(crate) fn validate_act_root_edits(
         normalized.instance_root_record = before.instance_root_record;
         normalized.components_root_record = before.components_root_record;
         normalized.registry_flag = before.registry_flag;
-        normalized.layout = normalized.layout.with_strings(
-            before.layout.entity_id().into(), before.layout.display_name().into(),
-        ).map_err(CodecError::NotImplemented)?;
+        normalized.layout = normalized
+            .layout
+            .with_strings(
+                before.layout.entity_id().into(),
+                before.layout.display_name().into(),
+            )
+            .map_err(CodecError::NotImplemented)?;
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
                 "F3D ACT root edit changes fields outside supported graph links and fixed-length strings: {id}"
@@ -1371,7 +1425,8 @@ pub(crate) fn validate_act_root_edits(
         if after == before {
             continue;
         }
-        if after.layout.entity_id().encode_utf16().count() != before.layout.entity_id().encode_utf16().count()
+        if after.layout.entity_id().encode_utf16().count()
+            != before.layout.entity_id().encode_utf16().count()
             || after.layout.display_name().encode_utf16().count()
                 != before.layout.display_name().encode_utf16().count()
         {
@@ -1424,29 +1479,45 @@ pub(crate) fn validate_design_type_edits(
         let mut normalized = after.clone();
         normalized.entities.clone_from(&before.entities);
         normalized.type_guid.clone_from(&before.type_guid);
-        normalized.base_type_guid = before.base_type_guid.as_ref().map(|field| crate::records::RecordedValue {
-            value: field.value.clone(),
-            offset: after.base_type_guid.as_ref().and_then(|field| field.offset),
-        });
+        normalized.base_type_guid =
+            before
+                .base_type_guid
+                .as_ref()
+                .map(|field| crate::records::RecordedValue {
+                    value: field.value.clone(),
+                    offset: after.base_type_guid.as_ref().and_then(|field| field.offset),
+                });
         normalized.version = before.version;
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
                 "F3D design-type edit changes fields outside its fixed type payload: {id}"
             )));
         }
-        let (before_entities, after_entities): (&[crate::records::Located<u64>], &[crate::records::Located<u64>]) = match (&before.entities, &after.entities) {
-            (crate::records::ReferenceRun::Located(before), crate::records::ReferenceRun::Located(after)) => (before, after),
+        let (before_entities, after_entities): (
+            &[crate::records::Located<u64>],
+            &[crate::records::Located<u64>],
+        ) = match (&before.entities, &after.entities) {
+            (
+                crate::records::ReferenceRun::Located(before),
+                crate::records::ReferenceRun::Located(after),
+            ) => (before, after),
             (before, after) if before.is_empty() && after.is_empty() => (&[], &[]),
-            _ => return Err(CodecError::NotImplemented(format!(
-                "F3D design type {id} must retain its entity-id cardinality"
-            ))),
+            _ => {
+                return Err(CodecError::NotImplemented(format!(
+                    "F3D design type {id} must retain its entity-id cardinality"
+                )))
+            }
         };
         if after_entities.len() != before_entities.len() {
             return Err(CodecError::NotImplemented(format!(
                 "F3D design type {id} must retain its entity-id cardinality"
             )));
         }
-        if before_entities.iter().map(|row| row.offset).ne(after_entities.iter().map(|row| row.offset)) {
+        if before_entities
+            .iter()
+            .map(|row| row.offset)
+            .ne(after_entities.iter().map(|row| row.offset))
+        {
             return Err(CodecError::NotImplemented(format!(
                 "F3D design-type edit changes fields outside its fixed type payload: {id}"
             )));
@@ -1466,9 +1537,13 @@ pub(crate) fn validate_design_type_edits(
             strings.push((after.type_guid_offset, after.type_guid.as_bytes().to_vec()));
         }
         if after.base_type_guid != before.base_type_guid {
-            let before_base = before.base_type_guid.as_ref().map(|field| field.value.as_str()).ok_or_else(|| {
-                CodecError::NotImplemented(format!("cannot add F3D base type GUID: {id}"))
-            })?;
+            let before_base = before
+                .base_type_guid
+                .as_ref()
+                .map(|field| field.value.as_str())
+                .ok_or_else(|| {
+                    CodecError::NotImplemented(format!("cannot add F3D base type GUID: {id}"))
+                })?;
             let after_field = after.base_type_guid.as_ref().ok_or_else(|| {
                 CodecError::NotImplemented(format!("cannot remove F3D base type GUID: {id}"))
             })?;
@@ -1590,11 +1665,23 @@ pub(crate) fn validate_entity_header_edits(
         normalized.record_reference = before.record_reference;
         normalized.references.clone_from(&before.references);
         let same_reference_locations = match (&before.references, &after.references) {
-            (crate::records::ReferenceRun::Located(before), crate::records::ReferenceRun::Located(after)) => before.iter().map(|row| row.offset).eq(after.iter().map(|row| row.offset)),
-            (crate::records::ReferenceRun::Unlocated(_), crate::records::ReferenceRun::Unlocated(_)) => true,
+            (
+                crate::records::ReferenceRun::Located(before),
+                crate::records::ReferenceRun::Located(after),
+            ) => before
+                .iter()
+                .map(|row| row.offset)
+                .eq(after.iter().map(|row| row.offset)),
+            (
+                crate::records::ReferenceRun::Unlocated(_),
+                crate::records::ReferenceRun::Unlocated(_),
+            ) => true,
             (before, after) => before.is_empty() && after.is_empty(),
         };
-        if &normalized != before || !same_reference_locations || before.declared_reference_count() != after.declared_reference_count() {
+        if &normalized != before
+            || !same_reference_locations
+            || before.declared_reference_count() != after.declared_reference_count()
+        {
             return Err(CodecError::NotImplemented(format!(
                 "F3D entity-header edit changes fields outside fixed record references: {id}"
             )));
@@ -1607,9 +1694,11 @@ pub(crate) fn validate_entity_header_edits(
         let after_references: &[crate::records::Located<u32>] = match &after.references {
             crate::records::ReferenceRun::Located(references) => references,
             crate::records::ReferenceRun::Unlocated(references) if references.is_empty() => &[],
-            crate::records::ReferenceRun::Unlocated(_) => return Err(CodecError::malformed(format_args!(
-                "F3D entity header {id} has mismatched reference values and offsets"
-            ))),
+            crate::records::ReferenceRun::Unlocated(_) => {
+                return Err(CodecError::malformed(format_args!(
+                    "F3D entity header {id} has mismatched reference values and offsets"
+                )))
+            }
         };
         let record_reference = if after.record_reference == before.record_reference {
             None
@@ -1631,7 +1720,10 @@ pub(crate) fn validate_entity_header_edits(
             .iter()
             .zip(before.references.values())
             .filter_map(|(after, before)| {
-                (after.value != *before).then_some(Edit { offset: after.offset, value: after.value })
+                (after.value != *before).then_some(Edit {
+                    offset: after.offset,
+                    value: after.value,
+                })
             })
             .collect();
         let stream = id
@@ -1928,13 +2020,17 @@ pub(crate) fn validate_construction_recipe_edits(
         let after = target_by_id[id];
         let mut normalized = after.clone();
         normalized.record_index = before.record_index;
-        normalized.design = before.design.as_ref().map(|design| crate::records::ConstructionRecipeDesign {
-            id: crate::records::RecordedValue {
-                value: design.id.value.clone(),
-                offset: after.design.as_ref().and_then(|design| design.id.offset),
-            },
-            selector: design.selector,
-        });
+        normalized.design =
+            before
+                .design
+                .as_ref()
+                .map(|design| crate::records::ConstructionRecipeDesign {
+                    id: crate::records::RecordedValue {
+                        value: design.id.value.clone(),
+                        offset: after.design.as_ref().and_then(|design| design.id.offset),
+                    },
+                    selector: design.selector,
+                });
         if &normalized != before
             || before.design.as_ref().and_then(|design| design.selector)
                 != after.design.as_ref().and_then(|design| design.selector)
@@ -1964,9 +2060,13 @@ pub(crate) fn validate_construction_recipe_edits(
         let design_id = if after.design == before.design {
             None
         } else {
-            let before_value = before.design.as_ref().map(|design| design.id.value.as_str()).ok_or_else(|| {
-                CodecError::NotImplemented(format!("cannot add F3D recipe design id: {id}"))
-            })?;
+            let before_value = before
+                .design
+                .as_ref()
+                .map(|design| design.id.value.as_str())
+                .ok_or_else(|| {
+                    CodecError::NotImplemented(format!("cannot add F3D recipe design id: {id}"))
+                })?;
             let after_design = after.design.as_ref().ok_or_else(|| {
                 CodecError::NotImplemented(format!("cannot remove F3D recipe design id: {id}"))
             })?;
@@ -2442,7 +2542,8 @@ fn valid_sketch_geometry(geometry: &SketchCurveGeometry) -> bool {
                 && knots.len() == poles.point_count() + *degree as usize + 1
                 && knots.iter().all(|knot| knot.is_finite())
                 && knots_nondecreasing(knots)
-                && poles.weights()
+                && poles
+                    .weights()
                     .all(|weight| weight.is_finite() && *weight > 0.0)
                 && poles.points().all(|point| finite_point(*point))
         }
@@ -2509,7 +2610,12 @@ pub(crate) fn validate_sketch_relation_edits(
         normalized.members.clone_from(&before.members);
         normalized.definition.clone_from(&before.definition);
         normalized.return_members.clone_from(&before.return_members);
-        if &normalized != before || relation.auxiliary_references.offsets().ne(before.auxiliary_references.offsets()) {
+        if &normalized != before
+            || relation
+                .auxiliary_references
+                .offsets()
+                .ne(before.auxiliary_references.offsets())
+        {
             return Err(CodecError::NotImplemented(format!(
                 "F3D sketch-relation edit changes fields outside its writable references and constraint mask: {}",
                 relation.id
@@ -2534,24 +2640,40 @@ pub(crate) fn validate_sketch_relation_edits(
         let mut values = Vec::new();
         collect_sketch_reference_edits(
             relation,
-            before.members.iter().map(|row| row.reference.record_index()),
-            relation.members.iter().map(|row| (row.reference.record_index(), row.offset)),
+            before
+                .members
+                .iter()
+                .map(|row| row.reference.record_index()),
+            relation
+                .members
+                .iter()
+                .map(|row| (row.reference.record_index(), row.offset)),
             &mut values,
         )?;
         match &relation.auxiliary_references {
-            crate::records::ReferenceRun::Located(after) if before.auxiliary_references.len() == after.len() => {
-                values.extend(before.auxiliary_references.values().zip(after)
-                    .filter(|(before, after)| **before != after.value)
-                    .map(|(_, after)| Edit {
-                        offset: relation.byte_offset + u64::from(after.offset),
-                        value: after.value.to_le_bytes().to_vec(),
-                    }));
+            crate::records::ReferenceRun::Located(after)
+                if before.auxiliary_references.len() == after.len() =>
+            {
+                values.extend(
+                    before
+                        .auxiliary_references
+                        .values()
+                        .zip(after)
+                        .filter(|(before, after)| **before != after.value)
+                        .map(|(_, after)| Edit {
+                            offset: relation.byte_offset + u64::from(after.offset),
+                            value: after.value.to_le_bytes().to_vec(),
+                        }),
+                );
             }
-            crate::records::ReferenceRun::Unlocated(after) if after.is_empty() && before.auxiliary_references.is_empty() => {}
-            _ => return Err(CodecError::NotImplemented(format!(
-                "F3D sketch relation {} must retain reference cardinality and offsets",
-                relation.id
-            ))),
+            crate::records::ReferenceRun::Unlocated(after)
+                if after.is_empty() && before.auxiliary_references.is_empty() => {}
+            _ => {
+                return Err(CodecError::NotImplemented(format!(
+                    "F3D sketch relation {} must retain reference cardinality and offsets",
+                    relation.id
+                )))
+            }
         }
         if relation.owner_reference != before.owner_reference {
             values.push(Edit {
@@ -2561,13 +2683,22 @@ pub(crate) fn validate_sketch_relation_edits(
         }
         collect_sketch_reference_edits(
             relation,
-            before.return_members.iter().map(|row| row.reference.record_index()),
-            relation.return_members.iter().map(|row| (row.reference.record_index(), row.offset)),
+            before
+                .return_members
+                .iter()
+                .map(|row| row.reference.record_index()),
+            relation
+                .return_members
+                .iter()
+                .map(|row| (row.reference.record_index(), row.offset)),
             &mut values,
         )?;
         if relation.definition.state() != before.definition.state() {
-            let encoded =
-                encode_sketch_relation_state(&relation.id, &before.raw_bytes, relation.definition.state())?;
+            let encoded = encode_sketch_relation_state(
+                &relation.id,
+                &before.raw_bytes,
+                relation.definition.state(),
+            )?;
             values.push(Edit {
                 offset: relation.byte_offset + u64::from(relation.state_offset),
                 value: encoded,
@@ -2893,11 +3024,21 @@ pub(crate) fn validate_curve_edits(
 ) -> Result<std::collections::BTreeSet<String>, CodecError> {
     let baseline = baseline
         .iter()
-        .map(|curve| (curve.id.as_str(), curve.geometry.solved_cache().unwrap_or(&curve.geometry)))
+        .map(|curve| {
+            (
+                curve.id.as_str(),
+                curve.geometry.solved_cache().unwrap_or(&curve.geometry),
+            )
+        })
         .collect::<BTreeMap<_, _>>();
     let target = target
         .iter()
-        .map(|curve| (curve.id.as_str(), curve.geometry.solved_cache().unwrap_or(&curve.geometry)))
+        .map(|curve| {
+            (
+                curve.id.as_str(),
+                curve.geometry.solved_cache().unwrap_or(&curve.geometry),
+            )
+        })
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
         return Err(CodecError::NotImplemented(
@@ -3105,11 +3246,21 @@ pub(crate) fn validate_surface_edits(
 ) -> Result<std::collections::BTreeSet<String>, CodecError> {
     let baseline = baseline
         .iter()
-        .map(|surface| (surface.id.as_str(), surface.geometry.solved_cache().unwrap_or(&surface.geometry)))
+        .map(|surface| {
+            (
+                surface.id.as_str(),
+                surface.geometry.solved_cache().unwrap_or(&surface.geometry),
+            )
+        })
         .collect::<BTreeMap<_, _>>();
     let target = target
         .iter()
-        .map(|surface| (surface.id.as_str(), surface.geometry.solved_cache().unwrap_or(&surface.geometry)))
+        .map(|surface| {
+            (
+                surface.id.as_str(),
+                surface.geometry.solved_cache().unwrap_or(&surface.geometry),
+            )
+        })
         .collect::<BTreeMap<_, _>>();
     if baseline.keys().ne(target.keys()) {
         return Err(CodecError::NotImplemented(
@@ -3630,7 +3781,10 @@ pub(crate) fn validate_procedural_curve_edits(
                     components: after_components,
                     ..
                 },
-            ) if before_components == after_components
+            ) if before_components
+                .iter()
+                .map(|item| &item.component)
+                .eq(after_components.iter().map(|item| &item.component))
                 && before.definition() != after.definition() =>
             {
                 Some(after.definition().clone())

@@ -2844,11 +2844,12 @@ fn emit_carrier_curve(
                 emit_projection_curve(out, i, embedded, format)
             }
             ProceduralCurveConstruction::Law(embedded) => emit_law_curve(out, i, embedded, format),
-            ProceduralCurveConstruction::Compound((
-                parameters,
-                component_parameters,
-                components,
-            )) => {
+            ProceduralCurveConstruction::Compound(
+                crate::nurbs::proc_curve::CompoundDefinition {
+                    parameters,
+                    components,
+                },
+            ) => {
                 let components = components
                     .into_iter()
                     .enumerate()
@@ -2859,15 +2860,17 @@ fn emit_carrier_curve(
                         .expect("identity grammar");
                         out.curves.push(Curve {
                             id: id.clone(),
-                            geometry: CurveGeometry::Nurbs(curve),
+                            geometry: CurveGeometry::Nurbs(curve.component),
                             source_object: None,
                         });
-                        id
+                        cadmpeg_ir::geometry::CompoundComponent {
+                            parameter: curve.parameter,
+                            component: id,
+                        }
                     })
                     .collect();
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound {
                     parameters,
-                    component_parameters,
                     components,
                 }
             }

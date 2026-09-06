@@ -999,7 +999,7 @@ fn patch_compound_definition(
 ) -> Result<(), CodecError> {
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound {
         parameters,
-        component_parameters,
+        components,
         ..
     } = definition
     else {
@@ -1016,7 +1016,7 @@ fn patch_compound_definition(
             ))
         })?;
     if layout.parameters.len() != parameters.len()
-        || layout.component_parameters.len() != component_parameters.len()
+        || layout.component_parameters.len() != components.len()
     {
         return Err(CodecError::NotImplemented(
             "compound edit changes native parameter cardinality".into(),
@@ -1029,7 +1029,12 @@ fn patch_compound_definition(
             .parameters
             .into_iter()
             .chain(layout.component_parameters)
-            .zip(parameters.iter().chain(component_parameters).copied()),
+            .zip(
+                parameters
+                    .iter()
+                    .copied()
+                    .chain(components.iter().map(|item| item.parameter)),
+            ),
     );
     Ok(())
 }

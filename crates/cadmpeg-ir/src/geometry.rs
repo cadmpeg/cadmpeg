@@ -1510,6 +1510,56 @@ mod compound_surface_components_wire {
     }
 }
 
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct CompoundCurveComponentsWire {
+    component_parameters: Vec<f64>,
+    components: Vec<CurveId>,
+}
+
+mod compound_curve_components_wire {
+    use super::{CompoundComponent, CompoundCurveComponentsWire, CurveId};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(
+        components: &[CompoundComponent<CurveId>],
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        CompoundCurveComponentsWire {
+            component_parameters: components.iter().map(|item| item.parameter).collect(),
+            components: components
+                .iter()
+                .map(|item| item.component.clone())
+                .collect(),
+        }
+        .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<CompoundComponent<CurveId>>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = CompoundCurveComponentsWire::deserialize(deserializer)?;
+        if wire.component_parameters.len() != wire.components.len() {
+            return Err(serde::de::Error::custom(
+                "compound curve component_parameters must match components",
+            ));
+        }
+        Ok(wire
+            .component_parameters
+            .into_iter()
+            .zip(wire.components)
+            .map(|(parameter, component)| CompoundComponent {
+                parameter,
+                component,
+            })
+            .collect())
+    }
+}
+
 /// Neutral semantics for a procedural surface.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -6679,10 +6729,10 @@ pub enum ProceduralCurveDefinition {
     Compound {
         /// Leading native parameter array.
         parameters: Vec<f64>,
-        /// One native scalar paired with each child curve.
-        component_parameters: Vec<f64>,
-        /// Ordered child curves forming the compound construction.
-        components: Vec<CurveId>,
+        /// Ordered child curves paired with their native construction scalars.
+        #[serde(flatten, with = "compound_curve_components_wire")]
+        #[cfg_attr(feature = "schema", schemars(with = "CompoundCurveComponentsWire"))]
+        components: Vec<CompoundComponent<CurveId>>,
     },
     /// Circular or conical helix around an axis.
     Helix {

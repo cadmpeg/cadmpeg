@@ -5699,3 +5699,17 @@ crate = "cadmpeg-asm"
 kind = "variant"
 item = "cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Compound"
 reason = "IR-85: each compound surface component owns its scalar; remove independent parallel arrays and preserve the flat JSON through checked conversion."
+
+[[change]]
+commit = "520cb063fefab67cfd11854a2e4c83508e1c1f2c"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound"
+reason = "IR-85: pair each compound curve scalar with its component and preserve the flat JSON through checked conversion."
+
+[[change]]
+commit = "520cb063fefab67cfd11854a2e4c83508e1c1f2c"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::nurbs::proc_curve::CompoundDefinition"
+reason = "IR-85: pair each compound curve scalar with its component and preserve the flat JSON through checked conversion."

@@ -1761,8 +1761,16 @@ fn project_with_type_130_policy(
                     .expect("identity grammar"),
                 ProceduralCurveDefinition::Compound {
                     parameters: boundaries,
-                    component_parameters: child_starts,
-                    components: curve_ids,
+                    components: child_starts
+                        .into_iter()
+                        .zip(curve_ids)
+                        .map(
+                            |(parameter, component)| cadmpeg_ir::geometry::CompoundComponent {
+                                parameter,
+                                component,
+                            },
+                        )
+                        .collect(),
                 },
             ),
         );

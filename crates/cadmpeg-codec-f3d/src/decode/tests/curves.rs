@@ -886,21 +886,26 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
         .expect("generated compound intcurve decode");
     let ProceduralCurveDefinition::Compound {
         parameters,
-        component_parameters,
         components,
     } = &result.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected compound construction")
     };
     assert_eq!(parameters, &[0.0, 0.5, 1.0]);
-    assert_eq!(component_parameters, &[-2.0, 4.0]);
+    assert_eq!(
+        components
+            .iter()
+            .map(|item| item.parameter)
+            .collect::<Vec<_>>(),
+        [-2.0, 4.0]
+    );
     assert_eq!(components.len(), 2);
     assert!(components.iter().all(|component| result
         .ir()
         .model
         .curves
         .iter()
-        .any(|curve| curve.id == *component)));
+        .any(|curve| curve.id == component.component)));
     assert!(
         (result.ir().model.procedural_curves[0]
             .cache_fit_tolerance()
@@ -915,14 +920,16 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
     edited.model.procedural_curves[0].edit_definition(|definition| {
         let ProceduralCurveDefinition::Compound {
             parameters,
-            component_parameters,
+            components,
             ..
         } = definition
         else {
             unreachable!()
         };
         *parameters = vec![-0.25, 0.75, 1.25];
-        *component_parameters = vec![-3.0, 5.0];
+        for (component, parameter) in components.iter_mut().zip([-3.0, 5.0]) {
+            component.parameter = parameter;
+        }
     });
     let expected_edit = edited.model.procedural_curves[0].definition().clone();
     let mut regenerated = Vec::new();
@@ -944,7 +951,7 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
             .model
             .curves
             .iter_mut()
-            .find(|curve| curve.id == *component)
+            .find(|curve| curve.id == component.component)
             .expect("compound component curve")
             .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
             origin: cadmpeg_ir::math::Point3::new(ordinal as f64, -1.0, 2.0),
@@ -961,14 +968,19 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
         .expect("source-less compound intcurve round trip");
     let ProceduralCurveDefinition::Compound {
         parameters,
-        component_parameters,
         components,
     } = &round_trip.ir().model.procedural_curves[0].definition()
     else {
         panic!("expected round-trip compound construction")
     };
     assert_eq!(parameters, &[0.0, 0.5, 1.0]);
-    assert_eq!(component_parameters, &[-2.0, 4.0]);
+    assert_eq!(
+        components
+            .iter()
+            .map(|item| item.parameter)
+            .collect::<Vec<_>>(),
+        [-2.0, 4.0]
+    );
     assert_eq!(components.len(), 2);
     for (ordinal, component) in components.iter().enumerate() {
         let curve = round_trip
@@ -976,7 +988,7 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
             .model
             .curves
             .iter()
-            .find(|curve| curve.id == *component)
+            .find(|curve| curve.id == component.component)
             .expect("round-trip compound component");
         let cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve) = &curve.geometry else {
             panic!("compound line component was not lowered to NURBS")

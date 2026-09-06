@@ -402,7 +402,10 @@ fn decode_projects_a_v5_type_142_constituent_through_its_model_curve() {
         panic!("expected a compound neutral carrier");
     };
     assert_eq!(
-        components,
+        components
+            .iter()
+            .map(|item| item.component.clone())
+            .collect::<Vec<_>>(),
         &[CurveId::mint("iges:model:curve#D3").expect("identity grammar")]
     );
     assert!(
@@ -461,7 +464,10 @@ fn decode_projects_a_v5_type_130_constituent_after_its_offset_carrier() {
         panic!("expected a compound neutral carrier");
     };
     assert_eq!(
-        components,
+        components
+            .iter()
+            .map(|item| item.component.clone())
+            .collect::<Vec<_>>(),
         &[CurveId::mint("iges:model:curve#D3").expect("identity grammar")]
     );
     assert!(

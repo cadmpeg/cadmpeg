@@ -4835,7 +4835,6 @@ pub(crate) fn native_procedural_curve(
     }
     if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound {
         parameters,
-        component_parameters,
         components,
     } = procedural.definition()
     {
@@ -4857,11 +4856,12 @@ pub(crate) fn native_procedural_curve(
                 CodecError::NotImplemented("compound component count exceeds i64".into())
             })?,
         );
-        for value in component_parameters {
-            native_f64(bytes, *value);
+        for item in components {
+            native_f64(bytes, item.parameter);
         }
         bytes.push(0x0b);
         for (ordinal, component) in components.iter().enumerate() {
+            let component = &component.component;
             let component = target
                 .model
                 .curves

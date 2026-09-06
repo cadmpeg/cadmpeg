@@ -42,7 +42,12 @@ pub type VectorOffsetDefinition = (
 pub type SubsetDefinition = (NurbsCurve, [f64; 2]);
 
 /// Parameter arrays and child curves decoded from a `comp_int_cur` construction.
-pub type CompoundDefinition = (Vec<f64>, Vec<f64>, Vec<NurbsCurve>);
+pub struct CompoundDefinition {
+    /// Leading native parameter array.
+    pub parameters: Vec<f64>,
+    /// Ordered child curves and their construction scalars.
+    pub components: Vec<cadmpeg_ir::geometry::CompoundComponent<NurbsCurve>>,
+}
 
 /// Embedded freeform support carriers and tail fields of an `off_int_cur`.
 pub struct EmbeddedTwoSidedOffset {
@@ -3137,12 +3142,18 @@ fn compound_definition(toks: &[Token]) -> Option<CompoundDefinition> {
     }
     cur.bump();
     let mut components = Vec::with_capacity(count);
-    for _ in 0..count {
+    for parameter in component_parameters {
         let (curve, end) = curve_block(toks, cur.pos())?;
-        components.push(curve);
+        components.push(cadmpeg_ir::geometry::CompoundComponent {
+            parameter,
+            component: curve,
+        });
         cur.set_pos(end);
     }
-    Some((parameters, component_parameters, components))
+    Some(CompoundDefinition {
+        parameters,
+        components,
+    })
 }
 
 fn subset_definition(toks: &[Token]) -> Option<SubsetDefinition> {
