@@ -131,26 +131,19 @@ pub(super) fn validate_consolidated_edge_runs(
         });
         let definition_valid = node.definition.as_ref().is_none_or(|definition| {
             let token_limit = 1u32.checked_shl(u32::from(u8::from(definition.width)) * 8);
-            let expected_data =
-                crate::families::consolidated::records::consolidated_edge_definition_data(
-                    definition.class,
-                    &definition.payload,
-                );
             node.uses.is_some()
-                && matches!(definition.class, 0x23..=0x25)
                 && token_limit.is_some_and(|limit| definition.header_token < limit)
                 && !definition.payload.is_empty()
                 && definition.byte_offset < node.byte_offset
-                && definition.data == expected_data
         });
         let analytic_circle_valid = node.analytic_circle.as_ref().is_none_or(|binding| {
             let definition = node.definition.as_ref();
             let circle = circles.get(binding.circle.as_str());
             node.uses.is_some()
                 && definition.is_some_and(|definition| {
-                    definition.class == 0x23
+                    u8::from(definition.class) == 0x23
                         && matches!(
-                            definition.data,
+                            definition.data(),
                             Some(ConsolidatedEdgeDefinitionData::Scalar {
                                 ref values,
                                 ..
@@ -169,9 +162,9 @@ pub(super) fn validate_consolidated_edge_runs(
         let class25_descriptor_valid = node.class25_descriptor.as_ref().is_none_or(|descriptor| {
             node.uses.is_some()
                 && node.definition.as_ref().is_some_and(|definition| {
-                    definition.class == 0x25
+                    u8::from(definition.class) == 0x25
                         && matches!(
-                            definition.data,
+                            definition.data(),
                             Some(
                                 ConsolidatedEdgeDefinitionData::Scalar25 { .. }
                                     | ConsolidatedEdgeDefinitionData::SegmentedScalar25 { .. }

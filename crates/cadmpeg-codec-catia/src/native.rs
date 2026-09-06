@@ -10,6 +10,9 @@ use std::ops::Range;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
 
+pub(crate) mod edge_definition;
+use edge_definition::CatiaConsolidatedEdgeDefinition;
+
 pub(crate) mod edge_node;
 use edge_node::{
     CatiaConsolidatedEdgeNode, CatiaConsolidatedEdgeNodeWire, consolidated_vertex_identities,
@@ -1533,30 +1536,6 @@ pub struct CatiaConsolidatedAnalyticCircleDescriptor {
     pub header_token: u32,
     /// Complete class-specific payload.
     pub payload: Vec<u8>,
-}
-
-/// Exact class-specific edge-definition frame owned by one consolidated edge node.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct CatiaConsolidatedEdgeDefinition {
-    /// Record byte offset.
-    pub byte_offset: u64,
-    /// Header-token width in bytes.
-    pub width: crate::wire::records::ConsolidatedFrameWidth,
-    /// Independent framing flag.
-    pub flag: crate::wire::records::ConsolidatedFrameFlag,
-    /// Edge-definition class in `0x23..=0x25`.
-    pub class: u8,
-    /// Width-coded header token.
-    pub header_token: u32,
-    /// Complete class-specific payload.
-    pub payload: Vec<u8>,
-    /// Structurally decoded class-specific payload. Reuses the consolidated
-    /// family enum directly: it is serialization-identical (same variant and
-    /// field names, no id/offset decoration), so no native restatement is
-    /// needed.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub data: Option<crate::families::consolidated::records::ConsolidatedEdgeDefinitionData>,
 }
 
 /// Exact oriented-use allocation chain owned by one consolidated edge node.
@@ -8765,7 +8744,6 @@ fn consolidated_edge_nodes(
 fn native_consolidated_edge_definition(
     definition: crate::families::consolidated::records::ConsolidatedEdgeDefinition,
 ) -> CatiaConsolidatedEdgeDefinition {
-    let data = definition.data();
     CatiaConsolidatedEdgeDefinition {
         byte_offset: definition.frame.pos as u64,
         width: definition.frame.width,
@@ -8773,7 +8751,6 @@ fn native_consolidated_edge_definition(
         class: definition.class,
         header_token: definition.frame.header_token,
         payload: definition.frame.payload,
-        data,
     }
 }
 

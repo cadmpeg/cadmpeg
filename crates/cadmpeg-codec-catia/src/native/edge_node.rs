@@ -6,10 +6,11 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::native::edge_definition::CatiaConsolidatedEdgeDefinition;
+
 use super::{
     CatiaAllocationReferenceEncoding, CatiaConsolidatedAnalyticCircleBinding,
-    CatiaConsolidatedClass25Descriptor, CatiaConsolidatedEdgeDefinition, CatiaConsolidatedEdgeUses,
-    CatiaConsolidatedVertexIdentity,
+    CatiaConsolidatedClass25Descriptor, CatiaConsolidatedEdgeUses, CatiaConsolidatedVertexIdentity,
 };
 
 /// One structurally complete width-coded class-`0x5e` edge node.

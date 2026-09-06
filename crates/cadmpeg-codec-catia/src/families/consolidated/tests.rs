@@ -555,7 +555,7 @@ fn consolidated_edge_use_run_owns_adjacent_compact_definition() {
         panic!("one edge-use run");
     };
     let definition = run.definition.as_ref().expect("adjacent definition");
-    assert_eq!(definition.class, 0x24);
+    assert_eq!(u8::from(definition.class), 0x24);
     assert_eq!(definition.frame.header_token, 5);
     assert_eq!(definition.frame.payload, [0x81, 0x05, 0x0f, 0x87]);
     assert_eq!(
@@ -565,18 +565,18 @@ fn consolidated_edge_use_run_owns_adjacent_compact_definition() {
 
     let native = crate::native::CatiaNative::decode(&bytes);
     assert_eq!(
-        native.consolidated_edge_nodes[0]
+        u8::from(native.consolidated_edge_nodes[0]
             .definition
             .as_ref()
             .expect("native definition")
-            .class,
+            .class),
         0x24
     );
     assert!(matches!(
         native.consolidated_edge_nodes[0]
             .definition
             .as_ref()
-            .and_then(|definition| definition.data.as_ref()),
+            .and_then(|definition| definition.data()),
         Some(
             crate::families::consolidated::records::ConsolidatedEdgeDefinitionData::Compact24 {
                 operand: 1
@@ -878,7 +878,7 @@ fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
         native.consolidated_edge_nodes[0]
             .definition
             .as_ref()
-            .and_then(|definition| definition.data.as_ref()),
+            .and_then(|definition| definition.data()),
         Some(
             crate::families::consolidated::records::ConsolidatedEdgeDefinitionData::Scalar25 {
                 operands: [1, 57, 3463],

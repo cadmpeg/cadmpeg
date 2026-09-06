@@ -1206,7 +1206,7 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
     let uses = node.uses.as_ref().expect("edge-owned oriented uses");
     assert_eq!(uses.references, [[4, 5], [5, 6]]);
     let definition = node.definition.as_ref().expect("edge-owned definition");
-    assert_eq!(definition.class, 0x23);
+    assert_eq!(u8::from(definition.class), 0x23);
     assert!(definition.byte_offset < node.byte_offset);
     assert_eq!(native.consolidated_vertex_identities.len(), 2);
     assert_eq!(native.consolidated_vertex_identities[0].identity, 139);
@@ -1280,17 +1280,10 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
         .expect("store invalid CATIA edge run for load validation");
     assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
 
-    let mut invalid = crate::native::CatiaNative::decode(&bytes);
-    invalid.consolidated_edge_nodes[0]
-        .definition
-        .as_mut()
-        .expect("edge definition")
-        .class = 0x26;
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    invalid
-        .store(&mut invalid_namespace)
-        .expect("store invalid CATIA edge definition");
-    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+    let mut invalid = serde_json::to_value(crate::native::CatiaNative::decode(&bytes))
+        .expect("serialize CATIA edge definition");
+    invalid["consolidated_edge_nodes"][0]["definition"]["class"] = serde_json::json!(0x26);
+    assert!(serde_json::from_value::<crate::native::CatiaNative>(invalid).is_err());
 
     let mut invalid = crate::native::CatiaNative::decode(&bytes);
     invalid.consolidated_edge_nodes[0].uses = None;

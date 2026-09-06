@@ -138,18 +138,50 @@ pub(crate) struct ConsolidatedOwnerBoundaryCycle {
     pub edges: [crate::families::b2::records::B2OwnerBoundaryEdge; 4],
 }
 
+/// Class of a consolidated edge-definition frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "u8", into = "u8")]
+pub enum ConsolidatedEdgeDefinitionClass {
+    Class23,
+    Class24,
+    Class25,
+}
+
+impl From<ConsolidatedEdgeDefinitionClass> for u8 {
+    fn from(class: ConsolidatedEdgeDefinitionClass) -> Self {
+        match class {
+            ConsolidatedEdgeDefinitionClass::Class23 => 0x23,
+            ConsolidatedEdgeDefinitionClass::Class24 => 0x24,
+            ConsolidatedEdgeDefinitionClass::Class25 => 0x25,
+        }
+    }
+}
+
+impl TryFrom<u8> for ConsolidatedEdgeDefinitionClass {
+    type Error = String;
+    fn try_from(class: u8) -> Result<Self, Self::Error> {
+        match class {
+            0x23 => Ok(Self::Class23),
+            0x24 => Ok(Self::Class24),
+            0x25 => Ok(Self::Class25),
+            _ => Err(format!("edge-definition class {class:#x} is not 0x23, 0x24, or 0x25")),
+        }
+    }
+}
+
 /// Framed edge definition structurally owned by an adjacent oriented-use run.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConsolidatedEdgeDefinition {
     /// Framed record.
     pub frame: ConsolidatedRawFrame,
     /// Edge-definition class in `0x23..=0x25`.
-    pub class: u8,
+    pub class: ConsolidatedEdgeDefinitionClass,
 }
 
 impl ConsolidatedEdgeDefinition {
     pub fn data(&self) -> Option<ConsolidatedEdgeDefinitionData> {
-        consolidated_edge_definition_data(self.class, &self.frame.payload)
+        consolidated_edge_definition_data(self.class.into(), &self.frame.payload)
     }
 }
 
@@ -686,7 +718,7 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
                             record,
                             data[record.payload.clone()].to_vec(),
                         )?,
-                        class: record.class,
+                        class: ConsolidatedEdgeDefinitionClass::try_from(record.class).ok()?,
                     })
                 });
             identity_chain_consistent.then(|| ConsolidatedEdgeUseRun {
@@ -743,7 +775,7 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
                     definition_record,
                     data[definition_record.payload.clone()].to_vec(),
                 )?,
-                class: definition_record.class,
+                class: ConsolidatedEdgeDefinitionClass::try_from(definition_record.class).ok()?,
             }),
             uses,
             node,
