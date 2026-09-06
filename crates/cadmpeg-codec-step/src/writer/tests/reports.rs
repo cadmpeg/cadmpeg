@@ -154,7 +154,9 @@ fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
     ir.model
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
-            id: "test:model:product#group".into(),
+            id: "test:model:product#group"
+                .try_into()
+                .expect("valid identity"),
             kind: cadmpeg_ir::products::ProductDefinitionKind::Group,
             source_name: Some("Group".into()),
             label: Some("Group".into()),
@@ -260,7 +262,9 @@ fn writer_reports_root_occurrence_scale() {
             native_ref: None,
         });
     ir.model.occurrences.push(cadmpeg_ir::products::Occurrence {
-        id: "test:model:occurrence#scaled".into(),
+        id: "test:model:occurrence#scaled"
+            .try_into()
+            .expect("valid identity"),
         prototype: cadmpeg_ir::products::PrototypeReference::Local {
             definition: product,
         },
@@ -576,7 +580,7 @@ fn writer_reports_dangling_appearance_binding() {
     let binding = "test:model:appearance-binding#dangling";
     let appearance = AppearanceId::mint("test:model:appearance#missing").expect("identity grammar");
     ir.model.appearance_bindings.push(AppearanceBinding {
-        id: binding.into(),
+        id: binding.try_into().expect("valid identity"),
         target: AppearanceTarget::Body(ir.model.bodies[0].id.clone()),
         appearance: appearance.clone(),
         source_entity_id: None,
@@ -622,7 +626,7 @@ fn writer_reports_appearance_without_base_color() {
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
-        id: binding.into(),
+        id: binding.try_into().expect("valid identity"),
         target: AppearanceTarget::Face(ir.model.faces[0].id.clone()),
         appearance: appearance.clone(),
         source_entity_id: None,
@@ -693,7 +697,7 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
     }
     let mut bindings = vec![
         AppearanceBinding {
-            id: "test:model:binding#red".into(),
+            id: "test:model:binding#red".try_into().expect("valid identity"),
             target: target.clone(),
             appearance: red,
             source_entity_id: None,
@@ -702,7 +706,9 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
             channels: std::collections::BTreeMap::new(),
         },
         AppearanceBinding {
-            id: "test:model:binding#blue".into(),
+            id: "test:model:binding#blue"
+                .try_into()
+                .expect("valid identity"),
             target,
             appearance: blue,
             source_entity_id: None,
@@ -1069,7 +1075,9 @@ fn ap203e1_reports_hidden_appearance_visibility_loss() {
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
-        id: "test:model:appearance-binding#hidden-face".into(),
+        id: "test:model:appearance-binding#hidden-face"
+            .try_into()
+            .expect("valid identity"),
         target: AppearanceTarget::Face(ir.model.faces[0].id.clone()),
         appearance,
         source_entity_id: None,
@@ -1307,9 +1315,9 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
 #[test]
 fn face_on_unknown_surface_is_skipped_and_reported() {
     let mut ir = unit_cube();
-    let target = ir.model.faces[0].surface.0.clone();
+    let target = ir.model.faces[0].surface.as_str().to_owned();
     for s in &mut ir.model.surfaces {
-        if s.id.0 == target {
+        if s.id.as_str() == target {
             s.geometry = SurfaceGeometry::Unknown { record: None };
         }
     }

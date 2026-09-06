@@ -74,13 +74,13 @@ fn pcurve_requires_one_two_dimensional_definition_and_rejects_replica_cycles() {
         .native_unknowns("step")
         .expect("STEP unknown arena")
         .iter()
-        .any(|record| record.id.0 == "step:data:pcurve#33"));
+        .any(|record| record.id.as_str() == "step:data:pcurve#33"));
     assert!(decoded
         .ir()
         .native_unknowns("step")
         .expect("STEP unknown arena")
         .iter()
-        .any(|record| record.id.0 == "step:data:pcurve#36"));
+        .any(|record| record.id.as_str() == "step:data:pcurve#36"));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -594,7 +594,7 @@ fn inconsistent_optional_pcurve_is_omitted_and_retained_as_source_data() {
         .native_unknowns("step")
         .expect("STEP unknown arena")
         .iter()
-        .any(|record| record.id.0 == "step:data:pcurve#56"));
+        .any(|record| record.id.as_str() == "step:data:pcurve#56"));
 
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -1046,7 +1046,7 @@ fn free_surface_curve_keeps_its_three_dimensional_basis_reachable() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0 == "step:data:curve#83")
+        .find(|curve| curve.id.as_str() == "step:data:curve#83")
         .expect("surface-curve basis");
     assert_eq!(
         basis

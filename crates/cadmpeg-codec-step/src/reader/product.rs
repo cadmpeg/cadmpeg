@@ -212,7 +212,7 @@ pub(super) fn decode(
                         .iter()
                         .any(|candidate| candidate.id == **body)
                 })
-                .map(|body| body.0.clone())
+                .map(|body| body.as_str().to_owned())
                 .collect::<Vec<_>>();
             bodies.retain(|body| {
                 ir.model

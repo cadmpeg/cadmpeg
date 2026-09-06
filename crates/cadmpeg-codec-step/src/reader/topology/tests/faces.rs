@@ -353,7 +353,7 @@ fn implicit_face_plane_rejects_non_coplanar_poly_loop_bounds_in_any_order() {
             .native_unknowns("step")
             .expect("STEP native namespace")
             .iter()
-            .map(|record| record.id.0.clone())
+            .map(|record| record.id.as_str().to_owned())
             .collect::<BTreeSet<_>>();
         assert_eq!(
             unknown_ids,
@@ -677,7 +677,7 @@ fn duplicate_face_outer_bound_witnesses_reject_topology_in_any_order() {
             .expect("STEP native namespace");
         let ids = unknowns
             .iter()
-            .map(|record| record.id.0.clone())
+            .map(|record| record.id.as_str().to_owned())
             .collect::<BTreeSet<_>>();
         assert_eq!(
             ids,
@@ -694,7 +694,7 @@ fn duplicate_face_outer_bound_witnesses_reject_topology_in_any_order() {
         );
         let links = unknowns
             .iter()
-            .map(|record| (record.id.0.clone(), record.links.clone()))
+            .map(|record| (record.id.as_str().to_owned(), record.links.clone()))
             .collect::<BTreeMap<_, _>>();
         assert_eq!(
             links,

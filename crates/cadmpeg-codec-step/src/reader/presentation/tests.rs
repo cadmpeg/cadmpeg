@@ -477,7 +477,7 @@ fn styled_free_curve_is_a_reachable_source_carrier() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0 == "step:data:curve#7")
+        .find(|curve| curve.id.as_str() == "step:data:curve#7")
         .expect("styled polyline carrier");
     assert_eq!(
         curve
@@ -715,7 +715,7 @@ fn context_dependent_styles_are_not_flattened_without_context() {
         "step:data:presentation_style_by_context#8",
     ] {
         assert!(
-            unknowns.iter().any(|record| record.id.0 == id),
+            unknowns.iter().any(|record| record.id.as_str() == id),
             "missing {id}"
         );
     }
@@ -742,7 +742,7 @@ fn context_dependent_styles_remain_native_for_distinct_contexts() {
     assert!(matches!(
         &result.ir().model.appearance_bindings[0].target,
         cadmpeg_ir::appearance::AppearanceTarget::Point(point)
-            if point.0 == "step:data:point#13"
+            if point.as_str() == "step:data:point#13"
     ));
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::ContextDependentStyleUnresolved.kind()
@@ -759,13 +759,13 @@ fn context_dependent_styles_remain_native_for_distinct_contexts() {
         "step:data:presentation_style_by_context#11",
     ] {
         assert!(
-            unknowns.iter().any(|record| record.id.0 == id),
+            unknowns.iter().any(|record| record.id.as_str() == id),
             "missing {id}"
         );
     }
     assert!(!unknowns
         .iter()
-        .any(|record| record.id.0 == "step:data:styled_item#15"));
+        .any(|record| record.id.as_str() == "step:data:styled_item#15"));
     assert!(result
         .ir()
         .model
@@ -787,7 +787,7 @@ fn context_style_retention_is_independent_of_style_set_order() {
             !matches!(
                 &binding.target,
                 cadmpeg_ir::appearance::AppearanceTarget::Point(point)
-                    if point.0 == "step:data:point#3"
+                    if point.as_str() == "step:data:point#3"
             )
         }));
         assert!(result.report().losses.iter().any(|loss| {
@@ -805,7 +805,7 @@ fn context_style_retention_is_independent_of_style_set_order() {
             "step:data:presentation_style_by_context#11",
         ] {
             assert!(
-                unknowns.iter().any(|record| record.id.0 == id),
+                unknowns.iter().any(|record| record.id.as_str() == id),
                 "missing {id}"
             );
         }
@@ -835,7 +835,7 @@ fn complex_representation_invisibility_reaches_surface_body() {
         .model
         .bodies
         .iter()
-        .find(|body| body.id.0 == "step:data:body#38")
+        .find(|body| body.id.as_str() == "step:data:body#38")
         .expect("surface body");
     assert_eq!(body.visible, Some(false));
     assert!(!decoded.report().losses.iter().any(|loss| {
@@ -873,7 +873,7 @@ fn styled_item_invisibility_is_binding_scoped() {
             matches!(
                 &binding.target,
                 cadmpeg_ir::appearance::AppearanceTarget::Surface(surface)
-                    if surface.0 == "step:data:surface#5"
+                    if surface.as_str() == "step:data:surface#5"
             )
         })
         .collect::<Vec<_>>();
@@ -895,7 +895,7 @@ fn styled_item_invisibility_is_binding_scoped() {
         .native_unknowns("step")
         .expect("STEP unknown arena")
         .iter()
-        .any(|record| record.id.0 == "step:data:invisibility#14"));
+        .any(|record| record.id.as_str() == "step:data:invisibility#14"));
 }
 
 #[test]
@@ -1057,7 +1057,7 @@ fn presentation_layer_invisibility_is_layer_scoped() {
         .native_unknowns("step")
         .expect("STEP unknown arena")
         .iter()
-        .any(|record| record.id.0 == "step:data:invisibility#3"));
+        .any(|record| record.id.as_str() == "step:data:invisibility#3"));
 }
 
 #[test]
@@ -1080,7 +1080,7 @@ fn presentation_records_retain_non_color_geometry_owners() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0 == "step:data:curve#3")
+        .find(|curve| curve.id.as_str() == "step:data:curve#3")
         .expect("styled curve");
     assert_eq!(
         curve
@@ -1095,7 +1095,7 @@ fn presentation_records_retain_non_color_geometry_owners() {
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id.0 == "step:data:surface#9")
+        .find(|surface| surface.id.as_str() == "step:data:surface#9")
         .expect("annotation support surface");
     assert_eq!(
         surface
@@ -1128,7 +1128,7 @@ fn complex_styled_item_decodes_color_and_owns_its_curve() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0 == "step:data:curve#3")
+        .find(|curve| curve.id.as_str() == "step:data:curve#3")
         .expect("complex styled curve");
     assert_eq!(
         curve
@@ -1352,7 +1352,9 @@ fn body_layers_and_visibility_cover_every_region_shape_item() {
     let mut ir = unit_cube();
     let body = ir.model.bodies[0].id.clone();
     let mut region = ir.model.regions[0].clone();
-    region.id.0 = "zzzz:test:region#second".into();
+    region.id = "zzzz:test:region#second"
+        .try_into()
+        .expect("valid identity");
     ir.model.bodies[0].regions.push(region.id.clone());
     ir.model.regions.push(region);
     ir.model.bodies[0].visible = Some(false);
@@ -1601,7 +1603,9 @@ pub(crate) fn face_appearance_binding_styles_the_advanced_face() {
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
-        id: "test:model:appearance-binding#face".into(),
+        id: "test:model:appearance-binding#face"
+            .try_into()
+            .expect("valid identity"),
         target: AppearanceTarget::Face(face),
         appearance: AppearanceId::mint("test:model:appearance#black".to_string())
             .expect("identity grammar"),
@@ -1652,7 +1656,9 @@ fn vertex_appearance_binding_styles_the_vertex_point() {
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
-        id: "test:model:appearance-binding#vertex".into(),
+        id: "test:model:appearance-binding#vertex"
+            .try_into()
+            .expect("valid identity"),
         target: AppearanceTarget::Vertex(vertex),
         appearance: AppearanceId::mint("test:model:appearance#vertex".to_string())
             .expect("identity grammar"),
@@ -1889,7 +1895,9 @@ pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
-        id: "test:model:appearance-binding#face".into(),
+        id: "test:model:appearance-binding#face"
+            .try_into()
+            .expect("valid identity"),
         target: AppearanceTarget::Face(face),
         appearance: AppearanceId::mint("test:model:appearance#black".to_string())
             .expect("identity grammar"),

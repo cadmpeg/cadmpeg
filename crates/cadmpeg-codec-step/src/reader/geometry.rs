@@ -82,7 +82,7 @@ pub(super) fn infer_edge_parameter_ranges(
         .iter()
         .filter_map(|vertex| {
             points
-                .get(vertex.point.0.as_str())
+                .get(vertex.point.as_str())
                 .copied()
                 .map(|point| (vertex.id.as_str(), point))
         })
@@ -95,8 +95,8 @@ pub(super) fn infer_edge_parameter_ranges(
         .filter(|(_, edge)| edge.param_range.is_none())
         .filter_map(|(index, edge)| {
             let curve = edge.curve.clone()?;
-            let start = vertices.get(edge.start.0.as_str()).copied()?;
-            let end = vertices.get(edge.end.0.as_str()).copied()?;
+            let start = vertices.get(edge.start.as_str()).copied()?;
+            let end = vertices.get(edge.end.as_str()).copied()?;
             Some((index, curve, start, end))
         })
         .collect::<Vec<_>>();
@@ -111,7 +111,7 @@ pub(super) fn infer_edge_parameter_ranges(
     let inferred = candidates
         .into_iter()
         .filter_map(|(edge_index, curve, start, end)| {
-            let geometry = &model_index.curves(curve.0.as_str())?.geometry;
+            let geometry = &model_index.curves(curve.as_str())?.geometry;
             let start_seed = curve_endpoint_seed(geometry, false, 0.0);
             let start_parameter = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
                 &model_index,
@@ -1627,7 +1627,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .filter(|(boundaries, _, _)| {
                     !boundaries.is_empty()
                         && boundaries.iter().all(|curve| {
-                            step_instance_id(&curve.0)
+                            step_instance_id(curve.as_str())
                                 .is_some_and(|id| carrier_index.curves.contains_key(&id))
                         })
                 })
@@ -1980,7 +1980,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 return;
             };
             boundary_pcurves.retain(|pcurve| {
-                step_instance_id(&pcurve.0).is_some_and(|id| decoded_pcurve_steps.contains(&id))
+                step_instance_id(pcurve.as_str())
+                    .is_some_and(|id| decoded_pcurve_steps.contains(&id))
             });
         });
     }
@@ -2581,21 +2582,21 @@ pub(super) fn topology_owned_carriers(ir: &CadIr, index: &CarrierIndex) -> Owned
                 .iter()
                 .filter_map(|coedge| coedge.use_curve.as_ref().map(|use_| &use_.curve)),
         )
-        .filter_map(|curve| step_instance_id(&curve.0))
+        .filter_map(|curve| step_instance_id(curve.as_str()))
         .filter_map(|id| index.curves.get(&id).copied())
         .collect();
     let surfaces = ir
         .model
         .faces
         .iter()
-        .filter_map(|face| step_instance_id(&face.surface.0))
+        .filter_map(|face| step_instance_id(face.surface.as_str()))
         .filter_map(|id| index.surfaces.get(&id).copied())
         .collect();
     let points = ir
         .model
         .vertices
         .iter()
-        .filter_map(|vertex| step_instance_id(&vertex.point.0))
+        .filter_map(|vertex| step_instance_id(vertex.point.as_str()))
         .filter_map(|id| index.points.get(&id).map(|point| &point.index).copied())
         .collect();
     OwnedCarriers {
@@ -2741,12 +2742,13 @@ pub(super) fn associate_pcurve_supports(exchange: &Exchange, ir: &mut CadIr, ind
         .model
         .coedges
         .iter()
-        .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.0.as_str()))
-        .chain(ir.model.loops.iter().flat_map(|loop_| {
-            loop_
-                .vertex_pcurves()
-                .map(|pcurve| pcurve.pcurve.0.as_str())
-        }))
+        .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.as_str()))
+        .chain(
+            ir.model
+                .loops
+                .iter()
+                .flat_map(|loop_| loop_.vertex_pcurves().map(|pcurve| pcurve.pcurve.as_str())),
+        )
         .chain(
             ir.model
                 .procedural_surfaces
@@ -2761,7 +2763,7 @@ pub(super) fn associate_pcurve_supports(exchange: &Exchange, ir: &mut CadIr, ind
                     Some(boundary_pcurves)
                 })
                 .flatten()
-                .map(|pcurve| pcurve.0.as_str()),
+                .map(|pcurve| pcurve.as_str()),
         )
         .collect::<BTreeSet<_>>();
     for (pcurve_id, record) in exchange.entities("PCURVE") {
@@ -4762,7 +4764,7 @@ fn directrix_parameter_scale(
     source_curve_parameter_scales: &BTreeMap<u64, f64>,
 ) -> Option<f64> {
     if let Some(source_scale) =
-        step_instance_id(&curve_id.0).and_then(|id| source_curve_parameter_scales.get(&id))
+        step_instance_id(curve_id.as_str()).and_then(|id| source_curve_parameter_scales.get(&id))
     {
         return Some(*source_scale);
     }

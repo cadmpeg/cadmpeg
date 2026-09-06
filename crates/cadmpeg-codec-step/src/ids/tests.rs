@@ -5,8 +5,8 @@ use cadmpeg_ir::{format_identity, is_valid_identity, IdentityError};
 #[test]
 fn signature_uses_three_component_grammar() {
     let id = StepIdentity::signature(0);
-    assert_eq!(id.0, "step:file:signature#0");
-    assert!(is_valid_identity(&id.0));
+    assert_eq!(id.as_str(), "step:file:signature#0");
+    assert!(is_valid_identity(&id.as_str()));
 }
 
 #[test]

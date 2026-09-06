@@ -11,7 +11,7 @@ use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, Pcurve, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
     ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
+use cadmpeg_ir::ids::{AppearanceBindingId, OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::pmi::{
     DatumTargetForm, DimensionKind, DimensionTolerance, GeometricToleranceKind, PmiDefinition,
     PmiQuantity, PmiTarget,
@@ -204,9 +204,9 @@ pub(crate) struct Builder<'a> {
     occurrence_step_refs: HashMap<String, Ref>,
     tessellation_step_refs: HashMap<String, Ref>,
     pmi_step_refs: HashMap<String, Ref>,
-    written_appearance_bindings: BTreeSet<cadmpeg_ir::ids::AppearanceBindingId>,
-    conflicted_appearance_bindings: BTreeSet<cadmpeg_ir::ids::AppearanceBindingId>,
-    appearance_binding_target_conflicts: BTreeMap<(String, String), BTreeSet<String>>,
+    written_appearance_bindings: BTreeSet<AppearanceBindingId>,
+    conflicted_appearance_bindings: BTreeSet<AppearanceBindingId>,
+    appearance_binding_target_conflicts: BTreeMap<(String, String), BTreeSet<AppearanceBindingId>>,
     hidden_appearance_items: Vec<Ref>,
     hidden_presentation_layer_items: Vec<Ref>,
     unstyled_colors: usize,
@@ -218,8 +218,8 @@ pub(crate) struct Builder<'a> {
     missing_wire_shells: BTreeSet<(String, String)>,
     hidden_bodies_without_items: BTreeSet<String>,
     hidden_presentation_layers_without_items: BTreeSet<String>,
-    dangling_appearance_bindings: BTreeSet<(cadmpeg_ir::ids::AppearanceBindingId, String)>,
-    colorless_appearance_bindings: BTreeSet<(cadmpeg_ir::ids::AppearanceBindingId, String)>,
+    dangling_appearance_bindings: BTreeSet<(AppearanceBindingId, String)>,
+    colorless_appearance_bindings: BTreeSet<(AppearanceBindingId, String)>,
     written_pmi: usize,
     length_unit: Option<Ref>,
     angle_unit: Option<Ref>,
@@ -497,19 +497,19 @@ impl<'a> Builder<'a> {
             .collect::<BTreeSet<_>>();
         let mut body_candidates: HashMap<&str, Vec<ColorSpec<'_>>> = HashMap::new();
         let mut face_candidates: HashMap<&str, Vec<ColorSpec<'_>>> = HashMap::new();
-        let mut body_binding_ids: HashMap<&str, Vec<&str>> = HashMap::new();
-        let mut face_binding_ids: HashMap<&str, Vec<&str>> = HashMap::new();
+        let mut body_binding_ids: HashMap<&str, Vec<&AppearanceBindingId>> = HashMap::new();
+        let mut face_binding_ids: HashMap<&str, Vec<&AppearanceBindingId>> = HashMap::new();
         let mut dangling_appearance_bindings = BTreeSet::new();
         let mut colorless_appearance_bindings = BTreeSet::new();
         for binding in &ir.model.appearance_bindings {
             let Some(appearance) = appearances.get(binding.appearance.as_str()).copied() else {
                 dangling_appearance_bindings
-                    .insert((binding.id.clone(), binding.appearance.0.clone()));
+                    .insert((binding.id.clone(), binding.appearance.as_str().to_owned()));
                 continue;
             };
             let Some(color) = appearance.base_color else {
                 colorless_appearance_bindings
-                    .insert((binding.id.clone(), binding.appearance.0.clone()));
+                    .insert((binding.id.clone(), binding.appearance.as_str().to_owned()));
                 continue;
             };
             let spec = ColorSpec {
@@ -523,14 +523,14 @@ impl<'a> Builder<'a> {
                     body_binding_ids
                         .entry(id.as_str())
                         .or_default()
-                        .push(binding.id.as_str());
+                        .push(&binding.id);
                 }
                 AppearanceTarget::Face(id) => {
                     face_candidates.entry(id.as_str()).or_default().push(spec);
                     face_binding_ids
                         .entry(id.as_str())
                         .or_default()
-                        .push(binding.id.as_str());
+                        .push(&binding.id);
                 }
                 AppearanceTarget::Surface(_)
                 | AppearanceTarget::Curve(_)
@@ -566,7 +566,8 @@ impl<'a> Builder<'a> {
                     .get(target)
                     .expect("body appearance candidate has binding ids")
                     .iter()
-                    .map(|id| (*id).to_string())
+                    .copied()
+                    .cloned()
                     .collect::<BTreeSet<_>>();
                 conflicted_binding_ids.extend(ids.iter().cloned());
                 target_conflicts.insert(("body".into(), target.into()), ids);
@@ -588,7 +589,8 @@ impl<'a> Builder<'a> {
                     .get(target)
                     .expect("face appearance candidate has binding ids")
                     .iter()
-                    .map(|id| (*id).to_string())
+                    .copied()
+                    .cloned()
                     .collect::<BTreeSet<_>>();
                 conflicted_binding_ids.extend(ids.iter().cloned());
                 target_conflicts.insert(("face".into(), target.into()), ids);
@@ -597,7 +599,7 @@ impl<'a> Builder<'a> {
             }
         }
         self.conflicted_appearance_bindings
-            .extend(conflicted_binding_ids.into_iter().map(Into::into));
+            .extend(conflicted_binding_ids);
         self.appearance_binding_target_conflicts
             .extend(target_conflicts);
         for body in &ir.model.bodies {
@@ -625,13 +627,13 @@ impl<'a> Builder<'a> {
 
         let mut face_body: HashMap<&str, &str> = HashMap::new();
         for region in &ir.model.regions {
-            let body = region.body.0.as_str();
+            let body = region.body.as_str();
             for shell_id in &region.shells {
                 let Some(shell) = self.shells.get(shell_id.as_str()).copied() else {
                     continue;
                 };
                 for face in &shell.faces {
-                    face_body.insert(face.0.as_str(), body);
+                    face_body.insert(face.as_str(), body);
                 }
             }
         }
@@ -667,19 +669,13 @@ impl<'a> Builder<'a> {
             }
             if own.is_some() {
                 if let Some(binding_ids) = face_binding_ids.get(face_id.as_str()) {
-                    self.written_appearance_bindings.extend(
-                        binding_ids
-                            .iter()
-                            .map(|id| cadmpeg_ir::ids::AppearanceBindingId::from(*id)),
-                    );
+                    self.written_appearance_bindings
+                        .extend(binding_ids.iter().copied().cloned());
                 }
             } else if let Some(body_id) = body {
                 if let Some(binding_ids) = body_binding_ids.get(body_id) {
-                    self.written_appearance_bindings.extend(
-                        binding_ids
-                            .iter()
-                            .map(|id| cadmpeg_ir::ids::AppearanceBindingId::from(*id)),
-                    );
+                    self.written_appearance_bindings
+                        .extend(binding_ids.iter().copied().cloned());
                 }
             }
             let name = spec
@@ -722,12 +718,12 @@ impl<'a> Builder<'a> {
             };
             let Some(target) = target else {
                 let target_id = match &binding.target {
-                    AppearanceTarget::Face(id) => id.0.clone(),
-                    AppearanceTarget::Surface(id) => id.0.clone(),
-                    AppearanceTarget::Curve(id) => id.0.clone(),
-                    AppearanceTarget::Edge(id) => id.0.clone(),
-                    AppearanceTarget::Point(id) => id.0.clone(),
-                    AppearanceTarget::Vertex(id) => id.0.clone(),
+                    AppearanceTarget::Face(id) => id.as_str().to_owned(),
+                    AppearanceTarget::Surface(id) => id.as_str().to_owned(),
+                    AppearanceTarget::Curve(id) => id.as_str().to_owned(),
+                    AppearanceTarget::Edge(id) => id.as_str().to_owned(),
+                    AppearanceTarget::Point(id) => id.as_str().to_owned(),
+                    AppearanceTarget::Vertex(id) => id.as_str().to_owned(),
                     AppearanceTarget::Tessellation(id) => id.clone(),
                     AppearanceTarget::Body(_) | AppearanceTarget::Source { .. } => continue,
                 };
@@ -764,11 +760,8 @@ impl<'a> Builder<'a> {
                 continue;
             }
             if let Some(binding_ids) = body_binding_ids.get(*body_id) {
-                self.written_appearance_bindings.extend(
-                    binding_ids
-                        .iter()
-                        .map(|id| cadmpeg_ir::ids::AppearanceBindingId::from(*id)),
-                );
+                self.written_appearance_bindings
+                    .extend(binding_ids.iter().copied().cloned());
             }
             let name = spec
                 .appearance
@@ -1220,7 +1213,7 @@ impl<'a> Builder<'a> {
                 ),
             );
             self.product_step_refs
-                .insert(product.id.0.clone(), product_ref);
+                .insert(product.id.as_str().to_owned(), product_ref);
             let formation = self.emitter.emit(
                 "PRODUCT_DEFINITION_FORMATION",
                 &format!("'','',{product_ref}"),
@@ -1288,7 +1281,8 @@ impl<'a> Builder<'a> {
                 continue;
             };
             let Some(parent_product) = occurrence_products.get(&parent_occurrence.id) else {
-                self.missing_parent_products.insert(occurrence.id.0.clone());
+                self.missing_parent_products
+                    .insert(occurrence.id.as_str().to_owned());
                 continue;
             };
             let Some(child_product) = occurrence_products.get(&occurrence.id) else {
@@ -1333,7 +1327,7 @@ impl<'a> Builder<'a> {
                 ),
             );
             self.occurrence_step_refs
-                .insert(occurrence.id.0.clone(), usage);
+                .insert(occurrence.id.as_str().to_owned(), usage);
             let usage_shape = self
                 .emitter
                 .emit("PRODUCT_DEFINITION_SHAPE", &format!("'','',{usage}"));
@@ -1446,27 +1440,28 @@ impl<'a> Builder<'a> {
                     let shape_item = self.place_body_item(&region.body, item, context);
                     items.push(shape_item);
                     self.body_shape_refs
-                        .entry(region.body.0.clone())
+                        .entry(region.body.as_str().to_owned())
                         .or_insert(shape_item);
                     self.body_item_refs
-                        .entry(region.body.0.clone())
+                        .entry(region.body.as_str().to_owned())
                         .or_default()
                         .push(shape_item);
                     self.body_step_item_refs
-                        .entry(region.body.0.clone())
+                        .entry(region.body.as_str().to_owned())
                         .or_default()
                         .push(item);
                     self.body_step_refs
-                        .entry(region.body.0.clone())
+                        .entry(region.body.as_str().to_owned())
                         .or_insert(item);
                 } else {
-                    self.empty_wire_regions.insert(region.id.0.clone());
+                    self.empty_wire_regions
+                        .insert(region.id.as_str().to_owned());
                 }
                 continue;
             }
             let closed = body_kind == BodyKind::Solid;
             let Some((outer_id, void_ids)) = region.shells.split_first() else {
-                self.empty_regions.insert(region.id.0.clone());
+                self.empty_regions.insert(region.id.as_str().to_owned());
                 continue;
             };
             let Some(outer) = self.emit_shell(outer_id.as_str(), closed) else {
@@ -1519,39 +1514,40 @@ impl<'a> Builder<'a> {
             let shape_item = self.place_body_item(&region.body, item, context);
             items.push(shape_item);
             self.body_shape_refs
-                .entry(region.body.0.clone())
+                .entry(region.body.as_str().to_owned())
                 .or_insert(shape_item);
             self.body_item_refs
-                .entry(region.body.0.clone())
+                .entry(region.body.as_str().to_owned())
                 .or_default()
                 .push(shape_item);
             self.body_step_item_refs
-                .entry(region.body.0.clone())
+                .entry(region.body.as_str().to_owned())
                 .or_default()
                 .push(item);
             self.body_step_refs
-                .entry(region.body.0.clone())
+                .entry(region.body.as_str().to_owned())
                 .or_insert(if closed { item } else { outer });
             if mixed_wire {
                 if let Some(item) = self.emit_wire_region(region) {
                     let shape_item = self.place_body_item(&region.body, item, context);
                     items.push(shape_item);
                     self.body_shape_refs
-                        .entry(region.body.0.clone())
+                        .entry(region.body.as_str().to_owned())
                         .or_insert(shape_item);
                     self.body_item_refs
-                        .entry(region.body.0.clone())
+                        .entry(region.body.as_str().to_owned())
                         .or_default()
                         .push(shape_item);
                     self.body_step_item_refs
-                        .entry(region.body.0.clone())
+                        .entry(region.body.as_str().to_owned())
                         .or_default()
                         .push(item);
                     self.body_step_refs
-                        .entry(region.body.0.clone())
+                        .entry(region.body.as_str().to_owned())
                         .or_insert(item);
                 } else {
-                    self.empty_wire_regions.insert(region.id.0.clone());
+                    self.empty_wire_regions
+                        .insert(region.id.as_str().to_owned());
                 }
             }
         }
@@ -1640,7 +1636,7 @@ impl<'a> Builder<'a> {
             if let Some(reference) = self.body_step_refs.get(body.id.as_str()).copied() {
                 hidden.push(reference);
             } else {
-                hidden_without_items.push(body.id.0.clone());
+                hidden_without_items.push(body.id.as_str().to_owned());
             }
         }
         self.hidden_bodies_without_items
@@ -1713,7 +1709,7 @@ impl<'a> Builder<'a> {
                 shells.push(shell);
             } else {
                 self.missing_wire_shells
-                    .insert((region.id.0.clone(), shell_id.0.clone()));
+                    .insert((region.id.as_str().to_owned(), shell_id.as_str().to_owned()));
             }
         }
         let mut connected_sets = Vec::new();
@@ -1756,7 +1752,7 @@ impl<'a> Builder<'a> {
             .surfaces
             .iter()
             .filter(|surface| !self.surface_refs.contains_key(surface.id.as_str()))
-            .map(|surface| surface.id.0.clone())
+            .map(|surface| surface.id.as_str().to_owned())
             .collect::<Vec<_>>();
         let mut members = Vec::new();
         let mut has_surfaces = false;
@@ -1774,7 +1770,7 @@ impl<'a> Builder<'a> {
             .curves
             .iter()
             .filter(|curve| !self.curve_refs.contains_key(curve.id.as_str()))
-            .map(|curve| curve.id.0.clone())
+            .map(|curve| curve.id.as_str().to_owned())
             .collect::<Vec<_>>();
         for curve_id in curve_ids {
             if let Some(reference) = self.emit_curve(&curve_id) {
@@ -1789,7 +1785,7 @@ impl<'a> Builder<'a> {
             .points
             .iter()
             .filter(|point| !self.point_refs.contains_key(point.id.as_str()))
-            .map(|point| point.id.0.clone())
+            .map(|point| point.id.as_str().to_owned())
             .collect::<Vec<_>>();
         for point_id in point_ids {
             let Some(point) = self.points.get(point_id.as_str()).copied() else {
@@ -2024,7 +2020,7 @@ impl<'a> Builder<'a> {
 
     fn emit_shell(&mut self, shell_id: &str, closed: bool) -> Option<Ref> {
         let shell = self.shells.get(shell_id).copied()?;
-        let face_ids: Vec<String> = shell.faces.iter().map(|f| f.0.clone()).collect();
+        let face_ids: Vec<String> = shell.faces.iter().map(|f| f.as_str().to_owned()).collect();
         let mut face_refs = Vec::new();
         for fid in &face_ids {
             if let Some(r) = self.emit_face(fid) {
@@ -2064,7 +2060,7 @@ impl<'a> Builder<'a> {
 
     fn emit_face(&mut self, face_id: &str) -> Option<Ref> {
         let face = self.faces.get(face_id).copied()?;
-        let surface_id = face.surface.0.clone();
+        let surface_id = face.surface.as_str().to_owned();
         // A face resting on an unknown (opaque) surface cannot become an
         // ADVANCED_FACE: STEP requires a real surface. Skip it and aggregate the
         // loss rather than fabricate placeholder geometry.
@@ -2074,7 +2070,7 @@ impl<'a> Builder<'a> {
                 return None;
             }
         }
-        let loop_ids: Vec<String> = face.loops.iter().map(|l| l.0.clone()).collect();
+        let loop_ids: Vec<String> = face.loops.iter().map(|l| l.as_str().to_owned()).collect();
         let same_sense = matches!(face.sense, Sense::Forward);
 
         let Some(surf_ref) = self.emit_surface(&surface_id) else {
@@ -2271,9 +2267,9 @@ impl<'a> Builder<'a> {
                 Sense::Reversed => (&edge.end, &edge.start),
             };
             segments.push(LoopSegment {
-                coedge_id: coedge_id.0.clone(),
-                start_vertex: start_vertex.0.clone(),
-                end_vertex: end_vertex.0.clone(),
+                coedge_id: coedge_id.as_str().to_owned(),
+                start_vertex: start_vertex.as_str().to_owned(),
+                end_vertex: end_vertex.as_str().to_owned(),
             });
         }
 
@@ -2489,7 +2485,7 @@ impl<'a> Builder<'a> {
         let vertex = self.vertices.get(vertex_id).copied()?;
         let pt = self.points.get(vertex.point.as_str()).copied()?;
         let cp = geometry::point(&mut self.emitter, pt.position);
-        self.point_refs.insert(vertex.point.0.clone(), cp);
+        self.point_refs.insert(vertex.point.as_str().to_owned(), cp);
         let r = self.emitter.emit("VERTEX_POINT", &format!("'',{cp}"));
         self.vertex_refs.insert(vertex_id.to_string(), r);
         Some(r)
@@ -2507,10 +2503,12 @@ impl<'a> Builder<'a> {
         self.geometry_emission_depth += 1;
         let result = (|| {
             let surf = self.surfaces.get(surface_id).copied()?;
-            let procedural = self
-                .procedural_surfaces
-                .get(surface_id)
-                .map(|procedural| (procedural.id.0.clone(), procedural.definition().clone()));
+            let procedural = self.procedural_surfaces.get(surface_id).map(|procedural| {
+                (
+                    procedural.id.as_str().to_owned(),
+                    procedural.definition().clone(),
+                )
+            });
             let emitted = procedural.and_then(|(id, definition)| {
                 self.emit_procedural_surface(
                     surf.geometry.solved_cache().unwrap_or(&surf.geometry),
@@ -2658,10 +2656,12 @@ impl<'a> Builder<'a> {
         self.geometry_emission_depth += 1;
         let result = (|| {
             let geometry = self.curves.get(curve_id)?.geometry.clone();
-            let procedural = self
-                .procedural_curves
-                .get(curve_id)
-                .map(|procedural| (procedural.id.0.clone(), procedural.definition().clone()));
+            let procedural = self.procedural_curves.get(curve_id).map(|procedural| {
+                (
+                    procedural.id.as_str().to_owned(),
+                    procedural.definition().clone(),
+                )
+            });
             let emitted = procedural.and_then(|(id, definition)| {
                 self.emit_procedural_curve(&definition)
                     .map(|reference| (id, reference))
@@ -3352,7 +3352,8 @@ impl<'a> Builder<'a> {
             }
         }
         for (annotation, reference) in annotation_refs {
-            self.pmi_step_refs.insert(annotation.0, reference);
+            self.pmi_step_refs
+                .insert(annotation.into_string(), reference);
         }
     }
 

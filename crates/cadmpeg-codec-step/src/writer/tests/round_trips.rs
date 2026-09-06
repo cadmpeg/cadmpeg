@@ -836,7 +836,9 @@ fn writer_round_trips_binding_scoped_appearance_visibility() {
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
-        id: "test:model:appearance-binding#hidden-face".into(),
+        id: "test:model:appearance-binding#hidden-face"
+            .try_into()
+            .expect("valid identity"),
         target: AppearanceTarget::Face(ir.model.faces[0].id.clone()),
         appearance,
         source_entity_id: None,
@@ -917,7 +919,9 @@ fn writer_round_trips_surface_appearance_transparency() {
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
-        id: "test:model:appearance-binding#transparent-face".into(),
+        id: "test:model:appearance-binding#transparent-face"
+            .try_into()
+            .expect("valid identity"),
         target: AppearanceTarget::Face(ir.model.faces[0].id.clone()),
         appearance,
         source_entity_id: None,
@@ -926,7 +930,9 @@ fn writer_round_trips_surface_appearance_transparency() {
         channels: std::collections::BTreeMap::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
-        id: "test:model:appearance-binding#more-transparent-face".into(),
+        id: "test:model:appearance-binding#more-transparent-face"
+            .try_into()
+            .expect("valid identity"),
         target: AppearanceTarget::Face(ir.model.faces[1].id.clone()),
         appearance: second_appearance,
         source_entity_id: None,

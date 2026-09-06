@@ -355,7 +355,7 @@ fn failed_void_shell_does_not_commit_the_outer_brep() {
         .native_unknowns("step")
         .expect("STEP unknown arena")
         .iter()
-        .any(|record| record.id.0 == "step:data:brep_with_voids#31"));
+        .any(|record| record.id.as_str() == "step:data:brep_with_voids#31"));
     assert!(decoded.report().losses.iter().any(|loss| loss
         .message
         .contains("STEP topology root #31 rejected: face carrier #99")));
@@ -406,7 +406,7 @@ fn aliased_topology_root_reuses_the_committed_body_identity() {
         .native_unknowns("step")
         .expect("STEP unknown arena")
         .iter()
-        .any(|record| record.id.0 == "step:data:shell_based_surface_model#70"));
+        .any(|record| record.id.as_str() == "step:data:shell_based_surface_model#70"));
 }
 
 #[test]
@@ -724,7 +724,9 @@ pub(crate) fn every_region_of_a_body_is_retained_as_a_shape_item() {
     let mut ir = unit_cube();
     let body = ir.model.bodies[0].id.clone();
     let mut region = ir.model.regions[0].clone();
-    region.id.0 = "zzzz:test:region#second".into();
+    region.id = "zzzz:test:region#second"
+        .try_into()
+        .expect("valid identity");
     ir.model.bodies[0].regions.push(region.id.clone());
     ir.model.regions.push(region);
     let mut builder = Builder::new(&ir, StepSchema::Ap242Edition3);

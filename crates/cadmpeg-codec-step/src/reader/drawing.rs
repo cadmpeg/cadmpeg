@@ -323,7 +323,7 @@ fn add_source_typed_targets(
         {
             continue;
         }
-        let identity = opaque_record_id(id, record).0;
+        let identity = opaque_record_id(id, record).into_string();
         let source_type = record
             .partials
             .iter()
@@ -828,7 +828,7 @@ fn target_for(
     }
     exchange.records.get(&id).map(|record| {
         ReferenceSelection::new(
-            ReferenceTarget::Local(opaque_record_id(id, record).0),
+            ReferenceTarget::Local(opaque_record_id(id, record).into_string()),
             Vec::new(),
         )
     })

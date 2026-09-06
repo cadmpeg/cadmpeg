@@ -48,8 +48,12 @@ fn cross_root_surface_filter_tracks_successful_commits_only() {
     let mut rejected_root = surface_draft(rejected_id);
     rejected_root
         .insert(Vertex {
-            id: "step:data:vertex#rejected".into(),
-            point: "step:data:point#missing".into(),
+            id: "step:data:vertex#rejected"
+                .try_into()
+                .expect("valid identity"),
+            point: "step:data:point#missing"
+                .try_into()
+                .expect("valid identity"),
             tolerance: None,
         })
         .expect("insert invalid root reference");
@@ -395,7 +399,7 @@ fn divergent_interior_pcurve_is_omitted_from_coedge() {
         .expect("STEP unknown arena");
     assert!(unknowns
         .iter()
-        .any(|record| record.id.0 == "step:data:pcurve#56"));
+        .any(|record| record.id.as_str() == "step:data:pcurve#56"));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -430,10 +434,10 @@ fn competing_same_surface_pcurves_remain_detached() {
         .expect("STEP unknown arena");
     assert!(unknowns
         .iter()
-        .any(|record| record.id.0 == "step:data:pcurve#56"));
+        .any(|record| record.id.as_str() == "step:data:pcurve#56"));
     assert!(unknowns
         .iter()
-        .any(|record| record.id.0 == "step:data:pcurve#69"));
+        .any(|record| record.id.as_str() == "step:data:pcurve#69"));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -464,10 +468,10 @@ fn assert_tp09_competing_pcurves_are_order_independent(source: &[u8]) {
         .expect("STEP unknown arena");
     assert!(unknowns
         .iter()
-        .any(|record| record.id.0 == "step:data:pcurve#56"));
+        .any(|record| record.id.as_str() == "step:data:pcurve#56"));
     assert!(unknowns
         .iter()
-        .any(|record| record.id.0 == "step:data:pcurve#69"));
+        .any(|record| record.id.as_str() == "step:data:pcurve#69"));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

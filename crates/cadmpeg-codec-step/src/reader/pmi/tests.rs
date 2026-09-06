@@ -553,7 +553,7 @@ fn geometric_tolerance_kind_uses_exact_leaf_and_retains_abstract_base_opaque() {
             .native_unknowns("step")
             .expect("STEP unknown records")
             .iter()
-            .any(|record| record.id.0 == "step:data:geometric_tolerance#13"));
+            .any(|record| record.id.as_str() == "step:data:geometric_tolerance#13"));
     }
     assert!(!canonical
         .report()
@@ -1018,7 +1018,7 @@ fn annotation_occurrence_with_leader_line_visibility_is_transferred() {
         .native_unknowns("step")
         .expect("STEP unknown records")
         .iter()
-        .any(|record| record.id.0 == "step:data:invisibility#2"));
+        .any(|record| record.id.as_str() == "step:data:invisibility#2"));
 }
 
 #[test]
@@ -1467,7 +1467,7 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
         .find(|annotation| annotation.name.as_deref() == Some("point dimension"))
         .expect("point dimension annotation");
     assert!(point_dimension.targets.contains(&PmiTarget::Point {
-        point: "step:data:point#50".into()
+        point: "step:data:point#50".try_into().expect("valid identity")
     }));
     let point = result
         .ir()
@@ -1487,7 +1487,7 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
         .find(|annotation| annotation.name.as_deref() == Some("curve dimension"))
         .expect("curve dimension annotation");
     assert!(curve_dimension.targets.contains(&PmiTarget::Curve {
-        curve: "step:data:curve#16".into()
+        curve: "step:data:curve#16".try_into().expect("valid identity")
     }));
 
     let mut output = Vec::new();

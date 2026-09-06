@@ -361,7 +361,7 @@ pub(super) fn decode(
                 .model
                 .surfaces
                 .iter_mut()
-                .find(|surface| surface.id.0 == surface_id)
+                .find(|surface| surface.id.as_str() == surface_id)
             {
                 surface
                     .source_object

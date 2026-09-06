@@ -220,7 +220,7 @@ pub(crate) fn decode_retains_signature_opaque_without_verification_result() {
         .native_unknowns("step")
         .unwrap()
         .into_iter()
-        .find(|record| record.id.0 == "step:file:signature#0")
+        .find(|record| record.id.as_str() == "step:file:signature#0")
         .expect("signature is retained as an opaque source record");
     let retained = result
         .source_fidelity()
@@ -256,7 +256,7 @@ pub(crate) fn decode_user_defined_entities_as_named_opaque_records() {
 
     let target = unknowns
         .iter()
-        .find(|record| record.id.0 == "step:data:!vendor_target#1")
+        .find(|record| record.id.as_str() == "step:data:!vendor_target#1")
         .expect("user-defined target record");
     assert!(target.links.is_empty());
     let target_source = result
@@ -270,7 +270,7 @@ pub(crate) fn decode_user_defined_entities_as_named_opaque_records() {
 
     let entity = unknowns
         .iter()
-        .find(|record| record.id.0 == "step:data:!vendor_entity#2")
+        .find(|record| record.id.as_str() == "step:data:!vendor_entity#2")
         .expect("user-defined entity record");
     assert_eq!(entity.links, vec!["step:data:!vendor_target#1".to_string()]);
     let entity_source = result
@@ -319,7 +319,7 @@ fn opaque_links_retain_fallback_carrier_targets() {
         .model
         .curves
         .iter()
-        .any(|curve| curve.id.0 == "step:data:curve#1"));
+        .any(|curve| curve.id.as_str() == "step:data:curve#1"));
 
     let unknowns = result
         .ir()
@@ -327,7 +327,7 @@ fn opaque_links_retain_fallback_carrier_targets() {
         .expect("STEP unknown records");
     let example = unknowns
         .iter()
-        .find(|record| record.id.0 == "step:data:example_record#2")
+        .find(|record| record.id.as_str() == "step:data:example_record#2")
         .expect("opaque record referencing fallback carrier");
     assert!(example.links.contains(&"step:data:curve#1".to_string()));
 
@@ -473,13 +473,13 @@ fn unowned_pcurve_dependencies_are_retained_as_one_opaque_closure() {
         .expect("STEP unknown arena");
     assert!(unknowns
         .iter()
-        .any(|record| record.id.0 == "step:data:pcurve#69"));
+        .any(|record| record.id.as_str() == "step:data:pcurve#69"));
     assert!(unknowns
         .iter()
-        .any(|record| record.id.0 == "step:data:definitional_representation#70"));
+        .any(|record| record.id.as_str() == "step:data:definitional_representation#70"));
     let line = unknowns
         .iter()
-        .find(|record| record.id.0 == "step:data:line#71")
+        .find(|record| record.id.as_str() == "step:data:line#71")
         .expect("unowned pcurve line is retained");
     assert!(decoded
         .source_fidelity()
@@ -527,7 +527,7 @@ fn a_protected_unowned_pcurve_stays_opaque() {
         .expect("STEP unknown arena");
     assert!(unknowns
         .iter()
-        .any(|record| record.id.0 == "step:data:pcurve#69"));
+        .any(|record| record.id.as_str() == "step:data:pcurve#69"));
 }
 
 #[test]
@@ -549,10 +549,10 @@ fn failed_mandatory_point_root_remains_opaque_and_unbound() {
         .expect("STEP unknown arena");
     assert!(unknowns
         .iter()
-        .any(|record| record.id.0 == "step:data:unsupported_point#3"));
+        .any(|record| record.id.as_str() == "step:data:unsupported_point#3"));
     assert!(unknowns
         .iter()
-        .any(|record| record.id.0 == "step:data:shell_based_surface_model#31"));
+        .any(|record| record.id.as_str() == "step:data:shell_based_surface_model#31"));
     assert!(decoded.report().losses.iter().any(|loss| loss
         .message
         .contains("STEP topology root #31 rejected: vertex point #3")));
@@ -571,7 +571,7 @@ fn unsupported_invisibility_relation_is_retained_as_opaque() {
         .native_unknowns("step")
         .expect("STEP unknown arena")
         .iter()
-        .any(|record| record.id.0 == "step:data:invisibility#1"));
+        .any(|record| record.id.as_str() == "step:data:invisibility#1"));
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.message
             .contains("INVISIBILITY #1 targets unsupported item #2")

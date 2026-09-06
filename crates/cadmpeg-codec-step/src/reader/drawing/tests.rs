@@ -83,7 +83,7 @@ fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
         .native_unknowns("step")
         .expect("STEP native namespace")
         .iter()
-        .any(|record| record.id.0 == "step:data:item#5"));
+        .any(|record| record.id.as_str() == "step:data:item#5"));
     assert!(result.report().losses.iter().all(|loss| {
         loss.code != StepLossCode::DrawingSheetRevisionUnresolved.kind()
             && loss.code != StepLossCode::DrawingRevisionSheetUnresolved.kind()
@@ -165,7 +165,7 @@ fn draughting_callout_visibility_is_transferred_from_invisibility() {
         .native_unknowns("step")
         .expect("STEP unknown arena")
         .iter()
-        .any(|record| record.id.0 == "step:data:invisibility#2"));
+        .any(|record| record.id.as_str() == "step:data:invisibility#2"));
 }
 
 #[test]
@@ -238,11 +238,11 @@ fn drawing_associations_preserve_shape_aspects_and_placeholders() {
             !record.id.as_str().ends_with("draughting_model_item_association#9")
                 && !record
                     .id
-                    .0
+                    .as_str()
                     .ends_with("draughting_model_item_association_with_placeholder#10")
                 && !record
                     .id
-                    .0
+                    .as_str()
                     .ends_with("draughting_model_item_association_with_placeholder+item_identified_representation_usage+annotation_placeholder_occurrence#11")
         }));
 }

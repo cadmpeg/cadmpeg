@@ -739,7 +739,7 @@ fn geometric_set_owns_catias_composite_trimmed_curve_chain() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0 == "step:data:curve#9")
+        .find(|curve| curve.id.as_str() == "step:data:curve#9")
         .expect("composite curve");
     let source = composite
         .source_object
@@ -800,7 +800,7 @@ fn complex_shape_representation_is_typed_for_free_representation_items() {
         .native_unknowns("step")
         .expect("STEP unknown arena")
         .iter()
-        .any(|record| record.id.0 == "step:data:shape_representation#4"));
+        .any(|record| record.id.as_str() == "step:data:shape_representation#4"));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -932,7 +932,7 @@ fn apll_leader_points_transfer_coordinates_and_keep_source_records() {
         assert!(
             unknowns.iter().any(|record| {
                 (id == 3 && record.id.as_str().ends_with("#3") && record.id.as_str().contains(kind))
-                    || (id != 3 && record.id.0 == format!("step:data:{kind}#{id}"))
+                    || (id != 3 && record.id.as_str() == format!("step:data:{kind}#{id}"))
             }),
             "missing retained source record #{id}"
         );
@@ -954,7 +954,7 @@ fn invalid_apll_leader_point_stays_source_native() {
         .native_unknowns("step")
         .expect("STEP unknown arena")
         .iter()
-        .any(|record| record.id.0 == "step:data:apll_point#1"));
+        .any(|record| record.id.as_str() == "step:data:apll_point#1"));
 }
 
 #[test]

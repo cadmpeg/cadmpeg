@@ -432,7 +432,7 @@ fn repositioned_annotation_mesh_with_invalid_or_missing_placement_keeps_source_c
                 .native_unknowns("step")
                 .expect("STEP native namespace")
                 .iter()
-                .any(|record| record.id.0 == "step:data:axis2_placement_3d#99"));
+                .any(|record| record.id.as_str() == "step:data:axis2_placement_3d#99"));
         }
         let validation =
             cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
@@ -805,7 +805,7 @@ fn complex_tessellated_face_keeps_exact_support_surface_reachable() {
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id.0 == "step:data:surface#79")
+        .find(|surface| surface.id.as_str() == "step:data:surface#79")
         .expect("exact support surface");
     assert_eq!(
         support

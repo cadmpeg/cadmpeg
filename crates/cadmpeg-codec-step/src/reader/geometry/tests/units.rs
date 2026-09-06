@@ -157,7 +157,7 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .model
         .points
         .iter()
-        .find(|point| point.id.0 == "step:data:point#3")
+        .find(|point| point.id.as_str() == "step:data:point#3")
         .unwrap();
     assert_eq!(placed.position.x, 1.0);
     assert_eq!(placed.position.y, 2.0);

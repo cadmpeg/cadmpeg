@@ -1812,7 +1812,7 @@ fn staged_topology(
     }
     let mut surface_ids = BTreeSet::new();
     for surface in surfaces {
-        if surface_ids.insert(surface.id.0.clone()) {
+        if surface_ids.insert(surface.id.as_str().to_owned()) {
             draft.insert(surface).ok()?;
         }
     }
@@ -2685,10 +2685,10 @@ fn build_one(
             };
             let (start, end) = edge.curve_vertices();
             component_edge_vertices.insert(
-                scoped_edge_id(*edge_id, id, shell_step, scope_edges, scope_root).0,
+                scoped_edge_id(*edge_id, id, shell_step, scope_edges, scope_root).into_string(),
                 (
-                    scoped_vertex_id(start, id, shell_step, scope_edges, scope_root).0,
-                    scoped_vertex_id(end, id, shell_step, scope_edges, scope_root).0,
+                    scoped_vertex_id(start, id, shell_step, scope_edges, scope_root).into_string(),
+                    scoped_vertex_id(end, id, shell_step, scope_edges, scope_root).into_string(),
                 ),
             );
         }
@@ -2697,10 +2697,12 @@ fn build_one(
                 continue;
             }
             component_edge_vertices.insert(
-                edge_id.0.clone(),
+                edge_id.as_str().to_owned(),
                 (
-                    scoped_poly_vertex_id(*start, id, shell_step, scope_edges, scope_root).0,
-                    scoped_poly_vertex_id(*end, id, shell_step, scope_edges, scope_root).0,
+                    scoped_poly_vertex_id(*start, id, shell_step, scope_edges, scope_root)
+                        .into_string(),
+                    scoped_poly_vertex_id(*end, id, shell_step, scope_edges, scope_root)
+                        .into_string(),
                 ),
             );
         }
@@ -2733,7 +2735,7 @@ fn build_one(
             let component_shell = if component_index == 0 {
                 sid.clone()
             } else {
-                ShellId::mint(format!("{}-component-{component_index}", sid.0))
+                ShellId::mint(format!("{sid}-component-{component_index}"))
                     .expect("identity grammar")
             };
             let component_faces = component
@@ -2919,20 +2921,25 @@ fn connected_face_components(
     let face_indices = face_ids
         .iter()
         .enumerate()
-        .map(|(index, face)| (face.0.clone(), index))
+        .map(|(index, face)| (face.as_str().to_owned(), index))
         .collect::<BTreeMap<_, _>>();
     let coedge_edges = coedges
         .iter()
-        .map(|coedge| (coedge.id.0.clone(), coedge.edge.0.clone()))
+        .map(|coedge| {
+            (
+                coedge.id.as_str().to_owned(),
+                coedge.edge.as_str().to_owned(),
+            )
+        })
         .collect::<BTreeMap<_, _>>();
     let mut faces_by_edge = BTreeMap::<String, BTreeSet<usize>>::new();
     let mut faces_by_vertex = BTreeMap::<String, BTreeSet<usize>>::new();
     for loop_ in loops {
-        let Some(&face_index) = face_indices.get(&loop_.face.0) else {
+        let Some(&face_index) = face_indices.get(loop_.face.as_str()) else {
             continue;
         };
         for coedge_id in loop_.coedges() {
-            let Some(edge_id) = coedge_edges.get(&coedge_id.0) else {
+            let Some(edge_id) = coedge_edges.get(coedge_id.as_str()) else {
                 continue;
             };
             faces_by_edge
@@ -2952,7 +2959,7 @@ fn connected_face_components(
         }
         for vertex in loop_.vertices() {
             faces_by_vertex
-                .entry(vertex.0.clone())
+                .entry(vertex.as_str().to_owned())
                 .or_default()
                 .insert(face_index);
         }
@@ -3367,7 +3374,7 @@ fn select_associated_pcurve(
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id.0 == surface_identity)
+        .find(|surface| surface.id.as_str() == surface_identity)
         .map(|surface| surface.geometry.clone())
         .ok_or(PcurveSelectionFailure::Carrier)?;
     let surface_id = SurfaceId::mint(surface_identity).expect("identity grammar");
@@ -3642,7 +3649,7 @@ fn surface_selection_parameters(
     v: f64,
 ) -> [f64; 2] {
     let domains = index
-        .surfaces(&surface_id.0)
+        .surfaces(surface_id.as_str())
         .map_or([None, None], |surface| {
             surface_selection_parameter_domains(index, surface_id, &surface.geometry)
         });
@@ -4013,7 +4020,7 @@ fn surface_selection_parameter_domains(
             | ProceduralSurfaceDefinition::LinearSweep { directrix, .. },
         ) => [curve_selection_parameter_domain(index, directrix), None],
         Some(ProceduralSurfaceDefinition::Replica { source, .. }) => index
-            .surfaces(&source.0)
+            .surfaces(source.as_str())
             .map_or([None, None], |source_surface| {
                 surface_selection_parameter_domains(index, source, &source_surface.geometry)
             }),
@@ -4059,7 +4066,7 @@ fn curve_selection_parameter_domain(
     index: &ModelIndex<'_>,
     curve_id: &CurveId,
 ) -> Option<[f64; 2]> {
-    let curve = index.curves(&curve_id.0)?;
+    let curve = index.curves(curve_id.as_str())?;
     curve_selection_parameter_domain_from_geometry(&curve.geometry)
 }
 

@@ -850,10 +850,10 @@ fn complex_document_dependency_records_use_inherited_fields() {
         .expect("STEP unknown arena")
         .iter()
         .any(|record| {
-            record.id.0 == "step:data:document#2"
-                || record.id.0 == "step:data:document_file#2"
-                || record.id.0 == "step:data:applied_document_reference#3"
-                || record.id.0 == "step:data:document_reference#3"
+            record.id.as_str() == "step:data:document#2"
+                || record.id.as_str() == "step:data:document_file#2"
+                || record.id.as_str() == "step:data:applied_document_reference#3"
+                || record.id.as_str() == "step:data:document_reference#3"
         }));
 }
 
