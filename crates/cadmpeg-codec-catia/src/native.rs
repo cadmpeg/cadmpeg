@@ -9828,6 +9828,7 @@ fn native_object_graph(
         .enumerate()
         .map(|(ordinal, record)| {
             let entity = entity_records.get(ordinal);
+            let roles = record.roles();
             CatiaObjectRecord {
                 id: format!("catia:outer:object-record#{:010}", record.pos),
                 parent: id.clone(),
@@ -9842,17 +9843,17 @@ fn native_object_graph(
                 lead: record.lead,
                 head: record.head().to_vec(),
                 inline_body: record.inline_body().map(<[u8]>::to_vec),
-                owner: record.owner_ref.map(CatiaObjectOwner::Entity).or_else(|| {
-                    record
+                owner: roles.owner_ref.map(CatiaObjectOwner::Entity).or_else(|| {
+                    roles
                         .owner_literal
                         .map(CatiaObjectOwner::UnassignedLiteral)
                 }),
-                class: record.class_ref.map(|class_ref| CatiaObjectClass {
+                class: roles.class_ref.map(|class_ref| CatiaObjectClass {
                     class_ref,
                     class_name: None,
                     class_entry: None,
                 }),
-                storage: record.storage_ref.map(|storage_ref| CatiaObjectStorage {
+                storage: roles.storage_ref.map(|storage_ref| CatiaObjectStorage {
                     storage_ref,
                     storage_record: None,
                     storage_design_object: None,

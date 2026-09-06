@@ -27,6 +27,7 @@ pub struct ObjectGraph {
 /// One `7C09` object record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "ObjectRecordWire", into = "ObjectRecordWire")]
 pub struct ObjectRecord {
     /// Record byte offset.
     pub pos: usize,
@@ -36,14 +37,59 @@ pub struct ObjectRecord {
     pub lead: u8,
     /// Inline body or nested head and payload.
     pub body: ObjectRecordBody,
-    /// First head reference, identifying the owner by stored entity identity.
-    pub owner_ref: Option<u32>,
-    /// Literal value occupying a structurally assigned owner slot.
-    pub owner_literal: Option<u8>,
-    /// Second head reference, identifying the per-file class.
-    pub class_ref: Option<u32>,
-    /// Third head reference, selecting the class-specific storage form.
-    pub storage_ref: Option<u32>,
+}
+
+// Serialized role fields are retained for wire compatibility and checked once on input.
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct ObjectRecordWire {
+    pos: usize,
+    total_len: usize,
+    lead: u8,
+    body: ObjectRecordBody,
+    owner_ref: Option<u32>,
+    owner_literal: Option<u8>,
+    class_ref: Option<u32>,
+    storage_ref: Option<u32>,
+}
+
+impl From<ObjectRecord> for ObjectRecordWire {
+    fn from(record: ObjectRecord) -> Self {
+        let roles = record.roles();
+        Self {
+            pos: record.pos,
+            total_len: record.total_len,
+            lead: record.lead,
+            body: record.body,
+            owner_ref: roles.owner_ref,
+            owner_literal: roles.owner_literal,
+            class_ref: roles.class_ref,
+            storage_ref: roles.storage_ref,
+        }
+    }
+}
+
+impl TryFrom<ObjectRecordWire> for ObjectRecord {
+    type Error = &'static str;
+
+    fn try_from(wire: ObjectRecordWire) -> Result<Self, Self::Error> {
+        let supplied = HeadRoles {
+            owner_ref: wire.owner_ref,
+            owner_literal: wire.owner_literal,
+            class_ref: wire.class_ref,
+            storage_ref: wire.storage_ref,
+        };
+        let record = Self {
+            pos: wire.pos,
+            total_len: wire.total_len,
+            lead: wire.lead,
+            body: wire.body,
+        };
+        if supplied != record.roles() {
+            return Err("object record roles disagree with head tokens");
+        }
+        Ok(record)
+    }
 }
 
 /// Inline or nested body of one `7C09` object record.
@@ -67,6 +113,10 @@ pub enum ObjectRecordBody {
 }
 
 impl ObjectRecord {
+    pub(crate) fn roles(&self) -> HeadRoles {
+        head_roles(self.lead, self.head())
+    }
+
     pub fn inline_body(&self) -> Option<&[u8]> {
         match &self.body {
             ObjectRecordBody::Inline(bytes) => Some(bytes),
@@ -84,11 +134,11 @@ impl ObjectRecord {
     pub fn payload(&self) -> &ObjectPayload {
         match &self.body {
             ObjectRecordBody::Inline(_) => {
-                static EMPTY: std::sync::OnceLock<ObjectPayload> = std::sync::OnceLock::new();
-                EMPTY.get_or_init(|| ObjectPayload {
+                static EMPTY: ObjectPayload = ObjectPayload {
                     size: 0,
                     fields: Vec::new(),
-                })
+                };
+                &EMPTY
             }
             ObjectRecordBody::Nested { payload, .. } => payload,
         }
@@ -703,13 +753,12 @@ fn parse_candidate(
             return None;
         }
         let body = data.get(head_start..record_end)?;
-        let (lead, body_form, roles) = match child {
+        let (lead, body_form) = match child {
             Some((child, _)) => {
                 let head_bytes = data.get(head_start..child)?;
                 let lead = *head_bytes.first()?;
                 let head = decode_head(head_bytes);
                 let payload = decode_payload(&data[child + 6..record_end])?;
-                let roles = head_roles(lead, &head);
                 let repeated_reference_suffix = repeated_reference_suffix(&payload);
                 let subtype = classify(&payload.fields);
                 (
@@ -720,24 +769,15 @@ fn parse_candidate(
                         repeated_reference_suffix,
                         subtype,
                     },
-                    roles,
                 )
             }
             None if is_inline_body(body) => {
                 let lead = body[0];
-                (
-                    lead,
-                    ObjectRecordBody::Inline(body.to_vec()),
-                    head_roles(lead, &[]),
-                )
+                (lead, ObjectRecordBody::Inline(body.to_vec()))
             }
             None if allow_opaque_childless_records && !body.is_empty() => {
                 let lead = body[0];
-                (
-                    lead,
-                    ObjectRecordBody::Inline(body.to_vec()),
-                    head_roles(lead, &[]),
-                )
+                (lead, ObjectRecordBody::Inline(body.to_vec()))
             }
             None => return None,
         };
@@ -746,10 +786,6 @@ fn parse_candidate(
             total_len: record_len,
             lead,
             body: body_form,
-            owner_ref: roles.owner_ref,
-            owner_literal: roles.owner_literal,
-            class_ref: roles.class_ref,
-            storage_ref: roles.storage_ref,
         });
         at = record_end;
     }
