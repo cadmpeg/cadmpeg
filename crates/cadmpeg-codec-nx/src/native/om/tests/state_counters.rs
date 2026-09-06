@@ -4,15 +4,15 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+use crate::NxCodec;
 use crate::container;
 use crate::native::features::FeatureOperationStateJournalUse;
 use crate::native::om::{
-    audit_trail_rows, operation_state_counters, operation_state_groups,
-    operation_state_journal_groups, operation_state_messages, operation_state_slot_lanes,
-    operation_state_statuses, OmAuditTrailRow, OmOperationStateCounter,
-    OmOperationStateJournalGroup, OmOperationStateMessage, OmOperationStateMessageSeverity,
-    OmOperationStateSlotLane, OmOperationStateStatus, OmRollForwardStateGroup,
-    OmRollForwardStateRow,
+    OmAuditTrailRow, OmOperationStateCounter, OmOperationStateJournalGroup,
+    OmOperationStateMessage, OmOperationStateMessageSeverity, OmOperationStateSlotLane,
+    OmOperationStateStatus, OmRollForwardStateGroup, OmRollForwardStateRow, audit_trail_rows,
+    operation_state_counters, operation_state_groups, operation_state_journal_groups,
+    operation_state_messages, operation_state_slot_lanes, operation_state_statuses,
 };
 use crate::test_support::{
     composed_feature_history_payload_with_operation_state_statuses,
@@ -21,7 +21,6 @@ use crate::test_support::{
     segment_om_record_area_with_state_groups_and_counter_map,
     size_framed_audit_trail_section_with_record_area,
 };
-use crate::NxCodec;
 
 #[test]
 fn operation_state_message_severity_uses_only_known_high_bytes() {
@@ -182,7 +181,7 @@ fn native_catalog_emits_field_declared_roll_forward_groups() {
 
     let groups = operation_state_groups(&container);
     assert_eq!(groups.len(), 3);
-    assert_eq!(groups[0].declared_count, 3);
+    assert_eq!(groups[0].count.declared_count(), 3);
     assert_eq!(groups[0].rows.len(), 2);
     assert!(matches!(
         groups[0].rows[0],
@@ -200,7 +199,7 @@ fn native_catalog_emits_field_declared_roll_forward_groups() {
             ..
         }
     ));
-    assert_eq!(groups[2].declared_count, 0);
+    assert_eq!(groups[2].count.declared_count(), 0);
     assert_eq!(groups[0].table_trailing_bytes, [0x01, 0x01]);
     assert!(groups[0].table_end_offset > groups[0].source_offset);
 

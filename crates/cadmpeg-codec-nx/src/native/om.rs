@@ -7,8 +7,8 @@ use super::*;
 use cadmpeg_core::decode::View;
 
 use crate::native::segments::segment_om_links;
-use crate::om::IndexedStore;
 use crate::om::parameter_name::ParameterName;
+use crate::om::{IndexedStore, OperationStateGroupCount, OperationStateGroupOpener};
 
 /// Semantic family declared by a linked OM section's class registry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -193,6 +193,10 @@ pub enum OmRollForwardStateRow {
 
 /// One counted `m_rollForwardStates` group from a feature-history section.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "OmRollForwardStateGroupWire",
+    into = "OmRollForwardStateGroupWire"
+)]
 pub struct OmRollForwardStateGroup {
     /// Globally unique group identity.
     pub id: String,
@@ -201,11 +205,9 @@ pub struct OmRollForwardStateGroup {
     /// Zero-based group ordinal within the table.
     pub ordinal: u32,
     /// Exact two-byte group opener.
-    pub opener: [u8; 2],
-    /// Whether the count used the nonempty `01 count` form.
-    pub count_prefix: Option<u8>,
-    /// Serialized member count including the implicit owner slot.
-    pub declared_count: u8,
+    pub opener: OperationStateGroupOpener,
+    /// Empty or explicitly counted header.
+    pub count: OperationStateGroupCount,
     /// Ordered typed rows in the group.
     pub rows: Vec<OmRollForwardStateRow>,
     /// Exact bytes between the final group and the counter-map boundary.
@@ -216,6 +218,73 @@ pub struct OmRollForwardStateGroup {
     pub source_offset: u64,
     /// Absolute file offset of the counter-map boundary.
     pub table_end_offset: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct OmRollForwardStateGroupWire {
+    /// Globally unique group identity.
+    id: String,
+    /// Owning feature-history section link.
+    section_link: String,
+    /// Zero-based group ordinal within the table.
+    ordinal: u32,
+    /// Exact two-byte group opener.
+    opener: [u8; 2],
+    /// Whether the count used the nonempty `01 count` form.
+    count_prefix: Option<u8>,
+    /// Serialized member count including the implicit owner slot.
+    declared_count: u8,
+    /// Ordered typed rows in the group.
+    rows: Vec<OmRollForwardStateRow>,
+    /// Exact bytes between the final group and the counter-map boundary.
+    table_trailing_bytes: Vec<u8>,
+    /// Directory entry containing the feature-history section.
+    source_entry: String,
+    /// Absolute file offset of the group opener.
+    source_offset: u64,
+    /// Absolute file offset of the counter-map boundary.
+    table_end_offset: u64,
+}
+
+impl From<OmRollForwardStateGroup> for OmRollForwardStateGroupWire {
+    fn from(value: OmRollForwardStateGroup) -> Self {
+        Self {
+            opener: value.opener.bytes(),
+            count_prefix: value.count.prefix(),
+            declared_count: value.count.declared_count(),
+            id: value.id,
+            section_link: value.section_link,
+            ordinal: value.ordinal,
+            rows: value.rows,
+            table_trailing_bytes: value.table_trailing_bytes,
+            source_entry: value.source_entry,
+            source_offset: value.source_offset,
+            table_end_offset: value.table_end_offset,
+        }
+    }
+}
+
+impl TryFrom<OmRollForwardStateGroupWire> for OmRollForwardStateGroup {
+    type Error = &'static str;
+    fn try_from(wire: OmRollForwardStateGroupWire) -> Result<Self, Self::Error> {
+        let count = match (wire.count_prefix, wire.declared_count) {
+            (None, 0) => OperationStateGroupCount::Empty,
+            (Some(1), count) => OperationStateGroupCount::Counted(count),
+            _ => return Err("invalid operation-state group count encoding"),
+        };
+        Ok(Self {
+            opener: OperationStateGroupOpener::try_from(wire.opener)?,
+            count,
+            id: wire.id,
+            section_link: wire.section_link,
+            ordinal: wire.ordinal,
+            rows: wire.rows,
+            table_trailing_bytes: wire.table_trailing_bytes,
+            source_entry: wire.source_entry,
+            source_offset: wire.source_offset,
+            table_end_offset: wire.table_end_offset,
+        })
+    }
 }
 
 /// Typed high-byte outcome of an operation-state diagnostic.
@@ -676,8 +745,7 @@ pub fn operation_state_groups(container: &Container) -> Vec<OmRollForwardStateGr
                         section_link: link.id.clone(),
                         ordinal,
                         opener: group.opener,
-                        count_prefix: group.count_prefix,
-                        declared_count: group.declared_count,
+                        count: group.count,
                         rows,
                         table_trailing_bytes: table.trailing_bytes.to_vec(),
                         source_entry: entry.name.clone(),

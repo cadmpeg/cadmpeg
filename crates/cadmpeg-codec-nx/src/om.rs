@@ -1889,17 +1889,69 @@ pub enum OperationStateGroupRow<'a> {
     },
 }
 
+/// Two admitted group opener encodings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OperationStateGroupOpener {
+    /// `01 00` opener.
+    Form00,
+    /// `01 01` opener.
+    Form01,
+}
+
+impl OperationStateGroupOpener {
+    pub fn bytes(self) -> [u8; 2] {
+        match self {
+            Self::Form00 => [1, 0],
+            Self::Form01 => [1, 1],
+        }
+    }
+}
+
+impl TryFrom<[u8; 2]> for OperationStateGroupOpener {
+    type Error = &'static str;
+    fn try_from(bytes: [u8; 2]) -> Result<Self, Self::Error> {
+        match bytes {
+            [1, 0] => Ok(Self::Form00),
+            [1, 1] => Ok(Self::Form01),
+            _ => Err("invalid operation-state group opener"),
+        }
+    }
+}
+
+/// Empty or explicitly counted operation-state group header.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OperationStateGroupCount {
+    /// Single zero byte, without an explicit count.
+    Empty,
+    /// `01 count`, including the implicit owner slot.
+    Counted(u8),
+}
+
+impl OperationStateGroupCount {
+    pub fn prefix(self) -> Option<u8> {
+        match self {
+            Self::Empty => None,
+            Self::Counted(_) => Some(1),
+        }
+    }
+
+    pub fn declared_count(self) -> u8 {
+        match self {
+            Self::Empty => 0,
+            Self::Counted(count) => count,
+        }
+    }
+}
+
 /// One counted `m_rollForwardStates` group.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationStateGroup<'a> {
     /// Absolute byte offset of the two-byte group opener.
     pub offset: usize,
-    /// Exact group opener, normally `01 01`.
-    pub opener: [u8; 2],
-    /// Whether the count used the nonempty `01 count` form.
-    pub count_prefix: Option<u8>,
-    /// Serialized member count including the implicit owner slot.
-    pub declared_count: u8,
+    /// Admitted two-byte group opener.
+    pub opener: OperationStateGroupOpener,
+    /// Empty or explicitly counted header.
+    pub count: OperationStateGroupCount,
     /// Ordered list or pair rows.
     pub rows: Vec<OperationStateGroupRow<'a>>,
     /// Exclusive absolute end offset after the final group row.
@@ -3175,7 +3227,7 @@ impl<'a> Section<'a> {
             .checked_sub(base_offset)?;
         let mut ends = Vec::with_capacity(2);
         if let Some(table) = &group {
-            let overlap_end = terminal.checked_add(table.groups.first()?.opener.len())?;
+            let overlap_end = terminal.checked_add(table.groups.first()?.opener.bytes().len())?;
             ends.push(overlap_end);
         }
         ends.push(terminal);
@@ -7775,18 +7827,19 @@ pub fn operation_state_status_table(
 fn operation_state_group_header_at(
     bytes: &[u8],
     at: usize,
-) -> Option<([u8; 2], Option<u8>, u8, usize)> {
-    let opener: [u8; 2] = bytes.get(at..at + 2)?.try_into().ok()?;
-    if !matches!(opener, [0x01, 0x00 | 0x01]) {
-        return None;
-    }
+) -> Option<(OperationStateGroupOpener, OperationStateGroupCount, usize)> {
+    let raw_opener: [u8; 2] = bytes.get(at..at + 2)?.try_into().ok()?;
+    let opener = OperationStateGroupOpener::try_from(raw_opener).ok()?;
     let count_at = at.checked_add(2)?;
-    let (count_prefix, declared_count, cursor) = match bytes.get(count_at) {
-        Some(0) => (None, 0, count_at + 1),
-        Some(1) => (Some(1), *bytes.get(count_at + 1)?, count_at + 2),
+    let (count, cursor) = match bytes.get(count_at) {
+        Some(0) => (OperationStateGroupCount::Empty, count_at + 1),
+        Some(1) => (
+            OperationStateGroupCount::Counted(*bytes.get(count_at + 1)?),
+            count_at + 2,
+        ),
         _ => return None,
     };
-    Some((opener, count_prefix, declared_count, cursor))
+    Some((opener, count, cursor))
 }
 
 fn operation_state_group_row_at(
@@ -7843,8 +7896,8 @@ fn operation_state_group_end_at(
     end: usize,
     base_offset: usize,
 ) -> Option<usize> {
-    let (_, _, declared_count, mut cursor) = operation_state_group_header_at(bytes, at)?;
-    let member_count = usize::from(declared_count.saturating_sub(1));
+    let (_, count, mut cursor) = operation_state_group_header_at(bytes, at)?;
+    let member_count = usize::from(count.declared_count().saturating_sub(1));
     for _ in 0..member_count {
         cursor = operation_state_group_row_at(bytes, cursor, base_offset)?.1;
     }
@@ -7857,9 +7910,8 @@ fn operation_state_group_at(
     end: usize,
     base_offset: usize,
 ) -> Option<OperationStateGroup<'_>> {
-    let (opener, count_prefix, declared_count, mut cursor) =
-        operation_state_group_header_at(bytes, at)?;
-    let member_count = usize::from(declared_count.saturating_sub(1));
+    let (opener, count, mut cursor) = operation_state_group_header_at(bytes, at)?;
+    let member_count = usize::from(count.declared_count().saturating_sub(1));
     let mut rows = Vec::with_capacity(member_count);
     for _ in 0..member_count {
         let (row, row_end) = operation_state_group_row_at(bytes, cursor, base_offset)?;
@@ -7869,8 +7921,7 @@ fn operation_state_group_at(
     (cursor <= end).then_some(OperationStateGroup {
         offset: base_offset.checked_add(at)?,
         opener,
-        count_prefix,
-        declared_count,
+        count,
         rows,
         end_offset: base_offset.checked_add(cursor)?,
     })

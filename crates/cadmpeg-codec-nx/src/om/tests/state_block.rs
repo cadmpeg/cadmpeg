@@ -121,7 +121,7 @@ fn operation_state_messages_accept_terminal_count_shared_with_group_opener() {
     assert_eq!(messages[0].text, "terminal");
     assert_eq!(messages[0].end_offset, 500 + group_start + 2);
     assert_eq!(table.offset, 500 + group_start);
-    assert_eq!(table.groups[0].opener, [0x01, 0x00]);
+    assert_eq!(table.groups[0].opener.bytes(), [0x01, 0x00]);
 }
 
 #[test]
@@ -263,8 +263,8 @@ fn operation_state_group_table_decodes_list_pair_and_empty_groups() {
     let table =
         super::operation_state_group_table(&bytes, 0, bytes.len(), 900).expect("group table");
     assert_eq!(table.groups.len(), 3);
-    assert_eq!(table.groups[0].opener, [0x01, 0x00]);
-    assert_eq!(table.groups[0].count_prefix, Some(1));
+    assert_eq!(table.groups[0].opener.bytes(), [0x01, 0x00]);
+    assert_eq!(table.groups[0].count.prefix(), Some(1));
     assert_eq!(table.groups[0].rows.len(), 2);
     assert_eq!(table.groups[1].rows.len(), 1);
     let OperationStateGroupRow::Pair {
@@ -276,7 +276,7 @@ fn operation_state_group_table_decodes_list_pair_and_empty_groups() {
     assert_eq!(tag, 0x4f);
     assert_eq!(first.value(), Some(0x42d));
     assert_eq!(second.value(), Some(0x3e1));
-    assert_eq!(table.groups[2].declared_count, 0);
+    assert_eq!(table.groups[2].count.declared_count(), 0);
     assert_eq!(table.groups[2].rows.len(), 0);
 }
 
@@ -301,7 +301,7 @@ fn operation_state_group_table_anchors_to_counter_map_boundary() {
     assert_eq!(table.groups.len(), 3);
     assert_eq!(table.groups[0].rows.len(), 2);
     assert_eq!(table.groups[1].rows.len(), 1);
-    assert_eq!(table.groups[2].declared_count, 0);
+    assert_eq!(table.groups[2].count.declared_count(), 0);
     assert_eq!(table.trailing_bytes, &[0x01, 0x01]);
 }
 
