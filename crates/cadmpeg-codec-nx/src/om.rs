@@ -5,6 +5,7 @@ pub(crate) mod draft_identity;
 pub(crate) mod plane_descriptor;
 pub(crate) mod csys_descriptor;
 pub(crate) mod reference_index;
+pub(crate) mod header_references;
 pub(crate) mod common_frame;
 pub(crate) mod body_write;
 pub(crate) mod direct_reference;

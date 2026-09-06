@@ -756,8 +756,7 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
         section_link: "section".to_string(),
         ordinal: 7,
         value: "SKETCH".to_string(),
-        object_indices: [None; 4],
-        raw_object_indices: Default::default(),
+        objects: crate::om::header_references::HeaderReferences([None; 4]),
         stable_identity: None,
         source_offset: 40,
     };
@@ -834,8 +833,7 @@ fn named_sketch_points_project_without_an_external_named_point() {
         section_link: "section".to_string(),
         ordinal: 8,
         value: "SKETCH".to_string(),
-        object_indices: [None; 4],
-        raw_object_indices: Default::default(),
+        objects: crate::om::header_references::HeaderReferences([None; 4]),
         stable_identity: None,
         source_offset: 40,
     };

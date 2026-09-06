@@ -296,8 +296,7 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
         section_link: "section#0".to_string(),
         ordinal: 3,
         value: "SIMPLE HOLE".to_string(),
-        object_indices: [None; 4],
-        raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+        objects: crate::om::header_references::HeaderReferences([None; 4]),
         stable_identity: None,
         source_offset: 100,
     };
@@ -469,8 +468,7 @@ fn nx_threaded_hole_template_requires_simple_hole_and_exact_tokens() {
         section_link: "section#0".to_string(),
         ordinal: 7,
         value: "SIMPLE HOLE".to_string(),
-        object_indices: [None; 4],
-        raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+        objects: crate::om::header_references::HeaderReferences([None; 4]),
         stable_identity: None,
         source_offset: 100,
     };
@@ -548,8 +546,7 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
         section_link: "nx:feature-history#0".to_string(),
         ordinal: 7,
         value: "SKETCH".to_string(),
-        object_indices: [Some(45), None, Some(81), None],
-        raw_object_indices: [vec![45], vec![0xff], vec![81], vec![0xff]],
+        objects: crate::om::header_references::HeaderReferences::from_wire([Some(45), None, Some(81), None], [&[45], &[0xff], &[81], &[0xff]]).unwrap(),
         stable_identity: None,
         source_offset: 700,
     };
@@ -734,7 +731,7 @@ fn decode_orders_and_deduplicates_linked_feature_history_sections() {
     );
     assert_ne!(labels[0].section_link, labels[1].section_link);
     assert_eq!(
-        labels[0].raw_object_indices,
+        labels[0].objects.0.map(|token| token.map_or_else(|| vec![0xff], |token| token.raw().to_vec())),
         [
             vec![0x01],
             vec![0x82, 0x40],
@@ -742,7 +739,7 @@ fn decode_orders_and_deduplicates_linked_feature_history_sections() {
             vec![0xff]
         ]
     );
-    assert_eq!(labels[1].raw_object_indices, labels[0].raw_object_indices);
+    assert_eq!(labels[1].objects.0.map(|token| token.map_or_else(|| vec![0xff], |token| token.raw().to_vec())), labels[0].objects.0.map(|token| token.map_or_else(|| vec![0xff], |token| token.raw().to_vec())));
     let records = namespace
         .arena_as::<super::FeatureOperationRecord>("feature_operation_records")
         .expect("required invariant");
@@ -834,7 +831,7 @@ fn decode_retains_role_scoped_om_record_area_header() {
     assert_eq!(labels[0].ordinal, 0);
     assert_eq!(labels[0].value, "UNITE");
     assert_eq!(
-        labels[0].object_indices,
+        labels[0].objects.values(),
         [Some(1), Some(576), Some(6099), None]
     );
     assert_eq!(labels[0].section_link, areas[0].section_link);
@@ -962,8 +959,7 @@ fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
         section_link: "section".to_string(),
         ordinal,
         value: value.to_string(),
-        object_indices: [None; 4],
-        raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+        objects: crate::om::header_references::HeaderReferences([None; 4]),
         stable_identity: None,
         source_offset: 100 + u64::from(ordinal),
     };

@@ -10,8 +10,7 @@ fn sketch_coordinate_pairs_are_retained_as_native_entities_without_roles() {
         section_link: "section".to_string(),
         ordinal: 9,
         value: "SKETCH".to_string(),
-        object_indices: [None; 4],
-        raw_object_indices: Default::default(),
+        objects: crate::om::header_references::HeaderReferences([None; 4]),
         stable_identity: None,
         source_offset: 40,
     };
@@ -85,8 +84,7 @@ fn sketch_fixed_points_are_retained_as_native_entities_without_roles() {
         section_link: "section".to_string(),
         ordinal: 11,
         value: "SKETCH".to_string(),
-        object_indices: [None; 4],
-        raw_object_indices: Default::default(),
+        objects: crate::om::header_references::HeaderReferences([None; 4]),
         stable_identity: None,
         source_offset: 80,
     };

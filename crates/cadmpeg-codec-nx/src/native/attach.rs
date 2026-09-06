@@ -2673,10 +2673,10 @@ fn attach_feature_operations(
                 );
             }
         }
-        for (slot, value) in label.object_indices.iter().enumerate() {
+        for (slot, value) in label.objects.0.iter().enumerate() {
             source_properties.insert(
                 format!("object_index.{slot}"),
-                value.map_or_else(|| "null".to_string(), |value| value.to_string()),
+                value.map_or_else(|| "null".to_string(), |value| value.value().to_string()),
             );
         }
         for input in input_blocks_by_operation
@@ -3504,7 +3504,7 @@ fn attach_feature_operations(
                     }
                     let mut definition = non_modeling_history_definition(
                         &label.value,
-                        &label.object_indices,
+                        &label.objects.values(),
                         &outputs,
                         body_reference_occurrences_by_operation
                             .get(label.id.as_str())

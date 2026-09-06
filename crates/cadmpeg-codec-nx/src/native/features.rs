@@ -55,10 +55,9 @@ pub struct FeatureOperationLabel {
     pub ordinal: u32,
     /// Exact printable operation name.
     pub value: String,
-    /// Four object-index slots in header order.
-    pub object_indices: [Option<u32>; 4],
-    /// Exact serialized object-index tokens in header order.
-    pub raw_object_indices: [Vec<u8>; 4],
+    /// Four nullable references with their exact source encodings.
+    #[serde(flatten)]
+    pub objects: crate::om::header_references::HeaderReferences,
     /// Record-order-independent header identity when every non-null slot
     /// resolves to a unique content-backed offset-store block and the tuple
     /// is unique across the feature-history sections.
@@ -6328,7 +6327,7 @@ fn assign_operation_header_identities(
 ) {
     let keys = labels
         .iter()
-        .map(|label| operation_header_identity_key(label.object_indices, block_identities))
+        .map(|label| operation_header_identity_key(label.objects.values(), block_identities))
         .collect::<Vec<_>>();
     let mut counts = BTreeMap::<String, usize>::new();
     for key in keys.iter().flatten() {
@@ -6377,7 +6376,7 @@ pub fn feature_operation_labels(container: &Container) -> Vec<FeatureOperationLa
                         };
                         record_area.get(start..end).map(<[u8]>::to_vec)
                     });
-                    let raw_object_indices = raw_object_indices
+                    let raw_object_indices: [Vec<u8>; 4] = raw_object_indices
                         .into_iter()
                         .collect::<Option<Vec<_>>>()?
                         .try_into()
@@ -6389,8 +6388,7 @@ pub fn feature_operation_labels(container: &Container) -> Vec<FeatureOperationLa
                         section_link: link.id.clone(),
                         ordinal: ordinal as u32,
                         value: label.value.to_string(),
-                        object_indices: label.object_indices,
-                        raw_object_indices,
+                        objects: crate::om::header_references::HeaderReferences::from_wire(label.object_indices, raw_object_indices.each_ref().map(Vec::as_slice)).ok()?,
                         stable_identity: None,
                         source_offset: entry_offset + label.offset as u64,
                     })

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::native::features::FeatureInputBlock;
+use crate::native::features::{FeatureInputBlock, FeatureOperationLabel};
 use super::{FeatureBodyReference, FeatureOperationBodyWrite, FeatureOperationObjectReference};
 
 #[test]
@@ -481,5 +481,28 @@ fn input_block_reference_preserves_header_encodings_and_rejects_invalid_pairs() 
         let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
         invalid["object_index"] = serde_json::json!(value + 1);
         assert!(serde_json::from_value::<FeatureInputBlock>(invalid).unwrap_err().to_string().contains("object_index"));
+    }
+}
+
+#[test]
+fn operation_label_wire_preserves_nullable_header_tokens() {
+    for identity in ["", r#","stable_identity":"stable""#] {
+        let wire = format!(r#"{{"id":"label","section_link":"section","ordinal":0,"value":"EXTRUDE","object_indices":[null,0,0,0],"raw_object_indices":[[255],[0],[128,0],[144,0,0]]{identity},"source_offset":19}}"#);
+        let label: FeatureOperationLabel = serde_json::from_str(&wire).unwrap();
+        assert_eq!(serde_json::to_string(&label).unwrap(), wire);
+        for (field, slot, value) in [
+            ("object_indices", 0, serde_json::json!(0)),
+            ("object_indices", 1, serde_json::json!(null)),
+            ("object_indices", 2, serde_json::json!(1)),
+            ("raw_object_indices", 0, serde_json::json!([])),
+            ("raw_object_indices", 0, serde_json::json!([0])),
+            ("raw_object_indices", 3, serde_json::json!([144,0])),
+            ("raw_object_indices", 3, serde_json::json!([240,0])),
+            ("raw_object_indices", 3, serde_json::json!([0,0])),
+        ] {
+            let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
+            invalid[field][slot] = value;
+            assert!(serde_json::from_value::<FeatureOperationLabel>(invalid).unwrap_err().to_string().contains("object_indices"));
+        }
     }
 }

@@ -13,8 +13,7 @@ fn label(ordinal: u32, object_indices: [Option<u32>; 4]) -> FeatureOperationLabe
         section_link: "history#0".to_string(),
         ordinal,
         value: "EXTRUDE".to_string(),
-        object_indices,
-        raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+        objects: crate::om::header_references::HeaderReferences(object_indices.map(|value| value.map(|value| crate::om::reference_index::FeatureReferenceToken::from_wire(value, &[u8::try_from(value).unwrap()]).unwrap()))),
         stable_identity: None,
         source_offset: u64::from(ordinal),
     }
@@ -140,11 +139,11 @@ fn operation_header_identity_survives_offset_store_insertion() {
     let first_labels = super::feature_operation_labels(&first);
     let second_labels = super::feature_operation_labels(&second);
     assert_eq!(
-        first_labels[0].object_indices,
+        first_labels[0].objects.values(),
         [Some(1), Some(2), None, None]
     );
     assert_eq!(
-        second_labels[0].object_indices,
+        second_labels[0].objects.values(),
         [Some(2), Some(3), None, None]
     );
     assert_eq!(
