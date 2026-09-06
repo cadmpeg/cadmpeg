@@ -105,3 +105,113 @@ pub(crate) fn sketch_pairs(bytes: &[u8]) -> Vec<Binary64Pair<SketchBinary64PairF
     pairs.sort_by_key(Binary64Pair::offset);
     pairs
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::test_support::shifted_f64_bytes;
+
+    #[test]
+    fn om_datum_plane_object_scalar_pairs_require_the_complete_discriminator() {
+        let mut bytes = vec![0x7f, 0x01, 0x01, 0xff];
+        bytes.extend_from_slice(&[
+            0x6d, 0x00, 0xf0, 0x08, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86,
+            0x02, 0x00, 0x03,
+        ]);
+        bytes.extend_from_slice(&[0x30, 0x24, 0, 0, 0, 0, 0, 0]);
+        bytes.push(0);
+        bytes.extend_from_slice(&[0xb0, 0x34, 0, 0, 0, 0, 0, 0]);
+        let pairs = crate::om::binary64_pair::datum_plane_pairs(&bytes);
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0].offset(), 4);
+        assert_eq!(pairs[0].values().map(|value| value.offset), [22, 31]);
+        assert_eq!(pairs[0].values().map(|value| value.scalar.value()), [10.0, -20.0]);
+        assert_eq!(pairs[0].values()[0].scalar.raw(), [0x30, 0x24, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(pairs[0].values()[1].scalar.raw(), [0xb0, 0x34, 0, 0, 0, 0, 0, 0]);
+        bytes[10] ^= 1;
+        assert!(crate::om::binary64_pair::datum_plane_pairs(&bytes).is_empty());
+    }
+
+    #[test]
+    fn om_datum_csys_scalar_pairs_require_discriminator_and_separator() {
+        let mut bytes = vec![0x2f, 0x2f, 0x41, 0x6d, 0x00, 0xf0];
+        bytes.extend_from_slice(&[
+            0x08, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
+        ]);
+        bytes.extend_from_slice(&[0x30, 0x24, 0, 0, 0, 0, 0, 0]);
+        bytes.push(0);
+        bytes.extend_from_slice(&[0xb0, 0x34, 0, 0, 0, 0, 0, 0]);
+        let pairs = crate::om::binary64_pair::object_pairs(&bytes);
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0].offset(), 6);
+        assert_eq!(pairs[0].values().map(|value| value.offset), [21, 30]);
+        assert_eq!(pairs[0].values().map(|value| value.scalar.value()), [10.0, -20.0]);
+        assert_eq!(pairs[0].values()[0].scalar.raw(), [0x30, 0x24, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(pairs[0].values()[1].scalar.raw(), [0xb0, 0x34, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(pairs[0].discriminator().len(), 15);
+
+        let mut extended = vec![
+            0x08, 0x02, 0x03, 0x01, 0x81, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00,
+            0x03,
+        ];
+        extended.extend_from_slice(&[0x30, 0x24, 0, 0, 0, 0, 0, 0]);
+        extended.push(0);
+        extended.extend_from_slice(&[0xb0, 0x34, 0, 0, 0, 0, 0, 0]);
+        let extended_pairs = crate::om::binary64_pair::object_pairs(&extended);
+        assert_eq!(extended_pairs.len(), 1);
+        assert_eq!(extended_pairs[0].discriminator().len(), 16);
+        assert_eq!(extended_pairs[0].values().map(|value| value.offset), [16, 25]);
+        assert_eq!(
+            extended_pairs[0].values()[0].scalar.raw(),
+            [0x30, 0x24, 0, 0, 0, 0, 0, 0]
+        );
+
+        bytes[29] = 1;
+        assert!(crate::om::binary64_pair::object_pairs(&bytes).is_empty());
+    }
+
+    #[test]
+    fn om_sketch_scalar_pairs_accept_the_repeated_type_frame() {
+        const EPS_SKETCH_SCALAR: f64 = 1e-12;
+
+        let mut bytes = vec![0xaa, 0x00];
+        let discriminator_offset = bytes.len();
+        bytes.extend_from_slice(&[
+            0x14, 0x14, 0x41, 0x00, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02,
+            0x00, 0x03,
+        ]);
+        let first_offset = bytes.len();
+        bytes.extend_from_slice(&shifted_f64_bytes(10.0));
+        let second_offset = bytes.len();
+        bytes.extend_from_slice(&shifted_f64_bytes(-20.0));
+
+        let pairs = crate::om::binary64_pair::sketch_pairs(&bytes);
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0].offset(), discriminator_offset);
+        assert_eq!(pairs[0].values().map(|value| value.offset), [first_offset, second_offset]);
+        assert!((pairs[0].values()[0].scalar.value() - 10.0).abs() < EPS_SKETCH_SCALAR);
+        assert!((pairs[0].values()[1].scalar.value() + 20.0).abs() < EPS_SKETCH_SCALAR);
+        assert_eq!(
+            pairs[0].discriminator(),
+            bytes[discriminator_offset..first_offset].to_vec()
+        );
+        assert!(crate::om::binary64_pair::object_pairs(&bytes).is_empty());
+
+        bytes[discriminator_offset + 1] = 0x15;
+        assert!(crate::om::binary64_pair::sketch_pairs(&bytes).is_empty());
+        bytes[discriminator_offset + 1] = 0x14;
+        bytes.truncate(second_offset + 7);
+        assert!(crate::om::binary64_pair::sketch_pairs(&bytes).is_empty());
+    }
+
+    #[test]
+    fn om_sketch_scalar_pairs_reject_non_binary64_atoms() {
+        let mut bytes = vec![0x00, 0x21, 0x21, 0x41, 0x00];
+        bytes.extend_from_slice(&[
+            0x00, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
+        ]);
+        bytes.extend_from_slice(&[0x30, 0x42, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00]);
+        bytes.extend_from_slice(&[0xd0, 0x29, 0x33, 0x32, 0x50, 0x20, 0x00, 0x00]);
+
+        assert!(crate::om::binary64_pair::sketch_pairs(&bytes).is_empty());
+    }
+}
