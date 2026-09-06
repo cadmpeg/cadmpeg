@@ -248,14 +248,6 @@ fn raw_compact_token<T>(bytes: &[u8], token: CompactToken<T>) -> Vec<u8> {
     bytes[token.offset..token.offset + token.width].to_vec()
 }
 
-/// One decoded value with its exact source token.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LaneToken<T, R = Vec<u8>> {
-    pub value: T,
-    pub offset: usize,
-    pub raw: R,
-}
-
 /// One counted compact-index lane ending in the exact `01 11` marker.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OffsetStoreCountedIndexLane {
@@ -1762,11 +1754,11 @@ pub struct DatumPlaneDoubleReferenceBranch {
 
 /// Complete terminal compact-index lane in a reconstructed datum-plane payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DatumPlaneObjectIndexLane {
+pub struct DatumPlaneObjectIndexLane<O = usize> {
     /// Payload-relative offset of the opening `01` marker.
-    pub offset: usize,
+    pub offset: O,
     /// Ordered non-null compact indices and their payload-relative offsets.
-    pub indices: Vec<LaneToken<u32>>,
+    pub indices: CountedIndexMembers<LocatedCompactIndex<O>, 1>,
     /// Big-endian trailer word after the zero separator.
     pub trailer: u32,
 }
@@ -4839,25 +4831,15 @@ pub fn datum_plane_object_index_lanes(bytes: &[u8]) -> Vec<DatumPlaneObjectIndex
             continue;
         }
         let mut at = start + 2;
-        let mut indices = Vec::with_capacity(usize::from(declared_count) - 1);
-        let mut complete = true;
-        for _ in 1..declared_count {
-            let Some((CompactIndex::Value(value), width)) = bytes.get(at..).and_then(compact_index)
-            else {
-                complete = false;
-                break;
-            };
-            indices.push(LaneToken {
-                value,
-                offset: at,
-                raw: bytes[at..at + width].to_vec(),
-            });
-            at += width;
-        }
-        if !complete || bytes.get(at) != Some(&0x00) || at + 5 != bytes.len() {
+        let indices = (1..declared_count).map(|_| {
+            let token = LocatedCompactIndex::read(&bytes[..scan_at], at)?;
+            at += token.atom.raw().len();
+            Some(token)
+        }).collect::<Option<Vec<_>>>();
+        let Some(indices) = indices.and_then(|indices| CountedIndexMembers::new(indices).ok()) else {
             continue;
-        }
-        let Some(trailer) = View::u32_be_at(bytes, at + 1) else {
+        };
+        let Some(trailer) = View::u32_be_at(bytes, scan_at + 1) else {
             continue;
         };
         lanes.push(DatumPlaneObjectIndexLane {

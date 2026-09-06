@@ -794,20 +794,22 @@ fn om_datum_plane_object_index_lane_ends_at_logical_payload_boundary() {
     let lanes = super::datum_plane_object_index_lanes(&bytes);
     assert_eq!(lanes.len(), 1);
     assert_eq!(lanes[0].offset, 2);
-    assert_eq!(lanes[0].indices.len() + 1, 4);
+    assert_eq!(lanes[0].indices.as_slice().len() + 1, 4);
     assert_eq!(
         lanes[0]
             .indices
+            .as_slice()
             .iter()
-            .map(|token| (token.value, token.offset))
+            .map(|token| (token.atom.value(), token.offset))
             .collect::<Vec<_>>(),
         [(257, 4), (1, 6), (1, 7)]
     );
     assert_eq!(
         lanes[0]
             .indices
+            .as_slice()
             .iter()
-            .map(|token| token.raw.clone())
+            .map(|token| token.atom.raw().to_vec())
             .collect::<Vec<_>>(),
         [vec![0x81, 0x01], vec![1], vec![1]]
     );

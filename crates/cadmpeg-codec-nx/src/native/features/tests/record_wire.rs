@@ -98,6 +98,27 @@ fn datum_plane_payload_derives_terminal_index_count() {
 }
 
 #[test]
+fn datum_plane_payload_retains_checked_compact_tokens() {
+    let json = r#"{"id":"payload","operation_label":"operation","datum_plane_header":"header","data_blocks":["block"],"byte_len":8,"sha256":"hash","block_payload_offsets":[0],"block_byte_lengths":[8],"block_source_offsets":[10],"index_lane_offset":2,"index_lane_declared_count":3,"index_lane_values":[4096,1],"index_lane_raw_indices":[[144,0],[128,1]],"index_lane_value_offsets":[4,6],"index_lane_trailer":0}"#;
+    let payload: super::FeatureDatumPlanePayload = serde_json::from_str(json).unwrap();
+    assert_eq!(serde_json::to_string(&payload).unwrap(), json);
+    for raw in [vec![255], vec![144], vec![144, 0, 0], vec![1]] {
+        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        wire["index_lane_raw_indices"][0] = serde_json::json!(raw);
+        let error = serde_json::from_value::<super::FeatureDatumPlanePayload>(wire).unwrap_err();
+        assert!(error.to_string().contains("index_lane_values[0]"));
+    }
+    for count in [0, 254, 255] {
+        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        wire["index_lane_declared_count"] = serde_json::json!(count + 1);
+        wire["index_lane_values"] = serde_json::json!(vec![2; count]);
+        wire["index_lane_raw_indices"] = serde_json::json!(vec![vec![2]; count]);
+        wire["index_lane_value_offsets"] = serde_json::json!(vec![4; count]);
+        assert_eq!(serde_json::from_value::<super::FeatureDatumPlanePayload>(wire).is_ok(), count == 254);
+    }
+}
+
+#[test]
 fn symbolic_thread_text_frame_derives_marker() {
     let json = r#"{"id":"frame","symbolic_thread":"thread","ordinal":0,"marker":3,"value":"CUT","source_offset":10}"#;
     let frame: super::FeatureSymbolicThreadTextFrame = serde_json::from_str(json).unwrap();

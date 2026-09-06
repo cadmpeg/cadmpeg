@@ -1885,22 +1885,6 @@ pub struct FeatureDatumPlaneCsysIdentityUse {
     pub datum_csys_reference_ordinal: CsysDescriptorSlot,
 }
 
-/// One compact index in a datum-plane terminal index lane.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureDatumPlaneIndexLaneEntry {
-    pub value: u32,
-    pub raw: Vec<u8>,
-    pub offset: u64,
-}
-
-/// Unique terminal compact-index lane of a reconstructed datum-plane payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureDatumPlaneIndexLane {
-    pub offset: u64,
-    pub trailer: u32,
-    pub entries: Vec<FeatureDatumPlaneIndexLaneEntry>,
-}
-
 /// Exact logical datum-plane object payload reconstructed in lane order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
@@ -1917,7 +1901,7 @@ pub struct FeatureDatumPlanePayload {
     /// Ordered source blocks and the hash of their concatenated bytes.
     pub content: FeaturePayloadContent<Vec<FeaturePayloadBlock>>,
     /// Unique terminal index lane, when the payload has exactly one.
-    pub index_lane: Option<FeatureDatumPlaneIndexLane>,
+    pub index_lane: Option<crate::om::DatumPlaneObjectIndexLane<u64>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1954,10 +1938,10 @@ impl From<FeatureDatumPlanePayload> for FeatureDatumPlanePayloadWire {
             None => (None, None, Vec::new(), Vec::new(), Vec::new(), None),
             Some(lane) => (
                 Some(lane.offset),
-                Some(lane.entries.len() + 1),
-                lane.entries.iter().map(|entry| entry.value).collect(),
-                lane.entries.iter().map(|entry| entry.raw.clone()).collect(),
-                lane.entries.iter().map(|entry| entry.offset).collect(),
+                Some(usize::from(lane.indices.declared_count())),
+                lane.indices.as_slice().iter().map(|entry| entry.atom.value()).collect(),
+                lane.indices.as_slice().iter().map(|entry| entry.atom.raw().to_vec()).collect(),
+                lane.indices.as_slice().iter().map(|entry| entry.offset).collect(),
                 Some(lane.trailer),
             ),
         };
@@ -1991,30 +1975,27 @@ impl TryFrom<FeatureDatumPlanePayloadWire> for FeatureDatumPlanePayload {
             ) {
                 (None, None, None, true) => None,
                 (Some(offset), Some(declared_count), Some(trailer), _) => {
-                    if !(2..=255).contains(&declared_count)
-                        || declared_count != wire.index_lane_values.len() + 1
+                    if declared_count != wire.index_lane_values.len() + 1
                     {
                         return Err("index_lane_declared_count must fit a byte and equal the nonempty entry count plus one".to_owned());
                     }
                     if wire.index_lane_values.len() != wire.index_lane_raw_indices.len()
                         || wire.index_lane_values.len() != wire.index_lane_value_offsets.len()
                     {
-                        return Err("datum-plane index lane entry vectors disagree".to_owned());
+                        return Err("index_lane_values/index_lane_raw_indices/index_lane_value_offsets differ in length".to_owned());
                     }
-                    Some(FeatureDatumPlaneIndexLane {
+                    let indices = wire.index_lane_values.into_iter()
+                        .zip(wire.index_lane_raw_indices).zip(wire.index_lane_value_offsets)
+                        .enumerate().map(|(slot, ((value, raw), offset))| Ok(LocatedCompactIndex {
+                            atom: CompactIndexAtom::from_wire(value, &raw)
+                                .map_err(|error| format!("index_lane_values[{slot}]: {error}"))?,
+                            offset,
+                        })).collect::<Result<Vec<_>, String>>()?;
+                    Some(crate::om::DatumPlaneObjectIndexLane {
                         offset,
                         trailer,
-                        entries: wire
-                            .index_lane_values
-                            .into_iter()
-                            .zip(wire.index_lane_raw_indices)
-                            .zip(wire.index_lane_value_offsets)
-                            .map(|((value, raw), offset)| FeatureDatumPlaneIndexLaneEntry {
-                                value,
-                                raw,
-                                offset,
-                            })
-                            .collect(),
+                        indices: CountedIndexMembers::new(indices)
+                            .map_err(|error| format!("index_lane_declared_count: {error}"))?,
                     })
                 }
                 _ => return Err(
@@ -8218,28 +8199,20 @@ pub fn feature_datum_plane_payloads(
                 .collect::<Vec<_>>();
             let (payload, content) = FeaturePayloadContent::from_source(data_blocks, &blocks)?;
             let lanes = crate::om::datum_plane_object_index_lanes(&payload);
-            let lane = match lanes.as_slice() {
-                [lane] => Some(lane),
-                _ => None,
-            };
+            let lane = <[_; 1]>::try_from(lanes).ok().map(|[lane]| lane);
             let key = header.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
             Some(FeatureDatumPlanePayload {
                 id: format!("nx:feature-history:datum-plane-payload#{key}"),
                 operation_label: header.operation_label.clone(),
                 datum_plane_header: header.id.clone(),
                 content,
-                index_lane: lane.map(|lane| FeatureDatumPlaneIndexLane {
+                index_lane: lane.map(|lane| crate::om::DatumPlaneObjectIndexLane {
                     offset: lane.offset as u64,
                     trailer: lane.trailer,
-                    entries: lane
-                        .indices
-                        .iter()
-                        .map(|token| FeatureDatumPlaneIndexLaneEntry {
-                            value: token.value,
-                            raw: token.raw.clone(),
-                            offset: token.offset as u64,
-                        })
-                        .collect(),
+                    indices: lane.indices.map(|token| LocatedCompactIndex {
+                        atom: token.atom,
+                        offset: token.offset as u64,
+                    }),
                 }),
             })
         })
