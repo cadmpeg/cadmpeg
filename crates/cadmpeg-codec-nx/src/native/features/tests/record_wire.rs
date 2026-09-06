@@ -624,4 +624,3 @@ fn binary64_pair_wire_requires_owner_form_and_complete_payload_extent() {
         }
     }
 }
-
