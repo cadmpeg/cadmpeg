@@ -45,11 +45,12 @@ use crate::printable_string::PrintableString;
 use cadmpeg_core::decode::{alloc_filled, View};
 
 pub(crate) mod compact;
-use compact::{CompactIndexAtom, LocatedCompactIndex, NullableCompactIndex, WrappedCompactIndex};
+use compact::{CompactIndexAtom, LocatedCompactIndex, NullableCompactIndex};
 pub(crate) mod color;
 use color::{ColorComponent, PaletteIndex, BACKGROUND_NAME, PALETTE_SIZE};
 pub(crate) mod branch_items;
 pub(crate) mod discriminators;
+pub(crate) mod extrude_32;
 pub(crate) mod extrude_profile;
 pub(crate) mod surface_branches;
 use branch_items::BranchItems;
@@ -991,23 +992,6 @@ pub struct OperationBodyReferenceLane {
     pub branch: discriminators::OperationBodyReferenceBranch,
     /// Ordered non-null lane values with their encoding.
     pub values: OperationBodyReferenceLaneValues,
-}
-
-/// Structured `32` branch following an extrusion body reference.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ExtrudePayload32Branch {
-    /// Absolute offset of the `32` branch marker.
-    pub offset: usize,
-    /// Finite shifted-IEEE scalar following the branch marker.
-    pub scalar: ShiftedBinary64,
-    /// Fixed-width wrapped compact indices with their source words and offsets.
-    pub atoms: Vec<LocatedCompactIndex<usize, WrappedCompactIndex>>,
-    /// Ordered values in the first compact-index lane.
-    pub first_indices: Vec<LocatedCompactIndex>,
-    /// Ordered values in the second compact-index lane.
-    pub second_indices: Vec<LocatedCompactIndex>,
-    /// Exact required terminal reference and its absolute source offset.
-    pub terminal: PayloadObjectReference,
 }
 
 /// Self-framed NX parameter name in one bounded expression declaration record.
@@ -2650,52 +2634,6 @@ fn operation_body_reference_lane_values<T>(
     (record.bytes().get(at..at + 4) == Some(&[0x00, 0x00, 0x0b, 0x00])).then_some(values)
 }
 
-/// Decode the structured `32` branch following an extrusion body field.
-pub fn extrude_payload_32_branch(record: OperationBodyInput<'_>) -> Option<ExtrudePayload32Branch> {
-    if record.name() != "EXTRUDE" {
-        return None;
-    }
-    let reference = operation_body_reference(record)?;
-    let token = reference.offset - record.offset();
-    let end = token + reference.object_index.raw().len();
-    if record.bytes().get(end..end + 4) != Some(&[0xff, 0x32, 0x00, 0x00]) {
-        return None;
-    }
-    let branch_at = end + 1;
-    let scalar = ShiftedBinary64::read(record.bytes().get(end + 4..end + 12)?)?;
-    let mut at = end + 12;
-    let mut atoms = counted_u32_atoms(record.bytes(), &mut at)?;
-    for token in &mut atoms {
-        token.offset += record.offset();
-    }
-    let mut first = counted_compact_values(record.bytes(), &mut at)?;
-    let mut second = counted_compact_values(record.bytes(), &mut at)?;
-    for token in first.iter_mut().chain(&mut second) {
-        token.offset += record.offset();
-    }
-    if record.bytes().get(at..at + 2) != Some(&[0x00, 0x01]) {
-        return None;
-    }
-    let terminal_token = ReferenceIndexToken::read_feature(record.bytes().get(at + 2..)?)?;
-    let next = at + 2 + terminal_token.raw().len();
-    if terminal_token.value() != reference.object_index.value()
-        || record.bytes().get(next..next + 2) != Some(&[0x00, 0x00])
-    {
-        return None;
-    }
-    Some(ExtrudePayload32Branch {
-        offset: record.offset() + branch_at,
-        scalar,
-        atoms,
-        first_indices: first,
-        second_indices: second,
-        terminal: PayloadObjectReference {
-            token: terminal_token,
-            offset: record.offset() + at + 2,
-        },
-    })
-}
-
 /// Decode one complete datum-plane descriptor block.
 pub fn datum_plane_descriptor_block(bytes: &[u8]) -> Option<plane_descriptor::PlaneDescriptor> {
     plane_descriptor::PlaneDescriptor::read(bytes)
@@ -2942,45 +2880,6 @@ pub fn data_block_object_frames(bytes: &[u8]) -> Vec<LocatedCompactIndex> {
         offset += width + DISCRIMINATOR.len();
     }
     references
-}
-
-fn counted_u32_atoms(
-    bytes: &[u8],
-    at: &mut usize,
-) -> Option<Vec<LocatedCompactIndex<usize, WrappedCompactIndex>>> {
-    if bytes.get(*at) != Some(&0x01) {
-        return None;
-    }
-    let count = usize::from(*bytes.get(*at + 1)?);
-    if count < 2 {
-        return None;
-    }
-    *at += 2;
-    let mut values = Vec::with_capacity(count - 1);
-    for _ in 1..count {
-        let atom = WrappedCompactIndex::read(View::u32_be_at(bytes, *at)?)?;
-        values.push(LocatedCompactIndex { atom, offset: *at });
-        *at += 4;
-    }
-    Some(values)
-}
-
-fn counted_compact_values(bytes: &[u8], at: &mut usize) -> Option<Vec<LocatedCompactIndex>> {
-    if bytes.get(*at) != Some(&0x01) {
-        return None;
-    }
-    let count = usize::from(*bytes.get(*at + 1)?);
-    if count < 2 {
-        return None;
-    }
-    *at += 2;
-    let mut values = Vec::with_capacity(count - 1);
-    for _ in 1..count {
-        let token = LocatedCompactIndex::read(bytes, *at)?;
-        *at += token.atom.raw().len();
-        values.push(token);
-    }
-    Some(values)
 }
 
 /// Decode the unique `04, length, p<decimal>[_qualifier], 00` declaration name.

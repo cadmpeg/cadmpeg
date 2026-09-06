@@ -1179,28 +1179,30 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
         data_block: Some("block#100".to_string()),
         source_offset: 10,
     };
-    let branch = super::FeatureExtrudePayload32Branch {
+    let branch = crate::native::features::extrude_32::FeatureExtrudePayload32Branch {
         id: "branch".to_string(),
         operation_label: "operation".to_string(),
-        scalar: crate::om::scalar::ShiftedBinary64::read(&[0x2f, 0xf0, 0, 0, 0, 0, 0, 0]).unwrap(),
-        atoms: vec![super::ConstructionReference {
-            token: crate::om::compact::WrappedCompactIndex::from_wire(1, 0x3d80_0100).unwrap(),
-            source_offset: 20,
-            data_block: Some("block#1".to_string()),
-        }],
-        first_indices: vec![super::ConstructionReference {
-            token: crate::om::compact::CompactIndexAtom::from_wire(2, &[2]).unwrap(),
-            source_offset: 21,
-            data_block: Some("block#2".to_string()),
-        }],
-        second_indices: vec![super::ConstructionReference {
-            token: crate::om::compact::CompactIndexAtom::from_wire(3, &[3]).unwrap(),
-            source_offset: 22,
-            data_block: Some("block#3".to_string()),
-        }],
-        terminal: crate::om::reference_index::ReferenceIndexToken::from_wire(42, &[42]).unwrap(),
-        terminal_source_offset: 23,
-        source_offset: 20,
+        frame: crate::om::extrude_32::Extrude32Frame::new(
+            20,
+            crate::om::scalar::ShiftedBinary64::read(&[0x2f, 0xf0, 0, 0, 0, 0, 0, 0]).unwrap(),
+            crate::om::branch_items::BranchItems::new(vec![(
+                crate::om::compact::WrappedCompactIndex::from_wire(1, 0x3d80_0100).unwrap(),
+                Some("block#1".to_string()),
+            )])
+            .unwrap(),
+            crate::om::branch_items::BranchItems::new(vec![(
+                crate::om::compact::CompactIndexAtom::from_wire(2, &[2]).unwrap(),
+                Some("block#2".to_string()),
+            )])
+            .unwrap(),
+            crate::om::branch_items::BranchItems::new(vec![(
+                crate::om::compact::CompactIndexAtom::from_wire(3, &[3]).unwrap(),
+                Some("block#3".to_string()),
+            )])
+            .unwrap(),
+            crate::om::reference_index::FeatureReferenceToken::from_wire(42, &[42]).unwrap(),
+        )
+        .unwrap(),
     };
     let constructions = super::feature_extrude_32_constructions(
         std::slice::from_ref(&reference),
@@ -1211,6 +1213,7 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
     assert_eq!(
         constructions[0]
             .profiles
+            .as_slice()
             .iter()
             .map(|member| member.reference.as_str())
             .collect::<Vec<_>>(),
@@ -1219,14 +1222,15 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
     assert_eq!(
         constructions[0]
             .profiles
+            .as_slice()
             .iter()
             .map(|member| member.data_block.as_str())
             .collect::<Vec<_>>(),
         ["block#100"]
     );
-    assert_eq!(constructions[0].atom_data_blocks, ["block#1"]);
-    assert_eq!(constructions[0].first_data_blocks, ["block#2"]);
-    assert_eq!(constructions[0].second_data_blocks, ["block#3"]);
+    assert_eq!(constructions[0].atom_data_blocks.as_slice(), ["block#1"]);
+    assert_eq!(constructions[0].first_data_blocks.as_slice(), ["block#2"]);
+    assert_eq!(constructions[0].second_data_blocks.as_slice(), ["block#3"]);
 
     assert!(super::feature_extrude_32_constructions(
         std::slice::from_ref(&reference),
@@ -1241,7 +1245,10 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
             .is_empty()
     );
     let mut unresolved_lane = branch;
-    unresolved_lane.first_indices[0].data_block = None;
+    unresolved_lane.frame =
+        unresolved_lane
+            .frame
+            .map_bindings(|index, binding| if index == 2 { None } else { binding });
     assert!(super::feature_extrude_32_constructions(
         &[super::FeatureExtrudeProfileReference {
             id: "profile#0".to_string(),

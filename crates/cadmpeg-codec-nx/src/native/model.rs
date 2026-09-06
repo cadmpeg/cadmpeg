@@ -16,7 +16,9 @@ use crate::native::features::delete::{
     feature_delete_construction_payloads, feature_delete_reference_fields,
     FeatureDeleteConstructionPayload, FeatureDeleteReferenceField,
 };
-use crate::native::features::extrude_32::FeatureExtrude32Construction;
+use crate::native::features::extrude_32::{
+    FeatureExtrude32Construction, FeatureExtrudePayload32Branch,
+};
 use crate::native::features::fset::{
     feature_fset_construction_payloads, feature_fset_reference_graphs, FeatureFsetReferenceGraph,
 };

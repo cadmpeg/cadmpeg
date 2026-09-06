@@ -6,7 +6,7 @@ pub(crate) mod draft;
 pub(crate) mod extrude_32;
 pub(crate) mod fset;
 use self::fset::FeatureFsetReferenceGroup;
-use extrude_32::FeatureExtrude32Construction;
+use extrude_32::{FeatureExtrude32Construction, FeatureExtrudePayload32Branch};
 pub(crate) mod holes;
 pub(crate) mod pattern;
 pub(crate) mod payload_name;
@@ -42,7 +42,6 @@ use crate::om::binary64_pair::{
 use crate::om::compact::CompactIndexAtom;
 use crate::om::compact::CountedIndexMembers;
 use crate::om::compact::LocatedCompactIndex;
-use crate::om::compact::WrappedCompactIndex;
 use crate::om::fixed::Q155;
 use crate::om::nonempty::NonEmpty;
 use crate::om::reference_index::{PayloadIndexToken, ReferenceIndexToken};
@@ -3460,229 +3459,6 @@ impl TryFrom<FeatureExtrudeConstructionProfileWire> for FeatureExtrudeConstructi
                     },
                 )
                 .collect(),
-        })
-    }
-}
-
-/// Structured `32` branch following an extrusion body-reference field.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureExtrudePayload32BranchWire",
-    into = "FeatureExtrudePayload32BranchWire"
-)]
-pub struct FeatureExtrudePayload32Branch {
-    pub id: String,
-    pub operation_label: String,
-    pub scalar: ShiftedBinary64,
-    pub atoms: Vec<ConstructionReference<Option<String>, WrappedCompactIndex>>,
-    pub first_indices: Vec<ConstructionReference<Option<String>, CompactIndexAtom>>,
-    pub second_indices: Vec<ConstructionReference<Option<String>, CompactIndexAtom>>,
-    pub terminal: ReferenceIndexToken,
-    pub terminal_source_offset: u64,
-    pub source_offset: u64,
-}
-
-#[derive(Serialize, Deserialize)]
-struct FeatureExtrudePayload32BranchWire {
-    /// Globally unique branch identity.
-    id: String,
-    /// Owning `EXTRUDE` operation label.
-    operation_label: String,
-    /// Body object index anchoring the branch.
-    body_object_index: u32,
-    /// Finite shifted-IEEE scalar following the branch marker.
-    scalar: f64,
-    /// Exact shifted-binary64 scalar encoding.
-    raw_scalar: [u8; 8],
-    /// Ordered fixed-width big-endian atoms in the first counted lane.
-    atoms_be: Vec<u32>,
-    /// Absolute source offsets of the fixed-width atoms in lane order.
-    atom_source_offsets: Vec<u64>,
-    /// Compact indices wrapped by the fixed-width atoms.
-    atom_indices: Vec<u32>,
-    /// Unique offset-only data blocks addressed by the atom indices.
-    atom_data_blocks: Vec<Option<String>>,
-    /// Ordered values in the first compact-index lane.
-    first_indices: Vec<u32>,
-    /// Exact compact-index tokens in the first lane.
-    raw_first_indices: Vec<Vec<u8>>,
-    /// Absolute source offsets of the first-lane tokens.
-    first_index_source_offsets: Vec<u64>,
-    /// Unique offset-only data blocks addressed by the first lane.
-    first_data_blocks: Vec<Option<String>>,
-    /// Ordered values in the second compact-index lane.
-    second_indices: Vec<u32>,
-    /// Exact compact-index tokens in the second lane.
-    raw_second_indices: Vec<Vec<u8>>,
-    /// Absolute source offsets of the second-lane tokens.
-    second_index_source_offsets: Vec<u64>,
-    /// Unique offset-only data blocks addressed by the second lane.
-    second_data_blocks: Vec<Option<String>>,
-    /// Object index in the terminal field.
-    terminal_object_index: u32,
-    /// Exact serialized terminal object-index token.
-    raw_terminal_object_index: Vec<u8>,
-    /// Absolute file offset of the terminal object-index token.
-    terminal_source_offset: u64,
-    /// Absolute file offset of the `32` branch marker.
-    source_offset: u64,
-}
-
-impl From<FeatureExtrudePayload32Branch> for FeatureExtrudePayload32BranchWire {
-    fn from(branch: FeatureExtrudePayload32Branch) -> Self {
-        Self {
-            id: branch.id,
-            operation_label: branch.operation_label,
-            body_object_index: branch.terminal.value(),
-            scalar: branch.scalar.value(),
-            raw_scalar: branch.scalar.raw(),
-            atom_indices: branch
-                .atoms
-                .iter()
-                .map(|token| token.token.value())
-                .collect(),
-            atoms_be: branch.atoms.iter().map(|token| token.token.raw()).collect(),
-            atom_source_offsets: branch
-                .atoms
-                .iter()
-                .map(|token| token.source_offset)
-                .collect(),
-            atom_data_blocks: branch
-                .atoms
-                .iter()
-                .map(|token| token.data_block.clone())
-                .collect(),
-            first_indices: branch
-                .first_indices
-                .iter()
-                .map(|token| token.token.value())
-                .collect(),
-            raw_first_indices: branch
-                .first_indices
-                .iter()
-                .map(|token| token.token.raw().to_vec())
-                .collect(),
-            first_index_source_offsets: branch
-                .first_indices
-                .iter()
-                .map(|token| token.source_offset)
-                .collect(),
-            first_data_blocks: branch
-                .first_indices
-                .iter()
-                .map(|token| token.data_block.clone())
-                .collect(),
-            second_indices: branch
-                .second_indices
-                .iter()
-                .map(|token| token.token.value())
-                .collect(),
-            raw_second_indices: branch
-                .second_indices
-                .iter()
-                .map(|token| token.token.raw().to_vec())
-                .collect(),
-            second_index_source_offsets: branch
-                .second_indices
-                .iter()
-                .map(|token| token.source_offset)
-                .collect(),
-            second_data_blocks: branch
-                .second_indices
-                .iter()
-                .map(|token| token.data_block.clone())
-                .collect(),
-            terminal_object_index: branch.terminal.value(),
-            raw_terminal_object_index: branch.terminal.raw().to_vec(),
-            terminal_source_offset: branch.terminal_source_offset,
-            source_offset: branch.source_offset,
-        }
-    }
-}
-
-impl TryFrom<FeatureExtrudePayload32BranchWire> for FeatureExtrudePayload32Branch {
-    type Error = String;
-
-    fn try_from(wire: FeatureExtrudePayload32BranchWire) -> Result<Self, Self::Error> {
-        if wire.atom_indices.len() != wire.atoms_be.len()
-            || wire.atom_indices.len() != wire.atom_source_offsets.len()
-            || wire.atom_indices.len() != wire.atom_data_blocks.len()
-        {
-            return Err("extrusion atoms columns must have equal lengths".into());
-        }
-        if wire.first_indices.len() != wire.raw_first_indices.len()
-            || wire.first_indices.len() != wire.first_index_source_offsets.len()
-            || wire.first_indices.len() != wire.first_data_blocks.len()
-        {
-            return Err("extrusion first_indices columns must have equal lengths".into());
-        }
-        if wire.second_indices.len() != wire.raw_second_indices.len()
-            || wire.second_indices.len() != wire.second_index_source_offsets.len()
-            || wire.second_indices.len() != wire.second_data_blocks.len()
-        {
-            return Err("extrusion second_indices columns must have equal lengths".into());
-        }
-        if wire.body_object_index != wire.terminal_object_index {
-            return Err("body_object_index must match terminal_object_index".into());
-        }
-        Ok(Self {
-            id: wire.id,
-            operation_label: wire.operation_label,
-            scalar: ShiftedBinary64::from_wire(wire.scalar, wire.raw_scalar)
-                .map_err(|error| format!("scalar/raw_scalar: {error}"))?,
-            atoms: wire
-                .atom_indices
-                .into_iter()
-                .zip(wire.atoms_be)
-                .zip(wire.atom_source_offsets)
-                .zip(wire.atom_data_blocks)
-                .map(|(((value, raw), source_offset), data_block)| {
-                    Ok(ConstructionReference {
-                        token: WrappedCompactIndex::from_wire(value, raw)
-                            .map_err(|error| format!("atom_indices/atoms_be: {error}"))?,
-                        source_offset,
-                        data_block,
-                    })
-                })
-                .collect::<Result<_, String>>()?,
-            first_indices: wire
-                .first_indices
-                .into_iter()
-                .zip(wire.raw_first_indices)
-                .zip(wire.first_index_source_offsets)
-                .zip(wire.first_data_blocks)
-                .map(|(((value, raw), source_offset), data_block)| {
-                    Ok(ConstructionReference {
-                        token: CompactIndexAtom::from_wire(value, &raw)
-                            .map_err(|error| format!("first_indices/raw_first_indices: {error}"))?,
-                        source_offset,
-                        data_block,
-                    })
-                })
-                .collect::<Result<_, String>>()?,
-            second_indices: wire
-                .second_indices
-                .into_iter()
-                .zip(wire.raw_second_indices)
-                .zip(wire.second_index_source_offsets)
-                .zip(wire.second_data_blocks)
-                .map(|(((value, raw), source_offset), data_block)| {
-                    Ok(ConstructionReference {
-                        token: CompactIndexAtom::from_wire(value, &raw).map_err(|error| {
-                            format!("second_indices/raw_second_indices: {error}")
-                        })?,
-                        source_offset,
-                        data_block,
-                    })
-                })
-                .collect::<Result<_, String>>()?,
-            terminal: ReferenceIndexToken::from_wire(
-                wire.terminal_object_index,
-                &wire.raw_terminal_object_index,
-            )
-            .map_err(|error| format!("terminal_object_index/raw_terminal_object_index: {error}"))?,
-            terminal_source_offset: wire.terminal_source_offset,
-            source_offset: wire.source_offset,
         })
     }
 }
@@ -7863,35 +7639,15 @@ pub fn feature_extrude_payload_32_branches(
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(branch) = crate::om::extrude_payload_32_branch(record.body_view()) else {
+            let Some(frame) = crate::om::extrude_32::extrude_payload_32_branch(record.body_view())
+                .and_then(|frame| frame.relocate(entry_offset))
+            else {
                 return;
             };
             branches.push(FeatureExtrudePayload32Branch {
-                id: format!(
-                    "nx:feature-history:extrude-payload-32-branch#{section_key}-{operation_ordinal:010}"
-                ),
-                operation_label: format!(
-                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
-                ),
-                scalar: branch.scalar,
-                atoms: branch.atoms.into_iter().map(|token| ConstructionReference {
-                    token: token.atom,
-                    source_offset: entry_offset + token.offset as u64,
-                    data_block: unique_offset_data_block(&indexed, token.atom.value()),
-                }).collect(),
-                first_indices: branch.first_indices.into_iter().map(|token| ConstructionReference {
-                    token: token.atom,
-                    source_offset: entry_offset + token.offset as u64,
-                    data_block: unique_offset_data_block(&indexed, token.atom.value()),
-                }).collect(),
-                second_indices: branch.second_indices.into_iter().map(|token| ConstructionReference {
-                    token: token.atom,
-                    source_offset: entry_offset + token.offset as u64,
-                    data_block: unique_offset_data_block(&indexed, token.atom.value()),
-                }).collect(),
-                terminal: branch.terminal.token,
-                terminal_source_offset: entry_offset + branch.terminal.offset as u64,
-                source_offset: entry_offset + branch.offset as u64,
+                id: format!("nx:feature-history:extrude-payload-32-branch#{section_key}-{operation_ordinal:010}"),
+                operation_label: format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"),
+                frame: frame.map_bindings(|index, ()| unique_offset_data_block(&indexed, index)),
             });
         },
     );
@@ -7920,10 +7676,11 @@ pub fn feature_extrude_32_constructions(
             .filter(|reference| reference.operation_label == operation_label)
             .collect::<Vec<_>>();
         profile.sort_by_key(|reference| reference.ordinal);
-        let Some(profile) = NonEmpty::new(profile) else {
+        let Ok(profile) = crate::om::branch_items::BranchItems::new(profile) else {
             continue;
         };
         if profile
+            .as_slice()
             .iter()
             .enumerate()
             .any(|(ordinal, reference)| reference.ordinal != ordinal as u32)
@@ -7931,7 +7688,7 @@ pub fn feature_extrude_32_constructions(
             continue;
         }
         let Some(profiles) = profile
-            .map(|reference| {
+            .map_indexed(|_, reference| {
                 Some(FeatureConstructionMember {
                     reference: reference.id.clone(),
                     data_block: reference.data_block.clone()?,
@@ -7942,26 +7699,29 @@ pub fn feature_extrude_32_constructions(
             continue;
         };
         let Some(atom_data_blocks) = branch
-            .atoms
-            .iter()
-            .map(|token| token.data_block.clone())
-            .collect()
+            .frame
+            .atom_members()
+            .clone()
+            .map_indexed(|_, (_, binding)| binding)
+            .transpose()
         else {
             continue;
         };
         let Some(first_data_blocks) = branch
-            .first_indices
-            .iter()
-            .map(|token| token.data_block.clone())
-            .collect()
+            .frame
+            .first_members()
+            .clone()
+            .map_indexed(|_, (_, binding)| binding)
+            .transpose()
         else {
             continue;
         };
         let Some(second_data_blocks) = branch
-            .second_indices
-            .iter()
-            .map(|token| token.data_block.clone())
-            .collect()
+            .frame
+            .second_members()
+            .clone()
+            .map_indexed(|_, (_, binding)| binding)
+            .transpose()
         else {
             continue;
         };
@@ -7971,7 +7731,7 @@ pub fn feature_extrude_32_constructions(
                 .replacen("extrude-payload-32-branch", "extrude-32-construction", 1),
             operation_label: branch.operation_label.clone(),
             branch: branch.id.clone(),
-            body_object_index: branch.terminal.value(),
+            body_object_index: branch.frame.terminal().value(),
             profiles,
             atom_data_blocks,
             first_data_blocks,

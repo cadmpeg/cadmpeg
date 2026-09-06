@@ -42,6 +42,12 @@ impl<T> BranchItems<T> {
     }
 }
 
+impl<T> BranchItems<Option<T>> {
+    pub(crate) fn transpose(self) -> Option<BranchItems<T>> {
+        Some(BranchItems(self.0.into_iter().collect::<Option<Vec<_>>>()?))
+    }
+}
+
 impl<'de, T: Deserialize<'de>> Deserialize<'de> for BranchItems<T> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         Self::new(Vec::deserialize(deserializer)?).map_err(serde::de::Error::custom)
@@ -66,5 +72,18 @@ mod tests {
             let json = serde_json::to_string(&vec![0; len]).unwrap();
             assert!(serde_json::from_str::<BranchItems<u8>>(&json).is_err());
         }
+    }
+    #[test]
+    fn resolution_retains_the_declared_count_or_rejects_the_whole_lane() {
+        let items = BranchItems::new(vec![Some(0), Some(1)])
+            .unwrap()
+            .transpose()
+            .unwrap();
+        assert_eq!(items.declared_count(), 3);
+        assert_eq!(items.as_slice(), [0, 1]);
+        assert!(BranchItems::new(vec![Some(0), None])
+            .unwrap()
+            .transpose()
+            .is_none());
     }
 }

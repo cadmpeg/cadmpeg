@@ -1272,90 +1272,81 @@ fn om_extrude_body_32_branch_decodes_counted_lanes() {
     let bytes = b"\x01\x02\x10\x73\xff\x32\x00\x00\x30\x77\x7e\x14\x7a\xe1\x47\xb3\x01\x03\x3d\x82\x56\x00\x3d\x82\x57\x00\x01\x04\x80\x2b\x80\x2d\x80\x2c\x01\x03\x80\x2e\x80\x77\x00\x01\x73\x00\x00";
     let record =
         crate::om::operation_record::OperationBodyInput::new(bytes, 100, 0, label).unwrap();
-    let branch = super::extrude_payload_32_branch(record).unwrap();
-    assert_eq!(branch.offset, 105);
-    assert_eq!(branch.terminal.token.value(), 115);
-    assert!(branch.scalar.value().is_finite());
-    assert_eq!(branch.scalar.raw(), bytes[8..16]);
+    let branch = crate::om::extrude_32::extrude_payload_32_branch(record).unwrap();
+    assert_eq!(branch.origin(), 105);
+    assert_eq!(branch.terminal().value(), 115);
+    assert!(branch.scalar().value().is_finite());
+    assert_eq!(branch.scalar().raw(), bytes[8..16]);
     assert_eq!(
         branch
-            .atoms
-            .iter()
-            .map(|token| token.atom.raw())
+            .atoms()
+            .map(|(token, _, _)| token.raw())
             .collect::<Vec<_>>(),
         [0x3d82_5600, 0x3d82_5700]
     );
     assert_eq!(
         branch
-            .atoms
-            .iter()
-            .map(|token| token.offset)
+            .atoms()
+            .map(|(_, _, offset)| offset)
             .collect::<Vec<_>>(),
         [118, 122]
     );
     assert_eq!(
         branch
-            .atoms
-            .iter()
-            .map(|token| token.atom.value())
+            .atoms()
+            .map(|(token, _, _)| token.value())
             .collect::<Vec<_>>(),
         [598, 599]
     );
     assert_eq!(
         branch
-            .first_indices
-            .iter()
-            .map(|token| token.atom.value())
+            .first_indices()
+            .map(|(token, _, _)| token.value())
             .collect::<Vec<_>>(),
         [43, 45, 44]
     );
     assert_eq!(
         branch
-            .first_indices
-            .iter()
-            .map(|token| token.atom.raw().to_vec())
+            .first_indices()
+            .map(|(token, _, _)| token.raw().to_vec())
             .collect::<Vec<_>>(),
         [vec![0x80, 0x2b], vec![0x80, 0x2d], vec![0x80, 0x2c]]
     );
     assert_eq!(
         branch
-            .first_indices
-            .iter()
-            .map(|token| token.offset)
+            .first_indices()
+            .map(|(_, _, offset)| offset)
             .collect::<Vec<_>>(),
         [128, 130, 132]
     );
     assert_eq!(
         branch
-            .second_indices
-            .iter()
-            .map(|token| token.atom.value())
+            .second_indices()
+            .map(|(token, _, _)| token.value())
             .collect::<Vec<_>>(),
         [46, 119]
     );
     assert_eq!(
         branch
-            .second_indices
-            .iter()
-            .map(|token| token.atom.raw().to_vec())
+            .second_indices()
+            .map(|(token, _, _)| token.raw().to_vec())
             .collect::<Vec<_>>(),
         [vec![0x80, 0x2e], vec![0x80, 0x77]]
     );
     assert_eq!(
         branch
-            .second_indices
-            .iter()
-            .map(|token| token.offset)
+            .second_indices()
+            .map(|(_, _, offset)| offset)
             .collect::<Vec<_>>(),
         [136, 138]
     );
-    assert_eq!(branch.terminal.token.value(), 115);
-    assert_eq!(branch.terminal.token.raw(), [0x73]);
-    assert_eq!(branch.terminal.offset, 142);
+    assert_eq!(branch.terminal().value(), 115);
+    assert_eq!(branch.terminal().raw(), [0x73]);
+    assert_eq!(branch.terminal_offset(), 142);
 
     let mut invalid = bytes.to_vec();
     invalid[36] = 0xff;
-    assert!(super::extrude_payload_32_branch(
+    assert!(crate::om::extrude_32::extrude_payload_32_branch(
         crate::om::operation_record::OperationBodyInput::new(
             &invalid,
             record.offset(),
@@ -1368,7 +1359,7 @@ fn om_extrude_body_32_branch_decodes_counted_lanes() {
 
     let mut invalid_atom = bytes.to_vec();
     invalid_atom[18] = 0x3c;
-    assert!(super::extrude_payload_32_branch(
+    assert!(crate::om::extrude_32::extrude_payload_32_branch(
         crate::om::operation_record::OperationBodyInput::new(
             &invalid_atom,
             record.offset(),
@@ -1381,7 +1372,7 @@ fn om_extrude_body_32_branch_decodes_counted_lanes() {
 
     let mut wrong_terminal_body = bytes.to_vec();
     wrong_terminal_body[43] = 0x72;
-    assert!(super::extrude_payload_32_branch(
+    assert!(crate::om::extrude_32::extrude_payload_32_branch(
         crate::om::operation_record::OperationBodyInput::new(
             &wrong_terminal_body,
             record.offset(),
