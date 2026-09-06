@@ -544,15 +544,7 @@ fn native_procedural_surface_definition(
             }
             bytes.push(0x10);
         }
-        ProceduralSurfaceDefinition::Compound {
-            parameters,
-            components,
-        } => {
-            if parameters.len() != components.len() {
-                return Err(CodecError::Malformed(
-                    "comp_spl_sur requires one parameter per component surface".into(),
-                ));
-            }
+        ProceduralSurfaceDefinition::Compound { components } => {
             native_surface_base(bytes, "spline")?;
             bytes.push(0x0f);
             native_ident(bytes, "comp_spl_sur")?;
@@ -562,14 +554,15 @@ fn native_procedural_surface_definition(
             }
             native_i64(
                 bytes,
-                i64::try_from(parameters.len()).map_err(|_| {
+                i64::try_from(components.len()).map_err(|_| {
                     CodecError::NotImplemented("compound surface count exceeds i64".into())
                 })?,
             );
-            for parameter in parameters {
-                native_f64(bytes, *parameter);
-            }
             for component in components {
+                native_f64(bytes, component.parameter);
+            }
+            for item in components {
+                let component = &item.component;
                 let component = target
                     .model
                     .surfaces
@@ -1841,10 +1834,7 @@ fn encode_native_scaled_compound_loft(
             native_enum(bytes, *singularity);
             native_nurbs_curve(bytes, &native_loft_curve(target, curve)?)?;
         }
-        ScaledCompoundLoftBranch::Direct {
-            flag,
-            direction,
-        } => {
+        ScaledCompoundLoftBranch::Direct { flag, direction } => {
             bytes.push(native_bool(false));
             bytes.push(native_bool(*flag));
             native_i64(bytes, direction.selector());

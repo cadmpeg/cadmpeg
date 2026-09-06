@@ -118,7 +118,11 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
         match procedural.definition() {
             ProceduralSurfaceDefinition::Exact { .. } => {}
             ProceduralSurfaceDefinition::Compound { components, .. } => {
-                surfaces.extend(components.iter().map(|component| component.0.as_str()));
+                surfaces.extend(
+                    components
+                        .iter()
+                        .map(|component| component.component.0.as_str()),
+                );
             }
             ProceduralSurfaceDefinition::SubSurface { support, .. } => {
                 surfaces.insert(&support.0);

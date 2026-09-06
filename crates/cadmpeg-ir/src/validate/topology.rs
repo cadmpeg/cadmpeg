@@ -506,8 +506,13 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
             ProceduralSurfaceDefinition::Exact { .. } => {}
             ProceduralSurfaceDefinition::Compound { components, .. } => {
                 for component in components {
-                    if ids.surfaces(&component.0).is_none() {
-                        ref_error(findings, &procedural.id.0, "surface", &component.0);
+                    if ids.surfaces(&component.component.0).is_none() {
+                        ref_error(
+                            findings,
+                            &procedural.id.0,
+                            "surface",
+                            &component.component.0,
+                        );
                     }
                 }
             }

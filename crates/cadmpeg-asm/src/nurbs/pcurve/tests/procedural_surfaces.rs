@@ -344,26 +344,22 @@ fn compound_surface_uses_leading_cache_then_parameterized_components() {
         )
         .unwrap_or_else(|| panic!("compound surface at width {int_width}"));
         let fit_tolerance = decoded.cache_fit_tolerance.expect("fit tolerance");
-        let DecodedProceduralSurfaceDefinition::Compound {
-            parameters,
-            components,
-        } = decoded.definition
-        else {
+        let DecodedProceduralSurfaceDefinition::Compound { components } = decoded.definition else {
             panic!("expected compound surface");
         };
 
-        assert!((parameters[0] - 0.25).abs() < f64::EPSILON);
-        assert!((parameters[1] - 0.75).abs() < f64::EPSILON);
+        assert!((components[0].parameter - 0.25).abs() < f64::EPSILON);
+        assert!((components[1].parameter - 0.75).abs() < f64::EPSILON);
         assert_eq!(components.len(), 2);
         assert!(matches!(
-            components[0],
+            components[0].component,
             SurfaceGeometry::Plane { origin, .. }
                 if (origin.x - 10.0).abs() < f64::EPSILON
                     && (origin.y - 20.0).abs() < f64::EPSILON
                     && (origin.z - 30.0).abs() < f64::EPSILON
         ));
         assert!(matches!(
-            components[1],
+            components[1].component,
             SurfaceGeometry::Plane { origin, .. }
                 if (origin.x - 40.0).abs() < f64::EPSILON
                     && (origin.y - 50.0).abs() < f64::EPSILON

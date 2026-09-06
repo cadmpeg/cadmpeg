@@ -672,13 +672,18 @@ fn solved_caches_reject_procedural_carriers_below_transform_chains() {
             transform: Default::default(),
         };
         assert_eq!(SolvedCurveGeometry::new(curve.clone()), Err(curve.clone()));
-        assert_eq!(SolvedSurfaceGeometry::new(surface.clone()), Err(surface.clone()));
+        assert_eq!(
+            SolvedSurfaceGeometry::new(surface.clone()),
+            Err(surface.clone())
+        );
         assert!(serde_json::from_value::<SolvedCurveGeometry>(
             serde_json::to_value(&curve).unwrap()
-        ).is_err());
+        )
+        .is_err());
         assert!(serde_json::from_value::<SolvedSurfaceGeometry>(
             serde_json::to_value(&surface).unwrap()
-        ).is_err());
+        )
+        .is_err());
     }
     let curve = CurveGeometry::Transformed {
         basis: Box::new(CurveGeometry::Unknown { record: None }),
@@ -688,8 +693,19 @@ fn solved_caches_reject_procedural_carriers_below_transform_chains() {
         basis: Box::new(SurfaceGeometry::Unknown { record: None }),
         transform: Default::default(),
     };
-    assert_eq!(SolvedCurveGeometry::new(curve.clone()).unwrap().as_geometry(), &curve);
-    assert_eq!(SolvedSurfaceGeometry::new(surface.clone()).unwrap().as_geometry(), &surface);
+    assert_eq!(
+        SolvedCurveGeometry::new(curve.clone())
+            .unwrap()
+            .as_geometry(),
+        &curve
+    );
+    assert_eq!(
+        SolvedSurfaceGeometry::new(surface.clone())
+            .unwrap()
+            .as_geometry(),
+        &surface
+    );
 }
 
+mod compound_components;
 mod compound_loft;

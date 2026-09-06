@@ -466,14 +466,8 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
-        if let ProceduralSurfaceDefinition::Compound {
-            parameters,
-            components,
-        } = procedural.definition()
-        {
-            if parameters.len() != components.len()
-                || parameters.iter().any(|parameter| !parameter.is_finite())
-            {
+        if let ProceduralSurfaceDefinition::Compound { components } = procedural.definition() {
+            if components.iter().any(|item| !item.parameter.is_finite()) {
                 bounds_err(
                     findings,
                     &procedural.id.0,
@@ -676,15 +670,14 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     scales.extend(scale.iter().map(Box::as_ref));
                     true
                 }
-                crate::geometry::ScaledCompoundLoftBranch::Direct {
-                            direction,
-                    ..
-                } => match direction {
-                    crate::geometry::CompoundLoftDirection::Vector { value } => {
-                        vector_finite(value)
+                crate::geometry::ScaledCompoundLoftBranch::Direct { direction, .. } => {
+                    match direction {
+                        crate::geometry::CompoundLoftDirection::Vector { value } => {
+                            vector_finite(value)
+                        }
+                        crate::geometry::CompoundLoftDirection::Curve { .. } => true,
                     }
-                    crate::geometry::CompoundLoftDirection::Curve { .. } => true,
-                },
+                }
             };
             let scales_valid = scales.iter().all(|scale| {
                 scale.members.iter().all(|member| {

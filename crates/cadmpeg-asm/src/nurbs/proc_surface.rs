@@ -43,10 +43,8 @@ pub enum DecodedProceduralSurfaceDefinition {
     },
     /// Native compound surface with ordered scalar/component pairs.
     Compound {
-        /// Ordered native parameters.
-        parameters: Vec<f64>,
-        /// Ordered embedded component surfaces.
-        components: Vec<SurfaceGeometry>,
+        /// Ordered embedded surfaces paired with native construction scalars.
+        components: Vec<cadmpeg_ir::geometry::CompoundComponent<SurfaceGeometry>>,
     },
     /// Exact rectangular restriction of an embedded support surface.
     SubSurface {
@@ -1673,7 +1671,10 @@ fn loft_subdata_form(
         let [row] = rows.as_slice() else {
             return None;
         };
-        Some(LoftSubdata::type_211([row_count, column_count], row.parameters))
+        Some(LoftSubdata::type_211(
+            [row_count, column_count],
+            row.parameters,
+        ))
     } else {
         LoftSubdata::table(type_code, rows)
     }
@@ -2194,10 +2195,7 @@ fn scaled_compound_loft_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurfa
                 curve,
             }
         };
-        EmbeddedScaledCompoundLoftBranch::Direct {
-            flag,
-            direction,
-        }
+        EmbeddedScaledCompoundLoftBranch::Direct { flag, direction }
     };
     let trailing_flags = [cur.take_bool()?, cur.take_bool()?];
     let tail_kind = cur.take_long()?;
@@ -3174,15 +3172,15 @@ fn comp_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
     };
     let parameters = cur.take_float_array()?;
     let mut components = Vec::with_capacity(parameters.len());
-    for _ in 0..parameters.len() {
-        components.push(embedded_surface(&mut cur)?);
+    for parameter in parameters {
+        components.push(cadmpeg_ir::geometry::CompoundComponent {
+            parameter,
+            component: embedded_surface(&mut cur)?,
+        });
     }
     cur.at_scope_end().then_some(())?;
     Some(DecodedProceduralSurface {
-        definition: DecodedProceduralSurfaceDefinition::Compound {
-            parameters,
-            components,
-        },
+        definition: DecodedProceduralSurfaceDefinition::Compound { components },
         cache_fit_tolerance,
     })
 }

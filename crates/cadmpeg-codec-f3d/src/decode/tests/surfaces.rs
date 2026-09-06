@@ -561,14 +561,16 @@ fn generated_compound_spline_surface_decodes_and_writes_source_less() {
         )
         .expect("compound spline surface decode");
     let procedural = result.ir().model.procedural_surfaces.first().unwrap();
-    let ProceduralSurfaceDefinition::Compound {
-        parameters,
-        components,
-    } = procedural.definition()
-    else {
+    let ProceduralSurfaceDefinition::Compound { components } = procedural.definition() else {
         panic!("expected compound surface construction")
     };
-    assert_eq!(parameters, &[-0.5, 1.5]);
+    assert_eq!(
+        components
+            .iter()
+            .map(|item| item.parameter)
+            .collect::<Vec<_>>(),
+        [-0.5, 1.5]
+    );
     assert_eq!(components.len(), 2);
     let solved = result
         .ir()
@@ -588,7 +590,7 @@ fn generated_compound_spline_surface_decodes_and_writes_source_less() {
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id == components[1])
+        .find(|surface| surface.id == components[1].component)
         .expect("compound rational component");
     assert!(matches!(
         rational_component.geometry,
@@ -608,8 +610,8 @@ fn generated_compound_spline_surface_decodes_and_writes_source_less() {
         .expect("source-less compound surface round trip");
     assert!(matches!(
         round_trip.ir().model.procedural_surfaces[0].definition(),
-        ProceduralSurfaceDefinition::Compound { ref parameters, ref components }
-            if parameters == &[-0.5, 1.5] && components.len() == 2
+        ProceduralSurfaceDefinition::Compound { components }
+            if components.iter().map(|item| item.parameter).collect::<Vec<_>>() == [-0.5, 1.5] && components.len() == 2
     ));
 }
 

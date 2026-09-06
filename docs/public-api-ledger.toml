@@ -5685,3 +5685,17 @@ crate = "cadmpeg-ir"
 kind = "method"
 item = "cadmpeg_ir::products::PairedJointKind::with_scalars"
 reason = "IR-85: remove the untyped scalar setter that silently discarded fields unsupported by the family; producers construct the typed variant directly."
+
+[[change]]
+commit = "3b69d310b8e6129c4801a9fa2b44549440426760"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Compound"
+reason = "IR-85: each compound surface component owns its scalar; remove independent parallel arrays and preserve the flat JSON through checked conversion."
+
+[[change]]
+commit = "3b69d310b8e6129c4801a9fa2b44549440426760"
+crate = "cadmpeg-asm"
+kind = "variant"
+item = "cadmpeg_asm::nurbs::proc_surface::DecodedProceduralSurfaceDefinition::Compound"
+reason = "IR-85: each compound surface component owns its scalar; remove independent parallel arrays and preserve the flat JSON through checked conversion."

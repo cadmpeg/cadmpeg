@@ -1159,7 +1159,6 @@ impl SolvedCurveGeometry {
         &self.0
     }
 
-
     #[cfg(test)]
     pub(crate) fn as_geometry_mut(&mut self) -> &mut CurveGeometry {
         &mut self.0
@@ -1449,6 +1448,68 @@ impl<'de> Deserialize<'de> for ExactSpline {
     }
 }
 
+/// One component and its native construction scalar.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct CompoundComponent<T> {
+    /// Scalar paired with this component.
+    pub parameter: f64,
+    /// Component geometry or its resolved identity.
+    pub component: T,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct CompoundSurfaceComponentsWire {
+    parameters: Vec<f64>,
+    components: Vec<SurfaceId>,
+}
+
+mod compound_surface_components_wire {
+    use super::{CompoundComponent, CompoundSurfaceComponentsWire, SurfaceId};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S>(
+        components: &[CompoundComponent<SurfaceId>],
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        CompoundSurfaceComponentsWire {
+            parameters: components.iter().map(|item| item.parameter).collect(),
+            components: components
+                .iter()
+                .map(|item| item.component.clone())
+                .collect(),
+        }
+        .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(
+        deserializer: D,
+    ) -> Result<Vec<CompoundComponent<SurfaceId>>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = CompoundSurfaceComponentsWire::deserialize(deserializer)?;
+        if wire.parameters.len() != wire.components.len() {
+            return Err(serde::de::Error::custom(
+                "compound surface parameters must match components",
+            ));
+        }
+        Ok(wire
+            .parameters
+            .into_iter()
+            .zip(wire.components)
+            .map(|(parameter, component)| CompoundComponent {
+                parameter,
+                component,
+            })
+            .collect())
+    }
+}
+
 /// Neutral semantics for a procedural surface.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1463,10 +1524,10 @@ pub enum ProceduralSurfaceDefinition {
     },
     /// Ordered native compound of a solved surface and component surfaces.
     Compound {
-        /// One native scalar paired with each component surface.
-        parameters: Vec<f64>,
-        /// Ordered component surfaces.
-        components: Vec<SurfaceId>,
+        /// Ordered surfaces paired with their native construction scalars.
+        #[serde(flatten, with = "compound_surface_components_wire")]
+        #[cfg_attr(feature = "schema", schemars(with = "CompoundSurfaceComponentsWire"))]
+        components: Vec<CompoundComponent<SurfaceId>>,
     },
     /// Exact rectangular restriction of an embedded support surface.
     SubSurface {
@@ -3258,7 +3319,10 @@ impl<'de> Deserialize<'de> for LoftSubdata {
                     "loft subdata type 211 forbids columns and a trailing pair",
                 ));
             }
-            return Ok(Self::type_211([wire.row_count, wire.column_count], row.parameters));
+            return Ok(Self::type_211(
+                [wire.row_count, wire.column_count],
+                row.parameters,
+            ));
         }
         let row_count = usize::try_from(wire.row_count)
             .map_err(|_| serde::de::Error::custom("loft subdata row_count is negative"))?;
@@ -4955,7 +5019,8 @@ mod compound_loft_direction_wire {
         CompoundLoftDirectionWire {
             selector: direction.selector(),
             direction: direction.clone(),
-        }.serialize(serializer)
+        }
+        .serialize(serializer)
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<CompoundLoftDirection, D::Error>
@@ -4965,12 +5030,14 @@ mod compound_loft_direction_wire {
         let wire = CompoundLoftDirectionWire::deserialize(deserializer)?;
         match (wire.selector, wire.direction) {
             (0, direction @ CompoundLoftDirection::Vector { .. }) => Ok(direction),
-            (selector, CompoundLoftDirection::Curve { curve, .. }) => {
-                NonZeroI64::new(selector)
-                    .map(|selector| CompoundLoftDirection::Curve { curve, selector })
-                    .ok_or_else(|| serde::de::Error::custom("compound-loft curve selector must be nonzero"))
-            }
-            _ => Err(serde::de::Error::custom("compound-loft vector selector must be zero")),
+            (selector, CompoundLoftDirection::Curve { curve, .. }) => NonZeroI64::new(selector)
+                .map(|selector| CompoundLoftDirection::Curve { curve, selector })
+                .ok_or_else(|| {
+                    serde::de::Error::custom("compound-loft curve selector must be nonzero")
+                }),
+            _ => Err(serde::de::Error::custom(
+                "compound-loft vector selector must be zero",
+            )),
         }
     }
 }
@@ -7107,7 +7174,9 @@ fn inject_revision_cache(
             }
             serde_json::Value::Object(fields) => {
                 if let Some(selector) = fields.get(selector_field).or_else(|| {
-                    (selector_field == "tail_enum").then(|| fields.get("cache_selector")).flatten()
+                    (selector_field == "tail_enum")
+                        .then(|| fields.get("cache_selector"))
+                        .flatten()
                 }) {
                     if *found {
                         return Err(format!(

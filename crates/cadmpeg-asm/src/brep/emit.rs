@@ -124,28 +124,27 @@ fn emit_carrier_surface(
             DecodedProceduralSurfaceDefinition::Exact { spline } => {
                 ProceduralSurfaceDefinition::Exact { spline }
             }
-            DecodedProceduralSurfaceDefinition::Compound {
-                parameters,
-                components,
-            } => {
+            DecodedProceduralSurfaceDefinition::Compound { components } => {
                 let component_ids = components
                     .into_iter()
                     .enumerate()
-                    .map(|(component, geometry)| {
+                    .map(|(component, item)| {
                         let id = SurfaceId::mint(format!(
                             "{format}:brep:procedural_surface#{i}:component{component}"
                         ))
                         .expect("identity grammar");
                         out.surfaces.push(Surface {
                             id: id.clone(),
-                            geometry,
+                            geometry: item.component,
                             source_object: None,
                         });
-                        id
+                        cadmpeg_ir::geometry::CompoundComponent {
+                            parameter: item.parameter,
+                            component: id,
+                        }
                     })
                     .collect();
                 ProceduralSurfaceDefinition::Compound {
-                    parameters,
                     components: component_ids,
                 }
             }
@@ -993,13 +992,12 @@ fn emit_scaled_compound_loft_surface(
                 curve: id,
             }
         }
-        EmbeddedScaledCompoundLoftBranch::Direct {
-            flag,
-            direction,
-        } => cadmpeg_ir::geometry::ScaledCompoundLoftBranch::Direct {
-            flag,
-            direction: map_direction(&mut *out, "branch:direction", direction),
-        },
+        EmbeddedScaledCompoundLoftBranch::Direct { flag, direction } => {
+            cadmpeg_ir::geometry::ScaledCompoundLoftBranch::Direct {
+                flag,
+                direction: map_direction(&mut *out, "branch:direction", direction),
+            }
+        }
     };
     let tail_curve = CurveId::mint(format!(
         "{format}:brep:procedural_surface#{i}:scaled_cloft:tail:curve"
