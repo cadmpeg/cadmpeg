@@ -25,7 +25,9 @@ pub(crate) mod object_frame;
 pub(crate) mod operation_record;
 pub(crate) mod surface_branches;
 pub(crate) mod swp104_branch;
+pub(crate) mod terminal_discriminator;
 pub(crate) mod thru_curve_branches;
+use terminal_discriminator::FeatureOperationTerminalDiscriminator;
 pub(crate) mod unlabeled_record;
 use crate::native::om::column_row::{
     DataBlockIndexRow, DataBlockLinkedIndexRow, DataBlockTargetIndexRow,
@@ -2782,122 +2784,6 @@ impl TryFrom<FeatureExtrudePayloadHeaderWire> for FeatureExtrudePayloadHeader {
             id: wire.id,
             operation_label: wire.operation_label,
             scalars: [first?, second?],
-            source_offset: wire.source_offset,
-        })
-    }
-}
-
-/// Exact terminal discriminator lane from a bounded operation payload.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureOperationTerminalDiscriminatorWire",
-    into = "FeatureOperationTerminalDiscriminatorWire"
-)]
-pub struct FeatureOperationTerminalDiscriminator {
-    pub id: String,
-    pub operation_label: String,
-    pub type_indices: [LocatedCompactIndex<u64>; 2],
-    pub flags: [u8; 4],
-    pub trailing_indices: Vec<LocatedCompactIndex<u64>>,
-    pub source_offset: u64,
-}
-
-#[derive(Serialize, Deserialize)]
-struct FeatureOperationTerminalDiscriminatorWire {
-    /// Globally unique lane identity.
-    id: String,
-    /// Owning operation label.
-    operation_label: String,
-    /// Two compact type indices following the footer prelude.
-    type_indices: [u32; 2],
-    /// Exact compact-index tokens for the two type indices.
-    raw_type_indices: [Vec<u8>; 2],
-    /// Absolute file offsets of the two type-index tokens.
-    type_index_source_offsets: [u64; 2],
-    /// Four serialized one-byte flags.
-    flags: [u8; 4],
-    /// Compact values preceding the payload terminator.
-    trailing_indices: Vec<u32>,
-    /// Exact compact-index tokens in the trailing lane.
-    raw_trailing_indices: Vec<Vec<u8>>,
-    /// Absolute file offsets of the trailing compact-index tokens.
-    trailing_index_source_offsets: Vec<u64>,
-    /// Absolute file offset of the footer prelude.
-    source_offset: u64,
-}
-
-impl From<FeatureOperationTerminalDiscriminator> for FeatureOperationTerminalDiscriminatorWire {
-    fn from(lane: FeatureOperationTerminalDiscriminator) -> Self {
-        Self {
-            id: lane.id,
-            operation_label: lane.operation_label,
-            type_indices: lane.type_indices.each_ref().map(|token| token.atom.value()),
-            raw_type_indices: lane
-                .type_indices
-                .each_ref()
-                .map(|token| token.atom.raw().to_vec()),
-            type_index_source_offsets: lane.type_indices.each_ref().map(|token| token.offset),
-            flags: lane.flags,
-            trailing_indices: lane
-                .trailing_indices
-                .iter()
-                .map(|token| token.atom.value())
-                .collect(),
-            raw_trailing_indices: lane
-                .trailing_indices
-                .iter()
-                .map(|token| token.atom.raw().to_vec())
-                .collect(),
-            trailing_index_source_offsets: lane
-                .trailing_indices
-                .iter()
-                .map(|token| token.offset)
-                .collect(),
-            source_offset: lane.source_offset,
-        }
-    }
-}
-
-impl TryFrom<FeatureOperationTerminalDiscriminatorWire> for FeatureOperationTerminalDiscriminator {
-    type Error = String;
-
-    fn try_from(wire: FeatureOperationTerminalDiscriminatorWire) -> Result<Self, Self::Error> {
-        if wire.trailing_indices.len() != wire.raw_trailing_indices.len()
-            || wire.trailing_indices.len() != wire.trailing_index_source_offsets.len()
-        {
-            return Err(
-                "terminal discriminator trailing token columns must have equal lengths".into(),
-            );
-        }
-        let [first, second] = std::array::from_fn::<_, 2, _>(|slot| {
-            Ok::<_, String>(LocatedCompactIndex {
-                atom: CompactIndexAtom::from_wire(
-                    wire.type_indices[slot],
-                    &wire.raw_type_indices[slot],
-                )
-                .map_err(|error| format!("type_indices[{slot}]: {error}"))?,
-                offset: wire.type_index_source_offsets[slot],
-            })
-        });
-        Ok(Self {
-            id: wire.id,
-            operation_label: wire.operation_label,
-            type_indices: [first?, second?],
-            flags: wire.flags,
-            trailing_indices: wire
-                .trailing_indices
-                .into_iter()
-                .zip(wire.raw_trailing_indices)
-                .zip(wire.trailing_index_source_offsets)
-                .enumerate()
-                .map(|(slot, ((value, raw), source_offset))| {
-                    Ok::<_, String>(LocatedCompactIndex {
-                        atom: CompactIndexAtom::from_wire(value, &raw)
-                            .map_err(|error| format!("trailing_indices[{slot}]: {error}"))?,
-                        offset: source_offset,
-                    })
-                })
-                .collect::<Result<_, _>>()?,
             source_offset: wire.source_offset,
         })
     }
@@ -7313,27 +7199,16 @@ pub fn feature_operation_terminal_discriminators(
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(lane) = crate::om::operation_terminal_discriminator(record.payload_view())
-            else {
+            let Some(frame) = crate::om::terminal_discriminator::operation_terminal_discriminator(
+                record.payload_view(),
+            )
+            .and_then(|frame| frame.relocate(entry_offset)) else {
                 return;
             };
             lanes.push(FeatureOperationTerminalDiscriminator {
-                id: format!(
-                    "nx:feature-history:operation-terminal-discriminator#{section_key}-{operation_ordinal:010}"
-                ),
-                operation_label: format!(
-                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
-                ),
-                type_indices: lane.type_indices.map(|token| LocatedCompactIndex {
-                    atom: token.atom,
-                    offset: entry_offset + token.offset as u64,
-                }),
-                flags: lane.flags,
-                trailing_indices: lane.trailing_indices.into_iter().map(|token| LocatedCompactIndex {
-                    atom: token.atom,
-                    offset: entry_offset + token.offset as u64,
-                }).collect(),
-                source_offset: entry_offset + lane.offset as u64,
+                id: format!("nx:feature-history:operation-terminal-discriminator#{section_key}-{operation_ordinal:010}"),
+                operation_label: format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"),
+                frame,
             });
         },
     );

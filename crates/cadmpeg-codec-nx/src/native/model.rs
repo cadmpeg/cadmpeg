@@ -28,6 +28,7 @@ use crate::native::features::surface_branches::{
     feature_surface_construction_branches, FeatureSurfaceConstructionBranch,
 };
 use crate::native::features::swp104_branch::FeatureSwp104LeadingBranch;
+use crate::native::features::terminal_discriminator::FeatureOperationTerminalDiscriminator;
 use crate::native::features::thru_curve_branches::{
     feature_thru_curve_construction_branch_groups, FeatureThruCurveConstructionBranchGroup,
 };

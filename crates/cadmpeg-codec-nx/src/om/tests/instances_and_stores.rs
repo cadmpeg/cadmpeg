@@ -963,41 +963,33 @@ fn om_operation_terminal_discriminator_requires_one_complete_lane() {
     let label = "EXTRUDE";
     let payload = b"\x01\x01\x02\x81\x5f\x80\xab\x01\x03\x02\x01\x01\x02\x01\x01\x00\x00\x00\x29\x29\x05\x80\xff\x00";
     let record = crate::om::operation_record::OperationPayload::new(payload, 200, label).unwrap();
-    let lane = super::operation_terminal_discriminator(record).unwrap();
-    assert_eq!(lane.offset, 200);
+    let lane = crate::om::terminal_discriminator::operation_terminal_discriminator(record).unwrap();
+    assert_eq!(lane.origin(), 200);
     assert_eq!(
-        lane.type_indices.each_ref().map(|token| token.atom.value()),
+        lane.type_indices().map(|(token, _)| token.value()),
         [351, 171]
     );
     assert_eq!(
-        lane.type_indices
-            .each_ref()
-            .map(|token| token.atom.raw().to_vec()),
+        lane.type_indices().map(|(token, _)| token.raw().to_vec()),
         [vec![0x81, 0x5f], vec![0x80, 0xab]]
     );
+    assert_eq!(lane.type_indices().map(|(_, offset)| offset), [203, 205]);
+    assert_eq!(lane.flags(), [1, 2, 1, 1]);
     assert_eq!(
-        lane.type_indices.each_ref().map(|token| token.offset),
-        [203, 205]
-    );
-    assert_eq!(lane.flags, [1, 2, 1, 1]);
-    assert_eq!(
-        lane.trailing_indices
-            .iter()
-            .map(|token| token.atom.value())
+        lane.trailing_indices()
+            .map(|(token, _)| token.value())
             .collect::<Vec<_>>(),
         [5, 255]
     );
     assert_eq!(
-        lane.trailing_indices
-            .iter()
-            .map(|token| token.atom.raw().to_vec())
+        lane.trailing_indices()
+            .map(|(token, _)| token.raw().to_vec())
             .collect::<Vec<_>>(),
         [vec![0x05], vec![0x80, 0xff]]
     );
     assert_eq!(
-        lane.trailing_indices
-            .iter()
-            .map(|token| token.offset)
+        lane.trailing_indices()
+            .map(|(_, offset)| offset)
             .collect::<Vec<_>>(),
         [220, 221]
     );
@@ -1009,32 +1001,36 @@ fn om_operation_terminal_discriminator_requires_one_complete_lane() {
     )
     .unwrap();
     assert_eq!(
-        super::operation_terminal_discriminator(subtract),
+        crate::om::terminal_discriminator::operation_terminal_discriminator(subtract),
         Some(lane.clone())
     );
 
     let truncated = &payload[..payload.len() - 1];
-    assert!(super::operation_terminal_discriminator(
-        crate::om::operation_record::OperationPayload::new(
-            truncated,
-            record.payload_offset(),
-            record.name()
+    assert!(
+        crate::om::terminal_discriminator::operation_terminal_discriminator(
+            crate::om::operation_record::OperationPayload::new(
+                truncated,
+                record.payload_offset(),
+                record.name()
+            )
+            .unwrap()
         )
-        .unwrap()
-    )
-    .is_none());
+        .is_none()
+    );
 
     let mut ambiguous = payload[..payload.len() - 1].to_vec();
     ambiguous.extend_from_slice(payload);
-    assert!(super::operation_terminal_discriminator(
-        crate::om::operation_record::OperationPayload::new(
-            &ambiguous,
-            record.payload_offset(),
-            record.name()
+    assert!(
+        crate::om::terminal_discriminator::operation_terminal_discriminator(
+            crate::om::operation_record::OperationPayload::new(
+                &ambiguous,
+                record.payload_offset(),
+                record.name()
+            )
+            .unwrap()
         )
-        .unwrap()
-    )
-    .is_none());
+        .is_none()
+    );
 }
 
 #[test]

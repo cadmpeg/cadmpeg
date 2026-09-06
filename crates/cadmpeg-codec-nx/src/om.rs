@@ -55,6 +55,7 @@ pub(crate) mod extrude_32;
 pub(crate) mod extrude_profile;
 pub(crate) mod surface_branches;
 pub(crate) mod surface_envelope;
+pub(crate) mod terminal_discriminator;
 use branch_items::BranchItems;
 pub(crate) mod binary64_pair;
 pub(crate) mod name_field;
@@ -855,19 +856,6 @@ pub struct ExtrudePayloadHeader {
     pub offset: usize,
     /// Ordered finite scalar values.
     pub scalars: [ShiftedBinary64; 2],
-}
-
-/// Exact terminal discriminator lane at the end of a bounded operation payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OperationTerminalDiscriminator {
-    /// Payload-relative offset of the fixed footer prelude.
-    pub offset: usize,
-    /// Two compact type indices following `01 01 02`.
-    pub type_indices: [LocatedCompactIndex; 2],
-    /// Four serialized one-byte flags.
-    pub flags: [u8; 4],
-    /// Compact values between `29 29` and the terminal zero, with source tokens.
-    pub trailing_indices: Vec<LocatedCompactIndex>,
 }
 
 /// Two tagged offset-store indices following each repeated scalar-lane witness.
@@ -2127,81 +2115,6 @@ pub fn extrude_payload_header(record: OperationPayload<'_>) -> Option<ExtrudePay
             ShiftedBinary64::read(record.payload().get(13..21)?)?,
         ],
     })
-}
-
-/// Decode the unique terminal discriminator lane in a bounded operation payload.
-pub fn operation_terminal_discriminator(
-    record: OperationPayload<'_>,
-) -> Option<OperationTerminalDiscriminator> {
-    if record.payload().last() != Some(&0) {
-        return None;
-    }
-
-    let decode = |start: usize| {
-        if record.payload().get(start..start + 3) != Some(&[0x01, 0x01, 0x02]) {
-            return None;
-        }
-        let mut at = start + 3;
-        let type_tokens = LocatedCompactIndex::read_array::<2>(record.payload(), &mut at)?;
-        if record.payload().get(at..at + 4) != Some(&[0x01, 0x03, 0x02, 0x01]) {
-            return None;
-        }
-        at += 4;
-        let flags = record
-            .payload()
-            .get(at..at + 4)
-            .and_then(|bytes| bytes.try_into().ok())?;
-        at += 4;
-        if record.payload().get(at..at + 5) != Some(&[0x00, 0x00, 0x00, 0x29, 0x29]) {
-            return None;
-        }
-        at += 5;
-
-        let trailing_end = record.payload().len() - 1;
-        let trailing_bytes = record.payload().get(at..trailing_end)?;
-        let mut scan = 0;
-        let mut trailing_count = 0;
-        while scan < trailing_bytes.len() {
-            let token = LocatedCompactIndex::read(trailing_bytes, scan)?;
-            scan += token.atom.raw().len();
-            trailing_count += 1;
-        }
-
-        // Candidates are scanned at every payload offset. Validate the bounded
-        // trailing bytes before allocating their owned representation.
-        let mut trailing_indices = Vec::with_capacity(trailing_count);
-        let mut scan = 0;
-        while scan < trailing_bytes.len() {
-            let token = LocatedCompactIndex::read(trailing_bytes, scan)?;
-            scan += token.atom.raw().len();
-            trailing_indices.push(LocatedCompactIndex {
-                atom: token.atom,
-                offset: record.payload_offset() + at + token.offset,
-            });
-        }
-
-        Some(OperationTerminalDiscriminator {
-            offset: record.payload_offset() + start,
-            type_indices: type_tokens.map(|token| LocatedCompactIndex {
-                atom: token.atom,
-                offset: record.payload_offset() + token.offset,
-            }),
-            flags,
-            trailing_indices,
-        })
-    };
-
-    let mut found = None;
-    for start in 0..record.payload().len().saturating_sub(18) {
-        let Some(lane) = decode(start) else {
-            continue;
-        };
-        if found.is_some() {
-            return None;
-        }
-        found = Some(lane);
-    }
-    found
 }
 
 /// Decode complete three-scalar clauses following ordered operation body fields.

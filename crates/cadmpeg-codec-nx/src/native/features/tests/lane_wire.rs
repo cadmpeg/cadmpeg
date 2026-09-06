@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::native::features::extrude_32::FeatureExtrudePayload32Branch;
+use crate::native::features::terminal_discriminator::FeatureOperationTerminalDiscriminator;
 
 #[test]
 fn input_identity_group_preserves_parallel_wire_and_requires_complete_members() {
@@ -32,7 +33,7 @@ fn sketch_scalar_lane_preserves_parallel_wire_and_requires_complete_tokens() {
 #[test]
 fn terminal_discriminator_preserves_wire_and_requires_complete_tokens() {
     check_lane_wire::<FeatureOperationTerminalDiscriminator>(
-        r#"{"id":"lane","operation_label":"operation","type_indices":[7,8],"raw_type_indices":[[7],[8]],"type_index_source_offsets":[110,120],"flags":[1,2,3,4],"trailing_indices":[9,10],"raw_trailing_indices":[[9],[10]],"trailing_index_source_offsets":[130,140],"source_offset":100}"#,
+        r#"{"id":"lane","operation_label":"operation","type_indices":[7,8],"raw_type_indices":[[7],[8]],"type_index_source_offsets":[103,104],"flags":[1,2,3,4],"trailing_indices":[9,10],"raw_trailing_indices":[[9],[10]],"trailing_index_source_offsets":[118,119],"source_offset":100}"#,
         &[
             "type_indices",
             "raw_type_indices",
@@ -46,7 +47,7 @@ fn terminal_discriminator_preserves_wire_and_requires_complete_tokens() {
 
 #[test]
 fn terminal_discriminator_rejects_inconsistent_compact_tokens() {
-    let json = r#"{"id":"lane","operation_label":"operation","type_indices":[4096,8],"raw_type_indices":[[144,0],[8]],"type_index_source_offsets":[110,120],"flags":[1,2,3,4],"trailing_indices":[9],"raw_trailing_indices":[[128,9]],"trailing_index_source_offsets":[130],"source_offset":100}"#;
+    let json = r#"{"id":"lane","operation_label":"operation","type_indices":[4096,8],"raw_type_indices":[[144,0],[8]],"type_index_source_offsets":[103,105],"flags":[1,2,3,4],"trailing_indices":[9],"raw_trailing_indices":[[128,9]],"trailing_index_source_offsets":[119],"source_offset":100}"#;
     check_lane_wire::<FeatureOperationTerminalDiscriminator>(json, &[]);
     for (field, raw_field, raw) in [
         (
