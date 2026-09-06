@@ -169,8 +169,8 @@ fn feature_parent_wire_rejects_disagreement_with_tree_children() {
 #[test]
 fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
     let mut ir = CadIr::empty();
-    let surface = SurfaceId("test:surface#cache".into());
-    let surface_construction = ProceduralSurfaceId("test:surface-construction#cache".into());
+    let surface = SurfaceId("test:model:surface#cache".into());
+    let surface_construction = ProceduralSurfaceId("test:model:surface-construction#cache".into());
     ir.model.surfaces.push(Surface {
         id: surface.clone(),
         geometry: SurfaceGeometry::Plane {
@@ -191,8 +191,8 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
         )
         .unwrap();
 
-    let curve = CurveId("test:curve#direct".into());
-    let curve_construction = ProceduralCurveId("test:curve-construction#direct".into());
+    let curve = CurveId("test:model:curve#direct".into());
+    let curve_construction = ProceduralCurveId("test:model:curve-construction#direct".into());
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Procedural {

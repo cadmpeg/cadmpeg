@@ -215,7 +215,13 @@ fn current_variable_blend_uses_the_solved_cache_for_points_and_partials() {
             parameters: [1.0, 1.0],
         }),
     );
-    ir.model.surfaces[2].geometry = SurfaceGeometry::Nurbs(bilinear_surface());
+    let SurfaceGeometry::Procedural { cache, .. } = &mut ir.model.surfaces[2].geometry else {
+        panic!("fixture surface must retain its construction");
+    };
+    *cache = Some(
+        crate::geometry::SolvedSurfaceGeometry::new(SurfaceGeometry::Nurbs(bilinear_surface()))
+            .unwrap(),
+    );
     ir.model.procedural_surfaces[0].edit_definition(|definition| {
         let ProceduralSurfaceDefinition::VariableBlend { construction } = definition else {
             unreachable!()
@@ -485,7 +491,13 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
         None
     );
 
-    ir.model.surfaces[2].geometry = SurfaceGeometry::Nurbs(bilinear_surface());
+    let SurfaceGeometry::Procedural { cache, .. } = &mut ir.model.surfaces[2].geometry else {
+        panic!("fixture surface must retain its construction");
+    };
+    *cache = Some(
+        crate::geometry::SolvedSurfaceGeometry::new(SurfaceGeometry::Nurbs(bilinear_surface()))
+            .unwrap(),
+    );
     ir.model.procedural_surfaces[0].edit_definition(|definition| {
         let ProceduralSurfaceDefinition::Blend {
             native: Some(native),

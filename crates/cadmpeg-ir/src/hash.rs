@@ -459,8 +459,8 @@ mod tests {
         namespace.arenas.insert(
             "unknowns".into(),
             vec![
-                pinned_unknown("pin:source-image#0", &[]),
-                pinned_unknown("pin:unknown#0", &["pin:record#0", "pin:unknown#1"]),
+                pinned_unknown("pin:test:source-image#0", &[]),
+                pinned_unknown("pin:test:unknown#0", &["pin:record#0", "pin:test:unknown#1"]),
             ],
         );
         ir.finalize();
@@ -474,24 +474,25 @@ mod tests {
         let ir = pinned_document();
         assert_eq!(
             canonical_json_sha256(&ir),
-            "00ac254ce62cf446f1d1dcea56ded050bd9a1ef2a53c846a8e7c588cd99bb071"
+            "2f38f9573fc415092825239479b341eb21172de952edc87cd1306d437719f5b7"
         );
         assert_eq!(
-            document_local_sha256(&ir, "pin", "pin:source-image#0"),
-            "83fa753fb39360b9e51859c9c07ddac6ff23ec17b179fa548cf33c4331170180"
+            document_local_sha256(&ir, "pin", "pin:test:source-image#0"),
+            "54d78564e5c77e42b5ab1c816dd700d1d9fa11d1554f9a797cc0897d8984c7a7"
         );
     }
 
     #[test]
     fn charged_document_digest_preserves_the_uncharged_digest() {
         let ir = pinned_document();
-        let expected = document_local_sha256(&ir, "pin", "pin:source-image#0");
+        let expected = document_local_sha256(&ir, "pin", "pin:test:source-image#0");
         let mut charged = 0;
-        let actual = document_local_sha256_with_charge(&ir, "pin", "pin:source-image#0", |bytes| {
-            charged += bytes;
-            Ok::<(), ()>(())
-        })
-        .unwrap();
+        let actual =
+            document_local_sha256_with_charge(&ir, "pin", "pin:test:source-image#0", |bytes| {
+                charged += bytes;
+                Ok::<(), ()>(())
+            })
+            .unwrap();
 
         assert_eq!(actual, expected);
         assert!(charged > 0);
@@ -500,9 +501,10 @@ mod tests {
     #[test]
     fn charged_document_digest_propagates_a_work_refusal() {
         let ir = pinned_document();
-        let result = document_local_sha256_with_charge(&ir, "pin", "pin:source-image#0", |_| {
-            Err::<(), _>("work limit")
-        });
+        let result =
+            document_local_sha256_with_charge(&ir, "pin", "pin:test:source-image#0", |_| {
+                Err::<(), _>("work limit")
+            });
 
         assert!(matches!(result, Err("work limit")));
     }
@@ -561,13 +563,13 @@ mod tests {
     #[test]
     fn pins_document_digest_over_source_metadata() {
         let ir = pinned_document_with_source();
-        let independently_normalized = cloned_local_digest(&ir, "pin", "pin:source-image#0");
+        let independently_normalized = cloned_local_digest(&ir, "pin", "pin:test:source-image#0");
         assert_eq!(
             independently_normalized,
-            "672c76d703df6fba55be8468b76f36dbc748cd5df85cbc5e6976a7f0d6a7e665"
+            "5bff3fb9555ca6f13947d17b443eb764ca32751f2605ed12763f2f90350a650e"
         );
         assert_eq!(
-            document_local_sha256(&ir, "pin", "pin:source-image#0"),
+            document_local_sha256(&ir, "pin", "pin:test:source-image#0"),
             independently_normalized
         );
     }
@@ -582,9 +584,9 @@ mod tests {
                 &ir,
                 &source,
                 "pin",
-                "pin:source-image#0",
+                "pin:test:source-image#0",
             ),
-            document_local_sha256(&pinned_document_with_source(), "pin", "pin:source-image#0")
+            document_local_sha256(&pinned_document_with_source(), "pin", "pin:test:source-image#0")
         );
     }
 

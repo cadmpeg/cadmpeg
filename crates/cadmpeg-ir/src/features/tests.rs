@@ -394,15 +394,16 @@ fn configuration_suppression_is_derived_and_legacy_lists_migrate_at_the_model_bo
 
 #[test]
 fn datum_plane_reference_preserves_legacy_feature_ids_and_face_selections() {
-    let feature =
-        crate::features::DatumPlaneReference::Feature(crate::features::FeatureId("feature".into()));
+    let feature = crate::features::DatumPlaneReference::Feature(crate::features::FeatureId(
+        "test:model:feature#feature".into(),
+    ));
     assert_eq!(
         serde_json::to_value(&feature).unwrap(),
-        serde_json::json!("feature")
+        serde_json::json!("test:model:feature#feature")
     );
     assert_eq!(
         serde_json::from_value::<crate::features::DatumPlaneReference>(serde_json::json!(
-            "feature"
+            "test:model:feature#feature"
         ))
         .unwrap(),
         feature
@@ -410,12 +411,12 @@ fn datum_plane_reference_preserves_legacy_feature_ids_and_face_selections() {
 
     let face =
         crate::features::DatumPlaneReference::Face(crate::features::FaceSelection::Faces(vec![
-            crate::ids::FaceId("face".into()),
+            crate::ids::FaceId("test:model:face#face".into()),
         ]));
     assert_eq!(
         serde_json::to_value(&face).unwrap(),
         serde_json::json!({
-            "face": {"kind": "faces", "value": ["face"]}
+            "face": {"kind": "faces", "value": ["test:model:face#face"]}
         })
     );
     assert_eq!(
@@ -426,7 +427,7 @@ fn datum_plane_reference_preserves_legacy_feature_ids_and_face_selections() {
         face
     );
     let legacy_face_wire = serde_json::json!({
-        "face": {"kind": "faces", "value": ["face"]},
+        "face": {"kind": "faces", "value": ["test:model:face#face"]},
         "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
         "normal": {"x": 0.0, "y": 0.0, "z": 1.0},
         "u_axis": {"x": 1.0, "y": 0.0, "z": 0.0}
@@ -457,7 +458,7 @@ fn datum_plane_reference_preserves_legacy_feature_ids_and_face_selections() {
     );
 
     let partial_legacy_wire = serde_json::json!({
-        "face": {"kind": "faces", "value": ["face"]},
+        "face": {"kind": "faces", "value": ["test:model:face#face"]},
         "origin": {"x": 0.0, "y": 0.0, "z": 0.0}
     });
     assert!(
@@ -648,7 +649,8 @@ fn generated_sweep_sections_round_trip_and_validate() {
         ir.finalize();
         validate_neutral(&ir, Vec::new())
     };
-    assert!(validate_definition(definition.clone()).is_ok());
+    let report = validate_definition(definition.clone());
+    assert!(report.is_ok(), "{report:#?}");
 
     let mut invalid_wall = definition.clone();
     let FeatureDefinition::Sweep { section, .. } = &mut invalid_wall else {
@@ -1143,7 +1145,7 @@ fn feature_result_topology_round_trips_without_current_model_bodies() {
 
     let state = FeatureResultTopology {
         id: FeatureResultTopologyId("synthetic:history-result:state#0".into()),
-        output_of: FeatureId("synthetic:feature#0".into()),
+        output_of: FeatureId("synthetic:model:feature#0".into()),
         bodies: vec!["body:17".into()],
         faces: vec!["face:3".into()],
         edges: vec!["edge:5".into()],
@@ -1559,7 +1561,7 @@ fn revolve_construction_preserves_the_flat_wire_shape() {
     let wire = serde_json::json!({
         "definition": "revolve",
         "construction": {
-            "profile": {"kind": "sketch", "value": "test:sketch#profile"},
+            "profile": {"kind": "sketch", "value": "test:model:sketch#profile"},
             "axis": {
                 "origin": {"x": 0.0, "y": 0.0, "z": 0.0},
                 "direction": {"x": 0.0, "y": 0.0, "z": 1.0}

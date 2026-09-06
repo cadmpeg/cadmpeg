@@ -189,10 +189,10 @@ mod tests {
     #[test]
     fn retained_record_derives_extent_and_digest() {
         let record = UnknownRecord::retained(
-            UnknownId("synthetic:unknown#0".into()),
+            UnknownId("synthetic:model:unknown#0".into()),
             7,
             vec![1, 2, 3],
-            vec!["synthetic:point#0".into()],
+            vec!["synthetic:model:point#0".into()],
         );
 
         assert_eq!(record.byte_len(), 3);
@@ -203,12 +203,12 @@ mod tests {
     #[test]
     fn deserialization_preserves_stored_extent_and_digest() {
         let wire = serde_json::json!({
-            "id": "synthetic:unknown#0",
+            "id": "synthetic:model:unknown#0",
             "offset": 7,
             "byte_len": 99,
             "sha256": "wire-value",
             "data": "AQID",
-            "links": ["synthetic:point#0"]
+            "links": ["synthetic:model:point#0"]
         });
 
         let record: UnknownRecord =

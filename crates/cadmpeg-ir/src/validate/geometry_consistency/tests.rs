@@ -40,8 +40,8 @@ macro_rules! procedural_curve {
 
 fn mapped_surface_curve(mapping: [f64; 2]) -> CadIr {
     let mut ir = CadIr::empty();
-    let curve = CurveId("curve".to_string());
-    let surface = SurfaceId("surface".to_string());
+    let curve = CurveId("test:model:curve#curve".to_string());
+    let surface = SurfaceId("test:model:surface#surface".to_string());
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Line {
@@ -135,30 +135,30 @@ fn untrimmed_surface_curve() -> CadIr {
     let mut ir = CadIr::empty();
     ir.model.points.extend([
         crate::topology::Point {
-            id: "point-start".into(),
+            id: "test:model:point#point-start".into(),
             position: Point3::new(0.0, 1.0, 0.0),
             source_object: None,
         },
         crate::topology::Point {
-            id: "point-end".into(),
+            id: "test:model:point#point-end".into(),
             position: Point3::new(-1.0, 0.0, 0.0),
             source_object: None,
         },
     ]);
     ir.model.vertices.extend([
         Vertex {
-            id: "vertex-start".into(),
-            point: "point-start".into(),
+            id: "test:model:vertex#vertex-start".into(),
+            point: "test:model:point#point-start".into(),
             tolerance: None,
         },
         Vertex {
-            id: "vertex-end".into(),
-            point: "point-end".into(),
+            id: "test:model:vertex#vertex-end".into(),
+            point: "test:model:point#point-end".into(),
             tolerance: None,
         },
     ]);
     ir.model.curves.push(Curve {
-        id: "curve".into(),
+        id: "test:model:curve#curve".into(),
         geometry: CurveGeometry::Circle {
             center: Point3::new(0.0, 0.0, 0.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -168,15 +168,15 @@ fn untrimmed_surface_curve() -> CadIr {
         source_object: None,
     });
     ir.model.edges.push(Edge {
-        id: "edge".into(),
-        curve: Some("curve".into()),
-        start: "vertex-start".into(),
-        end: "vertex-end".into(),
+        id: "test:model:edge#edge".into(),
+        curve: Some("test:model:curve#curve".into()),
+        start: "test:model:vertex#vertex-start".into(),
+        end: "test:model:vertex#vertex-end".into(),
         param_range: None,
         tolerance: None,
     });
     ir.model.surfaces.push(Surface {
-        id: "surface".into(),
+        id: "test:model:surface#surface".into(),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -185,7 +185,7 @@ fn untrimmed_surface_curve() -> CadIr {
         source_object: None,
     });
     ir.model.pcurves.push(Pcurve {
-        id: "pcurve".into(),
+        id: "test:model:pcurve#pcurve".into(),
         geometry: PcurveGeometry::Circle {
             center: Point2::new(0.0, 0.0),
             x_axis: Point2::new(1.0, 0.0),
@@ -195,32 +195,32 @@ fn untrimmed_surface_curve() -> CadIr {
         metadata: PcurveMetadata::general(None, None, None),
     });
     ir.model.coedges.push(Coedge {
-        id: "coedge".into(),
-        owner_loop: "loop".into(),
-        edge: "edge".into(),
-        radial_next: "coedge".into(),
+        id: "test:model:coedge#coedge".into(),
+        owner_loop: "test:model:loop#loop".into(),
+        edge: "test:model:edge#edge".into(),
+        radial_next: "test:model:coedge#coedge".into(),
         sense: Sense::Forward,
         pcurves: vec![PcurveUse {
-            pcurve: "pcurve".into(),
+            pcurve: "test:model:pcurve#pcurve".into(),
             isoparametric: None,
             parameter_range: None,
         }],
         use_curve: None,
     });
     ir.model.loops.push(Loop {
-        id: "loop".into(),
-        face: "face".into(),
+        id: "test:model:loop#loop".into(),
+        face: "test:model:face#face".into(),
         boundary: crate::topology::LoopBoundary::Ring {
-            coedges: vec!["coedge".into()],
+            coedges: vec!["test:model:coedge#coedge".into()],
             vertex_uses: Vec::new(),
         },
     });
     ir.model.faces.push(Face {
-        id: "face".into(),
-        shell: "shell".into(),
-        surface: "surface".into(),
+        id: "test:model:face#face".into(),
+        shell: "test:model:shell#shell".into(),
+        surface: "test:model:surface#surface".into(),
         sense: Sense::Forward,
-        loops: vec!["loop".into()].into(),
+        loops: vec!["test:model:loop#loop".into()].into(),
         name: None,
         color: None,
         tolerance: None,
@@ -294,7 +294,7 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
     let base_geometry = ir.model.surfaces[0].geometry.clone();
     ir.model.surfaces[0].id = base_id.clone();
     ir.model.surfaces.push(Surface {
-        id: "surface".into(),
+        id: "test:model:surface#surface".into(),
         geometry: base_geometry,
         source_object: None,
     });
@@ -310,7 +310,7 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
         record_bounds: None,
     };
     ir.model
-        .add_procedural_surface(SurfaceId("surface".into()), construction)
+        .add_procedural_surface(SurfaceId("test:model:surface#surface".into()), construction)
         .unwrap();
     ir.model.points[0].position = Point3::new(1.0, 2.0, 0.0);
     ir.model.points[1].position = Point3::new(2.0, 1.0, 0.0);
@@ -379,7 +379,7 @@ fn stale_trimmed_pcurve_range_can_use_a_vertex_derived_interval() {
 #[test]
 fn raw_nurbs_domain_is_not_treated_as_edge_trim() {
     let pcurve = Pcurve {
-        id: "pcurve".into(),
+        id: "test:model:pcurve#pcurve".into(),
         geometry: PcurveGeometry::Nurbs {
             nurbs: crate::geometry::PcurveNurbs::new(
                 2,
@@ -447,7 +447,7 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
         )
         .unwrap(),
     );
-    let surface_id = SurfaceId("surface".to_string());
+    let surface_id = SurfaceId("test:model:surface#surface".to_string());
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
@@ -456,7 +456,7 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
     });
     let index = crate::index::ModelIndex::new(&ir);
     let pcurve = Pcurve {
-        id: "pcurve".into(),
+        id: "test:model:pcurve#pcurve".into(),
         geometry: PcurveGeometry::Line {
             origin: Point2::new(1.0, 0.0),
             direction: Point2::new(0.0, 1.0),

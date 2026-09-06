@@ -49,6 +49,7 @@ macro_rules! procedural_curve {
 
 mod helix;
 mod law_sweep;
+mod procedural_curves;
 mod ruled_sum;
 mod variable_blend;
 

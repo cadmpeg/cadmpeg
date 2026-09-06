@@ -44,12 +44,12 @@ fn unknown_surface_json_round_trips() {
 fn ordered_pcurve_uses_round_trip_with_isoparametric_state() {
     let uses = vec![
         crate::topology::PcurveUse {
-            pcurve: crate::ids::PcurveId("test:pcurve#first".into()),
+            pcurve: crate::ids::PcurveId("test:model:pcurve#first".into()),
             isoparametric: Some(true),
             parameter_range: None,
         },
         crate::topology::PcurveUse {
-            pcurve: crate::ids::PcurveId("test:pcurve#second".into()),
+            pcurve: crate::ids::PcurveId("test:model:pcurve#second".into()),
             isoparametric: Some(false),
             parameter_range: Some([0.0, 1.0]),
         },
@@ -64,7 +64,7 @@ fn ordered_pcurve_uses_round_trip_with_isoparametric_state() {
 #[test]
 fn asm_inline_pcurve_metadata_keeps_the_flat_wire_shape() {
     let pcurve = crate::geometry::Pcurve {
-        id: crate::ids::PcurveId("test:pcurve#inline".into()),
+        id: crate::ids::PcurveId("test:model:pcurve#inline".into()),
         geometry: crate::geometry::PcurveGeometry::Line {
             origin: crate::math::Point2::new(1.0, 2.0),
             direction: crate::math::Point2::new(3.0, 4.0),
@@ -80,11 +80,11 @@ fn asm_inline_pcurve_metadata_keeps_the_flat_wire_shape() {
     assert_eq!(
         value,
         serde_json::json!({
-            "id": "test:pcurve#inline",
+            "id": "test:model:pcurve#inline",
             "geometry": {
                 "kind": "line",
-                "origin": [1.0, 2.0],
-                "direction": [3.0, 4.0]
+                "origin": {"u": 1.0, "v": 2.0},
+                "direction": {"u": 3.0, "v": 4.0}
             },
             "wrapper_reversed": false,
             "native_tail_flags": [true, false, true, false],
@@ -101,11 +101,11 @@ fn asm_inline_pcurve_metadata_keeps_the_flat_wire_shape() {
 #[test]
 fn incomplete_asm_inline_pcurve_metadata_is_rejected() {
     let result = serde_json::from_value::<crate::geometry::Pcurve>(serde_json::json!({
-        "id": "test:pcurve#incomplete",
+        "id": "test:model:pcurve#incomplete",
         "geometry": {
             "kind": "line",
-            "origin": [1.0, 2.0],
-            "direction": [3.0, 4.0]
+            "origin": {"u": 1.0, "v": 2.0},
+            "direction": {"u": 3.0, "v": 4.0}
         },
         "wrapper_reversed": false,
         "native_tail_flags": [true, false, true, false],
@@ -118,7 +118,7 @@ fn incomplete_asm_inline_pcurve_metadata_is_rejected() {
 fn g2_full_support_keeps_the_flat_wire_shape() {
     let shape = crate::geometry::G2BlendFirstShape::Full {
         support: Some(crate::geometry::G2BlendFullSupport {
-            surface: crate::ids::SurfaceId("test:surface#support".into()),
+            surface: crate::ids::SurfaceId("test:model:surface#support".into()),
             tolerance: 0.02,
         }),
     };
@@ -127,7 +127,7 @@ fn g2_full_support_keeps_the_flat_wire_shape() {
         value,
         serde_json::json!({
             "kind": "full",
-            "surface": "test:surface#support",
+            "surface": "test:model:surface#support",
             "tolerance": 0.02
         })
     );
@@ -141,7 +141,7 @@ fn g2_full_support_keeps_the_flat_wire_shape() {
 fn g2_full_support_rejects_split_wire_fields() {
     let error = serde_json::from_value::<crate::geometry::G2BlendFirstShape>(serde_json::json!({
         "kind": "full",
-        "surface": "test:surface#support"
+        "surface": "test:model:surface#support"
     }))
     .unwrap_err();
     assert!(error
@@ -159,7 +159,7 @@ struct RevisionCompoundLoftDirectionWireTest {
 fn revision_compound_loft_direction_keeps_the_flat_wire_shape() {
     let value = RevisionCompoundLoftDirectionWireTest {
         direction: crate::geometry::CompoundLoftDirection::Curve {
-            curve: crate::ids::CurveId("test:curve#direction".into()),
+            curve: crate::ids::CurveId("test:model:curve#direction".into()),
             selector: std::num::NonZeroI64::new(4).unwrap(),
         },
     };
@@ -168,7 +168,7 @@ fn revision_compound_loft_direction_keeps_the_flat_wire_shape() {
         wire,
         serde_json::json!({
             "selector": 4,
-            "direction_curve": "test:curve#direction"
+            "direction_curve": "test:model:curve#direction"
         })
     );
     assert_eq!(
@@ -182,7 +182,7 @@ fn revision_compound_loft_direction_rejects_a_mismatched_selector() {
     let error =
         serde_json::from_value::<RevisionCompoundLoftDirectionWireTest>(serde_json::json!({
             "selector": 0,
-            "direction_curve": "test:curve#direction"
+            "direction_curve": "test:model:curve#direction"
         }))
         .unwrap_err();
     assert!(error
@@ -364,12 +364,12 @@ fn loft_subdata_type_211_preserves_headers_independent_of_payload_size() {
 fn loft_member_form_keeps_the_nested_wire_shape() {
     let member = crate::geometry::LoftProfileMember {
         curve: crate::geometry::LoftPathCurve {
-            id: crate::ids::CurveId("test:curve#loft".into()),
+            id: crate::ids::CurveId("test:model:curve#loft".into()),
             endpoints: Some([Some(0.0), Some(1.0)]),
         },
         form: crate::geometry::LoftMemberForm::Support {
             type_code: 3,
-            surface: Some(crate::ids::SurfaceId("test:surface#loft".into())),
+            surface: Some(crate::ids::SurfaceId("test:model:surface#loft".into())),
             support_bounds: [Some(-1.0), Some(1.0), None, None],
             pcurve: None,
             first_flag: true,
@@ -380,7 +380,7 @@ fn loft_member_form_keeps_the_nested_wire_shape() {
     };
     let wire = serde_json::to_value(&member).unwrap();
     assert_eq!(wire["type_code"], 3);
-    assert_eq!(wire["data"]["surface"], "test:surface#loft");
+    assert_eq!(wire["data"]["surface"], "test:model:surface#loft");
     assert_eq!(wire["data"]["first_flag"], true);
     assert!(wire["data"].get("secondary_pcurve").is_none());
     assert_eq!(
@@ -393,7 +393,7 @@ fn loft_member_form_keeps_the_nested_wire_shape() {
 fn loft_member_form_rejects_a_payload_that_disagrees_with_its_type() {
     let pair = crate::geometry::LoftProfileMember {
         curve: crate::geometry::LoftPathCurve {
-            id: crate::ids::CurveId("test:curve#loft".into()),
+            id: crate::ids::CurveId("test:model:curve#loft".into()),
             endpoints: Some([None, None]),
         },
         form: crate::geometry::LoftMemberForm::PcurvePair {
@@ -405,7 +405,7 @@ fn loft_member_form_rejects_a_payload_that_disagrees_with_its_type() {
         },
     };
     let mut pair_wire = serde_json::to_value(pair).unwrap();
-    pair_wire["data"]["surface"] = serde_json::json!("test:surface#conflict");
+    pair_wire["data"]["surface"] = serde_json::json!("test:model:surface#conflict");
     let error =
         serde_json::from_value::<crate::geometry::LoftProfileMember>(pair_wire).unwrap_err();
     assert!(error
@@ -414,7 +414,7 @@ fn loft_member_form_rejects_a_payload_that_disagrees_with_its_type() {
 
     let mut support_wire = serde_json::to_value(crate::geometry::LoftProfileMember {
         curve: crate::geometry::LoftPathCurve {
-            id: crate::ids::CurveId("test:curve#loft".into()),
+            id: crate::ids::CurveId("test:model:curve#loft".into()),
             endpoints: None,
         },
         form: crate::geometry::LoftMemberForm::Support {
@@ -441,14 +441,14 @@ fn loft_member_form_rejects_a_payload_that_disagrees_with_its_type() {
 fn loft_path_rejects_endpoints_without_a_curve() {
     let path = crate::geometry::LoftPath {
         curve: Some(crate::geometry::LoftPathCurve {
-            id: crate::ids::CurveId("test:curve#path".into()),
+            id: crate::ids::CurveId("test:model:curve#path".into()),
             endpoints: Some([Some(0.0), Some(1.0)]),
         }),
         auxiliaries: Vec::new(),
         flag: 4,
     };
     let wire = serde_json::to_value(&path).unwrap();
-    assert_eq!(wire["curve"], "test:curve#path");
+    assert_eq!(wire["curve"], "test:model:curve#path");
     assert_eq!(wire["endpoints"], serde_json::json!([0.0, 1.0]));
     assert_eq!(
         serde_json::from_value::<crate::geometry::LoftPath>(wire.clone()).unwrap(),
@@ -465,14 +465,14 @@ fn loft_path_rejects_endpoints_without_a_curve() {
 fn law_edge_keeps_its_flat_curve_and_endpoints_wire_shape() {
     let expression = crate::geometry::LawExpression::Edge {
         curve: crate::geometry::LoftPathCurve {
-            id: crate::ids::CurveId("test:curve#law".into()),
+            id: crate::ids::CurveId("test:model:curve#law".into()),
             endpoints: Some([None, Some(2.0)]),
         },
         parameters: [-1.0, 3.0],
     };
     let wire = serde_json::to_value(&expression).unwrap();
     assert_eq!(wire["kind"], "edge");
-    assert_eq!(wire["curve"], "test:curve#law");
+    assert_eq!(wire["curve"], "test:model:curve#law");
     assert_eq!(wire["endpoints"], serde_json::json!([null, 2.0]));
     assert_eq!(
         serde_json::from_value::<crate::geometry::LawExpression>(wire).unwrap(),
@@ -562,7 +562,7 @@ fn spring_layout_keeps_the_flat_conditional_range_wire_shape() {
 #[test]
 fn spring_layout_rejects_split_support_state() {
     let mut wire = serde_json::to_value(ranged_spring_definition()).unwrap();
-    wire["context"]["sides"][0]["surface"] = serde_json::json!("test:surface#conflict");
+    wire["context"]["sides"][0]["surface"] = serde_json::json!("test:model:surface#conflict");
     let error =
         serde_json::from_value::<crate::geometry::ProceduralCurveDefinition>(wire).unwrap_err();
     assert!(error
@@ -596,7 +596,7 @@ fn projection_role_keeps_the_native_string_wire_shape() {
 #[test]
 fn vector_offset_roles_keep_the_fixed_flat_wire_shape() {
     let definition = crate::geometry::ProceduralCurveDefinition::VectorOffset {
-        source: crate::ids::CurveId("test:curve#source".into()),
+        source: crate::ids::CurveId("test:model:curve#source".into()),
         parameter_range: [-1.0, 2.0],
         offset: crate::math::Vector3::new(3.0, 4.0, 5.0),
         roles: crate::geometry::VectorOffsetRoles {
