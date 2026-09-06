@@ -60,15 +60,15 @@ fn operation_state_counter_map_anchors_to_the_longest_bounded_suffix() {
     assert_eq!(map.rows.len(), 3);
     assert_eq!(map.end_offset, 1004 + 8 + 8 + 6);
     assert_eq!(map.trailing_bytes.len(), 16);
-    assert_eq!(u8::from(map.rows[0].row_kind), 1);
-    assert_eq!(Some(map.rows[0].object_index.value()), Some(0x1234));
-    assert_eq!(map.rows[0].introduced_state, 0x56);
-    assert_eq!(map.rows[0].modified_state, 0x57);
-    assert_eq!(u8::from(map.rows[1].row_kind), 2);
-    assert_eq!(Some(map.rows[1].object_index.value()), Some(0x31f85));
-    assert_eq!(map.rows[1].introduced_state, 0x2a);
-    assert_eq!(map.rows[1].modified_state, 0x2b);
-    assert_eq!(map.rows[2].object_index.raw().len(), 1);
+    assert_eq!(u8::from(map.rows[0].kind()), 1);
+    assert_eq!(Some(map.rows[0].object().value()), Some(0x1234));
+    assert_eq!(map.rows[0].introduced(), 0x56);
+    assert_eq!(map.rows[0].modified(), 0x57);
+    assert_eq!(u8::from(map.rows[1].kind()), 2);
+    assert_eq!(Some(map.rows[1].object().value()), Some(0x31f85));
+    assert_eq!(map.rows[1].introduced(), 0x2a);
+    assert_eq!(map.rows[1].modified(), 0x2b);
+    assert_eq!(map.rows[2].object().raw().len(), 1);
 }
 
 #[test]

@@ -73,38 +73,18 @@ impl OperationStateIndex {
     pub(crate) fn offset(self) -> usize { self.offset }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct NonNullStateIndex {
-    token: StateIndexToken,
-    offset: usize,
-}
-
-impl NonNullStateIndex {
-    pub(crate) fn from_index(index: OperationStateIndex) -> Option<Self> {
-        Some(Self { token: index.token?, offset: index.offset })
-    }
-
-    pub(crate) fn token(self) -> StateIndexToken { self.token }
-
-    pub(crate) fn value(self) -> u32 { self.token.value() }
-
-    pub(crate) fn raw(&self) -> &[u8] { self.token.raw() }
-
-    pub(crate) fn offset(self) -> usize { self.offset }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{NonNullStateIndex, OperationStateIndex, StateIndexToken};
+    use super::{OperationStateIndex, StateIndexToken};
 
     #[test]
     fn required_indices_keep_alternate_zero_encodings_and_offsets() {
         for raw in [&[0][..], &[0x80, 0][..], &[0x90, 0, 0][..], &[0xa0, 0, 0][..], &[0xf1, 0, 0][..]] {
             let index = OperationStateIndex::read_at(raw, 0, 100).unwrap();
-            let required = NonNullStateIndex::from_index(index).unwrap();
+            let required = index.token().unwrap();
             assert_eq!(required.value(), 0);
             assert_eq!(required.raw(), raw);
-            assert_eq!(required.offset(), 100);
+            assert_eq!(index.offset(), 100);
         }
     }
 
@@ -113,7 +93,7 @@ mod tests {
         let null = OperationStateIndex::read_at(&[0xff], 0, 10).unwrap();
         assert_eq!(null.token().map(StateIndexToken::value), None);
         assert_eq!(null.raw(), &[0xff]);
-        assert!(NonNullStateIndex::from_index(null).is_none());
+        assert!(null.token().is_none());
         for raw in [&[][..], &[0xff][..], &[0x80][..], &[0x90, 0][..], &[0xa0, 0][..], &[0xf1, 0][..], &[0x91, 0, 0][..]] {
             assert!(StateIndexToken::read_at(raw, 0).is_none());
         }

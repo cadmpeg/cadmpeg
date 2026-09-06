@@ -46,14 +46,14 @@ fn native_catalog_emits_feature_history_state_counter_rows() {
 
     let rows = operation_state_counters(&container);
     assert_eq!(rows.len(), 2);
-    assert_eq!(u8::from(rows[0].row_kind), 1);
-    assert_eq!(rows[0].object_index.value(), 0x320);
-    assert_eq!(rows[0].object_index.raw(), [0x83, 0x20]);
-    assert_eq!(rows[0].introduced_state, 1);
-    assert_eq!(rows[0].modified_state, 2);
-    assert!(rows[0].object_index_source_offset > rows[0].source_offset);
-    assert_eq!(u8::from(rows[1].row_kind), 2);
-    assert_eq!(rows[1].object_index.value(), 0x1234);
+    assert_eq!(u8::from(rows[0].frame.kind()), 1);
+    assert_eq!(rows[0].frame.object().value(), 0x320);
+    assert_eq!(rows[0].frame.object().raw(), [0x83, 0x20]);
+    assert_eq!(rows[0].frame.introduced(), 1);
+    assert_eq!(rows[0].frame.modified(), 2);
+    assert!(rows[0].frame.object_offset() > rows[0].frame.offset());
+    assert_eq!(u8::from(rows[1].frame.kind()), 2);
+    assert_eq!(rows[1].frame.object().value(), 0x1234);
     assert_eq!(rows[1].ordinal, 1);
     assert_eq!(rows[0].section_link, rows[1].section_link);
 

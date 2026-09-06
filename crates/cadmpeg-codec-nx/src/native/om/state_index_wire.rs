@@ -124,14 +124,14 @@ impl From<OmOperationStateCounter> for OmOperationStateCounterWire {
             id: value.id,
             section_link: value.section_link,
             ordinal: value.ordinal,
-            row_kind: value.row_kind,
-            object_index: value.object_index.value(),
-            raw_object_index: value.object_index.raw().to_vec(),
-            introduced_state: value.introduced_state,
-            modified_state: value.modified_state,
-            object_index_source_offset: value.object_index_source_offset,
+            row_kind: value.frame.kind(),
+            object_index: value.frame.object().value(),
+            raw_object_index: value.frame.object().raw().to_vec(),
+            introduced_state: value.frame.introduced(),
+            modified_state: value.frame.modified(),
+            object_index_source_offset: value.frame.object_offset(),
             source_entry: value.source_entry,
-            source_offset: value.source_offset,
+            source_offset: value.frame.offset(),
         }
     }
 }
@@ -139,17 +139,19 @@ impl From<OmOperationStateCounter> for OmOperationStateCounterWire {
 impl TryFrom<OmOperationStateCounterWire> for OmOperationStateCounter {
     type Error = String;
     fn try_from(wire: OmOperationStateCounterWire) -> Result<Self, Self::Error> {
+        let object = StateIndexToken::from_wire(wire.object_index, &wire.raw_object_index)
+            .map_err(|error| format!("object_index/raw_object_index: {error}"))?;
+        let frame = crate::om::state_counter::StateCounter::new(
+            wire.source_offset, wire.row_kind, object, wire.introduced_state, wire.modified_state)?;
+        if wire.object_index_source_offset != frame.object_offset() {
+            return Err("object_index_source_offset: expected source_offset + 2".into());
+        }
         Ok(Self {
             id: wire.id,
             section_link: wire.section_link,
             ordinal: wire.ordinal,
-            row_kind: wire.row_kind,
-            object_index: StateIndexToken::from_wire(wire.object_index, &wire.raw_object_index).map_err(|error| format!("object_index/raw_object_index: {error}"))?,
-            introduced_state: wire.introduced_state,
-            modified_state: wire.modified_state,
-            object_index_source_offset: wire.object_index_source_offset,
+            frame,
             source_entry: wire.source_entry,
-            source_offset: wire.source_offset,
         })
     }
 }
@@ -402,6 +404,26 @@ mod tests {
         boundary["end_offset"] = u64::MAX.into();
         let row = serde_json::from_value::<OmAuditTrailRow>(boundary).unwrap();
         assert_eq!(row.end_offset(), u64::MAX);
+    }
+
+    #[test]
+    fn counter_rows_derive_index_position_and_bound_full_extent() {
+        let json = r#"{"id":"counter","section_link":"section","ordinal":0,"row_kind":1,"object_index":0,"raw_object_index":[144,0,0],"introduced_state":1,"modified_state":2,"object_index_source_offset":102,"source_entry":"om","source_offset":100}"#;
+        preserves_wire::<OmOperationStateCounter>(json);
+        let wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        let mut mismatch = wire.clone();
+        mismatch["object_index_source_offset"] = 103.into();
+        assert!(serde_json::from_value::<OmOperationStateCounter>(mismatch)
+            .unwrap_err().to_string().contains("object_index_source_offset"));
+        let mut boundary = wire.clone();
+        boundary["source_offset"] = (u64::MAX - 8).into();
+        boundary["object_index_source_offset"] = (u64::MAX - 6).into();
+        assert!(serde_json::from_value::<OmOperationStateCounter>(boundary).is_ok());
+        let mut overflow = wire;
+        overflow["source_offset"] = (u64::MAX - 7).into();
+        overflow["object_index_source_offset"] = (u64::MAX - 5).into();
+        assert!(serde_json::from_value::<OmOperationStateCounter>(overflow)
+            .unwrap_err().to_string().contains("source_offset"));
     }
 
     #[test]
