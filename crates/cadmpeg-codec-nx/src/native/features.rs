@@ -2462,6 +2462,7 @@ pub struct FeatureSketchPointGroup {
 
 /// Named two-scalar point object spanning consecutive offset-store blocks.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "OffsetStoreNamedPointWire", into = "OffsetStoreNamedPointWire")]
 pub struct OffsetStoreNamedPoint {
     /// Globally unique point-object identity.
     pub id: String,
@@ -2469,14 +2470,61 @@ pub struct OffsetStoreNamedPoint {
     pub name: String,
     /// Minimal consecutive source-block span carrying the object.
     pub data_blocks: Vec<String>,
-    /// Ordered finite native scalar values.
-    pub values: [f64; 2],
-    /// Exact shifted-binary64 encodings in scalar order.
-    pub raw_values: [[u8; 8]; 2],
-    /// Absolute source offsets of the two scalar markers.
-    pub value_source_offsets: [u64; 2],
+    /// Checked scalar atoms and their absolute frame offsets.
+    pub values: [FeatureBinary64ScalarToken; 2],
     /// Absolute source offset of the name frame.
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct OffsetStoreNamedPointWire {
+    /// Globally unique point-object identity.
+    id: String,
+    /// Exact `Point<positive decimal>` source name.
+    name: String,
+    /// Minimal consecutive source-block span carrying the object.
+    data_blocks: Vec<String>,
+    /// Ordered finite native scalar values.
+    values: [f64; 2],
+    /// Exact shifted-binary64 encodings in scalar order.
+    raw_values: [[u8; 8]; 2],
+    /// Absolute source offsets of the two scalar markers.
+    value_source_offsets: [u64; 2],
+    /// Absolute source offset of the name frame.
+    source_offset: u64,
+}
+
+impl From<OffsetStoreNamedPoint> for OffsetStoreNamedPointWire {
+    fn from(value: OffsetStoreNamedPoint) -> Self {
+        Self {
+            id: value.id,
+            name: value.name,
+            data_blocks: value.data_blocks,
+            values: value.values.map(|token| token.scalar.value()),
+            raw_values: value.values.map(|token| token.scalar.raw()),
+            value_source_offsets: value.values.map(|token| token.source_offset),
+            source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<OffsetStoreNamedPointWire> for OffsetStoreNamedPoint {
+    type Error = String;
+
+    fn try_from(wire: OffsetStoreNamedPointWire) -> Result<Self, Self::Error> {
+        let [first, second] = std::array::from_fn::<_, 2, _>(|i| {
+            ShiftedBinary64::from_wire(wire.values[i], wire.raw_values[i])
+                .map(|scalar| FeatureBinary64ScalarToken { scalar, source_offset: wire.value_source_offsets[i] })
+                .map_err(|error| format!("values/raw_values[{i}]: {error}"))
+        });
+        Ok(Self {
+            id: wire.id,
+            name: wire.name,
+            data_blocks: wire.data_blocks,
+            values: [first?, second?],
+            source_offset: wire.source_offset,
+        })
+    }
 }
 
 /// Exact reuse of one named-point block by a sketch reference.
@@ -9120,6 +9168,14 @@ pub fn offset_store_named_points(container: &Container) -> Vec<OffsetStoreNamedP
                 }
                 None
             };
+            let [Some(first), Some(second)] = point.values.map(|value| {
+                value_source_offset(value.offset).map(|source_offset| FeatureBinary64ScalarToken {
+                    scalar: value.scalar,
+                    source_offset,
+                })
+            }) else {
+                continue;
+            };
             points.push(OffsetStoreNamedPoint {
                 id: format!(
                     "nx:offset-store:named-point#{section_ordinal}-{}",
@@ -9129,12 +9185,7 @@ pub fn offset_store_named_points(container: &Container) -> Vec<OffsetStoreNamedP
                 data_blocks: (0..point.block_count)
                     .map(|relative| format!("{section_key}:block#{}", ordinal + relative + 1))
                     .collect(),
-                values: point.values,
-                raw_values: point.raw_values,
-                value_source_offsets: [
-                    value_source_offset(point.value_offsets[0]).expect("first scalar in span"),
-                    value_source_offset(point.value_offsets[1]).expect("second scalar in span"),
-                ],
+                values: [first, second],
                 source_offset: first_source,
             });
         }
@@ -9313,7 +9364,7 @@ pub fn feature_sketch_point_uses(
         if point_group
             .coordinates
             .iter()
-            .zip(named_point.values)
+            .zip(named_point.values.map(|token| token.scalar.value()))
             .any(|(first, second)| first.to_bits() != second.to_bits())
         {
             continue;
@@ -9447,20 +9498,21 @@ pub fn feature_sketch_datum_csys_dependencies(
         let point_use = &point_uses[point_use_index];
         let point = points[point_use.named_point.as_str()];
         let scalar_aliases = point
-            .value_source_offsets
+            .values
             .iter()
             .enumerate()
-            .flat_map(|(coordinate_ordinal, value_source_offset)| {
+            .flat_map(|(coordinate_ordinal, value)| {
+                let value_source_offset = value.source_offset;
                 scalars
                     .iter()
                     .filter(move |scalar| {
                         scalar.operation_label == construction.operation_label
-                            && scalar.source_offset == *value_source_offset
+                            && scalar.source_offset == value_source_offset
                     })
                     .map(move |scalar| FeatureSketchDatumCsysScalarAlias {
                         sketch_coordinate_ordinal: coordinate_ordinal as u8,
                         datum_csys_scalar: scalar.id.clone(),
-                        value_source_offset: *value_source_offset,
+                        value_source_offset,
                     })
             })
             .collect();

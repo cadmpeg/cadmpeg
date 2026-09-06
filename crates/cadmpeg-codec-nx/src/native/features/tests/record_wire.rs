@@ -197,3 +197,12 @@ fn construction_scalar_wire_derives_the_number_from_its_atom() {
         }
     }
 }
+
+#[test]
+fn named_point_wire_preserves_scalar_atoms_and_frame_offsets() {
+    let json = r#"{"id":"point","name":"Point1","data_blocks":["first","second"],"values":[1.0,2.0],"raw_values":[[47,240,0,0,0,0,0,0],[48,0,0,0,0,0,0,0]],"value_source_offsets":[10,20],"source_offset":5}"#;
+    let point: super::OffsetStoreNamedPoint = serde_json::from_str(json).unwrap();
+    assert_eq!(serde_json::to_string(&point).unwrap(), json);
+    let invalid = json.replace("1.0", "3.0");
+    assert!(serde_json::from_str::<super::OffsetStoreNamedPoint>(&invalid).unwrap_err().to_string().contains("values/raw_values"));
+}

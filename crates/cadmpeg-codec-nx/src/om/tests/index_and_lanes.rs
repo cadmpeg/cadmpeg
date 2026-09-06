@@ -5,6 +5,9 @@
 
 use crate::test_support::*;
 
+const EPS_NAMED_POINT_ROUNDING: f64 = 1.0e-12;
+const EPS_SHIFTED_SCALAR_ROUNDING: f64 = 2.0e-12;
+
 #[test]
 fn om_index_pairs_object_ids_with_bounded_entity_records() {
     let bytes = indexed_om_section();
@@ -171,7 +174,6 @@ fn om_sketch_scalar_field_requires_exact_frame_and_finite_shifted_value() {
     assert_eq!(fields.len(), 1);
     assert_eq!(fields[0].offset, 1);
     assert_eq!(fields[0].field_code, 0x64);
-    const EPS_SHIFTED_SCALAR_ROUNDING: f64 = 2.0e-12;
     assert!((fields[0].scalar.value() - 38.1).abs() < EPS_SHIFTED_SCALAR_ROUNDING);
 
     let mut malformed = bytes;
@@ -245,13 +247,13 @@ fn om_offset_store_named_point_uses_minimal_consecutive_block_span() {
     assert!(point
         .values
         .iter()
-        .all(|value| (*value - 57.15).abs() < 1.0e-12));
+        .all(|value| (value.scalar.value() - 57.15).abs() < EPS_NAMED_POINT_ROUNDING));
     let expected_raw: [[u8; 8]; 2] = [
         first[14..22].try_into().unwrap(),
         second[8..16].try_into().unwrap(),
     ];
-    assert_eq!(point.raw_values, expected_raw);
-    assert_eq!(point.value_offsets, [9, first.len() + 3]);
+    assert_eq!(point.values.map(|value| value.scalar.raw()), expected_raw);
+    assert_eq!(point.values.map(|value| value.offset), [9, first.len() + 3]);
     assert_eq!(point.block_count, 2);
 
     let mut same_block = first.to_vec();

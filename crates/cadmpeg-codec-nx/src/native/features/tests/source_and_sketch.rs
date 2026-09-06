@@ -1000,9 +1000,10 @@ fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
         id: "point".to_string(),
         name: "Point1".to_string(),
         data_blocks: vec!["point-first".to_string(), "shared".to_string()],
-        values: [1.0, 2.0],
-        raw_values: [shifted_f64_bytes(1.0), shifted_f64_bytes(2.0)],
-        value_source_offsets: [200, 220],
+        values: [(1.0, 200), (2.0, 220)].map(|(value, source_offset)| crate::native::features::FeatureBinary64ScalarToken {
+            scalar: crate::om::scalar::ShiftedBinary64::try_from(shifted_f64_bytes(value)).unwrap(),
+            source_offset,
+        }),
         source_offset: 190,
     };
     let point_use = FeatureSketchPointUse {
@@ -1085,9 +1086,10 @@ fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
             "nx:om:offset-store#7:block#10".to_string(),
             "nx:om:offset-store#7:block#11".to_string(),
         ],
-        values: [3.0, 4.0],
-        raw_values: [shifted_f64_bytes(3.0), shifted_f64_bytes(4.0)],
-        value_source_offsets: [500, 520],
+        values: [(3.0, 500), (4.0, 520)].map(|(value, source_offset)| crate::native::features::FeatureBinary64ScalarToken {
+            scalar: crate::om::scalar::ShiftedBinary64::try_from(shifted_f64_bytes(value)).unwrap(),
+            source_offset,
+        }),
         source_offset: 490,
     };
     let consecutive_use = FeatureSketchPointUse {

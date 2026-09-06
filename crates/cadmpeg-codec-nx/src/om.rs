@@ -13,7 +13,7 @@ use branch_items::BranchItems;
 pub(crate) mod parameter_name;
 pub(crate) mod swp104_state;
 pub(crate) mod scalar;
-use scalar::{ShiftedBinary64, shifted_ieee_f64, is_shifted_ieee_f64_marker};
+use scalar::{LocatedBinary64, ShiftedBinary64, shifted_ieee_f64, is_shifted_ieee_f64_marker};
 pub(crate) mod thru_curve_endings;
 pub(crate) mod thru_curve_controls;
 use thru_curve_controls::ThruCurveControls;
@@ -1051,12 +1051,8 @@ impl ConstructionPayloadNamedField<'_> {
 pub struct OffsetStoreNamedPoint {
     /// Exact `Point<positive decimal>` name.
     pub name: String,
-    /// Two framed scalar values in block order.
-    pub values: [f64; 2],
-    /// Exact shifted-binary64 encodings in scalar order.
-    pub raw_values: [[u8; 8]; 2],
-    /// Scalar marker offsets in the concatenated payload.
-    pub value_offsets: [usize; 2],
+    /// Two checked scalar atoms and their frame offsets in block order.
+    pub values: [LocatedBinary64; 2],
     /// Minimal number of consecutive blocks containing both scalar frames.
     pub block_count: usize,
 }
@@ -1101,9 +1097,10 @@ pub(crate) fn offset_store_named_point<'a>(
             [first_scalar, second_scalar] => {
                 candidate.get_or_insert_with(|| OffsetStoreNamedPoint {
                     name: name.value.to_string(),
-                    values: [first_scalar.scalar.value(), second_scalar.scalar.value()],
-                    raw_values: [first_scalar.scalar.raw(), second_scalar.scalar.raw()],
-                    value_offsets: [first_scalar.offset, second_scalar.offset],
+                    values: [first_scalar, second_scalar].map(|field| LocatedBinary64 {
+                        scalar: field.scalar,
+                        offset: field.offset,
+                    }),
                     block_count: block_ordinal + 1,
                 });
             }

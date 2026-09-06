@@ -80,9 +80,10 @@ fn sketch_named_point_block_uses_require_exact_shared_block_identity() {
         id: "nx:offset-store:named-point#2-10".to_string(),
         name: "Point1".to_string(),
         data_blocks: vec!["block-10".to_string(), "block-11".to_string()],
-        values: [1.0, 2.0],
-        raw_values: [shifted_f64_bytes(1.0), shifted_f64_bytes(2.0)],
-        value_source_offsets: [100, 120],
+        values: [(1.0, 100), (2.0, 120)].map(|(value, source_offset)| crate::native::features::FeatureBinary64ScalarToken {
+            scalar: crate::om::scalar::ShiftedBinary64::try_from(shifted_f64_bytes(value)).unwrap(),
+            source_offset,
+        }),
         source_offset: 90,
     };
     let reference = |id: &str, ordinal: u32, block: Option<&str>| FeatureSketchReference {
@@ -136,9 +137,10 @@ fn sketch_preceding_named_point_uses_require_a_complete_unique_consecutive_lane(
         id: id.to_string(),
         name: "Point1".to_string(),
         data_blocks: blocks.iter().map(|block| (*block).to_string()).collect(),
-        values: [1.0, 2.0],
-        raw_values: [shifted_f64_bytes(1.0), shifted_f64_bytes(2.0)],
-        value_source_offsets: [200, 220],
+        values: [(1.0, 200), (2.0, 220)].map(|(value, source_offset)| crate::native::features::FeatureBinary64ScalarToken {
+            scalar: crate::om::scalar::ShiftedBinary64::try_from(shifted_f64_bytes(value)).unwrap(),
+            source_offset,
+        }),
         source_offset: 190,
     };
     let preceding = point(
@@ -216,9 +218,10 @@ fn sketch_point_uses_retain_identical_witnesses_and_reject_conflicts() {
         id: "named-point".to_string(),
         name: "Point1".to_string(),
         data_blocks: vec!["block-10".to_string()],
-        values: [1.0, 2.0],
-        raw_values: [shifted_f64_bytes(1.0), shifted_f64_bytes(2.0)],
-        value_source_offsets: [200, 220],
+        values: [(1.0, 200), (2.0, 220)].map(|(value, source_offset)| crate::native::features::FeatureBinary64ScalarToken {
+            scalar: crate::om::scalar::ShiftedBinary64::try_from(shifted_f64_bytes(value)).unwrap(),
+            source_offset,
+        }),
         source_offset: 190,
     };
     let block_use = FeatureSketchNamedPointBlockUse {

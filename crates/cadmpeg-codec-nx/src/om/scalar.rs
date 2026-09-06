@@ -4,6 +4,13 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ShiftedBinary64([u8; 8]);
 
+/// A checked scalar paired with its owning frame's offset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct LocatedBinary64 {
+    pub(crate) scalar: ShiftedBinary64,
+    pub(crate) offset: usize,
+}
+
 impl ShiftedBinary64 {
     pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
         Self::try_from(<[u8; 8]>::try_from(bytes).ok()?).ok()
