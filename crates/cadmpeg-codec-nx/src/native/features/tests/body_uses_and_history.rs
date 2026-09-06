@@ -836,7 +836,7 @@ fn nx_hole_package_group_uses_require_one_exact_lane_and_group() {
         id: "simple-hole-group".into(),
         first_data_blocks: [blocks[0].clone(), blocks[1].clone()],
         second_data_blocks: [blocks[2].clone(), blocks[3].clone()],
-        members: vec![
+        members: crate::native::features::SimpleHoleConstructionMembers::new(vec![
             crate::native::features::FeatureSimpleHoleConstructionMember {
                 operation_label: "simple-hole-1".into(),
                 scalar_lane: "scalar-1".into(),
@@ -847,7 +847,7 @@ fn nx_hole_package_group_uses_require_one_exact_lane_and_group() {
                 scalar_lane: "scalar-2".into(),
                 block_reference: "references-2".into(),
             },
-        ],
+        ]).unwrap(),
     };
 
     let uses = feature_hole_package_construction_group_uses(

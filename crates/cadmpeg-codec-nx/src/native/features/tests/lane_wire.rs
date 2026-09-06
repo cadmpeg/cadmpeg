@@ -37,6 +37,23 @@ fn hole_group_preserves_parallel_wire_and_requires_complete_members() {
 }
 
 #[test]
+fn hole_group_rejects_short_and_duplicate_members_at_deserialization() {
+    for labels in [vec![], vec!["first"], vec!["first", "first"]] {
+        let count = labels.len();
+        let wire = serde_json::json!({
+            "id": "group",
+            "first_data_blocks": ["a", "b"],
+            "second_data_blocks": ["c", "d"],
+            "operation_labels": labels,
+            "scalar_lanes": (0..count).map(|index| format!("scalar-{index}")).collect::<Vec<_>>(),
+            "block_references": (0..count).map(|index| format!("refs-{index}")).collect::<Vec<_>>(),
+        });
+        let error = serde_json::from_value::<FeatureSimpleHoleConstructionGroup>(wire).unwrap_err();
+        assert!(error.to_string().contains("operation_labels"));
+    }
+}
+
+#[test]
 fn input_identity_group_preserves_parallel_wire_and_requires_complete_members() {
     check_lane_wire::<FeatureInputBlockIdentityGroup>(
         r#"{"id":"group","data_block":"block","input_blocks":["input-a","input-b"],"operation_labels":["first","second"],"input_slots":[2,1],"source_offsets":[10,40]}"#,

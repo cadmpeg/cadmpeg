@@ -629,7 +629,7 @@ pub struct FeatureSimpleHoleConstructionGroup {
     /// Shared repeated-witness block pair.
     pub second_data_blocks: [String; 2],
     /// Operations and their construction lanes in feature-history order.
-    pub members: Vec<FeatureSimpleHoleConstructionMember>,
+    pub members: SimpleHoleConstructionMembers,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -637,6 +637,31 @@ pub struct FeatureSimpleHoleConstructionMember {
     pub operation_label: String,
     pub scalar_lane: String,
     pub block_reference: String,
+}
+
+/// At least two distinct operations in retained feature-history order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SimpleHoleConstructionMembers(Vec<FeatureSimpleHoleConstructionMember>);
+
+impl SimpleHoleConstructionMembers {
+    pub fn new(members: Vec<FeatureSimpleHoleConstructionMember>) -> Result<Self, &'static str> {
+        if members.len() < 2 {
+            return Err("operation_labels must contain at least two members");
+        }
+        let mut labels = BTreeSet::new();
+        if members.iter().any(|member| !labels.insert(member.operation_label.as_str())) {
+            return Err("operation_labels must contain distinct members");
+        }
+        Ok(Self(members))
+    }
+}
+
+impl std::ops::Deref for SimpleHoleConstructionMembers {
+    type Target = [FeatureSimpleHoleConstructionMember];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -686,7 +711,7 @@ impl TryFrom<FeatureSimpleHoleConstructionGroupWire> for FeatureSimpleHoleConstr
             id: wire.id,
             first_data_blocks: wire.first_data_blocks,
             second_data_blocks: wire.second_data_blocks,
-            members: wire
+            members: SimpleHoleConstructionMembers::new(wire
                 .operation_labels
                 .into_iter()
                 .zip(wire.scalar_lanes)
@@ -698,7 +723,7 @@ impl TryFrom<FeatureSimpleHoleConstructionGroupWire> for FeatureSimpleHoleConstr
                         block_reference,
                     }
                 })
-                .collect(),
+                .collect()).map_err(str::to_owned)?,
         })
     }
 }
@@ -7086,10 +7111,10 @@ pub fn feature_simple_hole_repeated_scalar_lane_block_references(
                         .map(|(prefix, _)| prefix)
                 })
                 .collect::<BTreeSet<_>>();
-            if prefixes.len() != 1 {
+            let mut prefixes = prefixes.into_iter();
+            let (Some(prefix), None) = (prefixes.next(), prefixes.next()) else {
                 return;
-            }
-            let prefix = prefixes.into_iter().next().expect("one checked prefix");
+            };
             let Some(decoded) =
                 crate::om::simple_hole_repeated_scalar_lane_block_references(record)
             else {
@@ -7185,35 +7210,26 @@ pub fn feature_simple_hole_construction_groups(
                     .cmp(&operation_position(second))
                     .then_with(|| first.operation_label.cmp(&second.operation_label))
             });
-            if members.len() < 2
-                || members
-                    .windows(2)
-                    .any(|pair| pair[0].0.operation_label == pair[1].0.operation_label)
-            {
-                return None;
-            }
-            let first = members[0].0;
-            let id_anchor = members
-                .iter()
-                .map(|(reference, _)| *reference)
-                .min_by(|first, second| first.operation_label.cmp(&second.operation_label))
-                .expect("a group has at least two members");
+            let members = SimpleHoleConstructionMembers::new(members
+                .into_iter()
+                .map(|(reference, lane)| FeatureSimpleHoleConstructionMember {
+                    operation_label: reference.operation_label.clone(),
+                    scalar_lane: lane.id.clone(),
+                    block_reference: reference.id.clone(),
+                })
+                .collect()).ok()?;
+            let id_anchor = members.iter().fold(&members[0], |first, second| {
+                if first.operation_label <= second.operation_label { first } else { second }
+            });
             let id_key = id_anchor
                 .operation_label
                 .rsplit_once('#')
                 .map_or("unknown", |(_, key)| key);
             Some(FeatureSimpleHoleConstructionGroup {
                 id: format!("nx:feature-history:simple-hole-construction-group#{id_key}"),
-                first_data_blocks: first.first_data_blocks.clone(),
-                second_data_blocks: first.second_data_blocks.clone(),
-                members: members
-                    .into_iter()
-                    .map(|(reference, lane)| FeatureSimpleHoleConstructionMember {
-                        operation_label: reference.operation_label.clone(),
-                        scalar_lane: lane.id.clone(),
-                        block_reference: reference.id.clone(),
-                    })
-                    .collect(),
+                first_data_blocks: key.0,
+                second_data_blocks: key.1,
+                members,
             })
         })
         .collect()

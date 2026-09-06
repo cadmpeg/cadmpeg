@@ -47,7 +47,7 @@ fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
         id: "group".into(),
         first_data_blocks: blocks.first_data_blocks.clone(),
         second_data_blocks: blocks.second_data_blocks.clone(),
-        members: vec![
+        members: crate::native::features::SimpleHoleConstructionMembers::new(vec![
             crate::native::features::FeatureSimpleHoleConstructionMember {
                 operation_label: operation.into(),
                 scalar_lane: "lane".into(),
@@ -58,7 +58,7 @@ fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
                 scalar_lane: "other-lane".into(),
                 block_reference: "other-blocks".into(),
             },
-        ],
+        ]).unwrap(),
     };
     let properties = super::super::simple_hole_native_properties(
         operation,
@@ -119,7 +119,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         id: "group".into(),
         first_data_blocks: ["a".into(), "b".into()],
         second_data_blocks: ["c".into(), "d".into()],
-        members: vec![
+        members: crate::native::features::SimpleHoleConstructionMembers::new(vec![
             crate::native::features::FeatureSimpleHoleConstructionMember {
                 operation_label: operations[0].clone(),
                 scalar_lane: "lane-a".into(),
@@ -130,7 +130,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                 scalar_lane: "lane-b".into(),
                 block_reference: "refs-b".into(),
             },
-        ],
+        ]).unwrap(),
     };
     let mut model = Model::default();
     for ordinal in 0..2 {
