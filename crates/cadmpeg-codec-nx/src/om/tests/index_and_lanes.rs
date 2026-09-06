@@ -120,14 +120,14 @@ fn om_sketch_name_field_decodes_direct_and_extended_compact_type_codes() {
     assert_eq!(fields[0].offset, 0);
     assert_eq!(fields[0].value, "Point1");
     let first = fields[0].type_code.as_ref().expect("typed name");
-    assert_eq!(first.value, 0x32);
-    assert_eq!(first.raw, vec![0x32]);
+    assert_eq!(first.atom.value(), 0x32);
+    assert_eq!(first.atom.raw(), vec![0x32]);
     assert_eq!(first.offset, 1);
     assert_eq!(fields[1].offset, 12);
     assert_eq!(fields[1].value, "Line2");
     let second = fields[1].type_code.as_ref().expect("typed name");
-    assert_eq!(second.value, 0x83);
-    assert_eq!(second.raw, vec![0x80, 0x83]);
+    assert_eq!(second.atom.value(), 0x83);
+    assert_eq!(second.atom.raw(), vec![0x80, 0x83]);
     assert_eq!(second.offset, 13);
 
     assert!(super::construction_payload_named_fields(&[

@@ -27,8 +27,7 @@ fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
         construction_payload: "payload".to_string(),
         ordinal,
         type_code: Some(FeaturePayloadTypeCode {
-            value: 1,
-            raw: vec![1],
+            atom: crate::om::compact::CompactIndexAtom::from_wire(1, &[1]).unwrap(),
             payload_offset: offset + 1,
             source_offset: Some(1001 + offset),
         }),

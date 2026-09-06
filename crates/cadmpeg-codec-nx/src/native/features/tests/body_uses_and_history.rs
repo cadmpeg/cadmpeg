@@ -854,8 +854,7 @@ fn nx_block_payload_points_require_exactly_two_named_scalars() {
         construction_payload: construction_payload.clone(),
         ordinal: 0,
         type_code: Some(FeaturePayloadTypeCode {
-            value: 131,
-            raw: vec![0x80, 0x83],
+            atom: crate::om::compact::CompactIndexAtom::from_wire(131, &[0x80, 0x83]).unwrap(),
             payload_offset: 11,
             source_offset: Some(101),
         }),

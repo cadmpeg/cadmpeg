@@ -624,3 +624,29 @@ fn binary64_pair_wire_requires_owner_form_and_complete_payload_extent() {
         }
     }
 }
+
+#[test]
+fn payload_names_reject_inconsistent_compact_type_codes() {
+    use crate::native::features::{FeatureBlockPayloadName, FeatureSketchPayloadName};
+
+    for (value, raw) in [(0, vec![0]), (131, vec![128, 131]), (1, vec![128, 1])] {
+        let wire = serde_json::json!({
+            "id": "name", "operation_label": "operation", "construction_payload": "payload",
+            "ordinal": 0, "type_code": value, "raw_type_code": raw,
+            "type_code_payload_offset": 11, "payload_leading": false,
+            "value": "Point1", "payload_offset": 10, "source_offset": 100,
+        });
+        let sketch: FeatureSketchPayloadName = serde_json::from_value(wire.clone()).unwrap();
+        let block: FeatureBlockPayloadName = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(serde_json::to_value(sketch).unwrap(), wire);
+        assert_eq!(serde_json::to_value(block).unwrap(), wire);
+        for invalid_raw in [vec![], vec![255], vec![128], vec![0, 0], vec![127]] {
+            let mut invalid = wire.clone();
+            invalid["raw_type_code"] = serde_json::json!(invalid_raw);
+            let sketch = serde_json::from_value::<FeatureSketchPayloadName>(invalid.clone()).unwrap_err();
+            let block = serde_json::from_value::<FeatureBlockPayloadName>(invalid).unwrap_err();
+            assert!(sketch.to_string().contains("type_code/raw_type_code"));
+            assert!(block.to_string().contains("type_code/raw_type_code"));
+        }
+    }
+}

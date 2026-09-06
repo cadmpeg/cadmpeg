@@ -12,8 +12,7 @@ fn sketch_fixed_points_require_one_owned_finite_point_pair() {
         construction_payload: "payload".to_string(),
         ordinal: 0,
         type_code: Some(FeaturePayloadTypeCode {
-            value: 1,
-            raw: vec![1],
+            atom: crate::om::compact::CompactIndexAtom::from_wire(1, &[1]).unwrap(),
             payload_offset: 1,
             source_offset: Some(1001),
         }),
@@ -70,8 +69,7 @@ fn sketch_points_require_owned_finite_scalar_fields() {
         construction_payload: "payload".to_string(),
         ordinal: 0,
         type_code: Some(FeaturePayloadTypeCode {
-            value: 1,
-            raw: vec![1],
+            atom: crate::om::compact::CompactIndexAtom::from_wire(1, &[1]).unwrap(),
             payload_offset: 1,
             source_offset: Some(1001),
         }),

@@ -2354,10 +2354,8 @@ impl TryFrom<FeatureSketchPayloadScalarLaneWire> for FeatureSketchPayloadScalarL
 /// Compact type code on a reconstructed payload name that is not payload-leading.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeaturePayloadTypeCode {
-    /// Decoded compact type code following the `66` marker.
-    pub value: u32,
-    /// Exact compact type-code token.
-    pub raw: Vec<u8>,
+    /// Exact non-null compact type-code token.
+    pub atom: crate::om::compact::CompactIndexAtom,
     /// Payload-relative offset of the compact type-code token.
     pub payload_offset: u64,
     /// Absolute source offset of the compact type-code token, when mapped.
@@ -2381,8 +2379,8 @@ fn feature_payload_type_code_from_wire(
         (None, None, None, None, true) => Ok(None),
         (Some(value), Some(raw), Some(payload_offset), source_offset, false) => {
             Ok(Some(FeaturePayloadTypeCode {
-                value,
-                raw,
+                atom: crate::om::compact::CompactIndexAtom::from_wire(value, &raw)
+                    .map_err(|error| format!("type_code/raw_type_code: {error}"))?,
                 payload_offset,
                 source_offset,
             }))
@@ -2399,8 +2397,8 @@ fn feature_payload_type_code_to_wire(
     match type_code {
         None => (None, None, None, None, true),
         Some(code) => (
-            Some(code.value),
-            Some(code.raw),
+            Some(code.atom.value()),
+            Some(code.atom.raw().to_vec()),
             Some(code.payload_offset),
             code.source_offset,
             false,
@@ -8650,8 +8648,7 @@ pub fn feature_sketch_payload_names(
                         construction_payload: construction_payload.clone(),
                         ordinal: ordinal as u32,
                         type_code: field.type_code.map(|code| FeaturePayloadTypeCode {
-                            value: code.value,
-                            raw: code.raw,
+                            atom: code.atom,
                             payload_offset: code.offset as u64,
                             source_offset: joined.source_offset(code.offset as u64),
                         }),
@@ -11328,8 +11325,7 @@ pub fn feature_block_payload_names(
                         construction_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
                         type_code: field.type_code.map(|code| FeaturePayloadTypeCode {
-                            value: code.value,
-                            raw: code.raw,
+                            atom: code.atom,
                             payload_offset: code.offset as u64,
                             source_offset: joined.source_offset(code.offset as u64),
                         }),
