@@ -4,15 +4,15 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::NxCodec;
 use crate::container;
 use crate::native::features::FeatureOperationStateJournalUse;
 use crate::native::om::{
-    OmAuditTrailRow, OmOperationStateCounter, OmOperationStateJournalGroup,
-    OmOperationStateMessage, OmOperationStateMessageSeverity, OmOperationStateSlotLane,
-    OmOperationStateStatus, OmRollForwardStateGroup, OmRollForwardStateRow, audit_trail_rows,
-    operation_state_counters, operation_state_groups, operation_state_journal_groups,
-    operation_state_messages, operation_state_slot_lanes, operation_state_statuses,
+    audit_trail_rows, operation_state_counters, operation_state_groups,
+    operation_state_journal_groups, operation_state_messages, operation_state_slot_lanes,
+    operation_state_statuses, OmAuditTrailRow, OmOperationStateCounter,
+    OmOperationStateJournalGroup, OmOperationStateMessage, OmOperationStateMessageSeverity,
+    OmOperationStateSlotLane, OmOperationStateStatus, OmRollForwardStateGroup,
+    OmRollForwardStateRow,
 };
 use crate::test_support::{
     composed_feature_history_payload_with_operation_state_statuses,
@@ -21,6 +21,7 @@ use crate::test_support::{
     segment_om_record_area_with_state_groups_and_counter_map,
     size_framed_audit_trail_section_with_record_area,
 };
+use crate::NxCodec;
 
 #[test]
 fn operation_state_message_severity_uses_only_known_high_bytes() {
@@ -45,13 +46,13 @@ fn native_catalog_emits_feature_history_state_counter_rows() {
 
     let rows = operation_state_counters(&container);
     assert_eq!(rows.len(), 2);
-    assert_eq!(rows[0].row_kind, 1);
+    assert_eq!(u8::from(rows[0].row_kind), 1);
     assert_eq!(rows[0].object_index, 0x320);
     assert_eq!(rows[0].raw_object_index, [0x83, 0x20]);
     assert_eq!(rows[0].introduced_state, 1);
     assert_eq!(rows[0].modified_state, 2);
     assert!(rows[0].object_index_source_offset > rows[0].source_offset);
-    assert_eq!(rows[1].row_kind, 2);
+    assert_eq!(u8::from(rows[1].row_kind), 2);
     assert_eq!(rows[1].object_index, 0x1234);
     assert_eq!(rows[1].ordinal, 1);
     assert_eq!(rows[0].section_link, rows[1].section_link);
@@ -193,7 +194,7 @@ fn native_catalog_emits_field_declared_roll_forward_groups() {
     assert!(matches!(
         groups[1].rows[0],
         OmRollForwardStateRow::Pair {
-            tag: 0x4f,
+            tag: crate::om::discriminators::OperationStatePairTag::Form4f,
             first: 0x42d,
             second: 0x3e1,
             ..

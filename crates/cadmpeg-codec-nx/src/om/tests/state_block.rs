@@ -60,11 +60,11 @@ fn operation_state_counter_map_anchors_to_the_longest_bounded_suffix() {
     assert_eq!(map.rows.len(), 3);
     assert_eq!(map.end_offset, 1004 + 8 + 8 + 6);
     assert_eq!(map.trailing_bytes.len(), 16);
-    assert_eq!(map.rows[0].row_kind, 1);
+    assert_eq!(u8::from(map.rows[0].row_kind), 1);
     assert_eq!(map.rows[0].object_index.value(), Some(0x1234));
     assert_eq!(map.rows[0].introduced_state, 0x56);
     assert_eq!(map.rows[0].modified_state, 0x57);
-    assert_eq!(map.rows[1].row_kind, 2);
+    assert_eq!(u8::from(map.rows[1].row_kind), 2);
     assert_eq!(map.rows[1].object_index.value(), Some(0x31f85));
     assert_eq!(map.rows[1].introduced_state, 0x2a);
     assert_eq!(map.rows[1].modified_state, 0x2b);
@@ -273,7 +273,7 @@ fn operation_state_group_table_decodes_list_pair_and_empty_groups() {
     else {
         panic!("pair group row was not typed");
     };
-    assert_eq!(tag, 0x4f);
+    assert_eq!(u8::from(tag), 0x4f);
     assert_eq!(first.value(), Some(0x42d));
     assert_eq!(second.value(), Some(0x3e1));
     assert_eq!(table.groups[2].count.declared_count(), 0);

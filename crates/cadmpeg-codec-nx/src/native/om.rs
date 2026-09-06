@@ -137,7 +137,7 @@ pub struct OmOperationStateCounter {
     /// Zero-based row ordinal within the section's counter map.
     pub ordinal: u32,
     /// Serialized counter-row kind (`01` or `02`).
-    pub row_kind: u8,
+    pub row_kind: crate::om::discriminators::OperationStateCounterKind,
     /// Object carrying the introduced/last-modified state pair.
     pub object_index: u32,
     /// Exact serialized object-index token.
@@ -177,7 +177,7 @@ pub enum OmRollForwardStateRow {
         /// Zero-based position within the group row list.
         ordinal: u32,
         /// Schema-generation relation tag.
-        tag: u8,
+        tag: crate::om::discriminators::OperationStatePairTag,
         /// First relation endpoint.
         first: u32,
         /// Exact serialized first endpoint token.
@@ -5903,22 +5903,22 @@ mod tests {
     use std::io::{Cursor, Write};
 
     use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
-    use flate2::Compression;
     use flate2::write::ZlibEncoder;
+    use flate2::Compression;
 
-    use cadmpeg_ir::Exactness;
     use cadmpeg_ir::geometry::{
         BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry,
         ProceduralCurveDefinition, ProceduralSurfaceDefinition, SurfaceGeometry,
     };
     use cadmpeg_ir::math::{Point2, Vector3};
     use cadmpeg_ir::report::LossCategory;
+    use cadmpeg_ir::Exactness;
 
     use super::*;
     use crate::container;
 
-    use crate::NxCodec;
     use crate::test_support::*;
+    use crate::NxCodec;
 
     #[test]
     fn counted_lane_wire_preserves_member_columns() {
@@ -6472,12 +6472,11 @@ mod tests {
 
         assert_eq!(ir.model.parameters[0].expression, "p3 + 1");
         assert_eq!(ir.model.parameters[1].expression, "p2 + 1");
-        assert!(
-            ir.model
-                .parameters
-                .iter()
-                .all(|parameter| parameter.dependencies.is_empty())
-        );
+        assert!(ir
+            .model
+            .parameters
+            .iter()
+            .all(|parameter| parameter.dependencies.is_empty()));
         assert_eq!(
             crate::decode::incomplete_expression_parameters(&ir),
             ir.model
@@ -6553,7 +6552,7 @@ mod tests {
 
     #[test]
     fn nx_parameter_uses_group_binding_witnesses_and_project_consumers() {
-        use crate::native::features::{FeatureParameterBinding, feature_parameter_uses};
+        use crate::native::features::{feature_parameter_uses, FeatureParameterBinding};
 
         let binding = |id: &str, operation: &str, slot: u8, offset: u64| FeatureParameterBinding {
             id: id.to_string(),
@@ -7057,11 +7056,9 @@ mod tests {
         assert_eq!(expressions[0].expression, "120");
         assert_eq!(expressions[0].value, Some(120.0));
         assert_eq!(expressions[0].source_entry, "/Root/UG_PART/UG_PART");
-        assert!(
-            expressions[0]
-                .source_table
-                .starts_with("nx:om-entry-0:expression-table#")
-        );
+        assert!(expressions[0]
+            .source_table
+            .starts_with("nx:om-entry-0:expression-table#"));
         let declarations = result
             .ir()
             .native
@@ -7531,11 +7528,9 @@ mod object_record_identity_tests {
             .expect("required invariant");
         let records = super::object_records(&container);
         assert_eq!(records.len(), 2);
-        assert!(
-            records
-                .iter()
-                .all(|record| record.stable_identity.is_some())
-        );
+        assert!(records
+            .iter()
+            .all(|record| record.stable_identity.is_some()));
         assert_ne!(records[0].stable_identity, records[1].stable_identity);
     }
 

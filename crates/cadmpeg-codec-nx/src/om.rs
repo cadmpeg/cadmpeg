@@ -4,9 +4,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use cadmpeg_core::decode::{View, alloc_filled};
+use cadmpeg_core::decode::{alloc_filled, View};
 
+pub(crate) mod discriminators;
 pub(crate) mod parameter_name;
+use discriminators::{OperationStateCounterKind, OperationStatePairTag};
 pub(crate) mod registry;
 use parameter_name::ParameterName;
 
@@ -1748,7 +1750,7 @@ pub struct OperationStateCounter<'a> {
     /// Absolute byte offset of the row's `05` marker.
     pub offset: usize,
     /// Row-kind byte following `05`; modern files use `01` and `02`.
-    pub row_kind: u8,
+    pub row_kind: OperationStateCounterKind,
     /// Object whose state-counter pair is recorded.
     pub object_index: OperationStateIndex<'a>,
     /// Journal state at which the object was introduced.
@@ -1881,7 +1883,7 @@ pub enum OperationStateGroupRow<'a> {
         /// Absolute byte offset of the row's relation tag.
         offset: usize,
         /// Schema-generation relation tag (`4f` or `48`).
-        tag: u8,
+        tag: OperationStatePairTag,
         /// First relation endpoint.
         first: OperationStateIndex<'a>,
         /// Second relation endpoint.
@@ -6970,42 +6972,35 @@ fn operation_body_reference_candidates(
 ) -> impl Iterator<Item = OperationBodyReference> + '_ {
     let payload_start = record.payload_offset.checked_sub(record.offset());
     let mut cursor = 0usize;
-    std::iter::from_fn(move || {
-        loop {
-            let window_end = cursor.checked_add(3)?;
-            let window = record.bytes.get(cursor..window_end)?;
-            let marker = cursor;
-            cursor += 1;
-            let body_write = payload_start
-                .and_then(|payload_start| marker.checked_sub(payload_start))
-                .and_then(|payload_marker| {
-                    operation_body_write_frame_at(
-                        record.payload,
-                        record.payload_offset,
-                        payload_marker,
-                    )
-                });
-            if let Some(body_write) = body_write {
-                if let Some(end) = body_write.end_offset.checked_sub(record.offset()) {
-                    cursor = cursor.max(end);
-                }
+    std::iter::from_fn(move || loop {
+        let window_end = cursor.checked_add(3)?;
+        let window = record.bytes.get(cursor..window_end)?;
+        let marker = cursor;
+        cursor += 1;
+        let body_write = payload_start
+            .and_then(|payload_start| marker.checked_sub(payload_start))
+            .and_then(|payload_marker| {
+                operation_body_write_frame_at(record.payload, record.payload_offset, payload_marker)
+            });
+        if let Some(body_write) = body_write {
+            if let Some(end) = body_write.end_offset.checked_sub(record.offset()) {
+                cursor = cursor.max(end);
+            }
+            continue;
+        }
+        if window == [0x01, 0x02, 0x10] {
+            let token = marker + 3;
+            let Some((Some(object_index), end)) = feature_object_index(record.bytes, token) else {
+                continue;
+            };
+            if record.bytes.get(end) != Some(&0xff) {
                 continue;
             }
-            if window == [0x01, 0x02, 0x10] {
-                let token = marker + 3;
-                let Some((Some(object_index), end)) = feature_object_index(record.bytes, token)
-                else {
-                    continue;
-                };
-                if record.bytes.get(end) != Some(&0xff) {
-                    continue;
-                }
-                return Some(OperationBodyReference {
-                    offset: record.offset() + token,
-                    object_index,
-                    raw_object_index: record.bytes[token..end].to_vec(),
-                });
-            }
+            return Some(OperationBodyReference {
+                offset: record.offset() + token,
+                object_index,
+                raw_object_index: record.bytes[token..end].to_vec(),
+            });
         }
     })
 }
@@ -7278,10 +7273,7 @@ fn operation_state_counter_row(
     if bytes.get(at) != Some(&0x05) {
         return None;
     }
-    let row_kind = *bytes.get(at + 1)?;
-    if !matches!(row_kind, 0x01 | 0x02) {
-        return None;
-    }
+    let row_kind = OperationStateCounterKind::try_from(*bytes.get(at + 1)?).ok()?;
     let object_at = at.checked_add(2)?;
     let object_index = operation_state_index_at(bytes, object_at, base_offset)?;
     object_index.value()?;
@@ -7867,7 +7859,8 @@ fn operation_state_group_row_at(
                 row_end,
             ))
         }
-        0x4f | 0x48 => {
+        tag => {
+            let tag = OperationStatePairTag::try_from(tag).ok()?;
             let first_at = cursor.checked_add(1)?;
             let first = operation_state_index_at(bytes, first_at, base_offset)?;
             first.value()?;
@@ -7886,7 +7879,6 @@ fn operation_state_group_row_at(
                 row_end,
             ))
         }
-        _ => None,
     }
 }
 
