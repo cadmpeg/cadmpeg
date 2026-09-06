@@ -2283,11 +2283,9 @@ fn fixed_layout(
             }
             Token::Position => {
                 let xyz = vec3_be_at(stream, at)?;
-                xyz.iter()
-                    .all(|value| {
-                        value.is_finite() && (kind != 29 || *value == 0.0 || value.is_normal())
-                    })
-                    .then_some(())?;
+                if kind != 29 {
+                    xyz.iter().all(|value| value.is_finite()).then_some(())?;
+                }
                 position = Some(xyz);
                 canonical_bytes.extend_from_slice(stream.get(at..at + 24)?);
                 at += 24;

@@ -1521,7 +1521,7 @@ fn deltas_fixed_records_accept_direct_extended_and_escaped_envelopes() {
     assert_eq!(census.records[1].canonical_bytes, escaped_canonical);
     assert_eq!(census.records[2].xmt, 41);
     assert_eq!(census.records[2].family.node_id(), Some(42));
-    assert_eq!(census.records[2].family.position(), Some([1.0, 2.0, 3.0]));
+    assert_eq!(census.records[2].family.position().map(<[f64; 3]>::from), Some([1.0, 2.0, 3.0]));
 }
 
 #[test]

@@ -9,6 +9,7 @@ use crate::framing::xmt_reference::XmtTarget;
 use crate::parasolid::name_references::NameReferences;
 
 use crate::deltas::Census;
+use crate::deltas::record_family::PointCoordinates;
 use crate::parasolid::attribute_field::AttributeField;
 use crate::parasolid::attribute_action::AttributeAction;
 use std::num::NonZeroU32;
@@ -368,7 +369,7 @@ struct ParasolidDeltasRecordWire {
     group_selector: Option<GroupSelector>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     group_linked_reference_status: Option<GroupReferenceStatus>,
-    position: Option<[f64; 3]>,
+    position: Option<PointCoordinates>,
     byte_len: u64,
     inflated_offset: u64,
 }
@@ -509,6 +510,16 @@ mod deltas_record_wire_tests {
                     .unwrap_err().to_string().contains("references"));
             }
         }
+    }
+
+
+    #[test]
+    fn point_wire_preserves_signed_zero_and_rejects_subnormal_coordinates() {
+        let json = r#"{"id":"point","stream_ordinal":0,"family":"POINT","kind":29,"xmt":20,"node_id":7,"references":[1,1,1,1],"position":[0.0,-0.0,1.5],"byte_len":32,"inflated_offset":0}"#;
+        let record: ParasolidDeltasRecord = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_string(&record).unwrap(), json);
+        assert!(serde_json::from_str::<ParasolidDeltasRecord>(&json.replace("1.5", "5e-324"))
+            .unwrap_err().to_string().contains("position"));
     }
 
 }

@@ -8,6 +8,26 @@ use crate::framing::xmt_reference::NonNullXmt;
 use crate::nurbs::curve_references::CurveDescriptorReferences;
 use crate::parasolid::entity_references::EntityReferences;
 
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "[f64; 3]", into = "[f64; 3]")]
+pub(crate) struct PointCoordinates([f64; 3]);
+
+impl TryFrom<[f64; 3]> for PointCoordinates {
+    type Error = &'static str;
+
+    fn try_from(position: [f64; 3]) -> Result<Self, Self::Error> {
+        if position.iter().all(|value| *value == 0.0 || value.is_normal()) {
+            Ok(Self(position))
+        } else {
+            Err("position: POINT coordinates must be zero or finite normal numbers")
+        }
+    }
+}
+
+impl From<PointCoordinates> for [f64; 3] {
+    fn from(position: PointCoordinates) -> Self { position.0 }
+}
+
 /// Semantic family of one admitted deltas record.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RecordFamily {
@@ -43,7 +63,7 @@ pub enum RecordFamily {
     Point {
         references: [u32; 4],
         node_id: u32,
-        position: [f64; 3],
+        position: PointCoordinates,
     },
     Line {
         references: [u32; 5],
@@ -271,7 +291,7 @@ impl RecordFamily {
     }
 
     /// POINT coordinates in Parasolid metres.
-    pub const fn position(&self) -> Option<[f64; 3]> {
+    pub const fn position(&self) -> Option<PointCoordinates> {
         match self {
             Self::Point { position, .. } => Some(*position),
             _ => None,
@@ -345,7 +365,7 @@ impl RecordFamily {
             19 => Self::Region { references: references.try_into().ok()?, node_id: node_id? },
             29 => Self::Point { references: references.try_into().ok()?,
                 node_id: node_id?,
-                position: position?,
+                position: position?.try_into().ok()?,
             },
             30 => Self::Line { references: references.try_into().ok()?, node_id: node_id? },
             31 => Self::Circle { references: references.try_into().ok()?, node_id: node_id? },
@@ -370,7 +390,7 @@ impl RecordFamily {
         name: &str,
         kind: u16,
         node_id: Option<u32>,
-        position: Option<[f64; 3]>,
+        position: Option<PointCoordinates>,
         group_selector: Option<GroupSelector>,
         group_linked_reference_status: Option<GroupReferenceStatus>,
         references: Vec<u32>,
@@ -468,3 +488,19 @@ impl RecordFamily {
 
 }
 
+
+#[cfg(test)]
+mod point_coordinate_tests {
+    use super::PointCoordinates;
+
+    #[test]
+    fn point_coordinates_reject_nonfinite_and_subnormal_values() {
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, f64::from_bits(1), -f64::from_bits(1)] {
+            assert!(PointCoordinates::try_from([0.0, value, 0.0]).unwrap_err().contains("position"));
+        }
+        for value in [0.0, -0.0, f64::MIN_POSITIVE, -f64::MIN_POSITIVE, f64::MAX] {
+            let position = PointCoordinates::try_from([value, 0.0, 0.0]).unwrap();
+            assert_eq!(<[f64; 3]>::from(position)[0].to_bits(), value.to_bits());
+        }
+    }
+}
