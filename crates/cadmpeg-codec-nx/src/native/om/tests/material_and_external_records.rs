@@ -348,30 +348,24 @@ fn decode_selects_dominant_rmfastload_body() {
     assert_eq!(object_ids.len(), 50);
     assert_eq!(object_ids[0].value, 1_000);
     assert_eq!(object_ids[49].value, 1_049);
-    assert!(
-        result.ir().model.bodies[0]
-            .id
-            .as_str()
-            .starts_with("nx:s0:")
-    );
+    assert!(result.ir().model.bodies[0]
+        .id
+        .as_str()
+        .starts_with("nx:s0:"));
     assert_eq!(result.ir().model.faces.len(), 50);
     assert_eq!(result.ir().model.surfaces.len(), 50);
-    assert!(
-        result
-            .ir()
-            .model
-            .faces
-            .iter()
-            .all(|face| face.id.as_str().starts_with("nx:s0:"))
-    );
-    assert!(
-        result
-            .ir()
-            .model
-            .surfaces
-            .iter()
-            .all(|surface| surface.id.as_str().starts_with("nx:s0:"))
-    );
+    assert!(result
+        .ir()
+        .model
+        .faces
+        .iter()
+        .all(|face| face.id.as_str().starts_with("nx:s0:")));
+    assert!(result
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .all(|surface| surface.id.as_str().starts_with("nx:s0:")));
     assert_eq!(
         result
             .ir()
@@ -392,16 +386,19 @@ fn decode_selects_dominant_rmfastload_body() {
 #[test]
 fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
     use super::super::{
-        DataBlockLinkedIndexRow, DataBlockTargetIndexRow, data_block_column_index_tables,
+        data_block_column_index_tables, DataBlockLinkedIndexRow, DataBlockTargetIndexRow,
     };
 
-    let linked = |id: &str, target: u32, mode: u8, offset: u64| DataBlockLinkedIndexRow {
+    let linked = |id: &str,
+                  target: u32,
+                  mode: crate::om::discriminators::IndexRowMode,
+                  offset: u64| DataBlockLinkedIndexRow {
         id: id.into(),
         section_ordinal: 2,
         ordinal: 0,
         first_index: 20,
         raw_first_index: vec![20],
-        discriminator: 0x16,
+        discriminator: crate::om::discriminators::LinkedIndexDiscriminator::Form16,
         target_index: target,
         raw_target_index: vec![target as u8],
         indices: [5, 6, 7],
@@ -412,7 +409,7 @@ fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
             "block#6".into(),
             "block#7".into(),
         ],
-        flag: 3,
+        flag: crate::om::discriminators::LinkedIndexFlag::Form03,
         mode,
         source_entry: "entry".into(),
         opening_data_block: format!("opening-block-{id}"),
@@ -422,7 +419,10 @@ fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
         target_index_source_offset: offset + 7,
         index_source_offsets: [offset + 12, offset + 13, offset + 14],
     };
-    let target = |id: &str, index: u32, mode: u8, offset: u64| DataBlockTargetIndexRow {
+    let target = |id: &str,
+                  index: u32,
+                  mode: crate::om::discriminators::IndexRowMode,
+                  offset: u64| DataBlockTargetIndexRow {
         id: id.into(),
         section_ordinal: 2,
         ordinal: 0,
@@ -445,14 +445,44 @@ fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
         index_source_offsets: [offset + 10, offset + 11, offset + 12],
     };
     let linked_rows = [
-        linked("opening", 63, 7, 100),
-        linked("linked-59", 59, 4, 200),
-        linked("linked-58", 58, 4, 225),
+        linked(
+            "opening",
+            63,
+            crate::om::discriminators::IndexRowMode::Form07,
+            100,
+        ),
+        linked(
+            "linked-59",
+            59,
+            crate::om::discriminators::IndexRowMode::Form04,
+            200,
+        ),
+        linked(
+            "linked-58",
+            58,
+            crate::om::discriminators::IndexRowMode::Form04,
+            225,
+        ),
     ];
     let target_rows = [
-        target("target-62", 62, 7, 125),
-        target("target-61", 61, 7, 150),
-        target("target-60", 60, 4, 175),
+        target(
+            "target-62",
+            62,
+            crate::om::discriminators::IndexRowMode::Form07,
+            125,
+        ),
+        target(
+            "target-61",
+            61,
+            crate::om::discriminators::IndexRowMode::Form07,
+            150,
+        ),
+        target(
+            "target-60",
+            60,
+            crate::om::discriminators::IndexRowMode::Form04,
+            175,
+        ),
     ];
 
     let tables = data_block_column_index_tables(&linked_rows, &target_rows);
@@ -472,15 +502,15 @@ fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
     gap[1].target_index = 60;
     assert!(data_block_column_index_tables(&linked_rows, &gap).is_empty());
     let mut incomplete_mode = target_rows.clone();
-    incomplete_mode[2].mode = 7;
+    incomplete_mode[2].mode = crate::om::discriminators::IndexRowMode::Form07;
     assert!(data_block_column_index_tables(&linked_rows, &incomplete_mode).is_empty());
 }
 
 #[test]
 fn external_reference_record_slots_resolve_atomically_in_the_same_stream() {
     use super::super::{
-        ExternalReference, ExternalReferenceRecord, external_reference_record_children,
-        external_reference_record_string_uses,
+        external_reference_record_children, external_reference_record_string_uses,
+        ExternalReference, ExternalReferenceRecord,
     };
 
     let references = (0..4)

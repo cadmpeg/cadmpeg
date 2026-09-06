@@ -24,15 +24,15 @@ fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
             object_index: 42,
             raw_object_index: vec![42],
             object_index_source_offset: 22,
-            discriminator: 0x16,
+            discriminator: crate::om::discriminators::LinkedIndexDiscriminator::Form16,
             target_index: 7,
             raw_target_index: vec![7],
             target_index_source_offset: 23,
             indices: [1, 2, 3],
             raw_indices: [vec![1], vec![2], vec![3]],
             index_source_offsets: [24, 25, 26],
-            flag: 3,
-            mode: 4,
+            flag: crate::om::discriminators::LinkedIndexFlag::Form03,
+            mode: crate::om::discriminators::IndexRowMode::Form04,
         },
         target_object_id: Some("nx:test:object-id#7".into()),
         color_index: 201,
@@ -95,7 +95,7 @@ fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
         indices: [1, 2, 3],
         raw_indices: [vec![1], vec![2], vec![3]],
         index_source_offsets: [24, 25, 26],
-        mode: 4,
+        mode: crate::om::discriminators::IndexRowMode::Form04,
     };
     assert_eq!(
         resolve_rm_face_colors(
@@ -137,7 +137,7 @@ fn rm_source_color_bindings_require_one_palette_per_source_identity() {
                 indices: [1, 2, 3],
                 raw_indices: [vec![1], vec![2], vec![3]],
                 index_source_offsets: [offset + 1, offset + 2, offset + 3],
-                mode: 4,
+                mode: crate::om::discriminators::IndexRowMode::Form04,
             },
             target_object_id: source_id.map(str::to_owned),
             color_index: 201,
@@ -714,11 +714,9 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
     let mut annotations = AnnotationBuilder::new();
     super::attach_active_configuration_feature_states(&mut missing_dependency, &mut annotations);
     assert_eq!(missing_dependency.model.features[0].suppressed, None);
-    assert!(
-        missing_dependency.model.configurations[0]
-            .feature_states
-            .is_empty()
-    );
+    assert!(missing_dependency.model.configurations[0]
+        .feature_states
+        .is_empty());
 
     let mut unresolved_bodies = CadIr::empty();
     unresolved_bodies.model.features = vec![producer("writer")];
@@ -730,11 +728,9 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
     )];
     super::attach_active_configuration_feature_states(&mut unresolved_bodies, &mut annotations);
     assert_eq!(unresolved_bodies.model.features[0].suppressed, None);
-    assert!(
-        unresolved_bodies.model.configurations[0]
-            .feature_states
-            .is_empty()
-    );
+    assert!(unresolved_bodies.model.configurations[0]
+        .feature_states
+        .is_empty());
 
     let mut contradicted = CadIr::empty();
     contradicted.model.features = vec![producer("writer")];
@@ -747,11 +743,9 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
     )];
     super::attach_active_configuration_feature_states(&mut contradicted, &mut annotations);
     assert_eq!(contradicted.model.features[0].suppressed, Some(true));
-    assert!(
-        contradicted.model.configurations[0]
-            .feature_states
-            .is_empty()
-    );
+    assert!(contradicted.model.configurations[0]
+        .feature_states
+        .is_empty());
 
     let mut ambiguous = CadIr::empty();
     ambiguous.model.features = vec![producer("writer")];
@@ -770,13 +764,11 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
     ];
     super::attach_active_configuration_feature_states(&mut ambiguous, &mut annotations);
     assert_eq!(ambiguous.model.features[0].suppressed, None);
-    assert!(
-        ambiguous
-            .model
-            .configurations
-            .iter()
-            .all(|configuration| configuration.feature_states.is_empty())
-    );
+    assert!(ambiguous
+        .model
+        .configurations
+        .iter()
+        .all(|configuration| configuration.feature_states.is_empty()));
 }
 
 #[test]
@@ -838,23 +830,21 @@ fn solved_sketch_points_require_unique_exact_ownership_atomically() {
     let mut rejected_ir = CadIr::empty();
     let mut rejected_annotations = AnnotationBuilder::new();
     let rejected_stream = rejected_annotations.stream("nx:container");
-    assert!(
-        super::attach_sketch_graph(
-            &mut rejected_ir,
-            &label,
-            &super::SketchSources {
-                point_uses: &[&point_use, &point_use],
-                point_groups: &[group],
-                points: &[],
-                payload_scalars: &[],
-                fixed_points: &[],
-                coordinate_pairs: &[],
-            },
-            &mut rejected_annotations,
-            rejected_stream,
-        )
-        .is_none()
-    );
+    assert!(super::attach_sketch_graph(
+        &mut rejected_ir,
+        &label,
+        &super::SketchSources {
+            point_uses: &[&point_use, &point_use],
+            point_groups: &[group],
+            points: &[],
+            payload_scalars: &[],
+            fixed_points: &[],
+            coordinate_pairs: &[],
+        },
+        &mut rejected_annotations,
+        rejected_stream,
+    )
+    .is_none());
     assert!(rejected_ir.model.sketches.is_empty());
     assert!(rejected_ir.model.sketch_entities.is_empty());
 }

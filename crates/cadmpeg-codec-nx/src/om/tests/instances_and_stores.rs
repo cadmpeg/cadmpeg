@@ -1829,13 +1829,13 @@ fn om_offset_store_linked_index_rows_require_complete_exact_frames() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].first_index, (915, 2));
     assert_eq!(rows[0].raw_first_index, [0x83, 0x93]);
-    assert_eq!(rows[0].discriminator, 0x16);
+    assert_eq!(u8::from(rows[0].discriminator), 0x16);
     assert_eq!(rows[0].target_index, (36, 7));
     assert_eq!(rows[0].raw_target_index, [0x24]);
     assert_eq!(rows[0].indices, [(32, 12), (32, 13), (65, 14)]);
     assert_eq!(rows[0].raw_indices, [vec![0x20], vec![0x20], vec![0x41]]);
-    assert_eq!(rows[0].flag, 3);
-    assert_eq!(rows[0].mode, 4);
+    assert_eq!(u8::from(rows[0].flag), 3);
+    assert_eq!(u8::from(rows[0].mode), 4);
 
     let mut null = row.to_vec();
     null[7] = 0xff;
@@ -1852,7 +1852,7 @@ fn om_offset_store_linked_index_rows_require_complete_exact_frames() {
     let mut mode_seven = row.to_vec();
     mode_seven[18] = 0x07;
     assert_eq!(
-        super::offset_store_linked_index_rows(&mode_seven)[0].mode,
+        u8::from(super::offset_store_linked_index_rows(&mode_seven)[0].mode),
         7
     );
     assert!(super::offset_store_linked_index_rows(&row[..row.len() - 1]).is_empty());
@@ -1868,7 +1868,7 @@ fn om_offset_store_target_index_rows_require_complete_exact_frames() {
     assert_eq!(rows[0].raw_target_index, [0x3e]);
     assert_eq!(rows[0].indices, [(30, 10), (32, 11), (88, 12)]);
     assert_eq!(rows[0].raw_indices, [vec![0x1e], vec![0x20], vec![0x58]]);
-    assert_eq!(rows[0].mode, 7);
+    assert_eq!(u8::from(rows[0].mode), 7);
 
     let mut null = row.to_vec();
     null[5] = 0xff;
@@ -1881,7 +1881,10 @@ fn om_offset_store_target_index_rows_require_complete_exact_frames() {
     assert!(super::offset_store_target_index_rows(&suffix).is_empty());
     let mut mode_four = row.to_vec();
     mode_four[16] = 0x04;
-    assert_eq!(super::offset_store_target_index_rows(&mode_four)[0].mode, 4);
+    assert_eq!(
+        u8::from(super::offset_store_target_index_rows(&mode_four)[0].mode),
+        4
+    );
     assert!(super::offset_store_target_index_rows(&row[..row.len() - 1]).is_empty());
 }
 

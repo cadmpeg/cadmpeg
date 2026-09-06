@@ -2394,7 +2394,7 @@ pub struct DataBlockLinkedIndexRow {
     /// Exact serialized leading-index token.
     pub raw_first_index: Vec<u8>,
     /// Serialized `16`, `17`, or `18` discriminator.
-    pub discriminator: u8,
+    pub discriminator: crate::om::discriminators::LinkedIndexDiscriminator,
     /// Target compact block index.
     pub target_index: u32,
     /// Exact serialized target-index token.
@@ -2406,9 +2406,9 @@ pub struct DataBlockLinkedIndexRow {
     /// Target block followed by the three post-marker blocks.
     pub data_blocks: [String; 4],
     /// Serialized `03` or `07` flag.
-    pub flag: u8,
+    pub flag: crate::om::discriminators::LinkedIndexFlag,
     /// Serialized `04` or `07` mode.
-    pub mode: u8,
+    pub mode: crate::om::discriminators::IndexRowMode,
     /// Directory entry containing the store.
     pub source_entry: String,
     /// Column block containing the row's opening byte.
@@ -2445,7 +2445,7 @@ pub struct DataBlockTargetIndexRow {
     /// Target block followed by the three post-marker blocks.
     pub data_blocks: [String; 4],
     /// Serialized `04` or `07` mode.
-    pub mode: u8,
+    pub mode: crate::om::discriminators::IndexRowMode,
     /// Directory entry containing the store.
     pub source_entry: String,
     /// Column block containing the row's opening byte.
@@ -2479,15 +2479,15 @@ pub enum RmCreationDisplayDataEncoding {
         first_index: u32,
         raw_first_index: Vec<u8>,
         first_index_source_offset: u64,
-        discriminator: u8,
+        discriminator: crate::om::discriminators::LinkedIndexDiscriminator,
         target_index: u32,
         raw_target_index: Vec<u8>,
         target_index_source_offset: u64,
         indices: [u32; 3],
         raw_indices: [Vec<u8>; 3],
         index_source_offsets: [u64; 3],
-        flag: u8,
-        mode: u8,
+        flag: crate::om::discriminators::LinkedIndexFlag,
+        mode: crate::om::discriminators::IndexRowMode,
     },
     /// Self-framed target row whose third post-marker index selects the class.
     Target {
@@ -2497,7 +2497,7 @@ pub enum RmCreationDisplayDataEncoding {
         indices: [u32; 3],
         raw_indices: [Vec<u8>; 3],
         index_source_offsets: [u64; 3],
-        mode: u8,
+        mode: crate::om::discriminators::IndexRowMode,
     },
 }
 
@@ -2537,15 +2537,15 @@ enum RmCreationDisplayDataEncodingWire {
         index_source_offsets: [u64; 4],
     },
     Linked {
-        discriminator: u8,
+        discriminator: crate::om::discriminators::LinkedIndexDiscriminator,
         target_index: u32,
         raw_target_index: Vec<u8>,
         target_index_source_offset: u64,
         indices: [u32; 3],
         raw_indices: [Vec<u8>; 3],
         index_source_offsets: [u64; 3],
-        flag: u8,
-        mode: u8,
+        flag: crate::om::discriminators::LinkedIndexFlag,
+        mode: crate::om::discriminators::IndexRowMode,
     },
     Target {
         target_index: u32,
@@ -2554,7 +2554,7 @@ enum RmCreationDisplayDataEncodingWire {
         indices: [u32; 3],
         raw_indices: [Vec<u8>; 3],
         index_source_offsets: [u64; 3],
-        mode: u8,
+        mode: crate::om::discriminators::IndexRowMode,
     },
 }
 
@@ -2825,7 +2825,7 @@ pub enum RmDisplayColorAssignmentEncoding {
         /// Absolute leading-object token offset.
         object_index_source_offset: u64,
         /// Row discriminator.
-        discriminator: u8,
+        discriminator: crate::om::discriminators::LinkedIndexDiscriminator,
         /// Target index.
         target_index: u32,
         /// Exact target-index token.
@@ -2839,9 +2839,9 @@ pub enum RmDisplayColorAssignmentEncoding {
         /// Absolute post-marker token offsets.
         index_source_offsets: [u64; 3],
         /// Row flag.
-        flag: u8,
+        flag: crate::om::discriminators::LinkedIndexFlag,
         /// Row mode.
-        mode: u8,
+        mode: crate::om::discriminators::IndexRowMode,
     },
     /// Target-index row without a leading object identity.
     Target {
@@ -2858,7 +2858,7 @@ pub enum RmDisplayColorAssignmentEncoding {
         /// Absolute post-marker token offsets.
         index_source_offsets: [u64; 3],
         /// Row mode.
-        mode: u8,
+        mode: crate::om::discriminators::IndexRowMode,
     },
 }
 
@@ -5308,11 +5308,15 @@ pub fn data_block_column_index_tables(
             let targets = targets_by_section.remove(&section_ordinal)?;
             let (opening, suffix) = linked.split_first()?;
             let (last_target, target_prefix) = targets.split_last()?;
-            if opening.mode != 7
+            if opening.mode != crate::om::discriminators::IndexRowMode::Form07
                 || suffix.is_empty()
-                || suffix.iter().any(|row| row.mode != 4)
-                || last_target.mode != 4
-                || target_prefix.iter().any(|row| row.mode != 7)
+                || suffix
+                    .iter()
+                    .any(|row| row.mode != crate::om::discriminators::IndexRowMode::Form04)
+                || last_target.mode != crate::om::discriminators::IndexRowMode::Form04
+                || target_prefix
+                    .iter()
+                    .any(|row| row.mode != crate::om::discriminators::IndexRowMode::Form07)
             {
                 return None;
             }

@@ -956,8 +956,8 @@ pub enum FeatureInputColumnTargetRow {
     Linked {
         leading_index: u32,
         leading_index_source_offset: u64,
-        discriminator: u8,
-        flag: u8,
+        discriminator: crate::om::discriminators::LinkedIndexDiscriminator,
+        flag: crate::om::discriminators::LinkedIndexFlag,
     },
     /// Target-index row grammar.
     Target,
@@ -989,7 +989,7 @@ pub struct FeatureInputColumnTarget {
     /// Absolute offsets of the three compact field values.
     pub field_source_offsets: [u64; 3],
     /// Serialized row mode.
-    pub mode: u8,
+    pub mode: crate::om::discriminators::IndexRowMode,
     /// Unique complete composite table containing `column_row`.
     pub column_table: String,
     /// Exact target in the native `data_blocks` arena.
@@ -1011,13 +1011,13 @@ struct FeatureInputColumnTargetWire {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     leading_index_source_offset: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    discriminator: Option<u8>,
+    discriminator: Option<crate::om::discriminators::LinkedIndexDiscriminator>,
     field_indices: [u32; 3],
     field_data_blocks: [String; 3],
     field_source_offsets: [u64; 3],
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    flag: Option<u8>,
-    mode: u8,
+    flag: Option<crate::om::discriminators::LinkedIndexFlag>,
+    mode: crate::om::discriminators::IndexRowMode,
     column_table: String,
     data_block: String,
     source_offset: u64,

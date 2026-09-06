@@ -152,3 +152,84 @@ impl TryFrom<u8> for SurfaceBranchMode {
         }
     }
 }
+
+/// Admitted discriminator values for an index row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+#[repr(u8)]
+pub enum LinkedIndexDiscriminator {
+    /// Serialized `0x16` form.
+    Form16 = 0x16,
+    /// Serialized `0x17` form.
+    Form17 = 0x17,
+    /// Serialized `0x18` form.
+    Form18 = 0x18,
+}
+impl From<LinkedIndexDiscriminator> for u8 {
+    fn from(value: LinkedIndexDiscriminator) -> Self {
+        value as Self
+    }
+}
+impl TryFrom<u8> for LinkedIndexDiscriminator {
+    type Error = &'static str;
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0x16 => Ok(Self::Form16),
+            0x17 => Ok(Self::Form17),
+            0x18 => Ok(Self::Form18),
+            _ => Err("LinkedIndexDiscriminator.discriminator is not an admitted discriminator"),
+        }
+    }
+}
+
+/// Admitted flag values for an index row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+#[repr(u8)]
+pub enum LinkedIndexFlag {
+    /// Serialized `0x03` form.
+    Form03 = 0x03,
+    /// Serialized `0x07` form.
+    Form07 = 0x07,
+}
+impl From<LinkedIndexFlag> for u8 {
+    fn from(value: LinkedIndexFlag) -> Self {
+        value as Self
+    }
+}
+impl TryFrom<u8> for LinkedIndexFlag {
+    type Error = &'static str;
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0x03 => Ok(Self::Form03),
+            0x07 => Ok(Self::Form07),
+            _ => Err("LinkedIndexFlag.flag is not an admitted discriminator"),
+        }
+    }
+}
+
+/// Admitted mode values for an index row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+#[repr(u8)]
+pub enum IndexRowMode {
+    /// Serialized `0x04` form.
+    Form04 = 0x04,
+    /// Serialized `0x07` form.
+    Form07 = 0x07,
+}
+impl From<IndexRowMode> for u8 {
+    fn from(value: IndexRowMode) -> Self {
+        value as Self
+    }
+}
+impl TryFrom<u8> for IndexRowMode {
+    type Error = &'static str;
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0x04 => Ok(Self::Form04),
+            0x07 => Ok(Self::Form07),
+            _ => Err("IndexRowMode.mode is not an admitted discriminator"),
+        }
+    }
+}

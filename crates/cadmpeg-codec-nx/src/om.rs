@@ -264,7 +264,7 @@ pub struct OffsetStoreLinkedIndexRow {
     /// Exact serialized leading-index token.
     pub raw_first_index: Vec<u8>,
     /// Serialized `16`, `17`, or `18` row discriminator.
-    pub discriminator: u8,
+    pub discriminator: crate::om::discriminators::LinkedIndexDiscriminator,
     /// Compact target index and its byte offset.
     pub target_index: (u32, usize),
     /// Exact serialized target-index token.
@@ -274,9 +274,9 @@ pub struct OffsetStoreLinkedIndexRow {
     /// Exact serialized post-marker tokens in row order.
     pub raw_indices: [Vec<u8>; 3],
     /// Serialized `03` or `07` row flag.
-    pub flag: u8,
+    pub flag: crate::om::discriminators::LinkedIndexFlag,
     /// Serialized `04` or `07` row mode.
-    pub mode: u8,
+    pub mode: crate::om::discriminators::IndexRowMode,
 }
 
 /// Canonical NX color-index token immediately preceding a display row.
@@ -383,7 +383,7 @@ pub struct OffsetStoreTargetIndexRow {
     /// Exact serialized post-marker tokens in row order.
     pub raw_indices: [Vec<u8>; 3],
     /// Serialized `04` or `07` row mode.
-    pub mode: u8,
+    pub mode: crate::om::discriminators::IndexRowMode,
 }
 
 /// One RGB definition from an NX part color table.
@@ -704,7 +704,11 @@ pub fn offset_store_linked_index_rows(bytes: &[u8]) -> Vec<OffsetStoreLinkedInde
             start += 1;
             continue;
         }
-        let Some(discriminator @ (0x16..=0x18)) = bytes.get(marker + 2).copied() else {
+        let Some(discriminator) = bytes
+            .get(marker + 2)
+            .copied()
+            .and_then(|value| discriminators::LinkedIndexDiscriminator::try_from(value).ok())
+        else {
             start += 1;
             continue;
         };
@@ -742,11 +746,19 @@ pub fn offset_store_linked_index_rows(bytes: &[u8]) -> Vec<OffsetStoreLinkedInde
             start += 1;
             continue;
         }
-        let Some(flag @ (0x03 | 0x07)) = bytes.get(at + 2).copied() else {
+        let Some(flag) = bytes
+            .get(at + 2)
+            .copied()
+            .and_then(|value| discriminators::LinkedIndexFlag::try_from(value).ok())
+        else {
             start += 1;
             continue;
         };
-        let Some(mode @ (0x04 | 0x07)) = bytes.get(at + 3).copied() else {
+        let Some(mode) = bytes
+            .get(at + 3)
+            .copied()
+            .and_then(|value| discriminators::IndexRowMode::try_from(value).ok())
+        else {
             start += 1;
             continue;
         };
@@ -824,7 +836,11 @@ pub fn offset_store_target_index_rows(bytes: &[u8]) -> Vec<OffsetStoreTargetInde
             start += 1;
             continue;
         }
-        let Some(mode @ (0x04 | 0x07)) = bytes.get(at + 3).copied() else {
+        let Some(mode) = bytes
+            .get(at + 3)
+            .copied()
+            .and_then(|value| discriminators::IndexRowMode::try_from(value).ok())
+        else {
             start += 1;
             continue;
         };
