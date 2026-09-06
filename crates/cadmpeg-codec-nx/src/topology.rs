@@ -19,12 +19,13 @@ use crate::framing::{
 use crate::vec3_at::vec3_be_at;
 pub(crate) mod trimmed_curve_state;
 use trimmed_curve_state::TrimmedCurveState;
+pub(crate) mod blend_surface_state;
+use blend_surface_state::BlendSurfaceState;
 pub(crate) mod offset_surface_state;
 use offset_surface_state::OffsetSurfaceState;
 pub(crate) mod surface_curve_state;
 use surface_curve_state::SurfaceCurveState;
 
-const EPS_TOPOLOGY_BLEND_SURFACES_2_E9: f64 = 1.0e-9;
 
 /// Exact inline schema header for the `intersection_data` one-byte record
 /// family. Its terminal `5a` is also the standalone record tag when the
@@ -496,14 +497,8 @@ pub struct OffsetSurface {
 pub struct BlendSurface {
     /// Cross-reference index of the blend surface record.
     pub xmt: u32,
-    /// Ordered support-surface references.
-    pub supports: [u32; 2],
-    /// Ball-centre spine curve reference.
-    pub spine: u32,
-    /// Signed support offsets in millimetres.
-    pub offsets: [f64; 2],
-    /// Dimensionless thumb weights in support order.
-    pub thumb_weights: [f64; 2],
+    /// Checked supports, source-admitted offsets, and thumb weights.
+    pub state: BlendSurfaceState,
     /// Record type-tag offset in the inflated stream.
     pub pos: usize,
 }
@@ -657,24 +652,12 @@ impl Graph {
                     View::f64_be_at(&node.bytes, at + 16)?,
                     View::f64_be_at(&node.bytes, at + 24)?,
                 ];
-                if !values.iter().all(|value| value.is_finite())
-                    || node.bytes.get(at + 32..at + 40)? != [0, 1, 0, 1, 0, 1, 0, 1]
-                    || refs[0] <= 1
-                    || refs[1] <= 1
-                    || values[0] == 0.0
-                    || values[1] == 0.0
-                    || !(values[0] * 1000.0).is_finite()
-                    || !(values[1] * 1000.0).is_finite()
-                    || (values[0].abs() - values[1].abs()).abs() > EPS_TOPOLOGY_BLEND_SURFACES_2_E9
-                {
-                    return None;
-                }
+                (node.bytes.get(at + 32..at + 40)? == [0, 1, 0, 1, 0, 1, 0, 1]).then_some(())?;
                 Some(BlendSurface {
                     xmt: node.xmt,
-                    supports: [refs[0], refs[1]],
-                    spine: refs[2],
-                    offsets: [values[0] * 1000.0, values[1] * 1000.0],
-                    thumb_weights: [values[2], values[3]],
+                    state: BlendSurfaceState::from_metres(
+                        [refs[0], refs[1]], refs[2], [values[0], values[1]], [values[2], values[3]],
+                    ).ok()?,
                     pos: node.pos,
                 })
             })

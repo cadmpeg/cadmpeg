@@ -5,6 +5,7 @@
 use super::*;
 
 use crate::topology::offset_surface_state::OffsetSurfaceState;
+use crate::topology::blend_surface_state::BlendSurfaceState;
 use crate::framing::xmt_reference::XmtTarget;
 use crate::parasolid::name_references::NameReferences;
 
@@ -1726,16 +1727,29 @@ pub struct ParasolidBlendSurfaceRecord {
     pub stream_ordinal: u32,
     /// Stream-local `BLEND_SURF` identity.
     pub xmt: u32,
-    /// Ordered support-surface identities.
-    pub support_xmts: [u32; 2],
-    /// Ball-centre spine identity; `1` is the null reference.
-    pub spine_xmt: u32,
-    /// Signed support offsets in model millimetres.
-    pub offsets: [f64; 2],
-    /// Dimensionless support thumb weights.
-    pub thumb_weights: [f64; 2],
+    /// Checked supports, offsets, and thumb weights.
+    #[serde(flatten)]
+    pub state: BlendSurfaceState,
     /// Offset of the type tag in the inflated stream.
     pub inflated_offset: u64,
+}
+
+#[cfg(test)]
+mod blend_surface_wire_tests {
+    use super::ParasolidBlendSurfaceRecord;
+
+    #[test]
+    fn checked_blend_state_retains_the_flat_native_wire() {
+        let json = r#"{"id":"blend","stream_ordinal":0,"xmt":20,"support_xmts":[6,7],"spine_xmt":0,"offsets":[-3.0,3.0],"thumb_weights":[-0.0,-2.0],"inflated_offset":10}"#;
+        let record: ParasolidBlendSurfaceRecord = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_string(&record).unwrap(), json);
+        for (field, value) in [("support_xmts", serde_json::json!([1,7])), ("offsets", serde_json::json!([3.0,4.0]))] {
+            let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+            wire[field] = value;
+            assert!(serde_json::from_value::<ParasolidBlendSurfaceRecord>(wire)
+                .unwrap_err().to_string().contains(field));
+        }
+    }
 }
 
 fn default_legal_owner_flag_count() -> u8 {
@@ -2481,10 +2495,7 @@ impl ParasolidStreamRecords for ParasolidBlendSurfaceRecord {
             id,
             stream_ordinal,
             xmt: row.xmt,
-            support_xmts: row.supports,
-            spine_xmt: row.spine,
-            offsets: row.offsets,
-            thumb_weights: row.thumb_weights,
+            state: row.state,
             inflated_offset: row.pos as u64,
         }
     }

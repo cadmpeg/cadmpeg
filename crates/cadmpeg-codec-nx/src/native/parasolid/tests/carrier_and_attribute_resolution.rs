@@ -239,10 +239,10 @@ fn decode_emits_rolling_ball_blend_surface() {
         .arena_as::<super::super::ParasolidBlendSurfaceRecord>("parasolid_blend_surface_records")
         .expect("required invariant");
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].support_xmts, [6, 6]);
-    assert_eq!(records[0].spine_xmt, 1);
-    assert_eq!(records[0].offsets, [-3.0, 3.0]);
-    assert_eq!(records[0].thumb_weights, [1.0, 1.0]);
+    assert_eq!(records[0].state.support_xmts(), [6, 6]);
+    assert_eq!(records[0].state.spine_xmt(), 1);
+    assert_eq!(records[0].state.offsets(), [-3.0, 3.0]);
+    assert_eq!(records[0].state.thumb_weights(), [1.0, 1.0]);
     let carrier = result
         .ir()
         .model

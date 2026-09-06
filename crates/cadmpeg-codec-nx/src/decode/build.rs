@@ -472,7 +472,7 @@ pub(crate) fn try_decode_geometry(
                         supports: [None, None],
                         spine: None,
                         radius: BlendRadiusLaw::Constant {
-                            signed_radius: blend.offsets[0],
+                            signed_radius: blend.state.offsets()[0],
                         },
                         cross_section: BlendCrossSection::Circular,
                         native: None,
@@ -481,9 +481,9 @@ pub(crate) fn try_decode_geometry(
                 ),
             );
             if attached.is_ok() {
-                pending_blend_supports.push((procedural_index, blend.supports, blend.offsets));
-                if blend.spine > 1 {
-                    pending_blend_spines.push((procedural_index, blend.spine));
+                pending_blend_supports.push((procedural_index, blend.state.support_xmts(), blend.state.offsets()));
+                if blend.state.spine_xmt() > 1 {
+                    pending_blend_spines.push((procedural_index, blend.state.spine_xmt()));
                 }
             }
             surfaces_by_xmt.insert(blend.xmt, surface_id);
