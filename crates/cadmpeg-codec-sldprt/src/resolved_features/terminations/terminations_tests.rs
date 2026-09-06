@@ -664,32 +664,34 @@ fn compact_extrusion_to_face_preserves_an_unparsed_framed_face_path() {
 
 #[test]
 fn termination_consensus_uses_stable_reference_identity_across_lanes() {
-    let vote = |reference: &str, identity: &str| super::TerminationVote {
-        condition: "ToFace".into(),
+    let vote = |reference: &str, identity: &str| super::TerminationVote::Face {
+        condition: super::FaceCondition::ToFace,
         reference: Some(reference.into()),
-        second_condition: None,
-        reference_identity: Some(identity.into()),
-        canonical_reference: Some("components:1,2,3".into()),
-        depth_m: None,
+        identity: identity.into(),
+        canonical: Some("components:1,2,3".into()),
     };
     let first = vote("lane-0:100", "components:1,2,3");
     let second = vote("lane-1:200", "components:1,2,3");
     let consensus =
         super::consensus_termination_vote(&[Some(first.clone()), Some(second)]).unwrap();
-    assert_eq!(consensus.reference.as_deref(), Some("components:1,2,3"));
+    assert_eq!(consensus.reference(), Some("components:1,2,3"));
 
     let exact = super::consensus_termination_vote(&[Some(first.clone())]).unwrap();
-    assert_eq!(exact.reference, first.reference);
+    assert_eq!(exact.reference(), first.reference());
     assert!(super::consensus_termination_vote(&[
         Some(first),
         Some(vote("lane-1:200", "components:1,2,4")),
     ])
     .is_none());
 
-    let mut first_depth = vote("lane-0:100", "components:1,2,3");
-    first_depth.depth_m = Some(0.01);
-    let mut second_depth = vote("lane-1:200", "components:1,2,3");
-    second_depth.depth_m = Some(0.02);
+    let first_depth = super::TerminationVote::Blind {
+        depth_m: Some(0.01),
+        second_through_all: false,
+    };
+    let second_depth = super::TerminationVote::Blind {
+        depth_m: Some(0.02),
+        second_through_all: false,
+    };
     assert!(super::consensus_termination_vote(&[Some(first_depth), Some(second_depth),]).is_none());
 }
 
