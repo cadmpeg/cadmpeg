@@ -27,6 +27,10 @@ impl<T> BranchItems<T> {
         &self.0
     }
 
+    pub(crate) fn into_vec(self) -> Vec<T> {
+        self.0
+    }
+
     pub(crate) fn map_indexed<U>(self, mut f: impl FnMut(usize, T) -> U) -> BranchItems<U> {
         BranchItems(
             self.0

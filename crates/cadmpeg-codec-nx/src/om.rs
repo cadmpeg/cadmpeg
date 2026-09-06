@@ -13,6 +13,8 @@ use branch_items::BranchItems;
 pub(crate) mod parameter_name;
 pub(crate) mod swp104_state;
 pub(crate) mod thru_curve_endings;
+pub(crate) mod thru_curve_state;
+use thru_curve_state::ThruCurveBranchItems;
 use thru_curve_endings::{ThruCurveBranchSuffix, ThruCurveGroupTerminator};
 use swp104_state::Swp104StateLane;
 use discriminators::{
@@ -2313,10 +2315,8 @@ pub struct ThruCurvePayloadBranch {
     pub offset: usize,
     /// Serialized nonzero branch mode.
     pub mode: NonZeroU8,
-    /// Exact state lane after the repeated count.
-    pub state_lane: Vec<u8>,
     /// Ordered nonterminal references.
-    pub members: BranchItems<PayloadObjectReference>,
+    pub members: ThruCurveBranchItems<PayloadObjectReference>,
     /// Terminal reference.
     pub terminal: PayloadObjectReference,
     /// Exact two-byte branch suffix.
@@ -4992,25 +4992,15 @@ fn thru_curve_payload_branch(
     cursor += 2;
 
     let standard_len = usize::from(declared_count) + 3;
-    let standard = record
-        .payload
-        .get(cursor..cursor + standard_len)
-        .filter(|lane| lane.iter().all(|&byte| byte == 0))
-        .map(<[u8]>::to_vec);
-    let extended = (declared_count == 5)
-        .then(|| record.payload.get(cursor..cursor + 18))
-        .flatten()
-        .filter(|lane| {
-            lane[..4] == [0; 4]
-                && lane[4..6] == [0x01, declared_count]
-                && lane[10..12] == [0x01, declared_count]
-                && lane[16..] == [0; 2]
-        })
-        .map(<[u8]>::to_vec);
-    let ((Some(state_lane), None) | (None, Some(state_lane))) = (standard, extended) else {
-        return None;
+    let lane = record.payload.get(cursor..cursor + standard_len)?;
+    let lane = if lane.iter().all(|&byte| byte == 0) {
+        lane
+    } else {
+        record.payload.get(cursor..cursor + 18)?
     };
-    cursor += state_lane.len();
+    let lane_len = lane.len();
+    let members = ThruCurveBranchItems::from_parts(members, lane).ok()?;
+    cursor += lane_len;
     (record.payload.get(cursor..cursor + 3) == Some(&[0xff, 0x01, 0x02])).then_some(())?;
     cursor += 3;
     let terminal_offset = cursor;
@@ -5031,8 +5021,7 @@ fn thru_curve_payload_branch(
         ThruCurvePayloadBranch {
             offset: record.payload_offset + at,
             mode,
-            state_lane,
-            members: BranchItems::new(members).ok()?,
+            members,
             terminal,
             suffix,
         },

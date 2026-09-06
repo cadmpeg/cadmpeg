@@ -13,6 +13,7 @@ use std::borrow::Cow;
 use std::num::NonZeroU8;
 use crate::om::swp104_state::Swp104StateLane;
 use crate::om::branch_items::BranchItems;
+use crate::om::thru_curve_state::ThruCurveBranchItems;
 use crate::om::thru_curve_endings::{ThruCurveBranchSuffix, ThruCurveGroupTerminator};
 
 pub(crate) mod datum_plane_header;
@@ -4268,10 +4269,8 @@ pub struct FeatureThruCurveConstructionBranch {
     pub ordinal: u32,
     /// Serialized nonzero branch mode.
     pub mode: NonZeroU8,
-    /// Exact state lane after the repeated count.
-    pub state_lane: Vec<u8>,
     /// Ordered nonterminal references.
-    pub members: BranchItems<FeatureSurfaceBranchReference>,
+    pub members: ThruCurveBranchItems<FeatureSurfaceBranchReference>,
     /// Terminal reference.
     pub terminal: FeatureSurfaceBranchReference,
     /// Exact two-byte branch suffix.
@@ -4286,7 +4285,7 @@ struct FeatureThruCurveConstructionBranchWire {
     mode: NonZeroU8,
     declared_count: u8,
     state_lane: Vec<u8>,
-    members: BranchItems<FeatureSurfaceBranchReference>,
+    members: Vec<FeatureSurfaceBranchReference>,
     terminal: FeatureSurfaceBranchReference,
     suffix: ThruCurveBranchSuffix,
     source_offset: u64,
@@ -4298,8 +4297,8 @@ impl From<FeatureThruCurveConstructionBranch> for FeatureThruCurveConstructionBr
             ordinal: value.ordinal,
             mode: value.mode,
             declared_count: value.members.declared_count(),
-            state_lane: value.state_lane,
-            members: value.members,
+            state_lane: value.members.state_lane(),
+            members: value.members.into_members(),
             terminal: value.terminal,
             suffix: value.suffix,
             source_offset: value.source_offset,
@@ -4310,14 +4309,13 @@ impl From<FeatureThruCurveConstructionBranch> for FeatureThruCurveConstructionBr
 impl TryFrom<FeatureThruCurveConstructionBranchWire> for FeatureThruCurveConstructionBranch {
     type Error = String;
     fn try_from(wire: FeatureThruCurveConstructionBranchWire) -> Result<Self, Self::Error> {
-        if wire.declared_count != wire.members.declared_count() {
+        if usize::from(wire.declared_count) != wire.members.len() + 1 {
             return Err("declared_count must equal members length plus one".to_owned());
         }
         Ok(Self {
             ordinal: wire.ordinal,
             mode: wire.mode,
-            state_lane: wire.state_lane,
-            members: wire.members,
+            members: ThruCurveBranchItems::from_parts(wire.members, &wire.state_lane)?,
             terminal: wire.terminal,
             suffix: wire.suffix,
             source_offset: wire.source_offset,
@@ -10843,7 +10841,6 @@ pub fn feature_thru_curve_construction_branch_groups(
                     FeatureThruCurveConstructionBranch {
                         ordinal: ordinal as u32,
                         mode: branch.mode,
-                        state_lane: branch.state_lane,
                         members,
                         terminal,
                         suffix: branch.suffix,
