@@ -1294,7 +1294,7 @@ fn attach_feature_operations(
     }
     let body_references = admitted_body_references;
     let mut body_reference_occurrences_by_operation =
-        BTreeMap::<&str, Vec<&crate::native::features::FeatureBodyReferenceOccurrence>>::new();
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureBodyReference>>::new();
     for reference in body_reference_occurrences {
         body_reference_occurrences_by_operation
             .entry(reference.operation_label.as_str())
@@ -2297,17 +2297,18 @@ fn attach_feature_operations(
                 }
             }
         }
-        for reference in body_reference_occurrences_by_operation
+        for (reference, ordinal) in body_reference_occurrences_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
+            .filter_map(|reference| reference.ordinal.map(|ordinal| (reference, ordinal)))
         {
             source_properties.insert(
-                format!("body_reference.{}", reference.ordinal),
+                format!("body_reference.{ordinal}"),
                 reference.body_object_index.to_string(),
             );
             source_properties.insert(
-                format!("body_reference_occurrence.{}", reference.ordinal),
+                format!("body_reference_occurrence.{ordinal}"),
                 reference.id.clone(),
             );
         }

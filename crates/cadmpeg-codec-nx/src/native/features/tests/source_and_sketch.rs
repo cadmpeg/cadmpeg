@@ -910,11 +910,11 @@ fn decode_retains_role_scoped_om_record_area_header() {
         .native
         .namespace("nx")
         .expect("required invariant")
-        .arena_as::<super::FeatureBodyReferenceOccurrence>("feature_body_reference_occurrences")
+        .arena_as::<super::FeatureBodyReference>("feature_body_reference_occurrences")
         .expect("required invariant");
     assert_eq!(body_reference_occurrences.len(), 1);
     assert_eq!(body_reference_occurrences[0].operation_label, labels[0].id);
-    assert_eq!(body_reference_occurrences[0].ordinal, 0);
+    assert_eq!(body_reference_occurrences[0].ordinal, Some(0));
     assert_eq!(body_reference_occurrences[0].body_object_index, 6466);
     let feature = result.ir().model.features.first().expect("neutral feature");
     assert_eq!(feature.name.as_deref(), Some("UNITE"));
@@ -1258,7 +1258,7 @@ fn nx_extrude_construction_profile_requires_matching_resolved_encodings() {
 
 #[test]
 fn nx_operation_body_operands_require_known_distinct_body_identities() {
-    use super::{FeatureBodyReferenceOccurrence, FeatureOperationBodyMember};
+    use super::{FeatureBodyReference, FeatureOperationBodyMember};
     use crate::native::segments::SegmentBodyBinding;
     let member = |ordinal, member_index| FeatureOperationBodyMember {
         id: format!("nx:feature-history:operation-body-member#0-{ordinal}"),
@@ -1271,10 +1271,10 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
         source_offset: u64::from(ordinal),
     };
     let members = [member(0, 20), member(1, 30), member(2, 10)];
-    let references = [FeatureBodyReferenceOccurrence {
+    let references = [FeatureBodyReference {
         id: "reference".to_string(),
         operation_label: "earlier".to_string(),
-        ordinal: 0,
+        ordinal: Some(0),
         body_object_index: 20,
         raw_body_object_index: vec![20],
         source_offset: 0,
@@ -1351,7 +1351,7 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
     )
     .is_empty());
 
-    let same_store_reference = FeatureBodyReferenceOccurrence {
+    let same_store_reference = FeatureBodyReference {
         operation_label: "same-store".to_string(),
         ..references[0].clone()
     };
@@ -1378,7 +1378,7 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
     let distinct_member = member(0, 30);
     let distinct_member_operand = super::feature_operation_body_operands(
         &[distinct_member],
-        &[FeatureBodyReferenceOccurrence {
+        &[FeatureBodyReference {
             operation_label: "same-store".to_string(),
             ..references[0].clone()
         }],
@@ -1394,7 +1394,7 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
     );
     assert!(super::feature_operation_body_operands(
         &members,
-        &[FeatureBodyReferenceOccurrence {
+        &[FeatureBodyReference {
             operation_label: "same-store".to_string(),
             ..references[0].clone()
         }],

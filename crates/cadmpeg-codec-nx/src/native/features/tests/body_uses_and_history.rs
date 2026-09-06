@@ -38,6 +38,7 @@ fn segment_body_lineage_statuses_cover_every_bound_image() {
         },
     ];
     let references = [FeatureBodyReference {
+        ordinal: None,
         id: "reference#0".to_string(),
         operation_label: "operation#0".to_string(),
         body_object_index: 10,
@@ -94,6 +95,7 @@ fn segment_body_lineage_statuses_cover_every_bound_image() {
 fn unique_feature_body_references_require_one_field_per_operation() {
     let reference =
         |id: &str, operation_label: &str, body_object_index| super::FeatureBodyReference {
+            ordinal: None,
             id: id.to_string(),
             operation_label: operation_label.to_string(),
             body_object_index,
@@ -115,6 +117,7 @@ fn feature_body_segment_uses_require_one_alias_pair() {
     use super::{feature_body_segment_uses, FeatureBodyReference};
     use crate::native::segments::SegmentBodyBinding;
     let reference = FeatureBodyReference {
+        ordinal: None,
         id: "nx:feature-history:body-reference#0".into(),
         operation_label: "operation#0".into(),
         body_object_index: 11,
@@ -152,6 +155,7 @@ fn feature_body_segment_uses_require_one_alias_pair() {
     )
     .is_empty());
     let duplicate_reference = FeatureBodyReference {
+        ordinal: None,
         id: "nx:feature-history:body-reference#1".into(),
         operation_label: reference.operation_label.clone(),
         body_object_index: 12,
@@ -179,6 +183,7 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
     use crate::native::segments::SegmentBodyBinding;
 
     let reference = FeatureBodyReference {
+        ordinal: None,
         id: "reference#0".into(),
         operation_label: "operation#0".into(),
         body_object_index: 11,
@@ -384,6 +389,7 @@ fn feature_body_segment_uses_reject_primary_index_offset_collision() {
     use crate::native::segments::SegmentBodyBinding;
 
     let reference = FeatureBodyReference {
+        ordinal: None,
         id: "reference#0".into(),
         operation_label: "operation#0".into(),
         body_object_index: 11,
@@ -418,6 +424,7 @@ fn feature_body_segment_uses_exclude_missing_offset_store_ordinals() {
     use crate::native::segments::SegmentBodyBinding;
 
     let reference = FeatureBodyReference {
+        ordinal: None,
         id: "reference#99".into(),
         operation_label: "operation#0".into(),
         body_object_index: 99,
@@ -469,6 +476,7 @@ fn feature_body_segment_uses_exclude_ambiguous_offset_store_namespaces() {
     use crate::native::segments::SegmentBodyBinding;
 
     let reference = FeatureBodyReference {
+        ordinal: None,
         id: "reference#99".into(),
         operation_label: "operation#0".into(),
         body_object_index: 99,
@@ -524,6 +532,7 @@ fn feature_body_data_block_uses_inherit_the_operation_input_store() {
     use crate::native::om::{DataBlock, DataBlockRole};
 
     let reference = FeatureBodyReference {
+        ordinal: None,
         id: "nx:feature-history:body-reference#0".into(),
         operation_label: "operation#0".into(),
         body_object_index: 72,
@@ -564,6 +573,7 @@ fn feature_body_data_block_uses_inherit_the_operation_input_store() {
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].data_block, blocks[2].id);
     let duplicate_reference = FeatureBodyReference {
+        ordinal: None,
         id: "nx:feature-history:body-reference#1".into(),
         operation_label: "operation#0".into(),
         body_object_index: 73,
@@ -595,6 +605,7 @@ fn feature_body_lineage_closes_overlapping_alias_pairs_transitively() {
     };
     let labels = [label(1, "UNITE"), label(0, "EXTRUDE")];
     let references = [FeatureBodyReference {
+        ordinal: None,
         id: "reference#30".to_string(),
         operation_label: "operation#0".to_string(),
         body_object_index: 30,

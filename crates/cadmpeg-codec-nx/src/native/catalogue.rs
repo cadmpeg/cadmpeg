@@ -372,12 +372,7 @@ impl ContainerNoted for FeatureOperationBodyWrite {
         (&self.id, self.source_offset)
     }
 }
-impl ContainerNoted for FeatureOperationTaggedReference {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
-    }
-}
-impl ContainerNoted for FeatureOperationDataBlockReference {
+impl ContainerNoted for FeatureOperationObjectReference {
     fn container_note(&self) -> (&str, u64) {
         (&self.id, self.source_offset)
     }
@@ -403,11 +398,6 @@ impl ContainerNoted for FeaturePayloadString {
     }
 }
 impl ContainerNoted for FeatureBodyReference {
-    fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
-    }
-}
-impl ContainerNoted for FeatureBodyReferenceOccurrence {
     fn container_note(&self) -> (&str, u64) {
         (&self.id, self.source_offset)
     }

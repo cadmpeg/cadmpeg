@@ -932,6 +932,7 @@ mod tests {
         };
         let labels = [label(2, "UNITE"), label(1, "EXTRUDE"), label(0, "EXTRUDE")];
         let reference = |operation: &str, body_object_index| FeatureBodyReference {
+            ordinal: None,
             id: format!("reference#{body_object_index}"),
             operation_label: operation.to_string(),
             body_object_index,
@@ -1067,6 +1068,7 @@ mod tests {
         };
         let labels = [label(2, "EXTRUDE"), label(1, "UNITE"), label(0, "UNITE")];
         let references = [FeatureBodyReference {
+            ordinal: None,
             id: "reference#10".to_string(),
             operation_label: "operation#2".to_string(),
             body_object_index: 10,
@@ -1147,6 +1149,7 @@ mod tests {
             source_offset: 0,
         }];
         let references = [FeatureBodyReference {
+            ordinal: None,
             id: "reference#10".to_string(),
             operation_label: "operation#delete".to_string(),
             body_object_index: 10,
@@ -1196,6 +1199,7 @@ mod tests {
         }];
         let references = [
             FeatureBodyReference {
+                ordinal: None,
                 id: "reference#10".to_string(),
                 operation_label: labels[0].id.clone(),
                 body_object_index: 10,
@@ -1203,6 +1207,7 @@ mod tests {
                 source_offset: 0,
             },
             FeatureBodyReference {
+                ordinal: None,
                 id: "reference#20".to_string(),
                 operation_label: labels[0].id.clone(),
                 body_object_index: 20,
@@ -1264,6 +1269,7 @@ mod tests {
             source_offset: 0,
         }];
         let references = [FeatureBodyReference {
+            ordinal: None,
             id: "reference#10".to_string(),
             operation_label: labels[0].id.clone(),
             body_object_index: 10,
@@ -1316,6 +1322,7 @@ mod tests {
             source_offset: 0,
         }];
         let references = [FeatureBodyReference {
+            ordinal: None,
             id: "reference#11".to_string(),
             operation_label: "operation#delete".to_string(),
             body_object_index: 11,
@@ -1372,6 +1379,7 @@ mod tests {
             source_offset: 0,
         }];
         let references = [FeatureBodyReference {
+            ordinal: None,
             id: "reference#11".to_string(),
             operation_label: "operation#delete".to_string(),
             body_object_index: 11,
@@ -1593,6 +1601,7 @@ mod tests {
         // order places the later writer before the earlier delete.
         let labels = [label(0, "EXTRUDE"), label(1, "DELETE")];
         let reference = |ordinal: u32| FeatureBodyReference {
+            ordinal: None,
             id: format!("reference#{ordinal}"),
             operation_label: format!("operation#{ordinal}"),
             body_object_index: 10,
@@ -1642,6 +1651,7 @@ mod tests {
             source_offset: u64::from(ordinal),
         };
         let reference = |ordinal: u32| FeatureBodyReference {
+            ordinal: None,
             id: format!("reference#{ordinal}"),
             operation_label: format!("operation#{ordinal}"),
             body_object_index: 10,
@@ -1700,6 +1710,7 @@ mod tests {
             label("operation#late", "history#1", 0, "UNITE"),
         ];
         let references = [FeatureBodyReference {
+            ordinal: None,
             id: "reference#20".to_string(),
             operation_label: "operation#early".to_string(),
             body_object_index: 20,
@@ -1758,6 +1769,7 @@ mod tests {
         };
         let labels = [label(1, "UNITE"), label(0, "EXTRUDE")];
         let references = [FeatureBodyReference {
+            ordinal: None,
             id: "reference#150".to_string(),
             operation_label: "operation#0".to_string(),
             body_object_index: 150,

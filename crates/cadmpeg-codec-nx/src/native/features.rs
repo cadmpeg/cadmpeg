@@ -264,12 +264,12 @@ pub struct FeatureBodyWriteGroupPartitionUse {
     pub parasolid_group_members: Vec<String>,
 }
 
-/// Exact direct tagged-reference field retained from one feature operation.
+/// Exact direct object-reference field retained from one feature operation.
 ///
-/// The tag and object identity are native evidence. They do not assign a
+/// The optional tag and object identity are native evidence. They do not assign a
 /// body, operand, input, or output role.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureOperationTaggedReference {
+pub struct FeatureOperationObjectReference {
     /// Globally unique reference identity.
     pub id: String,
     /// Owning operation-label identity.
@@ -279,38 +279,8 @@ pub struct FeatureOperationTaggedReference {
     /// Zero-based reference order within the operation payload.
     pub ordinal: u32,
     /// Byte between the opening `01 02` marker and the object index.
-    pub tag: u8,
-    /// Referenced feature object index.
-    pub object_index: u32,
-    /// Exact serialized object-index token.
-    pub raw_object_index: Vec<u8>,
-    /// Unique target in the native offset-store data-block arena, when found.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub data_block: Option<String>,
-    /// Absolute offset of the object-index token.
-    pub object_index_source_offset: u64,
-    /// Exact serialized field byte length.
-    pub byte_len: u64,
-    /// Absolute offset of the opening `01 02` marker.
-    pub source_offset: u64,
-}
-
-/// Exact direct operation data-block reference retained from one feature
-/// operation.
-///
-/// The object identity and fixed suffix are native evidence. They do not
-/// assign a body, operand, input, output, seed, transform, or construction
-/// role.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureOperationDataBlockReference {
-    /// Globally unique reference identity.
-    pub id: String,
-    /// Owning operation-label identity.
-    pub operation_label: String,
-    /// Owning bounded operation-record identity.
-    pub operation_record: String,
-    /// Zero-based reference order within the operation payload.
-    pub ordinal: u32,
+    pub tag: Option<u8>,
     /// Referenced feature object index.
     pub object_index: u32,
     /// Exact serialized object-index token.
@@ -809,30 +779,16 @@ pub enum SimpleHoleEndTreatment {
     Chamfer,
 }
 
-/// Direct primary-body selection in one feature-history operation.
+/// Primary selection or ordered body-reference field in one feature operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureBodyReference {
     /// Globally unique reference identity.
     pub id: String,
     /// Owning operation-label identity.
     pub operation_label: String,
-    /// Serialized reference index interpreted through its resolved namespace.
-    pub body_object_index: u32,
-    /// Exact serialized variable-width object-index token.
-    pub raw_body_object_index: Vec<u8>,
-    /// Absolute file offset of the object-index token.
-    pub source_offset: u64,
-}
-
-/// Ordered body-reference field retained from one feature-history operation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureBodyReferenceOccurrence {
-    /// Globally unique occurrence identity.
-    pub id: String,
-    /// Owning operation-label identity.
-    pub operation_label: String,
-    /// Zero-based field order within the bounded operation record.
-    pub ordinal: u32,
+    /// Zero-based field order; absent for the primary body selection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ordinal: Option<u32>,
     /// Serialized reference index interpreted through its resolved namespace.
     pub body_object_index: u32,
     /// Exact serialized variable-width object-index token.
@@ -5757,7 +5713,7 @@ pub fn feature_body_write_group_partition_uses(
 /// Decode exact direct tagged-reference fields from bounded feature operations.
 pub fn feature_operation_tagged_references(
     container: &Container,
-) -> Vec<FeatureOperationTaggedReference> {
+) -> Vec<FeatureOperationObjectReference> {
     let indexed = container.indexed_om_sections();
     let mut references = Vec::new();
     visit_feature_history_operation_records(
@@ -5772,14 +5728,14 @@ pub fn feature_operation_tagged_references(
                 .into_iter()
                 .enumerate()
             {
-                references.push(FeatureOperationTaggedReference {
+                references.push(FeatureOperationObjectReference {
                     id: format!(
                         "nx:feature-history:operation-tagged-reference#{section_key}-{operation_ordinal:010}-{ordinal:010}"
                     ),
                     operation_label: operation_label.clone(),
                     operation_record: operation_record.clone(),
                     ordinal: ordinal as u32,
-                    tag: reference.tag,
+                    tag: Some(reference.tag),
                     object_index: reference.object_index,
                     raw_object_index: reference.raw_object_index,
                     data_block: unique_offset_data_block(&indexed, reference.object_index),
@@ -5798,7 +5754,7 @@ pub fn feature_operation_tagged_references(
 /// feature operations.
 pub fn feature_operation_data_block_references(
     container: &Container,
-) -> Vec<FeatureOperationDataBlockReference> {
+) -> Vec<FeatureOperationObjectReference> {
     let indexed = container.indexed_om_sections();
     let mut references = Vec::new();
     visit_feature_history_operation_records(
@@ -5813,7 +5769,8 @@ pub fn feature_operation_data_block_references(
                 .into_iter()
                 .enumerate()
             {
-                references.push(FeatureOperationDataBlockReference {
+                references.push(FeatureOperationObjectReference {
+                    tag: None,
                     id: format!(
                         "nx:feature-history:operation-data-block-reference#{section_key}-{operation_ordinal:010}-{ordinal:010}"
                     ),
@@ -6577,6 +6534,7 @@ pub fn feature_body_references(container: &Container) -> Vec<FeatureBodyReferenc
             let operation_label =
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
             references.push(FeatureBodyReference {
+                ordinal: None,
                 id: format!(
                     "nx:feature-history:body-reference#{section_key}-{operation_ordinal:010}"
                 ),
@@ -6616,7 +6574,7 @@ pub(crate) fn unique_feature_body_references(
 /// Decode every ordered body-reference field from bounded feature operations.
 pub fn feature_body_reference_occurrences(
     container: &Container,
-) -> Vec<FeatureBodyReferenceOccurrence> {
+) -> Vec<FeatureBodyReference> {
     let mut references = Vec::new();
     visit_feature_history_operation_records(
         container,
@@ -6627,12 +6585,12 @@ pub fn feature_body_reference_occurrences(
                 crate::om::operation_body_references(record)
                     .into_iter()
                     .enumerate()
-                    .map(|(ordinal, reference)| FeatureBodyReferenceOccurrence {
+                    .map(|(ordinal, reference)| FeatureBodyReference {
                         id: format!(
                             "nx:feature-history:body-reference-occurrence#{section_key}-{operation_ordinal:010}-{ordinal:010}"
                         ),
                         operation_label: operation_label.clone(),
-                        ordinal: ordinal as u32,
+                        ordinal: Some(ordinal as u32),
                         body_object_index: reference.object_index,
                         raw_body_object_index: reference.raw_object_index,
                         source_offset: entry_offset + reference.offset as u64,
@@ -10690,7 +10648,7 @@ pub fn feature_operation_body_members(container: &Container) -> Vec<FeatureOpera
 /// Resolve wrapped operation members that name known feature-body identities.
 pub fn feature_operation_body_operands(
     members: &[FeatureOperationBodyMember],
-    references: &[FeatureBodyReferenceOccurrence],
+    references: &[FeatureBodyReference],
     inputs: &[FeatureInputBlock],
     blocks: &[crate::native::om::DataBlock],
     bindings: &[SegmentBodyBinding],

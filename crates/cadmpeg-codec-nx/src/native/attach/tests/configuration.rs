@@ -1101,6 +1101,7 @@ fn boolean_target_is_an_independent_intermediate_result_writer() {
     );
 
     let primary = FeatureBodyReference {
+        ordinal: None,
         id: "nx:test:primary#0".into(),
         operation_label: boolean.operation_label.clone(),
         body_object_index: 7,
@@ -1578,6 +1579,7 @@ fn native_primary_body_references_retain_only_proven_body_namespaces() {
     use crate::native::om::{DataBlock, DataBlockRole};
 
     let reference = |id: &str, operation_label: &str, body_object_index| FeatureBodyReference {
+        ordinal: None,
         id: id.to_string(),
         operation_label: operation_label.to_string(),
         body_object_index,
