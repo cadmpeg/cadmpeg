@@ -19,7 +19,6 @@ fn operation_state_indices_retain_each_admitted_form() {
         let token = crate::om::state_index::OperationStateIndex::read_at(&bytes, at, 0).expect("complete state index");
         assert_eq!(token.token().map(crate::om::state_index::StateIndexToken::value), value);
         assert_eq!(token.raw(), &bytes[at..at + width]);
-        assert_eq!(token.offset(), at);
         at += width;
     }
     assert_eq!(at, bytes.len());

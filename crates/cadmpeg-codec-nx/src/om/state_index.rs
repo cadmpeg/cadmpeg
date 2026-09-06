@@ -52,7 +52,6 @@ impl StateIndexToken {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct OperationStateIndex {
     token: Option<StateIndexToken>,
-    offset: usize,
 }
 
 impl OperationStateIndex {
@@ -62,15 +61,14 @@ impl OperationStateIndex {
         } else {
             Some(StateIndexToken::read_at(bytes, at)?)
         };
-        Some(Self { token, offset: base_offset.checked_add(at)? })
+        base_offset.checked_add(at)?;
+        Some(Self { token })
     }
 
     pub(crate) fn token(self) -> Option<StateIndexToken> { self.token }
 
     pub(crate) fn raw(&self) -> &[u8] { self.token.as_ref().map_or(&[0xff], StateIndexToken::raw) }
 
-    #[cfg(test)]
-    pub(crate) fn offset(self) -> usize { self.offset }
 }
 
 #[cfg(test)]
@@ -84,7 +82,6 @@ mod tests {
             let required = index.token().unwrap();
             assert_eq!(required.value(), 0);
             assert_eq!(required.raw(), raw);
-            assert_eq!(index.offset(), 100);
         }
     }
 
