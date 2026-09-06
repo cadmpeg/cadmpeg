@@ -2397,19 +2397,14 @@ fn attach_feature_operations(
         }
         if let Some(dimensions) = block_dimensions_by_operation.get(label.id.as_str()) {
             source_properties.insert("block_dimensions".to_string(), dimensions.id.clone());
-            for (dimension_ordinal, (declaration, expression)) in dimensions
-                .declarations
-                .iter()
-                .zip(&dimensions.expressions)
-                .enumerate()
-            {
+            for (dimension_ordinal, dimension) in dimensions.dimensions.iter().enumerate() {
                 source_properties.insert(
                     format!("block_dimension_declaration.{dimension_ordinal}"),
-                    declaration.clone(),
+                    dimension.declaration.clone(),
                 );
                 source_properties.insert(
                     format!("block_dimension_expression.{dimension_ordinal}"),
-                    expression.clone(),
+                    dimension.expression.clone(),
                 );
             }
         }
@@ -3203,9 +3198,15 @@ fn attach_feature_operations(
             .iter()
             .map(|value| value.value.as_str())
             .collect::<Vec<_>>();
-        let block_dimension_values = block_dimensions_by_operation
-            .get(label.id.as_str())
-            .map(|dimensions| dimensions.values);
+        let block_dimension_values =
+            block_dimensions_by_operation
+                .get(label.id.as_str())
+                .map(|dimensions| {
+                    dimensions
+                        .dimensions
+                        .each_ref()
+                        .map(|dimension| dimension.value)
+                });
         let block_projection = (label.value == "BLOCK")
             .then(|| block_placement(ir, block_dimension_values?, &outputs))
             .flatten();
@@ -3568,9 +3569,9 @@ fn attach_feature_operations(
         if let Some(dimensions) = block_dimensions_by_operation.get(label.id.as_str()) {
             referenced_parameters.extend(
                 dimensions
-                    .expressions
+                    .dimensions
                     .iter()
-                    .filter_map(|expression| expression_parameter_id(expression)),
+                    .filter_map(|dimension| expression_parameter_id(&dimension.expression)),
             );
         }
         for owner in parameter_owner_dependencies(&parameter_owners, &referenced_parameters) {
@@ -8893,8 +8894,8 @@ fn attach_block_dimension_parameter_consumers(
         let consumer = dimension_set
             .operation_label
             .replacen("operation-label", "feature", 1);
-        for (ordinal, expression) in dimension_set.expressions.iter().enumerate() {
-            let Some(parameter_id) = expression_parameter_id(expression) else {
+        for (ordinal, dimension) in dimension_set.dimensions.iter().enumerate() {
+            let Some(parameter_id) = expression_parameter_id(&dimension.expression) else {
                 continue;
             };
             let Some(parameter) = parameters.get_mut(&parameter_id) else {

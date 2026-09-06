@@ -204,3 +204,11 @@ fn extrude_32_branch_preserves_wire_and_requires_complete_reference_tokens() {
         ],
     );
 }
+
+#[test]
+fn block_dimensions_preserve_wire_and_require_three_complete_parameters() {
+    check_lane_wire::<FeatureBlockDimensions>(
+        r#"{"id":"dimensions","operation_label":"operation","construction":"construction","anchor_bindings":["binding"],"declarations":["d1","d2","d3"],"expressions":["e1","e2","e3"],"values":[1.0,2.0,3.0]}"#,
+        &["declarations", "expressions", "values"],
+    );
+}

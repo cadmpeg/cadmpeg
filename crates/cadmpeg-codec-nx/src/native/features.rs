@@ -4923,21 +4923,80 @@ pub struct FeatureBlockPayloadPointGroup {
 
 /// Ordered three-parameter dimension run of one `BLOCK` feature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    from = "FeatureBlockDimensionsWire",
+    into = "FeatureBlockDimensionsWire"
+)]
 pub struct FeatureBlockDimensions {
-    /// Globally unique dimension-set identity.
     pub id: String,
-    /// Owning `BLOCK` operation label.
     pub operation_label: String,
-    /// Complete resolved block construction.
     pub construction: String,
-    /// Bindings selecting the first parameter declaration.
     pub anchor_bindings: Vec<String>,
+    pub dimensions: [FeatureBlockDimension; 3],
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FeatureBlockDimension {
+    pub declaration: String,
+    pub expression: String,
+    pub value: f64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureBlockDimensionsWire {
+    /// Globally unique dimension-set identity.
+    id: String,
+    /// Owning `BLOCK` operation label.
+    operation_label: String,
+    /// Complete resolved block construction.
+    construction: String,
+    /// Bindings selecting the first parameter declaration.
+    anchor_bindings: Vec<String>,
     /// Ordered consecutive parameter declarations.
-    pub declarations: [String; 3],
+    declarations: [String; 3],
     /// Ordered exact numeric expression records.
-    pub expressions: [String; 3],
+    expressions: [String; 3],
     /// Ordered finite dimensions in model millimeters.
-    pub values: [f64; 3],
+    values: [f64; 3],
+}
+
+impl From<FeatureBlockDimensions> for FeatureBlockDimensionsWire {
+    fn from(dimensions: FeatureBlockDimensions) -> Self {
+        Self {
+            id: dimensions.id,
+            operation_label: dimensions.operation_label,
+            construction: dimensions.construction,
+            anchor_bindings: dimensions.anchor_bindings,
+            declarations: dimensions
+                .dimensions
+                .each_ref()
+                .map(|dimension| dimension.declaration.clone()),
+            expressions: dimensions
+                .dimensions
+                .each_ref()
+                .map(|dimension| dimension.expression.clone()),
+            values: dimensions
+                .dimensions
+                .each_ref()
+                .map(|dimension| dimension.value),
+        }
+    }
+}
+
+impl From<FeatureBlockDimensionsWire> for FeatureBlockDimensions {
+    fn from(wire: FeatureBlockDimensionsWire) -> Self {
+        Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            construction: wire.construction,
+            anchor_bindings: wire.anchor_bindings,
+            dimensions: std::array::from_fn(|slot| FeatureBlockDimension {
+                declaration: wire.declarations[slot].clone(),
+                expression: wire.expressions[slot].clone(),
+                value: wire.values[slot],
+            }),
+        }
+    }
 }
 
 /// Persistent object frame carried by one bounded offset-store block.
@@ -11514,11 +11573,11 @@ pub fn feature_block_dimensions(
                     .into_iter()
                     .map(|binding| binding.id.clone())
                     .collect(),
-                declarations: run.map(|declaration| declaration.id.clone()),
-                expressions: resolved
-                    .each_ref()
-                    .map(|(expression, _)| expression.id.clone()),
-                values: resolved.map(|(_, value)| value),
+                dimensions: std::array::from_fn(|slot| FeatureBlockDimension {
+                    declaration: run[slot].id.clone(),
+                    expression: resolved[slot].0.id.clone(),
+                    value: resolved[slot].1,
+                }),
             })
         })
         .collect()

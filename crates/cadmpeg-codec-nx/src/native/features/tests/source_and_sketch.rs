@@ -227,7 +227,13 @@ fn nx_block_dimensions_do_not_cross_expression_sections() {
         &declarations,
         &expressions,
     );
-    assert_eq!(dimensions[0].values, [508.0, 533.4, 558.8]);
+    assert_eq!(
+        dimensions[0]
+            .dimensions
+            .each_ref()
+            .map(|dimension| dimension.value),
+        [508.0, 533.4, 558.8]
+    );
 }
 
 #[test]

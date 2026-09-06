@@ -1317,13 +1317,11 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
         operation_label: "nx:feature-history:operation-label#1-4".into(),
         construction: "construction".into(),
         anchor_bindings: vec!["binding".into()],
-        declarations: ["d20".into(), "d21".into(), "d22".into()],
-        expressions: [
-            expressions[0].id.clone(),
-            expressions[1].id.clone(),
-            expressions[2].id.clone(),
-        ],
-        values: [20.0, 21.0, 22.0],
+        dimensions: std::array::from_fn(|slot| crate::native::features::FeatureBlockDimension {
+            declaration: ["d20", "d21", "d22"][slot].into(),
+            expression: expressions[slot].id.clone(),
+            value: [20.0, 21.0, 22.0][slot],
+        }),
     };
     let mut ir = cadmpeg_ir::CadIr::empty();
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
@@ -1335,9 +1333,9 @@ fn nx_block_dimension_parameters_name_the_block_as_consumer() {
         .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
         .collect();
     let parameter_references = dimensions
-        .expressions
+        .dimensions
         .iter()
-        .filter_map(|expression| super::expression_parameter_id(expression))
+        .filter_map(|dimension| super::expression_parameter_id(&dimension.expression))
         .collect::<Vec<_>>();
     assert_eq!(
         super::parameter_owner_dependencies(&parameter_owners, &parameter_references),
