@@ -369,21 +369,21 @@ fn audit_trail_rows_retain_optional_selector_variable_value_width_and_raw_bytes(
     ];
     let rows = super::audit_trail_rows(&bytes, 2, bytes.len(), 900).expect("audit rows");
     assert_eq!(rows.len(), 2);
-    assert_eq!(Some(rows[0].ordinal.value()), Some(2));
-    assert_eq!(rows[0].frame_selector, None);
-    assert_eq!(rows[0].timestamp, 0x6553_4d20);
-    assert_eq!(rows[0].value.raw().len(), 5);
-    assert_eq!(rows[0].value.value(), 0x0102_0304);
-    assert_eq!(rows[0].span.offset(), 900 + 7);
-    assert_eq!(rows[0].raw, &bytes[7..20]);
-    assert_eq!(Some(rows[1].ordinal.value()), Some(3));
-    assert_eq!(rows[1].frame_selector, Some(7));
-    assert_eq!(rows[1].value.raw().len(), 4);
-    assert_eq!(rows[1].value.value(), 0x0001_0203);
-    assert_eq!(rows[1].raw, &bytes[20..36]);
-    assert_eq!(rows[1].span.end_offset(), 900 + 36);
+    assert_eq!(Some(rows[0].record().ordinal.value()), Some(2));
+    assert_eq!(rows[0].record().frame_selector, None);
+    assert_eq!(rows[0].record().timestamp, 0x6553_4d20);
+    assert_eq!(rows[0].record().value.raw().len(), 5);
+    assert_eq!(rows[0].record().value.value(), 0x0102_0304);
+    assert_eq!(rows[0].offset(), 900 + 7);
+    assert_eq!(rows[0].record().raw(), &bytes[7..20]);
+    assert_eq!(Some(rows[1].record().ordinal.value()), Some(3));
+    assert_eq!(rows[1].record().frame_selector, Some(7));
+    assert_eq!(rows[1].record().value.raw().len(), 4);
+    assert_eq!(rows[1].record().value.value(), 0x0001_0203);
+    assert_eq!(rows[1].record().raw(), &bytes[20..36]);
+    assert_eq!(rows[1].end_offset(), 900 + 36);
 
     let truncated = super::audit_trail_rows(&bytes, 2, 35, 900).expect("bounded audit rows");
     assert_eq!(truncated.len(), 1);
-    assert_eq!(truncated[0].raw, &bytes[7..20]);
+    assert_eq!(truncated[0].record().raw(), &bytes[7..20]);
 }

@@ -26,18 +26,20 @@ pub(super) struct OmAuditTrailRowWire {
 
 impl From<OmAuditTrailRow> for OmAuditTrailRowWire {
     fn from(value: OmAuditTrailRow) -> Self {
+        let record = value.record();
+        let end_offset = value.end_offset();
         Self {
             id: value.id,
             section_link: value.section_link,
-            ordinal: value.ordinal.value(),
-            raw_ordinal: value.ordinal.raw().to_vec(),
-            frame_selector: value.frame_selector,
-            timestamp: value.timestamp,
-            value: value.value,
-            raw: value.raw,
+            ordinal: record.ordinal.value(),
+            raw_ordinal: record.ordinal.raw().to_vec(),
+            frame_selector: record.frame_selector,
+            timestamp: record.timestamp,
+            value: record.value,
+            raw: record.raw(),
             source_entry: value.source_entry,
             source_offset: value.source_offset,
-            end_offset: value.end_offset,
+            end_offset,
         }
     }
 }
@@ -45,18 +47,17 @@ impl From<OmAuditTrailRow> for OmAuditTrailRowWire {
 impl TryFrom<OmAuditTrailRowWire> for OmAuditTrailRow {
     type Error = String;
     fn try_from(wire: OmAuditTrailRowWire) -> Result<Self, Self::Error> {
-        Ok(Self {
-            id: wire.id,
-            section_link: wire.section_link,
+        let record = crate::om::audit::AuditRecord {
             ordinal: StateIndexToken::from_wire(wire.ordinal, &wire.raw_ordinal).map_err(|error| format!("ordinal/raw_ordinal: {error}"))?,
             frame_selector: wire.frame_selector,
             timestamp: wire.timestamp,
             value: wire.value,
-            raw: wire.raw,
-            source_entry: wire.source_entry,
-            source_offset: wire.source_offset,
-            end_offset: wire.end_offset,
-        })
+        };
+        if wire.raw != record.raw() { return Err("raw: disagrees with the audit fields".to_string()); }
+        let value = Self::new(wire.id, wire.section_link, record, wire.source_entry, wire.source_offset)
+            .ok_or("source_offset: audit extent exceeds u64")?;
+        if wire.end_offset != value.end_offset() { return Err("end_offset: disagrees with the audit frame extent".to_string()); }
+        Ok(value)
     }
 }
 
@@ -384,8 +385,29 @@ mod tests {
     }
 
     #[test]
+    fn audit_wire_rejects_raw_and_extent_disagreement() {
+        let json = r#"{"id":"audit","section_link":"section","ordinal":2,"raw_ordinal":[2],"timestamp":0,"value_marker":160,"value":0,"raw_value":[160,0,0],"raw":[4,2,19,224,0,0,0,0,160,0,0],"source_entry":"om","source_offset":0,"end_offset":11}"#;
+        let wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        for (field, replacement) in [
+            ("raw", serde_json::json!([])),
+            ("end_offset", serde_json::json!(12)),
+            ("source_offset", serde_json::json!(u64::MAX)),
+        ] {
+            let mut invalid = wire.clone();
+            invalid[field] = replacement;
+            assert!(serde_json::from_value::<OmAuditTrailRow>(invalid).unwrap_err().to_string().contains(field));
+        }
+        let mut boundary = wire;
+        boundary["source_offset"] = (u64::MAX - 11).into();
+        boundary["end_offset"] = u64::MAX.into();
+        let row = serde_json::from_value::<OmAuditTrailRow>(boundary).unwrap();
+        assert_eq!(row.end_offset(), u64::MAX);
+    }
+
+    #[test]
     fn state_index_records_preserve_scalar_and_token_fields() {
         preserves_wire::<OmAuditTrailRow>(r#"{"id":"audit","section_link":"section","ordinal":2,"raw_ordinal":[2],"timestamp":0,"value_marker":160,"value":0,"raw_value":[160,0,0],"raw":[4,2,19,224,0,0,0,0,160,0,0],"source_entry":"om","source_offset":0,"end_offset":11}"#);
+        preserves_wire::<OmAuditTrailRow>(r#"{"id":"audit","section_link":"section","ordinal":2,"raw_ordinal":[2],"frame_selector":7,"timestamp":0,"value_marker":160,"value":0,"raw_value":[160,0,0],"raw":[4,2,19,4,5,7,0,224,0,0,0,0,160,0,0],"source_entry":"om","source_offset":0,"end_offset":15}"#);
         preserves_wire::<OmOperationStateJournalRow>(r#"{"timestamp":0,"value_marker":160,"value":0,"raw_value":[160,0,0],"schema_id":1,"raw_schema_id":[128,1],"state_ordinal":2,"raw_state_ordinal":[241,0,2],"source_offset":0,"end_offset":14}"#);
         preserves_wire::<OmOperationStateCounter>(r#"{"id":"counter","section_link":"section","ordinal":0,"row_kind":1,"object_index":0,"raw_object_index":[0],"introduced_state":0,"modified_state":0,"object_index_source_offset":2,"source_entry":"om","source_offset":0}"#);
         preserves_wire::<OmOperationStateStatus>(r#"{"id":"status","section_link":"section","ordinal":0,"status_code":65,"raw_status_code":[65],"object_index":1,"raw_object_index":[1],"payload":"Plain","source_entry":"om","source_offset":0,"end_offset":3}"#);

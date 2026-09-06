@@ -294,7 +294,7 @@ impl ContainerNoted for OmRecordArea {
 }
 impl ContainerNoted for OmAuditTrailRow {
     fn container_note(&self) -> (&str, u64) {
-        (&self.id, self.source_offset)
+        (&self.id, self.source_offset())
     }
 }
 impl ContainerNoted for OmOperationStateJournalGroup {

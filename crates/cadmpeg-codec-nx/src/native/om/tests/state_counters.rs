@@ -84,13 +84,13 @@ fn native_catalog_emits_role_gated_audit_trail_rows() {
 
     let rows = audit_trail_rows(&container);
     assert_eq!(rows.len(), 2);
-    assert_eq!(rows[0].ordinal.value(), 2);
-    assert_eq!(rows[0].frame_selector, None);
-    assert_eq!(rows[0].value.marker(), 0xe0);
-    assert_eq!(rows[1].ordinal.value(), 3);
-    assert_eq!(rows[1].frame_selector, Some(7));
-    assert_eq!(rows[1].value.marker(), 0xc0);
-    assert!(rows[1].source_offset > rows[0].source_offset);
+    assert_eq!(rows[0].record().ordinal.value(), 2);
+    assert_eq!(rows[0].record().frame_selector, None);
+    assert_eq!(rows[0].record().value.marker(), 0xe0);
+    assert_eq!(rows[1].record().ordinal.value(), 3);
+    assert_eq!(rows[1].record().frame_selector, Some(7));
+    assert_eq!(rows[1].record().value.marker(), 0xc0);
+    assert!(rows[1].source_offset() > rows[0].source_offset());
 
     let result = NxCodec
         .decode(

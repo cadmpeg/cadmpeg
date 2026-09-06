@@ -71,24 +71,24 @@ pub struct OmAuditTrailRow {
     pub id: String,
     /// Owning audit-trail section link.
     pub section_link: String,
-    /// Monotone row ordinal.
-    pub ordinal: StateIndexToken,
-    /// Optional selector in the `04 05 selector 00` envelope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub frame_selector: Option<u8>,
-    /// Big-endian row timestamp.
-    pub timestamp: u32,
-    /// Complete tagged integer token.
-    #[serde(flatten)]
-    pub value: crate::om::state_tagged_value::StateTaggedValue,
-    /// Exact complete row bytes.
-    pub raw: Vec<u8>,
+    /// Exact framed audit content.
+    record: crate::om::audit::AuditRecord,
     /// Directory entry containing the audit-trail section.
     pub source_entry: String,
     /// Absolute file offset of the row's opening `04` marker.
-    pub source_offset: u64,
-    /// Absolute exclusive end offset after the tagged value.
-    pub end_offset: u64,
+    source_offset: u64,
+}
+
+impl OmAuditTrailRow {
+    fn new(id: String, section_link: String, record: crate::om::audit::AuditRecord,
+        source_entry: String, source_offset: u64) -> Option<Self> {
+        source_offset.checked_add(record.byte_len() as u64)?;
+        Some(Self { id, section_link, record, source_entry, source_offset })
+    }
+
+    pub fn record(&self) -> crate::om::audit::AuditRecord { self.record }
+    pub fn source_offset(&self) -> u64 { self.source_offset }
+    pub fn end_offset(&self) -> u64 { self.source_offset + self.record.byte_len() as u64 }
 }
 
 /// One row from the feature-history state journal.
@@ -502,20 +502,14 @@ pub fn audit_trail_rows(container: &Container) -> Vec<OmAuditTrailRow> {
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
             let section_key = format!("{section_ordinal:010}");
             rows.into_iter()
-                .map(move |row| {
-                    let ordinal = row.ordinal.value();
-                    OmAuditTrailRow {
-                        id: format!("nx:audit-trail:row#{section_key}-{ordinal:010}"),
-                        section_link: link.id.clone(),
-                        ordinal: row.ordinal.token(),
-                        frame_selector: row.frame_selector,
-                        timestamp: row.timestamp,
-                        value: row.value,
-                        raw: row.raw.to_vec(),
-                        source_entry: entry.name.clone(),
-                        source_offset: entry_offset + row.span.offset() as u64,
-                        end_offset: entry_offset + row.span.end_offset() as u64,
-                    }
+                .filter_map(move |row| {
+                    let record = row.record();
+                    let ordinal = record.ordinal.value();
+                    OmAuditTrailRow::new(
+                        format!("nx:audit-trail:row#{section_key}-{ordinal:010}"),
+                        link.id.clone(), record, entry.name.clone(),
+                        entry_offset.checked_add(row.offset() as u64)?,
+                    )
                 })
                 .collect()
         })

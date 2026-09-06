@@ -58,6 +58,8 @@ use discriminators::{
 pub(crate) mod registry;
 pub(crate) mod cache;
 pub(crate) mod product;
+pub(crate) mod audit;
+use audit::{AuditRecord, AuditTrailRow};
 pub(crate) mod control_leading_value;
 use control_leading_value::ControlLeadingValue;
 use product::{ProductRecord, ProductRecordForm, ProductText};
@@ -1393,28 +1395,6 @@ pub struct OperationStateJournalGroup {
     pub rows: Vec<OperationStateJournalRow>,
 }
 
-/// One complete row in an audit-trail record area.
-///
-/// Audit rows share the tagged-value width family with feature-history state,
-/// but they are a separate record-area grammar. Their optional four-byte
-/// selector envelope is retained without assigning an event or suppression
-/// meaning.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AuditTrailRow<'a> {
-    /// Checked source position within its record area.
-    pub span: SourceSpan,
-    /// Monotone audit-row ordinal and its exact token.
-    pub ordinal: NonNullStateIndex,
-    /// Optional selector byte in the exact `04 05 selector 00` envelope.
-    pub frame_selector: Option<u8>,
-    /// Big-endian timestamp following the `e0` marker.
-    pub timestamp: u32,
-    /// Tagged value following the timestamp.
-    pub value: StateTaggedValue,
-    /// Exact complete row bytes.
-    pub raw: &'a [u8],
-}
-
 /// One length-framed UTF-8 string in a bounded operation payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationPayloadString<'a> {
@@ -2542,7 +2522,7 @@ impl<'a> Section<'a> {
     /// feature-history and model areas from being interpreted as audit data.
     /// Unknown bytes before, between, and after complete rows remain outside
     /// this typed view.
-    pub fn audit_trail_rows(&self) -> Option<Vec<AuditTrailRow<'a>>> {
+    pub fn audit_trail_rows(&self) -> Option<Vec<AuditTrailRow>> {
         let has_audit_marker = self
             .types
             .iter()
@@ -6834,7 +6814,7 @@ fn audit_trail_row_at(
     at: usize,
     end: usize,
     base_offset: usize,
-) -> Option<AuditTrailRow<'_>> {
+) -> Option<AuditTrailRow> {
     let bytes = bytes.get(..end)?;
     if bytes.get(at) != Some(&0x04) {
         return None;
@@ -6863,14 +6843,8 @@ fn audit_trail_row_at(
     let timestamp = View::u32_be_at(bytes, cursor + 1)?;
     cursor = cursor.checked_add(5)?;
     let value = StateTaggedValue::read_at(bytes, cursor)?;
-    let row_end = cursor.checked_add(value.raw().len())?;
-    Some(AuditTrailRow {
-        span: SourceSpan::new(base_offset, at, row_end)?,
-        ordinal,
-        frame_selector,
-        timestamp,
-        value,
-        raw: bytes.get(at..row_end)?,
+    AuditTrailRow::new(base_offset, at, AuditRecord {
+        ordinal: ordinal.token(), frame_selector, timestamp, value,
     })
 }
 
@@ -6885,7 +6859,7 @@ pub fn audit_trail_rows(
     start: usize,
     end: usize,
     base_offset: usize,
-) -> Option<Vec<AuditTrailRow<'_>>> {
+) -> Option<Vec<AuditTrailRow>> {
     if start >= end || end > bytes.len() {
         return None;
     }
@@ -6897,12 +6871,12 @@ pub fn audit_trail_rows(
             at += 1;
             continue;
         };
-        let ordinal = row.ordinal.value();
+        let ordinal = row.record().ordinal.value();
         if previous_ordinal.is_some_and(|previous| ordinal <= previous) {
             return None;
         }
         previous_ordinal = Some(ordinal);
-        at = row.span.local_end();
+        at = row.local_end();
         rows.push(row);
     }
     Some(rows)
