@@ -261,17 +261,11 @@ pub struct OffsetStoreIndexRow {
     /// Byte offset of the opening `2d 02 0b` discriminator.
     pub offset: usize,
     /// First non-null compact index.
-    pub first_index: u32,
-    /// Exact serialized first-index token.
-    pub raw_first_index: Vec<u8>,
-    /// Byte offset of the first compact index.
-    pub first_index_offset: usize,
+    pub first_index: LocatedCompactIndex,
     /// Serialized row flag.
-    pub flag: u8,
+    pub flag: crate::om::discriminators::LinkedIndexFlag,
     /// Four ordered non-null compact indices after the row flag.
-    pub indices: [(u32, usize); 4],
-    /// Exact serialized four-index tokens in row order.
-    pub raw_indices: [Vec<u8>; 4],
+    pub indices: [LocatedCompactIndex; 4],
 }
 
 /// One self-framed linked index row in contiguous column storage.
@@ -280,19 +274,13 @@ pub struct OffsetStoreLinkedIndexRow {
     /// Byte offset of the opening `02 0b` discriminator.
     pub offset: usize,
     /// Unresolved leading compact index and its byte offset.
-    pub first_index: (u32, usize),
-    /// Exact serialized leading-index token.
-    pub raw_first_index: Vec<u8>,
+    pub first_index: LocatedCompactIndex,
     /// Serialized `16`, `17`, or `18` row discriminator.
     pub discriminator: crate::om::discriminators::LinkedIndexDiscriminator,
     /// Compact target index and its byte offset.
-    pub target_index: (u32, usize),
-    /// Exact serialized target-index token.
-    pub raw_target_index: Vec<u8>,
+    pub target_index: LocatedCompactIndex,
     /// Three ordered non-null compact indices after `ff ff 90 fe`.
-    pub indices: [(u32, usize); 3],
-    /// Exact serialized post-marker tokens in row order.
-    pub raw_indices: [Vec<u8>; 3],
+    pub indices: [LocatedCompactIndex; 3],
     /// Serialized `03` or `07` row flag.
     pub flag: crate::om::discriminators::LinkedIndexFlag,
     /// Serialized `04` or `07` row mode.
@@ -379,13 +367,9 @@ pub struct OffsetStoreTargetIndexRow {
     /// Byte offset of the opening `02 01 01 01 16` discriminator.
     pub offset: usize,
     /// Compact target index and its byte offset.
-    pub target_index: (u32, usize),
-    /// Exact serialized target-index token.
-    pub raw_target_index: Vec<u8>,
+    pub target_index: LocatedCompactIndex,
     /// Three ordered non-null compact indices after `ff ff 90 fe`.
-    pub indices: [(u32, usize); 3],
-    /// Exact serialized post-marker tokens in row order.
-    pub raw_indices: [Vec<u8>; 3],
+    pub indices: [LocatedCompactIndex; 3],
     /// Serialized `04` or `07` row mode.
     pub mode: crate::om::discriminators::IndexRowMode,
 }
@@ -551,39 +535,24 @@ pub fn offset_store_index_rows(bytes: &[u8]) -> Vec<OffsetStoreIndexRow> {
             continue;
         }
         let first_index_offset = start + PREFIX.len();
-        let Some(first_token) = compact_value_token(bytes, first_index_offset) else {
+        let Some(first_token) = LocatedCompactIndex::read(bytes, first_index_offset) else {
             start += 1;
             continue;
         };
-        let first_index = first_token.value;
-        let marker = first_token.offset + first_token.width;
+        let marker = first_token.offset + first_token.atom.raw().len();
         if bytes.get(marker..marker + 2) != Some(&MIDDLE[..2]) {
             start += 1;
             continue;
         }
-        let Some(flag @ (0x03 | 0x07)) = bytes.get(marker + 2).copied() else {
+        let Some(flag) = bytes.get(marker + 2).copied().and_then(|value| discriminators::LinkedIndexFlag::try_from(value).ok()) else {
             start += 1;
             continue;
         };
         let mut at = marker + 3;
-        let mut index_tokens = [CompactToken {
-            value: 0,
-            offset: 0,
-            width: 0,
-        }; 4];
-        let mut complete = true;
-        for token in &mut index_tokens {
-            let Some(index_token) = compact_value_token(bytes, at) else {
-                complete = false;
-                break;
-            };
-            at += index_token.width;
-            *token = index_token;
-        }
-        if !complete {
+        let Some(index_tokens) = LocatedCompactIndex::read_array(bytes, &mut at) else {
             start += 1;
             continue;
-        }
+        };
         let Some(end) = at.checked_add(SUFFIX.len()) else {
             start += 1;
             continue;
@@ -594,15 +563,9 @@ pub fn offset_store_index_rows(bytes: &[u8]) -> Vec<OffsetStoreIndexRow> {
         }
         rows.push(OffsetStoreIndexRow {
             offset: start,
-            first_index,
-            raw_first_index: raw_compact_token(bytes, first_token),
-            first_index_offset,
+            first_index: first_token,
             flag,
-            indices: index_tokens.map(|token| {
-                let index = token.value;
-                (index, token.offset)
-            }),
-            raw_indices: index_tokens.map(|token| raw_compact_token(bytes, token)),
+            indices: index_tokens,
         });
         start = end;
     }
@@ -621,12 +584,11 @@ pub fn offset_store_linked_index_rows(bytes: &[u8]) -> Vec<OffsetStoreLinkedInde
             continue;
         }
         let first_offset = start + 2;
-        let Some(first_token) = compact_value_token(bytes, first_offset) else {
+        let Some(first_token) = LocatedCompactIndex::read(bytes, first_offset) else {
             start += 1;
             continue;
         };
-        let first_index = first_token.value;
-        let marker = first_token.offset + first_token.width;
+        let marker = first_token.offset + first_token.atom.raw().len();
         if bytes.get(marker..marker + 2) != Some(&[0x93, 0x8c]) {
             start += 1;
             continue;
@@ -640,35 +602,20 @@ pub fn offset_store_linked_index_rows(bytes: &[u8]) -> Vec<OffsetStoreLinkedInde
             continue;
         };
         let target_offset = marker + 3;
-        let Some(target_token) = compact_value_token(bytes, target_offset) else {
+        let Some(target_token) = LocatedCompactIndex::read(bytes, target_offset) else {
             start += 1;
             continue;
         };
-        let target_index = target_token.value;
-        let mut at = target_token.offset + target_token.width;
+        let mut at = target_token.offset + target_token.atom.raw().len();
         if bytes.get(at..at + MIDDLE.len()) != Some(&MIDDLE) {
             start += 1;
             continue;
         }
         at += MIDDLE.len();
-        let mut index_tokens = [CompactToken {
-            value: 0,
-            offset: 0,
-            width: 0,
-        }; 3];
-        let mut complete = true;
-        for token in &mut index_tokens {
-            let Some(index_token) = compact_value_token(bytes, at) else {
-                complete = false;
-                break;
-            };
-            at += index_token.width;
-            *token = index_token;
-        }
-        if !complete {
+        let Some(index_tokens) = LocatedCompactIndex::read_array(bytes, &mut at) else {
             start += 1;
             continue;
-        }
+        };
         if bytes.get(at..at + 2) != Some(&[0x00, 0x47]) {
             start += 1;
             continue;
@@ -699,16 +646,10 @@ pub fn offset_store_linked_index_rows(bytes: &[u8]) -> Vec<OffsetStoreLinkedInde
         }
         rows.push(OffsetStoreLinkedIndexRow {
             offset: start,
-            first_index: (first_index, first_offset),
-            raw_first_index: raw_compact_token(bytes, first_token),
+            first_index: first_token,
             discriminator,
-            target_index: (target_index, target_offset),
-            raw_target_index: raw_compact_token(bytes, target_token),
-            indices: index_tokens.map(|token| {
-                let index = token.value;
-                (index, token.offset)
-            }),
-            raw_indices: index_tokens.map(|token| raw_compact_token(bytes, token)),
+            target_index: target_token,
+            indices: index_tokens,
             flag,
             mode,
         });
@@ -730,35 +671,20 @@ pub fn offset_store_target_index_rows(bytes: &[u8]) -> Vec<OffsetStoreTargetInde
             continue;
         }
         let target_offset = start + PREFIX.len();
-        let Some(target_token) = compact_value_token(bytes, target_offset) else {
+        let Some(target_token) = LocatedCompactIndex::read(bytes, target_offset) else {
             start += 1;
             continue;
         };
-        let target_index = target_token.value;
-        let mut at = target_token.offset + target_token.width;
+        let mut at = target_token.offset + target_token.atom.raw().len();
         if bytes.get(at..at + MIDDLE.len()) != Some(&MIDDLE) {
             start += 1;
             continue;
         }
         at += MIDDLE.len();
-        let mut index_tokens = [CompactToken {
-            value: 0,
-            offset: 0,
-            width: 0,
-        }; 3];
-        let mut complete = true;
-        for token in &mut index_tokens {
-            let Some(index_token) = compact_value_token(bytes, at) else {
-                complete = false;
-                break;
-            };
-            at += index_token.width;
-            *token = index_token;
-        }
-        if !complete {
+        let Some(index_tokens) = LocatedCompactIndex::read_array(bytes, &mut at) else {
             start += 1;
             continue;
-        }
+        };
         if bytes.get(at..at + 3) != Some(&[0x00, 0x47, 0x03]) {
             start += 1;
             continue;
@@ -781,13 +707,8 @@ pub fn offset_store_target_index_rows(bytes: &[u8]) -> Vec<OffsetStoreTargetInde
         }
         rows.push(OffsetStoreTargetIndexRow {
             offset: start,
-            target_index: (target_index, target_offset),
-            raw_target_index: raw_compact_token(bytes, target_token),
-            indices: index_tokens.map(|token| {
-                let index = token.value;
-                (index, token.offset)
-            }),
-            raw_indices: index_tokens.map(|token| raw_compact_token(bytes, token)),
+            target_index: target_token,
+            indices: index_tokens,
             mode,
         });
         start = end;

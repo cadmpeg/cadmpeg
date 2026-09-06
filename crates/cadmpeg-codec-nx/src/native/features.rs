@@ -7752,41 +7752,18 @@ fn column_relations_by_block<'a>(
     }
     let mut slots_by_block = ColumnSlotsByBlock::new();
     for row in index_rows {
-        for (slot, data_block) in row.data_blocks.iter().enumerate() {
-            slots_by_block.entry(data_block).or_default().push((
-                row.id.as_str(),
-                ColumnIndexRowKind::Index,
-                slot,
-                row.index_source_offsets[slot],
-            ));
+        for (slot, token) in row.indices.iter().enumerate() {
+            slots_by_block.entry(&token.target.data_block).or_default().push((row.id.as_str(), ColumnIndexRowKind::Index, slot, token.source_offset));
         }
     }
     for row in linked_rows {
-        for (slot, data_block) in row.data_blocks.iter().enumerate() {
-            slots_by_block.entry(data_block).or_default().push((
-                row.id.as_str(),
-                ColumnIndexRowKind::LinkedIndex,
-                slot,
-                if slot == 0 {
-                    row.target_index_source_offset
-                } else {
-                    row.index_source_offsets[slot - 1]
-                },
-            ));
+        for (slot, token) in std::iter::once(&row.target).chain(&row.indices).enumerate() {
+            slots_by_block.entry(&token.target.data_block).or_default().push((row.id.as_str(), ColumnIndexRowKind::LinkedIndex, slot, token.source_offset));
         }
     }
     for row in target_rows {
-        for (slot, data_block) in row.data_blocks.iter().enumerate() {
-            slots_by_block.entry(data_block).or_default().push((
-                row.id.as_str(),
-                ColumnIndexRowKind::TargetIndex,
-                slot,
-                if slot == 0 {
-                    row.target_index_source_offset
-                } else {
-                    row.index_source_offsets[slot - 1]
-                },
-            ));
+        for (slot, token) in std::iter::once(&row.target).chain(&row.indices).enumerate() {
+            slots_by_block.entry(&token.target.data_block).or_default().push((row.id.as_str(), ColumnIndexRowKind::TargetIndex, slot, token.source_offset));
         }
     }
     (table_by_row, slots_by_block)
@@ -7928,14 +7905,14 @@ pub fn feature_input_column_targets(
                         };
                         (
                             FeatureInputColumnTargetRow::Linked {
-                                leading_index: row.first_index,
-                                leading_index_source_offset: row.first_index_source_offset,
+                                leading_index: row.first_index.atom.value(),
+                                leading_index_source_offset: row.first_index.offset,
                                 discriminator: row.discriminator,
                                 flag: row.flag,
                             },
-                            row.indices,
-                            std::array::from_fn(|index| row.data_blocks[index + 1].clone()),
-                            row.index_source_offsets,
+                            row.indices.each_ref().map(|token| token.target.atom.value()),
+                            row.indices.each_ref().map(|token| token.target.data_block.clone()),
+                            row.indices.each_ref().map(|token| token.source_offset),
                             row.mode,
                         )
                     }
@@ -7949,9 +7926,9 @@ pub fn feature_input_column_targets(
                         };
                         (
                             FeatureInputColumnTargetRow::Target,
-                            row.indices,
-                            std::array::from_fn(|index| row.data_blocks[index + 1].clone()),
-                            row.index_source_offsets,
+                            row.indices.each_ref().map(|token| token.target.atom.value()),
+                            row.indices.each_ref().map(|token| token.target.data_block.clone()),
+                            row.indices.each_ref().map(|token| token.source_offset),
                             row.mode,
                         )
                     }

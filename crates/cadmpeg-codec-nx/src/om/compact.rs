@@ -41,14 +41,21 @@ impl CompactIndexAtom {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct LocatedCompactIndex {
+pub(crate) struct LocatedCompactIndex<O = usize> {
     pub(crate) atom: CompactIndexAtom,
-    pub(crate) offset: usize,
+    pub(crate) offset: O,
 }
 
 impl LocatedCompactIndex {
     pub(crate) fn read(bytes: &[u8], offset: usize) -> Option<Self> {
         Some(Self { atom: CompactIndexAtom::read(bytes.get(offset..)?)?, offset })
+    }
+    pub(crate) fn read_array<const N: usize>(bytes: &[u8], at: &mut usize) -> Option<[Self; N]> {
+        (0..N).map(|_| {
+            let token = Self::read(bytes, *at)?;
+            *at += token.atom.raw().len();
+            Some(token)
+        }).collect::<Option<Vec<_>>>()?.try_into().ok()
     }
 }
 

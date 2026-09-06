@@ -6,7 +6,8 @@ use super::*;
 
 use cadmpeg_core::decode::View;
 
-use crate::om::compact::{CompactIndexAtom, CountedIndexMembers};
+use crate::om::compact::{CompactIndexAtom, CountedIndexMembers, LocatedCompactIndex};
+mod row_wire;
 use crate::om::color::{ColorComponent, PaletteIndex, PALETTE_SIZE, BACKGROUND_NAME};
 mod color_wire;
 pub(crate) mod column_index;
@@ -2323,6 +2324,7 @@ impl TryFrom<DataBlockAbrReferenceLaneWire> for DataBlockAbrReferenceLane {
 
 /// Self-framed index row in contiguous offset-store column storage.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "row_wire::DataBlockIndexRowWire", into = "row_wire::DataBlockIndexRowWire")]
 pub struct DataBlockIndexRow {
     /// Globally unique row identity.
     pub id: String,
@@ -2330,18 +2332,12 @@ pub struct DataBlockIndexRow {
     pub section_ordinal: u32,
     /// Zero-based row order within the section's column storage.
     pub ordinal: u32,
-    /// First non-null compact index.
-    pub first_index: u32,
-    /// Exact serialized leading-index token.
-    pub raw_first_index: Vec<u8>,
+    /// Checked leading index and its absolute source offset.
+    pub first_index: LocatedCompactIndex<u64>,
     /// Serialized `03` or `07` row flag.
-    pub flag: u8,
-    /// Four ordered non-null compact indices after the row flag.
-    pub indices: [u32; 4],
-    /// Exact serialized four-index tokens in row order.
-    pub raw_indices: [Vec<u8>; 4],
-    /// Four same-section blocks addressed by the compact indices.
-    pub data_blocks: [String; 4],
+    pub flag: crate::om::discriminators::LinkedIndexFlag,
+    /// Resolved ordered post-marker tokens with source locations.
+    pub indices: [DataBlockIndexToken; 4],
     /// Directory entry containing the offset-only store.
     pub source_entry: String,
     /// Column block containing the row's opening byte.
@@ -2350,14 +2346,11 @@ pub struct DataBlockIndexRow {
     pub opening_block_offset: u32,
     /// Absolute file offset of the opening discriminator.
     pub source_offset: u64,
-    /// Absolute file offset of the first compact index.
-    pub first_index_source_offset: u64,
-    /// Four ordered absolute file offsets of the compact indices.
-    pub index_source_offsets: [u64; 4],
 }
 
 /// Self-framed linked index row in contiguous column storage.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "row_wire::DataBlockLinkedIndexRowWire", into = "row_wire::DataBlockLinkedIndexRowWire")]
 pub struct DataBlockLinkedIndexRow {
     /// Globally unique row identity.
     pub id: String,
@@ -2365,22 +2358,14 @@ pub struct DataBlockLinkedIndexRow {
     pub section_ordinal: u32,
     /// Zero-based row order within the section's column storage.
     pub ordinal: u32,
-    /// Unresolved leading compact index.
-    pub first_index: u32,
-    /// Exact serialized leading-index token.
-    pub raw_first_index: Vec<u8>,
+    /// Checked leading index and its absolute source offset.
+    pub first_index: LocatedCompactIndex<u64>,
     /// Serialized `16`, `17`, or `18` discriminator.
     pub discriminator: crate::om::discriminators::LinkedIndexDiscriminator,
-    /// Target compact block index.
-    pub target_index: u32,
-    /// Exact serialized target-index token.
-    pub raw_target_index: Vec<u8>,
-    /// Three compact block indices after `ff ff 90 fe`.
-    pub indices: [u32; 3],
-    /// Exact serialized post-marker tokens in row order.
-    pub raw_indices: [Vec<u8>; 3],
-    /// Target block followed by the three post-marker blocks.
-    pub data_blocks: [String; 4],
+    /// Resolved target token and its absolute source offset.
+    pub target: DataBlockIndexToken,
+    /// Resolved ordered post-marker tokens with source locations.
+    pub indices: [DataBlockIndexToken; 3],
     /// Serialized `03` or `07` flag.
     pub flag: crate::om::discriminators::LinkedIndexFlag,
     /// Serialized `04` or `07` mode.
@@ -2393,16 +2378,11 @@ pub struct DataBlockLinkedIndexRow {
     pub opening_block_offset: u32,
     /// Absolute file offset of the opening discriminator.
     pub source_offset: u64,
-    /// Absolute file offset of the leading compact index.
-    pub first_index_source_offset: u64,
-    /// Absolute file offset of the target compact index.
-    pub target_index_source_offset: u64,
-    /// Absolute file offsets of the three post-marker indices.
-    pub index_source_offsets: [u64; 3],
 }
 
 /// Self-framed target-index row in contiguous column storage.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "row_wire::DataBlockTargetIndexRowWire", into = "row_wire::DataBlockTargetIndexRowWire")]
 pub struct DataBlockTargetIndexRow {
     /// Globally unique row identity.
     pub id: String,
@@ -2410,16 +2390,10 @@ pub struct DataBlockTargetIndexRow {
     pub section_ordinal: u32,
     /// Zero-based row order within the section's column storage.
     pub ordinal: u32,
-    /// Target compact block index.
-    pub target_index: u32,
-    /// Exact serialized target-index token.
-    pub raw_target_index: Vec<u8>,
-    /// Three compact block indices after `ff ff 90 fe`.
-    pub indices: [u32; 3],
-    /// Exact serialized post-marker tokens in row order.
-    pub raw_indices: [Vec<u8>; 3],
-    /// Target block followed by the three post-marker blocks.
-    pub data_blocks: [String; 4],
+    /// Resolved target token and its absolute source offset.
+    pub target: DataBlockIndexToken,
+    /// Resolved ordered post-marker tokens with source locations.
+    pub indices: [DataBlockIndexToken; 3],
     /// Serialized `04` or `07` mode.
     pub mode: crate::om::discriminators::IndexRowMode,
     /// Directory entry containing the store.
@@ -2430,10 +2404,6 @@ pub struct DataBlockTargetIndexRow {
     pub opening_block_offset: u32,
     /// Absolute file offset of the opening discriminator.
     pub source_offset: u64,
-    /// Absolute file offset of the target compact index.
-    pub target_index_source_offset: u64,
-    /// Absolute file offsets of the three post-marker indices.
-    pub index_source_offsets: [u64; 3],
 }
 
 /// Exact row encoding that selects `UGS::RM_creation_display_data` in an
@@ -4732,6 +4702,21 @@ pub fn data_block_abr_reference_lanes(container: &Container) -> Vec<DataBlockAbr
         .collect()
 }
 
+fn resolve_column_indices<const N: usize>(
+    section_ordinal: usize,
+    block_count: usize,
+    source_base: u64,
+    tokens: [LocatedCompactIndex; N],
+) -> Option<[DataBlockIndexToken; N]> {
+    tokens.into_iter().map(|token| Some(DataBlockIndexToken {
+        target: DataBlockIndexTarget {
+            atom: token.atom,
+            data_block: control_index_data_block(section_ordinal, block_count, token.atom.value())?,
+        },
+        source_offset: source_base + token.offset as u64,
+    })).collect::<Option<Vec<_>>>()?.try_into().ok()
+}
+
 /// Decode complete index rows from offset-store column storage.
 pub fn data_block_index_rows(container: &Container) -> Vec<DataBlockIndexRow> {
     container
@@ -4751,40 +4736,26 @@ pub fn data_block_index_rows(container: &Container) -> Vec<DataBlockIndexRow> {
             crate::om::offset_store_index_rows(storage)
                 .into_iter()
                 .filter_map(|row| {
-                    let data_blocks = row
-                        .indices
-                        .iter()
-                        .map(|(index, _)| {
-                            control_index_data_block(section_ordinal, block_count, *index)
-                        })
-                        .collect::<Option<Vec<_>>>()
-                        .and_then(|blocks| blocks.try_into().ok())?;
+                    let tokens = resolve_column_indices(section_ordinal, block_count, source_base, row.indices)?;
                     let opening = column_storage_block_at(
                         section_ordinal,
                         records,
                         storage_offset + row.offset,
                     )?;
-                    Some((row, data_blocks, opening))
+                    Some((row, tokens, opening))
                 })
                 .enumerate()
-                .map(|(ordinal, (row, data_blocks, opening))| DataBlockIndexRow {
+                .map(|(ordinal, (row, indices, opening))| DataBlockIndexRow {
                     id: format!("nx:om-data-block-index-rows-{section_ordinal}:row#{ordinal}"),
                     section_ordinal: section_ordinal as u32,
                     ordinal: ordinal as u32,
-                    first_index: row.first_index,
-                    raw_first_index: row.raw_first_index,
+                    first_index: LocatedCompactIndex { atom: row.first_index.atom, offset: source_base + row.first_index.offset as u64 },
                     flag: row.flag,
-                    indices: row.indices.map(|(index, _)| index),
-                    raw_indices: row.raw_indices,
-                    data_blocks,
+                    indices,
                     source_entry: entry.name.clone(),
                     opening_data_block: opening.0,
                     opening_block_offset: opening.1,
                     source_offset: source_base + row.offset as u64,
-                    first_index_source_offset: source_base + row.first_index_offset as u64,
-                    index_source_offsets: row
-                        .indices
-                        .map(|(_, offset)| source_base + offset as u64),
                 })
                 .collect()
         })
@@ -4810,46 +4781,32 @@ pub fn data_block_linked_index_rows(container: &Container) -> Vec<DataBlockLinke
             crate::om::offset_store_linked_index_rows(storage)
                 .into_iter()
                 .filter_map(|row| {
-                    let values = std::iter::once(row.target_index.0)
-                        .chain(row.indices.iter().map(|(index, _)| *index));
-                    let data_blocks = values
-                        .map(|index| control_index_data_block(section_ordinal, block_count, index))
-                        .collect::<Option<Vec<_>>>()
-                        .and_then(|blocks| blocks.try_into().ok())?;
+                    let tokens = resolve_column_indices(section_ordinal, block_count, source_base, [row.target_index, row.indices[0], row.indices[1], row.indices[2]])?;
                     let opening = column_storage_block_at(
                         section_ordinal,
                         records,
                         storage_offset + row.offset,
                     )?;
-                    Some((row, data_blocks, opening))
+                    Some((row, tokens, opening))
                 })
                 .enumerate()
                 .map(
-                    |(ordinal, (row, data_blocks, opening))| DataBlockLinkedIndexRow {
+                    |(ordinal, (row, [target, a, b, c], opening))| DataBlockLinkedIndexRow {
                         id: format!(
                             "nx:om-data-block-linked-index-rows-{section_ordinal}:row#{ordinal}"
                         ),
                         section_ordinal: section_ordinal as u32,
                         ordinal: ordinal as u32,
-                        first_index: row.first_index.0,
-                        raw_first_index: row.raw_first_index,
+                        first_index: LocatedCompactIndex { atom: row.first_index.atom, offset: source_base + row.first_index.offset as u64 },
                         discriminator: row.discriminator,
-                        target_index: row.target_index.0,
-                        raw_target_index: row.raw_target_index,
-                        indices: row.indices.map(|(index, _)| index),
-                        raw_indices: row.raw_indices,
-                        data_blocks,
+                        target,
+                        indices: [a, b, c],
                         flag: row.flag,
                         mode: row.mode,
                         source_entry: entry.name.clone(),
                         opening_data_block: opening.0,
                         opening_block_offset: opening.1,
                         source_offset: source_base + row.offset as u64,
-                        first_index_source_offset: source_base + row.first_index.1 as u64,
-                        target_index_source_offset: source_base + row.target_index.1 as u64,
-                        index_source_offsets: row
-                            .indices
-                            .map(|(_, offset)| source_base + offset as u64),
                     },
                 )
                 .collect()
@@ -4876,41 +4833,29 @@ pub fn data_block_target_index_rows(container: &Container) -> Vec<DataBlockTarge
             crate::om::offset_store_target_index_rows(storage)
                 .into_iter()
                 .filter_map(|row| {
-                    let values = std::iter::once(row.target_index.0)
-                        .chain(row.indices.iter().map(|(index, _)| *index));
-                    let data_blocks = values
-                        .map(|index| control_index_data_block(section_ordinal, block_count, index))
-                        .collect::<Option<Vec<_>>>()
-                        .and_then(|blocks| blocks.try_into().ok())?;
+                    let tokens = resolve_column_indices(section_ordinal, block_count, source_base, [row.target_index, row.indices[0], row.indices[1], row.indices[2]])?;
                     let opening = column_storage_block_at(
                         section_ordinal,
                         records,
                         storage_offset + row.offset,
                     )?;
-                    Some((row, data_blocks, opening))
+                    Some((row, tokens, opening))
                 })
                 .enumerate()
                 .map(
-                    |(ordinal, (row, data_blocks, opening))| DataBlockTargetIndexRow {
+                    |(ordinal, (row, [target, a, b, c], opening))| DataBlockTargetIndexRow {
                         id: format!(
                             "nx:om-data-block-target-index-rows-{section_ordinal}:row#{ordinal}"
                         ),
                         section_ordinal: section_ordinal as u32,
                         ordinal: ordinal as u32,
-                        target_index: row.target_index.0,
-                        raw_target_index: row.raw_target_index,
-                        indices: row.indices.map(|(index, _)| index),
-                        raw_indices: row.raw_indices,
-                        data_blocks,
+                        target,
+                        indices: [a, b, c],
                         mode: row.mode,
                         source_entry: entry.name.clone(),
                         opening_data_block: opening.0,
                         opening_block_offset: opening.1,
                         source_offset: source_base + row.offset as u64,
-                        target_index_source_offset: source_base + row.target_index.1 as u64,
-                        index_source_offsets: row
-                            .indices
-                            .map(|(_, offset)| source_base + offset as u64),
                     },
                 )
                 .collect()
@@ -4959,7 +4904,7 @@ pub fn rm_creation_display_data_relations(
         let class_definition = format!("nx:om-entry-{entry_index}:class#{}", definition.offset);
 
         for row in crate::om::offset_store_index_rows(record_area) {
-            if row.indices[3].0 != class_ordinal {
+            if row.indices[3].atom.value() != class_ordinal {
                 continue;
             }
             relations.push(RmCreationDisplayDataRelation {
@@ -4968,15 +4913,15 @@ pub fn rm_creation_display_data_relations(
                 class_name: CLASS_NAME.to_string(),
                 class_definition: class_definition.clone(),
                 encoding: RmCreationDisplayDataEncoding::Index {
-                    first_index: row.first_index,
-                    raw_first_index: row.raw_first_index,
-                    first_index_source_offset: source_base + row.first_index_offset as u64,
-                    flag: row.flag,
-                    indices: row.indices.map(|(index, _)| index),
-                    raw_indices: row.raw_indices,
+                    first_index: row.first_index.atom.value(),
+                    raw_first_index: row.first_index.atom.raw().to_vec(),
+                    first_index_source_offset: source_base + row.first_index.offset as u64,
+                    flag: u8::from(row.flag),
+                    indices: row.indices.map(|token| token.atom.value()),
+                    raw_indices: row.indices.map(|token| token.atom.raw().to_vec()),
                     index_source_offsets: row
                         .indices
-                        .map(|(_, offset)| source_base + offset as u64),
+                        .map(|token| source_base + token.offset as u64),
                 },
                 target_object_id: None,
                 source_entry: entry.name.clone(),
@@ -4984,7 +4929,7 @@ pub fn rm_creation_display_data_relations(
             });
         }
         for row in crate::om::offset_store_linked_index_rows(record_area) {
-            if row.indices[2].0 != class_ordinal {
+            if row.indices[2].atom.value() != class_ordinal {
                 continue;
             }
             relations.push(RmCreationDisplayDataRelation {
@@ -4993,28 +4938,28 @@ pub fn rm_creation_display_data_relations(
                 class_name: CLASS_NAME.to_string(),
                 class_definition: class_definition.clone(),
                 encoding: RmCreationDisplayDataEncoding::Linked {
-                    first_index: row.first_index.0,
-                    raw_first_index: row.raw_first_index,
-                    first_index_source_offset: source_base + row.first_index.1 as u64,
+                    first_index: row.first_index.atom.value(),
+                    raw_first_index: row.first_index.atom.raw().to_vec(),
+                    first_index_source_offset: source_base + row.first_index.offset as u64,
                     discriminator: row.discriminator,
-                    target_index: row.target_index.0,
-                    raw_target_index: row.raw_target_index,
-                    target_index_source_offset: source_base + row.target_index.1 as u64,
-                    indices: row.indices.map(|(index, _)| index),
-                    raw_indices: row.raw_indices,
+                    target_index: row.target_index.atom.value(),
+                    raw_target_index: row.target_index.atom.raw().to_vec(),
+                    target_index_source_offset: source_base + row.target_index.offset as u64,
+                    indices: row.indices.map(|token| token.atom.value()),
+                    raw_indices: row.indices.map(|token| token.atom.raw().to_vec()),
                     index_source_offsets: row
                         .indices
-                        .map(|(_, offset)| source_base + offset as u64),
+                        .map(|token| source_base + token.offset as u64),
                     flag: row.flag,
                     mode: row.mode,
                 },
-                target_object_id: rmfastload_target_object_id(object_ids, row.target_index.0),
+                target_object_id: rmfastload_target_object_id(object_ids, row.target_index.atom.value()),
                 source_entry: entry.name.clone(),
                 source_offset: source_base + row.offset as u64,
             });
         }
         for row in crate::om::offset_store_target_index_rows(record_area) {
-            if row.indices[2].0 != class_ordinal {
+            if row.indices[2].atom.value() != class_ordinal {
                 continue;
             }
             relations.push(RmCreationDisplayDataRelation {
@@ -5023,17 +4968,17 @@ pub fn rm_creation_display_data_relations(
                 class_name: CLASS_NAME.to_string(),
                 class_definition: class_definition.clone(),
                 encoding: RmCreationDisplayDataEncoding::Target {
-                    target_index: row.target_index.0,
-                    raw_target_index: row.raw_target_index,
-                    target_index_source_offset: source_base + row.target_index.1 as u64,
-                    indices: row.indices.map(|(index, _)| index),
-                    raw_indices: row.raw_indices,
+                    target_index: row.target_index.atom.value(),
+                    raw_target_index: row.target_index.atom.raw().to_vec(),
+                    target_index_source_offset: source_base + row.target_index.offset as u64,
+                    indices: row.indices.map(|token| token.atom.value()),
+                    raw_indices: row.indices.map(|token| token.atom.raw().to_vec()),
                     index_source_offsets: row
                         .indices
-                        .map(|(_, offset)| source_base + offset as u64),
+                        .map(|token| source_base + token.offset as u64),
                     mode: row.mode,
                 },
-                target_object_id: rmfastload_target_object_id(object_ids, row.target_index.0),
+                target_object_id: rmfastload_target_object_id(object_ids, row.target_index.atom.value()),
                 source_entry: entry.name.clone(),
                 source_offset: source_base + row.offset as u64,
             });
@@ -5144,22 +5089,22 @@ pub fn rm_display_color_assignments(
                 id: String::new(),
                 ordinal: 0,
                 encoding: RmDisplayColorAssignmentEncoding::Linked {
-                    object_index: row.first_index.0,
-                    raw_object_index: row.raw_first_index,
-                    object_index_source_offset: source_base + row.first_index.1 as u64,
+                    object_index: row.first_index.atom.value(),
+                    raw_object_index: row.first_index.atom.raw().to_vec(),
+                    object_index_source_offset: source_base + row.first_index.offset as u64,
                     discriminator: row.discriminator,
-                    target_index: row.target_index.0,
-                    raw_target_index: row.raw_target_index,
-                    target_index_source_offset: source_base + row.target_index.1 as u64,
-                    indices: row.indices.map(|(index, _)| index),
-                    raw_indices: row.raw_indices,
+                    target_index: row.target_index.atom.value(),
+                    raw_target_index: row.target_index.atom.raw().to_vec(),
+                    target_index_source_offset: source_base + row.target_index.offset as u64,
+                    indices: row.indices.map(|token| token.atom.value()),
+                    raw_indices: row.indices.map(|token| token.atom.raw().to_vec()),
                     index_source_offsets: row
                         .indices
-                        .map(|(_, offset)| source_base + offset as u64),
+                        .map(|token| source_base + token.offset as u64),
                     flag: row.flag,
                     mode: row.mode,
                 },
-                target_object_id: rmfastload_target_object_id(object_ids, row.target_index.0),
+                target_object_id: rmfastload_target_object_id(object_ids, row.target_index.atom.value()),
                 color_index: color.color_index,
                 color_definition: definition.id.clone(),
                 source_entry: entry.name.clone(),
@@ -5184,17 +5129,17 @@ pub fn rm_display_color_assignments(
                 id: String::new(),
                 ordinal: 0,
                 encoding: RmDisplayColorAssignmentEncoding::Target {
-                    target_index: row.target_index.0,
-                    raw_target_index: row.raw_target_index,
-                    target_index_source_offset: source_base + row.target_index.1 as u64,
-                    indices: row.indices.map(|(index, _)| index),
-                    raw_indices: row.raw_indices,
+                    target_index: row.target_index.atom.value(),
+                    raw_target_index: row.target_index.atom.raw().to_vec(),
+                    target_index_source_offset: source_base + row.target_index.offset as u64,
+                    indices: row.indices.map(|token| token.atom.value()),
+                    raw_indices: row.indices.map(|token| token.atom.raw().to_vec()),
                     index_source_offsets: row
                         .indices
-                        .map(|(_, offset)| source_base + offset as u64),
+                        .map(|token| source_base + token.offset as u64),
                     mode: row.mode,
                 },
-                target_object_id: rmfastload_target_object_id(object_ids, row.target_index.0),
+                target_object_id: rmfastload_target_object_id(object_ids, row.target_index.atom.value()),
                 color_index: color.color_index,
                 color_definition: definition.id.clone(),
                 source_entry: entry.name.clone(),
@@ -5253,16 +5198,16 @@ pub fn data_block_column_index_tables(
             {
                 return None;
             }
-            let ordered = std::iter::once((opening.target_index, opening.source_offset))
+            let ordered = std::iter::once((opening.target.target.atom.value(), opening.source_offset))
                 .chain(
                     targets
                         .iter()
-                        .map(|row| (row.target_index, row.source_offset)),
+                        .map(|row| (row.target.target.atom.value(), row.source_offset)),
                 )
                 .chain(
                     suffix
                         .iter()
-                        .map(|row| (row.target_index, row.source_offset)),
+                        .map(|row| (row.target.target.atom.value(), row.source_offset)),
                 )
                 .collect::<Vec<_>>();
             if ordered
@@ -5282,7 +5227,7 @@ pub fn data_block_column_index_tables(
                 section_ordinal,
                 opening_linked_row: opening.id.clone(),
                 rows: ColumnIndexRows::new(
-                    opening.target_index,
+                    opening.target.target.atom.value(),
                     targets.iter().map(|row| row.id.clone()).collect(),
                     suffix.iter().map(|row| row.id.clone()).collect(),
                 )

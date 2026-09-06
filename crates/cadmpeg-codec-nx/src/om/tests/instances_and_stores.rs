@@ -1735,20 +1735,20 @@ fn om_offset_store_index_rows_require_complete_exact_frames() {
     let rows = super::offset_store_index_rows(&bytes);
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].offset, 6);
-    assert_eq!(rows[0].first_index, 42);
-    assert_eq!(rows[0].raw_first_index, [0x2a]);
-    assert_eq!(rows[0].flag, 3);
-    assert_eq!(rows[0].indices, [(24, 13), (32, 15), (32, 16), (65, 17)]);
+    assert_eq!(rows[0].first_index.atom.value(), 42);
+    assert_eq!(rows[0].first_index.atom.raw(), [0x2a]);
+    assert_eq!(u8::from(rows[0].flag), 3);
+    assert_eq!(rows[0].indices.map(|token| (token.atom.value(), token.offset)), [(24, 13), (32, 15), (32, 16), (65, 17)]);
     assert_eq!(
-        rows[0].raw_indices,
+        rows[0].indices.map(|token| token.atom.raw().to_vec()),
         [vec![0x80, 0x18], vec![0x20], vec![0x20], vec![0x41]]
     );
-    assert_eq!(rows[1].first_index, 950);
-    assert_eq!(rows[1].raw_first_index, [0x83, 0xb6]);
-    assert_eq!(rows[1].flag, 7);
-    assert_eq!(rows[1].indices, [(24, 38), (32, 40), (77, 41), (65, 43)]);
+    assert_eq!(rows[1].first_index.atom.value(), 950);
+    assert_eq!(rows[1].first_index.atom.raw(), [0x83, 0xb6]);
+    assert_eq!(u8::from(rows[1].flag), 7);
+    assert_eq!(rows[1].indices.map(|token| (token.atom.value(), token.offset)), [(24, 38), (32, 40), (77, 41), (65, 43)]);
     assert_eq!(
-        rows[1].raw_indices,
+        rows[1].indices.map(|token| token.atom.raw().to_vec()),
         [vec![0x80, 0x18], vec![0x20], vec![0x80, 0x4d], vec![0x41]]
     );
 
@@ -1826,13 +1826,13 @@ fn om_offset_store_linked_index_rows_require_complete_exact_frames() {
     let row = b"\x02\x0b\x83\x93\x93\x8c\x16\x24\xff\xff\x90\xfe\x20\x20\x41\x00\x47\x03\x04\x01\xc0\x44\x04\x00";
     let rows = super::offset_store_linked_index_rows(row);
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].first_index, (915, 2));
-    assert_eq!(rows[0].raw_first_index, [0x83, 0x93]);
+    assert_eq!((rows[0].first_index.atom.value(), rows[0].first_index.offset), (915, 2));
+    assert_eq!(rows[0].first_index.atom.raw(), [0x83, 0x93]);
     assert_eq!(u8::from(rows[0].discriminator), 0x16);
-    assert_eq!(rows[0].target_index, (36, 7));
-    assert_eq!(rows[0].raw_target_index, [0x24]);
-    assert_eq!(rows[0].indices, [(32, 12), (32, 13), (65, 14)]);
-    assert_eq!(rows[0].raw_indices, [vec![0x20], vec![0x20], vec![0x41]]);
+    assert_eq!((rows[0].target_index.atom.value(), rows[0].target_index.offset), (36, 7));
+    assert_eq!(rows[0].target_index.atom.raw(), [0x24]);
+    assert_eq!(rows[0].indices.map(|token| (token.atom.value(), token.offset)), [(32, 12), (32, 13), (65, 14)]);
+    assert_eq!(rows[0].indices.map(|token| token.atom.raw().to_vec()), [vec![0x20], vec![0x20], vec![0x41]]);
     assert_eq!(u8::from(rows[0].flag), 3);
     assert_eq!(u8::from(rows[0].mode), 4);
 
@@ -1863,10 +1863,10 @@ fn om_offset_store_target_index_rows_require_complete_exact_frames() {
         b"\x02\x01\x01\x01\x16\x3e\xff\xff\x90\xfe\x1e\x20\x58\x00\x47\x03\x07\x01\xc0\x44\x04\x00";
     let rows = super::offset_store_target_index_rows(row);
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].target_index, (62, 5));
-    assert_eq!(rows[0].raw_target_index, [0x3e]);
-    assert_eq!(rows[0].indices, [(30, 10), (32, 11), (88, 12)]);
-    assert_eq!(rows[0].raw_indices, [vec![0x1e], vec![0x20], vec![0x58]]);
+    assert_eq!((rows[0].target_index.atom.value(), rows[0].target_index.offset), (62, 5));
+    assert_eq!(rows[0].target_index.atom.raw(), [0x3e]);
+    assert_eq!(rows[0].indices.map(|token| (token.atom.value(), token.offset)), [(30, 10), (32, 11), (88, 12)]);
+    assert_eq!(rows[0].indices.map(|token| token.atom.raw().to_vec()), [vec![0x1e], vec![0x20], vec![0x58]]);
     assert_eq!(u8::from(rows[0].mode), 7);
 
     let mut null = row.to_vec();

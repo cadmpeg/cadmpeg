@@ -1605,23 +1605,21 @@ fn feature_input_column_row_uses_preserve_index_row_slots() {
         id: "row#3".into(),
         section_ordinal: 0,
         ordinal: 3,
-        first_index: 20,
-        raw_first_index: vec![20],
-        flag: 3,
-        indices: [4, 4, 5, 6],
-        raw_indices: [vec![4], vec![4], vec![5], vec![6]],
-        data_blocks: [
-            "block#4".into(),
-            "block#4".into(),
-            "block#5".into(),
-            "block#6".into(),
-        ],
+        first_index: crate::om::compact::LocatedCompactIndex { atom: crate::om::compact::CompactIndexAtom::from_wire(20, &[20]).unwrap(), offset: 103 },
+        flag: crate::om::discriminators::LinkedIndexFlag::Form03,
+        indices: [
+            (4, [4], "block#4", 108),
+            (4, [4], "block#4", 109),
+            (5, [5], "block#5", 110),
+            (6, [6], "block#6", 111),
+        ].map(|(index, raw, data_block, source_offset)| crate::native::om::DataBlockIndexToken {
+            target: crate::native::om::DataBlockIndexTarget { atom: crate::om::compact::CompactIndexAtom::from_wire(index, &raw).unwrap(), data_block: data_block.into() },
+            source_offset,
+        }),
         source_entry: "entry".into(),
         opening_data_block: "opening-block".into(),
         opening_block_offset: 8,
         source_offset: 100,
-        first_index_source_offset: 103,
-        index_source_offsets: [108, 109, 110, 111],
     };
 
     let uses = feature_input_column_row_uses(&[input], &[row], &[], &[], &[]);
@@ -1658,28 +1656,26 @@ fn feature_input_column_row_uses_preserve_linked_row_slots() {
         id: "linked-row#3".into(),
         section_ordinal: 0,
         ordinal: 3,
-        first_index: 20,
-        raw_first_index: vec![20],
+        first_index: crate::om::compact::LocatedCompactIndex { atom: crate::om::compact::CompactIndexAtom::from_wire(20, &[20]).unwrap(), offset: 102 },
         discriminator: crate::om::discriminators::LinkedIndexDiscriminator::Form16,
-        target_index: 4,
-        raw_target_index: vec![4],
-        indices: [5, 6, 4],
-        raw_indices: [vec![5], vec![6], vec![4]],
-        data_blocks: [
-            "block#4".into(),
-            "block#5".into(),
-            "block#6".into(),
-            "block#4".into(),
-        ],
+        target: crate::native::om::DataBlockIndexToken {
+            target: crate::native::om::DataBlockIndexTarget { atom: crate::om::compact::CompactIndexAtom::from_wire(4, &[4]).unwrap(), data_block: "block#4".into() },
+            source_offset: 107,
+        },
+        indices: [
+            (5, [5], "block#5", 112),
+            (6, [6], "block#6", 113),
+            (4, [4], "block#4", 114),
+        ].map(|(index, raw, data_block, source_offset)| crate::native::om::DataBlockIndexToken {
+            target: crate::native::om::DataBlockIndexTarget { atom: crate::om::compact::CompactIndexAtom::from_wire(index, &raw).unwrap(), data_block: data_block.into() },
+            source_offset,
+        }),
         flag: crate::om::discriminators::LinkedIndexFlag::Form03,
         mode: crate::om::discriminators::IndexRowMode::Form04,
         source_entry: "entry".into(),
         opening_data_block: "opening-block".into(),
         opening_block_offset: 8,
         source_offset: 100,
-        first_index_source_offset: 102,
-        target_index_source_offset: 107,
-        index_source_offsets: [112, 113, 114],
     };
 
     let table = DataBlockColumnIndexTable {
@@ -1748,23 +1744,23 @@ fn feature_input_column_row_uses_preserve_target_row_slots() {
         id: "target-row#3".into(),
         section_ordinal: 0,
         ordinal: 3,
-        target_index: 4,
-        raw_target_index: vec![4],
-        indices: [5, 6, 4],
-        raw_indices: [vec![5], vec![6], vec![4]],
-        data_blocks: [
-            "block#4".into(),
-            "block#5".into(),
-            "block#6".into(),
-            "block#4".into(),
-        ],
+        target: crate::native::om::DataBlockIndexToken {
+            target: crate::native::om::DataBlockIndexTarget { atom: crate::om::compact::CompactIndexAtom::from_wire(4, &[4]).unwrap(), data_block: "block#4".into() },
+            source_offset: 105,
+        },
+        indices: [
+            (5, [5], "block#5", 110),
+            (6, [6], "block#6", 111),
+            (4, [4], "block#4", 112),
+        ].map(|(index, raw, data_block, source_offset)| crate::native::om::DataBlockIndexToken {
+            target: crate::native::om::DataBlockIndexTarget { atom: crate::om::compact::CompactIndexAtom::from_wire(index, &raw).unwrap(), data_block: data_block.into() },
+            source_offset,
+        }),
         mode: crate::om::discriminators::IndexRowMode::Form07,
         source_entry: "entry".into(),
         opening_data_block: "opening-block".into(),
         opening_block_offset: 8,
         source_offset: 100,
-        target_index_source_offset: 105,
-        index_source_offsets: [110, 111, 112],
     };
 
     let table = DataBlockColumnIndexTable {
@@ -1849,23 +1845,23 @@ fn datum_csys_column_row_uses_preserve_both_lane_offsets() {
         id: "target-row#3".into(),
         section_ordinal: 0,
         ordinal: 3,
-        target_index: 5,
-        raw_target_index: vec![5],
-        indices: [6, 7, 5],
-        raw_indices: [vec![6], vec![7], vec![5]],
-        data_blocks: [
-            "block#5".into(),
-            "block#6".into(),
-            "block#7".into(),
-            "block#5".into(),
-        ],
+        target: crate::native::om::DataBlockIndexToken {
+            target: crate::native::om::DataBlockIndexTarget { atom: crate::om::compact::CompactIndexAtom::from_wire(5, &[5]).unwrap(), data_block: "block#5".into() },
+            source_offset: 105,
+        },
+        indices: [
+            (6, [6], "block#6", 110),
+            (7, [7], "block#7", 111),
+            (5, [5], "block#5", 112),
+        ].map(|(index, raw, data_block, source_offset)| crate::native::om::DataBlockIndexToken {
+            target: crate::native::om::DataBlockIndexTarget { atom: crate::om::compact::CompactIndexAtom::from_wire(index, &raw).unwrap(), data_block: data_block.into() },
+            source_offset,
+        }),
         mode: crate::om::discriminators::IndexRowMode::Form07,
         source_entry: "entry".into(),
         opening_data_block: "opening-block".into(),
         opening_block_offset: 8,
         source_offset: 100,
-        target_index_source_offset: 105,
-        index_source_offsets: [110, 111, 112],
     };
     let table = DataBlockColumnIndexTable {
         id: "column-table".into(),
