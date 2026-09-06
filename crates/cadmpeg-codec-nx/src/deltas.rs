@@ -12,6 +12,8 @@ pub(crate) mod precision_state;
 pub(crate) mod type101_state;
 pub(crate) mod attdef_state;
 pub(crate) mod type70_state;
+pub(crate) mod type38_state;
+use type38_state::{IntersectionMarker, ReferenceLaneForm, Type38State};
 use type70_state::{TrailingCopies, Type70State};
 use attdef_state::AttdefState;
 use precision_state::PrecisionState;
@@ -1800,7 +1802,7 @@ fn inline_schema_declaration(
     {
         let mut at = offset.checked_add(crate::topology::TYPE_38_SCHEMA_HEADER.len())?;
         let (xmt, consumed) = read_xmt(stream, at)?;
-        (xmt > 1).then_some(())?;
+        let xmt = NonNullXmt::try_from(xmt).ok()?;
         at = at.checked_add(consumed)?;
         let node_id = View::u32_be_at(stream, at)?;
         at = at.checked_add(4)?;
@@ -1813,116 +1815,35 @@ fn inline_schema_declaration(
             *status = *stream.get(at)?;
             at = at.checked_add(1)?;
         }
-        (leading_statuses[..4] == [1; 4] && matches!(leading_statuses[4], 0 | 1)).then_some(())?;
-        (leading_statuses[4] == 1 || leading_references[4] > 1).then_some(())?;
-        let marker = *stream.get(at)?;
-        matches!(marker, 0x2b | 0x2d).then_some(())?;
+        let marker = IntersectionMarker::try_from(*stream.get(at)?).ok()?;
         at = at.checked_add(1)?;
         if let Some((linked_references, state_references, state_end)) =
-            type_38_reference_lanes(stream, at, 2, 3)
+            type_38_reference_lanes(stream, at, ReferenceLaneForm::TwoLinks)
         {
-            let descending_from_xmt = [
-                xmt.checked_add(3)?,
-                xmt.checked_add(2)?,
-                xmt.checked_add(1)?,
-            ];
-            let prior_anchor = linked_references
-                .iter()
-                .chain(&leading_references)
-                .copied()
-                .max()?;
-            let ascending_from_prior = [
-                prior_anchor.checked_add(1)?,
-                prior_anchor.checked_add(2)?,
-                prior_anchor.checked_add(3)?,
-            ];
-            if stream.get(state_end..state_end.checked_add(TYPE_41_SCHEMA_HEADER.len())?)
-                != Some(TYPE_41_SCHEMA_HEADER)
-            {
-                if leading_statuses[4] == 0 {
-                    let anchor = leading_references[4];
-                    (state_references.as_slice()
-                        == [
-                            anchor.checked_add(1)?,
-                            anchor.checked_add(2)?,
-                            anchor.checked_add(3)?,
-                        ])
-                    .then_some(())?;
-                    (state_end <= gap_end).then_some(())?;
-                    return Some(InlineSchemaDeclaration {
-                        fields: InlineSchemaFields::Type38 {
-                            xmt,
-                            node_id,
-                            leading_references,
-                            leading_statuses,
-                            marker,
-                            linked_references,
-                            state_references,
-                            numeric_values: None,
-                        },
-                        offset,
-                        end: state_end,
-                    });
-                }
-                (state_references.as_slice() == descending_from_xmt
-                    || state_references.as_slice() == ascending_from_prior)
-                    .then_some(())?;
+            let (numeric_values, end) = if stream.get(state_end..state_end.checked_add(TYPE_41_SCHEMA_HEADER.len())?) == Some(TYPE_41_SCHEMA_HEADER) {
+                let (term_reference, numeric_values, end) = type_41_schema_state(stream, state_end, gap_end)?;
+                (term_reference == state_references[1]).then_some(())?;
+                (Some(numeric_values), end)
+            } else {
                 (state_end <= gap_end).then_some(())?;
-                return Some(InlineSchemaDeclaration {
-                    fields: InlineSchemaFields::Type38 {
-                        xmt,
-                        node_id,
-                        leading_references,
-                        leading_statuses,
-                        marker,
-                        linked_references,
-                        state_references,
-                        numeric_values: None,
-                    },
-                    offset,
-                    end: state_end,
-                });
-            }
-            (leading_statuses == [1; 5]).then_some(())?;
-            (state_references.as_slice() == descending_from_xmt).then_some(())?;
-            let (term_reference, numeric_values, end) =
-                type_41_schema_state(stream, state_end, gap_end)?;
-            (u32::from(term_reference) == state_references[1]).then_some(())?;
+                (None, state_end)
+            };
             return Some(InlineSchemaDeclaration {
                 fields: InlineSchemaFields::Type38 {
-                    xmt,
-                    node_id,
-                    leading_references,
-                    leading_statuses,
-                    marker,
-                    linked_references,
-                    state_references,
-                    numeric_values: Some(numeric_values),
+                    state: Type38State::new(xmt, node_id, leading_references, leading_statuses, marker, linked_references, state_references, numeric_values).ok()?,
                 },
                 offset,
                 end,
             });
         }
-        let (linked_references, state_references, state_end) =
-            type_38_reference_lanes(stream, at, 1, 4)?;
-        (leading_statuses == [1; 5]).then_some(())?;
-        (state_references[2] == state_references[1].checked_add(1)?
-            && state_references[3] == state_references[2].checked_add(1)?)
-        .then_some(())?;
-        (state_end <= gap_end).then_some(())?;
+        let (linked_references, state_references, end) = type_38_reference_lanes(stream, at, ReferenceLaneForm::OneLink)?;
+        (end <= gap_end).then_some(())?;
         return Some(InlineSchemaDeclaration {
             fields: InlineSchemaFields::Type38 {
-                xmt,
-                node_id,
-                leading_references,
-                leading_statuses,
-                marker,
-                linked_references,
-                state_references,
-                numeric_values: None,
+                state: Type38State::new(xmt, node_id, leading_references, leading_statuses, marker, linked_references, state_references, None).ok()?,
             },
             offset,
-            end: state_end,
+            end,
         });
     }
     if stream.get(offset..offset.checked_add(TYPE_41_SCHEMA_HEADER.len())?)
@@ -2017,14 +1938,14 @@ fn inline_schema_declaration(
 fn type_38_reference_lanes(
     stream: &[u8],
     offset: usize,
-    linked_count: usize,
-    state_count: usize,
-) -> Option<(Vec<u32>, Vec<u32>, usize)> {
+    form: ReferenceLaneForm,
+) -> Option<(Vec<NonNullXmt>, Vec<NonNullXmt>, usize)> {
+    let (linked_count, state_count) = form.counts();
     let mut at = offset;
     let mut linked_references = Vec::new();
     for _ in 0..linked_count {
         let reference = read_status_one_reference(stream, &mut at)?;
-        (reference > 1).then_some(())?;
+        let reference = NonNullXmt::try_from(reference).ok()?;
         linked_references.push(reference);
     }
     let mut state_references = Vec::new();
@@ -2033,7 +1954,7 @@ fn type_38_reference_lanes(
         at = at.checked_add(consumed)?;
         (stream.get(at) == Some(&0)).then_some(())?;
         at = at.checked_add(1)?;
-        (reference > 1).then_some(())?;
+        let reference = NonNullXmt::try_from(reference).ok()?;
         state_references.push(reference);
     }
     (read_status_one_reference(stream, &mut at) == Some(1)).then_some(())?;
@@ -4038,16 +3959,12 @@ mod inline_schema_tests {
             census.inline_schema_declarations,
             [InlineSchemaDeclaration {
                 fields: InlineSchemaFields::Type38 {
-                    xmt: 40_000,
-                    node_id: 17,
-                    leading_references: [1, 7, 8, 9, 1],
-                    leading_statuses: [1; 5],
-                    marker: 0x2d,
-                    linked_references: vec![11, 12],
-                    state_references: vec![40_003, 40_002, 40_001],
-                    numeric_values: Some(
-                        [0.5, -0.25, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0,].try_into().unwrap()
-                    ),
+                    state: Type38State::new(
+                        40_000u32.try_into().unwrap(), 17, [1,7,8,9,1], [1;5], IntersectionMarker::Type2d,
+                        [11u32,12].into_iter().map(|value| value.try_into().unwrap()).collect(),
+                        [40_003u32,40_002,40_001].into_iter().map(|value| value.try_into().unwrap()).collect(),
+                        Some([0.5,-0.25,1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0].try_into().unwrap()),
+                    ).unwrap(),
                 },
                 offset: 0,
                 end: bytes.len(),
@@ -4087,14 +4004,10 @@ mod inline_schema_tests {
             assert!(matches!(
                 &census.inline_schema_declarations[0].fields,
                 InlineSchemaFields::Type38 {
-                    xmt: parsed_xmt,
-                    linked_references: parsed_links,
-                    state_references,
-                    numeric_values: None,
-                    ..
-                } if *parsed_xmt == xmt
-                    && parsed_links == &linked_references
-                    && state_references == &expected_state_references
+                    state,
+                } if state.xmt() == xmt && state.numeric_values().is_none()
+                    && state.linked_references() == linked_references
+                    && state.state_references() == expected_state_references
             ));
             assert_eq!(census.bytes_decoded, bytes.len());
         }
@@ -4124,14 +4037,10 @@ mod inline_schema_tests {
         assert!(matches!(
             &census.inline_schema_declarations[0].fields,
             InlineSchemaFields::Type38 {
-                xmt: 53,
-                marker: 0x2b,
-                linked_references,
-                state_references,
-                numeric_values: None,
-                ..
-            } if linked_references == &[381]
-                && state_references == &[765, 803, 804, 805]
+                state,
+            } if state.xmt() == 53 && state.marker() == 0x2b && state.numeric_values().is_none()
+                && state.linked_references() == [381]
+                && state.state_references() == [765, 803, 804, 805]
         ));
         assert_eq!(census.bytes_decoded, bytes.len());
     }
@@ -4170,11 +4079,10 @@ mod inline_schema_tests {
         assert!(matches!(
             &census.inline_schema_declarations[0].fields,
             InlineSchemaFields::Type38 {
-                leading_references: [1, 3, 907, 1_082, 1_119],
-                leading_statuses: [1, 1, 1, 1, 0],
-                state_references,
-                ..
-            } if state_references == &[1_120, 1_121, 1_122]
+                state,
+            } if state.leading_references() == [1, 3, 907, 1_082, 1_119]
+                && state.leading_statuses() == [1, 1, 1, 1, 0]
+                && state.state_references() == [1_120, 1_121, 1_122]
         ));
         assert_eq!(census.bytes_decoded, bytes.len());
 

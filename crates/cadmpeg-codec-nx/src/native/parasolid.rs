@@ -3186,10 +3186,10 @@ mod tests {
         use crate::deltas::inline_schema_fields::InlineSchemaFields;
         let base = serde_json::json!({
             "schema": "type38", "xmt": 3, "node_id": 7,
-            "leading_references": [1, 2, 3, 4, 5], "marker": 4,
-            "linked_references": [], "state_references": [], "numeric_values": null
+            "leading_references": [1, 2, 3, 4, 5], "marker": 45,
+            "linked_references": [2, 3], "state_references": [6, 7, 8], "numeric_values": null
         });
-        for statuses in [None, Some([1; 5]), Some([0, 1, 2, 1, 1])] {
+        for statuses in [None, Some([1; 5]), Some([1, 1, 1, 1, 0])] {
             let mut wire = base.clone();
             if let Some(statuses) = statuses {
                 wire["leading_statuses"] = serde_json::json!(statuses);
@@ -3197,13 +3197,13 @@ mod tests {
             let fields: InlineSchemaFields =
                 serde_json::from_value(wire.clone()).unwrap();
             let InlineSchemaFields::Type38 {
-                leading_statuses, ..
+                state,
             } = &fields
             else {
                 panic!("type38 wire must decode as Type38");
             };
-            assert_eq!(*leading_statuses, statuses.unwrap_or([1; 5]));
-            if *leading_statuses == [1; 5] {
+            assert_eq!(state.leading_statuses(), statuses.unwrap_or([1; 5]));
+            if state.leading_statuses() == [1; 5] {
                 wire.as_object_mut().unwrap().remove("leading_statuses");
             }
             assert_eq!(serde_json::to_value(fields).unwrap(), wire);
