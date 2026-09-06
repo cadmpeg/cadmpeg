@@ -2,7 +2,7 @@
 //! GROUP member families with their required node identities.
 
 use super::ParasolidGroupMember;
-use crate::deltas::RecordFamily;
+use crate::deltas::record_family::RecordFamily;
 use crate::topology::Graph;
 use serde::{Deserialize, Serialize};
 
