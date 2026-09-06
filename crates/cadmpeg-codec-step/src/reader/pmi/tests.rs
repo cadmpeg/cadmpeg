@@ -84,7 +84,7 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     let semantic = dimension.id.clone();
     result.ir_mut().model.pmi.push(cadmpeg_ir::PmiAnnotation {
-        id: cadmpeg_ir::ids::PmiId::mint("test:pmi:presentation").expect("identity grammar"),
+        id: cadmpeg_ir::ids::PmiId::mint("test:model:pmi#test:pmi:presentation").expect("identity grammar"),
         name: Some("width note".into()),
         visible: Some(false),
         targets: Vec::new(),
@@ -109,7 +109,7 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
     let roundtrip = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode written semantic PMI");
-    assert_eq!(roundtrip.ir().model.pmi.len(), 6);
+    assert_eq!(roundtrip.ir().model.pmi.len(), result.ir().model.pmi.len());
     assert!(roundtrip.ir().model.pmi.iter().any(|annotation| matches!(
         &annotation.definition,
         PmiDefinition::DatumSystem { references }
@@ -157,7 +157,11 @@ fn complex_datum_feature_remains_a_dimension_target() {
 #5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
 #6=(COMPOSITE_SHAPE_ASPECT() DATUM_FEATURE() SHAPE_ASPECT('feature','',#5,.T.));
 #10=DIMENSIONAL_SIZE(#6,'width');
-#99=UNRESOLVED_PRODUCT();",
+#99=UNRESOLVED_PRODUCT();
+#1000=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#1001=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(12.0),#1000);
+#1002=SHAPE_DIMENSION_REPRESENTATION('nominal',(#1001),$);
+#1003=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#10,#1002);",
     );
     let dimension = result
         .ir()
@@ -188,7 +192,12 @@ fn simple_shape_aspect_subtypes_remain_dimension_targets() {
 #7=DATUM_TARGET('datum target','',#5,.T.,'A');
 #10=DIMENSIONAL_SIZE(#6,'composite width');
 #11=DIMENSIONAL_SIZE(#7,'target width');
-#99=UNRESOLVED_PRODUCT();",
+#99=UNRESOLVED_PRODUCT();
+#1000=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#1001=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(12.0),#1000);
+#1002=SHAPE_DIMENSION_REPRESENTATION('nominal',(#1001),$);
+#1003=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#10,#1002);
+#1004=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#11,#1002);",
     );
     for (name, source_id) in [("composite width", "#6"), ("target width", "#7")] {
         let dimension = result
@@ -1013,8 +1022,22 @@ fn annotation_occurrence_with_leader_line_visibility_is_transferred() {
 
 #[test]
 fn malformed_zero_partial_pmi_reference_is_non_panicking() {
-    let result = decode_inline("#5=();\n#10=ANNOTATION_OCCURRENCE('',(),#5);");
-    assert!(result.ir().model.pmi.len() <= 1);
+    let source = b"ISO-10303-21;
+HEADER;
+FILE_DESCRIPTION(('test'),'2;1');
+FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');
+FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));
+ENDSEC;
+DATA;
+#5=();
+#10=ANNOTATION_OCCURRENCE('',(),#5);
+ENDSEC;
+END-ISO-10303-21;
+";
+    let error = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect_err("an entity must contain at least one partial record");
+    assert!(error.to_string().contains("expected name"));
 }
 
 #[test]
@@ -1365,7 +1388,7 @@ fn geometric_item_usage_adds_typed_topology_targets_to_pmi() {
             .expect("fixture is UTF-8")
             .replace(
                 "ENDSEC;\nEND-ISO-10303-21;",
-                "#38=PRODUCT_DEFINITION_SHAPE('PMI shape','',$);\n#39=SHAPE_ASPECT('dimension feature','',#38,.T.);\n#40=SHAPE_ASPECT('geometric feature','',#38,.T.);\n#41=DIMENSIONAL_SIZE(#39,'diameter');\n#42=SHAPE_ASPECT_RELATIONSHIP('','',#39,#40);\n#43=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#40,#32,#29);\n#44=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#39,#32,#6);\n#45=DATUM_TARGET('datum target','circle',#38,.F.,'A');\n#46=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#45,#32,#29);\n#47=SHAPE_ASPECT('datum basis','DATUM TARGET',#38,.T.);\n#48=FEATURE_FOR_DATUM_TARGET_RELATIONSHIP('','',#47,#45);\n#49=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#47,#32,#29);\n#50=CARTESIAN_POINT('isolated PMI point',(1.,2.,3.));\n#51=SHAPE_ASPECT('point feature','',#38,.T.);\n#52=DIMENSIONAL_SIZE(#51,'point dimension');\n#53=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#51,#32,#50);\n#54=SHAPE_ASPECT('curve feature','',#38,.T.);\n#55=DIMENSIONAL_SIZE(#54,'curve dimension');\n#56=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#54,#32,#16);\nENDSEC;\nEND-ISO-10303-21;",
+                "#38=PRODUCT_DEFINITION_SHAPE('PMI shape','',$);\n#39=SHAPE_ASPECT('dimension feature','',#38,.T.);\n#40=SHAPE_ASPECT('geometric feature','',#38,.T.);\n#41=DIMENSIONAL_SIZE(#39,'diameter');\n#42=SHAPE_ASPECT_RELATIONSHIP('','',#39,#40);\n#43=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#40,#32,#29);\n#44=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#39,#32,#6);\n#45=DATUM_TARGET('datum target','circle',#38,.F.,'A');\n#46=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#45,#32,#29);\n#47=SHAPE_ASPECT('datum basis','DATUM TARGET',#38,.T.);\n#48=FEATURE_FOR_DATUM_TARGET_RELATIONSHIP('','',#47,#45);\n#49=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#47,#32,#29);\n#50=CARTESIAN_POINT('isolated PMI point',(1.,2.,3.));\n#51=SHAPE_ASPECT('point feature','',#38,.T.);\n#52=DIMENSIONAL_SIZE(#51,'point dimension');\n#53=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#51,#32,#50);\n#54=SHAPE_ASPECT('curve feature','',#38,.T.);\n#55=DIMENSIONAL_SIZE(#54,'curve dimension');\n#56=GEOMETRIC_ITEM_SPECIFIC_USAGE('','',#54,#32,#16);\n#1000=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));\n#1001=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(12.0),#1000);\n#1002=SHAPE_DIMENSION_REPRESENTATION('nominal',(#1001),$);\n#1003=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#41,#1002);\n#1004=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#52,#1002);\n#1005=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#55,#1002);\nENDSEC;\nEND-ISO-10303-21;",
             );
     let result = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())

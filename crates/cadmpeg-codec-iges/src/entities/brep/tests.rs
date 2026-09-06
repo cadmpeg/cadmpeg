@@ -17,7 +17,7 @@ const EPS_EDGE_ENDPOINT_MATCH: f64 = 1.0e-9;
 
 #[test]
 fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
-    let curve_id = CurveId::mint("curve").expect("identity grammar");
+    let curve_id = CurveId::mint("test:model:curve#curve").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
@@ -29,18 +29,18 @@ fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
     });
     ir.model.edges.extend([
         Edge {
-            id: EdgeId::mint("wrong-occurrence").expect("identity grammar"),
+            id: EdgeId::mint("test:model:edge#wrong-occurrence").expect("identity grammar"),
             curve: Some(curve_id.clone()),
-            start: VertexId::mint("wrong-start").expect("identity grammar"),
-            end: VertexId::mint("wrong-end").expect("identity grammar"),
+            start: VertexId::mint("test:model:vertex#wrong-start").expect("identity grammar"),
+            end: VertexId::mint("test:model:vertex#wrong-end").expect("identity grammar"),
             param_range: Some([10.0, 11.0]),
             tolerance: None,
         },
         Edge {
-            id: EdgeId::mint("matching-occurrence").expect("identity grammar"),
+            id: EdgeId::mint("test:model:edge#matching-occurrence").expect("identity grammar"),
             curve: Some(curve_id.clone()),
-            start: VertexId::mint("matching-start").expect("identity grammar"),
-            end: VertexId::mint("matching-end").expect("identity grammar"),
+            start: VertexId::mint("test:model:vertex#matching-start").expect("identity grammar"),
+            end: VertexId::mint("test:model:vertex#matching-end").expect("identity grammar"),
             param_range: Some([0.0, 2.0]),
             tolerance: None,
         },
@@ -49,18 +49,21 @@ fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
     let source_edge = super::source_edge_for_vertices(
         &ir,
         &[0, 1],
-        &ir.model.curves[0].geometry,
+        ir.model.curves[0].geometry.solved_cache().unwrap_or(&ir.model.curves[0].geometry),
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(2.0, 0.0, 0.0),
         EPS_EDGE_ENDPOINT_MATCH,
     )
     .expect("matching edge occurrence");
-    assert_eq!(source_edge.id.as_str(), "matching-occurrence");
+    assert_eq!(
+        source_edge.id.as_str(),
+        "test:model:edge#matching-occurrence"
+    );
 }
 
 #[test]
 fn source_edge_selection_rejects_multiple_matching_occurrences() {
-    let curve_id = CurveId::mint("curve").expect("identity grammar");
+    let curve_id = CurveId::mint("test:model:curve#curve").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
@@ -74,18 +77,18 @@ fn source_edge_selection_rejects_multiple_matching_occurrences() {
     });
     ir.model.edges.extend([
         Edge {
-            id: EdgeId::mint("first-occurrence").expect("identity grammar"),
+            id: EdgeId::mint("test:model:edge#first-occurrence").expect("identity grammar"),
             curve: Some(curve_id.clone()),
-            start: VertexId::mint("first-start").expect("identity grammar"),
-            end: VertexId::mint("first-end").expect("identity grammar"),
+            start: VertexId::mint("test:model:vertex#first-start").expect("identity grammar"),
+            end: VertexId::mint("test:model:vertex#first-end").expect("identity grammar"),
             param_range: Some([0.0, std::f64::consts::TAU]),
             tolerance: None,
         },
         Edge {
-            id: EdgeId::mint("second-occurrence").expect("identity grammar"),
+            id: EdgeId::mint("test:model:edge#second-occurrence").expect("identity grammar"),
             curve: Some(curve_id.clone()),
-            start: VertexId::mint("second-start").expect("identity grammar"),
-            end: VertexId::mint("second-end").expect("identity grammar"),
+            start: VertexId::mint("test:model:vertex#second-start").expect("identity grammar"),
+            end: VertexId::mint("test:model:vertex#second-end").expect("identity grammar"),
             param_range: Some([std::f64::consts::TAU, 2.0 * std::f64::consts::TAU]),
             tolerance: None,
         },
@@ -94,7 +97,7 @@ fn source_edge_selection_rejects_multiple_matching_occurrences() {
     let result = super::source_edge_for_vertices(
         &ir,
         &[0, 1],
-        &ir.model.curves[0].geometry,
+        ir.model.curves[0].geometry.solved_cache().unwrap_or(&ir.model.curves[0].geometry),
         Point3::new(1.0, 0.0, 0.0),
         Point3::new(1.0, 0.0, 0.0),
         EPS_EDGE_ENDPOINT_MATCH,

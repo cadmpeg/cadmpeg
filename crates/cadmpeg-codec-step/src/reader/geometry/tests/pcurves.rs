@@ -152,7 +152,7 @@ fn trimmed_curve_resolves_a_surface_curve_basis_carrier() {
 
     assert!(decoded.ir().model.curves.iter().any(|curve| {
         curve.id.as_str() == "step:data:curve#70"
-            && matches!(curve.geometry, CurveGeometry::Line { .. })
+            && matches!(*curve.geometry.solved_cache().unwrap_or(&curve.geometry), CurveGeometry::Line { .. })
     }));
     assert!(decoded.ir().model.procedural_curves.iter().any(|curve| {
         decoded
@@ -261,7 +261,7 @@ fn cylindrical_pcurve_coordinates_follow_surface_parameter_units() {
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
         .expect("cylindrical pcurve");
     assert!(matches!(
-        pcurve.geometry,
+        &pcurve.geometry,
         cadmpeg_ir::geometry::PcurveGeometry::Line { direction, .. }
             if direction.u.abs() < 1.0e-12 && (direction.v - 10.0).abs() < 1.0e-12
     ));
@@ -459,7 +459,7 @@ fn planar_pcurve_coordinates_follow_the_document_length_unit() {
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
         .expect("planar pcurve");
     assert!(matches!(
-        pcurve.geometry,
+        &pcurve.geometry,
         cadmpeg_ir::geometry::PcurveGeometry::Line { direction, .. }
             if (direction.u - 10.0).abs() < 1.0e-12
     ));
@@ -525,7 +525,7 @@ fn cylindrical_pcurve_uses_surface_parameter_without_degree_repair() {
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#34")
         .expect("surface-chart pcurve");
     assert!(matches!(
-        pcurve.geometry,
+        &pcurve.geometry,
         cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction }
             if (origin.u - std::f64::consts::PI).abs() < 1.0e-12
                 && origin.v.abs() < 1.0e-12
@@ -944,7 +944,7 @@ fn direct_boundary_curve_builds_a_curve_bounded_surface() {
             .find(|curve| curve.id.as_str() == "step:data:curve#9")
             .expect("boundary curve carrier");
         assert!(matches!(
-            &boundary.geometry,
+            boundary.geometry.solved_cache().unwrap_or(&boundary.geometry),
             CurveGeometry::Composite { segments, .. }
                 if segments.len() == 1 && segments[0].curve.as_str() == "step:data:curve#7"
         ));

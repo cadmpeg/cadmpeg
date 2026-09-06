@@ -202,27 +202,7 @@ enum Command {
         subcommand_help_heading = "Byte tools",
         after_help = "Examples:\n  cadmpeg inspect part.sldprt"
     )]
-    Inspect {
-        #[command(flatten)]
-        file: inspect::FileArg,
-        /// Write JSON to standard output.
-        #[arg(long)]
-        json: bool,
-        /// Write a JSON report to this file.
-        #[arg(short = 'o', long, visible_alias = "output")]
-        report: Option<PathBuf>,
-        /// Replace an existing report file.
-        #[arg(long)]
-        force: bool,
-        /// Resource-limit profile applied during inspection.
-        #[arg(long, value_enum, default_value_t = LimitProfile::Desktop)]
-        limits: LimitProfile,
-        #[command(flatten)]
-        input_args: InputArgs,
-        /// Byte tool to run instead of showing the container.
-        #[command(subcommand)]
-        bytes: Option<inspect::ByteCommand>,
-    },
+    Inspect(inspect::InspectArgs),
     /// Write a CAD file as CADIR JSON.
     ///
     /// CADIR is cadmpeg's JSON form of a model. dump does not check.
@@ -355,29 +335,19 @@ fn main() -> ExitCode {
         validators: NativeValidatorCatalog::with_builtins(),
     };
     let result: Result<ExitCode, application::refusal::ApplicationError> = match command {
-        Command::Inspect {
-            file,
-            json,
-            report,
-            force,
-            limits,
-            input_args,
-            bytes,
-        } => match bytes {
-            Some(byte_command) => {
-                inspect::run(byte_command).map_err(application::refusal::ApplicationError::from)
-            }
-            None => commands::inspect(
-                &catalogs,
-                file.path(),
-                input_args.forced(),
-                json,
-                report.as_deref(),
-                force,
-                limits.limits(),
-            )
-            .map(|()| ExitCode::SUCCESS),
-        },
+        Command::Inspect(inspect::InspectArgs::Bytes(byte_command)) => {
+            inspect::run(byte_command).map_err(application::refusal::ApplicationError::from)
+        }
+        Command::Inspect(inspect::InspectArgs::Summary(args)) => commands::inspect(
+            &catalogs,
+            args.file.path(),
+            args.input_args.forced(),
+            args.json,
+            args.report.as_deref(),
+            args.force,
+            args.limits.limits(),
+        )
+        .map(|()| ExitCode::SUCCESS),
         Command::Dump {
             file,
             _reject_json: _,

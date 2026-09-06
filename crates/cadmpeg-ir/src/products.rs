@@ -652,7 +652,7 @@ mod tests {
 
     #[test]
     fn linked_prototype_wire_preserves_the_legacy_fields_and_rejects_ignored_transforms() {
-        let plain = occurrence("plain", OccurrenceParent::Root, 1.0);
+        let plain = occurrence("test:model:occurrence#plain", OccurrenceParent::Root, 1.0);
         let mut plain_wire = serde_json::to_value(&plain).expect("plain occurrence wire");
         assert_eq!(
             plain_wire.get("prototype_transform"),
@@ -682,15 +682,15 @@ mod tests {
 
     #[test]
     fn link_state_wire_preserves_the_legacy_fields_and_requires_a_copy_policy() {
-        let mut linked = occurrence("link", OccurrenceParent::Root, 1.0);
+        let mut linked = occurrence("test:model:occurrence#link", OccurrenceParent::Root, 1.0);
         linked.link = Some(LinkState {
             linked_subelements: vec!["Face1".into()],
-            element_component: Some(ProductDefinitionId("test:product#element".into())),
+            element_component: Some(ProductDefinitionId("test:model:product#element".into())),
             claim_child: Some(true),
             copy_on_change: Some(CopyOnChange {
                 policy: CopyOnChangePolicy::Owned,
-                source: Some(ProductDefinitionId("test:product#source".into())),
-                group: Some(ProductDefinitionId("test:product#group".into())),
+                source: Some(ProductDefinitionId("test:model:product#source".into())),
+                group: Some(ProductDefinitionId("test:model:product#group".into())),
                 touched: Some(true),
             }),
         });
@@ -703,8 +703,8 @@ mod tests {
         assert_eq!(serde_json::from_value::<Occurrence>(wire).unwrap(), linked);
 
         let mut invalid =
-            serde_json::to_value(occurrence("invalid-link", OccurrenceParent::Root, 1.0)).unwrap();
-        invalid["copy_on_change_source"] = serde_json::json!("test:product#source");
+            serde_json::to_value(occurrence("test:model:occurrence#invalid-link", OccurrenceParent::Root, 1.0)).unwrap();
+        invalid["copy_on_change_source"] = serde_json::json!("test:model:product#source");
         assert!(serde_json::from_value::<Occurrence>(invalid).is_err());
     }
 

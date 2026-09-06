@@ -31,35 +31,35 @@ fn edgeless_doc() -> CadIr {
     };
     let mut ir = CadIr::empty();
     ir.model.points.push(Point {
-        id: PointId::mint("p0").expect("identity grammar"),
+        id: PointId::mint("test:model:point#p0").expect("identity grammar"),
         position: Point3::new(0.0, 0.0, 0.0),
         source_object: None,
     });
     ir.model.points.push(Point {
-        id: PointId::mint("p1").expect("identity grammar"),
+        id: PointId::mint("test:model:point#p1").expect("identity grammar"),
         position: Point3::new(1.0, 0.0, 0.0),
         source_object: None,
     });
     ir.model.vertices.push(Vertex {
-        id: VertexId::mint("v0").expect("identity grammar"),
-        point: PointId::mint("p0").expect("identity grammar"),
+        id: VertexId::mint("test:model:vertex#v0").expect("identity grammar"),
+        point: PointId::mint("test:model:point#p0").expect("identity grammar"),
         tolerance: None,
     });
     ir.model.vertices.push(Vertex {
-        id: VertexId::mint("v1").expect("identity grammar"),
-        point: PointId::mint("p1").expect("identity grammar"),
+        id: VertexId::mint("test:model:vertex#v1").expect("identity grammar"),
+        point: PointId::mint("test:model:point#p1").expect("identity grammar"),
         tolerance: None,
     });
     ir.model.edges.push(Edge {
-        id: EdgeId::mint("e0").expect("identity grammar"),
+        id: EdgeId::mint("test:model:edge#e0").expect("identity grammar"),
         curve: None,
-        start: VertexId::mint("v0").expect("identity grammar"),
-        end: VertexId::mint("v1").expect("identity grammar"),
+        start: VertexId::mint("test:model:vertex#v0").expect("identity grammar"),
+        end: VertexId::mint("test:model:vertex#v1").expect("identity grammar"),
         param_range: None,
         tolerance: None,
     });
     ir.model.surfaces.push(Surface {
-        id: SurfaceId::mint("s0").expect("identity grammar"),
+        id: SurfaceId::mint("test:model:surface#s0").expect("identity grammar"),
         geometry: SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -68,48 +68,48 @@ fn edgeless_doc() -> CadIr {
         source_object: None,
     });
     ir.model.coedges.push(Coedge {
-        id: CoedgeId::mint("ce0").expect("identity grammar"),
-        owner_loop: LoopId::mint("lp0").expect("identity grammar"),
-        edge: EdgeId::mint("e0").expect("identity grammar"),
-        radial_next: CoedgeId::mint("ce0").expect("identity grammar"),
+        id: CoedgeId::mint("test:model:coedge#ce0").expect("identity grammar"),
+        owner_loop: LoopId::mint("test:model:loop#lp0").expect("identity grammar"),
+        edge: EdgeId::mint("test:model:edge#e0").expect("identity grammar"),
+        radial_next: CoedgeId::mint("test:model:coedge#ce0").expect("identity grammar"),
         sense: Sense::Forward,
         pcurves: Vec::new(),
         use_curve: None,
     });
     ir.model.loops.push(Loop {
-        id: LoopId::mint("lp0").expect("identity grammar"),
-        face: FaceId::mint("f0").expect("identity grammar"),
+        id: LoopId::mint("test:model:loop#lp0").expect("identity grammar"),
+        face: FaceId::mint("test:model:face#f0").expect("identity grammar"),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring {
-            coedges: vec![CoedgeId::mint("ce0").expect("identity grammar")],
+            coedges: vec![CoedgeId::mint("test:model:coedge#ce0").expect("identity grammar")],
             vertex_uses: Vec::new(),
         },
     });
     ir.model.faces.push(Face {
-        id: FaceId::mint("f0").expect("identity grammar"),
-        shell: ShellId::mint("sh0").expect("identity grammar"),
-        surface: SurfaceId::mint("s0").expect("identity grammar"),
+        id: FaceId::mint("test:model:face#f0").expect("identity grammar"),
+        shell: ShellId::mint("test:model:shell#sh0").expect("identity grammar"),
+        surface: SurfaceId::mint("test:model:surface#s0").expect("identity grammar"),
         sense: Sense::Forward,
-        loops: vec![LoopId::mint("lp0").expect("identity grammar")].into(),
+        loops: vec![LoopId::mint("test:model:loop#lp0").expect("identity grammar")].into(),
         name: None,
         color: None,
         tolerance: None,
     });
     ir.model.shells.push(Shell {
-        id: ShellId::mint("sh0").expect("identity grammar"),
-        region: RegionId::mint("l0").expect("identity grammar"),
-        faces: vec![FaceId::mint("f0").expect("identity grammar")],
+        id: ShellId::mint("test:model:shell#sh0").expect("identity grammar"),
+        region: RegionId::mint("test:model:region#l0").expect("identity grammar"),
+        faces: vec![FaceId::mint("test:model:face#f0").expect("identity grammar")],
         wire_edges: Vec::new(),
         free_vertices: Vec::new(),
     });
     ir.model.regions.push(Region {
-        id: RegionId::mint("l0").expect("identity grammar"),
-        body: BodyId::mint("b0").expect("identity grammar"),
-        shells: vec![ShellId::mint("sh0").expect("identity grammar")],
+        id: RegionId::mint("test:model:region#l0").expect("identity grammar"),
+        body: BodyId::mint("test:model:body#b0").expect("identity grammar"),
+        shells: vec![ShellId::mint("test:model:shell#sh0").expect("identity grammar")],
     });
     ir.model.bodies.push(Body {
-        id: BodyId::mint("b0").expect("identity grammar"),
+        id: BodyId::mint("test:model:body#b0").expect("identity grammar"),
         kind: cadmpeg_ir::topology::BodyKind::Solid,
-        regions: vec![RegionId::mint("l0").expect("identity grammar")],
+        regions: vec![RegionId::mint("test:model:region#l0").expect("identity grammar")],
         transform: None,
         name: None,
         color: None,
@@ -122,7 +122,7 @@ fn edgeless_doc() -> CadIr {
 fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
     let mut ir = unit_cube();
     ir.model.assets.push(cadmpeg_ir::assets::Asset {
-        id: cadmpeg_ir::assets::AssetId("test:asset#texture".into()),
+        id: cadmpeg_ir::assets::AssetId("test:model:asset#texture".into()),
         name: Some("texture".into()),
         media_type: Some("image/png".into()),
         content: cadmpeg_ir::assets::AssetContent::External {
@@ -133,7 +133,7 @@ fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
     ir.model
         .semantic_annotations
         .push(cadmpeg_ir::semantic_annotations::SemanticAnnotation {
-            id: cadmpeg_ir::semantic_annotations::SemanticAnnotationId("test:semantic#note".into()),
+            id: cadmpeg_ir::semantic_annotations::SemanticAnnotationId("test:model:semantic#note".into()),
             object: "note".into(),
             kind: cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text,
             runtime_type: "TextNote".into(),
@@ -152,7 +152,7 @@ fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
     ir.model
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
-            id: "test:product#group".into(),
+            id: "test:model:product#group".into(),
             kind: cadmpeg_ir::products::ProductDefinitionKind::Group,
             source_name: Some("Group".into()),
             label: Some("Group".into()),
@@ -242,7 +242,7 @@ fn writer_reports_unrepresented_topology_metadata() {
 #[test]
 fn writer_reports_root_occurrence_scale() {
     let mut ir = unit_cube();
-    let product = cadmpeg_ir::ids::ProductDefinitionId::mint("test:product#scaled")
+    let product = cadmpeg_ir::ids::ProductDefinitionId::mint("test:model:product#scaled")
         .expect("identity grammar");
     ir.model
         .product_definitions
@@ -258,7 +258,7 @@ fn writer_reports_root_occurrence_scale() {
             native_ref: None,
         });
     ir.model.occurrences.push(cadmpeg_ir::products::Occurrence {
-        id: "test:occurrence#scaled".into(),
+        id: "test:model:occurrence#scaled".into(),
         prototype: cadmpeg_ir::products::PrototypeReference::Local {
             definition: product,
         },
@@ -310,7 +310,7 @@ fn writer_reports_edge_loop_without_a_continuous_ordering() {
         .iter_mut()
         .find(|edge| edge.id == edge_id)
         .expect("loop edge exists")
-        .start = cadmpeg_ir::ids::VertexId::mint("missing-loop-vertex").expect("identity grammar");
+        .start = cadmpeg_ir::ids::VertexId::mint("test:model:vertex#missing-loop-vertex").expect("identity grammar");
 
     let report = write_step(
         &source,
@@ -391,7 +391,8 @@ fn ap242_writer_reports_unrepresented_tessellation_triangle_metadata() {
 fn writer_reports_occurrence_with_parent_without_local_product() {
     let mut ir = unit_cube();
     let product =
-        cadmpeg_ir::ids::ProductDefinitionId::mint("product-child").expect("identity grammar");
+        cadmpeg_ir::ids::ProductDefinitionId::mint("test:model:product-definition#product-child")
+            .expect("identity grammar");
     ir.model
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
@@ -405,7 +406,8 @@ fn writer_reports_occurrence_with_parent_without_local_product() {
             bodies: vec![ir.model.bodies[0].id.clone()],
             native_ref: None,
         });
-    let parent = cadmpeg_ir::ids::OccurrenceId::mint("external-parent").expect("identity grammar");
+    let parent = cadmpeg_ir::ids::OccurrenceId::mint("test:model:occurrence#external-parent")
+        .expect("identity grammar");
     ir.model.occurrences.push(cadmpeg_ir::products::Occurrence {
         id: parent.clone(),
         prototype: cadmpeg_ir::products::PrototypeReference::Unresolved,
@@ -420,7 +422,7 @@ fn writer_reports_occurrence_with_parent_without_local_product() {
         native_ref: None,
     });
     ir.model.occurrences.push(cadmpeg_ir::products::Occurrence {
-        id: cadmpeg_ir::ids::OccurrenceId::mint("local-child").expect("identity grammar"),
+        id: cadmpeg_ir::ids::OccurrenceId::mint("test:model:occurrence#local-child").expect("identity grammar"),
         prototype: cadmpeg_ir::products::PrototypeReference::Local {
             definition: product,
         },
@@ -498,7 +500,7 @@ fn writer_reports_wire_region_without_connected_edges() {
     ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Wire;
     ir.model.shells[0].faces.clear();
     ir.model.shells[0].wire_edges =
-        vec![cadmpeg_ir::ids::EdgeId::mint("missing-edge").expect("identity grammar")];
+        vec![cadmpeg_ir::ids::EdgeId::mint("test:model:edge#missing-edge").expect("identity grammar")];
 
     let report = write_step(
         &ir,
@@ -520,7 +522,7 @@ fn writer_reports_wire_region_with_missing_shell_record() {
     let mut ir = unit_cube();
     ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Wire;
     ir.model.regions[0].shells =
-        vec![cadmpeg_ir::ids::ShellId::mint("missing-shell").expect("identity grammar")];
+        vec![cadmpeg_ir::ids::ShellId::mint("test:model:shell#missing-shell").expect("identity grammar")];
 
     let report = write_step(
         &ir,
@@ -561,8 +563,8 @@ fn writer_reports_dangling_appearance_binding() {
     use cadmpeg_ir::ids::AppearanceId;
 
     let mut ir = unit_cube();
-    let binding = "test:appearance-binding#dangling";
-    let appearance = AppearanceId::mint("test:appearance#missing").expect("identity grammar");
+    let binding = "test:model:appearance-binding#dangling";
+    let appearance = AppearanceId::mint("test:model:appearance#missing").expect("identity grammar");
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: binding.into(),
         target: AppearanceTarget::Body(ir.model.bodies[0].id.clone()),
@@ -593,8 +595,9 @@ fn writer_reports_appearance_without_base_color() {
     use cadmpeg_ir::ids::AppearanceId;
 
     let mut ir = unit_cube();
-    let appearance = AppearanceId::mint("test:appearance#colorless").expect("identity grammar");
-    let binding = "test:appearance-binding#colorless";
+    let appearance =
+        AppearanceId::mint("test:model:appearance#colorless").expect("identity grammar");
+    let binding = "test:model:appearance-binding#colorless";
     ir.model.appearances.push(Appearance {
         id: appearance.clone(),
         name: None,
@@ -642,8 +645,8 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
     } else {
         AppearanceTarget::Face(ir.model.faces[0].id.clone())
     };
-    let red = AppearanceId::mint("test:appearance#red").expect("identity grammar");
-    let blue = AppearanceId::mint("test:appearance#blue").expect("identity grammar");
+    let red = AppearanceId::mint("test:model:appearance#red").expect("identity grammar");
+    let blue = AppearanceId::mint("test:model:appearance#blue").expect("identity grammar");
     for (id, color) in [
         (
             red.clone(),
@@ -680,7 +683,7 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
     }
     let mut bindings = vec![
         AppearanceBinding {
-            id: "test:binding#red".into(),
+            id: "test:model:binding#red".into(),
             target: target.clone(),
             appearance: red,
             source_entity_id: None,
@@ -689,7 +692,7 @@ fn duplicate_target_style_ir(body_target: bool, reverse: bool, same_color: bool)
             channels: std::collections::BTreeMap::new(),
         },
         AppearanceBinding {
-            id: "test:binding#blue".into(),
+            id: "test:model:binding#blue".into(),
             target,
             appearance: blue,
             source_entity_id: None,
@@ -733,8 +736,8 @@ fn writer_rejects_order_dependent_duplicate_target_styles() {
                 StepLossCode::AppearanceBindingTargetConflict.kind()
             );
             assert!(loss.message.contains(target_kind));
-            assert!(loss.message.contains("test:binding#red"));
-            assert!(loss.message.contains("test:binding#blue"));
+            assert!(loss.message.contains("test:model:binding#red"));
+            assert!(loss.message.contains("test:model:binding#blue"));
         }
         assert!(!String::from_utf8_lossy(&forward_output).contains("STYLED_ITEM"));
     }
@@ -782,7 +785,7 @@ fn writer_reports_reduced_tessellation_metadata_and_body_links() {
         )
         .expect("valid tessellation")
         .with_body(Some(
-            cadmpeg_ir::ids::BodyId::mint("test:missing-body").expect("identity grammar"),
+            cadmpeg_ir::ids::BodyId::mint("test:model:body#test:missing-body").expect("identity grammar"),
         ))
         .with_faces(vec![ir.model.faces[0].id.clone()])
         .with_chordal_deflection(Some(0.01)),
@@ -979,9 +982,14 @@ fn unsupported_standalone_curve_is_reported_and_strict_export_rejects() {
 
 #[test]
 fn consumed_unit_and_pmi_wrapper_records_are_strictly_writable() {
+    // Keep one complete tolerance per dimension and supply the second nominal.
+    let semantic = include_str!("../../../tests/fixtures/ap242_semantic_pmi.p21")
+        .replace("#23=LIMITS_AND_FITS('H','','7','ISO 286');\n", "")
+        .replace("#24=PLUS_MINUS_TOLERANCE(#23,#10);\n", "")
+        .replace("#26=PLUS_MINUS_TOLERANCE(#18,#25);", "#26=PLUS_MINUS_TOLERANCE(#18,#25);\n#27=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#25,#14);");
     for source in [
         include_bytes!("../../../tests/fixtures/ap242_degree_cone.p21").as_slice(),
-        include_bytes!("../../../tests/fixtures/ap242_semantic_pmi.p21").as_slice(),
+        semantic.as_bytes(),
     ] {
         let decoded = StepCodec::default()
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -1030,7 +1038,7 @@ fn ap203e1_reports_hidden_appearance_visibility_loss() {
     use cadmpeg_ir::ids::AppearanceId;
 
     let mut ir = unit_cube();
-    let appearance = AppearanceId::mint("test:appearance#hidden").expect("identity grammar");
+    let appearance = AppearanceId::mint("test:model:appearance#hidden").expect("identity grammar");
     ir.model.appearances.push(Appearance {
         id: appearance.clone(),
         name: None,
@@ -1050,7 +1058,7 @@ fn ap203e1_reports_hidden_appearance_visibility_loss() {
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
-        id: "test:appearance-binding#hidden-face".into(),
+        id: "test:model:appearance-binding#hidden-face".into(),
         target: AppearanceTarget::Face(ir.model.faces[0].id.clone()),
         appearance,
         source_entity_id: None,
@@ -1082,7 +1090,7 @@ fn ap203e1_reports_hidden_presentation_layer_visibility_loss() {
     let mut ir = unit_cube();
     let body = ir.model.bodies[0].id.clone();
     ir.model.presentation_layers.push(PresentationLayer {
-        id: LayerId::mint("test:layer#hidden").expect("identity grammar"),
+        id: LayerId::mint("test:model:layer#hidden").expect("identity grammar"),
         name: "hidden layer".into(),
         description: None,
         visible: Some(false),
@@ -1201,7 +1209,7 @@ fn edge_without_curve_is_reported_and_omitted() {
     )
     .unwrap();
     let curve = Curve {
-        id: CurveId::mint("unused").expect("identity grammar"),
+        id: CurveId::mint("test:model:curve#unused").expect("identity grammar"),
         geometry: CurveGeometry::Line {
             origin: Point3::new(0.0, 0.0, 0.0),
             direction: Vector3::new(1.0, 0.0, 0.0),
@@ -1224,7 +1232,7 @@ fn edge_without_curve_is_reported_and_omitted() {
 #[test]
 fn subds_tessellations_and_source_associations_are_reported_as_losses() {
     let source_object = cadmpeg_ir::SourceObjectAssociation {
-        format: cadmpeg_ir::CodecFormat::Step,
+        format: cadmpeg_ir::CodecFormat::Rhino,
         object_id: "object-0".into(),
         name: None,
         color: None,
@@ -1391,7 +1399,7 @@ fn procedural_surface_outside_the_writable_set_is_reported_not_panicked() {
     let mut ir = CadIr::empty();
     let surface_id = SurfaceId::mint("step:test:surface#unsupported").expect("identity grammar");
     let construction_id =
-        cadmpeg_ir::ids::ProceduralSurfaceId::mint("step:test:construction:surface#unsupported")
+        cadmpeg_ir::ids::ProceduralSurfaceId::mint("step:test:construction-surface#unsupported")
             .expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
@@ -1430,7 +1438,7 @@ fn procedural_surface_outside_the_writable_set_is_reported_not_panicked() {
 fn procedural_curve_outside_the_writable_set_is_reported_not_panicked() {
     let mut ir = CadIr::empty();
     let curve_id = CurveId::mint("step:test:curve#unsupported").expect("identity grammar");
-    let construction_id = ProceduralCurveId::mint("step:test:construction:curve#unsupported")
+    let construction_id = ProceduralCurveId::mint("step:test:construction-curve#unsupported")
         .expect("identity grammar");
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
@@ -1518,7 +1526,7 @@ fn procedural_construction_reduction_is_reported() {
     let mut ir = unit_cube();
     let owner = ir.model.curves[0].id.clone();
     let procedural = cadmpeg_ir::geometry::ProceduralCurve::try_new(
-        ProceduralCurveId::mint("generated_int_cur").expect("identity grammar"),
+        ProceduralCurveId::mint("test:model:procedural-curve#generated_int_cur").expect("identity grammar"),
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection {
             context: cadmpeg_ir::geometry::IntcurveSupportContext {
                 sides: std::array::from_fn(|_| cadmpeg_ir::geometry::IntcurveSupportSide {

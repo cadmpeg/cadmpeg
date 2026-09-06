@@ -823,27 +823,25 @@ fn reconcile_feature_parents(
                 "parent feature `{parent_id}` does not precede child `{child_id}`"
             ));
         }
-        if matches!(
-            model.features[parent_index].definition,
-            FeatureDefinition::TreeNode { .. }
-        ) {
-            if let Some(existing) = tree_parents.get(&child_id) {
-                if existing != &parent_id {
-                    return Err(format!(
-                        "tree child `{child_id}` names parent `{parent_id}` but is owned by `{existing}`"
-                    ));
-                }
-            } else if let FeatureDefinition::TreeNode { children, .. } =
-                &mut model.features[parent_index].definition
-            {
-                children.push(child_id.clone());
-                tree_parents.insert(child_id.clone(), parent_id);
+        if let Some(existing) = tree_parents.get(&child_id) {
+            if existing != &parent_id {
+                return Err(format!(
+                    "tree child `{child_id}` names parent `{parent_id}` but is owned by `{existing}`"
+                ));
             }
-        } else {
-            model
-                .feature_regeneration_parents
-                .0
-                .insert(child_id, parent_id);
+            continue;
+        }
+        match &mut model.features[parent_index].definition {
+            FeatureDefinition::TreeNode { children, .. } => {
+                children.push(child_id.clone());
+                tree_parents.insert(child_id, parent_id);
+            }
+            _ => {
+                model
+                    .feature_regeneration_parents
+                    .0
+                    .insert(child_id, parent_id);
+            }
         }
     }
     Ok(())

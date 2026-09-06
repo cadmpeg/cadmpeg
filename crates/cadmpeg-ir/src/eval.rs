@@ -3263,16 +3263,6 @@ fn model_curve_differential_by_id_inner(
     if let Some(budget) = budget {
         budget.charge().then_some(())?;
     }
-    if let Some(cache) = curve.geometry.solved_cache() {
-        return Some(ModelCurveDifferential {
-            point: budget.map_or_else(
-                || curve_point(cache, parameter),
-                |budget| curve_point_with_budget(cache, parameter, budget),
-            )?,
-            tangent: curve_tangent(cache, parameter)?,
-            acceleration: curve_second_derivative(cache, parameter)?,
-        });
-    }
     if let Some(procedural) = index
         .procedural_curves_for_curve(curve_id.0.as_str())
         .and_then(|procedurals| procedurals.first().copied())
@@ -3325,6 +3315,16 @@ fn model_curve_differential_by_id_inner(
             }
             _ => {}
         }
+    }
+    if let Some(cache) = curve.geometry.solved_cache() {
+        return Some(ModelCurveDifferential {
+            point: budget.map_or_else(
+                || curve_point(cache, parameter),
+                |budget| curve_point_with_budget(cache, parameter, budget),
+            )?,
+            tangent: curve_tangent(cache, parameter)?,
+            acceleration: curve_second_derivative(cache, parameter)?,
+        });
     }
     if matches!(&curve.geometry, CurveGeometry::Procedural { .. }) {
         return None;
@@ -3697,12 +3697,6 @@ fn model_curve_point_by_id_inner(
     if let Some(budget) = budget {
         budget.charge().then_some(())?;
     }
-    if let Some(cache) = curve.geometry.solved_cache() {
-        return budget.map_or_else(
-            || curve_point(cache, parameter),
-            |budget| curve_point_with_budget(cache, parameter, budget),
-        );
-    }
     let Some(procedural) = index
         .procedural_curves_for_curve(curve_id.0.as_str())
         .and_then(|procedurals| procedurals.first().copied())
@@ -3780,7 +3774,12 @@ fn model_curve_point_by_id_inner(
             (separation.is_finite() && separation <= *tolerance).then_some(first)
         }
         _ => {
-            if matches!(&curve.geometry, CurveGeometry::Procedural { .. }) {
+            if let Some(cache) = curve.geometry.solved_cache() {
+                budget.map_or_else(
+                    || curve_point(cache, parameter),
+                    |budget| curve_point_with_budget(cache, parameter, budget),
+                )
+            } else if matches!(&curve.geometry, CurveGeometry::Procedural { .. }) {
                 None
             } else if let Some(budget) = budget {
                 curve_point_with_budget(&curve.geometry, parameter, budget)
@@ -3857,9 +3856,6 @@ fn model_curve_parameter_near_point_with_tolerance(
         return None;
     }
     let curve = index.curves(&curve_id.0)?;
-    if let Some(cache) = curve.geometry.solved_cache() {
-        return direct_curve_parameter_near_point(cache, point, seed, tolerance);
-    }
     if let Some(procedural) = index
         .procedural_curves_for_curve(curve_id.0.as_str())
         .and_then(|procedurals| procedurals.first().copied())
@@ -3929,6 +3925,9 @@ fn model_curve_parameter_near_point_with_tolerance(
             }
             _ => {}
         }
+    }
+    if let Some(cache) = curve.geometry.solved_cache() {
+        return direct_curve_parameter_near_point(cache, point, seed, tolerance);
     }
     if !matches!(&curve.geometry, CurveGeometry::Procedural { .. }) {
         return curve_parameter_near_point(&curve.geometry, point, seed, tolerance);

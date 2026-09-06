@@ -42,7 +42,7 @@ fn exit_codes_distinguish_semantic_and_operational_failures() {
         .code(2);
 
     let mut invalid = unit_cube();
-    invalid.model.faces[0].surface.0 = "missing".into();
+    invalid.model.faces[0].surface.0 = "test:model:surface#missing".into();
     let invalid = fixture(dir.path(), "invalid.json", &invalid);
     Command::cargo_bin("cadmpeg")
         .unwrap()

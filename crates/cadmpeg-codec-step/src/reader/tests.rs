@@ -349,7 +349,13 @@ pub(crate) fn decode_accounts_for_every_part21_byte() {
 
     assert!(count("bytes_structural") > 0);
     assert!(count("bytes_typed") > 0);
-    assert_eq!(count("bytes_named_opaque"), 0);
+    // The unvalued characteristic and the extra tolerance remain native.
+    let (exchange, _) = crate::parse::parse(bytes).unwrap();
+    let retained_bytes: usize = [23, 24, 25, 26]
+        .iter()
+        .map(|id| exchange.records[id].span.len())
+        .sum();
+    assert_eq!(count("bytes_named_opaque"), retained_bytes);
     assert_eq!(count("bytes_unclassified"), 0);
     assert_eq!(
         count("bytes_structural")

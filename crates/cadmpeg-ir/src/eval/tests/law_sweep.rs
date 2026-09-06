@@ -190,7 +190,13 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
     assert_eq!(partials.du, Vector3::new(0.0, -2.0, 0.0));
     assert_eq!(partials.dv, Vector3::new(-2.0, 0.0, 1.0));
 
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Nurbs(bilinear_surface());
+    let SurfaceGeometry::Procedural { cache, .. } = &mut ir.model.surfaces[0].geometry else {
+        panic!("fixture surface must retain its construction");
+    };
+    *cache = Some(
+        crate::geometry::SolvedSurfaceGeometry::new(SurfaceGeometry::Nurbs(bilinear_surface()))
+            .unwrap(),
+    );
     ir.model.procedural_surfaces[0].edit_definition(|definition| {
         let ProceduralSurfaceDefinition::Sweep {
             native: Some(native),

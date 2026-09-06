@@ -43,7 +43,7 @@ fn product_descriptions_transfer_from_product_and_definition() {
     ir.model
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
-            id: "test:product#described".into(),
+            id: "test:model:product#described".into(),
             kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
             source_name: Some("Described part".into()),
             label: Some("Described part".into()),

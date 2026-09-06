@@ -2990,7 +2990,11 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                                         !positive_feature_length(thickness)
                                             || thickness.0 >= outer_radius.0
                                     })
-                                    || !matches!(mode, crate::features::SweepMode::Solid { .. })
+                                    || !matches!(
+                                        mode,
+                                        crate::features::SweepMode::NewBody
+                                            | crate::features::SweepMode::Solid { .. }
+                                    )
                             }
                         });
                 if let Some(guide_rail) = guide_rail {

@@ -42,7 +42,7 @@ fn ir() -> CadIr {
     let mut ir = CadIr::empty();
     ir.model.points.extend((0..ENTITY_COUNT).map(|index| Point {
         source_object: None,
-        id: PointId::mint(format!("point-{index}")).expect("identity grammar"),
+        id: PointId::mint(format!("test:bench:point#{index}")).expect("identity grammar"),
         position: Point3::new(index as f64, 2.0, 3.0),
     }));
     ir

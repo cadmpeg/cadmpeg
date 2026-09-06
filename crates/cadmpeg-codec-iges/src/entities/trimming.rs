@@ -423,7 +423,7 @@ fn line_directrix(ir: &CadIr, curve_id: &CurveId) -> bool {
         .curves
         .iter()
         .find(|curve| curve.id == *curve_id)
-        .is_some_and(|curve| is_line(&curve.geometry, 0))
+        .is_some_and(|curve| is_line(curve.geometry.solved_cache().unwrap_or(&curve.geometry), 0))
 }
 
 fn affine_parameter_map(source: [f64; 2], target: [f64; 2]) -> Option<(f64, f64)> {
@@ -575,7 +575,7 @@ fn source_curve_control_intervals(
     precision: RealPrecision,
     factor: f64,
     active: &mut BTreeSet<CurveId>,
-) -> Option<Vec<[DeclaredInterval; 3]>> {
+) -> Option<Vec<[DeclaredInterval; 3]>>{
     if !active.insert(curve_id.clone()) {
         return None;
     }
@@ -603,7 +603,7 @@ fn source_curve_control_intervals(
                 return (!controls.is_empty()).then_some(controls);
             }
         }
-        match &curve.geometry {
+        match curve.geometry.solved_cache().unwrap_or(&curve.geometry) {
             CurveGeometry::Composite { segments, .. } => {
                 let mut controls = Vec::new();
                 for segment in segments {
@@ -829,7 +829,7 @@ fn linear_boundary_model_points(
     let mut points = Vec::new();
     for item in items {
         let curve = index.curves(&item.model_curve.0)?;
-        let mut curve_points = match &curve.geometry {
+        let mut curve_points = match curve.geometry.solved_cache().unwrap_or(&curve.geometry) {
             CurveGeometry::Line { .. } => vec![item.start, item.end],
             CurveGeometry::Nurbs(nurbs) => {
                 linear_model_nurbs_points(nurbs, item.source_edge.param_range?)?
@@ -874,7 +874,7 @@ fn linear_boundary_geometry(
             return true;
         };
         !super::geometry::curve_geometry_coplanar(
-            &curve.geometry,
+            curve.geometry.solved_cache().unwrap_or(&curve.geometry),
             index,
             cadmpeg_ir::transform::Transform::identity(),
             model_plane,
@@ -1428,10 +1428,11 @@ fn edge_range_matches_curve(
     if !range.iter().all(|parameter| parameter.is_finite()) {
         return false;
     }
-    let Some(evaluated_start) = cadmpeg_ir::eval::curve_point(&curve.geometry, range[0]) else {
+    let geometry = curve.geometry.solved_cache().unwrap_or(&curve.geometry);
+    let Some(evaluated_start) = cadmpeg_ir::eval::curve_point(geometry, range[0]) else {
         return false;
     };
-    let Some(evaluated_end) = cadmpeg_ir::eval::curve_point(&curve.geometry, range[1]) else {
+    let Some(evaluated_end) = cadmpeg_ir::eval::curve_point(geometry, range[1]) else {
         return false;
     };
     close(evaluated_start, start, tolerance) && close(evaluated_end, end, tolerance)
@@ -1882,7 +1883,7 @@ pub(super) fn project(
             .expect("identity grammar");
         let Some(support_geometry) = carrier_index
             .surfaces(&surface_id.0)
-            .map(|surface| surface.geometry.clone())
+            .map(|surface| surface.geometry.solved_cache().unwrap_or(&surface.geometry).clone())
         else {
             losses.push(entity_loss(
                 entry,
