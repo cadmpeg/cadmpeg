@@ -26,10 +26,10 @@ fn parasolid_attribute_definition_requires_declared_printable_name_and_field_rec
     assert_eq!(definitions[0].type_id, 9000);
     assert_eq!(definitions[0].action_codes, [0, 1, 2, 3, 4, 5, 6, 0]);
     assert_eq!(definitions[0].field_names_xmt, 0x30);
-    assert_eq!(definitions[0].legal_owner_flags[4], 1);
-    assert_eq!(definitions[0].legal_owner_flags[12], 1);
-    assert_eq!(definitions[0].legal_owner_flag_count, 16);
-    assert_eq!(definitions[0].field_count, 1);
+    assert_eq!(definitions[0].legal_owner_flags.padded()[4], 1);
+    assert_eq!(definitions[0].legal_owner_flags.padded()[12], 1);
+    assert_eq!(definitions[0].legal_owner_flags.as_slice().len(), 16);
+    assert_eq!(definitions[0].field_codes.len(), 1);
     assert_eq!(definitions[0].field_codes, [2]);
 
     let truncated = &bytes[..bytes.len() - 1];
@@ -70,12 +70,12 @@ fn parasolid_attribute_definition_accepts_fourteen_legal_owner_flags() {
     let definitions = crate::parasolid::attribute_definitions(&bytes);
     assert_eq!(definitions.len(), 1);
     assert_eq!(definitions[0].xmt, 20);
-    assert_eq!(definitions[0].legal_owner_flag_count, 14);
+    assert_eq!(definitions[0].legal_owner_flags.as_slice().len(), 14);
     assert_eq!(
-        &definitions[0].legal_owner_flags[..14],
+        &definitions[0].legal_owner_flags.padded()[..14],
         [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0]
     );
-    assert_eq!(&definitions[0].legal_owner_flags[14..], [0, 0]);
+    assert_eq!(&definitions[0].legal_owner_flags.padded()[14..], [0, 0]);
     assert_eq!(definitions[0].field_codes, [2, 3]);
 }
 
@@ -369,9 +369,11 @@ fn decode_emits_charted_surface_intersection_construction() {
     assert_eq!(terms[0].form, "L?");
     assert_eq!(terms[0].point, [0.0, 0.0, 0.0]);
     assert_eq!(terms[1].point, [10.0, 0.0, 0.0]);
-    assert!(terms
-        .iter()
-        .all(|term| matches!(term.framing, crate::intersection::TermUseFraming::Direct)));
+    assert!(
+        terms
+            .iter()
+            .all(|term| matches!(term.framing, crate::intersection::TermUseFraming::Direct))
+    );
     let support_uv = result
         .ir()
         .native

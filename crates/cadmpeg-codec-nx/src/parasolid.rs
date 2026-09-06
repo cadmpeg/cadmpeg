@@ -12,9 +12,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_container::compression::inflate_zlib_member;
+use cadmpeg_core::CodecError;
 use cadmpeg_core::bytes::{contains, find};
 use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, View};
-use cadmpeg_core::CodecError;
 
 use crate::container::Container;
 use crate::framing::read_and_advance as read_xmt;
@@ -83,6 +83,49 @@ pub struct Stream {
     pub schema: Option<String>,
 }
 
+/// Owner-flag layouts admitted by the attribute-definition grammar.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LegalOwnerFlags {
+    /// Fourteen flags in the compact definition layout.
+    Fourteen([u8; 14]),
+    /// Sixteen flags in the extended definition layout.
+    Sixteen([u8; 16]),
+}
+
+impl LegalOwnerFlags {
+    pub fn as_slice(&self) -> &[u8] {
+        match self {
+            Self::Fourteen(flags) => flags,
+            Self::Sixteen(flags) => flags,
+        }
+    }
+
+    /// Fixed-width native JSON representation, padded after the source flags.
+    pub fn padded(self) -> [u8; 16] {
+        match self {
+            Self::Fourteen(flags) => {
+                let mut padded = [0; 16];
+                padded[..14].copy_from_slice(&flags);
+                padded
+            }
+            Self::Sixteen(flags) => flags,
+        }
+    }
+}
+
+impl TryFrom<&[u8]> for LegalOwnerFlags {
+    type Error = &'static str;
+    fn try_from(flags: &[u8]) -> Result<Self, Self::Error> {
+        if let Ok(flags) = <[u8; 16]>::try_from(flags) {
+            Ok(Self::Sixteen(flags))
+        } else if let Ok(flags) = <[u8; 14]>::try_from(flags) {
+            Ok(Self::Fourteen(flags))
+        } else {
+            Err("attribute owner flags require fourteen or sixteen bytes")
+        }
+    }
+}
+
 /// One Parasolid type-80 attribute definition joined to its type-79 identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AttributeDefinition<'a> {
@@ -105,11 +148,7 @@ pub struct AttributeDefinition<'a> {
     /// Stream-local field-name-list identity; `1` is null.
     pub field_names_xmt: u32,
     /// Ordered legal-owner flags.
-    pub legal_owner_flags: [u8; 16],
-    /// Number of legal-owner flags serialized by the definition.
-    pub legal_owner_flag_count: u8,
-    /// Declared number of fields in the `00 50` record.
-    pub field_count: u32,
+    pub legal_owner_flags: LegalOwnerFlags,
     /// One serialized field code for every declared field.
     pub field_codes: &'a [u8],
 }
@@ -1112,7 +1151,7 @@ pub fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
             at += 8;
             let field_names_xmt = read_xmt(bytes, &mut at)?;
             let field_count_usize = usize::try_from(field_count).ok()?;
-            let (legal_owner_flags, legal_owner_flag_count, field_codes) =
+            let (legal_owner_flags, field_codes) =
                 [16_usize, 14].into_iter().find_map(|flag_count| {
                     let flags = bytes.get(at..at.checked_add(flag_count)?)?;
                     flags
@@ -1126,13 +1165,7 @@ pub fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
                     if flag_count == 14 && !attribute_definition_boundary(bytes, field_codes_end) {
                         return None;
                     }
-                    let mut legal_owner_flags = [0; 16];
-                    legal_owner_flags[..flag_count].copy_from_slice(flags);
-                    Some((
-                        legal_owner_flags,
-                        u8::try_from(flag_count).ok()?,
-                        field_codes,
-                    ))
+                    Some((LegalOwnerFlags::try_from(flags).ok()?, field_codes))
                 })?;
             let mut matches = identifiers
                 .iter()
@@ -1150,8 +1183,6 @@ pub fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
                 action_codes,
                 field_names_xmt,
                 legal_owner_flags,
-                legal_owner_flag_count,
-                field_count,
                 field_codes,
             })
         })

@@ -787,7 +787,8 @@ fn deserialize_type38_leading_statuses<'de, D>(deserializer: D) -> Result<[u8; 5
 where
     D: serde::Deserializer<'de>,
 {
-    Ok(Option::<[u8; 5]>::deserialize(deserializer)?.unwrap_or_else(default_type38_leading_statuses))
+    Ok(Option::<[u8; 5]>::deserialize(deserializer)?
+        .unwrap_or_else(default_type38_leading_statuses))
 }
 
 /// Inline schema declaration in a Parasolid deltas stream.
@@ -1929,6 +1930,10 @@ fn is_default_legal_owner_flag_count(value: &u8) -> bool {
 
 /// Named Parasolid attribute class declared in one inflated body stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "ParasolidAttributeDefinitionWire",
+    into = "ParasolidAttributeDefinitionWire"
+)]
 pub struct ParasolidAttributeDefinition {
     /// Globally unique native-record identity.
     pub id: String,
@@ -1951,19 +1956,104 @@ pub struct ParasolidAttributeDefinition {
     /// Stream-local field-name-list identity; `1` is null.
     pub field_names_xmt: u32,
     /// Ordered legal-owner flags.
-    pub legal_owner_flags: [u8; 16],
+    pub legal_owner_flags: crate::parasolid::LegalOwnerFlags,
+    /// One serialized code for every declared field.
+    pub field_codes: Vec<u8>,
+    /// Offset of the declaration in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct ParasolidAttributeDefinitionWire {
+    /// Globally unique native-record identity.
+    id: String,
+    /// Zero-based embedded stream ordinal.
+    stream_ordinal: u32,
+    /// Stream-local definition record identity.
+    xmt: u32,
+    /// Stream-local next-definition identity; `1` is null.
+    next_definition_xmt: u32,
+    /// Stream-local type-79 identifier identity.
+    identifier_xmt: u32,
+    /// Offset of the resolved type-79 identifier in the inflated stream.
+    identifier_inflated_offset: u64,
+    /// Exact printable attribute class name.
+    name: String,
+    /// Numeric attribute type identifier.
+    type_id: u32,
+    /// Ordered actions for the eight logged event families.
+    action_codes: [u8; 8],
+    /// Stream-local field-name-list identity; `1` is null.
+    field_names_xmt: u32,
+    /// Ordered legal-owner flags.
+    legal_owner_flags: [u8; 16],
     /// Number of legal-owner flags serialized by the definition.
     #[serde(
         default = "default_legal_owner_flag_count",
         skip_serializing_if = "is_default_legal_owner_flag_count"
     )]
-    pub legal_owner_flag_count: u8,
+    legal_owner_flag_count: u8,
     /// Declared number of fields.
-    pub field_count: u32,
+    field_count: usize,
     /// One serialized code for every declared field.
-    pub field_codes: Vec<u8>,
+    field_codes: Vec<u8>,
     /// Offset of the declaration in the inflated stream.
-    pub inflated_offset: u64,
+    inflated_offset: u64,
+}
+
+impl From<ParasolidAttributeDefinition> for ParasolidAttributeDefinitionWire {
+    fn from(value: ParasolidAttributeDefinition) -> Self {
+        Self {
+            legal_owner_flag_count: value.legal_owner_flags.as_slice().len() as u8,
+            legal_owner_flags: value.legal_owner_flags.padded(),
+            field_count: value.field_codes.len(),
+            id: value.id,
+            stream_ordinal: value.stream_ordinal,
+            xmt: value.xmt,
+            next_definition_xmt: value.next_definition_xmt,
+            identifier_xmt: value.identifier_xmt,
+            identifier_inflated_offset: value.identifier_inflated_offset,
+            name: value.name,
+            type_id: value.type_id,
+            action_codes: value.action_codes,
+            field_names_xmt: value.field_names_xmt,
+            field_codes: value.field_codes,
+            inflated_offset: value.inflated_offset,
+        }
+    }
+}
+
+impl TryFrom<ParasolidAttributeDefinitionWire> for ParasolidAttributeDefinition {
+    type Error = &'static str;
+    fn try_from(wire: ParasolidAttributeDefinitionWire) -> Result<Self, Self::Error> {
+        let count = usize::from(wire.legal_owner_flag_count);
+        let flags = wire
+            .legal_owner_flags
+            .get(..count)
+            .ok_or("attribute owner flag count exceeds the wire array")?;
+        let legal_owner_flags = crate::parasolid::LegalOwnerFlags::try_from(flags)?;
+        if wire.legal_owner_flags != legal_owner_flags.padded() {
+            return Err("attribute owner flag padding is nonzero");
+        }
+        if wire.field_count != wire.field_codes.len() {
+            return Err("attribute field count disagrees with field codes");
+        }
+        Ok(Self {
+            legal_owner_flags,
+            id: wire.id,
+            stream_ordinal: wire.stream_ordinal,
+            xmt: wire.xmt,
+            next_definition_xmt: wire.next_definition_xmt,
+            identifier_xmt: wire.identifier_xmt,
+            identifier_inflated_offset: wire.identifier_inflated_offset,
+            name: wire.name,
+            type_id: wire.type_id,
+            action_codes: wire.action_codes,
+            field_names_xmt: wire.field_names_xmt,
+            field_codes: wire.field_codes,
+            inflated_offset: wire.inflated_offset,
+        })
+    }
 }
 
 /// Counted Parasolid type-99 field-name reference record.
@@ -2371,8 +2461,6 @@ pub fn parasolid_attribute_definitions(streams: &[Stream]) -> Vec<ParasolidAttri
                     action_codes: definition.action_codes,
                     field_names_xmt: definition.field_names_xmt,
                     legal_owner_flags: definition.legal_owner_flags,
-                    legal_owner_flag_count: definition.legal_owner_flag_count,
-                    field_count: definition.field_count,
                     field_codes: definition.field_codes.to_vec(),
                     inflated_offset: definition.offset as u64,
                 })
@@ -3314,8 +3402,12 @@ mod tests {
             if let Some(statuses) = statuses {
                 wire["leading_statuses"] = serde_json::json!(statuses);
             }
-            let fields: ParasolidDeltasInlineSchemaFields = serde_json::from_value(wire.clone()).unwrap();
-            let ParasolidDeltasInlineSchemaFields::Type38 { leading_statuses, .. } = &fields else {
+            let fields: ParasolidDeltasInlineSchemaFields =
+                serde_json::from_value(wire.clone()).unwrap();
+            let ParasolidDeltasInlineSchemaFields::Type38 {
+                leading_statuses, ..
+            } = &fields
+            else {
                 panic!("type38 wire must decode as Type38");
             };
             assert_eq!(*leading_statuses, statuses.unwrap_or([1; 5]));
@@ -3997,9 +4089,9 @@ mod tests {
 
     use cadmpeg_ir::report::LossCategory;
 
+    use crate::NxCodec;
     use crate::parasolid::StreamKind;
     use crate::test_support::*;
-    use crate::NxCodec;
 
     use super::*;
 
@@ -4016,9 +4108,8 @@ mod tests {
             type_id: 8000,
             action_codes: [0; 8],
             field_names_xmt: 1,
-            legal_owner_flags: [0; 16],
-            legal_owner_flag_count: 16,
-            field_count: 3,
+            legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([0; 16]),
+
             field_codes: vec![1, 2, 3],
             inflated_offset: 40,
         };
@@ -4099,53 +4190,61 @@ mod tests {
             definition_xmt: 11,
             attribute_definition: "other-definition".into(),
         };
-        assert!(parasolid_attribute_field_uses(
-            &[class_use.clone(), duplicate.clone()],
-            std::slice::from_ref(&definition),
-            std::slice::from_ref(&numeric_use),
-            &[],
-            &[],
-        )
-        .is_empty());
+        assert!(
+            parasolid_attribute_field_uses(
+                &[class_use.clone(), duplicate.clone()],
+                std::slice::from_ref(&definition),
+                std::slice::from_ref(&numeric_use),
+                &[],
+                &[],
+            )
+            .is_empty()
+        );
 
         let wrong_stream = ParasolidAttributeClassUse {
             stream_ordinal: 3,
             ..duplicate
         };
-        assert!(parasolid_attribute_field_uses(
-            &[wrong_stream],
-            std::slice::from_ref(&definition),
-            std::slice::from_ref(&numeric_use),
-            &[],
-            &[],
-        )
-        .is_empty());
+        assert!(
+            parasolid_attribute_field_uses(
+                &[wrong_stream],
+                std::slice::from_ref(&definition),
+                std::slice::from_ref(&numeric_use),
+                &[],
+                &[],
+            )
+            .is_empty()
+        );
 
         let mismatched = ParasolidEntity51NumericUse {
             kind: ParasolidEntity51NumericKind::Doubles,
             ..numeric_use.clone()
         };
-        assert!(parasolid_attribute_field_uses(
-            std::slice::from_ref(&class_use),
-            std::slice::from_ref(&definition),
-            &[mismatched],
-            &[],
-            &[],
-        )
-        .is_empty());
+        assert!(
+            parasolid_attribute_field_uses(
+                std::slice::from_ref(&class_use),
+                std::slice::from_ref(&definition),
+                &[mismatched],
+                &[],
+                &[],
+            )
+            .is_empty()
+        );
 
         let ambiguous_string = ParasolidEntity51StringUse {
             reference_ordinal: 5,
             ..string_use
         };
-        assert!(parasolid_attribute_field_uses(
-            std::slice::from_ref(&class_use),
-            std::slice::from_ref(&definition),
-            std::slice::from_ref(&numeric_use),
-            &[ambiguous_string],
-            &[],
-        )
-        .is_empty());
+        assert!(
+            parasolid_attribute_field_uses(
+                std::slice::from_ref(&class_use),
+                std::slice::from_ref(&definition),
+                std::slice::from_ref(&numeric_use),
+                &[ambiguous_string],
+                &[],
+            )
+            .is_empty()
+        );
     }
 
     #[test]
@@ -4191,14 +4290,16 @@ mod tests {
             byte_len: 16,
             inflated_offset: 90,
         };
-        assert!(parasolid_entity_51_structured_uses(
-            std::slice::from_ref(&entity),
-            std::slice::from_ref(&point),
-            &[],
-            std::slice::from_ref(&colliding_tag),
-            &[],
-        )
-        .is_empty());
+        assert!(
+            parasolid_entity_51_structured_uses(
+                std::slice::from_ref(&entity),
+                std::slice::from_ref(&point),
+                &[],
+                std::slice::from_ref(&colliding_tag),
+                &[],
+            )
+            .is_empty()
+        );
 
         let other_stream = ParasolidEntityVectorRecord {
             stream_ordinal: 3,
@@ -4231,9 +4332,8 @@ mod tests {
             type_id: 8000,
             action_codes: [0; 8],
             field_names_xmt: 1,
-            legal_owner_flags: [0; 16],
-            legal_owner_flag_count: 16,
-            field_count: 6,
+            legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([0; 16]),
+
             field_codes: vec![4, 5, 6, 7, 8, 10],
             inflated_offset: 40,
         };
@@ -4291,9 +4391,8 @@ mod tests {
             type_id: 8000,
             action_codes: [0; 8],
             field_names_xmt,
-            legal_owner_flags: [0; 16],
-            legal_owner_flag_count: 16,
-            field_count: u32::try_from(field_codes.len()).expect("test field count fits u32"),
+            legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([0; 16]),
+
             field_codes,
             inflated_offset: 20,
         };
@@ -4429,9 +4528,8 @@ mod tests {
             type_id: 8000,
             action_codes: [0; 8],
             field_names_xmt: 25,
-            legal_owner_flags: [0; 16],
-            legal_owner_flag_count: 16,
-            field_count: 3,
+            legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([0; 16]),
+
             field_codes: vec![2, 1, 1],
             inflated_offset: 20,
         };
@@ -4472,39 +4570,45 @@ mod tests {
 
         let mut incomplete = list.clone();
         incomplete.name_xmts.pop();
-        assert!(parasolid_attribute_field_names(
-            std::slice::from_ref(&definition),
-            &[incomplete],
-            &strings,
-            std::slice::from_ref(&unicode),
-        )
-        .is_empty());
-        assert!(parasolid_attribute_field_names(
-            &[definition.clone(), definition.clone()],
-            std::slice::from_ref(&list),
-            &strings,
-            std::slice::from_ref(&unicode),
-        )
-        .is_empty());
+        assert!(
+            parasolid_attribute_field_names(
+                std::slice::from_ref(&definition),
+                &[incomplete],
+                &strings,
+                std::slice::from_ref(&unicode),
+            )
+            .is_empty()
+        );
+        assert!(
+            parasolid_attribute_field_names(
+                &[definition.clone(), definition.clone()],
+                std::slice::from_ref(&list),
+                &strings,
+                std::slice::from_ref(&unicode),
+            )
+            .is_empty()
+        );
 
         let ambiguous = ParasolidEntity62UnicodeRecord {
             xmt: 28,
             ..unicode.clone()
         };
-        assert!(parasolid_attribute_field_names(
-            std::slice::from_ref(&definition),
-            &[ParasolidFieldNamesRecord {
-                id: "field-names".into(),
-                stream_ordinal: 3,
-                xmt: 25,
-                name_xmts: vec![28, 29, 30],
-                byte_len: 15,
-                inflated_offset: 30,
-            }],
-            &strings,
-            &[unicode, ambiguous],
-        )
-        .is_empty());
+        assert!(
+            parasolid_attribute_field_names(
+                std::slice::from_ref(&definition),
+                &[ParasolidFieldNamesRecord {
+                    id: "field-names".into(),
+                    stream_ordinal: 3,
+                    xmt: 25,
+                    name_xmts: vec![28, 29, 30],
+                    byte_len: 15,
+                    inflated_offset: 30,
+                }],
+                &strings,
+                &[unicode, ambiguous],
+            )
+            .is_empty()
+        );
     }
 
     #[test]
@@ -4683,9 +4787,8 @@ mod tests {
             type_id: 9000,
             action_codes: [0; 8],
             field_names_xmt: 1,
-            legal_owner_flags: [0; 16],
-            legal_owner_flag_count: 16,
-            field_count: 1,
+            legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([0; 16]),
+
             field_codes: vec![1],
             inflated_offset: 100,
         };
@@ -4729,26 +4832,32 @@ mod tests {
         assert_eq!(uses[0].attribute_class_use, instance_uses[0].id);
         assert_eq!(uses[0].definition_xmt, 34);
         assert_eq!(uses[0].attribute_definition, definition.id);
-        assert!(super::parasolid_topology_attribute_class_uses(
-            std::slice::from_ref(&reference),
-            std::slice::from_ref(&entity),
-            &[instance_uses[0].clone(), instance_uses[0].clone()],
-        )
-        .is_empty());
+        assert!(
+            super::parasolid_topology_attribute_class_uses(
+                std::slice::from_ref(&reference),
+                std::slice::from_ref(&entity),
+                &[instance_uses[0].clone(), instance_uses[0].clone()],
+            )
+            .is_empty()
+        );
 
         let mut invalid = entity;
         invalid.definition_xmt = 33;
-        assert!(super::parasolid_attribute_class_uses(
-            std::slice::from_ref(&invalid),
-            std::slice::from_ref(&definition),
-        )
-        .is_empty());
-        assert!(super::parasolid_topology_attribute_class_uses(
-            &[reference],
-            std::slice::from_ref(&invalid),
-            &super::parasolid_attribute_class_uses(&[invalid.clone()], &[definition]),
-        )
-        .is_empty());
+        assert!(
+            super::parasolid_attribute_class_uses(
+                std::slice::from_ref(&invalid),
+                std::slice::from_ref(&definition),
+            )
+            .is_empty()
+        );
+        assert!(
+            super::parasolid_topology_attribute_class_uses(
+                &[reference],
+                std::slice::from_ref(&invalid),
+                &super::parasolid_attribute_class_uses(&[invalid.clone()], &[definition]),
+            )
+            .is_empty()
+        );
     }
 
     #[test]
@@ -4764,9 +4873,8 @@ mod tests {
             type_id: 8000,
             action_codes: [0; 8],
             field_names_xmt: 1,
-            legal_owner_flags: [0; 16],
-            legal_owner_flag_count: 16,
-            field_count: 1,
+            legal_owner_flags: crate::parasolid::LegalOwnerFlags::Sixteen([0; 16]),
+
             field_codes: vec![1],
             inflated_offset: 20,
         };
