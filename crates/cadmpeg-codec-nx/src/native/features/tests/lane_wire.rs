@@ -102,3 +102,28 @@ fn draft_binary32_lane_preserves_parallel_wire_and_requires_complete_tokens() {
         ],
     );
 }
+
+#[test]
+fn multi_instance_lane_preserves_wire_and_requires_complete_rows_and_references() {
+    check_lane_wire::<FeatureMultiInstanceOutputLane>(
+        r#"{"id":"lane","operation_label":"operation","declared_count":3,"selectors":[7,8],"raw_selectors":[[7],[8]],"ordinals":[1,2],"row_indices":[3,4],"instance_count":2,"trailing_object_indices":[9],"raw_trailing_object_indices":[[9]],"source_offset":100,"selector_source_offsets":[110,120],"trailing_object_index_source_offsets":[130]}"#,
+        &[
+            "selectors",
+            "raw_selectors",
+            "ordinals",
+            "row_indices",
+            "selector_source_offsets",
+            "trailing_object_indices",
+            "raw_trailing_object_indices",
+            "trailing_object_index_source_offsets",
+        ],
+    );
+}
+
+#[test]
+fn identical_instance_lane_preserves_wire_and_requires_complete_selectors() {
+    check_lane_wire::<FeatureIdenticalInstanceOutputLane>(
+        r#"{"id":"lane","operation_label":"operation","leading_schema_index":4,"count_schema_index":5,"row_schema_indices":[6,7,8],"declared_count":3,"selectors":[7,8],"raw_selectors":[[7],[8]],"source_offset":100,"selector_source_offsets":[110,120]}"#,
+        &["selectors", "raw_selectors", "selector_source_offsets"],
+    );
+}

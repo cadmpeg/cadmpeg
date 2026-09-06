@@ -2868,8 +2868,28 @@ pub struct FeaturePatternTransformLane {
     pub selector_source_offsets: Vec<u64>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureIndexToken {
+    pub value: u32,
+    pub raw: Vec<u8>,
+    pub source_offset: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureMultiInstanceOutputRow {
+    pub value: u32,
+    pub raw: Vec<u8>,
+    pub ordinal: u8,
+    pub row_index: u8,
+    pub source_offset: u64,
+}
+
 /// Exact counted instance-output lane carried by a bounded operation payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "FeatureMultiInstanceOutputLaneWire",
+    into = "FeatureMultiInstanceOutputLaneWire"
+)]
 pub struct FeatureMultiInstanceOutputLane {
     /// Globally unique output-lane identity.
     pub id: String,
@@ -2877,30 +2897,139 @@ pub struct FeatureMultiInstanceOutputLane {
     pub operation_label: String,
     /// Count including the implicit seed row.
     pub declared_count: u8,
-    /// Ordered non-null compact selectors.
-    pub selectors: Vec<u32>,
-    /// Exact compact-index selector tokens in row order.
-    pub raw_selectors: Vec<Vec<u8>>,
-    /// Ordered serialized instance ordinals.
-    pub ordinals: Vec<u8>,
-    /// Ordered serialized row indices.
-    pub row_indices: Vec<u8>,
+    /// Ordered complete source tokens.
+    pub rows: Vec<FeatureMultiInstanceOutputRow>,
     /// Count including the implicit seed instance.
     pub instance_count: u8,
-    /// Ordered non-null trailing object indices.
-    pub trailing_object_indices: Vec<u32>,
-    /// Exact trailing object-index tokens in row order.
-    pub raw_trailing_object_indices: Vec<Vec<u8>>,
+    /// Ordered complete source tokens.
+    pub trailing_references: Vec<FeatureIndexToken>,
     /// Absolute source offset of the opening `25 01, count` field.
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureMultiInstanceOutputLaneWire {
+    /// Globally unique output-lane identity.
+    id: String,
+    /// Owning `Multi Instance Output` operation label.
+    operation_label: String,
+    /// Count including the implicit seed row.
+    declared_count: u8,
+    /// Ordered non-null compact selectors.
+    selectors: Vec<u32>,
+    /// Exact compact-index selector tokens in row order.
+    raw_selectors: Vec<Vec<u8>>,
+    /// Ordered serialized instance ordinals.
+    ordinals: Vec<u8>,
+    /// Ordered serialized row indices.
+    row_indices: Vec<u8>,
+    /// Count including the implicit seed instance.
+    instance_count: u8,
+    /// Ordered non-null trailing object indices.
+    trailing_object_indices: Vec<u32>,
+    /// Exact trailing object-index tokens in row order.
+    raw_trailing_object_indices: Vec<Vec<u8>>,
+    /// Absolute source offset of the opening `25 01, count` field.
+    source_offset: u64,
     /// Absolute source offsets of the selector tokens.
-    pub selector_source_offsets: Vec<u64>,
+    selector_source_offsets: Vec<u64>,
     /// Absolute source offsets of the trailing object-index tokens.
-    pub trailing_object_index_source_offsets: Vec<u64>,
+    trailing_object_index_source_offsets: Vec<u64>,
+}
+
+impl From<FeatureMultiInstanceOutputLane> for FeatureMultiInstanceOutputLaneWire {
+    fn from(lane: FeatureMultiInstanceOutputLane) -> Self {
+        Self {
+            id: lane.id,
+            operation_label: lane.operation_label,
+            declared_count: lane.declared_count,
+            instance_count: lane.instance_count,
+            source_offset: lane.source_offset,
+            selectors: lane.rows.iter().map(|token| token.value).collect(),
+            raw_selectors: lane.rows.iter().map(|token| token.raw.clone()).collect(),
+            ordinals: lane.rows.iter().map(|token| token.ordinal).collect(),
+            row_indices: lane.rows.iter().map(|token| token.row_index).collect(),
+            selector_source_offsets: lane.rows.iter().map(|token| token.source_offset).collect(),
+            trailing_object_indices: lane
+                .trailing_references
+                .iter()
+                .map(|token| token.value)
+                .collect(),
+            raw_trailing_object_indices: lane
+                .trailing_references
+                .iter()
+                .map(|token| token.raw.clone())
+                .collect(),
+            trailing_object_index_source_offsets: lane
+                .trailing_references
+                .iter()
+                .map(|token| token.source_offset)
+                .collect(),
+        }
+    }
+}
+
+impl TryFrom<FeatureMultiInstanceOutputLaneWire> for FeatureMultiInstanceOutputLane {
+    type Error = String;
+    fn try_from(wire: FeatureMultiInstanceOutputLaneWire) -> Result<Self, Self::Error> {
+        if wire.raw_selectors.len() != wire.selectors.len()
+            || wire.ordinals.len() != wire.selectors.len()
+            || wire.row_indices.len() != wire.selectors.len()
+            || wire.selector_source_offsets.len() != wire.selectors.len()
+        {
+            return Err(
+                "FeatureMultiInstanceOutputLane rows columns must have equal lengths".into(),
+            );
+        }
+        if wire.raw_trailing_object_indices.len() != wire.trailing_object_indices.len()
+            || wire.trailing_object_index_source_offsets.len() != wire.trailing_object_indices.len()
+        {
+            return Err("FeatureMultiInstanceOutputLane trailing_references columns must have equal lengths".into());
+        }
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            declared_count: wire.declared_count,
+            instance_count: wire.instance_count,
+            source_offset: wire.source_offset,
+            rows: wire
+                .selectors
+                .into_iter()
+                .zip(wire.raw_selectors)
+                .zip(wire.ordinals)
+                .zip(wire.row_indices)
+                .zip(wire.selector_source_offsets)
+                .map(|((((value, raw), ordinal), row_index), source_offset)| {
+                    FeatureMultiInstanceOutputRow {
+                        value,
+                        raw,
+                        ordinal,
+                        row_index,
+                        source_offset,
+                    }
+                })
+                .collect(),
+            trailing_references: wire
+                .trailing_object_indices
+                .into_iter()
+                .zip(wire.raw_trailing_object_indices)
+                .zip(wire.trailing_object_index_source_offsets)
+                .map(|((value, raw), source_offset)| FeatureIndexToken {
+                    value,
+                    raw,
+                    source_offset,
+                })
+                .collect(),
+        })
+    }
 }
 
 /// Exact counted selector lane carried by an identical-instance output payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "FeatureIdenticalInstanceOutputLaneWire",
+    into = "FeatureIdenticalInstanceOutputLaneWire"
+)]
 pub struct FeatureIdenticalInstanceOutputLane {
     /// Globally unique output-lane identity.
     pub id: String,
@@ -2914,14 +3043,93 @@ pub struct FeatureIdenticalInstanceOutputLane {
     pub row_schema_indices: [u8; 3],
     /// Count including the implicit owner row.
     pub declared_count: u8,
-    /// Ordered non-null compact selectors.
-    pub selectors: Vec<u32>,
-    /// Exact compact-index selector tokens in row order.
-    pub raw_selectors: Vec<Vec<u8>>,
+    /// Ordered complete source tokens.
+    pub selectors: Vec<FeatureIndexToken>,
     /// Absolute source offset of the leading schema index.
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureIdenticalInstanceOutputLaneWire {
+    /// Globally unique output-lane identity.
+    id: String,
+    /// Owning `IDENTICAL INSTANCE OUTPUT` operation label.
+    operation_label: String,
+    /// Schema index preceding the count field.
+    leading_schema_index: u8,
+    /// Schema index framing the serialized count.
+    count_schema_index: u8,
+    /// Three consecutive schema indices framing every selector row.
+    row_schema_indices: [u8; 3],
+    /// Count including the implicit owner row.
+    declared_count: u8,
+    /// Ordered non-null compact selectors.
+    selectors: Vec<u32>,
+    /// Exact compact-index selector tokens in row order.
+    raw_selectors: Vec<Vec<u8>>,
+    /// Absolute source offset of the leading schema index.
+    source_offset: u64,
     /// Absolute source offsets of the selector tokens.
-    pub selector_source_offsets: Vec<u64>,
+    selector_source_offsets: Vec<u64>,
+}
+
+impl From<FeatureIdenticalInstanceOutputLane> for FeatureIdenticalInstanceOutputLaneWire {
+    fn from(lane: FeatureIdenticalInstanceOutputLane) -> Self {
+        Self {
+            id: lane.id,
+            operation_label: lane.operation_label,
+            leading_schema_index: lane.leading_schema_index,
+            count_schema_index: lane.count_schema_index,
+            row_schema_indices: lane.row_schema_indices,
+            declared_count: lane.declared_count,
+            source_offset: lane.source_offset,
+            selectors: lane.selectors.iter().map(|token| token.value).collect(),
+            raw_selectors: lane
+                .selectors
+                .iter()
+                .map(|token| token.raw.clone())
+                .collect(),
+            selector_source_offsets: lane
+                .selectors
+                .iter()
+                .map(|token| token.source_offset)
+                .collect(),
+        }
+    }
+}
+
+impl TryFrom<FeatureIdenticalInstanceOutputLaneWire> for FeatureIdenticalInstanceOutputLane {
+    type Error = String;
+    fn try_from(wire: FeatureIdenticalInstanceOutputLaneWire) -> Result<Self, Self::Error> {
+        if wire.raw_selectors.len() != wire.selectors.len()
+            || wire.selector_source_offsets.len() != wire.selectors.len()
+        {
+            return Err(
+                "FeatureIdenticalInstanceOutputLane selectors columns must have equal lengths"
+                    .into(),
+            );
+        }
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            leading_schema_index: wire.leading_schema_index,
+            count_schema_index: wire.count_schema_index,
+            row_schema_indices: wire.row_schema_indices,
+            declared_count: wire.declared_count,
+            source_offset: wire.source_offset,
+            selectors: wire
+                .selectors
+                .into_iter()
+                .zip(wire.raw_selectors)
+                .zip(wire.selector_source_offsets)
+                .map(|((value, raw), source_offset)| FeatureIndexToken {
+                    value,
+                    raw,
+                    source_offset,
+                })
+                .collect(),
+        })
+    }
 }
 
 /// Exact leading construction header carried by a bounded point-feature payload.
@@ -8790,32 +8998,20 @@ pub fn feature_multi_instance_output_lanes(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
                 declared_count: lane.declared_count,
-                selectors: lane.rows.iter().map(|row| row.selector.value).collect(),
-                raw_selectors: lane.rows.iter().map(|row| row.selector.raw.clone()).collect(),
-                ordinals: lane.rows.iter().map(|row| row.ordinal).collect(),
-                row_indices: lane.rows.iter().map(|row| row.row_index).collect(),
+                rows: lane.rows.into_iter().map(|row| FeatureMultiInstanceOutputRow {
+                    value: row.selector.value,
+                    raw: row.selector.raw,
+                    ordinal: row.ordinal,
+                    row_index: row.row_index,
+                    source_offset: entry_offset + row.selector.offset as u64,
+                }).collect(),
                 instance_count: lane.instance_count,
-                trailing_object_indices: lane
-                    .trailing_references
-                    .iter()
-                    .map(|reference| reference.object_index)
-                    .collect(),
-                raw_trailing_object_indices: lane
-                    .trailing_references
-                    .iter()
-                    .map(|reference| reference.raw_object_index.clone())
-                    .collect(),
+                trailing_references: lane.trailing_references.into_iter().map(|reference| FeatureIndexToken {
+                    value: reference.object_index,
+                    raw: reference.raw_object_index,
+                    source_offset: entry_offset + reference.offset as u64,
+                }).collect(),
                 source_offset: entry_offset + lane.offset as u64,
-                selector_source_offsets: lane
-                    .rows
-                    .iter()
-                    .map(|row| entry_offset + row.selector.offset as u64)
-                    .collect(),
-                trailing_object_index_source_offsets: lane
-                    .trailing_references
-                    .into_iter()
-                    .map(|reference| entry_offset + reference.offset as u64)
-                    .collect(),
             });
         },
     );
@@ -8845,14 +9041,12 @@ pub fn feature_identical_instance_output_lanes(
                 count_schema_index: lane.count_schema_index,
                 row_schema_indices: lane.row_schema_indices,
                 declared_count: lane.declared_count,
-                selectors: lane.selectors.iter().map(|row| row.value).collect(),
-                raw_selectors: lane.selectors.iter().map(|row| row.raw.clone()).collect(),
+                selectors: lane.selectors.into_iter().map(|token| FeatureIndexToken {
+                    value: token.value,
+                    raw: token.raw,
+                    source_offset: entry_offset + token.offset as u64,
+                }).collect(),
                 source_offset: entry_offset + lane.offset as u64,
-                selector_source_offsets: lane
-                    .selectors
-                    .iter()
-                    .map(|row| entry_offset + row.offset as u64)
-                    .collect(),
             });
         },
     );
