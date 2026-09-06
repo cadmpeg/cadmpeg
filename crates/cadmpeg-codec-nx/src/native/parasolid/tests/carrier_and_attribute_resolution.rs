@@ -296,7 +296,10 @@ fn decode_preserves_intersection_curve_as_connected_carrier() {
         .iter()
         .find(|curve| &curve.id == edge_curve)
         .expect("intersection carrier");
-    assert!(matches!(curve.geometry, CurveGeometry::Unknown { .. }));
+    assert!(matches!(
+        curve.geometry.solved_cache(),
+        Some(CurveGeometry::Unknown { .. })
+    ));
     let records = result
         .ir()
         .native

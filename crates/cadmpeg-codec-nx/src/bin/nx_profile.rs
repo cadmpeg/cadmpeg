@@ -921,7 +921,7 @@ mod tests {
         use cadmpeg_ir::topology::{Body, BodyKind};
 
         let mut ir = CadIr::empty();
-        let body = BodyId::mint("body".to_string()).expect("identity grammar");
+        let body = BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar");
         ir.model.bodies.push(Body {
             id: body.clone(),
             kind: BodyKind::Solid,
@@ -971,7 +971,9 @@ mod tests {
             source_tag: None,
             source_text: None,
             source_content: Vec::new(),
-            outputs: vec![BodyId::mint("body".to_string()).expect("identity grammar")],
+            outputs: vec![
+                BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")
+            ],
             definition: FeatureDefinition::Block {
                 dimensions: None,
                 placement: None,
@@ -1092,7 +1094,7 @@ mod tests {
 
         let mut ir = CadIr::empty();
         let body = cadmpeg_ir::topology::Body {
-            id: BodyId::mint("body".to_string()).expect("identity grammar"),
+            id: BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar"),
             kind: cadmpeg_ir::topology::BodyKind::Solid,
             regions: Vec::new(),
             transform: None,
@@ -1100,7 +1102,8 @@ mod tests {
             color: None,
             visible: None,
         };
-        let appearance_id = AppearanceId::mint("appearance".to_string()).expect("identity grammar");
+        let appearance_id = AppearanceId::mint("test:model:entity#appearance".to_string())
+            .expect("identity grammar");
         ir.model.bodies.push(body.clone());
         ir.model.appearances.push(Appearance {
             id: appearance_id.clone(),
@@ -1121,7 +1124,9 @@ mod tests {
             textures: Vec::new(),
         });
         ir.model.appearance_bindings.push(AppearanceBinding {
-            id: "binding".into(),
+            id: "test:model:binding#binding"
+                .try_into()
+                .expect("valid identity"),
             target: AppearanceTarget::Body(body.id.clone()),
             appearance: appearance_id,
             source_entity_id: None,
@@ -1179,7 +1184,7 @@ mod tests {
 
         let mut ir = CadIr::empty();
         let body = cadmpeg_ir::topology::Body {
-            id: BodyId::mint("body".to_string()).expect("identity grammar"),
+            id: BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar"),
             kind: cadmpeg_ir::topology::BodyKind::Solid,
             regions: Vec::new(),
             transform: None,
@@ -1187,7 +1192,8 @@ mod tests {
             color: None,
             visible: None,
         };
-        let appearance_id = AppearanceId::mint("appearance".to_string()).expect("identity grammar");
+        let appearance_id = AppearanceId::mint("test:model:entity#appearance".to_string())
+            .expect("identity grammar");
         ir.model.bodies.push(body.clone());
         ir.model.appearances.push(Appearance {
             id: appearance_id.clone(),
@@ -1204,7 +1210,9 @@ mod tests {
         });
         let target = AppearanceTarget::Body(body.id.clone());
         ir.model.appearance_bindings.push(AppearanceBinding {
-            id: "binding-1".into(),
+            id: "test:model:binding#binding-1"
+                .try_into()
+                .expect("valid identity"),
             target: target.clone(),
             appearance: appearance_id.clone(),
             source_entity_id: None,
@@ -1221,7 +1229,9 @@ mod tests {
             a: 1.0,
         });
         ir.model.appearance_bindings.push(AppearanceBinding {
-            id: "binding-2".into(),
+            id: "test:model:binding#binding-2"
+                .try_into()
+                .expect("valid identity"),
             target: target.clone(),
             appearance: appearance_id,
             source_entity_id: None,
@@ -1235,8 +1245,9 @@ mod tests {
     #[test]
     fn effective_color_accepts_absent_color_without_an_assignment() {
         let ir = CadIr::empty();
-        let target =
-            AppearanceTarget::Body(BodyId::mint("body".to_string()).expect("identity grammar"));
+        let target = AppearanceTarget::Body(
+            BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar"),
+        );
 
         assert!(has_effective_color(&ir, None, &target));
     }
@@ -1244,8 +1255,9 @@ mod tests {
     #[test]
     fn effective_color_requires_normalized_direct_color() {
         let ir = CadIr::empty();
-        let target =
-            AppearanceTarget::Body(BodyId::mint("body".to_string()).expect("identity grammar"));
+        let target = AppearanceTarget::Body(
+            BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar"),
+        );
         assert!(!has_effective_color(
             &ir,
             Some(Color {

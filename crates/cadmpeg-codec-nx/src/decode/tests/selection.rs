@@ -318,8 +318,9 @@ fn decode_emits_inline_descriptor_intersection_witnesses() {
                     == Some(&curve.id)
             })
             .expect("intersection curve")
-            .geometry,
-        CurveGeometry::Nurbs(_)
+            .geometry
+            .solved_cache(),
+        Some(CurveGeometry::Nurbs(_))
     ));
 }
 
@@ -772,7 +773,7 @@ fn decode_preselection_retains_skipped_rmfastload_stream_as_unknown() {
         .native_unknowns("nx")
         .unwrap()
         .iter()
-        .any(|unknown| unknown.id.0 == "nx:container:parasolid#1"));
+        .any(|unknown| unknown.id.as_str() == "nx:container:parasolid#1"));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
@@ -1512,12 +1513,14 @@ fn design_intent_losses_accept_unbound_trim_surface_construction() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::TrimSurface {
-            faces: FaceSelection::Faces(vec![
-                cadmpeg_ir::ids::FaceId::mint("face").expect("identity grammar")
-            ]),
-            tool: PathRef::Edges(vec![
-                cadmpeg_ir::ids::EdgeId::mint("edge").expect("identity grammar")
-            ]),
+            faces: FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId::mint(
+                "test:model:entity#face",
+            )
+            .expect("identity grammar")]),
+            tool: PathRef::Edges(vec![cadmpeg_ir::ids::EdgeId::mint(
+                "test:model:entity#edge",
+            )
+            .expect("identity grammar")]),
             keep: TrimRegion::Inside,
         },
         native_ref: None,

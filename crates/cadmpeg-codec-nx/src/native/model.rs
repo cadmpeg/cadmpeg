@@ -416,7 +416,7 @@ pub(crate) fn terminal_feature_body_ids(
         let prefix = format!("nx:s{}:", binding.stream_ordinal);
         let stream_bodies = emitted
             .iter()
-            .filter(|body| body.0.starts_with(&prefix))
+            .filter(|body| body.as_str().starts_with(&prefix))
             .cloned()
             .collect::<Vec<_>>();
         if stream_bodies.is_empty() {

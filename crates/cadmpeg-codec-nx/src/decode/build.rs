@@ -1031,12 +1031,12 @@ pub(crate) fn try_decode_geometry(
         unknown.links_mut().extend(
             ir.model.surfaces[first_surface..]
                 .iter()
-                .map(|surface| surface.id.0.clone()),
+                .map(|surface| surface.id.as_str().to_owned()),
         );
         unknown.links_mut().extend(
             ir.model.curves[first_curve..]
                 .iter()
-                .map(|curve| curve.id.0.clone()),
+                .map(|curve| curve.id.as_str().to_owned()),
         );
         let container_stream = annotations.stream("nx:container");
         annotations
@@ -1423,7 +1423,14 @@ pub(crate) fn rmfastload_allows_terminal_lineage(
 pub(crate) fn rmfastload_stream_indices(selected: &BTreeSet<BodyId>) -> Option<BTreeSet<usize>> {
     selected
         .iter()
-        .map(|body| body.0.strip_prefix("nx:s")?.split_once(':')?.0.parse().ok())
+        .map(|body| {
+            body.as_str()
+                .strip_prefix("nx:s")?
+                .split_once(':')?
+                .0
+                .parse()
+                .ok()
+        })
         .collect()
 }
 
@@ -1716,7 +1723,7 @@ pub(crate) fn finalize_point_topology(ir: &mut CadIr, annotations: &mut Annotati
         RegionId::mint("nx:derived:point-region#0".to_string()).expect("identity grammar");
     let shell_id = ShellId::mint("nx:derived:point-shell#0".to_string()).expect("identity grammar");
     let stream = annotations.stream("nx:container");
-    for id in [&body_id.0, &region_id.0, &shell_id.0] {
+    for id in [body_id.as_str(), region_id.as_str(), shell_id.as_str()] {
         annotations
             .note(id, stream, 0)
             .tag("derived_point_topology");

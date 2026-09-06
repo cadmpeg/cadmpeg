@@ -573,7 +573,7 @@ pub(super) fn emit_topology(
                     .and_then(|face| surfaces.get(&face.surface))?;
                 let carrier = pcurves
                     .get(&fields.curve_xmt)
-                    .and_then(|id| index.pcurves(id.0.as_str()))?;
+                    .and_then(|id| index.pcurves(id.as_str()))?;
                 let use_range = trim_ranges
                     .get(&fields.curve_xmt)
                     .copied()
@@ -590,7 +590,7 @@ pub(super) fn emit_topology(
                     carrier.fit_tolerance(),
                     adaptive_geometry_budget,
                 )?;
-                let curve = index.edges(edge.0.as_str())?.curve.as_ref()?;
+                let curve = index.edges(edge.as_str())?.curve.as_ref()?;
                 let parameter_range = parameter_range?;
                 let Some((candidate_geometry, candidate_range, _)) =
                     intersection_pcurves.get(&(curve.clone(), support.clone()))
@@ -1416,7 +1416,7 @@ mod tests {
 
     #[test]
     fn curve_point_cache_reuses_an_exact_parameter_evaluation() {
-        let curve = CurveId::mint("synthetic:curve").expect("identity grammar");
+        let curve = CurveId::mint("test:model:entity#synthetic:curve").expect("identity grammar");
         let geometry = CurveGeometry::Nurbs(
             cadmpeg_ir::geometry::NurbsCurve::new(
                 1,

@@ -182,7 +182,7 @@ pub(crate) fn support_uv_lane_matches_surface_with_budget(
         return false;
     }
     let Some(geometry) = index
-        .surfaces(surface.0.as_str())
+        .surfaces(surface.as_str())
         .map(|surface| &surface.geometry)
     else {
         return false;
@@ -547,7 +547,7 @@ pub(crate) fn complete_ext11_support_uv_with_budget(
     for (procedural_id, samples, fit_tolerance, serialized) in pending {
         let points = samples.points();
         let parameters = samples.parameters();
-        let Some(procedural) = model_index.procedural_curves(procedural_id.0.as_str()) else {
+        let Some(procedural) = model_index.procedural_curves(procedural_id.as_str()) else {
             continue;
         };
         let (surfaces, missing) = match procedural.definition() {
@@ -584,7 +584,7 @@ pub(crate) fn complete_ext11_support_uv_with_budget(
                 return None;
             }
             let surface_geometry = model_index
-                .surfaces(surfaces[side].0.as_str())
+                .surfaces(surfaces[side].as_str())
                 .map(|surface| &surface.geometry)?;
             let values = assigned[side].as_ref()?;
             if values
@@ -754,7 +754,7 @@ pub(crate) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
             if geometry_budget.exhausted() || support_uv_budget_exhausted(support_budget) {
                 break;
             }
-            let Some(procedural) = index.procedural_curves(procedural_id.0.as_str()) else {
+            let Some(procedural) = index.procedural_curves(procedural_id.as_str()) else {
                 continue;
             };
             let Some(owner) = index.ir().model.procedural_curve_owner(&procedural.id) else {
@@ -775,7 +775,7 @@ pub(crate) fn invalidate_inconsistent_support_uv_with_validated_lanes_and_status
                     continue;
                 };
                 let Some(geometry) = index
-                    .surfaces(surface.0.as_str())
+                    .surfaces(surface.as_str())
                     .map(|surface| &surface.geometry)
                 else {
                     continue;
@@ -875,7 +875,7 @@ pub(crate) fn pending_support_lanes_requiring_completion(
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
     pending
         .iter()
-        .filter_map(|(procedural_id, ..)| index.procedural_curves(procedural_id.0.as_str()))
+        .filter_map(|(procedural_id, ..)| index.procedural_curves(procedural_id.as_str()))
         .filter_map(|procedural| {
             let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
             else {
@@ -917,7 +917,7 @@ fn complete_support_uv_wave(
             if support_uv_budget_exhausted(support_budget) {
                 break;
             }
-            let Some(procedural) = model_index.procedural_curves(procedural_id.0.as_str()) else {
+            let Some(procedural) = model_index.procedural_curves(procedural_id.as_str()) else {
                 continue;
             };
             let Some(owner) = model_index
@@ -950,14 +950,14 @@ fn complete_support_uv_wave(
                 {
                     continue;
                 }
-                let Some(surface) = model_index.surfaces(surface_id.0.as_str()) else {
+                let Some(surface) = model_index.surfaces(surface_id.as_str()) else {
                     continue;
                 };
                 let source_chart_available =
                     source_pcurve.is_some_and(|pcurve| !pcurve_requires_completion(Some(pcurve)));
                 let linear_offset_surface = match &surface.geometry {
                     SurfaceGeometry::Procedural { construction, .. } => model_index
-                        .procedural_surfaces(construction.0.as_str())
+                        .procedural_surfaces(construction.as_str())
                         .is_some_and(|procedural| {
                             matches!(
                                 procedural.definition(),
@@ -982,7 +982,7 @@ fn complete_support_uv_wave(
                         .zip(other_side.pcurve.as_ref())
                         .and_then(|(other_surface, other_pcurve)| {
                             let geometry = model_index
-                                .surfaces(other_surface.0.as_str())
+                                .surfaces(other_surface.as_str())
                                 .map(|surface| &surface.geometry)?;
                             Some((other_surface, other_pcurve, geometry))
                         })
@@ -1429,7 +1429,7 @@ pub(crate) fn blend_spine_cache_fit_tolerance_with_index(
     blend_surface_definition_with_index(index, surface)
         .and_then(|(_, spine, _, _)| {
             index
-                .procedural_curves_for_curve(spine.0.as_str())
+                .procedural_curves_for_curve(spine.as_str())
                 .and_then(|procedurals| procedurals.first().copied())
                 .and_then(|procedural| procedural.cache_fit_tolerance())
         })
@@ -1507,7 +1507,7 @@ fn complete_coupled_support_uv(
     for (procedural_id, samples, fit_tolerance, serialized) in pending {
         let points = samples.points();
         let parameters = samples.parameters();
-        let Some(procedural) = model_index.procedural_curves(procedural_id.0.as_str()) else {
+        let Some(procedural) = model_index.procedural_curves(procedural_id.as_str()) else {
             continue;
         };
         let Some(owner) = model_index
@@ -1541,7 +1541,7 @@ fn complete_coupled_support_uv(
         let both_lanes_missing = missing == [true, true];
         let has_procedural_support = surfaces.iter().any(|surface| {
             model_index
-                .surfaces(surface.0.as_str())
+                .surfaces(surface.as_str())
                 .is_some_and(|surface| {
                     matches!(surface.geometry, SurfaceGeometry::Procedural { .. })
                 })
@@ -1550,7 +1550,7 @@ fn complete_coupled_support_uv(
             missing[side]
                 && pcurve_control_point_seed(context.sides[side].pcurve.as_ref(), 0).is_some()
                 && model_index
-                    .surfaces(surfaces[side].0.as_str())
+                    .surfaces(surfaces[side].as_str())
                     .is_some_and(|surface| {
                         matches!(surface.geometry, SurfaceGeometry::Procedural { .. })
                     })
@@ -1562,7 +1562,7 @@ fn complete_coupled_support_uv(
                     .as_ref()
                     .is_some_and(|pcurve| !pcurve_requires_completion(Some(pcurve)))
                 && model_index
-                    .surfaces(surfaces[side].0.as_str())
+                    .surfaces(surfaces[side].as_str())
                     .is_some_and(|surface| {
                         matches!(surface.geometry, SurfaceGeometry::Procedural { .. })
                     })
@@ -1581,7 +1581,7 @@ fn complete_coupled_support_uv(
             let support = &context.sides[side];
             pcurve_control_point_seed(support.pcurve.as_ref(), 0).or_else(|| {
                 model_index
-                    .surfaces(surfaces[side].0.as_str())
+                    .surfaces(surfaces[side].as_str())
                     .and_then(|surface| {
                         serialized_support_uv_seed_for_side(&surface.geometry, serialized, side)
                     })
@@ -1621,7 +1621,7 @@ fn complete_coupled_support_uv(
             if missing[side] {
                 let endpoint_values =
                     model_index
-                        .surfaces(surfaces[side].0.as_str())
+                        .surfaces(surfaces[side].as_str())
                         .map(|surface| {
                             [
                                 lanes[side].first().and_then(|parameters| {
@@ -1804,11 +1804,8 @@ pub(crate) fn parameterization_equivalent_surfaces_with_index(
         if !visited.insert((first.clone(), second.clone())) {
             return false;
         }
-        let geometry = |id: &SurfaceId| {
-            index
-                .surfaces(id.0.as_str())
-                .map(|surface| &surface.geometry)
-        };
+        let geometry =
+            |id: &SurfaceId| index.surfaces(id.as_str()).map(|surface| &surface.geometry);
         let (Some(first_geometry), Some(second_geometry)) = (geometry(first), geometry(second))
         else {
             return false;
@@ -1837,10 +1834,10 @@ pub(crate) fn parameterization_equivalent_surfaces_with_index(
             }),
         ) = (
             index
-                .procedural_surface_for_carrier(first.0.as_str())
+                .procedural_surface_for_carrier(first.as_str())
                 .map(|surface| surface.definition()),
             index
-                .procedural_surface_for_carrier(second.0.as_str())
+                .procedural_surface_for_carrier(second.as_str())
                 .map(|surface| surface.definition()),
         )
         else {
@@ -2161,7 +2158,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
     for (coedge_id, source_index, (geometry, parameter_range, fit_tolerance)) in replacements {
         let source = &sources[source_index];
         let Some(fin_xmt) = coedge_id
-            .0
+            .as_str()
             .rsplit_once('#')
             .and_then(|(_, value)| value.parse::<u32>().ok())
         else {
@@ -2254,7 +2251,8 @@ mod tests {
 
     #[test]
     fn oversized_serialized_lane_is_declined_before_geometry_work() {
-        let surface_id = SurfaceId::mint("synthetic:support-plane").expect("identity grammar");
+        let surface_id =
+            SurfaceId::mint("test:model:entity#synthetic:support-plane").expect("identity grammar");
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: surface_id.clone(),
@@ -2310,8 +2308,8 @@ mod tests {
         const FIT_TOLERANCE: f64 = 1.0e-10;
         const GEOMETRY_WORK: usize = 1_024;
 
-        let surface_id =
-            SurfaceId::mint("synthetic:coarse-nurbs-support").expect("identity grammar");
+        let surface_id = SurfaceId::mint("test:model:entity#synthetic:coarse-nurbs-support")
+            .expect("identity grammar");
         let nurbs = cadmpeg_ir::geometry::NurbsSurface::new(
             1,
             1,

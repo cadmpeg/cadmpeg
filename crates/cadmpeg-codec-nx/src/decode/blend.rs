@@ -88,13 +88,14 @@ mod tests {
             1.0,
         );
         for index in 0..MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES {
-            let surface = SurfaceId::mint(format!("surface-{index}")).expect("identity grammar");
+            let surface = SurfaceId::mint(format!("test:model:entity#surface-{index}"))
+                .expect("identity grammar");
             cache.remember(&surface, index as f64, false, frame);
         }
-        let first = SurfaceId::mint("surface-0").expect("identity grammar");
+        let first = SurfaceId::mint("test:model:entity#surface-0").expect("identity grammar");
         assert_eq!(cache.get(&first, 0.0, false), Some(frame));
 
-        let newest = SurfaceId::mint("surface-newest").expect("identity grammar");
+        let newest = SurfaceId::mint("test:model:entity#surface-newest").expect("identity grammar");
         cache.remember(&newest, 0.0, false, frame);
         assert!(cache.get(&first, 0.0, false).is_none());
         assert_eq!(cache.get(&newest, 0.0, false), Some(frame));
@@ -106,15 +107,17 @@ mod tests {
         let mut cache = BlendSurfaceFrameCache::default();
         let point = Point3::new(1.0, 2.0, 3.0);
         for index in 0..MAX_BLEND_BOUNDARY_POINT_CACHE_ENTRIES {
-            let surface =
-                SurfaceId::mint(format!("boundary-surface-{index}")).expect("identity grammar");
+            let surface = SurfaceId::mint(format!("test:model:entity#boundary-surface-{index}"))
+                .expect("identity grammar");
             cache.remember_boundary_point(&surface, index as f64, index % 2, point);
         }
 
-        let first = SurfaceId::mint("boundary-surface-0").expect("identity grammar");
+        let first =
+            SurfaceId::mint("test:model:entity#boundary-surface-0").expect("identity grammar");
         assert_eq!(cache.get_boundary_point(&first, 0.0, 0), Some(point));
 
-        let newest = SurfaceId::mint("boundary-surface-newest").expect("identity grammar");
+        let newest =
+            SurfaceId::mint("test:model:entity#boundary-surface-newest").expect("identity grammar");
         cache.remember_boundary_point(&newest, 0.0, 1, point);
         assert!(cache.get_boundary_point(&first, 0.0, 0).is_none());
         assert_eq!(cache.get_boundary_point(&newest, 0.0, 1), Some(point));
@@ -152,9 +155,12 @@ mod tests {
 
     #[test]
     fn blend_contact_seed_cache_is_bounded_and_uses_the_nearest_chart() {
-        let support = SurfaceId::mint("synthetic:seed-support").expect("identity grammar");
-        let spine = CurveId::mint("synthetic:seed-spine").expect("identity grammar");
-        let offset_surface = SurfaceId::mint("synthetic:seed-offset").expect("identity grammar");
+        let support =
+            SurfaceId::mint("test:model:entity#synthetic:seed-support").expect("identity grammar");
+        let spine =
+            CurveId::mint("test:model:entity#synthetic:seed-spine").expect("identity grammar");
+        let offset_surface =
+            SurfaceId::mint("test:model:entity#synthetic:seed-offset").expect("identity grammar");
         let mut cache = BlendContactSeedCache::default();
         for parameter in 0..(MAX_BLEND_CONTACT_SEEDS + 4) {
             let parameter = parameter as f64;
@@ -377,23 +383,25 @@ fn blend_surface_parameters_inner(
     let (_, spine, _, _) = blend_surface_definition_with_index(index, surface)?;
     if let (Some(seed), Some(fit_tolerance)) = (seed, fit_tolerance) {
         let seed_u_is_valid = index
-            .curves(spine.0.as_str())
-            .and_then(|curve| match &curve.geometry {
-                CurveGeometry::Nurbs(nurbs) => {
-                    let degree = usize::try_from(nurbs.degree()).ok()?;
-                    let count = nurbs.control_points().len();
-                    let lower = *nurbs.knots().get(degree)?;
-                    let upper = *nurbs.knots().get(count)?;
-                    Some(
-                        lower.is_finite()
-                            && upper.is_finite()
-                            && lower < upper
-                            && seed.u >= lower
-                            && seed.u <= upper,
-                    )
-                }
-                _ => Some(seed.u.is_finite()),
-            })
+            .curves(spine.as_str())
+            .and_then(
+                |curve| match curve.geometry.solved_cache().unwrap_or(&curve.geometry) {
+                    CurveGeometry::Nurbs(nurbs) => {
+                        let degree = usize::try_from(nurbs.degree()).ok()?;
+                        let count = nurbs.control_points().len();
+                        let lower = *nurbs.knots().get(degree)?;
+                        let upper = *nurbs.knots().get(count)?;
+                        Some(
+                            lower.is_finite()
+                                && upper.is_finite()
+                                && lower < upper
+                                && seed.u >= lower
+                                && seed.u <= upper,
+                        )
+                    }
+                    _ => Some(seed.u.is_finite()),
+                },
+            )
             .unwrap_or(false);
         if seed_u_is_valid
             && section_domain.contains(seed.v)
@@ -622,8 +630,9 @@ pub(crate) fn blend_surface_parameter_grid_with_index_and_budget(
 ) -> Option<Vec<(Point2, Point3)>> {
     (depth < 32).then_some(())?;
     let (_, spine, _, _) = blend_surface_definition_with_index(index, surface)?;
-    let curve = index.curves(spine.0.as_str())?;
-    let CurveGeometry::Nurbs(nurbs) = &curve.geometry else {
+    let curve = index.curves(spine.as_str())?;
+    let CurveGeometry::Nurbs(nurbs) = curve.geometry.solved_cache().unwrap_or(&curve.geometry)
+    else {
         return None;
     };
     let degree = usize::try_from(nurbs.degree()).ok()?;
@@ -787,16 +796,16 @@ fn refine_blend_surface_parameters_with_section_domain_and_budget(
 ) -> Option<Point2> {
     (depth < 32).then_some(())?;
     let (_, spine, _, _) = blend_surface_definition_with_index(index, surface)?;
-    let u_domain = index
-        .curves(spine.0.as_str())
-        .and_then(|curve| match &curve.geometry {
+    let u_domain = index.curves(spine.as_str()).and_then(|curve| {
+        match curve.geometry.solved_cache().unwrap_or(&curve.geometry) {
             CurveGeometry::Nurbs(nurbs) => {
                 let degree = usize::try_from(nurbs.degree()).ok()?;
                 let count = nurbs.control_points().len();
                 Some([*nurbs.knots().get(degree)?, *nurbs.knots().get(count)?])
             }
             _ => None,
-        });
+        }
+    });
     if let Some(domain) = u_domain {
         parameters.u = parameters.u.clamp(domain[0], domain[1]);
     }
@@ -1251,10 +1260,22 @@ pub(crate) fn blend_surface_u_derivative_with_index_and_budget(
 ) -> Option<Vector3> {
     (depth < 32).then_some(())?;
     let (supports, spine, radius, _) = blend_surface_definition_with_index(index, surface)?;
-    let carrier = index.curves(spine.0.as_str())?;
-    let center = curve_point_with_budget(&carrier.geometry, u, geometry_budget)?;
-    let velocity = curve_tangent_with_budget(&carrier.geometry, u, geometry_budget)?;
-    let acceleration = curve_second_derivative_with_budget(&carrier.geometry, u, geometry_budget)?;
+    let carrier = index.curves(spine.as_str())?;
+    let center = curve_point_with_budget(
+        carrier.geometry.solved_cache().unwrap_or(&carrier.geometry),
+        u,
+        geometry_budget,
+    )?;
+    let velocity = curve_tangent_with_budget(
+        carrier.geometry.solved_cache().unwrap_or(&carrier.geometry),
+        u,
+        geometry_budget,
+    )?;
+    let acceleration = curve_second_derivative_with_budget(
+        carrier.geometry.solved_cache().unwrap_or(&carrier.geometry),
+        u,
+        geometry_budget,
+    )?;
     let speed = velocity.norm();
     if !speed.is_finite() || speed == 0.0 {
         return None;
@@ -1639,7 +1660,7 @@ pub(crate) fn blend_boundary_parameter_from_support_pcurve_with_budget(
     target: BoundaryInverseTarget,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point2> {
-    let support_geometry = &index.surfaces(support.0.as_str())?.geometry;
+    let support_geometry = &index.surfaces(support.as_str())?.geometry;
     blend_boundary_parameter_from_support_pcurve_with_geometry_and_budget(
         index,
         blend,
@@ -2741,7 +2762,7 @@ fn spine_contact_point_with_index_and_budget_and_options(
     }
     let support_has_nurbs_parameterization =
         surface_offset_lineage_with_index(index, support, depth + 1)
-            .and_then(|(base, _)| index.surfaces(base.0.as_str()))
+            .and_then(|(base, _)| index.surfaces(base.as_str()))
             .is_some_and(|surface| matches!(surface.geometry, SurfaceGeometry::Nurbs(_)));
     if !support_has_nurbs_parameterization {
         return None;
@@ -2780,7 +2801,7 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
     let tangent =
         model_curve_tangent_with_index_and_budget(index, spine, parameter, geometry_budget)?;
     let procedural = index
-        .procedural_curves_for_curve(spine.0.as_str())?
+        .procedural_curves_for_curve(spine.as_str())?
         .iter()
         .copied()
         .find(|candidate| {
@@ -2925,7 +2946,7 @@ pub(crate) fn spine_contact_pcurve_with_index<'a>(
 ) -> Option<&'a PcurveGeometry> {
     (depth < 32).then_some(())?;
     let procedural = index
-        .procedural_curves_for_curve(spine.0.as_str())?
+        .procedural_curves_for_curve(spine.as_str())?
         .iter()
         .copied()
         .find(|candidate| {
@@ -2979,8 +3000,8 @@ fn constant_surface_offset_between_with_index(
     if support_base == offset_base {
         return Some(offset_distance - support_offset);
     }
-    let support_geometry = &index.surfaces(support_base.0.as_str())?.geometry;
-    let offset_geometry = &index.surfaces(offset_base.0.as_str())?.geometry;
+    let support_geometry = &index.surfaces(support_base.as_str())?.geometry;
+    let offset_geometry = &index.surfaces(offset_base.as_str())?.geometry;
     let base_offset = analytic_surface_offset(support_geometry, offset_geometry).or_else(|| {
         blend_surface_offset_with_index(index, &support_base, &offset_base, depth + 1)
     })?;
@@ -3223,8 +3244,8 @@ fn surface_offset_lineage_with_index(
     depth: usize,
 ) -> Option<(SurfaceId, f64)> {
     (depth < 32).then_some(())?;
-    index.surfaces(surface.0.as_str())?;
-    let Some(procedural) = index.procedural_surface_for_carrier(surface.0.as_str()) else {
+    index.surfaces(surface.as_str())?;
+    let Some(procedural) = index.procedural_surface_for_carrier(surface.as_str()) else {
         return Some((surface.clone(), 0.0));
     };
     let ProceduralSurfaceDefinition::Offset {
@@ -3241,7 +3262,7 @@ pub(crate) fn blend_surface_definition_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
 ) -> Option<([SurfaceId; 2], CurveId, f64, [bool; 2])> {
-    let procedural = index.procedural_surface_for_surface(surface.0.as_str())?;
+    let procedural = index.procedural_surface_for_surface(surface.as_str())?;
     blend_surface_definition_from_procedural(procedural)
 }
 
@@ -3249,7 +3270,7 @@ fn blend_surface_definition_for_carrier_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surface: &SurfaceId,
 ) -> Option<([SurfaceId; 2], CurveId, f64, [bool; 2])> {
-    let procedural = index.procedural_surface_for_carrier(surface.0.as_str())?;
+    let procedural = index.procedural_surface_for_carrier(surface.as_str())?;
     blend_surface_definition_from_procedural(procedural)
 }
 
@@ -3327,16 +3348,16 @@ fn surface_contact_direction_with_index_and_budget(
     ) {
         return Some(direction);
     }
-    let carrier = index.surfaces(surface.0.as_str())?;
+    let carrier = index.surfaces(surface.as_str())?;
     let tolerance = ir.tolerances.linear;
     if !radius.is_finite() || radius <= 0.0 || !tolerance.is_finite() || tolerance <= 0.0 {
         return None;
     }
     let requires_radius_certificate = matches!(
-        &carrier.geometry,
+        carrier.geometry.solved_cache().unwrap_or(&carrier.geometry),
         SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Procedural { .. }
     );
-    let parameters = match &carrier.geometry {
+    let parameters = match carrier.geometry.solved_cache().unwrap_or(&carrier.geometry) {
         SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_parameter_within_tolerance_with_budget(
             nurbs,
             center,
@@ -3434,8 +3455,12 @@ pub(crate) fn model_curve_point_with_index_and_budget(
     parameter: f64,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Point3> {
-    let carrier = index.curves(curve.0.as_str())?;
-    curve_point_with_budget(&carrier.geometry, parameter, geometry_budget)
+    let carrier = index.curves(curve.as_str())?;
+    curve_point_with_budget(
+        carrier.geometry.solved_cache().unwrap_or(&carrier.geometry),
+        parameter,
+        geometry_budget,
+    )
 }
 
 pub(crate) fn model_curve_tangent_with_index_and_budget(
@@ -3444,9 +3469,9 @@ pub(crate) fn model_curve_tangent_with_index_and_budget(
     parameter: f64,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<Vector3> {
-    let carrier = index.curves(curve.0.as_str())?;
+    let carrier = index.curves(curve.as_str())?;
     unit_vector(curve_tangent_with_budget(
-        &carrier.geometry,
+        carrier.geometry.solved_cache().unwrap_or(&carrier.geometry),
         parameter,
         geometry_budget,
     )?)
@@ -3471,8 +3496,8 @@ pub(crate) fn closest_spine_parameter_with_index_and_budget(
     seed: Option<f64>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<f64> {
-    let carrier = index.curves(curve.0.as_str())?;
-    match &carrier.geometry {
+    let carrier = index.curves(curve.as_str())?;
+    match carrier.geometry.solved_cache().unwrap_or(&carrier.geometry) {
         CurveGeometry::Line { origin, direction } => Some(
             (point.x - origin.x) * direction.x
                 + (point.y - origin.y) * direction.y
@@ -3480,7 +3505,7 @@ pub(crate) fn closest_spine_parameter_with_index_and_budget(
         ),
         CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
             closest_periodic_analytic_curve_parameter_with_budget(
-                &carrier.geometry,
+                carrier.geometry.solved_cache().unwrap_or(&carrier.geometry),
                 point,
                 seed,
                 geometry_budget,

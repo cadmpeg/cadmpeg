@@ -68,13 +68,13 @@ fn body_image_outputs_require_one_body_per_binding() {
     let bodies = BTreeMap::from([
         (
             "binding-a",
-            vec![BodyId::mint("body-a").expect("identity grammar")],
+            vec![BodyId::mint("test:model:entity#body-a").expect("identity grammar")],
         ),
         (
             "binding-b",
             vec![
-                BodyId::mint("body-b1").expect("identity grammar"),
-                BodyId::mint("body-b2").expect("identity grammar"),
+                BodyId::mint("test:model:entity#body-b1").expect("identity grammar"),
+                BodyId::mint("test:model:entity#body-b2").expect("identity grammar"),
             ],
         ),
     ]);
@@ -83,7 +83,7 @@ fn body_image_outputs_require_one_body_per_binding() {
 
     assert_eq!(
         outputs.get("write-a"),
-        Some(&BodyId::mint("body-a").expect("identity grammar"))
+        Some(&BodyId::mint("test:model:entity#body-a").expect("identity grammar"))
     );
     assert!(!outputs.contains_key("write-b"));
 }
@@ -94,23 +94,38 @@ fn complete_body_image_outputs_reject_partial_and_duplicate_results() {
     let write_b = native_body_write("write-b");
     let writes = [&write_a, &write_b];
     let complete = BTreeMap::from([
-        ("write-a", BodyId::mint("body-a").expect("identity grammar")),
-        ("write-b", BodyId::mint("body-b").expect("identity grammar")),
+        (
+            "write-a",
+            BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
+        ),
+        (
+            "write-b",
+            BodyId::mint("test:model:entity#body-b").expect("identity grammar"),
+        ),
     ]);
     assert_eq!(
         super::complete_operation_body_image_outputs(&writes, &complete),
         [
-            BodyId::mint("body-a").expect("identity grammar"),
-            BodyId::mint("body-b").expect("identity grammar")
+            BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
+            BodyId::mint("test:model:entity#body-b").expect("identity grammar")
         ]
     );
 
-    let partial = BTreeMap::from([("write-a", BodyId::mint("body-a").expect("identity grammar"))]);
+    let partial = BTreeMap::from([(
+        "write-a",
+        BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
+    )]);
     assert!(super::complete_operation_body_image_outputs(&writes, &partial).is_empty());
 
     let duplicate = BTreeMap::from([
-        ("write-a", BodyId::mint("body").expect("identity grammar")),
-        ("write-b", BodyId::mint("body").expect("identity grammar")),
+        (
+            "write-a",
+            BodyId::mint("test:model:entity#body").expect("identity grammar"),
+        ),
+        (
+            "write-b",
+            BodyId::mint("test:model:entity#body").expect("identity grammar"),
+        ),
     ]);
     assert!(super::complete_operation_body_image_outputs(&writes, &duplicate).is_empty());
 }
@@ -176,7 +191,7 @@ fn duplicate_body_image_uses_do_not_assign_an_output() {
     ];
     let bodies = BTreeMap::from([(
         "binding-a",
-        vec![BodyId::mint("body-a").expect("identity grammar")],
+        vec![BodyId::mint("test:model:entity#body-a").expect("identity grammar")],
     )]);
 
     assert!(super::operation_body_image_outputs_by_write(&uses, &bodies).is_empty());
@@ -191,13 +206,13 @@ fn body_identity_outputs_require_one_body_per_unique_plain_binding() {
     let bodies = BTreeMap::from([
         (
             "binding-a",
-            vec![BodyId::mint("body-a").expect("identity grammar")],
+            vec![BodyId::mint("test:model:entity#body-a").expect("identity grammar")],
         ),
         (
             "binding-b",
             vec![
-                BodyId::mint("body-b1").expect("identity grammar"),
-                BodyId::mint("body-b2").expect("identity grammar"),
+                BodyId::mint("test:model:entity#body-b1").expect("identity grammar"),
+                BodyId::mint("test:model:entity#body-b2").expect("identity grammar"),
             ],
         ),
     ]);
@@ -206,26 +221,34 @@ fn body_identity_outputs_require_one_body_per_unique_plain_binding() {
 
     assert_eq!(
         outputs.get("write-a"),
-        Some(&BodyId::mint("body-a").expect("identity grammar"))
+        Some(&BodyId::mint("test:model:entity#body-a").expect("identity grammar"))
     );
     assert!(!outputs.contains_key("write-b"));
 }
 
 #[test]
 fn conflicting_body_output_witnesses_remain_unresolved() {
-    let mut outputs =
-        BTreeMap::from([("write", BodyId::mint("body-a").expect("identity grammar"))]);
+    let mut outputs = BTreeMap::from([(
+        "write",
+        BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
+    )]);
     let mut conflicts = BTreeSet::new();
 
     super::merge_operation_body_outputs(
         &mut outputs,
         &mut conflicts,
-        [("write", BodyId::mint("body-b").expect("identity grammar"))],
+        [(
+            "write",
+            BodyId::mint("test:model:entity#body-b").expect("identity grammar"),
+        )],
     );
     super::merge_operation_body_outputs(
         &mut outputs,
         &mut conflicts,
-        [("write", BodyId::mint("body-a").expect("identity grammar"))],
+        [(
+            "write",
+            BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
+        )],
     );
 
     assert!(!outputs.contains_key("write"));

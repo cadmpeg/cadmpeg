@@ -136,7 +136,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     };
     let mut model = Model::default();
     for ordinal in 0..2 {
-        let surface = SurfaceId::mint(format!("surface-{ordinal}")).expect("identity grammar");
+        let surface = SurfaceId::mint(format!("test:model:entity#surface-{ordinal}"))
+            .expect("identity grammar");
         model.surfaces.push(Surface {
             id: surface.clone(),
             geometry: SurfaceGeometry::Cylinder {
@@ -148,13 +149,16 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             source_object: None::<SourceObjectAssociation>,
         });
         model.faces.push(Face {
-            id: FaceId::mint(format!("face-{ordinal}")).expect("identity grammar"),
-            shell: ShellId::mint("shell").expect("identity grammar"),
+            id: FaceId::mint(format!("test:model:entity#face-{ordinal}"))
+                .expect("identity grammar"),
+            shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
             surface,
             sense: Sense::Reversed,
             loops: vec![
-                LoopId::mint(format!("loop-{ordinal}-0")).expect("identity grammar"),
-                LoopId::mint(format!("loop-{ordinal}-1")).expect("identity grammar"),
+                LoopId::mint(format!("test:model:entity#loop-{ordinal}-0"))
+                    .expect("identity grammar"),
+                LoopId::mint(format!("test:model:entity#loop-{ordinal}-1"))
+                    .expect("identity grammar"),
             ]
             .into(),
             name: None,
@@ -162,14 +166,16 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             tolerance: None,
         });
         for boundary in 0..2 {
-            let loop_id =
-                LoopId::mint(format!("loop-{ordinal}-{boundary}")).expect("identity grammar");
-            let curve = CurveId::mint(format!("bore-curve-{ordinal}-{boundary}"))
+            let loop_id = LoopId::mint(format!("test:model:entity#loop-{ordinal}-{boundary}"))
                 .expect("identity grammar");
-            let edge =
-                EdgeId::mint(format!("bore-edge-{ordinal}-{boundary}")).expect("identity grammar");
-            let coedge = CoedgeId::mint(format!("bore-coedge-{ordinal}-{boundary}"))
+            let curve = CurveId::mint(format!("test:model:entity#bore-curve-{ordinal}-{boundary}"))
                 .expect("identity grammar");
+            let edge = EdgeId::mint(format!("test:model:entity#bore-edge-{ordinal}-{boundary}"))
+                .expect("identity grammar");
+            let coedge = CoedgeId::mint(format!(
+                "test:model:entity#bore-coedge-{ordinal}-{boundary}"
+            ))
+            .expect("identity grammar");
             model.curves.push(Curve {
                 id: curve.clone(),
                 geometry: CurveGeometry::Circle {
@@ -183,8 +189,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             model.edges.push(Edge {
                 id: edge.clone(),
                 curve: Some(curve),
-                start: VertexId::mint("vertex").expect("identity grammar"),
-                end: VertexId::mint("vertex").expect("identity grammar"),
+                start: VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
+                end: VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
                 param_range: None,
                 tolerance: None,
             });
@@ -199,27 +205,27 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             });
         }
     }
-    let body = BodyId::mint("body").expect("identity grammar");
+    let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
     model.bodies.push(Body {
         id: body.clone(),
         kind: BodyKind::Solid,
-        regions: vec![RegionId::mint("region").expect("identity grammar")],
+        regions: vec![RegionId::mint("test:model:entity#region").expect("identity grammar")],
         transform: None,
         name: None,
         color: None,
         visible: None,
     });
     model.regions.push(Region {
-        id: RegionId::mint("region").expect("identity grammar"),
+        id: RegionId::mint("test:model:entity#region").expect("identity grammar"),
         body: body.clone(),
-        shells: vec![ShellId::mint("shell").expect("identity grammar")],
+        shells: vec![ShellId::mint("test:model:entity#shell").expect("identity grammar")],
     });
     model.shells.push(Shell {
-        id: ShellId::mint("shell").expect("identity grammar"),
-        region: RegionId::mint("region").expect("identity grammar"),
+        id: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
+        region: RegionId::mint("test:model:entity#region").expect("identity grammar"),
         faces: vec![
-            FaceId::mint("face-0").expect("identity grammar"),
-            FaceId::mint("face-1").expect("identity grammar"),
+            FaceId::mint("test:model:entity#face-0").expect("identity grammar"),
+            FaceId::mint("test:model:entity#face-1").expect("identity grammar"),
         ],
         wire_edges: Vec::new(),
         free_vertices: Vec::new(),
@@ -265,7 +271,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     )
     .is_empty());
     let mut single_hole = ir.clone();
-    single_hole.model.shells[0].faces = vec![FaceId::mint("face-1").expect("identity grammar")];
+    single_hole.model.shells[0].faces =
+        vec![FaceId::mint("test:model:entity#face-1").expect("identity grammar")];
     let single_operation = [operations[1].clone()];
     let single_output = std::collections::BTreeMap::from([(
         operations[1].clone(),
@@ -310,12 +317,12 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         unreachable!()
     };
     *axis = Vector3::new(0.0, -1.0, 0.0);
-    for curve in opposite_axis
-        .model
-        .curves
-        .iter_mut()
-        .filter(|curve| curve.id.as_str().starts_with("bore-curve-1-"))
-    {
+    for curve in opposite_axis.model.curves.iter_mut().filter(|curve| {
+        curve
+            .id
+            .as_str()
+            .starts_with("test:model:entity#bore-curve-1-")
+    }) {
         let CurveGeometry::Circle { axis, .. } = &mut curve.geometry else {
             unreachable!()
         };
@@ -341,12 +348,12 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         unreachable!()
     };
     *radius = 3.1;
-    for curve in different_radii
-        .model
-        .curves
-        .iter_mut()
-        .filter(|curve| curve.id.as_str().starts_with("bore-curve-1-"))
-    {
+    for curve in different_radii.model.curves.iter_mut().filter(|curve| {
+        curve
+            .id
+            .as_str()
+            .starts_with("test:model:entity#bore-curve-1-")
+    }) {
         let CurveGeometry::Circle { radius, .. } = &mut curve.geometry else {
             unreachable!()
         };
@@ -418,17 +425,18 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     let mut disconnected = ir.clone();
     disconnected.model.bodies[0]
         .regions
-        .push(RegionId::mint("second-region").expect("identity grammar"));
+        .push(RegionId::mint("test:model:entity#second-region").expect("identity grammar"));
     assert!(hole_diameters_for_operations(&disconnected, &operations, &outputs).is_empty());
     let mut shared_carrier = ir.clone();
     shared_carrier.model.faces.push(Face {
-        id: FaceId::mint("unowned-shared-cylinder-face").expect("identity grammar"),
-        shell: ShellId::mint("unowned-shell").expect("identity grammar"),
-        surface: SurfaceId::mint("surface-0").expect("identity grammar"),
+        id: FaceId::mint("test:model:entity#unowned-shared-cylinder-face")
+            .expect("identity grammar"),
+        shell: ShellId::mint("test:model:entity#unowned-shell").expect("identity grammar"),
+        surface: SurfaceId::mint("test:model:entity#surface-0").expect("identity grammar"),
         sense: Sense::Reversed,
         loops: vec![
-            LoopId::mint("unowned-loop-a").expect("identity grammar"),
-            LoopId::mint("unowned-loop-b").expect("identity grammar"),
+            LoopId::mint("test:model:entity#unowned-loop-a").expect("identity grammar"),
+            LoopId::mint("test:model:entity#unowned-loop-b").expect("identity grammar"),
         ]
         .into(),
         name: None,
@@ -448,37 +456,38 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     let mut distinct = ir.clone();
     distinct.model.shells[0].faces.pop();
     distinct.model.bodies.push(Body {
-        id: BodyId::mint("second-body").expect("identity grammar"),
+        id: BodyId::mint("test:model:entity#second-body").expect("identity grammar"),
         kind: BodyKind::Solid,
-        regions: vec![RegionId::mint("second-region").expect("identity grammar")],
+        regions: vec![RegionId::mint("test:model:entity#second-region").expect("identity grammar")],
         transform: None,
         name: None,
         color: None,
         visible: None,
     });
     distinct.model.regions.push(Region {
-        id: RegionId::mint("second-region").expect("identity grammar"),
-        body: BodyId::mint("second-body").expect("identity grammar"),
-        shells: vec![ShellId::mint("second-shell").expect("identity grammar")],
+        id: RegionId::mint("test:model:entity#second-region").expect("identity grammar"),
+        body: BodyId::mint("test:model:entity#second-body").expect("identity grammar"),
+        shells: vec![ShellId::mint("test:model:entity#second-shell").expect("identity grammar")],
     });
     distinct.model.shells.push(Shell {
-        id: ShellId::mint("second-shell").expect("identity grammar"),
-        region: RegionId::mint("second-region").expect("identity grammar"),
-        faces: vec![FaceId::mint("face-1").expect("identity grammar")],
+        id: ShellId::mint("test:model:entity#second-shell").expect("identity grammar"),
+        region: RegionId::mint("test:model:entity#second-region").expect("identity grammar"),
+        faces: vec![FaceId::mint("test:model:entity#face-1").expect("identity grammar")],
         wire_edges: Vec::new(),
         free_vertices: Vec::new(),
     });
-    distinct.model.faces[1].shell = ShellId::mint("second-shell").expect("identity grammar");
+    distinct.model.faces[1].shell =
+        ShellId::mint("test:model:entity#second-shell").expect("identity grammar");
     let SurfaceGeometry::Cylinder { radius, .. } = &mut distinct.model.surfaces[1].geometry else {
         unreachable!()
     };
     *radius = 3.0;
-    for curve in distinct
-        .model
-        .curves
-        .iter_mut()
-        .filter(|curve| curve.id.as_str().starts_with("bore-curve-1-"))
-    {
+    for curve in distinct.model.curves.iter_mut().filter(|curve| {
+        curve
+            .id
+            .as_str()
+            .starts_with("test:model:entity#bore-curve-1-")
+    }) {
         let CurveGeometry::Circle { radius, .. } = &mut curve.geometry else {
             unreachable!()
         };
@@ -487,11 +496,11 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     let distinct_outputs = std::collections::BTreeMap::from([
         (
             "hole-a".to_string(),
-            vec![BodyId::mint("body").expect("identity grammar")],
+            vec![BodyId::mint("test:model:entity#body").expect("identity grammar")],
         ),
         (
             "hole-b".to_string(),
-            vec![BodyId::mint("second-body").expect("identity grammar")],
+            vec![BodyId::mint("test:model:entity#second-body").expect("identity grammar")],
         ),
     ]);
     assert_eq!(
@@ -524,7 +533,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         &operations,
         &std::collections::BTreeMap::from([(
             "hole-a".to_string(),
-            vec![BodyId::mint("body").expect("identity grammar")],
+            vec![BodyId::mint("test:model:entity#body").expect("identity grammar")],
         )]),
     )
     .is_empty());
@@ -532,11 +541,15 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     let mut chamfered = ir.clone();
     for bore in 0..2 {
         for end in 0..2 {
-            let surface = SurfaceId::mint(format!("cone-{bore}-{end}")).expect("identity grammar");
-            let face = FaceId::mint(format!("cone-face-{bore}-{end}")).expect("identity grammar");
+            let surface = SurfaceId::mint(format!("test:model:entity#cone-{bore}-{end}"))
+                .expect("identity grammar");
+            let face = FaceId::mint(format!("test:model:entity#cone-face-{bore}-{end}"))
+                .expect("identity grammar");
             let loops = [
-                LoopId::mint(format!("cone-loop-{bore}-{end}-inner")).expect("identity grammar"),
-                LoopId::mint(format!("cone-loop-{bore}-{end}-outer")).expect("identity grammar"),
+                LoopId::mint(format!("test:model:entity#cone-loop-{bore}-{end}-inner"))
+                    .expect("identity grammar"),
+                LoopId::mint(format!("test:model:entity#cone-loop-{bore}-{end}-outer"))
+                    .expect("identity grammar"),
             ];
             chamfered.model.surfaces.push(Surface {
                 id: surface.clone(),
@@ -553,7 +566,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
             chamfered.model.shells[0].faces.push(face.clone());
             chamfered.model.faces.push(Face {
                 id: face,
-                shell: ShellId::mint("shell").expect("identity grammar"),
+                shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
                 surface,
                 sense: Sense::Reversed,
                 loops: loops.to_vec().into(),
@@ -562,12 +575,18 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                 tolerance: None,
             });
             for (boundary, (loop_id, radius)) in loops.into_iter().zip([2.55, 3.55]).enumerate() {
-                let curve = CurveId::mint(format!("cone-curve-{bore}-{end}-{boundary}"))
-                    .expect("identity grammar");
-                let edge = EdgeId::mint(format!("cone-edge-{bore}-{end}-{boundary}"))
-                    .expect("identity grammar");
-                let coedge = CoedgeId::mint(format!("cone-coedge-{bore}-{end}-{boundary}"))
-                    .expect("identity grammar");
+                let curve = CurveId::mint(format!(
+                    "test:model:entity#cone-curve-{bore}-{end}-{boundary}"
+                ))
+                .expect("identity grammar");
+                let edge = EdgeId::mint(format!(
+                    "test:model:entity#cone-edge-{bore}-{end}-{boundary}"
+                ))
+                .expect("identity grammar");
+                let coedge = CoedgeId::mint(format!(
+                    "test:model:entity#cone-coedge-{bore}-{end}-{boundary}"
+                ))
+                .expect("identity grammar");
                 chamfered.model.curves.push(Curve {
                     id: curve.clone(),
                     geometry: CurveGeometry::Circle {
@@ -581,8 +600,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                 chamfered.model.edges.push(Edge {
                     id: edge.clone(),
                     curve: Some(curve),
-                    start: VertexId::mint("vertex").expect("identity grammar"),
-                    end: VertexId::mint("vertex").expect("identity grammar"),
+                    start: VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
+                    end: VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
                     param_range: None,
                     tolerance: None,
                 });
@@ -630,7 +649,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     assert!(super::super::simple_hole_chamfers(&sheet, &templates, &outputs).is_empty());
     let mut unrelated = chamfered.clone();
     unrelated.model.surfaces.push(Surface {
-        id: SurfaceId::mint("unrelated-cone").expect("identity grammar"),
+        id: SurfaceId::mint("test:model:entity#unrelated-cone").expect("identity grammar"),
         geometry: SurfaceGeometry::Cone {
             origin: Point3::new(0.0, 0.0, 0.0),
             axis: Vector3::new(0.0, 1.0, 0.0),
@@ -642,13 +661,13 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         source_object: None,
     });
     unrelated.model.faces.push(Face {
-        id: FaceId::mint("unrelated-cone-face").expect("identity grammar"),
-        shell: ShellId::mint("unrelated-shell").expect("identity grammar"),
-        surface: SurfaceId::mint("unrelated-cone").expect("identity grammar"),
+        id: FaceId::mint("test:model:entity#unrelated-cone-face").expect("identity grammar"),
+        shell: ShellId::mint("test:model:entity#unrelated-shell").expect("identity grammar"),
+        surface: SurfaceId::mint("test:model:entity#unrelated-cone").expect("identity grammar"),
         sense: Sense::Reversed,
         loops: vec![
-            LoopId::mint("unrelated-a").expect("identity grammar"),
-            LoopId::mint("unrelated-b").expect("identity grammar"),
+            LoopId::mint("test:model:entity#unrelated-a").expect("identity grammar"),
+            LoopId::mint("test:model:entity#unrelated-b").expect("identity grammar"),
         ]
         .into(),
         name: None,

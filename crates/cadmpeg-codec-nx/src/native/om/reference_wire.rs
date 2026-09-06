@@ -73,7 +73,7 @@ mod tests {
         for fields in [
             r#""kind":"persistent_handle","value":4294967295,"target_record":null"#,
             r#""kind":"tagged28","value":268435455,"target_record":null"#,
-            r#""kind":"record_ordinal16","value":65535,"target_record":"record#65535"#,
+            r#""kind":"record_ordinal16","value":65535,"target_record":"record#65535""#,
         ] {
             let json = format!(
                 r#"{{"id":"r","record":"owner","object_id":null,"ordinal":0,{fields},"source_entry":"om","source_offset":10}}"#
@@ -82,9 +82,9 @@ mod tests {
             assert_eq!(serde_json::to_string(&record).unwrap(), json);
         }
         for fields in [
-            r#""kind":"persistent_handle","value":1,"target_record":"record#1"#,
+            r#""kind":"persistent_handle","value":1,"target_record":"record#1""#,
             r#""kind":"tagged28","value":268435456,"target_record":null"#,
-            r#""kind":"record_ordinal16","value":65536,"target_record":"record#65536"#,
+            r#""kind":"record_ordinal16","value":65536,"target_record":"record#65536""#,
             r#""kind":"record_ordinal16","value":1,"target_record":null"#,
         ] {
             let json = format!(

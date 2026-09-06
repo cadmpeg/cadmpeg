@@ -235,11 +235,11 @@ pub(crate) fn attach(
         annotations.exactness(&attribute.id, Exactness::ByteExact);
         let id = AttributeId::mint(format!("{}:neutral", attribute.id)).expect("identity grammar");
         annotations
-            .note(&id.0, annotation_stream, attribute.source_offset)
+            .note(id.as_str(), annotation_stream, attribute.source_offset)
             .tag("Attribute");
-        annotations.derived(&id.0, "target");
-        annotations.derived(&id.0, "name");
-        annotations.derived(&id.0, "values");
+        annotations.derived(id.as_str(), "target");
+        annotations.derived(id.as_str(), "name");
+        annotations.derived(id.as_str(), "values");
         ir.model.attributes.push(SourceAttribute {
             id,
             target: AttributeTarget::Document,
@@ -384,7 +384,7 @@ fn attach_rm_face_colors(
         .faces
         .iter()
         .enumerate()
-        .map(|(index, face)| (face.id.0.clone(), index))
+        .map(|(index, face)| (face.id.as_str().to_owned(), index))
         .collect::<BTreeMap<_, _>>();
     let face_ids = face_indices.keys().cloned().collect::<BTreeSet<_>>();
     let bindings = resolve_rm_face_colors(
@@ -431,7 +431,7 @@ fn attach_rm_appearances(
         .model
         .faces
         .iter()
-        .map(|face| face.id.0.clone())
+        .map(|face| face.id.as_str().to_owned())
         .collect::<BTreeSet<_>>();
     let face_bindings = resolve_rm_face_color_bindings(
         &face_ids,
@@ -472,7 +472,7 @@ fn attach_rm_appearances(
         annotations.derived(&binding_id, "target");
         annotations.derived(&binding_id, "appearance");
         ir.model.appearance_bindings.push(AppearanceBinding {
-            id: binding_id.into(),
+            id: binding_id.try_into().expect("valid identity"),
             target: AppearanceTarget::Source {
                 source_id: binding.source_id.clone(),
             },
@@ -491,7 +491,7 @@ fn attach_rm_appearances(
             .model
             .faces
             .iter()
-            .find(|face| face.id.0 == binding.face_id)
+            .find(|face| face.id.as_str() == binding.face_id)
             .map(|face| face.color)
         else {
             continue;
@@ -522,7 +522,7 @@ fn attach_rm_appearances(
         annotations.derived(&binding_id, "target");
         annotations.derived(&binding_id, "appearance");
         ir.model.appearance_bindings.push(AppearanceBinding {
-            id: binding_id.into(),
+            id: binding_id.try_into().expect("valid identity"),
             target: AppearanceTarget::Face(
                 FaceId::mint(binding.face_id.clone()).expect("identity grammar"),
             ),
@@ -551,11 +551,11 @@ fn ensure_rm_color_appearance(
             ))
             .expect("identity grammar");
             annotations
-                .note(&id.0, annotation_stream, definition.source_offset)
+                .note(id.as_str(), annotation_stream, definition.source_offset)
                 .tag("RMFASTLOAD_COLOR_APPEARANCE");
-            annotations.derived(&id.0, "name");
-            annotations.derived(&id.0, "schema");
-            annotations.derived(&id.0, "base_color");
+            annotations.derived(id.as_str(), "name");
+            annotations.derived(id.as_str(), "schema");
+            annotations.derived(id.as_str(), "base_color");
             ir.model.appearances.push(Appearance {
                 id: id.clone(),
                 name: Some(definition.name.clone()),
@@ -1055,7 +1055,7 @@ fn attach_initial_segment_bodies(
                 .iter()
                 .filter(|binding| {
                     body.id
-                        .0
+                        .as_str()
                         .starts_with(&format!("nx:s{}:", binding.stream_ordinal))
                 })
                 .map(|binding| binding.id.clone())
@@ -3377,7 +3377,7 @@ fn attach_feature_operations(
             for (support_ordinal, support) in supports.iter().enumerate() {
                 source_properties.insert(
                     format!("offset_support_surface.{support_ordinal}"),
-                    support.0.clone(),
+                    support.as_str().to_owned(),
                 );
             }
         }
@@ -3388,7 +3388,7 @@ fn attach_feature_operations(
             for (support_ordinal, support) in supports.iter().enumerate() {
                 source_properties.insert(
                     format!("thicken_support_surface.{support_ordinal}"),
-                    support.0.clone(),
+                    support.as_str().to_owned(),
                 );
             }
         }
@@ -3403,7 +3403,7 @@ fn attach_feature_operations(
             for (surface_ordinal, surface) in surfaces.iter().enumerate() {
                 source_properties.insert(
                     format!("blend_result_surface.{surface_ordinal}"),
-                    surface.0.clone(),
+                    surface.as_str().to_owned(),
                 );
             }
         }
@@ -4317,10 +4317,10 @@ fn attach_parasolid_topology_string_attributes(
             );
             let source_stream = annotations.stream(format!("nx:s{}", reference.stream_ordinal));
             annotations
-                .note(&id.0, source_stream, string.inflated_offset)
+                .note(id.as_str(), source_stream, string.inflated_offset)
                 .tag("ENTITY_54_STRING_ATTRIBUTE");
-            annotations.derived(&id.0, "target");
-            annotations.derived(&id.0, "name");
+            annotations.derived(id.as_str(), "target");
+            annotations.derived(id.as_str(), "name");
             let generic_name = format!(
                 "parasolid_type_84_reference_{}",
                 string_use.position.reference_ordinal()
@@ -4513,34 +4513,39 @@ fn parasolid_topology_attribute_targets(ir: &CadIr) -> BTreeMap<String, Attribut
     ir.model
         .shells
         .iter()
-        .map(|shell| (shell.id.0.clone(), AttributeTarget::Shell(shell.id.clone())))
-        .chain(
-            ir.model
-                .faces
-                .iter()
-                .map(|face| (face.id.0.clone(), AttributeTarget::Face(face.id.clone()))),
-        )
-        .chain(
-            ir.model
-                .loops
-                .iter()
-                .map(|loop_| (loop_.id.0.clone(), AttributeTarget::Loop(loop_.id.clone()))),
-        )
-        .chain(
-            ir.model
-                .edges
-                .iter()
-                .map(|edge| (edge.id.0.clone(), AttributeTarget::Edge(edge.id.clone()))),
-        )
+        .map(|shell| {
+            (
+                shell.id.as_str().to_owned(),
+                AttributeTarget::Shell(shell.id.clone()),
+            )
+        })
+        .chain(ir.model.faces.iter().map(|face| {
+            (
+                face.id.as_str().to_owned(),
+                AttributeTarget::Face(face.id.clone()),
+            )
+        }))
+        .chain(ir.model.loops.iter().map(|loop_| {
+            (
+                loop_.id.as_str().to_owned(),
+                AttributeTarget::Loop(loop_.id.clone()),
+            )
+        }))
+        .chain(ir.model.edges.iter().map(|edge| {
+            (
+                edge.id.as_str().to_owned(),
+                AttributeTarget::Edge(edge.id.clone()),
+            )
+        }))
         .chain(ir.model.coedges.iter().map(|coedge| {
             (
-                coedge.id.0.clone(),
+                coedge.id.as_str().to_owned(),
                 AttributeTarget::Coedge(coedge.id.clone()),
             )
         }))
         .chain(ir.model.vertices.iter().map(|vertex| {
             (
-                vertex.id.0.clone(),
+                vertex.id.as_str().to_owned(),
                 AttributeTarget::Vertex(vertex.id.clone()),
             )
         }))
@@ -4730,10 +4735,10 @@ fn attach_parasolid_topology_numeric_attributes(
             );
             let source_stream = annotations.stream(format!("nx:s{}", reference.stream_ordinal));
             annotations
-                .note(&id.0, source_stream, source_offset)
+                .note(id.as_str(), source_stream, source_offset)
                 .tag(tag);
-            annotations.derived(&id.0, "target");
-            annotations.derived(&id.0, "name");
+            annotations.derived(id.as_str(), "target");
+            annotations.derived(id.as_str(), "name");
             let generic_name = format!(
                 "parasolid_type_{lane}_reference_{}",
                 numeric_use.position.reference_ordinal()
@@ -4895,10 +4900,10 @@ fn attach_parasolid_topology_structured_attributes(
             );
             let source_stream = annotations.stream(format!("nx:s{}", reference.stream_ordinal));
             annotations
-                .note(&id.0, source_stream, source_offset)
+                .note(id.as_str(), source_stream, source_offset)
                 .tag(tag);
-            annotations.derived(&id.0, "target");
-            annotations.derived(&id.0, "name");
+            annotations.derived(id.as_str(), "target");
+            annotations.derived(id.as_str(), "name");
             let generic_name = format!(
                 "parasolid_type_{family}_reference_{}",
                 structured_use.position.reference_ordinal()
@@ -5231,12 +5236,12 @@ fn blend_feature_definition(
                     let (first_faces, _) = support_face_projection(
                         ir,
                         &first,
-                        format!("{}:blend-first-support-surfaces", body.0),
+                        format!("{body}:blend-first-support-surfaces"),
                     );
                     let (second_faces, _) = support_face_projection(
                         ir,
                         &second,
-                        format!("{}:blend-second-support-surfaces", body.0),
+                        format!("{body}:blend-second-support-surfaces"),
                     );
                     match (&first_faces, &second_faces) {
                         (FaceSelection::Resolved { .. }, FaceSelection::Resolved { .. }) => {
@@ -5334,7 +5339,7 @@ fn offset_surface_feature_definition(
     outputs: &[BodyId],
 ) -> Option<(FeatureDefinition, Vec<SurfaceId>)> {
     let (body, distance, supports) = owned_offset_surface_data(ir, outputs)?;
-    let native = format!("{}:offset-support-surfaces", body.0);
+    let native = format!("{}:offset-support-surfaces", body.as_str());
     let (faces, senses) = support_face_projection(ir, &supports, native);
     let distance = senses
         .as_deref()
@@ -5407,7 +5412,7 @@ fn thicken_feature_definition(
     outputs: &[BodyId],
 ) -> Option<(FeatureDefinition, Vec<SurfaceId>)> {
     let (body, thickness, supports, direction) = owned_thicken_surface_data(ir, outputs)?;
-    let native = format!("{}:thicken-support-surfaces", body.0);
+    let native = format!("{}:thicken-support-surfaces", body.as_str());
     let (faces, senses) = support_face_projection(ir, &supports, native);
     let side = match direction {
         ThickenDirection::Both => Some(ThickenSide::Both),

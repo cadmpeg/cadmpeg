@@ -41,7 +41,7 @@ pub enum RecordFamily {
         node_id: u32,
     },
     Shell {
-        references: [u32; 1],
+        references: [u32; 8],
         node_id: u32,
     },
     Face {
@@ -49,7 +49,7 @@ pub enum RecordFamily {
         node_id: u32,
     },
     Loop {
-        references: [u32; 1],
+        references: [u32; 4],
         node_id: u32,
     },
     Edge {
@@ -64,7 +64,7 @@ pub enum RecordFamily {
         node_id: u32,
     },
     Region {
-        references: [u32; 1],
+        references: [u32; 4],
         node_id: u32,
     },
     Point {

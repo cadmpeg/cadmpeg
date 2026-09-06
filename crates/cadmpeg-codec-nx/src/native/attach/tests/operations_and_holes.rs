@@ -177,15 +177,18 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
     let resolved = BTreeMap::from([
         (
             10,
-            vec![BodyId::mint("target".to_string()).expect("identity grammar")],
+            vec![BodyId::mint("test:model:entity#target".to_string()).expect("identity grammar")],
         ),
         (
             20,
-            vec![BodyId::mint("first-tool".to_string()).expect("identity grammar")],
+            vec![
+                BodyId::mint("test:model:entity#first-tool".to_string()).expect("identity grammar")
+            ],
         ),
         (
             30,
-            vec![BodyId::mint("second-tool".to_string()).expect("identity grammar")],
+            vec![BodyId::mint("test:model:entity#second-tool".to_string())
+                .expect("identity grammar")],
         ),
     ]);
     assert_eq!(
@@ -193,9 +196,11 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
         Some(FeatureDefinition::SewBodies {
             bodies: BodySelection::Resolved {
                 bodies: vec![
-                    BodyId::mint("target".to_string()).expect("identity grammar"),
-                    BodyId::mint("first-tool".to_string()).expect("identity grammar"),
-                    BodyId::mint("second-tool".to_string()).expect("identity grammar"),
+                    BodyId::mint("test:model:entity#target".to_string()).expect("identity grammar"),
+                    BodyId::mint("test:model:entity#first-tool".to_string())
+                        .expect("identity grammar"),
+                    BodyId::mint("test:model:entity#second-tool".to_string())
+                        .expect("identity grammar"),
                 ],
                 native: "nx:om-object-indices#10,20,30".to_string(),
             },
@@ -430,22 +435,26 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
     let resolved = BTreeMap::from([
         (
             10,
-            vec![BodyId::mint("target".to_string()).expect("identity grammar")],
+            vec![BodyId::mint("test:model:entity#target".to_string()).expect("identity grammar")],
         ),
         (
             20,
-            vec![BodyId::mint("tool".to_string()).expect("identity grammar")],
+            vec![BodyId::mint("test:model:entity#tool".to_string()).expect("identity grammar")],
         ),
     ]);
     assert_eq!(
         super::trim_body_feature_definition(10, &references, &roots, &resolved),
         FeatureDefinition::TrimBodies {
             targets: BodySelection::Resolved {
-                bodies: vec![BodyId::mint("target".to_string()).expect("identity grammar")],
+                bodies: vec![
+                    BodyId::mint("test:model:entity#target".to_string()).expect("identity grammar")
+                ],
                 native: "nx:om-object-index#10".to_string(),
             },
             tools: BodySelection::Resolved {
-                bodies: vec![BodyId::mint("tool".to_string()).expect("identity grammar")],
+                bodies: vec![
+                    BodyId::mint("test:model:entity#tool".to_string()).expect("identity grammar")
+                ],
                 native: "nx:om-object-indices#20".to_string(),
             },
             keep: BodyTrimSide::Unresolved,
@@ -703,7 +712,7 @@ fn nx_extract_string_projects_as_history_only_without_semantic_lanes() {
         ),
         (
             object_indices,
-            vec![BodyId::mint("body").expect("identity grammar")],
+            vec![BodyId::mint("test:model:entity#body").expect("identity grammar")],
             0,
             0,
             0,
@@ -795,13 +804,15 @@ fn nx_extract_body_projects_its_primary_source_namespace() {
     let roots = BTreeMap::from([(20, 20)]);
     let bodies = BTreeMap::from([(
         20,
-        vec![BodyId::mint("body".to_string()).expect("identity grammar")],
+        vec![BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")],
     )]);
     assert_eq!(
         super::extract_body_feature_definition(Some(20), &[], &roots, &bodies),
         FeatureDefinition::ExtractBody {
             source: BodySelection::Resolved {
-                bodies: vec![BodyId::mint("body".to_string()).expect("identity grammar")],
+                bodies: vec![
+                    BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")
+                ],
                 native: "nx:om-object-index#20".to_string(),
             },
         }
@@ -1140,17 +1151,19 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
         .expect("x-normal plane")
         .clone();
     intermediate_surface.id =
-        cadmpeg_ir::ids::SurfaceId::mint("intermediate-plane").expect("identity grammar");
+        cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#intermediate-plane")
+            .expect("identity grammar");
     let SurfaceGeometry::Plane { origin, .. } = &mut intermediate_surface.geometry else {
         unreachable!()
     };
     origin.x = 5.0;
     stepped.model.surfaces.push(intermediate_surface);
     let mut intermediate_face = stepped.model.faces.first().expect("cube face").clone();
-    intermediate_face.id =
-        cadmpeg_ir::ids::FaceId::mint("intermediate-face").expect("identity grammar");
+    intermediate_face.id = cadmpeg_ir::ids::FaceId::mint("test:model:entity#intermediate-face")
+        .expect("identity grammar");
     intermediate_face.surface =
-        cadmpeg_ir::ids::SurfaceId::mint("intermediate-plane").expect("identity grammar");
+        cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#intermediate-plane")
+            .expect("identity grammar");
     intermediate_face.loops.clear();
     stepped.model.shells[0]
         .faces
@@ -1184,8 +1197,8 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
 
     let mut curved_feature = ir.clone();
     let mut curved_surface = curved_feature.model.surfaces[0].clone();
-    curved_surface.id =
-        cadmpeg_ir::ids::SurfaceId::mint("later-curved-surface").expect("identity grammar");
+    curved_surface.id = cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#later-curved-surface")
+        .expect("identity grammar");
     curved_surface.geometry = SurfaceGeometry::Sphere {
         center: cadmpeg_ir::math::Point3::new(5.0, 10.0, 15.0),
         axis: Vector3::new(0.0, 0.0, 1.0),
@@ -1194,9 +1207,11 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
     };
     curved_feature.model.surfaces.push(curved_surface);
     let mut curved_face = curved_feature.model.faces[0].clone();
-    curved_face.id = cadmpeg_ir::ids::FaceId::mint("later-curved-face").expect("identity grammar");
+    curved_face.id = cadmpeg_ir::ids::FaceId::mint("test:model:entity#later-curved-face")
+        .expect("identity grammar");
     curved_face.surface =
-        cadmpeg_ir::ids::SurfaceId::mint("later-curved-surface").expect("identity grammar");
+        cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#later-curved-surface")
+            .expect("identity grammar");
     curved_face.loops.clear();
     curved_feature.model.shells[0]
         .faces
@@ -1216,7 +1231,8 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
 
     let mut disconnected = ir.clone();
     let mut second_region = disconnected.model.regions[0].clone();
-    second_region.id = cadmpeg_ir::ids::RegionId::mint("second-region").expect("identity grammar");
+    second_region.id = cadmpeg_ir::ids::RegionId::mint("test:model:entity#second-region")
+        .expect("identity grammar");
     second_region.shells.clear();
     disconnected.model.bodies[0]
         .regions
@@ -1258,24 +1274,31 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
     );
 
     let mut second_body = ir.model.bodies[0].clone();
-    second_body.id = BodyId::mint("second-body").expect("identity grammar");
-    second_body.regions =
-        vec![cadmpeg_ir::ids::RegionId::mint("second-region").expect("identity grammar")];
+    second_body.id = BodyId::mint("test:model:entity#second-body").expect("identity grammar");
+    second_body.regions = vec![
+        cadmpeg_ir::ids::RegionId::mint("test:model:entity#second-region")
+            .expect("identity grammar"),
+    ];
     let mut second_region = ir.model.regions[0].clone();
-    second_region.id = cadmpeg_ir::ids::RegionId::mint("second-region").expect("identity grammar");
+    second_region.id = cadmpeg_ir::ids::RegionId::mint("test:model:entity#second-region")
+        .expect("identity grammar");
     second_region.body = second_body.id.clone();
-    second_region.shells =
-        vec![cadmpeg_ir::ids::ShellId::mint("second-shell").expect("identity grammar")];
+    second_region.shells = vec![
+        cadmpeg_ir::ids::ShellId::mint("test:model:entity#second-shell").expect("identity grammar"),
+    ];
     let mut second_shell = ir.model.shells[0].clone();
-    second_shell.id = cadmpeg_ir::ids::ShellId::mint("second-shell").expect("identity grammar");
+    second_shell.id =
+        cadmpeg_ir::ids::ShellId::mint("test:model:entity#second-shell").expect("identity grammar");
     second_shell.region = second_region.id.clone();
-    second_shell.faces =
-        vec![cadmpeg_ir::ids::FaceId::mint("second-face").expect("identity grammar")];
+    second_shell.faces = vec![
+        cadmpeg_ir::ids::FaceId::mint("test:model:entity#second-face").expect("identity grammar"),
+    ];
     let mut second_face = ir.model.faces[0].clone();
-    second_face.id = cadmpeg_ir::ids::FaceId::mint("second-face").expect("identity grammar");
+    second_face.id =
+        cadmpeg_ir::ids::FaceId::mint("test:model:entity#second-face").expect("identity grammar");
     second_face.shell = second_shell.id.clone();
-    second_face.surface =
-        cadmpeg_ir::ids::SurfaceId::mint("second-surface").expect("identity grammar");
+    second_face.surface = cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#second-surface")
+        .expect("identity grammar");
     let mut second_surface = ir.model.surfaces[0].clone();
     second_surface.id = second_face.surface.clone();
     ir.model.bodies.push(second_body);
@@ -1287,14 +1310,17 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
     assert!(super::sphere_body_projection(&ir, &[]).is_none());
     assert!(super::sphere_body_projection(
         &ir,
-        &[body, BodyId::mint("second-body").expect("identity grammar")]
+        &[
+            body,
+            BodyId::mint("test:model:entity#second-body").expect("identity grammar")
+        ]
     )
     .is_none());
 }
 
 #[test]
 fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
-    let body = BodyId::mint("body").expect("identity grammar");
+    let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
     let provisional = FeatureId("initial-bodies".into());
     let mut history = BodyWriterHistory::default();
     history.record_writer(None, None, std::slice::from_ref(&body), &provisional);

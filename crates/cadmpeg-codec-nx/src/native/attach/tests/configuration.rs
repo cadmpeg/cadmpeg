@@ -324,7 +324,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
         simple_hole_construction_group: group.id.clone(),
         source_offset: 0,
     };
-    let body = BodyId::mint("body").expect("identity grammar");
+    let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
     let outputs = operations
         .iter()
         .map(|operation| (operation.clone(), vec![body.clone()]))
@@ -402,7 +402,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
     let mut mismatched_outputs = outputs;
     mismatched_outputs.insert(
         "simple-b".into(),
-        vec![BodyId::mint("other-body").expect("identity grammar")],
+        vec![BodyId::mint("test:model:entity#other-body").expect("identity grammar")],
     );
     let projection = super::hole_package_projection(
         &cadmpeg_ir::document::CadIr::empty(),
@@ -576,7 +576,7 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
         feature_states: BTreeMap::new(),
         native_ref: None,
     };
-    let body = BodyId::mint("body").expect("identity grammar");
+    let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.features = vec![
         feature("dependency", Vec::new(), Vec::new(), None),
@@ -613,13 +613,13 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
     );
     assert_eq!(
         states[&FeatureId("writer".into())].outputs,
-        [BodyId::mint("body").expect("identity grammar")]
+        [BodyId::mint("test:model:entity#body").expect("identity grammar")]
     );
 }
 
 #[test]
 fn current_body_writers_close_false_suppression_without_a_configuration() {
-    let body = BodyId::mint("body").expect("identity grammar");
+    let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
     let feature = |id: &str, ordinal, dependencies, outputs| Feature {
         id: FeatureId(id.into()),
         ordinal,
@@ -661,22 +661,25 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
     assert_eq!(ir.model.features[2].suppressed, None);
 
     ir.model.features[0].ordinal = 2;
-    assert!(
-        super::active_feature_closure(&ir, &[BodyId::mint("body").expect("identity grammar")])
-            .is_err()
-    );
+    assert!(super::active_feature_closure(
+        &ir,
+        &[BodyId::mint("test:model:entity#body").expect("identity grammar")]
+    )
+    .is_err());
     ir.model.features[0].ordinal = 1;
     ir.model.features[2].id = FeatureId("writer".into());
-    assert!(
-        super::active_feature_closure(&ir, &[BodyId::mint("body").expect("identity grammar")])
-            .is_err()
-    );
+    assert!(super::active_feature_closure(
+        &ir,
+        &[BodyId::mint("test:model:entity#body").expect("identity grammar")]
+    )
+    .is_err());
     ir.model.features[2].id = FeatureId("unrelated".into());
     ir.model.features[1].suppressed = Some(true);
-    assert!(
-        super::active_feature_closure(&ir, &[BodyId::mint("body").expect("identity grammar")])
-            .is_err()
-    );
+    assert!(super::active_feature_closure(
+        &ir,
+        &[BodyId::mint("test:model:entity#body").expect("identity grammar")]
+    )
+    .is_err());
 }
 
 #[test]
@@ -691,7 +694,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
         source_tag: None,
         source_text: None,
         source_content: Vec::new(),
-        outputs: vec![BodyId::mint("body").expect("identity grammar")],
+        outputs: vec![BodyId::mint("test:model:entity#body").expect("identity grammar")],
         definition: FeatureDefinition::TreeNode {
             role: FeatureTreeNodeRole::History,
             children: Vec::new(),
@@ -718,7 +721,9 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
     missing_dependency.model.configurations = vec![configuration(
         "active",
         true.into(),
-        ConfigurationBodies::Resolved(vec![BodyId::mint("body").expect("identity grammar")]),
+        ConfigurationBodies::Resolved(vec![
+            BodyId::mint("test:model:entity#body").expect("identity grammar")
+        ]),
     )];
     let mut annotations = AnnotationBuilder::new();
     super::attach_active_configuration_feature_states(&mut missing_dependency, &mut annotations);
@@ -748,7 +753,9 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
     contradicted.model.configurations = vec![configuration(
         "active",
         true.into(),
-        ConfigurationBodies::Resolved(vec![BodyId::mint("body").expect("identity grammar")]),
+        ConfigurationBodies::Resolved(vec![
+            BodyId::mint("test:model:entity#body").expect("identity grammar")
+        ]),
     )];
     super::attach_active_configuration_feature_states(&mut contradicted, &mut annotations);
     assert_eq!(contradicted.model.features[0].suppressed, Some(true));
@@ -763,12 +770,16 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
         configuration(
             "first",
             true.into(),
-            ConfigurationBodies::Resolved(vec![BodyId::mint("body").expect("identity grammar")]),
+            ConfigurationBodies::Resolved(vec![
+                BodyId::mint("test:model:entity#body").expect("identity grammar")
+            ]),
         ),
         configuration(
             "second",
             true.into(),
-            ConfigurationBodies::Resolved(vec![BodyId::mint("body").expect("identity grammar")]),
+            ConfigurationBodies::Resolved(vec![
+                BodyId::mint("test:model:entity#body").expect("identity grammar")
+            ]),
         ),
     ];
     super::attach_active_configuration_feature_states(&mut ambiguous, &mut annotations);
@@ -1713,7 +1724,9 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
         Body {
             id: bound.clone(),
             kind: BodyKind::Solid,
-            regions: vec![RegionId::mint("region-2".to_string()).expect("identity grammar")],
+            regions: vec![
+                RegionId::mint("test:model:entity#region-2".to_string()).expect("identity grammar")
+            ],
             transform: None,
             name: None,
             color: None,
@@ -1722,7 +1735,9 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
         Body {
             id: BodyId::mint("nx:s3:body#4".to_string()).expect("identity grammar"),
             kind: BodyKind::Solid,
-            regions: vec![RegionId::mint("region-3".to_string()).expect("identity grammar")],
+            regions: vec![
+                RegionId::mint("test:model:entity#region-3".to_string()).expect("identity grammar")
+            ],
             transform: None,
             name: None,
             color: None,

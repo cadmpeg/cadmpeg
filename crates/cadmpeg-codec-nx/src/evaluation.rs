@@ -1090,8 +1090,8 @@ mod tests {
 
     fn complete_block_ir() -> CadIr {
         let mut ir = CadIr::empty();
-        let body = BodyId::mint("body".to_string()).expect("identity grammar");
-        ir.model.bodies.push(model_body(&body.0));
+        let body = BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar");
+        ir.model.bodies.push(model_body(body.as_str()));
         ir.model.features.push(Feature {
             id: FeatureId("block".to_string()),
             ordinal: 0,
@@ -1269,8 +1269,8 @@ mod tests {
     #[test]
     fn complete_sphere_rederives_a_new_body() {
         let mut ir = CadIr::empty();
-        let body = BodyId::mint("sphere".to_string()).expect("identity grammar");
-        ir.model.bodies.push(model_body(&body.0));
+        let body = BodyId::mint("test:model:entity#sphere".to_string()).expect("identity grammar");
+        ir.model.bodies.push(model_body(body.as_str()));
         ir.model.features.push(Feature {
             id: FeatureId("sphere-feature".to_string()),
             ordinal: 0,
@@ -1326,7 +1326,9 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified {
-                bodies: vec![BodyId::mint("body".to_string()).expect("identity grammar")],
+                bodies: vec![
+                    BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")
+                ],
             }
         );
     }
@@ -1401,8 +1403,8 @@ mod tests {
                 feature: Some(FeatureBoundary {
                     id: FeatureId("section".to_string()),
                     name: None,
-                    family: None,
-                    ordinal: 0
+                    family: Some("section_shape".to_string()),
+                    ordinal: 1
                 }),
                 reason: UnsupportedBodyCensusReason::InvalidOutputLineage,
             }
@@ -1423,7 +1425,7 @@ mod tests {
                 feature: Some(FeatureBoundary {
                     id: FeatureId("block".to_string()),
                     name: None,
-                    family: None,
+                    family: Some("block".to_string()),
                     ordinal: 0
                 }),
                 reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
@@ -1477,8 +1479,9 @@ mod tests {
     fn complete_extrudes_apply_new_body_and_boolean_output_lineage() {
         let mut ir = complete_block_ir();
         let existing = ir.model.bodies[0].id.clone();
-        let created = BodyId::mint("extruded".to_string()).expect("identity grammar");
-        ir.model.bodies.push(model_body(&created.0));
+        let created =
+            BodyId::mint("test:model:entity#extruded".to_string()).expect("identity grammar");
+        ir.model.bodies.push(model_body(created.as_str()));
         let profile = FeatureId("profile".to_string());
         ir.model.features.push(body_neutral_feature(
             &profile.0,
@@ -1534,8 +1537,8 @@ mod tests {
                 feature: Some(FeatureBoundary {
                     id: FeatureId("extrude".to_string()),
                     name: None,
-                    family: None,
-                    ordinal: 0
+                    family: Some("extrude".to_string()),
+                    ordinal: 2
                 }),
                 reason: UnsupportedBodyCensusReason::InvalidOutputLineage,
             }
@@ -1631,8 +1634,10 @@ mod tests {
                     feature: Some(FeatureBoundary {
                         id: FeatureId(id),
                         name: None,
-                        family: None,
-                        ordinal: 0
+                        family: Some(
+                            ["loft", "extrude", "revolve", "rib", "sweep"][index].to_string()
+                        ),
+                        ordinal: 1
                     }),
                     reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
                 }
@@ -1728,7 +1733,7 @@ mod tests {
     fn hole_cannot_modify_a_body_absent_from_prior_history() {
         let mut ir = complete_block_ir();
         ir.model.features.push(complete_hole(
-            BodyId::mint("other".to_string()).expect("identity grammar"),
+            BodyId::mint("test:model:entity#other".to_string()).expect("identity grammar"),
         ));
 
         assert_eq!(
@@ -1737,8 +1742,8 @@ mod tests {
                 feature: Some(FeatureBoundary {
                     id: FeatureId("hole".to_string()),
                     name: None,
-                    family: None,
-                    ordinal: 0
+                    family: Some("hole".to_string()),
+                    ordinal: 1
                 }),
                 reason: UnsupportedBodyCensusReason::InvalidOutputLineage,
             }
@@ -1758,7 +1763,7 @@ mod tests {
                 feature: Some(FeatureBoundary {
                     id: FeatureId("block".to_string()),
                     name: None,
-                    family: None,
+                    family: Some("block".to_string()),
                     ordinal: 0
                 }),
                 reason: UnsupportedBodyCensusReason::InvalidHistoryOrder,
@@ -1793,7 +1798,7 @@ mod tests {
                 feature: Some(FeatureBoundary {
                     id: FeatureId("hole".to_string()),
                     name: None,
-                    family: None,
+                    family: Some("hole".to_string()),
                     ordinal: 0
                 }),
                 reason: UnsupportedBodyCensusReason::InvalidHistoryOrder,
@@ -1819,8 +1824,9 @@ mod tests {
     fn extract_body_copies_each_existing_source_to_one_new_output() {
         let mut ir = complete_block_ir();
         let source = ir.model.bodies[0].id.clone();
-        let extracted = BodyId::mint("extracted".to_string()).expect("identity grammar");
-        ir.model.bodies.push(model_body(&extracted.0));
+        let extracted =
+            BodyId::mint("test:model:entity#extracted".to_string()).expect("identity grammar");
+        ir.model.bodies.push(model_body(extracted.as_str()));
         ir.model.features.push(Feature {
             id: FeatureId("extract".to_string()),
             ordinal: 1,
@@ -1842,7 +1848,7 @@ mod tests {
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified {
                 bodies: vec![
-                    BodyId::mint("body".to_string()).expect("identity grammar"),
+                    BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar"),
                     extracted
                 ],
             }
@@ -1875,7 +1881,7 @@ mod tests {
         assert!(matches!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified { bodies }
-                if bodies == [BodyId::mint("body".to_string()).expect("identity grammar")]
+                if bodies == [BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")]
         ));
     }
 
@@ -1935,7 +1941,7 @@ mod tests {
         assert!(matches!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified { bodies }
-                if bodies == [BodyId::mint("body".to_string()).expect("identity grammar")]
+                if bodies == [BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")]
         ));
     }
 
@@ -1967,8 +1973,8 @@ mod tests {
                 feature: Some(FeatureBoundary {
                     id: FeatureId("delete".to_string()),
                     name: None,
-                    family: None,
-                    ordinal: 0
+                    family: Some("delete_body".to_string()),
+                    ordinal: 1
                 }),
                 reason: UnsupportedBodyCensusReason::UnresolvedSuppression,
             }
@@ -1979,7 +1985,8 @@ mod tests {
     fn keep_selected_removes_every_unselected_body() {
         let mut ir = complete_block_ir();
         let retained = ir.model.bodies[0].id.clone();
-        let removed = BodyId::mint("removed".to_string()).expect("identity grammar");
+        let removed =
+            BodyId::mint("test:model:entity#removed".to_string()).expect("identity grammar");
         ir.model.features[0].outputs.push(removed.clone());
         ir.model.features[0].definition = FeatureDefinition::BaseFeature {
             bodies: BodySelection::Bodies(vec![retained.clone(), removed.clone()]),
@@ -2005,7 +2012,7 @@ mod tests {
     fn combine_consumes_tools_and_preserves_the_target_identity() {
         let mut ir = complete_block_ir();
         let target = ir.model.bodies[0].id.clone();
-        let tool = BodyId::mint("tool".to_string()).expect("identity grammar");
+        let tool = BodyId::mint("test:model:entity#tool".to_string()).expect("identity grammar");
         ir.model.features[0].outputs.push(tool.clone());
         ir.model.features[0].definition = FeatureDefinition::BaseFeature {
             bodies: BodySelection::Bodies(vec![target.clone(), tool.clone()]),
@@ -2034,8 +2041,8 @@ mod tests {
     fn combine_preserves_tools_when_requested() {
         let mut ir = complete_block_ir();
         let target = ir.model.bodies[0].id.clone();
-        let tool = BodyId::mint("tool".to_string()).expect("identity grammar");
-        ir.model.bodies.push(model_body(&tool.0));
+        let tool = BodyId::mint("test:model:entity#tool".to_string()).expect("identity grammar");
+        ir.model.bodies.push(model_body(tool.as_str()));
         ir.model.features[0].outputs.push(tool.clone());
         ir.model.features[0].definition = FeatureDefinition::BaseFeature {
             bodies: BodySelection::Bodies(vec![target.clone(), tool.clone()]),
@@ -2114,8 +2121,8 @@ mod tests {
                 feature: Some(FeatureBoundary {
                     id: FeatureId("combine".to_string()),
                     name: None,
-                    family: None,
-                    ordinal: 0
+                    family: Some("combine".to_string()),
+                    ordinal: 1
                 }),
                 reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
             }
@@ -2149,10 +2156,11 @@ mod tests {
     fn trim_bodies_preserves_all_targets_and_tools() {
         let mut ir = complete_block_ir();
         let first = ir.model.bodies[0].id.clone();
-        let second = BodyId::mint("second".to_string()).expect("identity grammar");
-        let tool = BodyId::mint("tool".to_string()).expect("identity grammar");
-        ir.model.bodies.push(model_body(&second.0));
-        ir.model.bodies.push(model_body(&tool.0));
+        let second =
+            BodyId::mint("test:model:entity#second".to_string()).expect("identity grammar");
+        let tool = BodyId::mint("test:model:entity#tool".to_string()).expect("identity grammar");
+        ir.model.bodies.push(model_body(second.as_str()));
+        ir.model.bodies.push(model_body(tool.as_str()));
         ir.model.features[0].outputs = vec![first.clone(), second.clone(), tool.clone()];
         ir.model.features[0].definition = FeatureDefinition::BaseFeature {
             bodies: BodySelection::Bodies(vec![first.clone(), second.clone(), tool.clone()]),
@@ -2181,8 +2189,8 @@ mod tests {
     fn trim_bodies_rejects_outputs_that_do_not_match_its_targets() {
         let mut ir = complete_block_ir();
         let target = ir.model.bodies[0].id.clone();
-        let tool = BodyId::mint("tool".to_string()).expect("identity grammar");
-        ir.model.bodies.push(model_body(&tool.0));
+        let tool = BodyId::mint("test:model:entity#tool".to_string()).expect("identity grammar");
+        ir.model.bodies.push(model_body(tool.as_str()));
         ir.model.features[0].outputs.push(tool.clone());
         ir.model.features[0].definition = FeatureDefinition::BaseFeature {
             bodies: BodySelection::Bodies(vec![target.clone(), tool.clone()]),
@@ -2204,8 +2212,8 @@ mod tests {
                 feature: Some(FeatureBoundary {
                     id: FeatureId("trim".to_string()),
                     name: None,
-                    family: None,
-                    ordinal: 0
+                    family: Some("trim_bodies".to_string()),
+                    ordinal: 1
                 }),
                 reason: UnsupportedBodyCensusReason::InvalidOutputLineage,
             }
@@ -2222,9 +2230,10 @@ mod tests {
             target.clone(),
             FeatureDefinition::TrimBodies {
                 targets: BodySelection::Bodies(vec![target]),
-                tools: BodySelection::Bodies(vec![
-                    BodyId::mint("tool".to_string()).expect("identity grammar")
-                ]),
+                tools: BodySelection::Bodies(vec![BodyId::mint(
+                    "test:model:entity#tool".to_string(),
+                )
+                .expect("identity grammar")]),
                 keep: BodyTrimSide::Unresolved,
             },
         ));
@@ -2235,8 +2244,8 @@ mod tests {
                 feature: Some(FeatureBoundary {
                     id: FeatureId("trim".to_string()),
                     name: None,
-                    family: None,
-                    ordinal: 0
+                    family: Some("trim_bodies".to_string()),
+                    ordinal: 1
                 }),
                 reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
             }
@@ -2268,7 +2277,7 @@ mod tests {
         assert!(matches!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified { bodies }
-                if bodies == [BodyId::mint("body".to_string()).expect("identity grammar")]
+                if bodies == [BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")]
         ));
     }
 
@@ -2276,9 +2285,10 @@ mod tests {
     fn sew_replaces_all_inputs_with_its_declared_outputs() {
         let mut ir = complete_block_ir();
         let first = ir.model.bodies[0].id.clone();
-        let second = BodyId::mint("second".to_string()).expect("identity grammar");
-        let sewn = BodyId::mint("sewn".to_string()).expect("identity grammar");
-        ir.model.bodies[0] = model_body(&sewn.0);
+        let second =
+            BodyId::mint("test:model:entity#second".to_string()).expect("identity grammar");
+        let sewn = BodyId::mint("test:model:entity#sewn".to_string()).expect("identity grammar");
+        ir.model.bodies[0] = model_body(sewn.as_str());
         ir.model.features[0].outputs = vec![first.clone(), second.clone()];
         ir.model.features[0].definition = FeatureDefinition::BaseFeature {
             bodies: BodySelection::Bodies(vec![first.clone(), second.clone()]),
@@ -2344,9 +2354,10 @@ mod tests {
             body.clone(),
             FeatureDefinition::Combine {
                 target: BodySelection::Bodies(vec![body]),
-                tools: BodySelection::Bodies(vec![
-                    BodyId::mint("missing".to_string()).expect("identity grammar")
-                ]),
+                tools: BodySelection::Bodies(vec![BodyId::mint(
+                    "test:model:entity#missing".to_string(),
+                )
+                .expect("identity grammar")]),
                 op: cadmpeg_ir::features::BooleanKind::Cut,
                 keep_tools: false,
             },
@@ -2358,8 +2369,8 @@ mod tests {
                 feature: Some(FeatureBoundary {
                     id: FeatureId("combine".to_string()),
                     name: None,
-                    family: None,
-                    ordinal: 0
+                    family: Some("combine".to_string()),
+                    ordinal: 1
                 }),
                 reason: UnsupportedBodyCensusReason::InvalidOutputLineage,
             }
@@ -2370,9 +2381,11 @@ mod tests {
     fn sew_rejects_an_output_identity_owned_by_an_unconsumed_body() {
         let mut ir = complete_block_ir();
         let first = ir.model.bodies[0].id.clone();
-        let second = BodyId::mint("second".to_string()).expect("identity grammar");
-        let unrelated = BodyId::mint("unrelated".to_string()).expect("identity grammar");
-        ir.model.bodies = vec![model_body(&unrelated.0)];
+        let second =
+            BodyId::mint("test:model:entity#second".to_string()).expect("identity grammar");
+        let unrelated =
+            BodyId::mint("test:model:entity#unrelated".to_string()).expect("identity grammar");
+        ir.model.bodies = vec![model_body(&unrelated.as_str())];
         ir.model.features[0].outputs = vec![first.clone(), second.clone(), unrelated.clone()];
         ir.model.features[0].definition = FeatureDefinition::BaseFeature {
             bodies: BodySelection::Bodies(vec![first.clone(), second.clone(), unrelated.clone()]),
@@ -2393,8 +2406,8 @@ mod tests {
                 feature: Some(FeatureBoundary {
                     id: FeatureId("sew".to_string()),
                     name: None,
-                    family: None,
-                    ordinal: 0
+                    family: Some("sew_bodies".to_string()),
+                    ordinal: 1
                 }),
                 reason: UnsupportedBodyCensusReason::InvalidOutputLineage,
             }
@@ -2414,7 +2427,7 @@ mod tests {
                 feature: Some(FeatureBoundary {
                     id: FeatureId("block".to_string()),
                     name: None,
-                    family: None,
+                    family: Some("base_feature".to_string()),
                     ordinal: 0
                 }),
                 reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
@@ -2430,7 +2443,9 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Mismatch {
-                rederived: vec![BodyId::mint("body".to_string()).expect("identity grammar")],
+                rederived: vec![
+                    BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")
+                ],
                 saved: Vec::new(),
             }
         );
@@ -2508,11 +2523,12 @@ mod tests {
         let mut ir = complete_block_ir();
         let body = ir.model.bodies[0].id.clone();
         let first = FaceSelection::Faces(vec![
-            FaceId::mint("first".to_string()).expect("identity grammar")
+            FaceId::mint("test:model:entity#first".to_string()).expect("identity grammar")
         ]);
-        let second = FaceSelection::Faces(vec![
-            FaceId::mint("second".to_string()).expect("identity grammar")
-        ]);
+        let second =
+            FaceSelection::Faces(vec![
+                FaceId::mint("test:model:entity#second".to_string()).expect("identity grammar")
+            ]);
         let definitions = [
             FeatureDefinition::FaceBlend {
                 first_faces: first.clone(),
@@ -2566,23 +2582,25 @@ mod tests {
     fn complete_surface_edits_preserve_every_declared_body_identity() {
         let mut ir = complete_block_ir();
         let first = ir.model.bodies[0].id.clone();
-        let second = BodyId::mint("second".to_string()).expect("identity grammar");
-        ir.model.bodies.push(model_body(&second.0));
+        let second =
+            BodyId::mint("test:model:entity#second".to_string()).expect("identity grammar");
+        ir.model.bodies.push(model_body(second.as_str()));
         ir.model.features[0].outputs.push(second.clone());
         ir.model.features[0].definition = FeatureDefinition::BaseFeature {
             bodies: BodySelection::Bodies(vec![first.clone(), second.clone()]),
         };
         let faces = FaceSelection::Faces(vec![
-            FaceId::mint("face".to_string()).expect("identity grammar")
+            FaceId::mint("test:model:entity#face".to_string()).expect("identity grammar")
         ]);
         let mut trim = body_neutral_feature(
             "trim-surface",
             1,
             FeatureDefinition::TrimSurface {
                 faces: faces.clone(),
-                tool: PathRef::Curves(vec![
-                    CurveId::mint("trim-curve".to_string()).expect("identity grammar")
-                ]),
+                tool: PathRef::Curves(vec![CurveId::mint(
+                    "test:model:entity#trim-curve".to_string(),
+                )
+                .expect("identity grammar")]),
                 keep: TrimRegion::Inside,
             },
         );
@@ -2667,7 +2685,7 @@ mod tests {
         assert!(matches!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified { bodies }
-                if bodies == [BodyId::mint("body".to_string()).expect("identity grammar")]
+                if bodies == [BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")]
         ));
     }
 
@@ -2692,24 +2710,27 @@ mod tests {
         assert!(matches!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified { bodies }
-                if bodies == [BodyId::mint("body".to_string()).expect("identity grammar")]
+                if bodies == [BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")]
         ));
     }
 
     #[test]
     fn complete_surface_edit_rejects_an_output_absent_from_prior_history() {
         let mut ir = complete_block_ir();
-        let missing = BodyId::mint("missing".to_string()).expect("identity grammar");
+        let missing =
+            BodyId::mint("test:model:entity#missing".to_string()).expect("identity grammar");
         let mut trim = body_neutral_feature(
             "trim-surface",
             1,
             FeatureDefinition::TrimSurface {
-                faces: FaceSelection::Faces(vec![
-                    FaceId::mint("face".to_string()).expect("identity grammar")
-                ]),
-                tool: PathRef::Curves(vec![
-                    CurveId::mint("trim-curve".to_string()).expect("identity grammar")
-                ]),
+                faces: FaceSelection::Faces(vec![FaceId::mint(
+                    "test:model:entity#face".to_string(),
+                )
+                .expect("identity grammar")]),
+                tool: PathRef::Curves(vec![CurveId::mint(
+                    "test:model:entity#trim-curve".to_string(),
+                )
+                .expect("identity grammar")]),
                 keep: TrimRegion::Outside,
             },
         );
@@ -2722,8 +2743,8 @@ mod tests {
                 feature: Some(FeatureBoundary {
                     id: FeatureId("trim-surface".to_string()),
                     name: None,
-                    family: None,
-                    ordinal: 0
+                    family: Some("trim_surface".to_string()),
+                    ordinal: 1
                 }),
                 reason: UnsupportedBodyCensusReason::InvalidOutputLineage,
             }
@@ -2734,10 +2755,12 @@ mod tests {
     fn body_pattern_adds_one_copy_per_non_original_occurrence() {
         let mut ir = complete_block_ir();
         let seed = ir.model.bodies[0].id.clone();
-        let first_copy = BodyId::mint("copy-1".to_string()).expect("identity grammar");
-        let second_copy = BodyId::mint("copy-2".to_string()).expect("identity grammar");
-        ir.model.bodies.push(model_body(&first_copy.0));
-        ir.model.bodies.push(model_body(&second_copy.0));
+        let first_copy =
+            BodyId::mint("test:model:entity#copy-1".to_string()).expect("identity grammar");
+        let second_copy =
+            BodyId::mint("test:model:entity#copy-2".to_string()).expect("identity grammar");
+        ir.model.bodies.push(model_body(first_copy.as_str()));
+        ir.model.bodies.push(model_body(second_copy.as_str()));
         let mut pattern = body_neutral_feature(
             "pattern",
             1,
@@ -2788,7 +2811,7 @@ mod tests {
         assert!(matches!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Verified { bodies }
-                if bodies == [BodyId::mint("body".to_string()).expect("identity grammar")]
+                if bodies == [BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar")]
         ));
     }
 
@@ -2897,7 +2920,7 @@ mod tests {
                 feature: Some(FeatureBoundary {
                     id: FeatureId("block".to_string()),
                     name: None,
-                    family: None,
+                    family: Some("block".to_string()),
                     ordinal: 0
                 }),
                 reason: UnsupportedBodyCensusReason::UnresolvedSuppression,
@@ -2974,7 +2997,7 @@ mod tests {
                 feature: Some(FeatureBoundary {
                     id: FeatureId("delete".to_string()),
                     name: None,
-                    family: None,
+                    family: Some("native".to_string()),
                     ordinal: 0
                 }),
                 reason: UnsupportedBodyCensusReason::UnresolvedSuppression,
@@ -3005,8 +3028,8 @@ mod tests {
                 feature: Some(FeatureBoundary {
                     id: FeatureId("pattern".to_string()),
                     name: None,
-                    family: None,
-                    ordinal: 0
+                    family: Some("pattern".to_string()),
+                    ordinal: 1
                 }),
                 reason: UnsupportedBodyCensusReason::InvalidOutputLineage,
             }
@@ -3039,8 +3062,8 @@ mod tests {
                 feature: Some(FeatureBoundary {
                     id: FeatureId("pattern".to_string()),
                     name: None,
-                    family: None,
-                    ordinal: 0
+                    family: Some("pattern".to_string()),
+                    ordinal: 1
                 }),
                 reason: UnsupportedBodyCensusReason::UnsupportedFeatureDefinition,
             }
@@ -3052,7 +3075,7 @@ mod tests {
         let mut ir = complete_block_ir();
         let body = ir.model.bodies[0].id.clone();
         let faces = FaceSelection::Faces(vec![
-            FaceId::mint("face".to_string()).expect("identity grammar")
+            FaceId::mint("test:model:entity#face".to_string()).expect("identity grammar")
         ]);
         ir.model.features.push(body_preserving_feature(
             "replace-face",

@@ -263,7 +263,9 @@ pub(crate) fn termination_is_incomplete(termination: &LinearTermination) -> bool
                 vertex,
                 native,
             } => {
-                state.0.trim().is_empty() || vertex.0.trim().is_empty() || native.trim().is_empty()
+                state.as_str().trim().is_empty()
+                    || vertex.as_str().trim().is_empty()
+                    || native.trim().is_empty()
             }
             VertexSelection::Unresolved | VertexSelection::Native(_) => true,
         },
@@ -306,7 +308,9 @@ fn angular_termination_is_incomplete(termination: &AngularTermination) -> bool {
                 vertex,
                 native,
             } => {
-                state.0.trim().is_empty() || vertex.0.trim().is_empty() || native.trim().is_empty()
+                state.as_str().trim().is_empty()
+                    || vertex.as_str().trim().is_empty()
+                    || native.trim().is_empty()
             }
             VertexSelection::Unresolved | VertexSelection::Native(_) => true,
         },
@@ -763,7 +767,7 @@ pub(crate) fn loft_section_is_incomplete(section: &LoftSection) -> bool {
         LoftSection::Profile(profile) => profile_ref_is_incomplete(profile),
         LoftSection::Point(LoftPointSection::Native(_)) => true,
         LoftSection::Point(LoftPointSection::Point(point)) => !finite_feature_point(*point),
-        LoftSection::Point(LoftPointSection::Vertex(vertex)) => vertex.0.trim().is_empty(),
+        LoftSection::Point(LoftPointSection::Vertex(_)) => false,
     }
 }
 

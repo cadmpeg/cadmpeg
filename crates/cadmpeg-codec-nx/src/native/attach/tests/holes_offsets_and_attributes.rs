@@ -77,8 +77,10 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         end_treatment: SimpleHoleEndTreatment::None,
     };
     let mut model = Model::default();
-    let cylinder_surface = SurfaceId::mint("blind-cylinder-surface").expect("identity grammar");
-    let cap_surface = SurfaceId::mint("blind-cap-surface").expect("identity grammar");
+    let cylinder_surface =
+        SurfaceId::mint("test:model:entity#blind-cylinder-surface").expect("identity grammar");
+    let cap_surface =
+        SurfaceId::mint("test:model:entity#blind-cap-surface").expect("identity grammar");
     model.surfaces.push(Surface {
         id: cylinder_surface.clone(),
         geometry: SurfaceGeometry::Cylinder {
@@ -101,10 +103,12 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     let (entry_loop, cylinder_cap_loop, cap_face_loop) = {
         let mut add_circle_loop =
             |loop_name: &str, edge_name: &str, center: Point3, radius: f64| {
-                let loop_id = LoopId::mint(loop_name).expect("identity grammar");
-                let edge_id = EdgeId::mint(edge_name).expect("identity grammar");
-                let curve_id =
-                    CurveId::mint(format!("{edge_name}-curve")).expect("identity grammar");
+                let loop_id = LoopId::mint(format!("test:model:entity#{loop_name}"))
+                    .expect("identity grammar");
+                let edge_id = EdgeId::mint(format!("test:model:entity#{edge_name}"))
+                    .expect("identity grammar");
+                let curve_id = CurveId::mint(format!("test:model:entity#{edge_name}-curve"))
+                    .expect("identity grammar");
                 if !model.edges.iter().any(|edge| edge.id == edge_id) {
                     model.curves.push(Curve {
                         id: curve_id.clone(),
@@ -119,14 +123,15 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
                     model.edges.push(Edge {
                         id: edge_id.clone(),
                         curve: Some(curve_id),
-                        start: VertexId::mint("vertex").expect("identity grammar"),
-                        end: VertexId::mint("vertex").expect("identity grammar"),
+                        start: VertexId::mint("test:model:entity#vertex")
+                            .expect("identity grammar"),
+                        end: VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
                         param_range: None,
                         tolerance: None,
                     });
                 }
-                let coedge_id =
-                    CoedgeId::mint(format!("{loop_name}-coedge")).expect("identity grammar");
+                let coedge_id = CoedgeId::mint(format!("test:model:entity#{loop_name}-coedge"))
+                    .expect("identity grammar");
                 model.coedges.push(Coedge {
                     id: coedge_id.clone(),
                     owner_loop: loop_id.clone(),
@@ -159,11 +164,12 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
             ),
         )
     };
-    let cylinder_face = FaceId::mint("blind-cylinder-face").expect("identity grammar");
-    let cap_face = FaceId::mint("blind-cap-face").expect("identity grammar");
+    let cylinder_face =
+        FaceId::mint("test:model:entity#blind-cylinder-face").expect("identity grammar");
+    let cap_face = FaceId::mint("test:model:entity#blind-cap-face").expect("identity grammar");
     model.faces.push(Face {
         id: cylinder_face.clone(),
-        shell: ShellId::mint("blind-shell").expect("identity grammar"),
+        shell: ShellId::mint("test:model:entity#blind-shell").expect("identity grammar"),
         surface: cylinder_surface,
         sense: Sense::Reversed,
         loops: vec![entry_loop, cylinder_cap_loop].into(),
@@ -173,7 +179,7 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     });
     model.faces.push(Face {
         id: cap_face.clone(),
-        shell: ShellId::mint("blind-shell").expect("identity grammar"),
+        shell: ShellId::mint("test:model:entity#blind-shell").expect("identity grammar"),
         surface: cap_surface,
         sense: Sense::Forward,
         loops: vec![cap_face_loop].into(),
@@ -181,24 +187,24 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
         color: None,
         tolerance: None,
     });
-    let body = BodyId::mint("blind-body").expect("identity grammar");
+    let body = BodyId::mint("test:model:entity#blind-body").expect("identity grammar");
     model.bodies.push(Body {
         id: body.clone(),
         kind: BodyKind::Solid,
-        regions: vec![RegionId::mint("blind-region").expect("identity grammar")],
+        regions: vec![RegionId::mint("test:model:entity#blind-region").expect("identity grammar")],
         transform: None,
         name: None,
         color: None,
         visible: None,
     });
     model.regions.push(Region {
-        id: RegionId::mint("blind-region").expect("identity grammar"),
+        id: RegionId::mint("test:model:entity#blind-region").expect("identity grammar"),
         body: body.clone(),
-        shells: vec![ShellId::mint("blind-shell").expect("identity grammar")],
+        shells: vec![ShellId::mint("test:model:entity#blind-shell").expect("identity grammar")],
     });
     model.shells.push(Shell {
-        id: ShellId::mint("blind-shell").expect("identity grammar"),
-        region: RegionId::mint("blind-region").expect("identity grammar"),
+        id: ShellId::mint("test:model:entity#blind-shell").expect("identity grammar"),
+        region: RegionId::mint("test:model:entity#blind-region").expect("identity grammar"),
         faces: vec![cylinder_face, cap_face],
         wire_edges: Vec::new(),
         free_vertices: Vec::new(),
@@ -273,9 +279,9 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     ));
 
     let mut missing_cap = ir.clone();
-    missing_cap.model.shells[0]
-        .faces
-        .retain(|face| face != &FaceId::mint("blind-cap-face").expect("identity grammar"));
+    missing_cap.model.shells[0].faces.retain(|face| {
+        face != &FaceId::mint("test:model:entity#blind-cap-face").expect("identity grammar")
+    });
     assert!(super::blind_hole_body_projection(
         &missing_cap,
         std::slice::from_ref(&operation),
@@ -284,18 +290,21 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     .is_none());
     let mut duplicate_cap = ir.clone();
     duplicate_cap.model.faces.push(Face {
-        id: FaceId::mint("blind-duplicate-cap-face").expect("identity grammar"),
-        shell: ShellId::mint("blind-shell").expect("identity grammar"),
-        surface: SurfaceId::mint("blind-cap-surface").expect("identity grammar"),
+        id: FaceId::mint("test:model:entity#blind-duplicate-cap-face").expect("identity grammar"),
+        shell: ShellId::mint("test:model:entity#blind-shell").expect("identity grammar"),
+        surface: SurfaceId::mint("test:model:entity#blind-cap-surface").expect("identity grammar"),
         sense: Sense::Forward,
-        loops: vec![LoopId::mint("blind-cap-face-loop").expect("identity grammar")].into(),
+        loops: vec![
+            LoopId::mint("test:model:entity#blind-cap-face-loop").expect("identity grammar")
+        ]
+        .into(),
         name: None,
         color: None,
         tolerance: None,
     });
-    duplicate_cap.model.shells[0]
-        .faces
-        .push(FaceId::mint("blind-duplicate-cap-face").expect("identity grammar"));
+    duplicate_cap.model.shells[0].faces.push(
+        FaceId::mint("test:model:entity#blind-duplicate-cap-face").expect("identity grammar"),
+    );
     assert!(super::blind_hole_body_projection(
         &duplicate_cap,
         std::slice::from_ref(&operation),
@@ -365,11 +374,15 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
     let mut model = Model::default();
     let mut add_circle_loop =
         |name: &str, shared_edge: Option<&str>, center: Point3, radius: f64| {
-            let loop_id = LoopId::mint(format!("{name}-loop")).expect("identity grammar");
+            let loop_id =
+                LoopId::mint(format!("test:model:entity#{name}-loop")).expect("identity grammar");
             let edge_name = shared_edge.unwrap_or(name);
-            let curve_id = CurveId::mint(format!("{edge_name}-curve")).expect("identity grammar");
-            let edge_id = EdgeId::mint(format!("{edge_name}-edge")).expect("identity grammar");
-            let coedge_id = CoedgeId::mint(format!("{name}-coedge")).expect("identity grammar");
+            let curve_id = CurveId::mint(format!("test:model:entity#{edge_name}-curve"))
+                .expect("identity grammar");
+            let edge_id = EdgeId::mint(format!("test:model:entity#{edge_name}-edge"))
+                .expect("identity grammar");
+            let coedge_id = CoedgeId::mint(format!("test:model:entity#{name}-coedge"))
+                .expect("identity grammar");
             if !model.edges.iter().any(|edge| edge.id == edge_id) {
                 model.curves.push(Curve {
                     id: curve_id.clone(),
@@ -384,8 +397,8 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
                 model.edges.push(Edge {
                     id: edge_id.clone(),
                     curve: Some(curve_id),
-                    start: VertexId::mint("vertex").expect("identity grammar"),
-                    end: VertexId::mint("vertex").expect("identity grammar"),
+                    start: VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
+                    end: VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
                     param_range: None,
                     tolerance: None,
                 });
@@ -403,8 +416,8 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
         };
     let mut add_face = |id: &str, surface: SurfaceId, sense: Sense, loops: Vec<LoopId>| {
         model.faces.push(Face {
-            id: FaceId::mint(id).expect("identity grammar"),
-            shell: ShellId::mint("shell").expect("identity grammar"),
+            id: FaceId::mint(format!("test:model:entity#{id}")).expect("identity grammar"),
+            shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
             surface,
             sense,
             loops: loops.into(),
@@ -413,7 +426,7 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
             tolerance: None,
         });
     };
-    let bore_surface = SurfaceId::mint("bore-surface").expect("identity grammar");
+    let bore_surface = SurfaceId::mint("test:model:entity#bore-surface").expect("identity grammar");
     model.surfaces.push(Surface {
         id: bore_surface.clone(),
         geometry: SurfaceGeometry::Cylinder {
@@ -435,7 +448,8 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
     ];
     add_face("bore-face", bore_surface, Sense::Reversed, bore_loops);
 
-    let counterbore_surface = SurfaceId::mint("counterbore-surface").expect("identity grammar");
+    let counterbore_surface =
+        SurfaceId::mint("test:model:entity#counterbore-surface").expect("identity grammar");
     model.surfaces.push(Surface {
         id: counterbore_surface.clone(),
         geometry: SurfaceGeometry::Cylinder {
@@ -462,7 +476,8 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
         counterbore_loops,
     );
 
-    let shoulder_surface = SurfaceId::mint("shoulder-surface").expect("identity grammar");
+    let shoulder_surface =
+        SurfaceId::mint("test:model:entity#shoulder-surface").expect("identity grammar");
     model.surfaces.push(Surface {
         id: shoulder_surface.clone(),
         geometry: SurfaceGeometry::Plane {
@@ -493,28 +508,28 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
         shoulder_loops,
     );
 
-    let body = BodyId::mint("body").expect("identity grammar");
+    let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
     model.bodies.push(Body {
         id: body.clone(),
         kind: BodyKind::Solid,
-        regions: vec![RegionId::mint("region").expect("identity grammar")],
+        regions: vec![RegionId::mint("test:model:entity#region").expect("identity grammar")],
         transform: None,
         name: None,
         color: None,
         visible: None,
     });
     model.regions.push(Region {
-        id: RegionId::mint("region").expect("identity grammar"),
+        id: RegionId::mint("test:model:entity#region").expect("identity grammar"),
         body: body.clone(),
-        shells: vec![ShellId::mint("shell").expect("identity grammar")],
+        shells: vec![ShellId::mint("test:model:entity#shell").expect("identity grammar")],
     });
     model.shells.push(Shell {
-        id: ShellId::mint("shell").expect("identity grammar"),
-        region: RegionId::mint("region").expect("identity grammar"),
+        id: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
+        region: RegionId::mint("test:model:entity#region").expect("identity grammar"),
         faces: vec![
-            FaceId::mint("bore-face").expect("identity grammar"),
-            FaceId::mint("counterbore-face").expect("identity grammar"),
-            FaceId::mint("shoulder-face").expect("identity grammar"),
+            FaceId::mint("test:model:entity#bore-face").expect("identity grammar"),
+            FaceId::mint("test:model:entity#counterbore-face").expect("identity grammar"),
+            FaceId::mint("test:model:entity#shoulder-face").expect("identity grammar"),
         ],
         wire_edges: Vec::new(),
         free_vertices: Vec::new(),
@@ -604,9 +619,9 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder() {
     ));
 
     let mut missing_shoulder = ir.clone();
-    missing_shoulder.model.shells[0]
-        .faces
-        .retain(|face| face != &FaceId::mint("shoulder-face").expect("identity grammar"));
+    missing_shoulder.model.shells[0].faces.retain(|face| {
+        face != &FaceId::mint("test:model:entity#shoulder-face").expect("identity grammar")
+    });
     assert!(super::counterbore_body_projection(&missing_shoulder, &operations, &outputs).is_none());
     let mut sheet = ir.clone();
     sheet.model.bodies[0].kind = BodyKind::Sheet;
@@ -688,7 +703,8 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
     ));
 
     for face in ir.model.faces.iter_mut().filter(|face| {
-        face.surface.0 == "nx:s4:nurbs-surf#0" || face.surface.0 == "nx:s4:nurbs-surf#1"
+        face.surface.as_str() == "nx:s4:nurbs-surf#0"
+            || face.surface.as_str() == "nx:s4:nurbs-surf#1"
     }) {
         face.sense = cadmpeg_ir::topology::Sense::Reversed;
     }
@@ -953,9 +969,9 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let output = BodyId::mint("nx:s4:body#3").expect("identity grammar");
-    let support_a = SurfaceId::mint("support-a").expect("identity grammar");
-    let support_b = SurfaceId::mint("support-b").expect("identity grammar");
-    let support_c = SurfaceId::mint("support-c").expect("identity grammar");
+    let support_a = SurfaceId::mint("test:model:entity#support-a").expect("identity grammar");
+    let support_b = SurfaceId::mint("test:model:entity#support-b").expect("identity grammar");
+    let support_c = SurfaceId::mint("test:model:entity#support-c").expect("identity grammar");
     assert_eq!(
         super::blend_support_bipartition(vec![
             [support_a.clone(), support_b.clone()],
@@ -974,12 +990,12 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     .is_none());
     assert!(super::blend_support_bipartition(vec![
         [
-            SurfaceId::mint("a").expect("identity grammar"),
-            SurfaceId::mint("b").expect("identity grammar")
+            SurfaceId::mint("test:model:entity#a").expect("identity grammar"),
+            SurfaceId::mint("test:model:entity#b").expect("identity grammar")
         ],
         [
-            SurfaceId::mint("c").expect("identity grammar"),
-            SurfaceId::mint("d").expect("identity grammar")
+            SurfaceId::mint("test:model:entity#c").expect("identity grammar"),
+            SurfaceId::mint("test:model:entity#d").expect("identity grammar")
         ],
     ])
     .is_none());

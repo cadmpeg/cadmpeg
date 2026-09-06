@@ -87,9 +87,9 @@ fn rmfastload_preselection_keeps_only_streams_with_selected_body_images() {
 #[test]
 fn analytic_closed_isocurves_retain_the_native_full_turn() {
     let mut ir = CadIr::empty();
-    let cone = SurfaceId::mint("nx:test:cone").expect("identity grammar");
-    let sphere = SurfaceId::mint("nx:test:sphere").expect("identity grammar");
-    let torus = SurfaceId::mint("nx:test:torus").expect("identity grammar");
+    let cone = SurfaceId::mint("test:model:entity#nx:test:cone").expect("identity grammar");
+    let sphere = SurfaceId::mint("test:model:entity#nx:test:sphere").expect("identity grammar");
+    let torus = SurfaceId::mint("test:model:entity#nx:test:torus").expect("identity grammar");
     ir.model.surfaces.extend([
         Surface {
             id: cone.clone(),
@@ -125,7 +125,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
             source_object: None,
         },
     ]);
-    let plane = SurfaceId::mint("nx:test:plane").expect("identity grammar");
+    let plane = SurfaceId::mint("test:model:entity#nx:test:plane").expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: plane.clone(),
         geometry: SurfaceGeometry::Plane {
@@ -135,9 +135,12 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
         },
         source_object: None,
     });
-    let cone_ellipse = CurveId::mint("nx:test:cone-ellipse").expect("identity grammar");
-    let sphere_circle = CurveId::mint("nx:test:sphere-circle").expect("identity grammar");
-    let torus_circle = CurveId::mint("nx:test:torus-circle").expect("identity grammar");
+    let cone_ellipse =
+        CurveId::mint("test:model:entity#nx:test:cone-ellipse").expect("identity grammar");
+    let sphere_circle =
+        CurveId::mint("test:model:entity#nx:test:sphere-circle").expect("identity grammar");
+    let torus_circle =
+        CurveId::mint("test:model:entity#nx:test:torus-circle").expect("identity grammar");
     ir.model.curves.extend([
         Curve {
             id: cone_ellipse.clone(),
@@ -243,8 +246,8 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
         }
     }
 
-    let construction =
-        ProceduralCurveId::mint("nx:test:closed-intersection").expect("identity grammar");
+    let construction = ProceduralCurveId::mint("test:model:entity#nx:test:closed-intersection")
+        .expect("identity grammar");
     let _attached = ir.model.add_procedural_curve(
         sphere_circle.clone(),
         ProceduralCurve::new(
@@ -260,8 +263,9 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
             },
         ),
     );
-    let point = PointId::mint("nx:test:closed-point").expect("identity grammar");
-    let vertex = VertexId::mint("nx:test:closed-vertex").expect("identity grammar");
+    let point = PointId::mint("test:model:entity#nx:test:closed-point").expect("identity grammar");
+    let vertex =
+        VertexId::mint("test:model:entity#nx:test:closed-vertex").expect("identity grammar");
     ir.model.points.push(Point {
         id: point.clone(),
         position: Point3::new(3.0_f64.sqrt(), 0.0, 1.0),
@@ -273,7 +277,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
         tolerance: Some(1.0e-8),
     });
     ir.model.edges.push(Edge {
-        id: EdgeId::mint("nx:test:closed-edge").expect("identity grammar"),
+        id: EdgeId::mint("test:model:entity#nx:test:closed-edge").expect("identity grammar"),
         curve: Some(sphere_circle),
         start: vertex.clone(),
         end: vertex,
@@ -360,8 +364,10 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
 #[test]
 fn boundary_pcurve_requires_an_affine_carrier_witness() {
     let mut ir = CadIr::empty();
-    let curve = CurveId::mint("nx:test:bowed-boundary-curve").expect("identity grammar");
-    let surface = SurfaceId::mint("nx:test:boundary-plane").expect("identity grammar");
+    let curve =
+        CurveId::mint("test:model:entity#nx:test:bowed-boundary-curve").expect("identity grammar");
+    let surface =
+        SurfaceId::mint("test:model:entity#nx:test:boundary-plane").expect("identity grammar");
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Nurbs(
@@ -420,9 +426,10 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
 #[test]
 fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
     let mut ir = CadIr::empty();
-    let curve = CurveId::mint("nx:test:affine-nurbs-boundary-curve").expect("identity grammar");
-    let surface =
-        SurfaceId::mint("nx:test:affine-nurbs-boundary-surface").expect("identity grammar");
+    let curve = CurveId::mint("test:model:entity#nx:test:affine-nurbs-boundary-curve")
+        .expect("identity grammar");
+    let surface = SurfaceId::mint("test:model:entity#nx:test:affine-nurbs-boundary-surface")
+        .expect("identity grammar");
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Line {
@@ -615,12 +622,17 @@ fn adaptive_bezier_root_isolation_fails_closed_when_the_work_slice_is_empty() {
 
 #[test]
 fn pcurve_edge_admission_fails_closed_when_the_geometry_slice_is_empty() {
-    let surface = SurfaceId::mint("nx:test:budget-plane").expect("identity grammar");
-    let start_point = PointId::mint("nx:test:budget-start-point").expect("identity grammar");
-    let end_point = PointId::mint("nx:test:budget-end-point").expect("identity grammar");
-    let start_vertex = VertexId::mint("nx:test:budget-start-vertex").expect("identity grammar");
-    let end_vertex = VertexId::mint("nx:test:budget-end-vertex").expect("identity grammar");
-    let edge = EdgeId::mint("nx:test:budget-edge").expect("identity grammar");
+    let surface =
+        SurfaceId::mint("test:model:entity#nx:test:budget-plane").expect("identity grammar");
+    let start_point =
+        PointId::mint("test:model:entity#nx:test:budget-start-point").expect("identity grammar");
+    let end_point =
+        PointId::mint("test:model:entity#nx:test:budget-end-point").expect("identity grammar");
+    let start_vertex =
+        VertexId::mint("test:model:entity#nx:test:budget-start-vertex").expect("identity grammar");
+    let end_vertex =
+        VertexId::mint("test:model:entity#nx:test:budget-end-vertex").expect("identity grammar");
+    let edge = EdgeId::mint("test:model:entity#nx:test:budget-edge").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: surface.clone(),
@@ -940,7 +952,8 @@ fn nurbs_surface_fit_uses_the_declared_geometric_tolerance() {
 #[test]
 fn nurbs_blend_contact_requires_the_declared_radius_shell() {
     let mut ir = CadIr::empty();
-    let surface = SurfaceId::mint("nx:test:contact-support").expect("identity grammar");
+    let surface =
+        SurfaceId::mint("test:model:entity#nx:test:contact-support").expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: surface.clone(),
         geometry: affine_nurbs_surface(0.0),
@@ -957,8 +970,8 @@ fn nurbs_blend_contact_requires_the_declared_radius_shell() {
 #[test]
 fn saved_offset_cache_retains_its_procedural_lineage() {
     let mut ir = CadIr::empty();
-    let support = SurfaceId::mint("nx:test:support").expect("identity grammar");
-    let cache = SurfaceId::mint("nx:test:cache").expect("identity grammar");
+    let support = SurfaceId::mint("test:model:entity#nx:test:support").expect("identity grammar");
+    let cache = SurfaceId::mint("test:model:entity#nx:test:cache").expect("identity grammar");
     ir.model.surfaces.extend([
         Surface {
             id: support.clone(),
@@ -972,7 +985,7 @@ fn saved_offset_cache_retains_its_procedural_lineage() {
         },
     ]);
     let procedural = ProceduralSurface::try_new(
-        ProceduralSurfaceId::mint("nx:test:offset").expect("identity grammar"),
+        ProceduralSurfaceId::mint("test:model:entity#nx:test:offset").expect("identity grammar"),
         ProceduralSurfaceDefinition::Offset {
             support: support.clone(),
             distance: 4.0,
@@ -1015,8 +1028,9 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             source_object: None,
         });
     }
-    let curve = CurveId::mint("nx:test:curve").expect("identity grammar");
-    let procedural = ProceduralCurveId::mint("nx:test:intersection").expect("identity grammar");
+    let curve = CurveId::mint("test:model:entity#nx:test:curve").expect("identity grammar");
+    let procedural = ProceduralCurveId::mint("test:model:entity#nx:test:intersection")
+        .expect("identity grammar");
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Procedural {
@@ -1054,7 +1068,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             tolerance: None,
         });
     }
-    let edge = EdgeId::mint("nx:test:edge").expect("identity grammar");
+    let edge = EdgeId::mint("test:model:entity#nx:test:edge").expect("identity grammar");
     ir.model.edges.push(Edge {
         id: edge.clone(),
         curve: Some(curve),
@@ -1094,7 +1108,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         });
         ir.model.faces.push(Face {
             id: faces[index].clone(),
-            shell: ShellId::mint("nx:test:shell").expect("identity grammar"),
+            shell: ShellId::mint("test:model:entity#nx:test:shell").expect("identity grammar"),
             surface: surfaces[index].clone(),
             sense: Sense::Forward,
             loops: vec![loops[index].clone()].into(),
@@ -1504,7 +1518,8 @@ fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
         assert!((actual.v - expected.v).abs() < 1.0e-12);
     }
 
-    let support = SurfaceId::mint("nx:test:offset-orientation-support").expect("identity grammar");
+    let support = SurfaceId::mint("test:model:entity#nx:test:offset-orientation-support")
+        .expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: support.clone(),
@@ -1519,7 +1534,8 @@ fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
     let second = cadmpeg_ir::eval::pcurve_uv(&pcurve, 6.0).unwrap();
     let oriented = super::orient_tolerant_intersection_pcurve(
         &ir,
-        &CurveId::mint("nx:test:unused-orientation-curve").expect("identity grammar"),
+        &CurveId::mint("test:model:entity#nx:test:unused-orientation-curve")
+            .expect("identity grammar"),
         &support,
         &pcurve,
         [2.0, 6.0],
@@ -1541,8 +1557,10 @@ fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
 #[test]
 fn closed_serialized_pcurve_uses_carrier_tangent_for_orientation() {
     let mut ir = CadIr::empty();
-    let curve = CurveId::mint("nx:test:closed-orientation-curve").expect("identity grammar");
-    let support = SurfaceId::mint("nx:test:closed-orientation-support").expect("identity grammar");
+    let curve = CurveId::mint("test:model:entity#nx:test:closed-orientation-curve")
+        .expect("identity grammar");
+    let support = SurfaceId::mint("test:model:entity#nx:test:closed-orientation-support")
+        .expect("identity grammar");
     ir.model.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Circle {

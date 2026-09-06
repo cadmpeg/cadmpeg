@@ -69,10 +69,12 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
     assert!((translated_parameters.v - expected.v).abs() < 1.0e-3);
 
     let nested_surface =
-        cadmpeg_ir::ids::SurfaceId::mint("synthetic:nested-offset").expect("identity grammar");
-    let nested_construction =
-        cadmpeg_ir::ids::ProceduralSurfaceId::mint("synthetic:nested-offset-construction")
+        cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#synthetic:nested-offset")
             .expect("identity grammar");
+    let nested_construction = cadmpeg_ir::ids::ProceduralSurfaceId::mint(
+        "test:model:entity#synthetic:nested-offset-construction",
+    )
+    .expect("identity grammar");
     translated
         .model
         .surfaces
@@ -176,10 +178,13 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
     const FIT_TOLERANCE: f64 = 0.000_001;
     const PARAMETER_TOLERANCE: f64 = 0.001;
 
-    let support = SurfaceId::mint("synthetic:wavy-support").expect("identity grammar");
-    let offset = SurfaceId::mint("synthetic:wavy-offset").expect("identity grammar");
+    let support =
+        SurfaceId::mint("test:model:entity#synthetic:wavy-support").expect("identity grammar");
+    let offset =
+        SurfaceId::mint("test:model:entity#synthetic:wavy-offset").expect("identity grammar");
     let construction =
-        ProceduralSurfaceId::mint("synthetic:wavy-offset-construction").expect("identity grammar");
+        ProceduralSurfaceId::mint("test:model:entity#synthetic:wavy-offset-construction")
+            .expect("identity grammar");
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: support.clone(),
@@ -253,9 +258,10 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
     assert!((actual.u - expected.u).abs() <= PARAMETER_TOLERANCE);
     assert!((actual.v - expected.v).abs() <= PARAMETER_TOLERANCE);
 
-    let nested = SurfaceId::mint("synthetic:wavy-nested-offset").expect("identity grammar");
+    let nested = SurfaceId::mint("test:model:entity#synthetic:wavy-nested-offset")
+        .expect("identity grammar");
     let nested_construction =
-        ProceduralSurfaceId::mint("synthetic:wavy-nested-offset-construction")
+        ProceduralSurfaceId::mint("test:model:entity#synthetic:wavy-nested-offset-construction")
             .expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: nested.clone(),
@@ -933,7 +939,10 @@ fn decode_derives_analytic_support_uv_without_serialized_values() {
                 == Some(&curve.id)
         })
         .expect("intersection carrier");
-    assert!(matches!(carrier.geometry, CurveGeometry::Nurbs(_)));
+    assert!(matches!(
+        carrier.geometry.solved_cache(),
+        Some(CurveGeometry::Nurbs(_))
+    ));
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
         &result.ir().model.procedural_curves[0].definition()
     else {
@@ -962,7 +971,10 @@ fn decode_accepts_intersection_terms_within_chart_tolerance() {
                 == Some(&curve.id)
         })
         .expect("intersection carrier");
-    assert!(matches!(carrier.geometry, CurveGeometry::Nurbs(_)));
+    assert!(matches!(
+        carrier.geometry.solved_cache(),
+        Some(CurveGeometry::Nurbs(_))
+    ));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
@@ -985,7 +997,7 @@ fn decode_emits_ext11_deltas_intersection_chart() {
         .iter()
         .find(|curve| &curve.id == curve_id)
         .expect("intersection cache");
-    let CurveGeometry::Nurbs(nurbs) = &curve.geometry else {
+    let Some(CurveGeometry::Nurbs(nurbs)) = curve.geometry.solved_cache() else {
         panic!("NURBS chart cache");
     };
     assert_eq!(nurbs.control_points()[1].x, 10.0);
@@ -1367,11 +1379,13 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
 
     const FIT_TOLERANCE: f64 = 1.0e-9;
 
-    let surface_id =
-        SurfaceId::mint("synthetic:serialized-seed-surface").expect("identity grammar");
-    let curve_id = CurveId::mint("synthetic:serialized-seed-curve").expect("identity grammar");
-    let procedural_id = ProceduralCurveId::mint("synthetic:serialized-seed-intersection")
+    let surface_id = SurfaceId::mint("test:model:entity#synthetic:serialized-seed-surface")
         .expect("identity grammar");
+    let curve_id = CurveId::mint("test:model:entity#synthetic:serialized-seed-curve")
+        .expect("identity grammar");
+    let procedural_id =
+        ProceduralCurveId::mint("test:model:entity#synthetic:serialized-seed-intersection")
+            .expect("identity grammar");
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
@@ -1439,7 +1453,8 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
         .map(|parameter| {
             cadmpeg_ir::eval::model_surface_point_by_id(
                 &index,
-                &SurfaceId::mint("synthetic:serialized-seed-surface").expect("identity grammar"),
+                &SurfaceId::mint("test:model:entity#synthetic:serialized-seed-surface")
+                    .expect("identity grammar"),
                 parameter.u,
                 parameter.v,
             )
@@ -1493,17 +1508,21 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
     use cadmpeg_ir::math::Point3;
 
     let base_surfaces = [
-        SurfaceId::mint("synthetic:coupled-base-first").expect("identity grammar"),
-        SurfaceId::mint("synthetic:coupled-base-second").expect("identity grammar"),
+        SurfaceId::mint("test:model:entity#synthetic:coupled-base-first")
+            .expect("identity grammar"),
+        SurfaceId::mint("test:model:entity#synthetic:coupled-base-second")
+            .expect("identity grammar"),
     ];
     let procedural_surfaces = [
-        SurfaceId::mint("synthetic:coupled-procedural-first").expect("identity grammar"),
-        SurfaceId::mint("synthetic:coupled-procedural-second").expect("identity grammar"),
+        SurfaceId::mint("test:model:entity#synthetic:coupled-procedural-first")
+            .expect("identity grammar"),
+        SurfaceId::mint("test:model:entity#synthetic:coupled-procedural-second")
+            .expect("identity grammar"),
     ];
     let constructions = [
-        ProceduralSurfaceId::mint("synthetic:coupled-construction-first")
+        ProceduralSurfaceId::mint("test:model:entity#synthetic:coupled-construction-first")
             .expect("identity grammar"),
-        ProceduralSurfaceId::mint("synthetic:coupled-construction-second")
+        ProceduralSurfaceId::mint("test:model:entity#synthetic:coupled-construction-second")
             .expect("identity grammar"),
     ];
     let mut ir = cadmpeg_ir::document::CadIr::empty();
@@ -1552,9 +1571,10 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
         ));
     }
 
-    let procedural_id =
-        ProceduralCurveId::mint("synthetic:coupled-intersection").expect("identity grammar");
-    let carrier = CurveId::mint("synthetic:coupled-carrier").expect("identity grammar");
+    let procedural_id = ProceduralCurveId::mint("test:model:entity#synthetic:coupled-intersection")
+        .expect("identity grammar");
+    let carrier =
+        CurveId::mint("test:model:entity#synthetic:coupled-carrier").expect("identity grammar");
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
         id: carrier.clone(),
         geometry: CurveGeometry::Unknown { record: None },
@@ -1665,8 +1685,8 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
         else {
             panic!("plane support");
         };
-        let id =
-            SurfaceId::mint(format!("synthetic:offset-support-{side}")).expect("identity grammar");
+        let id = SurfaceId::mint(format!("test:model:entity#synthetic:offset-support-{side}"))
+            .expect("identity grammar");
         result.ir_mut().model.surfaces.push(Surface {
             id: id.clone(),
             geometry: SurfaceGeometry::Plane {
@@ -1682,9 +1702,11 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
         });
         id
     });
-    let blend = SurfaceId::mint("synthetic:dependent-blend").expect("identity grammar");
-    let blend_construction = ProceduralSurfaceId::mint("synthetic:dependent-blend-definition")
-        .expect("identity grammar");
+    let blend =
+        SurfaceId::mint("test:model:entity#synthetic:dependent-blend").expect("identity grammar");
+    let blend_construction =
+        ProceduralSurfaceId::mint("test:model:entity#synthetic:dependent-blend-definition")
+            .expect("identity grammar");
     result.ir_mut().model.surfaces.push(Surface {
         id: blend.clone(),
         geometry: SurfaceGeometry::Procedural {
@@ -1736,7 +1758,8 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
         .collect::<Vec<_>>();
 
     let dependent_id =
-        ProceduralCurveId::mint("synthetic:dependent-intersection").expect("identity grammar");
+        ProceduralCurveId::mint("test:model:entity#synthetic:dependent-intersection")
+            .expect("identity grammar");
     let mut dependent = result.ir().model.procedural_curves[0].clone();
     dependent.id = dependent_id.clone();
     dependent.edit_definition(|definition| {
@@ -1809,12 +1832,12 @@ fn support_uv_completion_does_not_retry_unchanged_failed_lanes() {
     let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
     let template = result.ir().model.procedural_curves[0].clone();
     let mut successful = template.clone();
-    let successful_id =
-        ProceduralCurveId::mint("synthetic:support-uv-success").expect("identity grammar");
+    let successful_id = ProceduralCurveId::mint("test:model:entity#synthetic:support-uv-success")
+        .expect("identity grammar");
     successful.id = successful_id.clone();
     let mut failed = template;
-    let failed_id =
-        ProceduralCurveId::mint("synthetic:support-uv-failure").expect("identity grammar");
+    let failed_id = ProceduralCurveId::mint("test:model:entity#synthetic:support-uv-failure")
+        .expect("identity grammar");
     failed.id = failed_id.clone();
     for procedural in [&mut successful, &mut failed] {
         procedural.edit_definition(|definition| {
@@ -1824,11 +1847,32 @@ fn support_uv_completion_does_not_retry_unchanged_failed_lanes() {
             context.sides[0].pcurve = None;
         });
     }
-    result
-        .ir_mut()
-        .model
-        .procedural_curves
-        .extend([successful, failed]);
+    {
+        let mut ir = result.ir_mut();
+        let owner = ir
+            .model
+            .procedural_curve_owner(&ir.model.procedural_curves[0].id)
+            .unwrap();
+        let template = ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == *owner)
+            .unwrap()
+            .clone();
+        for (name, procedural) in [("success", successful), ("failure", failed)] {
+            let mut carrier = template.clone();
+            carrier.id =
+                cadmpeg_ir::ids::CurveId::mint(format!("test:model:curve#support-uv-{name}"))
+                    .unwrap();
+            let CurveGeometry::Procedural { construction, .. } = &mut carrier.geometry else {
+                panic!("procedural carrier");
+            };
+            *construction = procedural.id.clone();
+            ir.model.curves.push(carrier);
+            ir.model.procedural_curves.push(procedural);
+        }
+    }
 
     let pending = vec![
         (
@@ -1874,14 +1918,18 @@ fn support_uv_completion_does_not_retry_unchanged_failed_lanes() {
         .model
         .procedural_curves
         .iter()
-        .find(|procedural| procedural.id.0 == "synthetic:support-uv-success")
+        .find(|procedural| {
+            procedural.id.as_str() == "test:model:entity#synthetic:support-uv-success"
+        })
         .unwrap();
     let failed = result
         .ir()
         .model
         .procedural_curves
         .iter()
-        .find(|procedural| procedural.id.0 == "synthetic:support-uv-failure")
+        .find(|procedural| {
+            procedural.id.as_str() == "test:model:entity#synthetic:support-uv-failure"
+        })
         .unwrap();
     let missing = |procedural: &cadmpeg_ir::geometry::ProceduralCurve| {
         let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
@@ -2001,8 +2049,8 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let supports = [
-        SurfaceId::mint("support-a").expect("identity grammar"),
-        SurfaceId::mint("support-b").expect("identity grammar"),
+        SurfaceId::mint("test:model:entity#support-a").expect("identity grammar"),
+        SurfaceId::mint("test:model:entity#support-b").expect("identity grammar"),
     ];
     for support in &supports {
         ir.model.surfaces.push(Surface {
@@ -2016,12 +2064,13 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
         });
     }
     let offsets = [
-        SurfaceId::mint("offset-a").expect("identity grammar"),
-        SurfaceId::mint("offset-b").expect("identity grammar"),
+        SurfaceId::mint("test:model:entity#offset-a").expect("identity grammar"),
+        SurfaceId::mint("test:model:entity#offset-b").expect("identity grammar"),
     ];
     for (ordinal, (surface, support)) in offsets.iter().zip(&supports).enumerate() {
-        let construction = ProceduralSurfaceId::mint(format!("offset-construction-{ordinal}"))
-            .expect("identity grammar");
+        let construction =
+            ProceduralSurfaceId::mint(format!("test:model:entity#offset-construction-{ordinal}"))
+                .expect("identity grammar");
         ir.model.surfaces.push(Surface {
             id: surface.clone(),
             geometry: SurfaceGeometry::Procedural {
@@ -2045,7 +2094,7 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
             None,
         ));
     }
-    let carrier = CurveId::mint("curve").expect("identity grammar");
+    let carrier = CurveId::mint("test:model:entity#curve").expect("identity grammar");
     ir.model.curves.push(Curve {
         id: carrier.clone(),
         geometry: CurveGeometry::Unknown { record: None },
@@ -2054,7 +2103,7 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
     let _attached = ir.model.add_procedural_curve(
         carrier,
         ProceduralCurve::new(
-            ProceduralCurveId::mint("intersection").expect("identity grammar"),
+            ProceduralCurveId::mint("test:model:entity#intersection").expect("identity grammar"),
             ProceduralCurveDefinition::Intersection {
                 context: cadmpeg_ir::geometry::IntcurveSupportContext {
                     sides: [

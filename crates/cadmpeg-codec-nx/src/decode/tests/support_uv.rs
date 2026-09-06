@@ -26,11 +26,29 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
     let mut result = cadmpeg_test_support::EditableDecodeResult::from(result);
     let validated_id = result.ir().model.procedural_curves[0].id.clone();
     let unvalidated_id =
-        ProceduralCurveId::mint("synthetic:unvalidated-support-uv").expect("identity grammar");
+        ProceduralCurveId::mint("test:model:entity#synthetic:unvalidated-support-uv")
+            .expect("identity grammar");
     let mut unvalidated = result.ir().model.procedural_curves[0].clone();
     unvalidated.id = unvalidated_id.clone();
     {
         let mut ir = result.ir_mut();
+        let original_owner = ir.model.procedural_curve_owner(&validated_id).unwrap();
+        let mut carrier = ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == *original_owner)
+            .unwrap()
+            .clone();
+        carrier.id =
+            cadmpeg_ir::ids::CurveId::mint("test:model:curve#unvalidated-support-uv").unwrap();
+        let cadmpeg_ir::geometry::CurveGeometry::Procedural { construction, .. } =
+            &mut carrier.geometry
+        else {
+            panic!("procedural carrier");
+        };
+        *construction = unvalidated_id.clone();
+        ir.model.curves.push(carrier);
         ir.model.procedural_curves.push(unvalidated);
         for procedural_id in [&validated_id, &unvalidated_id] {
             let procedural = ir
@@ -265,14 +283,19 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
     const FIT_TOLERANCE: f64 = 1.0e-6;
     const GEOMETRY_WORK: usize = 2_048;
 
-    let support = SurfaceId::mint("synthetic:seeded-offset-support").expect("identity grammar");
-    let offset = SurfaceId::mint("synthetic:seeded-offset").expect("identity grammar");
-    let offset_construction = ProceduralSurfaceId::mint("synthetic:seeded-offset-construction")
+    let support = SurfaceId::mint("test:model:entity#synthetic:seeded-offset-support")
         .expect("identity grammar");
-    let plane = SurfaceId::mint("synthetic:seeded-intersection-plane").expect("identity grammar");
-    let curve = CurveId::mint("synthetic:seeded-intersection-curve").expect("identity grammar");
-    let procedural_id =
-        ProceduralCurveId::mint("synthetic:seeded-intersection").expect("identity grammar");
+    let offset =
+        SurfaceId::mint("test:model:entity#synthetic:seeded-offset").expect("identity grammar");
+    let offset_construction =
+        ProceduralSurfaceId::mint("test:model:entity#synthetic:seeded-offset-construction")
+            .expect("identity grammar");
+    let plane = SurfaceId::mint("test:model:entity#synthetic:seeded-intersection-plane")
+        .expect("identity grammar");
+    let curve = CurveId::mint("test:model:entity#synthetic:seeded-intersection-curve")
+        .expect("identity grammar");
+    let procedural_id = ProceduralCurveId::mint("test:model:entity#synthetic:seeded-intersection")
+        .expect("identity grammar");
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.surfaces.extend([
         Surface {
