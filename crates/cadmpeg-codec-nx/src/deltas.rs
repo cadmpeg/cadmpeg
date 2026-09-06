@@ -6,6 +6,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) mod record_kind;
 pub(crate) mod packet_marker;
+pub(crate) mod type150_state;
+use type150_state::Type150State;
 use packet_marker::{ReferenceMarker, Type150Marker};
 pub(crate) mod group;
 pub(crate) mod tails;
@@ -626,12 +628,8 @@ pub struct ReferenceMarkerPacket {
 /// One single-byte type-150 deltas state packet.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Type150StatePacket {
-    /// Five ordered stream-local XMT references.
-    pub references: [u32; 5],
-    /// Serialized state discriminator.
-    pub marker: Type150Marker,
-    /// Nine finite binary64 state values.
-    pub values: [f64; 9],
+    /// Validated references, marker, and finite state values.
+    pub state: Type150State,
     /// First byte of the packet.
     pub offset: usize,
     /// First byte following the packet.
@@ -2405,19 +2403,15 @@ fn type_150_state_packet(
         at = at.checked_add(1)?;
         *reference = value;
     }
-    (references[0] == 1 && references[1..].iter().all(|reference| *reference > 1)).then_some(())?;
     let marker = Type150Marker::try_from(*stream.get(at)?).ok()?;
     at = at.checked_add(1)?;
     let mut values = [0.0; 9];
     for value in &mut values {
         *value = View::f64_be_at(stream, at)?;
-        value.is_finite().then_some(())?;
         at = at.checked_add(8)?;
     }
     (at == expected_end).then_some(Type150StatePacket {
-        references,
-        marker,
-        values,
+        state: Type150State::new(references, marker, values).ok()?,
         offset,
         end: at,
     })
@@ -3918,10 +3912,10 @@ mod type_150_state_packet_tests {
 
         assert_eq!(census.type_150_state_packets.len(), 1);
         let packet = &census.type_150_state_packets[0];
-        assert_eq!(packet.references, [1, 3, 6_192, 6_193, 6_194]);
-        assert_eq!(u8::from(packet.marker), 0x2b);
+        assert_eq!(packet.state.references(), [1, 3, 6_192, 6_193, 6_194]);
+        assert_eq!(u8::from(packet.state.marker), 0x2b);
         assert_eq!(
-            packet.values,
+            *packet.state.values(),
             [-0.025, -0.05, 0.25, 0.0, 1.0, 0.0, 0.0, -0.0, 1.0]
         );
         assert_eq!((packet.offset, packet.end), (0, bytes.len()));

@@ -11,7 +11,8 @@ mod chart_wire;
 mod tail_wire;
 mod body_revision_wire;
 use body_revision_wire::RevisionLengths;
-use crate::deltas::packet_marker::{ReferenceMarker, Type150Marker};
+use crate::deltas::packet_marker::ReferenceMarker;
+use crate::deltas::type150_state::Type150State;
 use crate::deltas::tails::{NullTailForm, NumericTailValues};
 pub(crate) mod group_member;
 use group_member::GroupMemberTarget;
@@ -664,12 +665,9 @@ pub struct ParasolidDeltasType150StatePacket {
     pub id: String,
     /// Zero-based source stream ordinal.
     pub stream_ordinal: u32,
-    /// Five ordered stream-local XMT references.
-    pub references: [u32; 5],
-    /// Serialized state discriminator.
-    pub marker: Type150Marker,
-    /// Nine finite binary64 state values.
-    pub values: [f64; 9],
+    /// Validated references, marker, and finite state values.
+    #[serde(flatten)]
+    pub state: Type150State,
     /// Exact packet byte length.
     pub byte_len: u64,
     /// SHA-256 of the exact packet bytes.
@@ -1108,9 +1106,7 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
                         packet.offset
                     ),
                     stream_ordinal: stream_ordinal as u32,
-                    references: packet.references,
-                    marker: packet.marker,
-                    values: packet.values,
+                    state: packet.state,
                     byte_len: bytes.len() as u64,
                     sha256: cadmpeg_ir::hash::sha256_hex(bytes),
                     inflated_offset: packet.offset as u64,
@@ -4657,9 +4653,9 @@ mod tests {
 
         assert_eq!(events.type_150_state_packets.len(), 1);
         let packet = &events.type_150_state_packets[0];
-        assert_eq!(packet.references, [1, 3, 6_192, 6_193, 6_194]);
-        assert_eq!(u8::from(packet.marker), 0x2b);
-        assert_eq!(packet.values, values);
+        assert_eq!(packet.state.references(), [1, 3, 6_192, 6_193, 6_194]);
+        assert_eq!(u8::from(packet.state.marker), 0x2b);
+        assert_eq!(*packet.state.values(), values);
         assert_eq!(packet.inflated_offset, packet_offset as u64);
         assert_eq!(packet.byte_len, (packet_end - packet_offset) as u64);
         assert_eq!(
