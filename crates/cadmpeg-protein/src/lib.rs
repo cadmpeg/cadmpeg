@@ -762,7 +762,7 @@ mod tests {
     #[test]
     fn multiple_references_keep_one_connection_block_including_zero_values() {
         let protein = schema_archive(&[(
-            "Schemas/References.xml",
+            "Schemas/ReferencesSchema.xml",
             r#"<Schema><UID val="References"/><Reference id="targets" allowmultiplevalues="true"/></Schema>"#,
         )]);
         for count in [0_u32, 2] {
@@ -772,7 +772,9 @@ mod tests {
             }
             record.extend_from_slice(&count.to_le_bytes());
             push_connections(&mut record, &["target"]);
-            let records = decode(&protein, &paged_stream(&[&record])).unwrap();
+            let outcome = decode_detailed(&protein, &paged_stream(&[&record])).unwrap();
+            assert!(outcome.rejected.is_empty(), "{:?}", outcome.rejected);
+            let records = outcome.records;
             assert_eq!(records.len(), 1);
             assert_eq!(
                 records[0].properties["targets"].content,
@@ -1061,10 +1063,13 @@ mod tests {
         for record in records {
             // A marker or continuation page always contributes its whole body,
             // so only the terminal page can hold a partial tail.
-            assert!(
-                record.len() >= BODY,
-                "a record fills at least one page body"
-            );
+            if record.len() < BODY {
+                let mut header = [0_u8; 8];
+                header[..4].copy_from_slice(TERMINAL_MARKER);
+                header[4..6].copy_from_slice(&(record.len() as u16).to_le_bytes());
+                page(header, record);
+                continue;
+            }
             let (head, rest) = record.split_at(BODY);
             page(opening(RECORD_MARKER), head);
             let mut chunks = rest.chunks(BODY).peekable();
