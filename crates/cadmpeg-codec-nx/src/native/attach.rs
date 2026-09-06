@@ -2721,11 +2721,11 @@ fn attach_feature_operations(
             .flatten()
         {
             source_properties.insert(
-                format!("sketch_reference_record.{}", reference.ordinal),
+                format!("sketch_reference_record.{}", reference.position.ordinal()),
                 reference.id.clone(),
             );
             source_properties.insert(
-                format!("sketch_reference.{}", reference.ordinal),
+                format!("sketch_reference.{}", reference.position.ordinal()),
                 reference
                     .data_block
                     .clone()

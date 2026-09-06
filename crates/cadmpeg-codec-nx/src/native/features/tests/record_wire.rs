@@ -523,3 +523,21 @@ fn operation_input_wire_requires_one_of_the_four_header_slots() {
         assert!(serde_json::from_value::<FeatureInputBlockIdentityGroup>(group).unwrap_err().to_string().contains("input_slots"));
     }
 }
+
+#[test]
+fn sketch_reference_wire_derives_terminal_and_retains_zero_count_form() {
+    use crate::native::features::FeatureSketchReference;
+    for (count, ordinal, terminal) in [(0, 0, true), (1, 0, true), (2, 0, false), (2, 1, true)] {
+        for target in ["", r#","data_block":"block""#] {
+            let wire = format!(r#"{{"id":"reference","operation_label":"sketch","ordinal":{ordinal},"declared_count":{count},"terminal":{terminal},"object_index":66,"raw_object_index":[240,66]{target},"source_offset":100}}"#);
+            let reference: FeatureSketchReference = serde_json::from_str(&wire).unwrap();
+            assert_eq!(serde_json::to_string(&reference).unwrap(), wire);
+            let mut invalid = serde_json::to_value(&reference).unwrap();
+            invalid["ordinal"] = serde_json::json!(count.max(1));
+            assert!(serde_json::from_value::<FeatureSketchReference>(invalid).unwrap_err().to_string().contains("ordinal"));
+            let mut invalid = serde_json::to_value(&reference).unwrap();
+            invalid["terminal"] = serde_json::json!(!terminal);
+            assert!(serde_json::from_value::<FeatureSketchReference>(invalid).unwrap_err().to_string().contains("terminal"));
+        }
+    }
+}

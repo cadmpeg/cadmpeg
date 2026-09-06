@@ -481,9 +481,9 @@ fn om_sketch_payload_reference_field_is_counted_ordered_and_canonical() {
     let payload = b"\x01\x00\x01\x05\xf0\xff\xf1\x01\x00\xf1\x01\x01\xf1\x01\x02\x00\x00\xf1\x01\x03\x01\x00\x00\x00";
     let record = crate::om::operation_record::OperationPayload::new(payload, 200, label).unwrap();
     let field = super::sketch_payload_references(record).unwrap();
-    assert_eq!(field.declared_count, 5);
+    assert_eq!(field.declared_count(), 5);
     let references: [super::PayloadObjectReference; 5] =
-        field.references.clone().try_into().unwrap();
+        field.references().to_vec().try_into().unwrap();
     assert_eq!(
         references.clone().map(|reference| reference.token.value()),
         [255, 256, 257, 258, 259]
@@ -494,7 +494,7 @@ fn om_sketch_payload_reference_field_is_counted_ordered_and_canonical() {
     );
     assert_eq!(
         field
-            .references
+            .references()
             .iter()
             .map(|reference| reference.token.raw())
             .collect::<Vec<_>>(),
@@ -509,16 +509,16 @@ fn om_sketch_payload_reference_field_is_counted_ordered_and_canonical() {
     let zero = b"\x01\x00\x00\x00\x00\xf0\x42\x01\x00\x00\x00";
     let field = super::sketch_payload_references(crate::om::operation_record::OperationPayload::new(zero, record.payload_offset(), record.name()).unwrap())
     .unwrap();
-    assert_eq!(field.declared_count, 0);
-    assert_eq!(field.references.len(), 1);
-    assert_eq!(field.references[0].token.value(), 0x42);
+    assert_eq!(field.declared_count(), 0);
+    assert_eq!(field.references().len(), 1);
+    assert_eq!(field.references()[0].token.value(), 0x42);
     let two = b"\x01\x00\x01\x02\xf0\x41\x00\x00\xf0\x42\x01\x00\x00\x00";
     let field = super::sketch_payload_references(crate::om::operation_record::OperationPayload::new(two, record.payload_offset(), record.name()).unwrap())
     .unwrap();
-    assert_eq!(field.declared_count, 2);
+    assert_eq!(field.declared_count(), 2);
     assert_eq!(
         field
-            .references
+            .references()
             .iter()
             .map(|reference| reference.token.value())
             .collect::<Vec<_>>(),

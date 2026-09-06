@@ -7,6 +7,8 @@ pub(crate) mod csys_descriptor;
 pub(crate) mod reference_index;
 pub(crate) mod header_references;
 pub(crate) mod operation_record;
+pub(crate) mod sketch_references;
+use sketch_references::SketchReferenceField;
 use operation_record::{OperationRecord, OperationPayload, OperationBodyInput};
 use header_references::{HeaderReferences, OperationHeader};
 pub(crate) mod common_frame;
@@ -1340,15 +1342,6 @@ pub struct PayloadObjectReference<T = ReferenceIndexToken, O = usize> {
     pub token: T,
 }
 
-/// Counted reference field in one bounded sketch-operation payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SketchPayloadReferenceField {
-    /// Effective count encoded by the nonempty flag and optional count byte.
-    pub declared_count: u8,
-    /// Ordered pre-separator references followed by the terminal reference.
-    pub references: Vec<PayloadObjectReference>,
-}
-
 /// Exact construction-reference field in a projected-curve payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectedCurvePayloadReferenceField {
@@ -2614,7 +2607,7 @@ pub fn hole_package_construction_group_lane(
 /// Decode the unique counted reference field in a bounded `SKETCH` payload.
 pub fn sketch_payload_references(
     record: OperationPayload<'_>,
-) -> Option<SketchPayloadReferenceField> {
+) -> Option<SketchReferenceField> {
     if record.name() != "SKETCH" {
         return None;
     }
@@ -2623,64 +2616,9 @@ pub fn sketch_payload_references(
             if record.payload().get(start..start + 2) != Some(&[0x01, 0x00]) {
                 return None;
             }
-            sketch_reference_field(record, start)
+            SketchReferenceField::read(record, start)
         }),
     )
-}
-
-fn sketch_reference_field(
-    record: OperationPayload<'_>,
-    start: usize,
-) -> Option<SketchPayloadReferenceField> {
-    let flag = *record.payload().get(start + 2)?;
-    let (declared_count, mut at) = match flag {
-        0 => (0, start + 3),
-        1 => {
-            let count = *record.payload().get(start + 3)?;
-            if count == 0 {
-                return None;
-            }
-            (count, start + 4)
-        }
-        _ => return None,
-    };
-    let leading_count = declared_count.saturating_sub(1) as usize;
-    let leading_start = at;
-    let mut scan_at = leading_start;
-    for _ in 0..leading_count {
-        let (_, width) = payload_object_index(record.payload().get(scan_at..)?)?;
-        scan_at += width;
-    }
-    if record.payload().get(scan_at..scan_at + 2) != Some(&[0x00, 0x00]) {
-        return None;
-    }
-    scan_at += 2;
-    let (_, width) = payload_object_index(record.payload().get(scan_at..)?)?;
-    scan_at += width;
-    if record.payload().get(scan_at..scan_at + 4) != Some(&[0x01, 0x00, 0x00, 0x00]) {
-        return None;
-    }
-
-    let mut references = Vec::with_capacity(leading_count + 1);
-    at = leading_start;
-    for _ in 0..leading_count {
-        let (object_index, width) = payload_object_index(record.payload().get(at..)?)?;
-        references.push(PayloadObjectReference {
-            offset: record.payload_offset() + at,
-            token: object_index,
-        });
-        at += width;
-    }
-    at += 2;
-    let object_index = ReferenceIndexToken::read_payload(record.payload().get(at..)?)?;
-    references.push(PayloadObjectReference {
-        offset: record.payload_offset() + at,
-        token: object_index,
-    });
-    Some(SketchPayloadReferenceField {
-        declared_count,
-        references,
-    })
 }
 
 fn payload_object_index(bytes: &[u8]) -> Option<(ReferenceIndexToken, usize)> {

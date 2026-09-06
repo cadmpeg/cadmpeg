@@ -2847,12 +2847,9 @@ pub struct FeatureSketchReference {
     pub id: String,
     /// Owning `SKETCH` operation label.
     pub operation_label: String,
-    /// Zero-based reference order in the counted field.
-    pub ordinal: u32,
-    /// Effective count encoded by the containing reference field.
-    pub declared_count: u8,
-    /// Whether this is the reference following the `00 00` separator.
-    pub terminal: bool,
+    /// Checked position in the counted field; terminal status is derived.
+    #[serde(flatten)]
+    pub position: crate::om::sketch_references::SketchReferencePosition,
     /// Checked index retaining the exact serialized token.
     #[serde(flatten)]
     pub token: crate::om::reference_index::ReferenceIndexToken,
@@ -8470,7 +8467,7 @@ pub fn feature_sketch_records(
                 .iter()
                 .filter(|reference| reference.operation_label == label.id)
                 .collect::<Vec<_>>();
-            payload_references.sort_by_key(|reference| reference.ordinal);
+            payload_references.sort_by_key(|reference| reference.position.ordinal());
             Some(FeatureSketchRecord {
                 id: label.id.replacen("operation-label", "sketch-record", 1),
                 operation_label: label.id.clone(),
@@ -8501,23 +8498,19 @@ pub fn feature_sketch_construction_inputs(
             .iter()
             .filter(|reference| reference.operation_label == sketch.operation_label)
             .collect::<Vec<_>>();
-        field.sort_by_key(|reference| reference.ordinal);
-        let Some(first) = field.first() else {
+        field.sort_by_key(|reference| reference.position.ordinal());
+        let Some((terminal, members)) = field.split_last() else {
             continue;
         };
-        let expected_len = usize::from(first.declared_count.max(1));
+        let expected_len = usize::from(terminal.position.declared_count().max(1));
         if field.len() != expected_len
             || field.iter().enumerate().any(|(ordinal, reference)| {
-                reference.declared_count != first.declared_count
-                    || reference.ordinal != ordinal as u32
-                    || reference.terminal != (ordinal + 1 == expected_len)
+                reference.position.declared_count() != terminal.position.declared_count()
+                    || reference.position.ordinal() != ordinal as u32
             })
         {
             continue;
         }
-        let Some((terminal, members)) = field.split_last() else {
-            continue;
-        };
         let Some(members) = members
             .iter()
             .map(|reference| Some(FeatureConstructionMember {
@@ -9143,11 +9136,11 @@ pub fn feature_sketch_named_point_block_uses(
             uses.push(FeatureSketchNamedPointBlockUse {
                 id: format!(
                     "nx:feature-history:sketch-named-point-block-use#{operation_key}-{}-{point_key}-{point_block_ordinal}",
-                    reference.ordinal
+                    reference.position.ordinal()
                 ),
                 operation_label: reference.operation_label.clone(),
                 sketch_reference: reference.id.clone(),
-                reference_ordinal: reference.ordinal,
+                reference_ordinal: reference.position.ordinal(),
                 named_point: point.id.clone(),
                 data_block: data_block.to_string(),
                 point_block_ordinal: point_block_ordinal as u32,
@@ -9177,7 +9170,7 @@ pub fn feature_sketch_preceding_named_point_uses(
     }
     let mut uses = Vec::new();
     for (operation_label, mut operation_references) in references_by_operation {
-        operation_references.sort_by_key(|reference| reference.ordinal);
+        operation_references.sort_by_key(|reference| reference.position.ordinal());
         let Some((first_reference, first_block)) = operation_references.first()
             .and_then(|reference| Some((*reference, reference.data_block.as_deref()?))) else {
             continue;
@@ -9186,10 +9179,9 @@ pub fn feature_sketch_preceding_named_point_uses(
                 .iter()
                 .enumerate()
                 .all(|(ordinal, reference)| {
-                    reference.ordinal == ordinal as u32
-                        && usize::from(reference.declared_count) == operation_references.len()
+                    reference.position.ordinal() == ordinal as u32
+                        && usize::from(reference.position.declared_count()) == operation_references.len()
                         && reference.data_block.is_some()
-                        && reference.terminal == (ordinal + 1 == operation_references.len())
                 });
         if !complete_lane {
             continue;
@@ -9474,18 +9466,15 @@ pub fn feature_sketch_references(container: &Container) -> Vec<FeatureSketchRefe
             };
             let operation_label =
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
-            let declared_count = decoded.declared_count;
-            let terminal_ordinal = decoded.references.len() - 1;
-            references.extend(decoded.references.into_iter().enumerate().map(|(ordinal, reference)| {
+            references.extend(decoded.into_positioned().map(|(position, reference)| {
+                let ordinal = position.ordinal();
                 let data_block = unique_offset_data_block(&indexed, reference.token.value());
                 FeatureSketchReference {
                     id: format!(
                         "nx:feature-history:sketch-reference#{section_key}-{operation_ordinal:010}-{ordinal:010}"
                     ),
                     operation_label: operation_label.clone(),
-                    ordinal: ordinal as u32,
-                    declared_count,
-                    terminal: ordinal == terminal_ordinal,
+                    position,
                     token: reference.token,
                     data_block,
                     source_offset: entry_offset + reference.offset as u64,
