@@ -2406,10 +2406,10 @@ fn build_one(
                         .expect("identity grammar");
                         coedge_ids.push(cid.clone());
                         coedges.push(Coedge {
-                            id: cid,
+                            id: cid.clone(),
                             owner_loop: lid.clone(),
                             edge: edge_id.clone(),
-                            radial_next: CoedgeId::mint(String::new()).expect("identity grammar"),
+                            radial_next: cid,
                             sense: if (canonical_start, canonical_end) == (start_point, end_point) {
                                 Sense::Forward
                             } else {
@@ -2598,10 +2598,10 @@ fn build_one(
                     };
                     coedge_ids.push(cid.clone());
                     coedges.push(Coedge {
-                        id: cid,
+                        id: cid.clone(),
                         owner_loop: lid.clone(),
                         edge: scoped_edge_id(o.edge, id, shell_step, scope_edges, scope_root),
-                        radial_next: CoedgeId::mint(String::new()).expect("identity grammar"),
+                        radial_next: cid,
                         sense: if (o.forward == edge.same()) == bound_forward {
                             Sense::Forward
                         } else {
