@@ -1054,7 +1054,7 @@ mod tests {
             issues: Vec::new(),
         };
         let appearance = Appearance {
-            id: AppearanceId::mint("appearance").expect("identity grammar"),
+            id: AppearanceId::mint("inventor:test:appearance#1").expect("identity grammar"),
             name: None,
             asset_guid: Some("d3c6130d-6c0f-4525-b268-53517ab46a78".into()),
             library_id: Some("afefc330-5e61-4e24-814f-ae810148b79d".into()),
@@ -1070,7 +1070,7 @@ mod tests {
         let projection = project_default_bindings(
             &inventory,
             &[appearance],
-            &[BodyId::mint("body").expect("identity grammar")],
+            &[BodyId::mint("inventor:test:body#1").expect("identity grammar")],
         );
 
         assert_eq!(projection.unresolved_defaults, 0);
@@ -1079,11 +1079,11 @@ mod tests {
         };
         assert_eq!(
             binding.appearance,
-            AppearanceId::mint("appearance").expect("identity grammar")
+            AppearanceId::mint("inventor:test:appearance#1").expect("identity grammar")
         );
         assert_eq!(
             binding.target,
-            AppearanceTarget::Body(BodyId::mint("body").expect("identity grammar"))
+            AppearanceTarget::Body(BodyId::mint("inventor:test:body#1").expect("identity grammar"))
         );
     }
 
@@ -1268,7 +1268,7 @@ mod tests {
             graphics_primary_color_styles: vec![style],
             issues: Vec::new(),
         };
-        let face_id = FaceId::mint("face").expect("identity grammar");
+        let face_id = FaceId::mint("inventor:test:face#1").expect("identity grammar");
         let face_keys = std::collections::HashMap::from([(face_id.clone(), 42)]);
 
         let projection = project_bindings(&inventory, &[], &[], &face_keys);
