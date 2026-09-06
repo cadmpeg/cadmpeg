@@ -7,6 +7,8 @@ use std::num::NonZeroU8;
 
 use cadmpeg_core::decode::{alloc_filled, View};
 
+pub(crate) mod compact;
+use compact::{LocatedCompactIndex, NullableCompactIndex, CountedIndexMembers};
 pub(crate) mod color;
 use color::{ColorComponent, PaletteIndex, PALETTE_SIZE, BACKGROUND_NAME};
 pub(crate) mod branch_items;
@@ -192,15 +194,12 @@ struct CompactToken<T = CompactIndex> {
 }
 
 fn compact_index(bytes: &[u8]) -> Option<(CompactIndex, usize)> {
-    let prefix = *bytes.first()?;
-    if prefix == 0xff {
-        Some((CompactIndex::Null, 1))
-    } else if prefix >= 0x80 {
-        let low = u32::from(*bytes.get(1)?);
-        Some((CompactIndex::Value(u32::from(prefix - 0x80) * 256 + low), 2))
-    } else {
-        Some((CompactIndex::Value(u32::from(prefix)), 1))
-    }
+    let token = NullableCompactIndex::read(bytes, 0)?;
+    let value = match token.atom {
+        None => CompactIndex::Null,
+        Some(atom) => CompactIndex::Value(atom.value()),
+    };
+    Some((value, token.raw().len()))
 }
 
 fn compact_token(bytes: &[u8], offset: usize) -> Option<CompactToken> {
@@ -241,16 +240,10 @@ pub struct LaneToken<T, R = Vec<u8>> {
 pub struct OffsetStoreCountedIndexLane {
     /// Byte offset of the opening `01` marker.
     pub offset: usize,
-    /// Serialized count. One slot is the anchor and one is the terminator.
-    pub declared_count: u8,
     /// Non-null compact index immediately following the count.
-    pub anchor: u32,
-    /// Exact serialized anchor token.
-    pub raw_anchor: Vec<u8>,
-    /// Byte offset of the anchor compact index.
-    pub anchor_offset: usize,
+    pub anchor: LocatedCompactIndex,
     /// Ordered non-null compact indices preceding the terminator.
-    pub members: Vec<LaneToken<u32>>,
+    pub members: CountedIndexMembers<LocatedCompactIndex>,
 }
 
 /// Fixed-width nullable block-index lane terminated by the literal `ABR` tag.
@@ -259,7 +252,7 @@ pub struct OffsetStoreAbrReferenceLane {
     /// Byte offset of the opening `11` marker.
     pub offset: usize,
     /// Sixteen ordered nullable compact indices and their byte offsets.
-    pub slots: [LaneToken<Option<u32>>; 16],
+    pub slots: [NullableCompactIndex; 16],
 }
 
 /// One self-framed index row in contiguous offset-store column storage.
@@ -814,36 +807,21 @@ pub fn offset_store_abr_reference_lanes(bytes: &[u8]) -> Vec<OffsetStoreAbrRefer
             continue;
         }
         let mut at = start + 1;
-        let mut tokens = [CompactToken {
-            value: CompactIndex::Null,
-            offset: 0,
-            width: 0,
-        }; SLOT_COUNT];
-        let mut complete = true;
-        for token in &mut tokens {
-            let Some(slot_token) = compact_token(bytes, at) else {
-                complete = false;
-                break;
-            };
-            at += slot_token.width;
-            *token = slot_token;
-        }
+        let tokens = (0..SLOT_COUNT).map(|_| {
+            let token = NullableCompactIndex::read(bytes, at)?;
+            at += token.raw().len();
+            Some(token)
+        }).collect::<Option<Vec<_>>>();
+        let Some(tokens) = tokens.and_then(|tokens| tokens.try_into().ok()) else {
+            start += 1;
+            continue;
+        };
         let Some(end) = at.checked_add(TERMINATOR.len()) else {
             start += 1;
             continue;
         };
-        if complete && bytes.get(at..end) == Some(&TERMINATOR) {
-            lanes.push(OffsetStoreAbrReferenceLane {
-                offset: start,
-                slots: tokens.map(|token| LaneToken {
-                    value: match token.value {
-                        CompactIndex::Null => None,
-                        CompactIndex::Value(value) => Some(value),
-                    },
-                    offset: token.offset,
-                    raw: raw_compact_token(bytes, token),
-                }),
-            });
+        if bytes.get(at..end) == Some(&TERMINATOR) {
+            lanes.push(OffsetStoreAbrReferenceLane { offset: start, slots: tokens });
             start = end;
         } else {
             start += 1;
@@ -862,34 +840,27 @@ pub fn offset_store_counted_index_lanes(bytes: &[u8]) -> Vec<OffsetStoreCountedI
         (bytes.get(start) == Some(&0x01)).then_some(())?;
         let declared_count = *bytes.get(start + 1)?;
         (declared_count >= 3).then_some(())?;
-        let anchor = compact_value_token(bytes, start + 2)?;
-        let members_start = anchor.offset + anchor.width;
+        let anchor = LocatedCompactIndex::read(bytes, start + 2)?;
+        let members_start = anchor.offset + anchor.atom.raw().len();
         let mut at = members_start;
         for _ in 0..usize::from(declared_count) - 2 {
-            at += compact_value_token(bytes, at)?.width;
+            at += LocatedCompactIndex::read(bytes, at)?.atom.raw().len();
         }
         let end = at.checked_add(2)?;
         (bytes.get(at..end) == Some(&[0x01, 0x11])).then_some(())?;
         at = members_start;
         let members = (0..usize::from(declared_count) - 2)
             .map(|_| {
-                let token = compact_value_token(bytes, at)?;
-                at += token.width;
-                Some(LaneToken {
-                    value: token.value,
-                    offset: token.offset,
-                    raw: raw_compact_token(bytes, token),
-                })
+                let token = LocatedCompactIndex::read(bytes, at)?;
+                at += token.atom.raw().len();
+                Some(token)
             })
             .collect::<Option<Vec<_>>>()?;
         Some((
             OffsetStoreCountedIndexLane {
                 offset: start,
-                declared_count,
-                anchor: anchor.value,
-                raw_anchor: raw_compact_token(bytes, anchor),
-                anchor_offset: anchor.offset,
-                members,
+                anchor,
+                members: CountedIndexMembers::new(members).ok()?,
             },
             end,
         ))

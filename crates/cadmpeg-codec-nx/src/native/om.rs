@@ -6,6 +6,7 @@ use super::*;
 
 use cadmpeg_core::decode::View;
 
+use crate::om::compact::{CompactIndexAtom, CountedIndexMembers};
 use crate::om::color::{ColorComponent, PaletteIndex, PALETTE_SIZE, BACKGROUND_NAME};
 mod color_wire;
 pub(crate) mod column_index;
@@ -2111,29 +2112,26 @@ pub struct DataBlockCountedIndexLane {
     pub data_block: String,
     /// Zero-based lane order within the block.
     pub ordinal: u32,
-    /// Serialized count including the anchor and terminal slot.
-    pub declared_count: u8,
-    /// Decoded anchoring block index.
-    pub anchor_index: u32,
-    /// Exact serialized anchor token.
-    pub raw_anchor_index: Vec<u8>,
-    /// Same-section block addressed by the anchor.
-    pub anchor_data_block: String,
-    /// Ordered resolved member tokens.
-    pub members: Vec<DataBlockIndexToken>,
+    /// Resolved non-null anchor with its source token.
+    pub anchor: DataBlockIndexToken,
+    /// Ordered nonempty resolved member tokens.
+    pub members: CountedIndexMembers<DataBlockIndexToken>,
     /// Absolute file offset of the opening `01` marker.
     pub source_offset: u64,
-    /// Absolute file offset of the anchoring compact index.
-    pub anchor_source_offset: u64,
 }
 
 /// A compact index with its resolved block and source token.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataBlockIndexToken {
-    pub index: u32,
-    pub raw: Vec<u8>,
-    pub data_block: String,
+    pub target: DataBlockIndexTarget,
     pub source_offset: u64,
+}
+
+/// A non-null compact index and the block it addresses.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DataBlockIndexTarget {
+    pub atom: CompactIndexAtom,
+    pub data_block: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -2172,28 +2170,16 @@ impl From<DataBlockCountedIndexLane> for DataBlockCountedIndexLaneWire {
             id: value.id,
             data_block: value.data_block,
             ordinal: value.ordinal,
-            declared_count: value.declared_count,
-            anchor_index: value.anchor_index,
-            raw_anchor_index: value.raw_anchor_index,
-            anchor_data_block: value.anchor_data_block,
+            declared_count: value.members.declared_count(),
+            anchor_index: value.anchor.target.atom.value(),
+            raw_anchor_index: value.anchor.target.atom.raw().to_vec(),
+            anchor_data_block: value.anchor.target.data_block,
             source_offset: value.source_offset,
-            anchor_source_offset: value.anchor_source_offset,
-            member_indices: value.members.iter().map(|token| token.index).collect(),
-            raw_member_indices: value
-                .members
-                .iter()
-                .map(|token| token.raw.clone())
-                .collect(),
-            member_data_blocks: value
-                .members
-                .iter()
-                .map(|token| token.data_block.clone())
-                .collect(),
-            member_source_offsets: value
-                .members
-                .iter()
-                .map(|token| token.source_offset)
-                .collect(),
+            anchor_source_offset: value.anchor.source_offset,
+            member_indices: value.members.as_slice().iter().map(|token| token.target.atom.value()).collect(),
+            raw_member_indices: value.members.as_slice().iter().map(|token| token.target.atom.raw().to_vec()).collect(),
+            member_data_blocks: value.members.as_slice().iter().map(|token| token.target.data_block.clone()).collect(),
+            member_source_offsets: value.members.as_slice().iter().map(|token| token.source_offset).collect(),
         }
     }
 }
@@ -2207,32 +2193,31 @@ impl TryFrom<DataBlockCountedIndexLaneWire> for DataBlockCountedIndexLane {
         {
             return Err("counted index lane member columns must have equal lengths".to_owned());
         }
-        let members = wire
-            .member_indices
-            .into_iter()
-            .zip(wire.raw_member_indices)
-            .zip(wire.member_data_blocks)
-            .zip(wire.member_source_offsets)
-            .map(
-                |(((index, raw), data_block), source_offset)| DataBlockIndexToken {
-                    index,
-                    raw,
-                    data_block,
+        let members = wire.member_indices.into_iter().zip(wire.raw_member_indices)
+            .zip(wire.member_data_blocks).zip(wire.member_source_offsets)
+            .map(|(((index, raw), data_block), source_offset)| {
+                Ok(DataBlockIndexToken {
+                    target: DataBlockIndexTarget { atom: CompactIndexAtom::from_wire(index, &raw).map_err(|error| format!("member_indices/raw_member_indices: {error}"))?, data_block },
                     source_offset,
-                },
-            )
-            .collect();
+                })
+            }).collect::<Result<Vec<_>, String>>()?;
+        let members = CountedIndexMembers::new(members)?;
+        if wire.declared_count != members.declared_count() {
+            return Err("declared_count: must equal member count plus anchor and terminator".into());
+        }
         Ok(Self {
             members,
             id: wire.id,
             data_block: wire.data_block,
             ordinal: wire.ordinal,
-            declared_count: wire.declared_count,
-            anchor_index: wire.anchor_index,
-            raw_anchor_index: wire.raw_anchor_index,
-            anchor_data_block: wire.anchor_data_block,
+            anchor: DataBlockIndexToken {
+                target: DataBlockIndexTarget {
+                    atom: CompactIndexAtom::from_wire(wire.anchor_index, &wire.raw_anchor_index).map_err(|error| format!("anchor_index/raw_anchor_index: {error}"))?,
+                    data_block: wire.anchor_data_block,
+                },
+                source_offset: wire.anchor_source_offset,
+            },
             source_offset: wire.source_offset,
-            anchor_source_offset: wire.anchor_source_offset,
         })
     }
 }
@@ -2261,17 +2246,10 @@ pub struct DataBlockAbrReferenceLane {
 /// A nullable block target and its source token.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataBlockAbrSlot {
-    pub target: Option<DataBlockAbrTarget>,
-    pub raw: Vec<u8>,
+    pub target: Option<DataBlockIndexTarget>,
     pub source_offset: u64,
 }
 
-/// A non-null block index and the block it addresses.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DataBlockAbrTarget {
-    pub index: u32,
-    pub data_block: String,
-}
 
 #[derive(Serialize, Deserialize)]
 struct DataBlockAbrReferenceLaneWire {
@@ -2306,8 +2284,8 @@ impl From<DataBlockAbrReferenceLane> for DataBlockAbrReferenceLaneWire {
             slot_indices: value
                 .slots
                 .each_ref()
-                .map(|slot| slot.target.as_ref().map(|target| target.index)),
-            raw_slot_indices: value.slots.each_ref().map(|slot| slot.raw.clone()),
+                .map(|slot| slot.target.as_ref().map(|target| target.atom.value())),
+            raw_slot_indices: value.slots.each_ref().map(|slot| slot.target.as_ref().map_or_else(|| vec![0xff], |target| target.atom.raw().to_vec())),
             slot_data_blocks: value
                 .slots
                 .each_ref()
@@ -2319,26 +2297,19 @@ impl From<DataBlockAbrReferenceLane> for DataBlockAbrReferenceLaneWire {
 impl TryFrom<DataBlockAbrReferenceLaneWire> for DataBlockAbrReferenceLane {
     type Error = String;
     fn try_from(wire: DataBlockAbrReferenceLaneWire) -> Result<Self, Self::Error> {
-        let mut slots = wire.raw_slot_indices.map(|raw| DataBlockAbrSlot {
-            target: None,
-            raw,
-            source_offset: 0,
-        });
-        for (((slot, index), data_block), source_offset) in slots
-            .iter_mut()
-            .zip(wire.slot_indices)
-            .zip(wire.slot_data_blocks)
-            .zip(wire.slot_source_offsets)
-        {
-            slot.target = match (index, data_block) {
-                (None, None) => None,
-                (Some(index), Some(data_block)) => Some(DataBlockAbrTarget { index, data_block }),
-                _ => {
-                    return Err("ABR slot index and data block must be present together".to_owned());
-                }
-            };
-            slot.source_offset = source_offset;
-        }
+        let slots = wire.raw_slot_indices.into_iter().zip(wire.slot_indices)
+            .zip(wire.slot_data_blocks).zip(wire.slot_source_offsets)
+            .map(|(((raw, index), data_block), source_offset)| {
+                let target = match (index, data_block) {
+                    (None, None) if raw == [0xff] => None,
+                    (Some(index), Some(data_block)) => Some(DataBlockIndexTarget {
+                        atom: CompactIndexAtom::from_wire(index, &raw).map_err(|error| format!("slot_indices/raw_slot_indices: {error}"))?, data_block,
+                    }),
+                    _ => return Err("slot_indices/slot_data_blocks/raw_slot_indices: inconsistent null or target token".into()),
+                };
+                Ok(DataBlockAbrSlot { target, source_offset })
+            }).collect::<Result<Vec<_>, String>>()?;
+        let slots = slots.try_into().map_err(|_: Vec<DataBlockAbrSlot>| "slot_indices: must contain sixteen slots")?;
         Ok(Self {
             slots,
             id: wire.id,
@@ -4670,24 +4641,29 @@ pub fn data_block_counted_index_lanes(container: &Container) -> Vec<DataBlockCou
                             let anchor_data_block = control_index_data_block(
                                 section_ordinal,
                                 block_count,
-                                lane.anchor,
+                                lane.anchor.atom.value(),
                             )?;
                             let source_base = entry_offset + block.offset as u64;
-                            let members = lane.members.iter().map(|token| {
+                            let members = lane.members.try_map(|token| {
                                 Some(DataBlockIndexToken {
-                                    index: token.value,
-                                    raw: token.raw.clone(),
-                                    data_block: control_index_data_block(section_ordinal, block_count, token.value)?,
+                                    target: DataBlockIndexTarget {
+                                        atom: token.atom,
+                                        data_block: control_index_data_block(section_ordinal, block_count, token.atom.value())?,
+                                    },
                                     source_offset: source_base + token.offset as u64,
                                 })
-                            }).collect::<Option<Vec<_>>>()?;
-                            Some((lane, anchor_data_block, members, source_base))
+                            })?;
+                            let anchor = DataBlockIndexToken {
+                                target: DataBlockIndexTarget { atom: lane.anchor.atom, data_block: anchor_data_block },
+                                source_offset: source_base + lane.anchor.offset as u64,
+                            };
+                            Some((lane.offset, anchor, members, source_base))
                         })
                         .enumerate()
                         .map(
                             |(
                                 ordinal,
-                                (lane, anchor_data_block, members, source_base),
+                                (offset, anchor, members, source_base),
                             )| DataBlockCountedIndexLane {
                                 id: format!(
                                     "nx:om-data-block-counted-index-lanes-{section_ordinal}-{block_ordinal}:lane#{ordinal}"
@@ -4696,13 +4672,9 @@ pub fn data_block_counted_index_lanes(container: &Container) -> Vec<DataBlockCou
                                     "nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"
                                 ),
                                 ordinal: ordinal as u32,
-                                declared_count: lane.declared_count,
-                                anchor_index: lane.anchor,
-                                raw_anchor_index: lane.raw_anchor,
-                                anchor_data_block,
+                                anchor,
                                 members,
-                                source_offset: source_base + lane.offset as u64,
-                                anchor_source_offset: source_base + lane.anchor_offset as u64,
+                                source_offset: source_base + offset as u64,
                             },
                         )
                         .collect::<Vec<_>>()
@@ -4731,24 +4703,17 @@ pub fn data_block_abr_reference_lanes(container: &Container) -> Vec<DataBlockAbr
             crate::om::offset_store_abr_reference_lanes(storage)
                 .into_iter()
                 .filter_map(|lane| {
-                    let mut slots = lane.slots.each_ref().map(|token| DataBlockAbrSlot {
-                        target: None,
-                        raw: token.raw.clone(),
-                        source_offset: source_base + token.offset as u64,
-                    });
-                    for (slot, token) in slots.iter_mut().zip(&lane.slots) {
-                        slot.target = match token.value {
-                            Some(index) => Some(DataBlockAbrTarget {
-                                index,
-                                data_block: control_index_data_block(
-                                    section_ordinal,
-                                    block_count,
-                                    index,
-                                )?,
+                    let slots = lane.slots.into_iter().map(|token| {
+                        let target = match token.atom {
+                            Some(atom) => Some(DataBlockIndexTarget {
+                                atom,
+                                data_block: control_index_data_block(section_ordinal, block_count, atom.value())?,
                             }),
                             None => None,
                         };
-                    }
+                        Some(DataBlockAbrSlot { target, source_offset: source_base + token.offset as u64 })
+                    }).collect::<Option<Vec<_>>>()?;
+                    let slots = slots.try_into().ok()?;
                     Some((lane, slots))
                 })
                 .enumerate()
@@ -5899,11 +5864,9 @@ mod tests {
         let json = r#"{"id":"lane","data_block":"block","ordinal":0,"declared_count":3,"anchor_index":1,"raw_anchor_index":[1],"anchor_data_block":"anchor","member_indices":[2],"raw_member_indices":[[2]],"member_data_blocks":["member"],"source_offset":10,"anchor_source_offset":11,"member_source_offsets":[12]}"#;
         let lane: super::DataBlockCountedIndexLane = serde_json::from_str(json).unwrap();
         assert_eq!(
-            lane.members,
-            vec![super::DataBlockIndexToken {
-                index: 2,
-                raw: vec![2],
-                data_block: "member".to_owned(),
+            lane.members.as_slice(),
+            [super::DataBlockIndexToken {
+                target: super::DataBlockIndexTarget { atom: CompactIndexAtom::read(&[2]).unwrap(), data_block: "member".to_owned() },
                 source_offset: 12,
             }]
         );
@@ -5918,6 +5881,17 @@ mod tests {
             malformed[field] = serde_json::json!([]);
             assert!(serde_json::from_value::<super::DataBlockCountedIndexLane>(malformed).is_err());
         }
+        for (field, invalid) in [
+            ("declared_count", serde_json::json!(4)),
+            ("raw_anchor_index", serde_json::json!([255])),
+            ("raw_member_indices", serde_json::json!([[3]])),
+        ] {
+            let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
+            malformed[field] = invalid;
+            let error = serde_json::from_value::<super::DataBlockCountedIndexLane>(malformed).unwrap_err();
+            assert!(error.to_string().contains(field), "{error}");
+        }
+
     }
 
     #[test]
@@ -5927,11 +5901,10 @@ mod tests {
         assert_eq!(
             lane.slots[0],
             super::DataBlockAbrSlot {
-                target: Some(super::DataBlockAbrTarget {
-                    index: 2,
+                target: Some(super::DataBlockIndexTarget {
+                    atom: CompactIndexAtom::read(&[2]).unwrap(),
                     data_block: "block".to_owned()
                 }),
-                raw: vec![2],
                 source_offset: 10,
             }
         );
@@ -5952,6 +5925,13 @@ mod tests {
             malformed[field][0] = serde_json::Value::Null;
             assert!(serde_json::from_value::<super::DataBlockAbrReferenceLane>(malformed).is_err());
         }
+        for (slot, raw) in [(0, vec![3]), (1, vec![0])] {
+            let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
+            malformed["raw_slot_indices"][slot] = serde_json::json!(raw);
+            let error = serde_json::from_value::<super::DataBlockAbrReferenceLane>(malformed).unwrap_err();
+            assert!(error.to_string().contains("raw_slot_indices"), "{error}");
+        }
+
     }
 
     #[test]
@@ -6953,7 +6933,7 @@ mod tests {
         let lanes = super::data_block_abr_reference_lanes(&container);
         assert_eq!(lanes.len(), 1);
         assert_eq!(
-            lanes[0].slots[0].target.as_ref().map(|target| target.index),
+            lanes[0].slots[0].target.as_ref().map(|target| target.atom.value()),
             Some(2)
         );
         assert_eq!(

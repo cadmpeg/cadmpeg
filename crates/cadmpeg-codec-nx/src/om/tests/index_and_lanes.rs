@@ -98,23 +98,23 @@ fn om_offset_store_counted_index_lane_requires_complete_non_null_members() {
     let lanes = super::offset_store_counted_index_lanes(&bytes);
     assert_eq!(lanes.len(), 1);
     assert_eq!(lanes[0].offset, 1);
-    assert_eq!(lanes[0].declared_count, 6);
-    assert_eq!(lanes[0].anchor, 0x42);
-    assert_eq!(lanes[0].raw_anchor, [0x42]);
-    assert_eq!(lanes[0].anchor_offset, 3);
+    assert_eq!(lanes[0].members.declared_count(), 6);
+    assert_eq!(lanes[0].anchor.atom.value(), 0x42);
+    assert_eq!(lanes[0].anchor.atom.raw(), [0x42]);
+    assert_eq!(lanes[0].anchor.offset, 3);
     assert_eq!(
         lanes[0]
             .members
-            .iter()
-            .map(|token| (token.value, token.offset))
+            .as_slice().iter()
+            .map(|token| (token.atom.value(), token.offset))
             .collect::<Vec<_>>(),
         vec![(0x62, 4), (0x48, 5), (0x50, 7), (0x7c, 9)]
     );
     assert_eq!(
         lanes[0]
             .members
-            .iter()
-            .map(|token| token.raw.clone())
+            .as_slice().iter()
+            .map(|token| token.atom.raw().to_vec())
             .collect::<Vec<_>>(),
         [vec![0x62], vec![0x80, 0x48], vec![0x80, 0x50], vec![0x7c]]
     );
@@ -143,20 +143,20 @@ fn om_offset_store_abr_lane_requires_sixteen_slots_and_exact_terminator() {
     assert_eq!(lanes[0].offset, 1);
     assert_eq!(lanes[0].slots.len(), 16);
     assert_eq!(
-        (lanes[0].slots[6].value, lanes[0].slots[6].offset),
+        (lanes[0].slots[6].atom.map(crate::om::compact::CompactIndexAtom::value), lanes[0].slots[6].offset),
         (Some(643), 8)
     );
-    assert_eq!(lanes[0].slots[6].raw, [0x82, 0x83]);
+    assert_eq!(lanes[0].slots[6].raw(), [0x82, 0x83]);
     assert!(lanes[0]
         .slots
         .iter()
         .enumerate()
-        .all(|(slot, token)| slot == 6 || token.raw == [0xff]));
+        .all(|(slot, token)| slot == 6 || token.raw() == [0xff]));
     assert!(lanes[0]
         .slots
         .iter()
         .enumerate()
-        .all(|(slot, token)| slot == 6 || token.value.is_none()));
+        .all(|(slot, token)| slot == 6 || token.atom.is_none()));
 
     bytes[23] = b'X';
     assert!(super::offset_store_abr_reference_lanes(&bytes).is_empty());
