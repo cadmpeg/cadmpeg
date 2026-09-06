@@ -769,24 +769,21 @@ fn om_extrude_profile_references_require_matching_witness_field() {
     let label = "EXTRUDE";
     let payload = b"\x01\x02\x16\x01\x03\xf0\xff\xf1\x01\x00\x01\x03\x79\xaa\x01\x03\xf0\xff\xf1\x01\x00\x00\x00";
     let record = crate::om::operation_record::OperationPayload::new(payload, 200, label).unwrap();
-    let field = super::extrude_profile_references(record).unwrap();
-    assert_eq!(field.field_tag, 0x16);
-    assert_eq!(field.references[0].witness_offset.unwrap(), 216);
-    assert_eq!(field.references[1].witness_offset.unwrap(), 218);
-    let references = field.references;
+    let field = crate::om::extrude_profile::extrude_profile_references(record).unwrap();
+    assert_eq!(field.field_tag(), 0x16);
+    let references: Vec<_> = field.references().collect();
+    assert_eq!(references[0].2.unwrap(), 216);
+    assert_eq!(references[1].2.unwrap(), 218);
     assert_eq!(references.len(), 2);
-    assert_eq!(references[0].reference.token.value(), 255);
-    assert_eq!(references[0].reference.token.raw().to_vec(), [0xf0, 0xff]);
-    assert_eq!(references[0].reference.offset, 205);
-    assert_eq!(references[1].reference.token.value(), 256);
-    assert_eq!(
-        references[1].reference.token.raw().to_vec(),
-        [0xf1, 0x01, 0x00]
-    );
-    assert_eq!(references[1].reference.offset, 207);
+    assert_eq!(references[0].0.value(), 255);
+    assert_eq!(references[0].0.raw().to_vec(), [0xf0, 0xff]);
+    assert_eq!(references[0].1, 205);
+    assert_eq!(references[1].0.value(), 256);
+    assert_eq!(references[1].0.raw().to_vec(), [0xf1, 0x01, 0x00]);
+    assert_eq!(references[1].1, 207);
 
     let without_witness = &payload[..14];
-    let field = super::extrude_profile_references(
+    let field = crate::om::extrude_profile::extrude_profile_references(
         crate::om::operation_record::OperationPayload::new(
             without_witness,
             record.payload_offset(),
@@ -795,14 +792,11 @@ fn om_extrude_profile_references_require_matching_witness_field() {
         .unwrap(),
     )
     .unwrap();
-    assert!(field
-        .references
-        .iter()
-        .all(|row| row.witness_offset.is_none()));
-    assert_eq!(field.references.len(), 2);
+    assert!(field.references().all(|row| row.2.is_none()));
+    assert_eq!(field.references().count(), 2);
     let mut alternate_tag = payload.to_vec();
     alternate_tag[2] = 0x5d;
-    let field = super::extrude_profile_references(
+    let field = crate::om::extrude_profile::extrude_profile_references(
         crate::om::operation_record::OperationPayload::new(
             &alternate_tag,
             record.payload_offset(),
@@ -811,10 +805,10 @@ fn om_extrude_profile_references_require_matching_witness_field() {
         .unwrap(),
     )
     .unwrap();
-    assert_eq!(field.field_tag, 0x5d);
+    assert_eq!(field.field_tag(), 0x5d);
     let mut ambiguous = payload.to_vec();
     ambiguous.extend_from_slice(&alternate_tag);
-    assert!(super::extrude_profile_references(
+    assert!(crate::om::extrude_profile::extrude_profile_references(
         crate::om::operation_record::OperationPayload::new(
             &ambiguous,
             record.payload_offset(),
@@ -823,7 +817,7 @@ fn om_extrude_profile_references_require_matching_witness_field() {
         .unwrap()
     )
     .is_none());
-    assert!(super::extrude_profile_references(
+    assert!(crate::om::extrude_profile::extrude_profile_references(
         crate::om::operation_record::OperationPayload::new(
             record.payload(),
             record.payload_offset(),

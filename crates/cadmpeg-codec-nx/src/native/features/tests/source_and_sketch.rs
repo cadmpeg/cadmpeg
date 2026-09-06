@@ -956,9 +956,9 @@ fn nx_extrude_construction_profile_requires_matching_resolved_encodings() {
         ordinal: ordinal - 10,
         field_tag: 0x16,
         witness_source_offset: Some(u64::from(ordinal + 20)),
-        token: crate::om::reference_index::ReferenceIndexToken::from_wire(
+        token: crate::om::reference_index::PayloadIndexToken::from_wire(
             ordinal + 90,
-            &[(ordinal + 90) as u8],
+            &[0xf0, (ordinal + 90) as u8],
         )
         .unwrap(),
         data_block: Some(format!("block-{ordinal}")),
@@ -1165,7 +1165,7 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
         ordinal: 0,
         field_tag: 0x16,
         witness_source_offset: None,
-        token: crate::om::reference_index::ReferenceIndexToken::from_wire(100, &[100]).unwrap(),
+        token: crate::om::reference_index::PayloadIndexToken::from_wire(100, &[0xf0, 100]).unwrap(),
         data_block: Some("block#100".to_string()),
         source_offset: 10,
     };
@@ -1225,7 +1225,8 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
             ordinal: 0,
             field_tag: 0x16,
             witness_source_offset: None,
-            token: crate::om::reference_index::ReferenceIndexToken::from_wire(100, &[100]).unwrap(),
+            token: crate::om::reference_index::PayloadIndexToken::from_wire(100, &[0xf0, 100])
+                .unwrap(),
             data_block: Some("block#100".to_string()),
             source_offset: 10,
         }],

@@ -2718,7 +2718,7 @@ pub struct FeatureExtrudeProfileReference {
     pub witness_source_offset: Option<u64>,
     /// Checked index retaining the exact serialized token.
     #[serde(flatten)]
-    pub token: crate::om::reference_index::ReferenceIndexToken,
+    pub token: crate::om::reference_index::PayloadIndexToken,
     /// Unique target in the native `data_blocks` arena.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_block: Option<String>,
@@ -7512,24 +7512,26 @@ pub fn feature_extrude_profile_references(
     visit_feature_history_operation_records(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
-            let Some(decoded) = crate::om::extrude_profile_references(record.payload_view()) else {
+            let Some(decoded) =
+                crate::om::extrude_profile::extrude_profile_references(record.payload_view())
+                    .and_then(|field| field.relocate(entry_offset))
+            else {
                 return;
             };
             let operation_label =
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
-            references.extend(decoded.references.into_iter().enumerate().map(|(ordinal, row)| {
-                let reference = row.reference;
+            references.extend(decoded.references().enumerate().map(|(ordinal, (token, source_offset, witness_source_offset))| {
                 FeatureExtrudeProfileReference {
                     id: format!(
                         "nx:feature-history:extrude-profile-reference#{section_key}-{operation_ordinal:010}-{ordinal:010}"
                     ),
                     operation_label: operation_label.clone(),
                     ordinal: ordinal as u32,
-                    field_tag: decoded.field_tag,
-                    witness_source_offset: row.witness_offset.map(|offset| entry_offset + offset as u64),
-                    token: reference.token,
-                    data_block: unique_offset_data_block(&indexed, reference.token.value()),
-                    source_offset: entry_offset + reference.offset as u64,
+                    field_tag: decoded.field_tag(),
+                    witness_source_offset,
+                    token,
+                    data_block: unique_offset_data_block(&indexed, token.value()),
+                    source_offset,
                 }
             }));
         },
@@ -7859,11 +7861,10 @@ pub fn feature_extrude_construction_profiles(
     let mut profiles = Vec::new();
     for (operation_label, mut operation_references) in references_by_operation {
         operation_references.sort_by_key(|reference| reference.ordinal);
-        if operation_references.is_empty()
-            || operation_references
-                .iter()
-                .enumerate()
-                .any(|(ordinal, reference)| reference.ordinal != ordinal as u32)
+        if operation_references
+            .iter()
+            .enumerate()
+            .any(|(ordinal, reference)| reference.ordinal != ordinal as u32)
         {
             continue;
         }

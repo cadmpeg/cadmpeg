@@ -47,6 +47,7 @@ pub(crate) mod color;
 use color::{ColorComponent, PaletteIndex, BACKGROUND_NAME, PALETTE_SIZE};
 pub(crate) mod branch_items;
 pub(crate) mod discriminators;
+pub(crate) mod extrude_profile;
 pub(crate) mod surface_branches;
 use branch_items::BranchItems;
 pub(crate) mod binary64_pair;
@@ -813,24 +814,6 @@ impl Swp104PayloadLeadingBranch {
             + self.terminal.raw().len()
             + 1
     }
-}
-
-/// One extrusion profile reference and its duplicate-list witness location.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExtrudeProfileReference {
-    /// Exact primary reference token.
-    pub reference: PayloadObjectReference,
-    /// Location of this token in the unique byte-identical witness list.
-    pub witness_offset: Option<usize>,
-}
-
-/// Ordered extrusion profile-reference field and its redundant witness state.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExtrudeProfileReferenceField {
-    /// Serialized field tag between the relation marker and list marker.
-    pub field_tag: u8,
-    /// Ordered profile object indices, each with its witness when present.
-    pub references: Vec<ExtrudeProfileReference>,
 }
 
 /// Fixed ordered construction-reference lane in a datum coordinate-system payload.
@@ -2379,25 +2362,6 @@ pub fn swp104_payload_leading_branch(
     })
 }
 
-/// Decode the unique witnessed profile-reference field in an `EXTRUDE` payload.
-pub fn extrude_profile_references(
-    record: OperationPayload<'_>,
-) -> Option<ExtrudeProfileReferenceField> {
-    if record.name() != "EXTRUDE" {
-        return None;
-    }
-    unique_candidate(
-        (0..record.payload().len().saturating_sub(6)).filter_map(|start| {
-            if record.payload().get(start..start + 2) != Some(&[0x01, 0x02])
-                || record.payload().get(start + 3) != Some(&0x01)
-            {
-                return None;
-            }
-            extrude_profile_reference_field(record, start)
-        }),
-    )
-}
-
 /// Decode the fixed two-scalar header in a bounded `EXTRUDE` payload.
 pub fn extrude_payload_header(record: OperationPayload<'_>) -> Option<ExtrudePayloadHeader> {
     if record.name() != "EXTRUDE"
@@ -3268,61 +3232,6 @@ fn counted_compact_values(bytes: &[u8], at: &mut usize) -> Option<Vec<LocatedCom
         values.push(token);
     }
     Some(values)
-}
-
-fn extrude_profile_reference_field(
-    record: OperationPayload<'_>,
-    start: usize,
-) -> Option<ExtrudeProfileReferenceField> {
-    let count = *record.payload().get(start + 4)?;
-    if count < 2 {
-        return None;
-    }
-    let references_start = start + 5;
-    let mut at = references_start;
-    let mut references = Vec::with_capacity(usize::from(count - 1));
-    for _ in 1..count {
-        let (object_index, width) = payload_object_index(record.payload().get(at..)?)?;
-        references.push(PayloadObjectReference {
-            offset: record.payload_offset() + at,
-            token: object_index,
-        });
-        at += width;
-    }
-    if record.payload().get(at..at + 3) != Some(&[0x01, 0x03, 0x79]) {
-        return None;
-    }
-    let encoded_references = record.payload().get(references_start..at)?;
-    let witness_len = 2 + encoded_references.len() + 2;
-    let witness_starts = record
-        .payload()
-        .windows(witness_len)
-        .enumerate()
-        .filter_map(|(witness_start, candidate)| {
-            (candidate.starts_with(&[0x01, count])
-                && candidate.get(2..2 + encoded_references.len()) == Some(encoded_references)
-                && candidate.ends_with(&[0x00, 0x00]))
-            .then_some(witness_start)
-        })
-        .collect::<Vec<_>>();
-    let witness_start = match witness_starts.as_slice() {
-        [witness_start] => Some(*witness_start),
-        _ => None,
-    };
-    Some(ExtrudeProfileReferenceField {
-        field_tag: record.payload()[start + 2],
-        references: references
-            .into_iter()
-            .map(|reference| {
-                let relative_offset = reference.offset - record.payload_offset() - references_start;
-                ExtrudeProfileReference {
-                    reference,
-                    witness_offset: witness_start
-                        .map(|start| record.payload_offset() + start + 2 + relative_offset),
-                }
-            })
-            .collect(),
-    })
 }
 
 /// Decode the unique `04, length, p<decimal>[_qualifier], 00` declaration name.
