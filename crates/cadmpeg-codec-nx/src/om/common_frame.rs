@@ -202,4 +202,38 @@ mod tests {
         assert!(TerminalFrame::<u64>::new(suffix, u64::MAX - 4).is_some());
         assert!(TerminalFrame::<u64>::new(suffix, u64::MAX - 3).is_none());
     }
+
+    #[test]
+    fn operation_common_frame_types_the_parasolid_modification_field() {
+        let mut state = [0; 8];
+        assert_eq!(common_frame_with_state(state).modifies_parasolid_data(), Some(false));
+        state[4] = 1;
+        assert_eq!(common_frame_with_state(state).modifies_parasolid_data(), Some(true));
+        state[4] = 2;
+        assert_eq!(common_frame_with_state(state).modifies_parasolid_data(), None);
+    }
+
+    #[test]
+    fn operation_common_frame_retains_the_split_tracking_data_field() {
+        assert_eq!(
+            common_frame_with_state([1, 2, 3, 0, 1, 0x56, 0xa9, 7]).split_tracking_data(),
+            [0x56, 0xa9]
+        );
+    }
+
+    #[test]
+    fn operation_common_frame_types_the_legacy_inactive_modules_field() {
+        let mut state = [0; 8];
+        assert_eq!(common_frame_with_state(state).legacy_inactive_modules(), Some(false));
+        state[3] = 1;
+        assert_eq!(common_frame_with_state(state).legacy_inactive_modules(), Some(true));
+        state[3] = 2;
+        assert_eq!(common_frame_with_state(state).legacy_inactive_modules(), None);
+    }
+
+    fn common_frame_with_state(state: [u8; 8]) -> crate::om::common_frame::CommonFrame<u64> {
+        crate::om::common_frame::CommonFrame::<u64>::new(
+            crate::om::common_frame::CommonFramePrefix::from_wire([0; 3], &[vec![0], vec![0], vec![0]], [1, 1, 1]).unwrap(),
+            state, crate::om::common_frame::CommonFrameSuffix::from_wire(0, &[0], None, &[0xff]).unwrap(), 0).unwrap()
+    }
 }
