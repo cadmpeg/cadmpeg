@@ -12,7 +12,7 @@ use crate::native::segments::{segment_om_links, SegmentBodyBinding, SegmentOmLin
 use std::borrow::Cow;
 use std::num::NonZeroU8;
 use crate::om::swp104_state::Swp104StateLane;
-use crate::om::scalar::{LocatedBinary64, ShiftedBinary64};
+use crate::om::scalar::{LocatedBinary64, PayloadScalarAtom, PayloadScalarEncoding, ShiftedBinary64};
 use crate::om::branch_items::BranchItems;
 use crate::om::thru_curve_state::ThruCurveBranchItems;
 use crate::om::thru_curve_controls::ThruCurveControls;
@@ -4977,20 +4977,9 @@ impl TryFrom<FeatureOperationTerminalDiscriminatorWire> for FeatureOperationTerm
     }
 }
 
-/// Serialized width form of an extrusion payload scalar.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum FeaturePayloadScalarEncoding {
-    /// Single-byte exact zero.
-    Zero,
-    /// Four-byte shifted IEEE-754 binary32.
-    Binary32,
-    /// Eight-byte shifted IEEE-754 binary64.
-    Binary64,
-}
-
 /// Three typed scalars anchored to an ordered operation body reference.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "FeatureOperationBodyScalarTripleWire", into = "FeatureOperationBodyScalarTripleWire")]
 pub struct FeatureOperationBodyScalarTriple {
     /// Globally unique scalar-clause identity.
     pub id: String,
@@ -5002,14 +4991,72 @@ pub struct FeatureOperationBodyScalarTriple {
     pub body_object_index: u32,
     /// Branch discriminator following the body-reference terminator.
     pub branch: u8,
+    /// Three checked scalar atoms and their absolute source offsets.
+    pub values: [FeatureBodyScalarToken; 3],
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureOperationBodyScalarTripleWire {
+    /// Globally unique scalar-clause identity.
+    id: String,
+    /// Owning operation label.
+    operation_label: String,
+    /// Zero-based body-reference occurrence order.
+    body_reference_ordinal: u32,
+    /// Serialized body object index.
+    body_object_index: u32,
+    /// Branch discriminator following the body-reference terminator.
+    branch: u8,
     /// Ordered finite scalar values.
-    pub values: [f64; 3],
+    values: [f64; 3],
     /// Ordered serialized width forms.
-    pub encodings: [FeaturePayloadScalarEncoding; 3],
+    encodings: [PayloadScalarEncoding; 3],
     /// Exact serialized scalar atoms in value order.
-    pub raw_values: [Vec<u8>; 3],
+    raw_values: [Vec<u8>; 3],
     /// Absolute file offsets of the three scalar markers.
-    pub source_offsets: [u64; 3],
+    source_offsets: [u64; 3],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FeatureBodyScalarToken {
+    pub atom: PayloadScalarAtom,
+    pub source_offset: u64,
+}
+
+impl From<FeatureOperationBodyScalarTriple> for FeatureOperationBodyScalarTripleWire {
+    fn from(value: FeatureOperationBodyScalarTriple) -> Self {
+        Self {
+            id: value.id,
+            operation_label: value.operation_label,
+            body_reference_ordinal: value.body_reference_ordinal,
+            body_object_index: value.body_object_index,
+            branch: value.branch,
+            values: value.values.map(|token| token.atom.value()),
+            encodings: value.values.map(|token| token.atom.encoding()),
+            raw_values: value.values.map(|token| token.atom.raw().to_vec()),
+            source_offsets: value.values.map(|token| token.source_offset),
+        }
+    }
+}
+
+impl TryFrom<FeatureOperationBodyScalarTripleWire> for FeatureOperationBodyScalarTriple {
+    type Error = String;
+
+    fn try_from(wire: FeatureOperationBodyScalarTripleWire) -> Result<Self, Self::Error> {
+        let [a, b, c] = std::array::from_fn::<_, 3, _>(|i| {
+            PayloadScalarAtom::from_wire(wire.values[i], wire.encodings[i], &wire.raw_values[i])
+                .map(|atom| FeatureBodyScalarToken { atom, source_offset: wire.source_offsets[i] })
+                .map_err(|error| format!("scalar[{i}]: {error}"))
+        });
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            body_reference_ordinal: wire.body_reference_ordinal,
+            body_object_index: wire.body_object_index,
+            branch: wire.branch,
+            values: [a?, b?, c?],
+        })
+    }
 }
 
 /// Ordered member index in a branch-`11` operation body clause.
@@ -11380,15 +11427,6 @@ pub fn feature_operation_body_scalar_triples(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             for triple in crate::om::operation_body_scalar_triples(record) {
-                let encoding = |encoding| match encoding {
-                    crate::om::PayloadScalarEncoding::Zero => FeaturePayloadScalarEncoding::Zero,
-                    crate::om::PayloadScalarEncoding::Binary32 => {
-                        FeaturePayloadScalarEncoding::Binary32
-                    }
-                    crate::om::PayloadScalarEncoding::Binary64 => {
-                        FeaturePayloadScalarEncoding::Binary64
-                    }
-                };
                 triples.push(FeatureOperationBodyScalarTriple {
                     id: format!(
                         "nx:feature-history:operation-body-scalar-triple#{section_key}-{operation_ordinal:010}-{}",
@@ -11400,19 +11438,10 @@ pub fn feature_operation_body_scalar_triples(
                     body_reference_ordinal: triple.body_reference_ordinal,
                     body_object_index: triple.body_object_index,
                     branch: triple.branch,
-                    values: triple.scalars.each_ref().map(|scalar| scalar.value),
-                    encodings: triple
-                        .scalars
-                        .each_ref()
-                        .map(|scalar| encoding(scalar.encoding)),
-                    raw_values: triple
-                        .scalars
-                        .each_ref()
-                        .map(|scalar| scalar.raw_value.clone()),
-                    source_offsets: triple
-                        .scalars
-                        .each_ref()
-                        .map(|scalar| entry_offset + scalar.offset as u64),
+                    values: triple.scalars.map(|scalar| FeatureBodyScalarToken {
+                        atom: scalar.atom,
+                        source_offset: entry_offset + scalar.offset as u64,
+                    }),
                 });
             }
         },

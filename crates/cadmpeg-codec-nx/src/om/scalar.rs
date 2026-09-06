@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Checked shifted binary64 atoms and their decoded values.
+//! Checked shifted scalar atoms and their decoded values.
+
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ShiftedBinary64([u8; 8]);
@@ -62,9 +64,116 @@ pub(super) fn is_shifted_ieee_f64_marker(marker: u8) -> bool {
     matches!(marker, 0x20..=0x3f | 0xa0..=0xbf)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ShiftedBinary32([u8; 4]);
+
+impl ShiftedBinary32 {
+    pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
+        let raw = <[u8; 4]>::try_from(bytes).ok()?;
+        matches!(raw[0], 0x40..=0x5f | 0xc0..=0xdf).then_some(Self(raw))
+    }
+
+    pub(crate) fn raw(self) -> [u8; 4] { self.0 }
+
+    pub(crate) fn value(self) -> f64 {
+        let mut bytes = self.0;
+        bytes[0] -= 0x10;
+        f64::from(f32::from_be_bytes(bytes))
+    }
+}
+
+/// Wire spelling of a scalar atom's derived width.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum PayloadScalarEncoding {
+    Zero,
+    Binary32,
+    Binary64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PayloadScalarAtom {
+    Zero,
+    Binary32(ShiftedBinary32),
+    Binary64(ShiftedBinary64),
+}
+
+impl PayloadScalarAtom {
+    pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
+        match bytes.first()? {
+            0 => Some(Self::Zero),
+            0x40..=0x5f | 0xc0..=0xdf => ShiftedBinary32::read(bytes.get(..4)?).map(Self::Binary32),
+            0x20..=0x3f | 0xa0..=0xbf => ShiftedBinary64::read(bytes.get(..8)?).map(Self::Binary64),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn value(self) -> f64 {
+        match self {
+            Self::Zero => 0.0,
+            Self::Binary32(atom) => atom.value(),
+            Self::Binary64(atom) => atom.value(),
+        }
+    }
+
+    pub(crate) fn raw(&self) -> &[u8] {
+        match self {
+            Self::Zero => &[0],
+            Self::Binary32(atom) => &atom.0,
+            Self::Binary64(atom) => &atom.0,
+        }
+    }
+
+    pub(crate) fn encoding(self) -> PayloadScalarEncoding {
+        match self {
+            Self::Zero => PayloadScalarEncoding::Zero,
+            Self::Binary32(_) => PayloadScalarEncoding::Binary32,
+            Self::Binary64(_) => PayloadScalarEncoding::Binary64,
+        }
+    }
+
+    pub(crate) fn from_wire(value: f64, encoding: PayloadScalarEncoding, raw: &[u8]) -> Result<Self, &'static str> {
+        let atom = Self::read(raw).ok_or("raw_values must contain complete scalar atoms")?;
+        if atom.raw().len() != raw.len() {
+            return Err("raw_values must contain exactly one scalar atom per entry");
+        }
+        if atom.encoding() != encoding {
+            return Err("encodings must match raw_values");
+        }
+        if atom.value().to_bits() != value.to_bits() {
+            return Err("values must match raw_values");
+        }
+        Ok(atom)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn payload_atoms_derive_width_and_reject_inconsistent_wire_data() {
+        for (raw, expected) in [
+            (vec![0], 0.0),
+            (vec![0x50, 0x40, 0, 0], 3.0),
+            (vec![0x2f, 0xf0, 0, 0, 0, 0, 0, 0], 1.0),
+        ] {
+            let atom = PayloadScalarAtom::read(&raw).unwrap();
+            assert_eq!(atom.value(), expected);
+            assert_eq!(atom.raw(), raw);
+            assert_eq!(PayloadScalarAtom::from_wire(expected, atom.encoding(), &raw), Ok(atom));
+            assert!(PayloadScalarAtom::from_wire(expected + 1.0, atom.encoding(), &raw).is_err());
+            let mut oversized = raw;
+            oversized.push(0);
+            assert!(PayloadScalarAtom::from_wire(expected, atom.encoding(), &oversized).is_err());
+        }
+        for marker in [0x40, 0x5f, 0xc0, 0xdf] {
+            assert!(ShiftedBinary32::read(&[marker, 255, 255, 255]).unwrap().value().is_finite());
+        }
+        for bytes in [vec![], vec![1], vec![0x50, 0x40, 0], vec![0x2f, 0xf0, 0, 0, 0, 0, 0]] {
+            assert!(PayloadScalarAtom::read(&bytes).is_none());
+        }
+    }
 
     #[test]
     fn shifted_binary64_retains_bytes_and_derives_the_value() {

@@ -227,3 +227,17 @@ fn binary64_pair_wire_preserves_all_payload_owner_forms() {
     let invalid = json.replace("1.0", "3.0");
     assert!(serde_json::from_str::<super::FeatureExtrudePayloadHeader>(&invalid).unwrap_err().to_string().contains("scalars"));
 }
+
+#[test]
+fn body_scalar_triple_wire_checks_the_atom_value_and_width() {
+    let json = r#"{"id":"triple","operation_label":"operation","body_reference_ordinal":0,"body_object_index":10,"branch":28,"values":[0.0,3.0,1.0],"encodings":["zero","binary32","binary64"],"raw_values":[[0],[80,64,0,0],[47,240,0,0,0,0,0,0]],"source_offsets":[100,101,105]}"#;
+    let triple: super::FeatureOperationBodyScalarTriple = serde_json::from_str(json).unwrap();
+    assert_eq!(serde_json::to_string(&triple).unwrap(), json);
+    for invalid in [
+        json.replace("3.0", "4.0"),
+        json.replacen("\"binary32\"", "\"binary64\"", 1),
+        json.replace("[[0],", "[[0,0],"),
+    ] {
+        assert!(serde_json::from_str::<super::FeatureOperationBodyScalarTriple>(&invalid).is_err());
+    }
+}

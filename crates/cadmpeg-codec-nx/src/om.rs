@@ -13,7 +13,7 @@ use branch_items::BranchItems;
 pub(crate) mod parameter_name;
 pub(crate) mod swp104_state;
 pub(crate) mod scalar;
-use scalar::{LocatedBinary64, ShiftedBinary64, shifted_ieee_f64, is_shifted_ieee_f64_marker};
+use scalar::{LocatedBinary64, PayloadScalarAtom, PayloadScalarEncoding, ShiftedBinary32, ShiftedBinary64, shifted_ieee_f64, is_shifted_ieee_f64_marker};
 pub(crate) mod thru_curve_endings;
 pub(crate) mod thru_curve_controls;
 use thru_curve_controls::ThruCurveControls;
@@ -2698,28 +2698,13 @@ pub struct HolePackageConstructionGroupLane {
     pub references: [PayloadObjectReference; 4],
 }
 
-/// Width form of one self-delimiting operation-payload scalar.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PayloadScalarEncoding {
-    /// Single-byte exact zero.
-    Zero,
-    /// Four-byte shifted IEEE-754 binary32.
-    Binary32,
-    /// Eight-byte shifted IEEE-754 binary64.
-    Binary64,
-}
-
 /// One typed scalar in a bounded operation payload.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PayloadScalar {
     /// Absolute offset of the scalar marker.
     pub offset: usize,
-    /// Finite scalar value.
-    pub value: f64,
-    /// Serialized width form.
-    pub encoding: PayloadScalarEncoding,
-    /// Exact serialized scalar atom.
-    pub raw_value: Vec<u8>,
+    /// Checked scalar atom with a derived value and width.
+    pub atom: PayloadScalarAtom,
 }
 
 /// One three-scalar clause anchored to an ordered operation body reference.
@@ -4172,7 +4157,8 @@ pub fn pattern_payload_transform_lane(
             (record.payload.get(at + 1..at + 1 + prefix_tail.len()) == Some(prefix_tail))
                 .then_some(())?;
             at += 1 + prefix_tail.len();
-            let (_, encoding, width) = payload_scalar(record.payload.get(at..)?)?;
+            let atom = PayloadScalarAtom::read(record.payload.get(at..)?)?;
+            let (encoding, width) = (atom.encoding(), atom.raw().len());
             (encoding != PayloadScalarEncoding::Zero).then_some(())?;
             at += width;
             (record.payload.get(at..at + scalar_suffix.len()) == Some(scalar_suffix))
@@ -4205,7 +4191,8 @@ pub fn pattern_payload_transform_lane(
             (record.payload.get(at) == Some(&row_schema_index)).then_some(())?;
             at += 1;
             for value_ordinal in 0..4 {
-                let (_, encoding, width) = payload_scalar(record.payload.get(at..)?)?;
+                let atom = PayloadScalarAtom::read(record.payload.get(at..)?)?;
+            let (encoding, width) = (atom.encoding(), atom.raw().len());
                 (encoding == PayloadScalarEncoding::Binary64 && width == 8).then_some(())?;
                 at += width;
                 if value_ordinal == 1 {
@@ -4218,7 +4205,8 @@ pub fn pattern_payload_transform_lane(
             let width = if record.payload.get(at) == Some(&0x01) {
                 1
             } else {
-                let (_, encoding, width) = payload_scalar(record.payload.get(at..)?)?;
+                let atom = PayloadScalarAtom::read(record.payload.get(at..)?)?;
+            let (encoding, width) = (atom.encoding(), atom.raw().len());
                 (encoding == PayloadScalarEncoding::Binary32).then_some(())?;
                 width
             };
@@ -4251,7 +4239,8 @@ pub fn pattern_payload_transform_lane(
             (record.payload.get(at + 1..at + 1 + prefix_tail.len()) == Some(prefix_tail))
                 .then_some(())?;
             at += 1 + prefix_tail.len();
-            let (value, actual_encoding, width) = payload_scalar(record.payload.get(at..)?)?;
+            let atom = PayloadScalarAtom::read(record.payload.get(at..)?)?;
+            let (value, actual_encoding, width) = (atom.value(), atom.encoding(), atom.raw().len());
             let encoding = match actual_encoding {
                 PayloadScalarEncoding::Zero => return None,
                 PayloadScalarEncoding::Binary32 => PatternTransformEncoding::Binary32,
@@ -4308,7 +4297,8 @@ pub fn pattern_payload_transform_lane(
             at += 1;
             let mut decode_value = |value_ordinal| {
                 let value_offset = at;
-                let (value, encoding, width) = payload_scalar(record.payload.get(at..)?)?;
+                let atom = PayloadScalarAtom::read(record.payload.get(at..)?)?;
+                let (value, encoding, width) = (atom.value(), atom.encoding(), atom.raw().len());
                 (encoding == PayloadScalarEncoding::Binary64 && width == 8).then_some(())?;
                 let value = PatternScalarToken {
                     encoding: PatternTransformEncoding::Binary64,
@@ -4335,7 +4325,8 @@ pub fn pattern_payload_transform_lane(
             let (terminal_value, encoding, width) = if record.payload.get(at) == Some(&0x01) {
                 (1.0, PatternTransformEncoding::ExactOne, 1)
             } else {
-                let (value, encoding, width) = payload_scalar(record.payload.get(at..)?)?;
+                let atom = PayloadScalarAtom::read(record.payload.get(at..)?)?;
+                let (value, encoding, width) = (atom.value(), atom.encoding(), atom.raw().len());
                 let encoding = match encoding {
                     PayloadScalarEncoding::Binary32 => PatternTransformEncoding::Binary32,
                     _ => return None,
@@ -5421,12 +5412,11 @@ pub fn operation_body_scalar_triples(
             let mut at = end + 2;
             let mut scalars = Vec::with_capacity(3);
             for _ in 0..3 {
-                let (value, encoding, width) = payload_scalar(record.bytes.get(at..)?)?;
+                let atom = PayloadScalarAtom::read(record.bytes.get(at..)?)?;
+                let width = atom.raw().len();
                 scalars.push(PayloadScalar {
                     offset: record.offset() + at,
-                    value,
-                    encoding,
-                    raw_value: record.bytes.get(at..at + width)?.to_vec(),
+                    atom,
                 });
                 at += width;
             }
@@ -5457,10 +5447,10 @@ pub fn operation_body_members(record: OperationRecord<'_>) -> Vec<OperationBodyM
             }
             let mut at = end + 2;
             for _ in 0..3 {
-                let Some((_, _, width)) = record.bytes.get(at..).and_then(payload_scalar) else {
+                let Some(atom) = record.bytes.get(at..).and_then(PayloadScalarAtom::read) else {
                     return Vec::new();
                 };
-                at += width;
+                at += atom.raw().len();
             }
             if record.bytes.get(at) != Some(&0x01) {
                 return Vec::new();
@@ -5541,7 +5531,7 @@ pub fn operation_body_11_continuations(
             }
             let mut at = end + 2;
             for _ in 0..3 {
-                let (_, _, width) = payload_scalar(record.bytes.get(at..)?)?;
+                let width = PayloadScalarAtom::read(record.bytes.get(at..)?)?.raw().len();
                 at += width;
             }
             if record.bytes.get(at) != Some(&0x01) {
@@ -5624,7 +5614,7 @@ pub fn operation_body_reference_lanes(
             }
             let mut at = end + 2;
             for _ in 0..3 {
-                let (_, _, width) = payload_scalar(record.bytes.get(at..)?)?;
+                let width = PayloadScalarAtom::read(record.bytes.get(at..)?)?.raw().len();
                 at += width;
             }
             if record.bytes.get(at) != Some(&0x01) {
@@ -6200,7 +6190,8 @@ pub fn sketch_payload_scalar_lanes(bytes: &[u8]) -> Vec<SketchPayloadScalarLane>
                         if bytes.get(at) == Some(&0x00) {
                             break;
                         }
-                        let (value, encoding, width) = payload_scalar(bytes.get(at..)?)?;
+                        let atom = PayloadScalarAtom::read(bytes.get(at..)?)?;
+                        let (value, encoding, width) = (atom.value(), atom.encoding(), atom.raw().len());
                         if encoding == PayloadScalarEncoding::Zero {
                             return None;
                         }
@@ -6297,8 +6288,7 @@ pub fn sketch_payload_mixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadMixedPair> {
         else {
             continue;
         };
-        let Some((binary32_value, PayloadScalarEncoding::Binary32, 4)) =
-            payload_scalar(&binary32_raw_value)
+        let Some(binary32_atom) = ShiftedBinary32::read(&binary32_raw_value)
         else {
             continue;
         };
@@ -6308,7 +6298,7 @@ pub fn sketch_payload_mixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadMixedPair> {
         pairs.push(SketchPayloadMixedPair {
             offset,
             fixed_value,
-            binary32_value,
+            binary32_value: binary32_atom.value(),
             fixed_raw_value,
             binary32_raw_value,
             value_offsets: [fixed_offset, binary32_offset],
@@ -6442,14 +6432,13 @@ pub fn draft_construction_binary32_lanes(bytes: &[u8]) -> Vec<DraftConstructionB
                     let mut values = Vec::new();
                     while matches!(bytes.get(at), Some(0x40..=0x5f | 0xc0..=0xdf)) {
                         let raw: [u8; 4] = bytes.get(at..at + 4)?.try_into().ok()?;
-                        let Some((value, PayloadScalarEncoding::Binary32, 4)) =
-                            payload_scalar(&raw)
+                        let Some(atom) = ShiftedBinary32::read(&raw)
                         else {
                             return None;
                         };
                         values.push(LaneToken {
-                            value,
-                            raw,
+                            value: atom.value(),
+                            raw: atom.raw(),
                             offset: at,
                         });
                         at += 4;
@@ -6671,27 +6660,6 @@ fn counted_compact_values(bytes: &[u8], at: &mut usize) -> Option<Vec<LaneToken<
     Some(values)
 }
 
-fn payload_scalar(bytes: &[u8]) -> Option<(f64, PayloadScalarEncoding, usize)> {
-    let marker = *bytes.first()?;
-    match marker {
-        0x00 => Some((0.0, PayloadScalarEncoding::Zero, 1)),
-        marker if is_shifted_ieee_f64_marker(marker) => Some((
-            shifted_ieee_f64(bytes.get(..8)?)?,
-            PayloadScalarEncoding::Binary64,
-            8,
-        )),
-        0x40..=0x5f | 0xc0..=0xdf => {
-            let encoded: [u8; 4] = bytes.get(..4)?.try_into().ok()?;
-            let mut raw = encoded;
-            raw[0] = raw[0].checked_sub(0x10)?;
-            let value = f32::from_be_bytes(raw);
-            value
-                .is_finite()
-                .then_some((f64::from(value), PayloadScalarEncoding::Binary32, 4))
-        }
-        _ => None,
-    }
-}
 
 fn extrude_profile_reference_field(
     record: OperationRecord<'_>,
