@@ -3,6 +3,7 @@
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
+use crate::om::control_leading_value::ControlLeadingValue;
 use crate::printable_string::PrintableString;
 use crate::om::state_index::StateIndexToken;
 mod state_index_wire;
@@ -1777,7 +1778,7 @@ pub struct DataBlock {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DataBlockControlFormKind {
     ZeroPrefixed,
-    ProductAnchored { leading: Option<(u8, u32)> },
+    ProductAnchored { leading: Option<ControlLeadingValue> },
 }
 
 /// Atomic classification of one complete offset-store control lane.
@@ -1830,8 +1831,8 @@ impl From<DataBlockControlForm> for DataBlockControlFormWire {
             }
             DataBlockControlFormKind::ProductAnchored { leading } => (
                 DataBlockControlFormKindWire::ProductAnchored,
-                leading.map(|(width, _)| width),
-                leading.map(|(_, value)| value),
+                leading.map(ControlLeadingValue::width),
+                leading.map(ControlLeadingValue::value),
             ),
         };
         Self {
@@ -1860,7 +1861,7 @@ impl TryFrom<DataBlockControlFormWire> for DataBlockControlForm {
             }
             (DataBlockControlFormKindWire::ProductAnchored, Some(width), Some(value)) => {
                 DataBlockControlFormKind::ProductAnchored {
-                    leading: Some((width, value)),
+                    leading: Some(ControlLeadingValue::from_wire(width, value)?),
                 }
             }
             _ => {
@@ -4071,12 +4072,8 @@ pub fn data_block_control_forms(container: &Container) -> Vec<DataBlockControlFo
                     leading_value,
                     values,
                 } => {
-                    let leading = match leading_value {
-                        Some((width, value)) => Some((u8::try_from(width).ok()?, value)),
-                        None => None,
-                    };
                     (
-                        DataBlockControlFormKind::ProductAnchored { leading },
+                        DataBlockControlFormKind::ProductAnchored { leading: leading_value },
                         values.len(),
                     )
                 }
@@ -4231,7 +4228,7 @@ pub fn data_block_control_index_values(container: &Container) -> Vec<DataBlockCo
             else {
                 return Vec::new();
             };
-            let leading_value_width = leading_value.map_or(0, |(width, _)| width);
+            let leading_value_width = leading_value.map_or(0, ControlLeadingValue::width);
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
             let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
             let block_count = records.len() + 1;
@@ -6533,7 +6530,7 @@ mod tests {
         assert_eq!(
             crate::om::offset_store_control_form(&bytes, None),
             Some(crate::om::OffsetStoreControlForm::ProductAnchored {
-                leading_value: Some((2, 0)),
+                leading_value: Some(crate::om::control_leading_value::ControlLeadingValue::from_wire(2, 0).unwrap()),
                 values: vec![7, 0x1020],
             })
         );
@@ -6544,7 +6541,7 @@ mod tests {
         assert_eq!(
             crate::om::offset_store_control_form(&nonzero_leading, None),
             Some(crate::om::OffsetStoreControlForm::ProductAnchored {
-                leading_value: Some((3, 0x1234)),
+                leading_value: Some(crate::om::control_leading_value::ControlLeadingValue::from_wire(3, 0x1234).unwrap()),
                 values: vec![7],
             })
         );
@@ -6649,6 +6646,19 @@ mod tests {
     }
 
     #[test]
+    fn control_leading_value_preserves_wire_and_rejects_width_mismatch() {
+        let json = r#"{"id":"c","data_block":"b","kind":"product_anchored","value_count":2,"leading_value_width":2,"leading_value":0,"byte_len":26,"source_offset":0}"#;
+        let value: super::DataBlockControlForm = serde_json::from_str(json).unwrap();
+        assert_eq!(serde_json::to_string(&value).unwrap(), json);
+        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        wire["leading_value_width"] = 4.into();
+        assert!(serde_json::from_value::<super::DataBlockControlForm>(wire.clone()).unwrap_err().to_string().contains("leading_value_width"));
+        wire["leading_value_width"] = 2.into();
+        wire["leading_value"] = 65536.into();
+        assert!(serde_json::from_value::<super::DataBlockControlForm>(wire).unwrap_err().to_string().contains("leading_value"));
+    }
+
+    #[test]
     fn native_catalog_classifies_product_anchored_control_atomically() {
         let file = prt_with_named_payloads(&[(
             "/Root/UG_PART/UG_PART",
@@ -6661,7 +6671,7 @@ mod tests {
         assert_eq!(
             forms[0].kind,
             super::DataBlockControlFormKind::ProductAnchored {
-                leading: Some((2, 0)),
+                leading: Some(crate::om::control_leading_value::ControlLeadingValue::from_wire(2, 0).unwrap()),
             }
         );
         assert_eq!(forms[0].value_count, 2);

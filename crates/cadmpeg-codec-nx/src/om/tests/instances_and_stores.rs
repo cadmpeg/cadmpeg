@@ -1713,7 +1713,7 @@ fn om_offset_store_control_form_requires_one_complete_grammar() {
     assert_eq!(
         super::offset_store_control_form(&product, None),
         Some(super::OffsetStoreControlForm::ProductAnchored {
-            leading_value: Some((2, 0)),
+            leading_value: Some(crate::om::control_leading_value::ControlLeadingValue::from_wire(2, 0).unwrap()),
             values: vec![7, 0x1020],
         })
     );

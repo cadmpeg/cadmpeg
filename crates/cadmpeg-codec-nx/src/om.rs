@@ -58,6 +58,8 @@ use discriminators::{
 pub(crate) mod registry;
 pub(crate) mod cache;
 pub(crate) mod product;
+pub(crate) mod control_leading_value;
+use control_leading_value::ControlLeadingValue;
 use product::{ProductRecord, ProductRecordForm, ProductText};
 mod index_table;
 use index_table::{DescendingU32Edges, FixedIndex, OffsetIndex};
@@ -7992,20 +7994,16 @@ fn offset_store_product_anchored_form(
         let control_array_bytes = control.len().checked_sub(leading_width)?;
         (!control_array_bytes.is_multiple_of(4)).then_some(())?;
     }
-    let leading_value = (leading_width != 0).then(|| {
-        (0..leading_width).fold(0u32, |value, shift| {
-            value
-                | (u32::from(
-                    joined_control_byte(control, first_record, shift)
-                        .expect("leading byte precedes the validated product offset"),
-                ) << (shift * 8))
-        })
-    });
+    let leading_value = if leading_width == 0 {
+        None
+    } else {
+        Some(ControlLeadingValue::read(leading_width, control.iter().chain(first_record).copied())?)
+    };
     let values = (0..(product_offset - leading_width) / 4)
         .map(|index| joined_control_u32_le(control, first_record, leading_width + index * 4))
         .collect::<Option<Vec<_>>>()?;
     Some(OffsetStoreControlForm::ProductAnchored {
-        leading_value: leading_value.map(|value| (leading_width, value)),
+        leading_value,
         values,
     })
 }
@@ -8022,7 +8020,7 @@ pub enum OffsetStoreControlForm {
     /// self-framed product record.
     ProductAnchored {
         /// Width and value of the compact leading little-endian integer.
-        leading_value: Option<(usize, u32)>,
+        leading_value: Option<ControlLeadingValue>,
         /// Ordered values preceding the product record.
         values: Vec<u32>,
     },
