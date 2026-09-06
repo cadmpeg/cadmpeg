@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Nonempty printable ASCII values shared by parsed and retained type-84 records.
+//! Nonempty printable ASCII values shared by parsed and retained records.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(transparent)]
@@ -15,6 +15,8 @@ impl<S: AsRef<str>> PrintableString<S> {
     }
 
     pub(crate) fn as_str(&self) -> &str { self.0.as_ref() }
+
+    pub(crate) fn into_inner(self) -> S { self.0 }
 }
 
 impl PrintableString<&str> {

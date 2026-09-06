@@ -2,7 +2,7 @@
 //! Type-101 bound state with derived form words.
 
 use serde::{Deserialize, Serialize};
-use super::xmt_reference::NonNullXmt;
+use crate::framing::xmt_reference::NonNullXmt;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Form { Populated, Empty }

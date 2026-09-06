@@ -3,7 +3,7 @@
 
 use std::num::NonZeroU16;
 use serde::{Deserialize, Serialize};
-use super::xmt_reference::NonNullXmt;
+use crate::framing::xmt_reference::NonNullXmt;
 
 #[derive(Clone, Copy)]
 pub(crate) enum TrailingCopies { One, Two }

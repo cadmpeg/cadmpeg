@@ -2,7 +2,7 @@
 //! ATTDEF_LIST active references followed by null slots.
 
 use serde::{Deserialize, Serialize};
-use super::xmt_reference::NonNullXmt;
+use crate::framing::xmt_reference::NonNullXmt;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "StateWire", into = "StateWire")]

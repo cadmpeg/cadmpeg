@@ -2,7 +2,7 @@
 //! Complete blend-bound bridge payload and its integer wire fields.
 
 use serde::{Deserialize, Serialize};
-use crate::deltas::xmt_reference::NonNullXmt;
+use crate::framing::xmt_reference::NonNullXmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Boundary { First, Second }

@@ -2,7 +2,7 @@
 //! Shared source and native inline-schema payloads.
 
 use serde::{Deserialize, Serialize};
-use super::xmt_reference::NonNullXmt;
+use crate::framing::xmt_reference::NonNullXmt;
 use super::precision_state::PrecisionState;
 use super::type101_state::Type101State;
 use super::attdef_state::AttdefState;

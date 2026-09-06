@@ -2,7 +2,8 @@
 //! Intersection declaration forms and derived state-reference sequences.
 
 use serde::{Deserialize, Serialize};
-use super::{inline_schema_fields::TermUseValues, xmt_reference::NonNullXmt};
+use super::inline_schema_fields::TermUseValues;
+use crate::framing::xmt_reference::NonNullXmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]

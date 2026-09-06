@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 use super::record_kind::RecordKind;
-use super::xmt_reference::NonNullXmt;
+use crate::framing::xmt_reference::NonNullXmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TaggedKind { Record(RecordKind), Type79, Type80 }

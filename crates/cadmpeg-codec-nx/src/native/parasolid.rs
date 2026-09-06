@@ -30,7 +30,7 @@ mod transmit_header_wire;
 use transmit_header_wire::TransmitHeaderWire;
 use body_revision_wire::RevisionLengths;
 use crate::deltas::packet_marker::ReferenceMarker;
-use crate::deltas::xmt_reference::NonNullXmt;
+use crate::framing::xmt_reference::NonNullXmt;
 use crate::deltas::state_frame::StateFrames;
 use crate::deltas::reference_lanes::{MapEntries, TaggedReferences};
 use crate::deltas::inline_schema_fields::{InlineBodyStateFields, InlineSchemaFields};
@@ -1662,15 +1662,15 @@ pub struct ParasolidAttributeDefinition {
     /// Zero-based embedded stream ordinal.
     pub stream_ordinal: u32,
     /// Stream-local definition record identity.
-    pub xmt: u32,
+    pub xmt: NonNullXmt,
     /// Stream-local next-definition identity; `1` is null.
     pub next_definition_xmt: u32,
     /// Stream-local type-79 identifier identity.
-    pub identifier_xmt: u32,
+    pub identifier_xmt: NonNullXmt,
     /// Offset of the resolved type-79 identifier in the inflated stream.
     pub identifier_inflated_offset: u64,
     /// Exact printable attribute class name.
-    pub name: String,
+    pub name: PrintableString<String>,
     /// Numeric attribute type identifier.
     pub type_id: NonZeroU32,
     /// Ordered actions for the eight logged event families.
@@ -1731,11 +1731,11 @@ impl From<ParasolidAttributeDefinition> for ParasolidAttributeDefinitionWire {
             field_count: value.field_codes.len(),
             id: value.id,
             stream_ordinal: value.stream_ordinal,
-            xmt: value.xmt,
+            xmt: value.xmt.into(),
             next_definition_xmt: value.next_definition_xmt,
-            identifier_xmt: value.identifier_xmt,
+            identifier_xmt: value.identifier_xmt.into(),
             identifier_inflated_offset: value.identifier_inflated_offset,
-            name: value.name,
+            name: value.name.into_inner(),
             type_id: value.type_id.get(),
             action_codes: value.action_codes,
             field_names_xmt: value.field_names_xmt,
@@ -1764,11 +1764,11 @@ impl TryFrom<ParasolidAttributeDefinitionWire> for ParasolidAttributeDefinition 
             legal_owner_flags,
             id: wire.id,
             stream_ordinal: wire.stream_ordinal,
-            xmt: wire.xmt,
+            xmt: NonNullXmt::try_from(wire.xmt).map_err(|_| "xmt must exceed one")?,
             next_definition_xmt: wire.next_definition_xmt,
-            identifier_xmt: wire.identifier_xmt,
+            identifier_xmt: NonNullXmt::try_from(wire.identifier_xmt).map_err(|_| "identifier_xmt must exceed one")?,
             identifier_inflated_offset: wire.identifier_inflated_offset,
-            name: wire.name,
+            name: PrintableString::new(wire.name).map_err(|_| "name must be nonempty printable ASCII")?,
             type_id: NonZeroU32::new(wire.type_id).ok_or("type_id must be nonzero")?,
             action_codes: wire.action_codes,
             field_names_xmt: wire.field_names_xmt,
@@ -2231,14 +2231,14 @@ pub fn parasolid_attribute_definitions(streams: &[Stream]) -> Vec<ParasolidAttri
                 .map(move |definition| ParasolidAttributeDefinition {
                     id: format!(
                         "nx:s{stream_ordinal}:attribute-definition#{}",
-                        definition.xmt
+                        u32::from(definition.xmt)
                     ),
                     stream_ordinal: stream_ordinal as u32,
                     xmt: definition.xmt,
                     next_definition_xmt: definition.next_definition_xmt,
                     identifier_xmt: definition.identifier_xmt,
                     identifier_inflated_offset: definition.identifier_offset as u64,
-                    name: definition.name.to_string(),
+                    name: definition.name.into_owned(),
                     type_id: definition.type_id,
                     action_codes: definition.action_codes,
                     field_names_xmt: definition.field_names_xmt,
@@ -2287,7 +2287,7 @@ pub fn parasolid_attribute_field_names(
         BTreeMap::<(u32, u32), Vec<&ParasolidAttributeDefinition>>::new();
     for definition in definitions {
         definitions_by_identity
-            .entry((definition.stream_ordinal, definition.xmt))
+            .entry((definition.stream_ordinal, u32::from(definition.xmt)))
             .or_default()
             .push(definition);
     }
@@ -2344,7 +2344,7 @@ pub fn parasolid_attribute_field_names(
             Some(ParasolidAttributeFieldNames {
                 id: format!(
                     "nx:s{}:attribute-field-names#{}",
-                    definition.stream_ordinal, definition.xmt
+                    definition.stream_ordinal, u32::from(definition.xmt)
                 ),
                 stream_ordinal: definition.stream_ordinal,
                 attribute_definition: definition.id.clone(),
@@ -2926,7 +2926,7 @@ pub fn parasolid_attribute_class_uses(
         BTreeMap::<(u32, u32), Vec<&ParasolidAttributeDefinition>>::new();
     for definition in definitions {
         definitions_by_identity
-            .entry((definition.stream_ordinal, definition.xmt))
+            .entry((definition.stream_ordinal, u32::from(definition.xmt)))
             .or_default()
             .push(definition);
     }
@@ -3877,11 +3877,11 @@ mod tests {
         let definition = ParasolidAttributeDefinition {
             id: "definition".into(),
             stream_ordinal: 2,
-            xmt: 9,
+            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(9).unwrap(),
             next_definition_xmt: 1,
-            identifier_xmt: 10,
+            identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(10).unwrap(),
             identifier_inflated_offset: 32,
-            name: "CLASS".into(),
+            name: crate::parasolid::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
             type_id: std::num::NonZeroU32::new(8000).unwrap(),
             action_codes: [AttributeAction::Code0; 8],
             field_names_xmt: 1,
@@ -4090,11 +4090,11 @@ mod tests {
         let definition = ParasolidAttributeDefinition {
             id: "definition".into(),
             stream_ordinal: 2,
-            xmt: 9,
+            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(9).unwrap(),
             next_definition_xmt: 1,
-            identifier_xmt: 10,
+            identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(10).unwrap(),
             identifier_inflated_offset: 32,
-            name: "CLASS".into(),
+            name: crate::parasolid::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
             type_id: std::num::NonZeroU32::new(8000).unwrap(),
             action_codes: [AttributeAction::Code0; 8],
             field_names_xmt: 1,
@@ -4149,11 +4149,11 @@ mod tests {
         let definition = |field_names_xmt, field_codes: Vec<u8>| ParasolidAttributeDefinition {
             id: "definition".into(),
             stream_ordinal: 0,
-            xmt: 20,
+            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(20).unwrap(),
             next_definition_xmt: 1,
-            identifier_xmt: 21,
+            identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(21).unwrap(),
             identifier_inflated_offset: 10,
-            name: "CLASS".into(),
+            name: crate::parasolid::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
             type_id: std::num::NonZeroU32::new(8000).unwrap(),
             action_codes: [AttributeAction::Code0; 8],
             field_names_xmt,
@@ -4283,11 +4283,11 @@ mod tests {
         let definition = ParasolidAttributeDefinition {
             id: "definition".into(),
             stream_ordinal: 3,
-            xmt: 20,
+            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(20).unwrap(),
             next_definition_xmt: 1,
-            identifier_xmt: 21,
+            identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(21).unwrap(),
             identifier_inflated_offset: 10,
-            name: "CLASS".into(),
+            name: crate::parasolid::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
             type_id: std::num::NonZeroU32::new(8000).unwrap(),
             action_codes: [AttributeAction::Code0; 8],
             field_names_xmt: 25,
@@ -4535,11 +4535,11 @@ mod tests {
         let definition = ParasolidAttributeDefinition {
             id: "definition".into(),
             stream_ordinal: 3,
-            xmt: 34,
+            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(34).unwrap(),
             next_definition_xmt: 1,
-            identifier_xmt: 35,
+            identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(35).unwrap(),
             identifier_inflated_offset: 80,
-            name: "UG2/PMARK_ATTRIBUTE".into(),
+            name: crate::parasolid::printable_string::PrintableString::new("UG2/PMARK_ATTRIBUTE".to_string()).unwrap(),
             type_id: std::num::NonZeroU32::new(9000).unwrap(),
             action_codes: [AttributeAction::Code0; 8],
             field_names_xmt: 1,
@@ -4614,11 +4614,11 @@ mod tests {
         let definition = ParasolidAttributeDefinition {
             id: "definition".into(),
             stream_ordinal: 0,
-            xmt: 20,
+            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(20).unwrap(),
             next_definition_xmt: 1,
-            identifier_xmt: 21,
+            identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(21).unwrap(),
             identifier_inflated_offset: 10,
-            name: "CLASS".into(),
+            name: crate::parasolid::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
             type_id: std::num::NonZeroU32::new(8000).unwrap(),
             action_codes: [AttributeAction::Code0; 8],
             field_names_xmt: 1,

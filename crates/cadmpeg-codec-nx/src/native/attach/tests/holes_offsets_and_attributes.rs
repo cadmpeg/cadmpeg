@@ -1265,11 +1265,11 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
     let definition = ParasolidAttributeDefinition {
         id: "definition".into(),
         stream_ordinal: 3,
-        xmt: 34,
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(34).unwrap(),
         next_definition_xmt: 1,
-        identifier_xmt: 35,
+        identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(35).unwrap(),
         identifier_inflated_offset: 90,
-        name: "SDL/TYSA_DENSITY".into(),
+        name: crate::parasolid::printable_string::PrintableString::new("SDL/TYSA_DENSITY".to_string()).unwrap(),
         type_id: std::num::NonZeroU32::new(8004).unwrap(),
         action_codes: [AttributeAction::Code0; 8],
         field_names_xmt: 1,
@@ -1283,7 +1283,7 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
         topology_attribute_reference: references[2].id.clone(),
         entity_51_record: "entity".into(),
         attribute_class_use: "attribute-class-use".into(),
-        definition_xmt: definition.xmt,
+        definition_xmt: definition.xmt.into(),
         attribute_definition: definition.id.clone(),
     };
     let class_uses = [class_use];
@@ -1377,11 +1377,11 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
     let definition = ParasolidAttributeDefinition {
         id: "definition".into(),
         stream_ordinal: 3,
-        xmt: 34,
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(34).unwrap(),
         next_definition_xmt: 1,
-        identifier_xmt: 35,
+        identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(35).unwrap(),
         identifier_inflated_offset: 90,
-        name: "SDL/TYSA_DENSITY".into(),
+        name: crate::parasolid::printable_string::PrintableString::new("SDL/TYSA_DENSITY".to_string()).unwrap(),
         type_id: std::num::NonZeroU32::new(8004).unwrap(),
         action_codes: [AttributeAction::Code0; 8],
         field_names_xmt: 1,
@@ -1395,7 +1395,7 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
         topology_attribute_reference: reference.id.clone(),
         entity_51_record: "entity".into(),
         attribute_class_use: "attribute-class-use".into(),
-        definition_xmt: definition.xmt,
+        definition_xmt: definition.xmt.into(),
         attribute_definition: definition.id.clone(),
     };
     let field_use = ParasolidAttributeFieldUse {
@@ -1445,7 +1445,7 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
     );
 
     let generic_definition = ParasolidAttributeDefinition {
-        name: "CLASS".into(),
+        name: crate::parasolid::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
         field_names_xmt: 25,
         ..definition.clone()
     };
@@ -1463,7 +1463,7 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
     );
 
     let named_definition = ParasolidAttributeDefinition {
-        name: "PVM/25_1".into(),
+        name: crate::parasolid::printable_string::PrintableString::new("PVM/25_1".to_string()).unwrap(),
         field_names_xmt: 25,
         ..definition.clone()
     };
@@ -1524,11 +1524,11 @@ fn topology_attribute_fields_use_declared_ordinal_and_type_for_every_class() {
     let definition = ParasolidAttributeDefinition {
         id: "definition".into(),
         stream_ordinal: 3,
-        xmt: 34,
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(34).unwrap(),
         next_definition_xmt: 1,
-        identifier_xmt: 35,
+        identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(35).unwrap(),
         identifier_inflated_offset: 90,
-        name: "SDL/TYSA_BLEND_ID".into(),
+        name: crate::parasolid::printable_string::PrintableString::new("SDL/TYSA_BLEND_ID".to_string()).unwrap(),
         type_id: std::num::NonZeroU32::new(8004).unwrap(),
         action_codes: [AttributeAction::Code0; 8],
         field_names_xmt: 1,
@@ -1542,7 +1542,7 @@ fn topology_attribute_fields_use_declared_ordinal_and_type_for_every_class() {
         topology_attribute_reference: reference.id.clone(),
         entity_51_record: "entity".into(),
         attribute_class_use: "attribute-class-use".into(),
-        definition_xmt: definition.xmt,
+        definition_xmt: definition.xmt.into(),
         attribute_definition: definition.id.clone(),
     };
     let text_field = ParasolidAttributeFieldUse {
@@ -1618,11 +1618,11 @@ fn topology_attribute_index_retains_linked_type_81_records() {
     let definition = ParasolidAttributeDefinition {
         id: "definition".into(),
         stream_ordinal: 3,
-        xmt: 34,
+        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(34).unwrap(),
         next_definition_xmt: 1,
-        identifier_xmt: 35,
+        identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(35).unwrap(),
         identifier_inflated_offset: 90,
-        name: "CLASS".into(),
+        name: crate::parasolid::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
         type_id: std::num::NonZeroU32::new(8000).unwrap(),
         action_codes: [AttributeAction::Code0; 8],
         field_names_xmt: 1,
@@ -1637,7 +1637,7 @@ fn topology_attribute_index_retains_linked_type_81_records() {
             topology_attribute_reference: reference.id.clone(),
             entity_51_record: "head".into(),
             attribute_class_use: "head-class-use".into(),
-            definition_xmt: definition.xmt,
+            definition_xmt: definition.xmt.into(),
             attribute_definition: definition.id.clone(),
         },
         ParasolidTopologyAttributeClassUse {
@@ -1645,7 +1645,7 @@ fn topology_attribute_index_retains_linked_type_81_records() {
             topology_attribute_reference: reference.id.clone(),
             entity_51_record: "child".into(),
             attribute_class_use: "child-class-use".into(),
-            definition_xmt: definition.xmt,
+            definition_xmt: definition.xmt.into(),
             attribute_definition: definition.id.clone(),
         },
     ];

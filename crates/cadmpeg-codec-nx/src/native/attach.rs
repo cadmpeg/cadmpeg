@@ -4444,7 +4444,7 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
                 field_use.position.field_ordinal(), field_use.value_kind.field_code().code()
             ),
         };
-        Some(format!("{}.{}", definition.name, field_name))
+        Some(format!("{}.{}", definition.name.as_str(), field_name))
     }
 }
 

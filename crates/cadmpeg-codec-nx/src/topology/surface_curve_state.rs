@@ -2,7 +2,7 @@
 //! Surface-curve references and finite source tolerance.
 
 use serde::{Deserialize, Serialize};
-use crate::deltas::xmt_reference::NonNullXmt;
+use crate::framing::xmt_reference::NonNullXmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "StateWire", into = "StateWire")]

@@ -9,6 +9,8 @@
 
 use cadmpeg_core::decode::View;
 
+pub(crate) mod xmt_reference;
+
 use crate::layout::analytic_common_header as analytic;
 use crate::layout::circle_payload as circle;
 use crate::layout::cone_payload as cone;

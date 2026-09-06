@@ -34,6 +34,7 @@ use entity_references::EntityReferences;
 
 use crate::container::Container;
 use crate::framing::read_and_advance as read_xmt;
+use crate::framing::xmt_reference::NonNullXmt;
 
 /// Classification of an inflated payload in the part stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -148,15 +149,15 @@ pub struct AttributeDefinition<'a> {
     /// Inflated-stream offset of the `00 50` definition tag.
     pub offset: usize,
     /// Stream-local definition record identity.
-    pub xmt: u32,
+    pub xmt: NonNullXmt,
     /// Stream-local next-definition identity; `1` is null.
     pub next_definition_xmt: u32,
     /// Stream-local type-79 identifier identity.
-    pub identifier_xmt: u32,
+    pub identifier_xmt: NonNullXmt,
     /// Inflated-stream offset of the resolved `00 4f` identifier tag.
     pub identifier_offset: usize,
     /// Exact printable class name.
-    pub name: &'a str,
+    pub name: PrintableString<&'a str>,
     /// Numeric attribute type identifier.
     pub type_id: NonZeroU32,
     /// Ordered actions for the eight logged event families.
@@ -436,7 +437,7 @@ fn referenced_value_xmts(bytes: &[u8], multiplicity: ValueMultiplicity) -> BTree
     let mut definitions = BTreeMap::<u32, Vec<AttributeDefinition<'_>>>::new();
     for definition in attribute_definitions(bytes) {
         definitions
-            .entry(definition.xmt)
+            .entry(u32::from(definition.xmt))
             .or_default()
             .push(definition);
     }
@@ -1060,8 +1061,8 @@ fn entity_51_references(bytes: &[u8], at: &mut usize, count: usize) -> Option<Ve
 #[derive(Debug, Clone, Copy)]
 struct AttributeIdentifier<'a> {
     offset: usize,
-    xmt: u32,
-    name: &'a str,
+    xmt: NonNullXmt,
+    name: PrintableString<&'a str>,
 }
 
 fn attribute_identifiers(bytes: &[u8]) -> Vec<AttributeIdentifier<'_>> {
@@ -1074,18 +1075,13 @@ fn attribute_identifiers(bytes: &[u8]) -> Vec<AttributeIdentifier<'_>> {
             }
             let name_len = usize::try_from(View::u32_be_at(bytes, at)?).ok()?;
             at += 4;
-            let xmt = read_xmt(bytes, &mut at)?;
+            let xmt = NonNullXmt::try_from(read_xmt(bytes, &mut at)?).ok()?;
             let name_end = at.checked_add(name_len)?;
             let name_bytes = bytes.get(at..name_end)?;
-            (!name_bytes.is_empty()
-                && name_bytes
-                    .iter()
-                    .all(|byte| byte.is_ascii() && !byte.is_ascii_control()))
-            .then_some(())?;
             Some(AttributeIdentifier {
                 offset,
                 xmt,
-                name: std::str::from_utf8(name_bytes).ok()?,
+                name: PrintableString::new(std::str::from_utf8(name_bytes).ok()?).ok()?,
             })
         })
         .collect()
@@ -1103,16 +1099,15 @@ pub fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
             }
             let field_count = View::u32_be_at(bytes, at)?;
             at += 4;
-            let xmt = read_xmt(bytes, &mut at)?;
+            let xmt = NonNullXmt::try_from(read_xmt(bytes, &mut at)?).ok()?;
             let next_definition_xmt = read_xmt(bytes, &mut at)?;
-            let identifier_xmt = read_xmt(bytes, &mut at)?;
+            let identifier_xmt = NonNullXmt::try_from(read_xmt(bytes, &mut at)?).ok()?;
             let type_id = NonZeroU32::new(View::u32_be_at(bytes, at)?)?;
             at += 4;
             let mut action_codes = [AttributeAction::Code0; 8];
             for (action, byte) in action_codes.iter_mut().zip(bytes.get(at..at + 8)?) {
                 *action = AttributeAction::try_from(*byte).ok()?;
             }
-            (xmt > 1 && identifier_xmt > 1).then_some(())?;
             at += 8;
             let field_names_xmt = read_xmt(bytes, &mut at)?;
             let mut matches = identifiers

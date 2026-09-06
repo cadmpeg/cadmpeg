@@ -2,7 +2,7 @@
 //! Complete reference-lane forms of a state frame.
 
 use serde::{Deserialize, Serialize};
-use super::xmt_reference::NonNullXmt;
+use crate::framing::xmt_reference::NonNullXmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "[u32; 4]", into = "[u32; 4]")]

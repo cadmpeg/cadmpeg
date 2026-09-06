@@ -2,7 +2,7 @@
 //! Non-null trim basis and finite endpoint payloads.
 
 use serde::{Deserialize, Serialize};
-use crate::deltas::xmt_reference::NonNullXmt;
+use crate::framing::xmt_reference::NonNullXmt;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Endpoint { point: [f64; 3], parameter: f64 }
