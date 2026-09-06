@@ -21,6 +21,7 @@ use crate::om::fixed::{Q155, Q155Atom, Q155Marker, Q155LaneFrame};
 use crate::om::scalar_run::FramedScalarRun;
 use crate::om::scalar_pair::{PairPosition, SketchPairForm, DatumPairForm, MixedPairForm};
 mod pair_wire;
+use crate::om::draft_identity::{DraftIdentityFrame, DraftIdentityForm};
 use crate::om::discriminators::DraftBinary32Branch;
 use crate::om::pattern::{PatternRow, PatternRows, PatternScalarEncoding, PatternTerminal, PatternValue, PatternWideValues};
 use crate::om::thru_curve_state::ThruCurveBranchItems;
@@ -4113,24 +4114,12 @@ pub struct FeatureDraftConstructionIdentityFrame {
     pub draft_construction_payload: String,
     /// Zero-based frame order in the reconstructed payload.
     pub ordinal: u32,
-    /// Exact bytes from the opening marker through the identity introducer.
-    pub prefix: Vec<u8>,
-    /// Typed frame form selected by the exact prefix.
-    pub form: FeatureDraftConstructionIdentityFrameForm,
-    /// Nonempty lowercase hexadecimal identity.
-    pub identity: String,
-    /// Payload-relative offset of the opening marker.
-    pub payload_offset: u64,
+    /// Exact prefix tokens, identity, and bounded payload position.
+    pub frame: DraftIdentityFrame,
     /// Absolute source offset of the opening marker.
     pub source_offset: u64,
     /// Absolute source offset of the identity.
     pub identity_source_offset: u64,
-}
-
-impl FeatureDraftConstructionIdentityFrame {
-    pub fn identity_payload_offset(&self) -> u64 {
-        self.payload_offset + self.prefix.len() as u64
-    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -4146,7 +4135,7 @@ struct FeatureDraftConstructionIdentityFrameWire {
     /// Exact bytes from the opening marker through the identity introducer.
     prefix: Vec<u8>,
     /// Typed frame form selected by the exact prefix.
-    form: FeatureDraftConstructionIdentityFrameForm,
+    form: DraftIdentityForm,
     /// Nonempty lowercase hexadecimal identity.
     identity: String,
     /// Payload-relative offset of the opening marker.
@@ -4161,16 +4150,16 @@ struct FeatureDraftConstructionIdentityFrameWire {
 
 impl From<FeatureDraftConstructionIdentityFrame> for FeatureDraftConstructionIdentityFrameWire {
     fn from(value: FeatureDraftConstructionIdentityFrame) -> Self {
-        let identity_payload_offset = value.identity_payload_offset();
+        let identity_payload_offset = value.frame.identity_offset();
         Self {
             id: value.id,
             operation_label: value.operation_label,
             draft_construction_payload: value.draft_construction_payload,
             ordinal: value.ordinal,
-            prefix: value.prefix,
-            form: value.form,
-            identity: value.identity,
-            payload_offset: value.payload_offset,
+            prefix: value.frame.prefix(),
+            form: value.frame.form(),
+            identity: value.frame.identity().to_owned(),
+            payload_offset: value.frame.offset(),
             identity_payload_offset,
             source_offset: value.source_offset,
             identity_source_offset: value.identity_source_offset,
@@ -4182,7 +4171,9 @@ impl TryFrom<FeatureDraftConstructionIdentityFrameWire> for FeatureDraftConstruc
     type Error = String;
 
     fn try_from(wire: FeatureDraftConstructionIdentityFrameWire) -> Result<Self, Self::Error> {
-        if wire.payload_offset.checked_add(wire.prefix.len() as u64) != Some(wire.identity_payload_offset) {
+        let frame = DraftIdentityFrame::from_wire(&wire.prefix, wire.form, wire.identity, wire.payload_offset)
+            .map_err(str::to_owned)?;
+        if frame.identity_offset() != wire.identity_payload_offset {
             return Err("identity_payload_offset must equal payload_offset plus prefix length".into());
         }
         Ok(Self {
@@ -4190,36 +4181,13 @@ impl TryFrom<FeatureDraftConstructionIdentityFrameWire> for FeatureDraftConstruc
             operation_label: wire.operation_label,
             draft_construction_payload: wire.draft_construction_payload,
             ordinal: wire.ordinal,
-            prefix: wire.prefix,
-            form: wire.form,
-            identity: wire.identity,
-            payload_offset: wire.payload_offset,
+            frame,
             source_offset: wire.source_offset,
             identity_source_offset: wire.identity_source_offset,
         })
     }
 }
 
-
-/// Typed prefix form of a draft construction identity frame.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum FeatureDraftConstructionIdentityFrameForm {
-    /// Two compact indices and a `02` or `03` branch.
-    IndexedBranch {
-        /// Non-null first compact index.
-        first_index: u32,
-        /// Nullable second compact index.
-        second_index: Option<u32>,
-        /// Exact `02` or `03` branch byte.
-        branch: crate::om::discriminators::DraftIdentityBranch,
-    },
-    /// One nullable compact index followed by `ff 02 01`.
-    Tagged {
-        /// Nullable compact index.
-        index: Option<u32>,
-    },
-}
 
 /// End-anchored compact-index lane in a bounded draft construction payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -10562,31 +10530,14 @@ pub fn feature_draft_construction_identity_frames(
                 .into_iter()
                 .enumerate()
                 .filter_map(|(ordinal, frame)| {
-                    let payload_offset = frame.offset as u64;
-                    let identity_payload_offset = frame.identity_offset() as u64;
-                    let form = match frame.form {
-                        crate::om::DraftConstructionIdentityFrameForm::IndexedBranch {
-                            first_index,
-                            second_index,
-                            branch,
-                        } => FeatureDraftConstructionIdentityFrameForm::IndexedBranch {
-                            first_index,
-                            second_index,
-                            branch,
-                        },
-                        crate::om::DraftConstructionIdentityFrameForm::Tagged { index } => {
-                            FeatureDraftConstructionIdentityFrameForm::Tagged { index }
-                        }
-                    };
+                    let payload_offset = frame.offset();
+                    let identity_payload_offset = frame.identity_offset();
                     Some(FeatureDraftConstructionIdentityFrame {
                         id: format!("{}-identity-frame-{ordinal:010}", payload.id),
                         operation_label: payload.operation_label.clone(),
                         draft_construction_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
-                        prefix: frame.prefix,
-                        form,
-                        identity: frame.identity,
-                        payload_offset,
+                        frame,
                         source_offset: joined.source_offset(payload_offset)?,
                         identity_source_offset: joined.source_offset(identity_payload_offset)?,
                     })

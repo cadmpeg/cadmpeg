@@ -408,3 +408,23 @@ fn extrude_32_branch_rejects_disagreeing_scalar_and_body_copies() {
         assert!(error.to_string().contains(field), "{error}");
     }
 }
+
+#[test]
+fn draft_identity_frame_derives_prefix_form_and_preserves_wire() {
+    let json = r#"{"id":"frame","operation_label":"operation","draft_construction_payload":"payload","ordinal":0,"prefix":[65,129,84,240,56,2,1],"form":{"kind":"indexed_branch","first_index":340,"second_index":56,"branch":2},"identity":"abc123","payload_offset":1,"identity_payload_offset":8,"source_offset":100,"identity_source_offset":500}"#;
+    let frame: FeatureDraftConstructionIdentityFrame = serde_json::from_str(json).unwrap();
+    assert_eq!(serde_json::to_string(&frame).unwrap(), json);
+    for (field, value, expected) in [
+        ("identity", serde_json::json!(""), "identity"),
+        ("identity", serde_json::json!("ABC123"), "identity"),
+        ("prefix", serde_json::json!([65, 129, 84, 240, 56, 3, 1]), "form"),
+        ("prefix", serde_json::json!([65, 129, 84, 240, 56, 2, 1, 0]), "prefix"),
+        ("identity_payload_offset", serde_json::json!(9), "identity_payload_offset"),
+        ("payload_offset", serde_json::json!(u64::MAX), "payload_offset"),
+    ] {
+        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        wire[field] = value;
+        let error = serde_json::from_value::<FeatureDraftConstructionIdentityFrame>(wire).unwrap_err();
+        assert!(error.to_string().contains(expected), "{error}");
+    }
+}

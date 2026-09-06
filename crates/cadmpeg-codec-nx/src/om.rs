@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Frame NX object-model entities using external boundary and identity arrays.
 
+pub(crate) mod draft_identity;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::num::NonZeroU8;
@@ -53,7 +55,7 @@ use thru_curve_state::ThruCurveBranchItems;
 use thru_curve_endings::{ThruCurveBranchSuffix, ThruCurveGroupTerminator};
 use swp104_state::Swp104StateLane;
 use discriminators::{
-    DraftBinary32Branch, DraftIdentityBranch, OperationStateCounterKind, OperationStatePairTag,
+    DraftBinary32Branch, OperationStateCounterKind, OperationStatePairTag,
 };
 pub(crate) mod registry;
 pub(crate) mod cache;
@@ -1892,44 +1894,6 @@ pub struct DatumCsysDescriptorBlock {
     pub identity: String,
     /// Exact bytes following the identity.
     pub suffix: Vec<u8>,
-}
-
-/// Complete identity frame in a reconstructed draft construction payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DraftConstructionIdentityFrame {
-    /// Payload-relative offset of the opening `41` marker.
-    pub offset: usize,
-    /// Exact bytes from the opening marker through the identity introducer.
-    pub prefix: Vec<u8>,
-    /// Typed frame form selected by the exact prefix.
-    pub form: DraftConstructionIdentityFrameForm,
-    /// Nonempty lowercase hexadecimal identity.
-    pub identity: String,
-}
-
-impl DraftConstructionIdentityFrame {
-    pub fn identity_offset(&self) -> usize {
-        self.offset + self.prefix.len()
-    }
-}
-
-/// Typed prefix form of a draft construction identity frame.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DraftConstructionIdentityFrameForm {
-    /// Two compact indices and a `02` or `03` branch.
-    IndexedBranch {
-        /// Non-null first compact index.
-        first_index: u32,
-        /// Nullable second compact index.
-        second_index: Option<u32>,
-        /// Exact `02` or `03` branch byte.
-        branch: DraftIdentityBranch,
-    },
-    /// One nullable compact index followed by `ff 02 01`.
-    Tagged {
-        /// Nullable compact index.
-        index: Option<u32>,
-    },
 }
 
 /// Compact object frame in a bounded offset-store block.
@@ -5553,80 +5517,10 @@ pub fn datum_csys_descriptor_block(bytes: &[u8]) -> Option<DatumCsysDescriptorBl
 }
 
 /// Decode every complete identity frame in a reconstructed draft construction payload.
-pub fn draft_construction_identity_frames(bytes: &[u8]) -> Vec<DraftConstructionIdentityFrame> {
-    let mut frames = Vec::new();
-    for offset in 0..bytes.len() {
-        if bytes[offset] != 0x41 {
-            continue;
-        }
-        let Some((prefix_len, form)) = draft_identity_prefix(&bytes[offset..]) else {
-            continue;
-        };
-        let identity_start = offset + prefix_len;
-        let mut identity_end = identity_start;
-        while bytes
-            .get(identity_end)
-            .is_some_and(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
-        {
-            identity_end += 1;
-        }
-        if identity_end == identity_start || bytes.get(identity_end) != Some(&b'?') {
-            continue;
-        }
-        frames.push(DraftConstructionIdentityFrame {
-            offset,
-            prefix: bytes[offset..offset + prefix_len].to_vec(),
-            form,
-            identity: String::from_utf8(bytes[identity_start..identity_end].to_vec())
-                .expect("lowercase hexadecimal bytes are UTF-8"),
-        });
-    }
-    frames
+pub fn draft_construction_identity_frames(bytes: &[u8]) -> Vec<draft_identity::DraftIdentityFrame> {
+    (0..bytes.len()).filter_map(|offset| draft_identity::DraftIdentityFrame::read(bytes, offset)).collect()
 }
 
-fn draft_identity_prefix(bytes: &[u8]) -> Option<(usize, DraftConstructionIdentityFrameForm)> {
-    if bytes.first() != Some(&0x41) {
-        return None;
-    }
-    if bytes.get(1) == Some(&0xf0) {
-        let (index, index_width) = compact_index(bytes.get(2..)?)?;
-        let end = 2 + index_width + 3;
-        (bytes.get(2 + index_width..end) == Some(&[0xff, 0x02, 0x01])).then_some((
-            end,
-            DraftConstructionIdentityFrameForm::Tagged {
-                index: compact_index_value(index),
-            },
-        ))
-    } else {
-        let (CompactIndex::Value(first_index), first_width) = compact_index(bytes.get(1..)?)?
-        else {
-            return None;
-        };
-        let second_at = 1 + first_width + 1;
-        if bytes.get(1 + first_width) != Some(&0xf0) {
-            return None;
-        }
-        let (second_index, second_width) = compact_index(bytes.get(second_at..)?)?;
-        let branch_at = second_at + second_width;
-        let end = branch_at + 2;
-        let branch = DraftIdentityBranch::try_from(*bytes.get(branch_at)?).ok()?;
-        (bytes.get(branch_at + 1) == Some(&0x01)).then_some((
-            end,
-            DraftConstructionIdentityFrameForm::IndexedBranch {
-                first_index,
-                second_index: compact_index_value(second_index),
-                branch,
-            },
-        ))
-    }
-}
-
-fn compact_index_value(index: CompactIndex) -> Option<u32> {
-    match index {
-        CompactIndex::Null => None,
-        CompactIndex::Value(value) => Some(value),
-    }
-}
 
 /// Decode compact object IDs followed by their complete frame discriminator.
 pub fn data_block_object_frames(bytes: &[u8]) -> Vec<DataBlockObjectFrame> {
