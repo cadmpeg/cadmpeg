@@ -238,3 +238,27 @@ impl super::scalar_run::ScalarFrame for DraftBinary32Branch {
     type Atom = super::scalar::ShiftedBinary32;
     fn prefix_len(self) -> u64 { self.discriminator().len() as u64 }
 }
+
+/// Branch introducing an operation body reference lane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+#[repr(u8)]
+pub enum OperationBodyReferenceBranch {
+    Form11 = 0x11,
+    Form1c = 0x1c,
+}
+
+impl From<OperationBodyReferenceBranch> for u8 {
+    fn from(branch: OperationBodyReferenceBranch) -> Self { branch as Self }
+}
+
+impl TryFrom<u8> for OperationBodyReferenceBranch {
+    type Error = &'static str;
+    fn try_from(branch: u8) -> Result<Self, Self::Error> {
+        match branch {
+            0x11 => Ok(Self::Form11),
+            0x1c => Ok(Self::Form1c),
+            _ => Err("OperationBodyReferenceBranch.branch is not an admitted discriminator"),
+        }
+    }
+}

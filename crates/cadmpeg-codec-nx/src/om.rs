@@ -1992,7 +1992,7 @@ pub struct OperationBodyReferenceLane {
     /// Serialized body object index.
     pub body_object_index: u32,
     /// Branch discriminator following the body-reference terminator.
-    pub branch: u8,
+    pub branch: discriminators::OperationBodyReferenceBranch,
     /// Ordered non-null lane values with their encoding.
     pub values: OperationBodyReferenceLaneValues,
 }
@@ -4645,10 +4645,7 @@ pub fn operation_body_reference_lanes(
             if record.bytes.get(end) != Some(&0xff) {
                 return None;
             }
-            let branch = *record.bytes.get(end + 1)?;
-            if !matches!(branch, 0x11 | 0x1c) {
-                return None;
-            }
+            let branch = discriminators::OperationBodyReferenceBranch::try_from(*record.bytes.get(end + 1)?).ok()?;
             let mut at = end + 2;
             for _ in 0..3 {
                 let width = PayloadScalarAtom::read(record.bytes.get(at..)?)?.raw().len();

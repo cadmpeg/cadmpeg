@@ -1251,7 +1251,7 @@ fn om_operation_body_decodes_homogeneous_unwrapped_reference_lanes() {
         ..record
     });
     assert_eq!(lanes.len(), 1);
-    assert_eq!(lanes[0].branch, 0x11);
+    assert_eq!(lanes[0].branch, crate::om::discriminators::OperationBodyReferenceBranch::Form11);
     let super::OperationBodyReferenceLaneValues::PayloadObjectIndex(values) = &lanes[0].values else { panic!("expected payload lane") };
     assert_eq!(
         values.iter()

@@ -546,3 +546,15 @@ fn operation_body_reference_lanes_preserve_wire_and_enforce_each_grammar() {
         assert!(error.to_string().contains("raw_object_indices"), "{error}");
     }
 }
+
+#[test]
+fn operation_body_reference_lane_rejects_unknown_branch() {
+    let json = serde_json::json!({
+        "id": "lane", "operation_label": "operation", "body_reference_ordinal": 0,
+        "body_object_index": 110, "branch": 0, "encoding": "compact_index",
+        "object_indices": [1], "raw_object_indices": [[1]], "data_blocks": [null],
+        "source_offsets": [100]
+    });
+    let error = serde_json::from_value::<FeatureOperationBodyReferenceLane>(json).unwrap_err();
+    assert!(error.to_string().contains("branch"));
+}

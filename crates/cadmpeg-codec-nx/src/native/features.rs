@@ -5238,7 +5238,7 @@ pub struct FeatureOperationBodyReferenceLane {
     pub operation_label: String,
     pub body_reference_ordinal: u32,
     pub body_object_index: u32,
-    pub branch: u8,
+    pub branch: crate::om::discriminators::OperationBodyReferenceBranch,
     pub references: FeatureOperationBodyReferences,
 }
 
@@ -5253,7 +5253,7 @@ struct FeatureOperationBodyReferenceLaneWire {
     /// Serialized body object index.
     body_object_index: u32,
     /// Branch discriminator following the body-reference terminator.
-    branch: u8,
+    branch: crate::om::discriminators::OperationBodyReferenceBranch,
     /// Homogeneous encoding used by every lane value.
     encoding: FeatureOperationBodyReferenceLaneEncoding,
     /// Ordered decoded indices.
