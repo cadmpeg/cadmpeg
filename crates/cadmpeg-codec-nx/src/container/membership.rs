@@ -10,7 +10,13 @@ impl<T> ObjectIdMembers<T> {
         Ok(Self(members))
     }
 
-    pub(crate) fn count(&self) -> u32 { self.0.len() as u32 }
-    pub(crate) fn as_slice(&self) -> &[T] { &self.0 }
-    pub(crate) fn into_vec(self) -> Vec<T> { self.0 }
+    pub(crate) fn count(&self) -> u32 {
+        self.0.len() as u32
+    }
+    pub(crate) fn as_slice(&self) -> &[T] {
+        &self.0
+    }
+    pub(crate) fn into_vec(self) -> Vec<T> {
+        self.0
+    }
 }

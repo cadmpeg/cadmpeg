@@ -21,8 +21,8 @@ use crate::records::{
     DesignRecordHeader, DesignSketchPlacement, DesignSketchProfileOperand,
     DesignSketchProfileRegionMember, SketchCurveIdentity, SketchRelationOperand,
 };
-use cadmpeg_core::CodecError;
 use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
@@ -180,7 +180,11 @@ pub(crate) fn bind_sweep_sketch_selections(
                     group.id == group_id
                         && group.scope_record_index == scope.record_index
                         && group.role == 0x0000_0041_0000_0000
-                        && group.members.iter().map(|member| member.value).eq([profile_operand.record_index])
+                        && group
+                            .members
+                            .iter()
+                            .map(|member| member.value)
+                            .eq([profile_operand.record_index])
                         && native_stream(&group.id) == Some(stream)
                 });
                 matches!(
@@ -657,7 +661,9 @@ fn historical_face_profile_selection(
         for member in group_members {
             let (kind, entity_ref) = match &member.historical {
                 Some(binding) => {
-                    if !binding.state_ids.is_empty() && !binding.state_ids.contains(&previous_state_id) {
+                    if !binding.state_ids.is_empty()
+                        && !binding.state_ids.contains(&previous_state_id)
+                    {
                         return None;
                     }
                     (Some(binding.kind), binding.entity_ref)
@@ -1479,11 +1485,18 @@ fn historical_selection_regions(
     }
     let mut state_ids = members
         .first()?
-        .historical.as_ref().into_iter()
+        .historical
+        .as_ref()
+        .into_iter()
         .flat_map(|binding| binding.state_ids.iter().copied())
         .collect::<HashSet<_>>();
     for member in &members[1..] {
-        state_ids.retain(|state_id| member.historical.as_ref().is_some_and(|binding| binding.state_ids.contains(state_id)));
+        state_ids.retain(|state_id| {
+            member
+                .historical
+                .as_ref()
+                .is_some_and(|binding| binding.state_ids.contains(state_id))
+        });
     }
     let mut state_ids = state_ids.into_iter().collect::<Vec<_>>();
     state_ids.sort_unstable();
@@ -1696,11 +1709,9 @@ fn resolved_selection_member_points(
     };
     let (origin, normal, u_axis) = sketch.resolved_placement()?;
     let v_axis = normal.cross(u_axis);
-    Some(vec![
-        origin
-            .translated(u_axis, position.u)
-            .translated(v_axis, position.v),
-    ])
+    Some(vec![origin
+        .translated(u_axis, position.u)
+        .translated(v_axis, position.v)])
 }
 
 pub(crate) fn ordered_unique_profile_selections(
@@ -1874,7 +1885,8 @@ fn resolve_entity_selection_path(
     }
     let primary_identity = primary_identity?;
     let mut matching_placements = resolution.placements.iter().filter(|placement| {
-        native_stream(&placement.id) == Some(stream) && placement.entity_id.suffix() == primary_identity
+        native_stream(&placement.id) == Some(stream)
+            && placement.entity_id.suffix() == primary_identity
     });
     let placement = matching_placements.next()?;
     if matching_placements.next().is_some() {
@@ -1890,7 +1902,8 @@ fn resolve_entity_selection_path(
             native_stream(&curve.id) == Some(stream)
                 && curve.owner_reference == Some(owner_reference)
                 && curve.primary_id == secondary_identity
-                && secondary.curve_identity
+                && secondary
+                    .curve_identity
                     .is_none_or(|identity| curve.secondary_id == identity.value)
         });
         let curve = curves.next()?;

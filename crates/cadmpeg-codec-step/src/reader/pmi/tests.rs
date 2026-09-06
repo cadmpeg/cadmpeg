@@ -84,7 +84,8 @@ pub(crate) fn decode_transfers_ap242_semantic_pmi() {
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     let semantic = dimension.id.clone();
     result.ir_mut().model.pmi.push(cadmpeg_ir::PmiAnnotation {
-        id: cadmpeg_ir::ids::PmiId::mint("test:model:pmi#test:pmi:presentation").expect("identity grammar"),
+        id: cadmpeg_ir::ids::PmiId::mint("test:model:pmi#test:pmi:presentation")
+            .expect("identity grammar"),
         name: Some("width note".into()),
         visible: Some(false),
         targets: Vec::new(),

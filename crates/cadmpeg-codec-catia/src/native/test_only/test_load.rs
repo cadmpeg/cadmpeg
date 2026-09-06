@@ -1,4 +1,3 @@
-use crate::native::class5b5c::CatiaConsolidatedClass5b5cRecord;
 use super::test_consolidated::{
     validate_consolidated_circles, validate_consolidated_class5b5c_records,
     validate_consolidated_class61_records, validate_consolidated_cone_faces,
@@ -14,8 +13,8 @@ use super::test_legacy::{
     validate_legacy_entity_runs,
 };
 use super::test_links::{
-    ConsolidatedSupportArenas, validate_consolidated_edge_runs,
-    validate_consolidated_owner_packets, validate_native_links,
+    validate_consolidated_edge_runs, validate_consolidated_owner_packets, validate_native_links,
+    ConsolidatedSupportArenas,
 };
 use super::test_zero_entity::{
     validate_zero_entity_endpoint_locus_candidates, validate_zero_entity_endpoint_pair_candidates,
@@ -23,7 +22,8 @@ use super::test_zero_entity::{
     validate_zero_entity_support_runs, validate_zero_entity_topology_records,
 };
 use super::*;
-use crate::native::edge_node::{CatiaConsolidatedEdgeNodeWire, load_edge_nodes};
+use crate::native::class5b5c::CatiaConsolidatedClass5b5cRecord;
+use crate::native::edge_node::{load_edge_nodes, CatiaConsolidatedEdgeNodeWire};
 use crate::test_support::NativeRecordTestExt;
 
 impl CatiaNative {

@@ -3,8 +3,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_core::CodecError;
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::OccurrenceId;
 use cadmpeg_ir::products::{
     ExternalDocumentReference, Occurrence, OccurrenceParent, PrototypeReference,

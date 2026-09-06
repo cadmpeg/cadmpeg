@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Product-structure transfer unit tests.
 
-use crate::FcstdCodec;
 use crate::native;
-use crate::product::{ProductKind, product_cycle_nodes, product_kind, product_record_index};
+use crate::product::{product_cycle_nodes, product_kind, product_record_index, ProductKind};
 use crate::test_support::*;
+use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::collections::HashSet;
 use std::io::Cursor;
@@ -182,12 +182,10 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
         definition: cadmpeg_ir::ids::ProductDefinitionId::mint("fcstd:model:component#missing")
             .expect("identity grammar"),
     };
-    assert!(
-        cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
-            .findings
-            .iter()
-            .any(|finding| finding.message.contains("invalid occurrence reference"))
-    );
+    assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("invalid occurrence reference")));
 }
 
 #[test]

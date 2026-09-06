@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Nonempty type-99 field-name references.
 
-use serde::{Deserialize, Serialize};
 use crate::framing::xmt_reference::NonNullXmt;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "Vec<NonNullXmt>", into = "Vec<NonNullXmt>")]
@@ -11,17 +11,23 @@ pub(crate) struct NameReferences(Vec<NonNullXmt>);
 impl TryFrom<Vec<NonNullXmt>> for NameReferences {
     type Error = &'static str;
     fn try_from(values: Vec<NonNullXmt>) -> Result<Self, Self::Error> {
-        if values.is_empty() { return Err("name_xmts: must contain at least one reference"); }
+        if values.is_empty() {
+            return Err("name_xmts: must contain at least one reference");
+        }
         Ok(Self(values))
     }
 }
 
 impl From<NameReferences> for Vec<NonNullXmt> {
-    fn from(values: NameReferences) -> Self { values.0 }
+    fn from(values: NameReferences) -> Self {
+        values.0
+    }
 }
 
 impl NameReferences {
-    pub(crate) fn as_slice(&self) -> &[NonNullXmt] { &self.0 }
+    pub(crate) fn as_slice(&self) -> &[NonNullXmt] {
+        &self.0
+    }
 }
 
 #[cfg(test)]

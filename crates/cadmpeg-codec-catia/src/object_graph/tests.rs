@@ -1477,7 +1477,10 @@ fn object_record_wire_checks_derived_roles() {
         body: super::ObjectRecordBody::Inline(vec![0, 0xfe]),
     };
     let mut wire = serde_json::to_value(&record).unwrap();
-    assert_eq!(serde_json::from_value::<super::ObjectRecord>(wire.clone()).unwrap(), record);
+    assert_eq!(
+        serde_json::from_value::<super::ObjectRecord>(wire.clone()).unwrap(),
+        record
+    );
     wire["owner_ref"] = serde_json::json!(2);
     assert!(serde_json::from_value::<super::ObjectRecord>(wire).is_err());
 }

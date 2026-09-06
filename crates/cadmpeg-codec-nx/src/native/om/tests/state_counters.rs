@@ -290,9 +290,18 @@ fn native_catalog_emits_bounded_operation_state_statuses_and_slot_lanes() {
     let lanes = operation_state_slot_lanes(&container);
     assert_eq!(lanes.len(), 1);
     assert_eq!(lanes[0].slots.len(), 3);
-    assert_eq!(lanes[0].slots.as_slice()[0].map(crate::om::state_index::StateIndexToken::value), None);
-    assert_eq!(lanes[0].slots.as_slice()[1].map(crate::om::state_index::StateIndexToken::value), Some(0x3ad));
-    assert_eq!(lanes[0].slots.as_slice()[2].map(crate::om::state_index::StateIndexToken::value), None);
+    assert_eq!(
+        lanes[0].slots.as_slice()[0].map(crate::om::state_index::StateIndexToken::value),
+        None
+    );
+    assert_eq!(
+        lanes[0].slots.as_slice()[1].map(crate::om::state_index::StateIndexToken::value),
+        Some(0x3ad)
+    );
+    assert_eq!(
+        lanes[0].slots.as_slice()[2].map(crate::om::state_index::StateIndexToken::value),
+        None
+    );
 
     let result = NxCodec
         .decode(
@@ -321,27 +330,39 @@ fn message_body_preserves_flat_tagged_value_wire() {
     assert_eq!(serde_json::to_string(&body).unwrap(), json);
     let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
     wire["value"] = 1.into();
-    assert!(serde_json::from_value::<super::OmOperationStateMessageBody>(wire)
-        .unwrap_err().to_string().contains("value"));
+    assert!(
+        serde_json::from_value::<super::OmOperationStateMessageBody>(wire)
+            .unwrap_err()
+            .to_string()
+            .contains("value")
+    );
 }
 
 #[test]
 fn message_body_rejects_text_length_mismatch() {
     let json = r#"{"declared_length":4,"text":"A","value_marker":160,"value":0,"raw_value":[160,0,0],"count_or_severity":0}"#;
-    assert!(serde_json::from_str::<super::OmOperationStateMessageBody>(json)
-        .unwrap_err().to_string().contains("declared_length"));
+    assert!(
+        serde_json::from_str::<super::OmOperationStateMessageBody>(json)
+            .unwrap_err()
+            .to_string()
+            .contains("declared_length")
+    );
 }
 
 #[test]
 fn roll_forward_groups_preserve_zero_row_headers_and_reject_count_mismatch() {
     for (prefix, count) in [("null", 0), ("1", 0), ("1", 1)] {
-        let json = format!(r#"{{"id":"group","section_link":"section","ordinal":0,"opener":[1,0],"count_prefix":{prefix},"declared_count":{count},"rows":[],"table_trailing_bytes":[],"source_entry":"om","source_offset":0,"table_end_offset":4}}"#);
+        let json = format!(
+            r#"{{"id":"group","section_link":"section","ordinal":0,"opener":[1,0],"count_prefix":{prefix},"declared_count":{count},"rows":[],"table_trailing_bytes":[],"source_entry":"om","source_offset":0,"table_end_offset":4}}"#
+        );
         let group: OmRollForwardStateGroup = serde_json::from_str(&json).unwrap();
         assert_eq!(serde_json::to_string(&group).unwrap(), json);
     }
     let json = r#"{"id":"group","section_link":"section","ordinal":0,"opener":[1,0],"count_prefix":1,"declared_count":2,"rows":[],"table_trailing_bytes":[],"source_entry":"om","source_offset":0,"table_end_offset":4}"#;
     assert!(serde_json::from_str::<OmRollForwardStateGroup>(json)
-        .unwrap_err().to_string().contains("declared_count/rows"));
+        .unwrap_err()
+        .to_string()
+        .contains("declared_count/rows"));
 }
 
 #[test]
@@ -352,7 +373,9 @@ fn roll_forward_group_derives_row_ordinals() {
     let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
     wire["rows"][0]["List"]["ordinal"] = 1.into();
     assert!(serde_json::from_value::<OmRollForwardStateGroup>(wire)
-        .unwrap_err().to_string().contains("rows.ordinal"));
+        .unwrap_err()
+        .to_string()
+        .contains("rows.ordinal"));
 }
 
 #[test]
@@ -363,5 +386,7 @@ fn state_slot_lane_derives_ordinals_and_preserves_null_tokens() {
     let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
     wire["slots"][1]["ordinal"] = 0.into();
     assert!(serde_json::from_value::<OmOperationStateSlotLane>(wire)
-        .unwrap_err().to_string().contains("slots.ordinal"));
+        .unwrap_err()
+        .to_string()
+        .contains("slots.ordinal"));
 }

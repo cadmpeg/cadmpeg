@@ -24,13 +24,23 @@ fn parasolid_attribute_definition_requires_declared_printable_name_and_field_rec
     assert_eq!(definitions[0].name.as_str(), "SDL/TYSA_DENSITY");
     assert_eq!(XmtTarget::to_wire(definitions[0].next_definition_xmt), 1);
     assert_eq!(definitions[0].type_id.get(), 9000);
-    assert_eq!(definitions[0].action_codes.map(|action| action.code()), [0, 1, 2, 3, 4, 5, 6, 0]);
+    assert_eq!(
+        definitions[0].action_codes.map(|action| action.code()),
+        [0, 1, 2, 3, 4, 5, 6, 0]
+    );
     assert_eq!(XmtTarget::to_wire(definitions[0].field_names_xmt), 0x30);
     assert_eq!(definitions[0].legal_owner_flags.padded()[4], 1);
     assert_eq!(definitions[0].legal_owner_flags.padded()[12], 1);
     assert_eq!(definitions[0].legal_owner_flags.as_slice().len(), 16);
     assert_eq!(definitions[0].field_codes.len(), 1);
-    assert_eq!(definitions[0].field_codes.iter().map(|field| field.code()).collect::<Vec<_>>(), [2]);
+    assert_eq!(
+        definitions[0]
+            .field_codes
+            .iter()
+            .map(|field| field.code())
+            .collect::<Vec<_>>(),
+        [2]
+    );
 
     let truncated = &bytes[..bytes.len() - 1];
     assert!(crate::parasolid::attribute_definitions(truncated).is_empty());
@@ -76,7 +86,14 @@ fn parasolid_attribute_definition_accepts_fourteen_legal_owner_flags() {
         [0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0]
     );
     assert_eq!(&definitions[0].legal_owner_flags.padded()[14..], [0, 0]);
-    assert_eq!(definitions[0].field_codes.iter().map(|field| field.code()).collect::<Vec<_>>(), [2, 3]);
+    assert_eq!(
+        definitions[0]
+            .field_codes
+            .iter()
+            .map(|field| field.code())
+            .collect::<Vec<_>>(),
+        [2, 3]
+    );
 }
 
 #[test]
@@ -369,11 +386,9 @@ fn decode_emits_charted_surface_intersection_construction() {
     assert_eq!(serde_json::to_value(terms[0].form).unwrap(), "L?");
     assert_eq!(<[f64; 3]>::from(terms[0].point), [0.0, 0.0, 0.0]);
     assert_eq!(<[f64; 3]>::from(terms[1].point), [10.0, 0.0, 0.0]);
-    assert!(
-        terms
-            .iter()
-            .all(|term| matches!(term.framing, crate::intersection::TermUseFraming::Direct))
-    );
+    assert!(terms
+        .iter()
+        .all(|term| matches!(term.framing, crate::intersection::TermUseFraming::Direct)));
     let support_uv = result
         .ir()
         .native
@@ -403,7 +418,15 @@ fn decode_emits_charted_surface_intersection_construction() {
     assert_eq!(serde_json::to_value(&charts[0]).unwrap()["chart_count"], 2);
     assert_eq!(charts[0].preamble.chordal_error(), 0.000_01);
     assert_eq!(charts[0].preamble.angular_error(), 0.001);
-    assert_eq!(charts[0].data.points().iter().map(|point| [point.x, point.y, point.z]).collect::<Vec<_>>(), [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]]);
+    assert_eq!(
+        charts[0]
+            .data
+            .points()
+            .iter()
+            .map(|point| [point.x, point.y, point.z])
+            .collect::<Vec<_>>(),
+        [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]]
+    );
     assert!(matches!(
         charts[0].data.point_layout(),
         crate::intersection::ChartPointLayout::Xyz3

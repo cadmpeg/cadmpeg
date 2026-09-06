@@ -3,8 +3,10 @@
 
 use std::{ops::Range, sync::Arc};
 
-use super::{EntityRecord, FieldDefinition, FixedEntityRecord, IndexedSection, IndexedStore,
-    OperationLabel, RecordArea, Section, TypeDefinition};
+use super::{
+    EntityRecord, FieldDefinition, FixedEntityRecord, IndexedSection, IndexedStore, OperationLabel,
+    RecordArea, Section, TypeDefinition,
+};
 
 /// The range and its immutable owner are checked and retained together.
 #[derive(Debug, Clone)]
@@ -17,12 +19,21 @@ impl CachedRange {
     fn new(source: &Arc<[u8]>, start: usize, length: usize) -> Option<Self> {
         let end = start.checked_add(length)?;
         source.get(start..end)?;
-        Some(Self { source: source.clone(), range: start..end })
+        Some(Self {
+            source: source.clone(),
+            range: start..end,
+        })
     }
 
-    fn bytes(&self) -> &[u8] { &self.source[self.range.clone()] }
-    fn offset(&self) -> usize { self.range.start }
-    fn len(&self) -> usize { self.range.len() }
+    fn bytes(&self) -> &[u8] {
+        &self.source[self.range.clone()]
+    }
+    fn offset(&self) -> usize {
+        self.range.start
+    }
+    fn len(&self) -> usize {
+        self.range.len()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -34,23 +45,39 @@ struct CachedDefinition {
 
 impl CachedDefinition {
     fn type_definition(&self) -> TypeDefinition<'_> {
-        TypeDefinition { offset: self.offset, name: &self.name, registry_tail: &self.registry_tail }
+        TypeDefinition {
+            offset: self.offset,
+            name: &self.name,
+            registry_tail: &self.registry_tail,
+        }
     }
 
     fn field_definition(&self) -> FieldDefinition<'_> {
-        FieldDefinition { offset: self.offset, name: &self.name, registry_tail: &self.registry_tail }
+        FieldDefinition {
+            offset: self.offset,
+            name: &self.name,
+            registry_tail: &self.registry_tail,
+        }
     }
 }
 
 impl From<&TypeDefinition<'_>> for CachedDefinition {
     fn from(value: &TypeDefinition<'_>) -> Self {
-        Self { offset: value.offset, name: value.name.to_owned(), registry_tail: value.registry_tail.into() }
+        Self {
+            offset: value.offset,
+            name: value.name.to_owned(),
+            registry_tail: value.registry_tail.into(),
+        }
     }
 }
 
 impl From<&FieldDefinition<'_>> for CachedDefinition {
     fn from(value: &FieldDefinition<'_>) -> Self {
-        Self { offset: value.offset, name: value.name.to_owned(), registry_tail: value.registry_tail.into() }
+        Self {
+            offset: value.offset,
+            name: value.name.to_owned(),
+            registry_tail: value.registry_tail.into(),
+        }
     }
 }
 
@@ -62,8 +89,14 @@ struct FixedCachedRecord {
 
 #[derive(Debug, Clone)]
 enum CachedStore {
-    Fixed { records: Vec<FixedCachedRecord> },
-    OffsetOnly { control: CachedRange, column_storage: CachedRange, records: Vec<CachedRange> },
+    Fixed {
+        records: Vec<FixedCachedRecord>,
+    },
+    OffsetOnly {
+        control: CachedRange,
+        column_storage: CachedRange,
+        records: Vec<CachedRange>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -80,17 +113,28 @@ impl IndexedSectionLayout {
     pub(crate) fn from_section(section: &IndexedSection<'_>, source: &Arc<[u8]>) -> Option<Self> {
         let store = match &section.store {
             IndexedStore::Fixed { records } => CachedStore::Fixed {
-                records: records.iter().map(|record| Some(FixedCachedRecord {
-                    object_id: record.object_id,
-                    bytes: CachedRange::new(source, record.offset, record.bytes.len())?,
-                })).collect::<Option<_>>()?,
+                records: records
+                    .iter()
+                    .map(|record| {
+                        Some(FixedCachedRecord {
+                            object_id: record.object_id,
+                            bytes: CachedRange::new(source, record.offset, record.bytes.len())?,
+                        })
+                    })
+                    .collect::<Option<_>>()?,
             },
-            IndexedStore::OffsetOnly { control, column_storage, records } => {
+            IndexedStore::OffsetOnly {
+                control,
+                column_storage,
+                records,
+            } => {
                 let start = control.offset.checked_add(control.bytes.len())?;
                 CachedStore::OffsetOnly {
                     control: CachedRange::new(source, control.offset, control.bytes.len())?,
                     column_storage: CachedRange::new(source, start, column_storage.len())?,
-                    records: records.iter().map(|record| CachedRange::new(source, record.offset, record.bytes.len()))
+                    records: records
+                        .iter()
+                        .map(|record| CachedRange::new(source, record.offset, record.bytes.len()))
                         .collect::<Option<_>>()?,
                 }
             }
@@ -108,26 +152,52 @@ impl IndexedSectionLayout {
     pub(crate) fn materialize(&self) -> IndexedSection<'_> {
         let store = match &self.store {
             CachedStore::Fixed { records } => IndexedStore::Fixed {
-                records: records.iter().map(|record| FixedEntityRecord {
-                    object_id: record.object_id,
-                    offset: record.bytes.offset(),
-                    bytes: record.bytes.bytes(),
-                }).collect::<Vec<_>>().into(),
+                records: records
+                    .iter()
+                    .map(|record| FixedEntityRecord {
+                        object_id: record.object_id,
+                        offset: record.bytes.offset(),
+                        bytes: record.bytes.bytes(),
+                    })
+                    .collect::<Vec<_>>()
+                    .into(),
             },
-            CachedStore::OffsetOnly { control, column_storage, records } => IndexedStore::OffsetOnly {
-                control: EntityRecord { offset: control.offset(), bytes: control.bytes() },
+            CachedStore::OffsetOnly {
+                control,
+                column_storage,
+                records,
+            } => IndexedStore::OffsetOnly {
+                control: EntityRecord {
+                    offset: control.offset(),
+                    bytes: control.bytes(),
+                },
                 column_storage: column_storage.bytes(),
-                records: records.iter().map(|record| EntityRecord {
-                    offset: record.offset(), bytes: record.bytes(),
-                }).collect::<Vec<_>>().into(),
+                records: records
+                    .iter()
+                    .map(|record| EntityRecord {
+                        offset: record.offset(),
+                        bytes: record.bytes(),
+                    })
+                    .collect::<Vec<_>>()
+                    .into(),
             },
         };
         IndexedSection {
             base: self.base,
             entity_index_offset: self.entity_index_offset,
             object_id_table_offset: self.object_id_table_offset,
-            types: self.types.iter().map(CachedDefinition::type_definition).collect::<Vec<_>>().into(),
-            fields: self.fields.iter().map(CachedDefinition::field_definition).collect::<Vec<_>>().into(),
+            types: self
+                .types
+                .iter()
+                .map(CachedDefinition::type_definition)
+                .collect::<Vec<_>>()
+                .into(),
+            fields: self
+                .fields
+                .iter()
+                .map(CachedDefinition::field_definition)
+                .collect::<Vec<_>>()
+                .into(),
             store,
         }
     }
@@ -153,7 +223,11 @@ impl SectionLayout {
             types: section.types.iter().map(CachedDefinition::from).collect(),
             fields: section.fields.iter().map(CachedDefinition::from).collect(),
             record_area,
-            operation_labels: section.cached_operation_labels.iter().map(CachedOperationLabel::from).collect(),
+            operation_labels: section
+                .cached_operation_labels
+                .iter()
+                .map(CachedOperationLabel::from)
+                .collect(),
         })
     }
 
@@ -161,12 +235,28 @@ impl SectionLayout {
         Section {
             offset: self.frame.offset(),
             byte_len: self.frame.len(),
-            types: self.types.iter().map(CachedDefinition::type_definition).collect::<Vec<_>>().into(),
-            fields: self.fields.iter().map(CachedDefinition::field_definition).collect::<Vec<_>>().into(),
+            types: self
+                .types
+                .iter()
+                .map(CachedDefinition::type_definition)
+                .collect::<Vec<_>>()
+                .into(),
+            fields: self
+                .fields
+                .iter()
+                .map(CachedDefinition::field_definition)
+                .collect::<Vec<_>>()
+                .into(),
             record_area: self.record_area.as_ref().map(|range| RecordArea {
-                offset: range.offset(), bytes: range.bytes(),
+                offset: range.offset(),
+                bytes: range.bytes(),
             }),
-            cached_operation_labels: self.operation_labels.iter().map(CachedOperationLabel::materialize).collect::<Vec<_>>().into(),
+            cached_operation_labels: self
+                .operation_labels
+                .iter()
+                .map(CachedOperationLabel::materialize)
+                .collect::<Vec<_>>()
+                .into(),
         }
     }
 }
@@ -179,13 +269,19 @@ struct CachedOperationLabel {
 
 impl From<&OperationLabel<'_>> for CachedOperationLabel {
     fn from(value: &OperationLabel<'_>) -> Self {
-        Self { header: value.header, value: value.value.to_owned() }
+        Self {
+            header: value.header,
+            value: value.value.to_owned(),
+        }
     }
 }
 
 impl CachedOperationLabel {
     fn materialize(&self) -> OperationLabel<'_> {
-        OperationLabel { header: self.header, value: &self.value }
+        OperationLabel {
+            header: self.header,
+            value: &self.value,
+        }
     }
 }
 

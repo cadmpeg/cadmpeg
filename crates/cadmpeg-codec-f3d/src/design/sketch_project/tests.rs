@@ -7,8 +7,8 @@ use crate::design::dimensions::{exact_atomic_constraint, point_lies_on_sketch_ge
 use crate::design::geometry::{point_on_sketch_entity, sketch_entity_endpoints};
 use crate::records::{
     DesignSketchPlacement, DesignSketchVisibility, SketchCurveIdentity, SketchPoint,
-    SketchRelation, SketchRelationKind, SketchRelationMember,
-    SketchRelationReturnMember, SketchText,
+    SketchRelation, SketchRelationKind, SketchRelationMember, SketchRelationReturnMember,
+    SketchText,
 };
 use cadmpeg_ir::features::Length;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -59,18 +59,26 @@ fn sketch_text_alignment_ordinals_project_to_named_positions() {
 #[test]
 fn sketch_container_visibility_projects_to_the_neutral_sketch() {
     let placement = DesignSketchPlacement {
-        frame: crate::records::DesignSketchFrame::new(0, crate::records::DesignSketchFrameForm::MemberCompact { paired_byte_offset: 34 }).unwrap(),
+        frame: crate::records::DesignSketchFrame::new(
+            0,
+            crate::records::DesignSketchFrameForm::MemberCompact {
+                paired_byte_offset: 34,
+            },
+        )
+        .unwrap(),
         id: "f3d:design:design-sketch-placement#1".into(),
         scope_record_index: None,
-        entity_id: crate::records::DesignEntityId::try_from("Sketch_201".to_owned()).expect("valid entity ID"),
+        entity_id: crate::records::DesignEntityId::try_from("Sketch_201".to_owned())
+            .expect("valid entity ID"),
 
-        visibility: Some(DesignSketchVisibility::new(std::num::NonZeroU32::new(1).unwrap(), 30, false).unwrap()),
+        visibility: Some(
+            DesignSketchVisibility::new(std::num::NonZeroU32::new(1).unwrap(), 30, false).unwrap(),
+        ),
 
         class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
         record_index: 1,
 
         paired_class_tag: crate::records::DesignClassTag::try_from("257".to_owned()).unwrap(),
-
     };
 
     let (sketches, entities) = project_sketch_design(&[placement], &[], &[], &[], &[], 1.0e-6);
@@ -82,10 +90,15 @@ fn sketch_container_visibility_projects_to_the_neutral_sketch() {
 #[test]
 fn text_frame_curves_are_construction_geometry_not_profiles() {
     let placement = DesignSketchPlacement {
-        frame: crate::records::DesignSketchFrame::new(0, crate::records::DesignSketchFrameForm::ScopeCompact).unwrap(),
+        frame: crate::records::DesignSketchFrame::new(
+            0,
+            crate::records::DesignSketchFrameForm::ScopeCompact,
+        )
+        .unwrap(),
         id: "f3d:BulkStream.dat:placement#0".into(),
         scope_record_index: None,
-        entity_id: crate::records::DesignEntityId::try_from("Sketch_42".to_owned()).expect("valid entity ID"),
+        entity_id: crate::records::DesignEntityId::try_from("Sketch_42".to_owned())
+            .expect("valid entity ID"),
 
         visibility: None,
 
@@ -93,7 +106,6 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
         record_index: 1,
 
         paired_class_tag: crate::records::DesignClassTag::try_from("257".to_owned()).unwrap(),
-
     };
     let curve =
         |record_index, primary_id, start: (f64, f64), end: (f64, f64)| SketchCurveIdentity {
@@ -187,18 +199,26 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
             SketchRelationMember::from_index(11),
             SketchRelationMember::from_index(12),
             SketchRelationMember::from_index(13),
-        ]).try_into().expect("uniform member resolution"),
+        ])
+        .try_into()
+        .expect("uniform member resolution"),
         owner_reference_offset: 0,
-        definition: crate::records::SketchRelationDefinition::new(0x100_0000_0000, SketchRelationKind::from_pattern(Some(
-            crate::records::SketchPatternDefinition::TextFrame { text_reference: 20 },
-        ))).expect("valid relation definition"),
+        definition: crate::records::SketchRelationDefinition::new(
+            0x100_0000_0000,
+            SketchRelationKind::from_pattern(Some(
+                crate::records::SketchPatternDefinition::TextFrame { text_reference: 20 },
+            )),
+        )
+        .expect("valid relation definition"),
         entity_genesis: Some(0),
         return_members: (vec![
             SketchRelationReturnMember::from_index(10),
             SketchRelationReturnMember::from_index(11),
             SketchRelationReturnMember::from_index(12),
             SketchRelationReturnMember::from_index(13),
-        ]).try_into().expect("uniform member resolution"),
+        ])
+        .try_into()
+        .expect("uniform member resolution"),
         raw_bytes: Vec::new(),
     };
 
@@ -231,10 +251,15 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
 #[test]
 fn point_closure_does_not_mark_construction_geometry() {
     let placement = DesignSketchPlacement {
-        frame: crate::records::DesignSketchFrame::new(0, crate::records::DesignSketchFrameForm::ScopeCompact).unwrap(),
+        frame: crate::records::DesignSketchFrame::new(
+            0,
+            crate::records::DesignSketchFrameForm::ScopeCompact,
+        )
+        .unwrap(),
         id: "f3d:BulkStream.dat:placement#0".into(),
         scope_record_index: None,
-        entity_id: crate::records::DesignEntityId::try_from("Sketch_42".to_owned()).expect("valid entity ID"),
+        entity_id: crate::records::DesignEntityId::try_from("Sketch_42".to_owned())
+            .expect("valid entity ID"),
 
         visibility: None,
 
@@ -242,7 +267,6 @@ fn point_closure_does_not_mark_construction_geometry() {
         record_index: 1,
 
         paired_class_tag: crate::records::DesignClassTag::try_from("257".to_owned()).unwrap(),
-
     };
     let point = SketchPoint {
         id: "f3d:BulkStream.dat:point#10".into(),
@@ -313,16 +337,24 @@ fn point_closure_does_not_mark_construction_geometry() {
 #[test]
 fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     let placement = DesignSketchPlacement {
-        frame: crate::records::DesignSketchFrame::new(100, crate::records::DesignSketchFrameForm::ScopeExplicit(crate::records::SketchPlacementMatrix::try_from([
-            [0.0, 0.0, 1.0, 10.0],
-            [1.0, 0.0, 0.0, 20.0],
-            [0.0, 1.0, 0.0, 30.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ]).unwrap())).unwrap(),
+        frame: crate::records::DesignSketchFrame::new(
+            100,
+            crate::records::DesignSketchFrameForm::ScopeExplicit(
+                crate::records::SketchPlacementMatrix::try_from([
+                    [0.0, 0.0, 1.0, 10.0],
+                    [1.0, 0.0, 0.0, 20.0],
+                    [0.0, 1.0, 0.0, 30.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ])
+                .unwrap(),
+            ),
+        )
+        .unwrap(),
 
         id: "f3d:native:placement#0".into(),
         scope_record_index: Some(177),
-        entity_id: crate::records::DesignEntityId::try_from("0_172".to_owned()).expect("valid entity ID"),
+        entity_id: crate::records::DesignEntityId::try_from("0_172".to_owned())
+            .expect("valid entity ID"),
 
         visibility: None,
 
@@ -330,7 +362,6 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         record_index: 185,
 
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
-
     };
     let point = SketchPoint {
         id: "f3d:native:point#175".into(),
@@ -467,14 +498,22 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         members: (vec![member]
             .into_iter()
             .map(SketchRelationMember::from_index)
-            .collect::<Vec<_>>()).try_into().expect("uniform member resolution"),
+            .collect::<Vec<_>>())
+        .try_into()
+        .expect("uniform member resolution"),
         owner_reference_offset: 55,
-        definition: crate::records::SketchRelationDefinition::new(0x40, SketchRelationKind::Unpatterned).expect("valid relation definition"),
+        definition: crate::records::SketchRelationDefinition::new(
+            0x40,
+            SketchRelationKind::Unpatterned,
+        )
+        .expect("valid relation definition"),
         entity_genesis: None,
         return_members: (vec![member]
             .into_iter()
             .map(SketchRelationReturnMember::from_index)
-            .collect::<Vec<_>>()).try_into().expect("uniform member resolution"),
+            .collect::<Vec<_>>())
+        .try_into()
+        .expect("uniform member resolution"),
         raw_bytes: Vec::new(),
     };
     let mut curve_point_coincidence = relation(702, 217);
@@ -487,8 +526,13 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     curve_point_coincidence.members = members.try_into().expect("uniform member resolution");
     let mut returned = curve_point_coincidence.return_members.to_vec();
     returned.push(SketchRelationReturnMember::from_index(175));
-    curve_point_coincidence.return_members = returned.try_into().expect("uniform member resolution");
-    curve_point_coincidence.definition = crate::records::SketchRelationDefinition::new(1, curve_point_coincidence.definition.kind().clone()).expect("valid relation definition");
+    curve_point_coincidence.return_members =
+        returned.try_into().expect("uniform member resolution");
+    curve_point_coincidence.definition = crate::records::SketchRelationDefinition::new(
+        1,
+        curve_point_coincidence.definition.kind().clone(),
+    )
+    .expect("valid relation definition");
     let mut midpoint = curve_point_coincidence.clone();
     midpoint.record_index = 703;
     midpoint.id = "f3d:native:relation#703".into();
@@ -498,7 +542,9 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     let mut curvature = curve_point_coincidence.clone();
     curvature.record_index = 704;
     curvature.id = "f3d:native:relation#704".into();
-    curvature.definition = crate::records::SketchRelationDefinition::new(0x200, curvature.definition.kind().clone()).expect("valid relation definition");
+    curvature.definition =
+        crate::records::SketchRelationDefinition::new(0x200, curvature.definition.kind().clone())
+            .expect("valid relation definition");
     let mut spline_group = relation(705, 218);
     // Reverse the first run so only the specified semantic run can satisfy the
     // assertion below.
@@ -514,14 +560,30 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         .collect::<Vec<_>>())
     .try_into()
     .expect("uniform member resolution");
-    spline_group.return_members = ([(217, 80), (218, 95)].into_iter().map(|(record_index, offset)| crate::records::SketchRelationReturnMember { reference: crate::records::SketchRelationReference::Index(record_index), offset, }).collect::<Vec<_>>()).try_into().expect("uniform member resolution");
-    spline_group.definition = crate::records::SketchRelationDefinition::new(0x8000_0000, spline_group.definition.kind().clone()).expect("valid relation definition");
+    spline_group.return_members = ([(217, 80), (218, 95)]
+        .into_iter()
+        .map(
+            |(record_index, offset)| crate::records::SketchRelationReturnMember {
+                reference: crate::records::SketchRelationReference::Index(record_index),
+                offset,
+            },
+        )
+        .collect::<Vec<_>>())
+    .try_into()
+    .expect("uniform member resolution");
+    spline_group.definition = crate::records::SketchRelationDefinition::new(
+        0x8000_0000,
+        spline_group.definition.kind().clone(),
+    )
+    .expect("valid relation definition");
     let mut horizontal_point = relation(701, 175);
     horizontal_point.auxiliary_references = crate::records::ReferenceRun::Unlocated(vec![999]);
     horizontal_point.return_members = (vec![
         SketchRelationReturnMember::from_index(175),
         SketchRelationReturnMember::from_index(175),
-    ]).try_into().expect("uniform member resolution");
+    ])
+    .try_into()
+    .expect("uniform member resolution");
     horizontal_point.definition = crate::records::SketchRelationDefinition::new(
         0x1_0000_0040,
         horizontal_point.definition.kind().clone(),
@@ -673,16 +735,24 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     use cadmpeg_ir::sketches::SpatialSketchGeometry;
 
     let placement = DesignSketchPlacement {
-        frame: crate::records::DesignSketchFrame::new(100, crate::records::DesignSketchFrameForm::ScopeExplicit(crate::records::SketchPlacementMatrix::try_from([
-            [0.0, 0.0, 1.0, 10.0],
-            [1.0, 0.0, 0.0, 20.0],
-            [0.0, 1.0, 0.0, 30.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ]).unwrap())).unwrap(),
+        frame: crate::records::DesignSketchFrame::new(
+            100,
+            crate::records::DesignSketchFrameForm::ScopeExplicit(
+                crate::records::SketchPlacementMatrix::try_from([
+                    [0.0, 0.0, 1.0, 10.0],
+                    [1.0, 0.0, 0.0, 20.0],
+                    [0.0, 1.0, 0.0, 30.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ])
+                .unwrap(),
+            ),
+        )
+        .unwrap(),
 
         id: "f3d:Design/BulkStream.dat:placement#100".into(),
         scope_record_index: None,
-        entity_id: crate::records::DesignEntityId::try_from("Sketch_42".to_owned()).expect("valid entity ID"),
+        entity_id: crate::records::DesignEntityId::try_from("Sketch_42".to_owned())
+            .expect("valid entity ID"),
 
         visibility: None,
 
@@ -690,7 +760,6 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         record_index: 100,
 
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
-
     };
     let curve = |record_index, primary_id, geometry| SketchCurveIdentity {
         id: format!("f3d:Design/BulkStream.dat:curve#{record_index}"),
@@ -762,8 +831,14 @@ fn nonplanar_sketch_curves_project_in_model_space() {
             scalar_width: 4,
             knots: vec![0.0, 0.0, 1.0, 1.0],
             poles: crate::records::SketchNurbsPoles::Rational(vec![
-                crate::records::SketchNurbsPole { point: Point3::new(2.0, 3.0, 4.0), weight: 1.0 },
-                crate::records::SketchNurbsPole { point: Point3::new(5.0, 6.0, 7.0), weight: 1.0 },
+                crate::records::SketchNurbsPole {
+                    point: Point3::new(2.0, 3.0, 4.0),
+                    weight: 1.0,
+                },
+                crate::records::SketchNurbsPole {
+                    point: Point3::new(5.0, 6.0, 7.0),
+                    weight: 1.0,
+                },
             ]),
         },
     ));
@@ -781,14 +856,22 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         members: (vec![
             SketchRelationMember::from_index(104),
             SketchRelationMember::from_index(103),
-        ]).try_into().expect("uniform member resolution"),
+        ])
+        .try_into()
+        .expect("uniform member resolution"),
         owner_reference_offset: 0,
-        definition: crate::records::SketchRelationDefinition::new(0x8000_0000, SketchRelationKind::Unpatterned).expect("valid relation definition"),
+        definition: crate::records::SketchRelationDefinition::new(
+            0x8000_0000,
+            SketchRelationKind::Unpatterned,
+        )
+        .expect("valid relation definition"),
         entity_genesis: None,
         return_members: (vec![
             SketchRelationReturnMember::from_index(103),
             SketchRelationReturnMember::from_index(104),
-        ]).try_into().expect("uniform member resolution"),
+        ])
+        .try_into()
+        .expect("uniform member resolution"),
         raw_bytes: Vec::new(),
     };
     let point = SketchPoint {
@@ -811,15 +894,23 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     let mut midpoint_relation = relation.clone();
     midpoint_relation.id = "f3d:Design/BulkStream.dat:relation#106".into();
     midpoint_relation.record_index = 106;
-    midpoint_relation.definition = crate::records::SketchRelationDefinition::new(0x1000, midpoint_relation.definition.kind().clone()).expect("valid relation definition");
+    midpoint_relation.definition = crate::records::SketchRelationDefinition::new(
+        0x1000,
+        midpoint_relation.definition.kind().clone(),
+    )
+    .expect("valid relation definition");
     midpoint_relation.members = (vec![106, 101]
         .into_iter()
         .map(SketchRelationMember::from_index)
-        .collect::<Vec<_>>()).try_into().expect("uniform member resolution");
+        .collect::<Vec<_>>())
+    .try_into()
+    .expect("uniform member resolution");
     midpoint_relation.return_members = (vec![101, 106]
         .into_iter()
         .map(SketchRelationReturnMember::from_index)
-        .collect::<Vec<_>>()).try_into().expect("uniform member resolution");
+        .collect::<Vec<_>>())
+    .try_into()
+    .expect("uniform member resolution");
     let mut coincident_point = point.clone();
     coincident_point.id = "f3d:Design/BulkStream.dat:point#107".into();
     coincident_point.record_index = 107;
@@ -833,21 +924,37 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     let mut coincident_relation = relation.clone();
     coincident_relation.id = "f3d:Design/BulkStream.dat:relation#107".into();
     coincident_relation.record_index = 107;
-    coincident_relation.definition = crate::records::SketchRelationDefinition::new(1, coincident_relation.definition.kind().clone()).expect("valid relation definition");
+    coincident_relation.definition = crate::records::SketchRelationDefinition::new(
+        1,
+        coincident_relation.definition.kind().clone(),
+    )
+    .expect("valid relation definition");
     coincident_relation.members = (vec![106, 107]
         .into_iter()
         .map(SketchRelationMember::from_index)
-        .collect::<Vec<_>>()).try_into().expect("uniform member resolution");
+        .collect::<Vec<_>>())
+    .try_into()
+    .expect("uniform member resolution");
     coincident_relation.return_members = (vec![106, 107]
         .into_iter()
         .map(SketchRelationReturnMember::from_index)
-        .collect::<Vec<_>>()).try_into().expect("uniform member resolution");
+        .collect::<Vec<_>>())
+    .try_into()
+    .expect("uniform member resolution");
     let mut horizontal_relation = relation.clone();
     horizontal_relation.id = "f3d:Design/BulkStream.dat:relation#108".into();
     horizontal_relation.record_index = 108;
-    horizontal_relation.definition = crate::records::SketchRelationDefinition::new(0x40, horizontal_relation.definition.kind().clone()).expect("valid relation definition");
-    horizontal_relation.members = (vec![SketchRelationMember::from_index(108)]).try_into().expect("uniform member resolution");
-    horizontal_relation.return_members = (vec![SketchRelationReturnMember::from_index(108)]).try_into().expect("uniform member resolution");
+    horizontal_relation.definition = crate::records::SketchRelationDefinition::new(
+        0x40,
+        horizontal_relation.definition.kind().clone(),
+    )
+    .expect("valid relation definition");
+    horizontal_relation.members = (vec![SketchRelationMember::from_index(108)])
+        .try_into()
+        .expect("uniform member resolution");
+    horizontal_relation.return_members = (vec![SketchRelationReturnMember::from_index(108)])
+        .try_into()
+        .expect("uniform member resolution");
     let surface = SketchSurface {
         id: "f3d:Design/BulkStream.dat:surface#109".into(),
         record_index: 109,
@@ -868,15 +975,23 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     let mut point_on_surface_relation = relation.clone();
     point_on_surface_relation.id = "f3d:Design/BulkStream.dat:relation#109".into();
     point_on_surface_relation.record_index = 109;
-    point_on_surface_relation.definition = crate::records::SketchRelationDefinition::new(1, point_on_surface_relation.definition.kind().clone()).expect("valid relation definition");
+    point_on_surface_relation.definition = crate::records::SketchRelationDefinition::new(
+        1,
+        point_on_surface_relation.definition.kind().clone(),
+    )
+    .expect("valid relation definition");
     point_on_surface_relation.members = (vec![106, 109]
         .into_iter()
         .map(SketchRelationMember::from_index)
-        .collect::<Vec<_>>()).try_into().expect("uniform member resolution");
+        .collect::<Vec<_>>())
+    .try_into()
+    .expect("uniform member resolution");
     point_on_surface_relation.return_members = (vec![106, 109]
         .into_iter()
         .map(SketchRelationReturnMember::from_index)
-        .collect::<Vec<_>>()).try_into().expect("uniform member resolution");
+        .collect::<Vec<_>>())
+    .try_into()
+    .expect("uniform member resolution");
 
     let points = [point, coincident_point];
     let relations = [

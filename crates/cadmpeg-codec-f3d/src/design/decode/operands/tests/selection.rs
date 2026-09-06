@@ -38,7 +38,8 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
         id: "f3d:Design/BulkStream.dat:entity#172".into(),
         byte_offset: 1000,
 
-        entity_id: crate::records::DesignEntityId::try_from("0_172".to_owned()).expect("valid entity ID"),
+        entity_id: crate::records::DesignEntityId::try_from("0_172".to_owned())
+            .expect("valid entity ID"),
         class_tag: crate::records::DesignClassTag::try_from("269".to_owned()).unwrap(),
         optional_slot_present: false,
         module: Some(DESIGN_MODULE_SKETCH.to_owned()),
@@ -145,7 +146,8 @@ fn generated_base_flange_profile_frame_resolves() {
         id: "f3d:Design/BulkStream.dat:entity#800".into(),
         byte_offset: 0,
 
-        entity_id: crate::records::DesignEntityId::try_from("Sketch_800".to_owned()).expect("valid entity ID"),
+        entity_id: crate::records::DesignEntityId::try_from("Sketch_800".to_owned())
+            .expect("valid entity ID"),
         class_tag: crate::records::DesignClassTag::try_from("365".to_owned()).unwrap(),
         optional_slot_present: false,
         module: Some(DESIGN_MODULE_SKETCH.to_owned()),
@@ -182,13 +184,19 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
         record_index: 100,
         byte_offset: 1000,
         class_tag: "332".into(),
-        members: vec![crate::records::Located { value: 200, offset: 1026 }],
+        members: vec![crate::records::Located {
+            value: 200,
+            offset: 1026,
+        }],
         lost_edge_references: Vec::new(),
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 1021,
             auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
-            trailing_records: vec![crate::records::Located { value: 300, offset: 1043 }],
+            trailing_records: vec![crate::records::Located {
+                value: 300,
+                offset: 1043,
+            }],
             trailing_transforms: Vec::new(),
             trailing_dual_transforms: Vec::new(),
             trailing_flags: Vec::new(),
@@ -229,8 +237,22 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
 
     let identity = parse_construction_operand_identity(&bytes, &group, &wrapper_header)
         .expect("identity chain");
-    assert_eq!(identity.wrappers.iter().map(|wrapper| wrapper.record_index).collect::<Vec<_>>(), [300, 305]);
-    assert_eq!(identity.wrappers.iter().map(|wrapper| wrapper.byte_offset).collect::<Vec<_>>(), [0, 24]);
+    assert_eq!(
+        identity
+            .wrappers
+            .iter()
+            .map(|wrapper| wrapper.record_index)
+            .collect::<Vec<_>>(),
+        [300, 305]
+    );
+    assert_eq!(
+        identity
+            .wrappers
+            .iter()
+            .map(|wrapper| wrapper.byte_offset)
+            .collect::<Vec<_>>(),
+        [0, 24]
+    );
     assert_eq!(identity.following_record_index, 400);
     assert_eq!(identity.following_byte_offset, 48);
     let persistent = identity
@@ -264,7 +286,15 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
     bind_lost_edge_groups(
         std::slice::from_mut(&mut bound_group),
         std::slice::from_ref(&terminating_identity),
-        &[LostEdgeReference::new("f3d:Design/BulkStream.dat:lost-edge-reference#152".into(), 152, "419".into(), 299, "326".into(), 300).expect("valid lost-edge record layout")],
+        &[LostEdgeReference::new(
+            "f3d:Design/BulkStream.dat:lost-edge-reference#152".into(),
+            152,
+            "419".into(),
+            299,
+            "326".into(),
+            300,
+        )
+        .expect("valid lost-edge record layout")],
     )
     .expect("lost-edge run terminates at the group identity");
     assert_eq!(
@@ -288,13 +318,19 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
         record_index: 90,
         byte_offset: 900,
         class_tag: "269".into(),
-        members: vec![crate::records::Located { value: 100, offset: 926 }],
+        members: vec![crate::records::Located {
+            value: 100,
+            offset: 926,
+        }],
         lost_edge_references: Vec::new(),
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 921,
             auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
-            trailing_records: vec![crate::records::Located { value: 200, offset: 943 }],
+            trailing_records: vec![crate::records::Located {
+                value: 200,
+                offset: 943,
+            }],
             trailing_transforms: Vec::new(),
             trailing_dual_transforms: Vec::new(),
             trailing_flags: Vec::new(),
@@ -343,7 +379,10 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     let operand = parse_entity_selection_operand(&bytes, &group, 0, &record)
         .expect("nested entity-selection frame");
     assert_eq!(operand.primary_identity, 1331);
-    assert_eq!(operand.secondary.map(|secondary| secondary.identity.value), Some(183));
+    assert_eq!(
+        operand.secondary.map(|secondary| secondary.identity.value),
+        Some(183)
+    );
     assert_eq!(operand.identity_record_offset, identity_at as u64);
     assert_eq!(operand.next_byte_offset, next_at as u64);
 
@@ -356,7 +395,12 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     let compact_operand = parse_entity_selection_operand(&compact, &group, 0, &record)
         .expect("compact nested entity-selection frame");
     assert_eq!(compact_operand.primary_identity, 1331);
-    assert_eq!(compact_operand.secondary.map(|secondary| secondary.identity.value), None);
+    assert_eq!(
+        compact_operand
+            .secondary
+            .map(|secondary| secondary.identity.value),
+        None
+    );
     assert_eq!(compact_operand.identity_record_offset, identity_at as u64);
     assert_eq!(compact_operand.next_record_index, 109);
     assert_eq!(compact_operand.next_byte_offset, compact_next_at as u64);
@@ -372,10 +416,24 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     let curve_operand = parse_entity_selection_operand(&curve_identity, &group, 0, &record)
         .expect("expanded Sketch-curve entity-selection frame");
     assert_eq!(curve_operand.primary_identity, 1331);
-    assert_eq!(curve_operand.secondary.map(|secondary| secondary.identity.value), Some(183));
-    assert_eq!(curve_operand.secondary.and_then(|secondary| secondary.curve_identity).map(|identity| identity.value), Some(77));
     assert_eq!(
-        curve_operand.secondary.and_then(|secondary| secondary.curve_identity).map(|identity| identity.offset),
+        curve_operand
+            .secondary
+            .map(|secondary| secondary.identity.value),
+        Some(183)
+    );
+    assert_eq!(
+        curve_operand
+            .secondary
+            .and_then(|secondary| secondary.curve_identity)
+            .map(|identity| identity.value),
+        Some(77)
+    );
+    assert_eq!(
+        curve_operand
+            .secondary
+            .and_then(|secondary| secondary.curve_identity)
+            .map(|identity| identity.offset),
         Some(identity_at as u64 + 21)
     );
     assert_eq!(curve_operand.next_byte_offset, curve_next_at as u64);
@@ -400,14 +458,27 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
         parse_entity_selection_operand(&class_338_curve_identity, &group, 0, &class_338_record)
             .expect("class-338 Sketch-curve entity-selection frame");
     assert_eq!(class_338_operand.primary_identity, 949);
-    assert_eq!(class_338_operand.secondary.map(|secondary| secondary.identity.value), Some(249));
-    assert_eq!(class_338_operand.secondary.and_then(|secondary| secondary.curve_identity).map(|identity| identity.value), None);
+    assert_eq!(
+        class_338_operand
+            .secondary
+            .map(|secondary| secondary.identity.value),
+        Some(249)
+    );
+    assert_eq!(
+        class_338_operand
+            .secondary
+            .and_then(|secondary| secondary.curve_identity)
+            .map(|identity| identity.value),
+        None
+    );
     assert_eq!(
         class_338_operand.primary_identity_offset,
         identity_at as u64 + 33
     );
     assert_eq!(
-        class_338_operand.secondary.map(|secondary| secondary.identity.offset),
+        class_338_operand
+            .secondary
+            .map(|secondary| secondary.identity.offset),
         Some(identity_at as u64 + 41)
     );
     assert_eq!(class_338_operand.next_byte_offset, class_338_next_at as u64);
@@ -441,7 +512,12 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         previous_history_state_id: None,
         previous_history_state_id_offset: None,
         reference_count_offset: 1080,
-        reference_members: crate::records::ReferenceRun::from_columns(vec![100], vec![1085], "reference_members").unwrap(),
+        reference_members: crate::records::ReferenceRun::from_columns(
+            vec![100],
+            vec![1085],
+            "reference_members",
+        )
+        .unwrap(),
         payload: crate::records::DesignFeatureKind::Extrude.into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "261".into(),
@@ -482,7 +558,14 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
 
     let mut group = parse_extrude_selection_group(&group_bytes, &scope, 0, &record)
         .expect("counted Extrude selection group");
-    assert_eq!(group.members.iter().map(|member| member.value).collect::<Vec<_>>(), [200, 201]);
+    assert_eq!(
+        group
+            .members
+            .iter()
+            .map(|member| member.value)
+            .collect::<Vec<_>>(),
+        [200, 201]
+    );
     assert_eq!(group.opaque_index, 180);
     assert_eq!(group.opaque_scalar, 0.25);
     assert!(group.variant);
@@ -573,7 +656,11 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     let identity = DesignConstructionOperandIdentity {
         id: "f3d:Design/BulkStream.dat:operand-identity#50".into(),
         group_record_index: 50,
-        wrappers: vec![crate::records::DesignIdentityWrapper { record_index: 150, byte_offset: 50, class_tag: "289".into() }],
+        wrappers: vec![crate::records::DesignIdentityWrapper {
+            record_index: 150,
+            byte_offset: 50,
+            class_tag: "289".into(),
+        }],
         following_record_index: 200,
         following_byte_offset: 0,
         following_class_tag: "290".into(),
@@ -609,7 +696,8 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 class_tag: "308".into(),
                 asset_id: "df9087bd-02a6-4a3f-a132-7e69990f323c".into(),
                 asset_id_offset: 3040,
-                entity_id: crate::records::DesignEntityId::try_from("0_172".to_owned()).expect("valid entity identity"),
+                entity_id: crate::records::DesignEntityId::try_from("0_172".to_owned())
+                    .expect("valid entity identity"),
                 entity_reference_offset: 3120,
                 region_selection: None,
                 paired_class_tag: "259".into(),

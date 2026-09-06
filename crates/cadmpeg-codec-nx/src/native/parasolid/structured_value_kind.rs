@@ -44,7 +44,10 @@ mod tests {
             (StructuredValueKind::Unicode, "\"unicode\""),
         ] {
             assert_eq!(serde_json::to_string(&kind).unwrap(), wire);
-            assert_eq!(serde_json::from_str::<StructuredValueKind>(wire).unwrap(), kind);
+            assert_eq!(
+                serde_json::from_str::<StructuredValueKind>(wire).unwrap(),
+                kind
+            );
         }
         for wire in ["\"unsigned_integers\"", "\"doubles\"", "\"string\""] {
             assert!(serde_json::from_str::<StructuredValueKind>(wire).is_err());

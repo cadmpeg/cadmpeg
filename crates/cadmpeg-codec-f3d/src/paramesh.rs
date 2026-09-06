@@ -568,9 +568,9 @@ fn mesh_registry(message: &[u8]) -> Result<MeshRegistry, CodecError> {
             }
             (REGISTRY_MESH_UUID, ProtobufValue::Bytes(value)) => {
                 let value = guid(value, "mesh UUID")?;
-                let value = DesignMeshUuid::try_from(value).map_err(|_| malformed(
-                    "paramesh mesh UUID is not a lowercase version-4 UUID",
-                ))?;
+                let value = DesignMeshUuid::try_from(value).map_err(|_| {
+                    malformed("paramesh mesh UUID is not a lowercase version-4 UUID")
+                })?;
                 if mesh_uuid.replace(value).is_some() {
                     return Err(malformed("paramesh registry repeats its mesh UUID"));
                 }

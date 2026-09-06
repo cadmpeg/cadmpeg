@@ -47,9 +47,20 @@ impl TryFrom<DataBlockIndexRowWire> for DataBlockIndexRow {
             opening_data_block: wire.opening_data_block,
             opening_block_offset: wire.opening_block_offset,
             source_offset: wire.source_offset,
-            first_index: located_index(wire.first_index, &wire.raw_first_index, wire.first_index_source_offset, "first_index/raw_first_index")?,
-            indices: resolved_indices(wire.indices, wire.raw_indices, wire.data_blocks, wire.index_source_offsets)?,
-            flag: crate::om::discriminators::LinkedIndexFlag::try_from(wire.flag).map_err(|_| "flag: must be 3 or 7")?,
+            first_index: located_index(
+                wire.first_index,
+                &wire.raw_first_index,
+                wire.first_index_source_offset,
+                "first_index/raw_first_index",
+            )?,
+            indices: resolved_indices(
+                wire.indices,
+                wire.raw_indices,
+                wire.data_blocks,
+                wire.index_source_offsets,
+            )?,
+            flag: crate::om::discriminators::LinkedIndexFlag::try_from(wire.flag)
+                .map_err(|_| "flag: must be 3 or 7")?,
         })
     }
 }
@@ -66,8 +77,14 @@ impl From<DataBlockIndexRow> for DataBlockIndexRowWire {
             first_index: value.first_index.atom.value(),
             raw_first_index: value.first_index.atom.raw().to_vec(),
             first_index_source_offset: value.first_index.offset,
-            indices: value.indices.each_ref().map(|token| token.target.atom.value()),
-            raw_indices: value.indices.each_ref().map(|token| token.target.atom.raw().to_vec()),
+            indices: value
+                .indices
+                .each_ref()
+                .map(|token| token.target.atom.value()),
+            raw_indices: value
+                .indices
+                .each_ref()
+                .map(|token| token.target.atom.raw().to_vec()),
             index_source_offsets: value.indices.each_ref().map(|token| token.source_offset),
             data_blocks: value.indices.map(|token| token.target.data_block),
             flag: u8::from(value.flag),
@@ -131,12 +148,26 @@ impl TryFrom<DataBlockLinkedIndexRowWire> for DataBlockLinkedIndexRow {
             opening_data_block: wire.opening_data_block,
             opening_block_offset: wire.opening_block_offset,
             source_offset: wire.source_offset,
-            first_index: located_index(wire.first_index, &wire.raw_first_index, wire.first_index_source_offset, "first_index/raw_first_index")?,
+            first_index: located_index(
+                wire.first_index,
+                &wire.raw_first_index,
+                wire.first_index_source_offset,
+                "first_index/raw_first_index",
+            )?,
             target: DataBlockIndexToken {
-                target: DataBlockIndexTarget { atom: CompactIndexAtom::from_wire(wire.target_index, &wire.raw_target_index).map_err(|error| format!("target_index/raw_target_index: {error}"))?, data_block: target_block },
+                target: DataBlockIndexTarget {
+                    atom: CompactIndexAtom::from_wire(wire.target_index, &wire.raw_target_index)
+                        .map_err(|error| format!("target_index/raw_target_index: {error}"))?,
+                    data_block: target_block,
+                },
                 source_offset: wire.target_index_source_offset,
             },
-            indices: resolved_indices(wire.indices, wire.raw_indices, [block_a, block_b, block_c], wire.index_source_offsets)?,
+            indices: resolved_indices(
+                wire.indices,
+                wire.raw_indices,
+                [block_a, block_b, block_c],
+                wire.index_source_offsets,
+            )?,
             discriminator: wire.discriminator,
             flag: wire.flag,
             mode: wire.mode,
@@ -159,10 +190,21 @@ impl From<DataBlockLinkedIndexRow> for DataBlockLinkedIndexRowWire {
             target_index: value.target.target.atom.value(),
             raw_target_index: value.target.target.atom.raw().to_vec(),
             target_index_source_offset: value.target.source_offset,
-            indices: value.indices.each_ref().map(|token| token.target.atom.value()),
-            raw_indices: value.indices.each_ref().map(|token| token.target.atom.raw().to_vec()),
+            indices: value
+                .indices
+                .each_ref()
+                .map(|token| token.target.atom.value()),
+            raw_indices: value
+                .indices
+                .each_ref()
+                .map(|token| token.target.atom.raw().to_vec()),
             index_source_offsets: value.indices.each_ref().map(|token| token.source_offset),
-            data_blocks: [value.target.target.data_block, value.indices[0].target.data_block.clone(), value.indices[1].target.data_block.clone(), value.indices[2].target.data_block.clone()],
+            data_blocks: [
+                value.target.target.data_block,
+                value.indices[0].target.data_block.clone(),
+                value.indices[1].target.data_block.clone(),
+                value.indices[2].target.data_block.clone(),
+            ],
             discriminator: value.discriminator,
             flag: value.flag,
             mode: value.mode,
@@ -217,10 +259,19 @@ impl TryFrom<DataBlockTargetIndexRowWire> for DataBlockTargetIndexRow {
             opening_block_offset: wire.opening_block_offset,
             source_offset: wire.source_offset,
             target: DataBlockIndexToken {
-                target: DataBlockIndexTarget { atom: CompactIndexAtom::from_wire(wire.target_index, &wire.raw_target_index).map_err(|error| format!("target_index/raw_target_index: {error}"))?, data_block: target_block },
+                target: DataBlockIndexTarget {
+                    atom: CompactIndexAtom::from_wire(wire.target_index, &wire.raw_target_index)
+                        .map_err(|error| format!("target_index/raw_target_index: {error}"))?,
+                    data_block: target_block,
+                },
                 source_offset: wire.target_index_source_offset,
             },
-            indices: resolved_indices(wire.indices, wire.raw_indices, [block_a, block_b, block_c], wire.index_source_offsets)?,
+            indices: resolved_indices(
+                wire.indices,
+                wire.raw_indices,
+                [block_a, block_b, block_c],
+                wire.index_source_offsets,
+            )?,
             mode: wire.mode,
         })
     }
@@ -238,36 +289,78 @@ impl From<DataBlockTargetIndexRow> for DataBlockTargetIndexRowWire {
             target_index: value.target.target.atom.value(),
             raw_target_index: value.target.target.atom.raw().to_vec(),
             target_index_source_offset: value.target.source_offset,
-            indices: value.indices.each_ref().map(|token| token.target.atom.value()),
-            raw_indices: value.indices.each_ref().map(|token| token.target.atom.raw().to_vec()),
+            indices: value
+                .indices
+                .each_ref()
+                .map(|token| token.target.atom.value()),
+            raw_indices: value
+                .indices
+                .each_ref()
+                .map(|token| token.target.atom.raw().to_vec()),
             index_source_offsets: value.indices.each_ref().map(|token| token.source_offset),
-            data_blocks: [value.target.target.data_block, value.indices[0].target.data_block.clone(), value.indices[1].target.data_block.clone(), value.indices[2].target.data_block.clone()],
+            data_blocks: [
+                value.target.target.data_block,
+                value.indices[0].target.data_block.clone(),
+                value.indices[1].target.data_block.clone(),
+                value.indices[2].target.data_block.clone(),
+            ],
             mode: value.mode,
         }
     }
 }
 
-pub(super) fn located_index(value: u32, raw: &[u8], offset: u64, field: &str) -> Result<LocatedCompactIndex<u64>, String> {
-    Ok(LocatedCompactIndex { atom: CompactIndexAtom::from_wire(value, raw).map_err(|error| format!("{field}: {error}"))?, offset })
+pub(super) fn located_index(
+    value: u32,
+    raw: &[u8],
+    offset: u64,
+    field: &str,
+) -> Result<LocatedCompactIndex<u64>, String> {
+    Ok(LocatedCompactIndex {
+        atom: CompactIndexAtom::from_wire(value, raw)
+            .map_err(|error| format!("{field}: {error}"))?,
+        offset,
+    })
 }
 
 pub(super) fn located_indices<const N: usize>(
-    values: [u32; N], raw: [Vec<u8>; N], offsets: [u64; N],
+    values: [u32; N],
+    raw: [Vec<u8>; N],
+    offsets: [u64; N],
 ) -> Result<[LocatedCompactIndex<u64>; N], String> {
-    values.into_iter().zip(raw).zip(offsets).map(|((value, raw), offset)| {
-        located_index(value, &raw, offset, "indices/raw_indices")
-    }).collect::<Result<Vec<_>, String>>()?.try_into().map_err(|_| "indices: column width mismatch".into())
+    values
+        .into_iter()
+        .zip(raw)
+        .zip(offsets)
+        .map(|((value, raw), offset)| located_index(value, &raw, offset, "indices/raw_indices"))
+        .collect::<Result<Vec<_>, String>>()?
+        .try_into()
+        .map_err(|_| "indices: column width mismatch".into())
 }
 
 fn resolved_indices<const N: usize>(
-    values: [u32; N], raw: [Vec<u8>; N], blocks: [String; N], offsets: [u64; N],
+    values: [u32; N],
+    raw: [Vec<u8>; N],
+    blocks: [String; N],
+    offsets: [u64; N],
 ) -> Result<[DataBlockIndexToken; N], String> {
-    values.into_iter().zip(raw).zip(blocks).zip(offsets).map(|(((value, raw), data_block), source_offset)| {
-        Ok(DataBlockIndexToken {
-            target: DataBlockIndexTarget { atom: CompactIndexAtom::from_wire(value, &raw).map_err(|error| format!("indices/raw_indices: {error}"))?, data_block },
-            source_offset,
+    values
+        .into_iter()
+        .zip(raw)
+        .zip(blocks)
+        .zip(offsets)
+        .map(|(((value, raw), data_block), source_offset)| {
+            Ok(DataBlockIndexToken {
+                target: DataBlockIndexTarget {
+                    atom: CompactIndexAtom::from_wire(value, &raw)
+                        .map_err(|error| format!("indices/raw_indices: {error}"))?,
+                    data_block,
+                },
+                source_offset,
+            })
         })
-    }).collect::<Result<Vec<_>, String>>()?.try_into().map_err(|_| "indices: column width mismatch".into())
+        .collect::<Result<Vec<_>, String>>()?
+        .try_into()
+        .map_err(|_| "indices: column width mismatch".into())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -319,48 +412,112 @@ pub(super) enum RmDisplayColorAssignmentEncodingWire {
     },
 }
 
-
 impl From<RmDisplayColorAssignmentEncoding> for RmDisplayColorAssignmentEncodingWire {
- fn from(value: RmDisplayColorAssignmentEncoding) -> Self {
- match value {
-RmDisplayColorAssignmentEncoding::Linked { object_index, discriminator, target_index, indices, flag, mode } => Self::Linked {
-object_index: object_index.atom.value(), raw_object_index: object_index.atom.raw().to_vec(), object_index_source_offset: object_index.offset,
-discriminator,
-target_index: target_index.atom.value(), raw_target_index: target_index.atom.raw().to_vec(), target_index_source_offset: target_index.offset,
-indices: indices.map(|token| token.atom.value()), raw_indices: indices.map(|token| token.atom.raw().to_vec()), index_source_offsets: indices.map(|token| token.offset),
-flag,
-mode,
-},
-RmDisplayColorAssignmentEncoding::Target { target_index, indices, mode } => Self::Target {
-target_index: target_index.atom.value(), raw_target_index: target_index.atom.raw().to_vec(), target_index_source_offset: target_index.offset,
-indices: indices.map(|token| token.atom.value()), raw_indices: indices.map(|token| token.atom.raw().to_vec()), index_source_offsets: indices.map(|token| token.offset),
-mode,
-},
-} } }
+    fn from(value: RmDisplayColorAssignmentEncoding) -> Self {
+        match value {
+            RmDisplayColorAssignmentEncoding::Linked {
+                object_index,
+                discriminator,
+                target_index,
+                indices,
+                flag,
+                mode,
+            } => Self::Linked {
+                object_index: object_index.atom.value(),
+                raw_object_index: object_index.atom.raw().to_vec(),
+                object_index_source_offset: object_index.offset,
+                discriminator,
+                target_index: target_index.atom.value(),
+                raw_target_index: target_index.atom.raw().to_vec(),
+                target_index_source_offset: target_index.offset,
+                indices: indices.map(|token| token.atom.value()),
+                raw_indices: indices.map(|token| token.atom.raw().to_vec()),
+                index_source_offsets: indices.map(|token| token.offset),
+                flag,
+                mode,
+            },
+            RmDisplayColorAssignmentEncoding::Target {
+                target_index,
+                indices,
+                mode,
+            } => Self::Target {
+                target_index: target_index.atom.value(),
+                raw_target_index: target_index.atom.raw().to_vec(),
+                target_index_source_offset: target_index.offset,
+                indices: indices.map(|token| token.atom.value()),
+                raw_indices: indices.map(|token| token.atom.raw().to_vec()),
+                index_source_offsets: indices.map(|token| token.offset),
+                mode,
+            },
+        }
+    }
+}
 impl TryFrom<RmDisplayColorAssignmentEncodingWire> for RmDisplayColorAssignmentEncoding {
- type Error = String;
- fn try_from(value: RmDisplayColorAssignmentEncodingWire) -> Result<Self, Self::Error> {
- Ok(match value {
-RmDisplayColorAssignmentEncodingWire::Linked { object_index, raw_object_index, object_index_source_offset, discriminator, target_index, raw_target_index, target_index_source_offset, indices, raw_indices, index_source_offsets, flag, mode } => Self::Linked {
-object_index: located_index(object_index, &raw_object_index, object_index_source_offset, "object_index/raw_object_index")?,
-discriminator,
-target_index: located_index(target_index, &raw_target_index, target_index_source_offset, "target_index/raw_target_index")?,
-indices: located_indices(indices, raw_indices, index_source_offsets)?,
-flag,
-mode,
-},
-RmDisplayColorAssignmentEncodingWire::Target { target_index, raw_target_index, target_index_source_offset, indices, raw_indices, index_source_offsets, mode } => Self::Target {
-target_index: located_index(target_index, &raw_target_index, target_index_source_offset, "target_index/raw_target_index")?,
-indices: located_indices(indices, raw_indices, index_source_offsets)?,
-mode,
-},
-}) } }
+    type Error = String;
+    fn try_from(value: RmDisplayColorAssignmentEncodingWire) -> Result<Self, Self::Error> {
+        Ok(match value {
+            RmDisplayColorAssignmentEncodingWire::Linked {
+                object_index,
+                raw_object_index,
+                object_index_source_offset,
+                discriminator,
+                target_index,
+                raw_target_index,
+                target_index_source_offset,
+                indices,
+                raw_indices,
+                index_source_offsets,
+                flag,
+                mode,
+            } => Self::Linked {
+                object_index: located_index(
+                    object_index,
+                    &raw_object_index,
+                    object_index_source_offset,
+                    "object_index/raw_object_index",
+                )?,
+                discriminator,
+                target_index: located_index(
+                    target_index,
+                    &raw_target_index,
+                    target_index_source_offset,
+                    "target_index/raw_target_index",
+                )?,
+                indices: located_indices(indices, raw_indices, index_source_offsets)?,
+                flag,
+                mode,
+            },
+            RmDisplayColorAssignmentEncodingWire::Target {
+                target_index,
+                raw_target_index,
+                target_index_source_offset,
+                indices,
+                raw_indices,
+                index_source_offsets,
+                mode,
+            } => Self::Target {
+                target_index: located_index(
+                    target_index,
+                    &raw_target_index,
+                    target_index_source_offset,
+                    "target_index/raw_target_index",
+                )?,
+                indices: located_indices(indices, raw_indices, index_source_offsets)?,
+                mode,
+            },
+        })
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn check_wire<T: serde::de::DeserializeOwned + Serialize + std::fmt::Debug>(json: &str, field: &str, invalid: serde_json::Value) {
+    fn check_wire<T: serde::de::DeserializeOwned + Serialize + std::fmt::Debug>(
+        json: &str,
+        field: &str,
+        invalid: serde_json::Value,
+    ) {
         let row: T = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&row).unwrap(), json);
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
@@ -373,26 +530,31 @@ mod tests {
     fn column_rows_keep_wire_order_and_reject_mismatched_tokens() {
         check_wire::<DataBlockIndexRow>(
             r#"{"id":"row","section_ordinal":0,"ordinal":0,"first_index":1,"raw_first_index":[1],"flag":3,"indices":[2,3,4,5],"raw_indices":[[2],[3],[4],[5]],"data_blocks":["a","b","c","d"],"source_entry":"entry","opening_data_block":"opening","opening_block_offset":0,"source_offset":10,"first_index_source_offset":13,"index_source_offsets":[17,18,19,20]}"#,
-            "raw_first_index", serde_json::json!([255]),
+            "raw_first_index",
+            serde_json::json!([255]),
         );
         check_wire::<DataBlockLinkedIndexRow>(
             r#"{"id":"row","section_ordinal":0,"ordinal":0,"first_index":1,"raw_first_index":[1],"discriminator":22,"target_index":2,"raw_target_index":[2],"indices":[3,4,5],"raw_indices":[[3],[4],[5]],"data_blocks":["a","b","c","d"],"flag":3,"mode":4,"source_entry":"entry","opening_data_block":"opening","opening_block_offset":0,"source_offset":10,"first_index_source_offset":12,"target_index_source_offset":16,"index_source_offsets":[21,22,23]}"#,
-            "raw_target_index", serde_json::json!([3]),
+            "raw_target_index",
+            serde_json::json!([3]),
         );
         check_wire::<DataBlockTargetIndexRow>(
             r#"{"id":"row","section_ordinal":0,"ordinal":0,"target_index":2,"raw_target_index":[2],"indices":[3,4,5],"raw_indices":[[3],[4],[5]],"data_blocks":["a","b","c","d"],"mode":7,"source_entry":"entry","opening_data_block":"opening","opening_block_offset":0,"source_offset":10,"target_index_source_offset":15,"index_source_offsets":[20,21,22]}"#,
-            "raw_indices", serde_json::json!([[3], [4], [6]]),
+            "raw_indices",
+            serde_json::json!([[3], [4], [6]]),
         );
     }
     #[test]
     fn display_color_encodings_keep_wire_order_and_reject_mismatched_tokens() {
         check_wire::<RmDisplayColorAssignmentEncoding>(
             r#"{"kind":"linked","object_index":1,"raw_object_index":[128,1],"object_index_source_offset":10,"discriminator":22,"target_index":2,"raw_target_index":[2],"target_index_source_offset":15,"indices":[3,4,5],"raw_indices":[[3],[4],[5]],"index_source_offsets":[20,21,22],"flag":3,"mode":4}"#,
-            "raw_object_index", serde_json::json!([2]),
+            "raw_object_index",
+            serde_json::json!([2]),
         );
         check_wire::<RmDisplayColorAssignmentEncoding>(
             r#"{"kind":"target","target_index":2,"raw_target_index":[2],"target_index_source_offset":15,"indices":[3,4,5],"raw_indices":[[3],[4],[5]],"index_source_offsets":[20,21,22],"mode":7}"#,
-            "raw_indices", serde_json::json!([[3], [4], [255]]),
+            "raw_indices",
+            serde_json::json!([[3], [4], [255]]),
         );
     }
 
@@ -404,8 +566,14 @@ mod tests {
             r#"{"kind":"target","target_index":2,"raw_target_index":[2],"target_index_source_offset":15,"indices":[3,4,5],"raw_indices":[[3],[4],[5]],"index_source_offsets":[20,21,22],"mode":7}"#,
         ];
         for (ordinal, encoding) in encodings.into_iter().enumerate() {
-            let first = if ordinal < 2 { r#","first_index":1,"raw_first_index":[128,1],"first_index_source_offset":10"# } else { "" };
-            let json = format!(r#"{{"id":"relation","ordinal":0{first},"class_name":"class","class_definition":"definition","encoding":{encoding},"source_entry":"entry","source_offset":5}}"#);
+            let first = if ordinal < 2 {
+                r#","first_index":1,"raw_first_index":[128,1],"first_index_source_offset":10"#
+            } else {
+                ""
+            };
+            let json = format!(
+                r#"{{"id":"relation","ordinal":0{first},"class_name":"class","class_definition":"definition","encoding":{encoding},"source_entry":"entry","source_offset":5}}"#
+            );
             let relation: RmCreationDisplayDataRelation = serde_json::from_str(&json).unwrap();
             assert_eq!(serde_json::to_string(&relation).unwrap(), json);
             let mut wire: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -414,5 +582,4 @@ mod tests {
             assert!(error.to_string().contains("raw_indices"), "{error}");
         }
     }
-
 }

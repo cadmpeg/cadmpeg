@@ -15,7 +15,10 @@ fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
         components: [(0.25_f64, 11), (0.5, 12), (0.75, 13)].map(|(value, offset)| {
             let mut raw = (value * 4.0).to_be_bytes();
             raw[0] -= 0x10;
-            (crate::om::color::ColorComponent::read(&raw).unwrap(), offset)
+            (
+                crate::om::color::ColorComponent::read(&raw).unwrap(),
+                offset,
+            )
         }),
         source_offset: 10,
     };
@@ -23,10 +26,19 @@ fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
         id: "nx:test:assignment#0".into(),
         ordinal: 0,
         encoding: crate::native::om::RmDisplayColorAssignmentEncoding::Linked {
-            object_index: LocatedCompactIndex { atom: CompactIndexAtom::read(&[42]).unwrap(), offset: 22 },
+            object_index: LocatedCompactIndex {
+                atom: CompactIndexAtom::read(&[42]).unwrap(),
+                offset: 22,
+            },
             discriminator: crate::om::discriminators::LinkedIndexDiscriminator::Form16,
-            target_index: LocatedCompactIndex { atom: CompactIndexAtom::read(&[7]).unwrap(), offset: 23 },
-            indices: [(1, 24), (2, 25), (3, 26)].map(|(value, offset)| LocatedCompactIndex { atom: CompactIndexAtom::read(&[value]).unwrap(), offset }),
+            target_index: LocatedCompactIndex {
+                atom: CompactIndexAtom::read(&[7]).unwrap(),
+                offset: 23,
+            },
+            indices: [(1, 24), (2, 25), (3, 26)].map(|(value, offset)| LocatedCompactIndex {
+                atom: CompactIndexAtom::read(&[value]).unwrap(),
+                offset,
+            }),
             flag: crate::om::discriminators::LinkedIndexFlag::Form03,
             mode: crate::om::discriminators::IndexRowMode::Form04,
         },
@@ -40,7 +52,10 @@ fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
     let record = crate::native::parasolid::ParasolidDeltasRecord {
         id: "nx:test:deltas#0".into(),
         stream_ordinal: 1,
-        family: crate::deltas::record_family::RecordFamily::Face { node_id: 42, references: [1; 11] },
+        family: crate::deltas::record_family::RecordFamily::Face {
+            node_id: 42,
+            references: [1; 11],
+        },
         xmt: 99,
         byte_len: 1,
         inflated_offset: 0,
@@ -83,8 +98,14 @@ fn rm_face_colors_require_unique_palette_topology_and_stream_joins() {
 
     let mut target_assignment = assignment.clone();
     target_assignment.encoding = crate::native::om::RmDisplayColorAssignmentEncoding::Target {
-        target_index: LocatedCompactIndex { atom: CompactIndexAtom::read(&[7]).unwrap(), offset: 23 },
-        indices: [(1, 24), (2, 25), (3, 26)].map(|(value, offset)| LocatedCompactIndex { atom: CompactIndexAtom::read(&[value]).unwrap(), offset }),
+        target_index: LocatedCompactIndex {
+            atom: CompactIndexAtom::read(&[7]).unwrap(),
+            offset: 23,
+        },
+        indices: [(1, 24), (2, 25), (3, 26)].map(|(value, offset)| LocatedCompactIndex {
+            atom: CompactIndexAtom::read(&[value]).unwrap(),
+            offset,
+        }),
         mode: crate::om::discriminators::IndexRowMode::Form04,
     };
     assert_eq!(
@@ -121,8 +142,16 @@ fn rm_source_color_bindings_require_one_palette_per_source_identity() {
             id: id.into(),
             ordinal: 0,
             encoding: crate::native::om::RmDisplayColorAssignmentEncoding::Target {
-                target_index: LocatedCompactIndex { atom: CompactIndexAtom::read(&[7]).unwrap(), offset },
-                indices: [(1, offset + 1), (2, offset + 2), (3, offset + 3)].map(|(value, offset)| LocatedCompactIndex { atom: CompactIndexAtom::read(&[value]).unwrap(), offset }),
+                target_index: LocatedCompactIndex {
+                    atom: CompactIndexAtom::read(&[7]).unwrap(),
+                    offset,
+                },
+                indices: [(1, offset + 1), (2, offset + 2), (3, offset + 3)].map(
+                    |(value, offset)| LocatedCompactIndex {
+                        atom: CompactIndexAtom::read(&[value]).unwrap(),
+                        offset,
+                    },
+                ),
                 mode: crate::om::discriminators::IndexRowMode::Form04,
             },
             target_object_id: source_id.map(str::to_owned),
@@ -197,7 +226,8 @@ fn ungrouped_simple_holes_follow_authoritative_history_order() {
                 scalar_lane: "lane-older".into(),
                 block_reference: "blocks-older".into(),
             },
-        ]).unwrap(),
+        ])
+        .unwrap(),
     };
     assert!(
         simple_hole_operations(&templates, &[unordered_group], &operation_positions,).is_none()
@@ -226,22 +256,22 @@ fn ungrouped_simple_holes_follow_authoritative_history_order() {
         Some(vec!["operation#blind".into()])
     );
     let duplicate_members = crate::native::features::SimpleHoleConstructionMembers::new(vec![
-            crate::native::features::FeatureSimpleHoleConstructionMember {
-                operation_label: "operation#older".into(),
-                scalar_lane: "lane-a".into(),
-                block_reference: "refs-a".into(),
-            },
-            crate::native::features::FeatureSimpleHoleConstructionMember {
-                operation_label: "operation#newer".into(),
-                scalar_lane: "lane-b".into(),
-                block_reference: "refs-b".into(),
-            },
-            crate::native::features::FeatureSimpleHoleConstructionMember {
-                operation_label: "operation#older".into(),
-                scalar_lane: "lane-a".into(),
-                block_reference: "refs-a".into(),
-            },
-        ]);
+        crate::native::features::FeatureSimpleHoleConstructionMember {
+            operation_label: "operation#older".into(),
+            scalar_lane: "lane-a".into(),
+            block_reference: "refs-a".into(),
+        },
+        crate::native::features::FeatureSimpleHoleConstructionMember {
+            operation_label: "operation#newer".into(),
+            scalar_lane: "lane-b".into(),
+            block_reference: "refs-b".into(),
+        },
+        crate::native::features::FeatureSimpleHoleConstructionMember {
+            operation_label: "operation#older".into(),
+            scalar_lane: "lane-a".into(),
+            block_reference: "refs-a".into(),
+        },
+    ]);
     assert!(duplicate_members.is_err());
 }
 
@@ -284,7 +314,8 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
                 scalar_lane: "lane-b".into(),
                 block_reference: "blocks-b".into(),
             },
-        ]).unwrap(),
+        ])
+        .unwrap(),
     };
     let use_ = FeatureHolePackageConstructionGroupUse {
         id: "use".into(),
@@ -1063,7 +1094,9 @@ fn boolean_target_is_an_independent_intermediate_result_writer() {
         operation_label: "nx:test:operation#0".into(),
         kind: FeatureBooleanKind::Unite,
         target: crate::test_support::native_references::boolean_reference(7, 1),
-        tools: vec![crate::test_support::native_references::boolean_reference(8, 2)],
+        tools: vec![crate::test_support::native_references::boolean_reference(
+            8, 2,
+        )],
         source_offset: 0,
     };
     assert_eq!(
@@ -1546,7 +1579,11 @@ fn native_primary_body_references_retain_only_proven_body_namespaces() {
         ordinal: None,
         id: id.to_string(),
         operation_label: operation_label.to_string(),
-        body: crate::om::reference_index::FeatureReferenceToken::from_wire(body_object_index, &[body_object_index as u8]).unwrap(),
+        body: crate::om::reference_index::FeatureReferenceToken::from_wire(
+            body_object_index,
+            &[body_object_index as u8],
+        )
+        .unwrap(),
         source_offset: 0,
     };
     let references = [
@@ -1561,7 +1598,11 @@ fn native_primary_body_references_retain_only_proven_body_namespaces() {
         id: id.to_string(),
         operation_label: operation_label.to_string(),
         input_slot: crate::om::header_references::HeaderSlot::try_from(slot).unwrap(),
-        object: crate::om::reference_index::FeatureReferenceToken::from_wire(u32::from(slot), &[slot]).unwrap(),
+        object: crate::om::reference_index::FeatureReferenceToken::from_wire(
+            u32::from(slot),
+            &[slot],
+        )
+        .unwrap(),
         data_block: data_block.to_string(),
         source_offset: 0,
     };
@@ -1762,7 +1803,9 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
         operation_label: "operation#0".to_string(),
         kind: crate::native::features::FeatureBooleanKind::Subtract,
         target: crate::test_support::native_references::boolean_reference(94, 0),
-        tools: vec![crate::test_support::native_references::boolean_reference(122, 1)],
+        tools: vec![crate::test_support::native_references::boolean_reference(
+            122, 1,
+        )],
         source_offset: 0,
     };
     let body = BodyId::mint("nx:s18:body#3".to_string()).expect("identity grammar");
@@ -1862,7 +1905,9 @@ fn nx_boolean_writers_follow_selected_identity_namespace() {
         operation_label: "nx:feature-history:operation-label#section-7".to_string(),
         kind: crate::native::features::FeatureBooleanKind::Unite,
         target: crate::test_support::native_references::boolean_reference(401, 0),
-        tools: vec![crate::test_support::native_references::boolean_reference(402, 1)],
+        tools: vec![crate::test_support::native_references::boolean_reference(
+            402, 1,
+        )],
         source_offset: 0,
     };
     let blocks = BTreeMap::from([
@@ -1961,13 +2006,16 @@ fn nx_boolean_offset_store_resolution_requires_one_unique_store() {
     let mut control = block(3, 0);
     control.role = DataBlockRole::Control;
     let control_operation = crate::native::features::FeatureBooleanOperation {
-        target: crate::test_support::native_references::boolean_reference(0, operation.target.offset),
+        target: crate::test_support::native_references::boolean_reference(
+            0,
+            operation.target.offset,
+        ),
         tools: [401, 402]
             .into_iter()
             .zip(operation.tools.iter())
-            .map(
-                |(value, token)| crate::test_support::native_references::boolean_reference(value, token.offset),
-            )
+            .map(|(value, token)| {
+                crate::test_support::native_references::boolean_reference(value, token.offset)
+            })
             .collect(),
         ..operation.clone()
     };

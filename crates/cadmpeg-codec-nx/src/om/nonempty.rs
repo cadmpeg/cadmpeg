@@ -10,32 +10,45 @@ pub(crate) struct NonEmpty<T> {
 impl<T> NonEmpty<T> {
     pub(crate) fn new(values: impl IntoIterator<Item = T>) -> Option<Self> {
         let mut values = values.into_iter();
-        Some(Self { first: values.next()?, rest: values.collect() })
+        Some(Self {
+            first: values.next()?,
+            rest: values.collect(),
+        })
     }
 
     pub(crate) fn iter(&self) -> impl DoubleEndedIterator<Item = &T> {
         std::iter::once(&self.first).chain(&self.rest)
     }
 
-    pub(crate) fn len(&self) -> usize { 1 + self.rest.len() }
+    pub(crate) fn len(&self) -> usize {
+        1 + self.rest.len()
+    }
 
     pub(crate) fn last(&self) -> &T {
         self.rest.last().unwrap_or(&self.first)
     }
 
     pub(crate) fn map<U>(self, mut map: impl FnMut(T) -> U) -> NonEmpty<U> {
-        NonEmpty { first: map(self.first), rest: self.rest.into_iter().map(map).collect() }
+        NonEmpty {
+            first: map(self.first),
+            rest: self.rest.into_iter().map(map).collect(),
+        }
     }
 }
 
 impl<T> NonEmpty<Option<T>> {
     pub(crate) fn transpose(self) -> Option<NonEmpty<T>> {
-        Some(NonEmpty { first: self.first?, rest: self.rest.into_iter().collect::<Option<Vec<_>>>()? })
+        Some(NonEmpty {
+            first: self.first?,
+            rest: self.rest.into_iter().collect::<Option<Vec<_>>>()?,
+        })
     }
 }
 
 impl<T> IntoIterator for NonEmpty<T> {
     type Item = T;
     type IntoIter = std::iter::Chain<std::iter::Once<T>, std::vec::IntoIter<T>>;
-    fn into_iter(self) -> Self::IntoIter { std::iter::once(self.first).chain(self.rest) }
+    fn into_iter(self) -> Self::IntoIter {
+        std::iter::once(self.first).chain(self.rest)
+    }
 }

@@ -397,7 +397,8 @@ fn boundary_edge_selection_uses_the_unique_pcurve_endpoint_match() {
         },
         Vertex {
             id: VertexId::mint("test:model:vertex#matching-start").expect("identity grammar"),
-            point: PointId::mint("test:model:point#matching-point-start").expect("identity grammar"),
+            point: PointId::mint("test:model:point#matching-point-start")
+                .expect("identity grammar"),
             tolerance: None,
         },
         Vertex {

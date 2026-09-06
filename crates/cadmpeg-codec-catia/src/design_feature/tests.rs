@@ -8,8 +8,13 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use std::io::Cursor;
 
-use crate::native::{CatiaDefinitionChainValue, CatiaDefinitionValue, CatiaDesignClass, CatiaDesignObjectRelation, CatiaDesignObjectRelationSource, CatiaEntityEvaluation, CatiaEntityEvaluationEncoding, CatiaEntitySchemaValue, CatiaEntitySuffixPayload, CatiaEntitySuffixSchemaValue, CatiaObjectGraph, CatiaObjectOwner, CatiaObjectRecordReferenceSource};
 use crate::native::entity_record::{CatiaEntityRecord, CatiaEntityRecordBody};
+use crate::native::{
+    CatiaDefinitionChainValue, CatiaDefinitionValue, CatiaDesignClass, CatiaDesignObjectRelation,
+    CatiaDesignObjectRelationSource, CatiaEntityEvaluation, CatiaEntityEvaluationEncoding,
+    CatiaEntitySchemaValue, CatiaEntitySuffixPayload, CatiaEntitySuffixSchemaValue,
+    CatiaObjectGraph, CatiaObjectOwner, CatiaObjectRecordReferenceSource,
+};
 use crate::object_graph::HeadToken;
 use crate::object_graph::ObjectPayload;
 use crate::test_support::*;
@@ -157,7 +162,7 @@ fn entity_record(
         value_schema_selections: Vec::new(),
         range_interval: None,
         object_production: None,
-            value_production: None,
+        value_production: None,
 
         reference_signature: None,
         suffix: None,
@@ -769,22 +774,26 @@ fn transfers_exact_definition_values_as_typed_feature_properties() {
         .push("definition-entity".to_string());
     operation.fields.push("definition-record".to_string());
     let mut definition_entity = entity_record("definition-entity", "definition-record", 20, 1);
-    definition_entity.value_production = Some(crate::native::entity_record::CatiaEntityValueProduction::DefinitionValue(CatiaDefinitionValue {
-        definition: CatiaEntitySchemaValue {
-            offset: 4,
-            ordinal: 2,
-            entry: "definition-entry".to_string(),
-            value: "Mirror".to_string(),
-        },
-        payload: CatiaEntitySuffixPayload::Evaluation {
-            opcode_offset: 8,
-            evaluation: CatiaEntityEvaluation::Scalar {
-                bits: 12.5_f64.to_bits(),
+    definition_entity.value_production = Some(
+        crate::native::entity_record::CatiaEntityValueProduction::DefinitionValue(
+            CatiaDefinitionValue {
+                definition: CatiaEntitySchemaValue {
+                    offset: 4,
+                    ordinal: 2,
+                    entry: "definition-entry".to_string(),
+                    value: "Mirror".to_string(),
+                },
+                payload: CatiaEntitySuffixPayload::Evaluation {
+                    opcode_offset: 8,
+                    evaluation: CatiaEntityEvaluation::Scalar {
+                        bits: 12.5_f64.to_bits(),
+                    },
+                    encoding: CatiaEntityEvaluationEncoding::Direct,
+                },
+                schema_selection: None,
             },
-            encoding: CatiaEntityEvaluationEncoding::Direct,
-        },
-        schema_selection: None,
-    }));
+        ),
+    );
     let native = CatiaNative {
         design_objects: vec![operation],
         object_graphs: vec![CatiaObjectGraph {
@@ -900,26 +909,30 @@ fn transfers_exact_definition_chains_as_typed_feature_properties() {
     operation.fields.push("definition-chain-record".to_string());
     let mut chain_entity =
         entity_record("definition-chain-entity", "definition-chain-record", 20, 1);
-    chain_entity.value_production = Some(crate::native::entity_record::CatiaEntityValueProduction::DefinitionChainValue(CatiaDefinitionChainValue {
-        selector: CatiaEntitySchemaValue {
-            offset: 4,
-            ordinal: 2,
-            entry: "selector-entry".to_string(),
-            value: "Length".to_string(),
-        },
-        role: CatiaEntitySchemaValue {
-            offset: 8,
-            ordinal: 3,
-            entry: "role-entry".to_string(),
-            value: "UnsupportedRole".to_string(),
-        },
-        value: CatiaEntitySuffixSchemaValue::Evaluation {
-            opcode_offset: 12,
-            evaluation: CatiaEntityEvaluation::Scalar {
-                bits: 12.5_f64.to_bits(),
+    chain_entity.value_production = Some(
+        crate::native::entity_record::CatiaEntityValueProduction::DefinitionChainValue(
+            CatiaDefinitionChainValue {
+                selector: CatiaEntitySchemaValue {
+                    offset: 4,
+                    ordinal: 2,
+                    entry: "selector-entry".to_string(),
+                    value: "Length".to_string(),
+                },
+                role: CatiaEntitySchemaValue {
+                    offset: 8,
+                    ordinal: 3,
+                    entry: "role-entry".to_string(),
+                    value: "UnsupportedRole".to_string(),
+                },
+                value: CatiaEntitySuffixSchemaValue::Evaluation {
+                    opcode_offset: 12,
+                    evaluation: CatiaEntityEvaluation::Scalar {
+                        bits: 12.5_f64.to_bits(),
+                    },
+                },
             },
-        },
-    }));
+        ),
+    );
     let native = CatiaNative {
         design_objects: vec![operation],
         object_graphs: vec![CatiaObjectGraph {
@@ -1049,21 +1062,25 @@ fn transfers_definition_chains_from_exact_operation_owner_descendants() {
         .push("descendant-chain-entity".to_string());
     let mut descendant_entity =
         entity_record("descendant-chain-entity", "descendant-record", 30, 2);
-    descendant_entity.value_production = Some(crate::native::entity_record::CatiaEntityValueProduction::DefinitionChainValue(CatiaDefinitionChainValue {
-        selector: CatiaEntitySchemaValue {
-            offset: 2,
-            ordinal: 4,
-            entry: "selector-entry".to_string(),
-            value: "Length".to_string(),
-        },
-        role: CatiaEntitySchemaValue {
-            offset: 7,
-            ordinal: 5,
-            entry: "role-entry".to_string(),
-            value: "UnsupportedRole".to_string(),
-        },
-        value: CatiaEntitySuffixSchemaValue::Atom { value: 3 },
-    }));
+    descendant_entity.value_production = Some(
+        crate::native::entity_record::CatiaEntityValueProduction::DefinitionChainValue(
+            CatiaDefinitionChainValue {
+                selector: CatiaEntitySchemaValue {
+                    offset: 2,
+                    ordinal: 4,
+                    entry: "selector-entry".to_string(),
+                    value: "Length".to_string(),
+                },
+                role: CatiaEntitySchemaValue {
+                    offset: 7,
+                    ordinal: 5,
+                    entry: "role-entry".to_string(),
+                    value: "UnsupportedRole".to_string(),
+                },
+                value: CatiaEntitySuffixSchemaValue::Atom { value: 3 },
+            },
+        ),
+    );
     let native = CatiaNative {
         design_objects: vec![operation, descendant],
         object_graphs: vec![CatiaObjectGraph {

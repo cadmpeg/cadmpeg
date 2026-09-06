@@ -112,15 +112,18 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
             point_record_byte_offset: 0,
             position: [4.0, 3.0, 0.0],
             position_offset: 0,
-            rule: crate::records::DesignWorkPointRule::try_from(crate::records::DesignWorkPointRuleForm::Vertex {
-                input: DesignWorkPointInput {
-                    record_index: 202,
-                    reference_offset: 0,
-                    carrier: Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
-                        recipe,
-                    })),
+            rule: crate::records::DesignWorkPointRule::try_from(
+                crate::records::DesignWorkPointRuleForm::Vertex {
+                    input: DesignWorkPointInput {
+                        record_index: 202,
+                        reference_offset: 0,
+                        carrier: Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
+                            recipe,
+                        })),
+                    },
                 },
-            }).expect("compatible WorkPoint rule"),
+            )
+            .expect("compatible WorkPoint rule"),
             reference_type_offset: 0,
         });
     }
@@ -216,13 +219,25 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
         }],
     };
     let timeline = DesignFeatureTimeline {
-frame: crate::records::DesignTimelineFrame::test_items(0, vec![crate::records::Located { value: 100, offset: 0 }, crate::records::Located { value: 200, offset: 0 }]),
-id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
-class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-record_index: std::num::NonZeroU64::new(1).unwrap(),
-source_ordinal: 0,
-context_record_index: std::num::NonZeroU64::new(1).unwrap(),
-};
+        frame: crate::records::DesignTimelineFrame::test_items(
+            0,
+            vec![
+                crate::records::Located {
+                    value: 100,
+                    offset: 0,
+                },
+                crate::records::Located {
+                    value: 200,
+                    offset: 0,
+                },
+            ],
+        ),
+        id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
+        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        record_index: std::num::NonZeroU64::new(1).unwrap(),
+        source_ordinal: 0,
+        context_record_index: std::num::NonZeroU64::new(1).unwrap(),
+    };
     let mut scopes = vec![extrude, work_point];
 
     super::super::bind_vertex_recipe_history(
@@ -241,14 +256,24 @@ context_record_index: std::num::NonZeroU64::new(1).unwrap(),
     else {
         unreachable!("test input carries a vertex recipe")
     };
-    assert_eq!(recipe.resolution.map(|resolution| resolution.state_id), Some(4));
-    assert_eq!(recipe.resolution.map(|resolution| resolution.vertex_slot()), Some(40));
+    assert_eq!(
+        recipe.resolution.map(|resolution| resolution.state_id),
+        Some(4)
+    );
+    assert_eq!(
+        recipe.resolution.map(|resolution| resolution.vertex_slot()),
+        Some(40)
+    );
 
     let mut ambiguous = scopes;
     let construction = ambiguous[1]
         .work_point_construction_mut()
         .expect("WorkPoint construction");
-    let recipe = construction.rule.vertex_recipes_mut().next().expect("vertex recipe");
+    let recipe = construction
+        .rule
+        .vertex_recipes_mut()
+        .next()
+        .expect("vertex recipe");
     recipe.recipe_references[0]
         .candidate_faces
         .push(FaceId::mint(crate::ids::brep_entity_id(11)).expect("identity grammar"));
@@ -317,10 +342,12 @@ fn feature_input_topology_projects_historical_vertices() {
             bulletin_boards: Vec::new(),
             records: Vec::new(),
             entity_versions: Vec::new(),
-            topology_cache: crate::history_records::AsmTopologyCache::Complete(AsmHistoricalTopology {
-                vertices: vec![43, 59],
-                ..AsmHistoricalTopology::default()
-            }),
+            topology_cache: crate::history_records::AsmTopologyCache::Complete(
+                AsmHistoricalTopology {
+                    vertices: vec![43, 59],
+                    ..AsmHistoricalTopology::default()
+                },
+            ),
             transition: None,
         }],
     };
@@ -633,7 +660,9 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
         Region {
             id: RegionId::mint("test:model:region#external-region").expect("identity grammar"),
             body: bodies[1].id.clone(),
-            shells: vec![ShellId::mint("test:model:shell#external-shell").expect("identity grammar")],
+            shells: vec![
+                ShellId::mint("test:model:shell#external-shell").expect("identity grammar")
+            ],
         },
         Region {
             id: RegionId::mint("test:model:region#cache-region").expect("identity grammar"),
@@ -649,13 +678,21 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
         free_vertices: Vec::new(),
     };
     let shells = [
-        shell("test:model:shell#current-shell", "test:model:region#current-region", "f3d:brep/current/brep:face#1"),
+        shell(
+            "test:model:shell#current-shell",
+            "test:model:region#current-region",
+            "f3d:brep/current/brep:face#1",
+        ),
         shell(
             "test:model:shell#external-shell",
             "test:model:region#external-region",
             "f3d:brep/external/brep:face#1",
         ),
-        shell("test:model:shell#cache-shell", "test:model:region#cache-region", "f3d:brep/cache/brep:face#1"),
+        shell(
+            "test:model:shell#cache-shell",
+            "test:model:region#cache-region",
+            "f3d:brep/cache/brep:face#1",
+        ),
     ];
 
     assert_eq!(
@@ -877,7 +914,10 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         record_index: 20,
         byte_offset: 0,
         class_tag: "280".into(),
-        members: vec![crate::records::Located { value: 21, offset: 0 }],
+        members: vec![crate::records::Located {
+            value: 21,
+            offset: 0,
+        }],
         lost_edge_references: Vec::new(),
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
@@ -981,10 +1021,16 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         byte_offset: 0,
         record_index_offset: None,
         kind: crate::records::ConstructionRecipeKind::Body,
-        design: Some(crate::records::ConstructionRecipeDesign { id: crate::records::RecordedValue { value: "301".into(), offset: None }, selector: Some(crate::records::ConstructionRecipeSelector {
-            value: 9,
-            byte_offset: 0,
-        }) }),
+        design: Some(crate::records::ConstructionRecipeDesign {
+            id: crate::records::RecordedValue {
+                value: "301".into(),
+                offset: None,
+            },
+            selector: Some(crate::records::ConstructionRecipeSelector {
+                value: 9,
+                byte_offset: 0,
+            }),
+        }),
         recipe_index: 0,
         record_index: 0,
     };
@@ -1197,7 +1243,10 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
         record_index: 100,
         byte_offset: 1000,
         class_tag: "297".into(),
-        members: vec![crate::records::Located { value: 200, offset: 1010 }],
+        members: vec![crate::records::Located {
+            value: 200,
+            offset: 1010,
+        }],
         lost_edge_references: Vec::new(),
         frame: DesignConstructionOperandGroupFrame {
             member_count_offset: 1008,
@@ -1269,7 +1318,9 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(AsmHistoricalTopology::default()),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(
+            AsmHistoricalTopology::default(),
+        ),
         transition,
     };
     let history = AsmHistory {
@@ -1358,7 +1409,10 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         record_index: 100,
         byte_offset: 1_000,
         class_tag: "297".into(),
-        members: vec![crate::records::Located { value: 200, offset: 1_010 }],
+        members: vec![crate::records::Located {
+            value: 200,
+            offset: 1_010,
+        }],
         lost_edge_references: Vec::new(),
         frame: DesignConstructionOperandGroupFrame {
             member_count_offset: 1_008,
@@ -1508,7 +1562,8 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
             form: DesignThreadForm::Standard,
             designation_offset: 0,
             designation: "M4x0.7".into(),
-            nominal_size: crate::records::DesignThreadNominalSize::try_from("4.0".to_owned()).expect("nominal size"),
+            nominal_size: crate::records::DesignThreadNominalSize::try_from("4.0".to_owned())
+                .expect("nominal size"),
             profile: "ISO Metric profile".into(),
             major_diameter: 0.4,
             minor_diameter: 0.2,
@@ -1829,7 +1884,10 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
             reference_type: 0,
             reference_type_offset: 0,
             tangent_point_data: None,
-            input_records: vec![crate::records::Located { value: 55, offset: 0 }],
+            input_records: vec![crate::records::Located {
+                value: 55,
+                offset: 0,
+            }],
             face_selection: Some(DesignHoleFaceSelection {
                 record_index: 100,
                 byte_offset: 0,
@@ -1905,7 +1963,9 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(AsmHistoricalTopology::default()),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(
+            AsmHistoricalTopology::default(),
+        ),
         transition,
     };
     let history = AsmHistory {

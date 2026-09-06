@@ -481,7 +481,11 @@ pub(crate) fn try_decode_geometry(
                 ),
             );
             if attached.is_ok() {
-                pending_blend_supports.push((procedural_index, blend.state.support_xmts(), blend.state.offsets()));
+                pending_blend_supports.push((
+                    procedural_index,
+                    blend.state.support_xmts(),
+                    blend.state.offsets(),
+                ));
                 if blend.state.spine_xmt() > 1 {
                     pending_blend_spines.push((procedural_index, blend.state.spine_xmt()));
                 }
@@ -817,7 +821,9 @@ pub(crate) fn try_decode_geometry(
                     let parameters = curve_indices
                         .get(&basis)
                         .and_then(|index| ir.model.curves.get(*index))
-                        .and_then(|curve| canonical_trim_range(&curve.geometry, trim.state.parameters()));
+                        .and_then(|curve| {
+                            canonical_trim_range(&curve.geometry, trim.state.parameters())
+                        });
                     curves_by_xmt.insert(trim.xmt, basis);
                     if let Some(parameters) = parameters {
                         trim_ranges.insert(trim.xmt, parameters);
@@ -825,7 +831,8 @@ pub(crate) fn try_decode_geometry(
                 }
                 if let Some(pcurve) = pcurves_by_xmt.get(&trim.state.basis()).cloned() {
                     pcurves_by_xmt.insert(trim.xmt, pcurve);
-                    if let Some(support) = pcurve_supports_by_xmt.get(&trim.state.basis()).cloned() {
+                    if let Some(support) = pcurve_supports_by_xmt.get(&trim.state.basis()).cloned()
+                    {
                         pcurve_supports_by_xmt.insert(trim.xmt, support);
                     }
                     trim_ranges.insert(trim.xmt, trim.state.parameters());
@@ -873,11 +880,18 @@ pub(crate) fn try_decode_geometry(
                         }
                     }
                     pcurves_by_xmt.insert(surface_curve.xmt, pcurve);
-                    if let Some(support) = surfaces_by_xmt.get(&surface_curve.state.surface()).cloned() {
+                    if let Some(support) =
+                        surfaces_by_xmt.get(&surface_curve.state.surface()).cloned()
+                    {
                         pcurve_supports_by_xmt.insert(surface_curve.xmt, support);
                     }
                 }
-                if let Some(original) = surface_curve.state.original().and_then(|original| curves_by_xmt.get(&original)).cloned() {
+                if let Some(original) = surface_curve
+                    .state
+                    .original()
+                    .and_then(|original| curves_by_xmt.get(&original))
+                    .cloned()
+                {
                     curves_by_xmt.insert(surface_curve.xmt, original);
                 }
             }

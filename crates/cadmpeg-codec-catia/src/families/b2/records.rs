@@ -13,8 +13,8 @@ use std::mem::size_of;
 
 use crate::analytic::{periodic_angular_range_is_valid, sphere_angular_ranges_are_valid};
 use crate::families::a5a8::records::FreeformSurface;
-use crate::wire::bytes::persistent_ref;
 use crate::native::owner_chart::{CatiaOwnerChartMiddleControl, CatiaOwnerChartTerminalControl};
+use crate::wire::bytes::persistent_ref;
 use crate::wire::bytes::{
     allocation_reference, compact_int, f64_le, finite_f64_lane, read_f64_array, u32_le_24,
     AllocationReferenceEncoding,
@@ -1087,7 +1087,8 @@ pub(crate) fn b2_owner_charts_from_records(
             {
                 return None;
             }
-            let [selector_05, selector_09, selector_0d, selector_11] = points.map(|point| point.pos);
+            let [selector_05, selector_09, selector_0d, selector_11] =
+                points.map(|point| point.pos);
             Some(B2OwnerChart {
                 owner_pos: owner.pos,
                 source_index: owner.source_index,

@@ -383,13 +383,48 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
         state_offset: 100,
         owner_reference: 1,
         owner_entity_id: "0_1".into(),
-        auxiliary_references: crate::records::ReferenceRun::Located(vec![crate::records::Located { value: 0, offset: 80 }]),
+        auxiliary_references: crate::records::ReferenceRun::Located(vec![
+            crate::records::Located {
+                value: 0,
+                offset: 80,
+            },
+        ]),
         rectangular_counted_reference_count: None,
-        members: ([(1, 25, 3), (2, 40, 5), (3, 55, 1), (4, 70, 1)].into_iter().map(|(record_index, offset, relation_ordinal)| crate::records::SketchRelationMember { reference: crate::records::SketchRelationReference::Index(record_index), offset, relation_ordinal: Some(relation_ordinal), }).collect::<Vec<_>>()).try_into().expect("uniform member resolution"),
+        members: ([(1, 25, 3), (2, 40, 5), (3, 55, 1), (4, 70, 1)]
+            .into_iter()
+            .map(
+                |(record_index, offset, relation_ordinal)| crate::records::SketchRelationMember {
+                    reference: crate::records::SketchRelationReference::Index(record_index),
+                    offset,
+                    relation_ordinal: Some(relation_ordinal),
+                },
+            )
+            .collect::<Vec<_>>())
+        .try_into()
+        .expect("uniform member resolution"),
         owner_reference_offset: 90,
-        definition: crate::records::SketchRelationDefinition::new(0x20_0000_0000, crate::records::SketchRelationKind::Unpatterned).expect("valid relation definition"),
+        definition: crate::records::SketchRelationDefinition::new(
+            0x20_0000_0000,
+            crate::records::SketchRelationKind::Unpatterned,
+        )
+        .expect("valid relation definition"),
         entity_genesis: None,
-        return_members: ([(1, 120, curve(1, 10)), (3, 131, curve(3, 30)), (2, 142, curve(2, 20)), (4, 153, curve(4, 40))].into_iter().map(|(_record_index, offset, resolved)| crate::records::SketchRelationReturnMember { reference: crate::records::SketchRelationReference::Resolved(resolved), offset, }).collect::<Vec<_>>()).try_into().expect("uniform member resolution"),
+        return_members: ([
+            (1, 120, curve(1, 10)),
+            (3, 131, curve(3, 30)),
+            (2, 142, curve(2, 20)),
+            (4, 153, curve(4, 40)),
+        ]
+        .into_iter()
+        .map(
+            |(_record_index, offset, resolved)| crate::records::SketchRelationReturnMember {
+                reference: crate::records::SketchRelationReference::Resolved(resolved),
+                offset,
+            },
+        )
+        .collect::<Vec<_>>())
+        .try_into()
+        .expect("uniform member resolution"),
         raw_bytes: Vec::new(),
     };
     let projected = HashMap::from([
@@ -480,12 +515,23 @@ fn single_curve_annotation_projects_parameterized_offset() {
         class_tag: "305".into(),
         record_index: 12,
         source_ordinal: 0,
-        source: crate::records::DesignParameterSource::new("Linear Dimension-2".into(), Some(13), Some(crate::records::Located { value: crate::records::DesignParameterDiscriminator::Code6, offset: 0 })).unwrap(),
+        source: crate::records::DesignParameterSource::new(
+            "Linear Dimension-2".into(),
+            Some(13),
+            Some(crate::records::Located {
+                value: crate::records::DesignParameterDiscriminator::Code6,
+                offset: 0,
+            }),
+        )
+        .unwrap(),
         expression: "2 mm".into(),
         expression_offset: 0,
         source_kind_offset: 0,
 
-        unit: Some(crate::records::RecordedValue { value: "mm".into(), offset: Some(0) }),
+        unit: Some(crate::records::RecordedValue {
+            value: "mm".into(),
+            offset: Some(0),
+        }),
         name: "d1".into(),
         name_offset: 0,
         evaluated_value: 0.2,
@@ -518,7 +564,10 @@ fn single_curve_annotation_projects_parameterized_offset() {
         annotation_byte_offset: 0,
         governing_owner_record_index: 13,
         governing_owner_reference_offset: 0,
-        return_members: vec![crate::records::Located { value: std::num::NonZeroU32::new(10).unwrap(), offset: 0 }],
+        return_members: vec![crate::records::Located {
+            value: std::num::NonZeroU32::new(10).unwrap(),
+            offset: 0,
+        }],
         paired_class_tag: "256".into(),
         paired_byte_offset: 0,
         owner_reference: 100,
@@ -575,7 +624,16 @@ fn single_curve_annotation_projects_parameterized_offset() {
                 role_offset: 0,
             },
         ],
-        return_members: vec![crate::records::Located { value: std::num::NonZeroU32::new(10).unwrap(), offset: 0 }, crate::records::Located { value: std::num::NonZeroU32::new(11).unwrap(), offset: 0 }],
+        return_members: vec![
+            crate::records::Located {
+                value: std::num::NonZeroU32::new(10).unwrap(),
+                offset: 0,
+            },
+            crate::records::Located {
+                value: std::num::NonZeroU32::new(11).unwrap(),
+                offset: 0,
+            },
+        ],
         ..frame.clone()
     };
     let explicit_definition = crate::design::dimensions::annotation_offset_dimension_definition(
@@ -756,11 +814,16 @@ fn angular_point_operand_selects_unique_incident_line_by_value() {
 fn counted_angular_group_projects_unique_point_selected_line() {
     let stream = "f3d:A";
     let placement = DesignSketchPlacement {
-        frame: crate::records::DesignSketchFrame::new(0, crate::records::DesignSketchFrameForm::ScopeCompact).unwrap(),
+        frame: crate::records::DesignSketchFrame::new(
+            0,
+            crate::records::DesignSketchFrameForm::ScopeCompact,
+        )
+        .unwrap(),
 
         id: format!("{stream}:design-sketch-placement#0"),
         scope_record_index: Some(10),
-        entity_id: crate::records::DesignEntityId::try_from("0_100".to_owned()).expect("valid entity ID"),
+        entity_id: crate::records::DesignEntityId::try_from("0_100".to_owned())
+            .expect("valid entity ID"),
 
         visibility: None,
 
@@ -768,7 +831,6 @@ fn counted_angular_group_projects_unique_point_selected_line() {
         record_index: 11,
 
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
-
     };
     let parameter = DesignParameter {
         id: format!("{stream}:design-parameter#20"),
@@ -776,12 +838,23 @@ fn counted_angular_group_projects_unique_point_selected_line() {
         class_tag: "305".into(),
         record_index: 20,
         source_ordinal: 4,
-        source: crate::records::DesignParameterSource::new("Angular Dimension-4".into(), Some(21), Some(crate::records::Located { value: crate::records::DesignParameterDiscriminator::Code0, offset: 0 })).unwrap(),
+        source: crate::records::DesignParameterSource::new(
+            "Angular Dimension-4".into(),
+            Some(21),
+            Some(crate::records::Located {
+                value: crate::records::DesignParameterDiscriminator::Code0,
+                offset: 0,
+            }),
+        )
+        .unwrap(),
         expression: "1.0471975512 rad".into(),
         expression_offset: 0,
         source_kind_offset: 0,
 
-        unit: Some(crate::records::RecordedValue { value: "rad".into(), offset: Some(0) }),
+        unit: Some(crate::records::RecordedValue {
+            value: "rad".into(),
+            offset: Some(0),
+        }),
         name: "d4".into(),
         name_offset: 0,
         evaluated_value: std::f64::consts::FRAC_PI_3,
@@ -823,14 +896,20 @@ fn counted_angular_group_projects_unique_point_selected_line() {
         frame_length: 100,
         loci: vec![
             DesignDimensionLocus {
-                returned: crate::records::Located { value: 40, offset: 0 },
+                returned: crate::records::Located {
+                    value: 40,
+                    offset: 0,
+                },
                 geometry_record_index: 40,
                 geometry_reference_offset: 0,
                 role: 0,
                 role_offset: 0,
             },
             DesignDimensionLocus {
-                returned: crate::records::Located { value: 41, offset: 0 },
+                returned: crate::records::Located {
+                    value: 41,
+                    offset: 0,
+                },
                 geometry_record_index: 41,
                 geometry_reference_offset: 0,
                 role: 0,

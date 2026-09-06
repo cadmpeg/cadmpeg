@@ -288,7 +288,13 @@ pub(super) fn project(
             .curves
             .iter()
             .find(|curve| curve.id == source_id)
-            .map(|curve| curve.geometry.solved_cache().unwrap_or(&curve.geometry).clone())
+            .map(|curve| {
+                curve
+                    .geometry
+                    .solved_cache()
+                    .unwrap_or(&curve.geometry)
+                    .clone()
+            })
         else {
             losses.push(entity_loss(entry, "offset source curve is missing"));
             continue;
@@ -598,7 +604,11 @@ pub(super) fn project(
                     losses.push(entity_loss(entry, "offset function curve is missing"));
                     continue;
                 };
-                let CurveGeometry::Nurbs(function_nurbs) = function.geometry.solved_cache().unwrap_or(&function.geometry) else {
+                let CurveGeometry::Nurbs(function_nurbs) = function
+                    .geometry
+                    .solved_cache()
+                    .unwrap_or(&function.geometry)
+                else {
                     losses.push(entity_loss(
                         entry,
                         "offset function has no polynomial NURBS carrier",
@@ -704,9 +714,13 @@ pub(super) fn project(
                     .iter()
                     .map(|value| source_parameter(inverse_parameter(*value)))
                     .collect();
-                let Some(function_start) =
-                    cadmpeg_ir::eval::curve_point(function.geometry.solved_cache().unwrap_or(&function.geometry), function_range[0])
-                else {
+                let Some(function_start) = cadmpeg_ir::eval::curve_point(
+                    function
+                        .geometry
+                        .solved_cache()
+                        .unwrap_or(&function.geometry),
+                    function_range[0],
+                ) else {
                     losses.push(entity_loss(
                         entry,
                         "offset function start cannot be evaluated",

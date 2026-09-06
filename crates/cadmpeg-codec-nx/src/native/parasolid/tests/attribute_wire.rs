@@ -12,7 +12,10 @@ fn value_relation_positions_preserve_wire_and_reject_leading_slots() {
         let invalid = wire.replace("\"reference_ordinal\":5", "\"reference_ordinal\":4");
         assert!(serde_json::from_str::<T>(&invalid).is_err());
         for target in [0, 1] {
-            let invalid = wire.replace("\"referenced_xmt\":10", &format!("\"referenced_xmt\":{target}"));
+            let invalid = wire.replace(
+                "\"referenced_xmt\":10",
+                &format!("\"referenced_xmt\":{target}"),
+            );
             assert!(serde_json::from_str::<T>(&invalid).is_err());
         }
     }
@@ -20,7 +23,9 @@ fn value_relation_positions_preserve_wire_and_reject_leading_slots() {
     let numeric = r#"{"id":"use","stream_ordinal":0,"entity_51_record":"entity","reference_ordinal":5,"referenced_xmt":10,"kind":"doubles","value_record":"value","inflated_offset":8}"#;
     check::<ParasolidEntity51NumericUse>(numeric);
     check::<ParasolidEntity51StructuredUse>(&numeric.replace("doubles", "points"));
-    let string = numeric.replace("\"kind\":\"doubles\",", "").replace("value_record", "string_record");
+    let string = numeric
+        .replace("\"kind\":\"doubles\",", "")
+        .replace("value_record", "string_record");
     check::<ParasolidEntity51StringUse>(&string);
 }
 
@@ -33,8 +38,14 @@ fn attribute_definition_wire_preserves_codes_and_rejects_invalid_domains() {
     assert_eq!(serde_json::to_string(&definition).unwrap(), wire);
     for target in [0, 1, 2, u32::MAX] {
         let wire = wire
-            .replace("\"next_definition_xmt\":1", &format!("\"next_definition_xmt\":{target}"))
-            .replace("\"field_names_xmt\":1", &format!("\"field_names_xmt\":{target}"));
+            .replace(
+                "\"next_definition_xmt\":1",
+                &format!("\"next_definition_xmt\":{target}"),
+            )
+            .replace(
+                "\"field_names_xmt\":1",
+                &format!("\"field_names_xmt\":{target}"),
+            );
         let definition: ParasolidAttributeDefinition = serde_json::from_str(&wire).unwrap();
         assert_eq!(definition.next_definition_xmt.is_none(), target == 1);
         assert_eq!(definition.field_names_xmt.is_none(), target == 1);
@@ -55,15 +66,24 @@ fn attribute_definition_wire_preserves_codes_and_rejects_invalid_domains() {
 
 #[test]
 fn resolved_class_relations_preserve_non_null_definition_wire() {
-    use crate::native::parasolid::{ParasolidAttributeClassUse, ParasolidTopologyAttributeClassUse};
+    use crate::native::parasolid::{
+        ParasolidAttributeClassUse, ParasolidTopologyAttributeClassUse,
+    };
     fn check<T: serde::Serialize + serde::de::DeserializeOwned>(wire: &str) {
         let relation: T = serde_json::from_str(wire).unwrap();
         assert_eq!(serde_json::to_string(&relation).unwrap(), wire);
         for target in [0, 1] {
-            let invalid = wire.replace("\"definition_xmt\":2", &format!("\"definition_xmt\":{target}"));
+            let invalid = wire.replace(
+                "\"definition_xmt\":2",
+                &format!("\"definition_xmt\":{target}"),
+            );
             assert!(serde_json::from_str::<T>(&invalid).is_err());
         }
     }
-    check::<ParasolidAttributeClassUse>(r#"{"id":"class","stream_ordinal":0,"entity_51_record":"entity","definition_xmt":2,"attribute_definition":"definition"}"#);
-    check::<ParasolidTopologyAttributeClassUse>(r#"{"id":"class","topology_attribute_reference":"topology","entity_51_record":"entity","attribute_class_use":"use","definition_xmt":2,"attribute_definition":"definition"}"#);
+    check::<ParasolidAttributeClassUse>(
+        r#"{"id":"class","stream_ordinal":0,"entity_51_record":"entity","definition_xmt":2,"attribute_definition":"definition"}"#,
+    );
+    check::<ParasolidTopologyAttributeClassUse>(
+        r#"{"id":"class","topology_attribute_reference":"topology","entity_51_record":"entity","attribute_class_use":"use","definition_xmt":2,"attribute_definition":"definition"}"#,
+    );
 }

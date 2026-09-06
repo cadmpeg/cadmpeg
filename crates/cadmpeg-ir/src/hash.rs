@@ -460,7 +460,10 @@ mod tests {
             "unknowns".into(),
             vec![
                 pinned_unknown("pin:test:source-image#0", &[]),
-                pinned_unknown("pin:test:unknown#0", &["pin:record#0", "pin:test:unknown#1"]),
+                pinned_unknown(
+                    "pin:test:unknown#0",
+                    &["pin:record#0", "pin:test:unknown#1"],
+                ),
             ],
         );
         ir.finalize();
@@ -586,7 +589,11 @@ mod tests {
                 "pin",
                 "pin:test:source-image#0",
             ),
-            document_local_sha256(&pinned_document_with_source(), "pin", "pin:test:source-image#0")
+            document_local_sha256(
+                &pinned_document_with_source(),
+                "pin",
+                "pin:test:source-image#0"
+            )
         );
     }
 

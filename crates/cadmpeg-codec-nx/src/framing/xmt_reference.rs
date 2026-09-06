@@ -10,13 +10,17 @@ pub(crate) struct NonNullXmt(u32);
 impl TryFrom<u32> for NonNullXmt {
     type Error = &'static str;
     fn try_from(value: u32) -> Result<Self, Self::Error> {
-        if value <= 1 { return Err("xmt reference: must exceed one"); }
+        if value <= 1 {
+            return Err("xmt reference: must exceed one");
+        }
         Ok(Self(value))
     }
 }
 
 impl From<NonNullXmt> for u32 {
-    fn from(value: NonNullXmt) -> Self { value.0 }
+    fn from(value: NonNullXmt) -> Self {
+        value.0
+    }
 }
 
 /// A retained reference target other than the null token. Zero remains
@@ -26,7 +30,11 @@ pub(crate) struct XmtTarget(u32);
 
 impl XmtTarget {
     pub(crate) fn from_wire(value: u32) -> Option<Self> {
-        if value == 1 { None } else { Some(Self(value)) }
+        if value == 1 {
+            None
+        } else {
+            Some(Self(value))
+        }
     }
 
     pub(crate) fn to_wire(value: Option<Self>) -> u32 {
@@ -35,7 +43,9 @@ impl XmtTarget {
 }
 
 impl From<XmtTarget> for u32 {
-    fn from(target: XmtTarget) -> Self { target.0 }
+    fn from(target: XmtTarget) -> Self {
+        target.0
+    }
 }
 
 #[cfg(test)]
@@ -60,7 +70,10 @@ mod tests {
             assert_eq!(serde_json::to_string(&reference).unwrap(), json);
         }
         for json in ["0", "1"] {
-            assert!(serde_json::from_str::<NonNullXmt>(json).unwrap_err().to_string().contains("reference"));
+            assert!(serde_json::from_str::<NonNullXmt>(json)
+                .unwrap_err()
+                .to_string()
+                .contains("reference"));
         }
     }
 }

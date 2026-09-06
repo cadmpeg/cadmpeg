@@ -7,21 +7,20 @@ use crate::bytes::lp_ascii_filtered;
 use crate::container::ContainerScan;
 use crate::design::construction_recipe_family_name_len;
 use crate::design::decode::meta::{decode_types, stream_types_by_entity};
-use crate::design::decode::sketch::{
-    indexed_record_offsets, next_indexed_record_offset,
-};
+use crate::design::decode::sketch::{indexed_record_offsets, next_indexed_record_offset};
 use crate::ids::{self, native_stream};
 use crate::layout::grouped_recipe_reference_prefix as grouped_recipe;
 use crate::records::{
-    ConstructionRecipe, DesignDimensionAnnotationFrame, DesignDimensionAnnotationOperand, DesignDimensionPresentationOperand,
+    ConstructionRecipe, DesignDimensionAnnotationFrame, DesignDimensionAnnotationOperand,
     DesignDimensionLocus, DesignDimensionLocusGroup, DesignDimensionLocusPair,
-    DesignDimensionNullLocusPair, DesignDimensionPresentationFrame, DesignDimensionRecipeRecord,
-    DesignEdgeOperand, DesignEntityHeader, DesignParameter, DesignParameterCompanion,
-    DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
-    DesignSketchPlacement, PersistentSubentityTag, SketchCurveIdentity, SketchPoint,
+    DesignDimensionNullLocusPair, DesignDimensionPresentationFrame,
+    DesignDimensionPresentationOperand, DesignDimensionRecipeRecord, DesignEdgeOperand,
+    DesignEntityHeader, DesignParameter, DesignParameterCompanion, DesignParameterKind,
+    DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
+    PersistentSubentityTag, SketchCurveIdentity, SketchPoint,
 };
-use cadmpeg_core::CodecError;
 use cadmpeg_core::decode::View;
+use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
 /// Record slices every dimension-record decode pass reads: the container scan
@@ -1212,7 +1211,8 @@ pub(crate) fn parse_dimension_annotation_frame(
         {
             return None;
         }
-        let geometry_record_index = std::num::NonZeroU32::new(View::u32_le_at(bytes, position + 1)?);
+        let geometry_record_index =
+            std::num::NonZeroU32::new(View::u32_le_at(bytes, position + 1)?);
         if geometry_record_index.is_some_and(|index| !geometry_indices.contains(&index.get())) {
             return None;
         }
@@ -1274,7 +1274,9 @@ pub(crate) fn parse_dimension_annotation_frame(
                 valid = false;
                 break;
             }
-            let Some(reference) = View::u32_le_at(bytes, cursor + 1).and_then(std::num::NonZeroU32::new) else {
+            let Some(reference) =
+                View::u32_le_at(bytes, cursor + 1).and_then(std::num::NonZeroU32::new)
+            else {
                 valid = false;
                 break;
             };
@@ -1282,7 +1284,10 @@ pub(crate) fn parse_dimension_annotation_frame(
                 valid = false;
                 break;
             }
-            return_members.push(crate::records::Located { value: reference, offset: (cursor + 1) as u64 });
+            return_members.push(crate::records::Located {
+                value: reference,
+                offset: (cursor + 1) as u64,
+            });
             cursor += 11;
         }
         if !valid
@@ -1295,11 +1300,12 @@ pub(crate) fn parse_dimension_annotation_frame(
         }
         let mut operand_members = operands
             .iter()
-            .filter_map(|operand| {
-                operand.geometry_record_index.map(std::num::NonZeroU32::get)
-            })
+            .filter_map(|operand| operand.geometry_record_index.map(std::num::NonZeroU32::get))
             .collect::<Vec<_>>();
-        let mut returned = return_members.iter().map(|member| member.value.get()).collect::<Vec<_>>();
+        let mut returned = return_members
+            .iter()
+            .map(|member| member.value.get())
+            .collect::<Vec<_>>();
         operand_members.sort_unstable();
         returned.sort_unstable();
         if operand_members != returned {
@@ -1312,14 +1318,8 @@ pub(crate) fn parse_dimension_annotation_frame(
             return_members,
         ));
     }
-    let [
-        (
-            tail,
-            governing_owner_record_index,
-            governing_companion_record_index,
-            return_members,
-        ),
-    ] = tails.as_slice()
+    let [(tail, governing_owner_record_index, governing_companion_record_index, return_members)] =
+        tails.as_slice()
     else {
         return None;
     };
@@ -1543,7 +1543,8 @@ pub(crate) fn parse_dimension_presentation_frame(
         {
             return None;
         }
-        let geometry_record_index = std::num::NonZeroU32::new(View::u32_le_at(bytes, position + 1)?)?;
+        let geometry_record_index =
+            std::num::NonZeroU32::new(View::u32_le_at(bytes, position + 1)?)?;
         if !geometry_indices.contains(&geometry_record_index.get()) {
             return None;
         }
@@ -1832,7 +1833,12 @@ pub(crate) fn parse_dimension_locus_group(
         if !geometry_indices.contains(&geometry_record_index) {
             return None;
         }
-        geometry.push((geometry_record_index, (position + 1) as u64, View::u32_le_at(bytes, position + 11)?, (position + 11) as u64));
+        geometry.push((
+            geometry_record_index,
+            (position + 1) as u64,
+            View::u32_le_at(bytes, position + 11)?,
+            (position + 11) as u64,
+        ));
         position = position.checked_add(15)?;
     }
     if bytes.get(position) != Some(&0)
@@ -1868,8 +1874,14 @@ pub(crate) fn parse_dimension_locus_group(
             return None;
         }
         loci.push(DesignDimensionLocus {
-            geometry_record_index, geometry_reference_offset, role, role_offset,
-            returned: crate::records::Located { value: record_index, offset: (position + 1) as u64 },
+            geometry_record_index,
+            geometry_reference_offset,
+            role,
+            role_offset,
+            returned: crate::records::Located {
+                value: record_index,
+                offset: (position + 1) as u64,
+            },
         });
         position = position.checked_add(11)?;
     }

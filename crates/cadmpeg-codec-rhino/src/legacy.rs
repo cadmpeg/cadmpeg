@@ -3,8 +3,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::CodecError;
 use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
@@ -24,7 +24,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::unknown::UnknownRecord;
 use serde::Serialize;
 
-use crate::chunks::{ArchiveVersion, BoundedReader, FramingError, chunk_at, parse_header};
+use crate::chunks::{chunk_at, parse_header, ArchiveVersion, BoundedReader, FramingError};
 use crate::layout::file_header;
 use crate::loss::RhinoLossCode;
 
@@ -2969,13 +2969,11 @@ mod tests {
                 .count(),
             3
         );
-        assert!(
-            !result
-                .report()
-                .losses
-                .iter()
-                .any(|loss| loss.message.contains("ffffffff"))
-        );
+        assert!(!result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("ffffffff")));
     }
 
     #[test]
@@ -2996,18 +2994,14 @@ mod tests {
         assert_eq!(retained[0].byte_len(), record.len() as u64);
         assert_eq!(retained[0].data(), Some(record.as_slice()));
         assert_eq!(retained[0].stream(), "rhino");
-        assert!(
-            retained[0]
-                .id()
-                .starts_with("rhino:legacy:record#00200004-")
-        );
-        assert!(
-            result
-                .report()
-                .losses
-                .iter()
-                .any(|loss| loss.code == RhinoLossCode::ObjectFamilyNotTransferred.kind())
-        );
+        assert!(retained[0]
+            .id()
+            .starts_with("rhino:legacy:record#00200004-"));
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == RhinoLossCode::ObjectFamilyNotTransferred.kind()));
     }
 
     #[test]
@@ -3156,14 +3150,12 @@ mod tests {
         );
         assert_eq!(result.ir().model.edges.len(), 4);
         assert_eq!(result.ir().model.curves.len(), 4);
-        assert!(
-            result
-                .ir()
-                .model
-                .edges
-                .iter()
-                .all(|edge| edge.curve.is_some())
-        );
+        assert!(result
+            .ir()
+            .model
+            .edges
+            .iter()
+            .all(|edge| edge.curve.is_some()));
     }
 
     #[test]

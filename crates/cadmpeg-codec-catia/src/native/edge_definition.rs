@@ -2,8 +2,8 @@
 //! Native edge-definition wire projection from its class and raw payload.
 
 use crate::families::consolidated::records::{
-    ConsolidatedEdgeDefinitionClass, ConsolidatedEdgeDefinitionData,
-    consolidated_edge_definition_data,
+    consolidated_edge_definition_data, ConsolidatedEdgeDefinitionClass,
+    ConsolidatedEdgeDefinitionData,
 };
 use crate::wire::records::{ConsolidatedFrameFlag, ConsolidatedFrameWidth, ConsolidatedRawFrame};
 #[cfg(feature = "schema")]

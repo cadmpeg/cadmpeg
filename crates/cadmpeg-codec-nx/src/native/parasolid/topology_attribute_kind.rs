@@ -16,7 +16,12 @@ pub(crate) enum TopologyAttributeKind {
 
 impl TopologyAttributeKind {
     pub(crate) const ALL: [Self; 6] = [
-        Self::Shell, Self::Face, Self::Loop, Self::Edge, Self::Fin, Self::Vertex,
+        Self::Shell,
+        Self::Face,
+        Self::Loop,
+        Self::Edge,
+        Self::Fin,
+        Self::Vertex,
     ];
 
     pub(crate) fn code(self) -> u8 {

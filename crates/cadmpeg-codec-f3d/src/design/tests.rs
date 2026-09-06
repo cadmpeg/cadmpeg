@@ -30,11 +30,21 @@ use std::collections::HashSet;
 #[test]
 fn feature_family_tokens_are_localized() {
     use crate::records::DesignFeatureKind;
-    let family = |token: &str| design_feature_family(&DesignFeatureKind::try_from(token.to_owned()).expect("nonempty family name"));
-    let treatment =
-        |token: &str| has_typed_edge_treatment_group(&DesignFeatureKind::try_from(token.to_owned()).expect("nonempty family name"));
-    let localized =
-        |token: &str| is_localized_edge_treatment_kind(&DesignFeatureKind::try_from(token.to_owned()).expect("nonempty family name"));
+    let family = |token: &str| {
+        design_feature_family(
+            &DesignFeatureKind::try_from(token.to_owned()).expect("nonempty family name"),
+        )
+    };
+    let treatment = |token: &str| {
+        has_typed_edge_treatment_group(
+            &DesignFeatureKind::try_from(token.to_owned()).expect("nonempty family name"),
+        )
+    };
+    let localized = |token: &str| {
+        is_localized_edge_treatment_kind(
+            &DesignFeatureKind::try_from(token.to_owned()).expect("nonempty family name"),
+        )
+    };
     assert_eq!(family("As-built"), Some(DesignFeatureFamily::Assemble));
     assert_eq!(family("Esquisse"), Some(DesignFeatureFamily::Sketch));
     assert_eq!(family("Extrusion"), Some(DesignFeatureFamily::Extrude));
@@ -212,11 +222,16 @@ fn governing_dimension_identity_uses_parameter_identity() {
 #[test]
 fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     let placement = |stream: &str| DesignSketchPlacement {
-        frame: crate::records::DesignSketchFrame::new(0, crate::records::DesignSketchFrameForm::ScopeCompact).unwrap(),
+        frame: crate::records::DesignSketchFrame::new(
+            0,
+            crate::records::DesignSketchFrameForm::ScopeCompact,
+        )
+        .unwrap(),
 
         id: format!("f3d:{stream}:design-sketch-placement#0"),
         scope_record_index: Some(10),
-        entity_id: crate::records::DesignEntityId::try_from(format!("{stream}_100")).expect("valid entity ID"),
+        entity_id: crate::records::DesignEntityId::try_from(format!("{stream}_100"))
+            .expect("valid entity ID"),
 
         visibility: None,
 
@@ -224,20 +239,26 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         record_index: 11,
 
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
-
     };
     let header = |stream: &str| DesignEntityHeader {
         id: format!("f3d:{stream}:design-entity-header#0"),
         byte_offset: 0,
 
-        entity_id: crate::records::DesignEntityId::try_from(format!("{stream}_100")).expect("valid entity ID"),
+        entity_id: crate::records::DesignEntityId::try_from(format!("{stream}_100"))
+            .expect("valid entity ID"),
         class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         optional_slot_present: true,
         module: Some(DESIGN_MODULE_SKETCH.to_owned()),
         record_reference: None,
         record_reference_offset: None,
         reference_count_present: true,
-        references: crate::records::ReferenceRun::Located(vec![30].into_iter().zip(vec![0]).map(|(value, offset)| crate::records::Located { value, offset }).collect()),
+        references: crate::records::ReferenceRun::Located(
+            vec![30]
+                .into_iter()
+                .zip(vec![0])
+                .map(|(value, offset)| crate::records::Located { value, offset })
+                .collect(),
+        ),
         members: crate::records::ReferenceRun::Unlocated(Vec::new()),
     };
     let point = |stream: &str| SketchPoint {
@@ -267,11 +288,19 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         owner_entity_id: String::new(),
         auxiliary_references: crate::records::ReferenceRun::Unlocated(Vec::new()),
         rectangular_counted_reference_count: None,
-        members: (vec![SketchRelationMember::from_index(20)]).try_into().expect("uniform member resolution"),
+        members: (vec![SketchRelationMember::from_index(20)])
+            .try_into()
+            .expect("uniform member resolution"),
         owner_reference_offset: 0,
-        definition: crate::records::SketchRelationDefinition::new(0, SketchRelationKind::Unpatterned).expect("valid relation definition"),
+        definition: crate::records::SketchRelationDefinition::new(
+            0,
+            SketchRelationKind::Unpatterned,
+        )
+        .expect("valid relation definition"),
         entity_genesis: None,
-        return_members: (vec![SketchRelationReturnMember::from_index(20)]).try_into().expect("uniform member resolution"),
+        return_members: (vec![SketchRelationReturnMember::from_index(20)])
+            .try_into()
+            .expect("uniform member resolution"),
         raw_bytes: Vec::new(),
     };
 
@@ -290,7 +319,8 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     assert_eq!(relations[1].owner_entity_id, "B_100");
 
     let mut overflowing_header = header("A");
-    overflowing_header.entity_id = crate::records::DesignEntityId::from_parts("A", u64::from(u32::MAX) + 101);
+    overflowing_header.entity_id =
+        crate::records::DesignEntityId::from_parts("A", u64::from(u32::MAX) + 101);
     assert!(bind_sketch_graph(
         &[overflowing_header],
         &mut [point("A")],

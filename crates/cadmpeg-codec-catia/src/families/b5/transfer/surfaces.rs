@@ -826,11 +826,13 @@ mod tests {
         let support_ids = HashMap::from([
             (
                 10,
-                SurfaceId::mint("catia:test:surface#support-10".to_string()).expect("identity grammar"),
+                SurfaceId::mint("catia:test:surface#support-10".to_string())
+                    .expect("identity grammar"),
             ),
             (
                 20,
-                SurfaceId::mint("catia:test:surface#support-20".to_string()).expect("identity grammar"),
+                SurfaceId::mint("catia:test:surface#support-20".to_string())
+                    .expect("identity grammar"),
             ),
         ]);
         let pcurve = |x| PcurveGeometry::Nurbs {

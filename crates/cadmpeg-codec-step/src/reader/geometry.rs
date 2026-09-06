@@ -891,14 +891,13 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let Some(transform) = transformation_operators.get(&operator_step).copied() else {
                 continue;
             };
-            let Some(basis) = ir
-                .model
-                .curves
-                .get(parent_index.0)
-                .map(|curve| {
-                    curve.geometry.solved_cache().unwrap_or(&curve.geometry).clone()
-                })
-            else {
+            let Some(basis) = ir.model.curves.get(parent_index.0).map(|curve| {
+                curve
+                    .geometry
+                    .solved_cache()
+                    .unwrap_or(&curve.geometry)
+                    .clone()
+            }) else {
                 continue;
             };
             let curve_index = CurveIndex(ir.model.curves.len());
@@ -953,7 +952,11 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .get(&basis_step)
                 .and_then(|index| ir.model.curves.get(index.0))
                 .map(|candidate| {
-                    candidate.geometry.solved_cache().unwrap_or(&candidate.geometry).clone()
+                    candidate
+                        .geometry
+                        .solved_cache()
+                        .unwrap_or(&candidate.geometry)
+                        .clone()
                 })
             else {
                 continue;
@@ -1088,7 +1091,11 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             .get(&source_step)
             .and_then(|index| ir.model.curves.get(index.0))
             .map(|candidate| {
-                candidate.geometry.solved_cache().unwrap_or(&candidate.geometry).clone()
+                candidate
+                    .geometry
+                    .solved_cache()
+                    .unwrap_or(&candidate.geometry)
+                    .clone()
             })
         else {
             continue;
@@ -1486,7 +1493,11 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .get(&support_step)
                 .and_then(|index| ir.model.surfaces.get(index.0))
                 .map(|surface| {
-                    surface.geometry.solved_cache().unwrap_or(&surface.geometry).clone()
+                    surface
+                        .geometry
+                        .solved_cache()
+                        .unwrap_or(&surface.geometry)
+                        .clone()
                 })
             else {
                 surface_waiting_on.entry(support_step).or_default().push(id);
@@ -1602,7 +1613,11 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .surfaces
                 .get(support_index.0)
                 .map(|surface| {
-                    surface.geometry.solved_cache().unwrap_or(&surface.geometry).clone()
+                    surface
+                        .geometry
+                        .solved_cache()
+                        .unwrap_or(&surface.geometry)
+                        .clone()
                 })
                 .zip(boundaries)
                 .zip(implicit_outer)
@@ -1708,14 +1723,13 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             let Some(transform) = transformation_operators.get(&operator_step).copied() else {
                 continue;
             };
-            let Some(basis) = ir
-                .model
-                .surfaces
-                .get(parent_index.0)
-                .map(|surface| {
-                    surface.geometry.solved_cache().unwrap_or(&surface.geometry).clone()
-                })
-            else {
+            let Some(basis) = ir.model.surfaces.get(parent_index.0).map(|surface| {
+                surface
+                    .geometry
+                    .solved_cache()
+                    .unwrap_or(&surface.geometry)
+                    .clone()
+            }) else {
                 continue;
             };
             let surface =

@@ -30,15 +30,24 @@ impl PatternTerminal {
     }
 
     pub(crate) fn value(self) -> f64 {
-        match self { Self::ExactOne => 1.0, Self::Binary32(atom) => atom.value() }
+        match self {
+            Self::ExactOne => 1.0,
+            Self::Binary32(atom) => atom.value(),
+        }
     }
 
     pub(crate) fn raw(&self) -> &[u8] {
-        match self { Self::ExactOne => &[1], Self::Binary32(atom) => atom.as_bytes() }
+        match self {
+            Self::ExactOne => &[1],
+            Self::Binary32(atom) => atom.as_bytes(),
+        }
     }
 
     pub(crate) fn encoding(self) -> PatternScalarEncoding {
-        match self { Self::ExactOne => PatternScalarEncoding::ExactOne, Self::Binary32(_) => PatternScalarEncoding::Binary32 }
+        match self {
+            Self::ExactOne => PatternScalarEncoding::ExactOne,
+            Self::Binary32(_) => PatternScalarEncoding::Binary32,
+        }
     }
 }
 
@@ -68,7 +77,10 @@ pub(crate) enum PatternRows<I, O> {
 
 impl<I, O> PatternRows<I, O> {
     pub(crate) fn declared_count(&self) -> u8 {
-        match self { Self::Scalar(rows) => rows.declared_count(), Self::Wide(rows) => rows.declared_count() }
+        match self {
+            Self::Scalar(rows) => rows.declared_count(),
+            Self::Wide(rows) => rows.declared_count(),
+        }
     }
 
     pub(crate) fn map<J, P>(
@@ -78,13 +90,22 @@ impl<I, O> PatternRows<I, O> {
     ) -> PatternRows<J, P> {
         match self {
             Self::Scalar(rows) => PatternRows::Scalar(rows.map_indexed(|_, row| PatternRow {
-                values: PatternValue { scalar: row.values.scalar, offset: offset(row.values.offset) },
+                values: PatternValue {
+                    scalar: row.values.scalar,
+                    offset: offset(row.values.offset),
+                },
                 selector: selector(row.selector),
             })),
             Self::Wide(rows) => PatternRows::Wide(rows.map_indexed(|_, row| PatternRow {
                 values: PatternWideValues {
-                    first: row.values.first.map(|value| PatternValue { scalar: value.scalar, offset: offset(value.offset) }),
-                    terminal: PatternValue { scalar: row.values.terminal.scalar, offset: offset(row.values.terminal.offset) },
+                    first: row.values.first.map(|value| PatternValue {
+                        scalar: value.scalar,
+                        offset: offset(value.offset),
+                    }),
+                    terminal: PatternValue {
+                        scalar: row.values.terminal.scalar,
+                        offset: offset(row.values.terminal.offset),
+                    },
                 },
                 selector: selector(row.selector),
             })),

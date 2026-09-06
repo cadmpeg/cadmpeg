@@ -17,11 +17,15 @@ impl<S: AsRef<str>> ProductText<S> {
         Ok(Self(value))
     }
 
-    pub(crate) fn as_str(&self) -> &str { self.0.as_str() }
+    pub(crate) fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
 }
 
 impl ProductText<&str> {
-    pub(crate) fn into_owned(self) -> ProductText<String> { ProductText(self.0.into_owned()) }
+    pub(crate) fn into_owned(self) -> ProductText<String> {
+        ProductText(self.0.into_owned())
+    }
 }
 
 impl<'de> serde::Deserialize<'de> for ProductText<String> {
@@ -32,7 +36,10 @@ impl<'de> serde::Deserialize<'de> for ProductText<String> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum ProductRecordForm { Modern, LegacyFeature }
+pub(crate) enum ProductRecordForm {
+    Modern,
+    LegacyFeature,
+}
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ProductRecord<'a> {
@@ -43,20 +50,28 @@ pub(crate) struct ProductRecord<'a> {
 impl<'a> ProductRecord<'a> {
     pub(crate) fn read(bytes: &'a [u8], form: ProductRecordForm) -> Option<Self> {
         let (length_offset, text_start): (usize, usize) = match form {
-            ProductRecordForm::Modern if matches!(bytes.get(..2), Some([0x04 | 0x05, 0x01])) => (2, 3),
+            ProductRecordForm::Modern if matches!(bytes.get(..2), Some([0x04 | 0x05, 0x01])) => {
+                (2, 3)
+            }
             ProductRecordForm::LegacyFeature if bytes.first() == Some(&0x01) => (1, 2),
             _ => return None,
         };
         let text_length = usize::from(*bytes.get(length_offset)?).checked_sub(2)?;
         let text_end = text_start.checked_add(text_length)?;
-        let text = ProductText::new(std::str::from_utf8(bytes.get(text_start..text_end)?).ok()?).ok()?;
+        let text =
+            ProductText::new(std::str::from_utf8(bytes.get(text_start..text_end)?).ok()?).ok()?;
         (bytes.get(text_end) == Some(&0)).then_some(Self { form, text })
     }
 
-    pub(crate) fn text(self) -> ProductText<&'a str> { self.text }
+    pub(crate) fn text(self) -> ProductText<&'a str> {
+        self.text
+    }
 
     pub(crate) fn byte_len(self) -> usize {
-        let header_len = match self.form { ProductRecordForm::Modern => 3, ProductRecordForm::LegacyFeature => 2 };
+        let header_len = match self.form {
+            ProductRecordForm::Modern => 3,
+            ProductRecordForm::LegacyFeature => 2,
+        };
         header_len + self.text.as_str().len() + 1
     }
 }
@@ -71,10 +86,15 @@ mod tests {
         let value = ProductText::new(text.as_str()).unwrap().into_owned();
         let wire = serde_json::to_string(&value).unwrap();
         assert_eq!(wire, serde_json::to_string(&text).unwrap());
-        assert_eq!(serde_json::from_str::<ProductText<String>>(&wire).unwrap(), value);
+        assert_eq!(
+            serde_json::from_str::<ProductText<String>>(&wire).unwrap(),
+            value
+        );
         for text in ["NX", "NX μ", "NX \n", &format!("NX {}", "x".repeat(251))] {
             assert!(ProductText::new(text).is_err());
-            let error = serde_json::from_str::<ProductText<String>>(&serde_json::to_string(text).unwrap()).unwrap_err();
+            let error =
+                serde_json::from_str::<ProductText<String>>(&serde_json::to_string(text).unwrap())
+                    .unwrap_err();
             assert!(error.to_string().contains("product_version/version"));
         }
     }
@@ -88,7 +108,12 @@ mod tests {
             assert_eq!(product.byte_len(), frame.len());
         }
         let frame = [1, 5, b'N', b'X', b' ', 0];
-        assert_eq!(ProductRecord::read(&frame, ProductRecordForm::LegacyFeature).unwrap().byte_len(), frame.len());
+        assert_eq!(
+            ProductRecord::read(&frame, ProductRecordForm::LegacyFeature)
+                .unwrap()
+                .byte_len(),
+            frame.len()
+        );
         assert!(ProductRecord::read(&frame[..5], ProductRecordForm::LegacyFeature).is_none());
     }
 }

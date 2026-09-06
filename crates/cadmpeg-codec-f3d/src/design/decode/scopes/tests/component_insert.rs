@@ -71,7 +71,12 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         previous_history_state_id: None,
         previous_history_state_id_offset: None,
         reference_count_offset: 0,
-        reference_members: crate::records::ReferenceRun::from_columns(vec![20], vec![scope_at as u64 + 38], "reference_members").unwrap(),
+        reference_members: crate::records::ReferenceRun::from_columns(
+            vec![20],
+            vec![scope_at as u64 + 38],
+            "reference_members",
+        )
+        .unwrap(),
         payload: crate::records::DesignFeatureKind::ComponentInsert.into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "259".into(),
@@ -87,7 +92,10 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
     assert_eq!(construction.neutron_role, role);
     assert_eq!(construction.neutron_role_offset, (role_at + 4) as u64);
     assert_eq!(*construction.transform(), transform);
-    assert_eq!(construction.transform_offset(), Some((scope_at + 50) as u64));
+    assert_eq!(
+        construction.transform_offset(),
+        Some((scope_at + 50) as u64)
+    );
     assert_eq!(
         construction.carrier_transform_offset(),
         Some(carrier_transform_at as u64)
@@ -187,7 +195,10 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         byte_offset: expanded_scope_at as u64,
         class_tag: "335".into(),
         frame_length: 404,
-        reference_members: crate::records::ReferenceRun::Located(vec![crate::records::Located { value: 20, offset: (expanded_scope_at + 42) as u64 }]),
+        reference_members: crate::records::ReferenceRun::Located(vec![crate::records::Located {
+            value: 20,
+            offset: (expanded_scope_at + 42) as u64,
+        }]),
         payload: scope.kind().into(),
         paired_class_tag: "260".into(),
         paired_byte_offset: (expanded_scope_at + 404) as u64,
@@ -372,7 +383,12 @@ fn compact_component_insert_identity_form_joins_grouped_carrier() {
     scope.byte_offset = scope_at as u64;
     scope.class_tag = "296".into();
     scope.frame_length = 261;
-    scope.reference_members = crate::records::ReferenceRun::from_columns(vec![20], vec![(scope_at + 38) as u64], "reference_members").unwrap();
+    scope.reference_members = crate::records::ReferenceRun::from_columns(
+        vec![20],
+        vec![(scope_at + 38) as u64],
+        "reference_members",
+    )
+    .unwrap();
     scope.paired_class_tag = "263".into();
     scope.paired_byte_offset = (scope_at + 261) as u64;
 
@@ -471,7 +487,12 @@ fn class_410_component_insert_identity_form_joins_class_380_carrier() {
     scope.byte_offset = scope_at as u64;
     scope.class_tag = "410".into();
     scope.frame_length = 261;
-    scope.reference_members = crate::records::ReferenceRun::from_columns(vec![167], vec![(scope_at + 38) as u64], "reference_members").unwrap();
+    scope.reference_members = crate::records::ReferenceRun::from_columns(
+        vec![167],
+        vec![(scope_at + 38) as u64],
+        "reference_members",
+    )
+    .unwrap();
     scope.paired_class_tag = "261".into();
     scope.paired_byte_offset = (scope_at + 261) as u64;
 
@@ -579,7 +600,12 @@ fn class_434_component_insert_identity_form_joins_variable_role_class_341_carrie
     scope.byte_offset = scope_at as u64;
     scope.class_tag = "434".into();
     scope.frame_length = 261;
-    scope.reference_members = crate::records::ReferenceRun::from_columns(vec![167], vec![(scope_at + 38) as u64], "reference_members").unwrap();
+    scope.reference_members = crate::records::ReferenceRun::from_columns(
+        vec![167],
+        vec![(scope_at + 38) as u64],
+        "reference_members",
+    )
+    .unwrap();
     scope.paired_class_tag = "266".into();
     scope.paired_byte_offset = (scope_at + 261) as u64;
 
@@ -693,7 +719,12 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
     scope.byte_offset = scope_at as u64;
     scope.class_tag = "426".into();
     scope.frame_length = 261;
-    scope.reference_members = crate::records::ReferenceRun::from_columns(vec![20], vec![(scope_at + 38) as u64], "reference_members").unwrap();
+    scope.reference_members = crate::records::ReferenceRun::from_columns(
+        vec![20],
+        vec![(scope_at + 38) as u64],
+        "reference_members",
+    )
+    .unwrap();
     scope.paired_class_tag = "258".into();
     scope.paired_byte_offset = (scope_at + 261) as u64;
 
@@ -723,7 +754,12 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
     let external_scope_at = scope_at + carrier_shift;
     let mut external_scope = scope.clone();
     external_scope.byte_offset = external_scope_at as u64;
-    external_scope.reference_members = crate::records::ReferenceRun::from_columns(external_scope.reference_members.values().copied().collect(), vec![(external_scope_at + 38) as u64], "reference_members").unwrap();
+    external_scope.reference_members = crate::records::ReferenceRun::from_columns(
+        external_scope.reference_members.values().copied().collect(),
+        vec![(external_scope_at + 38) as u64],
+        "reference_members",
+    )
+    .unwrap();
     external_scope.paired_byte_offset = (external_scope_at + 261) as u64;
     let external_construction = exact_component_insert_construction(
         &external_bytes,
@@ -829,7 +865,12 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
         scope.byte_offset = scope_at as u64;
         scope.class_tag = "283".into();
         scope.frame_length = frame_length as u64;
-        scope.reference_members = crate::records::ReferenceRun::from_columns(vec![20], vec![(scope_at + 34) as u64], "reference_members").unwrap();
+        scope.reference_members = crate::records::ReferenceRun::from_columns(
+            vec![20],
+            vec![(scope_at + 34) as u64],
+            "reference_members",
+        )
+        .unwrap();
         scope.paired_class_tag = "262".into();
         scope.paired_byte_offset = (scope_at + frame_length) as u64;
         (bytes, scope, scope_at)
@@ -868,7 +909,10 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
         crate::layout::component_insert_carrier_334_prefix::NEUTRON_ROLE as u64
     );
     assert_eq!(*construction.transform(), transformed);
-    assert_eq!(construction.transform_offset(), Some((scope_at + 46) as u64));
+    assert_eq!(
+        construction.transform_offset(),
+        Some((scope_at + 46) as u64)
+    );
     assert_eq!(construction.carrier_transform_offset(), None);
 }
 

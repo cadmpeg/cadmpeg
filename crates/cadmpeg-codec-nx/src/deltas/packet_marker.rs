@@ -5,28 +5,52 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
-pub(crate) enum ReferenceMarker { Form53, Form56 }
+pub(crate) enum ReferenceMarker {
+    Form53,
+    Form56,
+}
 impl TryFrom<u8> for ReferenceMarker {
     type Error = &'static str;
     fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value { 83 => Ok(Self::Form53), 86 => Ok(Self::Form56), _ => Err("marker: must be 83 or 86") }
+        match value {
+            83 => Ok(Self::Form53),
+            86 => Ok(Self::Form56),
+            _ => Err("marker: must be 83 or 86"),
+        }
     }
 }
 impl From<ReferenceMarker> for u8 {
-    fn from(value: ReferenceMarker) -> Self { match value { ReferenceMarker::Form53 => 83, ReferenceMarker::Form56 => 86 } }
+    fn from(value: ReferenceMarker) -> Self {
+        match value {
+            ReferenceMarker::Form53 => 83,
+            ReferenceMarker::Form56 => 86,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
-pub(crate) enum Type150Marker { Form2b, Form2d }
+pub(crate) enum Type150Marker {
+    Form2b,
+    Form2d,
+}
 impl TryFrom<u8> for Type150Marker {
     type Error = &'static str;
     fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value { 43 => Ok(Self::Form2b), 45 => Ok(Self::Form2d), _ => Err("marker: must be 43 or 45") }
+        match value {
+            43 => Ok(Self::Form2b),
+            45 => Ok(Self::Form2d),
+            _ => Err("marker: must be 43 or 45"),
+        }
     }
 }
 impl From<Type150Marker> for u8 {
-    fn from(value: Type150Marker) -> Self { match value { Type150Marker::Form2b => 43, Type150Marker::Form2d => 45 } }
+    fn from(value: Type150Marker) -> Self {
+        match value {
+            Type150Marker::Form2b => 43,
+            Type150Marker::Form2d => 45,
+        }
+    }
 }
 
 #[cfg(test)]

@@ -28,7 +28,10 @@ fn group(
         record_index,
         byte_offset: 0,
         class_tag: "277".into(),
-        members: vec![crate::records::Located { value: member, offset: 0 }],
+        members: vec![crate::records::Located {
+            value: member,
+            offset: 0,
+        }],
         lost_edge_references: Vec::new(),
         frame: DesignConstructionOperandGroupFrame {
             member_count_offset: 0,

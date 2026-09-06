@@ -3,8 +3,8 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{AppearanceId, BodyId, FaceId};
@@ -787,7 +787,11 @@ fn parse_rendering_style<'a>(
 }
 
 const fn legacy_block_len(version: u8) -> usize {
-    if version <= 14 { 4 } else { 0 }
+    if version <= 14 {
+        4
+    } else {
+        0
+    }
 }
 
 struct Cursor<'a> {

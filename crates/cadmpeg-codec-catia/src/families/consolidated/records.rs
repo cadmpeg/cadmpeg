@@ -158,7 +158,9 @@ impl TryFrom<u8> for ConsolidatedEdgeDefinitionClass {
             0x23 => Ok(Self::Class23),
             0x24 => Ok(Self::Class24),
             0x25 => Ok(Self::Class25),
-            _ => Err(format!("edge-definition class {class:#x} is not 0x23, 0x24, or 0x25")),
+            _ => Err(format!(
+                "edge-definition class {class:#x} is not 0x23, 0x24, or 0x25"
+            )),
         }
     }
 }

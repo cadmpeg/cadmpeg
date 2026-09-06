@@ -331,9 +331,11 @@ mod tests {
         });
         for index in 0..face_count {
             ir.model.faces.push(Face {
-                id: FaceId::mint(format!("catia:test:face#face-{index}")).expect("identity grammar"),
+                id: FaceId::mint(format!("catia:test:face#face-{index}"))
+                    .expect("identity grammar"),
                 shell: ShellId::mint("catia:test:shell#shell").expect("identity grammar"),
-                surface: SurfaceId::mint(format!("catia:test:surface#surface-{index}")).expect("identity grammar"),
+                surface: SurfaceId::mint(format!("catia:test:surface#surface-{index}"))
+                    .expect("identity grammar"),
                 sense: Sense::Forward,
                 loops: vec![].into(),
                 name: None,
@@ -346,12 +348,15 @@ mod tests {
 
     fn native(fields: Vec<ValueField>) -> CatiaNative {
         let mut native = CatiaNative::default();
-        let payload = fields.iter().flat_map(|field| {
-            let ValueField::Inline { code, bytes, .. } = field else {
-                panic!("appearance fixture requires inline fields");
-            };
-            [0x8e, *code, 0x84].into_iter().chain(bytes.iter().copied())
-        }).collect::<Vec<_>>();
+        let payload = fields
+            .iter()
+            .flat_map(|field| {
+                let ValueField::Inline { code, bytes, .. } = field else {
+                    panic!("appearance fixture requires inline fields");
+                };
+                [0x8e, *code, 0x84].into_iter().chain(bytes.iter().copied())
+            })
+            .collect::<Vec<_>>();
         native.value_blocks.push(CatiaValueBlock {
             id: "values".into(),
             byte_offset: 0,

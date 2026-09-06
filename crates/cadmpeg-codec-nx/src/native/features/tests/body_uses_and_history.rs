@@ -4,8 +4,8 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use crate::NxCodec;
 use crate::test_support::{composed_feature_history_payload, prt_with_named_payloads};
+use crate::NxCodec;
 
 use super::*;
 
@@ -14,7 +14,7 @@ fn segment_body_lineage_statuses_cover_every_bound_image() {
     use super::{
         FeatureBodyReference, FeatureBooleanKind, FeatureBooleanOperation, FeatureOperationLabel,
     };
-    use crate::native::segments::{SegmentBodyBinding, segment_body_lineage_statuses};
+    use crate::native::segments::{segment_body_lineage_statuses, SegmentBodyBinding};
     let labels = [
         FeatureOperationLabel {
             id: "operation#0".to_string(),
@@ -47,7 +47,9 @@ fn segment_body_lineage_statuses_cover_every_bound_image() {
         operation_label: "operation#1".to_string(),
         kind: FeatureBooleanKind::Unite,
         target: crate::test_support::native_references::boolean_reference(10, 1),
-        tools: vec![crate::test_support::native_references::boolean_reference(21, 1)],
+        tools: vec![crate::test_support::native_references::boolean_reference(
+            21, 1,
+        )],
         source_offset: 1,
     }];
     let binding =
@@ -95,7 +97,11 @@ fn unique_feature_body_references_require_one_field_per_operation() {
             ordinal: None,
             id: id.to_string(),
             operation_label: operation_label.to_string(),
-            body: crate::om::reference_index::FeatureReferenceToken::from_wire(body_object_index, &[body_object_index as u8]).unwrap(),
+            body: crate::om::reference_index::FeatureReferenceToken::from_wire(
+                body_object_index,
+                &[body_object_index as u8],
+            )
+            .unwrap(),
             source_offset: 0,
         };
     let references = [
@@ -110,7 +116,7 @@ fn unique_feature_body_references_require_one_field_per_operation() {
 
 #[test]
 fn feature_body_segment_uses_require_one_alias_pair() {
-    use super::{FeatureBodyReference, feature_body_segment_uses};
+    use super::{feature_body_segment_uses, FeatureBodyReference};
     use crate::native::segments::SegmentBodyBinding;
     let reference = FeatureBodyReference {
         ordinal: None,
@@ -140,17 +146,15 @@ fn feature_body_segment_uses_require_one_alias_pair() {
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].feature_body_reference, reference.id);
     assert_eq!(uses[0].segment_body_binding, binding.id);
-    assert!(
-        feature_body_segment_uses(
-            std::slice::from_ref(&reference),
-            &[],
-            &[],
-            &[],
-            &[binding.clone(), binding.clone()],
-            &[]
-        )
-        .is_empty()
-    );
+    assert!(feature_body_segment_uses(
+        std::slice::from_ref(&reference),
+        &[],
+        &[],
+        &[],
+        &[binding.clone(), binding.clone()],
+        &[]
+    )
+    .is_empty());
     let duplicate_reference = FeatureBodyReference {
         ordinal: None,
         id: "nx:feature-history:body-reference#1".into(),
@@ -158,26 +162,21 @@ fn feature_body_segment_uses_require_one_alias_pair() {
         body: crate::om::reference_index::FeatureReferenceToken::from_wire(12, &[12]).unwrap(),
         source_offset: 91,
     };
-    assert!(
-        feature_body_segment_uses(
-            &[reference, duplicate_reference],
-            &[],
-            &[],
-            &[],
-            std::slice::from_ref(&binding),
-            &[],
-        )
-        .is_empty()
-    );
+    assert!(feature_body_segment_uses(
+        &[reference, duplicate_reference],
+        &[],
+        &[],
+        &[],
+        std::slice::from_ref(&binding),
+        &[],
+    )
+    .is_empty());
 }
 
 #[test]
 fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
+    use super::{feature_body_segment_uses, FeatureBodyDataBlockUse, FeatureBodyReference};
     use crate::native::features::object_frame::DataBlockObjectFrame;
-    use super::{
-        FeatureBodyDataBlockUse, FeatureBodyReference,
-        feature_body_segment_uses,
-    };
     use crate::native::om::{DataBlock, DataBlockRole};
     use crate::native::segments::SegmentBodyBinding;
 
@@ -252,7 +251,10 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
         id: "frame#0".into(),
         data_block: "block#11".into(),
         ordinal: 0,
-        object: crate::om::compact::LocatedCompactIndex { atom: parsed_frames[0].atom, offset: 100 },
+        object: crate::om::compact::LocatedCompactIndex {
+            atom: parsed_frames[0].atom,
+            offset: 100,
+        },
     };
     let uses = feature_body_segment_uses(
         std::slice::from_ref(&reference),
@@ -265,69 +267,59 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].segment_body_binding, "binding#0");
 
-    assert!(
-        feature_body_segment_uses(
-            std::slice::from_ref(&reference),
-            std::slice::from_ref(&data_block_use),
-            std::slice::from_ref(&input),
-            &blocks,
-            std::slice::from_ref(&binding),
-            &[],
-        )
-        .is_empty()
-    );
+    assert!(feature_body_segment_uses(
+        std::slice::from_ref(&reference),
+        std::slice::from_ref(&data_block_use),
+        std::slice::from_ref(&input),
+        &blocks,
+        std::slice::from_ref(&binding),
+        &[],
+    )
+    .is_empty());
 
     let mut mismatched_frame = object_frame.clone();
     mismatched_frame.object.atom = crate::om::compact::CompactIndexAtom::read(&[12]).unwrap();
-    assert!(
-        feature_body_segment_uses(
-            std::slice::from_ref(&reference),
-            std::slice::from_ref(&data_block_use),
-            std::slice::from_ref(&input),
-            &blocks,
-            std::slice::from_ref(&binding),
-            std::slice::from_ref(&mismatched_frame),
-        )
-        .is_empty()
-    );
+    assert!(feature_body_segment_uses(
+        std::slice::from_ref(&reference),
+        std::slice::from_ref(&data_block_use),
+        std::slice::from_ref(&input),
+        &blocks,
+        std::slice::from_ref(&binding),
+        std::slice::from_ref(&mismatched_frame),
+    )
+    .is_empty());
 
     let mut wrong_block_frame = object_frame.clone();
     wrong_block_frame.data_block = "block#other".into();
-    assert!(
-        feature_body_segment_uses(
-            std::slice::from_ref(&reference),
-            std::slice::from_ref(&data_block_use),
-            std::slice::from_ref(&input),
-            &blocks,
-            std::slice::from_ref(&binding),
-            std::slice::from_ref(&wrong_block_frame),
-        )
-        .is_empty()
-    );
+    assert!(feature_body_segment_uses(
+        std::slice::from_ref(&reference),
+        std::slice::from_ref(&data_block_use),
+        std::slice::from_ref(&input),
+        &blocks,
+        std::slice::from_ref(&binding),
+        std::slice::from_ref(&wrong_block_frame),
+    )
+    .is_empty());
 
-    assert!(
-        feature_body_segment_uses(
-            std::slice::from_ref(&reference),
-            std::slice::from_ref(&data_block_use),
-            std::slice::from_ref(&input),
-            &blocks,
-            std::slice::from_ref(&binding),
-            &[object_frame.clone(), object_frame.clone()],
-        )
-        .is_empty()
-    );
+    assert!(feature_body_segment_uses(
+        std::slice::from_ref(&reference),
+        std::slice::from_ref(&data_block_use),
+        std::slice::from_ref(&input),
+        &blocks,
+        std::slice::from_ref(&binding),
+        &[object_frame.clone(), object_frame.clone()],
+    )
+    .is_empty());
 
-    assert!(
-        feature_body_segment_uses(
-            std::slice::from_ref(&reference),
-            &[data_block_use.clone(), data_block_use.clone()],
-            std::slice::from_ref(&input),
-            &blocks,
-            std::slice::from_ref(&binding),
-            std::slice::from_ref(&object_frame),
-        )
-        .is_empty()
-    );
+    assert!(feature_body_segment_uses(
+        std::slice::from_ref(&reference),
+        &[data_block_use.clone(), data_block_use.clone()],
+        std::slice::from_ref(&input),
+        &blocks,
+        std::slice::from_ref(&binding),
+        std::slice::from_ref(&object_frame),
+    )
+    .is_empty());
 
     let second_input = FeatureInputBlock {
         id: "input#1".into(),
@@ -349,53 +341,47 @@ fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
         source_entry: String::new(),
         source_offset: 0,
     };
-    assert!(
-        feature_body_segment_uses(
-            std::slice::from_ref(&reference),
-            std::slice::from_ref(&data_block_use),
-            &[input.clone(), second_input],
-            &[blocks[0].clone(), blocks[1].clone(), second_block],
-            std::slice::from_ref(&binding),
-            std::slice::from_ref(&object_frame),
-        )
-        .is_empty()
-    );
+    assert!(feature_body_segment_uses(
+        std::slice::from_ref(&reference),
+        std::slice::from_ref(&data_block_use),
+        &[input.clone(), second_input],
+        &[blocks[0].clone(), blocks[1].clone(), second_block],
+        std::slice::from_ref(&binding),
+        std::slice::from_ref(&object_frame),
+    )
+    .is_empty());
 
     let mut duplicate_alias = binding.clone();
     duplicate_alias.id = "binding#1".into();
     duplicate_alias.body_object_index = 20;
-    assert!(
-        feature_body_segment_uses(
-            std::slice::from_ref(&reference),
-            std::slice::from_ref(&data_block_use),
-            std::slice::from_ref(&input),
-            &blocks,
-            &[binding.clone(), duplicate_alias],
-            std::slice::from_ref(&object_frame),
-        )
-        .is_empty()
-    );
+    assert!(feature_body_segment_uses(
+        std::slice::from_ref(&reference),
+        std::slice::from_ref(&data_block_use),
+        std::slice::from_ref(&input),
+        &blocks,
+        &[binding.clone(), duplicate_alias],
+        std::slice::from_ref(&object_frame),
+    )
+    .is_empty());
 
     let mut primary_collision = binding.clone();
     primary_collision.id = "binding#2".into();
     primary_collision.body_object_index = 11;
     primary_collision.body_alias_object_index = 12;
-    assert!(
-        feature_body_segment_uses(
-            std::slice::from_ref(&reference),
-            std::slice::from_ref(&data_block_use),
-            std::slice::from_ref(&input),
-            &blocks,
-            &[binding, primary_collision],
-            std::slice::from_ref(&object_frame),
-        )
-        .is_empty()
-    );
+    assert!(feature_body_segment_uses(
+        std::slice::from_ref(&reference),
+        std::slice::from_ref(&data_block_use),
+        std::slice::from_ref(&input),
+        &blocks,
+        &[binding, primary_collision],
+        std::slice::from_ref(&object_frame),
+    )
+    .is_empty());
 }
 
 #[test]
 fn feature_body_segment_uses_reject_primary_index_offset_collision() {
-    use super::{FeatureBodyDataBlockUse, FeatureBodyReference, feature_body_segment_uses};
+    use super::{feature_body_segment_uses, FeatureBodyDataBlockUse, FeatureBodyReference};
     use crate::native::segments::SegmentBodyBinding;
 
     let reference = FeatureBodyReference {
@@ -428,7 +414,7 @@ fn feature_body_segment_uses_reject_primary_index_offset_collision() {
 
 #[test]
 fn feature_body_segment_uses_exclude_missing_offset_store_ordinals() {
-    use super::{FeatureBodyReference, FeatureInputBlock, feature_body_segment_uses};
+    use super::{feature_body_segment_uses, FeatureBodyReference, FeatureInputBlock};
     use crate::native::om::{DataBlock, DataBlockRole};
     use crate::native::segments::SegmentBodyBinding;
 
@@ -478,7 +464,7 @@ fn feature_body_segment_uses_exclude_missing_offset_store_ordinals() {
 
 #[test]
 fn feature_body_segment_uses_exclude_ambiguous_offset_store_namespaces() {
-    use super::{FeatureBodyReference, FeatureInputBlock, feature_body_segment_uses};
+    use super::{feature_body_segment_uses, FeatureBodyReference, FeatureInputBlock};
     use crate::native::om::{DataBlock, DataBlockRole};
     use crate::native::segments::SegmentBodyBinding;
 
@@ -493,7 +479,11 @@ fn feature_body_segment_uses_exclude_ambiguous_offset_store_namespaces() {
         id: format!("input#{slot}"),
         operation_label: reference.operation_label.clone(),
         input_slot: crate::om::header_references::HeaderSlot::try_from(slot).unwrap(),
-        object: crate::om::reference_index::FeatureReferenceToken::from_wire(object_index, &[object_index as u8]).unwrap(),
+        object: crate::om::reference_index::FeatureReferenceToken::from_wire(
+            object_index,
+            &[object_index as u8],
+        )
+        .unwrap(),
         data_block: data_block.into(),
         source_offset: 80 + u64::from(slot),
     };
@@ -520,22 +510,20 @@ fn feature_body_segment_uses_exclude_ambiguous_offset_store_namespaces() {
         source_offset: 40,
     };
 
-    assert!(
-        feature_body_segment_uses(
-            std::slice::from_ref(&reference),
-            &[],
-            &[input(0, 3, "block#3"), input(1, 4, "block#4"),],
-            &[block("block#3", 2, 3), block("block#4", 3, 4)],
-            &[binding],
-            &[],
-        )
-        .is_empty()
-    );
+    assert!(feature_body_segment_uses(
+        std::slice::from_ref(&reference),
+        &[],
+        &[input(0, 3, "block#3"), input(1, 4, "block#4"),],
+        &[block("block#3", 2, 3), block("block#4", 3, 4)],
+        &[binding],
+        &[],
+    )
+    .is_empty());
 }
 
 #[test]
 fn feature_body_data_block_uses_inherit_the_operation_input_store() {
-    use super::{FeatureBodyReference, FeatureInputBlock, feature_body_data_block_uses};
+    use super::{feature_body_data_block_uses, FeatureBodyReference, FeatureInputBlock};
     use crate::native::om::{DataBlock, DataBlockRole};
 
     let reference = FeatureBodyReference {
@@ -595,7 +583,7 @@ fn feature_body_lineage_closes_overlapping_alias_pairs_transitively() {
     use super::{
         FeatureBodyReference, FeatureBooleanKind, FeatureBooleanOperation, FeatureOperationLabel,
     };
-    use crate::native::segments::{SegmentBodyBinding, segment_body_lineage_statuses};
+    use crate::native::segments::{segment_body_lineage_statuses, SegmentBodyBinding};
 
     let label = |ordinal: u32, value: &str| FeatureOperationLabel {
         id: format!("operation#{ordinal}"),
@@ -619,7 +607,9 @@ fn feature_body_lineage_closes_overlapping_alias_pairs_transitively() {
         operation_label: "operation#1".to_string(),
         kind: FeatureBooleanKind::Unite,
         target: crate::test_support::native_references::boolean_reference(99, 1),
-        tools: vec![crate::test_support::native_references::boolean_reference(10, 1)],
+        tools: vec![crate::test_support::native_references::boolean_reference(
+            10, 1,
+        )],
         source_offset: 1,
     }];
     let binding = |id: &str, stream_ordinal, body, alias| SegmentBodyBinding {
@@ -656,9 +646,8 @@ fn feature_body_lineage_closes_overlapping_alias_pairs_transitively() {
 #[test]
 fn nx_simple_hole_construction_groups_require_shared_four_block_identity() {
     use super::{
-        FeatureOperationLabel, FeatureSimpleHoleRepeatedScalarLane,
-        FeatureSimpleHoleRepeatedScalarLaneBlockReferences,
-        feature_simple_hole_construction_groups,
+        feature_simple_hole_construction_groups, FeatureOperationLabel,
+        FeatureSimpleHoleRepeatedScalarLane, FeatureSimpleHoleRepeatedScalarLaneBlockReferences,
     };
     let label = |id: &str, ordinal: u32| FeatureOperationLabel {
         id: id.into(),
@@ -679,7 +668,8 @@ fn nx_simple_hole_construction_groups_require_shared_four_block_identity() {
                 crate::om::scalar::ShiftedBinary64::read(&raw).unwrap()
             },
             witness_offsets: [1, 2],
-        }]).unwrap(),
+        }])
+        .unwrap(),
     };
     let reference =
         |operation: &str, last: &str| FeatureSimpleHoleRepeatedScalarLaneBlockReferences {
@@ -774,8 +764,8 @@ fn nx_simple_hole_construction_groups_require_shared_four_block_identity() {
 #[test]
 fn nx_hole_package_group_uses_require_one_exact_lane_and_group() {
     use super::{
-        FeatureHolePackageConstructionGroupLane, FeatureSimpleHoleConstructionGroup,
-        feature_hole_package_construction_group_uses,
+        feature_hole_package_construction_group_uses, FeatureHolePackageConstructionGroupLane,
+        FeatureSimpleHoleConstructionGroup,
     };
     let blocks = [
         "block-1".to_string(),
@@ -788,10 +778,16 @@ fn nx_hole_package_group_uses_require_one_exact_lane_and_group() {
         operation_label: "package-operation".into(),
         selector: std::num::NonZeroU8::new(0x46).unwrap(),
         branch: std::num::NonZeroU8::new(0x11).unwrap(),
-        references: std::array::from_fn(|index| crate::native::features::reference::ConstructionReference {
-            token: crate::om::reference_index::ReferenceIndexToken::from_wire(index as u32 + 1, &[0xf0, index as u8 + 1]).unwrap(),
-            data_block: blocks[index].clone(),
-            source_offset: [132, 134, 141, 143][index],
+        references: std::array::from_fn(|index| {
+            crate::native::features::reference::ConstructionReference {
+                token: crate::om::reference_index::ReferenceIndexToken::from_wire(
+                    index as u32 + 1,
+                    &[0xf0, index as u8 + 1],
+                )
+                .unwrap(),
+                data_block: blocks[index].clone(),
+                source_offset: [132, 134, 141, 143][index],
+            }
         }),
         payload_offset: 20,
         source_offset: 120,
@@ -811,7 +807,8 @@ fn nx_hole_package_group_uses_require_one_exact_lane_and_group() {
                 scalar_lane: "scalar-2".into(),
                 block_reference: "references-2".into(),
             },
-        ]).unwrap(),
+        ])
+        .unwrap(),
     };
 
     let uses = feature_hole_package_construction_group_uses(
@@ -823,27 +820,23 @@ fn nx_hole_package_group_uses_require_one_exact_lane_and_group() {
     assert_eq!(uses[0].construction_group_lane, lane.id);
     assert_eq!(uses[0].simple_hole_construction_group, group.id);
 
-    assert!(
-        feature_hole_package_construction_group_uses(
-            &[lane.clone(), lane.clone()],
-            std::slice::from_ref(&group),
-        )
-        .is_empty()
-    );
-    assert!(
-        feature_hole_package_construction_group_uses(
-            std::slice::from_ref(&lane),
-            &[group.clone(), group],
-        )
-        .is_empty()
-    );
+    assert!(feature_hole_package_construction_group_uses(
+        &[lane.clone(), lane.clone()],
+        std::slice::from_ref(&group),
+    )
+    .is_empty());
+    assert!(feature_hole_package_construction_group_uses(
+        std::slice::from_ref(&lane),
+        &[group.clone(), group],
+    )
+    .is_empty());
 }
 
 #[test]
 fn nx_block_payload_points_require_exactly_two_named_scalars() {
     use super::{
-        FeatureBlockPayloadName, FeatureBlockPayloadNamedRecord, FeaturePayloadScalar,
-        FeaturePayloadTypeCode, feature_block_payload_point_groups, feature_block_payload_points,
+        feature_block_payload_point_groups, feature_block_payload_points, FeatureBlockPayloadName,
+        FeatureBlockPayloadNamedRecord, FeaturePayloadScalar, FeaturePayloadTypeCode,
     };
 
     let operation_label = "operation".to_string();
@@ -1051,7 +1044,11 @@ fn decoded_operation_frames_resolve_unique_offset_store_targets() {
     assert_eq!(common_frames.len(), 1);
     assert_eq!(common_frames[0].frame.suffix().object_index(), Some(65));
     assert_eq!(
-        common_frames[0].frame.suffix().target().and_then(Option::as_deref),
+        common_frames[0]
+            .frame
+            .suffix()
+            .target()
+            .and_then(Option::as_deref),
         Some("nx:om-data-blocks-0:block#65")
     );
     let terminal_frames = namespace
@@ -1060,8 +1057,11 @@ fn decoded_operation_frames_resolve_unique_offset_store_targets() {
     assert_eq!(terminal_frames.len(), 1);
     assert_eq!(terminal_frames[0].frame.suffix().object_index(), Some(65));
     assert_eq!(
-        terminal_frames[0].frame.suffix().target().and_then(Option::as_deref),
+        terminal_frames[0]
+            .frame
+            .suffix()
+            .target()
+            .and_then(Option::as_deref),
         Some("nx:om-data-blocks-0:block#65")
     );
 }
-

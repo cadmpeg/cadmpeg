@@ -4,8 +4,8 @@
 use cadmpeg_ir::codec::{Codec, Confidence};
 use std::io::Cursor;
 
-use crate::SatCodec;
 use crate::test_support::text_sphere_stream;
+use crate::SatCodec;
 
 #[test]
 fn detection_is_content_based() {

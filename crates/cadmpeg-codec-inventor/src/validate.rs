@@ -20,13 +20,12 @@ use crate::native::protein::{ProteinAssetRecord, ProteinRecord, ProteinRejection
 use crate::native::ufrx::UfrxRecord;
 use crate::native::{
     ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord, DatabaseIssueRecord,
-    DatabaseRecord, INVENTOR_NATIVE_VERSION, MetaSectionRecord, MetaTypeRecord,
-    PmAppDefaultStyleRecord, PmAppRenderingStyleRecord, PmGraphicsFaceRecord,
-    PmGraphicsPrimaryColorStyleRecord, PmGraphicsStyleCollectionRecord, PropertyRecord,
-    PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, RevisionRecord,
-    RseRecordRecord, SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord,
-    SegmentMetaRecord, SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord,
-    StructuralIssueRecord, UnpairedSegmentRecord,
+    DatabaseRecord, MetaSectionRecord, MetaTypeRecord, PmAppDefaultStyleRecord,
+    PmAppRenderingStyleRecord, PmGraphicsFaceRecord, PmGraphicsPrimaryColorStyleRecord,
+    PmGraphicsStyleCollectionRecord, PropertyRecord, PropertySectionRecord, PropertySetIssueRecord,
+    PropertySetRecord, RevisionRecord, RseRecordRecord, SegmentBulkIssueRecord, SegmentBulkRecord,
+    SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord, SegmentRegistryRecord,
+    StorageBandRecord, StructuralIssueRecord, UnpairedSegmentRecord, INVENTOR_NATIVE_VERSION,
 };
 use crate::pmdc::PmDcReferenceList;
 use crate::record_issue::RecordIssue;

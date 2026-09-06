@@ -570,11 +570,13 @@ fn consolidated_edge_use_run_owns_adjacent_compact_definition() {
 
     let native = crate::native::CatiaNative::decode(&bytes);
     assert_eq!(
-        u8::from(native.consolidated_edge_nodes[0]
-            .definition
-            .as_ref()
-            .expect("native definition")
-            .class),
+        u8::from(
+            native.consolidated_edge_nodes[0]
+                .definition
+                .as_ref()
+                .expect("native definition")
+                .class
+        ),
         0x24
     );
     assert!(matches!(

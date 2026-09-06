@@ -92,9 +92,16 @@ impl TryFrom<PartColorTableWire> for PartColorTable {
         Ok(Self {
             id: wire.id,
             class_definition: wire.class_definition,
-            background: components_from_wire(wire.background_rgb, &wire.raw_background_components, wire.background_component_source_offsets)
-                .map_err(|error| format!("background_rgb/raw_background_components: {error}"))?,
-            definitions: wire.definitions.try_into().map_err(|_: Vec<String>| "definitions: must contain 216 entries")?,
+            background: components_from_wire(
+                wire.background_rgb,
+                &wire.raw_background_components,
+                wire.background_component_source_offsets,
+            )
+            .map_err(|error| format!("background_rgb/raw_background_components: {error}"))?,
+            definitions: wire
+                .definitions
+                .try_into()
+                .map_err(|_: Vec<String>| "definitions: must contain 216 entries")?,
             source_entry: wire.source_entry,
             source_offset: wire.source_offset,
         })
@@ -107,7 +114,9 @@ impl From<PartColorTable> for PartColorTableWire {
             class_definition: value.class_definition,
             background_name: BACKGROUND_NAME.into(),
             background_rgb: value.background.map(|(component, _)| component.value()),
-            raw_background_components: value.background.map(|(component, _)| component.raw().to_vec()),
+            raw_background_components: value
+                .background
+                .map(|(component, _)| component.raw().to_vec()),
             background_component_source_offsets: value.background.map(|(_, offset)| offset),
             definitions: Vec::from(value.definitions),
             source_entry: value.source_entry,
@@ -119,7 +128,8 @@ impl From<PartColorTable> for PartColorTableWire {
 impl TryFrom<PartColorDefinitionWire> for PartColorDefinition {
     type Error = String;
     fn try_from(wire: PartColorDefinitionWire) -> Result<Self, Self::Error> {
-        let color_index = PaletteIndex::new(wire.color_index).ok_or("color_index: must be in 1..=216")?;
+        let color_index =
+            PaletteIndex::new(wire.color_index).ok_or("color_index: must be in 1..=216")?;
         if color_index.definition_raw() != wire.raw_color_index {
             return Err("raw_color_index: differs from color_index definition token".into());
         }
@@ -128,7 +138,11 @@ impl TryFrom<PartColorDefinitionWire> for PartColorDefinition {
             color_table: wire.color_table,
             color_index,
             name: wire.name,
-            components: components_from_wire(wire.rgb, &wire.raw_components, wire.component_source_offsets)?,
+            components: components_from_wire(
+                wire.rgb,
+                &wire.raw_components,
+                wire.component_source_offsets,
+            )?,
             source_offset: wire.source_offset,
         })
     }
@@ -142,7 +156,9 @@ impl From<PartColorDefinition> for PartColorDefinitionWire {
             name: value.name,
             rgb: value.components.map(|(component, _)| component.value()),
             raw_color_index: value.color_index.definition_raw(),
-            raw_components: value.components.map(|(component, _)| component.raw().to_vec()),
+            raw_components: value
+                .components
+                .map(|(component, _)| component.raw().to_vec()),
             source_offset: value.source_offset,
             component_source_offsets: value.components.map(|(_, offset)| offset),
         }
@@ -152,7 +168,8 @@ impl From<PartColorDefinition> for PartColorDefinitionWire {
 impl TryFrom<RmDisplayColorAssignmentWire> for RmDisplayColorAssignment {
     type Error = String;
     fn try_from(wire: RmDisplayColorAssignmentWire) -> Result<Self, Self::Error> {
-        let color_index = PaletteIndex::new(wire.color_index).ok_or("color_index: must be in 1..=216")?;
+        let color_index =
+            PaletteIndex::new(wire.color_index).ok_or("color_index: must be in 1..=216")?;
         if color_index.display_raw() != wire.raw_color_index {
             return Err("raw_color_index: differs from color_index display token".into());
         }
@@ -219,7 +236,10 @@ mod tests {
             source_offset: 0,
         };
         let wire = serde_json::to_value(&table).unwrap();
-        assert_eq!(serde_json::from_value::<PartColorTable>(wire.clone()).unwrap(), table);
+        assert_eq!(
+            serde_json::from_value::<PartColorTable>(wire.clone()).unwrap(),
+            table
+        );
         for (field, invalid) in [
             ("definitions", serde_json::json!([])),
             ("background_name", serde_json::json!("background")),

@@ -45,7 +45,10 @@ pub(crate) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result
                 ))
             })?;
         if surface.geometry.solved_cache().is_some_and(|geometry| {
-            !matches!(geometry, SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. })
+            !matches!(
+                geometry,
+                SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. }
+            )
         }) {
             return Err(CodecError::NotImplemented(format!(
                 "source-less F3D procedural surface {} cannot retain its construction on analytic carrier {}",
@@ -85,13 +88,18 @@ pub(crate) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result
         match curve.geometry.solved_cache() {
             Some(CurveGeometry::Nurbs(_)) => {}
             None if procedural.cache_fit_tolerance().is_none() => {}
-            None => return Err(CodecError::InvalidInput(format!(
-                "cacheless procedural curve {} carries a cache-fit tolerance", procedural.id
-            ))),
-            Some(_) => return Err(CodecError::NotImplemented(format!(
+            None => {
+                return Err(CodecError::InvalidInput(format!(
+                    "cacheless procedural curve {} carries a cache-fit tolerance",
+                    procedural.id
+                )))
+            }
+            Some(_) => {
+                return Err(CodecError::NotImplemented(format!(
                 "source-less F3D procedural curve {} cannot retain its construction on carrier {}",
                 procedural.id, curve.id
-            ))),
+            )))
+            }
         }
     }
     Ok(())
@@ -194,7 +202,13 @@ pub(crate) fn validate_source_less_recipes(native: &F3dNative) -> Result<(), Cod
     let mut group_counts = HashMap::new();
     for recipe in &native.construction_recipes {
         let expected = group_counts
-            .entry((recipe.kind, recipe.design.as_ref().map(|design| design.id.value.as_str())))
+            .entry((
+                recipe.kind,
+                recipe
+                    .design
+                    .as_ref()
+                    .map(|design| design.id.value.as_str()),
+            ))
             .or_insert(0u32);
         if recipe.recipe_index != *expected {
             return Err(CodecError::InvalidInput(format!(
@@ -228,7 +242,11 @@ fn source_less_design_record_type<'a>(
             "F3D {record_kind} class tag {class_tag} is outside the Design type table"
         ))
     })?;
-    if !design_type.entities.values().any(|registered| *registered == u64::from(record_index)) {
+    if !design_type
+        .entities
+        .values()
+        .any(|registered| *registered == u64::from(record_index))
+    {
         return Err(CodecError::InvalidInput(format!(
             "F3D {record_kind} {record_index} is not registered by class tag {class_tag}"
         )));
@@ -358,7 +376,10 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
             .design_types
             .iter()
             .filter(|design_type| {
-                design_type.entities.values().any(|registered| *registered == u64::from(owner_reference))
+                design_type
+                    .entities
+                    .values()
+                    .any(|registered| *registered == u64::from(owner_reference))
                     && design_type.type_guid.eq_ignore_ascii_case(
                         crate::design::decode::sketch::SKETCH_CONTAINER_TYPE_GUID,
                     )
@@ -384,7 +405,9 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
             .iter()
             .filter(|design_type| {
                 design_type
-                    .entities.values().any(|registered| *registered == u64::from(point.paired_reference))
+                    .entities
+                    .values()
+                    .any(|registered| *registered == u64::from(point.paired_reference))
                     && design_type_matches(
                         design_type,
                         crate::design::decode::sketch::SKETCH_POINT_COMPANION_TYPE,
@@ -558,7 +581,12 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
     // A base type need not be registered by the same segment, so an unresolved
     // base GUID is legal; a resolved chain must still terminate.
     for design_type in &native.design_types {
-        if design_type.base_type_guid.as_ref().map(|field| field.value.as_str()) == Some(design_type.type_guid.as_str()) {
+        if design_type
+            .base_type_guid
+            .as_ref()
+            .map(|field| field.value.as_str())
+            == Some(design_type.type_guid.as_str())
+        {
             return Err(CodecError::InvalidInput(format!(
                 "F3D Design type {} is its own base type",
                 design_type.id
@@ -567,7 +595,9 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
         let mut ancestors = BTreeSet::new();
         let mut cursor = design_type;
         while let Some(base) = cursor
-            .base_type_guid.as_ref().map(|field| field.value.as_str())
+            .base_type_guid
+            .as_ref()
+            .map(|field| field.value.as_str())
             .and_then(|base| types_by_guid.get(base))
         {
             if !ancestors.insert(base.type_guid.as_str()) {

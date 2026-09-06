@@ -2516,7 +2516,7 @@ impl<'a> Builder<'a> {
                     surf.geometry.solved_cache().unwrap_or(&surf.geometry),
                     &definition,
                 )
-                    .map(|reference| (id, reference))
+                .map(|reference| (id, reference))
             });
             let r = if let Some((id, reference)) = emitted {
                 self.written_procedural_surfaces.insert(id);

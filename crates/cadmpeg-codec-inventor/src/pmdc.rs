@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Common `PmDc` scalar, reference, content-header, and typed-list grammar.
 
-use cadmpeg_core::CodecError;
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
 pub(crate) fn type_id_string(value: [u8; 16]) -> String {

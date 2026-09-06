@@ -49,7 +49,10 @@ fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
     let source_edge = super::source_edge_for_vertices(
         &ir,
         &[0, 1],
-        ir.model.curves[0].geometry.solved_cache().unwrap_or(&ir.model.curves[0].geometry),
+        ir.model.curves[0]
+            .geometry
+            .solved_cache()
+            .unwrap_or(&ir.model.curves[0].geometry),
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(2.0, 0.0, 0.0),
         EPS_EDGE_ENDPOINT_MATCH,
@@ -97,7 +100,10 @@ fn source_edge_selection_rejects_multiple_matching_occurrences() {
     let result = super::source_edge_for_vertices(
         &ir,
         &[0, 1],
-        ir.model.curves[0].geometry.solved_cache().unwrap_or(&ir.model.curves[0].geometry),
+        ir.model.curves[0]
+            .geometry
+            .solved_cache()
+            .unwrap_or(&ir.model.curves[0].geometry),
         Point3::new(1.0, 0.0, 0.0),
         Point3::new(1.0, 0.0, 0.0),
         EPS_EDGE_ENDPOINT_MATCH,

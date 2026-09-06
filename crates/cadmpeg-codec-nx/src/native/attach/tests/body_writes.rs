@@ -4,8 +4,8 @@
 
 use super::*;
 use crate::native::parasolid::group_member::{GroupMemberTarget, GroupNodeFamily};
-use crate::NxCodec;
 use crate::test_support::{composed_feature_history_payload, prt_with_named_payloads};
+use crate::NxCodec;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use std::io::Cursor;
 
@@ -21,10 +21,14 @@ fn native_body_write(id: &str) -> crate::native::features::FeatureOperationBodyW
         operation_label: Some("operation".into()),
         operation_record: "record".into(),
         ordinal: 0,
-        frame: crate::om::body_write::BodyWriteFrame::<u64>::new(17,
+        frame: crate::om::body_write::BodyWriteFrame::<u64>::new(
+            17,
             crate::om::body_write::BodyWriteIndex::from_wire(1, &[1]).unwrap(),
             crate::om::body_write::BodyImageTag::Form10,
-            crate::om::body_write::BodyWriteIndex::from_wire(2, &[2]).unwrap(), 0).unwrap(),
+            crate::om::body_write::BodyWriteIndex::from_wire(2, &[2]).unwrap(),
+            0,
+        )
+        .unwrap(),
         body_image_data_block: Some("block".into()),
     }
 }
@@ -131,9 +135,14 @@ fn native_boolean(
 #[test]
 fn boolean_body_write_requires_one_target_image_and_excludes_tools() {
     let mut write = native_body_write("write");
-    write.frame = crate::om::body_write::BodyWriteFrame::<u64>::new(write.frame.body_identity(),
-        write.frame.group_node(), write.frame.endpoint_tag(),
-        crate::om::body_write::BodyWriteIndex::from_wire(40, &[40]).unwrap(), write.frame.offset()).unwrap();
+    write.frame = crate::om::body_write::BodyWriteFrame::<u64>::new(
+        write.frame.body_identity(),
+        write.frame.group_node(),
+        write.frame.endpoint_tag(),
+        crate::om::body_write::BodyWriteIndex::from_wire(40, &[40]).unwrap(),
+        write.frame.offset(),
+    )
+    .unwrap();
     let boolean = native_boolean(40, vec![41, 42]);
 
     assert!(super::body_writes_match_boolean_target(&[&write], None));
@@ -227,9 +236,14 @@ fn conflicting_body_output_witnesses_remain_unresolved() {
 fn group_partition_witness_projects_every_write_of_the_bound_body_identity() {
     let write_a = native_body_write("write-a");
     let mut write_b = native_body_write("write-b");
-    write_b.frame = crate::om::body_write::BodyWriteFrame::<u64>::new(write_b.frame.body_identity(),
-        crate::om::body_write::BodyWriteIndex::from_wire(2, &[2]).unwrap(), write_b.frame.endpoint_tag(),
-        write_b.frame.body_image(), write_b.frame.offset()).unwrap();
+    write_b.frame = crate::om::body_write::BodyWriteFrame::<u64>::new(
+        write_b.frame.body_identity(),
+        crate::om::body_write::BodyWriteIndex::from_wire(2, &[2]).unwrap(),
+        write_b.frame.endpoint_tag(),
+        write_b.frame.body_image(),
+        write_b.frame.offset(),
+    )
+    .unwrap();
     let use_ = crate::native::features::FeatureBodyWriteGroupPartitionUse {
         id: "partition-use".into(),
         body_write: "unlabeled-write".into(),
@@ -273,7 +287,11 @@ fn group_member(
         ordinal: 0,
         list_record_xmt: 20,
         member_xmt: 30,
-        target: GroupMemberTarget::Node { family, node_id: 50, current_xmt: current_member_xmt },
+        target: GroupMemberTarget::Node {
+            family,
+            node_id: 50,
+            current_xmt: current_member_xmt,
+        },
     }
 }
 
@@ -308,31 +326,11 @@ fn direct_group_use(
 fn result_topology_uses_only_unique_current_group_members() {
     let use_ = group_use(&["face", "edge", "vertex", "historical", "shell"]);
     let members = [
-        group_member(
-            "face",
-            GroupNodeFamily::Face,
-            Some(40),
-        ),
-        group_member(
-            "edge",
-            GroupNodeFamily::Edge,
-            Some(41),
-        ),
-        group_member(
-            "vertex",
-            GroupNodeFamily::Vertex,
-            Some(42),
-        ),
-        group_member(
-            "historical",
-            GroupNodeFamily::Face,
-            None,
-        ),
-        group_member(
-            "shell",
-            GroupNodeFamily::Shell,
-            Some(43),
-        ),
+        group_member("face", GroupNodeFamily::Face, Some(40)),
+        group_member("edge", GroupNodeFamily::Edge, Some(41)),
+        group_member("vertex", GroupNodeFamily::Vertex, Some(42)),
+        group_member("historical", GroupNodeFamily::Face, None),
+        group_member("shell", GroupNodeFamily::Shell, Some(43)),
     ];
     let result = super::feature_result_group_members(
         use_.partition_stream_ordinal,
@@ -345,16 +343,8 @@ fn result_topology_uses_only_unique_current_group_members() {
     assert_eq!(result.vertices, ["nx:s4:vertex#42"]);
 
     let duplicate_members = [
-        group_member(
-            "face",
-            GroupNodeFamily::Face,
-            Some(40),
-        ),
-        group_member(
-            "face",
-            GroupNodeFamily::Face,
-            Some(40),
-        ),
+        group_member("face", GroupNodeFamily::Face, Some(40)),
+        group_member("face", GroupNodeFamily::Face, Some(40)),
     ];
     assert!(
         super::feature_result_group_members(4, &["face".into()], &duplicate_members)
@@ -366,16 +356,8 @@ fn result_topology_uses_only_unique_current_group_members() {
 #[test]
 fn result_topology_accepts_either_partition_witness_and_rejects_disagreement() {
     let members = [
-        group_member(
-            "face",
-            GroupNodeFamily::Face,
-            Some(40),
-        ),
-        group_member(
-            "edge",
-            GroupNodeFamily::Edge,
-            Some(41),
-        ),
+        group_member("face", GroupNodeFamily::Face, Some(40)),
+        group_member("edge", GroupNodeFamily::Edge, Some(41)),
     ];
     let image = group_use(&["face"]);
     let direct = direct_group_use(&["face"]);

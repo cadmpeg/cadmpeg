@@ -78,11 +78,14 @@ fn generated_source_less_refuses_procedural_construction_loss_on_analytic_carrie
         .unwrap()
         .geometry = SurfaceGeometry::Procedural {
         construction: source_less.model.procedural_surfaces[0].id.clone(),
-        cache: Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::new(SurfaceGeometry::Plane {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-    }).unwrap()),
+        cache: Some(
+            cadmpeg_ir::geometry::SolvedSurfaceGeometry::new(SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            })
+            .unwrap(),
+        ),
     };
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -114,10 +117,13 @@ fn generated_source_less_refuses_procedural_construction_loss_on_analytic_carrie
         .unwrap()
         .geometry = CurveGeometry::Procedural {
         construction: source_less.model.procedural_curves[0].id.clone(),
-        cache: Some(cadmpeg_ir::geometry::SolvedCurveGeometry::new(CurveGeometry::Line {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        direction: Vector3::new(1.0, 0.0, 0.0),
-    }).unwrap()),
+        cache: Some(
+            cadmpeg_ir::geometry::SolvedCurveGeometry::new(CurveGeometry::Line {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                direction: Vector3::new(1.0, 0.0, 0.0),
+            })
+            .unwrap(),
+        ),
     };
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)

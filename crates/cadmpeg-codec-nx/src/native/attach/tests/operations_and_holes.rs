@@ -16,7 +16,9 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
         operation_label: "operation#mixed-namespaces".to_string(),
         kind: crate::native::features::FeatureBooleanKind::Subtract,
         target: crate::test_support::native_references::boolean_reference(94, 0),
-        tools: vec![crate::test_support::native_references::boolean_reference(122, 1)],
+        tools: vec![crate::test_support::native_references::boolean_reference(
+            122, 1,
+        )],
         source_offset: 0,
     };
     let body = BodyId::mint("nx:s18:body#3".to_string()).expect("identity grammar");
@@ -127,7 +129,11 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
         body_reference_ordinal: 0,
         ordinal,
         operand: crate::om::compact::LocatedCompactIndex {
-            atom: crate::om::compact::CompactIndexAtom::from_wire(object_index, &[object_index as u8]).unwrap(),
+            atom: crate::om::compact::CompactIndexAtom::from_wire(
+                object_index,
+                &[object_index as u8],
+            )
+            .unwrap(),
             offset: u64::from(ordinal),
         },
         operand_data_block: None,
@@ -230,7 +236,11 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
             body_reference_ordinal: 0,
             ordinal,
             operand: crate::om::compact::LocatedCompactIndex {
-                atom: crate::om::compact::CompactIndexAtom::from_wire(object_index, &[object_index as u8]).unwrap(),
+                atom: crate::om::compact::CompactIndexAtom::from_wire(
+                    object_index,
+                    &[object_index as u8],
+                )
+                .unwrap(),
                 offset: u64::from(ordinal),
             },
             operand_data_block: Some(data_block.to_string()),

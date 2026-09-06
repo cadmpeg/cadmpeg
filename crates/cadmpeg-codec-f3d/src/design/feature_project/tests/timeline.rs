@@ -114,13 +114,19 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
     later.previous_history_state_id = Some(7);
     let scopes = vec![later.clone(), earlier.clone()];
     let timeline = |items: Vec<u64>| DesignFeatureTimeline {
-frame: crate::records::DesignTimelineFrame::test_items(10, items.into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect()),
-id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 10),
-class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-record_index: std::num::NonZeroU64::new(35).unwrap(),
-source_ordinal: 0,
-context_record_index: std::num::NonZeroU64::new(17).unwrap(),
-};
+        frame: crate::records::DesignTimelineFrame::test_items(
+            10,
+            items
+                .into_iter()
+                .map(|value| crate::records::Located { value, offset: 0 })
+                .collect(),
+        ),
+        id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 10),
+        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        record_index: std::num::NonZeroU64::new(35).unwrap(),
+        source_ordinal: 0,
+        context_record_index: std::num::NonZeroU64::new(17).unwrap(),
+    };
     let authored = timeline(vec![100, 150, 200]);
     let project = |timeline: &DesignFeatureTimeline| {
         project_parameter_design_with_edge_identities(
@@ -160,10 +166,16 @@ context_record_index: std::num::NonZeroU64::new(17).unwrap(),
     assert_eq!(later_feature.dependencies, [earlier_feature.id.clone()]);
 
     let unrelated = DesignFeatureTimeline {
-frame: crate::records::DesignTimelineFrame::test_items(authored.frame.byte_offset(), vec![crate::records::Located { value: 9000, offset: 0 }]),
-id: crate::ids::native_design_feature_timeline_id_in_stream("f3d:Other/BulkStream.dat", 10),
-..authored.clone()
-};
+        frame: crate::records::DesignTimelineFrame::test_items(
+            authored.frame.byte_offset(),
+            vec![crate::records::Located {
+                value: 9000,
+                offset: 0,
+            }],
+        ),
+        id: crate::ids::native_design_feature_timeline_id_in_stream("f3d:Other/BulkStream.dat", 10),
+        ..authored.clone()
+    };
     let ordinals = crate::design::feature_project::authored_scope_ordinals(
         &scopes,
         &[unrelated, authored.clone()],
@@ -179,11 +191,17 @@ id: crate::ids::native_design_feature_timeline_id_in_stream("f3d:Other/BulkStrea
         .contains("dependency does not precede its authored timeline position"));
 
     let second = DesignFeatureTimeline {
-frame: crate::records::DesignTimelineFrame::test_items(authored.frame.byte_offset(), vec![crate::records::Located { value: 300, offset: 0 }]),
-source_ordinal: 1,
-record_index: std::num::NonZeroU64::new(36).unwrap(),
-..authored.clone()
-};
+        frame: crate::records::DesignTimelineFrame::test_items(
+            authored.frame.byte_offset(),
+            vec![crate::records::Located {
+                value: 300,
+                offset: 0,
+            }],
+        ),
+        source_ordinal: 1,
+        record_index: std::num::NonZeroU64::new(36).unwrap(),
+        ..authored.clone()
+    };
     let error = project_parameter_design_with_edge_identities(
         &crate::design::feature_project::ProjectInputs {
             native: &[],
@@ -237,13 +255,25 @@ fn feature_projection_collapses_internal_scope_history_chains() {
     successor.previous_history_state_id = Some(8);
     let scopes = vec![successor.clone(), internal.clone(), predecessor.clone()];
     let timeline = DesignFeatureTimeline {
-frame: crate::records::DesignTimelineFrame::test_items(10, vec![crate::records::Located { value: 100, offset: 0 }, crate::records::Located { value: 200, offset: 0 }]),
-id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 10),
-class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-record_index: std::num::NonZeroU64::new(35).unwrap(),
-source_ordinal: 0,
-context_record_index: std::num::NonZeroU64::new(17).unwrap(),
-};
+        frame: crate::records::DesignTimelineFrame::test_items(
+            10,
+            vec![
+                crate::records::Located {
+                    value: 100,
+                    offset: 0,
+                },
+                crate::records::Located {
+                    value: 200,
+                    offset: 0,
+                },
+            ],
+        ),
+        id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 10),
+        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        record_index: std::num::NonZeroU64::new(35).unwrap(),
+        source_ordinal: 0,
+        context_record_index: std::num::NonZeroU64::new(17).unwrap(),
+    };
     let mut parameter = parse_design_parameter(&parameter_record(
         Some(40),
         "1 mm",
@@ -255,7 +285,12 @@ context_record_index: std::num::NonZeroU64::new(17).unwrap(),
     .expect("synthetic internal parameter");
     parameter.id = format!("{stream}:design-parameter#41");
     parameter.record_index = 41;
-    parameter.source = crate::records::DesignParameterSource::new(parameter.source_kind().to_owned(), Some(40), parameter.family_discriminator()).unwrap();
+    parameter.source = crate::records::DesignParameterSource::new(
+        parameter.source_kind().to_owned(),
+        Some(40),
+        parameter.family_discriminator(),
+    )
+    .unwrap();
     let owner = DesignParameterOwner {
         id: format!("{stream}:design-parameter-owner#40"),
         byte_offset: 0,
@@ -334,7 +369,9 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
             angle: 0.0,
             offset: [0.0; 3],
             owners: Vec::new(),
-            form: Some(crate::records::DesignAssemblyAlignmentForm::DatumEnvelope { joint_origin_scope_record_index: 20 }),
+            form: Some(crate::records::DesignAssemblyAlignmentForm::DatumEnvelope {
+                joint_origin_scope_record_index: 20,
+            }),
         });
     }
     let mut origin = DesignParameterScope::empty(
@@ -351,13 +388,19 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
     internal_origin.with_joint_origin_transform(identity_matrix());
     let scopes = vec![assembly, origin.clone(), internal_origin.clone()];
     let timeline = DesignFeatureTimeline {
-frame: crate::records::DesignTimelineFrame::test_items(0, vec![crate::records::Located { value: 10, offset: 0 }]),
-id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
-class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-record_index: std::num::NonZeroU64::new(1).unwrap(),
-source_ordinal: 0,
-context_record_index: std::num::NonZeroU64::new(2).unwrap(),
-};
+        frame: crate::records::DesignTimelineFrame::test_items(
+            0,
+            vec![crate::records::Located {
+                value: 10,
+                offset: 0,
+            }],
+        ),
+        id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
+        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        record_index: std::num::NonZeroU64::new(1).unwrap(),
+        source_ordinal: 0,
+        context_record_index: std::num::NonZeroU64::new(2).unwrap(),
+    };
     let (features, _) = project_parameter_design_with_edge_identities(
         &crate::design::feature_project::ProjectInputs {
             native: &[],
@@ -398,8 +441,12 @@ context_record_index: std::num::NonZeroU64::new(2).unwrap(),
 
     let mut directly_listed = timeline;
     let mut items = directly_listed.frame.items().to_vec();
-    items.push(crate::records::Located { value: origin.record_index.into(), offset: 0 });
-    directly_listed.frame = crate::records::DesignTimelineFrame::test_items(directly_listed.frame.byte_offset(), items);
+    items.push(crate::records::Located {
+        value: origin.record_index.into(),
+        offset: 0,
+    });
+    directly_listed.frame =
+        crate::records::DesignTimelineFrame::test_items(directly_listed.frame.byte_offset(), items);
     let (features, _) = project_parameter_design_with_edge_identities(
         &crate::design::feature_project::ProjectInputs {
             native: &[],
@@ -445,7 +492,9 @@ fn feature_projection_rejects_multiple_datum_envelope_positions() {
                 angle: 0.0,
                 offset: [0.0; 3],
                 owners: Vec::new(),
-            form: Some(crate::records::DesignAssemblyAlignmentForm::DatumEnvelope { joint_origin_scope_record_index: 20 }),
+                form: Some(crate::records::DesignAssemblyAlignmentForm::DatumEnvelope {
+                    joint_origin_scope_record_index: 20,
+                }),
             });
         }
         scope
@@ -458,13 +507,25 @@ fn feature_projection_rejects_multiple_datum_envelope_positions() {
     origin.with_joint_origin_transform(identity_matrix());
     let scopes = vec![envelope(10), envelope(11), origin];
     let timeline = DesignFeatureTimeline {
-frame: crate::records::DesignTimelineFrame::test_items(0, vec![crate::records::Located { value: 10, offset: 0 }, crate::records::Located { value: 11, offset: 0 }]),
-id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
-class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-record_index: std::num::NonZeroU64::new(1).unwrap(),
-source_ordinal: 0,
-context_record_index: std::num::NonZeroU64::new(2).unwrap(),
-};
+        frame: crate::records::DesignTimelineFrame::test_items(
+            0,
+            vec![
+                crate::records::Located {
+                    value: 10,
+                    offset: 0,
+                },
+                crate::records::Located {
+                    value: 11,
+                    offset: 0,
+                },
+            ],
+        ),
+        id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
+        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        record_index: std::num::NonZeroU64::new(1).unwrap(),
+        source_ordinal: 0,
+        context_record_index: std::num::NonZeroU64::new(2).unwrap(),
+    };
     let result = crate::design::feature_project::authored_scope_ordinals(
         &scopes,
         std::slice::from_ref(&timeline),
@@ -501,13 +562,19 @@ fn feature_projection_rejects_a_cyclic_internal_scope_history() {
     consumer.previous_history_state_id = Some(1);
     let scopes = vec![first_internal, second_internal, consumer];
     let timeline = DesignFeatureTimeline {
-frame: crate::records::DesignTimelineFrame::test_items(0, vec![crate::records::Located { value: 30, offset: 0 }]),
-id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
-class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-record_index: std::num::NonZeroU64::new(1).unwrap(),
-source_ordinal: 0,
-context_record_index: std::num::NonZeroU64::new(2).unwrap(),
-};
+        frame: crate::records::DesignTimelineFrame::test_items(
+            0,
+            vec![crate::records::Located {
+                value: 30,
+                offset: 0,
+            }],
+        ),
+        id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
+        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        record_index: std::num::NonZeroU64::new(1).unwrap(),
+        source_ordinal: 0,
+        context_record_index: std::num::NonZeroU64::new(2).unwrap(),
+    };
     let result = project_parameter_design_with_edge_identities(
         &crate::design::feature_project::ProjectInputs {
             native: &[],
@@ -564,13 +631,25 @@ fn feature_projection_does_not_invent_an_ambiguous_internal_dependency() {
     successor.previous_history_state_id = Some(8);
     let scopes = vec![predecessor, internal(150), internal(160), successor.clone()];
     let timeline = DesignFeatureTimeline {
-frame: crate::records::DesignTimelineFrame::test_items(0, vec![crate::records::Located { value: 100, offset: 0 }, crate::records::Located { value: 200, offset: 0 }]),
-id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
-class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-record_index: std::num::NonZeroU64::new(1).unwrap(),
-source_ordinal: 0,
-context_record_index: std::num::NonZeroU64::new(2).unwrap(),
-};
+        frame: crate::records::DesignTimelineFrame::test_items(
+            0,
+            vec![
+                crate::records::Located {
+                    value: 100,
+                    offset: 0,
+                },
+                crate::records::Located {
+                    value: 200,
+                    offset: 0,
+                },
+            ],
+        ),
+        id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
+        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        record_index: std::num::NonZeroU64::new(1).unwrap(),
+        source_ordinal: 0,
+        context_record_index: std::num::NonZeroU64::new(2).unwrap(),
+    };
     let (features, _) = project_parameter_design_with_edge_identities(
         &crate::design::feature_project::ProjectInputs {
             native: &[],
@@ -698,8 +777,15 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         previous_history_state_id: previous,
         previous_history_state_id_offset: Some(byte_offset + 120),
         reference_count_offset: byte_offset + 80,
-        reference_members: crate::records::ReferenceRun::from_columns(Vec::new(), Vec::new(), "reference_members").unwrap(),
-        payload: crate::records::DesignFeatureKind::try_from(kind.to_owned()).expect("nonempty family name").into(),
+        reference_members: crate::records::ReferenceRun::from_columns(
+            Vec::new(),
+            Vec::new(),
+            "reference_members",
+        )
+        .unwrap(),
+        payload: crate::records::DesignFeatureKind::try_from(kind.to_owned())
+            .expect("nonempty family name")
+            .into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "261".into(),
         paired_byte_offset: byte_offset + 200,
@@ -743,13 +829,25 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
     let owners = [owner(44, 45, 12), owner(54, 55, 22)];
     let scopes = vec![successor, predecessor];
     let timeline = DesignFeatureTimeline {
-frame: crate::records::DesignTimelineFrame::test_items(0, vec![crate::records::Located { value: 12, offset: 0 }, crate::records::Located { value: 22, offset: 0 }]),
-id: crate::ids::native_design_feature_timeline_id_in_stream("f3d:native", 0),
-class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-record_index: std::num::NonZeroU64::new(1).unwrap(),
-source_ordinal: 0,
-context_record_index: std::num::NonZeroU64::new(1).unwrap(),
-};
+        frame: crate::records::DesignTimelineFrame::test_items(
+            0,
+            vec![
+                crate::records::Located {
+                    value: 12,
+                    offset: 0,
+                },
+                crate::records::Located {
+                    value: 22,
+                    offset: 0,
+                },
+            ],
+        ),
+        id: crate::ids::native_design_feature_timeline_id_in_stream("f3d:native", 0),
+        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        record_index: std::num::NonZeroU64::new(1).unwrap(),
+        source_ordinal: 0,
+        context_record_index: std::num::NonZeroU64::new(1).unwrap(),
+    };
     let (features, parameters) = project_parameter_design_with_edge_identities(
         &crate::design::feature_project::ProjectInputs {
             native: &parameters,

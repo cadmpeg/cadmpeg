@@ -2,7 +2,7 @@
 //! `UFRx` document states and their owned child records.
 
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
-use serde::{Deserialize, Serialize, de::Error as _};
+use serde::{de::Error as _, Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 // One document state owns all child arenas; no extra box is needed for the singleton header.
@@ -475,12 +475,10 @@ mod tests {
         namespace
             .set_arena("ufrx", &wire)
             .expect("valid test fixture");
-        assert!(
-            UfrxRecord::read(&namespace)
-                .expect_err("invalid test fixture")
-                .to_string()
-                .contains("model_state_count")
-        );
+        assert!(UfrxRecord::read(&namespace)
+            .expect_err("invalid test fixture")
+            .to_string()
+            .contains("model_state_count"));
         let absent = UfrxRecord::Absent {
             id: "inventor:ufrx:state#root".into(),
         };

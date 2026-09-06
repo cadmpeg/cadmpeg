@@ -14,8 +14,9 @@ impl<S: AsRef<str>> PayloadText<S> {
         Ok(Self(value))
     }
 
-    pub(crate) fn as_str(&self) -> &str { self.0.as_ref() }
-
+    pub(crate) fn as_str(&self) -> &str {
+        self.0.as_ref()
+    }
 }
 
 impl PayloadText<&str> {
@@ -41,7 +42,10 @@ mod tests {
         let value = PayloadText::new(text).unwrap().into_owned();
         let json = serde_json::to_string(&value).unwrap();
         assert_eq!(json, serde_json::to_string(text).unwrap());
-        assert_eq!(serde_json::from_str::<PayloadText<String>>(&json).unwrap(), value);
+        assert_eq!(
+            serde_json::from_str::<PayloadText<String>>(&json).unwrap(),
+            value
+        );
     }
 
     #[test]

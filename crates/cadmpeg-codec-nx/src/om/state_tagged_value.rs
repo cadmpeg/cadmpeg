@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Complete operation-state tagged integer tokens.
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde::ser::SerializeStruct;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TokenBytes {
@@ -35,15 +35,26 @@ impl StateTaggedValue {
 
     pub(crate) fn marker(self) -> u8 {
         match self.0 {
-            TokenBytes::Short([marker, ..]) | TokenBytes::Medium([marker, ..]) | TokenBytes::Wide([marker, ..]) => marker,
+            TokenBytes::Short([marker, ..])
+            | TokenBytes::Medium([marker, ..])
+            | TokenBytes::Wide([marker, ..]) => marker,
         }
     }
 
     pub(crate) fn value(self) -> u32 {
         match self.0 {
-            TokenBytes::Short([marker, a, b]) => (u32::from(marker - 0xa0) << 16) | (u32::from(a) << 8) | u32::from(b),
-            TokenBytes::Medium([marker, a, b, c]) => (u32::from(marker - 0xc0) << 24) | (u32::from(a) << 16) | (u32::from(b) << 8) | u32::from(c),
-            TokenBytes::Wide([_, a, b, c, d]) => (u32::from(a) << 24) | (u32::from(b) << 16) | (u32::from(c) << 8) | u32::from(d),
+            TokenBytes::Short([marker, a, b]) => {
+                (u32::from(marker - 0xa0) << 16) | (u32::from(a) << 8) | u32::from(b)
+            }
+            TokenBytes::Medium([marker, a, b, c]) => {
+                (u32::from(marker - 0xc0) << 24)
+                    | (u32::from(a) << 16)
+                    | (u32::from(b) << 8)
+                    | u32::from(c)
+            }
+            TokenBytes::Wide([_, a, b, c, d]) => {
+                (u32::from(a) << 24) | (u32::from(b) << 16) | (u32::from(c) << 8) | u32::from(d)
+            }
         }
     }
 }
@@ -71,7 +82,9 @@ impl<'de> Deserialize<'de> for StateTaggedValue {
             .filter(|value| value.raw().len() == wire.raw_value.len())
             .ok_or_else(|| serde::de::Error::custom("raw_value: invalid tagged integer token"))?;
         if value.marker() != wire.value_marker {
-            return Err(serde::de::Error::custom("value_marker: disagrees with raw_value"));
+            return Err(serde::de::Error::custom(
+                "value_marker: disagrees with raw_value",
+            ));
         }
         if value.value() != wire.value {
             return Err(serde::de::Error::custom("value: disagrees with raw_value"));
@@ -100,15 +113,35 @@ mod tests {
     #[test]
     fn tagged_wire_rejects_incomplete_tokens_and_inconsistent_projections() {
         for (json, field) in [
-            (r#"{"value_marker":160,"value":0,"raw_value":[]}"#, "raw_value"),
-            (r#"{"value_marker":160,"value":0,"raw_value":[160,0]}"#, "raw_value"),
-            (r#"{"value_marker":160,"value":0,"raw_value":[160,0,0,0]}"#, "raw_value"),
-            (r#"{"value_marker":225,"value":0,"raw_value":[225,0,0,0,0]}"#, "raw_value"),
-            (r#"{"value_marker":255,"value":0,"raw_value":[224,0,0,0,0]}"#, "value_marker"),
-            (r#"{"value_marker":160,"value":1,"raw_value":[160,0,0]}"#, "value"),
+            (
+                r#"{"value_marker":160,"value":0,"raw_value":[]}"#,
+                "raw_value",
+            ),
+            (
+                r#"{"value_marker":160,"value":0,"raw_value":[160,0]}"#,
+                "raw_value",
+            ),
+            (
+                r#"{"value_marker":160,"value":0,"raw_value":[160,0,0,0]}"#,
+                "raw_value",
+            ),
+            (
+                r#"{"value_marker":225,"value":0,"raw_value":[225,0,0,0,0]}"#,
+                "raw_value",
+            ),
+            (
+                r#"{"value_marker":255,"value":0,"raw_value":[224,0,0,0,0]}"#,
+                "value_marker",
+            ),
+            (
+                r#"{"value_marker":160,"value":1,"raw_value":[160,0,0]}"#,
+                "value",
+            ),
         ] {
             assert!(serde_json::from_str::<StateTaggedValue>(json)
-                .unwrap_err().to_string().contains(field));
+                .unwrap_err()
+                .to_string()
+                .contains(field));
         }
     }
 }

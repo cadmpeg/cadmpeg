@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Borrowed monotone OM indexes retain the bounds needed to enumerate records.
 
-use cadmpeg_core::decode::View;
 use super::{EntityRecord, FixedEntityRecord};
+use cadmpeg_core::decode::View;
 
 /// Source-affine positions where adjacent little-endian words decrease.
 #[derive(Debug)]
@@ -15,31 +15,51 @@ impl<'a> DescendingU32Edges<'a> {
     pub(super) fn new(bytes: &'a [u8]) -> Self {
         let mut offsets_by_alignment = <[Vec<usize>; 4]>::default();
         for offset in 0..bytes.len().saturating_sub(7) {
-            if View::u32_le_at(bytes, offset).zip(View::u32_le_at(bytes, offset + 4))
-                .is_some_and(|(current, next)| current > next) {
+            if View::u32_le_at(bytes, offset)
+                .zip(View::u32_le_at(bytes, offset + 4))
+                .is_some_and(|(current, next)| current > next)
+            {
                 offsets_by_alignment[offset % 4].push(offset);
             }
         }
-        Self { bytes, offsets_by_alignment }
+        Self {
+            bytes,
+            offsets_by_alignment,
+        }
     }
 
     pub(super) fn is_nondecreasing(&self, start: usize, end: usize) -> bool {
-        if end < start { return false; }
-        if end - start < 8 { return true; }
+        if end < start {
+            return false;
+        }
+        if end - start < 8 {
+            return true;
+        }
         let offsets = &self.offsets_by_alignment[start % 4];
         let first = offsets.partition_point(|offset| *offset < start);
-        offsets.get(first).is_none_or(|offset| *offset >= end.saturating_sub(4))
+        offsets
+            .get(first)
+            .is_none_or(|offset| *offset >= end.saturating_sub(4))
     }
 
     fn records(&self, start: usize, count: usize, base: usize) -> Option<IndexRecords<'a>> {
-        if count < 2 { return None; }
+        if count < 2 {
+            return None;
+        }
         let end = start.checked_add(count.checked_mul(4)?)?;
         let mut words = View::over_retained(self.bytes.get(start..end)?);
-        if !self.is_nondecreasing(start, end) { return None; }
+        if !self.is_nondecreasing(start, end) {
+            return None;
+        }
         let first = base.checked_add(words.u32_le()? as usize)?;
         let last = base.checked_add(View::u32_le_at(self.bytes, end - 4)? as usize)?;
         let source = self.bytes.get(..last)?;
-        Some(IndexRecords { source, base, first, words })
+        Some(IndexRecords {
+            source,
+            base,
+            first,
+            words,
+        })
     }
 }
 
@@ -59,7 +79,10 @@ impl<'a> IndexRecords<'a> {
         let mut start = self.first;
         std::iter::from_fn(move || {
             let end = self.base + words.u32_le()? as usize;
-            let record = EntityRecord { offset: start, bytes: &self.source[start..end] };
+            let record = EntityRecord {
+                offset: start,
+                bytes: &self.source[start..end],
+            };
             start = end;
             Some(record)
         })
@@ -76,22 +99,44 @@ pub(super) struct FixedIndex<'a> {
 }
 
 impl<'a> FixedIndex<'a> {
-    pub(super) fn new(edges: &DescendingU32Edges<'a>, index_start: usize, count: usize,
-        base: usize, object_id_table_offset: usize) -> Option<Self> {
-        if View::u32_le_at(edges.bytes, index_start) != Some(0) { return None; }
+    pub(super) fn new(
+        edges: &DescendingU32Edges<'a>,
+        index_start: usize,
+        count: usize,
+        base: usize,
+        object_id_table_offset: usize,
+    ) -> Option<Self> {
+        if View::u32_le_at(edges.bytes, index_start) != Some(0) {
+            return None;
+        }
         let records = edges.records(index_start.checked_add(4)?, count, base)?;
-        if records.first == base { return None; }
+        if records.first == base {
+            return None;
+        }
         let ids_start = object_id_table_offset.checked_add(8)?;
         let ids_end = ids_start.checked_add(records.words.remaining())?;
         let object_ids = View::over_retained(records.source.get(ids_start..ids_end)?);
         records.source.get(..index_start)?;
-        Some(Self { index_start, object_id_table_offset, object_ids, records })
+        Some(Self {
+            index_start,
+            object_id_table_offset,
+            object_ids,
+            records,
+        })
     }
 
-    pub(super) fn source(self) -> &'a [u8] { self.records.source }
-    pub(super) fn base(self) -> usize { self.records.base }
-    pub(super) fn index_start(self) -> usize { self.index_start }
-    pub(super) fn object_id_table_offset(self) -> usize { self.object_id_table_offset }
+    pub(super) fn source(self) -> &'a [u8] {
+        self.records.source
+    }
+    pub(super) fn base(self) -> usize {
+        self.records.base
+    }
+    pub(super) fn index_start(self) -> usize {
+        self.index_start
+    }
+    pub(super) fn object_id_table_offset(self) -> usize {
+        self.object_id_table_offset
+    }
 
     pub(super) fn records(self) -> impl Iterator<Item = FixedEntityRecord<'a>> {
         let mut ids = self.object_ids;
@@ -100,9 +145,14 @@ impl<'a> FixedIndex<'a> {
             let offset = ids_start + ids.position();
             ids.u32_le().map(|value| (value, offset as u64))
         });
-        self.records.records().zip(ids).map(|(record, object_id)| FixedEntityRecord {
-            object_id, offset: record.offset, bytes: record.bytes,
-        })
+        self.records
+            .records()
+            .zip(ids)
+            .map(|(record, object_id)| FixedEntityRecord {
+                object_id,
+                offset: record.offset,
+                bytes: record.bytes,
+            })
     }
 }
 
@@ -114,23 +164,48 @@ pub(super) struct OffsetIndex<'a> {
 }
 
 impl<'a> OffsetIndex<'a> {
-    pub(super) fn new(edges: &DescendingU32Edges<'a>, index_start: usize,
-        offset_count: usize, count_offset: usize) -> Option<Self> {
-        if index_start.checked_add(offset_count.checked_mul(4)?)? != count_offset { return None; }
+    pub(super) fn new(
+        edges: &DescendingU32Edges<'a>,
+        index_start: usize,
+        offset_count: usize,
+        count_offset: usize,
+    ) -> Option<Self> {
+        if index_start.checked_add(offset_count.checked_mul(4)?)? != count_offset {
+            return None;
+        }
         let mut records = edges.records(index_start, offset_count, 0)?;
-        if records.first < count_offset.checked_add(4)? { return None; }
+        if records.first < count_offset.checked_add(4)? {
+            return None;
+        }
         let control_start = records.first;
         let control_end = records.words.u32_le()? as usize;
-        let control = EntityRecord { offset: control_start, bytes: &records.source[control_start..control_end] };
+        let control = EntityRecord {
+            offset: control_start,
+            bytes: &records.source[control_start..control_end],
+        };
         records.first = control_end;
-        Some(Self { index_start, control, records })
+        Some(Self {
+            index_start,
+            control,
+            records,
+        })
     }
 
-    pub(super) fn source(&self) -> &'a [u8] { self.records.source }
-    pub(super) fn index_start(&self) -> usize { self.index_start }
-    pub(super) fn control(&self) -> EntityRecord<'a> { self.control.clone() }
-    pub(super) fn column_storage(&self) -> &'a [u8] { &self.records.source[self.records.first..] }
-    pub(super) fn records(&self) -> impl Iterator<Item = EntityRecord<'a>> { self.records.records() }
+    pub(super) fn source(&self) -> &'a [u8] {
+        self.records.source
+    }
+    pub(super) fn index_start(&self) -> usize {
+        self.index_start
+    }
+    pub(super) fn control(&self) -> EntityRecord<'a> {
+        self.control.clone()
+    }
+    pub(super) fn column_storage(&self) -> &'a [u8] {
+        &self.records.source[self.records.first..]
+    }
+    pub(super) fn records(&self) -> impl Iterator<Item = EntityRecord<'a>> {
+        self.records.records()
+    }
 }
 
 #[cfg(test)]

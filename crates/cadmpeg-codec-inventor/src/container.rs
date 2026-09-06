@@ -4,15 +4,15 @@
 use cadmpeg_core::container::ContainerRole;
 
 use cadmpeg_container::compound::{CompoundEntry, CompoundSnapshot};
-use cadmpeg_core::CodecError;
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::ContainerSummary;
 
-use crate::external_reference::{UfrxState, parse as parse_ufrx};
-use crate::property_set::{PropertySetDescriptor, inventory as property_set_inventory};
-use crate::protein::{ProteinState, parse as parse_protein};
+use crate::external_reference::{parse as parse_ufrx, UfrxState};
+use crate::property_set::{inventory as property_set_inventory, PropertySetDescriptor};
+use crate::protein::{parse as parse_protein, ProteinState};
 use crate::rse::SegmentBulkState;
-use crate::rse::{RseInventory, SegmentMetaState, database_band, direct_rse_child};
+use crate::rse::{database_band, direct_rse_child, RseInventory, SegmentMetaState};
 
 /// One parsed Inventor compound container.
 pub(crate) struct InventorContainer<'a> {

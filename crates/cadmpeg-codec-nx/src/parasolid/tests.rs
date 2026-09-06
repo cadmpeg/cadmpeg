@@ -153,8 +153,6 @@ fn parasolid_entity_51_rejects_nonzero_upper_flag_bytes() {
     assert!(crate::parasolid::entity_51_record_at(&bytes, 0).is_none());
 }
 
-
-
 #[test]
 fn parasolid_field_names_require_a_complete_nonempty_reference_lane() {
     let bytes = [
@@ -166,16 +164,21 @@ fn parasolid_field_names_require_a_complete_nonempty_reference_lane() {
     assert_eq!(records[0].offset, 1);
     assert_eq!(records[0].byte_len, 14);
     assert_eq!(u32::from(records[0].xmt), 25);
-    assert_eq!(records[0].name_xmts.as_slice().iter().copied().map(u32::from).collect::<Vec<_>>(), [28, 29, 30]);
+    assert_eq!(
+        records[0]
+            .name_xmts
+            .as_slice()
+            .iter()
+            .copied()
+            .map(u32::from)
+            .collect::<Vec<_>>(),
+        [28, 29, 30]
+    );
     assert!(crate::parasolid::field_names_record_at(&bytes[..14], 1).is_none());
 
     let empty = [0x00, 0x63, 0, 0, 0, 0, 0, 25];
     assert!(crate::parasolid::field_names_records(&empty).is_empty());
 }
-
-
-
-
 
 #[test]
 fn parasolid_field_name_scan_does_not_admit_nested_counted_candidates() {
@@ -189,9 +192,17 @@ fn parasolid_field_name_scan_does_not_admit_nested_counted_candidates() {
     let records = crate::parasolid::field_names_records(&bytes);
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].offset, 0);
-    assert_eq!(records[0].name_xmts.as_slice().iter().copied().map(u32::from).collect::<Vec<_>>(), [99, 256, 256, 8192, 12288, 64]);
+    assert_eq!(
+        records[0]
+            .name_xmts
+            .as_slice()
+            .iter()
+            .copied()
+            .map(u32::from)
+            .collect::<Vec<_>>(),
+        [99, 256, 256, 8192, 12288, 64]
+    );
 }
-
 
 #[test]
 fn partition_values_require_a_unique_entity_reference() {
@@ -294,7 +305,10 @@ fn external_reference_record_parser_accepts_sorted_repeated_handles() {
     assert_eq!(records[0].record_id, 6);
     assert_eq!(records[0].declared_count, 2);
     assert_eq!(records[0].id_slots, [8, 11, 12, 4]);
-    assert_eq!(records[0].handles.values(), [0x1020_3040, 0x2030_4050, 0x2030_4050]);
+    assert_eq!(
+        records[0].handles.values(),
+        [0x1020_3040, 0x2030_4050, 0x2030_4050]
+    );
     assert!(records[0].handles.closing_duplicate());
     assert_eq!(records[0].tail_byte_len, 0);
 
@@ -508,6 +522,8 @@ fn legal_owner_flags_carry_binary_values_and_exact_layout_length() {
 fn counted_value_identities_require_nonempty_payloads() {
     for tag in [0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x62] {
         let bytes = [0, tag, 0, 0, 0, 0, 0, 17, 0];
-        assert!(crate::parasolid::value_records::entity_value_record_identity_at(&bytes, 0).is_none());
+        assert!(
+            crate::parasolid::value_records::entity_value_record_identity_at(&bytes, 0).is_none()
+        );
     }
 }

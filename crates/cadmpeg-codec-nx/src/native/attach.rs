@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! IR-writing attachment of the native object model.
 
-use std::collections::{BTreeMap, BTreeSet, btree_map::Entry};
+use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 
+use cadmpeg_core::decode::{alloc_filled, DecodeContext};
 use cadmpeg_core::CodecError;
-use cadmpeg_core::decode::{DecodeContext, alloc_filled};
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
@@ -45,14 +45,14 @@ const MIN_ANGULAR_TOLERANCE: f64 = 1.0e-12;
 use crate::container::EntryContent;
 use crate::decode::Scan;
 use crate::native::history::{
-    BodyWriterHistory, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS, NATIVE_PRIMARY_BODY_OBJECT_INDEX,
-    active_feature_closure,
+    active_feature_closure, BodyWriterHistory, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS,
+    NATIVE_PRIMARY_BODY_OBJECT_INDEX,
 };
 use crate::native::segments::BooleanOffsetStoreResolution;
 use crate::native::vector::{cross_vector, dot_vector, unit_vector};
 
 use super::catalogue::NATIVE_CATALOGUE;
-use super::display_jt::{DisplayJtTessellationInputs, display_jt_tessellations};
+use super::display_jt::{display_jt_tessellations, DisplayJtTessellationInputs};
 use super::has_complete_saved_toggle_stream;
 use cadmpeg_ir::native::catalogue::NotePhase;
 
@@ -3613,8 +3613,10 @@ fn attach_feature_operations(
                 boolean_offset_store_resolution.as_ref(),
                 Some(BooleanOffsetStoreResolution::Unresolved)
             ) {
-                let (native_target, offset_store_target) =
-                    boolean_target_writer(&definition, canonical_body(operation.target.token.value()));
+                let (native_target, offset_store_target) = boolean_target_writer(
+                    &definition,
+                    canonical_body(operation.target.token.value()),
+                );
                 body_writer_history.record_writer(native_target, offset_store_target, &[], &id);
             }
         }
@@ -3792,7 +3794,12 @@ fn feature_result_group_members(
         if member.partition_stream_ordinal != partition_stream_ordinal {
             continue;
         }
-        let GroupMemberTarget::Node { family, current_xmt: Some(xmt), .. } = member.target else {
+        let GroupMemberTarget::Node {
+            family,
+            current_xmt: Some(xmt),
+            ..
+        } = member.target
+        else {
             continue;
         };
         match family {
@@ -4441,7 +4448,8 @@ impl<'a> ParasolidAttributeNameIndex<'a> {
             }
             _ => format!(
                 "field_{}.parasolid_type_{}",
-                field_use.position.field_ordinal(), field_use.value_kind.field_code().code()
+                field_use.position.field_ordinal(),
+                field_use.value_kind.field_code().code()
             ),
         };
         Some(format!("{}.{}", definition.name.as_str(), field_name))
@@ -6426,10 +6434,10 @@ fn simple_hole_operations(
             .collect::<Vec<_>>(),
         [group] => {
             if group
-                    .members
-                    .iter()
-                    .map(|member| &member.operation_label)
-                    .any(|operation| !operation_positions.contains_key(operation.as_str()))
+                .members
+                .iter()
+                .map(|member| &member.operation_label)
+                .any(|operation| !operation_positions.contains_key(operation.as_str()))
                 || group.members.windows(2).any(|pair| {
                     operation_positions[pair[0].operation_label.as_str()]
                         >= operation_positions[pair[1].operation_label.as_str()]
@@ -6577,10 +6585,10 @@ fn hole_package_projection(
             continue;
         };
         if group
-                .members
-                .iter()
-                .map(|member| &member.operation_label)
-                .any(|operation| projection.internal_operations.contains(operation))
+            .members
+            .iter()
+            .map(|member| &member.operation_label)
+            .any(|operation| projection.internal_operations.contains(operation))
         {
             continue;
         }

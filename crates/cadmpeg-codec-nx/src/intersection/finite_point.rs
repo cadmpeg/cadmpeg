@@ -20,7 +20,9 @@ impl TryFrom<[f64; 3]> for FinitePoint {
 }
 
 impl From<FinitePoint> for [f64; 3] {
-    fn from(point: FinitePoint) -> Self { point.0 }
+    fn from(point: FinitePoint) -> Self {
+        point.0
+    }
 }
 
 impl From<FinitePoint> for Point3 {
@@ -39,9 +41,14 @@ mod tests {
         let point = FinitePoint::try_from([f64::from_bits(1), -0.0, f64::MAX]).unwrap();
         let json = serde_json::to_string(&point).unwrap();
         let round_trip: FinitePoint = serde_json::from_str(&json).unwrap();
-        assert_eq!(<[f64; 3]>::from(round_trip).map(f64::to_bits), <[f64; 3]>::from(point).map(f64::to_bits));
+        assert_eq!(
+            <[f64; 3]>::from(round_trip).map(f64::to_bits),
+            <[f64; 3]>::from(point).map(f64::to_bits)
+        );
         for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-            assert!(FinitePoint::try_from([value, 0.0, 0.0]).unwrap_err().contains("point"));
+            assert!(FinitePoint::try_from([value, 0.0, 0.0])
+                .unwrap_err()
+                .contains("point"));
         }
     }
 }

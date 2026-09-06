@@ -13,8 +13,8 @@ use cadmpeg_core::container::ContainerRole;
 
 pub(crate) mod extref_handles;
 use extref_handles::ExtrefHandles;
-pub(crate) mod membership;
 pub(crate) mod entry_ref;
+pub(crate) mod membership;
 use entry_ref::EntryRef;
 use membership::ObjectIdMembers;
 
@@ -351,13 +351,11 @@ impl<'a> Container<'a> {
         let framed_cache = self.om_section_cache.get_or_init(|| match &self.data {
             Cow::Borrowed(bytes) => {
                 let bytes: &'a [u8] = bytes;
-                let (sections, _) =
-                    parse_framed_section_cache(bytes, &self.entries, false);
+                let (sections, _) = parse_framed_section_cache(bytes, &self.entries, false);
                 FramedSectionCache::Borrowed { sections }
             }
             Cow::Owned(bytes) => {
-                let (sections, layouts) =
-                    parse_framed_section_cache(bytes, &self.entries, true);
+                let (sections, layouts) = parse_framed_section_cache(bytes, &self.entries, true);
                 drop(sections);
                 FramedSectionCache::Owned { layouts }
             }
@@ -366,21 +364,24 @@ impl<'a> Container<'a> {
             FramedSectionCache::Borrowed { sections } => sections
                 .iter()
                 .filter_map(|(entry_index, section)| {
-                    EntryRef::new(&self.entries, *entry_index)
-                        .map(|entry| (entry, section.clone()))
+                    EntryRef::new(&self.entries, *entry_index).map(|entry| (entry, section.clone()))
                 })
                 .collect(),
             FramedSectionCache::Owned { layouts } => layouts
                 .iter()
-                .filter_map(|(entry_index, layout)| EntryRef::new(&self.entries, *entry_index).map(|entry| (entry, layout.materialize())))
+                .filter_map(|(entry_index, layout)| {
+                    EntryRef::new(&self.entries, *entry_index)
+                        .map(|entry| (entry, layout.materialize()))
+                })
                 .collect(),
         }
     }
 
     /// Locate indexed NX object-model sections in catalogued file entries.
     pub fn indexed_om_sections(&self) -> Vec<(EntryRef<'_>, crate::om::IndexedSection<'_>)> {
-        let cache = self.indexed_section_layouts.get_or_init(|| {
-            match &self.data {
+        let cache = self
+            .indexed_section_layouts
+            .get_or_init(|| match &self.data {
                 Cow::Borrowed(bytes) => {
                     let bytes: &'a [u8] = bytes;
                     let (sections, _) = parse_indexed_section_cache(bytes, &self.entries, false);
@@ -413,20 +414,21 @@ impl<'a> Container<'a> {
                 Cow::Owned(bytes) => {
                     let (_, layouts) = parse_indexed_section_cache(bytes, &self.entries, true);
                     IndexedSectionCache::Owned { layouts }
-                },
-            }
-        });
+                }
+            });
         match cache {
             IndexedSectionCache::Borrowed { sections, .. } => sections
                 .iter()
                 .filter_map(|(entry_index, section)| {
-                    EntryRef::new(&self.entries, *entry_index)
-                        .map(|entry| (entry, section.clone()))
+                    EntryRef::new(&self.entries, *entry_index).map(|entry| (entry, section.clone()))
                 })
                 .collect(),
             IndexedSectionCache::Owned { layouts } => layouts
                 .iter()
-                .filter_map(|(entry_index, layout)| EntryRef::new(&self.entries, *entry_index).map(|entry| (entry, layout.materialize())))
+                .filter_map(|(entry_index, layout)| {
+                    EntryRef::new(&self.entries, *entry_index)
+                        .map(|entry| (entry, layout.materialize()))
+                })
                 .collect(),
         }
     }
@@ -536,22 +538,28 @@ impl<'a> Container<'a> {
         let search_start = registry_offset.checked_add(REGISTRY_MARKER.len())?;
         // A suffix of the table can form a smaller span ending at the same
         // product record. The first complete span is the table boundary.
-        let (count_offset, count, ids_start) =
-            (search_start..bytes.len().saturating_sub(3)).find_map(|count_offset| {
+        let (count_offset, count, ids_start) = (search_start..bytes.len().saturating_sub(3))
+            .find_map(|count_offset| {
                 let count = usize::try_from(View::u32_le_at(bytes, count_offset)?).ok()?;
                 let id_bytes = count.checked_mul(4)?;
                 let ids_start = count_offset.checked_add(4)?;
                 let ids_end = ids_start.checked_add(id_bytes)?;
-                crate::om::product::ProductRecord::read(bytes.get(ids_end..)?, crate::om::product::ProductRecordForm::Modern).is_some().then_some((
-                    count_offset,
-                    count,
-                    ids_start,
-                ))
+                crate::om::product::ProductRecord::read(
+                    bytes.get(ids_end..)?,
+                    crate::om::product::ProductRecordForm::Modern,
+                )
+                .is_some()
+                .then_some((count_offset, count, ids_start))
             })?;
-        let object_ids = (0..count).map(|ordinal| {
-            let offset = ids_start + ordinal * 4;
-            Some(RmFastLoadObjectId { value: View::u32_le_at(bytes, offset)?, offset })
-        }).collect::<Option<Vec<_>>>()?;
+        let object_ids = (0..count)
+            .map(|ordinal| {
+                let offset = ids_start + ordinal * 4;
+                Some(RmFastLoadObjectId {
+                    value: View::u32_le_at(bytes, offset)?,
+                    offset,
+                })
+            })
+            .collect::<Option<Vec<_>>>()?;
         let object_ids = ObjectIdMembers::new(object_ids).ok()?;
         Some((
             entry,
@@ -822,10 +830,7 @@ fn parse_framed_section_cache<'bytes>(
     bytes: &'bytes [u8],
     entries: &[DirEntry],
     retain_layouts: bool,
-) -> (
-    FramedSections<'bytes>,
-    FramedSectionLayouts,
-) {
+) -> (FramedSections<'bytes>, FramedSectionLayouts) {
     let mut sections = Vec::new();
     let mut layouts = Vec::new();
     for (entry_index, entry) in entries.iter().enumerate() {
@@ -839,11 +844,16 @@ fn parse_framed_section_cache<'bytes>(
             continue;
         };
         let parsed = crate::om::sections(payload);
-        if parsed.is_empty() { continue; }
+        if parsed.is_empty() {
+            continue;
+        }
         let source = retain_layouts.then(|| std::sync::Arc::<[u8]>::from(payload));
         for section in parsed {
             if let Some(source) = &source {
-                let Some(layout) = crate::om::cache::SectionLayout::from_section(&section, source) else { continue; };
+                let Some(layout) = crate::om::cache::SectionLayout::from_section(&section, source)
+                else {
+                    continue;
+                };
                 layouts.push((entry_index, layout));
             }
             sections.push((entry_index, section));
@@ -856,22 +866,38 @@ type IndexedSections<'a> = Vec<(usize, crate::om::IndexedSection<'a>)>;
 type IndexedSectionLayouts = Vec<(usize, crate::om::cache::IndexedSectionLayout)>;
 
 fn parse_indexed_section_cache<'bytes>(
-    bytes: &'bytes [u8], entries: &[DirEntry], retain_layouts: bool,
+    bytes: &'bytes [u8],
+    entries: &[DirEntry],
+    retain_layouts: bool,
 ) -> (IndexedSections<'bytes>, IndexedSectionLayouts) {
     let mut sections = Vec::new();
     let mut layouts = Vec::new();
     let mut seen = std::collections::BTreeSet::new();
     for (entry_index, entry) in entries.iter().enumerate() {
-        let Some((offset, size)) = entry.file_span else { continue; };
-        let (Ok(offset), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else { continue; };
-        let Some(payload) = bytes.get(offset..offset.saturating_add(size)) else { continue; };
+        let Some((offset, size)) = entry.file_span else {
+            continue;
+        };
+        let (Ok(offset), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
+            continue;
+        };
+        let Some(payload) = bytes.get(offset..offset.saturating_add(size)) else {
+            continue;
+        };
         let parsed = crate::om::indexed_sections(payload);
-        if parsed.is_empty() { continue; }
+        if parsed.is_empty() {
+            continue;
+        }
         let source = retain_layouts.then(|| std::sync::Arc::<[u8]>::from(payload));
         for section in parsed {
-            if !seen.insert((offset, section.object_id_table_offset)) { continue; }
+            if !seen.insert((offset, section.object_id_table_offset)) {
+                continue;
+            }
             if let Some(source) = &source {
-                let Some(layout) = crate::om::cache::IndexedSectionLayout::from_section(&section, source) else { continue; };
+                let Some(layout) =
+                    crate::om::cache::IndexedSectionLayout::from_section(&section, source)
+                else {
+                    continue;
+                };
                 layouts.push((entry_index, layout));
             }
             sections.push((entry_index, section));

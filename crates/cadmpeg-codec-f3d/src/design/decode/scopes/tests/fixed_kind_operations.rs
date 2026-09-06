@@ -35,7 +35,8 @@ pub(super) fn continue_fixed_kind_operations(
     let mut draft_scope = scope.clone();
     draft_scope.payload = crate::records::DesignFeatureKind::Draft.into();
     draft_scope.frame_length = 361;
-    draft_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![175, 176, 181, 182, 186, 190, 193]);
+    draft_scope.reference_members =
+        crate::records::ReferenceRun::Unlocated(vec![175, 176, 181, 182, 186, 190, 193]);
     let expected = Some(DesignDraftOperation {
         angle: 0.4,
         angle_record_index: 175,
@@ -56,7 +57,8 @@ pub(super) fn continue_fixed_kind_operations(
     // The ordered reference table is in record-index order, so the scalar lanes
     // hold no fixed position in it. Their local ordinals order them, and moving
     // them within the table must not change the recovered operation.
-    draft_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![181, 182, 186, 190, 193, 175, 176]);
+    draft_scope.reference_members =
+        crate::records::ReferenceRun::Unlocated(vec![181, 182, 186, 190, 193, 175, 176]);
     assert_eq!(
         exact_draft_operation_with_owners(
             &bytes,
@@ -68,7 +70,8 @@ pub(super) fn continue_fixed_kind_operations(
     );
 
     // A table that reaches only one of the two lanes has no complete operation.
-    draft_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![175, 181, 182, 186, 190, 193]);
+    draft_scope.reference_members =
+        crate::records::ReferenceRun::Unlocated(vec![175, 181, 182, 186, 190, 193]);
     assert_eq!(
         exact_draft_operation_with_owners(
             &bytes,
@@ -79,7 +82,8 @@ pub(super) fn continue_fixed_kind_operations(
         None
     );
 
-    draft_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![175, 176, 181, 182, 186]);
+    draft_scope.reference_members =
+        crate::records::ReferenceRun::Unlocated(vec![175, 176, 181, 182, 186]);
     assert_eq!(
         exact_draft_operation_with_owners(
             &bytes,
@@ -89,7 +93,8 @@ pub(super) fn continue_fixed_kind_operations(
         ),
         None
     );
-    draft_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![175, 176, 181, 182, 186, 190, 193]);
+    draft_scope.reference_members =
+        crate::records::ReferenceRun::Unlocated(vec![175, 176, 181, 182, 186, 190, 193]);
 
     let fillet_start = bytes.len();
     for (record_index, ordinal, value) in [
@@ -114,7 +119,8 @@ pub(super) fn continue_fixed_kind_operations(
     }
     let mut fillet_scope = scope.clone();
     fillet_scope.payload = crate::records::DesignFeatureKind::Fillet.into();
-    fillet_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![77, 50, 78, 79, 87, 88]);
+    fillet_scope.reference_members =
+        crate::records::ReferenceRun::Unlocated(vec![77, 50, 78, 79, 87, 88]);
     assert_eq!(
         exact_fixed_fillet_parameters(&bytes, &IndexedRecordOffsets::build(&bytes), &fillet_scope),
         Some(DesignFixedFilletParameters {
@@ -125,11 +131,27 @@ pub(super) fn continue_fixed_kind_operations(
                     value_offset: (fillet_start + 40) as u64,
                 }),
                 law: crate::records::DesignFixedFilletLaw::Variable {
-                    start: crate::records::DesignFixedFilletScalar { value: 0.0, record_index: 78, value_offset: (fillet_start + 115 + 40) as u64 },
-                    end: crate::records::DesignFixedFilletScalar { value: 0.65, record_index: 79, value_offset: (fillet_start + 230 + 40) as u64 },
+                    start: crate::records::DesignFixedFilletScalar {
+                        value: 0.0,
+                        record_index: 78,
+                        value_offset: (fillet_start + 115 + 40) as u64
+                    },
+                    end: crate::records::DesignFixedFilletScalar {
+                        value: 0.65,
+                        record_index: 79,
+                        value_offset: (fillet_start + 230 + 40) as u64
+                    },
                     intermediate: vec![crate::records::DesignFixedFilletIntermediate {
-                        radius: crate::records::DesignFixedFilletScalar { value: 0.4, record_index: 87, value_offset: (fillet_start + 345 + 40) as u64 },
-                        parameter: crate::records::DesignFixedFilletScalar { value: 0.2, record_index: 88, value_offset: (fillet_start + 460 + 40) as u64 },
+                        radius: crate::records::DesignFixedFilletScalar {
+                            value: 0.4,
+                            record_index: 87,
+                            value_offset: (fillet_start + 345 + 40) as u64
+                        },
+                        parameter: crate::records::DesignFixedFilletScalar {
+                            value: 0.2,
+                            record_index: 88,
+                            value_offset: (fillet_start + 460 + 40) as u64
+                        },
                     }],
                 },
             }],
@@ -141,7 +163,13 @@ pub(super) fn continue_fixed_kind_operations(
         Some(DesignFixedFilletParameters {
             groups: vec![crate::records::DesignFixedFilletGroup {
                 tangency_weight: None,
-                law: crate::records::DesignFixedFilletLaw::Constant(crate::records::DesignFixedFilletScalar { value: 1.0, record_index: 77, value_offset: (fillet_start + 40) as u64 }),
+                law: crate::records::DesignFixedFilletLaw::Constant(
+                    crate::records::DesignFixedFilletScalar {
+                        value: 1.0,
+                        record_index: 77,
+                        value_offset: (fillet_start + 40) as u64
+                    }
+                ),
             }],
         })
     );
@@ -173,7 +201,13 @@ pub(super) fn continue_fixed_kind_operations(
         Some(DesignFixedFilletParameters {
             groups: vec![crate::records::DesignFixedFilletGroup {
                 tangency_weight: None,
-                law: crate::records::DesignFixedFilletLaw::Constant(crate::records::DesignFixedFilletScalar { value: 0.5, record_index: 89, value_offset: (dynamic_scalar_at + 40) as u64 }),
+                law: crate::records::DesignFixedFilletLaw::Constant(
+                    crate::records::DesignFixedFilletScalar {
+                        value: 0.5,
+                        record_index: 89,
+                        value_offset: (dynamic_scalar_at + 40) as u64
+                    }
+                ),
             }],
         })
     );
@@ -203,8 +237,22 @@ pub(super) fn continue_fixed_kind_operations(
         exact_fixed_fillet_parameters(&bytes, &IndexedRecordOffsets::build(&bytes), &fillet_scope)
             .expect("two constant-radius Fillet scalar groups");
     assert_eq!(fixed.groups.len(), 2);
-    assert_eq!(fixed.groups[0].law.radii().map(|scalar| scalar.value).collect::<Vec<_>>(), [0.5]);
-    assert_eq!(fixed.groups[1].law.radii().map(|scalar| scalar.value).collect::<Vec<_>>(), [0.25]);
+    assert_eq!(
+        fixed.groups[0]
+            .law
+            .radii()
+            .map(|scalar| scalar.value)
+            .collect::<Vec<_>>(),
+        [0.5]
+    );
+    assert_eq!(
+        fixed.groups[1]
+            .law
+            .radii()
+            .map(|scalar| scalar.value)
+            .collect::<Vec<_>>(),
+        [0.25]
+    );
     assert_eq!(
         fixed.groups[1]
             .tangency_weight
@@ -325,7 +373,8 @@ pub(super) fn continue_fixed_kind_operations(
     revolve_scope.byte_offset = revolve_start as u64;
     revolve_scope.payload = crate::records::DesignFeatureKind::Revolve.into();
     revolve_scope.frame_length = 386;
-    revolve_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![200, 201, 202, 203, 1_779, 1_780, 204]);
+    revolve_scope.reference_members =
+        crate::records::ReferenceRun::Unlocated(vec![200, 201, 202, 203, 1_779, 1_780, 204]);
     let revolve_construction = exact_path_feature_construction(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -334,14 +383,19 @@ pub(super) fn continue_fixed_kind_operations(
     );
     assert_eq!(
         revolve_construction,
-        Some(DesignPathFeatureConstruction::Revolve(crate::records::DesignRevolveConstruction {
-            operation: DesignExtrudeOperation::NewBody,
-            operation_offset: (revolve_start + 25) as u64,
-            angle: 3.5,
-            angle_record_index: 1_779,
-            angle_offset: (revolve_scalar_start + 40) as u64,
-            opposite_angle: Some(crate::records::Located { value: 1_780, offset: (revolve_scalar_start + 116 + 40) as u64 }),
-        }))
+        Some(DesignPathFeatureConstruction::Revolve(
+            crate::records::DesignRevolveConstruction {
+                operation: DesignExtrudeOperation::NewBody,
+                operation_offset: (revolve_start + 25) as u64,
+                angle: 3.5,
+                angle_record_index: 1_779,
+                angle_offset: (revolve_scalar_start + 40) as u64,
+                opposite_angle: Some(crate::records::Located {
+                    value: 1_780,
+                    offset: (revolve_scalar_start + 116 + 40) as u64
+                }),
+            }
+        ))
     );
 
     let indexed_revolve_start = bytes.len();
@@ -358,7 +412,8 @@ pub(super) fn continue_fixed_kind_operations(
     indexed_revolve_scope.class_tag = "407".into();
     indexed_revolve_scope.paired_class_tag = "258".into();
     indexed_revolve_scope.frame_length = 377;
-    indexed_revolve_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![200, 201, 202, 203, 204, 205, 1_790, 1_791]);
+    indexed_revolve_scope.reference_members =
+        crate::records::ReferenceRun::Unlocated(vec![200, 201, 202, 203, 204, 205, 1_790, 1_791]);
     let indexed_angle = DesignParameterOwner {
         id: indexed_revolve_scope.id.clone(),
         byte_offset: 0,
@@ -382,14 +437,16 @@ pub(super) fn continue_fixed_kind_operations(
     );
     assert_eq!(
         indexed_revolve_construction,
-        Some(DesignPathFeatureConstruction::Revolve(crate::records::DesignRevolveConstruction {
-            operation: DesignExtrudeOperation::Cut,
-            operation_offset: (indexed_revolve_start + 21) as u64,
-            angle: std::f64::consts::TAU,
-            angle_record_index: indexed_angle_record_index,
-            angle_offset: 45,
-            opposite_angle: None,
-        }))
+        Some(DesignPathFeatureConstruction::Revolve(
+            crate::records::DesignRevolveConstruction {
+                operation: DesignExtrudeOperation::Cut,
+                operation_offset: (indexed_revolve_start + 21) as u64,
+                angle: std::f64::consts::TAU,
+                angle_record_index: indexed_angle_record_index,
+                angle_offset: 45,
+                opposite_angle: None,
+            }
+        ))
     );
 
     let class403_start = bytes.len();
@@ -428,14 +485,16 @@ pub(super) fn continue_fixed_kind_operations(
             &class403_scope,
             std::slice::from_ref(&class403_angle),
         ),
-        Some(DesignPathFeatureConstruction::Revolve(crate::records::DesignRevolveConstruction {
-            operation: DesignExtrudeOperation::Cut,
-            operation_offset: (class403_start + 21) as u64,
-            angle: std::f64::consts::TAU,
-            angle_record_index: indexed_angle_record_index,
-            angle_offset: (class403_start + 40) as u64,
-            opposite_angle: None,
-        }))
+        Some(DesignPathFeatureConstruction::Revolve(
+            crate::records::DesignRevolveConstruction {
+                operation: DesignExtrudeOperation::Cut,
+                operation_offset: (class403_start + 21) as u64,
+                angle: std::f64::consts::TAU,
+                angle_record_index: indexed_angle_record_index,
+                angle_offset: (class403_start + 40) as u64,
+                opposite_angle: None,
+            }
+        ))
     );
     bytes[class403_start + 34] = 0;
     assert_eq!(
@@ -462,8 +521,14 @@ pub(super) fn continue_fixed_kind_operations(
     legacy_revolve_scope.class_tag = "409".into();
     legacy_revolve_scope.paired_class_tag = "257".into();
     legacy_revolve_scope.frame_length = 359;
-    legacy_revolve_scope.reference_members =
-        crate::records::ReferenceRun::Unlocated(vec![200, 201, 202, 203, legacy_angle_record_index, 204]);
+    legacy_revolve_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![
+        200,
+        201,
+        202,
+        203,
+        legacy_angle_record_index,
+        204,
+    ]);
     let legacy_angle = DesignParameterOwner {
         id: legacy_revolve_scope.id.clone(),
         byte_offset: 0,
@@ -486,20 +551,30 @@ pub(super) fn continue_fixed_kind_operations(
             &legacy_revolve_scope,
             std::slice::from_ref(&legacy_angle),
         ),
-        Some(DesignPathFeatureConstruction::Revolve(crate::records::DesignRevolveConstruction {
-            operation: DesignExtrudeOperation::NewBody,
-            operation_offset: (legacy_revolve_start + 25) as u64,
-            angle: std::f64::consts::TAU,
-            angle_record_index: legacy_angle_record_index,
-            angle_offset: 55,
-            opposite_angle: None,
-        }))
+        Some(DesignPathFeatureConstruction::Revolve(
+            crate::records::DesignRevolveConstruction {
+                operation: DesignExtrudeOperation::NewBody,
+                operation_offset: (legacy_revolve_start + 25) as u64,
+                angle: std::f64::consts::TAU,
+                angle_record_index: legacy_angle_record_index,
+                angle_offset: 55,
+                opposite_angle: None,
+            }
+        ))
     );
     legacy_revolve_scope.class_tag = "323".into();
     legacy_revolve_scope.paired_class_tag = "260".into();
     legacy_revolve_scope.frame_length = 381;
-    legacy_revolve_scope.reference_members =
-        crate::records::ReferenceRun::Unlocated(vec![legacy_angle_record_index, 200, 201, 202, 203, 204, 205, 206]);
+    legacy_revolve_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![
+        legacy_angle_record_index,
+        200,
+        201,
+        202,
+        203,
+        204,
+        205,
+        206,
+    ]);
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
@@ -507,20 +582,28 @@ pub(super) fn continue_fixed_kind_operations(
             &legacy_revolve_scope,
             std::slice::from_ref(&legacy_angle),
         ),
-        Some(DesignPathFeatureConstruction::Revolve(crate::records::DesignRevolveConstruction {
-            operation: DesignExtrudeOperation::NewBody,
-            operation_offset: (legacy_revolve_start + 25) as u64,
-            angle: std::f64::consts::TAU,
-            angle_record_index: legacy_angle_record_index,
-            angle_offset: 55,
-            opposite_angle: None,
-        }))
+        Some(DesignPathFeatureConstruction::Revolve(
+            crate::records::DesignRevolveConstruction {
+                operation: DesignExtrudeOperation::NewBody,
+                operation_offset: (legacy_revolve_start + 25) as u64,
+                angle: std::f64::consts::TAU,
+                angle_record_index: legacy_angle_record_index,
+                angle_offset: 55,
+                opposite_angle: None,
+            }
+        ))
     );
     legacy_revolve_scope.class_tag = "385".into();
     legacy_revolve_scope.paired_class_tag = "262".into();
     legacy_revolve_scope.frame_length = 369;
-    legacy_revolve_scope.reference_members =
-        crate::records::ReferenceRun::Unlocated(vec![200, 201, 202, 203, legacy_angle_record_index, 204]);
+    legacy_revolve_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![
+        200,
+        201,
+        202,
+        203,
+        legacy_angle_record_index,
+        204,
+    ]);
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
@@ -528,14 +611,16 @@ pub(super) fn continue_fixed_kind_operations(
             &legacy_revolve_scope,
             std::slice::from_ref(&legacy_angle),
         ),
-        Some(DesignPathFeatureConstruction::Revolve(crate::records::DesignRevolveConstruction {
-            operation: DesignExtrudeOperation::NewBody,
-            operation_offset: (legacy_revolve_start + 25) as u64,
-            angle: std::f64::consts::TAU,
-            angle_record_index: legacy_angle_record_index,
-            angle_offset: 55,
-            opposite_angle: None,
-        }))
+        Some(DesignPathFeatureConstruction::Revolve(
+            crate::records::DesignRevolveConstruction {
+                operation: DesignExtrudeOperation::NewBody,
+                operation_offset: (legacy_revolve_start + 25) as u64,
+                angle: std::f64::consts::TAU,
+                angle_record_index: legacy_angle_record_index,
+                angle_offset: 55,
+                opposite_angle: None,
+            }
+        ))
     );
     revolve_scope.id = "stream:scope".into();
     {
@@ -565,7 +650,8 @@ pub(super) fn continue_fixed_kind_operations(
     indexed_revolve_scope.id = "stream:indexed-revolve".into();
     {
         let value = indexed_revolve_construction;
-        indexed_revolve_scope.payload = value.map_or_else(|| indexed_revolve_scope.kind().into(), Into::into);
+        indexed_revolve_scope.payload =
+            value.map_or_else(|| indexed_revolve_scope.kind().into(), Into::into);
     }
     let mut indexed_profile = thicken_group.clone();
     indexed_profile.id = "stream:indexed-profile".into();
@@ -574,7 +660,10 @@ pub(super) fn continue_fixed_kind_operations(
     let mut indexed_axis = indexed_profile.clone();
     indexed_axis.id = "stream:indexed-axis".into();
     indexed_axis.record_index = 899;
-    indexed_axis.members = vec![crate::records::Located { value: 900, offset: indexed_axis.members[0].offset }];
+    indexed_axis.members = vec![crate::records::Located {
+        value: 900,
+        offset: indexed_axis.members[0].offset,
+    }];
     indexed_axis.role = 0x0000_0021_0000_0000;
     let mut indexed_bodies = indexed_profile.clone();
     indexed_bodies.id = "stream:indexed-bodies".into();
@@ -596,7 +685,13 @@ pub(super) fn continue_fixed_kind_operations(
         identity_record_offset: 0,
         primary_identity: 100,
         primary_identity_offset: 0,
-        secondary: Some(crate::records::DesignSecondaryIdentity { identity: crate::records::Located { value: 104, offset: 0 }, curve_identity: None }),
+        secondary: Some(crate::records::DesignSecondaryIdentity {
+            identity: crate::records::Located {
+                value: 104,
+                offset: 0,
+            },
+            curve_identity: None,
+        }),
         historical_edge_candidates: Vec::new(),
         historical_face_candidates: Vec::new(),
         resolved_edge_slot: None,
@@ -604,11 +699,16 @@ pub(super) fn continue_fixed_kind_operations(
         next_byte_offset: 0,
     };
     let axis_placement = DesignSketchPlacement {
-        frame: crate::records::DesignSketchFrame::new(0, crate::records::DesignSketchFrameForm::ScopeCompact).unwrap(),
+        frame: crate::records::DesignSketchFrame::new(
+            0,
+            crate::records::DesignSketchFrameForm::ScopeCompact,
+        )
+        .unwrap(),
 
         id: "stream:indexed-axis-placement".into(),
         scope_record_index: Some(10),
-        entity_id: crate::records::DesignEntityId::try_from("Sketch_100".to_owned()).expect("valid entity ID"),
+        entity_id: crate::records::DesignEntityId::try_from("Sketch_100".to_owned())
+            .expect("valid entity ID"),
 
         visibility: None,
 
@@ -616,7 +716,6 @@ pub(super) fn continue_fixed_kind_operations(
         record_index: 904,
 
         paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
-
     };
     let axis_curve = SketchCurveIdentity {
         id: "stream:indexed-axis-curve".into(),
@@ -801,8 +900,10 @@ pub(super) fn continue_fixed_kind_operations(
     let axis_faces = [
         cadmpeg_ir::topology::Face {
             id: cadmpeg_ir::ids::FaceId::mint("test:model:face#axis-a").expect("identity grammar"),
-            shell: cadmpeg_ir::ids::ShellId::mint("test:model:shell#axis").expect("identity grammar"),
-            surface: cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#axis-a").expect("identity grammar"),
+            shell: cadmpeg_ir::ids::ShellId::mint("test:model:shell#axis")
+                .expect("identity grammar"),
+            surface: cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#axis-a")
+                .expect("identity grammar"),
             sense: cadmpeg_ir::topology::Sense::Forward,
             loops: Vec::new().into(),
             name: None,
@@ -811,8 +912,10 @@ pub(super) fn continue_fixed_kind_operations(
         },
         cadmpeg_ir::topology::Face {
             id: cadmpeg_ir::ids::FaceId::mint("test:model:face#axis-b").expect("identity grammar"),
-            shell: cadmpeg_ir::ids::ShellId::mint("test:model:shell#axis").expect("identity grammar"),
-            surface: cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#axis-b").expect("identity grammar"),
+            shell: cadmpeg_ir::ids::ShellId::mint("test:model:shell#axis")
+                .expect("identity grammar"),
+            surface: cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#axis-b")
+                .expect("identity grammar"),
             sense: cadmpeg_ir::topology::Sense::Forward,
             loops: Vec::new().into(),
             name: None,
@@ -822,7 +925,8 @@ pub(super) fn continue_fixed_kind_operations(
     ];
     let mut axis_surfaces = [
         cadmpeg_ir::geometry::Surface {
-            id: cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#axis-a").expect("identity grammar"),
+            id: cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#axis-a")
+                .expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
                 origin: Point3::new(1.0, 2.0, 3.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
@@ -832,7 +936,8 @@ pub(super) fn continue_fixed_kind_operations(
             source_object: None,
         },
         cadmpeg_ir::geometry::Surface {
-            id: cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#axis-b").expect("identity grammar"),
+            id: cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#axis-b")
+                .expect("identity grammar"),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
                 origin: Point3::new(1.0, 2.0, 8.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
@@ -902,17 +1007,21 @@ pub(super) fn continue_fixed_kind_operations(
             &loft_scope,
             &[],
         ),
-        Some(DesignPathFeatureConstruction::Loft(crate::records::DesignLoftConstruction {
-            operation: DesignExtrudeOperation::Join,
-            operation_offset: (loft_start + 29) as u64,
-        }))
+        Some(DesignPathFeatureConstruction::Loft(
+            crate::records::DesignLoftConstruction {
+                operation: DesignExtrudeOperation::Join,
+                operation_offset: (loft_start + 29) as u64,
+            }
+        ))
     );
     loft_scope.id = "stream:loft-scope".into();
     {
-        let value = Some(DesignPathFeatureConstruction::Loft(crate::records::DesignLoftConstruction {
-            operation: DesignExtrudeOperation::NewBody,
-            operation_offset: (loft_start + 29) as u64,
-        }));
+        let value = Some(DesignPathFeatureConstruction::Loft(
+            crate::records::DesignLoftConstruction {
+                operation: DesignExtrudeOperation::NewBody,
+                operation_offset: (loft_start + 29) as u64,
+            },
+        ));
         loft_scope.payload = value.map_or_else(|| loft_scope.kind().into(), Into::into);
     }
     let loft_record_index = loft_scope.record_index;
@@ -966,10 +1075,12 @@ pub(super) fn continue_fixed_kind_operations(
         &role_shape(&guided_role_41),
     ));
     {
-        let value = Some(DesignPathFeatureConstruction::Loft(crate::records::DesignLoftConstruction {
-            operation: DesignExtrudeOperation::Cut,
-            operation_offset: (loft_start + 29) as u64,
-        }));
+        let value = Some(DesignPathFeatureConstruction::Loft(
+            crate::records::DesignLoftConstruction {
+                operation: DesignExtrudeOperation::Cut,
+                operation_offset: (loft_start + 29) as u64,
+            },
+        ));
         loft_scope.payload = value.map_or_else(|| loft_scope.kind().into(), Into::into);
     }
     let cut = [
@@ -1052,10 +1163,12 @@ pub(super) fn continue_fixed_kind_operations(
         None
     );
     {
-        let value = Some(DesignPathFeatureConstruction::Loft(crate::records::DesignLoftConstruction {
-            operation: DesignExtrudeOperation::NewBody,
-            operation_offset: (loft_start + 29) as u64,
-        }));
+        let value = Some(DesignPathFeatureConstruction::Loft(
+            crate::records::DesignLoftConstruction {
+                operation: DesignExtrudeOperation::NewBody,
+                operation_offset: (loft_start + 29) as u64,
+            },
+        ));
         loft_scope.payload = value.map_or_else(|| loft_scope.kind().into(), Into::into);
     }
     let role_5 = [
@@ -1111,10 +1224,16 @@ pub(super) fn continue_fixed_kind_operations(
         &role_shape(&mixed),
     ));
     let mut point = loft_group(0, 0x5_0000_0000);
-    point.members = vec![10].into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect();
+    point.members = vec![10]
+        .into_iter()
+        .map(|value| crate::records::Located { value, offset: 0 })
+        .collect();
     let profile = loft_group(1, 0x43_0000_0000);
     let mut boundary = loft_group(2, 0x5_0000_0000);
-    boundary.members = vec![20, 21, 22].into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect();
+    boundary.members = vec![20, 21, 22]
+        .into_iter()
+        .map(|value| crate::records::Located { value, offset: 0 })
+        .collect();
     assert!(matches!(
         crate::design::feature_project::project_fixed_loft(
             &loft_scope,
@@ -1176,15 +1295,17 @@ pub(super) fn continue_fixed_kind_operations(
             &sweep_scope,
             &[],
         ),
-        Some(DesignPathFeatureConstruction::Sweep(crate::records::DesignSweepConstruction {
-            operation: DesignExtrudeOperation::NewBody,
-            operation_offset: (sweep_start + 25) as u64,
-            values: sweep_values,
-            record_indexes: [80, 81, 82, 83, 84, 85],
-            value_offsets: std::array::from_fn(|ordinal| {
-                (sweep_scalar_start + ordinal * 111 + 40) as u64
-            }),
-        }))
+        Some(DesignPathFeatureConstruction::Sweep(
+            crate::records::DesignSweepConstruction {
+                operation: DesignExtrudeOperation::NewBody,
+                operation_offset: (sweep_start + 25) as u64,
+                values: sweep_values,
+                record_indexes: [80, 81, 82, 83, 84, 85],
+                value_offsets: std::array::from_fn(|ordinal| {
+                    (sweep_scalar_start + ordinal * 111 + 40) as u64
+                }),
+            }
+        ))
     );
     sweep_scope.id = "stream:sweep-scope".into();
     {
@@ -1229,15 +1350,17 @@ pub(super) fn continue_fixed_kind_operations(
     ));
     let rail = sweep_group(2, 0x5_0000_0000);
     {
-        let value = Some(DesignPathFeatureConstruction::Sweep(crate::records::DesignSweepConstruction {
-            operation: DesignExtrudeOperation::NewBody,
-            operation_offset: (sweep_start + 25) as u64,
-            values: [0.0, 1.0, 0.0, 1.0, 0.0, 0.0],
-            record_indexes: [80, 81, 82, 83, 84, 85],
-            value_offsets: std::array::from_fn(|ordinal| {
-                (sweep_scalar_start + ordinal * 111 + 40) as u64
-            }),
-        }));
+        let value = Some(DesignPathFeatureConstruction::Sweep(
+            crate::records::DesignSweepConstruction {
+                operation: DesignExtrudeOperation::NewBody,
+                operation_offset: (sweep_start + 25) as u64,
+                values: [0.0, 1.0, 0.0, 1.0, 0.0, 0.0],
+                record_indexes: [80, 81, 82, 83, 84, 85],
+                value_offsets: std::array::from_fn(|ordinal| {
+                    (sweep_scalar_start + ordinal * 111 + 40) as u64
+                }),
+            },
+        ));
         sweep_scope.payload = value.map_or_else(|| sweep_scope.kind().into(), Into::into);
     }
     assert!(matches!(
@@ -1267,15 +1390,17 @@ pub(super) fn continue_fixed_kind_operations(
     ));
     let complete_sweep_values = [1.0, 1.0, 1.0, 1.0, sweep_values[4], 0.0];
     {
-        let value = Some(DesignPathFeatureConstruction::Sweep(crate::records::DesignSweepConstruction {
-            operation: DesignExtrudeOperation::NewBody,
-            operation_offset: (sweep_start + 25) as u64,
-            values: complete_sweep_values,
-            record_indexes: [80, 81, 82, 83, 84, 85],
-            value_offsets: std::array::from_fn(|ordinal| {
-                (sweep_scalar_start + ordinal * 111 + 40) as u64
-            }),
-        }));
+        let value = Some(DesignPathFeatureConstruction::Sweep(
+            crate::records::DesignSweepConstruction {
+                operation: DesignExtrudeOperation::NewBody,
+                operation_offset: (sweep_start + 25) as u64,
+                values: complete_sweep_values,
+                record_indexes: [80, 81, 82, 83, 84, 85],
+                value_offsets: std::array::from_fn(|ordinal| {
+                    (sweep_scalar_start + ordinal * 111 + 40) as u64
+                }),
+            },
+        ));
         sweep_scope.payload = value.map_or_else(|| sweep_scope.kind().into(), Into::into);
     }
     assert!(matches!(
@@ -1311,23 +1436,29 @@ pub(super) fn continue_fixed_kind_operations(
             class_tag: "312".into(),
             asset_id: "asset".into(),
             asset_id_offset: 32_040,
-            entity_id: crate::records::DesignEntityId::try_from("0_2718".to_owned()).expect("valid entity identity"),
+            entity_id: crate::records::DesignEntityId::try_from("0_2718".to_owned())
+                .expect("valid entity identity"),
             entity_reference_offset: 32_080,
             region_selection: None,
             paired_class_tag: "258".into(),
             paired_byte_offset: 32_180,
         });
-        if let crate::records::DesignScopePayload::Sweep(slot) = &mut sweep_scope.payload
-        {
+        if let crate::records::DesignScopePayload::Sweep(slot) = &mut sweep_scope.payload {
             slot.get_or_insert_with(Default::default).sweep_profile = value;
         }
     }
     let mut selected_profile = profile.clone();
-    selected_profile.members = vec![crate::records::Located { value: 2788, offset: selected_profile.members[0].offset }];
+    selected_profile.members = vec![crate::records::Located {
+        value: 2788,
+        offset: selected_profile.members[0].offset,
+    }];
     let mut profile_carrier = profile.clone();
     profile_carrier.id = "stream:sweep-profile-carrier".into();
     profile_carrier.scope_reference_ordinal = 3;
-    profile_carrier.members = vec![crate::records::Located { value: 2795, offset: profile_carrier.members[0].offset }];
+    profile_carrier.members = vec![crate::records::Located {
+        value: 2795,
+        offset: profile_carrier.members[0].offset,
+    }];
     let mut guide_surface = sweep_group(4, 0x11_0000_0000);
     guide_surface.id = "stream:sweep-guide-surface".into();
     let entity_selection = crate::records::DesignEntitySelectionOperand {
@@ -1346,7 +1477,13 @@ pub(super) fn continue_fixed_kind_operations(
         identity_record_offset: 31_180,
         primary_identity: 2718,
         primary_identity_offset: 31_200,
-        secondary: Some(crate::records::DesignSecondaryIdentity { identity: crate::records::Located { value: 164, offset: 31_208 }, curve_identity: None }),
+        secondary: Some(crate::records::DesignSecondaryIdentity {
+            identity: crate::records::Located {
+                value: 164,
+                offset: 31_208,
+            },
+            curve_identity: None,
+        }),
         historical_edge_candidates: Vec::new(),
         historical_face_candidates: Vec::new(),
         resolved_edge_slot: None,
@@ -1373,20 +1510,21 @@ pub(super) fn continue_fixed_kind_operations(
             ..
         }) if profile == "stream:sweep-group-0" && faces == "stream:sweep-guide-surface"
     ));
-    if let crate::records::DesignScopePayload::Sweep(slot) = &mut sweep_scope.payload
-    {
+    if let crate::records::DesignScopePayload::Sweep(slot) = &mut sweep_scope.payload {
         slot.get_or_insert_with(Default::default).sweep_profile = None;
     }
     {
-        let value = Some(DesignPathFeatureConstruction::Sweep(crate::records::DesignSweepConstruction {
-            operation: DesignExtrudeOperation::Cut,
-            operation_offset: (sweep_start + 25) as u64,
-            values: complete_sweep_values,
-            record_indexes: [80, 81, 82, 83, 84, 85],
-            value_offsets: std::array::from_fn(|ordinal| {
-                (sweep_scalar_start + ordinal * 111 + 40) as u64
-            }),
-        }));
+        let value = Some(DesignPathFeatureConstruction::Sweep(
+            crate::records::DesignSweepConstruction {
+                operation: DesignExtrudeOperation::Cut,
+                operation_offset: (sweep_start + 25) as u64,
+                values: complete_sweep_values,
+                record_indexes: [80, 81, 82, 83, 84, 85],
+                value_offsets: std::array::from_fn(|ordinal| {
+                    (sweep_scalar_start + ordinal * 111 + 40) as u64
+                }),
+            },
+        ));
         sweep_scope.payload = value.map_or_else(|| sweep_scope.kind().into(), Into::into);
     }
     assert!(matches!(
@@ -1442,19 +1580,21 @@ pub(super) fn continue_fixed_kind_operations(
             &pipe_scope,
             &[],
         ),
-        Some(DesignPathFeatureConstruction::Pipe(crate::records::DesignPipeConstruction {
-            operation: DesignExtrudeOperation::NewBody,
-            operation_offset: (pipe_start + 25) as u64,
-            section_shape: crate::records::DesignPipeSectionShape::Circular,
-            section_shape_offset: (pipe_start + 29) as u64,
-            filled: true,
-            filled_offset: (pipe_start + 30) as u64,
-            values: pipe_values,
-            record_indexes: [170, 171, 172, 173],
-            value_offsets: std::array::from_fn(|ordinal| {
-                (pipe_scalar_start + ordinal * 111 + 40) as u64
-            }),
-        }))
+        Some(DesignPathFeatureConstruction::Pipe(
+            crate::records::DesignPipeConstruction {
+                operation: DesignExtrudeOperation::NewBody,
+                operation_offset: (pipe_start + 25) as u64,
+                section_shape: crate::records::DesignPipeSectionShape::Circular,
+                section_shape_offset: (pipe_start + 29) as u64,
+                filled: true,
+                filled_offset: (pipe_start + 30) as u64,
+                values: pipe_values,
+                record_indexes: [170, 171, 172, 173],
+                value_offsets: std::array::from_fn(|ordinal| {
+                    (pipe_scalar_start + ordinal * 111 + 40) as u64
+                }),
+            }
+        ))
     );
 
     let owner_pipe_start = bytes.len();
@@ -1495,7 +1635,8 @@ pub(super) fn continue_fixed_kind_operations(
     owner_pipe_scope.paired_class_tag = "257".into();
     owner_pipe_scope.payload = crate::records::DesignFeatureKind::Pipe.into();
     owner_pipe_scope.frame_length = 405;
-    owner_pipe_scope.reference_members = crate::records::ReferenceRun::Unlocated(owner_pipe_record_indexes.into());
+    owner_pipe_scope.reference_members =
+        crate::records::ReferenceRun::Unlocated(owner_pipe_record_indexes.into());
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
@@ -1503,17 +1644,19 @@ pub(super) fn continue_fixed_kind_operations(
             &owner_pipe_scope,
             &owner_pipe_owners,
         ),
-        Some(DesignPathFeatureConstruction::Pipe(crate::records::DesignPipeConstruction {
-            operation: DesignExtrudeOperation::NewBody,
-            operation_offset: (owner_pipe_start + fixed_pipe_layout::OPERATION) as u64,
-            section_shape: crate::records::DesignPipeSectionShape::Circular,
-            section_shape_offset: (owner_pipe_start + fixed_pipe_layout::SECTION_SHAPE) as u64,
-            filled: true,
-            filled_offset: (owner_pipe_start + fixed_pipe_layout::FILLED) as u64,
-            values: owner_pipe_values,
-            record_indexes: owner_pipe_record_indexes,
-            value_offsets: [10_000, 10_001, 10_002, 10_003],
-        }))
+        Some(DesignPathFeatureConstruction::Pipe(
+            crate::records::DesignPipeConstruction {
+                operation: DesignExtrudeOperation::NewBody,
+                operation_offset: (owner_pipe_start + fixed_pipe_layout::OPERATION) as u64,
+                section_shape: crate::records::DesignPipeSectionShape::Circular,
+                section_shape_offset: (owner_pipe_start + fixed_pipe_layout::SECTION_SHAPE) as u64,
+                filled: true,
+                filled_offset: (owner_pipe_start + fixed_pipe_layout::FILLED) as u64,
+                values: owner_pipe_values,
+                record_indexes: owner_pipe_record_indexes,
+                value_offsets: [10_000, 10_001, 10_002, 10_003],
+            }
+        ))
     );
     let mut wrong_owner_class = owner_pipe_owners.clone();
     wrong_owner_class[0].class_tag = "341".into();
@@ -1567,7 +1710,9 @@ pub(super) fn continue_fixed_kind_operations(
         legacy_scope.paired_class_tag = paired_class_tag.into();
         legacy_scope.payload = crate::records::DesignFeatureKind::Pipe.into();
         legacy_scope.frame_length = 383;
-        legacy_scope.reference_members = crate::records::ReferenceRun::Unlocated((first_record_index..first_record_index + 4).collect());
+        legacy_scope.reference_members = crate::records::ReferenceRun::Unlocated(
+            (first_record_index..first_record_index + 4).collect(),
+        );
         assert_eq!(
             exact_path_feature_construction(
                 &bytes,
@@ -1575,25 +1720,27 @@ pub(super) fn continue_fixed_kind_operations(
                 &legacy_scope,
                 &[],
             ),
-            Some(DesignPathFeatureConstruction::Pipe(crate::records::DesignPipeConstruction {
-                operation: DesignExtrudeOperation::NewBody,
-                operation_offset: (legacy_pipe_start + legacy_pipe_layout::OPERATION) as u64,
-                section_shape: crate::records::DesignPipeSectionShape::Circular,
-                section_shape_offset: (legacy_pipe_start + legacy_pipe_layout::SECTION_SHAPE)
-                    as u64,
-                filled: true,
-                filled_offset: (legacy_pipe_start + legacy_pipe_layout::FILLED) as u64,
-                values: legacy_values,
-                record_indexes: [
-                    first_record_index,
-                    first_record_index + 1,
-                    first_record_index + 2,
-                    first_record_index + 3,
-                ],
-                value_offsets: std::array::from_fn(|ordinal| {
-                    (legacy_scalar_start + ordinal * 111 + 40) as u64
-                }),
-            }))
+            Some(DesignPathFeatureConstruction::Pipe(
+                crate::records::DesignPipeConstruction {
+                    operation: DesignExtrudeOperation::NewBody,
+                    operation_offset: (legacy_pipe_start + legacy_pipe_layout::OPERATION) as u64,
+                    section_shape: crate::records::DesignPipeSectionShape::Circular,
+                    section_shape_offset: (legacy_pipe_start + legacy_pipe_layout::SECTION_SHAPE)
+                        as u64,
+                    filled: true,
+                    filled_offset: (legacy_pipe_start + legacy_pipe_layout::FILLED) as u64,
+                    values: legacy_values,
+                    record_indexes: [
+                        first_record_index,
+                        first_record_index + 1,
+                        first_record_index + 2,
+                        first_record_index + 3,
+                    ],
+                    value_offsets: std::array::from_fn(|ordinal| {
+                        (legacy_scalar_start + ordinal * 111 + 40) as u64
+                    }),
+                }
+            ))
         );
     }
 
@@ -1699,7 +1846,8 @@ pub(super) fn continue_fixed_kind_operations(
     | crate::records::DesignScopePayload::Esboco(slot) = &mut scope.payload
     {
         *slot = Some(crate::records::DesignSketchEntityBinding {
-            entity_id: crate::records::DesignEntityId::try_from("Sketch_99".to_owned()).expect("valid entity identity"),
+            entity_id: crate::records::DesignEntityId::try_from("Sketch_99".to_owned())
+                .expect("valid entity identity"),
             entity_reference_offset: 0,
         });
     }
@@ -1707,7 +1855,8 @@ pub(super) fn continue_fixed_kind_operations(
         id: "f3d:native:design-entity-header#70".into(),
         byte_offset: 70,
 
-        entity_id: crate::records::DesignEntityId::try_from("Sketch_99".to_owned()).expect("valid entity ID"),
+        entity_id: crate::records::DesignEntityId::try_from("Sketch_99".to_owned())
+            .expect("valid entity ID"),
         class_tag: crate::records::DesignClassTag::try_from("366".to_owned()).unwrap(),
         optional_slot_present: false,
         module: Some("MSketch".into()),

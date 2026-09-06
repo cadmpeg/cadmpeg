@@ -5,9 +5,8 @@ mod schema;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use cadmpeg_core::CodecError;
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::SourceProvenance;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::AppearanceId;
@@ -17,6 +16,7 @@ use cadmpeg_ir::presentation::{
 };
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::Color;
+use cadmpeg_ir::SourceProvenance;
 
 use crate::brep::ShapePayloadRecord;
 use crate::loss::FreecadLossCode;

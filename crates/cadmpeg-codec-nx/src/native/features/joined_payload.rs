@@ -30,12 +30,17 @@ impl JoinedPayload {
             let (fragment, source_offset) = blocks.get(id).copied()?;
             source_offset.checked_add(fragment.len() as u64)?;
             bytes.extend_from_slice(fragment);
-            sources.push(SourceSpan { byte_len: fragment.len() as u64, source_offset });
+            sources.push(SourceSpan {
+                byte_len: fragment.len() as u64,
+                source_offset,
+            });
         }
         Some(Self { bytes, sources })
     }
 
-    pub(super) fn bytes(&self) -> &[u8] { &self.bytes }
+    pub(super) fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
 
     pub(super) fn source_spans(&self) -> impl Iterator<Item = (u64, u64, u64)> + '_ {
         let mut at = 0;
@@ -48,8 +53,7 @@ impl JoinedPayload {
 
     pub(super) fn source_offset(&self, relative: u64) -> Option<u64> {
         self.source_spans().find_map(|(start, length, source)| {
-            (relative >= start && relative - start < length)
-                .then(|| source + (relative - start))
+            (relative >= start && relative - start < length).then(|| source + (relative - start))
         })
     }
 }
@@ -68,8 +72,10 @@ mod tests {
         ]);
         let joined = JoinedPayload::from_source(ids.iter(), &blocks).unwrap();
         assert_eq!(joined.bytes(), [1, 2, 3, 4, 5]);
-        assert_eq!([0, 1, 2, 4, 5, u64::MAX].map(|offset| joined.source_offset(offset)),
-            [Some(10), Some(11), Some(100), Some(102), None, None]);
+        assert_eq!(
+            [0, 1, 2, 4, 5, u64::MAX].map(|offset| joined.source_offset(offset)),
+            [Some(10), Some(11), Some(100), Some(102), None, None]
+        );
     }
 
     #[test]
@@ -89,13 +95,44 @@ mod tests {
                 (&[0x0c, 0xcc, 0xcc, 0xcc, 0xcd, 0x72][..], 900_u64),
             ),
         ]);
-        let joined = crate::native::features::joined_payload::JoinedPayload::from_source(ids.iter(), &blocks).expect("required invariant");
-        assert_eq!(joined.bytes(), [0x30, 0x43, 0x0c, 0xcc, 0xcc, 0xcc, 0xcd, 0x72]);
-        assert_eq!(joined.source_spans().map(|(start, _, _)| start).collect::<Vec<_>>(), [0, 2]);
-        assert_eq!(joined.source_spans().map(|(_, length, _)| length).collect::<Vec<_>>(), [2, 6]);
-        assert_eq!(joined.source_spans().map(|(_, _, source)| source).collect::<Vec<_>>(), [120, 900]);
+        let joined = crate::native::features::joined_payload::JoinedPayload::from_source(
+            ids.iter(),
+            &blocks,
+        )
+        .expect("required invariant");
+        assert_eq!(
+            joined.bytes(),
+            [0x30, 0x43, 0x0c, 0xcc, 0xcc, 0xcc, 0xcd, 0x72]
+        );
+        assert_eq!(
+            joined
+                .source_spans()
+                .map(|(start, _, _)| start)
+                .collect::<Vec<_>>(),
+            [0, 2]
+        );
+        assert_eq!(
+            joined
+                .source_spans()
+                .map(|(_, length, _)| length)
+                .collect::<Vec<_>>(),
+            [2, 6]
+        );
+        assert_eq!(
+            joined
+                .source_spans()
+                .map(|(_, _, source)| source)
+                .collect::<Vec<_>>(),
+            [120, 900]
+        );
 
         let missing = vec!["block#2".to_string(), "missing".to_string()];
-        assert!(crate::native::features::joined_payload::JoinedPayload::from_source(missing.iter(), &blocks).is_none());
+        assert!(
+            crate::native::features::joined_payload::JoinedPayload::from_source(
+                missing.iter(),
+                &blocks
+            )
+            .is_none()
+        );
     }
 }

@@ -103,11 +103,15 @@ fn generated_source_less_rejects_material_assignment_without_presentation_graph(
         asm_body_key_offset: 0,
 
         entity_suffix_offset: 0,
-        entity_id: crate::records::DesignEntityId::try_from("0_985".to_owned()).expect("valid entity ID"),
+        entity_id: crate::records::DesignEntityId::try_from("0_985".to_owned())
+            .expect("valid entity ID"),
         entity_id_offset: 0,
         visual_guid: "11111111-2222-3333-4444-555555555555".into(),
         visual_guid_offset: 0,
-        physical_token: Some(crate::records::RecordedValue { value: "PrismMaterial-Generated".into(), offset: None }),
+        physical_token: Some(crate::records::RecordedValue {
+            value: "PrismMaterial-Generated".into(),
+            offset: None,
+        }),
         visual_preset: None,
     }];
 
@@ -157,7 +161,11 @@ fn generated_f3d_rejects_material_assignment_divergence() {
         .expect("generated material decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
     update_f3d_native(&mut edited, |native| {
-        native.design_material_assignments[0].physical_token.as_mut().expect("material field").value = "PrismMaterial-019".into();
+        native.design_material_assignments[0]
+            .physical_token
+            .as_mut()
+            .expect("material field")
+            .value = "PrismMaterial-019".into();
     });
 
     let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())
@@ -174,7 +182,8 @@ fn generated_f3d_rejects_partial_material_assignment_identity_edit() {
     let (mut edited, _, fidelity) = decoded.into_parts();
     update_f3d_native(&mut edited, |native| {
         let assignment = &mut native.design_material_assignments[0];
-        assignment.entity_id = crate::records::DesignEntityId::try_from("0_986".to_owned()).expect("valid entity ID");
+        assignment.entity_id =
+            crate::records::DesignEntityId::try_from("0_986".to_owned()).expect("valid entity ID");
     });
 
     let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())

@@ -5,16 +5,16 @@
 //! record vectors into domain sub-structs. Extraction is infallible: malformed
 //! data is omitted, never surfaced as an error.
 
-use crate::native::om::material_texture::{MaterialTextureAsset, material_texture_assets};
+use super::features::operation_record::FeatureOperationRecord;
+use super::features::unlabeled_record::FeatureUnlabeledOperationRecord;
+use crate::container::Container;
+use crate::native::features::block_reference::FeatureBlockConstructionReference;
+use crate::native::features::datum_plane_header::{
+    feature_datum_plane_headers, FeatureDatumPlaneHeader,
+};
 use crate::native::features::object_frame::DataBlockObjectFrame;
 use crate::native::features::swp104_branch::FeatureSwp104LeadingBranch;
-use crate::native::features::block_reference::FeatureBlockConstructionReference;
-use super::features::unlabeled_record::FeatureUnlabeledOperationRecord;
-use super::features::operation_record::FeatureOperationRecord;
-use crate::container::Container;
-use crate::native::features::datum_plane_header::{
-    FeatureDatumPlaneHeader, feature_datum_plane_headers,
-};
+use crate::native::om::material_texture::{material_texture_assets, MaterialTextureAsset};
 use crate::parasolid::Stream;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::ids::BodyId;
@@ -576,9 +576,14 @@ impl NativeModel {
             &parasolid_group_records,
             &parasolid_group_members,
         );
-        let feature_operation_tagged_references = feature_operation_object_references(container, crate::om::direct_reference::ReferenceFieldKind::Tagged17);
-        let feature_operation_data_block_references =
-            feature_operation_object_references(container, crate::om::direct_reference::ReferenceFieldKind::DataBlock03);
+        let feature_operation_tagged_references = feature_operation_object_references(
+            container,
+            crate::om::direct_reference::ReferenceFieldKind::Tagged17,
+        );
+        let feature_operation_data_block_references = feature_operation_object_references(
+            container,
+            crate::om::direct_reference::ReferenceFieldKind::DataBlock03,
+        );
         let feature_operation_common_frames = feature_operation_common_frames(container);
         let feature_operation_terminal_discriminators =
             feature_operation_terminal_discriminators(container);

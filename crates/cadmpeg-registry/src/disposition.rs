@@ -209,7 +209,10 @@ mod tests {
             assert_eq!(write.to_string(), word);
         }
         for word in ["L10", "L09", "L+9", "L00", "L 9", "L9 "] {
-            assert!(ReadDisposition::try_from(word.to_owned()).is_err(), "{word}");
+            assert!(
+                ReadDisposition::try_from(word.to_owned()).is_err(),
+                "{word}"
+            );
         }
         assert!(ReadDisposition::try_from("L".to_owned()).is_err());
         assert!(ReadDisposition::try_from("verified".to_owned()).is_err());

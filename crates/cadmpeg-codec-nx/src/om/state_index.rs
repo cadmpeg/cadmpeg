@@ -25,18 +25,25 @@ impl StateIndexToken {
     }
 
     pub(crate) fn from_wire(value: u32, raw: &[u8]) -> Result<Self, &'static str> {
-        let token = Self::read_at(raw, 0).filter(|token| token.raw().len() == raw.len())
+        let token = Self::read_at(raw, 0)
+            .filter(|token| token.raw().len() == raw.len())
             .ok_or("invalid non-null state-index token")?;
-        if token.value() != value { return Err("decoded value disagrees with raw token"); }
+        if token.value() != value {
+            return Err("decoded value disagrees with raw token");
+        }
         Ok(token)
     }
 
     pub(crate) fn value(self) -> u32 {
         match self.0 {
             IndexBytes::Direct(value) => u32::from(value),
-            IndexBytes::Compact([marker, value]) => (u32::from(marker - 0x80) << 8) | u32::from(value),
+            IndexBytes::Compact([marker, value]) => {
+                (u32::from(marker - 0x80) << 8) | u32::from(value)
+            }
             IndexBytes::Word([_, a, b]) => (u32::from(a) << 8) | u32::from(b),
-            IndexBytes::Packed([marker, a, b]) => (u32::from(marker - 0xa0) << 16) | (u32::from(a) << 8) | u32::from(b),
+            IndexBytes::Packed([marker, a, b]) => {
+                (u32::from(marker - 0xa0) << 16) | (u32::from(a) << 8) | u32::from(b)
+            }
         }
     }
 
@@ -62,15 +69,24 @@ impl OperationStateIndex {
         } else {
             Some(StateIndexToken::read_at(bytes, at)?)
         };
-        Some(Self { token, offset: base_offset.checked_add(at)? })
+        Some(Self {
+            token,
+            offset: base_offset.checked_add(at)?,
+        })
     }
 
-    pub(crate) fn token(self) -> Option<StateIndexToken> { self.token }
+    pub(crate) fn token(self) -> Option<StateIndexToken> {
+        self.token
+    }
 
-    pub(crate) fn raw(&self) -> &[u8] { self.token.as_ref().map_or(&[0xff], StateIndexToken::raw) }
+    pub(crate) fn raw(&self) -> &[u8] {
+        self.token.as_ref().map_or(&[0xff], StateIndexToken::raw)
+    }
 
     #[cfg(test)]
-    pub(crate) fn offset(self) -> usize { self.offset }
+    pub(crate) fn offset(self) -> usize {
+        self.offset
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,16 +97,27 @@ pub(crate) struct NonNullStateIndex {
 
 impl NonNullStateIndex {
     pub(crate) fn from_index(index: OperationStateIndex) -> Option<Self> {
-        Some(Self { token: index.token?, offset: index.offset })
+        Some(Self {
+            token: index.token?,
+            offset: index.offset,
+        })
     }
 
-    pub(crate) fn token(self) -> StateIndexToken { self.token }
+    pub(crate) fn token(self) -> StateIndexToken {
+        self.token
+    }
 
-    pub(crate) fn value(self) -> u32 { self.token.value() }
+    pub(crate) fn value(self) -> u32 {
+        self.token.value()
+    }
 
-    pub(crate) fn raw(&self) -> &[u8] { self.token.raw() }
+    pub(crate) fn raw(&self) -> &[u8] {
+        self.token.raw()
+    }
 
-    pub(crate) fn offset(self) -> usize { self.offset }
+    pub(crate) fn offset(self) -> usize {
+        self.offset
+    }
 }
 
 #[cfg(test)]
@@ -99,7 +126,13 @@ mod tests {
 
     #[test]
     fn required_indices_keep_alternate_zero_encodings_and_offsets() {
-        for raw in [&[0][..], &[0x80, 0][..], &[0x90, 0, 0][..], &[0xa0, 0, 0][..], &[0xf1, 0, 0][..]] {
+        for raw in [
+            &[0][..],
+            &[0x80, 0][..],
+            &[0x90, 0, 0][..],
+            &[0xa0, 0, 0][..],
+            &[0xf1, 0, 0][..],
+        ] {
             let index = OperationStateIndex::read_at(raw, 0, 100).unwrap();
             let required = NonNullStateIndex::from_index(index).unwrap();
             assert_eq!(required.value(), 0);
@@ -114,7 +147,15 @@ mod tests {
         assert_eq!(null.token().map(StateIndexToken::value), None);
         assert_eq!(null.raw(), &[0xff]);
         assert!(NonNullStateIndex::from_index(null).is_none());
-        for raw in [&[][..], &[0xff][..], &[0x80][..], &[0x90, 0][..], &[0xa0, 0][..], &[0xf1, 0][..], &[0x91, 0, 0][..]] {
+        for raw in [
+            &[][..],
+            &[0xff][..],
+            &[0x80][..],
+            &[0x90, 0][..],
+            &[0xa0, 0][..],
+            &[0xf1, 0][..],
+            &[0x91, 0, 0][..],
+        ] {
             assert!(StateIndexToken::read_at(raw, 0).is_none());
         }
         assert!(OperationStateIndex::read_at(&[0, 0], 1, usize::MAX).is_none());

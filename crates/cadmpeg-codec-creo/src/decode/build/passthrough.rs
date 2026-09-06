@@ -4,10 +4,10 @@
 use cadmpeg_core::container::ContainerRole;
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::AnnotationBuilder;
-use cadmpeg_ir::Exactness;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::UnknownId;
+use cadmpeg_ir::AnnotationBuilder;
+use cadmpeg_ir::Exactness;
 use serde::Serialize;
 
 use crate::container::{self, ContainerScan};

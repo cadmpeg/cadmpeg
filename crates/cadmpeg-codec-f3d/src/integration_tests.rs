@@ -11,8 +11,8 @@ use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
-use crate::F3dCodec;
 use crate::test_support::*;
+use crate::F3dCodec;
 
 fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
     F3dCodec
@@ -35,12 +35,10 @@ fn f3d_pipeline_aligns_detection_inspection_container_roles_and_decode() {
         .expect("F3D inspection");
     assert_eq!(summary.format(), "f3d");
     assert_eq!(summary.container_kind, "zip");
-    assert!(
-        summary
-            .entries
-            .iter()
-            .any(|entry| entry.role == ContainerRole::BrepSmbh)
-    );
+    assert!(summary
+        .entries
+        .iter()
+        .any(|entry| entry.role == ContainerRole::BrepSmbh));
 
     let result = decode(bytes);
     assert!(result.report().geometry_transferred());
@@ -215,13 +213,11 @@ fn f3z_pipeline_recursively_merges_occurrences_and_reports_reference_cycles() {
             ("middle.f3d", cyclic_middle.as_slice()),
         ],
     ));
-    assert!(
-        cyclic
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.message.contains("reference cycle"))
-    );
+    assert!(cyclic
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("reference cycle")));
 }
 
 #[test]

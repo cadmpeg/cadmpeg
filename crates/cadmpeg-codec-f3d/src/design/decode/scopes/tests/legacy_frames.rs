@@ -353,7 +353,10 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
         scope.class_tag = scope_class.into();
         scope.paired_class_tag = scope_paired_class.into();
         scope.frame_length = scope_length as u64;
-        scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![carrier_record_index, support_record_index]);
+        scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![
+            carrier_record_index,
+            support_record_index,
+        ]);
         let construction =
             exact_work_axis_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
                 .expect("direct WorkAxis carrier");

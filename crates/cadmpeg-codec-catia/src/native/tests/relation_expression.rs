@@ -492,14 +492,18 @@ fn native_migrates_and_validates_relation_signature_parameter_symbols() {
             "(#1_ : #In LENGTH) : Real",
         ));
     let expected = native.entity_records[0]
-        .relation_expression().cloned()
+        .relation_expression()
+        .cloned()
         .expect("relation expression");
     let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native
         .store(&mut namespace)
         .expect("store relation signature");
     let loaded = crate::native::CatiaNative::load(&namespace).expect("load relation signature");
-    assert_eq!(loaded.entity_records[0].relation_expression(), Some(&expected));
+    assert_eq!(
+        loaded.entity_records[0].relation_expression(),
+        Some(&expected)
+    );
 }
 
 #[test]

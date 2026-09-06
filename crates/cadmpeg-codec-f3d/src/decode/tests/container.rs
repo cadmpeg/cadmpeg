@@ -18,9 +18,9 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::LossKind;
 use zip::CompressionMethod;
 
-use crate::F3dCodec;
 use crate::loss::F3dLossCode;
 use crate::test_support::*;
+use crate::F3dCodec;
 
 /// A document with no ASM BREP stream has no selected stream, so the geometry
 /// and topology losses must not name a decode failure of one. Stating a cause

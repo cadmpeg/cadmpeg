@@ -236,7 +236,9 @@ impl TryFrom<u8> for IndexRowMode {
 
 impl super::scalar_run::ScalarFrame for DraftBinary32Branch {
     type Atom = super::scalar::ShiftedBinary32;
-    fn prefix_len(self) -> u64 { self.discriminator().len() as u64 }
+    fn prefix_len(self) -> u64 {
+        self.discriminator().len() as u64
+    }
 }
 
 /// Branch introducing an operation body reference lane.
@@ -249,7 +251,9 @@ pub enum OperationBodyReferenceBranch {
 }
 
 impl From<OperationBodyReferenceBranch> for u8 {
-    fn from(branch: OperationBodyReferenceBranch) -> Self { branch as Self }
+    fn from(branch: OperationBodyReferenceBranch) -> Self {
+        branch as Self
+    }
 }
 
 impl TryFrom<u8> for OperationBodyReferenceBranch {

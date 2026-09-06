@@ -8,7 +8,10 @@ use crate::container::ContainerScan;
 use crate::design::decode::image::embedded_image_asset;
 use crate::design::decode::sketch::next_indexed_record_offset_with_index;
 use crate::ids;
-use crate::records::{DesignCanvasImage, DesignCanvasGeometry, DesignCanvasAsset, DesignCanvasBounds, DesignCanvasGeometryPayload, DesignCanvasPrologue, DesignParameterScope};
+use crate::records::{
+    DesignCanvasAsset, DesignCanvasBounds, DesignCanvasGeometry, DesignCanvasGeometryPayload,
+    DesignCanvasImage, DesignCanvasPrologue, DesignParameterScope,
+};
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::Asset;
@@ -89,8 +92,14 @@ pub fn project_canvas_images(
             u_axis,
             v_axis,
             bounds: [
-                Point2::new(minimum.u * DESIGN_LENGTH_TO_MM, minimum.v * DESIGN_LENGTH_TO_MM),
-                Point2::new(maximum.u * DESIGN_LENGTH_TO_MM, maximum.v * DESIGN_LENGTH_TO_MM),
+                Point2::new(
+                    minimum.u * DESIGN_LENGTH_TO_MM,
+                    minimum.v * DESIGN_LENGTH_TO_MM,
+                ),
+                Point2::new(
+                    maximum.u * DESIGN_LENGTH_TO_MM,
+                    maximum.v * DESIGN_LENGTH_TO_MM,
+                ),
             ],
             opacity: Some(f64::from(opacity)),
         };
@@ -208,13 +217,24 @@ fn parse_canvas_image(
     }
 
     DesignCanvasImage::new(
-        ids::native_design_canvas_image_id(stream, geometry_at), scope.record_index,
+        ids::native_design_canvas_image_id(stream, geometry_at),
+        scope.record_index,
         u64::try_from(geometry_reference_at + 1).ok()?,
-        DesignCanvasGeometry::new([geometry_class_tag, paired_geometry_class_tag], geometry_record_index,
-            u64::try_from(geometry_at).ok()?, label, geometry_prologue, boundary, geometry_payload).ok()?,
+        DesignCanvasGeometry::new(
+            [geometry_class_tag, paired_geometry_class_tag],
+            geometry_record_index,
+            u64::try_from(geometry_at).ok()?,
+            label,
+            geometry_prologue,
+            boundary,
+            geometry_payload,
+        )
+        .ok()?,
         DesignCanvasAsset::new(asset_class_tag, asset_record_index, asset_name).ok()?,
-        plane_entity_suffix, component_entity_suffix,
-    ).ok()
+        plane_entity_suffix,
+        component_entity_suffix,
+    )
+    .ok()
 }
 
 fn marked_reference(bytes: &[u8], at: usize) -> Option<u32> {

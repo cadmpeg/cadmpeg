@@ -17,8 +17,8 @@ use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, View};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::{CodecError, ContainerEntry};
-use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::ContainerSummary;
 
 use crate::layout::block_frame_header as block_hdr;
 use crate::layout::cache_cell_header as cache_hdr;

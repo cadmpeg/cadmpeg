@@ -116,7 +116,8 @@ fn nx_block_dimensions_do_not_cross_expression_sections() {
         operation_label: operation.into(),
         control: 0,
         members: std::array::from_fn(|ordinal| super::FeatureConstructionMember {
-            reference: format!("reference#{ordinal}"), data_block: format!("block#{ordinal}"),
+            reference: format!("reference#{ordinal}"),
+            data_block: format!("block#{ordinal}"),
         }),
         terminal_reference: "terminal-reference".into(),
         terminal_data_block: "terminal-block".into(),
@@ -227,7 +228,9 @@ fn nx_boolean_projection_rejects_target_tool_alias_overlap() {
         operation_label: "operation#0".to_string(),
         kind: super::FeatureBooleanKind::Subtract,
         target: crate::test_support::native_references::boolean_reference(10, 0),
-        tools: vec![crate::test_support::native_references::boolean_reference(20, 1)],
+        tools: vec![crate::test_support::native_references::boolean_reference(
+            20, 1,
+        )],
         source_offset: 0,
     };
     let roots = BTreeMap::from([(10, 10), (20, 10)]);
@@ -266,8 +269,8 @@ fn nx_boolean_projection_rejects_target_tool_alias_overlap() {
 #[test]
 fn nx_simple_hole_template_requires_exact_ordered_tokens() {
     use super::{
-        FeatureOperationLabel, FeaturePayloadString,
-        SimpleHoleEndTreatment, SimpleHoleExtent, SimpleHoleFamily, SimpleHoleForm,
+        FeatureOperationLabel, FeaturePayloadString, SimpleHoleEndTreatment, SimpleHoleExtent,
+        SimpleHoleFamily, SimpleHoleForm,
     };
 
     let label = FeatureOperationLabel {
@@ -286,13 +289,17 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
         sha256: "a".repeat(64),
         payload_sha256: "b".repeat(64),
         stable_identity: None,
-        span: crate::native::features::operation_record::OperationRecordSpan::new(90, 120, 40).unwrap(),
+        span: crate::native::features::operation_record::OperationRecordSpan::new(90, 120, 40)
+            .unwrap(),
     };
     let string = FeaturePayloadString {
         id: "payload-string#3-0".to_string(),
         operation_record: record.id.clone(),
         ordinal: 0,
-        value: crate::payload_text::PayloadText::new("Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer".to_string()).unwrap(),
+        value: crate::payload_text::PayloadText::new(
+            "Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer".to_string(),
+        )
+        .unwrap(),
         source_offset: 130,
     };
     let templates = super::feature_simple_hole_templates(
@@ -364,7 +371,10 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
         id: "payload-string#4-0".to_string(),
         operation_record: counterbored_record.id.clone(),
         ordinal: 0,
-        value: crate::payload_text::PayloadText::new("Hole_GeneralHole_Counterbored_Through".to_string()).unwrap(),
+        value: crate::payload_text::PayloadText::new(
+            "Hole_GeneralHole_Counterbored_Through".to_string(),
+        )
+        .unwrap(),
         source_offset: 130,
     };
     let counterbored_templates = super::feature_simple_hole_templates(
@@ -388,7 +398,10 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
         id: "payload-string#5-0".to_string(),
         operation_record: countersunk_record.id.clone(),
         ordinal: 0,
-        value: crate::payload_text::PayloadText::new("Hole_GeneralHole_Countersunk_Blind".to_string()).unwrap(),
+        value: crate::payload_text::PayloadText::new(
+            "Hole_GeneralHole_Countersunk_Blind".to_string(),
+        )
+        .unwrap(),
         source_offset: 130,
     };
     let countersunk_templates = super::feature_simple_hole_templates(
@@ -428,15 +441,17 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
     .is_empty());
 
     let mut malformed = string;
-    malformed.value = crate::payload_text::PayloadText::new("Hole_GeneralHole_Simple_Through_EndChamfer_StartChamfer".to_string()).unwrap();
+    malformed.value = crate::payload_text::PayloadText::new(
+        "Hole_GeneralHole_Simple_Through_EndChamfer_StartChamfer".to_string(),
+    )
+    .unwrap();
     assert!(super::feature_simple_hole_templates(&[label], &[record], &[malformed]).is_empty());
 }
 
 #[test]
 fn nx_threaded_hole_template_requires_simple_hole_and_exact_tokens() {
     use super::{
-        FeatureOperationLabel, FeaturePayloadString, SimpleHoleExtent,
-        ThreadedHoleFamily,
+        FeatureOperationLabel, FeaturePayloadString, SimpleHoleExtent, ThreadedHoleFamily,
     };
 
     let label = FeatureOperationLabel {
@@ -455,13 +470,17 @@ fn nx_threaded_hole_template_requires_simple_hole_and_exact_tokens() {
         sha256: "a".repeat(64),
         payload_sha256: "b".repeat(64),
         stable_identity: None,
-        span: crate::native::features::operation_record::OperationRecordSpan::new(90, 120, 40).unwrap(),
+        span: crate::native::features::operation_record::OperationRecordSpan::new(90, 120, 40)
+            .unwrap(),
     };
     let string = FeaturePayloadString {
         id: "payload-string#threaded-0".to_string(),
         operation_record: record.id.clone(),
         ordinal: 0,
-        value: crate::payload_text::PayloadText::new("Hole_ThreadedHole_M Profile_Blind".to_string()).unwrap(),
+        value: crate::payload_text::PayloadText::new(
+            "Hole_ThreadedHole_M Profile_Blind".to_string(),
+        )
+        .unwrap(),
         source_offset: 130,
     };
     let templates = super::feature_threaded_hole_templates(
@@ -504,22 +523,27 @@ fn nx_threaded_hole_template_requires_simple_hole_and_exact_tokens() {
     .is_empty());
 
     let mut unknown = string;
-    unknown.value = crate::payload_text::PayloadText::new("Hole_ThreadedHole_M Profile_Blind_Extra".to_string()).unwrap();
+    unknown.value = crate::payload_text::PayloadText::new(
+        "Hole_ThreadedHole_M Profile_Blind_Extra".to_string(),
+    )
+    .unwrap();
     assert!(super::feature_threaded_hole_templates(&[label], &[record], &[unknown]).is_empty());
 }
 
 #[test]
 fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
-    use super::{
-        FeatureInputBlock, FeatureOperationLabel, FeatureSketchReference,
-    };
+    use super::{FeatureInputBlock, FeatureOperationLabel, FeatureSketchReference};
 
     let label = FeatureOperationLabel {
         id: "nx:feature-history:operation-label#0-7".to_string(),
         section_link: "nx:feature-history#0".to_string(),
         ordinal: 7,
         value: "SKETCH".to_string(),
-        objects: crate::om::header_references::HeaderReferences::from_wire([Some(45), None, Some(81), None], [&[45], &[0xff], &[81], &[0xff]]).unwrap(),
+        objects: crate::om::header_references::HeaderReferences::from_wire(
+            [Some(45), None, Some(81), None],
+            [&[45], &[0xff], &[81], &[0xff]],
+        )
+        .unwrap(),
         stable_identity: None,
         source_offset: 700,
     };
@@ -530,13 +554,15 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
         sha256: "00".repeat(32),
         payload_sha256: "11".repeat(32),
         stable_identity: None,
-        span: crate::native::features::operation_record::OperationRecordSpan::new(700, 733, 140).unwrap(),
+        span: crate::native::features::operation_record::OperationRecordSpan::new(700, 733, 140)
+            .unwrap(),
     };
     let input = |slot, index| FeatureInputBlock {
         id: format!("nx:feature-history:input-block#0-7-{slot}"),
         operation_label: label.id.clone(),
         input_slot: crate::om::header_references::HeaderSlot::try_from(slot).unwrap(),
-        object: crate::om::reference_index::FeatureReferenceToken::from_wire(index, &[index as u8]).unwrap(),
+        object: crate::om::reference_index::FeatureReferenceToken::from_wire(index, &[index as u8])
+            .unwrap(),
         data_block: format!("nx:om-data-blocks-2:block#{index}"),
         source_offset: 710 + u64::from(slot),
     };
@@ -545,7 +571,11 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
         id: format!("nx:feature-history:sketch-reference#0-7-{ordinal}"),
         operation_label: label.id.clone(),
         position: crate::om::sketch_references::SketchReferencePosition::new(2, ordinal).unwrap(),
-        token: crate::om::reference_index::ReferenceIndexToken::from_wire(index, &[0xf0, index as u8]).unwrap(),
+        token: crate::om::reference_index::ReferenceIndexToken::from_wire(
+            index,
+            &[0xf0, index as u8],
+        )
+        .unwrap(),
         data_block: Some(format!("nx:om-data-blocks-2:block#{index}")),
         source_offset: 740 + u64::from(ordinal),
     };
@@ -589,11 +619,19 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
     let construction = super::feature_sketch_construction_inputs(&sketches, &references);
     assert_eq!(construction.len(), 1);
     assert_eq!(
-        construction[0].members.iter().map(|member| member.reference.as_str()).collect::<Vec<_>>(),
+        construction[0]
+            .members
+            .iter()
+            .map(|member| member.reference.as_str())
+            .collect::<Vec<_>>(),
         ["nx:feature-history:sketch-reference#0-7-0"]
     );
     assert_eq!(
-        construction[0].members.iter().map(|member| member.data_block.as_str()).collect::<Vec<_>>(),
+        construction[0]
+            .members
+            .iter()
+            .map(|member| member.data_block.as_str())
+            .collect::<Vec<_>>(),
         ["nx:om-data-blocks-2:block#96"]
     );
     assert_eq!(
@@ -606,7 +644,8 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
     );
 
     let mut malformed = references;
-    malformed[0].position = crate::om::sketch_references::SketchReferencePosition::new(3, 2).unwrap();
+    malformed[0].position =
+        crate::om::sketch_references::SketchReferencePosition::new(3, 2).unwrap();
     assert!(super::feature_sketch_construction_inputs(&sketches, &malformed).is_empty());
 }
 
@@ -699,7 +738,10 @@ fn decode_orders_and_deduplicates_linked_feature_history_sections() {
     );
     assert_ne!(labels[0].section_link, labels[1].section_link);
     assert_eq!(
-        labels[0].objects.0.map(|token| token.map_or_else(|| vec![0xff], |token| token.raw().to_vec())),
+        labels[0]
+            .objects
+            .0
+            .map(|token| token.map_or_else(|| vec![0xff], |token| token.raw().to_vec())),
         [
             vec![0x01],
             vec![0x82, 0x40],
@@ -707,7 +749,16 @@ fn decode_orders_and_deduplicates_linked_feature_history_sections() {
             vec![0xff]
         ]
     );
-    assert_eq!(labels[1].objects.0.map(|token| token.map_or_else(|| vec![0xff], |token| token.raw().to_vec())), labels[0].objects.0.map(|token| token.map_or_else(|| vec![0xff], |token| token.raw().to_vec())));
+    assert_eq!(
+        labels[1]
+            .objects
+            .0
+            .map(|token| token.map_or_else(|| vec![0xff], |token| token.raw().to_vec())),
+        labels[0]
+            .objects
+            .0
+            .map(|token| token.map_or_else(|| vec![0xff], |token| token.raw().to_vec()))
+    );
     let records = namespace
         .arena_as::<FeatureOperationRecord>("feature_operation_records")
         .expect("required invariant");
@@ -936,9 +987,12 @@ fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
         id: "point".to_string(),
         name: "Point1".to_string(),
         data_blocks: vec!["point-first".to_string(), "shared".to_string()],
-        values: [(1.0, 200), (2.0, 220)].map(|(value, source_offset)| crate::native::features::FeatureBinary64ScalarToken {
-            scalar: crate::om::scalar::ShiftedBinary64::try_from(shifted_f64_bytes(value)).unwrap(),
-            source_offset,
+        values: [(1.0, 200), (2.0, 220)].map(|(value, source_offset)| {
+            crate::native::features::FeatureBinary64ScalarToken {
+                scalar: crate::om::scalar::ShiftedBinary64::try_from(shifted_f64_bytes(value))
+                    .unwrap(),
+                source_offset,
+            }
         }),
         source_offset: 190,
     };
@@ -959,10 +1013,12 @@ fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
         id: "construction".to_string(),
         operation_label: "csys".to_string(),
         control: 19,
-        references: blocks.map(|data_block| crate::native::features::reference::ConstructionReference {
-            token: crate::om::reference_index::ReferenceIndexToken::from_wire(0, &[0]).unwrap(),
-            data_block,
-            source_offset: 400,
+        references: blocks.map(|data_block| {
+            crate::native::features::reference::ConstructionReference {
+                token: crate::om::reference_index::ReferenceIndexToken::from_wire(0, &[0]).unwrap(),
+                data_block,
+                source_offset: 400,
+            }
         }),
     };
     let scalar = FeaturePayloadScalar {
@@ -1023,9 +1079,12 @@ fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
             "nx:om:offset-store#7:block#10".to_string(),
             "nx:om:offset-store#7:block#11".to_string(),
         ],
-        values: [(3.0, 500), (4.0, 520)].map(|(value, source_offset)| crate::native::features::FeatureBinary64ScalarToken {
-            scalar: crate::om::scalar::ShiftedBinary64::try_from(shifted_f64_bytes(value)).unwrap(),
-            source_offset,
+        values: [(3.0, 500), (4.0, 520)].map(|(value, source_offset)| {
+            crate::native::features::FeatureBinary64ScalarToken {
+                scalar: crate::om::scalar::ShiftedBinary64::try_from(shifted_f64_bytes(value))
+                    .unwrap(),
+                source_offset,
+            }
         }),
         source_offset: 490,
     };
@@ -1096,7 +1155,10 @@ fn nx_datum_plane_csys_identity_uses_join_only_equal_typed_identities() {
         datum_plane_header: "plane-header".into(),
         ordinal: 0,
         data_block: "plane-block".into(),
-        descriptor: crate::om::plane_descriptor::PlaneDescriptor::read(b"012345678901234567890123456789?A\x01\xff\x02\x01abcd").unwrap(),
+        descriptor: crate::om::plane_descriptor::PlaneDescriptor::read(
+            b"012345678901234567890123456789?A\x01\xff\x02\x01abcd",
+        )
+        .unwrap(),
         source_offset: 10,
     };
     let csys = super::FeatureDatumCsysDescriptor {
@@ -1107,9 +1169,14 @@ fn nx_datum_plane_csys_identity_uses_join_only_equal_typed_identities() {
         data_block: "csys-block".into(),
         descriptor: crate::om::csys_descriptor::LocatedCsysDescriptor::new(
             crate::om::csys_descriptor::CsysDescriptor::from_wire(
-                vec![2, 1], plane.descriptor.identity().to_owned().try_into().unwrap(), vec![b'?', b'A'],
-            ).unwrap(), 20,
-        ).unwrap(),
+                vec![2, 1],
+                plane.descriptor.identity().to_owned().try_into().unwrap(),
+                vec![b'?', b'A'],
+            )
+            .unwrap(),
+            20,
+        )
+        .unwrap(),
     };
     let uses = super::feature_datum_plane_csys_identity_uses(&[plane], &[csys]);
     assert_eq!(uses.len(), 1);
@@ -1125,10 +1192,16 @@ fn nx_datum_csys_block_uses_preserve_reference_and_input_order() {
         id: "construction".to_string(),
         operation_label: "operation#0".to_string(),
         control: 0x13,
-        references: std::array::from_fn(|index| crate::native::features::reference::ConstructionReference {
-            token: crate::om::reference_index::ReferenceIndexToken::from_wire(index as u32 + 40, &[index as u8 + 40]).unwrap(),
-            data_block: format!("block#{}", index + 40),
-            source_offset: index as u64 + 100,
+        references: std::array::from_fn(|index| {
+            crate::native::features::reference::ConstructionReference {
+                token: crate::om::reference_index::ReferenceIndexToken::from_wire(
+                    index as u32 + 40,
+                    &[index as u8 + 40],
+                )
+                .unwrap(),
+                data_block: format!("block#{}", index + 40),
+                source_offset: index as u64 + 100,
+            }
         }),
     };
     let input = |id: &str, operation: &str, slot: u8, block: &str| super::FeatureInputBlock {
@@ -1170,7 +1243,11 @@ fn nx_extrude_construction_profile_requires_matching_resolved_encodings() {
         ordinal: ordinal - 10,
         field_tag: 0x16,
         witness_source_offset: Some(u64::from(ordinal + 20)),
-        token: crate::om::reference_index::ReferenceIndexToken::from_wire(ordinal + 90, &[(ordinal + 90) as u8]).unwrap(),
+        token: crate::om::reference_index::ReferenceIndexToken::from_wire(
+            ordinal + 90,
+            &[(ordinal + 90) as u8],
+        )
+        .unwrap(),
         data_block: Some(format!("block-{ordinal}")),
         source_offset: u64::from(ordinal),
     });
@@ -1226,7 +1303,11 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
         body_object_index: 10,
         ordinal,
         member: crate::om::compact::LocatedCompactIndex {
-            atom: crate::om::compact::CompactIndexAtom::from_wire(member_index, &[member_index as u8]).unwrap(),
+            atom: crate::om::compact::CompactIndexAtom::from_wire(
+                member_index,
+                &[member_index as u8],
+            )
+            .unwrap(),
             offset: u64::from(ordinal),
         },
     };
@@ -1443,14 +1524,23 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
 #[test]
 fn nx_block_construction_requires_complete_resolved_reference_field() {
     let references = (0..19)
-        .map(|ordinal| crate::native::features::block_reference::FeatureBlockConstructionReference {
-            id: format!("reference#{ordinal}"),
-            operation_label: "operation".to_string(),
-            control: 0x26,
-            position: crate::native::features::block_reference::BlockReferencePosition::new(ordinal).unwrap(),
-            token: crate::om::reference_index::ReferenceIndexToken::from_wire(ordinal + 100, &[(ordinal + 100) as u8]).unwrap(),
-            data_block: Some(format!("block#{ordinal}")),
-            source_offset: u64::from(ordinal),
+        .map(|ordinal| {
+            crate::native::features::block_reference::FeatureBlockConstructionReference {
+                id: format!("reference#{ordinal}"),
+                operation_label: "operation".to_string(),
+                control: 0x26,
+                position: crate::native::features::block_reference::BlockReferencePosition::new(
+                    ordinal,
+                )
+                .unwrap(),
+                token: crate::om::reference_index::ReferenceIndexToken::from_wire(
+                    ordinal + 100,
+                    &[(ordinal + 100) as u8],
+                )
+                .unwrap(),
+                data_block: Some(format!("block#{ordinal}")),
+                source_offset: u64::from(ordinal),
+            }
         })
         .collect::<Vec<_>>();
     let constructions = super::feature_block_constructions(&references);
@@ -1461,7 +1551,8 @@ fn nx_block_construction_requires_complete_resolved_reference_field() {
     assert_eq!(constructions[0].terminal_data_block, "block#18");
 
     let mut duplicate = references.clone();
-    duplicate[7].position = crate::native::features::block_reference::BlockReferencePosition::new(8).unwrap();
+    duplicate[7].position =
+        crate::native::features::block_reference::BlockReferencePosition::new(8).unwrap();
     assert!(super::feature_block_constructions(&duplicate).is_empty());
 
     let mut unresolved = references;
@@ -1550,16 +1641,25 @@ fn feature_input_column_row_uses_preserve_index_row_slots() {
         id: "row#3".into(),
         section_ordinal: 0,
         ordinal: 3,
-        first_index: crate::om::compact::LocatedCompactIndex { atom: crate::om::compact::CompactIndexAtom::from_wire(20, &[20]).unwrap(), offset: 103 },
+        first_index: crate::om::compact::LocatedCompactIndex {
+            atom: crate::om::compact::CompactIndexAtom::from_wire(20, &[20]).unwrap(),
+            offset: 103,
+        },
         flag: crate::om::discriminators::LinkedIndexFlag::Form03,
         indices: [
             (4, [4], "block#4", 108),
             (4, [4], "block#4", 109),
             (5, [5], "block#5", 110),
             (6, [6], "block#6", 111),
-        ].map(|(index, raw, data_block, source_offset)| crate::native::om::DataBlockIndexToken {
-            target: crate::native::om::DataBlockIndexTarget { atom: crate::om::compact::CompactIndexAtom::from_wire(index, &raw).unwrap(), data_block: data_block.into() },
-            source_offset,
+        ]
+        .map(|(index, raw, data_block, source_offset)| {
+            crate::native::om::DataBlockIndexToken {
+                target: crate::native::om::DataBlockIndexTarget {
+                    atom: crate::om::compact::CompactIndexAtom::from_wire(index, &raw).unwrap(),
+                    data_block: data_block.into(),
+                },
+                source_offset,
+            }
         }),
         source_entry: "entry".into(),
         opening_data_block: "opening-block".into(),
@@ -1600,19 +1700,31 @@ fn feature_input_column_row_uses_preserve_linked_row_slots() {
         id: "linked-row#3".into(),
         section_ordinal: 0,
         ordinal: 3,
-        first_index: crate::om::compact::LocatedCompactIndex { atom: crate::om::compact::CompactIndexAtom::from_wire(20, &[20]).unwrap(), offset: 102 },
+        first_index: crate::om::compact::LocatedCompactIndex {
+            atom: crate::om::compact::CompactIndexAtom::from_wire(20, &[20]).unwrap(),
+            offset: 102,
+        },
         discriminator: crate::om::discriminators::LinkedIndexDiscriminator::Form16,
         target: crate::native::om::DataBlockIndexToken {
-            target: crate::native::om::DataBlockIndexTarget { atom: crate::om::compact::CompactIndexAtom::from_wire(4, &[4]).unwrap(), data_block: "block#4".into() },
+            target: crate::native::om::DataBlockIndexTarget {
+                atom: crate::om::compact::CompactIndexAtom::from_wire(4, &[4]).unwrap(),
+                data_block: "block#4".into(),
+            },
             source_offset: 107,
         },
         indices: [
             (5, [5], "block#5", 112),
             (6, [6], "block#6", 113),
             (4, [4], "block#4", 114),
-        ].map(|(index, raw, data_block, source_offset)| crate::native::om::DataBlockIndexToken {
-            target: crate::native::om::DataBlockIndexTarget { atom: crate::om::compact::CompactIndexAtom::from_wire(index, &raw).unwrap(), data_block: data_block.into() },
-            source_offset,
+        ]
+        .map(|(index, raw, data_block, source_offset)| {
+            crate::native::om::DataBlockIndexToken {
+                target: crate::native::om::DataBlockIndexTarget {
+                    atom: crate::om::compact::CompactIndexAtom::from_wire(index, &raw).unwrap(),
+                    data_block: data_block.into(),
+                },
+                source_offset,
+            }
         }),
         flag: crate::om::discriminators::LinkedIndexFlag::Form03,
         mode: crate::om::discriminators::IndexRowMode::Form04,
@@ -1688,16 +1800,25 @@ fn feature_input_column_row_uses_preserve_target_row_slots() {
         section_ordinal: 0,
         ordinal: 3,
         target: crate::native::om::DataBlockIndexToken {
-            target: crate::native::om::DataBlockIndexTarget { atom: crate::om::compact::CompactIndexAtom::from_wire(4, &[4]).unwrap(), data_block: "block#4".into() },
+            target: crate::native::om::DataBlockIndexTarget {
+                atom: crate::om::compact::CompactIndexAtom::from_wire(4, &[4]).unwrap(),
+                data_block: "block#4".into(),
+            },
             source_offset: 105,
         },
         indices: [
             (5, [5], "block#5", 110),
             (6, [6], "block#6", 111),
             (4, [4], "block#4", 112),
-        ].map(|(index, raw, data_block, source_offset)| crate::native::om::DataBlockIndexToken {
-            target: crate::native::om::DataBlockIndexTarget { atom: crate::om::compact::CompactIndexAtom::from_wire(index, &raw).unwrap(), data_block: data_block.into() },
-            source_offset,
+        ]
+        .map(|(index, raw, data_block, source_offset)| {
+            crate::native::om::DataBlockIndexToken {
+                target: crate::native::om::DataBlockIndexTarget {
+                    atom: crate::om::compact::CompactIndexAtom::from_wire(index, &raw).unwrap(),
+                    data_block: data_block.into(),
+                },
+                source_offset,
+            }
         }),
         mode: crate::om::discriminators::IndexRowMode::Form07,
         source_entry: "entry".into(),
@@ -1779,10 +1900,16 @@ fn datum_csys_column_row_uses_preserve_both_lane_offsets() {
         id: "construction#1".into(),
         operation_label: "operation#1".into(),
         control: 0x16,
-        references: std::array::from_fn(|slot| crate::native::features::reference::ConstructionReference {
-            token: crate::om::reference_index::ReferenceIndexToken::from_wire(slot as u32, &[slot as u8]).unwrap(),
-            data_block: format!("block#{slot}"),
-            source_offset: 200 + slot as u64,
+        references: std::array::from_fn(|slot| {
+            crate::native::features::reference::ConstructionReference {
+                token: crate::om::reference_index::ReferenceIndexToken::from_wire(
+                    slot as u32,
+                    &[slot as u8],
+                )
+                .unwrap(),
+                data_block: format!("block#{slot}"),
+                source_offset: 200 + slot as u64,
+            }
         }),
     };
     let row = DataBlockTargetIndexRow {
@@ -1790,16 +1917,25 @@ fn datum_csys_column_row_uses_preserve_both_lane_offsets() {
         section_ordinal: 0,
         ordinal: 3,
         target: crate::native::om::DataBlockIndexToken {
-            target: crate::native::om::DataBlockIndexTarget { atom: crate::om::compact::CompactIndexAtom::from_wire(5, &[5]).unwrap(), data_block: "block#5".into() },
+            target: crate::native::om::DataBlockIndexTarget {
+                atom: crate::om::compact::CompactIndexAtom::from_wire(5, &[5]).unwrap(),
+                data_block: "block#5".into(),
+            },
             source_offset: 105,
         },
         indices: [
             (6, [6], "block#6", 110),
             (7, [7], "block#7", 111),
             (5, [5], "block#5", 112),
-        ].map(|(index, raw, data_block, source_offset)| crate::native::om::DataBlockIndexToken {
-            target: crate::native::om::DataBlockIndexTarget { atom: crate::om::compact::CompactIndexAtom::from_wire(index, &raw).unwrap(), data_block: data_block.into() },
-            source_offset,
+        ]
+        .map(|(index, raw, data_block, source_offset)| {
+            crate::native::om::DataBlockIndexToken {
+                target: crate::native::om::DataBlockIndexTarget {
+                    atom: crate::om::compact::CompactIndexAtom::from_wire(index, &raw).unwrap(),
+                    data_block: data_block.into(),
+                },
+                source_offset,
+            }
         }),
         mode: crate::om::discriminators::IndexRowMode::Form07,
         source_entry: "entry".into(),

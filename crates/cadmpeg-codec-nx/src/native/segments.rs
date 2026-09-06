@@ -660,8 +660,8 @@ mod tests {
 
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-    use crate::NxCodec;
     use crate::test_support::*;
+    use crate::NxCodec;
 
     use super::*;
 
@@ -933,7 +933,11 @@ mod tests {
             ordinal: None,
             id: format!("reference#{body_object_index}"),
             operation_label: operation.to_string(),
-            body: crate::om::reference_index::FeatureReferenceToken::from_wire(body_object_index, &[body_object_index as u8]).unwrap(),
+            body: crate::om::reference_index::FeatureReferenceToken::from_wire(
+                body_object_index,
+                &[body_object_index as u8],
+            )
+            .unwrap(),
             source_offset: 0,
         };
         let references = [reference("operation#0", 10), reference("operation#1", 20)];
@@ -942,7 +946,9 @@ mod tests {
             operation_label: "operation#2".to_string(),
             kind: FeatureBooleanKind::Unite,
             target: crate::test_support::native_references::boolean_reference(10, 0),
-            tools: vec![crate::test_support::native_references::boolean_reference(20, 0)],
+            tools: vec![crate::test_support::native_references::boolean_reference(
+                20, 0,
+            )],
             source_offset: 0,
         }];
 
@@ -982,7 +988,10 @@ mod tests {
             id: format!("boolean#{ordinal}"),
             operation_label: format!("operation#{ordinal}"),
             kind: FeatureBooleanKind::Unite,
-            target: crate::test_support::native_references::boolean_reference(target, ordinal as u64),
+            target: crate::test_support::native_references::boolean_reference(
+                target,
+                ordinal as u64,
+            ),
             tools: tools
                 .into_iter()
                 .map(|value| crate::test_support::native_references::boolean_reference(value, 0))
@@ -1057,7 +1066,10 @@ mod tests {
             id: format!("boolean#{ordinal}"),
             operation_label: format!("operation#{ordinal}"),
             kind: FeatureBooleanKind::Unite,
-            target: crate::test_support::native_references::boolean_reference(target, ordinal as u64),
+            target: crate::test_support::native_references::boolean_reference(
+                target,
+                ordinal as u64,
+            ),
             tools: tools
                 .into_iter()
                 .map(|value| crate::test_support::native_references::boolean_reference(value, 0))
@@ -1169,14 +1181,16 @@ mod tests {
                 ordinal: None,
                 id: "reference#10".to_string(),
                 operation_label: labels[0].id.clone(),
-                body: crate::om::reference_index::FeatureReferenceToken::from_wire(10, &[10]).unwrap(),
+                body: crate::om::reference_index::FeatureReferenceToken::from_wire(10, &[10])
+                    .unwrap(),
                 source_offset: 0,
             },
             FeatureBodyReference {
                 ordinal: None,
                 id: "reference#20".to_string(),
                 operation_label: labels[0].id.clone(),
-                body: crate::om::reference_index::FeatureReferenceToken::from_wire(20, &[20]).unwrap(),
+                body: crate::om::reference_index::FeatureReferenceToken::from_wire(20, &[20])
+                    .unwrap(),
                 source_offset: 1,
             },
         ];
@@ -1414,7 +1428,9 @@ mod tests {
             operation_label,
             kind: FeatureBooleanKind::Unite,
             target: crate::test_support::native_references::boolean_reference(11, 0),
-            tools: vec![crate::test_support::native_references::boolean_reference(21, 0)],
+            tools: vec![crate::test_support::native_references::boolean_reference(
+                21, 0,
+            )],
             source_offset: 0,
         }];
         let block = |ordinal| DataBlock {
@@ -1480,7 +1496,9 @@ mod tests {
             operation_label,
             kind: FeatureBooleanKind::Unite,
             target: crate::test_support::native_references::boolean_reference(11, 0),
-            tools: vec![crate::test_support::native_references::boolean_reference(21, 0)],
+            tools: vec![crate::test_support::native_references::boolean_reference(
+                21, 0,
+            )],
             source_offset: 0,
         }];
         let blocks = [DataBlock {
@@ -1656,7 +1674,9 @@ mod tests {
             operation_label: "operation#late".to_string(),
             kind: FeatureBooleanKind::Unite,
             target: crate::test_support::native_references::boolean_reference(10, 1),
-            tools: vec![crate::test_support::native_references::boolean_reference(20, 1)],
+            tools: vec![crate::test_support::native_references::boolean_reference(
+                20, 1,
+            )],
             source_offset: 1,
         }];
 
@@ -1697,7 +1717,8 @@ mod tests {
             ordinal: None,
             id: "reference#150".to_string(),
             operation_label: "operation#0".to_string(),
-            body: crate::om::reference_index::FeatureReferenceToken::from_wire(150, &[0x80, 150]).unwrap(),
+            body: crate::om::reference_index::FeatureReferenceToken::from_wire(150, &[0x80, 150])
+                .unwrap(),
             source_offset: 0,
         }];
         let booleans = [FeatureBooleanOperation {
@@ -1705,7 +1726,9 @@ mod tests {
             operation_label: "operation#1".to_string(),
             kind: FeatureBooleanKind::Unite,
             target: crate::test_support::native_references::boolean_reference(10, 0),
-            tools: vec![crate::test_support::native_references::boolean_reference(94, 0)],
+            tools: vec![crate::test_support::native_references::boolean_reference(
+                94, 0,
+            )],
             source_offset: 0,
         }];
         let bindings = [SegmentBodyBinding {

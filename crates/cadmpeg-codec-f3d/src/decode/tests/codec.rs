@@ -345,7 +345,10 @@ fn decode_retains_generated_asm_history_graph() {
     assert_eq!(history.states[0].records.len(), 1);
     assert_eq!(history.states[0].records[0].name(), "history_payload");
     assert_eq!(history.states[0].records[0].revision_id, Some(1830));
-    let crate::history_records::AsmHistoryRecordFraming::Framed { entity_references, .. } = &history.states[0].records[0].framing else {
+    let crate::history_records::AsmHistoryRecordFraming::Framed {
+        entity_references, ..
+    } = &history.states[0].records[0].framing
+    else {
         panic!("framed history record");
     };
     assert_eq!(entity_references, &[1830, -1]);

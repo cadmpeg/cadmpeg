@@ -5,15 +5,15 @@ use std::io::{Seek, SeekFrom, Write};
 
 pub(crate) mod target;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_core::decode::alloc_filled;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry, knots_nondecreasing};
+use cadmpeg_ir::geometry::{knots_nondecreasing, CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::topology::LoopBoundaryRole;
 use sha2::{Digest, Sha256};
 
-use crate::RhinoArchiveVersion;
 use crate::chunks::{MAGIC, TCODE_ENDOFFILE, TCODE_SHORT};
+use crate::RhinoArchiveVersion;
 
 const EPS_WRITE_DEGENERATE: f64 = 1.0e-10;
 

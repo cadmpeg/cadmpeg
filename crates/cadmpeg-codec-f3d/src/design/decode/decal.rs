@@ -12,7 +12,8 @@ use crate::layout::design_decal_image_asset_record as decal_asset;
 use crate::layout::design_decal_image_name_prefix as decal_name;
 use crate::layout::design_decal_scope_prefix as decal_scope;
 use crate::records::{
-    DesignBodyRecipeOperand, DesignConstructionOperandGroup, DesignDecalAsset, DesignDecalImage, DesignParameterScope,
+    DesignBodyRecipeOperand, DesignConstructionOperandGroup, DesignDecalAsset, DesignDecalImage,
+    DesignParameterScope,
 };
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
@@ -180,9 +181,15 @@ fn parse_decal_image_frame(
     }
     DesignDecalImage::new(
         ids::native_design_decal_image_id(stream, scope_at),
-        crate::records::Located { value: scope_record_index, offset: u64::try_from(scope_at).ok()? },
-        crate::records::DesignDecalMappingMode::from_code(mapping_mode), target_group_record_index, asset_record?,
-    ).ok()
+        crate::records::Located {
+            value: scope_record_index,
+            offset: u64::try_from(scope_at).ok()?,
+        },
+        crate::records::DesignDecalMappingMode::from_code(mapping_mode),
+        target_group_record_index,
+        asset_record?,
+    )
+    .ok()
 }
 
 fn parse_decal_asset_record(
@@ -212,9 +219,9 @@ fn parse_decal_asset_record(
     let (name_class_tag, after_name_tag) =
         lp_ascii_filtered(bytes, name_at, 0..=2000, u8::is_ascii_graphic)?;
     let name_record_index = View::u32_le_at(bytes, after_name_tag)?;
-    if bytes.get(
-            name_at + decal_name::ZERO_RUN_10..name_at + decal_name::ASSET_NAME_CODE_UNIT_COUNT,
-        )? != [0; 10]
+    if bytes
+        .get(name_at + decal_name::ZERO_RUN_10..name_at + decal_name::ASSET_NAME_CODE_UNIT_COUNT)?
+        != [0; 10]
     {
         return None;
     }
@@ -228,8 +235,14 @@ fn parse_decal_asset_record(
         return None;
     }
 
-    DesignDecalAsset::new([asset_class_tag, name_class_tag], [asset_record_index, name_record_index],
-        u64::try_from(asset_at).ok()?, asset_entity_suffix, asset_name).ok()
+    DesignDecalAsset::new(
+        [asset_class_tag, name_class_tag],
+        [asset_record_index, name_record_index],
+        u64::try_from(asset_at).ok()?,
+        asset_entity_suffix,
+        asset_name,
+    )
+    .ok()
 }
 
 fn marked_reference(bytes: &[u8], at: usize) -> Option<u32> {

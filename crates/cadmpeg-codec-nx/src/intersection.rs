@@ -17,7 +17,7 @@ pub(crate) mod chart_samples;
 pub(crate) mod support_uv_values;
 use support_uv_values::{SupportUvPacking, SupportUvValues};
 
-use chart_samples::{ChartSamples, ChartPreamble, SourceChartData, MISSING_PARAMETER};
+use chart_samples::{ChartPreamble, ChartSamples, SourceChartData, MISSING_PARAMETER};
 
 use crate::framing::read_xmt_width as read_xmt;
 use crate::layout::chart_s_preamble as chart_preamble;
@@ -409,8 +409,7 @@ fn scan_with_auxiliaries(
             }
             Err(rejection)
                 if referenced_curves.contains(&construction.xmt)
-                    && construction_supports(construction, uv, bridges, graph)
-                        .is_some()
+                    && construction_supports(construction, uv, bridges, graph).is_some()
                     && construction_has_endpoint_witnesses(construction, terms, graph) =>
             {
                 result.constructions.push(construction);
@@ -499,8 +498,8 @@ fn enrich(
             });
         }
     }
-    let supports = construction_supports(construction, uv, bridges, graph)
-        .ok_or(Rejection::MissingSupport)?;
+    let supports =
+        construction_supports(construction, uv, bridges, graph).ok_or(Rejection::MissingSupport)?;
     let support_uv = uv
         .get(&construction.references[5])
         .map(SupportUvValues::support_uv)
@@ -529,9 +528,16 @@ fn construction_supports(
         // A present marker-3 values array explicitly reverses the serialized
         // support order. Without that array, retain the type-38 references'
         // order; no alternate order was serialized.
-        match uv.get(&construction.references[5]).map(SupportUvValues::packing) {
-            Some(SupportUvPacking::Form3) => (construction.references[1], construction.references[0]),
-            Some(SupportUvPacking::Form2 | SupportUvPacking::Form4) | None => (construction.references[0], construction.references[1]),
+        match uv
+            .get(&construction.references[5])
+            .map(SupportUvValues::packing)
+        {
+            Some(SupportUvPacking::Form3) => {
+                (construction.references[1], construction.references[0])
+            }
+            Some(SupportUvPacking::Form2 | SupportUvPacking::Form4) | None => {
+                (construction.references[0], construction.references[1])
+            }
         }
     };
     is_surface(graph, primary).then_some(())?;
@@ -772,7 +778,9 @@ pub(crate) fn chart_source_record_at(
         if chart_count as usize != count || [e0, e1] != [MISSING_PARAMETER, MISSING_PARAMETER] {
             continue;
         }
-        let Ok(preamble_values) = ChartPreamble::new(base_parameter, base_scale, chordal_error, angular_error) else {
+        let Ok(preamble_values) =
+            ChartPreamble::new(base_parameter, base_scale, chordal_error, angular_error)
+        else {
             continue;
         };
         let block = preamble + chart_preamble::LEN;
@@ -836,7 +844,10 @@ fn chart_points(
             }
         }
     }
-    Some((SourceChartData::ext11(points, native_parameters, ext_support_uv).ok()?, end))
+    Some((
+        SourceChartData::ext11(points, native_parameters, ext_support_uv).ok()?,
+        end,
+    ))
 }
 
 fn chart_ext_point_at(stream: &[u8], at: usize) -> Option<(Point3, f64, [[f64; 2]; 2])> {
@@ -931,7 +942,10 @@ fn term_at(
 }
 
 fn uv_records(stream: &[u8]) -> BTreeMap<u32, SupportUvValues> {
-    support_uv_records(stream).into_iter().map(|record| (record.xmt, record.values)).collect()
+    support_uv_records(stream)
+        .into_iter()
+        .map(|record| (record.xmt, record.values))
+        .collect()
 }
 
 /// Decode complete direct, escaped, and descriptor-inline support-UV arrays.

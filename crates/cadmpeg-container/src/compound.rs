@@ -1874,13 +1874,11 @@ mod tests {
             let stream = snapshot.stream("Small").expect("empty stream exists");
             assert_eq!(stream.start_sector(), marker);
             assert_eq!(stream.logical_size(), 0);
-            assert!(
-                snapshot
-                    .open(&ctx, stream)
-                    .expect("empty stream opens")
-                    .window()
-                    .is_empty()
-            );
+            assert!(snapshot
+                .open(&ctx, stream)
+                .expect("empty stream opens")
+                .window()
+                .is_empty());
             let summary = snapshot.container_entries(|_| ContainerRole::Stream);
             let entry = summary
                 .iter()
@@ -1925,16 +1923,14 @@ mod tests {
         let (ctx, root) = DecodeContext::from_root_bytes(&too_large, &arena, &policy)
             .expect("synthetic CFB fits the decode policy");
         let snapshot = CompoundSnapshot::new(&ctx, root).expect("metadata still parses");
-        assert!(
-            snapshot
-                .open(
-                    &ctx,
-                    snapshot
-                        .stream("Store/Large")
-                        .expect("regular stream exists")
-                )
-                .is_err()
-        );
+        assert!(snapshot
+            .open(
+                &ctx,
+                snapshot
+                    .stream("Store/Large")
+                    .expect("regular stream exists")
+            )
+            .is_err());
     }
 
     #[test]

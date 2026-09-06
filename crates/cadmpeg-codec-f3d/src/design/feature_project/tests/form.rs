@@ -375,7 +375,8 @@ fn reads_class_328_form_envelope() {
         crate::records::DesignFeatureKind::Form,
         scope_record,
     );
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![group_record, metadata_record]);
+    scope.reference_members =
+        crate::records::ReferenceRun::Unlocated(vec![group_record, metadata_record]);
     assert!(super::form_class_328_envelope(&bytes, &records, &scope));
 
     let mut wrong_pair = bytes;
@@ -546,12 +547,16 @@ fn retains_parameter_when_owner_frame_has_no_scope_binding() {
         class_tag: "301".into(),
         record_index: 7,
         source_ordinal: 0,
-        source: crate::records::DesignParameterSource::new("AlongDistance".into(), Some(8), None).unwrap(),
+        source: crate::records::DesignParameterSource::new("AlongDistance".into(), Some(8), None)
+            .unwrap(),
         expression: "12.5 mm".into(),
         expression_offset: 0,
         source_kind_offset: 0,
 
-        unit: Some(crate::records::RecordedValue { value: "mm".into(), offset: Some(0) }),
+        unit: Some(crate::records::RecordedValue {
+            value: "mm".into(),
+            offset: Some(0),
+        }),
         name: "distance".into(),
         name_offset: 0,
         evaluated_value: 1.25,
@@ -559,7 +564,8 @@ fn retains_parameter_when_owner_frame_has_no_scope_binding() {
     };
     let scope = crate::records::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#9",
-        crate::records::DesignFeatureKind::try_from("Unsupported".to_owned()).expect("native family name"),
+        crate::records::DesignFeatureKind::try_from("Unsupported".to_owned())
+            .expect("native family name"),
         9,
     );
 

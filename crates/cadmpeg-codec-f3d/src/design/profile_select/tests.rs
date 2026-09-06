@@ -35,7 +35,16 @@ fn group() -> DesignConstructionOperandGroup {
         record_index: 9,
         byte_offset: 0,
         class_tag: "277".into(),
-        members: vec![crate::records::Located { value: 10, offset: 0 }, crate::records::Located { value: 11, offset: 0 }],
+        members: vec![
+            crate::records::Located {
+                value: 10,
+                offset: 0,
+            },
+            crate::records::Located {
+                value: 11,
+                offset: 0,
+            },
+        ],
         lost_edge_references: Vec::new(),
         frame: DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
@@ -80,7 +89,13 @@ fn operand(
         identity_record_offset: 0,
         primary_identity: 42,
         primary_identity_offset: 0,
-        secondary: Some(crate::records::DesignSecondaryIdentity { identity: crate::records::Located { value: secondary_identity, offset: 0 }, curve_identity: None }),
+        secondary: Some(crate::records::DesignSecondaryIdentity {
+            identity: crate::records::Located {
+                value: secondary_identity,
+                offset: 0,
+            },
+            curve_identity: None,
+        }),
         historical_edge_candidates: Vec::new(),
         historical_face_candidates: Vec::new(),
         resolved_edge_slot: None,
@@ -91,10 +106,15 @@ fn operand(
 
 fn placement() -> DesignSketchPlacement {
     DesignSketchPlacement {
-        frame: crate::records::DesignSketchFrame::new(0, crate::records::DesignSketchFrameForm::ScopeCompact).unwrap(),
+        frame: crate::records::DesignSketchFrame::new(
+            0,
+            crate::records::DesignSketchFrameForm::ScopeCompact,
+        )
+        .unwrap(),
         id: "stream:placement".into(),
         scope_record_index: Some(7),
-        entity_id: crate::records::DesignEntityId::try_from("Sketch_42".to_owned()).expect("valid entity ID"),
+        entity_id: crate::records::DesignEntityId::try_from("Sketch_42".to_owned())
+            .expect("valid entity ID"),
 
         visibility: None,
 
@@ -102,7 +122,6 @@ fn placement() -> DesignSketchPlacement {
         record_index: 20,
 
         paired_class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
-
     }
 }
 
@@ -207,7 +226,10 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
         byte_offset: 0,
         class_tag: "277".into(),
         member_count_offset: 0,
-        members: vec![crate::records::Located { value: 10, offset: 0 }],
+        members: vec![crate::records::Located {
+            value: 10,
+            offset: 0,
+        }],
         opaque_index: 1,
         opaque_index_offset: 0,
         opaque_scalar: 0.0,
@@ -269,7 +291,10 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
     );
 
     let mut conflicting_group = group.clone();
-    conflicting_group.members.push(crate::records::Located { value: 11, offset: 0 });
+    conflicting_group.members.push(crate::records::Located {
+        value: 11,
+        offset: 0,
+    });
     let mut conflicting_member = member.clone();
     conflicting_member.id = "f3d:Design/BulkStream.dat:selection-member#11".into();
     conflicting_member.group_member_ordinal = 1;
@@ -939,7 +964,10 @@ fn entity_selection_profile_retains_an_open_curve_as_ordered_entities() {
     }];
     let mut group = group();
     group.role = 0x41_0000_0000;
-    group.members = vec![10].into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect();
+    group.members = vec![10]
+        .into_iter()
+        .map(|value| crate::records::Located { value, offset: 0 })
+        .collect();
     let operands = [operand(10, 0, 100)];
     let resolution = EntitySelectionPathResolution {
         operands: &operands,

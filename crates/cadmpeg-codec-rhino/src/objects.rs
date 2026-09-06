@@ -5,8 +5,8 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
 use crate::chunks::{
-    ArchiveVersion, BoundedReader, ChecksumStatus, FramingError, chunk_at, direct_checksum_ranges,
-    verify_checksum, verify_checksum_ranges,
+    chunk_at, direct_checksum_ranges, verify_checksum, verify_checksum_ranges, ArchiveVersion,
+    BoundedReader, ChecksumStatus, FramingError,
 };
 use crate::container::Record;
 use crate::layout::class_uuid_chunk_body as class_uuid_body;

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Transmit headers always start at inflated offset zero.
 
-use serde::{Deserialize, Serialize};
-use crate::deltas::transmit_state::TransmitState;
 use super::ParasolidDeltasTransmitHeader;
+use crate::deltas::transmit_state::TransmitState;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize)]
 pub(super) struct TransmitHeaderWire {
@@ -18,15 +18,30 @@ pub(super) struct TransmitHeaderWire {
 
 impl From<ParasolidDeltasTransmitHeader> for TransmitHeaderWire {
     fn from(header: ParasolidDeltasTransmitHeader) -> Self {
-        Self { id: header.id, stream_ordinal: header.stream_ordinal, state: header.state, byte_len: header.byte_len, sha256: header.sha256, inflated_offset: 0 }
+        Self {
+            id: header.id,
+            stream_ordinal: header.stream_ordinal,
+            state: header.state,
+            byte_len: header.byte_len,
+            sha256: header.sha256,
+            inflated_offset: 0,
+        }
     }
 }
 
 impl TryFrom<TransmitHeaderWire> for ParasolidDeltasTransmitHeader {
     type Error = &'static str;
     fn try_from(wire: TransmitHeaderWire) -> Result<Self, Self::Error> {
-        if wire.inflated_offset != 0 { return Err("inflated_offset: transmit header must start at zero"); }
-        Ok(Self { id: wire.id, stream_ordinal: wire.stream_ordinal, state: wire.state, byte_len: wire.byte_len, sha256: wire.sha256 })
+        if wire.inflated_offset != 0 {
+            return Err("inflated_offset: transmit header must start at zero");
+        }
+        Ok(Self {
+            id: wire.id,
+            stream_ordinal: wire.stream_ordinal,
+            state: wire.state,
+            byte_len: wire.byte_len,
+            sha256: wire.sha256,
+        })
     }
 }
 
@@ -40,6 +55,11 @@ mod tests {
         let header: ParasolidDeltasTransmitHeader = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&header).unwrap(), json);
         let displaced = json.replace("\"inflated_offset\":0", "\"inflated_offset\":1");
-        assert!(serde_json::from_str::<ParasolidDeltasTransmitHeader>(&displaced).unwrap_err().to_string().contains("inflated_offset"));
+        assert!(
+            serde_json::from_str::<ParasolidDeltasTransmitHeader>(&displaced)
+                .unwrap_err()
+                .to_string()
+                .contains("inflated_offset")
+        );
     }
 }

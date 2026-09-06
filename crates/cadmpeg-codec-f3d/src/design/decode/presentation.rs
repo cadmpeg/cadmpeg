@@ -80,7 +80,9 @@ pub(crate) fn browser_node_records(
         if frame.design_type.module != DESIGN_MODULE_FUSION
             || !frame
                 .design_type
-                .base_type_guid.as_ref().map(|field| field.value.as_str())
+                .base_type_guid
+                .as_ref()
+                .map(|field| field.value.as_str())
                 .is_some_and(|base| base.eq_ignore_ascii_case(BROWSER_NODE_BASE_TYPE_GUID))
         {
             return Err(CodecError::malformed(format_args!(
@@ -156,7 +158,9 @@ pub(crate) fn body_presentations(
         if frame.design_type.module != DESIGN_MODULE_BODY
             || !frame
                 .design_type
-                .base_type_guid.as_ref().map(|field| field.value.as_str())
+                .base_type_guid
+                .as_ref()
+                .map(|field| field.value.as_str())
                 .is_some_and(|base| base.eq_ignore_ascii_case(BODY_PRESENTATION_BASE_TYPE_GUID))
         {
             return Err(CodecError::malformed(format_args!(
@@ -167,7 +171,9 @@ pub(crate) fn body_presentations(
         let framed_bytes = &bytes[..frame.end];
         let named_header = parse_settled_entity_header(framed_bytes, frame.start)
             .or_else(|| parse_genesis_entity_header(framed_bytes, frame.start));
-        let (entity_suffix, owner, material) = if let Some((entity_id, _, header_end)) = named_header {
+        let (entity_suffix, owner, material) = if let Some((entity_id, _, header_end)) =
+            named_header
+        {
             let entity_suffix = entity_id.suffix();
             if entity_suffix != frame.entity_id {
                 return Err(CodecError::malformed(format_args!(
@@ -383,7 +389,10 @@ fn presentation_material(
             physical_token_offset: (token_at + 4) as u64,
             visual_guid,
             visual_guid_offset: (visual_at + 4) as u64,
-            visual_preset: visual_preset.map(|(at, value)| crate::records::Located { value, offset: (at + 4) as u64 }),
+            visual_preset: visual_preset.map(|(at, value)| crate::records::Located {
+                value,
+                offset: (at + 4) as u64,
+            }),
         });
     }
     match candidates.as_slice() {
@@ -620,7 +629,10 @@ mod tests {
             byte_offset: 0,
             type_guid: type_guid.into(),
             type_guid_offset: 0,
-            base_type_guid: base_type_guid.map(|value| crate::records::RecordedValue { value: value.to_owned(), offset: Some(0) }),
+            base_type_guid: base_type_guid.map(|value| crate::records::RecordedValue {
+                value: value.to_owned(),
+                offset: Some(0),
+            }),
             version,
             version_offset: 0,
             module: module.into(),
@@ -785,7 +797,10 @@ mod tests {
             presentations[0]
                 .material
                 .as_ref()
-                .and_then(|material| material.visual_preset.as_ref().map(|field| field.value.as_str())),
+                .and_then(|material| material
+                    .visual_preset
+                    .as_ref()
+                    .map(|field| field.value.as_str())),
             Some("Prism-001")
         );
     }

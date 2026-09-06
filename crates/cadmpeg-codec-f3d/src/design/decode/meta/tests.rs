@@ -191,10 +191,17 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
         };
         assert_eq!(timeline.record_index.get(), 35);
         assert_eq!(timeline.context_record_index.get(), 17);
-        assert_eq!(timeline.frame.items().iter().map(|item| item.value).collect::<Vec<_>>(), [101, 102]);
+        assert_eq!(
+            timeline
+                .frame
+                .items()
+                .iter()
+                .map(|item| item.value)
+                .collect::<Vec<_>>(),
+            [101, 102]
+        );
         assert_eq!(timeline.frame.frame_length(), bulk.len() as u64);
-        for item in timeline.frame.items()
-        {
+        for item in timeline.frame.items() {
             assert_eq!(
                 u64::from_le_bytes(
                     bulk[item.offset as usize..item.offset as usize + 8]

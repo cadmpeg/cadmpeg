@@ -46,7 +46,10 @@ fn generated_source_less_writes_design_type_metastream() {
             entities: crate::records::ReferenceRun::Unlocated(vec![277]),
             type_guid: "22222222-3333-4444-5555-666666666666".into(),
             type_guid_offset: 0,
-            base_type_guid: Some(crate::records::RecordedValue { value: "11111111-2222-3333-4444-555555555555".into(), offset: None }),
+            base_type_guid: Some(crate::records::RecordedValue {
+                value: "11111111-2222-3333-4444-555555555555".into(),
+                offset: None,
+            }),
             version: 9,
             version_offset: 0,
         },
@@ -57,7 +60,10 @@ fn generated_source_less_writes_design_type_metastream() {
             entities: crate::records::ReferenceRun::Unlocated(vec![999]),
             type_guid: "33333333-4444-5555-6666-777777777777".into(),
             type_guid_offset: 0,
-            base_type_guid: Some(crate::records::RecordedValue { value: "11111111-2222-3333-4444-555555555555".into(), offset: None }),
+            base_type_guid: Some(crate::records::RecordedValue {
+                value: "11111111-2222-3333-4444-555555555555".into(),
+                offset: None,
+            }),
             version: 11,
             version_offset: 0,
         },
@@ -80,7 +86,10 @@ fn generated_source_less_writes_design_type_metastream() {
         .to_string()
         .contains("Design type module name is GUID-shaped"));
     f3d_native_mut(&mut source_less).design_types[0].base_type_guid =
-        Some(crate::records::RecordedValue { value: "22222222-3333-4444-5555-666666666666".into(), offset: None });
+        Some(crate::records::RecordedValue {
+            value: "22222222-3333-4444-5555-666666666666".into(),
+            offset: None,
+        });
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
@@ -98,7 +107,10 @@ fn generated_source_less_writes_design_type_metastream() {
         .find(|design_type| design_type.type_guid == "11111111-2222-3333-4444-555555555555")
         .expect("Fusion type");
     assert_eq!(fusion.module, "Fusion");
-    assert_eq!(fusion.entities.values().copied().collect::<Vec<_>>(), [1, 2]);
+    assert_eq!(
+        fusion.entities.values().copied().collect::<Vec<_>>(),
+        [1, 2]
+    );
     assert_eq!(fusion.version, 7);
     assert_eq!(fusion.base_type_guid, None);
     let sketch = types
@@ -107,7 +119,10 @@ fn generated_source_less_writes_design_type_metastream() {
         .expect("sketch-module type");
     assert_eq!(sketch.entities.values().copied().collect::<Vec<_>>(), [277]);
     assert_eq!(
-        sketch.base_type_guid.as_ref().map(|field| field.value.as_str()),
+        sketch
+            .base_type_guid
+            .as_ref()
+            .map(|field| field.value.as_str()),
         Some("11111111-2222-3333-4444-555555555555")
     );
     assert_eq!(sketch.version, 9);
@@ -142,7 +157,13 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
         byte_offset: 0,
         record_index_offset: None,
         kind,
-        design: Some(crate::records::ConstructionRecipeDesign { id: crate::records::RecordedValue { value: format!("{}", 320 + ordinal), offset: None }, selector: None }),
+        design: Some(crate::records::ConstructionRecipeDesign {
+            id: crate::records::RecordedValue {
+                value: format!("{}", 320 + ordinal),
+                offset: None,
+            },
+            selector: None,
+        }),
         recipe_index: 0,
         record_index: 100 + i32::try_from(ordinal).unwrap(),
     })
@@ -170,7 +191,15 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
             value: 500,
         },
     ];
-    native.lost_edge_references = vec![LostEdgeReference::new("generated:lost-edge-reference#0".into(), 0, "419".into(), 4645, "419".into(), 4646).expect("valid lost-edge record layout")];
+    native.lost_edge_references = vec![LostEdgeReference::new(
+        "generated:lost-edge-reference#0".into(),
+        0,
+        "419".into(),
+        4645,
+        "419".into(),
+        4646,
+    )
+    .expect("valid lost-edge record layout")];
 
     drop(native);
     let mut encoded = Vec::new();
@@ -258,7 +287,13 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
         .find(|recipe| recipe.kind == ConstructionRecipeKind::Body)
         .expect("body recipe");
     assert_eq!(body_recipe.record_index, 100);
-    assert_eq!(body_recipe.design.as_ref().map(|design| design.id.value.as_str()), Some("320"));
+    assert_eq!(
+        body_recipe
+            .design
+            .as_ref()
+            .map(|design| design.id.value.as_str()),
+        Some("320")
+    );
     assert!(native
         .construction_recipes
         .iter()
@@ -268,7 +303,13 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
         .iter()
         .find(|recipe| recipe.kind == ConstructionRecipeKind::BoundedFace)
         .expect("bounded-face recipe");
-    assert_eq!(bounded.design.as_ref().map(|design| design.id.value.as_str()), Some("322"));
+    assert_eq!(
+        bounded
+            .design
+            .as_ref()
+            .map(|design| design.id.value.as_str()),
+        Some("322")
+    );
     assert_eq!(bounded.record_index, 102);
     assert_eq!(native.persistent_references.len(), 3);
     assert_eq!(
@@ -286,7 +327,10 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
     assert_eq!(native.lost_edge_references.len(), 1);
     assert_eq!(native.lost_edge_references[0].class_tag.as_str(), "419");
     assert_eq!(native.lost_edge_references[0].record_index, 4645);
-    assert_eq!(native.lost_edge_references[0].next_class_tag.as_str(), "419");
+    assert_eq!(
+        native.lost_edge_references[0].next_class_tag.as_str(),
+        "419"
+    );
     assert_eq!(native.lost_edge_references[0].next_record_index, 4646);
 }
 
@@ -325,7 +369,8 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
         id: "generated:entity-header#0".into(),
         byte_offset: 0,
 
-        entity_id: crate::records::DesignEntityId::try_from("0_277".to_owned()).expect("valid entity ID"),
+        entity_id: crate::records::DesignEntityId::try_from("0_277".to_owned())
+            .expect("valid entity ID"),
         class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
         optional_slot_present: true,
         module: Some(crate::records::DESIGN_MODULE_SKETCH.to_owned()),
@@ -376,9 +421,19 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
     assert_eq!(native.design_body_members[1].flags, 3);
     assert_eq!(native.design_entity_headers.len(), 1);
     assert_eq!(native.design_entity_headers[0].entity_id.as_str(), "0_277");
-    assert_eq!(native.design_entity_headers[0].declared_reference_count(), Some(2));
+    assert_eq!(
+        native.design_entity_headers[0].declared_reference_count(),
+        Some(2)
+    );
     assert_eq!(native.design_entity_headers[0].record_reference, Some(584));
-    assert_eq!(native.design_entity_headers[0].references.values().copied().collect::<Vec<_>>(), [33, 44]);
+    assert_eq!(
+        native.design_entity_headers[0]
+            .references
+            .values()
+            .copied()
+            .collect::<Vec<_>>(),
+        [33, 44]
+    );
     assert_eq!(native.design_record_headers.len(), 2);
     assert_eq!(native.design_record_headers[0].record_index, 33);
     assert_eq!(native.design_record_headers[1].class_tag, "351");
@@ -479,7 +534,8 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         id: "generated:sketch-header#0".into(),
         byte_offset: 0,
 
-        entity_id: crate::records::DesignEntityId::try_from("0_277".to_owned()).expect("valid entity ID"),
+        entity_id: crate::records::DesignEntityId::try_from("0_277".to_owned())
+            .expect("valid entity ID"),
         class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
         optional_slot_present: true,
         module: Some(crate::records::DESIGN_MODULE_SKETCH.to_owned()),
@@ -565,9 +621,18 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
                 scalar_width: 8,
                 knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
                 poles: crate::records::SketchNurbsPoles::Rational(vec![
-                    crate::records::SketchNurbsPole { point: Point3::new(0.0, 0.0, 0.0), weight: 1.0 },
-                    crate::records::SketchNurbsPole { point: Point3::new(10.0, 20.0, 0.0), weight: 0.8 },
-                    crate::records::SketchNurbsPole { point: Point3::new(30.0, 10.0, 0.0), weight: 1.0 },
+                    crate::records::SketchNurbsPole {
+                        point: Point3::new(0.0, 0.0, 0.0),
+                        weight: 1.0,
+                    },
+                    crate::records::SketchNurbsPole {
+                        point: Point3::new(10.0, 20.0, 0.0),
+                        weight: 0.8,
+                    },
+                    crate::records::SketchNurbsPole {
+                        point: Point3::new(30.0, 10.0, 0.0),
+                        weight: 1.0,
+                    },
                 ]),
             }),
         },
@@ -586,13 +651,21 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         members: (vec![
             SketchRelationMember::from_index(100),
             SketchRelationMember::from_index(600),
-        ]).try_into().expect("uniform member resolution"),
-        definition: crate::records::SketchRelationDefinition::new(0x11, SketchRelationKind::Unpatterned).expect("valid relation definition"),
+        ])
+        .try_into()
+        .expect("uniform member resolution"),
+        definition: crate::records::SketchRelationDefinition::new(
+            0x11,
+            SketchRelationKind::Unpatterned,
+        )
+        .expect("valid relation definition"),
         entity_genesis: None,
         return_members: (vec![
             SketchRelationReturnMember::from_index(600),
             SketchRelationReturnMember::from_index(100),
-        ]).try_into().expect("uniform member resolution"),
+        ])
+        .try_into()
+        .expect("uniform member resolution"),
         raw_bytes: Vec::new(),
     }];
 
@@ -636,13 +709,15 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         .expect_err("source-less points require their direct owner backlink");
     assert!(matches!(error, cadmpeg_core::CodecError::InvalidInput(_)));
     f3d_native_mut(&mut source_less).sketch_points[0].owner_reference = Some(277);
-    f3d_native_mut(&mut source_less).design_types[6].entities = crate::records::ReferenceRun::Unlocated(Vec::new());
+    f3d_native_mut(&mut source_less).design_types[6].entities =
+        crate::records::ReferenceRun::Unlocated(Vec::new());
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("source-less points require a registered inverse companion");
     assert!(matches!(error, cadmpeg_core::CodecError::InvalidInput(_)));
-    f3d_native_mut(&mut source_less).design_types[6].entities = crate::records::ReferenceRun::Unlocated(vec![101]);
+    f3d_native_mut(&mut source_less).design_types[6].entities =
+        crate::records::ReferenceRun::Unlocated(vec![101]);
     f3d_native_mut(&mut source_less).design_types[2].version = 10;
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -655,13 +730,17 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         relation.members = ([100, 600, 100, 600, 100, 600, 100, 600]
             .into_iter()
             .map(SketchRelationMember::from_index)
-            .collect::<Vec<_>>()).try_into().expect("uniform member resolution");
+            .collect::<Vec<_>>())
+        .try_into()
+        .expect("uniform member resolution");
         relation.return_members = (relation
             .members
             .iter()
             .rev()
             .map(|member| SketchRelationReturnMember::from_index(member.reference.record_index()))
-            .collect::<Vec<_>>()).try_into().expect("uniform member resolution");
+            .collect::<Vec<_>>())
+        .try_into()
+        .expect("uniform member resolution");
     }
     let mut variable_relation = Vec::new();
     F3dCodec
@@ -689,11 +768,15 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         relation.members = (vec![
             SketchRelationMember::from_index(100),
             SketchRelationMember::from_index(600),
-        ]).try_into().expect("uniform member resolution");
+        ])
+        .try_into()
+        .expect("uniform member resolution");
         relation.return_members = (vec![
             SketchRelationReturnMember::from_index(600),
             SketchRelationReturnMember::from_index(100),
-        ]).try_into().expect("uniform member resolution");
+        ])
+        .try_into()
+        .expect("uniform member resolution");
     }
     f3d_native_mut(&mut source_less).sketch_relations[0].owner_reference = 999;
     let error = F3dCodec
@@ -847,9 +930,13 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
 
     let mut inconsistent = round_trip.ir().clone();
     f3d_native_mut(&mut inconsistent).sketch_relations[0]
-        .members.resolve(|record_index| crate::records::SketchRelationOperand::Point {
-            record_index, persistent_id: Some(u64::MAX),
-        });
+        .members
+        .resolve(
+            |record_index| crate::records::SketchRelationOperand::Point {
+                record_index,
+                persistent_id: Some(u64::MAX),
+            },
+        );
     assert!(crate::validate::validate_native(&inconsistent)
         .iter()
         .any(|finding| {

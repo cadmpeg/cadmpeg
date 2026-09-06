@@ -41,10 +41,13 @@ fn dispatcher_projects_datum_feature_scopes() {
             point_record_byte_offset: 0,
             position: [4.0, 5.0, 6.0],
             position_offset: 0,
-            rule: crate::records::DesignWorkPointRule::try_from(crate::records::DesignWorkPointRuleForm::Native {
-                reference_type: 1,
-                inputs: Vec::new(),
-            }).expect("compatible WorkPoint rule"),
+            rule: crate::records::DesignWorkPointRule::try_from(
+                crate::records::DesignWorkPointRuleForm::Native {
+                    reference_type: 1,
+                    inputs: Vec::new(),
+                },
+            )
+            .expect("compatible WorkPoint rule"),
             reference_type_offset: 0,
         });
     }
@@ -87,7 +90,10 @@ fn dispatcher_projects_scale_point_center_in_neutral_units() {
         *slot = Some(DesignScaleOperation {
             body_group_record_index: 5,
             center_record_index: 6,
-            center_position: Some(crate::records::Located { value: [1.25, -2.5, 3.75], offset: 40 }),
+            center_position: Some(crate::records::Located {
+                value: [1.25, -2.5, 3.75],
+                offset: 40,
+            }),
             uniform_factor: 2.5,
             uniform_factor_offset: 20,
         });
@@ -161,7 +167,9 @@ fn dispatcher_projects_three_point_work_plane_vertices() {
         recipe_references: Vec::new(),
         recipe_program_offset: 4,
         recipe_program: vec![0],
-        resolution: Some(crate::records::DesignVertexResolution::new(4, vertex).expect("valid vertex slot")),
+        resolution: Some(
+            crate::records::DesignVertexResolution::new(4, vertex).expect("valid vertex slot"),
+        ),
         next_record_index: record_index + 5,
         next_byte_offset: 5,
     };
@@ -241,9 +249,12 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
             point_record_byte_offset: 0,
             position: [1.0, 2.0, 3.0],
             position_offset: 0,
-            rule: crate::records::DesignWorkPointRule::try_from(crate::records::DesignWorkPointRuleForm::ThreePlaneIntersection {
-                inputs: [input(42, 10), input(46, 20), input(50, 30)],
-            }).expect("compatible WorkPoint rule"),
+            rule: crate::records::DesignWorkPointRule::try_from(
+                crate::records::DesignWorkPointRuleForm::ThreePlaneIntersection {
+                    inputs: [input(42, 10), input(46, 20), input(50, 30)],
+                },
+            )
+            .expect("compatible WorkPoint rule"),
             reference_type_offset: 0,
         });
     }
@@ -306,7 +317,9 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
         recipe_references: Vec::new(),
         recipe_program_offset: 4,
         recipe_program: vec![0],
-        resolution: Some(crate::records::DesignVertexResolution::new(4, 43).expect("valid vertex slot")),
+        resolution: Some(
+            crate::records::DesignVertexResolution::new(4, 43).expect("valid vertex slot"),
+        ),
         next_record_index: 25,
         next_byte_offset: 5,
     };
@@ -321,26 +334,41 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
             point_record_byte_offset: 0,
             position: [4.0, 3.0, 0.0],
             position_offset: 0,
-            rule: crate::records::DesignWorkPointRule::try_from(crate::records::DesignWorkPointRuleForm::Vertex {
-                input: DesignWorkPointInput {
-                    record_index: 22,
-                    reference_offset: 0,
-                    carrier: Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
-                        recipe,
-                    })),
+            rule: crate::records::DesignWorkPointRule::try_from(
+                crate::records::DesignWorkPointRuleForm::Vertex {
+                    input: DesignWorkPointInput {
+                        record_index: 22,
+                        reference_offset: 0,
+                        carrier: Some(Box::new(DesignWorkPointInputCarrier::VertexRecipe {
+                            recipe,
+                        })),
+                    },
                 },
-            }).expect("compatible WorkPoint rule"),
+            )
+            .expect("compatible WorkPoint rule"),
             reference_type_offset: 0,
         });
     }
     let timeline = DesignFeatureTimeline {
-frame: crate::records::DesignTimelineFrame::test_items(0, vec![crate::records::Located { value: 10, offset: 0 }, crate::records::Located { value: 20, offset: 0 }]),
-id: crate::ids::native_design_feature_timeline_id_in_stream("f3d:native", 0),
-class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-record_index: std::num::NonZeroU64::new(1).unwrap(),
-source_ordinal: 0,
-context_record_index: std::num::NonZeroU64::new(1).unwrap(),
-};
+        frame: crate::records::DesignTimelineFrame::test_items(
+            0,
+            vec![
+                crate::records::Located {
+                    value: 10,
+                    offset: 0,
+                },
+                crate::records::Located {
+                    value: 20,
+                    offset: 0,
+                },
+            ],
+        ),
+        id: crate::ids::native_design_feature_timeline_id_in_stream("f3d:native", 0),
+        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        record_index: std::num::NonZeroU64::new(1).unwrap(),
+        source_ordinal: 0,
+        context_record_index: std::num::NonZeroU64::new(1).unwrap(),
+    };
     let scopes = vec![predecessor, point];
     let (features, _) = project_parameter_design_with_edge_identities(
         &crate::design::feature_project::ProjectInputs {
@@ -428,7 +456,11 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             record_index,
             byte_offset: 0,
             class_tag: "264".into(),
-            members: members.to_vec().into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect(),
+            members: members
+                .to_vec()
+                .into_iter()
+                .map(|value| crate::records::Located { value, offset: 0 })
+                .collect(),
             lost_edge_references: Vec::new(),
             frame: DesignConstructionOperandGroupFrame {
                 member_count_offset: 0,
@@ -479,7 +511,8 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             class_tag: "377".into(),
             asset_id: "asset".into(),
             asset_id_offset: 0,
-            entity_id: crate::records::DesignEntityId::try_from("Sketch_7".to_owned()).expect("valid entity identity"),
+            entity_id: crate::records::DesignEntityId::try_from("Sketch_7".to_owned())
+                .expect("valid entity identity"),
             entity_reference_offset: 0,
             region_selection: None,
             paired_class_tag: "264".into(),
@@ -503,7 +536,8 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         crate::records::DesignFeatureKind::SurfaceStitch,
         30,
     );
-    surface_stitch.reference_members = crate::records::ReferenceRun::Unlocated(vec![300, 301, 302, 303]);
+    surface_stitch.reference_members =
+        crate::records::ReferenceRun::Unlocated(vec![300, 301, 302, 303]);
     if let crate::records::DesignScopePayload::SurfaceStitch(slot) = &mut surface_stitch.payload {
         *slot = Some(DesignSurfaceStitchOperation {
             gap_tolerance: 0.01,
@@ -542,7 +576,20 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         &mut copy_paste_bodies.payload
     {
         *slot = Some(DesignCopyPasteBodiesOperation {
-            bodies: vec![crate::records::DesignCopiedBody { operand: crate::records::Located { value: 502, offset: 0 }, source: crate::records::Located { value: 11, offset: 0 }, copied: crate::records::Located { value: 12, offset: 0 } }],
+            bodies: vec![crate::records::DesignCopiedBody {
+                operand: crate::records::Located {
+                    value: 502,
+                    offset: 0,
+                },
+                source: crate::records::Located {
+                    value: 11,
+                    offset: 0,
+                },
+                copied: crate::records::Located {
+                    value: 12,
+                    offset: 0,
+                },
+            }],
             body_group_record_index: 501,
             body_group_class_tag: "264".into(),
             body_group_byte_offset: 0,
@@ -559,11 +606,25 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     );
     if let crate::records::DesignScopePayload::BaseFeature(slot) = &mut base_feature.payload {
         *slot = Some(DesignBaseFeatureConstruction::ResultBodies {
-            bodies: crate::records::DesignBaseFeatureResults::WithoutRepeatedFields(vec![crate::records::DesignBaseFeatureResultBody {
-                entity: crate::records::DesignBaseFeatureEntry { value: 21, offset: 0, field: [0; 6] },
-                reference: crate::records::DesignBaseFeatureEntry { value: 601, offset: 0, field: [0; 6] },
-                result: crate::records::DesignBaseFeatureEntry { value: 603, offset: 0, field: [0; 6] },
-            }]),
+            bodies: crate::records::DesignBaseFeatureResults::WithoutRepeatedFields(vec![
+                crate::records::DesignBaseFeatureResultBody {
+                    entity: crate::records::DesignBaseFeatureEntry {
+                        value: 21,
+                        offset: 0,
+                        field: [0; 6],
+                    },
+                    reference: crate::records::DesignBaseFeatureEntry {
+                        value: 601,
+                        offset: 0,
+                        field: [0; 6],
+                    },
+                    result: crate::records::DesignBaseFeatureEntry {
+                        value: 603,
+                        offset: 0,
+                        field: [0; 6],
+                    },
+                },
+            ]),
             metadata_record: 602,
             metadata_record_offset: 0,
             metadata_field: vec![0, 0],
@@ -580,7 +641,8 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             form: DesignThreadForm::Compact(None),
             designation_offset: 0,
             designation: "M3.5x0.6".into(),
-            nominal_size: crate::records::DesignThreadNominalSize::try_from("3.5".to_owned()).expect("nominal size"),
+            nominal_size: crate::records::DesignThreadNominalSize::try_from("3.5".to_owned())
+                .expect("nominal size"),
             profile: "GB Metric profile".into(),
             major_diameter: 0.35995,
             minor_diameter: 0.293,
@@ -607,10 +669,15 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         group(70, 0, 701, &[702], 0x0000_0010_0000_0000),
     ];
     let placement = DesignSketchPlacement {
-        frame: crate::records::DesignSketchFrame::new(0, crate::records::DesignSketchFrameForm::ScopeCompact).unwrap(),
+        frame: crate::records::DesignSketchFrame::new(
+            0,
+            crate::records::DesignSketchFrameForm::ScopeCompact,
+        )
+        .unwrap(),
         id: format!("{stream}:placement#7"),
         scope_record_index: None,
-        entity_id: crate::records::DesignEntityId::try_from("Sketch_7".to_owned()).expect("valid entity ID"),
+        entity_id: crate::records::DesignEntityId::try_from("Sketch_7".to_owned())
+            .expect("valid entity ID"),
 
         visibility: None,
 
@@ -618,7 +685,6 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         record_index: 700,
 
         paired_class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
-
     };
     let (features, _) = project_parameter_design(
         &[],

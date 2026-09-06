@@ -187,7 +187,8 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
     let _attached = ir.model.add_procedural_surface(
         sweep.clone(),
         ProceduralSurface::new(
-            ProceduralSurfaceId::mint("test:model:procedural-surface#sweep-construction").expect("identity grammar"),
+            ProceduralSurfaceId::mint("test:model:procedural-surface#sweep-construction")
+                .expect("identity grammar"),
             ProceduralSurfaceDefinition::LinearSweep {
                 directrix: directrix.clone(),
                 direction: Vector3::new(0.0, 1.0, 0.0),
@@ -198,7 +199,8 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
     let _attached = ir.model.add_procedural_surface(
         revolution.clone(),
         ProceduralSurface::new(
-            ProceduralSurfaceId::mint("test:model:procedural-surface#revolution-construction").expect("identity grammar"),
+            ProceduralSurfaceId::mint("test:model:procedural-surface#revolution-construction")
+                .expect("identity grammar"),
             ProceduralSurfaceDefinition::AxisRevolution {
                 directrix,
                 axis_origin: Point3::new(0.0, 0.0, 0.0),
@@ -214,7 +216,10 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
         surface_parameter_scales_for_step(
             &ir,
             &sweep,
-            ir.model.surfaces[0].geometry.solved_cache().unwrap_or(&ir.model.surfaces[0].geometry),
+            ir.model.surfaces[0]
+                .geometry
+                .solved_cache()
+                .unwrap_or(&ir.model.surfaces[0].geometry),
             length_scale,
             angle_scale,
             &BTreeMap::new(),
@@ -225,7 +230,10 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
         surface_parameter_scales_for_step(
             &ir,
             &revolution,
-            ir.model.surfaces[1].geometry.solved_cache().unwrap_or(&ir.model.surfaces[1].geometry),
+            ir.model.surfaces[1]
+                .geometry
+                .solved_cache()
+                .unwrap_or(&ir.model.surfaces[1].geometry),
             length_scale,
             angle_scale,
             &BTreeMap::new(),
@@ -296,7 +304,8 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
     let _attached = ir.model.add_procedural_surface(
         surface.clone(),
         ProceduralSurface::new(
-            ProceduralSurfaceId::mint("test:model:procedural-surface#sweep-construction").expect("identity grammar"),
+            ProceduralSurfaceId::mint("test:model:procedural-surface#sweep-construction")
+                .expect("identity grammar"),
             ProceduralSurfaceDefinition::LinearSweep {
                 directrix,
                 direction: Vector3::new(0.0, 1.0, 0.0),
@@ -309,7 +318,10 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
         surface_parameter_scales_for_step(
             &ir,
             &surface,
-            ir.model.surfaces[0].geometry.solved_cache().unwrap_or(&ir.model.surfaces[0].geometry),
+            ir.model.surfaces[0]
+                .geometry
+                .solved_cache()
+                .unwrap_or(&ir.model.surfaces[0].geometry),
             0.001,
             std::f64::consts::PI / 180.0,
             &BTreeMap::new(),
@@ -339,7 +351,8 @@ fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
     let _attached = ir.model.add_procedural_surface(
         surface_id.clone(),
         ProceduralSurface::new(
-            ProceduralSurfaceId::mint("test:model:procedural-surface#construction").expect("identity grammar"),
+            ProceduralSurfaceId::mint("test:model:procedural-surface#construction")
+                .expect("identity grammar"),
             ProceduralSurfaceDefinition::AxisRevolution {
                 directrix,
                 axis_origin: Point3::new(0.0, 0.0, 0.0),
@@ -353,7 +366,10 @@ fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
         surface_parameter_scales_for_step(
             &ir,
             &surface_id,
-            ir.model.surfaces[0].geometry.solved_cache().unwrap_or(&ir.model.surfaces[0].geometry),
+            ir.model.surfaces[0]
+                .geometry
+                .solved_cache()
+                .unwrap_or(&ir.model.surfaces[0].geometry),
             10.0,
             std::f64::consts::PI / 180.0,
             &BTreeMap::new(),

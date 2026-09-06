@@ -80,14 +80,24 @@ pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
         .model
         .curves
         .iter()
-        .filter(|curve| !matches!(curve.geometry, CurveGeometry::Unknown { .. } | CurveGeometry::Procedural { .. }))
+        .filter(|curve| {
+            !matches!(
+                curve.geometry,
+                CurveGeometry::Unknown { .. } | CurveGeometry::Procedural { .. }
+            )
+        })
         .map(|curve| curve.id.clone())
         .collect::<HashSet<_>>();
     let mut resolved_surfaces = ir
         .model
         .surfaces
         .iter()
-        .filter(|surface| !matches!(surface.geometry, SurfaceGeometry::Unknown { .. } | SurfaceGeometry::Procedural { .. }))
+        .filter(|surface| {
+            !matches!(
+                surface.geometry,
+                SurfaceGeometry::Unknown { .. } | SurfaceGeometry::Procedural { .. }
+            )
+        })
         .map(|surface| surface.id.clone())
         .collect::<HashSet<_>>();
     loop {
@@ -153,8 +163,10 @@ pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
         .curves
         .iter()
         .filter(|curve| {
-            matches!(curve.geometry, CurveGeometry::Unknown { .. } | CurveGeometry::Procedural { .. })
-                && !resolved_curves.contains(&curve.id)
+            matches!(
+                curve.geometry,
+                CurveGeometry::Unknown { .. } | CurveGeometry::Procedural { .. }
+            ) && !resolved_curves.contains(&curve.id)
         })
         .count()
         + ir.model
@@ -167,8 +179,10 @@ pub(crate) fn unresolved_carrier_counts(ir: &CadIr) -> (usize, usize) {
         .surfaces
         .iter()
         .filter(|surface| {
-            matches!(surface.geometry, SurfaceGeometry::Unknown { .. } | SurfaceGeometry::Procedural { .. })
-                && !resolved_surfaces.contains(&surface.id)
+            matches!(
+                surface.geometry,
+                SurfaceGeometry::Unknown { .. } | SurfaceGeometry::Procedural { .. }
+            ) && !resolved_surfaces.contains(&surface.id)
         })
         .count();
     (curves, surfaces)
@@ -1030,19 +1044,22 @@ mod route_tests {
     #[test]
     fn unresolved_carrier_accounting_requires_an_exact_construction() {
         let mut ir = CadIr::empty();
-        let curve_id = CurveId::mint("catia:test:curve#curve-0".to_string()).expect("identity grammar");
+        let curve_id =
+            CurveId::mint("catia:test:curve#curve-0".to_string()).expect("identity grammar");
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry: CurveGeometry::Unknown { record: None },
             source_object: None,
         });
-        let surface_id = SurfaceId::mint("catia:test:surface#surface-0".to_string()).expect("identity grammar");
+        let surface_id =
+            SurfaceId::mint("catia:test:surface#surface-0".to_string()).expect("identity grammar");
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Unknown { record: None },
             source_object: None,
         });
-        let offset_id = SurfaceId::mint("catia:test:surface#surface-1".to_string()).expect("identity grammar");
+        let offset_id =
+            SurfaceId::mint("catia:test:surface#surface-1".to_string()).expect("identity grammar");
         ir.model.surfaces.push(Surface {
             id: offset_id.clone(),
             geometry: SurfaceGeometry::Unknown { record: None },
@@ -1054,12 +1071,15 @@ mod route_tests {
             .add_procedural_curve(
                 curve_id,
                 ProceduralCurve::new(
-                    ProceduralCurveId::mint("catia:test:proceduralcurve#procedural-curve-0".to_string())
-                        .expect("identity grammar"),
+                    ProceduralCurveId::mint(
+                        "catia:test:proceduralcurve#procedural-curve-0".to_string(),
+                    )
+                    .expect("identity grammar"),
                     ProceduralCurveDefinition::Unknown {
                         native_kind: None,
                         record: Some(
-                            UnknownId::mint("catia:test:unknown#record-0".to_string()).expect("identity grammar"),
+                            UnknownId::mint("catia:test:unknown#record-0".to_string())
+                                .expect("identity grammar"),
                         ),
                     },
                 ),
@@ -1069,11 +1089,14 @@ mod route_tests {
             .add_procedural_surface(
                 surface_id.clone(),
                 ProceduralSurface::new(
-                    ProceduralSurfaceId::mint("catia:test:proceduralsurface#procedural-surface-0".to_string())
-                        .expect("identity grammar"),
+                    ProceduralSurfaceId::mint(
+                        "catia:test:proceduralsurface#procedural-surface-0".to_string(),
+                    )
+                    .expect("identity grammar"),
                     ProceduralSurfaceDefinition::Unknown {
                         record: Some(
-                            UnknownId::mint("catia:test:unknown#record-1".to_string()).expect("identity grammar"),
+                            UnknownId::mint("catia:test:unknown#record-1".to_string())
+                                .expect("identity grammar"),
                         ),
                     },
                     None,
@@ -1084,8 +1107,10 @@ mod route_tests {
             .add_procedural_surface(
                 offset_id,
                 ProceduralSurface::new(
-                    ProceduralSurfaceId::mint("catia:test:proceduralsurface#procedural-surface-1".to_string())
-                        .expect("identity grammar"),
+                    ProceduralSurfaceId::mint(
+                        "catia:test:proceduralsurface#procedural-surface-1".to_string(),
+                    )
+                    .expect("identity grammar"),
                     ProceduralSurfaceDefinition::Offset {
                         support: surface_id,
                         distance: 2.0,

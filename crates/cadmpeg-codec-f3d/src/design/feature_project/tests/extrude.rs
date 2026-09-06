@@ -176,7 +176,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 class_tag: "308".into(),
                 asset_id: "e72ed0d8-58b4-4b8e-800d-5eaeea9c0c4b".into(),
                 asset_id_offset: 330,
-                entity_id: crate::records::DesignEntityId::try_from("0_172".to_owned()).expect("valid entity identity"),
+                entity_id: crate::records::DesignEntityId::try_from("0_172".to_owned())
+                    .expect("valid entity identity"),
                 entity_reference_offset: 420,
                 region_selection: None,
                 paired_class_tag: "259".into(),
@@ -191,22 +192,35 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         previous_history_state_id: None,
         previous_history_state_id_offset: None,
         reference_count_offset: 180,
-        reference_members: crate::records::ReferenceRun::from_columns(vec![100], vec![185], "reference_members").unwrap(),
+        reference_members: crate::records::ReferenceRun::from_columns(
+            vec![100],
+            vec![185],
+            "reference_members",
+        )
+        .unwrap(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "261".into(),
         paired_byte_offset: 300,
     };
     let placement = DesignSketchPlacement {
-        frame: crate::records::DesignSketchFrame::new(600, crate::records::DesignSketchFrameForm::ScopeExplicit(crate::records::SketchPlacementMatrix::try_from([
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, -1.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ]).unwrap())).unwrap(),
+        frame: crate::records::DesignSketchFrame::new(
+            600,
+            crate::records::DesignSketchFrameForm::ScopeExplicit(
+                crate::records::SketchPlacementMatrix::try_from([
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, -1.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ])
+                .unwrap(),
+            ),
+        )
+        .unwrap(),
 
         id: "f3d:Design/BulkStream.dat:placement#200".into(),
         scope_record_index: Some(11),
-        entity_id: crate::records::DesignEntityId::try_from("0_172".to_owned()).expect("valid entity ID"),
+        entity_id: crate::records::DesignEntityId::try_from("0_172".to_owned())
+            .expect("valid entity ID"),
 
         visibility: None,
 
@@ -214,7 +228,6 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         record_index: 200,
 
         paired_class_tag: crate::records::DesignClassTag::try_from("260".to_owned()).unwrap(),
-
     };
     let along = parameter("AlongDistance", "mm", 0.55);
     let taper = parameter("TaperAngle", "deg", 0.2);
@@ -369,7 +382,10 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         byte_offset: 700,
         class_tag: "308".into(),
         member_count_offset: 720,
-        members: vec![crate::records::Located { value: 301, offset: 724 }],
+        members: vec![crate::records::Located {
+            value: 301,
+            offset: 724,
+        }],
         opaque_index: 1,
         opaque_index_offset: 735,
         opaque_scalar: 0.0,
@@ -472,7 +488,12 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     let mut owned_along = along.clone();
     owned_along.id = "f3d:Design/BulkStream.dat:parameter#45".into();
     owned_along.record_index = 45;
-    owned_along.source = crate::records::DesignParameterSource::new(owned_along.source_kind().to_owned(), Some(44), owned_along.family_discriminator()).unwrap();
+    owned_along.source = crate::records::DesignParameterSource::new(
+        owned_along.source_kind().to_owned(),
+        Some(44),
+        owned_along.family_discriminator(),
+    )
+    .unwrap();
     let mut owner = parse_parameter_owner(&parameter_owner_frame())
         .expect("generated parameter owner is canonical");
     owner.id = "f3d:Design/BulkStream.dat:owner#44".into();
@@ -631,13 +652,19 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         record_index: 101,
         byte_offset: 1000,
         class_tag: "332".into(),
-        members: vec![crate::records::Located { value: 200, offset: 1026 }],
+        members: vec![crate::records::Located {
+            value: 200,
+            offset: 1026,
+        }],
         lost_edge_references: Vec::new(),
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 1021,
             auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
-            trailing_records: vec![crate::records::Located { value: 300, offset: 1044 }],
+            trailing_records: vec![crate::records::Located {
+                value: 300,
+                offset: 1044,
+            }],
             trailing_transforms: Vec::new(),
             trailing_dual_transforms: Vec::new(),
             trailing_flags: Vec::new(),
@@ -684,7 +711,10 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     target_shape_group.id = "f3d:Design/BulkStream.dat:operand-group#105".into();
     target_shape_group.record_index = 105;
     target_shape_group.scope_reference_ordinal = 2;
-    target_shape_group.members = vec![crate::records::Located { value: 201, offset: 1026 }];
+    target_shape_group.members = vec![crate::records::Located {
+        value: 201,
+        offset: 1026,
+    }];
     target_shape_group.role = 0x0000_0005_0000_0000;
     target_shape_group.extrude_role = None;
     let Some(DesignExtrudePrologue::ReferenceAware {
@@ -702,7 +732,10 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     unrelated_target_group.id = "f3d:Design/BulkStream.dat:operand-group#106".into();
     unrelated_target_group.record_index = 106;
     unrelated_target_group.scope_reference_ordinal = 3;
-    unrelated_target_group.members = vec![crate::records::Located { value: 202, offset: unrelated_target_group.members[0].offset }];
+    unrelated_target_group.members = vec![crate::records::Located {
+        value: 202,
+        offset: unrelated_target_group.members[0].offset,
+    }];
     let mut target_shape_operand = DesignBodyRecipeOperand {
         id: "f3d:Design/BulkStream.dat:body-recipe-operand#201".into(),
         scope_record_index: scope.record_index,
@@ -817,7 +850,10 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     ));
 
     let mut multi_target_group = target_shape_group.clone();
-    multi_target_group.members.push(crate::records::Located { value: 202, offset: 1030 });
+    multi_target_group.members.push(crate::records::Located {
+        value: 202,
+        offset: 1030,
+    });
     let mut second_target_operand = target_shape_operand.clone();
     second_target_operand.id = "f3d:Design/BulkStream.dat:body-recipe-operand#202".into();
     second_target_operand.owner = DesignOperandOwner::Group {

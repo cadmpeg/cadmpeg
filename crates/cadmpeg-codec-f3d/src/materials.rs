@@ -583,11 +583,17 @@ pub fn decode_with_body_bindings<'a>(
             out.push(Appearance {
                 id: AppearanceId::mint(format!("f3d:design:appearance#{}", assignment.visual_guid))
                     .expect("identity grammar"),
-                name: assignment.visual_preset.as_ref().map(|field| field.value.clone()),
+                name: assignment
+                    .visual_preset
+                    .as_ref()
+                    .map(|field| field.value.clone()),
                 asset_guid: Some(assignment.visual_guid.clone()),
                 library_id: None,
                 visual_guid: Some(assignment.visual_guid.clone()),
-                physical_token: assignment.physical_token.as_ref().map(|field| field.value.clone()),
+                physical_token: assignment
+                    .physical_token
+                    .as_ref()
+                    .map(|field| field.value.clone()),
                 schema: None,
                 category: None,
                 base_color: None,
@@ -603,7 +609,10 @@ pub fn decode_with_body_bindings<'a>(
                 .as_deref()
                 .is_some_and(|guid| visual_tokens_match(guid, &assignment.visual_guid))
         }) {
-            appearance.physical_token = assignment.physical_token.as_ref().map(|field| field.value.clone());
+            appearance.physical_token = assignment
+                .physical_token
+                .as_ref()
+                .map(|field| field.value.clone());
         }
     }
     let mut bindings = bind_bodies(
@@ -998,8 +1007,16 @@ pub(crate) fn decode_design_assignments(
                 entity_id_offset,
                 visual_guid: material.visual_guid,
                 visual_guid_offset: material.visual_guid_offset,
-                physical_token: Some(crate::records::RecordedValue { value: material.physical_token, offset: Some(material.physical_token_offset) }),
-                visual_preset: material.visual_preset.map(|field| crate::records::RecordedValue { value: field.value, offset: Some(field.offset) }),
+                physical_token: Some(crate::records::RecordedValue {
+                    value: material.physical_token,
+                    offset: Some(material.physical_token_offset),
+                }),
+                visual_preset: material
+                    .visual_preset
+                    .map(|field| crate::records::RecordedValue {
+                        value: field.value,
+                        offset: Some(field.offset),
+                    }),
             });
         }
     }
@@ -1482,7 +1499,8 @@ fn bind_bodies(
         out.push(AppearanceBinding {
             id: format!(
                 "f3d:appearance:binding#{}:{}",
-                assignment.entity_id.as_str(), assignment.visual_guid
+                assignment.entity_id.as_str(),
+                assignment.visual_guid
             )
             .into(),
             target: AppearanceTarget::Body(body),
@@ -1510,7 +1528,10 @@ pub(crate) fn appearance_for_assignment<'a>(
     appearance_for_visual_token(
         appearances,
         &assignment.visual_guid,
-        assignment.visual_preset.as_ref().map(|field| field.value.as_str()),
+        assignment
+            .visual_preset
+            .as_ref()
+            .map(|field| field.value.as_str()),
     )
 }
 

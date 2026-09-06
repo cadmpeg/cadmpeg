@@ -85,11 +85,19 @@ fn sketch_visibility_accepts_settled_container_header() {
             byte_offset: 0,
             type_guid: type_guid.into(),
             type_guid_offset: 0,
-            base_type_guid: base_type_guid.map(|value| crate::records::RecordedValue { value: value.to_owned(), offset: Some(0) }),
+            base_type_guid: base_type_guid.map(|value| crate::records::RecordedValue {
+                value: value.to_owned(),
+                offset: Some(0),
+            }),
             version,
             version_offset: 0,
             module: module.into(),
-            entities: crate::records::ReferenceRun::Located(entity_ids.into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect()),
+            entities: crate::records::ReferenceRun::Located(
+                entity_ids
+                    .into_iter()
+                    .map(|value| crate::records::Located { value, offset: 0 })
+                    .collect(),
+            ),
         }
     };
     let metadata = crate::metastream::MetaStream {

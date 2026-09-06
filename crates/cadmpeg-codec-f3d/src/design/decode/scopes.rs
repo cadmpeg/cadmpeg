@@ -154,18 +154,17 @@ use crate::records::{
     DesignCoilExtent, DesignCoilPlacement, DesignCoilSection, DesignCoilSectionPlacement,
     DesignCoilSelection, DesignCombineBodySelection, DesignCombineExternalBodyIdentity,
     DesignCombineForm, DesignCombineOperation, DesignComponentInsertConstruction,
-    DesignComponentOccurrence,  DesignCopyPasteBodiesOperation,
-    DesignCopyPasteComponentOperation, DesignDerivedInstanceConstruction,
-    DesignDirectFaceOperation, DesignDraftOperation, DesignEdgeFlangeHeightExtent,
-    DesignEdgeFlangeOperation, DesignEdgeFlangeWidthParameterSource, DesignEdgeWidthMode,
-    DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue,
-    DesignExtrudePrologueReference, DesignExtrudeStart, DesignExtrudeTargetOrdinal,
-    DesignFixedChamferDistance, DesignFixedChamferParameters, DesignFixedExtrudeDistance,
-    DesignFixedExtrudeParameters, DesignFixedExtrudeScalar, DesignFixedFilletGroup,
-    DesignFixedFilletParameters, DesignHemOperation, DesignHemParameterOwners,
-    DesignHoleConstruction, DesignHoleFaceSelection, DesignMirrorConstruction,
-    DesignMirrorScopeTolerance, DesignMoveOperation, DesignParameter, DesignParameterOwner,
-    DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
+    DesignComponentOccurrence, DesignCopyPasteBodiesOperation, DesignCopyPasteComponentOperation,
+    DesignDerivedInstanceConstruction, DesignDirectFaceOperation, DesignDraftOperation,
+    DesignEdgeFlangeHeightExtent, DesignEdgeFlangeOperation, DesignEdgeFlangeWidthParameterSource,
+    DesignEdgeWidthMode, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeOperation,
+    DesignExtrudePrologue, DesignExtrudePrologueReference, DesignExtrudeStart,
+    DesignExtrudeTargetOrdinal, DesignFixedChamferDistance, DesignFixedChamferParameters,
+    DesignFixedExtrudeDistance, DesignFixedExtrudeParameters, DesignFixedExtrudeScalar,
+    DesignFixedFilletGroup, DesignFixedFilletParameters, DesignHemOperation,
+    DesignHemParameterOwners, DesignHoleConstruction, DesignHoleFaceSelection,
+    DesignMirrorConstruction, DesignMirrorScopeTolerance, DesignMoveOperation, DesignParameter,
+    DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
     DesignRectangularPatternConstruction, DesignRectangularPatternInstances,
     DesignRuledSurfaceCorner, DesignRuledSurfaceMethod, DesignRuledSurfaceOperation,
     DesignScaleOperation, DesignSheetMetalHeightDatum, DesignSolidPrimitive,
@@ -329,17 +328,30 @@ pub fn decode_parameter_scopes(
                     slot.get_or_insert_with(Default::default).coil_placement = Some(placement);
                 }
             }
-            if let Some(construction) = exact_solid_primitive(bytes, &records, &scope, parameter_owners) {
+            if let Some(construction) =
+                exact_solid_primitive(bytes, &records, &scope, parameter_owners)
+            {
                 scope.payload = construction.into();
             }
             {
                 let construction = exact_direct_face_operation(bytes, &records, &scope);
                 match (&mut scope.payload, construction) {
-(crate::records::DesignScopePayload::OffsetFaces(slot) | crate::records::DesignScopePayload::DecalerLesFaces(slot), Some(crate::records::DesignDirectFaceOperation::OffsetFaces(value))) => *slot = Some(value),
-(crate::records::DesignScopePayload::Shell(slot) | crate::records::DesignScopePayload::Schale(slot), Some(crate::records::DesignDirectFaceOperation::Shell(value))) => *slot = Some(value),
-(crate::records::DesignScopePayload::Thicken(slot), Some(crate::records::DesignDirectFaceOperation::Thicken(value))) => *slot = Some(value),
-_ => {},
-}
+                    (
+                        crate::records::DesignScopePayload::OffsetFaces(slot)
+                        | crate::records::DesignScopePayload::DecalerLesFaces(slot),
+                        Some(crate::records::DesignDirectFaceOperation::OffsetFaces(value)),
+                    ) => *slot = Some(value),
+                    (
+                        crate::records::DesignScopePayload::Shell(slot)
+                        | crate::records::DesignScopePayload::Schale(slot),
+                        Some(crate::records::DesignDirectFaceOperation::Shell(value)),
+                    ) => *slot = Some(value),
+                    (
+                        crate::records::DesignScopePayload::Thicken(slot),
+                        Some(crate::records::DesignDirectFaceOperation::Thicken(value)),
+                    ) => *slot = Some(value),
+                    _ => {}
+                }
             }
             {
                 let construction = exact_move_operation(bytes, &records, &scope);
@@ -468,14 +480,29 @@ _ => {},
                 }
             }
             let legacy_form = scope.assembly_alignment().and_then(|alignment| {
-                let crate::records::DesignAssemblyAlignmentForm::SolvedOnly { solved_frame, limits } = alignment.form.as_ref()? else { return None; };
-                let carriers = exact_legacy_as_built_421_operands(bytes, &records, &scope, &stream_types, recipes, solved_frame)?;
-                Some(crate::records::DesignAssemblyAlignmentForm::LegacyAsBuilt421 {
-                    carriers,
-                    solved_frame: solved_frame.clone(),
-                    limits: limits.clone(),
-                    frames_field_present: true,
-                })
+                let crate::records::DesignAssemblyAlignmentForm::SolvedOnly {
+                    solved_frame,
+                    limits,
+                } = alignment.form.as_ref()?
+                else {
+                    return None;
+                };
+                let carriers = exact_legacy_as_built_421_operands(
+                    bytes,
+                    &records,
+                    &scope,
+                    &stream_types,
+                    recipes,
+                    solved_frame,
+                )?;
+                Some(
+                    crate::records::DesignAssemblyAlignmentForm::LegacyAsBuilt421 {
+                        carriers,
+                        solved_frame: solved_frame.clone(),
+                        limits: limits.clone(),
+                        frames_field_present: true,
+                    },
+                )
             });
             if let (Some(alignment), Some(form)) = (scope.assembly_alignment_mut(), legacy_form) {
                 alignment.form = Some(form);
@@ -679,7 +706,12 @@ pub(crate) fn exact_thread_construction(
     let designation_at = start.checked_add(designation_delta)?;
     let face_group_record_indices = match prefix_form {
         ThreadPrefix::Standard => vec![*scope.reference_members.values().next()?],
-        ThreadPrefix::Compact => scope.reference_members.values().step_by(2).copied().collect(),
+        ThreadPrefix::Compact => scope
+            .reference_members
+            .values()
+            .step_by(2)
+            .copied()
+            .collect(),
     };
     let construction = parse_thread_payload(
         bytes,
@@ -760,20 +792,10 @@ pub(crate) fn parse_thread_payload(
     let (profile, after_profile) = lp_utf16_bounded(bytes, after_nominal, 1..=256)?;
     let (pitch_marker, trailer_kind) =
         match (expected_form, bytes.get(after_profile..after_profile + 5)?) {
-            (ThreadPrefix::Standard, [0, 1, 0, 0, 0]) => {
-                (1, ThreadTrailerKind::Standard)
-            }
-            (ThreadPrefix::Standard, [1, 1, 0, 0, 0]) => (
-                0,
-                ThreadTrailerKind::StandardLegacy,
-            ),
-            (ThreadPrefix::Compact, [1, 2, 0, 0, 0]) => {
-                (0, ThreadTrailerKind::Compact)
-            }
-            (ThreadPrefix::Compact, [1, 1, 0, 0, 0]) => (
-                0,
-                ThreadTrailerKind::CompactLegacy,
-            ),
+            (ThreadPrefix::Standard, [0, 1, 0, 0, 0]) => (1, ThreadTrailerKind::Standard),
+            (ThreadPrefix::Standard, [1, 1, 0, 0, 0]) => (0, ThreadTrailerKind::StandardLegacy),
+            (ThreadPrefix::Compact, [1, 2, 0, 0, 0]) => (0, ThreadTrailerKind::Compact),
+            (ThreadPrefix::Compact, [1, 1, 0, 0, 0]) => (0, ThreadTrailerKind::CompactLegacy),
             _ => return None,
         };
     let nominal_size = crate::records::DesignThreadNominalSize::try_from(nominal_size_text).ok()?;
@@ -795,10 +817,14 @@ pub(crate) fn parse_thread_payload(
         }
         ThreadTrailerKind::StandardLegacy
             if bytes.get(trailer_offset..trailer_offset + 4)? == [0, 0, 0, 1] =>
-        { DesignThreadForm::StandardLegacy }
+        {
+            DesignThreadForm::StandardLegacy
+        }
         ThreadTrailerKind::CompactLegacy
             if bytes.get(trailer_offset..trailer_offset + 4)? == [0, 0, 0, 1] =>
-        { DesignThreadForm::CompactLegacy }
+        {
+            DesignThreadForm::CompactLegacy
+        }
         ThreadTrailerKind::Compact
             if bytes.get(trailer_offset..trailer_offset + 4)? == [0, 0, 0, 1] =>
         {
@@ -809,7 +835,8 @@ pub(crate) fn parse_thread_payload(
                 && bytes.get(trailer_offset + 5..trailer_offset + 11)? == [0; 6] =>
         {
             let reference_offset = trailer_offset.checked_add(1)?;
-            let record_index = std::num::NonZeroU32::new(View::u32_le_at(bytes, reference_offset)?)?;
+            let record_index =
+                std::num::NonZeroU32::new(View::u32_le_at(bytes, reference_offset)?)?;
             DesignThreadForm::Compact(Some(crate::records::Located {
                 value: record_index,
                 offset: u64::try_from(reference_offset).ok()?,
@@ -817,14 +844,9 @@ pub(crate) fn parse_thread_payload(
         }
         _ => return None,
     };
-    if !([
-        major_diameter,
-        minor_diameter,
-        pitch,
-        pitch_diameter,
-    ]
-    .into_iter()
-    .all(|value| value.is_finite() && value > 0.0)
+    if !([major_diameter, minor_diameter, pitch, pitch_diameter]
+        .into_iter()
+        .all(|value| value.is_finite() && value > 0.0)
         && minor_diameter < pitch_diameter
         && pitch_diameter < major_diameter)
     {
@@ -938,7 +960,9 @@ pub(crate) fn bind_joint_origin_frames_from_assemblies(
             continue;
         }
         if let Some(alignment) = assembly.assembly_alignment_mut() {
-            alignment.form = Some(crate::records::DesignAssemblyAlignmentForm::DatumEnvelope { joint_origin_scope_record_index: joint_origin_record_index });
+            alignment.form = Some(crate::records::DesignAssemblyAlignmentForm::DatumEnvelope {
+                joint_origin_scope_record_index: joint_origin_record_index,
+            });
         }
     }
 }
@@ -958,15 +982,22 @@ pub(crate) fn bind_axial_assembly_operand_targets(
                 return None;
             }
             let alignment = scope.assembly_alignment()?;
-            let crate::records::DesignAssemblyAlignmentForm::Frames { frames } = alignment.form.as_ref()? else { return None; };
+            let crate::records::DesignAssemblyAlignmentForm::Frames { frames } =
+                alignment.form.as_ref()?
+            else {
+                return None;
+            };
             let first =
                 exact_assembly_axial_operand_target(bytes, records, scope, &frames[0], scopes)?;
             let second =
                 exact_assembly_axial_operand_target(bytes, records, scope, &frames[1], scopes)?;
             Some((
                 ordinal,
-                crate::records::DesignAssemblyAlignmentForm::qualified(frames.clone(), [first, second]
-                    .map(|target| DesignAssemblyOperandQualifier::AxialTarget { target })),
+                crate::records::DesignAssemblyAlignmentForm::qualified(
+                    frames.clone(),
+                    [first, second]
+                        .map(|target| DesignAssemblyOperandQualifier::AxialTarget { target }),
+                ),
             ))
         })
         .collect::<Vec<_>>();
@@ -1117,7 +1148,10 @@ fn exact_assembly_axial_component_operand_at(
         [first_axis_record_index, first_selector_record_index],
         [second_axis_record_index, second_selector_record_index],
     ] {
-        if scope.reference_members.values().zip(scope.reference_members.values().skip(1))
+        if scope
+            .reference_members
+            .values()
+            .zip(scope.reference_members.values().skip(1))
             .filter(|(first, second)| [**first, **second] == pair)
             .count()
             != 1
@@ -1477,8 +1511,12 @@ fn exact_surface_offset_face_groups(
 
     let mut group_record_indices = Vec::new();
     let mut covered_references = HashSet::new();
-    for (scope_reference_ordinal, record_index) in
-        scope.reference_members.values().copied().enumerate().skip(1)
+    for (scope_reference_ordinal, record_index) in scope
+        .reference_members
+        .values()
+        .copied()
+        .enumerate()
+        .skip(1)
     {
         let group = exact_construction_operand_group(
             bytes,
@@ -1499,7 +1537,11 @@ fn exact_surface_offset_face_groups(
         }
         for member in group.members.iter().map(|member| &member.value) {
             if *member == *distance_record_index
-                || !scope.reference_members.values().skip(1).any(|value| value == member)
+                || !scope
+                    .reference_members
+                    .values()
+                    .skip(1)
+                    .any(|value| value == member)
                 || !covered_references.insert(*member)
             {
                 return None;
@@ -1735,10 +1777,20 @@ pub(crate) fn exact_assembly_alignment(
     if as_built_421 {
         let exact = exact_legacy_as_built_421_alignment(bytes, scope, &lanes)?;
         let form = match exact_legacy_as_built_421_solved_frame(bytes, records, scope) {
-            Some(solved_frame) => DesignAssemblyAlignmentForm::SolvedOnly { solved_frame, limits: Some(exact.limits) },
-            None => DesignAssemblyAlignmentForm::LimitsOnly { limits: exact.limits },
+            Some(solved_frame) => DesignAssemblyAlignmentForm::SolvedOnly {
+                solved_frame,
+                limits: Some(exact.limits),
+            },
+            None => DesignAssemblyAlignmentForm::LimitsOnly {
+                limits: exact.limits,
+            },
         };
-        return Some(DesignAssemblyAlignment { angle: exact.angle, offset: exact.offset, owners: exact.owners, form: Some(form) });
+        return Some(DesignAssemblyAlignment {
+            angle: exact.angle,
+            offset: exact.offset,
+            owners: exact.owners,
+            form: Some(form),
+        });
     }
     let (angle, offset, owners) = {
         if matches!(scope.frame_length, 671 | 744 | 748)
@@ -1761,13 +1813,25 @@ pub(crate) fn exact_assembly_alignment(
         let (angle, offset) = match alignment_lanes {
             [angle, offset_x, offset_y, offset_z] => (
                 angle.evaluated_value,
-                [offset_x.evaluated_value, offset_y.evaluated_value, offset_z.evaluated_value],
+                [
+                    offset_x.evaluated_value,
+                    offset_y.evaluated_value,
+                    offset_z.evaluated_value,
+                ],
             ),
-            [angle, axial_offset] => (angle.evaluated_value, [0.0, 0.0, axial_offset.evaluated_value]),
+            [angle, axial_offset] => (
+                angle.evaluated_value,
+                [0.0, 0.0, axial_offset.evaluated_value],
+            ),
             _ => return None,
         };
-        let owners: Vec<crate::records::Located<u32>> = alignment_lanes.iter()
-            .map(|owner| crate::records::Located { value: owner.record_index, offset: owner.evaluated_value_offset }).collect();
+        let owners: Vec<crate::records::Located<u32>> = alignment_lanes
+            .iter()
+            .map(|owner| crate::records::Located {
+                value: owner.record_index,
+                offset: owner.evaluated_value_offset,
+            })
+            .collect();
         if legacy_class_388 {
             let owner_reference_order_matches = CLASS_388_OWNER_REFERENCE_ORDINALS
                 .into_iter()
@@ -1779,7 +1843,12 @@ pub(crate) fn exact_assembly_alignment(
                 .iter()
                 .any(|owner| owner.class_tag != "282" || owner.frame_length != 103)
                 || !owner_reference_order_matches
-                || !scope.reference_members.values().skip(4).take(4).eq(owners.iter().map(|owner| &owner.value))
+                || !scope
+                    .reference_members
+                    .values()
+                    .skip(4)
+                    .take(4)
+                    .eq(owners.iter().map(|owner| &owner.value))
             {
                 return None;
             }
@@ -1794,7 +1863,12 @@ pub(crate) fn exact_assembly_alignment(
                 .iter()
                 .any(|owner| owner.class_tag != "284" || owner.frame_length != 103)
                 || !owner_reference_order_matches
-                || !scope.reference_members.values().skip(8).take(4).eq(owners.iter().map(|owner| &owner.value))
+                || !scope
+                    .reference_members
+                    .values()
+                    .skip(8)
+                    .take(4)
+                    .eq(owners.iter().map(|owner| &owner.value))
             {
                 return None;
             }
@@ -1806,14 +1880,26 @@ pub(crate) fn exact_assembly_alignment(
                 .iter()
                 .any(|owner| owner.class_tag != "289" || owner.frame_length != 103)
                 || (0..scope.reference_members.len())
-                    .filter(|&start| scope.reference_members.values_in(start..start + owners.len())
-                        .is_some_and(|values| values.eq(owners.iter().map(|owner| &owner.value))))
+                    .filter(|&start| {
+                        scope
+                            .reference_members
+                            .values_in(start..start + owners.len())
+                            .is_some_and(|values| {
+                                values.eq(owners.iter().map(|owner| &owner.value))
+                            })
+                    })
                     .count()
                     != 1
             {
                 return None;
             }
-        } else if !scope.reference_members.values().rev().take(owners.len()).eq(owners.iter().map(|owner| &owner.value).rev()) {
+        } else if !scope
+            .reference_members
+            .values()
+            .rev()
+            .take(owners.len())
+            .eq(owners.iter().map(|owner| &owner.value).rev())
+        {
             return None;
         }
         (angle, offset, owners)
@@ -1821,26 +1907,39 @@ pub(crate) fn exact_assembly_alignment(
     let form = if scope.kind() == crate::records::DesignFeatureKind::AsBuilt {
         exact_assembly_operand_paths(bytes, records, scope).map(|paths| {
             match exact_as_built_operand_frames(bytes, &paths) {
-                Some(frames) => DesignAssemblyAlignmentForm::qualified(frames,
-                    paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })),
+                Some(frames) => DesignAssemblyAlignmentForm::qualified(
+                    frames,
+                    paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path }),
+                ),
                 None => DesignAssemblyAlignmentForm::UnframedPaths(paths),
             }
         })
     } else {
         exact_assembly_operand_frames(bytes, scope).map(|frames| {
             let qualifiers = if legacy_class_383 {
-                exact_legacy_class_383_operand_paths(bytes, records, scope, &frames)
-                    .map(|paths| paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path }))
+                exact_legacy_class_383_operand_paths(bytes, records, scope, &frames).map(|paths| {
+                    paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
+                })
             } else if legacy_class_388 {
-                exact_legacy_class_388_operand_paths(bytes, records, scope)
-                    .map(|paths| paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path }))
-            } else if crate::design::assembly::variable_reference_assembly_generation(&scope.class_tag, &scope.paired_class_tag) {
-                assembly_carrier_paths::exact_variable_reference_operand_qualifiers(bytes, records, scope, &frames)
-                    .or_else(|| exact_assembly_operand_paths(bytes, records, scope)
-                        .map(|paths| paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })))
+                exact_legacy_class_388_operand_paths(bytes, records, scope).map(|paths| {
+                    paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
+                })
+            } else if crate::design::assembly::variable_reference_assembly_generation(
+                &scope.class_tag,
+                &scope.paired_class_tag,
+            ) {
+                assembly_carrier_paths::exact_variable_reference_operand_qualifiers(
+                    bytes, records, scope, &frames,
+                )
+                .or_else(|| {
+                    exact_assembly_operand_paths(bytes, records, scope).map(|paths| {
+                        paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
+                    })
+                })
             } else {
-                exact_assembly_operand_paths(bytes, records, scope)
-                    .map(|paths| paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path }))
+                exact_assembly_operand_paths(bytes, records, scope).map(|paths| {
+                    paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
+                })
             };
             match qualifiers {
                 Some(qualifiers) => DesignAssemblyAlignmentForm::qualified(frames, qualifiers),
@@ -1848,7 +1947,12 @@ pub(crate) fn exact_assembly_alignment(
             }
         })
     };
-    Some(DesignAssemblyAlignment { angle, offset, owners, form })
+    Some(DesignAssemblyAlignment {
+        angle,
+        offset,
+        owners,
+        form,
+    })
 }
 
 pub(crate) fn exact_derived_instance_construction(
@@ -2221,7 +2325,10 @@ pub(crate) fn exact_component_insert_construction(
         neutron_role_offset: u64::try_from(*neutron_role_offset).ok()?,
         placement: match (transform_at, *carrier_transform_offset) {
             (Some(offset), carrier_offset) => Some(crate::records::DesignComponentInsertMatrix {
-                scope: crate::records::Located { value: transform, offset: u64::try_from(offset).ok()? },
+                scope: crate::records::Located {
+                    value: transform,
+                    offset: u64::try_from(offset).ok()?,
+                },
                 carrier_offset: carrier_offset.map(u64::try_from).transpose().ok()?,
             }),
             (None, None) => None,
@@ -2789,7 +2896,8 @@ fn bind_component_pattern_occurrences(
             .iter()
             .filter(|occurrence| {
                 native_stream(&occurrence.id) == Some(stream.as_str())
-                    && occurrence.transform().map(|frame| frame.offset) == Some(frame.transform.offset)
+                    && occurrence.transform().map(|frame| frame.offset)
+                        == Some(frame.transform.offset)
                     && occurrence.occurrence_ordinal() == ordinal as u32 + 1
             })
             .collect::<Vec<_>>();
@@ -2819,7 +2927,10 @@ fn bind_component_pattern_occurrences(
                 && occurrence
                     .component_guid
                     .eq_ignore_ascii_case(component_guid)
-                && matches!(occurrence.placement, crate::records::DesignComponentOccurrencePlacement::Base)
+                && matches!(
+                    occurrence.placement,
+                    crate::records::DesignComponentOccurrencePlacement::Base
+                )
         })
         .collect::<Vec<_>>();
     let [seed] = seed_candidates.as_slice() else {
@@ -2830,8 +2941,19 @@ fn bind_component_pattern_occurrences(
     };
     *instances = DesignRectangularPatternInstances::Components {
         component_guid: component_guid.clone(),
-        seed: crate::records::DesignPatternComponentInstance { instance: seed_frame, occurrence_guid: seed.occurrence_guid.clone() },
-        generated: generated.into_iter().map(|(occurrence, instance)| crate::records::DesignPatternComponentInstance { instance, occurrence_guid: occurrence.occurrence_guid.clone() }).collect(),
+        seed: crate::records::DesignPatternComponentInstance {
+            instance: seed_frame,
+            occurrence_guid: seed.occurrence_guid.clone(),
+        },
+        generated: generated
+            .into_iter()
+            .map(
+                |(occurrence, instance)| crate::records::DesignPatternComponentInstance {
+                    instance,
+                    occurrence_guid: occurrence.occurrence_guid.clone(),
+                },
+            )
+            .collect(),
     };
 }
 
@@ -3412,8 +3534,14 @@ fn exact_legacy_class_383_operand_path(
         record_index: leading_identity_record_index,
         class_tag: "386".into(),
         byte_offset: u64::try_from(leading_identity_at).ok()?,
-        occurrence_guids: vec![crate::records::Located { value: leading_occurrence_guid, offset: occurrence_guid_offset }],
-        identity_guids: vec![crate::records::Located { value: leading_identity_guid, offset: identity_guid_offset }],
+        occurrence_guids: vec![crate::records::Located {
+            value: leading_occurrence_guid,
+            offset: occurrence_guid_offset,
+        }],
+        identity_guids: vec![crate::records::Located {
+            value: leading_identity_guid,
+            offset: identity_guid_offset,
+        }],
     })
 }
 
@@ -3741,14 +3869,18 @@ fn exact_legacy_class_412_path(
         if identity_end != start.checked_add(expected_end)? {
             return None;
         }
-        identity_guids.push(crate::records::Located { value: identity_guid, offset: u64::try_from(identity_at.checked_add(4)?).ok()? });
+        identity_guids.push(crate::records::Located {
+            value: identity_guid,
+            offset: u64::try_from(identity_at.checked_add(4)?).ok()?,
+        });
     }
     Some(LegacyClass412Path {
         record_index,
         byte_offset: u64::try_from(start).ok()?,
-        occurrence_guid: crate::records::Located { value: occurrence_guid, offset: u64::try_from(
-            start.checked_add(class_412_path::OCCURRENCE_GUID + 4)?,
-        ).ok()? },
+        occurrence_guid: crate::records::Located {
+            value: occurrence_guid,
+            offset: u64::try_from(start.checked_add(class_412_path::OCCURRENCE_GUID + 4)?).ok()?,
+        },
         identity_guids,
     })
 }
@@ -4046,14 +4178,20 @@ fn exact_assembly_operand_path(
             if !crate::bytes::is_guid_relaxed(&occurrence) {
                 return None;
             }
-            occurrence_guids.push(crate::records::Located { value: occurrence, offset: u64::try_from(position + 4).ok()? });
+            occurrence_guids.push(crate::records::Located {
+                value: occurrence,
+                offset: u64::try_from(position + 4).ok()?,
+            });
             position = after_occurrence;
             for _ in 0..2 {
                 let (guid, after_guid) = lp_utf16_bounded(bytes.get(..end)?, position, 36..=36)?;
                 if !crate::bytes::is_guid_relaxed(&guid) {
                     return None;
                 }
-                identity_guids.push(crate::records::Located { value: guid, offset: u64::try_from(position + 4).ok()? });
+                identity_guids.push(crate::records::Located {
+                    value: guid,
+                    offset: u64::try_from(position + 4).ok()?,
+                });
                 position = after_guid;
             }
             if View::u64_le_at(bytes, position)? != 2 {
@@ -4065,7 +4203,10 @@ fn exact_assembly_operand_path(
                 if !crate::bytes::is_guid_relaxed(&guid) {
                     return None;
                 }
-                identity_guids.push(crate::records::Located { value: guid, offset: u64::try_from(position + 4).ok()? });
+                identity_guids.push(crate::records::Located {
+                    value: guid,
+                    offset: u64::try_from(position + 4).ok()?,
+                });
                 position = after_guid;
             }
             if View::u32_le_at(bytes, position)? != 2
@@ -4088,7 +4229,10 @@ fn exact_assembly_operand_path(
                 if !crate::bytes::is_guid_relaxed(&guid) {
                     return None;
                 }
-                occurrence_guids.push(crate::records::Located { value: guid, offset: u64::try_from(position + 4).ok()? });
+                occurrence_guids.push(crate::records::Located {
+                    value: guid,
+                    offset: u64::try_from(position + 4).ok()?,
+                });
                 position = after_guid;
             }
             if position == limit {
@@ -4102,7 +4246,10 @@ fn exact_assembly_operand_path(
                     if !crate::bytes::is_guid_relaxed(&guid) {
                         return None;
                     }
-                    identity_guids.push(crate::records::Located { value: guid, offset: u64::try_from(position + 4).ok()? });
+                    identity_guids.push(crate::records::Located {
+                        value: guid,
+                        offset: u64::try_from(position + 4).ok()?,
+                    });
                     position = after_guid;
                 }
                 if View::u64_le_at(bytes, position)? != 2 {
@@ -4115,7 +4262,10 @@ fn exact_assembly_operand_path(
                     if !crate::bytes::is_guid_relaxed(&guid) {
                         return None;
                     }
-                    identity_guids.push(crate::records::Located { value: guid, offset: u64::try_from(position + 4).ok()? });
+                    identity_guids.push(crate::records::Located {
+                        value: guid,
+                        offset: u64::try_from(position + 4).ok()?,
+                    });
                     position = after_guid;
                 }
                 if View::u32_le_at(bytes, position)? != 2
@@ -4226,13 +4376,23 @@ fn exact_rectangular_pattern_instances(
     let count = usize::try_from(*count).ok()?;
     if count > 4_096
         || scope.reference_members.len() != count.checked_add(6)?
-        || !scope.reference_members.values().skip(1).take(4).eq(construction.owner_record_indices.iter())
+        || !scope
+            .reference_members
+            .values()
+            .skip(1)
+            .take(4)
+            .eq(construction.owner_record_indices.iter())
     {
         return None;
     }
     let mut record_indices = Vec::with_capacity(count);
     record_indices.push(*scope.reference_members.values().next()?);
-    record_indices.extend(scope.reference_members.values_in(6..count.checked_add(5)?)?.copied());
+    record_indices.extend(
+        scope
+            .reference_members
+            .values_in(6..count.checked_add(5)?)?
+            .copied(),
+    );
     let reference_starts = scope
         .reference_members
         .values()
@@ -4310,10 +4470,21 @@ fn exact_rectangular_pattern_instances(
     let [run] = runs.as_slice() else {
         return None;
     };
-    Some(DesignRectangularPatternInstances::Bodies(record_indices.into_iter().zip(run).map(|(record_index, (value, offset))| crate::records::DesignPatternInstance {
-        record_index,
-        transform: crate::records::Located { value: *value, offset: *offset },
-    }).collect()))
+    Some(DesignRectangularPatternInstances::Bodies(
+        record_indices
+            .into_iter()
+            .zip(run)
+            .map(
+                |(record_index, (value, offset))| crate::records::DesignPatternInstance {
+                    record_index,
+                    transform: crate::records::Located {
+                        value: *value,
+                        offset: *offset,
+                    },
+                },
+            )
+            .collect(),
+    ))
 }
 
 type TransformCandidate = ([[f64; 4]; 4], u64);
@@ -4385,8 +4556,11 @@ pub(crate) fn exact_circular_pattern_construction_with_owners(
         return None;
     }
     let mut axis_candidates = Vec::new();
-    for (record_index, selection_record_index) in scope.reference_members.values()
-        .zip(scope.reference_members.values().skip(1)) {
+    for (record_index, selection_record_index) in scope
+        .reference_members
+        .values()
+        .zip(scope.reference_members.values().skip(1))
+    {
         for (start, paired_at) in records.frames(*record_index) {
             if let Some((origin, direction)) = exact_circular_pattern_axis(
                 bytes,
@@ -4581,7 +4755,10 @@ fn exact_legacy_circular_pattern_axis(
         return None;
     }
     let selection_record_index = marked_record_reference(bytes, selection_at)?;
-    if !scope.reference_members.values().any(|value| value == &selection_record_index)
+    if !scope
+        .reference_members
+        .values()
+        .any(|value| value == &selection_record_index)
         || bytes.get(selection_at + 5..selection_at + 11) != Some(&[0; 6])
     {
         return None;
@@ -4610,13 +4787,26 @@ fn exact_legacy_circular_pattern_axis(
     {
         return None;
     }
-    let wrappers = identity_offsets.iter().map(|offset| {
-        let record_index = View::u32_le_at(bytes, *offset)?;
-        let (identity, identity_offset) = exact_pattern_identity_wrapper(bytes, records, record_index)?;
-        Some((identity, crate::records::DesignPatternAxisWrapper { record_index, identity_offset }))
-    }).collect::<Option<Vec<_>>>()?;
+    let wrappers = identity_offsets
+        .iter()
+        .map(|offset| {
+            let record_index = View::u32_le_at(bytes, *offset)?;
+            let (identity, identity_offset) =
+                exact_pattern_identity_wrapper(bytes, records, record_index)?;
+            Some((
+                identity,
+                crate::records::DesignPatternAxisWrapper {
+                    record_index,
+                    identity_offset,
+                },
+            ))
+        })
+        .collect::<Option<Vec<_>>>()?;
     let persistent_identity = wrappers.first()?.0;
-    if wrappers.iter().any(|(identity, _)| *identity != persistent_identity) {
+    if wrappers
+        .iter()
+        .any(|(identity, _)| *identity != persistent_identity)
+    {
         return None;
     }
     Some((
@@ -4859,7 +5049,11 @@ pub(super) fn exact_legacy_mirror_scope_tolerance(
         value,
         u64::try_from(value_offset).ok()?,
         DesignMirrorScopeTolerance {
-            marker: crate::records::DesignMirrorToleranceMarker::try_from((marker, repeated_marker_offset.map(u64::try_from).transpose().ok()?)).ok()?,
+            marker: crate::records::DesignMirrorToleranceMarker::try_from((
+                marker,
+                repeated_marker_offset.map(u64::try_from).transpose().ok()?,
+            ))
+            .ok()?,
             marker_offset: u64::try_from(marker_offset).ok()?,
             first_reference,
             first_reference_offset: u64::try_from(first_reference_offset).ok()?,
@@ -4918,7 +5112,11 @@ pub fn bind_mirror_constructions(
         else {
             continue;
         };
-        let [crate::records::Located { value: plane_member, .. }] = plane_group.members.as_slice() else {
+        let [crate::records::Located {
+            value: plane_member,
+            ..
+        }] = plane_group.members.as_slice()
+        else {
             continue;
         };
         let Some(plane_header) = headers.get(&(stream.as_str(), *plane_member)) else {
@@ -4958,7 +5156,10 @@ pub fn bind_mirror_constructions(
         let (plane_scope_record_index, plane_selection_record_index) =
             if let Some((plane_scope_record_index, plane_reference_offset)) = work_plane {
                 (
-                    Some(crate::records::Located { value: plane_scope_record_index, offset: plane_reference_offset }),
+                    Some(crate::records::Located {
+                        value: plane_scope_record_index,
+                        offset: plane_reference_offset,
+                    }),
                     None,
                 )
             } else if crate::design::decode::operands::parse_entity_selection_operand(
@@ -5019,10 +5220,7 @@ pub fn bind_mirror_constructions(
             .collect::<Vec<_>>();
         let (count, tolerance_source) = (
             match (count.as_slice(), inline_count) {
-                ([count], None) => Some((
-                    count.record_index,
-                    count.evaluated_value_offset,
-                )),
+                ([count], None) => Some((count.record_index, count.evaluated_value_offset)),
                 ([], Some(count)) => Some(count),
                 _ => None,
             },
@@ -5030,22 +5228,22 @@ pub fn bind_mirror_constructions(
                 ([tolerance], None) => Some((
                     tolerance.evaluated_value,
                     tolerance.evaluated_value_offset,
-                    crate::records::DesignMirrorToleranceSource::Owner { record_index: tolerance.record_index },
+                    crate::records::DesignMirrorToleranceSource::Owner {
+                        record_index: tolerance.record_index,
+                    },
                 )),
-                ([], Some((value, value_offset, scope_tail))) => {
-                    Some((value, value_offset, crate::records::DesignMirrorToleranceSource::Scope(scope_tail)))
-                }
+                ([], Some((value, value_offset, scope_tail))) => Some((
+                    value,
+                    value_offset,
+                    crate::records::DesignMirrorToleranceSource::Scope(scope_tail),
+                )),
                 _ => None,
             },
         );
         let Some((count_record_index, count_offset)) = count else {
             continue;
         };
-        let Some((
-            stitch_tolerance,
-            stitch_tolerance_offset,
-            tolerance_source,
-        )) = tolerance_source
+        let Some((stitch_tolerance, stitch_tolerance_offset, tolerance_source)) = tolerance_source
         else {
             continue;
         };
@@ -5058,7 +5256,8 @@ pub fn bind_mirror_constructions(
                 tolerance_source,
                 seed_group_record_index: seed_group.record_index,
                 plane_group_record_index: plane_group.record_index,
-                seed_feature_scope_record_index: seed_feature.map(|(value, offset)| crate::records::Located { value, offset }),
+                seed_feature_scope_record_index: seed_feature
+                    .map(|(value, offset)| crate::records::Located { value, offset }),
                 plane_scope_record_index,
                 plane_selection_record_index,
                 plane: None,
@@ -5279,7 +5478,10 @@ pub(crate) fn exact_copy_paste_bodies_operation(
         if actual != *expected {
             return None;
         }
-        operands.push(crate::records::Located { value: actual, offset: u64::try_from(body_group_cursor + 1).ok()? });
+        operands.push(crate::records::Located {
+            value: actual,
+            offset: u64::try_from(body_group_cursor + 1).ok()?,
+        });
         body_group_cursor = body_group_cursor.checked_add(11)?;
     }
     let relation_at = records.first_at_or_after(search_at, relation_record_index)?;
@@ -5316,11 +5518,19 @@ pub(crate) fn exact_copy_paste_bodies_operation(
         let copied_at = source_at.checked_add(15)?;
         bodies.push(crate::records::DesignCopiedBody {
             operand,
-            source: crate::records::Located { value: body_reference(source_at, 10)?, offset: u64::try_from(source_at + 1).ok()? },
-            copied: crate::records::Located { value: body_reference(copied_at, if ordinal + 1 == body_count { 6 } else { 10 })?, offset: u64::try_from(copied_at + 1).ok()? },
+            source: crate::records::Located {
+                value: body_reference(source_at, 10)?,
+                offset: u64::try_from(source_at + 1).ok()?,
+            },
+            copied: crate::records::Located {
+                value: body_reference(copied_at, if ordinal + 1 == body_count { 6 } else { 10 })?,
+                offset: u64::try_from(copied_at + 1).ok()?,
+            },
         });
     }
-    if bodies.iter().flat_map(|body| [body.source.value, body.copied.value])
+    if bodies
+        .iter()
+        .flat_map(|body| [body.source.value, body.copied.value])
         .collect::<HashSet<_>>()
         .len()
         != reference_count
@@ -5342,7 +5552,9 @@ pub(crate) fn exact_base_feature_construction(
     bytes: &[u8],
     scope: &DesignParameterScope,
 ) -> Option<DesignBaseFeatureConstruction> {
-    use crate::records::{DesignBaseFeatureEntry, DesignBaseFeatureResultBody, DesignBaseFeatureResults};
+    use crate::records::{
+        DesignBaseFeatureEntry, DesignBaseFeatureResultBody, DesignBaseFeatureResults,
+    };
     if scope.kind() != crate::records::DesignFeatureKind::BaseFeature {
         return None;
     }
@@ -5385,7 +5597,11 @@ pub(crate) fn exact_base_feature_construction(
                     ..start + legacy_zero_body::SHARED_METADATA_MARKER,
             )? != [0; 11]
             || bytes.get(start + legacy_zero_body::SHARED_METADATA_MARKER) != Some(&1)
-            || !scope.reference_members.values().copied().eq([metadata_record])
+            || !scope
+                .reference_members
+                .values()
+                .copied()
+                .eq([metadata_record])
         {
             return None;
         }
@@ -5418,7 +5634,11 @@ pub(crate) fn exact_base_feature_construction(
             || scope.reference_members.len() != 1
             || scope.reference_count_offset
                 != scope.byte_offset + u64::try_from(legacy_444_zero_body::REFERENCE_COUNT).ok()?
-            || !scope.reference_members.offsets().copied().eq([scope.byte_offset
+            || !scope
+                .reference_members
+                .offsets()
+                .copied()
+                .eq([scope.byte_offset
                     + u64::try_from(legacy_444_zero_body::SCOPE_REFERENCE_RECORD).ok()?])
             || scope.kind_offset
                 != scope.byte_offset + u64::try_from(legacy_444_zero_body::KIND_LENGTH + 4).ok()?
@@ -5449,7 +5669,11 @@ pub(crate) fn exact_base_feature_construction(
             )? != [0; 11]
             || bytes.get(start + legacy_444_zero_body::SHARED_METADATA_MARKER)
                 != Some(&legacy_444_zero_body::SHARED_METADATA_MARKER_VALUE)
-            || !scope.reference_members.values().copied().eq([metadata_record])
+            || !scope
+                .reference_members
+                .values()
+                .copied()
+                .eq([metadata_record])
             || bytes.get(
                 start + legacy_444_zero_body::SHARED_METADATA_ZERO_TAIL
                     ..start + legacy_444_zero_body::GUID_CODE_UNIT_COUNT,
@@ -5532,16 +5756,29 @@ pub(crate) fn exact_base_feature_construction(
             entries.push(DesignBaseFeatureEntry {
                 value: View::u64_le_at(bytes, cursor + result_body_entry::REFERENCE_VALUE)?,
                 offset: u64::try_from(cursor + result_body_entry::REFERENCE_VALUE).ok()?,
-                field: bytes.get(cursor + result_body_entry::REFERENCE_FIELD..cursor + result_body_entry::LEN)?.try_into().ok()?,
+                field: bytes
+                    .get(
+                        cursor + result_body_entry::REFERENCE_FIELD
+                            ..cursor + result_body_entry::LEN,
+                    )?
+                    .try_into()
+                    .ok()?,
             });
             cursor += result_body_entry::LEN;
         }
         Some(entries)
     };
     let entities = read_u64_run(body_count)?;
-    let references = read_u64_run(body_count)?.into_iter().map(|entry| {
-        Some(DesignBaseFeatureEntry { value: u32::try_from(entry.value).ok()?, offset: entry.offset, field: entry.field })
-    }).collect::<Option<Vec<_>>>()?;
+    let references = read_u64_run(body_count)?
+        .into_iter()
+        .map(|entry| {
+            Some(DesignBaseFeatureEntry {
+                value: u32::try_from(entry.value).ok()?,
+                offset: entry.offset,
+                field: entry.field,
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
     if expanded {
         if bytes.get(cursor) != Some(&1)
             || bytes.get(cursor + 1..cursor + 7) != Some(&[0; 6])
@@ -5625,7 +5862,11 @@ pub(crate) fn exact_base_feature_construction(
     }
     cursor += 4;
     let mut result_rows = Vec::with_capacity(body_count);
-    for ((entity, reference), field) in entities.into_iter().zip(references).zip(repeated_reference_fields) {
+    for ((entity, reference), field) in entities
+        .into_iter()
+        .zip(references)
+        .zip(repeated_reference_fields)
+    {
         if bytes.get(cursor) != Some(&1) {
             return None;
         }
@@ -5634,7 +5875,14 @@ pub(crate) fn exact_base_feature_construction(
             offset: u64::try_from(cursor + 1).ok()?,
             field: bytes.get(cursor + 5..cursor + 11)?.try_into().ok()?,
         };
-        result_rows.push((DesignBaseFeatureResultBody { entity, reference, result }, field));
+        result_rows.push((
+            DesignBaseFeatureResultBody {
+                entity,
+                reference,
+                result,
+            },
+            field,
+        ));
         cursor += 11;
     }
     let uuid_offset = usize::try_from(scope.kind_offset).ok()?.checked_sub(102)?;
@@ -5645,7 +5893,10 @@ pub(crate) fn exact_base_feature_construction(
     let mut result_rows = result_rows.into_iter();
     let first = result_rows.next()?;
     admitted.then_some(DesignBaseFeatureConstruction::ResultBodies {
-        bodies: DesignBaseFeatureResults::WithRepeatedFields { first, rest: result_rows.collect() },
+        bodies: DesignBaseFeatureResults::WithRepeatedFields {
+            first,
+            rest: result_rows.collect(),
+        },
         metadata_record,
         metadata_record_offset,
         metadata_field,
@@ -5687,7 +5938,10 @@ fn exact_base_feature_body_snapshot(
         bodies.push(crate::records::DesignBaseFeatureEntry {
             value: View::u64_le_at(bytes, cursor + snapshot_entry::BODY_ENTITY_SUFFIX)?,
             offset: u64::try_from(cursor + snapshot_entry::BODY_ENTITY_SUFFIX).ok()?,
-            field: bytes.get(cursor + snapshot_entry::BODY_ENTITY_FIELD..cursor + snapshot_entry::LEN)?.try_into().ok()?,
+            field: bytes
+                .get(cursor + snapshot_entry::BODY_ENTITY_FIELD..cursor + snapshot_entry::LEN)?
+                .try_into()
+                .ok()?,
         });
         cursor += snapshot_entry::LEN;
     }
@@ -5768,7 +6022,8 @@ fn exact_base_feature_body_snapshot(
     if bytes.get(after_third_guid..reference_count_at)? != [0; 3]
         || View::u32_le_at(bytes, reference_count_at)? != 1
         || bytes.get(reference_marker) != Some(&1)
-        || View::u32_le_at(bytes, reference_marker + 1)? != *scope.reference_members.values().next()?
+        || View::u32_le_at(bytes, reference_marker + 1)?
+            != *scope.reference_members.values().next()?
         || bytes.get(reference_marker + 5..state_at)? != [0; 6]
         || scope.reference_count_offset != u64::try_from(reference_count_at).ok()?
         || scope.reference_members.offsets().next().copied()
@@ -5823,9 +6078,7 @@ pub(crate) fn exact_solid_primitive(
     parameter_owners: &[DesignParameterOwner],
 ) -> Option<DesignSolidPrimitive> {
     let start = usize::try_from(scope.byte_offset).ok()?;
-    let (operation, operation_offset, cylinder_transform) = match scope
-        .kind_name()
-    {
+    let (operation, operation_offset, cylinder_transform) = match scope.kind_name() {
         "SpherePrimitive" | "TorusPrimitive" => {
             let operation_offset = start.checked_add(25)?;
             (
@@ -5881,15 +6134,17 @@ pub(crate) fn exact_solid_primitive(
             let (diameter, diameter_offset) =
                 exact_primitive_diameter(bytes, records, diameter_record_index)?;
             let (transform, transform_offset) = matrix(64)?;
-            Some(DesignSolidPrimitive::Sphere(crate::records::DesignSpherePrimitive {
-                transform,
-                transform_offset,
-                diameter,
-                diameter_record_index,
-                diameter_offset,
-                operation,
-                operation_offset: operation_offset as u64,
-            }))
+            Some(DesignSolidPrimitive::Sphere(
+                crate::records::DesignSpherePrimitive {
+                    transform,
+                    transform_offset,
+                    diameter,
+                    diameter_record_index,
+                    diameter_offset,
+                    operation,
+                    operation_offset: operation_offset as u64,
+                },
+            ))
         }
         "TorusPrimitive"
             if scope.frame_length == 486
@@ -5909,18 +6164,20 @@ pub(crate) fn exact_solid_primitive(
             let (minor_diameter, minor_diameter_offset) =
                 exact_primitive_diameter(bytes, records, minor_diameter_record_index)?;
             let (transform, transform_offset) = matrix(75)?;
-            Some(DesignSolidPrimitive::Torus(crate::records::DesignTorusPrimitive {
-                transform,
-                transform_offset,
-                major_diameter,
-                major_diameter_record_index,
-                major_diameter_offset,
-                minor_diameter,
-                minor_diameter_record_index,
-                minor_diameter_offset,
-                operation,
-                operation_offset: operation_offset as u64,
-            }))
+            Some(DesignSolidPrimitive::Torus(
+                crate::records::DesignTorusPrimitive {
+                    transform,
+                    transform_offset,
+                    major_diameter,
+                    major_diameter_record_index,
+                    major_diameter_offset,
+                    minor_diameter,
+                    minor_diameter_record_index,
+                    minor_diameter_offset,
+                    operation,
+                    operation_offset: operation_offset as u64,
+                },
+            ))
         }
         "BoxPrimitive" => {
             if scope.frame_length < 78 || scope.reference_members.len() < 5 {
@@ -5933,25 +6190,27 @@ pub(crate) fn exact_solid_primitive(
             (length.evaluated_value > 0.0
                 && width.evaluated_value > 0.0
                 && height.evaluated_value > 0.0)
-                .then_some(DesignSolidPrimitive::Box(crate::records::DesignBoxPrimitive {
-                    length: length.evaluated_value,
-                    length_record_index: length.record_index,
-                    length_offset: length.evaluated_value_offset,
-                    width: width.evaluated_value,
-                    width_record_index: width.record_index,
-                    width_offset: width.evaluated_value_offset,
-                    height: height.evaluated_value,
-                    height_record_index: height.record_index,
-                    height_offset: height.evaluated_value_offset,
-                    offset_x: offset_x.evaluated_value,
-                    offset_x_record_index: offset_x.record_index,
-                    offset_x_offset: offset_x.evaluated_value_offset,
-                    offset_y: offset_y.evaluated_value,
-                    offset_y_record_index: offset_y.record_index,
-                    offset_y_offset: offset_y.evaluated_value_offset,
-                    operation,
-                    operation_offset: operation_offset as u64,
-                }))
+                .then_some(DesignSolidPrimitive::Box(
+                    crate::records::DesignBoxPrimitive {
+                        length: length.evaluated_value,
+                        length_record_index: length.record_index,
+                        length_offset: length.evaluated_value_offset,
+                        width: width.evaluated_value,
+                        width_record_index: width.record_index,
+                        width_offset: width.evaluated_value_offset,
+                        height: height.evaluated_value,
+                        height_record_index: height.record_index,
+                        height_offset: height.evaluated_value_offset,
+                        offset_x: offset_x.evaluated_value,
+                        offset_x_record_index: offset_x.record_index,
+                        offset_x_offset: offset_x.evaluated_value_offset,
+                        offset_y: offset_y.evaluated_value,
+                        offset_y_record_index: offset_y.record_index,
+                        offset_y_offset: offset_y.evaluated_value_offset,
+                        operation,
+                        operation_offset: operation_offset as u64,
+                    },
+                ))
         }
         "CylinderPrimitive" => {
             if scope.frame_length < 78 || scope.reference_members.len() < 2 {
@@ -6236,7 +6495,10 @@ fn exact_owned_primitive_parameters<'a>(
         .filter(|owner| {
             owner.scope_record_index == scope.record_index
                 && native_stream(&owner.id) == Some(stream)
-                && scope.reference_members.values().any(|value| value == &owner.record_index)
+                && scope
+                    .reference_members
+                    .values()
+                    .any(|value| value == &owner.record_index)
                 && owner.evaluated_value.is_finite()
         })
         .collect::<Vec<_>>();
@@ -6336,7 +6598,10 @@ fn exact_pipe_owner_lanes(
         .filter(|owner| {
             native_stream(&owner.id) == Some(stream)
                 && owner.scope_record_index == scope.record_index
-                && scope.reference_members.values().any(|value| value == &owner.record_index)
+                && scope
+                    .reference_members
+                    .values()
+                    .any(|value| value == &owner.record_index)
                 && owner.class_tag == "342"
                 && owner.frame_length == 103
                 && owner.evaluated_value.is_finite()
@@ -6433,11 +6698,13 @@ fn exact_legacy_thicken_class_347(
         return None;
     }
     let scalar = exact_fixed_scalar(bytes, records, thickness_record_index)?;
-    (scalar.value != 0.0).then_some(DesignDirectFaceOperation::Thicken(crate::records::DesignThickenOperation {
-        signed_thickness: scalar.value,
-        thickness_record_index,
-        thickness_offset: scalar.value_offset,
-    }))
+    (scalar.value != 0.0).then_some(DesignDirectFaceOperation::Thicken(
+        crate::records::DesignThickenOperation {
+            signed_thickness: scalar.value,
+            thickness_record_index,
+            thickness_offset: scalar.value_offset,
+        },
+    ))
 }
 
 fn exact_shell_class_369_261(
@@ -6527,13 +6794,15 @@ fn exact_shell_class_369_261(
     if scalar.value <= 0.0 {
         return None;
     }
-    Some(DesignDirectFaceOperation::Shell(crate::records::DesignShellOperation {
-        thickness: scalar.value,
-        thickness_record_index,
-        thickness_offset: scalar.value_offset,
-        outward,
-        outward_offset: u64::try_from(start + shell_369_261::OUTWARD).ok()?,
-    }))
+    Some(DesignDirectFaceOperation::Shell(
+        crate::records::DesignShellOperation {
+            thickness: scalar.value,
+            thickness_record_index,
+            thickness_offset: scalar.value_offset,
+            outward,
+            outward_offset: u64::try_from(start + shell_369_261::OUTWARD).ok()?,
+        },
+    ))
 }
 
 pub(crate) fn exact_direct_face_operation(
@@ -6563,11 +6832,13 @@ pub(crate) fn exact_direct_face_operation(
                 return None;
             }
             let scalar = exact_fixed_scalar(bytes, records, distance_record_index)?;
-            Some(DesignDirectFaceOperation::OffsetFaces(crate::records::DesignOffsetFacesOperation {
-                distance: scalar.value,
-                distance_record_index,
-                distance_offset: scalar.value_offset,
-            }))
+            Some(DesignDirectFaceOperation::OffsetFaces(
+                crate::records::DesignOffsetFacesOperation {
+                    distance: scalar.value,
+                    distance_record_index,
+                    distance_offset: scalar.value_offset,
+                },
+            ))
         }
         DesignFeatureFamily::Thicken if scope.reference_members.len() >= 3 => {
             if let Some(operation) = exact_legacy_thicken_class_347(bytes, records, scope) {
@@ -6613,11 +6884,13 @@ pub(crate) fn exact_direct_face_operation(
             if scalar.value == 0.0 {
                 return None;
             }
-            Some(DesignDirectFaceOperation::Thicken(crate::records::DesignThickenOperation {
-                signed_thickness: scalar.value,
-                thickness_record_index,
-                thickness_offset: scalar.value_offset,
-            }))
+            Some(DesignDirectFaceOperation::Thicken(
+                crate::records::DesignThickenOperation {
+                    signed_thickness: scalar.value,
+                    thickness_record_index,
+                    thickness_offset: scalar.value_offset,
+                },
+            ))
         }
         DesignFeatureFamily::Shell if scope.reference_members.len() == 3 => {
             let (thickness_record_index, thickness_is_first, outward, outward_offset) =
@@ -6691,13 +6964,15 @@ pub(crate) fn exact_direct_face_operation(
             if scalar.value <= 0.0 {
                 return None;
             }
-            Some(DesignDirectFaceOperation::Shell(crate::records::DesignShellOperation {
-                thickness: scalar.value,
-                thickness_record_index,
-                thickness_offset: scalar.value_offset,
-                outward,
-                outward_offset: u64::try_from(outward_offset).ok()?,
-            }))
+            Some(DesignDirectFaceOperation::Shell(
+                crate::records::DesignShellOperation {
+                    thickness: scalar.value,
+                    thickness_record_index,
+                    thickness_offset: scalar.value_offset,
+                    outward,
+                    outward_offset: u64::try_from(outward_offset).ok()?,
+                },
+            ))
         }
         _ => None,
     }
@@ -6741,7 +7016,10 @@ pub(crate) fn exact_move_operation(
             if bytes.get(start + 47) != Some(&0) {
                 continue;
             }
-            let Ok(form) = crate::records::DesignMoveForm::try_from(View::u32_le_at(bytes, start + form_offset)?) else {
+            let Ok(form) = crate::records::DesignMoveForm::try_from(View::u32_le_at(
+                bytes,
+                start + form_offset,
+            )?) else {
                 continue;
             };
             let transform: [[f64; 4]; 4] = f64s_at(bytes, start + transform_offset, 16)?
@@ -6797,7 +7075,8 @@ pub(crate) fn exact_scale_operation(
     let (body_group_record_index, center_record_index, uniform_factor_offset, center) =
         if parameter_scope_payload_length(scope) == Some(303) && scope.reference_members.len() == 5
         {
-            let Some([factor_record_index, body_group_record_index, _, _, center_record_index]) = scope.reference_members.values_array()
+            let Some([factor_record_index, body_group_record_index, _, _, center_record_index]) =
+                scope.reference_members.values_array()
             else {
                 return None;
             };
@@ -7046,34 +7325,67 @@ pub(crate) fn exact_fixed_fillet_parameters(
     {
         return None;
     }
-    use crate::records::{DesignFixedFilletIntermediate, DesignFixedFilletLaw, DesignFixedFilletScalar};
+    use crate::records::{
+        DesignFixedFilletIntermediate, DesignFixedFilletLaw, DesignFixedFilletScalar,
+    };
     let scalar = |(record_index, scalar): &(u32, FixedScalarFrame)| DesignFixedFilletScalar {
-        value: scalar.value, record_index: *record_index, value_offset: scalar.value_offset,
+        value: scalar.value,
+        record_index: *record_index,
+        value_offset: scalar.value_offset,
     };
     let group = |tangency_lane: Option<&(u32, FixedScalarFrame)>, law: DesignFixedFilletLaw| {
         let tangency_weight = tangency_lane.map(scalar);
-        if tangency_weight.as_ref().is_some_and(|weight| weight.value <= 0.0)
+        if tangency_weight
+            .as_ref()
+            .is_some_and(|weight| weight.value <= 0.0)
             || law.radii().any(|radius| radius.value < 0.0)
             || law.radii().all(|radius| radius.value == 0.0)
-            || law.intermediate().iter().any(|row| !(0.0..1.0).contains(&row.parameter.value))
-            || law.intermediate().windows(2).any(|pair| pair[0].parameter.value >= pair[1].parameter.value)
+            || law
+                .intermediate()
+                .iter()
+                .any(|row| !(0.0..1.0).contains(&row.parameter.value))
+            || law
+                .intermediate()
+                .windows(2)
+                .any(|pair| pair[0].parameter.value >= pair[1].parameter.value)
         {
             return None;
         }
-        Some(DesignFixedFilletGroup { tangency_weight, law })
+        Some(DesignFixedFilletGroup {
+            tangency_weight,
+            law,
+        })
     };
     let groups = if lanes.len() == 1 {
-        vec![group(None, DesignFixedFilletLaw::Constant(scalar(&lanes[0])))?]
+        vec![group(
+            None,
+            DesignFixedFilletLaw::Constant(scalar(&lanes[0])),
+        )?]
     } else if lanes.len() % 2 == 0 {
-        lanes.chunks_exact(2).map(|pair| group(Some(&pair[0]), DesignFixedFilletLaw::Constant(scalar(&pair[1]))))
+        lanes
+            .chunks_exact(2)
+            .map(|pair| {
+                group(
+                    Some(&pair[0]),
+                    DesignFixedFilletLaw::Constant(scalar(&pair[1])),
+                )
+            })
             .collect::<Option<Vec<_>>>()?
     } else {
-        vec![group(Some(&lanes[0]), DesignFixedFilletLaw::Variable {
-            start: scalar(&lanes[1]), end: scalar(&lanes[2]),
-            intermediate: lanes[3..].chunks_exact(2).map(|pair| DesignFixedFilletIntermediate {
-                radius: scalar(&pair[0]), parameter: scalar(&pair[1]),
-            }).collect(),
-        })?]
+        vec![group(
+            Some(&lanes[0]),
+            DesignFixedFilletLaw::Variable {
+                start: scalar(&lanes[1]),
+                end: scalar(&lanes[2]),
+                intermediate: lanes[3..]
+                    .chunks_exact(2)
+                    .map(|pair| DesignFixedFilletIntermediate {
+                        radius: scalar(&pair[0]),
+                        parameter: scalar(&pair[1]),
+                    })
+                    .collect(),
+            },
+        )?]
     };
     Some(DesignFixedFilletParameters { groups })
 }
@@ -7136,7 +7448,10 @@ fn unique_revolve_angle_owner<'a>(
     let mut candidates = parameter_owners.iter().filter(|owner| {
         native_stream(&owner.id) == native_stream(&scope.id)
             && owner.scope_record_index == scope.record_index
-            && scope.reference_members.values().any(|value| value == &owner.record_index)
+            && scope
+                .reference_members
+                .values()
+                .any(|value| value == &owner.record_index)
             && record_index.is_none_or(|index| owner.record_index == index)
             && owner.local_ordinal == 0
             && owner.evaluated_value.is_finite()
@@ -7172,14 +7487,16 @@ pub(crate) fn exact_path_feature_construction(
                 && View::u32_le_at(bytes, start + revolve::STRUCTURAL_CONSTANT) == Some(1) =>
         {
             let angle = unique_revolve_angle_owner(scope, parameter_owners, None)?;
-            Some(DesignPathFeatureConstruction::Revolve(crate::records::DesignRevolveConstruction {
-                operation: operation(start + revolve::OPERATION)?,
-                operation_offset: u64::try_from(start + revolve::OPERATION).ok()?,
-                angle: angle.evaluated_value,
-                angle_record_index: angle.record_index,
-                angle_offset: angle.evaluated_value_offset,
-                opposite_angle: None,
-            }))
+            Some(DesignPathFeatureConstruction::Revolve(
+                crate::records::DesignRevolveConstruction {
+                    operation: operation(start + revolve::OPERATION)?,
+                    operation_offset: u64::try_from(start + revolve::OPERATION).ok()?,
+                    angle: angle.evaluated_value,
+                    angle_record_index: angle.record_index,
+                    angle_offset: angle.evaluated_value_offset,
+                    opposite_angle: None,
+                },
+            ))
         }
         DesignFeatureFamily::Revolve
             if parameter_scope_payload_length(scope) == Some(372)
@@ -7208,14 +7525,19 @@ pub(crate) fn exact_path_feature_construction(
             {
                 return None;
             }
-            Some(DesignPathFeatureConstruction::Revolve(crate::records::DesignRevolveConstruction {
-                operation: operation(start + revolve::OPERATION)?,
-                operation_offset: u64::try_from(start + revolve::OPERATION).ok()?,
-                angle: angle.value,
-                angle_record_index: *angle_record_index,
-                angle_offset: angle.value_offset,
-                opposite_angle: Some(crate::records::Located { value: *opposite_angle_record_index, offset: opposite.value_offset }),
-            }))
+            Some(DesignPathFeatureConstruction::Revolve(
+                crate::records::DesignRevolveConstruction {
+                    operation: operation(start + revolve::OPERATION)?,
+                    operation_offset: u64::try_from(start + revolve::OPERATION).ok()?,
+                    angle: angle.value,
+                    angle_record_index: *angle_record_index,
+                    angle_offset: angle.value_offset,
+                    opposite_angle: Some(crate::records::Located {
+                        value: *opposite_angle_record_index,
+                        offset: opposite.value_offset,
+                    }),
+                },
+            ))
         }
         DesignFeatureFamily::Revolve
             if scope.class_tag == "407"
@@ -7234,14 +7556,16 @@ pub(crate) fn exact_path_feature_construction(
             }
             let angle =
                 unique_revolve_angle_owner(scope, parameter_owners, Some(angle_record_index))?;
-            Some(DesignPathFeatureConstruction::Revolve(crate::records::DesignRevolveConstruction {
-                operation: operation(start + 21)?,
-                operation_offset: u64::try_from(start + 21).ok()?,
-                angle: angle.evaluated_value,
-                angle_record_index,
-                angle_offset: angle.evaluated_value_offset,
-                opposite_angle: None,
-            }))
+            Some(DesignPathFeatureConstruction::Revolve(
+                crate::records::DesignRevolveConstruction {
+                    operation: operation(start + 21)?,
+                    operation_offset: u64::try_from(start + 21).ok()?,
+                    angle: angle.evaluated_value,
+                    angle_record_index,
+                    angle_offset: angle.evaluated_value_offset,
+                    opposite_angle: None,
+                },
+            ))
         }
         DesignFeatureFamily::Revolve
             if scope.class_tag == "403"
@@ -7256,14 +7580,16 @@ pub(crate) fn exact_path_feature_construction(
                 marked_record_reference(bytes, start + class_403_revolve::ANGLE_REFERENCE_MARKER)?;
             let angle =
                 unique_revolve_angle_owner(scope, parameter_owners, Some(angle_record_index))?;
-            Some(DesignPathFeatureConstruction::Revolve(crate::records::DesignRevolveConstruction {
-                operation: operation(start + class_403_revolve::OPERATION)?,
-                operation_offset: u64::try_from(start + class_403_revolve::OPERATION).ok()?,
-                angle: angle.evaluated_value,
-                angle_record_index,
-                angle_offset: angle.evaluated_value_offset,
-                opposite_angle: None,
-            }))
+            Some(DesignPathFeatureConstruction::Revolve(
+                crate::records::DesignRevolveConstruction {
+                    operation: operation(start + class_403_revolve::OPERATION)?,
+                    operation_offset: u64::try_from(start + class_403_revolve::OPERATION).ok()?,
+                    angle: angle.evaluated_value,
+                    angle_record_index,
+                    angle_offset: angle.evaluated_value_offset,
+                    opposite_angle: None,
+                },
+            ))
         }
         DesignFeatureFamily::Loft
             if scope.class_tag.len() == 3
@@ -7277,19 +7603,23 @@ pub(crate) fn exact_path_feature_construction(
                 && bytes.get(start + compact_loft::ZERO_RUN_11..start + compact_loft::LEN)
                     == Some(&[0; 11]) =>
         {
-            Some(DesignPathFeatureConstruction::Loft(crate::records::DesignLoftConstruction {
-                operation: operation(start + compact_loft::OPERATION)?,
-                operation_offset: u64::try_from(start + compact_loft::OPERATION).ok()?,
-            }))
+            Some(DesignPathFeatureConstruction::Loft(
+                crate::records::DesignLoftConstruction {
+                    operation: operation(start + compact_loft::OPERATION)?,
+                    operation_offset: u64::try_from(start + compact_loft::OPERATION).ok()?,
+                },
+            ))
         }
         DesignFeatureFamily::Loft
             if scope.class_tag.len() == 3
                 && parameter_scope_payload_length(scope).is_some_and(|length| length >= 368) =>
         {
-            Some(DesignPathFeatureConstruction::Loft(crate::records::DesignLoftConstruction {
-                operation: operation(start + 29)?,
-                operation_offset: u64::try_from(start + 29).ok()?,
-            }))
+            Some(DesignPathFeatureConstruction::Loft(
+                crate::records::DesignLoftConstruction {
+                    operation: operation(start + 29)?,
+                    operation_offset: u64::try_from(start + 29).ok()?,
+                },
+            ))
         }
         DesignFeatureFamily::Sweep => {
             let lanes = scope
@@ -7309,13 +7639,15 @@ pub(crate) fn exact_path_feature_construction(
             {
                 return None;
             }
-            Some(DesignPathFeatureConstruction::Sweep(crate::records::DesignSweepConstruction {
-                operation: operation(start + 25)?,
-                operation_offset: u64::try_from(start + 25).ok()?,
-                values: lanes.map(|(_, scalar)| scalar.value),
-                record_indexes: lanes.map(|(record_index, _)| record_index),
-                value_offsets: lanes.map(|(_, scalar)| scalar.value_offset),
-            }))
+            Some(DesignPathFeatureConstruction::Sweep(
+                crate::records::DesignSweepConstruction {
+                    operation: operation(start + 25)?,
+                    operation_offset: u64::try_from(start + 25).ok()?,
+                    values: lanes.map(|(_, scalar)| scalar.value),
+                    record_indexes: lanes.map(|(record_index, _)| record_index),
+                    value_offsets: lanes.map(|(_, scalar)| scalar.value_offset),
+                },
+            ))
         }
         DesignFeatureFamily::Pipe => {
             let legacy_prefix_layout = matches!(
@@ -7376,17 +7708,19 @@ pub(crate) fn exact_path_feature_construction(
                 1 => true,
                 _ => return None,
             };
-            Some(DesignPathFeatureConstruction::Pipe(crate::records::DesignPipeConstruction {
-                operation: operation(operation_offset)?,
-                operation_offset: u64::try_from(operation_offset).ok()?,
-                section_shape: crate::records::DesignPipeSectionShape::from_code(section_shape),
-                section_shape_offset: u64::try_from(section_shape_offset).ok()?,
-                filled,
-                filled_offset: u64::try_from(filled_offset).ok()?,
-                values: lanes.map(|(_, scalar)| scalar.value),
-                record_indexes: lanes.map(|(record_index, _)| record_index),
-                value_offsets: lanes.map(|(_, scalar)| scalar.value_offset),
-            }))
+            Some(DesignPathFeatureConstruction::Pipe(
+                crate::records::DesignPipeConstruction {
+                    operation: operation(operation_offset)?,
+                    operation_offset: u64::try_from(operation_offset).ok()?,
+                    section_shape: crate::records::DesignPipeSectionShape::from_code(section_shape),
+                    section_shape_offset: u64::try_from(section_shape_offset).ok()?,
+                    filled,
+                    filled_offset: u64::try_from(filled_offset).ok()?,
+                    values: lanes.map(|(_, scalar)| scalar.value),
+                    record_indexes: lanes.map(|(record_index, _)| record_index),
+                    value_offsets: lanes.map(|(_, scalar)| scalar.value_offset),
+                },
+            ))
         }
         _ => None,
     }
@@ -7597,7 +7931,8 @@ fn exact_two_point_work_axis_construction(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignWorkAxisConstruction> {
-    let Some([axis_record_index, _, first_point_record_index, _, second_point_record_index]) = scope.reference_members.values_array()
+    let Some([axis_record_index, _, first_point_record_index, _, second_point_record_index]) =
+        scope.reference_members.values_array()
     else {
         return None;
     };
@@ -7673,7 +8008,8 @@ fn exact_direct_work_axis_construction(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignWorkAxisConstruction> {
-    let Some([carrier_record_index, support_record_index]) = scope.reference_members.values_array() else {
+    let Some([carrier_record_index, support_record_index]) = scope.reference_members.values_array()
+    else {
         return None;
     };
     let (
@@ -7982,7 +8318,12 @@ pub(crate) fn exact_work_point_construction(
     if scope.kind() != crate::records::DesignFeatureKind::WorkPoint {
         return None;
     }
-    exact_point_data_construction(bytes, records, scope.reference_members.values(), stream_types)
+    exact_point_data_construction(
+        bytes,
+        records,
+        scope.reference_members.values(),
+        stream_types,
+    )
 }
 
 pub(crate) fn exact_point_data_construction<'a>(
@@ -8045,7 +8386,8 @@ pub(crate) fn exact_point_data_construction<'a>(
                     rule: DesignWorkPointRule::from_serialized(
                         level.reference_type,
                         level.inputs.clone(),
-                    ).ok()?,
+                    )
+                    .ok()?,
                     reference_type_offset: u64::try_from(level.reference_type_at).ok()?,
                 });
             }
@@ -8209,8 +8551,7 @@ fn hole_construction_frame_at(
     let reference_type_at = cursor;
     let reference_type = View::u32_le_at(body, cursor)?;
     cursor = cursor.checked_add(4)?;
-    let tangent_point_data = if version == 4
-    {
+    let tangent_point_data = if version == 4 {
         let prefix = *body.get(cursor)?;
         cursor = cursor.checked_add(1)?;
         let tangent_point_data_at = cursor;
@@ -8219,7 +8560,10 @@ fn hole_construction_frame_at(
             f64s_at(body, tangent_point_data_at, 3)?.try_into().ok()?;
         Some(crate::records::DesignHoleTangentPoint {
             prefix,
-            data: crate::records::Located { value: tangent_point_data, offset: u64::try_from(tangent_point_data_at).ok()? },
+            data: crate::records::Located {
+                value: tangent_point_data,
+                offset: u64::try_from(tangent_point_data_at).ok()?,
+            },
         })
     } else if version == 1 {
         None
@@ -8242,7 +8586,11 @@ fn hole_construction_frame_at(
         .iter()
         .chain(direction.iter())
         .chain(point_parameters.iter())
-        .chain(tangent_point_data.iter().flat_map(|tangent| tangent.data.value.iter()))
+        .chain(
+            tangent_point_data
+                .iter()
+                .flat_map(|tangent| tangent.data.value.iter()),
+        )
         .any(|value| !value.is_finite())
         || (direction_norm - 1.0).abs() > EPS_HOLE_DIRECTION_NORM
     {
@@ -8253,7 +8601,10 @@ fn hole_construction_frame_at(
         let reference_at = cursor;
         let reference = take_reference(body, &mut cursor)?;
         let target = u32::try_from(reference.target?).ok()?;
-        input_records.push(crate::records::Located { value: target, offset: u64::try_from(reference_at.checked_add(1)?).ok()? });
+        input_records.push(crate::records::Located {
+            value: target,
+            offset: u64::try_from(reference_at.checked_add(1)?).ok()?,
+        });
     }
     if (version == 4 && cursor != paired_at)
         || (version == 1 && next_indexed_record_offset(bytes, cursor)? != paired_at)
@@ -8366,8 +8717,12 @@ pub(crate) fn exact_combine_operation(
     };
     let mut target = None;
     let mut tools = Vec::with_capacity(scope.reference_members.len() / 2);
-    for (operation_record_index, selection_record_index) in scope.reference_members.values().step_by(2)
-        .zip(scope.reference_members.values().skip(1).step_by(2)) {
+    for (operation_record_index, selection_record_index) in scope
+        .reference_members
+        .values()
+        .step_by(2)
+        .zip(scope.reference_members.values().skip(1).step_by(2))
+    {
         let [operation_at, operation_end] = records.offsets(*operation_record_index) else {
             return None;
         };
@@ -8390,14 +8745,21 @@ pub(crate) fn exact_combine_operation(
             CombineOperandRole::Tool => tools.push(DesignCombineBodySelection {
                 record_index: *selection_record_index,
                 external_identity: exact_combine_external_body_identity(
-                    bytes, *selection_at, *selection_end, scope.record_index, *selection_record_index,
+                    bytes,
+                    *selection_at,
+                    *selection_end,
+                    scope.record_index,
+                    *selection_record_index,
                 ),
             }),
         }
     }
     let target = target?;
     let mut tools = tools.into_iter();
-    let tools = crate::records::DesignCombineTools { first: tools.next()?, additional: tools.collect() };
+    let tools = crate::records::DesignCombineTools {
+        first: tools.next()?,
+        additional: tools.collect(),
+    };
     Some(DesignCombineOperation {
         form,
         operation,
@@ -8442,28 +8804,33 @@ fn take_external_reference_identity(
     }
     let link_name_at = after_asset_id.checked_add(1)?;
     let (link_name, after_link_name) = lp_utf16_bounded(bytes, link_name_at, 1..=256)?;
-    let (version, end) =
-        match bytes.get(after_link_name)? {
-            0 => (None, after_link_name.checked_add(1)?),
-            1 => {
-                let property_key_at = after_link_name.checked_add(1)?;
-                let (property_key, after_property_key) =
-                    lp_utf16_bounded(bytes, property_key_at, 1..=256)?;
-                let version_urn_at = after_property_key;
-                let (version_urn, end) = lp_utf16_bounded(bytes, version_urn_at, 1..=256)?;
-                if !is_guid_relaxed(&property_key) {
-                    return None;
-                }
-                (
-                    Some(crate::records::DesignExternalVersion {
-                        property_key: crate::records::Located { value: property_key, offset: u64::try_from(property_key_at.checked_add(4)?).ok()? },
-                        version_urn: crate::records::Located { value: version_urn, offset: u64::try_from(version_urn_at.checked_add(4)?).ok()? },
-                    }),
-                    end,
-                )
+    let (version, end) = match bytes.get(after_link_name)? {
+        0 => (None, after_link_name.checked_add(1)?),
+        1 => {
+            let property_key_at = after_link_name.checked_add(1)?;
+            let (property_key, after_property_key) =
+                lp_utf16_bounded(bytes, property_key_at, 1..=256)?;
+            let version_urn_at = after_property_key;
+            let (version_urn, end) = lp_utf16_bounded(bytes, version_urn_at, 1..=256)?;
+            if !is_guid_relaxed(&property_key) {
+                return None;
             }
-            _ => return None,
-        };
+            (
+                Some(crate::records::DesignExternalVersion {
+                    property_key: crate::records::Located {
+                        value: property_key,
+                        offset: u64::try_from(property_key_at.checked_add(4)?).ok()?,
+                    },
+                    version_urn: crate::records::Located {
+                        value: version_urn,
+                        offset: u64::try_from(version_urn_at.checked_add(4)?).ok()?,
+                    },
+                }),
+                end,
+            )
+        }
+        _ => return None,
+    };
     *cursor = end;
     Some(ExternalReferenceIdentity {
         target,
@@ -8943,11 +9310,33 @@ pub(crate) fn parse_parameter_scope(
     };
     let coil = if family == Some(DesignFeatureFamily::Coil) {
         Some(crate::records::DesignCoilScope {
-            coil_operation: coil_discriminators.as_ref().map(|fields| crate::records::RecordedValue { value: fields.operation, offset: Some(fields.operation_offset) }),
-            coil_extent: coil_discriminators.as_ref().and_then(|fields| fields.extent),
-            coil_section: coil_discriminators.as_ref().map(|fields| crate::records::RecordedValue { value: fields.section, offset: fields.section_offset }),
-            coil_section_placement: coil_discriminators.as_ref().map(|fields| crate::records::RecordedValue { value: fields.section_placement, offset: fields.section_placement_offset }),
-            coil_clockwise: coil_discriminators.as_ref().map(|fields| crate::records::RecordedValue { value: fields.clockwise, offset: fields.clockwise_offset }),
+            coil_operation: coil_discriminators.as_ref().map(|fields| {
+                crate::records::RecordedValue {
+                    value: fields.operation,
+                    offset: Some(fields.operation_offset),
+                }
+            }),
+            coil_extent: coil_discriminators
+                .as_ref()
+                .and_then(|fields| fields.extent),
+            coil_section: coil_discriminators.as_ref().map(|fields| {
+                crate::records::RecordedValue {
+                    value: fields.section,
+                    offset: fields.section_offset,
+                }
+            }),
+            coil_section_placement: coil_discriminators.as_ref().map(|fields| {
+                crate::records::RecordedValue {
+                    value: fields.section_placement,
+                    offset: fields.section_placement_offset,
+                }
+            }),
+            coil_clockwise: coil_discriminators.as_ref().map(|fields| {
+                crate::records::RecordedValue {
+                    value: fields.clockwise,
+                    offset: fields.clockwise_offset,
+                }
+            }),
             coil_placement: None,
             coil_transform,
         })
@@ -8970,9 +9359,14 @@ pub(crate) fn parse_parameter_scope(
             .and_then(|offset| u64::try_from(offset).ok())
             .filter(|&offset| offset != 0),
         reference_count_offset: u64::try_from(*reference_count_at).ok()?,
-        reference_members: crate::records::ReferenceRun::Located(reference_members.iter().copied()
-            .zip(reference_member_offsets.iter().copied())
-            .map(|(value, offset)| crate::records::Located { value, offset }).collect()),
+        reference_members: crate::records::ReferenceRun::Located(
+            reference_members
+                .iter()
+                .copied()
+                .zip(reference_member_offsets.iter().copied())
+                .map(|(value, offset)| crate::records::Located { value, offset })
+                .collect(),
+        ),
         payload: kind.into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag,
@@ -9216,7 +9610,8 @@ fn exact_coil_placement(
             }
             Some(crate::records::Located {
                 value: transform,
-                offset: u64::try_from(transform_start.checked_add(coil_modern_matrix::MATRIX)?).ok()?,
+                offset: u64::try_from(transform_start.checked_add(coil_modern_matrix::MATRIX)?)
+                    .ok()?,
             })
         }
         coil_identity::LEN
@@ -9273,7 +9668,10 @@ fn exact_coil_placement(
         }
         _ => return None,
     };
-    if explicit_transform.as_ref().is_some_and(|matrix| !valid_right_handed_coil_transform(&matrix.value)) {
+    if explicit_transform
+        .as_ref()
+        .is_some_and(|matrix| !valid_right_handed_coil_transform(&matrix.value))
+    {
         return None;
     }
     let selection = parse_entity_selection_frame(
@@ -9287,10 +9685,12 @@ fn exact_coil_placement(
         context_id: selection.context_id,
         identity_record_index: selection.identity_record_index,
         primary_identity: selection.primary_identity,
-        secondary: selection.secondary.map(|identity| crate::records::DesignSecondaryIdentity {
-            identity: identity.identity.value,
-            curve_identity: identity.curve_identity.map(|identity| identity.value),
-        }),
+        secondary: selection
+            .secondary
+            .map(|identity| crate::records::DesignSecondaryIdentity {
+                identity: identity.identity.value,
+                curve_identity: identity.curve_identity.map(|identity| identity.value),
+            }),
     })
     .or_else(|| {
         exact_coil_face_selection(
@@ -9502,10 +9902,13 @@ fn exact_coil_face_selection(
         recipe_record_byte_offset: face.recipe_record_byte_offset,
         recipe_id: recipe.id.clone(),
         recipe_kind: crate::records::DesignFaceRecipeKind::try_from(recipe.kind).ok()?,
-        design: recipe.design.as_ref().map(|design| crate::records::ConstructionRecipeDesign {
-            id: design.id.value.clone(),
-            selector: design.selector,
-        }),
+        design: recipe
+            .design
+            .as_ref()
+            .map(|design| crate::records::ConstructionRecipeDesign {
+                id: design.id.value.clone(),
+                selector: design.selector,
+            }),
     })
 }
 
@@ -9615,7 +10018,10 @@ fn exact_coil_discriminators(
     Some(CoilDiscriminators {
         operation,
         operation_offset: operation_offset as u64,
-        extent: Some(crate::records::RecordedValue { value: extent, offset: Some(extent_offset as u64) }),
+        extent: Some(crate::records::RecordedValue {
+            value: extent,
+            offset: Some(extent_offset as u64),
+        }),
         section,
         section_offset: Some(section_offset as u64),
         section_placement,
@@ -9772,10 +10178,11 @@ fn bind_coil_extent_from_parameters(
         if let crate::records::DesignScopePayload::SpirePrimitive(slot)
         | crate::records::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
         {
-            slot.get_or_insert_with(Default::default).coil_extent = Some(crate::records::RecordedValue {
-                value: extent,
-                offset: None,
-            });
+            slot.get_or_insert_with(Default::default).coil_extent =
+                Some(crate::records::RecordedValue {
+                    value: extent,
+                    offset: None,
+                });
         }
     }
 }

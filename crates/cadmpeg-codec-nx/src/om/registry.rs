@@ -23,19 +23,35 @@ pub(crate) enum RegistryTokenForm {
 pub(crate) struct RegistryToken(RegistryValue);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RegistryValue { Direct(u8), Compact(u16), Wide(u32) }
+enum RegistryValue {
+    Direct(u8),
+    Compact(u16),
+    Wide(u32),
+}
 
 impl RegistryToken {
     pub(crate) fn value(self) -> u32 {
-        match self.0 { RegistryValue::Direct(value) => u32::from(value), RegistryValue::Compact(value) => u32::from(value), RegistryValue::Wide(value) => value }
+        match self.0 {
+            RegistryValue::Direct(value) => u32::from(value),
+            RegistryValue::Compact(value) => u32::from(value),
+            RegistryValue::Wide(value) => value,
+        }
     }
 
     pub(crate) fn form(self) -> RegistryTokenForm {
-        match self.0 { RegistryValue::Direct(_) => RegistryTokenForm::Direct, RegistryValue::Compact(_) => RegistryTokenForm::Compact, RegistryValue::Wide(_) => RegistryTokenForm::Wide }
+        match self.0 {
+            RegistryValue::Direct(_) => RegistryTokenForm::Direct,
+            RegistryValue::Compact(_) => RegistryTokenForm::Compact,
+            RegistryValue::Wide(_) => RegistryTokenForm::Wide,
+        }
     }
 
     pub(crate) fn width(self) -> usize {
-        match self.form() { RegistryTokenForm::Direct => 1, RegistryTokenForm::Compact => 2, RegistryTokenForm::Wide => 3 }
+        match self.form() {
+            RegistryTokenForm::Direct => 1,
+            RegistryTokenForm::Compact => 2,
+            RegistryTokenForm::Wide => 3,
+        }
     }
 }
 
@@ -78,7 +94,9 @@ struct RegistryDeclaration<'a> {
 }
 
 impl RegistryDeclaration<'_> {
-    fn name_end(self) -> usize { self.offset + 1 + self.name.len() }
+    fn name_end(self) -> usize {
+        self.offset + 1 + self.name.len()
+    }
 }
 
 pub(crate) fn registry_token_at(tail: &[u8], offset: usize) -> Option<RegistryToken> {

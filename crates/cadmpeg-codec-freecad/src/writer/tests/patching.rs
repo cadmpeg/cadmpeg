@@ -224,5 +224,7 @@ pub(crate) fn writer_rejects_unserialized_declaration_and_stale_payload_edits() 
         .plan(EncodeInput::new(&stale_entry, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("stale entry metadata must fail");
-    assert!(error.to_string().contains("entry byte_len/sha256 disagrees with data"));
+    assert!(error
+        .to_string()
+        .contains("entry byte_len/sha256 disagrees with data"));
 }

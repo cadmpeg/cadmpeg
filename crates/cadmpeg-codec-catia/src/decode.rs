@@ -627,12 +627,22 @@ fn finish_decode(
     let mut numeric_entity_value_packet_count = 0;
     let mut layout_entity_value_packet_count = 0;
     let mut e9_scalar_entity_value_packet_count = 0;
-    for packet in native.entity_records.iter().flat_map(CatiaEntityRecord::value_packets) {
+    for packet in native
+        .entity_records
+        .iter()
+        .flat_map(CatiaEntityRecord::value_packets)
+    {
         match packet {
-            entity_table::EntityValuePacket::Compact { .. } => compact_entity_value_packet_count += 1,
-            entity_table::EntityValuePacket::Numeric { .. } => numeric_entity_value_packet_count += 1,
+            entity_table::EntityValuePacket::Compact { .. } => {
+                compact_entity_value_packet_count += 1
+            }
+            entity_table::EntityValuePacket::Numeric { .. } => {
+                numeric_entity_value_packet_count += 1
+            }
             entity_table::EntityValuePacket::Layout { .. } => layout_entity_value_packet_count += 1,
-            entity_table::EntityValuePacket::E9Scalar { .. } => e9_scalar_entity_value_packet_count += 1,
+            entity_table::EntityValuePacket::E9Scalar { .. } => {
+                e9_scalar_entity_value_packet_count += 1
+            }
         }
     }
     let numeric_entity_value_pair_count = native

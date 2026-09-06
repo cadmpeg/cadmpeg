@@ -55,7 +55,12 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         previous_history_state_id: None,
         previous_history_state_id_offset: None,
         reference_count_offset: 1080,
-        reference_members: crate::records::ReferenceRun::from_columns(vec![100, 200, 201], vec![1085, 1096, 1107], "reference_members").unwrap(),
+        reference_members: crate::records::ReferenceRun::from_columns(
+            vec![100, 200, 201],
+            vec![1085, 1096, 1107],
+            "reference_members",
+        )
+        .unwrap(),
         payload: crate::records::DesignFeatureKind::Extrude.into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "261".into(),
@@ -101,13 +106,35 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let group = parse_construction_operand_group(&bytes, &scope, 0, &record)
         .complete()
         .expect("counted Extrude operand group");
-    assert_eq!(group.members.iter().map(|member| member.value).collect::<Vec<_>>(), [200, 201]);
-    assert_eq!(group.members.iter().map(|member| member.offset).collect::<Vec<_>>(), [26, 37]);
+    assert_eq!(
+        group
+            .members
+            .iter()
+            .map(|member| member.value)
+            .collect::<Vec<_>>(),
+        [200, 201]
+    );
+    assert_eq!(
+        group
+            .members
+            .iter()
+            .map(|member| member.offset)
+            .collect::<Vec<_>>(),
+        [26, 37]
+    );
     assert_eq!(group.role, 0x0000_0008_0000_0000);
     assert_eq!(group.extrude_role, Some(DesignExtrudeOperandRole::Bodies));
     assert_eq!(group.frame.member_count_offset, 21);
     assert!(group.frame.auxiliary_records.is_empty());
-    assert_eq!(group.frame.trailing_records.iter().map(|record| record.value).collect::<Vec<_>>(), [300]);
+    assert_eq!(
+        group
+            .frame
+            .trailing_records
+            .iter()
+            .map(|record| record.value)
+            .collect::<Vec<_>>(),
+        [300]
+    );
     assert_eq!(group.frame.opaque_index, 180);
     assert_eq!(group.frame.opaque_scalar, 0.125);
     assert!(group.frame.variant);
@@ -143,7 +170,14 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         .complete()
         .expect("operation-flagged counted operand group");
     assert_eq!(flagged.frame.member_count_offset, flagged_count_at as u64);
-    assert_eq!(flagged.members.iter().map(|member| member.value).collect::<Vec<_>>(), [200, 201]);
+    assert_eq!(
+        flagged
+            .members
+            .iter()
+            .map(|member| member.value)
+            .collect::<Vec<_>>(),
+        [200, 201]
+    );
     assert_eq!(flagged.role, 0x0000_0008_0000_0000);
 
     let mut start_face_bytes = bytes.clone();
@@ -240,7 +274,14 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let flagless = parse_construction_operand_group(&flagless, &scope, 0, &record)
         .complete()
         .expect("flagless counted operand group");
-    assert_eq!(flagless.members.iter().map(|member| member.value).collect::<Vec<_>>(), [200, 201]);
+    assert_eq!(
+        flagless
+            .members
+            .iter()
+            .map(|member| member.value)
+            .collect::<Vec<_>>(),
+        [200, 201]
+    );
     assert_eq!(flagless.role, 0x0000_0008_0000_0000);
     assert!(!flagless.frame.variant);
     assert_eq!(
@@ -301,10 +342,40 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let auxiliary = parse_construction_operand_group(&auxiliary, &scope, 0, &auxiliary_record)
         .complete()
         .expect("Extrude face group carrying both optional references");
-    assert_eq!(auxiliary.members.iter().map(|member| member.value).collect::<Vec<_>>(), [109]);
-    assert_eq!(auxiliary.members.iter().map(|member| member.offset).collect::<Vec<_>>(), [26]);
-    assert_eq!(auxiliary.frame.auxiliary_records.iter().map(|record| record.value).collect::<Vec<_>>(), [103, 106]);
-    assert_eq!(auxiliary.frame.auxiliary_records.iter().map(|record| record.offset).collect::<Vec<_>>(), [37, 48]);
+    assert_eq!(
+        auxiliary
+            .members
+            .iter()
+            .map(|member| member.value)
+            .collect::<Vec<_>>(),
+        [109]
+    );
+    assert_eq!(
+        auxiliary
+            .members
+            .iter()
+            .map(|member| member.offset)
+            .collect::<Vec<_>>(),
+        [26]
+    );
+    assert_eq!(
+        auxiliary
+            .frame
+            .auxiliary_records
+            .iter()
+            .map(|record| record.value)
+            .collect::<Vec<_>>(),
+        [103, 106]
+    );
+    assert_eq!(
+        auxiliary
+            .frame
+            .auxiliary_records
+            .iter()
+            .map(|record| record.offset)
+            .collect::<Vec<_>>(),
+        [37, 48]
+    );
     assert!(auxiliary.frame.trailing_records.is_empty());
     assert_eq!(auxiliary.role, 0x0000_0011_0000_0000);
     assert_eq!(
@@ -316,7 +387,12 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let mut split_scope = scope.clone();
     split_scope.payload = crate::records::DesignFeatureKind::SplitFace.into();
     split_scope.frame_length = 334;
-    split_scope.reference_members = crate::records::ReferenceRun::from_columns(vec![100, 200, 201, 400, 500], vec![1085, 1096, 1107, 1118, 1129], "reference_members").unwrap();
+    split_scope.reference_members = crate::records::ReferenceRun::from_columns(
+        vec![100, 200, 201, 400, 500],
+        vec![1085, 1096, 1107, 1118, 1129],
+        "reference_members",
+    )
+    .unwrap();
     let mut tool_group = group.clone();
     tool_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
     tool_group.role = 0x0000_0021_0000_0000;
@@ -324,7 +400,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     target_group.id = "f3d:Design/BulkStream.dat:operand-group#400".into();
     target_group.record_index = 400;
     target_group.scope_reference_ordinal = 3;
-    target_group.members = vec![crate::records::Located { value: 500, offset: 1129 }];
+    target_group.members = vec![crate::records::Located {
+        value: 500,
+        offset: 1129,
+    }];
     target_group.role = 0x0000_0010_0000_0000;
     let split_groups = [tool_group, target_group];
     let (features, _) = project_parameter_design(
@@ -423,13 +502,22 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     ];
     let plane_scopes = vec![first_plane, second_plane, compact_split_scope.clone()];
     let plane_timeline = DesignFeatureTimeline {
-frame: crate::records::DesignTimelineFrame::test_items(0, plane_scopes.iter().map(|scope| crate::records::Located { value: u64::from(scope.record_index), offset: 0 }).collect()),
-id: crate::ids::native_design_feature_timeline_id_in_stream("f3d:Design/BulkStream.dat", 0),
-class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-record_index: std::num::NonZeroU64::new(1).unwrap(),
-source_ordinal: 0,
-context_record_index: std::num::NonZeroU64::new(1).unwrap(),
-};
+        frame: crate::records::DesignTimelineFrame::test_items(
+            0,
+            plane_scopes
+                .iter()
+                .map(|scope| crate::records::Located {
+                    value: u64::from(scope.record_index),
+                    offset: 0,
+                })
+                .collect(),
+        ),
+        id: crate::ids::native_design_feature_timeline_id_in_stream("f3d:Design/BulkStream.dat", 0),
+        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        record_index: std::num::NonZeroU64::new(1).unwrap(),
+        source_ordinal: 0,
+        context_record_index: std::num::NonZeroU64::new(1).unwrap(),
+    };
     let (plane_features, _) = project_parameter_design_with_edge_identities(
         &crate::design::feature_project::ProjectInputs {
             native: &[],
@@ -485,18 +573,29 @@ context_record_index: std::num::NonZeroU64::new(1).unwrap(),
     let mut split_body_scope = scope.clone();
     split_body_scope.payload = crate::records::DesignFeatureKind::Split.into();
     split_body_scope.frame_length = 325;
-    split_body_scope.reference_members = crate::records::ReferenceRun::from_columns(vec![100, 200, 400, 500], vec![1085, 1096, 1107, 1118], "reference_members").unwrap();
+    split_body_scope.reference_members = crate::records::ReferenceRun::from_columns(
+        vec![100, 200, 400, 500],
+        vec![1085, 1096, 1107, 1118],
+        "reference_members",
+    )
+    .unwrap();
     let mut split_tool_group = group.clone();
     split_tool_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
     split_tool_group.record_index = 100;
     split_tool_group.scope_reference_ordinal = 0;
-    split_tool_group.members = vec![crate::records::Located { value: 200, offset: 1096 }];
+    split_tool_group.members = vec![crate::records::Located {
+        value: 200,
+        offset: 1096,
+    }];
     split_tool_group.role = 0x0000_0009_0000_0000;
     let mut split_target_group = group.clone();
     split_target_group.id = "f3d:Design/BulkStream.dat:operand-group#400".into();
     split_target_group.record_index = 400;
     split_target_group.scope_reference_ordinal = 2;
-    split_target_group.members = vec![crate::records::Located { value: 500, offset: 1118 }];
+    split_target_group.members = vec![crate::records::Located {
+        value: 500,
+        offset: 1118,
+    }];
     split_target_group.role = 0x0000_0004_0000_0000;
     let split_tool = DesignFaceOperand {
         id: "f3d:Design/BulkStream.dat:face-operand#200".into(),
@@ -579,9 +678,13 @@ context_record_index: std::num::NonZeroU64::new(1).unwrap(),
 
     let mut multiple_targets_scope = split_body_scope.clone();
     multiple_targets_scope.frame_length = 358;
-    multiple_targets_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![100, 200, 400, 500, 501]);
+    multiple_targets_scope.reference_members =
+        crate::records::ReferenceRun::Unlocated(vec![100, 200, 400, 500, 501]);
     let mut multiple_targets = split_target_group.clone();
-    multiple_targets.members = vec![500, 501].into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect();
+    multiple_targets.members = vec![500, 501]
+        .into_iter()
+        .map(|value| crate::records::Located { value, offset: 0 })
+        .collect();
     assert!(matches!(
         project_split(
             &multiple_targets_scope,
@@ -593,10 +696,14 @@ context_record_index: std::num::NonZeroU64::new(1).unwrap(),
 
     let mut construction_tool_scope = split_body_scope.clone();
     construction_tool_scope.frame_length = 347;
-    construction_tool_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![100, 200, 201, 400, 500]);
+    construction_tool_scope.reference_members =
+        crate::records::ReferenceRun::Unlocated(vec![100, 200, 201, 400, 500]);
     let mut construction_tool = split_tool_group.clone();
     construction_tool.role = 0x0000_0021_0000_0000;
-    construction_tool.members = vec![200, 201].into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect();
+    construction_tool.members = vec![200, 201]
+        .into_iter()
+        .map(|value| crate::records::Located { value, offset: 0 })
+        .collect();
     split_target_group.scope_reference_ordinal = 3;
     assert!(matches!(
         project_split(
@@ -614,7 +721,10 @@ context_record_index: std::num::NonZeroU64::new(1).unwrap(),
     let mut invalid_groups = Vec::new();
     invalid_groups.push(vec![split_target_group.clone()]);
     let mut oversized_tool = split_tool_group.clone();
-    oversized_tool.members = vec![200, 201, 202, 203].into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect();
+    oversized_tool.members = vec![200, 201, 202, 203]
+        .into_iter()
+        .map(|value| crate::records::Located { value, offset: 0 })
+        .collect();
     invalid_groups.push(vec![oversized_tool, split_target_group.clone()]);
     for mutate in 0..4 {
         let mut tool = split_tool_group.clone();
@@ -622,7 +732,12 @@ context_record_index: std::num::NonZeroU64::new(1).unwrap(),
             0 => tool.scope_reference_ordinal = 1,
             1 => tool.record_index = 101,
             2 => tool.role = 0x0000_0008_0000_0000,
-            3 => tool.members = vec![crate::records::Located { value: 201, offset: tool.members[0].offset }],
+            3 => {
+                tool.members = vec![crate::records::Located {
+                    value: 201,
+                    offset: tool.members[0].offset,
+                }]
+            }
             _ => unreachable!(),
         }
         invalid_groups.push(vec![tool, split_target_group.clone()]);
@@ -633,7 +748,12 @@ context_record_index: std::num::NonZeroU64::new(1).unwrap(),
             0 => target.scope_reference_ordinal = 3,
             1 => target.record_index = 401,
             2 => target.role = 0x0000_0005_0000_0000,
-            3 => target.members = vec![crate::records::Located { value: 501, offset: target.members[0].offset }],
+            3 => {
+                target.members = vec![crate::records::Located {
+                    value: 501,
+                    offset: target.members[0].offset,
+                }]
+            }
             _ => unreachable!(),
         }
         invalid_groups.push(vec![split_tool_group.clone(), target]);
@@ -657,10 +777,18 @@ context_record_index: std::num::NonZeroU64::new(1).unwrap(),
     delete_scope.payload = crate::records::DesignFeatureKind::DeleteFace.into();
     delete_scope.frame_length = 258;
     delete_scope.kind_offset = 1161;
-    delete_scope.reference_members = crate::records::ReferenceRun::from_columns(vec![100, 200], vec![1085, 1096], "reference_members").unwrap();
+    delete_scope.reference_members = crate::records::ReferenceRun::from_columns(
+        vec![100, 200],
+        vec![1085, 1096],
+        "reference_members",
+    )
+    .unwrap();
     let mut delete_group = group.clone();
     delete_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
-    delete_group.members = vec![crate::records::Located { value: 200, offset: 1096 }];
+    delete_group.members = vec![crate::records::Located {
+        value: 200,
+        offset: 1096,
+    }];
     delete_group.role = 0x0000_0010_0000_0000;
     let mut delete_face_operand = split_tool.clone();
     delete_face_operand.id = "f3d:Design/BulkStream.dat:face-operand#200".into();
@@ -934,7 +1062,8 @@ context_record_index: std::num::NonZeroU64::new(1).unwrap(),
 
     let mut stitch_scope = scope;
     stitch_scope.payload = crate::records::DesignFeatureKind::SurfaceStitch.into();
-    stitch_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![100, 200, 300, 301]);
+    stitch_scope.reference_members =
+        crate::records::ReferenceRun::Unlocated(vec![100, 200, 300, 301]);
     if let crate::records::DesignScopePayload::SurfaceStitch(slot) = &mut stitch_scope.payload {
         *slot = Some(DesignSurfaceStitchOperation {
             gap_tolerance: 0.01,
@@ -944,7 +1073,10 @@ context_record_index: std::num::NonZeroU64::new(1).unwrap(),
         });
     }
     let mut stitch_group = remove_group;
-    stitch_group.members = vec![200].into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect();
+    stitch_group.members = vec![200]
+        .into_iter()
+        .map(|value| crate::records::Located { value, offset: 0 })
+        .collect();
     stitch_group.role = 0x0000_0005_0000_0000;
     assert_eq!(
         crate::design::feature_project::project_surface_stitch(
@@ -1051,7 +1183,14 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
             .complete()
             .expect("legacy body construction group");
 
-        assert_eq!(group.members.iter().map(|member| member.value).collect::<Vec<_>>(), [group_record_index + 3]);
+        assert_eq!(
+            group
+                .members
+                .iter()
+                .map(|member| member.value)
+                .collect::<Vec<_>>(),
+            [group_record_index + 3]
+        );
         assert_eq!(group.role, 0x0000_0004_0000_0000);
         assert_eq!(group.frame.variant, flag_pair == [1, 1]);
         assert_eq!(group.paired_byte_offset, paired_at as u64);
@@ -1070,7 +1209,8 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
     scope.paired_class_tag = "261".into();
     scope.frame_length = 536;
     scope.reference_count_offset = 1291;
-    scope.reference_members = crate::records::ReferenceRun::Unlocated((0..13).map(|index| 296_500 + index).collect());
+    scope.reference_members =
+        crate::records::ReferenceRun::Unlocated((0..13).map(|index| 296_500 + index).collect());
     if let crate::records::DesignScopePayload::Extrude(slot)
     | crate::records::DesignScopePayload::Extrusion(slot)
     | crate::records::DesignScopePayload::Extrusao(slot) = &mut scope.payload
@@ -1292,7 +1432,13 @@ fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
     let expanded = parse_construction_operand_path(&expanded, scope_record_index, &expanded_header)
         .expect("expanded selection path");
     assert_eq!(expanded.entity_ref, 174);
-    assert_eq!(expanded.placement, crate::records::DesignConstructionPathPlacement::Transform(crate::records::Located { value: transform, offset: 33 }));
+    assert_eq!(
+        expanded.placement,
+        crate::records::DesignConstructionPathPlacement::Transform(crate::records::Located {
+            value: transform,
+            offset: 33
+        })
+    );
     assert_eq!(expanded.scope_record_index_offset, 163);
     assert_eq!(expanded.nested_record_index, 102);
     assert_eq!(expanded.nested_record_index_offset, 174);
@@ -1313,7 +1459,10 @@ fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
     let compact = parse_construction_operand_path(&compact, scope_record_index, &expanded_header)
         .expect("compact selection path");
     assert_eq!(compact.entity_ref, 18_064);
-    assert_eq!(compact.placement, crate::records::DesignConstructionPathPlacement::Compact(true));
+    assert_eq!(
+        compact.placement,
+        crate::records::DesignConstructionPathPlacement::Compact(true)
+    );
     assert_eq!(compact.scope_record_index_offset, 35);
     assert_eq!(compact.nested_record_index_offset, 46);
     assert_eq!(compact.following_byte_offset, compact_following_at as u64);
@@ -1374,10 +1523,30 @@ fn construction_tracking_path_decodes_absent_and_present_related_identities() {
     let present = tracking_path(Some(113), Some(119));
     let present = parse_construction_tracking_path(&present, 0, 300, "361")
         .expect("tracking path with related identities");
-    assert_eq!(present.first_related_identity.map(|identity| identity.value), Some(113));
-    assert_eq!(present.first_related_identity.map(|identity| identity.offset), Some(110));
-    assert_eq!(present.second_related_identity.map(|identity| identity.value), Some(119));
-    assert_eq!(present.second_related_identity.map(|identity| identity.offset), Some(122));
+    assert_eq!(
+        present
+            .first_related_identity
+            .map(|identity| identity.value),
+        Some(113)
+    );
+    assert_eq!(
+        present
+            .first_related_identity
+            .map(|identity| identity.offset),
+        Some(110)
+    );
+    assert_eq!(
+        present
+            .second_related_identity
+            .map(|identity| identity.value),
+        Some(119)
+    );
+    assert_eq!(
+        present
+            .second_related_identity
+            .map(|identity| identity.offset),
+        Some(122)
+    );
     assert_eq!(present.following_byte_offset, 130);
 }
 
@@ -1430,10 +1599,12 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
         12,
     );
     {
-        let value = Some(crate::records::DesignPathFeatureConstruction::Loft(crate::records::DesignLoftConstruction {
-            operation: crate::records::DesignExtrudeOperation::Cut,
-            operation_offset: 0,
-        }));
+        let value = Some(crate::records::DesignPathFeatureConstruction::Loft(
+            crate::records::DesignLoftConstruction {
+                operation: crate::records::DesignExtrudeOperation::Cut,
+                operation_offset: 0,
+            },
+        ));
         scope.payload = value.map_or_else(|| scope.kind().into(), Into::into);
     }
 
@@ -1457,7 +1628,12 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
     assert_eq!(parsed_322.opaque_scalar, 1.25);
     assert_eq!(parsed_322.next_next_record_index, 102);
     assert_eq!(parsed_322.next_record_index, 101);
-    assert_eq!(parsed_322.trailing_scope_reference_offset.map(|_| parsed_322.scope_record_index), None);
+    assert_eq!(
+        parsed_322
+            .trailing_scope_reference_offset
+            .map(|_| parsed_322.scope_record_index),
+        None
+    );
 
     let class_322_tail = carrier(b"322", b"262", 12, 200, true);
     let parsed_322_tail = parse_loft_legacy_body_carrier(
@@ -1473,7 +1649,12 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
     .expect("class-322 legacy Loft carrier with scope tail");
     assert_eq!(parsed_322_tail.paired_class_tag, "262");
     assert_eq!(parsed_322_tail.paired_byte_offset, 99);
-    assert_eq!(parsed_322_tail.trailing_scope_reference_offset.map(|_| parsed_322_tail.scope_record_index), Some(12));
+    assert_eq!(
+        parsed_322_tail
+            .trailing_scope_reference_offset
+            .map(|_| parsed_322_tail.scope_record_index),
+        Some(12)
+    );
     assert_eq!(parsed_322_tail.trailing_scope_reference_offset, Some(88));
 
     let class_411 = carrier(b"411", b"266", 12, 300, true);
@@ -1490,7 +1671,12 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
     .expect("class-411 legacy Loft carrier");
     assert_eq!(parsed_411.paired_class_tag, "266");
     assert_eq!(parsed_411.paired_byte_offset, 99);
-    assert_eq!(parsed_411.trailing_scope_reference_offset.map(|_| parsed_411.scope_record_index), Some(12));
+    assert_eq!(
+        parsed_411
+            .trailing_scope_reference_offset
+            .map(|_| parsed_411.scope_record_index),
+        Some(12)
+    );
     assert_eq!(parsed_411.trailing_scope_reference_offset, Some(88));
 
     let mut wrong_presence = class_322.clone();

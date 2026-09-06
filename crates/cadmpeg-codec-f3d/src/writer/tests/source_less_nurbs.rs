@@ -452,8 +452,8 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
             position: cadmpeg_ir::math::Point3::new(x, y, z),
             source_object: None,
         });
-        let vertex_id =
-            VertexId::mint(format!("generated:test:inner_vertex#{index}")).expect("identity grammar");
+        let vertex_id = VertexId::mint(format!("generated:test:inner_vertex#{index}"))
+            .expect("identity grammar");
         source_less
             .model
             .vertices
@@ -478,8 +478,8 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
             param_range: Some([0.0, 1.0]),
             tolerance: None,
         });
-        let coedge_id =
-            CoedgeId::mint(format!("generated:test:inner_coedge#{index}")).expect("identity grammar");
+        let coedge_id = CoedgeId::mint(format!("generated:test:inner_coedge#{index}"))
+            .expect("identity grammar");
         coedge_ids.push(coedge_id.clone());
         source_less
             .model

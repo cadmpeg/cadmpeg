@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sketch scalars with the implicit `30` marker and one-quarter scale.
 
-use serde::{Deserialize, Serialize};
 use super::scalar::ShiftedBinary32;
+use serde::{Deserialize, Serialize};
 
 const SKETCH_FIXED_ATOM_SCALE: f64 = 0.25;
 
@@ -10,9 +10,13 @@ const SKETCH_FIXED_ATOM_SCALE: f64 = 0.25;
 pub(crate) struct SketchScaledAtom([u8; 7]);
 
 impl SketchScaledAtom {
-    pub(crate) fn from_raw(raw: [u8; 7]) -> Self { Self(raw) }
+    pub(crate) fn from_raw(raw: [u8; 7]) -> Self {
+        Self(raw)
+    }
 
-    pub(crate) fn raw(self) -> [u8; 7] { self.0 }
+    pub(crate) fn raw(self) -> [u8; 7] {
+        self.0
+    }
 
     pub(crate) fn value(self) -> f64 {
         let mut encoded = [0_u8; 8];
@@ -70,8 +74,8 @@ impl TryFrom<MixedWire> for SketchMixedScalars {
 }
 
 pub(crate) mod pair_wire {
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use super::SketchScaledAtom;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     #[derive(Serialize, Deserialize)]
     struct Wire {
@@ -79,19 +83,36 @@ pub(crate) mod pair_wire {
         raw_values: [[u8; 7]; 2],
     }
 
-    pub(crate) fn serialize<S: Serializer>(values: &[SketchScaledAtom; 2], serializer: S) -> Result<S::Ok, S::Error> {
-        Wire { values: values.map(SketchScaledAtom::value), raw_values: values.map(SketchScaledAtom::raw) }.serialize(serializer)
+    pub(crate) fn serialize<S: Serializer>(
+        values: &[SketchScaledAtom; 2],
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        Wire {
+            values: values.map(SketchScaledAtom::value),
+            raw_values: values.map(SketchScaledAtom::raw),
+        }
+        .serialize(serializer)
     }
 
-    pub(crate) fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<[SketchScaledAtom; 2], D::Error> {
+    pub(crate) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<[SketchScaledAtom; 2], D::Error> {
         let wire = Wire::deserialize(deserializer)?;
-        let [a, b] = std::array::from_fn(|i| SketchScaledAtom::from_wire(wire.values[i], wire.raw_values[i]));
-        Ok([a.map_err(serde::de::Error::custom)?, b.map_err(serde::de::Error::custom)?])
+        let [a, b] = std::array::from_fn(|i| {
+            SketchScaledAtom::from_wire(wire.values[i], wire.raw_values[i])
+        });
+        Ok([
+            a.map_err(serde::de::Error::custom)?,
+            b.map_err(serde::de::Error::custom)?,
+        ])
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SketchScalarLaneForm { Form03, Form07 }
+pub(crate) enum SketchScalarLaneForm {
+    Form03,
+    Form07,
+}
 
 impl SketchScalarLaneForm {
     pub(crate) fn discriminator(self) -> &'static [u8] {
@@ -108,12 +129,16 @@ impl SketchScalarLaneForm {
     }
 
     pub(crate) fn from_discriminator(bytes: &[u8]) -> Result<Self, &'static str> {
-        [Self::Form03, Self::Form07].into_iter().find(|form| form.discriminator() == bytes)
+        [Self::Form03, Self::Form07]
+            .into_iter()
+            .find(|form| form.discriminator() == bytes)
             .ok_or("discriminator must select a sketch scalar lane form")
     }
 }
 
 impl super::scalar_run::ScalarFrame for SketchScalarLaneForm {
     type Atom = super::scalar::ShiftedScalar;
-    fn prefix_len(self) -> u64 { self.discriminator().len() as u64 }
+    fn prefix_len(self) -> u64 {
+        self.discriminator().len() as u64
+    }
 }

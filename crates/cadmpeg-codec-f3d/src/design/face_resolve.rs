@@ -264,7 +264,8 @@ pub(crate) fn resolved_profile_face_group(
 ) -> Option<cadmpeg_ir::features::ProfileRef> {
     use cadmpeg_ir::features::ProfileRef;
 
-    let selection = resolved_historical_face_group(scope, scope.previous_history_state_id, group, operands)?;
+    let selection =
+        resolved_historical_face_group(scope, scope.previous_history_state_id, group, operands)?;
     let cadmpeg_ir::features::FaceSelection::Historical {
         state,
         faces,
@@ -356,11 +357,15 @@ fn visit_extrude_profile_group(
     visited: &mut HashSet<u32>,
 ) -> bool {
     visited.insert(group.record_index)
-        && group.members.iter().map(|member| &member.value).all(|member| {
-            groups_by_record
-                .get(member)
-                .is_none_or(|child| visit_extrude_profile_group(child, groups_by_record, visited))
-        })
+        && group
+            .members
+            .iter()
+            .map(|member| &member.value)
+            .all(|member| {
+                groups_by_record.get(member).is_none_or(|child| {
+                    visit_extrude_profile_group(child, groups_by_record, visited)
+                })
+            })
 }
 
 /// Resolve each member of an Extrude profile group to one exact leaf operand.
@@ -468,25 +473,34 @@ pub(crate) fn is_paired_extrude_profile_aggregate(
         return false;
     };
     !root.members.is_empty()
-        && root.members.iter().map(|member| &member.value).all(|record_index| {
-            let mut children = groups.iter().filter(|group| {
-                native_stream(&group.id) == Some(stream)
-                    && group.scope_record_index == root.scope_record_index
-                    && group.record_index == *record_index
-                    && group.scope_reference_ordinal > root.scope_reference_ordinal
-                    && group.extrude_role == Some(DesignExtrudeOperandRole::Profile)
-            });
-            let Some(child) = children.next() else {
-                return false;
-            };
-            if children.next().is_some() {
-                return false;
-            }
-            let [crate::records::Located { value: operand_record_index, .. }] = child.members.as_slice() else {
-                return false;
-            };
-            let mut leaves = operands.iter().filter(|operand| {
-                native_stream(&operand.id) == Some(stream)
+        && root
+            .members
+            .iter()
+            .map(|member| &member.value)
+            .all(|record_index| {
+                let mut children = groups.iter().filter(|group| {
+                    native_stream(&group.id) == Some(stream)
+                        && group.scope_record_index == root.scope_record_index
+                        && group.record_index == *record_index
+                        && group.scope_reference_ordinal > root.scope_reference_ordinal
+                        && group.extrude_role == Some(DesignExtrudeOperandRole::Profile)
+                });
+                let Some(child) = children.next() else {
+                    return false;
+                };
+                if children.next().is_some() {
+                    return false;
+                }
+                let [crate::records::Located {
+                    value: operand_record_index,
+                    ..
+                }] = child.members.as_slice()
+                else {
+                    return false;
+                };
+                let mut leaves =
+                    operands.iter().filter(|operand| {
+                        native_stream(&operand.id) == Some(stream)
                     && operand.scope_record_index == root.scope_record_index
                     && operand.group_record_index() == Some(child.record_index)
                     && operand.group_member_ordinal() == Some(0)
@@ -495,9 +509,9 @@ pub(crate) fn is_paired_extrude_profile_aggregate(
                     && crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(
                         &operand.recipe_prefix_bytes,
                     )
-            });
-            matches!((leaves.next(), leaves.next()), (Some(_), None))
-        })
+                    });
+                matches!((leaves.next(), leaves.next()), (Some(_), None))
+            })
 }
 
 /// Resolve one top-level Extrude profile group through its exact leaf operands.
@@ -569,8 +583,7 @@ fn resolved_extrude_profile_active_faces(
         else {
             return None;
         };
-        if operand.recipe_nodes.len() != header_value
-        {
+        if operand.recipe_nodes.len() != header_value {
             return None;
         }
         for face in &operand.candidate_faces {
@@ -607,7 +620,8 @@ pub(crate) fn resolved_loft_edge_profile_group(
     let mut member_ids = HashSet::new();
     if group
         .members
-        .iter().map(|member| &member.value)
+        .iter()
+        .map(|member| &member.value)
         .any(|member| !member_ids.insert(*member))
     {
         return None;
@@ -617,7 +631,8 @@ pub(crate) fn resolved_loft_edge_profile_group(
     }
     let member_operands = group
         .members
-        .iter().map(|member| &member.value)
+        .iter()
+        .map(|member| &member.value)
         .enumerate()
         .map(|(ordinal, record_index)| {
             let scope_ordinal = group
@@ -625,7 +640,9 @@ pub(crate) fn resolved_loft_edge_profile_group(
                 .checked_add(1)?
                 .checked_add(u32::try_from(ordinal).ok()?)?;
             if scope
-                .reference_members.values().nth(group_ordinal.checked_add(ordinal.checked_add(1)?)?)
+                .reference_members
+                .values()
+                .nth(group_ordinal.checked_add(ordinal.checked_add(1)?)?)
                 != Some(record_index)
             {
                 return None;
@@ -901,10 +918,13 @@ pub(crate) fn resolved_historical_split_face_target_group_with_updated_faces(
     {
         return None;
     }
-    resolved_historical_split_face_target_group(scope, previous_state_id, group, operands).or_else(|| {
-        let faces = split_face_updated_target_slots(scope, group, operands, updated_face_slots)?;
-        historical_face_selection_in_state(scope, group, previous_state_id?, faces)
-    })
+    resolved_historical_split_face_target_group(scope, previous_state_id, group, operands).or_else(
+        || {
+            let faces =
+                split_face_updated_target_slots(scope, group, operands, updated_face_slots)?;
+            historical_face_selection_in_state(scope, group, previous_state_id?, faces)
+        },
+    )
 }
 
 fn split_face_updated_target_slots(
@@ -1552,9 +1572,7 @@ fn boundary_edge_count(
     boundaries.iter().try_fold(0usize, |total, boundary| {
         boundary.loops.iter().try_fold(total, |total, loop_| {
             let count = loop_.boundary.coedges().count();
-            (count != 0)
-                .then(|| total.checked_add(count))
-                .flatten()
+            (count != 0).then(|| total.checked_add(count)).flatten()
         })
     })
 }
@@ -1673,7 +1691,11 @@ fn extrude_start_plane_geometry_candidates(
     operands: &[DesignFaceOperand],
     faces: &[cadmpeg_ir::topology::Face],
 ) -> Option<Vec<cadmpeg_ir::ids::FaceId>> {
-    let [crate::records::Located { value: record_index, .. }] = group.members.as_slice() else {
+    let [crate::records::Located {
+        value: record_index,
+        ..
+    }] = group.members.as_slice()
+    else {
         return None;
     };
     let mut matching = operands.iter().filter(|operand| {
@@ -1940,7 +1962,11 @@ fn extrude_target_plane_candidate(
     sketch_origin: Point3,
     sweep_direction: Vector3,
 ) -> Option<cadmpeg_ir::ids::FaceId> {
-    let [crate::records::Located { value: record_index, .. }] = group.members.as_slice() else {
+    let [crate::records::Located {
+        value: record_index,
+        ..
+    }] = group.members.as_slice()
+    else {
         return None;
     };
     let stream = native_stream(&group.id)?;
@@ -2000,7 +2026,10 @@ pub(crate) fn retain_face_operand_resolution(
     let mut matches = operands.iter_mut().filter(|operand| {
         native_stream(&operand.id) == Some(stream)
             && operand.scope_record_index == group.scope_record_index
-            && group.members.iter().any(|member| member.value == operand.record_index)
+            && group
+                .members
+                .iter()
+                .any(|member| member.value == operand.record_index)
             && (face_operand_candidates(operand).contains(face)
                 || (face_operand_candidates(operand).is_empty()
                     && operand.resolved_face_slots.is_empty()
@@ -2079,7 +2108,11 @@ fn point_plane_distance(point: Point3, origin: Point3, normal: Vector3) -> f64 {
 }
 
 pub(crate) fn design_angle(parameter: &DesignParameter) -> Option<cadmpeg_ir::features::Angle> {
-    (parameter.unit.as_ref().map(|field| field.value.as_str()).is_some_and(design_angle_unit)
+    (parameter
+        .unit
+        .as_ref()
+        .map(|field| field.value.as_str())
+        .is_some_and(design_angle_unit)
         && parameter.evaluated_value.is_finite())
     .then_some(cadmpeg_ir::features::Angle(parameter.evaluated_value))
 }
@@ -2292,7 +2325,9 @@ mod tests {
         assert_eq!(
             resolved_face_group(&group, std::slice::from_ref(&operand)),
             Some(cadmpeg_ir::features::FaceSelection::Resolved {
-                faces: vec![FaceId::mint("f3d:brep/legacy/brep:entity#30").expect("identity grammar")],
+                faces: vec![
+                    FaceId::mint("f3d:brep/legacy/brep:entity#30").expect("identity grammar")
+                ],
                 native: group.id.clone(),
             })
         );
@@ -2474,10 +2509,17 @@ mod tests {
             face_slot: slot,
             loops: vec![DesignHistoricalFaceLoopContext {
                 loop_slot: slot + 1_000,
-                boundary: crate::records::DesignHistoricalLoopBoundary::Coedges((0..edge_count).map(|ordinal| {
+                boundary: crate::records::DesignHistoricalLoopBoundary::Coedges(
+                    (0..edge_count)
+                        .map(|ordinal| {
                             let coedge_slot = i64::try_from(ordinal).expect("test ordinal");
-                            crate::records::DesignHistoricalLoopCoedge { coedge_slot, edge_slot: coedge_slot + 2_000 }
-                        }).collect()),
+                            crate::records::DesignHistoricalLoopCoedge {
+                                coedge_slot,
+                                edge_slot: coedge_slot + 2_000,
+                            }
+                        })
+                        .collect(),
+                ),
             }],
         }
     }
@@ -2504,7 +2546,11 @@ mod tests {
     ) -> DesignEdgeRecipeReferenceContext {
         let face = face(slot);
         let boundary = boundary(slot, edge_count);
-        let edges = boundary.loops[0].boundary.coedges().map(|row| row.edge_slot).collect::<Vec<_>>();
+        let edges = boundary.loops[0]
+            .boundary
+            .coedges()
+            .map(|row| row.edge_slot)
+            .collect::<Vec<_>>();
         DesignEdgeRecipeReferenceContext {
             reference_ordinal: ordinal,
             result_faces: vec![face.clone()],
@@ -2664,10 +2710,17 @@ mod tests {
                     face_slot: *face,
                     loops: vec![DesignHistoricalFaceLoopContext {
                         loop_slot: face + 2_000,
-                        boundary: crate::records::DesignHistoricalLoopBoundary::Coedges((0..*edge_count).map(|ordinal| {
-                            let coedge_slot = i64::try_from(ordinal).expect("test ordinal");
-                            crate::records::DesignHistoricalLoopCoedge { coedge_slot, edge_slot: coedge_slot + 10_000 }
-                        }).collect()),
+                        boundary: crate::records::DesignHistoricalLoopBoundary::Coedges(
+                            (0..*edge_count)
+                                .map(|ordinal| {
+                                    let coedge_slot = i64::try_from(ordinal).expect("test ordinal");
+                                    crate::records::DesignHistoricalLoopCoedge {
+                                        coedge_slot,
+                                        edge_slot: coedge_slot + 10_000,
+                                    }
+                                })
+                                .collect(),
+                        ),
                     }],
                 })
                 .collect(),
@@ -2998,7 +3051,8 @@ mod tests {
         let face = |id: &str, surface: &str| Face {
             id: FaceId::mint(format!("test:model:face#{id}")).expect("identity grammar"),
             shell: ShellId::mint("test:model:shell#shell").expect("identity grammar"),
-            surface: SurfaceId::mint(format!("test:model:surface#{surface}")).expect("identity grammar"),
+            surface: SurfaceId::mint(format!("test:model:surface#{surface}"))
+                .expect("identity grammar"),
             sense: Sense::Forward,
             loops: Vec::new().into(),
             name: None,
@@ -3141,7 +3195,8 @@ mod tests {
         let face_with_surface = |slot: i64, surface: &str| Face {
             id: face(slot),
             shell: ShellId::mint("test:model:shell#shell").expect("identity grammar"),
-            surface: SurfaceId::mint(format!("test:model:surface#{surface}")).expect("identity grammar"),
+            surface: SurfaceId::mint(format!("test:model:surface#{surface}"))
+                .expect("identity grammar"),
             sense: Sense::Forward,
             loops: Vec::new().into(),
             name: None,

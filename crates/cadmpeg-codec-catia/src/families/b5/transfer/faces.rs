@@ -664,7 +664,8 @@ mod tests {
                 let start_point = points[start];
                 let end_point = points[end];
                 pcurves.push(Pcurve {
-                    id: PcurveId::mint(format!("catia:test:pcurve#pc%23{pcurve}")).expect("identity grammar"),
+                    id: PcurveId::mint(format!("catia:test:pcurve#pc%23{pcurve}"))
+                        .expect("identity grammar"),
                     geometry: PcurveGeometry::Line {
                         origin: Point2::new(start_point[0], start_point[1]),
                         direction: Point2::new(
@@ -681,7 +682,8 @@ mod tests {
                 pcurve_uses.insert(
                     (loop_id, member),
                     (
-                        PcurveId::mint(format!("catia:test:pcurve#pc%23{pcurve}")).expect("identity grammar"),
+                        PcurveId::mint(format!("catia:test:pcurve#pc%23{pcurve}"))
+                            .expect("identity grammar"),
                         [0.0, 1.0],
                     ),
                 );
@@ -745,7 +747,8 @@ mod tests {
         };
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
-            id: SurfaceId::mint("catia:test:surface#surface%2310".to_string()).expect("identity grammar"),
+            id: SurfaceId::mint("catia:test:surface#surface%2310".to_string())
+                .expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: Vector3::new(0.0, 0.0, 1.0),
@@ -763,7 +766,8 @@ mod tests {
                 &orientations,
                 &HashMap::from([(
                     10,
-                    SurfaceId::mint("catia:test:surface#surface%2310".to_string()).expect("identity grammar")
+                    SurfaceId::mint("catia:test:surface#surface%2310".to_string())
+                        .expect("identity grammar")
                 )]),
                 &pcurve_uses,
             ),

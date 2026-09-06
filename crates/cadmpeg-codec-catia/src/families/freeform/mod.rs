@@ -3085,33 +3085,42 @@ mod tests {
 
         for (index, position) in points.into_iter().enumerate() {
             ir.model.points.push(Point {
-                id: PointId::mint(format!("catia:test:point#point%23{index}")).expect("identity grammar"),
+                id: PointId::mint(format!("catia:test:point#point%23{index}"))
+                    .expect("identity grammar"),
                 position,
                 source_object: None,
             });
             ir.model.vertices.push(Vertex {
-                id: VertexId::mint(format!("catia:test:vertex#vertex%23{index}")).expect("identity grammar"),
-                point: PointId::mint(format!("catia:test:point#point%23{index}")).expect("identity grammar"),
+                id: VertexId::mint(format!("catia:test:vertex#vertex%23{index}"))
+                    .expect("identity grammar"),
+                point: PointId::mint(format!("catia:test:point#point%23{index}"))
+                    .expect("identity grammar"),
                 tolerance: None,
             });
         }
-        let curve_id = CurveId::mint("catia:test:curve#standard-curve".to_string()).expect("identity grammar");
+        let curve_id =
+            CurveId::mint("catia:test:curve#standard-curve".to_string()).expect("identity grammar");
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry: CurveGeometry::Unknown { record: None },
             source_object: None,
         });
         ir.model.edges.push(Edge {
-            id: EdgeId::mint("catia:test:edge#standard-edge".to_string()).expect("identity grammar"),
+            id: EdgeId::mint("catia:test:edge#standard-edge".to_string())
+                .expect("identity grammar"),
             curve: Some(curve_id.clone()),
-            start: VertexId::mint("catia:test:vertex#vertex%231".to_string()).expect("identity grammar"),
-            end: VertexId::mint("catia:test:vertex#vertex%230".to_string()).expect("identity grammar"),
+            start: VertexId::mint("catia:test:vertex#vertex%231".to_string())
+                .expect("identity grammar"),
+            end: VertexId::mint("catia:test:vertex#vertex%230".to_string())
+                .expect("identity grammar"),
             param_range: Some([0.0, 1.0]),
             tolerance: None,
         });
         let support_ids = [
-            SurfaceId::mint("catia:test:surface#support%230".to_string()).expect("identity grammar"),
-            SurfaceId::mint("catia:test:surface#support%231".to_string()).expect("identity grammar"),
+            SurfaceId::mint("catia:test:surface#support%230".to_string())
+                .expect("identity grammar"),
+            SurfaceId::mint("catia:test:surface#support%231".to_string())
+                .expect("identity grammar"),
         ];
         ir.model.surfaces.push(Surface {
             id: support_ids[0].clone(),
@@ -3124,12 +3133,16 @@ mod tests {
             source_object: None,
         });
         for (side, support_id) in support_ids.iter().enumerate() {
-            let face_id = FaceId::mint(format!("catia:test:face#face%23{side}")).expect("identity grammar");
-            let loop_id = LoopId::mint(format!("catia:test:loop#loop%23{side}")).expect("identity grammar");
-            let coedge_id = CoedgeId::mint(format!("catia:test:coedge#coedge%23{side}")).expect("identity grammar");
+            let face_id =
+                FaceId::mint(format!("catia:test:face#face%23{side}")).expect("identity grammar");
+            let loop_id =
+                LoopId::mint(format!("catia:test:loop#loop%23{side}")).expect("identity grammar");
+            let coedge_id = CoedgeId::mint(format!("catia:test:coedge#coedge%23{side}"))
+                .expect("identity grammar");
             ir.model.faces.push(Face {
                 id: face_id.clone(),
-                shell: ShellId::mint("catia:test:shell#shell".to_string()).expect("identity grammar"),
+                shell: ShellId::mint("catia:test:shell#shell".to_string())
+                    .expect("identity grammar"),
                 surface: support_id.clone(),
                 sense: Sense::Forward,
                 loops: vec![loop_id.clone()].into(),
@@ -3148,7 +3161,8 @@ mod tests {
             ir.model.coedges.push(Coedge {
                 id: coedge_id.clone(),
                 owner_loop: loop_id,
-                edge: EdgeId::mint("catia:test:edge#standard-edge".to_string()).expect("identity grammar"),
+                edge: EdgeId::mint("catia:test:edge#standard-edge".to_string())
+                    .expect("identity grammar"),
                 radial_next: CoedgeId::mint(format!("catia:test:coedge#coedge%23{}", 1 - side))
                     .expect("identity grammar"),
                 sense: if side == 0 {
@@ -3163,8 +3177,10 @@ mod tests {
         let _attached = ir.model.add_procedural_curve(
             curve_id.clone(),
             ProceduralCurve::new(
-                ProceduralCurveId::mint("catia:test:proceduralcurve#standard-intersection".to_string())
-                    .expect("identity grammar"),
+                ProceduralCurveId::mint(
+                    "catia:test:proceduralcurve#standard-intersection".to_string(),
+                )
+                .expect("identity grammar"),
                 ProceduralCurveDefinition::Intersection {
                     context: IntcurveSupportContext {
                         sides: std::array::from_fn(|side| IntcurveSupportSide {
@@ -3224,7 +3240,8 @@ mod tests {
         let bytes =
             crate::test_support::a5_native_edge_run_stream_with_support(6, 139, 142, 0x1234);
         let mut ir = CadIr::empty();
-        let surface_id = SurfaceId::mint("catia:test:surface#standard-carrier".to_string()).expect("identity grammar");
+        let surface_id = SurfaceId::mint("catia:test:surface#standard-carrier".to_string())
+            .expect("identity grammar");
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Plane {
@@ -3271,7 +3288,8 @@ mod tests {
         let bytes =
             crate::test_support::a5_native_edge_run_stream_with_support(6, 139, 142, 0x5678);
         let mut ir = CadIr::empty();
-        let surface_id = SurfaceId::mint("catia:test:surface#standard-carrier".to_string()).expect("identity grammar");
+        let surface_id = SurfaceId::mint("catia:test:surface#standard-carrier".to_string())
+            .expect("identity grammar");
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Plane {
@@ -3356,27 +3374,34 @@ mod tests {
         let mut ir = CadIr::empty();
         for (index, position) in points.into_iter().enumerate() {
             ir.model.points.push(Point {
-                id: PointId::mint(format!("catia:test:point#point%23{index}")).expect("identity grammar"),
+                id: PointId::mint(format!("catia:test:point#point%23{index}"))
+                    .expect("identity grammar"),
                 position,
                 source_object: None,
             });
             ir.model.vertices.push(Vertex {
-                id: VertexId::mint(format!("catia:test:vertex#vertex%23{index}")).expect("identity grammar"),
-                point: PointId::mint(format!("catia:test:point#point%23{index}")).expect("identity grammar"),
+                id: VertexId::mint(format!("catia:test:vertex#vertex%23{index}"))
+                    .expect("identity grammar"),
+                point: PointId::mint(format!("catia:test:point#point%23{index}"))
+                    .expect("identity grammar"),
                 tolerance: None,
             });
         }
-        let curve_id = CurveId::mint("catia:test:curve#standard-plane-curve".to_string()).expect("identity grammar");
+        let curve_id = CurveId::mint("catia:test:curve#standard-plane-curve".to_string())
+            .expect("identity grammar");
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry: CurveGeometry::Unknown { record: None },
             source_object: None,
         });
         ir.model.edges.push(Edge {
-            id: EdgeId::mint("catia:test:edge#standard-plane-edge".to_string()).expect("identity grammar"),
+            id: EdgeId::mint("catia:test:edge#standard-plane-edge".to_string())
+                .expect("identity grammar"),
             curve: Some(curve_id.clone()),
-            start: VertexId::mint("catia:test:vertex#vertex%230".to_string()).expect("identity grammar"),
-            end: VertexId::mint("catia:test:vertex#vertex%231".to_string()).expect("identity grammar"),
+            start: VertexId::mint("catia:test:vertex#vertex%230".to_string())
+                .expect("identity grammar"),
+            end: VertexId::mint("catia:test:vertex#vertex%231".to_string())
+                .expect("identity grammar"),
             param_range: None,
             tolerance: None,
         });
@@ -3386,8 +3411,10 @@ mod tests {
             u_axis: Vector3::new(1.0, 0.0, 0.0),
         };
         let support_ids = [
-            SurfaceId::mint("catia:test:surface#standard-plane%230".to_string()).expect("identity grammar"),
-            SurfaceId::mint("catia:test:surface#standard-plane%231".to_string()).expect("identity grammar"),
+            SurfaceId::mint("catia:test:surface#standard-plane%230".to_string())
+                .expect("identity grammar"),
+            SurfaceId::mint("catia:test:surface#standard-plane%231".to_string())
+                .expect("identity grammar"),
         ];
         for support_id in &support_ids {
             ir.model.surfaces.push(Surface {
@@ -3399,8 +3426,10 @@ mod tests {
         let _attached = ir.model.add_procedural_curve(
             curve_id,
             ProceduralCurve::new(
-                ProceduralCurveId::mint("catia:test:proceduralcurve#standard-plane-intersection".to_string())
-                    .expect("identity grammar"),
+                ProceduralCurveId::mint(
+                    "catia:test:proceduralcurve#standard-plane-intersection".to_string(),
+                )
+                .expect("identity grammar"),
                 ProceduralCurveDefinition::Intersection {
                     context: IntcurveSupportContext {
                         sides: std::array::from_fn(|side| IntcurveSupportSide {

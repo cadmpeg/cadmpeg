@@ -150,8 +150,8 @@ fn identical_instance_lane_preserves_wire_and_requires_complete_selectors() {
     ] {
         let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
         malformed[field] = value;
-        let error = serde_json::from_value::<FeatureIdenticalInstanceOutputLane>(malformed)
-            .unwrap_err();
+        let error =
+            serde_json::from_value::<FeatureIdenticalInstanceOutputLane>(malformed).unwrap_err();
         assert!(error.to_string().contains(field));
     }
 }
@@ -176,17 +176,46 @@ fn terminal_discriminator_rejects_inconsistent_compact_tokens() {
     let json = r#"{"id":"lane","operation_label":"operation","type_indices":[4096,8],"raw_type_indices":[[144,0],[8]],"type_index_source_offsets":[110,120],"flags":[1,2,3,4],"trailing_indices":[9],"raw_trailing_indices":[[128,9]],"trailing_index_source_offsets":[130],"source_offset":100}"#;
     check_lane_wire::<FeatureOperationTerminalDiscriminator>(json, &[]);
     for (field, raw_field, raw) in [
-        ("type_indices", "raw_type_indices", serde_json::json!([[144, 0, 0], [8]])),
-        ("type_indices", "raw_type_indices", serde_json::json!([[255], [8]])),
-        ("type_indices", "raw_type_indices", serde_json::json!([[144], [8]])),
-        ("type_indices", "raw_type_indices", serde_json::json!([[7], [8]])),
-        ("trailing_indices", "raw_trailing_indices", serde_json::json!([[10]])),
-        ("trailing_indices", "raw_trailing_indices", serde_json::json!([[9, 0]])),
-        ("trailing_indices", "raw_trailing_indices", serde_json::json!([[255]])),
+        (
+            "type_indices",
+            "raw_type_indices",
+            serde_json::json!([[144, 0, 0], [8]]),
+        ),
+        (
+            "type_indices",
+            "raw_type_indices",
+            serde_json::json!([[255], [8]]),
+        ),
+        (
+            "type_indices",
+            "raw_type_indices",
+            serde_json::json!([[144], [8]]),
+        ),
+        (
+            "type_indices",
+            "raw_type_indices",
+            serde_json::json!([[7], [8]]),
+        ),
+        (
+            "trailing_indices",
+            "raw_trailing_indices",
+            serde_json::json!([[10]]),
+        ),
+        (
+            "trailing_indices",
+            "raw_trailing_indices",
+            serde_json::json!([[9, 0]]),
+        ),
+        (
+            "trailing_indices",
+            "raw_trailing_indices",
+            serde_json::json!([[255]]),
+        ),
     ] {
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
         wire[raw_field] = raw;
-        let error = serde_json::from_value::<FeatureOperationTerminalDiscriminator>(wire).unwrap_err();
+        let error =
+            serde_json::from_value::<FeatureOperationTerminalDiscriminator>(wire).unwrap_err();
         assert!(error.to_string().contains(field));
     }
 }
@@ -232,8 +261,10 @@ fn draft_index_lane_requires_nonempty_byte_counted_members() {
             "indices": vec![1; count], "raw_indices": vec![vec![1]; count],
             "source_offsets": vec![100; count],
         });
-        assert_eq!(serde_json::from_value::<FeatureDraftConstructionIndexLane>(wire).is_ok(),
-            matches!(count, 1 | 254));
+        assert_eq!(
+            serde_json::from_value::<FeatureDraftConstructionIndexLane>(wire).is_ok(),
+            matches!(count, 1 | 254)
+        );
     }
 }
 
@@ -304,11 +335,31 @@ fn boolean_operation_rejects_inconsistent_reference_tokens() {
     let json = r#"{"id":"boolean","operation_label":"operation","kind":"subtract","target_object_index":256,"raw_target_object_index":[144,1,0],"target_source_offset":100,"tool_object_indices":[20,256],"raw_tool_object_indices":[[240,20],[241,1,0]],"tool_source_offsets":[110,120],"source_offset":90}"#;
     check_lane_wire::<FeatureBooleanOperation>(json, &[]);
     for (field, value, error_field) in [
-        ("target_object_index", serde_json::json!(257), "target_object_index"),
-        ("raw_target_object_index", serde_json::json!([144, 1, 0, 0]), "target_object_index"),
-        ("raw_target_object_index", serde_json::json!([255]), "target_object_index"),
-        ("tool_object_indices", serde_json::json!([21, 256]), "tool_object_indices"),
-        ("raw_tool_object_indices", serde_json::json!([[240, 20], [241, 0, 0]]), "tool_object_indices"),
+        (
+            "target_object_index",
+            serde_json::json!(257),
+            "target_object_index",
+        ),
+        (
+            "raw_target_object_index",
+            serde_json::json!([144, 1, 0, 0]),
+            "target_object_index",
+        ),
+        (
+            "raw_target_object_index",
+            serde_json::json!([255]),
+            "target_object_index",
+        ),
+        (
+            "tool_object_indices",
+            serde_json::json!([21, 256]),
+            "tool_object_indices",
+        ),
+        (
+            "raw_tool_object_indices",
+            serde_json::json!([[240, 20], [241, 0, 0]]),
+            "tool_object_indices",
+        ),
     ] {
         let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
         malformed[field] = value;
@@ -323,8 +374,8 @@ fn draft_terminal_lane_derives_its_source_offset() {
     check_lane_wire::<FeatureDraftConstructionTerminalLane>(json, &[]);
     let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
     malformed["source_offset"] = serde_json::json!(101);
-    let error = serde_json::from_value::<FeatureDraftConstructionTerminalLane>(malformed)
-        .unwrap_err();
+    let error =
+        serde_json::from_value::<FeatureDraftConstructionTerminalLane>(malformed).unwrap_err();
     assert!(error.to_string().contains("source_offset"));
 }
 
@@ -332,11 +383,17 @@ fn draft_terminal_lane_derives_its_source_offset() {
 fn draft_terminal_lane_requires_two_byte_compact_indices() {
     let json = r#"{"id":"lane","operation_label":"operation","indices":[4096,1],"raw_indices":[[144,0],[128,1]],"tail":[1,2,3],"index_source_offsets":[100,102],"source_offset":100}"#;
     check_lane_wire::<FeatureDraftConstructionTerminalLane>(json, &[]);
-    for (value, raw) in [(4096, [255, 0]), (4096, [127, 0]), (1, [1, 0]), (1, [128, 2])] {
+    for (value, raw) in [
+        (4096, [255, 0]),
+        (4096, [127, 0]),
+        (1, [1, 0]),
+        (1, [128, 2]),
+    ] {
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
         wire["indices"][0] = serde_json::json!(value);
         wire["raw_indices"][0] = serde_json::json!(raw);
-        let error = serde_json::from_value::<FeatureDraftConstructionTerminalLane>(wire).unwrap_err();
+        let error =
+            serde_json::from_value::<FeatureDraftConstructionTerminalLane>(wire).unwrap_err();
         assert!(error.to_string().contains("indices[0]"));
     }
 }
@@ -348,13 +405,16 @@ fn pattern_rows_reject_scalar_families_outside_their_layout() {
     let wide = r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"wide_rows","declared_count":2,"encodings":["binary64","binary64","binary64","binary64","exact_one"],"values":[2.5,4.0,5.0,6.0,1.0],"raw_values":[[48,4,0,0,0,0,0,0],[48,16,0,0,0,0,0,0],[48,20,0,0,0,0,0,0],[48,24,0,0,0,0,0,0],[1]],"selectors":[7],"raw_selectors":[[7]],"source_offset":100,"value_source_offsets":[110,118,126,134,142],"selector_source_offsets":[143]}"#;
     let mut wrong_first: serde_json::Value = serde_json::from_str(wide).unwrap();
     wrong_first["encodings"][0] = serde_json::json!("binary32");
-    wrong_first["raw_values"][0] = serde_json::json!([80,32,0,0]);
+    wrong_first["raw_values"][0] = serde_json::json!([80, 32, 0, 0]);
     assert!(serde_json::from_value::<FeaturePatternTransformLane>(wrong_first).is_err());
     let mut wrong_terminal: serde_json::Value = serde_json::from_str(wide).unwrap();
     wrong_terminal["encodings"][4] = serde_json::json!("binary64");
-    wrong_terminal["raw_values"][4] = serde_json::json!([47,240,0,0,0,0,0,0]);
+    wrong_terminal["raw_values"][4] = serde_json::json!([47, 240, 0, 0, 0, 0, 0, 0]);
     assert!(serde_json::from_value::<FeaturePatternTransformLane>(wrong_terminal).is_err());
-    assert!(serde_json::from_str::<FeaturePatternTransformLane>(&wide.replace("\"row_schema_index\":3", "\"row_schema_index\":0")).is_err());
+    assert!(serde_json::from_str::<FeaturePatternTransformLane>(
+        &wide.replace("\"row_schema_index\":3", "\"row_schema_index\":0")
+    )
+    .is_err());
 }
 
 #[test]
@@ -362,8 +422,8 @@ fn sketch_scalar_lane_rejects_inconsistent_or_zero_atoms() {
     let json = r#"{"id":"lane","operation_label":"operation","construction_payload":"payload","ordinal":0,"discriminator":[37,37,65,0,4,1,7,1,192,69,16,0,128,134,2,0,1,0],"values":[2.5],"raw_values":[[80,32,0,0]],"value_payload_offsets":[18],"terminator_payload_offset":22,"source_offset":100,"value_source_offsets":[118],"terminator_source_offset":122}"#;
     let original: serde_json::Value = serde_json::from_str(json).unwrap();
     for (value, raw) in [
-        (4.0, vec![80,32,0,0]),
-        (2.5, vec![80,32,0,0,0]),
+        (4.0, vec![80, 32, 0, 0]),
+        (2.5, vec![80, 32, 0, 0, 0]),
         (0.0, vec![0]),
     ] {
         let mut invalid = original.clone();
@@ -379,9 +439,9 @@ fn draft_binary32_lane_rejects_inconsistent_or_wrong_width_atoms() {
     let json = r#"{"id":"lane","operation_label":"operation","graph_payload":"payload","ordinal":0,"discriminator":[144,24,69,1,4,1,3,1,192,69,4,0,128,134,2,0,3,0],"branch":3,"values":[2.5],"raw_values":[[80,32,0,0]],"payload_offset":0,"value_payload_offsets":[18],"source_offset":100,"value_source_offsets":[118]}"#;
     let original: serde_json::Value = serde_json::from_str(json).unwrap();
     for (value, raw) in [
-        (4.0, vec![80,32,0,0]),
-        (2.5, vec![48,4,0,0,0,0,0,0]),
-        (0.0, vec![0,0,0,0]),
+        (4.0, vec![80, 32, 0, 0]),
+        (2.5, vec![48, 4, 0, 0, 0, 0, 0, 0]),
+        (0.0, vec![0, 0, 0, 0]),
     ] {
         let mut invalid = original.clone();
         invalid["values"][0] = serde_json::json!(value);
@@ -393,16 +453,31 @@ fn draft_binary32_lane_rejects_inconsistent_or_wrong_width_atoms() {
 #[test]
 fn repeated_scalar_lane_rejects_empty_and_inconsistent_atoms() {
     let empty = r#"{"id":"lane","operation_label":"operation","values":[],"raw_values":[],"first_witness_offsets":[],"second_witness_offsets":[]}"#;
-    assert!(serde_json::from_str::<FeatureSimpleHoleRepeatedScalarLane>(empty).unwrap_err().to_string().contains("values"));
+    assert!(
+        serde_json::from_str::<FeatureSimpleHoleRepeatedScalarLane>(empty)
+            .unwrap_err()
+            .to_string()
+            .contains("values")
+    );
     let invalid = r#"{"id":"lane","operation_label":"operation","values":[4.0],"raw_values":[[48,4,0,0,0,0,0,0]],"first_witness_offsets":[10],"second_witness_offsets":[40]}"#;
-    assert!(serde_json::from_str::<FeatureSimpleHoleRepeatedScalarLane>(invalid).unwrap_err().to_string().contains("raw_values"));
+    assert!(
+        serde_json::from_str::<FeatureSimpleHoleRepeatedScalarLane>(invalid)
+            .unwrap_err()
+            .to_string()
+            .contains("raw_values")
+    );
 }
 
 #[test]
 fn datum_fixed_pair_preserves_values_and_raw_values_wire() {
     check_lane_wire::<FeatureDatumCsysPayloadFixedPair>(
         r#"{"id":"pair","operation_label":"operation","datum_csys_payload":"payload","ordinal":0,"values":[0.5,-0.5],"raw_values":[[64,0,0,0,0,0,0],[192,0,0,0,0,0,0]],"discriminator":[11,2,3,1,3,1,192,69,4,0,128,134,2,0,3],"payload_offset":0,"value_payload_offsets":[15,24],"source_offset":100,"value_source_offsets":[115,124]}"#,
-        &["values", "raw_values", "value_payload_offsets", "value_source_offsets"],
+        &[
+            "values",
+            "raw_values",
+            "value_payload_offsets",
+            "value_source_offsets",
+        ],
     );
 }
 
@@ -410,7 +485,10 @@ fn datum_fixed_pair_preserves_values_and_raw_values_wire() {
 fn q155_lanes_reject_mismatched_values_and_unknown_markers() {
     let pattern = r#"{"id":"lane","operation_label":"operation","construction_payload":"payload","ordinal":0,"values":[0.5],"markers":[48],"raw_values":[[64,0,0,0,0,0,0]],"payload_offset":0,"value_payload_offsets":[18],"source_offset":100,"value_source_offsets":[118]}"#;
     let draft = pattern.replace("construction_payload", "graph_payload");
-    for (key, value) in [("values", serde_json::json!([0.25])), ("markers", serde_json::json!([49]))] {
+    for (key, value) in [
+        ("values", serde_json::json!([0.25])),
+        ("markers", serde_json::json!([49])),
+    ] {
         let mut invalid: serde_json::Value = serde_json::from_str(pattern).unwrap();
         invalid[key] = value.clone();
         assert!(serde_json::from_value::<FeaturePatternConstructionFixedLane>(invalid).is_err());
@@ -424,7 +502,12 @@ fn q155_lanes_reject_mismatched_values_and_unknown_markers() {
 fn scaled_sketch_pair_preserves_values_and_raw_values_wire() {
     check_lane_wire::<FeatureSketchPayloadFixedPair>(
         r#"{"id":"pair","operation_label":"operation","construction_payload":"payload","ordinal":0,"values":[0.5,0.75],"raw_values":[[0,0,0,0,0,0,0],[8,0,0,0,0,0,0]],"discriminator":[4,224,72,14,2,3,128,132],"payload_offset":0,"value_payload_offsets":[8,17],"source_offset":100,"value_source_offsets":[108,117]}"#,
-        &["values", "raw_values", "value_payload_offsets", "value_source_offsets"],
+        &[
+            "values",
+            "raw_values",
+            "value_payload_offsets",
+            "value_source_offsets",
+        ],
     );
 }
 
@@ -432,26 +515,47 @@ fn scaled_sketch_pair_preserves_values_and_raw_values_wire() {
 fn mixed_sketch_pair_preserves_interleaved_atom_wire() {
     check_lane_wire::<FeatureSketchPayloadMixedPair>(
         r#"{"id":"pair","operation_label":"operation","construction_payload":"payload","ordinal":0,"fixed_value":0.5,"binary32_value":3.25,"fixed_raw_value":[0,0,0,0,0,0,0],"binary32_raw_value":[80,80,0,0],"discriminator":[4,224,72,14,2,3,128,132],"payload_offset":0,"value_payload_offsets":[8,17],"source_offset":100,"value_source_offsets":[108,117]}"#,
-        &["fixed_raw_value", "binary32_raw_value", "value_payload_offsets", "value_source_offsets"],
+        &[
+            "fixed_raw_value",
+            "binary32_raw_value",
+            "value_payload_offsets",
+            "value_source_offsets",
+        ],
     );
 }
 
 #[test]
 fn scaled_sketch_pair_rejects_values_inconsistent_with_its_marker() {
     let invalid = r#"{"id":"pair","operation_label":"operation","construction_payload":"payload","ordinal":0,"values":[0.5,-0.5],"raw_values":[[0,0,0,0,0,0,0],[0,0,0,0,0,0,0]],"discriminator":[4,224,72,14,2,3,128,132],"payload_offset":0,"value_payload_offsets":[8,17],"source_offset":100,"value_source_offsets":[108,117]}"#;
-    assert!(serde_json::from_str::<FeatureSketchPayloadFixedPair>(invalid).unwrap_err().to_string().contains("raw_values"));
+    assert!(
+        serde_json::from_str::<FeatureSketchPayloadFixedPair>(invalid)
+            .unwrap_err()
+            .to_string()
+            .contains("raw_values")
+    );
 }
 
 #[test]
 fn sketch_scalar_run_derives_payload_positions_across_split_source_blocks() {
     let json = r#"{"id":"lane","operation_label":"operation","construction_payload":"payload","ordinal":0,"discriminator":[37,37,65,0,4,1,7,1,192,69,16,0,128,134,2,0,1,0],"values":[2.5,4.0],"raw_values":[[80,32,0,0],[48,16,0,0,0,0,0,0]],"value_payload_offsets":[18,22],"terminator_payload_offset":30,"source_offset":100,"value_source_offsets":[118,900],"terminator_source_offset":908}"#;
-    check_lane_wire::<FeatureSketchPayloadScalarLane>(json, &["values", "raw_values", "value_payload_offsets", "value_source_offsets"]);
+    check_lane_wire::<FeatureSketchPayloadScalarLane>(
+        json,
+        &[
+            "values",
+            "raw_values",
+            "value_payload_offsets",
+            "value_source_offsets",
+        ],
+    );
     let original: serde_json::Value = serde_json::from_str(json).unwrap();
     for (field, value) in [
-        ("value_payload_offsets", serde_json::json!([18,23])),
+        ("value_payload_offsets", serde_json::json!([18, 23])),
         ("terminator_payload_offset", serde_json::json!(31)),
-        ("discriminator", serde_json::json!([1,2])),
-        ("value_payload_offsets", serde_json::json!([u64::MAX - 1, u64::MAX])),
+        ("discriminator", serde_json::json!([1, 2])),
+        (
+            "value_payload_offsets",
+            serde_json::json!([u64::MAX - 1, u64::MAX]),
+        ),
     ] {
         let mut invalid = original.clone();
         invalid[field] = value;
@@ -463,16 +567,41 @@ fn sketch_scalar_run_derives_payload_positions_across_split_source_blocks() {
 #[test]
 fn draft_and_pattern_runs_reject_payload_gaps_and_empty_atoms() {
     let fixed = r#"{"id":"lane","operation_label":"operation","construction_payload":"payload","ordinal":0,"values":[0.25,0.5],"markers":[48,176],"raw_values":[[32,0,0,0,0,0,0],[64,0,0,0,0,0,0]],"payload_offset":0,"value_payload_offsets":[18,27],"source_offset":100,"value_source_offsets":[118,900]}"#;
-    assert!(serde_json::from_str::<FeaturePatternConstructionFixedLane>(fixed).unwrap_err().to_string().contains("value_payload_offsets"));
+    assert!(
+        serde_json::from_str::<FeaturePatternConstructionFixedLane>(fixed)
+            .unwrap_err()
+            .to_string()
+            .contains("value_payload_offsets")
+    );
     let draft_fixed = fixed.replace("construction_payload", "graph_payload");
-    assert!(serde_json::from_str::<FeatureDraftConstructionFixedLane>(&draft_fixed).unwrap_err().to_string().contains("value_payload_offsets"));
+    assert!(
+        serde_json::from_str::<FeatureDraftConstructionFixedLane>(&draft_fixed)
+            .unwrap_err()
+            .to_string()
+            .contains("value_payload_offsets")
+    );
     let binary32 = r#"{"id":"lane","operation_label":"operation","graph_payload":"payload","ordinal":0,"discriminator":[144,24,69,1,4,1,3,1,192,69,4,0,128,134,2,0,3,0],"branch":3,"values":[2.5,4.0],"raw_values":[[80,32,0,0],[80,128,0,0]],"payload_offset":0,"value_payload_offsets":[18,23],"source_offset":100,"value_source_offsets":[118,900]}"#;
-    assert!(serde_json::from_str::<FeatureDraftConstructionBinary32Lane>(binary32).unwrap_err().to_string().contains("value_payload_offsets"));
+    assert!(
+        serde_json::from_str::<FeatureDraftConstructionBinary32Lane>(binary32)
+            .unwrap_err()
+            .to_string()
+            .contains("value_payload_offsets")
+    );
     let mut empty: serde_json::Value = serde_json::from_str(binary32).unwrap();
-    for field in ["values", "raw_values", "value_payload_offsets", "value_source_offsets"] {
+    for field in [
+        "values",
+        "raw_values",
+        "value_payload_offsets",
+        "value_source_offsets",
+    ] {
         empty[field] = serde_json::json!([]);
     }
-    assert!(serde_json::from_value::<FeatureDraftConstructionBinary32Lane>(empty).unwrap_err().to_string().contains("values"));
+    assert!(
+        serde_json::from_value::<FeatureDraftConstructionBinary32Lane>(empty)
+            .unwrap_err()
+            .to_string()
+            .contains("values")
+    );
 }
 
 #[test]
@@ -510,14 +639,31 @@ fn draft_identity_frame_derives_prefix_form_and_preserves_wire() {
     for (field, value, expected) in [
         ("identity", serde_json::json!(""), "identity"),
         ("identity", serde_json::json!("ABC123"), "identity"),
-        ("prefix", serde_json::json!([65, 129, 84, 240, 56, 3, 1]), "form"),
-        ("prefix", serde_json::json!([65, 129, 84, 240, 56, 2, 1, 0]), "prefix"),
-        ("identity_payload_offset", serde_json::json!(9), "identity_payload_offset"),
-        ("payload_offset", serde_json::json!(u64::MAX), "payload_offset"),
+        (
+            "prefix",
+            serde_json::json!([65, 129, 84, 240, 56, 3, 1]),
+            "form",
+        ),
+        (
+            "prefix",
+            serde_json::json!([65, 129, 84, 240, 56, 2, 1, 0]),
+            "prefix",
+        ),
+        (
+            "identity_payload_offset",
+            serde_json::json!(9),
+            "identity_payload_offset",
+        ),
+        (
+            "payload_offset",
+            serde_json::json!(u64::MAX),
+            "payload_offset",
+        ),
     ] {
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
         wire[field] = value;
-        let error = serde_json::from_value::<FeatureDraftConstructionIdentityFrame>(wire).unwrap_err();
+        let error =
+            serde_json::from_value::<FeatureDraftConstructionIdentityFrame>(wire).unwrap_err();
         assert!(error.to_string().contains(expected), "{error}");
     }
 }
@@ -541,7 +687,10 @@ fn datum_plane_descriptor_derives_suffix_and_preserves_native_wire() {
     let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
     wire["identity"] = serde_json::json!("012345678901234567890123456789?");
     wire["suffix"].as_array_mut().unwrap().remove(0);
-    assert!(serde_json::from_value::<FeatureDatumPlaneDescriptor>(wire).unwrap_err().to_string().contains("identity"));
+    assert!(serde_json::from_value::<FeatureDatumPlaneDescriptor>(wire)
+        .unwrap_err()
+        .to_string()
+        .contains("identity"));
 }
 
 #[test]
@@ -571,7 +720,8 @@ fn pattern_counted_references_preserve_wire_and_reject_token_disagreement() {
     for raw in [vec![240, 2], vec![255], vec![240], vec![240, 1, 0]] {
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
         wire["raw_object_indices"] = serde_json::json!([raw]);
-        let error = serde_json::from_value::<super::FeaturePatternCountedReferenceLane>(wire).unwrap_err();
+        let error =
+            serde_json::from_value::<super::FeaturePatternCountedReferenceLane>(wire).unwrap_err();
         assert!(error.to_string().contains("raw_object_indices"), "{error}");
     }
 }
@@ -585,7 +735,8 @@ fn operation_body_reference_lanes_preserve_wire_and_enforce_each_grammar() {
         assert_eq!(serde_json::to_string(&lane).unwrap(), json);
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
         wire["object_indices"][0] = serde_json::json!(2);
-        let error = serde_json::from_value::<super::FeatureOperationBodyReferenceLane>(wire).unwrap_err();
+        let error =
+            serde_json::from_value::<super::FeatureOperationBodyReferenceLane>(wire).unwrap_err();
         assert!(error.to_string().contains("object_indices"), "{error}");
     }
     for (json, raw) in [
@@ -601,7 +752,8 @@ fn operation_body_reference_lanes_preserve_wire_and_enforce_each_grammar() {
     ] {
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
         wire["raw_object_indices"][0] = serde_json::json!(raw);
-        let error = serde_json::from_value::<super::FeatureOperationBodyReferenceLane>(wire).unwrap_err();
+        let error =
+            serde_json::from_value::<super::FeatureOperationBodyReferenceLane>(wire).unwrap_err();
         assert!(error.to_string().contains("raw_object_indices"), "{error}");
     }
 }
@@ -647,7 +799,8 @@ fn identical_instance_selectors_check_tokens_and_terminal_count_capacity() {
     ] {
         let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
         malformed[field] = value;
-        let error = serde_json::from_value::<FeatureIdenticalInstanceOutputLane>(malformed).unwrap_err();
+        let error =
+            serde_json::from_value::<FeatureIdenticalInstanceOutputLane>(malformed).unwrap_err();
         assert!(error.to_string().contains("selectors"), "{error}");
     }
     for count in [253, 254] {
@@ -673,18 +826,37 @@ fn multi_instance_groups_preserve_interleaving_and_reject_invalid_ordinals() {
         ("ordinals", serde_json::json!([1, 2, 3, 3]), "ordinals"),
         ("ordinals", serde_json::json!([2, 2, 2, 3]), "ordinals"),
         ("ordinals", serde_json::json!([2, 2, 4, 3]), "ordinals"),
-        ("raw_selectors", serde_json::json!([[7], [8], [255], [128, 8]]), "selectors"),
-        ("raw_trailing_object_indices", serde_json::json!([[9], [240, 1]]), "trailing_object_indices"),
-        ("trailing_object_indices", serde_json::json!([9, 257]), "trailing_object_indices"),
+        (
+            "raw_selectors",
+            serde_json::json!([[7], [8], [255], [128, 8]]),
+            "selectors",
+        ),
+        (
+            "raw_trailing_object_indices",
+            serde_json::json!([[9], [240, 1]]),
+            "trailing_object_indices",
+        ),
+        (
+            "trailing_object_indices",
+            serde_json::json!([9, 257]),
+            "trailing_object_indices",
+        ),
     ] {
         let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
         malformed[field] = value;
-        let error = serde_json::from_value::<FeatureMultiInstanceOutputLane>(malformed).unwrap_err();
+        let error =
+            serde_json::from_value::<FeatureMultiInstanceOutputLane>(malformed).unwrap_err();
         assert!(error.to_string().contains(error_field), "{error}");
     }
     let mut incomplete: serde_json::Value = serde_json::from_str(json).unwrap();
     incomplete["declared_count"] = serde_json::json!(4);
-    for field in ["selectors", "raw_selectors", "ordinals", "row_indices", "selector_source_offsets"] {
+    for field in [
+        "selectors",
+        "raw_selectors",
+        "ordinals",
+        "row_indices",
+        "selector_source_offsets",
+    ] {
         incomplete[field].as_array_mut().unwrap().pop();
     }
     let error = serde_json::from_value::<FeatureMultiInstanceOutputLane>(incomplete).unwrap_err();

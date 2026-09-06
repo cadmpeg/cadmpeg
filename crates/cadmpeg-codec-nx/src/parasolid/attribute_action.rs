@@ -30,7 +30,9 @@ impl AttributeAction {
 }
 
 impl From<AttributeAction> for u8 {
-    fn from(value: AttributeAction) -> Self { value.code() }
+    fn from(value: AttributeAction) -> Self {
+        value.code()
+    }
 }
 
 impl TryFrom<u8> for AttributeAction {

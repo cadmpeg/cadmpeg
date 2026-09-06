@@ -1,5 +1,5 @@
-use crate::native::class5b5c::CatiaConsolidatedClass5b5cRecord;
 use super::*;
+use crate::native::class5b5c::CatiaConsolidatedClass5b5cRecord;
 
 pub(super) fn validate_consolidated_class61_records(
     records: &[CatiaConsolidatedClass61Record],

@@ -119,7 +119,13 @@ fn deltas_reference_state_packets_decode_compact_and_extended_references() {
 
     let compound_census = crate::deltas::walk(&compound);
     assert_eq!(compound_census.reference_state_packets.len(), 1);
-    assert_eq!(compound_census.reference_state_packets[0].frames.as_slice().len(), 2);
+    assert_eq!(
+        compound_census.reference_state_packets[0]
+            .frames
+            .as_slice()
+            .len(),
+        2
+    );
     assert!(compound_census.reference_state_packets[0].terminal);
     assert_eq!(
         compound_census.reference_state_packets[0].end,
@@ -140,7 +146,10 @@ fn deltas_reference_marker_packets_decode_extended_references_atomically() {
     let census = crate::deltas::walk(&packet);
 
     assert_eq!(census.reference_marker_packets.len(), 1);
-    assert_eq!(u32::from(census.reference_marker_packets[0].reference), 40_000);
+    assert_eq!(
+        u32::from(census.reference_marker_packets[0].reference),
+        40_000
+    );
     assert_eq!(u8::from(census.reference_marker_packets[0].marker), 0x56);
     assert_eq!(census.reference_marker_packets[0].offset, 0);
     assert_eq!(census.reference_marker_packets[0].end, packet.len());
@@ -223,6 +232,9 @@ fn deltas_body_revision_does_not_absorb_an_adjacent_tagged_reference_lane() {
     assert_eq!(census.body_revisions[0].end, lane_offset);
     assert_eq!(census.tagged_reference_lanes.len(), 1);
     assert_eq!(census.tagged_reference_lanes[0].offset, lane_offset);
-    assert_eq!(Vec::<(u16, u32)>::from(census.tagged_reference_lanes[0].references.clone()), [(29, 10)]);
+    assert_eq!(
+        Vec::<(u16, u32)>::from(census.tagged_reference_lanes[0].references.clone()),
+        [(29, 10)]
+    );
     assert_eq!(census.bytes_decoded, bytes.len());
 }

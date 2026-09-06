@@ -59,14 +59,16 @@ pub(crate) fn resolved_surface_patch_edge_group(
     let mut member_ids = HashSet::new();
     if group
         .members
-        .iter().map(|member| &member.value)
+        .iter()
+        .map(|member| &member.value)
         .any(|member| !member_ids.insert(*member))
     {
         return fallback();
     }
     let matched_operands = group
         .members
-        .iter().map(|member| &member.value)
+        .iter()
+        .map(|member| &member.value)
         .map(|member| {
             let mut matches = operands.iter().filter(|operand| {
                 native_stream(&operand.id) == stream
@@ -215,7 +217,8 @@ pub(crate) fn resolved_edge_flange_group(
     let mut members = HashSet::new();
     let candidate_sets = group
         .members
-        .iter().map(|member| &member.value)
+        .iter()
+        .map(|member| &member.value)
         .map(|member| {
             if !members.insert(*member) {
                 return None;
@@ -345,12 +348,7 @@ pub(crate) fn resolved_edge_treatment_group_with_corners(
     let mut edge_group = group.clone();
     let mut corner_slots = Vec::new();
     edge_group.members.clear();
-    for (ordinal, member) in group
-        .members
-        .iter()
-        .copied()
-        .enumerate()
-    {
+    for (ordinal, member) in group.members.iter().copied().enumerate() {
         let edge_count = operands
             .iter()
             .filter(|operand| {
@@ -504,21 +502,26 @@ fn resolved_edge_group_with_transition_chain(
     let has_surface_patch_operand = operands.iter().any(|operand| {
         native_stream(&operand.id) == stream
             && operand.scope_record_index == group.scope_record_index
-            && group.members.iter().any(|member| member.value == operand.record_index)
+            && group
+                .members
+                .iter()
+                .any(|member| member.value == operand.record_index)
             && operand.surface_patch_recipe_structure.is_some()
     });
     if has_surface_patch_operand {
         let mut member_ids = HashSet::new();
         if group
             .members
-            .iter().map(|member| &member.value)
+            .iter()
+            .map(|member| &member.value)
             .any(|member| !member_ids.insert(*member))
         {
             return unmatched_selection(previous_state_id);
         }
         let matched_operands = group
             .members
-            .iter().map(|member| &member.value)
+            .iter()
+            .map(|member| &member.value)
             .map(|member| {
                 let mut matches = operands.iter().filter(|operand| {
                     native_stream(&operand.id) == stream
@@ -584,7 +587,8 @@ fn resolved_edge_group_with_transition_chain(
     }
     let identity_matches = group
         .members
-        .iter().map(|member| &member.value)
+        .iter()
+        .map(|member| &member.value)
         .map(|member| {
             let mut matches = identity_operands.iter().filter(|operand| {
                 native_stream(&operand.id) == stream
@@ -596,56 +600,75 @@ fn resolved_edge_group_with_transition_chain(
             matches.next().is_none().then_some(operand)
         })
         .collect::<Option<Vec<_>>>();
-    let has_recipe_operands = group.members.iter().map(|member| &member.value).all(|member| {
-        let matches = operands
+    let has_recipe_operands = group
+        .members
+        .iter()
+        .map(|member| &member.value)
+        .all(|member| {
+            let matches = operands
+                .iter()
+                .filter(|operand| {
+                    native_stream(&operand.id) == stream
+                        && operand.scope_record_index == group.scope_record_index
+                        && operand.record_index == *member
+                })
+                .collect::<Vec<_>>();
+            matches.len() == 1
+        });
+    let has_unstructured_recipe_operand =
+        group
+            .members
             .iter()
-            .filter(|operand| {
-                native_stream(&operand.id) == stream
-                    && operand.scope_record_index == group.scope_record_index
-                    && operand.record_index == *member
-            })
-            .collect::<Vec<_>>();
-        matches.len() == 1
-    });
-    let has_unstructured_recipe_operand = group.members.iter().map(|member| &member.value).any(|member| {
-        operands.iter().any(|operand| {
-            native_stream(&operand.id) == stream
-                && operand.scope_record_index == group.scope_record_index
-                && operand.record_index == *member
-                && !operand.recipe_program.is_empty()
-                && operand.recipe_structure.is_none()
-        })
-    });
+            .map(|member| &member.value)
+            .any(|member| {
+                operands.iter().any(|operand| {
+                    native_stream(&operand.id) == stream
+                        && operand.scope_record_index == group.scope_record_index
+                        && operand.record_index == *member
+                        && !operand.recipe_program.is_empty()
+                        && operand.recipe_structure.is_none()
+                })
+            });
     if has_recipe_operands && has_unstructured_recipe_operand {
         return unmatched_selection(previous_state_id);
     }
-    let has_standard_recipe_operands = group.members.iter().map(|member| &member.value).any(|member| {
-        operands.iter().any(|operand| {
-            native_stream(&operand.id) == stream
-                && operand.scope_record_index == group.scope_record_index
-                && operand.record_index == *member
-                && operand.recipe_structure.is_some()
-        })
-    });
-    let has_concrete_recipe_evidence = group.members.iter().map(|member| &member.value).any(|member| {
-        let matches = operands
+    let has_standard_recipe_operands =
+        group
+            .members
             .iter()
-            .filter(|operand| {
-                native_stream(&operand.id) == stream
-                    && operand.scope_record_index == group.scope_record_index
-                    && operand.record_index == *member
-            })
-            .collect::<Vec<_>>();
-        match matches.as_slice() {
-            [operand] => {
-                operand.resolved_edge_slot.is_some()
-                    || !operand.changed_boundary_edge_slots.is_empty()
-                    || !operand.deleted_boundary_edge_slots.is_empty()
-                    || !operand.treatment_radius_candidates.is_empty()
-            }
-            _ => false,
-        }
-    });
+            .map(|member| &member.value)
+            .any(|member| {
+                operands.iter().any(|operand| {
+                    native_stream(&operand.id) == stream
+                        && operand.scope_record_index == group.scope_record_index
+                        && operand.record_index == *member
+                        && operand.recipe_structure.is_some()
+                })
+            });
+    let has_concrete_recipe_evidence =
+        group
+            .members
+            .iter()
+            .map(|member| &member.value)
+            .any(|member| {
+                let matches = operands
+                    .iter()
+                    .filter(|operand| {
+                        native_stream(&operand.id) == stream
+                            && operand.scope_record_index == group.scope_record_index
+                            && operand.record_index == *member
+                    })
+                    .collect::<Vec<_>>();
+                match matches.as_slice() {
+                    [operand] => {
+                        operand.resolved_edge_slot.is_some()
+                            || !operand.changed_boundary_edge_slots.is_empty()
+                            || !operand.deleted_boundary_edge_slots.is_empty()
+                            || !operand.treatment_radius_candidates.is_empty()
+                    }
+                    _ => false,
+                }
+            });
     let identity_transition_slots = (allow_edge_treatment_transition_chain
         && treatment_radius.is_none()
         && group.members.len() == 1)
@@ -680,7 +703,8 @@ fn resolved_edge_group_with_transition_chain(
     let recipe_supports_transition_chain = |chain: &[i64]| {
         let member_operands = group
             .members
-            .iter().map(|member| &member.value)
+            .iter()
+            .map(|member| &member.value)
             .map(|member| {
                 let mut matches = operands.iter().filter(|operand| {
                     native_stream(&operand.id) == stream
@@ -2131,19 +2155,15 @@ fn corroborated_common_triplet_intersection(
     shared_edge_sets: &[&[i64]],
 ) -> Option<i64> {
     let edge_sets = selector_contexts.iter().flat_map(|selector| {
-        selector
-            .clauses
-            .iter()
-            .flatten()
-            .filter_map(|clause| {
-                clause.entry.common_incident_edge_ordinal()?;
-                let [first, second] = &clause.triplet_edge_slots;
-                let mut common = first.clone();
-                common.retain(|edge| second.contains(edge));
-                common.sort_unstable();
-                common.dedup();
-                (!common.is_empty()).then_some(common)
-            })
+        selector.clauses.iter().flatten().filter_map(|clause| {
+            clause.entry.common_incident_edge_ordinal()?;
+            let [first, second] = &clause.triplet_edge_slots;
+            let mut common = first.clone();
+            common.retain(|edge| second.contains(edge));
+            common.sort_unstable();
+            common.dedup();
+            (!common.is_empty()).then_some(common)
+        })
     });
     corroborated_edge_set_intersection(edge_sets, shared_edge_sets)
 }
@@ -2156,7 +2176,8 @@ fn corroborated_cross_clause_triplet_intersection(
         let [Some(left), Some(right)] = selector.clauses.as_slice() else {
             return Vec::new();
         };
-        left.triplet_edge_slots.iter()
+        left.triplet_edge_slots
+            .iter()
             .zip(&right.triplet_edge_slots)
             .filter_map(|(left, right)| {
                 let mut common = left.clone();
@@ -2304,16 +2325,29 @@ pub(crate) fn project_fixed_fillet_with_corners(
     let fixed = scope.fixed_fillet_parameters()?;
     let stream = native_stream(&scope.id)?;
     let radius_spec = |group: &crate::records::DesignFixedFilletGroup| match &group.law {
-        crate::records::DesignFixedFilletLaw::Constant(radius) => (radius.value > 0.0).then_some(RadiusSpec::Constant {
-            radius: Length(radius.value * 10.0),
-        }),
-        crate::records::DesignFixedFilletLaw::Variable { start, end, intermediate } => {
+        crate::records::DesignFixedFilletLaw::Constant(radius) => {
+            (radius.value > 0.0).then_some(RadiusSpec::Constant {
+                radius: Length(radius.value * 10.0),
+            })
+        }
+        crate::records::DesignFixedFilletLaw::Variable {
+            start,
+            end,
+            intermediate,
+        } => {
             let mut points = Vec::with_capacity(intermediate.len() + 2);
-            points.push(VariableRadius { parameter: 0.0, radius: Length(start.value * 10.0) });
+            points.push(VariableRadius {
+                parameter: 0.0,
+                radius: Length(start.value * 10.0),
+            });
             points.extend(intermediate.iter().map(|row| VariableRadius {
-                parameter: row.parameter.value, radius: Length(row.radius.value * 10.0),
+                parameter: row.parameter.value,
+                radius: Length(row.radius.value * 10.0),
             }));
-            points.push(VariableRadius { parameter: 1.0, radius: Length(end.value * 10.0) });
+            points.push(VariableRadius {
+                parameter: 1.0,
+                radius: Length(end.value * 10.0),
+            });
             Some(RadiusSpec::Variable { points })
         }
     };
@@ -2330,13 +2364,17 @@ pub(crate) fn project_fixed_fillet_with_corners(
         .iter()
         .copied()
         .filter(|group| {
-            group.members.iter().map(|member| &member.value).all(|member| {
-                edge_operands.iter().any(|operand| {
-                    native_stream(&operand.id) == Some(stream)
-                        && operand.scope_record_index == scope.record_index
-                        && operand.record_index == *member
+            group
+                .members
+                .iter()
+                .map(|member| &member.value)
+                .all(|member| {
+                    edge_operands.iter().any(|operand| {
+                        native_stream(&operand.id) == Some(stream)
+                            && operand.scope_record_index == scope.record_index
+                            && operand.record_index == *member
+                    })
                 })
-            })
         })
         .collect::<Vec<_>>();
     let edge_groups = if complete_edge_groups.len() == fixed.groups.len() {
@@ -2357,7 +2395,8 @@ pub(crate) fn project_fixed_fillet_with_corners(
             };
             let identities = group
                 .members
-                .iter().map(|member| &member.value)
+                .iter()
+                .map(|member| &member.value)
                 .map(|member| {
                     let matches = edge_identity_operands
                         .iter()

@@ -30,7 +30,6 @@ use crate::layout::sketch_profile_region_member as region_member;
 use crate::layout::sketch_profile_region_selection_prefix as region_selection;
 use crate::layout::work_point_sketch_point_identity as sketch_point_identity;
 use crate::records::{
-    DesignWorkPointRule,
     ConstructionRecipe, ConstructionRecipeKind, DesignBodyRecipeOperand, DesignBodyRecipeReference,
     DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
     DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity,
@@ -40,11 +39,11 @@ use crate::records::{
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignExtrudeStart,
     DesignFaceOperand, DesignFaceSourceGroup, DesignFaceSourceMember, DesignFilletRadiusGroup,
     DesignFilletRadiusLaw, DesignLoftLegacyBodyCarrier, DesignOperandOwner, DesignParameter,
-    DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
-    DesignSketchProfileOperand, DesignSketchProfileRegion, DesignSketchProfileRegionMember,
-    DesignSketchProfileRegionSelection, DesignSurfaceOffsetSupport, DesignTopologyRecipeEntry,
-    DesignTopologyRecipeSide, DesignTopologyRecipeTriplet, DesignVertexRecipe,
-    DesignWorkPlaneConstruction, DesignWorkPointInputCarrier, DesignWorkPointPlaneSelection,
+    DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchProfileOperand,
+    DesignSketchProfileRegion, DesignSketchProfileRegionMember, DesignSketchProfileRegionSelection,
+    DesignSurfaceOffsetSupport, DesignTopologyRecipeEntry, DesignTopologyRecipeSide,
+    DesignTopologyRecipeTriplet, DesignVertexRecipe, DesignWorkPlaneConstruction,
+    DesignWorkPointInputCarrier, DesignWorkPointPlaneSelection, DesignWorkPointRule,
     DesignWorkPointSketchPointSelection, LostEdgeReference, PersistentSubentityTag,
     SketchCurveIdentity, SketchPoint, SketchRelationOperand,
 };
@@ -216,7 +215,8 @@ pub fn decode_edge_treatment_vertex_operands(
                 .filter_map(|group| {
                     let mut ordinals = group
                         .members
-                        .iter().map(|member| &member.value)
+                        .iter()
+                        .map(|member| &member.value)
                         .enumerate()
                         .filter(|(_, member)| **member == record_index);
                     let (ordinal, _) = ordinals.next()?;
@@ -406,9 +406,9 @@ pub fn bind_work_point_input_carriers(
                 },
             }));
         }
-        construction.rule = DesignWorkPointRule::from_serialized(
-            construction.rule.reference_type(), inputs,
-        ).map_err(crate::error::malformed)?;
+        construction.rule =
+            DesignWorkPointRule::from_serialized(construction.rule.reference_type(), inputs)
+                .map_err(crate::error::malformed)?;
     }
     Ok(())
 }
@@ -451,7 +451,8 @@ pub fn bind_work_plane_constructions(
         let records = record_offset_index
             .entry(stream.clone())
             .or_insert_with(|| IndexedRecordOffsets::build(bytes));
-        let Some([placement_record_index, first, second, third, extra_offset]) = scope.reference_members.values_array()
+        let Some([placement_record_index, first, second, third, extra_offset]) =
+            scope.reference_members.values_array()
         else {
             continue;
         };
@@ -759,7 +760,9 @@ pub fn decode_face_operands(
         let records = record_offset_index
             .entry(stream)
             .or_insert_with(|| IndexedRecordOffsets::build(bytes));
-        for (group_member_index, record_index) in group.members.iter().map(|member| &member.value).enumerate() {
+        for (group_member_index, record_index) in
+            group.members.iter().map(|member| &member.value).enumerate()
+        {
             if !seen.insert((stream, scope.record_index, *record_index)) {
                 continue;
             }
@@ -868,7 +871,8 @@ pub fn decode_face_operands(
             {
                 scope
                     .reference_members
-                    .values().nth(ordinal + 1)
+                    .values()
+                    .nth(ordinal + 1)
                     .and_then(|record_index| headers.get(&(stream, *record_index)))
                     .map(|header| header.byte_offset)
             } else {
@@ -962,35 +966,40 @@ pub fn decode_face_source_groups(
             ) else {
                 continue;
             };
-            let Some(source_members) = source_reference_offsets.into_iter().map(|(offset, source_record_index)| {
-                let source_byte_offset = records.first_at_or_after(
-                    carrier_byte_offset.saturating_add(indexed_header::LEN),
-                    source_record_index,
-                )?;
-                let (source_class_tag, _) = lp_ascii_filtered(bytes, source_byte_offset, 3..=3, u8::is_ascii_digit)?;
-                let member = parse_extrude_identity_member(bytes, source_byte_offset)?;
-                let source_byte_offset_u64 = u64::try_from(source_byte_offset).ok()?;
-                Some(crate::records::Located {
-                    offset: u64::try_from(offset).ok()?,
-                value: DesignFaceSourceMember {
-                    record_index: source_record_index,
-                    byte_offset: source_byte_offset_u64,
-                    class_tag: source_class_tag,
-                    persistent_identity: DesignConstructionPersistentIdentity {
-                        local_id: member.local_id,
-                        local_id_offset: member.local_id_offset,
-                        asset_id: member.asset_id,
-                        asset_id_offset: member.asset_id_offset,
-                        context_id: member.context_id,
-                        context_id_offset: member.context_id_offset,
-                        tail_slot_present: member.tail_slot_present,
-                        tail_slot_offset: member.tail_slot_offset,
-                        next_record_index: member.next_record_index,
-                        next_byte_offset: member.next_byte_offset,
-                    },
-                },
+            let Some(source_members) = source_reference_offsets
+                .into_iter()
+                .map(|(offset, source_record_index)| {
+                    let source_byte_offset = records.first_at_or_after(
+                        carrier_byte_offset.saturating_add(indexed_header::LEN),
+                        source_record_index,
+                    )?;
+                    let (source_class_tag, _) =
+                        lp_ascii_filtered(bytes, source_byte_offset, 3..=3, u8::is_ascii_digit)?;
+                    let member = parse_extrude_identity_member(bytes, source_byte_offset)?;
+                    let source_byte_offset_u64 = u64::try_from(source_byte_offset).ok()?;
+                    Some(crate::records::Located {
+                        offset: u64::try_from(offset).ok()?,
+                        value: DesignFaceSourceMember {
+                            record_index: source_record_index,
+                            byte_offset: source_byte_offset_u64,
+                            class_tag: source_class_tag,
+                            persistent_identity: DesignConstructionPersistentIdentity {
+                                local_id: member.local_id,
+                                local_id_offset: member.local_id_offset,
+                                asset_id: member.asset_id,
+                                asset_id_offset: member.asset_id_offset,
+                                context_id: member.context_id,
+                                context_id_offset: member.context_id_offset,
+                                tail_slot_present: member.tail_slot_present,
+                                tail_slot_offset: member.tail_slot_offset,
+                                next_record_index: member.next_record_index,
+                                next_byte_offset: member.next_byte_offset,
+                            },
+                        },
+                    })
                 })
-            }).collect::<Option<Vec<_>>>() else {
+                .collect::<Option<Vec<_>>>()
+            else {
                 continue;
             };
             let Ok(carrier_reference_ordinal) = u32::try_from(carrier_ordinal) else {
@@ -1002,7 +1011,9 @@ pub fn decode_face_source_groups(
             ) else {
                 continue;
             };
-            let Some(carrier_span) = crate::records::NonEmptyByteSpan::new(carrier_start, carrier_end) else {
+            let Some(carrier_span) =
+                crate::records::NonEmptyByteSpan::new(carrier_start, carrier_end)
+            else {
                 continue;
             };
             out.push(DesignFaceSourceGroup {
@@ -1273,8 +1284,7 @@ pub fn bind_sketch_profiles(
             } else if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sweep) {
                 {
                     let value = Some(profile.clone());
-                    if let crate::records::DesignScopePayload::Sweep(slot) = &mut scope.payload
-                    {
+                    if let crate::records::DesignScopePayload::Sweep(slot) = &mut scope.payload {
                         slot.get_or_insert_with(Default::default).sweep_profile = value;
                     }
                 }
@@ -1533,7 +1543,8 @@ pub(crate) fn parse_loft_legacy_body_carrier(
     if cursor != start.checked_add(legacy_loft_322::OPAQUE_INDEX)? {
         return None;
     }
-    let opaque_index = u8::try_from(View::u32_le_at(bytes, cursor)?).ok()
+    let opaque_index = u8::try_from(View::u32_le_at(bytes, cursor)?)
+        .ok()
         .and_then(std::num::NonZeroU8::new)?;
     cursor = cursor.checked_add(4)?;
     let opaque_scalar = View::f64_le_at(bytes, cursor)?;
@@ -1692,7 +1703,9 @@ pub fn decode_fillet_radius_groups(
         owned_parameters.sort_by_key(|(ordinal, _)| *ordinal);
         let radii = owned_parameters
             .iter()
-            .filter_map(|(_, parameter)| (parameter.source_kind() == "Radius").then_some(*parameter))
+            .filter_map(|(_, parameter)| {
+                (parameter.source_kind() == "Radius").then_some(*parameter)
+            })
             .collect::<Vec<_>>();
         let weights = owned_parameters
             .iter()
@@ -1713,7 +1726,11 @@ pub fn decode_fillet_radius_groups(
                     scope_record_index: scope.record_index,
                     group_ordinal,
                     group_record_index: group.record_index,
-                    edge_operand_record_indices: group.members.iter().map(|member| member.value).collect(),
+                    edge_operand_record_indices: group
+                        .members
+                        .iter()
+                        .map(|member| member.value)
+                        .collect(),
                     law: DesignFilletRadiusLaw::Constant {
                         radius_parameter_record_index: radius.record_index,
                     },
@@ -1746,7 +1763,11 @@ pub fn decode_fillet_radius_groups(
                 scope_record_index: scope.record_index,
                 group_ordinal: 0,
                 group_record_index: group.record_index,
-                edge_operand_record_indices: group.members.iter().map(|member| member.value).collect(),
+                edge_operand_record_indices: group
+                    .members
+                    .iter()
+                    .map(|member| member.value)
+                    .collect(),
                 law: DesignFilletRadiusLaw::Chordal {
                     chord_length_parameter_record_index: *chord_length,
                 },
@@ -1779,7 +1800,11 @@ pub fn decode_fillet_radius_groups(
                     scope_record_index: scope.record_index,
                     group_ordinal: 0,
                     group_record_index: group.record_index,
-                    edge_operand_record_indices: group.members.iter().map(|member| member.value).collect(),
+                    edge_operand_record_indices: group
+                        .members
+                        .iter()
+                        .map(|member| member.value)
+                        .collect(),
                     law: DesignFilletRadiusLaw::Asymmetric {
                         offset_one_parameter_record_index: *offset_one,
                         offset_two_parameter_record_index: *offset_two,
@@ -1825,7 +1850,16 @@ pub fn decode_fillet_radius_groups(
             law: DesignFilletRadiusLaw::Variable {
                 start_radius_parameter_record_index: *start,
                 end_radius_parameter_record_index: *end,
-                middle: middle_radii.into_iter().zip(middle_parameters).map(|(radius_parameter_record_index, parameter_record_index)| crate::records::DesignFilletMidpoint { radius_parameter_record_index, parameter_record_index }).collect(),
+                middle: middle_radii
+                    .into_iter()
+                    .zip(middle_parameters)
+                    .map(|(radius_parameter_record_index, parameter_record_index)| {
+                        crate::records::DesignFilletMidpoint {
+                            radius_parameter_record_index,
+                            parameter_record_index,
+                        }
+                    })
+                    .collect(),
             },
             tangency_weight_parameter_record_index: weights
                 .first()
@@ -1977,7 +2011,10 @@ pub(crate) fn parse_construction_operand_group(
         let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
             return NotAGroup;
         };
-        members.push(crate::records::Located { value: record_index, offset });
+        members.push(crate::records::Located {
+            value: record_index,
+            offset,
+        });
     }
     let mut auxiliary_records = Vec::new();
     let mut auxiliary_reference_slots = [false; 2];
@@ -1990,7 +2027,10 @@ pub(crate) fn parse_construction_operand_group(
         let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
             return NotAGroup;
         };
-        auxiliary_records.push(crate::records::Located { value: record_index, offset });
+        auxiliary_records.push(crate::records::Located {
+            value: record_index,
+            offset,
+        });
     }
     let Some(trailing_count) = View::u32_le_at(bytes, cursor) else {
         return NotAGroup;
@@ -2004,15 +2044,17 @@ pub(crate) fn parse_construction_operand_group(
         let Some((record_index, offset)) = take_record_reference(bytes, &mut cursor) else {
             return NotAGroup;
         };
-        trailing_records.push(crate::records::Located { value: record_index, offset });
+        trailing_records.push(crate::records::Located {
+            value: record_index,
+            offset,
+        });
     }
     let legacy_move_class_328 = scope.kind() == crate::records::DesignFeatureKind::Move
         && header.class_tag == "328"
         && auxiliary_reference_slots == [false, true]
-        && header
-            .record_index
-            .checked_add(13)
-            .is_some_and(|expected| auxiliary_records.len() == 1 && auxiliary_records[0].value == expected)
+        && header.record_index.checked_add(13).is_some_and(|expected| {
+            auxiliary_records.len() == 1 && auxiliary_records[0].value == expected
+        })
         && trailing_count == 0;
     if legacy_move_class_328 {
         if bytes.get(cursor) != Some(&0) {
@@ -2331,23 +2373,28 @@ pub(crate) fn parse_construction_operand_path(
     }
     let entity_ref = View::u64_le_at(bytes, start + 22)?;
     let entity_ref_offset = u64::try_from(start + 22).ok()?;
-    let (placement, mut cursor) =
-        if bytes.get(start + 30..start + 33)? == [0; 3] {
-            let transform = rigid_transform_at(bytes, start + 33)?;
-            if bytes.get(start + 161) != Some(&0) {
-                return None;
-            }
-            (
-                crate::records::DesignConstructionPathPlacement::Transform(crate::records::Located { value: transform, offset: u64::try_from(start + 33).ok()? }),
-                start + 162,
-            )
-        } else {
-            let variant = match bytes.get(start + 30..start + 34)? {
-                [0, 0, variant @ (0 | 1), 0] => *variant != 0,
-                _ => return None,
-            };
-            (crate::records::DesignConstructionPathPlacement::Compact(variant), start + 34)
+    let (placement, mut cursor) = if bytes.get(start + 30..start + 33)? == [0; 3] {
+        let transform = rigid_transform_at(bytes, start + 33)?;
+        if bytes.get(start + 161) != Some(&0) {
+            return None;
+        }
+        (
+            crate::records::DesignConstructionPathPlacement::Transform(crate::records::Located {
+                value: transform,
+                offset: u64::try_from(start + 33).ok()?,
+            }),
+            start + 162,
+        )
+    } else {
+        let variant = match bytes.get(start + 30..start + 34)? {
+            [0, 0, variant @ (0 | 1), 0] => *variant != 0,
+            _ => return None,
         };
+        (
+            crate::records::DesignConstructionPathPlacement::Compact(variant),
+            start + 34,
+        )
+    };
     let (scope_record_index, scope_record_index_offset) =
         take_record_reference(bytes, &mut cursor)?;
     if scope_record_index != expected_scope_record_index {
@@ -2482,7 +2529,12 @@ pub fn decode_construction_operand_identities(
         else {
             continue;
         };
-        let Some(trailing_record_index) = group.frame.trailing_records.first().map(|record| &record.value) else {
+        let Some(trailing_record_index) = group
+            .frame
+            .trailing_records
+            .first()
+            .map(|record| &record.value)
+        else {
             continue;
         };
         let Some(wrapper_header) = headers.get(&(stream, *trailing_record_index)) else {
@@ -2705,10 +2757,8 @@ pub(crate) fn parse_construction_tracking_path(
     let selector = View::i32_le_at(bytes, carrier_at + 57)?;
     let kind = View::u32_le_at(bytes, carrier_at + 61)?;
     let mut cursor = carrier_at.checked_add(73)?;
-    let first_related_identity =
-        take_optional_tracking_identity(bytes, &mut cursor)?;
-    let second_related_identity =
-        take_optional_tracking_identity(bytes, &mut cursor)?;
+    let first_related_identity = take_optional_tracking_identity(bytes, &mut cursor)?;
+    let second_related_identity = take_optional_tracking_identity(bytes, &mut cursor)?;
     let following_at = cursor;
     let (following_class_tag, after_following_tag) =
         lp_ascii_filtered(bytes, following_at, 3..=3, u8::is_ascii_digit)?;
@@ -2750,7 +2800,10 @@ fn take_optional_tracking_identity(
             let value_at = (*cursor).checked_add(4)?;
             let value = View::u64_le_at(bytes, value_at)?;
             *cursor = value_at.checked_add(8)?;
-            Some(Some(crate::records::Located { value, offset: u64::try_from(value_at).ok()? }))
+            Some(Some(crate::records::Located {
+                value,
+                offset: u64::try_from(value_at).ok()?,
+            }))
         }
         _ => None,
     }
@@ -2782,7 +2835,10 @@ pub(crate) fn parse_extrude_selection_group(
         if bytes.get(position) != Some(&1) || bytes.get(position + 5..position + 11)? != [0; 6] {
             return None;
         }
-        members.push(crate::records::Located { value: View::u32_le_at(bytes, position + 1)?, offset: u64::try_from(position + 1).ok()? });
+        members.push(crate::records::Located {
+            value: View::u32_le_at(bytes, position + 1)?,
+            offset: u64::try_from(position + 1).ok()?,
+        });
         position = position.checked_add(11)?;
     }
     let opaque_index = View::u32_le_at(bytes, position)?;
@@ -2960,7 +3016,8 @@ pub(crate) struct EntitySelectionFrame {
     pub(crate) identity_record_offset: u64,
     pub(crate) primary_identity: u64,
     pub(crate) primary_identity_offset: u64,
-    pub(crate) secondary: Option<crate::records::DesignSecondaryIdentity<crate::records::Located<u64>>>,
+    pub(crate) secondary:
+        Option<crate::records::DesignSecondaryIdentity<crate::records::Located<u64>>>,
     pub(crate) next_record_index: u32,
     pub(crate) next_byte_offset: u64,
 }
@@ -3037,7 +3094,9 @@ pub(crate) fn entity_selection_matches_curve(
 ) -> bool {
     operand.secondary.is_some_and(|secondary| {
         curve.primary_id == secondary.identity.value
-            && secondary.curve_identity.is_none_or(|identity| curve.secondary_id == identity.value)
+            && secondary
+                .curve_identity
+                .is_none_or(|identity| curve.secondary_id == identity.value)
     })
 }
 
@@ -3173,11 +3232,7 @@ pub(crate) fn parse_entity_selection_frame(
         lp_ascii_filtered(bytes, identity_at, 0..=2000, u8::is_ascii_graphic)?;
     let (_, after_next_tag) = lp_ascii_filtered(bytes, next_at, 0..=2000, u8::is_ascii_graphic)?;
     let next_record_index = View::u32_le_at(bytes, after_next_tag)?;
-    let (
-        primary_identity_offset,
-        primary_identity,
-        secondary,
-    ) = if class_tag == "338"
+    let (primary_identity_offset, primary_identity, secondary) = if class_tag == "338"
         && identity_class_tag == "361"
         && bytes.get(
             identity_at + class_338_curve::ZERO_PREFIX..identity_at + class_338_curve::PRESENCE,
@@ -3206,7 +3261,10 @@ pub(crate) fn parse_entity_selection_frame(
             Some(crate::records::DesignSecondaryIdentity {
                 identity: crate::records::Located {
                     value: secondary_identity,
-                    offset: u64::try_from(identity_at.checked_add(class_338_curve::CURVE_PERSISTENT_ID)?).ok()?,
+                    offset: u64::try_from(
+                        identity_at.checked_add(class_338_curve::CURVE_PERSISTENT_ID)?,
+                    )
+                    .ok()?,
                 },
                 curve_identity: None,
             }),
@@ -3229,7 +3287,8 @@ pub(crate) fn parse_entity_selection_frame(
                 curve_identity: Some(crate::records::Located {
                     value: View::u64_le_at(bytes, curve_secondary_identity_offset)?,
                     offset: u64::try_from(curve_secondary_identity_offset).ok()?,
-                }).filter(|identity| identity.value != 0),
+                })
+                .filter(|identity| identity.value != 0),
             }),
         )
     } else if bytes.get(identity_at + 11..identity_at + 21)? == [0; 10]
@@ -3358,10 +3417,18 @@ pub fn decode_body_recipe_operands(
             .entry(stream)
             .or_insert_with(|| IndexedRecordOffsets::build(bytes));
         let operation = scope.combine_operation();
-        let record_indexes = operation.into_iter().flat_map(|operation| {
-            std::iter::once(&operation.target_record_index)
-                .chain(operation.tools.iter().map(|tool| &tool.record_index))
-        }).chain(scope.reference_members.values().filter(|_| operation.is_none()));
+        let record_indexes = operation
+            .into_iter()
+            .flat_map(|operation| {
+                std::iter::once(&operation.target_record_index)
+                    .chain(operation.tools.iter().map(|tool| &tool.record_index))
+            })
+            .chain(
+                scope
+                    .reference_members
+                    .values()
+                    .filter(|_| operation.is_none()),
+            );
         for record_index in record_indexes {
             let mut ordinals = scope
                 .reference_members
@@ -3792,7 +3859,8 @@ pub fn bind_extrude_selection_identities(
                         })
             })
             .collect::<Vec<_>>();
-        matches.sort_by_key(|identity| identity.wrappers.first().map(|wrapper| wrapper.byte_offset));
+        matches
+            .sort_by_key(|identity| identity.wrappers.first().map(|wrapper| wrapper.byte_offset));
         member.operand_identity_ids = matches
             .into_iter()
             .map(|identity| identity.id.clone())
@@ -4170,7 +4238,10 @@ fn parse_sketch_profile_region_selection(
                 )
                 .ok()?,
                 incidence_flag: incidence_words[3] == 1,
-                incidence_values: [crate::records::DesignRegionIncidence::try_from(incidence_words[4]).ok()?, crate::records::DesignRegionIncidence::try_from(incidence_words[5]).ok()?],
+                incidence_values: [
+                    crate::records::DesignRegionIncidence::try_from(incidence_words[4]).ok()?,
+                    crate::records::DesignRegionIncidence::try_from(incidence_words[5]).ok()?,
+                ],
                 incidence_words_offset: u64::try_from(incidence_words_offset).ok()?,
             });
             cursor = cursor.checked_add(region_member::LEN)?;
@@ -4561,7 +4632,9 @@ pub(crate) fn surface_patch_recipe_structure(
     if !remaining.is_empty() {
         return None;
     }
-    Some(crate::records::DesignSurfacePatchRecipeStructure { clauses: clauses.try_into().ok()? })
+    Some(crate::records::DesignSurfacePatchRecipeStructure {
+        clauses: clauses.try_into().ok()?,
+    })
 }
 
 pub(crate) fn edge_recipe_local_topology_references(
@@ -4839,7 +4912,8 @@ fn edge_recipe_topology_triplet(
     Some(DesignTopologyRecipeTriplet {
         outer,
         middle: *middle,
-        incident: incident.map(|(side, ordinal)| crate::records::DesignTopologyIncident { ordinal, side }),
+        incident: incident
+            .map(|(side, ordinal)| crate::records::DesignTopologyIncident { ordinal, side }),
     })
 }
 

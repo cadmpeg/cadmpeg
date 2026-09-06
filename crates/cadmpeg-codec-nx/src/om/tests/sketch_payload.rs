@@ -33,7 +33,12 @@ fn sketch_fixed_pair_parser_reads_scaled_shifted_binary64_atoms() {
 
     let pairs = super::sketch_payload_fixed_pairs(&bytes);
     assert_eq!(pairs.len(), 1);
-    assert_sketch_fixed_pair_values(pairs[0].values.map(crate::om::sketch_scalar::SketchScaledAtom::value), [0.5, 0.75]);
+    assert_sketch_fixed_pair_values(
+        pairs[0]
+            .values
+            .map(crate::om::sketch_scalar::SketchScaledAtom::value),
+        [0.5, 0.75],
+    );
     assert_eq!(
         pairs[0].value_offsets(),
         [discriminator.len(), discriminator.len() + 9]
@@ -58,11 +63,21 @@ fn sketch_fixed_pair_parser_accepts_adjacent_short_and_extended_branches() {
 
     let short_pair = super::sketch_payload_fixed_pairs(&short);
     assert_eq!(short_pair.len(), 1);
-    assert_sketch_fixed_pair_values(short_pair[0].values.map(crate::om::sketch_scalar::SketchScaledAtom::value), [0.5, 0.75]);
+    assert_sketch_fixed_pair_values(
+        short_pair[0]
+            .values
+            .map(crate::om::sketch_scalar::SketchScaledAtom::value),
+        [0.5, 0.75],
+    );
 
     let extended_pair = super::sketch_payload_fixed_pairs(&extended);
     assert_eq!(extended_pair.len(), 1);
-    assert_sketch_fixed_pair_values(extended_pair[0].values.map(crate::om::sketch_scalar::SketchScaledAtom::value), [0.5, 0.5]);
+    assert_sketch_fixed_pair_values(
+        extended_pair[0]
+            .values
+            .map(crate::om::sketch_scalar::SketchScaledAtom::value),
+        [0.5, 0.5],
+    );
 
     let mut malformed = short;
     malformed[short_discriminator.len() + 8] = 0x31;
@@ -78,7 +93,12 @@ fn sketch_fixed_pair_parser_accepts_the_three_member_branch() {
 
     let pairs = super::sketch_payload_fixed_pairs(&bytes);
     assert_eq!(pairs.len(), 1);
-    assert_sketch_fixed_pair_values(pairs[0].values.map(crate::om::sketch_scalar::SketchScaledAtom::value), [0.5, 0.75]);
+    assert_sketch_fixed_pair_values(
+        pairs[0]
+            .values
+            .map(crate::om::sketch_scalar::SketchScaledAtom::value),
+        [0.5, 0.75],
+    );
 
     let mut malformed = bytes;
     malformed[14] = 0x02;
@@ -120,7 +140,10 @@ fn om_sketch_scalar_pairs_accept_the_repeated_type_frame() {
     let pairs = sketch_payload_scalar_pairs(&bytes);
     assert_eq!(pairs.len(), 1);
     assert_eq!(pairs[0].offset, discriminator_offset);
-    assert_eq!(pairs[0].values.map(|value| value.offset), [first_offset, second_offset]);
+    assert_eq!(
+        pairs[0].values.map(|value| value.offset),
+        [first_offset, second_offset]
+    );
     assert!((pairs[0].values[0].scalar.value() - 10.0).abs() < EPS_SKETCH_SCALAR);
     assert!((pairs[0].values[1].scalar.value() + 20.0).abs() < EPS_SKETCH_SCALAR);
     assert_eq!(

@@ -14,7 +14,11 @@ pub(crate) struct Type150State {
 }
 
 impl Type150State {
-    pub(crate) fn new(references: [u32; 5], marker: Type150Marker, values: [f64; 9]) -> Result<Self, &'static str> {
+    pub(crate) fn new(
+        references: [u32; 5],
+        marker: Type150Marker,
+        values: [f64; 9],
+    ) -> Result<Self, &'static str> {
         let [null, a, b, c, d] = references;
         if null != 1 || [a, b, c, d].iter().any(|reference| *reference <= 1) {
             return Err("references: require one null followed by four non-null references");
@@ -22,7 +26,11 @@ impl Type150State {
         if values.iter().any(|value| !value.is_finite()) {
             return Err("values: require nine finite state values");
         }
-        Ok(Self { references: [a, b, c, d], marker, values })
+        Ok(Self {
+            references: [a, b, c, d],
+            marker,
+            values,
+        })
     }
 
     pub(crate) fn references(&self) -> [u32; 5] {
@@ -30,7 +38,9 @@ impl Type150State {
         [1, a, b, c, d]
     }
 
-    pub(crate) fn values(&self) -> &[f64; 9] { &self.values }
+    pub(crate) fn values(&self) -> &[f64; 9] {
+        &self.values
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -42,7 +52,11 @@ struct StateWire {
 
 impl From<Type150State> for StateWire {
     fn from(value: Type150State) -> Self {
-        Self { references: value.references(), marker: value.marker, values: *value.values() }
+        Self {
+            references: value.references(),
+            marker: value.marker,
+            values: *value.values(),
+        }
     }
 }
 
@@ -65,10 +79,17 @@ mod tests {
         for references in [[2, 3, 4, 5, 6], [1, 0, 4, 5, 6], [1, 3, 4, 1, 6]] {
             let mut wire = serde_json::to_value(&state).unwrap();
             wire["references"] = serde_json::to_value(references).unwrap();
-            assert!(serde_json::from_value::<Type150State>(wire).unwrap_err().to_string().contains("references"));
+            assert!(serde_json::from_value::<Type150State>(wire)
+                .unwrap_err()
+                .to_string()
+                .contains("references"));
         }
         for nonfinite in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-            assert!(Type150State::new([1, 3, 4, 5, 6], Type150Marker::Form2b, [nonfinite; 9]).unwrap_err().contains("values"));
+            assert!(
+                Type150State::new([1, 3, 4, 5, 6], Type150Marker::Form2b, [nonfinite; 9])
+                    .unwrap_err()
+                    .contains("values")
+            );
         }
     }
 }

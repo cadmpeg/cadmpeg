@@ -9,8 +9,10 @@ pub(crate) fn boolean_reference(
     let [high, low] = value.to_be_bytes();
     crate::om::PayloadObjectReference {
         token: crate::om::reference_index::ReferenceIndexToken::from_wire(
-            u32::from(value), &[0x90, high, low],
-        ).unwrap(),
+            u32::from(value),
+            &[0x90, high, low],
+        )
+        .unwrap(),
         offset,
     }
 }

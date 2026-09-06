@@ -150,7 +150,9 @@ fn native_namespace_retains_class5b5c_control_records_without_assigning_roles() 
         records[1].frame.width,
         crate::wire::records::ConsolidatedFrameWidth::Two
     );
-    assert!(records.iter().all(|record| !record.frame.payload.is_empty()));
+    assert!(records
+        .iter()
+        .all(|record| !record.frame.payload.is_empty()));
 
     let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native
@@ -952,10 +954,7 @@ fn native_namespace_retains_source_closed_owner_chart() {
     };
     let chart = packet.owner_chart().expect("owner chart relation");
     assert_eq!(chart.carrier, CatiaOwnerChartCarrier::B2b);
-    assert_eq!(
-        chart.side_axis(),
-        CatiaOwnerChartSideAxis::SecondParameter
-    );
+    assert_eq!(chart.side_axis(), CatiaOwnerChartSideAxis::SecondParameter);
     let CatiaOwnerChartBridge::SupportedSurface {
         byte_offset,
         carrier_surface,
@@ -984,8 +983,8 @@ fn native_namespace_retains_source_closed_owner_chart() {
         crate::native::CatiaAllocationReferenceEncoding::BackwardDistance
     );
     let wire = serde_json::to_value(chart).expect("serialize owner chart");
-    let controls: [u8; 6] = serde_json::from_value(wire["bridge"]["controls"].clone())
-        .expect("six bridge controls");
+    let controls: [u8; 6] =
+        serde_json::from_value(wire["bridge"]["controls"].clone()).expect("six bridge controls");
     assert_eq!(controls, [0x09, 0x05, 0x03, 0x05, 0x01, 0x05]);
     assert_eq!(*construction_radius, 1.0);
     assert!(chart.parameter_point_byte_offsets[3] < packet.byte_offset);

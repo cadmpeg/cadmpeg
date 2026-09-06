@@ -23,7 +23,9 @@ fn history_state(state_id: i64, previous_state_id: Option<i64>) -> AsmDeltaState
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(AsmHistoricalTopology::default()),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(
+            AsmHistoricalTopology::default(),
+        ),
         transition: previous_state_id.map(|previous_state_id| AsmHistoricalTransition {
             previous_state_id: Some(previous_state_id),
             records: AsmHistoricalEntityDelta::default(),
@@ -92,7 +94,12 @@ fn retains_later_equivalent_scope_envelope_without_history_binding() {
     older.class_tag = "392".into();
     older.frame_length = 260;
     older.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
-    older.reference_members = crate::records::ReferenceRun::from_columns(vec![101, 102, 103], vec![110, 120, 130], "reference_members").unwrap();
+    older.reference_members = crate::records::ReferenceRun::from_columns(
+        vec![101, 102, 103],
+        vec![110, 120, 130],
+        "reference_members",
+    )
+    .unwrap();
     older.paired_class_tag = "262".into();
     let mut newer = older.clone();
     newer.id = "f3d:stream:design-parameter-scope#200".into();
@@ -100,7 +107,12 @@ fn retains_later_equivalent_scope_envelope_without_history_binding() {
     newer.class_tag = "404".into();
     newer.frame_length = 340;
     newer.history_state_id = Some(9);
-    newer.reference_members = crate::records::ReferenceRun::from_columns(newer.reference_members.values().copied().collect(), vec![210, 220, 230], "reference_members").unwrap();
+    newer.reference_members = crate::records::ReferenceRun::from_columns(
+        newer.reference_members.values().copied().collect(),
+        vec![210, 220, 230],
+        "reference_members",
+    )
+    .unwrap();
     newer.paired_class_tag = "258".into();
 
     let mut scopes = vec![older, newer];

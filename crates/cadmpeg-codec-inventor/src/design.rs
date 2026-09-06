@@ -3,12 +3,12 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_core::CodecError;
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Angle, DesignParameter, Length, ParameterId, ParameterValue};
 use serde::{Deserialize, Serialize};
 
-use crate::pmdc::{Cursor, PmDcContentHeader, PmDcReference, type_id_string};
+use crate::pmdc::{type_id_string, Cursor, PmDcContentHeader, PmDcReference};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 

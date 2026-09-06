@@ -34,9 +34,19 @@ impl From<super::FeatureDeleteReferenceField> for DeleteReferenceFieldWire {
             id: value.id,
             operation_label: value.operation_label,
             control: value.control,
-            object_indices: value.references.each_ref().map(|slot| slot.target.as_ref().map(|target| target.0.value())),
-            raw_object_indices: value.references.each_ref().map(|slot| slot.target.as_ref().map_or_else(|| vec![0xff], |target| target.0.raw().to_vec())),
-            data_blocks: value.references.each_ref().map(|slot| slot.target.as_ref().and_then(|target| target.1.clone())),
+            object_indices: value
+                .references
+                .each_ref()
+                .map(|slot| slot.target.as_ref().map(|target| target.0.value())),
+            raw_object_indices: value.references.each_ref().map(|slot| {
+                slot.target
+                    .as_ref()
+                    .map_or_else(|| vec![0xff], |target| target.0.raw().to_vec())
+            }),
+            data_blocks: value
+                .references
+                .each_ref()
+                .map(|slot| slot.target.as_ref().and_then(|target| target.1.clone())),
             source_offset: value.source_offset,
             object_index_source_offsets: value.references.each_ref().map(|slot| slot.source_offset),
         }
@@ -56,10 +66,14 @@ impl TryFrom<DeleteReferenceFieldWire> for super::FeatureDeleteReferenceField {
                 )),
                 None => {
                     if wire.raw_object_indices[slot] != [0xff] {
-                        return Err(format!("raw_object_indices[{slot}]: null reference requires ff"));
+                        return Err(format!(
+                            "raw_object_indices[{slot}]: null reference requires ff"
+                        ));
                     }
                     if wire.data_blocks[slot].is_some() {
-                        return Err(format!("data_blocks[{slot}]: null reference cannot have a target"));
+                        return Err(format!(
+                            "data_blocks[{slot}]: null reference cannot have a target"
+                        ));
                     }
                     None
                 }
@@ -122,13 +136,17 @@ impl TryFrom<Body11ContinuationWire> for super::FeatureOperationBody11Continuati
             body_object_index: wire.body_object_index,
             continuation: crate::om::compact::LocatedCompactIndex {
                 atom: crate::om::compact::CompactIndexAtom::from_wire(
-                    wire.continuation_index, &wire.raw_continuation_index,
-                ).map_err(|error| format!("continuation_index: {error}"))?,
+                    wire.continuation_index,
+                    &wire.raw_continuation_index,
+                )
+                .map_err(|error| format!("continuation_index: {error}"))?,
                 offset: wire.continuation_source_offset,
             },
             terminal: ReferenceIndexToken::from_wire(
-                wire.terminal_object_index, &wire.raw_terminal_object_index,
-            ).map_err(|error| format!("terminal_object_index: {error}"))?,
+                wire.terminal_object_index,
+                &wire.raw_terminal_object_index,
+            )
+            .map_err(|error| format!("terminal_object_index: {error}"))?,
             terminal_source_offset: wire.terminal_source_offset,
         })
     }

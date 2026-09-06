@@ -38,7 +38,9 @@ impl AttributeField {
 }
 
 impl From<AttributeField> for u8 {
-    fn from(value: AttributeField) -> Self { value.code() }
+    fn from(value: AttributeField) -> Self {
+        value.code()
+    }
 }
 
 impl TryFrom<u8> for AttributeField {

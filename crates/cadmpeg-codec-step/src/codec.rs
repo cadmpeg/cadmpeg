@@ -7,10 +7,10 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
 use cadmpeg_core::{CodecError, ContainerEntry};
-use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::codec::write::{Catalog, EncodeInput, EncoderBackend, ExportBody, ResolvedWrite};
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded};
 use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::ContainerSummary;
 
 use crate::archive;
 use crate::dialect::refuse_alternate_encoding;
@@ -587,7 +587,7 @@ mod tests {
     use cadmpeg_core::decode::InspectOptions;
     use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
-    use super::{StepCodec, starts_with_step_magic};
+    use super::{starts_with_step_magic, StepCodec};
 
     #[test]
     fn detects_magic_after_ignored_controls_and_inside_token() {
@@ -612,11 +612,9 @@ mod tests {
             .inspect(&mut Cursor::new(bytes), &InspectOptions::default())
             .expect("inspection describes recoverable source order");
 
-        assert!(
-            summary
-                .notes
-                .iter()
-                .any(|note| note.contains("complex partial records are not alphabetical"))
-        );
+        assert!(summary
+            .notes
+            .iter()
+            .any(|note| note.contains("complex partial records are not alphabetical")));
     }
 }

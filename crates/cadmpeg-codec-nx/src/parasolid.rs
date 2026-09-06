@@ -27,16 +27,14 @@ pub(crate) mod value_records;
 
 pub(crate) mod unicode_value;
 
-
 pub(crate) mod counted_values;
-
 
 use crate::printable_string::PrintableString;
 
 pub(crate) mod entity_references;
 pub(crate) mod name_references;
-use name_references::NameReferences;
 use entity_references::EntityReferences;
+use name_references::NameReferences;
 
 use crate::container::Container;
 use crate::framing::read_and_advance as read_xmt;
@@ -242,7 +240,10 @@ fn referenced_value_xmts(bytes: &[u8], multiplicity: ValueMultiplicity) -> BTree
     let mut referenced = BTreeSet::new();
     let mut entities = BTreeMap::<u32, Vec<Entity51Record>>::new();
     for record in entity_51_records(bytes) {
-        entities.entry(u32::from(record.xmt)).or_default().push(record);
+        entities
+            .entry(u32::from(record.xmt))
+            .or_default()
+            .push(record);
     }
     for records in entities.into_values() {
         if multiplicity == ValueMultiplicity::UniqueSnapshot && records.len() != 1 {
@@ -256,7 +257,10 @@ fn referenced_value_xmts(bytes: &[u8], multiplicity: ValueMultiplicity) -> BTree
 
     let mut field_name_lists = BTreeMap::<u32, Vec<FieldNamesRecord>>::new();
     for record in field_names_records(bytes) {
-        field_name_lists.entry(u32::from(record.xmt)).or_default().push(record);
+        field_name_lists
+            .entry(u32::from(record.xmt))
+            .or_default()
+            .push(record);
     }
     let mut definitions = BTreeMap::<u32, Vec<AttributeDefinition<'_>>>::new();
     for definition in attribute_definitions(bytes) {
@@ -271,9 +275,9 @@ fn referenced_value_xmts(bytes: &[u8], multiplicity: ValueMultiplicity) -> BTree
             continue;
         }
         referenced_lists.extend(
-            records.into_iter().filter_map(|record| {
-                record.field_names_xmt.map(u32::from)
-            }),
+            records
+                .into_iter()
+                .filter_map(|record| record.field_names_xmt.map(u32::from)),
         );
     }
     for (xmt, records) in field_name_lists {
@@ -517,9 +521,12 @@ pub fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
                     if flag_count == 14 && !attribute_definition_boundary(bytes, field_codes_end) {
                         return None;
                     }
-                    let fields = field_codes.iter().copied()
+                    let fields = field_codes
+                        .iter()
+                        .copied()
                         .map(AttributeField::try_from)
-                        .collect::<Result<Vec<_>, _>>().ok()?;
+                        .collect::<Result<Vec<_>, _>>()
+                        .ok()?;
                     Some((legal_owner_flags, fields))
                 })?;
             Some(AttributeDefinition {

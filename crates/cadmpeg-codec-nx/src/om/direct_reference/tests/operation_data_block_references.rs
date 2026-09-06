@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::om::direct_reference::{
+    operation_reference_fields, DirectReferenceFrame, ReferenceFieldKind,
+};
 use crate::om::operation_record::OperationPayload;
-use crate::om::direct_reference::{operation_reference_fields, DirectReferenceFrame, ReferenceFieldKind};
 
 fn record(payload: &[u8], payload_offset: usize) -> OperationPayload<'_> {
     OperationPayload::new(payload, payload_offset, "EXTRUDE").unwrap()
@@ -37,24 +39,63 @@ fn operation_data_block_references_retain_canonical_indices_and_bounds() {
     let payload_offset = 700;
 
     assert_eq!(
-        operation_reference_fields(record(&payload, payload_offset), ReferenceFieldKind::DataBlock03),
+        operation_reference_fields(
+            record(&payload, payload_offset),
+            ReferenceFieldKind::DataBlock03
+        ),
         [
             {
-                let frame = DirectReferenceFrame::<usize>::new(ReferenceFieldKind::DataBlock03, crate::om::reference_index::CanonicalFeatureReferenceToken::from_wire(0x6a, &[0x6a]).unwrap(), payload_offset + first_start).unwrap();
+                let frame = DirectReferenceFrame::<usize>::new(
+                    ReferenceFieldKind::DataBlock03,
+                    crate::om::reference_index::CanonicalFeatureReferenceToken::from_wire(
+                        0x6a,
+                        &[0x6a],
+                    )
+                    .unwrap(),
+                    payload_offset + first_start,
+                )
+                .unwrap();
                 assert_eq!(frame.object_offset(), payload_offset + first_start + 3);
-                assert_eq!(frame.offset() + usize::from(frame.byte_len()), payload_offset + first_start + first.len());
+                assert_eq!(
+                    frame.offset() + usize::from(frame.byte_len()),
+                    payload_offset + first_start + first.len()
+                );
                 frame
             },
             {
-                let frame = DirectReferenceFrame::<usize>::new(ReferenceFieldKind::DataBlock03, crate::om::reference_index::CanonicalFeatureReferenceToken::from_wire(0x645, &[0x86, 0x45]).unwrap(), payload_offset + second_start).unwrap();
+                let frame = DirectReferenceFrame::<usize>::new(
+                    ReferenceFieldKind::DataBlock03,
+                    crate::om::reference_index::CanonicalFeatureReferenceToken::from_wire(
+                        0x645,
+                        &[0x86, 0x45],
+                    )
+                    .unwrap(),
+                    payload_offset + second_start,
+                )
+                .unwrap();
                 assert_eq!(frame.object_offset(), payload_offset + second_start + 3);
-                assert_eq!(frame.offset() + usize::from(frame.byte_len()), payload_offset + second_start + second.len());
+                assert_eq!(
+                    frame.offset() + usize::from(frame.byte_len()),
+                    payload_offset + second_start + second.len()
+                );
                 frame
             },
             {
-                let frame = DirectReferenceFrame::<usize>::new(ReferenceFieldKind::DataBlock03, crate::om::reference_index::CanonicalFeatureReferenceToken::from_wire(0x1234, &[0x90, 0x12, 0x34]).unwrap(), payload_offset + third_start).unwrap();
+                let frame = DirectReferenceFrame::<usize>::new(
+                    ReferenceFieldKind::DataBlock03,
+                    crate::om::reference_index::CanonicalFeatureReferenceToken::from_wire(
+                        0x1234,
+                        &[0x90, 0x12, 0x34],
+                    )
+                    .unwrap(),
+                    payload_offset + third_start,
+                )
+                .unwrap();
                 assert_eq!(frame.object_offset(), payload_offset + third_start + 3);
-                assert_eq!(frame.offset() + usize::from(frame.byte_len()), payload_offset + third_start + third.len());
+                assert_eq!(
+                    frame.offset() + usize::from(frame.byte_len()),
+                    payload_offset + third_start + third.len()
+                );
                 frame
             },
         ]
@@ -76,6 +117,9 @@ fn operation_data_block_references_reject_noncanonical_and_incomplete_frames() {
         &wrong_suffix[..],
         &null_index[..],
     ] {
-        assert!(operation_reference_fields(record(payload, 500), ReferenceFieldKind::DataBlock03).is_empty());
+        assert!(
+            operation_reference_fields(record(payload, 500), ReferenceFieldKind::DataBlock03)
+                .is_empty()
+        );
     }
 }

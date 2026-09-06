@@ -1,6 +1,6 @@
-use crate::native::edge_node::CatiaConsolidatedEdgeNode;
 use super::test_consolidated::valid_consolidated_plane_geometry;
 use super::*;
+use crate::native::edge_node::CatiaConsolidatedEdgeNode;
 
 pub(super) fn validate_consolidated_owner_packets(
     packets: &[CatiaConsolidatedOwnerPacket],
@@ -294,7 +294,11 @@ pub(super) fn validate_native_links(
     value_blocks: &[CatiaValueBlock],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for catalog in catalogs {
-        let count_width = if catalog.declared_count() <= 0x50 { 1 } else { 2 };
+        let count_width = if catalog.declared_count() <= 0x50 {
+            1
+        } else {
+            2
+        };
         let Some(mut expected_offset) = catalog.byte_offset.checked_add(6 + count_width) else {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "catalog `{}` has an overflowing extent",
@@ -382,7 +386,7 @@ pub(super) fn validate_native_links(
             )));
         }
         if value_schema_selections(&block.id, block.byte_offset, &block.fields(), catalog)
-                != block.schema_selections
+            != block.schema_selections
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "value block `{}` has an invalid derived view",

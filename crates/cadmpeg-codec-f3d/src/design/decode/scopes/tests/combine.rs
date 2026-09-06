@@ -55,16 +55,18 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
     let records = IndexedRecordOffsets::build(&bytes);
     assert!(matches!(
         exact_solid_primitive(&bytes, &records, &box_scope, &box_owners),
-        Some(DesignSolidPrimitive::Box(crate::records::DesignBoxPrimitive {
-            length: 3.0,
-            width: 4.0,
-            height: 2.0,
-            offset_x: 0.5,
-            offset_y: -0.25,
-            operation: DesignExtrudeOperation::Join,
-            operation_offset: 20,
-            ..
-        }))
+        Some(DesignSolidPrimitive::Box(
+            crate::records::DesignBoxPrimitive {
+                length: 3.0,
+                width: 4.0,
+                height: 2.0,
+                offset_x: 0.5,
+                offset_y: -0.25,
+                operation: DesignExtrudeOperation::Join,
+                operation_offset: 20,
+                ..
+            }
+        ))
     ));
 
     bytes[20..24].copy_from_slice(&4u32.to_le_bytes());
@@ -75,13 +77,15 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
     let cylinder_owners = vec![owner(13, 30, 0, 0.7), owner(13, 31, 1, 3.0)];
     assert!(matches!(
         exact_solid_primitive(&bytes, &records, &cylinder_scope, &cylinder_owners,),
-        Some(DesignSolidPrimitive::Cylinder(crate::records::DesignCylinderPrimitive {
-            height: 0.7,
-            diameter: 3.0,
-            operation: DesignExtrudeOperation::NewBody,
-            operation_offset: 20,
-            ..
-        }))
+        Some(DesignSolidPrimitive::Cylinder(
+            crate::records::DesignCylinderPrimitive {
+                height: 0.7,
+                diameter: 3.0,
+                operation: DesignExtrudeOperation::NewBody,
+                operation_offset: 20,
+                ..
+            }
+        ))
     ));
 }
 
@@ -146,12 +150,11 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
         scope.paired_byte_offset = frame_length as u64;
         scope.frame_length = frame_length as u64;
         scope.reference_members = crate::records::ReferenceRun::Unlocated(reference_members);
-        let (reference_count, _, kind, feature_ordinal, previous) =
-            if frame_length == 352 {
-                (174, 233, 241, 275, 306)
-            } else {
-                (302, 383, 391, 425, 456)
-            };
+        let (reference_count, _, kind, feature_ordinal, previous) = if frame_length == 352 {
+            (174, 233, 241, 275, 306)
+        } else {
+            (302, 383, 391, 425, 456)
+        };
         scope.reference_count_offset = reference_count;
 
         scope.kind_offset = kind;
@@ -195,14 +198,16 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
             &compact_scope,
             &compact_owners,
         ),
-        Some(DesignSolidPrimitive::Cylinder(crate::records::DesignCylinderPrimitive {
-            height: 0.7,
-            diameter: 3.0,
-            operation: DesignExtrudeOperation::NewBody,
-            operation_offset: 22,
-            transform: None,
-            ..
-        }))
+        Some(DesignSolidPrimitive::Cylinder(
+            crate::records::DesignCylinderPrimitive {
+                height: 0.7,
+                diameter: 3.0,
+                operation: DesignExtrudeOperation::NewBody,
+                operation_offset: 22,
+                transform: None,
+                ..
+            }
+        ))
     ));
 
     for (class_tag, paired_class_tag) in [("297", "258"), ("375", "258"), ("414", "272")] {
@@ -242,14 +247,16 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
                 &expanded_scope,
                 &expanded_owners,
             ),
-            Some(DesignSolidPrimitive::Cylinder(crate::records::DesignCylinderPrimitive {
-                height: 0.7,
-                diameter: 3.0,
-                operation: DesignExtrudeOperation::Join,
-                operation_offset: 22,
-                transform: Some(crate::records::Located { offset: 72, .. }),
-                ..
-            }))
+            Some(DesignSolidPrimitive::Cylinder(
+                crate::records::DesignCylinderPrimitive {
+                    height: 0.7,
+                    diameter: 3.0,
+                    operation: DesignExtrudeOperation::Join,
+                    operation_offset: 22,
+                    transform: Some(crate::records::Located { offset: 72, .. }),
+                    ..
+                }
+            ))
         ));
 
         let mut translated = expanded;
@@ -360,13 +367,16 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
             keep_tools: true,
             keep_tools_offset: 25,
             target_record_index: 96,
-            tools: crate::records::DesignCombineTools { first: DesignCombineBodySelection {
+            tools: crate::records::DesignCombineTools {
+                first: DesignCombineBodySelection {
                     record_index: 92,
                     external_identity: None,
-                }, additional: vec![DesignCombineBodySelection {
+                },
+                additional: vec![DesignCombineBodySelection {
                     record_index: 94,
                     external_identity: None,
-                },] },
+                },]
+            },
         }
     );
     if let crate::records::DesignScopePayload::Combine(slot) = &mut scope.payload {
@@ -559,11 +569,17 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
     assert_eq!(identity.external_segment, 7);
     assert_eq!(identity.external_link_name, "component-body-link");
     assert_eq!(
-        identity.external_version.as_ref().map(|version| version.property_key.value.as_str()),
+        identity
+            .external_version
+            .as_ref()
+            .map(|version| version.property_key.value.as_str()),
         Some("33333333-3333-4333-8333-333333333333")
     );
     assert_eq!(
-        identity.external_version.as_ref().map(|version| version.version_urn.value.as_str()),
+        identity
+            .external_version
+            .as_ref()
+            .map(|version| version.version_urn.value.as_str()),
         Some("urn:example:version:4")
     );
     assert_eq!(identity.tail_values, [11, 12]);

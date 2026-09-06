@@ -26,7 +26,6 @@ use offset_surface_state::OffsetSurfaceState;
 pub(crate) mod surface_curve_state;
 use surface_curve_state::SurfaceCurveState;
 
-
 /// Exact inline schema header for the `intersection_data` one-byte record
 /// family. Its terminal `5a` is also the standalone record tag when the
 /// following fields form a complete shared record.
@@ -656,8 +655,12 @@ impl Graph {
                 Some(BlendSurface {
                     xmt: node.xmt,
                     state: BlendSurfaceState::from_metres(
-                        [refs[0], refs[1]], refs[2], [values[0], values[1]], [values[2], values[3]],
-                    ).ok()?,
+                        [refs[0], refs[1]],
+                        refs[2],
+                        [values[0], values[1]],
+                        [values[2], values[3]],
+                    )
+                    .ok()?,
                     pos: node.pos,
                 })
             })
@@ -675,7 +678,8 @@ impl Graph {
         self.of_kind(60)
             .filter_map(|node| {
                 let mut at = node.compact_tail_offset()?;
-                let discriminator = OffsetSurfaceDiscriminator::try_from(char::from(*node.bytes.get(at)?)).ok()?;
+                let discriminator =
+                    OffsetSurfaceDiscriminator::try_from(char::from(*node.bytes.get(at)?)).ok()?;
                 at += 1;
                 let true_offset = match node.bytes.get(at)? {
                     0 => false,
@@ -740,7 +744,8 @@ impl Graph {
                 let p1 = View::f64_be_at(&node.bytes, at + 56)?;
                 Some(TrimmedCurve {
                     xmt: node.xmt,
-                    state: TrimmedCurveState::from_metres(basis, [point_0, point_1], [p0, p1]).ok()?,
+                    state: TrimmedCurveState::from_metres(basis, [point_0, point_1], [p0, p1])
+                        .ok()?,
                     pos: node.pos,
                 })
             })

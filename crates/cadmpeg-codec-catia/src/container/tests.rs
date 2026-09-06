@@ -10,12 +10,12 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, Confidence};
 
-use crate::CatiaCodec;
 use crate::test_support::{
     append_e5_record, external_reference_segment, finjpl_stream, outer_body_catpart,
     outer_directory_catpart, standard_catpart, summary_preview_segment,
 };
 use crate::variant::Variant;
+use crate::CatiaCodec;
 
 fn append_e5_test_record(bytes: &mut Vec<u8>, id: u32) {
     append_e5_test_record_with_payload(bytes, id, &[]);
@@ -804,11 +804,9 @@ fn summary_preview_requires_a_coherent_frame_header() {
     let mut inconsistent_components = valid;
     inconsistent_components[frame + 9] = 2;
     assert!(crate::container::preview_images(&inconsistent_components).is_empty());
-    assert!(
-        crate::native::CatiaNative::decode(&inconsistent_components)
-            .preview_images
-            .is_empty()
-    );
+    assert!(crate::native::CatiaNative::decode(&inconsistent_components)
+        .preview_images
+        .is_empty());
 }
 
 #[test]
@@ -974,11 +972,9 @@ fn consolidated_record_sources_follow_physical_stream_extents() {
         crate::container::consolidated_record_sources(&scan),
         expected_sources
     );
-    assert!(
-        crate::container::consolidated_record_ranges(&scan)
-            .iter()
-            .all(|range| !range.contains(&inner.inner))
-    );
+    assert!(crate::container::consolidated_record_ranges(&scan)
+        .iter()
+        .all(|range| !range.contains(&inner.inner)));
 }
 
 #[test]

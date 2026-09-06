@@ -23,7 +23,10 @@ fn direction_selector_round_trips_without_duplicate_state() {
         };
         let mut wire = serde_json::to_value(&tail).unwrap();
         assert_eq!(wire["selector"], selector);
-        assert_eq!(serde_json::from_value::<CompoundLoftTail>(wire.clone()).unwrap(), tail);
+        assert_eq!(
+            serde_json::from_value::<CompoundLoftTail>(wire.clone()).unwrap(),
+            tail
+        );
         wire["selector"] = serde_json::json!(if selector == 0 { 4 } else { 0 });
         assert!(serde_json::from_value::<CompoundLoftTail>(wire).is_err());
     }
@@ -41,7 +44,10 @@ fn scaled_direction_selector_preserves_exact_nonzero_value() {
     };
     let mut wire = serde_json::to_value(&branch).unwrap();
     assert_eq!(wire["selector"], -4);
-    assert_eq!(serde_json::from_value::<ScaledCompoundLoftBranch>(wire.clone()).unwrap(), branch);
+    assert_eq!(
+        serde_json::from_value::<ScaledCompoundLoftBranch>(wire.clone()).unwrap(),
+        branch
+    );
     wire["selector"] = serde_json::json!(0);
     assert!(serde_json::from_value::<ScaledCompoundLoftBranch>(wire).is_err());
 }

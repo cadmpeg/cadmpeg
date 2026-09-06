@@ -37,7 +37,8 @@ fn thread_scope_decodes_standard_size_and_face_group() {
         form: DesignThreadForm::Standard,
         designation_offset: 38,
         designation: "M30x3.5".into(),
-        nominal_size: crate::records::DesignThreadNominalSize::try_from("30.0".to_owned()).expect("nominal size"),
+        nominal_size: crate::records::DesignThreadNominalSize::try_from("30.0".to_owned())
+            .expect("nominal size"),
         profile: "ISO Metric profile".into(),
         major_diameter: 2.97345,
         minor_diameter: 2.5732,
@@ -119,7 +120,8 @@ fn thread_scope_decodes_class_334_legacy_standard_tail() {
         form: DesignThreadForm::StandardLegacy,
         designation_offset: 38,
         designation: "M7x1".into(),
-        nominal_size: crate::records::DesignThreadNominalSize::try_from("7.0".to_owned()).expect("nominal size"),
+        nominal_size: crate::records::DesignThreadNominalSize::try_from("7.0".to_owned())
+            .expect("nominal size"),
         profile: "ISO Metric profile".into(),
         major_diameter: 0.71472,
         minor_diameter: 0.60355,
@@ -162,7 +164,13 @@ fn assert_thread_construction(
         expected.face_group_record_indices
     );
     for (actual, expected) in [
-        (actual.nominal_size.value().expect("actual nominal size"), expected.nominal_size.value().expect("expected nominal size")),
+        (
+            actual.nominal_size.value().expect("actual nominal size"),
+            expected
+                .nominal_size
+                .value()
+                .expect("expected nominal size"),
+        ),
         (actual.major_diameter, expected.major_diameter),
         (actual.minor_diameter, expected.minor_diameter),
         (actual.pitch, expected.pitch),
@@ -197,7 +205,8 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
         form: DesignThreadForm::Compact(None),
         designation_offset: 38,
         designation: "M3.5x0.6".into(),
-        nominal_size: crate::records::DesignThreadNominalSize::try_from("3.5".to_owned()).expect("nominal size"),
+        nominal_size: crate::records::DesignThreadNominalSize::try_from("3.5".to_owned())
+            .expect("nominal size"),
         profile: "GB Metric profile".into(),
         major_diameter: 0.35995,
         minor_diameter: 0.293,
@@ -214,7 +223,10 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
     referenced[after_profile + 39..after_profile + 43].copy_from_slice(&2075u32.to_le_bytes());
     referenced[after_profile + 43..after_profile + 49].fill(0);
     let mut referenced_expected = expected.clone();
-    referenced_expected.form = DesignThreadForm::Compact(Some(crate::records::Located { value: std::num::NonZeroU32::new(2075).expect("reference"), offset: (after_profile + 39) as u64 }));
+    referenced_expected.form = DesignThreadForm::Compact(Some(crate::records::Located {
+        value: std::num::NonZeroU32::new(2075).expect("reference"),
+        offset: (after_profile + 39) as u64,
+    }));
     assert_thread_construction(
         parse_thread_payload(&referenced, 38, ThreadPrefix::Compact, vec![988]),
         &referenced_expected,
@@ -248,7 +260,11 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
         None
     );
 
-    scope.reference_members = { let mut values: Vec<u32> = scope.reference_members.values().copied().collect(); values.push(994); crate::records::ReferenceRun::Unlocated(values) };
+    scope.reference_members = {
+        let mut values: Vec<u32> = scope.reference_members.values().copied().collect();
+        values.push(994);
+        crate::records::ReferenceRun::Unlocated(values)
+    };
     assert_eq!(exact_thread_construction(&owner_marked, &scope), None);
 }
 
@@ -276,7 +292,8 @@ fn thread_scope_decodes_class_414_legacy_compact_tail() {
         form: DesignThreadForm::CompactLegacy,
         designation_offset: 38,
         designation: "M190x8".into(),
-        nominal_size: crate::records::DesignThreadNominalSize::try_from("190.0".to_owned()).expect("nominal size"),
+        nominal_size: crate::records::DesignThreadNominalSize::try_from("190.0".to_owned())
+            .expect("nominal size"),
         profile: "ISO Metric profile".into(),
         major_diameter: 19.08149,
         minor_diameter: 18.18397,
@@ -337,6 +354,13 @@ fn localized_sketch_scope_retains_its_generic_reference_table() {
     let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
         .expect("localized Sketch scope");
     assert_eq!(scope.kind(), crate::records::DesignFeatureKind::Esquisse);
-    assert_eq!(scope.reference_members.values().copied().collect::<Vec<_>>(), [55, 56]);
+    assert_eq!(
+        scope
+            .reference_members
+            .values()
+            .copied()
+            .collect::<Vec<_>>(),
+        [55, 56]
+    );
     assert!(scope.sketch_entity().is_none());
 }

@@ -111,7 +111,11 @@ fn exact_class_363_operand_path(
                     .checked_add(ordinal * ASSEMBLY_MARKED_REFERENCE_LEN)?,
             )?,
         )?;
-        if !scope.reference_members.values().any(|value| value == &owner_record_index) {
+        if !scope
+            .reference_members
+            .values()
+            .any(|value| value == &owner_record_index)
+        {
             return None;
         }
     }
@@ -149,8 +153,14 @@ fn exact_class_363_operand_path(
         record_index: terminal_record_index,
         class_tag: "386".into(),
         byte_offset: u64::try_from(terminal_at).ok()?,
-        occurrence_guids: vec![crate::records::Located { value: occurrence_guid, offset: occurrence_guid_offset }],
-        identity_guids: vec![crate::records::Located { value: identity_guid, offset: identity_guid_offset }],
+        occurrence_guids: vec![crate::records::Located {
+            value: occurrence_guid,
+            offset: occurrence_guid_offset,
+        }],
+        identity_guids: vec![crate::records::Located {
+            value: identity_guid,
+            offset: identity_guid_offset,
+        }],
     })
 }
 
@@ -293,7 +303,11 @@ fn exact_class_363_node_frame(
         "360",
         class_363_leading::LEN,
     )?;
-    if !scope.reference_members.values().any(|value| value == &leading_record_index) {
+    if !scope
+        .reference_members
+        .values()
+        .any(|value| value == &leading_record_index)
+    {
         return None;
     }
     Some((start, class_363_child::SCOPE_REFERENCE))

@@ -3,8 +3,8 @@
 
 use cadmpeg_core::container::ContainerRole;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_core::decode::View;
+use cadmpeg_core::CodecError;
 
 use crate::bytes::{is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded};
 use crate::container::ContainerScan;
@@ -101,7 +101,10 @@ pub(crate) fn exact_component_occurrence(
             let transform = super::scopes::rigid_transform_at(bytes, start + 209)?;
             crate::records::DesignComponentOccurrencePlacement::Explicit {
                 ordinal: occurrence_ordinal,
-                transform: crate::records::Located { value: transform, offset: u64::try_from(start.checked_add(209)?).ok()? },
+                transform: crate::records::Located {
+                    value: transform,
+                    offset: u64::try_from(start.checked_add(209)?).ok()?,
+                },
             }
         }
         _ => return None,
@@ -186,7 +189,10 @@ mod tests {
         let generated = exact_component_occurrence(&generated, 0, "f3d:Design/BulkStream.dat")
             .expect("generated occurrence");
         assert_eq!(generated.occurrence_ordinal(), 2);
-        assert_eq!(generated.transform().map(|frame| frame.value), Some(transform));
+        assert_eq!(
+            generated.transform().map(|frame| frame.value),
+            Some(transform)
+        );
         assert_eq!(generated.transform().map(|frame| frame.offset), Some(209));
 
         let mut legacy = common(229, 1);
@@ -211,7 +217,10 @@ mod tests {
             exact_component_occurrence(&legacy_placed, 0, "f3d:Design/BulkStream.dat")
                 .expect("legacy placed occurrence");
         assert_eq!(legacy_placed.occurrence_ordinal(), 1);
-        assert_eq!(legacy_placed.transform().map(|frame| frame.value), Some(transform));
+        assert_eq!(
+            legacy_placed.transform().map(|frame| frame.value),
+            Some(transform)
+        );
 
         // The carrier class tag is a per-file dynamic value, so the fixed frame
         // alone identifies the carrier and a third tag reads the same members.
@@ -226,7 +235,10 @@ mod tests {
             .expect("dynamic-tag placed occurrence");
         assert_eq!(dynamic_tag.class_tag, "336");
         assert_eq!(dynamic_tag.occurrence_ordinal(), 1);
-        assert_eq!(dynamic_tag.transform().map(|frame| frame.value), Some(transform));
+        assert_eq!(
+            dynamic_tag.transform().map(|frame| frame.value),
+            Some(transform)
+        );
 
         // A class-256 carrier still cannot use a placed frame for ordinal one.
         let mut placed_seed = common(357, 1);

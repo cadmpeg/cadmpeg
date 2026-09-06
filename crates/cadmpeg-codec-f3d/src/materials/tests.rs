@@ -249,7 +249,8 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
     let owner = crate::ids::native_scoped_id(stream, "material-assignment", 500);
     let visual_guid = "11111111-2222-3333-4444-555555555555";
     let appearance = cadmpeg_ir::appearance::Appearance {
-        id: cadmpeg_ir::ids::AppearanceId::mint("f3d:test:appearance#second").expect("identity grammar"),
+        id: cadmpeg_ir::ids::AppearanceId::mint("f3d:test:appearance#second")
+            .expect("identity grammar"),
         name: None,
         asset_guid: Some(visual_guid.into()),
         library_id: None,
@@ -267,7 +268,8 @@ fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
         asm_body_key_offset: 125,
 
         entity_suffix_offset: 133,
-        entity_id: crate::records::DesignEntityId::try_from("0_200".to_owned()).expect("valid entity ID"),
+        entity_id: crate::records::DesignEntityId::try_from("0_200".to_owned())
+            .expect("valid entity ID"),
         entity_id_offset: 500,
         visual_guid: visual_guid.into(),
         visual_guid_offset: 600,
@@ -314,7 +316,8 @@ fn presetless_assignment_matches_only_its_visual_guid() {
         asm_body_key_offset: 25,
 
         entity_suffix_offset: 33,
-        entity_id: crate::records::DesignEntityId::try_from("0_100".to_owned()).expect("valid entity ID"),
+        entity_id: crate::records::DesignEntityId::try_from("0_100".to_owned())
+            .expect("valid entity ID"),
         entity_id_offset: 500,
         visual_guid: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into(),
         visual_guid_offset: 600,
@@ -336,7 +339,10 @@ fn presetless_assignment_matches_only_its_visual_guid() {
     );
 
     assignment.visual_guid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into();
-    assignment.visual_preset = Some(crate::records::RecordedValue { value: "Prism-017".into(), offset: None });
+    assignment.visual_preset = Some(crate::records::RecordedValue {
+        value: "Prism-017".into(),
+        offset: None,
+    });
     appearance.name = Some("Prism-017".into());
     assert!(
         super::appearance_for_assignment(std::slice::from_ref(&appearance), &assignment)
@@ -948,11 +954,15 @@ fn decode_transfers_generated_protein_appearance() {
     assert!(f3d_native(result.ir()).act_entities[0].in_table());
     assert_eq!(f3d_native(result.ir()).act_root_components.len(), 1);
     assert_eq!(
-        f3d_native(result.ir()).act_root_components[0].layout.entity_id(),
+        f3d_native(result.ir()).act_root_components[0]
+            .layout
+            .entity_id(),
         "0_3"
     );
     assert_eq!(
-        f3d_native(result.ir()).act_root_components[0].layout.display_name(),
+        f3d_native(result.ir()).act_root_components[0]
+            .layout
+            .display_name(),
         "(Unsaved)"
     );
     assert_eq!(
@@ -960,7 +970,8 @@ fn decode_transfers_generated_protein_appearance() {
         12
     );
     assert_eq!(
-        serde_json::to_value(&f3d_native(result.ir()).act_root_components[0]).unwrap()["tracked_entity_record"],
+        serde_json::to_value(&f3d_native(result.ir()).act_root_components[0]).unwrap()
+            ["tracked_entity_record"],
         3
     );
     assert_eq!(
@@ -1009,7 +1020,9 @@ fn decode_transfers_generated_protein_appearance() {
     );
     assert_eq!(
         f3d_native(result.ir()).construction_recipes[0]
-            .design.as_ref().map(|design| design.id.value.as_str()),
+            .design
+            .as_ref()
+            .map(|design| design.id.value.as_str()),
         Some("322")
     );
     assert_eq!(
@@ -1030,7 +1043,9 @@ fn decode_transfers_generated_protein_appearance() {
         }));
     assert_eq!(f3d_native(result.ir()).lost_edge_references.len(), 1);
     assert_eq!(
-        f3d_native(result.ir()).lost_edge_references[0].class_tag.as_str(),
+        f3d_native(result.ir()).lost_edge_references[0]
+            .class_tag
+            .as_str(),
         "419"
     );
     assert_eq!(
@@ -1048,10 +1063,18 @@ fn decode_transfers_generated_protein_appearance() {
     let sketch = f3d_native(result.ir())
         .design_types
         .iter()
-        .find(|design_type| design_type.entities.values().any(|registered| *registered == 277))
+        .find(|design_type| {
+            design_type
+                .entities
+                .values()
+                .any(|registered| *registered == 277)
+        })
         .cloned()
         .unwrap();
-    assert_eq!(sketch.entities.values().copied().collect::<Vec<_>>(), vec![277]);
+    assert_eq!(
+        sketch.entities.values().copied().collect::<Vec<_>>(),
+        vec![277]
+    );
     assert_eq!(sketch.version, 4);
     assert_eq!(f3d_native(result.ir()).design_entity_headers.len(), 2);
     let sketch_header = f3d_native(result.ir())
@@ -1069,7 +1092,14 @@ fn decode_transfers_generated_protein_appearance() {
     );
     assert_eq!(sketch_header.record_reference, Some(584));
     assert_eq!(sketch_header.declared_reference_count(), Some(2));
-    assert_eq!(sketch_header.references.values().copied().collect::<Vec<_>>(), [33, 44]);
+    assert_eq!(
+        sketch_header
+            .references
+            .values()
+            .copied()
+            .collect::<Vec<_>>(),
+        [33, 44]
+    );
     assert_eq!(f3d_native(result.ir()).design_record_headers.len(), 6);
     let record_33 = f3d_native(result.ir())
         .design_record_headers

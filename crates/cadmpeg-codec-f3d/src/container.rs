@@ -19,8 +19,8 @@ use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::{CodecError, ContainerEntry};
-use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::ContainerSummary;
 
 use cadmpeg_asm::kernel_header::KernelHeader;
 use cadmpeg_asm::{acis_header, asm_header};

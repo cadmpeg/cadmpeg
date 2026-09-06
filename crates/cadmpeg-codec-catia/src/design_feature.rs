@@ -10,8 +10,11 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
 
 use crate::entity_table::{RangeIntervalPrefix, RangeIntervalSlot};
-use crate::native::{CatiaDesignObject, CatiaDesignObjectRelationSource, CatiaNative, CatiaObjectRecord, CatiaRangeInterval, CatiaRangeNominalFraming};
-use crate::native::entity_record::{CatiaEntityRecord};
+use crate::native::entity_record::CatiaEntityRecord;
+use crate::native::{
+    CatiaDesignObject, CatiaDesignObjectRelationSource, CatiaNative, CatiaObjectRecord,
+    CatiaRangeInterval, CatiaRangeNominalFraming,
+};
 use crate::object_graph::{PayloadField, PayloadSubtype};
 
 #[derive(Debug, Default, PartialEq, Eq)]

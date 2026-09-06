@@ -10,8 +10,8 @@ use cadmpeg_ir::pmi::{
 };
 
 use crate::entity_table::{RangeInterval, RangeIntervalSlot};
+use crate::native::entity_record::CatiaEntityRecord;
 use crate::native::{CatiaNative, CatiaRangeInterval};
-use crate::native::entity_record::{CatiaEntityRecord};
 
 /// Transfer complete CATIA dimension productions.
 ///
@@ -168,8 +168,13 @@ fn finite_length(bits: u64) -> Option<PmiValue> {
 mod tests {
     use super::*;
     use crate::entity_table::{RangeIntervalPrefix, RangeIntervalSlot};
-    use crate::native::{CatiaConstraintRange, CatiaConstraintRangeFraming, CatiaDefinitionSchemaSelection, CatiaEntityEvaluation, CatiaEntityIncomingReference, CatiaEntityReference, CatiaEntitySchemaValue, CatiaEntityValueSchemaSelection, CatiaObjectRecordReferenceSource, CatiaRangeNominal, CatiaRangeNominalFraming};
-use crate::native::entity_record::{CatiaEntityRecord, CatiaEntityRecordBody};
+    use crate::native::entity_record::{CatiaEntityRecord, CatiaEntityRecordBody};
+    use crate::native::{
+        CatiaConstraintRange, CatiaConstraintRangeFraming, CatiaDefinitionSchemaSelection,
+        CatiaEntityEvaluation, CatiaEntityIncomingReference, CatiaEntityReference,
+        CatiaEntitySchemaValue, CatiaEntityValueSchemaSelection, CatiaObjectRecordReferenceSource,
+        CatiaRangeNominal, CatiaRangeNominalFraming,
+    };
     use cadmpeg_ir::pmi::PmiDefinition;
 
     fn schema_value(value: &str) -> CatiaEntitySchemaValue {
@@ -220,15 +225,19 @@ use crate::native::entity_record::{CatiaEntityRecord, CatiaEntityRecordBody};
                 incoming_references: Vec::new(),
                 incoming_storage_references: Vec::new(),
             }),
-            value_production: Some(crate::native::entity_record::CatiaEntityValueProduction::ConstraintRange(CatiaConstraintRange {
-                range: schema_value("Range"),
-                constraint: schema_value("CstAttr_Dimension"),
-                framing: CatiaConstraintRangeFraming::DimensionDC,
-                evaluation: CatiaEntityEvaluation::Scalar { bits: nominal },
-                evaluation_opcode_offset: 0,
-                incoming_references: Vec::new(),
-                incoming_storage_references: Vec::new(),
-            })),
+            value_production: Some(
+                crate::native::entity_record::CatiaEntityValueProduction::ConstraintRange(
+                    CatiaConstraintRange {
+                        range: schema_value("Range"),
+                        constraint: schema_value("CstAttr_Dimension"),
+                        framing: CatiaConstraintRangeFraming::DimensionDC,
+                        evaluation: CatiaEntityEvaluation::Scalar { bits: nominal },
+                        evaluation_opcode_offset: 0,
+                        incoming_references: Vec::new(),
+                        incoming_storage_references: Vec::new(),
+                    },
+                ),
+            ),
             object_production: None,
 
             reference_signature: None,

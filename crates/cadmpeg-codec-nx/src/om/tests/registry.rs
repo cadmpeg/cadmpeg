@@ -41,9 +41,17 @@ fn decodes_compact_and_wide_class_registry_tokens() {
 
     let compact_layout = crate::om::registry::class_registry_layout(compact.registry_tail).unwrap();
     assert_eq!(compact_layout.storage_code.value(), 0xc9 + 1);
-    assert_eq!(compact_layout.storage_code.form(), RegistryTokenForm::Compact);
+    assert_eq!(
+        compact_layout.storage_code.form(),
+        RegistryTokenForm::Compact
+    );
     assert_eq!(compact_layout.storage_code.width(), 2);
-    assert_eq!(compact_layout.base_class.map_or(0, std::num::NonZeroU32::get), 0x09);
+    assert_eq!(
+        compact_layout
+            .base_class
+            .map_or(0, std::num::NonZeroU32::get),
+        0x09
+    );
     assert_eq!(compact_layout.schema_fingerprint, fingerprint);
     assert_eq!(compact_layout.reference.get(), 0x01);
 
@@ -60,7 +68,10 @@ fn decodes_compact_and_wide_class_registry_tokens() {
     assert_eq!(wide_layout.storage_code.value(), 0x27_10 + 1);
     assert_eq!(wide_layout.storage_code.form(), RegistryTokenForm::Wide);
     assert_eq!(wide_layout.storage_code.width(), 3);
-    assert_eq!(wide_layout.base_class.map_or(0, std::num::NonZeroU32::get), 0x02_3c + 1);
+    assert_eq!(
+        wide_layout.base_class.map_or(0, std::num::NonZeroU32::get),
+        0x02_3c + 1
+    );
     assert_eq!(
         wide_layout.schema_fingerprint,
         [0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0]
@@ -108,7 +119,10 @@ fn decodes_direct_and_compact_field_registry_heads() {
     };
     let compact_layout = crate::om::registry::field_registry_layout(compact.registry_tail).unwrap();
     assert_eq!(compact_layout.storage_code.value(), 0xcf + 1);
-    assert_eq!(compact_layout.storage_code.form(), RegistryTokenForm::Compact);
+    assert_eq!(
+        compact_layout.storage_code.form(),
+        RegistryTokenForm::Compact
+    );
     assert_eq!(compact_layout.owner_class.get(), 0x28);
 }
 
@@ -173,7 +187,8 @@ fn separates_complete_reference_class_and_member_regions() {
     assert_eq!(
         crate::om::registry::class_registry_layout(registry.definitions[0].registry_tail)
             .unwrap()
-            .base_class.map_or(0, std::num::NonZeroU32::get),
+            .base_class
+            .map_or(0, std::num::NonZeroU32::get),
         0
     );
     assert_eq!(
@@ -192,14 +207,16 @@ fn separates_complete_reference_class_and_member_regions() {
     assert_eq!(
         crate::om::registry::field_registry_layout(fields[0].registry_tail)
             .unwrap()
-            .owner_class.get(),
+            .owner_class
+            .get(),
         1
     );
     assert_eq!(fields[1].name, "m_second");
     assert_eq!(
         crate::om::registry::field_registry_layout(fields[1].registry_tail)
             .unwrap()
-            .owner_class.get(),
+            .owner_class
+            .get(),
         2
     );
     assert_eq!(fields[2].name, "m_tail");

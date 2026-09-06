@@ -2,8 +2,8 @@
 //! Bulkstream and sketch/design record encoders for source-less generation.
 
 use crate::records::{
-    ConstructionRecipeKind, PersistentReferenceKind, SketchCurveGeometry,
-    SketchPointRecordForm, SketchText,
+    ConstructionRecipeKind, PersistentReferenceKind, SketchCurveGeometry, SketchPointRecordForm,
+    SketchText,
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -400,7 +400,9 @@ fn primary_record_u64(
     })
 }
 
-pub(super) fn encode_document_parameters(parameters: &[crate::records::DesignParameter]) -> Result<Vec<u8>, CodecError> {
+pub(super) fn encode_document_parameters(
+    parameters: &[crate::records::DesignParameter],
+) -> Result<Vec<u8>, CodecError> {
     let mut out = Vec::new();
     let mut parameter_indices = std::collections::BTreeSet::new();
     let mut parameter_ordinals = std::collections::BTreeSet::new();
@@ -409,21 +411,31 @@ pub(super) fn encode_document_parameters(parameters: &[crate::records::DesignPar
             crate::design::decode::parameters::design_parameter_discriminator(
                 parameter.source_kind(),
             );
-        if parameter.family_discriminator().map(|value| value.value.code()) != Some(expected_discriminator) {
+        if parameter
+            .family_discriminator()
+            .map(|value| value.value.code())
+            != Some(expected_discriminator)
+        {
             return Err(CodecError::InvalidInput(format!(
                 "F3D Design parameter {} has discriminator {:?}, expected {expected_discriminator} for {}",
                 parameter.id, parameter.family_discriminator().map(|value| value.value.code()), parameter.source_kind()
             )));
         }
         validate_dynamic_class_tag(&parameter.class_tag, "Design parameter")?;
-        let crate::records::DesignParameterSource::User { family_discriminator } = &parameter.source else {
+        let crate::records::DesignParameterSource::User {
+            family_discriminator,
+        } = &parameter.source
+        else {
             return Err(CodecError::NotImplemented(
                 "source-less F3D owned Design parameter records are not writable".into(),
             ));
         };
         if parameter.expression.is_empty()
             || parameter.name.is_empty()
-            || parameter.unit.as_ref().is_some_and(|field| field.value.is_empty())
+            || parameter
+                .unit
+                .as_ref()
+                .is_some_and(|field| field.value.is_empty())
             || !parameter.evaluated_value.is_finite()
         {
             return Err(CodecError::InvalidInput(format!(
@@ -757,7 +769,8 @@ fn encode_sketch_nurbs(
     record.extend_from_slice(&point_count.to_le_bytes());
     record.extend_from_slice(&point_count.to_le_bytes());
     record.extend_from_slice(&8u32.to_le_bytes());
-    let coordinates = poles.points()
+    let coordinates = poles
+        .points()
         .flat_map(|point| {
             [
                 point.x / LEN_TO_MM,

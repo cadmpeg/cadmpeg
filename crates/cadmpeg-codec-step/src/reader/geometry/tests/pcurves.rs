@@ -152,7 +152,10 @@ fn trimmed_curve_resolves_a_surface_curve_basis_carrier() {
 
     assert!(decoded.ir().model.curves.iter().any(|curve| {
         curve.id.as_str() == "step:data:curve#70"
-            && matches!(*curve.geometry.solved_cache().unwrap_or(&curve.geometry), CurveGeometry::Line { .. })
+            && matches!(
+                *curve.geometry.solved_cache().unwrap_or(&curve.geometry),
+                CurveGeometry::Line { .. }
+            )
     }));
     assert!(decoded.ir().model.procedural_curves.iter().any(|curve| {
         decoded

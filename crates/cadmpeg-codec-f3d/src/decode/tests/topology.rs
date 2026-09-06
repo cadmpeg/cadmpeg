@@ -1204,7 +1204,12 @@ fn cached_unmodeled_spline_families_retain_exact_shape_and_opaque_construction()
             .model
             .surfaces
             .iter()
-            .find(|surface| matches!(surface.geometry.solved_cache(), Some(SurfaceGeometry::Nurbs(_))))
+            .find(|surface| {
+                matches!(
+                    surface.geometry.solved_cache(),
+                    Some(SurfaceGeometry::Nurbs(_))
+                )
+            })
             .unwrap_or_else(|| panic!("{family} must retain its solved NURBS carrier"));
         let procedural = result
             .ir()

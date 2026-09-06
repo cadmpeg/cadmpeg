@@ -186,10 +186,12 @@ fn decode_projects_an_interval_certified_linear_bezier_ruled_surface() {
         .surfaces
         .iter()
         .find(|surface| surface.id.0 == "iges:model:surface#D5")
-        .and_then(|surface| match surface.geometry.solved_cache().unwrap_or(&surface.geometry) {
-            SurfaceGeometry::Nurbs(surface) => Some(surface),
-            _ => None,
-        })
+        .and_then(
+            |surface| match surface.geometry.solved_cache().unwrap_or(&surface.geometry) {
+                SurfaceGeometry::Nurbs(surface) => Some(surface),
+                _ => None,
+            },
+        )
         .expect("linear Bezier ruled surface");
     let midpoint = cadmpeg_ir::eval::nurbs_surface_point(surface, 0.5, 0.5)
         .expect("linear Bezier ruled midpoint");
@@ -1146,7 +1148,11 @@ fn decode_places_a_nurbs_tabulated_surface_and_its_exact_directrix() {
             Some(Point3::new(10.5, 20.0, 30.0))
         );
         assert_eq!(
-            cadmpeg_ir::eval::surface_point(surface.geometry.solved_cache().unwrap_or(&surface.geometry), 0.5, 0.5),
+            cadmpeg_ir::eval::surface_point(
+                surface.geometry.solved_cache().unwrap_or(&surface.geometry),
+                0.5,
+                0.5
+            ),
             Some(Point3::new(10.5, 20.0, 31.0))
         );
         assert!(
@@ -1184,7 +1190,14 @@ fn decode_projects_an_unbounded_plane_from_implicit_coefficients() {
     assert_eq!(*normal, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(*u_axis, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
     assert_eq!(
-        cadmpeg_ir::eval::surface_point(result.ir().model.surfaces[0].geometry.solved_cache().unwrap_or(&result.ir().model.surfaces[0].geometry), 1.0, 3.0),
+        cadmpeg_ir::eval::surface_point(
+            result.ir().model.surfaces[0]
+                .geometry
+                .solved_cache()
+                .unwrap_or(&result.ir().model.surfaces[0].geometry),
+            1.0,
+            3.0
+        ),
         Some(cadmpeg_ir::math::Point3::new(1.0, 3.0, 2.0))
     );
     assert!(result.report().losses.is_empty());
@@ -1284,7 +1297,11 @@ fn decode_solves_signed_analytic_offset_surfaces() {
             .iter()
             .find(|surface| surface.id.0 == "iges:model:surface#D3")
             .unwrap();
-        let cadmpeg_ir::geometry::SurfaceGeometry::Plane { origin, .. } = *offset.geometry.solved_cache().expect("solved offset carrier") else {
+        let cadmpeg_ir::geometry::SurfaceGeometry::Plane { origin, .. } = *offset
+            .geometry
+            .solved_cache()
+            .expect("solved offset carrier")
+        else {
             panic!("expected an exact plane offset carrier");
         };
         assert_eq!(origin, cadmpeg_ir::math::Point3::new(0.0, 0.0, expected_z));
@@ -1317,7 +1334,10 @@ fn decode_uses_the_cylinder_normal_at_the_designated_parameters() {
             .iter()
             .find(|surface| surface.id.0 == "iges:model:surface#D7")
             .expect("offset cylinder");
-        let cadmpeg_ir::geometry::SurfaceGeometry::Cylinder { radius, .. } = *surface.geometry.solved_cache().expect("solved offset cylinder")
+        let cadmpeg_ir::geometry::SurfaceGeometry::Cylinder { radius, .. } = *surface
+            .geometry
+            .solved_cache()
+            .expect("solved offset cylinder")
         else {
             panic!("expected cylindrical offset carrier")
         };

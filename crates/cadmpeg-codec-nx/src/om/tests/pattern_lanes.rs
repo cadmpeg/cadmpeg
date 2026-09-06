@@ -40,9 +40,13 @@ fn om_pattern_counted_reference_lane_requires_exact_terminator() {
 
     let mut malformed = payload.clone();
     malformed.pop();
-    assert!(pattern_payload_counted_reference_lane(OperationPayload::new(&malformed, record.payload_offset(), record.name()).unwrap())
+    assert!(pattern_payload_counted_reference_lane(
+        OperationPayload::new(&malformed, record.payload_offset(), record.name()).unwrap()
+    )
     .is_none());
     let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
-    assert!(pattern_payload_counted_reference_lane(OperationPayload::new(&ambiguous, record.payload_offset(), record.name()).unwrap())
+    assert!(pattern_payload_counted_reference_lane(
+        OperationPayload::new(&ambiguous, record.payload_offset(), record.name()).unwrap()
+    )
     .is_none());
 }

@@ -31,7 +31,11 @@ impl TryFrom<FeatureDatumCsysPayloadFixedPairWire> for FeatureDatumCsysPayloadFi
     type Error = String;
     fn try_from(wire: FeatureDatumCsysPayloadFixedPairWire) -> Result<Self, Self::Error> {
         Ok(Self {
-            position: PairPosition::from_wire(&wire.discriminator, wire.payload_offset, wire.value_payload_offsets)?,
+            position: PairPosition::from_wire(
+                &wire.discriminator,
+                wire.payload_offset,
+                wire.value_payload_offsets,
+            )?,
             id: wire.id,
             operation_label: wire.operation_label,
             datum_csys_payload: wire.datum_csys_payload,
@@ -88,7 +92,11 @@ impl TryFrom<FeatureSketchPayloadFixedPairWire> for FeatureSketchPayloadFixedPai
     type Error = String;
     fn try_from(wire: FeatureSketchPayloadFixedPairWire) -> Result<Self, Self::Error> {
         Ok(Self {
-            position: PairPosition::from_wire(&wire.discriminator, wire.payload_offset, wire.value_payload_offsets)?,
+            position: PairPosition::from_wire(
+                &wire.discriminator,
+                wire.payload_offset,
+                wire.value_payload_offsets,
+            )?,
             id: wire.id,
             operation_label: wire.operation_label,
             construction_payload: wire.construction_payload,
@@ -145,7 +153,11 @@ impl TryFrom<FeatureSketchPayloadMixedPairWire> for FeatureSketchPayloadMixedPai
     type Error = String;
     fn try_from(wire: FeatureSketchPayloadMixedPairWire) -> Result<Self, Self::Error> {
         Ok(Self {
-            position: PairPosition::from_wire(&wire.discriminator, wire.payload_offset, wire.value_payload_offsets)?,
+            position: PairPosition::from_wire(
+                &wire.discriminator,
+                wire.payload_offset,
+                wire.value_payload_offsets,
+            )?,
             id: wire.id,
             operation_label: wire.operation_label,
             construction_payload: wire.construction_payload,
@@ -190,7 +202,10 @@ mod tests {
             value_source_offsets: [1028, 2037],
         };
         let wire = serde_json::to_value(&pair).unwrap();
-        assert_eq!(serde_json::from_value::<FeatureSketchPayloadFixedPair>(wire.clone()).unwrap(), pair);
+        assert_eq!(
+            serde_json::from_value::<FeatureSketchPayloadFixedPair>(wire.clone()).unwrap(),
+            pair
+        );
         for (field, invalid) in [
             ("discriminator", serde_json::json!([4])),
             ("value_payload_offsets", serde_json::json!([28, 38])),
@@ -198,7 +213,8 @@ mod tests {
         ] {
             let mut invalid_wire = wire.clone();
             invalid_wire[field] = invalid;
-            let error = serde_json::from_value::<FeatureSketchPayloadFixedPair>(invalid_wire).unwrap_err();
+            let error =
+                serde_json::from_value::<FeatureSketchPayloadFixedPair>(invalid_wire).unwrap_err();
             assert!(error.to_string().contains(field), "{error}");
         }
     }

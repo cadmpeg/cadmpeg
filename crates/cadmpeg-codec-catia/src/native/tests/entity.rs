@@ -177,7 +177,8 @@ fn native_namespace_retains_and_validates_complete_entity_numeric_pairs() {
         .store(&mut legacy_namespace)
         .expect("store legacy numeric-pair view");
     legacy_namespace.arenas.get_mut("entity_records").unwrap()[0]
-        .fields_mut().remove("numeric_pair");
+        .fields_mut()
+        .remove("numeric_pair");
     legacy_namespace.set_version(
         std::num::NonZeroU32::new(crate::native::CATIA_REFERENCE_SIGNATURE_COHORT_VERSION).unwrap(),
     );
@@ -186,11 +187,12 @@ fn native_namespace_retains_and_validates_complete_entity_numeric_pairs() {
     assert!(migrated.entity_records[0].numeric_pair().is_some());
 
     let mut wire = serde_json::to_value(&native.entity_records[0]).unwrap();
-    wire["numeric_pair"]["slots"][0] = serde_json::to_value(
-        crate::entity_table::NumericPairSlot::ControlE8 { offset: 8 }
-    ).unwrap();
-    assert!(serde_json::from_value::<crate::native::entity_record::CatiaEntityRecord>(wire).is_err());
-
+    wire["numeric_pair"]["slots"][0] =
+        serde_json::to_value(crate::entity_table::NumericPairSlot::ControlE8 { offset: 8 })
+            .unwrap();
+    assert!(
+        serde_json::from_value::<crate::native::entity_record::CatiaEntityRecord>(wire).is_err()
+    );
 }
 
 #[test]
@@ -1100,26 +1102,32 @@ fn typed_definition_chain_values_transfer_as_parameters() {
             0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0xe6, 0, 0, 0, 0, 0, 0, 0, 0,
         ]));
     let parameter_entity = native.entity_records[0].clone();
-    native.entity_records[0].object_production = Some(crate::native::entity_record::CatiaEntityObjectProduction::RelationProgramInstance(crate::native::CatiaRelationProgramInstance {
-            framing: crate::native::CatiaRelationProgramInstanceFraming::Lead12 {
-                context_entity: crate::native::CatiaEntityReference::Unresolved { entity_id: 0 },
+    native.entity_records[0].object_production = Some(
+        crate::native::entity_record::CatiaEntityObjectProduction::RelationProgramInstance(
+            crate::native::CatiaRelationProgramInstance {
+                framing: crate::native::CatiaRelationProgramInstanceFraming::Lead12 {
+                    context_entity: crate::native::CatiaEntityReference::Unresolved {
+                        entity_id: 0,
+                    },
+                },
+                program_entity: crate::native::CatiaEntityReference::Unresolved { entity_id: 0 },
+                repeated_entity: crate::native::CatiaEntityReference::Unresolved { entity_id: 0 },
+                reference_incidences: Vec::new(),
+                relation_expression: None,
+                parameter_dependencies: Vec::new(),
+                inputs: Some(vec![crate::native::CatiaRelationProgramInput {
+                    parameter: "#1_".to_string(),
+                    value_type: "Real".to_string(),
+                    entity: crate::native::CatiaEntityReference::from_parts(
+                        parameter_entity.entity_id,
+                        false,
+                        Some(parameter_entity.id.clone()),
+                        Some("param".to_string()),
+                    ),
+                }]),
             },
-            program_entity: crate::native::CatiaEntityReference::Unresolved { entity_id: 0 },
-            repeated_entity: crate::native::CatiaEntityReference::Unresolved { entity_id: 0 },
-            reference_incidences: Vec::new(),
-            relation_expression: None,
-            parameter_dependencies: Vec::new(),
-            inputs: Some(vec![crate::native::CatiaRelationProgramInput {
-                parameter: "#1_".to_string(),
-                value_type: "Real".to_string(),
-                entity: crate::native::CatiaEntityReference::from_parts(
-                    parameter_entity.entity_id,
-                    false,
-                    Some(parameter_entity.id.clone()),
-                    Some("param".to_string()),
-                ),
-            }]),
-        }));
+        ),
+    );
     let mut relation_ir = CadIr::empty();
     let relation_transfer = crate::formula::transfer_parameters(
         &mut relation_ir,

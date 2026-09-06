@@ -14,7 +14,15 @@ fn label(ordinal: u32, object_indices: [Option<u32>; 4]) -> FeatureOperationLabe
         section_link: "history#0".to_string(),
         ordinal,
         value: "EXTRUDE".to_string(),
-        objects: crate::om::header_references::HeaderReferences(object_indices.map(|value| value.map(|value| crate::om::reference_index::FeatureReferenceToken::from_wire(value, &[u8::try_from(value).unwrap()]).unwrap()))),
+        objects: crate::om::header_references::HeaderReferences(object_indices.map(|value| {
+            value.map(|value| {
+                crate::om::reference_index::FeatureReferenceToken::from_wire(
+                    value,
+                    &[u8::try_from(value).unwrap()],
+                )
+                .unwrap()
+            })
+        })),
         stable_identity: None,
         source_offset: u64::from(ordinal),
     }
@@ -190,7 +198,10 @@ fn operation_body_write_retains_identity_group_and_image() {
     assert_eq!(first.frame.body_image().value(), 0x693);
     assert_eq!(first.frame.body_image().raw(), [0x86, 0x93]);
     assert_eq!(second.frame.body_identity(), 0x12);
-    assert_eq!(second.frame.group_node().value(), first.frame.group_node().value());
+    assert_eq!(
+        second.frame.group_node().value(),
+        first.frame.group_node().value()
+    );
     assert_eq!(second.frame.body_image().value(), 0x694);
 }
 
@@ -258,16 +269,14 @@ fn body_image_segment_use_requires_one_plain_alias() {
         "nx:om-data-blocks-0:block#65"
     );
     assert_eq!(uses[0].segment_body_binding, "plain");
-    assert!(
-        super::feature_operation_body_image_segment_uses(
-            &writes,
-            &[
-                binding("first", crate::parasolid::StreamKind::Plain),
-                binding("second", crate::parasolid::StreamKind::Plain)
-            ],
-        )
-        .is_empty()
-    );
+    assert!(super::feature_operation_body_image_segment_uses(
+        &writes,
+        &[
+            binding("first", crate::parasolid::StreamKind::Plain),
+            binding("second", crate::parasolid::StreamKind::Plain)
+        ],
+    )
+    .is_empty());
 }
 
 #[test]
@@ -277,10 +286,14 @@ fn body_identity_segment_use_does_not_require_an_image_block() {
         operation_label: Some("operation".into()),
         operation_record: "record".into(),
         ordinal: 0,
-        frame: crate::om::body_write::BodyWriteFrame::<u64>::new(11,
+        frame: crate::om::body_write::BodyWriteFrame::<u64>::new(
+            11,
             crate::om::body_write::BodyWriteIndex::from_wire(1, &[1]).unwrap(),
             crate::om::body_write::BodyImageTag::Form12,
-            crate::om::body_write::BodyWriteIndex::from_wire(1519, &[0x85, 0xef]).unwrap(), 0).unwrap(),
+            crate::om::body_write::BodyWriteIndex::from_wire(1519, &[0x85, 0xef]).unwrap(),
+            0,
+        )
+        .unwrap(),
         body_image_data_block: None,
     };
     let binding = |id: &str, stream_kind: crate::parasolid::StreamKind| SegmentBodyBinding {
@@ -307,16 +320,14 @@ fn body_identity_segment_use_does_not_require_an_image_block() {
     assert_eq!(uses[0].segment_body_binding, "plain");
 
     write.body_image_data_block = Some("irrelevant".into());
-    assert!(
-        super::feature_operation_body_identity_segment_uses(
-            &[write],
-            &[
-                binding("first", crate::parasolid::StreamKind::Plain),
-                binding("second", crate::parasolid::StreamKind::Plain)
-            ],
-        )
-        .is_empty()
-    );
+    assert!(super::feature_operation_body_identity_segment_uses(
+        &[write],
+        &[
+            binding("first", crate::parasolid::StreamKind::Plain),
+            binding("second", crate::parasolid::StreamKind::Plain)
+        ],
+    )
+    .is_empty());
 }
 
 #[test]
@@ -363,7 +374,10 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
     let group =
         |id: &str, partition_stream_ordinal| crate::native::parasolid::ParasolidGroupRecord {
             id: id.into(),
-            origin: crate::native::parasolid::group_record::GroupOrigin::Deltas { stream_ordinal: partition_stream_ordinal + 1, partition_stream_ordinal: Some(partition_stream_ordinal) },
+            origin: crate::native::parasolid::group_record::GroupOrigin::Deltas {
+                stream_ordinal: partition_stream_ordinal + 1,
+                partition_stream_ordinal: Some(partition_stream_ordinal),
+            },
             xmt: 10,
             node_id: writes[0].frame.group_node().value(),
             references: [3, 4, 5, 6, 7],
@@ -388,40 +402,38 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
     assert_eq!(uses[0].parasolid_group_records, ["owned"]);
 
     let unterminated = [binding("plain-0", 0, 11, 10), binding("plain-1", 1, 12, 10)];
-    assert!(
-        super::feature_operation_body_partition_uses(
-            &writes,
-            &image_uses,
-            &unterminated,
-            &streams,
-            &groups,
-            &[],
-        )
-        .is_empty()
-    );
+    assert!(super::feature_operation_body_partition_uses(
+        &writes,
+        &image_uses,
+        &unterminated,
+        &streams,
+        &groups,
+        &[],
+    )
+    .is_empty());
 
     let repeated_terminal = [binding("plain-0", 0, 11, 16), binding("plain-1", 1, 12, 16)];
-    assert!(
-        super::body_history_partition_stream(&repeated_terminal[1], &repeated_terminal, &streams,)
-            .is_none()
-    );
+    assert!(super::body_history_partition_stream(
+        &repeated_terminal[1],
+        &repeated_terminal,
+        &streams,
+    )
+    .is_none());
 
     let interrupted_streams = [
         stream(crate::parasolid::StreamKind::Plain),
         stream(crate::parasolid::StreamKind::Deltas),
         stream(crate::parasolid::StreamKind::Partition),
     ];
-    assert!(
-        super::feature_operation_body_partition_uses(
-            &writes,
-            &image_uses,
-            &bindings,
-            &interrupted_streams,
-            &groups,
-            &[],
-        )
-        .is_empty()
-    );
+    assert!(super::feature_operation_body_partition_uses(
+        &writes,
+        &image_uses,
+        &bindings,
+        &interrupted_streams,
+        &groups,
+        &[],
+    )
+    .is_empty());
 }
 
 #[test]
@@ -431,16 +443,23 @@ fn unlabeled_group_binds_a_body_identity_to_one_partition_namespace() {
         id: "unlabeled-body-write".into(),
         operation_record: "unlabeled-record".into(),
         ordinal: 0,
-        frame: crate::om::body_write::BodyWriteFrame::<u64>::new(11,
+        frame: crate::om::body_write::BodyWriteFrame::<u64>::new(
+            11,
             crate::om::body_write::BodyWriteIndex::from_wire(99, &[99]).unwrap(),
             crate::om::body_write::BodyImageTag::Form10,
-            crate::om::body_write::BodyWriteIndex::from_wire(20, &[20]).unwrap(), 9).unwrap(),
+            crate::om::body_write::BodyWriteIndex::from_wire(20, &[20]).unwrap(),
+            9,
+        )
+        .unwrap(),
         body_image_data_block: Some("block".into()),
     };
     let group =
         |id: &str, partition_stream_ordinal| crate::native::parasolid::ParasolidGroupRecord {
             id: id.into(),
-            origin: crate::native::parasolid::group_record::GroupOrigin::Deltas { stream_ordinal: partition_stream_ordinal + 1, partition_stream_ordinal: Some(partition_stream_ordinal) },
+            origin: crate::native::parasolid::group_record::GroupOrigin::Deltas {
+                stream_ordinal: partition_stream_ordinal + 1,
+                partition_stream_ordinal: Some(partition_stream_ordinal),
+            },
             xmt: 10,
             node_id: 99,
             references: [3, 4, 5, 6, 7],
@@ -461,23 +480,26 @@ fn unlabeled_group_binds_a_body_identity_to_one_partition_namespace() {
     assert_eq!(uses[0].partition_stream_ordinal, 2);
     assert_eq!(uses[0].parasolid_group_records, ["owned"]);
 
-    assert!(
-        super::feature_body_write_group_partition_uses(
-            &[],
-            &[unlabeled],
-            &[group("first", 2), group("collision", 4)],
-            &[],
-        )
-        .is_empty()
-    );
+    assert!(super::feature_body_write_group_partition_uses(
+        &[],
+        &[unlabeled],
+        &[group("first", 2), group("collision", 4)],
+        &[],
+    )
+    .is_empty());
 }
 
 fn journal_row(state_ordinal: u32, source_offset: u64) -> OmOperationStateJournalRow {
     OmOperationStateJournalRow {
         timestamp: 1_700_000_000,
-        value: crate::om::state_tagged_value::StateTaggedValue::read_at(&[0xe0, 0, 0, 0, state_ordinal as u8], 0).unwrap(),
+        value: crate::om::state_tagged_value::StateTaggedValue::read_at(
+            &[0xe0, 0, 0, 0, state_ordinal as u8],
+            0,
+        )
+        .unwrap(),
         schema_id: crate::om::state_index::StateIndexToken::read_at(&[12], 0).unwrap(),
-        state_ordinal: crate::om::state_index::StateIndexToken::read_at(&[state_ordinal as u8], 0).unwrap(),
+        state_ordinal: crate::om::state_index::StateIndexToken::read_at(&[state_ordinal as u8], 0)
+            .unwrap(),
         source_offset,
         end_offset: source_offset + 16,
     }
@@ -508,7 +530,8 @@ fn operation_record(id: &str, operation_label: &str) -> FeatureOperationRecord {
         sha256: "record-sha256".to_string(),
         payload_sha256: "payload-sha256".to_string(),
         stable_identity: None,
-        span: crate::native::features::operation_record::OperationRecordSpan::new(400, 404, 8).unwrap(),
+        span: crate::native::features::operation_record::OperationRecordSpan::new(400, 404, 8)
+            .unwrap(),
     }
 }
 
@@ -518,7 +541,18 @@ fn terminal_frame(operation_record: &str, local_ordinal: u32) -> FeatureOperatio
         operation_record: operation_record.to_string(),
         immediate_common_frame: None,
         frame: crate::om::common_frame::TerminalFrame::<u64, Option<String>>::new(
-            crate::om::common_frame::CommonFrameSuffix::from_wire(local_ordinal, &[local_ordinal as u8], None, &[0xff]).unwrap().with_target(None).unwrap(), 420).unwrap(),
+            crate::om::common_frame::CommonFrameSuffix::from_wire(
+                local_ordinal,
+                &[local_ordinal as u8],
+                None,
+                &[0xff],
+            )
+            .unwrap()
+            .with_target(None)
+            .unwrap(),
+            420,
+        )
+        .unwrap(),
     }
 }
 

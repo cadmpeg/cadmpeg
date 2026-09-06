@@ -6,8 +6,8 @@ use std::io::Cursor;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 
-use crate::IgesCodec;
 use crate::test_support::*;
+use crate::IgesCodec;
 
 #[test]
 fn overlong_preterminate_physical_line_is_malformed() {

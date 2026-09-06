@@ -288,7 +288,8 @@ fn standard_circle_endpoint_domain_requires_both_face_carriers() {
             source_object: None,
         },
         Point {
-            id: PointId::mint("catia:test:point#other-occurrence".to_string()).expect("identity grammar"),
+            id: PointId::mint("catia:test:point#other-occurrence".to_string())
+                .expect("identity grammar"),
             position: Point3::new(3.0, -4.0, 0.0),
             source_object: None,
         },
@@ -319,7 +320,8 @@ fn standard_circle_endpoint_domain_requires_both_trimmed_face_bounds() {
             source_object: None,
         },
         Point {
-            id: PointId::mint("catia:test:point#other-occurrence".to_string()).expect("identity grammar"),
+            id: PointId::mint("catia:test:point#other-occurrence".to_string())
+                .expect("identity grammar"),
             position: Point3::new(3.0, -4.0, 0.0),
             source_object: None,
         },

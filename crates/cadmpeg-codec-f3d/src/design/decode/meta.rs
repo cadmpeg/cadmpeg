@@ -5,16 +5,16 @@ use cadmpeg_core::container::ContainerRole;
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_core::CodecError;
 use cadmpeg_core::decode::View;
+use cadmpeg_core::CodecError;
 
 use crate::bytes::{
-    Reference, is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded, take_reference,
+    is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded, take_reference, Reference,
 };
 use crate::container::ContainerScan;
 use crate::ids::{self, native_stream};
 use crate::records::{
-    DESIGN_MODULE_FUSION, DesignComponentNamingSpace, DesignFeatureTimeline, SegmentType,
+    DesignComponentNamingSpace, DesignFeatureTimeline, SegmentType, DESIGN_MODULE_FUSION,
 };
 
 const COMPONENT_MODULE: &str = "Component";
@@ -33,7 +33,9 @@ pub(crate) fn is_supported_feature_timeline_type(design_type: &SegmentType) -> b
     FEATURE_TIMELINE_TYPE_VERSIONS.contains(&design_type.version)
         && design_type.module == DESIGN_MODULE_FUSION
         && design_type
-            .base_type_guid.as_ref().map(|field| field.value.as_str())
+            .base_type_guid
+            .as_ref()
+            .map(|field| field.value.as_str())
             .is_some_and(|base| base.eq_ignore_ascii_case(FEATURE_TIMELINE_BASE_TYPE_GUID))
 }
 
@@ -96,9 +98,13 @@ pub fn decode_component_naming_spaces(
             .iter()
             .filter(|design_type| {
                 design_type.module == COMPONENT_MODULE
-                    && design_type.base_type_guid.as_ref().map(|field| field.value.as_str()).is_some_and(|base| {
-                        base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
-                    })
+                    && design_type
+                        .base_type_guid
+                        .as_ref()
+                        .map(|field| field.value.as_str())
+                        .is_some_and(|base| {
+                            base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
+                        })
             })
             .flat_map(|design_type| design_type.entities.values().copied())
             .collect::<HashSet<_>>();
@@ -158,11 +164,18 @@ pub fn decode_component_naming_spaces(
                 || reference.link_name.is_some()
                 || !meta.types.iter().any(|design_type| {
                     design_type.module == COMPONENT_MODULE
-                        && design_type.base_type_guid.as_ref().map(|field| field.value.as_str()).is_some_and(|base| {
-                            base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
-                        })
+                        && design_type
+                            .base_type_guid
+                            .as_ref()
+                            .map(|field| field.value.as_str())
+                            .is_some_and(|base| {
+                                base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
+                            })
                         && design_type.type_guid.eq_ignore_ascii_case(inline_type_guid)
-                        && design_type.entities.values().any(|registered| *registered == component_record_index)
+                        && design_type
+                            .entities
+                            .values()
+                            .any(|registered| *registered == component_record_index)
                 })
             {
                 continue;
@@ -271,7 +284,8 @@ pub(crate) fn design_primary_frames<'a>(
         .enumerate()
         .flat_map(|(ordinal, design_type)| {
             design_type
-                .entities.values()
+                .entities
+                .values()
                 .copied()
                 .map(move |entity_id| (ordinal, entity_id))
         })
@@ -466,9 +480,10 @@ fn parse_feature_timeline_record(
 
     let mut at = payload.checked_add(2)?;
     let context_reference_offset = at.checked_add(1)?;
-    let context_record_index = std::num::NonZeroU64::new(
-        local_reference(&take_reference(bytes, &mut at)?, type_guids_by_entity)?,
-    )?;
+    let context_record_index = std::num::NonZeroU64::new(local_reference(
+        &take_reference(bytes, &mut at)?,
+        type_guids_by_entity,
+    )?)?;
     let item_count_offset = at;
     let count = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
     at = at.checked_add(4)?;
@@ -479,7 +494,10 @@ fn parse_feature_timeline_record(
     for _ in 0..count {
         let target_offset = at.checked_add(1)?;
         let target = local_reference(&take_reference(bytes, &mut at)?, type_guids_by_entity)?;
-        items.push(crate::records::Located { value: target, offset: target_offset as u64 });
+        items.push(crate::records::Located {
+            value: target,
+            offset: target_offset as u64,
+        });
     }
     if at != end {
         return None;
@@ -487,7 +505,14 @@ fn parse_feature_timeline_record(
 
     Some(DesignFeatureTimeline {
         id: ids::native_design_feature_timeline_id(stream, start),
-        frame: crate::records::DesignTimelineFrame::new(start as u64, end.checked_sub(start)? as u64, context_reference_offset as u64, item_count_offset as u64, items).ok()?,
+        frame: crate::records::DesignTimelineFrame::new(
+            start as u64,
+            end.checked_sub(start)? as u64,
+            context_reference_offset as u64,
+            item_count_offset as u64,
+            items,
+        )
+        .ok()?,
         class_tag: crate::records::DesignClassTag::try_from(class_tag).ok()?,
         record_index: std::num::NonZeroU64::new(expected_entity_id)?,
         source_ordinal,

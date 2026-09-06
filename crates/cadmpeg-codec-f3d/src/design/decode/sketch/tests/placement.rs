@@ -21,7 +21,8 @@ fn sketch_placement_decodes_compact_identity_and_explicit_affine_frame() {
         parse_sketch_placement_candidates(
             bytes,
             scope_record_index,
-            &crate::records::DesignEntityId::try_from(entity_id.to_owned()).expect("valid entity ID"),
+            &crate::records::DesignEntityId::try_from(entity_id.to_owned())
+                .expect("valid entity ID"),
             record_index,
             &records,
         )
@@ -98,7 +99,8 @@ fn entity_genesis_placement_decodes_compact_and_explicit_frames() {
         parse_sketch_placement_candidates(
             bytes,
             scope_record_index,
-            &crate::records::DesignEntityId::try_from(entity_id.to_owned()).expect("valid entity ID"),
+            &crate::records::DesignEntityId::try_from(entity_id.to_owned())
+                .expect("valid entity ID"),
             record_index,
             &records,
         )
@@ -171,17 +173,27 @@ fn entity_genesis_placement_decodes_compact_and_explicit_frames() {
 
 #[test]
 fn entity_genesis_placement_origin_scales_to_neutral_units() {
-    let placement = |form: fn(crate::records::SketchPlacementMatrix) -> crate::records::DesignSketchFrameForm| DesignSketchPlacement {
-        frame: crate::records::DesignSketchFrame::new(0, form(crate::records::SketchPlacementMatrix::try_from([
-            [0.0, 0.0, 1.0, 26.0],
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ]).unwrap())).unwrap(),
+    let placement = |form: fn(
+        crate::records::SketchPlacementMatrix,
+    ) -> crate::records::DesignSketchFrameForm| DesignSketchPlacement {
+        frame: crate::records::DesignSketchFrame::new(
+            0,
+            form(
+                crate::records::SketchPlacementMatrix::try_from([
+                    [0.0, 0.0, 1.0, 26.0],
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ])
+                .unwrap(),
+            ),
+        )
+        .unwrap(),
 
         id: "f3d:native:design-sketch-placement#0".into(),
         scope_record_index: Some(10),
-        entity_id: crate::records::DesignEntityId::try_from("0_100".to_owned()).expect("valid entity ID"),
+        entity_id: crate::records::DesignEntityId::try_from("0_100".to_owned())
+            .expect("valid entity ID"),
 
         visibility: None,
 
@@ -189,7 +201,6 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
         record_index: 11,
 
         paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
-
     };
     let point = SketchPoint {
         id: "f3d:native:sketch-point#0".into(),
@@ -212,13 +223,18 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
     identityless_point.id = "f3d:native:sketch-point#1".into();
     identityless_point.record_index = 21;
     identityless_point.coordinate_offset = 33;
-    identityless_point.record_form = crate::records::SketchPointRecordForm::Version0 { flag: false, companion: None };
+    identityless_point.record_form = crate::records::SketchPointRecordForm::Version0 {
+        flag: false,
+        companion: None,
+    };
 
     // The `EntityGenesis`-flavor frame stores its origin in centimetres
     // while the sketch records carry ten-times-centimetre values; the
     // projected sketch origin scales by ten to stay commensurate.
     let (sketches, entities) = project_sketch_design(
-        &[placement(crate::records::DesignSketchFrameForm::ScopeGenesisExplicit)],
+        &[placement(
+            crate::records::DesignSketchFrameForm::ScopeGenesisExplicit,
+        )],
         &[point.clone(), identityless_point],
         &[],
         &[],
@@ -245,7 +261,16 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
     );
 
     // The settled explicit frame keeps its stored origin unscaled.
-    let (sketches, _) = project_sketch_design(&[placement(crate::records::DesignSketchFrameForm::ScopeExplicit)], &[point], &[], &[], &[], 1.0e-6);
+    let (sketches, _) = project_sketch_design(
+        &[placement(
+            crate::records::DesignSketchFrameForm::ScopeExplicit,
+        )],
+        &[point],
+        &[],
+        &[],
+        &[],
+        1.0e-6,
+    );
     assert_eq!(
         sketches[0]
             .resolved_placement()
@@ -290,7 +315,8 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
         id: "f3d:Design/BulkStream.dat:design-entity-header#0".into(),
         byte_offset: 0,
 
-        entity_id: crate::records::DesignEntityId::try_from("0_100".to_owned()).expect("valid entity ID"),
+        entity_id: crate::records::DesignEntityId::try_from("0_100".to_owned())
+            .expect("valid entity ID"),
         class_tag: crate::records::DesignClassTag::try_from("281".to_owned()).unwrap(),
         optional_slot_present: false,
         module: Some(DESIGN_MODULE_SKETCH.to_owned()),
@@ -301,9 +327,13 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
         members: crate::records::ReferenceRun::Unlocated(Vec::new()),
     };
     let records = IndexedRecordOffsets::build(&bytes);
-    let placement =
-        crate::design::decode::sketch::parse_member_run_head_placement(&bytes, entity.byte_offset, &entity.entity_id, &records)
-            .expect("feature-owned sketch placement");
+    let placement = crate::design::decode::sketch::parse_member_run_head_placement(
+        &bytes,
+        entity.byte_offset,
+        &entity.entity_id,
+        &records,
+    )
+    .expect("feature-owned sketch placement");
     assert_eq!(placement.record_index, 200);
     assert_eq!(placement.byte_offset(), head_at as u64);
     assert_eq!(placement.paired_byte_offset(), paired_at as u64);
@@ -329,9 +359,13 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
     bytes.extend_from_slice(b"284");
     bytes.extend_from_slice(&201u32.to_le_bytes());
     let records = IndexedRecordOffsets::build(&bytes);
-    let compact =
-        crate::design::decode::sketch::parse_member_run_head_placement(&bytes, entity.byte_offset, &entity.entity_id, &records)
-            .expect("compact identity sketch placement");
+    let compact = crate::design::decode::sketch::parse_member_run_head_placement(
+        &bytes,
+        entity.byte_offset,
+        &entity.entity_id,
+        &records,
+    )
+    .expect("compact identity sketch placement");
     assert_eq!(compact.frame_length(), 34);
     assert_eq!(*compact.transform(), identity_matrix());
     assert_eq!(compact.transform_offset(), None);
@@ -361,11 +395,16 @@ fn legacy_sketch_pair_decodes_its_complete_member_run() {
         bytes.extend_from_slice(&[0; 6]);
     }
 
-    let members =
-        crate::design::decode::sketch::parse_legacy_sketch_member_run(&bytes, 0, 100)
-            .expect("legacy sketch member run");
-    assert_eq!(members.iter().map(|row| row.value).collect::<Vec<_>>(), [300, 301]);
-    assert_eq!(members.iter().map(|row| row.offset).collect::<Vec<_>>(), [(paired_at + 46) as u64, (paired_at + 57) as u64]);
+    let members = crate::design::decode::sketch::parse_legacy_sketch_member_run(&bytes, 0, 100)
+        .expect("legacy sketch member run");
+    assert_eq!(
+        members.iter().map(|row| row.value).collect::<Vec<_>>(),
+        [300, 301]
+    );
+    assert_eq!(
+        members.iter().map(|row| row.offset).collect::<Vec<_>>(),
+        [(paired_at + 46) as u64, (paired_at + 57) as u64]
+    );
 }
 
 #[test]
@@ -615,7 +654,10 @@ fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
     assert_eq!(degree, 2);
     assert_eq!(knots, [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
     assert_eq!(poles.weights().copied().collect::<Vec<_>>(), [1.0; 3]);
-    assert_eq!(poles.points().nth(1).copied().unwrap(), Point3::new(5.0, 7.5, 0.0));
+    assert_eq!(
+        poles.points().nth(1).copied().unwrap(),
+        Point3::new(5.0, 7.5, 0.0)
+    );
     assert!((fit_tolerance - 0.000_1).abs() <= f64::EPSILON);
 
     marked_reference(&mut bytes, 201);
@@ -629,7 +671,12 @@ fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
             version,
             version_offset: 0,
             module: module.into(),
-            entities: crate::records::ReferenceRun::Located(entity_ids.into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect()),
+            entities: crate::records::ReferenceRun::Located(
+                entity_ids
+                    .into_iter()
+                    .map(|value| crate::records::Located { value, offset: 0 })
+                    .collect(),
+            ),
         }
     };
     let meta = crate::metastream::MetaStream {
@@ -731,7 +778,11 @@ fn sketch_member_run_backfills_relation_free_owners() {
     bytes.extend_from_slice(&[0; 8]);
     assert_eq!(
         crate::design::decode::sketch::parse_sketch_member_run(&bytes, 0, 100),
-        vec![99, 20, 21].into_iter().zip(member_offsets).map(|(value, offset)| crate::records::Located { value, offset }).collect::<Vec<_>>()
+        vec![99, 20, 21]
+            .into_iter()
+            .zip(member_offsets)
+            .map(|(value, offset)| crate::records::Located { value, offset })
+            .collect::<Vec<_>>()
     );
     assert_eq!(
         crate::design::decode::sketch::parse_sketch_member_run(&bytes, 0, 101),
@@ -746,7 +797,8 @@ fn sketch_member_run_backfills_relation_free_owners() {
         id: format!("f3d:native:design-entity-header#{suffix}"),
         byte_offset: suffix,
 
-        entity_id: crate::records::DesignEntityId::try_from(format!("0_{suffix}")).expect("valid entity ID"),
+        entity_id: crate::records::DesignEntityId::try_from(format!("0_{suffix}"))
+            .expect("valid entity ID"),
         class_tag: crate::records::DesignClassTag::try_from("281".to_owned()).unwrap(),
         optional_slot_present: false,
         module: Some(DESIGN_MODULE_SKETCH.to_owned()),
@@ -754,7 +806,12 @@ fn sketch_member_run_backfills_relation_free_owners() {
         record_reference_offset: None,
         reference_count_present: false,
         references: crate::records::ReferenceRun::Unlocated(Vec::new()),
-        members: crate::records::ReferenceRun::Located(members.into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect()),
+        members: crate::records::ReferenceRun::Located(
+            members
+                .into_iter()
+                .map(|value| crate::records::Located { value, offset: 0 })
+                .collect(),
+        ),
     };
     let point = |record_index: u32| SketchPoint {
         id: format!("f3d:native:sketch-point#{record_index}"),

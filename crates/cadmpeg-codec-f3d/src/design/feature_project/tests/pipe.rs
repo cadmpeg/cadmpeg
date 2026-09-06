@@ -23,19 +23,22 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     );
     scope.class_tag = "405".into();
     scope.paired_class_tag = "259".into();
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![10, 11, 12, 13, 20, 21, 22]);
+    scope.reference_members =
+        crate::records::ReferenceRun::Unlocated(vec![10, 11, 12, 13, 20, 21, 22]);
     {
-        let value = Some(DesignPathFeatureConstruction::Pipe(crate::records::DesignPipeConstruction {
-            operation: DesignExtrudeOperation::NewBody,
-            operation_offset: 26,
-            section_shape: crate::records::DesignPipeSectionShape::Circular,
-            section_shape_offset: 30,
-            filled: true,
-            filled_offset: 31,
-            values: [1.0, 1.0, 0.6, 0.15],
-            record_indexes: [10, 11, 12, 13],
-            value_offsets: [40, 151, 262, 373],
-        }));
+        let value = Some(DesignPathFeatureConstruction::Pipe(
+            crate::records::DesignPipeConstruction {
+                operation: DesignExtrudeOperation::NewBody,
+                operation_offset: 26,
+                section_shape: crate::records::DesignPipeSectionShape::Circular,
+                section_shape_offset: 30,
+                filled: true,
+                filled_offset: 31,
+                values: [1.0, 1.0, 0.6, 0.15],
+                record_indexes: [10, 11, 12, 13],
+                value_offsets: [40, 151, 262, 373],
+            },
+        ));
         scope.payload = value.map_or_else(|| scope.kind().into(), Into::into);
     }
 
@@ -48,12 +51,16 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         class_tag: "277".into(),
         record_index,
         source_ordinal: record_index,
-        source: crate::records::DesignParameterSource::new(source_kind.into(), Some(0), None).unwrap(),
+        source: crate::records::DesignParameterSource::new(source_kind.into(), Some(0), None)
+            .unwrap(),
         expression: String::new(),
         expression_offset: 0,
         source_kind_offset: 0,
 
-        unit: unit.map(|value| crate::records::RecordedValue { value: value.to_owned(), offset: None }),
+        unit: unit.map(|value| crate::records::RecordedValue {
+            value: value.to_owned(),
+            offset: None,
+        }),
         name: source_kind.into(),
         name_offset: 0,
         evaluated_value,
@@ -76,7 +83,10 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         record_index: 20,
         byte_offset: 0,
         class_tag: "312".into(),
-        members: vec![crate::records::Located { value: 21, offset: 0 }],
+        members: vec![crate::records::Located {
+            value: 21,
+            offset: 0,
+        }],
         lost_edge_references: Vec::new(),
         frame: DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
@@ -120,17 +130,19 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     ));
 
     {
-        let value = Some(DesignPathFeatureConstruction::Pipe(crate::records::DesignPipeConstruction {
-            operation: DesignExtrudeOperation::NewBody,
-            operation_offset: 26,
-            section_shape: crate::records::DesignPipeSectionShape::Circular,
-            section_shape_offset: 30,
-            filled: false,
-            filled_offset: 31,
-            values: [1.0, 1.0, 0.6, 0.15],
-            record_indexes: [10, 11, 12, 13],
-            value_offsets: [40, 151, 262, 373],
-        }));
+        let value = Some(DesignPathFeatureConstruction::Pipe(
+            crate::records::DesignPipeConstruction {
+                operation: DesignExtrudeOperation::NewBody,
+                operation_offset: 26,
+                section_shape: crate::records::DesignPipeSectionShape::Circular,
+                section_shape_offset: 30,
+                filled: false,
+                filled_offset: 31,
+                values: [1.0, 1.0, 0.6, 0.15],
+                record_indexes: [10, 11, 12, 13],
+                value_offsets: [40, 151, 262, 373],
+            },
+        ));
         scope.payload = value.map_or_else(|| scope.kind().into(), Into::into);
     }
     let hollow_definition = crate::design::feature_project::project_fixed_pipe(
@@ -160,17 +172,19 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         .map(|parameter| (parameter.record_index, parameter))
         .collect::<Vec<_>>();
     {
-        let value = Some(DesignPathFeatureConstruction::Pipe(crate::records::DesignPipeConstruction {
-            operation: DesignExtrudeOperation::NewBody,
-            operation_offset: 26,
-            section_shape: crate::records::DesignPipeSectionShape::Circular,
-            section_shape_offset: 30,
-            filled: false,
-            filled_offset: 31,
-            values: [1.0, 1.0, 0.6, 0.35],
-            record_indexes: [10, 11, 12, 13],
-            value_offsets: [40, 151, 262, 373],
-        }));
+        let value = Some(DesignPathFeatureConstruction::Pipe(
+            crate::records::DesignPipeConstruction {
+                operation: DesignExtrudeOperation::NewBody,
+                operation_offset: 26,
+                section_shape: crate::records::DesignPipeSectionShape::Circular,
+                section_shape_offset: 30,
+                filled: false,
+                filled_offset: 31,
+                values: [1.0, 1.0, 0.6, 0.35],
+                record_indexes: [10, 11, 12, 13],
+                value_offsets: [40, 151, 262, 373],
+            },
+        ));
         scope.payload = value.map_or_else(|| scope.kind().into(), Into::into);
     }
     assert!(crate::design::feature_project::project_fixed_pipe(
@@ -183,21 +197,27 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     .is_none());
 
     {
-        let value = Some(DesignPathFeatureConstruction::Pipe(crate::records::DesignPipeConstruction {
-            operation: DesignExtrudeOperation::NewBody,
-            operation_offset: 26,
-            section_shape: crate::records::DesignPipeSectionShape::Circular,
-            section_shape_offset: 30,
-            filled: true,
-            filled_offset: 31,
-            values: [1.0, 1.0, 0.6, 0.15],
-            record_indexes: [10, 11, 12, 13],
-            value_offsets: [40, 151, 262, 373],
-        }));
+        let value = Some(DesignPathFeatureConstruction::Pipe(
+            crate::records::DesignPipeConstruction {
+                operation: DesignExtrudeOperation::NewBody,
+                operation_offset: 26,
+                section_shape: crate::records::DesignPipeSectionShape::Circular,
+                section_shape_offset: 30,
+                filled: true,
+                filled_offset: 31,
+                values: [1.0, 1.0, 0.6, 0.15],
+                record_indexes: [10, 11, 12, 13],
+                value_offsets: [40, 151, 262, 373],
+            },
+        ));
         scope.payload = value.map_or_else(|| scope.kind().into(), Into::into);
     }
 
-    scope.reference_members = { let mut values: Vec<u32> = scope.reference_members.values().copied().collect(); values.push(23); crate::records::ReferenceRun::Unlocated(values) };
+    scope.reference_members = {
+        let mut values: Vec<u32> = scope.reference_members.values().copied().collect();
+        values.push(23);
+        crate::records::ReferenceRun::Unlocated(values)
+    };
     assert!(crate::design::feature_project::project_fixed_pipe(
         &scope,
         &parameter_refs,
@@ -207,7 +227,11 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     )
     .is_none());
 
-    scope.reference_members = { let mut values: Vec<u32> = scope.reference_members.values().copied().collect(); values.pop(); crate::records::ReferenceRun::Unlocated(values) };
+    scope.reference_members = {
+        let mut values: Vec<u32> = scope.reference_members.values().copied().collect();
+        values.pop();
+        crate::records::ReferenceRun::Unlocated(values)
+    };
     scope.class_tag = "475".into();
     scope.paired_class_tag = "260".into();
     assert!(crate::design::feature_project::project_fixed_pipe(
@@ -222,17 +246,19 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     scope.class_tag = "421".into();
     scope.paired_class_tag = "257".into();
     {
-        let value = Some(DesignPathFeatureConstruction::Pipe(crate::records::DesignPipeConstruction {
-            operation: DesignExtrudeOperation::NewBody,
-            operation_offset: 25,
-            section_shape: crate::records::DesignPipeSectionShape::Circular,
-            section_shape_offset: 29,
-            filled: true,
-            filled_offset: 30,
-            values: [1.0, 1.0, 0.6, 0.15],
-            record_indexes: [10, 11, 12, 13],
-            value_offsets: [40, 151, 262, 373],
-        }));
+        let value = Some(DesignPathFeatureConstruction::Pipe(
+            crate::records::DesignPipeConstruction {
+                operation: DesignExtrudeOperation::NewBody,
+                operation_offset: 25,
+                section_shape: crate::records::DesignPipeSectionShape::Circular,
+                section_shape_offset: 29,
+                filled: true,
+                filled_offset: 30,
+                values: [1.0, 1.0, 0.6, 0.15],
+                record_indexes: [10, 11, 12, 13],
+                value_offsets: [40, 151, 262, 373],
+            },
+        ));
         scope.payload = value.map_or_else(|| scope.kind().into(), Into::into);
     }
     assert!(crate::design::feature_project::project_fixed_pipe(

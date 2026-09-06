@@ -58,7 +58,8 @@ fn om_multi_instance_output_lane_requires_consistent_counts_and_groups() {
     assert_eq!(lane.offset, 209);
     assert_eq!(lane.outputs.selectors().len() + 1, 7);
     assert_eq!(
-        lane.outputs.selectors()
+        lane.outputs
+            .selectors()
             .iter()
             .map(|row| row.atom.value())
             .collect::<Vec<_>>(),
@@ -70,14 +71,16 @@ fn om_multi_instance_output_lane_requires_consistent_counts_and_groups() {
     );
     assert_eq!(lane.outputs.references().len() + 1, 3);
     assert_eq!(
-        lane.outputs.selectors()
+        lane.outputs
+            .selectors()
             .iter()
             .map(|row| row.offset)
             .collect::<Vec<_>>(),
         [219, 230, 241, 252, 263, 274]
     );
     assert_eq!(
-        lane.outputs.references()
+        lane.outputs
+            .references()
             .iter()
             .map(|reference| reference.token.value())
             .collect::<Vec<_>>(),
@@ -91,21 +94,36 @@ fn om_multi_instance_output_lane_requires_consistent_counts_and_groups() {
 
     let mut incomplete_group = payload.clone();
     incomplete_group[76] = 2;
-    assert!(
-        super::multi_instance_output_payload_lane(crate::om::operation_record::OperationPayload::new(&incomplete_group, record.payload_offset(), record.name()).unwrap())
-        .is_none()
-    );
+    assert!(super::multi_instance_output_payload_lane(
+        crate::om::operation_record::OperationPayload::new(
+            &incomplete_group,
+            record.payload_offset(),
+            record.name()
+        )
+        .unwrap()
+    )
+    .is_none());
     let mut wrong_row_index = payload.clone();
     wrong_row_index[77] = 6;
-    assert!(
-        super::multi_instance_output_payload_lane(crate::om::operation_record::OperationPayload::new(&wrong_row_index, record.payload_offset(), record.name()).unwrap())
-        .is_none()
-    );
+    assert!(super::multi_instance_output_payload_lane(
+        crate::om::operation_record::OperationPayload::new(
+            &wrong_row_index,
+            record.payload_offset(),
+            record.name()
+        )
+        .unwrap()
+    )
+    .is_none());
     let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
-    assert!(
-        super::multi_instance_output_payload_lane(crate::om::operation_record::OperationPayload::new(&ambiguous, record.payload_offset(), record.name()).unwrap())
-        .is_none()
-    );
+    assert!(super::multi_instance_output_payload_lane(
+        crate::om::operation_record::OperationPayload::new(
+            &ambiguous,
+            record.payload_offset(),
+            record.name()
+        )
+        .unwrap()
+    )
+    .is_none());
 }
 
 #[test]
@@ -150,21 +168,36 @@ fn om_identical_instance_output_lane_requires_complete_ordered_rows() {
 
     let mut wrong_ordinal = payload.to_vec();
     wrong_ordinal[21] = 4;
-    assert!(
-        super::identical_instance_output_payload_lane(crate::om::operation_record::OperationPayload::new(&wrong_ordinal, record.payload_offset(), record.name()).unwrap())
-        .is_none()
-    );
+    assert!(super::identical_instance_output_payload_lane(
+        crate::om::operation_record::OperationPayload::new(
+            &wrong_ordinal,
+            record.payload_offset(),
+            record.name()
+        )
+        .unwrap()
+    )
+    .is_none());
     let mut wrong_terminal_count = payload.to_vec();
     wrong_terminal_count[32] = 4;
-    assert!(
-        super::identical_instance_output_payload_lane(crate::om::operation_record::OperationPayload::new(&wrong_terminal_count, record.payload_offset(), record.name()).unwrap())
-        .is_none()
-    );
+    assert!(super::identical_instance_output_payload_lane(
+        crate::om::operation_record::OperationPayload::new(
+            &wrong_terminal_count,
+            record.payload_offset(),
+            record.name()
+        )
+        .unwrap()
+    )
+    .is_none());
     let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
-    assert!(
-        super::identical_instance_output_payload_lane(crate::om::operation_record::OperationPayload::new(&ambiguous, record.payload_offset(), record.name()).unwrap())
-        .is_none()
-    );
+    assert!(super::identical_instance_output_payload_lane(
+        crate::om::operation_record::OperationPayload::new(
+            &ambiguous,
+            record.payload_offset(),
+            record.name()
+        )
+        .unwrap()
+    )
+    .is_none());
 }
 
 #[test]
@@ -177,7 +210,14 @@ fn om_geometry_instance_reference_requires_one_complete_field() {
     assert_eq!(field.references[0].offset, 205);
 
     let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
-    assert!(super::pattern_payload_references(crate::om::operation_record::OperationPayload::new(&ambiguous, record.payload_offset(), record.name()).unwrap())
+    assert!(super::pattern_payload_references(
+        crate::om::operation_record::OperationPayload::new(
+            &ambiguous,
+            record.payload_offset(),
+            record.name()
+        )
+        .unwrap()
+    )
     .is_none());
 }
 
@@ -194,7 +234,14 @@ fn om_point_feature_header_requires_the_complete_leading_envelope() {
     let mut alternate_mode = payload.to_vec();
     alternate_mode[52] = 0x03;
     assert_eq!(
-        super::point_feature_payload_header(crate::om::operation_record::OperationPayload::new(&alternate_mode, record.payload_offset(), record.name()).unwrap())
+        super::point_feature_payload_header(
+            crate::om::operation_record::OperationPayload::new(
+                &alternate_mode,
+                record.payload_offset(),
+                record.name()
+            )
+            .unwrap()
+        )
         .expect("alternate mode")
         .mode,
         0x03
@@ -203,14 +250,35 @@ fn om_point_feature_header_requires_the_complete_leading_envelope() {
     for malformed_offset in [0, 10, 51, 72] {
         let mut malformed = payload.to_vec();
         malformed[malformed_offset] ^= 0x01;
-        assert!(super::point_feature_payload_header(crate::om::operation_record::OperationPayload::new(&malformed, record.payload_offset(), record.name()).unwrap())
+        assert!(super::point_feature_payload_header(
+            crate::om::operation_record::OperationPayload::new(
+                &malformed,
+                record.payload_offset(),
+                record.name()
+            )
+            .unwrap()
+        )
         .is_none());
     }
     let mut unsupported_mode = payload.to_vec();
     unsupported_mode[52] = 0x04;
-    assert!(super::point_feature_payload_header(crate::om::operation_record::OperationPayload::new(&unsupported_mode, record.payload_offset(), record.name()).unwrap())
+    assert!(super::point_feature_payload_header(
+        crate::om::operation_record::OperationPayload::new(
+            &unsupported_mode,
+            record.payload_offset(),
+            record.name()
+        )
+        .unwrap()
+    )
     .is_none());
-    assert!(super::point_feature_payload_header(crate::om::operation_record::OperationPayload::new(&payload[..72], record.payload_offset(), record.name()).unwrap())
+    assert!(super::point_feature_payload_header(
+        crate::om::operation_record::OperationPayload::new(
+            &payload[..72],
+            record.payload_offset(),
+            record.name()
+        )
+        .unwrap()
+    )
     .is_none());
 }
 
@@ -231,8 +299,16 @@ fn om_point_feature_scalar_lane_spans_the_preceding_block_atomically() {
     target.push(0xcc);
 
     let lane = super::point_feature_scalar_lane(&preceding, &target).expect("complete lane");
-    assert_eq!(lane.values.map(crate::om::scalar::ShiftedBinary64::value), [1.0, -2.0, 3.5, 4.0, 5.25, -6.0]);
-    assert_eq!(lane.values.map(crate::om::scalar::ShiftedBinary64::raw).concat(), encoded);
+    assert_eq!(
+        lane.values.map(crate::om::scalar::ShiftedBinary64::value),
+        [1.0, -2.0, 3.5, 4.0, 5.25, -6.0]
+    );
+    assert_eq!(
+        lane.values
+            .map(crate::om::scalar::ShiftedBinary64::raw)
+            .concat(),
+        encoded
+    );
     assert_eq!(lane.value_offsets(), [2, 10, 18, 26, 34, 42]);
 
     let mut malformed = target.clone();
@@ -285,33 +361,66 @@ fn om_draft_feature_references_require_one_complete_graph() {
         vec![vec![0x80, 0x94], vec![0x82, 0x49]]
     );
     let terminal_lane = super::draft_feature_terminal_lane(record).expect("complete terminal lane");
-    assert_eq!(terminal_lane.indices.map(|token| token.atom.value()), [350, 184]);
-    assert_eq!(terminal_lane.indices.map(|token| *token.atom.raw()), [[0x81, 0x5e], [0x80, 0xb8]]);
+    assert_eq!(
+        terminal_lane.indices.map(|token| token.atom.value()),
+        [350, 184]
+    );
+    assert_eq!(
+        terminal_lane.indices.map(|token| *token.atom.raw()),
+        [[0x81, 0x5e], [0x80, 0xb8]]
+    );
     assert_eq!(terminal_lane.indices.map(|token| token.offset), [284, 286]);
     assert_eq!(terminal_lane.tail, [0x29, 0x29, 0x0c]);
 
     let mut malformed = payload.clone();
     malformed[53] = 0x00;
-    assert!(
-        super::draft_feature_payload_references(crate::om::operation_record::OperationPayload::new(&malformed, record.payload_offset(), record.name()).unwrap())
-        .is_none()
-    );
+    assert!(super::draft_feature_payload_references(
+        crate::om::operation_record::OperationPayload::new(
+            &malformed,
+            record.payload_offset(),
+            record.name()
+        )
+        .unwrap()
+    )
+    .is_none());
     let mut malformed_lane = payload.clone();
     malformed_lane[23] = 4;
-    assert!(
-        super::draft_feature_leading_index_lane(crate::om::operation_record::OperationPayload::new(&malformed_lane, record.payload_offset(), record.name()).unwrap())
-        .is_none()
-    );
+    assert!(super::draft_feature_leading_index_lane(
+        crate::om::operation_record::OperationPayload::new(
+            &malformed_lane,
+            record.payload_offset(),
+            record.name()
+        )
+        .unwrap()
+    )
+    .is_none());
     let ambiguous = [prefix.as_slice(), graph.as_slice(), graph.as_slice()].concat();
-    assert!(
-        super::draft_feature_payload_references(crate::om::operation_record::OperationPayload::new(&ambiguous, record.payload_offset(), record.name()).unwrap())
-        .is_none()
-    );
-    assert!(
-        super::draft_feature_payload_references(crate::om::operation_record::OperationPayload::new(&payload[..prefix.len() + graph.len() - 2], record.payload_offset(), record.name()).unwrap())
-        .is_none()
-    );
-    assert!(super::draft_feature_terminal_lane(crate::om::operation_record::OperationPayload::new(&payload[..payload.len() - 1], record.payload_offset(), record.name()).unwrap())
+    assert!(super::draft_feature_payload_references(
+        crate::om::operation_record::OperationPayload::new(
+            &ambiguous,
+            record.payload_offset(),
+            record.name()
+        )
+        .unwrap()
+    )
+    .is_none());
+    assert!(super::draft_feature_payload_references(
+        crate::om::operation_record::OperationPayload::new(
+            &payload[..prefix.len() + graph.len() - 2],
+            record.payload_offset(),
+            record.name()
+        )
+        .unwrap()
+    )
+    .is_none());
+    assert!(super::draft_feature_terminal_lane(
+        crate::om::operation_record::OperationPayload::new(
+            &payload[..payload.len() - 1],
+            record.payload_offset(),
+            record.name()
+        )
+        .unwrap()
+    )
     .is_none());
 }
 
@@ -331,22 +440,37 @@ fn om_surface_feature_references_require_the_complete_common_envelope() {
     );
 
     let studio_payload = [&[0x14], &payload[1..]].concat();
-    let studio = crate::om::operation_record::OperationPayload::new(&studio_payload, record.payload_offset(), "Studio Surface").unwrap();
+    let studio = crate::om::operation_record::OperationPayload::new(
+        &studio_payload,
+        record.payload_offset(),
+        "Studio Surface",
+    )
+    .unwrap();
     assert!(super::surface_feature_payload_references(studio).is_some());
 
     let mut malformed = payload.to_vec();
     let last = malformed.len() - 1;
     malformed[last] = 0x00;
-    assert!(
-        super::surface_feature_payload_references(crate::om::operation_record::OperationPayload::new(&malformed, record.payload_offset(), record.name()).unwrap())
-        .is_none()
-    );
+    assert!(super::surface_feature_payload_references(
+        crate::om::operation_record::OperationPayload::new(
+            &malformed,
+            record.payload_offset(),
+            record.name()
+        )
+        .unwrap()
+    )
+    .is_none());
 
     let ambiguous = [payload.as_slice(), &payload[51..]].concat();
-    assert!(
-        super::surface_feature_payload_references(crate::om::operation_record::OperationPayload::new(&ambiguous, record.payload_offset(), record.name()).unwrap())
-        .is_none()
-    );
+    assert!(super::surface_feature_payload_references(
+        crate::om::operation_record::OperationPayload::new(
+            &ambiguous,
+            record.payload_offset(),
+            record.name()
+        )
+        .unwrap()
+    )
+    .is_none());
 }
 
 #[test]
@@ -375,24 +499,44 @@ fn om_thru_curve_references_require_the_complete_leading_envelope() {
     alternate[16..24].copy_from_slice(&[7, 3, 3, 4, 1, 2, 4, 1]);
     alternate[44] = 6;
     alternate[46..48].copy_from_slice(&[0x5d, 0xfc]);
-    let alternate = super::thru_curve_payload_references(crate::om::operation_record::OperationPayload::new(&alternate, record.payload_offset(), record.name()).unwrap())
+    let alternate = super::thru_curve_payload_references(
+        crate::om::operation_record::OperationPayload::new(
+            &alternate,
+            record.payload_offset(),
+            record.name(),
+        )
+        .unwrap(),
+    )
     .expect("alternate controls");
     assert_eq!(alternate.discriminator.get(), 0x17);
-    assert_eq!(<[u8; 9]>::from(alternate.controls), [7, 3, 3, 4, 1, 2, 4, 1, 7]);
+    assert_eq!(
+        <[u8; 9]>::from(alternate.controls),
+        [7, 3, 3, 4, 1, 2, 4, 1, 7]
+    );
     assert_eq!(alternate.trailing_control.get(), 6);
     assert_eq!(alternate.trailing_value, [0x5d, 0xfc]);
 
     let mut malformed = payload.to_vec();
     malformed[24] = 0x09;
-    assert!(
-        super::thru_curve_payload_references(crate::om::operation_record::OperationPayload::new(&malformed, record.payload_offset(), record.name()).unwrap())
-        .is_none()
-    );
+    assert!(super::thru_curve_payload_references(
+        crate::om::operation_record::OperationPayload::new(
+            &malformed,
+            record.payload_offset(),
+            record.name()
+        )
+        .unwrap()
+    )
+    .is_none());
 
-    assert!(
-        super::thru_curve_payload_references(crate::om::operation_record::OperationPayload::new(&payload[..payload.len() - 2], record.payload_offset(), record.name()).unwrap())
-        .is_none()
-    );
+    assert!(super::thru_curve_payload_references(
+        crate::om::operation_record::OperationPayload::new(
+            &payload[..payload.len() - 2],
+            record.payload_offset(),
+            record.name()
+        )
+        .unwrap()
+    )
+    .is_none());
 
     let mut branched = payload[..payload.len() - 1].to_vec();
     branched.push(3);
@@ -405,17 +549,35 @@ fn om_thru_curve_references_require_the_complete_leading_envelope() {
     append_standard_branch(&mut branched, 0x15, 0x33, 0x34);
     branched.extend([0, 0, 0, 0, 0, 0, 0xff, 0, 0xff, 1]);
     branched.extend([0xaa, 0xbb]);
-    let group = super::thru_curve_payload_branch_group(crate::om::operation_record::OperationPayload::new(&branched, record.payload_offset(), record.name()).unwrap())
+    let group = super::thru_curve_payload_branch_group(
+        crate::om::operation_record::OperationPayload::new(
+            &branched,
+            record.payload_offset(),
+            record.name(),
+        )
+        .unwrap(),
+    )
     .expect("complete branch group");
     assert_eq!(group.branches.declared_count(), 3);
     assert_eq!(group.branches.len(), 2);
     assert_eq!(group.branches.as_slice()[0].mode.get(), 0x15);
     assert_eq!(group.branches.as_slice()[0].members.declared_count(), 2);
     assert_eq!(group.branches.as_slice()[0].members.state_lane(), [0; 5]);
-    assert_eq!(group.branches.as_slice()[0].members.as_slice()[0].token.value(), 0x31);
+    assert_eq!(
+        group.branches.as_slice()[0].members.as_slice()[0]
+            .token
+            .value(),
+        0x31
+    );
     assert_eq!(group.branches.as_slice()[0].terminal.token.value(), 0x32);
-    assert_eq!(<[u8; 2]>::from(group.branches.as_slice()[0].suffix), [0x81, 0x58]);
-    assert_eq!(group.terminator.bytes(), &[0, 0, 0, 0, 0, 0, 0xff, 0, 0xff, 1]);
+    assert_eq!(
+        <[u8; 2]>::from(group.branches.as_slice()[0].suffix),
+        [0x81, 0x58]
+    );
+    assert_eq!(
+        group.terminator.bytes(),
+        &[0, 0, 0, 0, 0, 0, 0xff, 0, 0xff, 1]
+    );
 
     let mut extended = payload[..payload.len() - 1].to_vec();
     extended.extend([2, 0x2f, 1, 5]);
@@ -425,7 +587,14 @@ fn om_thru_curve_references_require_the_complete_leading_envelope() {
     extended.extend([1, 5, 0, 0, 0, 0, 1, 5, 2, 3, 3, 2, 1, 5, 0, 1, 1, 1, 0, 0]);
     extended.extend([0xff, 1, 2, 0xf0, 0x45, 0, 0x81, 0x48]);
     extended.extend([0, 0, 0, 0, 0, 0, 0xff, 0xff, 1]);
-    let group = super::thru_curve_payload_branch_group(crate::om::operation_record::OperationPayload::new(&extended, record.payload_offset(), record.name()).unwrap())
+    let group = super::thru_curve_payload_branch_group(
+        crate::om::operation_record::OperationPayload::new(
+            &extended,
+            record.payload_offset(),
+            record.name(),
+        )
+        .unwrap(),
+    )
     .expect("extended branch state");
     assert_eq!(group.branches.as_slice()[0].members.state_lane().len(), 18);
     assert_eq!(group.branches.as_slice()[0].members.len(), 4);
@@ -446,7 +615,10 @@ fn om_surface_feature_branches_require_one_complete_counted_group() {
     assert!(group.branches.as_slice()[0].witnessed);
     assert_eq!(group.branches.as_slice()[0].members.len(), 3);
     assert_eq!(group.branches.as_slice()[0].terminal.token.value(), 7159);
-    assert_eq!(group.branches.as_slice()[0].suffix, [0x81, 0x58, 0x01, 0x02]);
+    assert_eq!(
+        group.branches.as_slice()[0].suffix,
+        [0x81, 0x58, 0x01, 0x02]
+    );
     assert_eq!(group.branches.as_slice()[1].members.declared_count(), 5);
     assert!(!group.branches.as_slice()[1].witnessed);
     assert_eq!(group.branches.as_slice()[1].members.len(), 4);
@@ -458,21 +630,36 @@ fn om_surface_feature_branches_require_one_complete_counted_group() {
         &[0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x01],
     ]
     .concat();
-    let studio = crate::om::operation_record::OperationPayload::new(&studio_payload, record.payload_offset(), "Studio Surface").unwrap();
+    let studio = crate::om::operation_record::OperationPayload::new(
+        &studio_payload,
+        record.payload_offset(),
+        "Studio Surface",
+    )
+    .unwrap();
     assert!(super::surface_feature_payload_branches(studio).is_some());
 
     let mut malformed = payload.to_vec();
     malformed[19] = 0x03;
-    assert!(
-        super::surface_feature_payload_branches(crate::om::operation_record::OperationPayload::new(&malformed, record.payload_offset(), record.name()).unwrap())
-        .is_none()
-    );
+    assert!(super::surface_feature_payload_branches(
+        crate::om::operation_record::OperationPayload::new(
+            &malformed,
+            record.payload_offset(),
+            record.name()
+        )
+        .unwrap()
+    )
+    .is_none());
 
     let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
-    assert!(
-        super::surface_feature_payload_branches(crate::om::operation_record::OperationPayload::new(&ambiguous, record.payload_offset(), record.name()).unwrap())
-        .is_none()
-    );
+    assert!(super::surface_feature_payload_branches(
+        crate::om::operation_record::OperationPayload::new(
+            &ambiguous,
+            record.payload_offset(),
+            record.name()
+        )
+        .unwrap()
+    )
+    .is_none());
 }
 
 #[test]
@@ -507,13 +694,27 @@ fn om_sketch_payload_reference_field_is_counted_ordered_and_canonical() {
         ]
     );
     let zero = b"\x01\x00\x00\x00\x00\xf0\x42\x01\x00\x00\x00";
-    let field = super::sketch_payload_references(crate::om::operation_record::OperationPayload::new(zero, record.payload_offset(), record.name()).unwrap())
+    let field = super::sketch_payload_references(
+        crate::om::operation_record::OperationPayload::new(
+            zero,
+            record.payload_offset(),
+            record.name(),
+        )
+        .unwrap(),
+    )
     .unwrap();
     assert_eq!(field.declared_count(), 0);
     assert_eq!(field.references().len(), 1);
     assert_eq!(field.references()[0].token.value(), 0x42);
     let two = b"\x01\x00\x01\x02\xf0\x41\x00\x00\xf0\x42\x01\x00\x00\x00";
-    let field = super::sketch_payload_references(crate::om::operation_record::OperationPayload::new(two, record.payload_offset(), record.name()).unwrap())
+    let field = super::sketch_payload_references(
+        crate::om::operation_record::OperationPayload::new(
+            two,
+            record.payload_offset(),
+            record.name(),
+        )
+        .unwrap(),
+    )
     .unwrap();
     assert_eq!(field.declared_count(), 2);
     assert_eq!(
@@ -527,9 +728,23 @@ fn om_sketch_payload_reference_field_is_counted_ordered_and_canonical() {
 
     let mut noncanonical = payload.to_vec();
     noncanonical[7] = 0;
-    assert!(super::sketch_payload_references(crate::om::operation_record::OperationPayload::new(&noncanonical, record.payload_offset(), record.name()).unwrap())
+    assert!(super::sketch_payload_references(
+        crate::om::operation_record::OperationPayload::new(
+            &noncanonical,
+            record.payload_offset(),
+            record.name()
+        )
+        .unwrap()
+    )
     .is_none());
-    assert!(super::sketch_payload_references(crate::om::operation_record::OperationPayload::new(record.payload(), record.payload_offset(), "BLOCK").unwrap())
+    assert!(super::sketch_payload_references(
+        crate::om::operation_record::OperationPayload::new(
+            record.payload(),
+            record.payload_offset(),
+            "BLOCK"
+        )
+        .unwrap()
+    )
     .is_none());
 }
 
@@ -548,11 +763,21 @@ fn om_extrude_profile_references_require_matching_witness_field() {
     assert_eq!(references[0].reference.token.raw().to_vec(), [0xf0, 0xff]);
     assert_eq!(references[0].reference.offset, 205);
     assert_eq!(references[1].reference.token.value(), 256);
-    assert_eq!(references[1].reference.token.raw().to_vec(), [0xf1, 0x01, 0x00]);
+    assert_eq!(
+        references[1].reference.token.raw().to_vec(),
+        [0xf1, 0x01, 0x00]
+    );
     assert_eq!(references[1].reference.offset, 207);
 
     let without_witness = &payload[..14];
-    let field = super::extrude_profile_references(crate::om::operation_record::OperationPayload::new(without_witness, record.payload_offset(), record.name()).unwrap())
+    let field = super::extrude_profile_references(
+        crate::om::operation_record::OperationPayload::new(
+            without_witness,
+            record.payload_offset(),
+            record.name(),
+        )
+        .unwrap(),
+    )
     .unwrap();
     assert!(field
         .references
@@ -561,14 +786,35 @@ fn om_extrude_profile_references_require_matching_witness_field() {
     assert_eq!(field.references.len(), 2);
     let mut alternate_tag = payload.to_vec();
     alternate_tag[2] = 0x5d;
-    let field = super::extrude_profile_references(crate::om::operation_record::OperationPayload::new(&alternate_tag, record.payload_offset(), record.name()).unwrap())
+    let field = super::extrude_profile_references(
+        crate::om::operation_record::OperationPayload::new(
+            &alternate_tag,
+            record.payload_offset(),
+            record.name(),
+        )
+        .unwrap(),
+    )
     .unwrap();
     assert_eq!(field.field_tag, 0x5d);
     let mut ambiguous = payload.to_vec();
     ambiguous.extend_from_slice(&alternate_tag);
-    assert!(super::extrude_profile_references(crate::om::operation_record::OperationPayload::new(&ambiguous, record.payload_offset(), record.name()).unwrap())
+    assert!(super::extrude_profile_references(
+        crate::om::operation_record::OperationPayload::new(
+            &ambiguous,
+            record.payload_offset(),
+            record.name()
+        )
+        .unwrap()
+    )
     .is_none());
-    assert!(super::extrude_profile_references(crate::om::operation_record::OperationPayload::new(record.payload(), record.payload_offset(), "SKETCH").unwrap())
+    assert!(super::extrude_profile_references(
+        crate::om::operation_record::OperationPayload::new(
+            record.payload(),
+            record.payload_offset(),
+            "SKETCH"
+        )
+        .unwrap()
+    )
     .is_none());
 }
 
@@ -580,12 +826,30 @@ fn om_extrude_header_decodes_shifted_ieee_scalars() {
     let record = crate::om::operation_record::OperationPayload::new(payload, 200, label).unwrap();
     let header = super::extrude_payload_header(record).unwrap();
     assert_eq!(header.offset, 205);
-    assert_eq!(header.scalars.map(crate::om::scalar::ShiftedBinary64::value), [0.04, 0.038]);
-    assert_eq!(header.scalars.map(crate::om::scalar::ShiftedBinary64::raw).concat(), payload[5..21]);
+    assert_eq!(
+        header
+            .scalars
+            .map(crate::om::scalar::ShiftedBinary64::value),
+        [0.04, 0.038]
+    );
+    assert_eq!(
+        header
+            .scalars
+            .map(crate::om::scalar::ShiftedBinary64::raw)
+            .concat(),
+        payload[5..21]
+    );
 
     let mut invalid = payload.to_vec();
     invalid[5] = 0xf0;
-    assert!(super::extrude_payload_header(crate::om::operation_record::OperationPayload::new(&invalid, record.payload_offset(), record.name()).unwrap())
+    assert!(super::extrude_payload_header(
+        crate::om::operation_record::OperationPayload::new(
+            &invalid,
+            record.payload_offset(),
+            record.name()
+        )
+        .unwrap()
+    )
     .is_none());
 }
 
@@ -603,8 +867,16 @@ fn om_swp104_leading_branch_preserves_counts_state_and_references() {
     let record = crate::om::operation_record::OperationPayload::new(&payload, 200, label).unwrap();
     let branch = super::swp104_payload_leading_branch(record).expect("leading branch");
     assert_eq!(branch.discriminator.get(), 0x21);
-    assert_eq!(branch.scalars.map(crate::om::scalar::ShiftedBinary64::value), [0.04; 4]);
-    assert_eq!(branch.scalars.map(crate::om::scalar::ShiftedBinary64::raw), [raw_scalar; 4]);
+    assert_eq!(
+        branch
+            .scalars
+            .map(crate::om::scalar::ShiftedBinary64::value),
+        [0.04; 4]
+    );
+    assert_eq!(
+        branch.scalars.map(crate::om::scalar::ShiftedBinary64::raw),
+        [raw_scalar; 4]
+    );
     assert!(!branch.leading_zero);
     assert_eq!(branch.mode.get(), 0x23);
     assert_eq!(branch.members.declared_count(), 3);
@@ -624,10 +896,15 @@ fn om_swp104_leading_branch_preserves_counts_state_and_references() {
 
     let mut malformed_witness = payload.clone();
     malformed_witness[45] = 1;
-    assert!(
-        super::swp104_payload_leading_branch(crate::om::operation_record::OperationPayload::new(&malformed_witness, record.payload_offset(), record.name()).unwrap())
-        .is_none()
-    );
+    assert!(super::swp104_payload_leading_branch(
+        crate::om::operation_record::OperationPayload::new(
+            &malformed_witness,
+            record.payload_offset(),
+            record.name()
+        )
+        .unwrap()
+    )
+    .is_none());
 
     let mut unwitnessed = vec![0x21, 0, 0, 1, 0];
     for _ in 0..4 {
@@ -636,17 +913,29 @@ fn om_swp104_leading_branch_preserves_counts_state_and_references() {
     unwitnessed.extend([0, 0x23, 1, 2, 0xf0, 0x41]);
     unwitnessed.extend([0; 5]);
     unwitnessed.extend([0xff, 1, 2, 0xf0, 0x42, 0]);
-    let branch = super::swp104_payload_leading_branch(crate::om::operation_record::OperationPayload::new(&unwitnessed, record.payload_offset(), record.name()).unwrap())
+    let branch = super::swp104_payload_leading_branch(
+        crate::om::operation_record::OperationPayload::new(
+            &unwitnessed,
+            record.payload_offset(),
+            record.name(),
+        )
+        .unwrap(),
+    )
     .expect("unwitnessed leading branch");
     assert!(branch.leading_zero);
     assert_eq!(branch.state_lane.witnessed_count(), None);
     assert_eq!(branch.state_lane.bytes(), [0; 5]);
 
     unwitnessed[43] = 1;
-    assert!(
-        super::swp104_payload_leading_branch(crate::om::operation_record::OperationPayload::new(&unwitnessed, record.payload_offset(), record.name()).unwrap())
-        .is_none()
-    );
+    assert!(super::swp104_payload_leading_branch(
+        crate::om::operation_record::OperationPayload::new(
+            &unwitnessed,
+            record.payload_offset(),
+            record.name()
+        )
+        .unwrap()
+    )
+    .is_none());
 }
 
 #[test]
@@ -661,7 +950,9 @@ fn om_operation_terminal_discriminator_requires_one_complete_lane() {
         [351, 171]
     );
     assert_eq!(
-        lane.type_indices.each_ref().map(|token| token.atom.raw().to_vec()),
+        lane.type_indices
+            .each_ref()
+            .map(|token| token.atom.raw().to_vec()),
         [vec![0x81, 0x5f], vec![0x80, 0xab]]
     );
     assert_eq!(
@@ -691,42 +982,64 @@ fn om_operation_terminal_discriminator_requires_one_complete_lane() {
         [220, 221]
     );
 
-    let subtract = crate::om::operation_record::OperationPayload::new(record.payload(), record.payload_offset(), "SUBTRACT").unwrap();
+    let subtract = crate::om::operation_record::OperationPayload::new(
+        record.payload(),
+        record.payload_offset(),
+        "SUBTRACT",
+    )
+    .unwrap();
     assert_eq!(
         super::operation_terminal_discriminator(subtract),
         Some(lane.clone())
     );
 
     let truncated = &payload[..payload.len() - 1];
-    assert!(
-        super::operation_terminal_discriminator(crate::om::operation_record::OperationPayload::new(truncated, record.payload_offset(), record.name()).unwrap())
-        .is_none()
-    );
+    assert!(super::operation_terminal_discriminator(
+        crate::om::operation_record::OperationPayload::new(
+            truncated,
+            record.payload_offset(),
+            record.name()
+        )
+        .unwrap()
+    )
+    .is_none());
 
     let mut ambiguous = payload[..payload.len() - 1].to_vec();
     ambiguous.extend_from_slice(payload);
-    assert!(
-        super::operation_terminal_discriminator(crate::om::operation_record::OperationPayload::new(&ambiguous, record.payload_offset(), record.name()).unwrap())
-        .is_none()
-    );
+    assert!(super::operation_terminal_discriminator(
+        crate::om::operation_record::OperationPayload::new(
+            &ambiguous,
+            record.payload_offset(),
+            record.name()
+        )
+        .unwrap()
+    )
+    .is_none());
 }
 
 #[test]
 fn om_operation_body_scalar_clauses_preserve_body_order_and_branch() {
     let label = "TRIM BODY";
     let bytes = b"\x01\x02\x10\x42\xff\x1c\x00\x50\x40\x00\x00\xb0\x65\x40\x00\x00\x00\x00\x00\xaa\x01\x02\x10\x43\xff\x11\x30\x00\x00\x00\x00\x00\x00\x00\x00\x00";
-    let record = crate::om::operation_record::OperationBodyInput::new(bytes, 100, 0, label).unwrap();
+    let record =
+        crate::om::operation_record::OperationBodyInput::new(bytes, 100, 0, label).unwrap();
     let triples = super::operation_body_scalar_triples(record);
     assert_eq!(triples.len(), 2);
     assert_eq!(triples[0].body_reference_ordinal, 0);
     assert_eq!(triples[0].body_object_index, 66);
     assert_eq!(triples[0].branch, 0x1c);
     assert_eq!(
-        triples[0].scalars.each_ref().map(|scalar| scalar.atom.value()),
+        triples[0]
+            .scalars
+            .each_ref()
+            .map(|scalar| scalar.atom.value()),
         [0.0, 3.0, -170.0]
     );
     assert_eq!(
-        triples[0].scalars.each_ref().map(|scalar| scalar.atom.encoding()),
+        triples[0]
+            .scalars
+            .each_ref()
+            .map(|scalar| scalar.atom.encoding()),
         [
             crate::om::scalar::PayloadScalarEncoding::Zero,
             crate::om::scalar::PayloadScalarEncoding::Binary32,
@@ -748,11 +1061,22 @@ fn om_operation_body_scalar_clauses_preserve_body_order_and_branch() {
     assert_eq!(triples[1].body_object_index, 67);
     assert_eq!(triples[1].branch, 0x11);
     assert_eq!(
-        triples[1].scalars.each_ref().map(|scalar| scalar.atom.value()),
+        triples[1]
+            .scalars
+            .each_ref()
+            .map(|scalar| scalar.atom.value()),
         [2.0, 0.0, 0.0]
     );
     let truncated = &bytes[..bytes.len() - 1];
-    let truncated_triples = super::operation_body_scalar_triples(crate::om::operation_record::OperationBodyInput::new(truncated, record.offset(), record.payload_start(), record.name()).unwrap());
+    let truncated_triples = super::operation_body_scalar_triples(
+        crate::om::operation_record::OperationBodyInput::new(
+            truncated,
+            record.offset(),
+            record.payload_start(),
+            record.name(),
+        )
+        .unwrap(),
+    );
     assert_eq!(truncated_triples.len(), 1);
     assert_eq!(truncated_triples[0], triples[0]);
 }
@@ -761,7 +1085,8 @@ fn om_operation_body_scalar_clauses_preserve_body_order_and_branch() {
 fn om_operation_body_branch_11_decodes_wrapped_member_lane_atomically() {
     let label = "SEW";
     let bytes = b"\x01\x02\x10\x42\xff\x11\x00\x50\x40\x00\x00\xb0\x65\x40\x00\x00\x00\x00\x00\x01\x03\x2e\x7f\x00\x2e\x80\x01\x00";
-    let record = crate::om::operation_record::OperationBodyInput::new(bytes, 100, 0, label).unwrap();
+    let record =
+        crate::om::operation_record::OperationBodyInput::new(bytes, 100, 0, label).unwrap();
     let members = super::operation_body_members(record);
     assert_eq!(members.len(), 2);
     assert_eq!(members[0].body_reference_ordinal, 0);
@@ -773,7 +1098,15 @@ fn om_operation_body_branch_11_decodes_wrapped_member_lane_atomically() {
     assert_eq!(members[1].member.atom.raw(), [0x80, 0x01]);
 
     let truncated = &bytes[..bytes.len() - 1];
-    assert!(super::operation_body_members(crate::om::operation_record::OperationBodyInput::new(truncated, record.offset(), record.payload_start(), record.name()).unwrap())
+    assert!(super::operation_body_members(
+        crate::om::operation_record::OperationBodyInput::new(
+            truncated,
+            record.offset(),
+            record.payload_start(),
+            record.name()
+        )
+        .unwrap()
+    )
     .is_empty());
 }
 
@@ -781,7 +1114,8 @@ fn om_operation_body_branch_11_decodes_wrapped_member_lane_atomically() {
 fn om_trim_body_branch_11_decodes_terminal_continuation_atomically() {
     let label = "TRIM BODY";
     let bytes = b"\x01\x02\x10\x72\xff\x11\x00\x50\x40\x00\x00\xb0\x65\x40\x00\x00\x00\x00\x00\x01\x02\x2e\x41\x00\x01\x02\x80\x43\x00\x00\x01\x72\x00\x00";
-    let record = crate::om::operation_record::OperationBodyInput::new(bytes, 100, 0, label).unwrap();
+    let record =
+        crate::om::operation_record::OperationBodyInput::new(bytes, 100, 0, label).unwrap();
     let continuations = super::operation_body_11_continuations(record);
     assert_eq!(continuations.len(), 1);
     let continuation = &continuations[0];
@@ -797,35 +1131,56 @@ fn om_trim_body_branch_11_decodes_terminal_continuation_atomically() {
     let mut distinct_terminal = bytes.to_vec();
     distinct_terminal[31] = 0x71;
     assert_eq!(
-        super::operation_body_11_continuations(crate::om::operation_record::OperationBodyInput::new(&distinct_terminal, record.offset(), record.payload_start(), record.name()).unwrap())[0]
-            .terminal.token.value(),
+        super::operation_body_11_continuations(
+            crate::om::operation_record::OperationBodyInput::new(
+                &distinct_terminal,
+                record.offset(),
+                record.payload_start(),
+                record.name()
+            )
+            .unwrap()
+        )[0]
+        .terminal
+        .token
+        .value(),
         113
     );
 
     let truncated = &bytes[..bytes.len() - 1];
-    assert!(
-        super::operation_body_11_continuations(crate::om::operation_record::OperationBodyInput::new(truncated, record.offset(), record.payload_start(), record.name()).unwrap())
-        .is_empty()
-    );
+    assert!(super::operation_body_11_continuations(
+        crate::om::operation_record::OperationBodyInput::new(
+            truncated,
+            record.offset(),
+            record.payload_start(),
+            record.name()
+        )
+        .unwrap()
+    )
+    .is_empty());
 }
 
 #[test]
 fn om_operation_body_decodes_homogeneous_unwrapped_reference_lanes() {
     let label = "OFFSET";
     let compact = b"\x01\x02\x10\x6e\xff\x1c\x00\x00\x00\x01\x03\x80\x0d\x69\x00\x00\x0b\x00";
-    let record = crate::om::operation_record::OperationBodyInput::new(compact, 100, 0, label).unwrap();
+    let record =
+        crate::om::operation_record::OperationBodyInput::new(compact, 100, 0, label).unwrap();
     let lanes = super::operation_body_reference_lanes(record);
     assert_eq!(lanes.len(), 1);
     assert_eq!(lanes[0].body_object_index, 110);
-    let super::OperationBodyReferenceLaneValues::CompactIndex(values) = &lanes[0].values else { panic!("expected CompactIndex lane") };
+    let super::OperationBodyReferenceLaneValues::CompactIndex(values) = &lanes[0].values else {
+        panic!("expected CompactIndex lane")
+    };
     assert_eq!(
-        values.iter()
+        values
+            .iter()
             .map(|value| (value.atom.value(), value.offset))
             .collect::<Vec<_>>(),
         [(13, 111), (105, 113)]
     );
     assert_eq!(
-        values.iter()
+        values
+            .iter()
             .map(|value| value.atom.raw())
             .collect::<Vec<_>>(),
         [b"\x80\x0d".as_slice(), b"\x69".as_slice()]
@@ -833,36 +1188,68 @@ fn om_operation_body_decodes_homogeneous_unwrapped_reference_lanes() {
 
     let objects =
         b"\x01\x02\x10\x70\xff\x1c\x00\x00\x00\x01\x03\xf1\x02\x9e\xf0\x44\x00\x00\x0b\x00";
-    let object_record = crate::om::operation_record::OperationBodyInput::new(objects, record.offset(), record.payload_start(), record.name()).unwrap();
+    let object_record = crate::om::operation_record::OperationBodyInput::new(
+        objects,
+        record.offset(),
+        record.payload_start(),
+        record.name(),
+    )
+    .unwrap();
     let lanes = super::operation_body_reference_lanes(object_record);
-    let super::OperationBodyReferenceLaneValues::PayloadObjectIndex(values) = &lanes[0].values else { panic!("expected PayloadObjectIndex lane") };
+    let super::OperationBodyReferenceLaneValues::PayloadObjectIndex(values) = &lanes[0].values
+    else {
+        panic!("expected PayloadObjectIndex lane")
+    };
     assert_eq!(
-        values.iter()
+        values
+            .iter()
             .map(|value| value.token.value())
             .collect::<Vec<_>>(),
         [670, 68]
     );
     assert_eq!(
-        values.iter()
+        values
+            .iter()
             .map(|value| value.token.raw())
             .collect::<Vec<_>>(),
         [b"\xf1\x02\x9e".as_slice(), b"\xf0\x44".as_slice()]
     );
 
     let truncated = &objects[..objects.len() - 1];
-    assert!(
-        super::operation_body_reference_lanes(crate::om::operation_record::OperationBodyInput::new(truncated, object_record.offset(), object_record.payload_start(), object_record.name()).unwrap())
-        .is_empty()
-    );
+    assert!(super::operation_body_reference_lanes(
+        crate::om::operation_record::OperationBodyInput::new(
+            truncated,
+            object_record.offset(),
+            object_record.payload_start(),
+            object_record.name()
+        )
+        .unwrap()
+    )
+    .is_empty());
 
     let branch_11 =
         b"\x01\x02\x10\x70\xff\x11\x00\x00\x00\x01\x03\xf1\x02\x9e\xf0\x44\x00\x00\x0b\x00";
-    let lanes = super::operation_body_reference_lanes(crate::om::operation_record::OperationBodyInput::new(branch_11, record.offset(), record.payload_start(), record.name()).unwrap());
+    let lanes = super::operation_body_reference_lanes(
+        crate::om::operation_record::OperationBodyInput::new(
+            branch_11,
+            record.offset(),
+            record.payload_start(),
+            record.name(),
+        )
+        .unwrap(),
+    );
     assert_eq!(lanes.len(), 1);
-    assert_eq!(lanes[0].branch, crate::om::discriminators::OperationBodyReferenceBranch::Form11);
-    let super::OperationBodyReferenceLaneValues::PayloadObjectIndex(values) = &lanes[0].values else { panic!("expected payload lane") };
     assert_eq!(
-        values.iter()
+        lanes[0].branch,
+        crate::om::discriminators::OperationBodyReferenceBranch::Form11
+    );
+    let super::OperationBodyReferenceLaneValues::PayloadObjectIndex(values) = &lanes[0].values
+    else {
+        panic!("expected payload lane")
+    };
+    assert_eq!(
+        values
+            .iter()
             .map(|value| value.token.value())
             .collect::<Vec<_>>(),
         [670, 68]
@@ -873,7 +1260,8 @@ fn om_operation_body_decodes_homogeneous_unwrapped_reference_lanes() {
 fn om_extrude_body_32_branch_decodes_counted_lanes() {
     let label = "EXTRUDE";
     let bytes = b"\x01\x02\x10\x73\xff\x32\x00\x00\x30\x77\x7e\x14\x7a\xe1\x47\xb3\x01\x03\x3d\x82\x56\x00\x3d\x82\x57\x00\x01\x04\x80\x2b\x80\x2d\x80\x2c\x01\x03\x80\x2e\x80\x77\x00\x01\x73\x00\x00";
-    let record = crate::om::operation_record::OperationBodyInput::new(bytes, 100, 0, label).unwrap();
+    let record =
+        crate::om::operation_record::OperationBodyInput::new(bytes, 100, 0, label).unwrap();
     let branch = super::extrude_payload_32_branch(record).unwrap();
     assert_eq!(branch.offset, 105);
     assert_eq!(branch.terminal.token.value(), 115);
@@ -957,17 +1345,41 @@ fn om_extrude_body_32_branch_decodes_counted_lanes() {
 
     let mut invalid = bytes.to_vec();
     invalid[36] = 0xff;
-    assert!(super::extrude_payload_32_branch(crate::om::operation_record::OperationBodyInput::new(&invalid, record.offset(), record.payload_start(), record.name()).unwrap())
+    assert!(super::extrude_payload_32_branch(
+        crate::om::operation_record::OperationBodyInput::new(
+            &invalid,
+            record.offset(),
+            record.payload_start(),
+            record.name()
+        )
+        .unwrap()
+    )
     .is_none());
 
     let mut invalid_atom = bytes.to_vec();
     invalid_atom[18] = 0x3c;
-    assert!(super::extrude_payload_32_branch(crate::om::operation_record::OperationBodyInput::new(&invalid_atom, record.offset(), record.payload_start(), record.name()).unwrap())
+    assert!(super::extrude_payload_32_branch(
+        crate::om::operation_record::OperationBodyInput::new(
+            &invalid_atom,
+            record.offset(),
+            record.payload_start(),
+            record.name()
+        )
+        .unwrap()
+    )
     .is_none());
 
     let mut wrong_terminal_body = bytes.to_vec();
     wrong_terminal_body[43] = 0x72;
-    assert!(super::extrude_payload_32_branch(crate::om::operation_record::OperationBodyInput::new(&wrong_terminal_body, record.offset(), record.payload_start(), record.name()).unwrap())
+    assert!(super::extrude_payload_32_branch(
+        crate::om::operation_record::OperationBodyInput::new(
+            &wrong_terminal_body,
+            record.offset(),
+            record.payload_start(),
+            record.name()
+        )
+        .unwrap()
+    )
     .is_none());
 }
 
@@ -988,25 +1400,37 @@ fn om_block_construction_field_decodes_ordered_canonical_references() {
     assert_eq!(field.references[0].token.value(), 1);
     assert_eq!(field.references[0].token.raw().to_vec(), [0xf0, 0x01]);
     assert_eq!(field.references[18].token.value(), 256);
-    assert_eq!(field.references[18].token.raw().to_vec(), [0xf1, 0x01, 0x00]);
+    assert_eq!(
+        field.references[18].token.raw().to_vec(),
+        [0xf1, 0x01, 0x00]
+    );
     assert_eq!(field.references[0].offset, 206);
 
     let mut invalid = payload.clone();
     invalid[42] = 0xf0;
-    assert!(
-        super::block_construction_references(crate::om::operation_record::OperationPayload::new(&invalid, record.payload_offset(), record.name()).unwrap())
-        .is_none()
-    );
+    assert!(super::block_construction_references(
+        crate::om::operation_record::OperationPayload::new(
+            &invalid,
+            record.payload_offset(),
+            record.name()
+        )
+        .unwrap()
+    )
+    .is_none());
 }
 
 #[test]
 fn om_boolean_operations_decode_counted_target_and_tools() {
     let bytes = b"\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\xff\xff\xff\xff\x03\x0aSUBTRACT\0\x31\x00\x00\x01\x00\x14\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\x03\x00\x00\xe0\x7f\xff\xff\xff\x01\x01\x01\x02\x90\x19\x5e\x00\x01\x05\x90\x19\x5f\x90\x19\x44\x90\x19\x43\x90\x19\x60\x00";
-    let operations = super::boolean_operations_with_labels(bytes, 100, &super::operation_labels(bytes, 100));
+    let operations =
+        super::boolean_operations_with_labels(bytes, 100, &super::operation_labels(bytes, 100));
     assert_eq!(operations.len(), 1);
     assert_eq!(operations[0].kind, super::BooleanOperationKind::Subtract);
     assert_eq!(operations[0].target.token.value(), 6494);
-    assert_eq!(operations[0].target.token.raw().to_vec(), [0x90, 0x19, 0x5e]);
+    assert_eq!(
+        operations[0].target.token.raw().to_vec(),
+        [0x90, 0x19, 0x5e]
+    );
     assert_eq!(
         operations[0].target.offset,
         100 + bytes
@@ -1051,7 +1475,12 @@ fn om_boolean_operations_decode_counted_target_and_tools() {
 
     let mut invalid = bytes.to_vec();
     *invalid.last_mut().unwrap() = 1;
-    assert!(super::boolean_operations_with_labels(&invalid, 0, &super::operation_labels(&invalid, 0)).is_empty());
+    assert!(super::boolean_operations_with_labels(
+        &invalid,
+        0,
+        &super::operation_labels(&invalid, 0)
+    )
+    .is_empty());
 }
 
 #[test]
@@ -1149,7 +1578,8 @@ fn om_indexed_layout_materializes_both_store_forms_without_semantic_drift() {
             .next()
             .expect("indexed fixture has one section");
         let source = std::sync::Arc::<[u8]>::from(bytes.as_slice());
-        let layout = crate::om::cache::IndexedSectionLayout::from_section(&section, &source).unwrap();
+        let layout =
+            crate::om::cache::IndexedSectionLayout::from_section(&section, &source).unwrap();
         assert_eq!(layout.materialize(), section);
     }
 }
@@ -1244,7 +1674,12 @@ fn om_offset_only_index_requires_one_supported_product_record() {
 #[test]
 fn om_offset_store_control_values_require_complete_zero_prefixed_words() {
     assert_eq!(
-        super::offset_store_control_values(&[0, 0x34, 0x12, 0, 0, 0xff, 0xff, 0xff]).map(|values| values.into_iter().map(crate::om::control_word::ControlWord24::value).collect::<Vec<_>>()),
+        super::offset_store_control_values(&[0, 0x34, 0x12, 0, 0, 0xff, 0xff, 0xff]).map(
+            |values| values
+                .into_iter()
+                .map(crate::om::control_word::ControlWord24::value)
+                .collect::<Vec<_>>()
+        ),
         Some(vec![0x1234, 0x00ff_ffff])
     );
     assert!(super::offset_store_control_values(&[]).is_none());
@@ -1257,7 +1692,11 @@ fn om_offset_store_control_form_requires_one_complete_grammar() {
     assert_eq!(
         super::offset_store_control_form(&[0, 0x34, 0x12, 0, 0, 0xff, 0xff, 0xff], None),
         Some(super::OffsetStoreControlForm::ZeroPrefixed {
-            values: crate::om::nonempty::NonEmpty::new([0x1234, 0x00ff_ffff].map(|value| crate::om::control_word::ControlWord24::try_from(value).unwrap())).unwrap(),
+            values: crate::om::nonempty::NonEmpty::new(
+                [0x1234, 0x00ff_ffff]
+                    .map(|value| crate::om::control_word::ControlWord24::try_from(value).unwrap())
+            )
+            .unwrap(),
         })
     );
 
@@ -1268,7 +1707,9 @@ fn om_offset_store_control_form_requires_one_complete_grammar() {
     assert_eq!(
         super::offset_store_control_form(&product, None),
         Some(super::OffsetStoreControlForm::ProductAnchored {
-            leading_value: Some(crate::om::control_leading_value::ControlLeadingValue::from_wire(2, 0).unwrap()),
+            leading_value: Some(
+                crate::om::control_leading_value::ControlLeadingValue::from_wire(2, 0).unwrap()
+            ),
             values: crate::om::nonempty::NonEmpty::new([7, 0x1020]).unwrap(),
         })
     );
@@ -1294,7 +1735,12 @@ fn om_offset_store_index_rows_require_complete_exact_frames() {
     assert_eq!(rows[0].first_index.atom.value(), 42);
     assert_eq!(rows[0].first_index.atom.raw(), [0x2a]);
     assert_eq!(u8::from(rows[0].flag), 3);
-    assert_eq!(rows[0].indices.map(|token| (token.atom.value(), token.offset)), [(24, 13), (32, 15), (32, 16), (65, 17)]);
+    assert_eq!(
+        rows[0]
+            .indices
+            .map(|token| (token.atom.value(), token.offset)),
+        [(24, 13), (32, 15), (32, 16), (65, 17)]
+    );
     assert_eq!(
         rows[0].indices.map(|token| token.atom.raw().to_vec()),
         [vec![0x80, 0x18], vec![0x20], vec![0x20], vec![0x41]]
@@ -1302,7 +1748,12 @@ fn om_offset_store_index_rows_require_complete_exact_frames() {
     assert_eq!(rows[1].first_index.atom.value(), 950);
     assert_eq!(rows[1].first_index.atom.raw(), [0x83, 0xb6]);
     assert_eq!(u8::from(rows[1].flag), 7);
-    assert_eq!(rows[1].indices.map(|token| (token.atom.value(), token.offset)), [(24, 38), (32, 40), (77, 41), (65, 43)]);
+    assert_eq!(
+        rows[1]
+            .indices
+            .map(|token| (token.atom.value(), token.offset)),
+        [(24, 38), (32, 40), (77, 41), (65, 43)]
+    );
     assert_eq!(
         rows[1].indices.map(|token| token.atom.raw().to_vec()),
         [vec![0x80, 0x18], vec![0x20], vec![0x80, 0x4d], vec![0x41]]
@@ -1358,11 +1809,24 @@ fn om_color_table_requires_complete_names_indices_and_rgb_atoms() {
 
     let tables = super::color_tables(&bytes);
     assert_eq!(tables.len(), 1);
-    assert_eq!(tables[0].background.map(|(component, _)| component.value()), [1.0, 1.0, 1.0]);
+    assert_eq!(
+        tables[0].background.map(|(component, _)| component.value()),
+        [1.0, 1.0, 1.0]
+    );
     assert_eq!(tables[0].definitions.len(), 216);
     assert_eq!(tables[0].definitions[0].name, "Color 1");
-    assert_eq!(tables[0].definitions[0].components.map(|(component, _)| component.value()), [1.0, 1.0, 1.0]);
-    assert_eq!(tables[0].definitions[1].components.map(|(component, _)| component.value()), [0.5, 0.25, 0.0]);
+    assert_eq!(
+        tables[0].definitions[0]
+            .components
+            .map(|(component, _)| component.value()),
+        [1.0, 1.0, 1.0]
+    );
+    assert_eq!(
+        tables[0].definitions[1]
+            .components
+            .map(|(component, _)| component.value()),
+        [0.5, 0.25, 0.0]
+    );
     let index_offset = tables[0].definitions[127].offset + 1;
     assert_eq!(bytes[index_offset..index_offset + 2], [0x80, 0x7f]);
 
@@ -1382,13 +1846,30 @@ fn om_offset_store_linked_index_rows_require_complete_exact_frames() {
     let row = b"\x02\x0b\x83\x93\x93\x8c\x16\x24\xff\xff\x90\xfe\x20\x20\x41\x00\x47\x03\x04\x01\xc0\x44\x04\x00";
     let rows = super::offset_store_linked_index_rows(row);
     assert_eq!(rows.len(), 1);
-    assert_eq!((rows[0].first_index.atom.value(), rows[0].first_index.offset), (915, 2));
+    assert_eq!(
+        (rows[0].first_index.atom.value(), rows[0].first_index.offset),
+        (915, 2)
+    );
     assert_eq!(rows[0].first_index.atom.raw(), [0x83, 0x93]);
     assert_eq!(u8::from(rows[0].discriminator), 0x16);
-    assert_eq!((rows[0].target_index.atom.value(), rows[0].target_index.offset), (36, 7));
+    assert_eq!(
+        (
+            rows[0].target_index.atom.value(),
+            rows[0].target_index.offset
+        ),
+        (36, 7)
+    );
     assert_eq!(rows[0].target_index.atom.raw(), [0x24]);
-    assert_eq!(rows[0].indices.map(|token| (token.atom.value(), token.offset)), [(32, 12), (32, 13), (65, 14)]);
-    assert_eq!(rows[0].indices.map(|token| token.atom.raw().to_vec()), [vec![0x20], vec![0x20], vec![0x41]]);
+    assert_eq!(
+        rows[0]
+            .indices
+            .map(|token| (token.atom.value(), token.offset)),
+        [(32, 12), (32, 13), (65, 14)]
+    );
+    assert_eq!(
+        rows[0].indices.map(|token| token.atom.raw().to_vec()),
+        [vec![0x20], vec![0x20], vec![0x41]]
+    );
     assert_eq!(u8::from(rows[0].flag), 3);
     assert_eq!(u8::from(rows[0].mode), 4);
 
@@ -1419,10 +1900,24 @@ fn om_offset_store_target_index_rows_require_complete_exact_frames() {
         b"\x02\x01\x01\x01\x16\x3e\xff\xff\x90\xfe\x1e\x20\x58\x00\x47\x03\x07\x01\xc0\x44\x04\x00";
     let rows = super::offset_store_target_index_rows(row);
     assert_eq!(rows.len(), 1);
-    assert_eq!((rows[0].target_index.atom.value(), rows[0].target_index.offset), (62, 5));
+    assert_eq!(
+        (
+            rows[0].target_index.atom.value(),
+            rows[0].target_index.offset
+        ),
+        (62, 5)
+    );
     assert_eq!(rows[0].target_index.atom.raw(), [0x3e]);
-    assert_eq!(rows[0].indices.map(|token| (token.atom.value(), token.offset)), [(30, 10), (32, 11), (88, 12)]);
-    assert_eq!(rows[0].indices.map(|token| token.atom.raw().to_vec()), [vec![0x1e], vec![0x20], vec![0x58]]);
+    assert_eq!(
+        rows[0]
+            .indices
+            .map(|token| (token.atom.value(), token.offset)),
+        [(30, 10), (32, 11), (88, 12)]
+    );
+    assert_eq!(
+        rows[0].indices.map(|token| token.atom.raw().to_vec()),
+        [vec![0x1e], vec![0x20], vec![0x58]]
+    );
     assert_eq!(u8::from(rows[0].mode), 7);
 
     let mut null = row.to_vec();

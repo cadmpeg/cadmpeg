@@ -14,9 +14,13 @@ impl PaletteIndex {
         (1..=216).contains(&value).then_some(Self(value as u8))
     }
 
-    pub(crate) fn all() -> [Self; PALETTE_SIZE] { std::array::from_fn(|ordinal| Self(ordinal as u8 + 1)) }
+    pub(crate) fn all() -> [Self; PALETTE_SIZE] {
+        std::array::from_fn(|ordinal| Self(ordinal as u8 + 1))
+    }
 
-    pub(crate) fn value(self) -> u16 { u16::from(self.0) }
+    pub(crate) fn value(self) -> u16 {
+        u16::from(self.0)
+    }
 
     pub(crate) fn definition_raw(self) -> Vec<u8> {
         let (bytes, width) = self.definition_token();
@@ -24,11 +28,19 @@ impl PaletteIndex {
     }
 
     pub(crate) fn definition_token(self) -> ([u8; 2], usize) {
-        if self.0 < 128 { ([self.0, 0], 1) } else { ([0x80, self.0 - 1], 2) }
+        if self.0 < 128 {
+            ([self.0, 0], 1)
+        } else {
+            ([0x80, self.0 - 1], 2)
+        }
     }
 
     pub(crate) fn display_raw(self) -> Vec<u8> {
-        if self.0 < 128 { vec![self.0] } else { vec![0x80, self.0] }
+        if self.0 < 128 {
+            vec![self.0]
+        } else {
+            vec![0x80, self.0]
+        }
     }
 
     pub(crate) fn read_display(raw: &[u8]) -> Option<Self> {
@@ -40,7 +52,11 @@ impl PaletteIndex {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ColorAtom { Zero, One, Shifted(ShiftedScalar) }
+enum ColorAtom {
+    Zero,
+    One,
+    Shifted(ShiftedScalar),
+}
 
 /// Source atom whose normalized value lies in the closed unit interval.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -54,7 +70,9 @@ impl ColorComponent {
             _ => ColorAtom::Shifted(ShiftedScalar::read(bytes)?),
         };
         if let ColorAtom::Shifted(scalar) = atom {
-            if !(0.0..=1.0).contains(&(scalar.value() / 4.0)) { return None; }
+            if !(0.0..=1.0).contains(&(scalar.value() / 4.0)) {
+                return None;
+            }
         }
         Some(Self(atom))
     }

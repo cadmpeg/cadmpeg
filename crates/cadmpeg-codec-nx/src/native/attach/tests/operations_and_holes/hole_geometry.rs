@@ -21,17 +21,17 @@ fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
     let lane = FeatureSimpleHoleRepeatedScalarLane {
         id: "lane".to_string(),
         operation_label: operation.to_string(),
-        values: crate::om::nonempty::NonEmpty::new([
-            (508.0_f64, [10, 30]),
-            (38.1_f64, [18, 38]),
-        ].map(|(value, witness_offsets)| {
-            let mut raw = value.to_be_bytes();
-            raw[0] -= 0x10;
-            crate::om::scalar::RepeatedScalar {
-                scalar: crate::om::scalar::ShiftedBinary64::read(&raw).unwrap(),
-                witness_offsets,
-            }
-        })).unwrap(),
+        values: crate::om::nonempty::NonEmpty::new(
+            [(508.0_f64, [10, 30]), (38.1_f64, [18, 38])].map(|(value, witness_offsets)| {
+                let mut raw = value.to_be_bytes();
+                raw[0] -= 0x10;
+                crate::om::scalar::RepeatedScalar {
+                    scalar: crate::om::scalar::ShiftedBinary64::read(&raw).unwrap(),
+                    witness_offsets,
+                }
+            }),
+        )
+        .unwrap(),
     };
     let blocks = FeatureSimpleHoleRepeatedScalarLaneBlockReferences {
         id: "blocks".to_string(),
@@ -58,7 +58,8 @@ fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
                 scalar_lane: "other-lane".into(),
                 block_reference: "other-blocks".into(),
             },
-        ]).unwrap(),
+        ])
+        .unwrap(),
     };
     let properties = super::super::simple_hole_native_properties(
         operation,
@@ -130,7 +131,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
                 scalar_lane: "lane-b".into(),
                 block_reference: "refs-b".into(),
             },
-        ]).unwrap(),
+        ])
+        .unwrap(),
     };
     let mut model = Model::default();
     for ordinal in 0..2 {

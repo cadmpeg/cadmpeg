@@ -10,8 +10,11 @@ use cadmpeg_ir::sketches::{
 };
 
 use crate::design_feature::{self, DesignFeatureTransfer};
-use crate::native::{CatiaConstraintRange, CatiaDesignObject, CatiaEntityEvaluation, CatiaNative, CatiaObjectRecord, CatiaObjectRecordReference, CatiaObjectRecordReferenceSource};
-use crate::native::entity_record::{CatiaEntityRecord};
+use crate::native::entity_record::CatiaEntityRecord;
+use crate::native::{
+    CatiaConstraintRange, CatiaDesignObject, CatiaEntityEvaluation, CatiaNative, CatiaObjectRecord,
+    CatiaObjectRecordReference, CatiaObjectRecordReferenceSource,
+};
 
 const NATIVE_SKETCH_GEOMETRY_CLASSES: &[&str] = &["2DPoint"];
 
@@ -967,8 +970,12 @@ mod tests {
     use cadmpeg_ir::sketches::{Sketch, SketchPlacement};
 
     use crate::design_feature::DesignFeatureTransfer;
-    use crate::native::{CatiaConstraintRangeFraming, CatiaEntityEvaluation, CatiaEntityIncomingReference, CatiaEntitySchemaValue, CatiaObjectGraph, CatiaObjectOwner, CatiaObjectRecordReference, CatiaObjectRecordReferenceSource};
-use crate::native::entity_record::{CatiaEntityRecordBody};
+    use crate::native::entity_record::CatiaEntityRecordBody;
+    use crate::native::{
+        CatiaConstraintRangeFraming, CatiaEntityEvaluation, CatiaEntityIncomingReference,
+        CatiaEntitySchemaValue, CatiaObjectGraph, CatiaObjectOwner, CatiaObjectRecordReference,
+        CatiaObjectRecordReferenceSource,
+    };
     use crate::object_graph::{ObjectPayload, PayloadField, PayloadSubtype};
 
     fn design_object(id: &str, owner_design_object: Option<&str>) -> CatiaDesignObject {
@@ -1055,27 +1062,31 @@ use crate::native::entity_record::{CatiaEntityRecordBody};
 
     fn fixture(storage: bool) -> (CadIr, CatiaNative, DesignFeatureTransfer, HashSet<String>) {
         let mut range_entity = entity_record("catia:outer:entity-record#range", "range-record", 10);
-        range_entity.value_production = Some(crate::native::entity_record::CatiaEntityValueProduction::ConstraintRange(CatiaConstraintRange {
-            range: CatiaEntitySchemaValue {
-                offset: 2,
-                ordinal: 3,
-                entry: "range-entry".to_string(),
-                value: "Range".to_string(),
-            },
-            constraint: CatiaEntitySchemaValue {
-                offset: 4,
-                ordinal: 5,
-                entry: "constraint-entry".to_string(),
-                value: "CstAttr_Dimension".to_string(),
-            },
-            framing: CatiaConstraintRangeFraming::DimensionC1,
-            evaluation: CatiaEntityEvaluation::Scalar {
-                bits: 128.0_f64.to_bits(),
-            },
-            evaluation_opcode_offset: 6,
-            incoming_references: Vec::new(),
-            incoming_storage_references: Vec::new(),
-        }));
+        range_entity.value_production = Some(
+            crate::native::entity_record::CatiaEntityValueProduction::ConstraintRange(
+                CatiaConstraintRange {
+                    range: CatiaEntitySchemaValue {
+                        offset: 2,
+                        ordinal: 3,
+                        entry: "range-entry".to_string(),
+                        value: "Range".to_string(),
+                    },
+                    constraint: CatiaEntitySchemaValue {
+                        offset: 4,
+                        ordinal: 5,
+                        entry: "constraint-entry".to_string(),
+                        value: "CstAttr_Dimension".to_string(),
+                    },
+                    framing: CatiaConstraintRangeFraming::DimensionC1,
+                    evaluation: CatiaEntityEvaluation::Scalar {
+                        bits: 128.0_f64.to_bits(),
+                    },
+                    evaluation_opcode_offset: 6,
+                    incoming_references: Vec::new(),
+                    incoming_storage_references: Vec::new(),
+                },
+            ),
+        );
         let mut source_record = object_record(
             "source-record",
             Some("source-object"),

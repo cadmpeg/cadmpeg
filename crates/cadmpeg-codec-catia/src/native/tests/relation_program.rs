@@ -337,26 +337,32 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
     let mut native =
         crate::native::CatiaNative::decode(&standard_catpart_with_formula_relation(0x63, false));
     let parameter_entity = native.entity_records[2].clone();
-    native.entity_records[0].object_production = Some(crate::native::entity_record::CatiaEntityObjectProduction::RelationProgramInstance(crate::native::CatiaRelationProgramInstance {
-            framing: crate::native::CatiaRelationProgramInstanceFraming::Lead12 {
-                context_entity: crate::native::CatiaEntityReference::Unresolved { entity_id: 0 },
+    native.entity_records[0].object_production = Some(
+        crate::native::entity_record::CatiaEntityObjectProduction::RelationProgramInstance(
+            crate::native::CatiaRelationProgramInstance {
+                framing: crate::native::CatiaRelationProgramInstanceFraming::Lead12 {
+                    context_entity: crate::native::CatiaEntityReference::Unresolved {
+                        entity_id: 0,
+                    },
+                },
+                program_entity: crate::native::CatiaEntityReference::Unresolved { entity_id: 0 },
+                repeated_entity: crate::native::CatiaEntityReference::Unresolved { entity_id: 0 },
+                reference_incidences: Vec::new(),
+                relation_expression: None,
+                parameter_dependencies: Vec::new(),
+                inputs: Some(vec![crate::native::CatiaRelationProgramInput {
+                    parameter: "#1_".to_string(),
+                    value_type: "LENGTH".to_string(),
+                    entity: crate::native::CatiaEntityReference::from_parts(
+                        parameter_entity.entity_id,
+                        false,
+                        Some(parameter_entity.id.clone()),
+                        Some("param".to_string()),
+                    ),
+                }]),
             },
-            program_entity: crate::native::CatiaEntityReference::Unresolved { entity_id: 0 },
-            repeated_entity: crate::native::CatiaEntityReference::Unresolved { entity_id: 0 },
-            reference_incidences: Vec::new(),
-            relation_expression: None,
-            parameter_dependencies: Vec::new(),
-            inputs: Some(vec![crate::native::CatiaRelationProgramInput {
-                parameter: "#1_".to_string(),
-                value_type: "LENGTH".to_string(),
-                entity: crate::native::CatiaEntityReference::from_parts(
-                    parameter_entity.entity_id,
-                    false,
-                    Some(parameter_entity.id.clone()),
-                    Some("param".to_string()),
-                ),
-            }]),
-        }));
+        ),
+    );
 
     let mut ir = CadIr::empty();
     let mut annotations = Annotations::default();
@@ -409,14 +415,19 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
 
     let mut conflicting_native = native.clone();
     let mut conflicting_instance = conflicting_native.entity_records[0]
-        .relation_program_instance().cloned()
+        .relation_program_instance()
+        .cloned()
         .expect("complete relation-program instance");
     conflicting_instance
         .inputs
         .as_mut()
         .expect("complete relation-program inputs")[0]
         .value_type = "Real".to_string();
-    conflicting_native.entity_records[1].object_production = Some(crate::native::entity_record::CatiaEntityObjectProduction::RelationProgramInstance(conflicting_instance));
+    conflicting_native.entity_records[1].object_production = Some(
+        crate::native::entity_record::CatiaEntityObjectProduction::RelationProgramInstance(
+            conflicting_instance,
+        ),
+    );
     let mut conflicting_ir = CadIr::empty();
     let conflicting_transfer = crate::formula::transfer_parameters(
         &mut conflicting_ir,
@@ -437,31 +448,35 @@ fn complete_relation_program_output_transfers_a_typed_result() {
     let expression_entity = native.entity_records[1].clone();
     let input_entity = native.entity_records[2].clone();
     let output_entity = native.entity_records[3].clone();
-    native.entity_records[0].object_production = Some(crate::native::entity_record::CatiaEntityObjectProduction::RelationProgramInstance(crate::native::CatiaRelationProgramInstance {
-            framing: crate::native::CatiaRelationProgramInstanceFraming::Lead12 {
-                context_entity: crate::native::CatiaEntityReference::from_parts(
-                    output_entity.entity_id,
-                    false,
-                    Some(output_entity.id.clone()),
-                    Some("paramout".to_string()),
-                ),
+    native.entity_records[0].object_production = Some(
+        crate::native::entity_record::CatiaEntityObjectProduction::RelationProgramInstance(
+            crate::native::CatiaRelationProgramInstance {
+                framing: crate::native::CatiaRelationProgramInstanceFraming::Lead12 {
+                    context_entity: crate::native::CatiaEntityReference::from_parts(
+                        output_entity.entity_id,
+                        false,
+                        Some(output_entity.id.clone()),
+                        Some("paramout".to_string()),
+                    ),
+                },
+                program_entity: crate::native::CatiaEntityReference::Unresolved { entity_id: 0 },
+                repeated_entity: crate::native::CatiaEntityReference::Unresolved { entity_id: 0 },
+                reference_incidences: Vec::new(),
+                relation_expression: Some(expression_entity.id.clone()),
+                parameter_dependencies: Vec::new(),
+                inputs: Some(vec![crate::native::CatiaRelationProgramInput {
+                    parameter: "#1_".to_string(),
+                    value_type: "LENGTH".to_string(),
+                    entity: crate::native::CatiaEntityReference::from_parts(
+                        input_entity.entity_id,
+                        false,
+                        Some(input_entity.id.clone()),
+                        Some("param".to_string()),
+                    ),
+                }]),
             },
-            program_entity: crate::native::CatiaEntityReference::Unresolved { entity_id: 0 },
-            repeated_entity: crate::native::CatiaEntityReference::Unresolved { entity_id: 0 },
-            reference_incidences: Vec::new(),
-            relation_expression: Some(expression_entity.id.clone()),
-            parameter_dependencies: Vec::new(),
-            inputs: Some(vec![crate::native::CatiaRelationProgramInput {
-                parameter: "#1_".to_string(),
-                value_type: "LENGTH".to_string(),
-                entity: crate::native::CatiaEntityReference::from_parts(
-                    input_entity.entity_id,
-                    false,
-                    Some(input_entity.id.clone()),
-                    Some("param".to_string()),
-                ),
-            }]),
-        }));
+        ),
+    );
 
     let mut ir = CadIr::empty();
     let mut annotations = Annotations::default();
@@ -483,9 +498,14 @@ fn complete_relation_program_output_transfers_a_typed_result() {
 
     let mut ambiguous_native = native;
     let duplicate_program = ambiguous_native.entity_records[0]
-        .relation_program_instance().cloned()
+        .relation_program_instance()
+        .cloned()
         .expect("compound relation-program instance");
-    ambiguous_native.entity_records[1].object_production = Some(crate::native::entity_record::CatiaEntityObjectProduction::RelationProgramInstance(duplicate_program));
+    ambiguous_native.entity_records[1].object_production = Some(
+        crate::native::entity_record::CatiaEntityObjectProduction::RelationProgramInstance(
+            duplicate_program,
+        ),
+    );
     let mut ambiguous_ir = CadIr::empty();
     let ambiguous_transfer = crate::formula::transfer_parameters(
         &mut ambiguous_ir,
@@ -942,7 +962,8 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
         ),
     ] {
         let expected = native.entity_records[1]
-            .relation_program_instance().cloned()
+            .relation_program_instance()
+            .cloned()
             .expect("decoded relation-program instance");
         let mut stored = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
         native
@@ -1032,8 +1053,7 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
             let migrated = crate::native::CatiaNative::load(&namespace)
                 .expect("migrate relation-program instance");
             assert_eq!(
-                migrated.entity_records[1]
-                    .relation_program_instance(),
+                migrated.entity_records[1].relation_program_instance(),
                 Some(&expected)
             );
         }
@@ -1065,8 +1085,7 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
         let migrated = crate::native::CatiaNative::load(&namespace)
             .expect("migrate relation-program reference offsets");
         assert_eq!(
-            migrated.entity_records[1]
-                .relation_program_instance(),
+            migrated.entity_records[1].relation_program_instance(),
             Some(&expected)
         );
 
@@ -1099,8 +1118,7 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
         let migrated = crate::native::CatiaNative::load(&namespace)
             .expect("migrate relation-program dependency offsets");
         assert_eq!(
-            migrated.entity_records[1]
-                .relation_program_instance(),
+            migrated.entity_records[1].relation_program_instance(),
             Some(&expected)
         );
 
@@ -1183,7 +1201,8 @@ fn native_load_rederives_relation_program_paramout_outputs_from_older_namespaces
         ),
     ] {
         let expected = native.entity_records[1]
-            .relation_program_instance().cloned()
+            .relation_program_instance()
+            .cloned()
             .expect("decoded paramout relation-program instance");
         assert!(expected.output_entity().is_some());
         let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
@@ -1208,8 +1227,7 @@ fn native_load_rederives_relation_program_paramout_outputs_from_older_namespaces
         let migrated = crate::native::CatiaNative::load(&namespace)
             .expect("migrate paramout relation-program output");
         assert_eq!(
-            migrated.entity_records[1]
-                .relation_program_instance(),
+            migrated.entity_records[1].relation_program_instance(),
             Some(&expected)
         );
     }

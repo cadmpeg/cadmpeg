@@ -4,19 +4,32 @@
 use super::reference_index::FeatureReferenceToken;
 
 /// Position in the four-reference operation header.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 #[serde(try_from = "u8", into = "u8")]
 #[repr(u8)]
-pub(crate) enum HeaderSlot { Zero = 0, One = 1, Two = 2, Three = 3 }
+pub(crate) enum HeaderSlot {
+    Zero = 0,
+    One = 1,
+    Two = 2,
+    Three = 3,
+}
 
 impl HeaderSlot {
     pub(crate) const ALL: [Self; 4] = [Self::Zero, Self::One, Self::Two, Self::Three];
-    pub(crate) fn number(self) -> u8 { self as u8 }
-    pub(crate) fn index(self) -> usize { usize::from(self.number()) }
+    pub(crate) fn number(self) -> u8 {
+        self as u8
+    }
+    pub(crate) fn index(self) -> usize {
+        usize::from(self.number())
+    }
 }
 
 impl From<HeaderSlot> for u8 {
-    fn from(value: HeaderSlot) -> Self { value.number() }
+    fn from(value: HeaderSlot) -> Self {
+        value.number()
+    }
 }
 
 impl TryFrom<u8> for HeaderSlot {
@@ -62,7 +75,10 @@ impl HeaderReferences {
     }
 
     fn byte_len(self) -> usize {
-        self.0.iter().map(|token| token.as_ref().map_or(1, |token| token.raw().len())).sum()
+        self.0
+            .iter()
+            .map(|token| token.as_ref().map_or(1, |token| token.raw().len()))
+            .sum()
     }
 
     pub(crate) fn values(self) -> [Option<u32>; 4] {
@@ -75,8 +91,9 @@ impl HeaderReferences {
             tokens[slot] = match value {
                 None if raw == [0xff] => None,
                 None => return Err(format!("raw_object_indices[{slot}]: null requires ff")),
-                Some(value) => Some(FeatureReferenceToken::from_wire(value, raw)
-                    .map_err(|error| format!("object_indices/raw_object_indices[{slot}]: {error}"))?),
+                Some(value) => Some(FeatureReferenceToken::from_wire(value, raw).map_err(
+                    |error| format!("object_indices/raw_object_indices[{slot}]: {error}"),
+                )?),
             };
         }
         Ok(Self(tokens))
@@ -93,7 +110,9 @@ impl From<HeaderReferences> for HeaderReferencesWire {
     fn from(value: HeaderReferences) -> Self {
         Self {
             object_indices: value.values(),
-            raw_object_indices: value.0.map(|token| token.map_or_else(|| vec![0xff], |token| token.raw().to_vec())),
+            raw_object_indices: value
+                .0
+                .map(|token| token.map_or_else(|| vec![0xff], |token| token.raw().to_vec())),
         }
     }
 }
@@ -102,7 +121,10 @@ impl TryFrom<HeaderReferencesWire> for HeaderReferences {
     type Error = String;
 
     fn try_from(wire: HeaderReferencesWire) -> Result<Self, Self::Error> {
-        Self::from_wire(wire.object_indices, wire.raw_object_indices.each_ref().map(Vec::as_slice))
+        Self::from_wire(
+            wire.object_indices,
+            wire.raw_object_indices.each_ref().map(Vec::as_slice),
+        )
     }
 }
 
@@ -127,13 +149,19 @@ checked_header!(usize);
 checked_header!(u64);
 
 impl<O: Copy + std::ops::Add<Output = O> + From<u8>> OperationHeader<O> {
-    pub(crate) fn offset(self) -> O { self.offset }
-    pub(crate) fn objects(self) -> HeaderReferences { self.objects }
+    pub(crate) fn offset(self) -> O {
+        self.offset
+    }
+    pub(crate) fn objects(self) -> HeaderReferences {
+        self.objects
+    }
     pub(crate) fn byte_len(self) -> u8 {
         // Four tokens of at most three bytes follow the 15-byte fixed prefix.
         (FIXED_HEADER_LEN + self.objects.byte_len()) as u8
     }
-    pub(crate) fn end_offset(self) -> O { self.offset + O::from(self.byte_len()) }
+    pub(crate) fn end_offset(self) -> O {
+        self.offset + O::from(self.byte_len())
+    }
     pub(crate) fn object_offsets(self) -> [O; 4] {
         let mut at = self.offset + O::from(FIXED_HEADER_LEN as u8);
         self.objects.0.map(|token| {
@@ -152,24 +180,46 @@ mod tests {
     fn header_reference_widths_determine_every_position() {
         let objects = HeaderReferences::read(&[0xff, 0, 0x80, 0, 0x90, 0, 0, 0x03]).unwrap();
         assert_eq!(objects.values(), [None, Some(0), Some(0), Some(0)]);
-        assert_eq!(objects.0.map(|token| token.map(|token| token.raw().to_vec())),
-            [None, Some(vec![0]), Some(vec![0x80, 0]), Some(vec![0x90, 0, 0])]);
+        assert_eq!(
+            objects
+                .0
+                .map(|token| token.map(|token| token.raw().to_vec())),
+            [
+                None,
+                Some(vec![0]),
+                Some(vec![0x80, 0]),
+                Some(vec![0x90, 0, 0])
+            ]
+        );
         let header = OperationHeader::<usize>::new(100, objects).unwrap();
         assert_eq!(header.offset(), 100);
         assert_eq!(header.object_offsets(), [115, 116, 117, 119]);
         assert_eq!(header.end_offset(), 122);
-        assert_eq!(OperationHeader::<usize>::new(usize::MAX - 22, objects).unwrap().end_offset(), usize::MAX);
+        assert_eq!(
+            OperationHeader::<usize>::new(usize::MAX - 22, objects)
+                .unwrap()
+                .end_offset(),
+            usize::MAX
+        );
         assert!(OperationHeader::<usize>::new(usize::MAX - 21, objects).is_none());
     }
 
     #[test]
     fn header_requires_four_complete_feature_tokens() {
-        for bytes in [&[][..], &[0xff, 0xff, 0xff], &[0xff, 0xff, 0xff, 0x80],
-            &[0xff, 0xff, 0xff, 0x90, 0], &[0xff, 0xff, 0xff, 0xf0, 0],
-            &[0xff, 0xff, 0xff, 0xf1, 1, 0]] {
+        for bytes in [
+            &[][..],
+            &[0xff, 0xff, 0xff],
+            &[0xff, 0xff, 0xff, 0x80],
+            &[0xff, 0xff, 0xff, 0x90, 0],
+            &[0xff, 0xff, 0xff, 0xf0, 0],
+            &[0xff, 0xff, 0xff, 0xf1, 1, 0],
+        ] {
             assert!(HeaderReferences::read(bytes).is_none());
         }
-        assert_eq!(HeaderReferences::read(&[0xff; 4]).unwrap().values(), [None; 4]);
+        assert_eq!(
+            HeaderReferences::read(&[0xff; 4]).unwrap().values(),
+            [None; 4]
+        );
     }
 
     #[test]
@@ -188,5 +238,4 @@ mod tests {
             assert!(error.to_string().contains("input_slot"));
         }
     }
-
 }

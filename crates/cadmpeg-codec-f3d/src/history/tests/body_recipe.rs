@@ -12,7 +12,9 @@ fn form33_without_unique_body_proof_remains_unresolved() {
     let body = |slot| Body {
         id: BodyId::mint(format!("f3d:brep:body#{slot}")).expect("identity grammar"),
         kind: BodyKind::Solid,
-        regions: vec![RegionId::mint(format!("test:model:region#{slot}")).expect("identity grammar")],
+        regions: vec![
+            RegionId::mint(format!("test:model:region#{slot}")).expect("identity grammar")
+        ],
         transform: None,
         name: None,
         color: None,

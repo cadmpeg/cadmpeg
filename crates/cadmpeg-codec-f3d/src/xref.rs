@@ -14,8 +14,8 @@ use std::collections::HashSet;
 
 use serde::Deserialize;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_core::decode::View;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Feature, FeatureDefinition};
 use cadmpeg_ir::products::{
     ExternalDocumentReference, Occurrence, OccurrenceParent, PrototypeReference,

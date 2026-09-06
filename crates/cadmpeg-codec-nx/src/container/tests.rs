@@ -292,10 +292,22 @@ fn container_reads_rmfastload_active_ids() {
             .collect::<Vec<_>>(),
         (1..=50).collect::<Vec<_>>()
     );
-    assert_eq!(table.object_ids.as_slice()[0].offset, table.count_offset + 4);
-    assert_eq!(table.object_ids.as_slice()[0].value.to_le_bytes(), 1u32.to_le_bytes());
-    assert_eq!(table.object_ids.as_slice()[49].offset, table.count_offset + 4 + 49 * 4);
-    assert_eq!(table.object_ids.as_slice()[49].value.to_le_bytes(), 50u32.to_le_bytes());
+    assert_eq!(
+        table.object_ids.as_slice()[0].offset,
+        table.count_offset + 4
+    );
+    assert_eq!(
+        table.object_ids.as_slice()[0].value.to_le_bytes(),
+        1u32.to_le_bytes()
+    );
+    assert_eq!(
+        table.object_ids.as_slice()[49].offset,
+        table.count_offset + 4 + 49 * 4
+    );
+    assert_eq!(
+        table.object_ids.as_slice()[49].value.to_le_bytes(),
+        50u32.to_le_bytes()
+    );
 }
 
 #[test]

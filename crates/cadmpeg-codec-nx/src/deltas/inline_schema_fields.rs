@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared source and native inline-schema payloads.
 
-use serde::{Deserialize, Serialize};
-use crate::framing::xmt_reference::NonNullXmt;
+use super::attdef_state::AttdefState;
 use super::precision_state::PrecisionState;
 use super::type101_state::Type101State;
-use super::attdef_state::AttdefState;
-use super::type70_state::Type70State;
 use super::type38_state::Type38State;
+use super::type70_state::Type70State;
+use crate::framing::xmt_reference::NonNullXmt;
+use serde::{Deserialize, Serialize};
 
 /// Body of an inline schema declaration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -94,7 +94,9 @@ impl TryFrom<[f64; 11]> for TermUseValues {
     }
 }
 impl From<TermUseValues> for [f64; 11] {
-    fn from(values: TermUseValues) -> Self { values.0 }
+    fn from(values: TermUseValues) -> Self {
+        values.0
+    }
 }
 
 #[cfg(test)]
@@ -107,7 +109,9 @@ mod tests {
         let fields: InlineSchemaFields = serde_json::from_str(json).unwrap();
         assert_eq!(serde_json::to_string(&fields).unwrap(), json);
         for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-            assert!(TermUseValues::try_from([value; 11]).unwrap_err().contains("numeric_values"));
+            assert!(TermUseValues::try_from([value; 11])
+                .unwrap_err()
+                .contains("numeric_values"));
         }
     }
 }
@@ -120,12 +124,16 @@ pub(crate) struct BodyStateBytes(Vec<u8>);
 impl TryFrom<Vec<u8>> for BodyStateBytes {
     type Error = &'static str;
     fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
-        if bytes.is_empty() { return Err("state_bytes: require a nonempty revision state"); }
+        if bytes.is_empty() {
+            return Err("state_bytes: require a nonempty revision state");
+        }
         Ok(Self(bytes))
     }
 }
 impl From<BodyStateBytes> for Vec<u8> {
-    fn from(bytes: BodyStateBytes) -> Self { bytes.0 }
+    fn from(bytes: BodyStateBytes) -> Self {
+        bytes.0
+    }
 }
 
 #[cfg(test)]
@@ -141,9 +149,15 @@ mod body_state_tests {
             assert_eq!(serde_json::to_string(&state).unwrap(), json);
         }
         for reference in [0, 1] {
-            assert!(serde_json::from_value::<InlineBodyStateFields>(serde_json::json!({"form":"compact","reference":reference})).is_err());
+            assert!(serde_json::from_value::<InlineBodyStateFields>(
+                serde_json::json!({"form":"compact","reference":reference})
+            )
+            .is_err());
         }
-        let error = serde_json::from_str::<InlineBodyStateFields>(r#"{"form":"revision","node_id":7,"references":[8,1,2,3,4,5,6,7],"state_bytes":[]}"#).unwrap_err();
+        let error = serde_json::from_str::<InlineBodyStateFields>(
+            r#"{"form":"revision","node_id":7,"references":[8,1,2,3,4,5,6,7],"state_bytes":[]}"#,
+        )
+        .unwrap_err();
         assert!(error.to_string().contains("state_bytes"));
     }
 }

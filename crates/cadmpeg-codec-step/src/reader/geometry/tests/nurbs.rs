@@ -34,10 +34,12 @@ fn defaulted_spline_curve_subtypes_derive_knot_vectors() {
             .curves
             .iter()
             .find(|curve| curve.id.as_str() == id)
-            .and_then(|curve| match curve.geometry.solved_cache().unwrap_or(&curve.geometry) {
-                CurveGeometry::Nurbs(nurbs) => Some(nurbs),
-                _ => None,
-            })
+            .and_then(
+                |curve| match curve.geometry.solved_cache().unwrap_or(&curve.geometry) {
+                    CurveGeometry::Nurbs(nurbs) => Some(nurbs),
+                    _ => None,
+                },
+            )
             .unwrap_or_else(|| panic!("missing NURBS curve {id}"))
     };
     assert_eq!(
@@ -83,9 +85,11 @@ fn defaulted_spline_surface_subtypes_derive_axis_knot_vectors() {
             .surfaces
             .iter()
             .find(|surface| surface.id.as_str() == id)
-            .and_then(|surface| match surface.geometry.solved_cache().unwrap_or(&surface.geometry) {
-                SurfaceGeometry::Nurbs(nurbs) => Some(nurbs),
-                _ => None,
+            .and_then(|surface| {
+                match surface.geometry.solved_cache().unwrap_or(&surface.geometry) {
+                    SurfaceGeometry::Nurbs(nurbs) => Some(nurbs),
+                    _ => None,
+                }
             })
             .unwrap_or_else(|| panic!("missing NURBS surface {id}"))
     };

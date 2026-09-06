@@ -5,10 +5,10 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{BodyId, SurfaceId};
 
-use crate::test_support::*;
-use crate::parasolid::attribute_field::AttributeField;
-use crate::parasolid::attribute_action::AttributeAction;
 use crate::native::parasolid::topology_attribute_kind::TopologyAttributeKind;
+use crate::parasolid::attribute_action::AttributeAction;
+use crate::parasolid::attribute_field::AttributeField;
+use crate::test_support::*;
 
 use super::*;
 
@@ -1213,8 +1213,9 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
         (TopologyAttributeKind::Shell, 58),
         (TopologyAttributeKind::Face, 60),
         (TopologyAttributeKind::Loop, 59),
-    ].map(|(topology_type, topology_xmt)| {
-        ParasolidTopologyAttributeListReference {
+    ]
+    .map(
+        |(topology_type, topology_xmt)| ParasolidTopologyAttributeListReference {
             id: format!("topology-reference-{}", topology_type.code()),
             stream_ordinal: 3,
             topology_type,
@@ -1222,8 +1223,8 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
             attribute_list_xmt: 50,
             attribute_list_record: Some("entity".into()),
             inflated_offset: 300,
-        }
-    });
+        },
+    );
     let integer = ParasolidEntity52IntegerRecord {
         id: "integers".into(),
         stream_ordinal: 3,
@@ -1269,7 +1270,8 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
         next_definition_xmt: None,
         identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(35).unwrap(),
         identifier_inflated_offset: 90,
-        name: crate::printable_string::PrintableString::new("SDL/TYSA_DENSITY".to_string()).unwrap(),
+        name: crate::printable_string::PrintableString::new("SDL/TYSA_DENSITY".to_string())
+            .unwrap(),
         type_id: std::num::NonZeroU32::new(8004).unwrap(),
         action_codes: [AttributeAction::Code0; 8],
         field_names_xmt: None,
@@ -1381,7 +1383,8 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
         next_definition_xmt: None,
         identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(35).unwrap(),
         identifier_inflated_offset: 90,
-        name: crate::printable_string::PrintableString::new("SDL/TYSA_DENSITY".to_string()).unwrap(),
+        name: crate::printable_string::PrintableString::new("SDL/TYSA_DENSITY".to_string())
+            .unwrap(),
         type_id: std::num::NonZeroU32::new(8004).unwrap(),
         action_codes: [AttributeAction::Code0; 8],
         field_names_xmt: None,
@@ -1473,8 +1476,14 @@ fn topology_attribute_field_names_use_unique_declared_assignments() {
         attribute_definition: named_definition.id.clone(),
         field_names_record: "field-names-record".into(),
         fields: vec![
-            crate::native::parasolid::named_fields::NamedField { value_record: "name-1".into(), name: "width".into() },
-            crate::native::parasolid::named_fields::NamedField { value_record: "name-2".into(), name: "units".into() },
+            crate::native::parasolid::named_fields::NamedField {
+                value_record: "name-1".into(),
+                name: "width".into(),
+            },
+            crate::native::parasolid::named_fields::NamedField {
+                value_record: "name-2".into(),
+                name: "units".into(),
+            },
         ],
     };
     assert_eq!(
@@ -1528,7 +1537,8 @@ fn topology_attribute_fields_use_declared_ordinal_and_type_for_every_class() {
         next_definition_xmt: None,
         identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(35).unwrap(),
         identifier_inflated_offset: 90,
-        name: crate::printable_string::PrintableString::new("SDL/TYSA_BLEND_ID".to_string()).unwrap(),
+        name: crate::printable_string::PrintableString::new("SDL/TYSA_BLEND_ID".to_string())
+            .unwrap(),
         type_id: std::num::NonZeroU32::new(8004).unwrap(),
         action_codes: [AttributeAction::Code0; 8],
         field_names_xmt: None,
@@ -1785,10 +1795,9 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
     use cadmpeg_ir::AnnotationBuilder;
 
     use crate::native::parasolid::{
-        ParasolidEntity51StructuredUse,
-        ParasolidEntity57AxisRecord, ParasolidEntity58TagRecord, ParasolidEntity62UnicodeRecord,
-        ParasolidEntityVectorRecord, ParasolidTopologyAttributeListReference,
-        ParasolidVectorValueKind,
+        ParasolidEntity51StructuredUse, ParasolidEntity57AxisRecord, ParasolidEntity58TagRecord,
+        ParasolidEntity62UnicodeRecord, ParasolidEntityVectorRecord,
+        ParasolidTopologyAttributeListReference, ParasolidVectorValueKind,
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -1824,9 +1833,11 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
         id: "axis".into(),
         stream_ordinal: 3,
         xmt: crate::framing::xmt_reference::NonNullXmt::try_from(73).unwrap(),
-        values: crate::parasolid::counted_values::CountedValues::new(vec![
-            [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
-        ]).unwrap(),
+        values: crate::parasolid::counted_values::CountedValues::new(vec![[
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ]])
+        .unwrap(),
         byte_len: 60,
         inflated_offset: 430,
     };
@@ -1860,8 +1871,14 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
         id: format!("use-{ordinal}"),
         stream_ordinal: 3,
         entity_51_record: "entity".into(),
-        position: crate::parasolid::entity_references::FieldPosition::try_from(u32::try_from(ordinal).expect("test ordinal fits u32") + 5).unwrap(),
-        referenced_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(u32::try_from(ordinal).expect("test ordinal fits u32") + 70).unwrap(),
+        position: crate::parasolid::entity_references::FieldPosition::try_from(
+            u32::try_from(ordinal).expect("test ordinal fits u32") + 5,
+        )
+        .unwrap(),
+        referenced_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(
+            u32::try_from(ordinal).expect("test ordinal fits u32") + 70,
+        )
+        .unwrap(),
         kind,
         value_record: record.into(),
         inflated_offset: 200,

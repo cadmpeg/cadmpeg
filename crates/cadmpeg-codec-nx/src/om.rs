@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Frame NX object-model entities using external boundary and identity arrays.
 
-pub(crate) mod draft_identity;
-pub(crate) mod plane_descriptor;
 pub(crate) mod csys_descriptor;
-pub(crate) mod reference_index;
+pub(crate) mod draft_identity;
 pub(crate) mod header_references;
 pub(crate) mod operation_record;
+pub(crate) mod plane_descriptor;
+pub(crate) mod reference_index;
 pub(crate) mod sketch_references;
-use sketch_references::SketchReferenceField;
-use operation_record::{OperationRecord, OperationPayload, OperationBodyInput};
 use header_references::{HeaderReferences, OperationHeader};
-pub(crate) mod common_frame;
+use operation_record::{OperationBodyInput, OperationPayload, OperationRecord};
+use sketch_references::SketchReferenceField;
 pub(crate) mod body_write;
+pub(crate) mod common_frame;
 pub(crate) mod direct_reference;
 use body_write::{BodyImageTag, BodyWriteFrame, BodyWriteIndex};
 use common_frame::{CommonFrame, CommonFramePrefix, CommonFrameSuffix, TerminalFrame};
@@ -22,63 +22,67 @@ pub(crate) mod control_word;
 use control_word::ControlWord24;
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
 use std::num::NonZeroU8;
+use std::sync::Arc;
 
-use cadmpeg_core::decode::{alloc_filled, View};
 use crate::printable_string::PrintableString;
+use cadmpeg_core::decode::{alloc_filled, View};
 
 pub(crate) mod compact;
-use compact::{CompactIndexAtom, WrappedCompactIndex, LocatedCompactIndex, NullableCompactIndex, CountedIndexMembers};
+use compact::{
+    CompactIndexAtom, CountedIndexMembers, LocatedCompactIndex, NullableCompactIndex,
+    WrappedCompactIndex,
+};
 pub(crate) mod color;
-use color::{ColorComponent, PaletteIndex, PALETTE_SIZE, BACKGROUND_NAME};
+use color::{ColorComponent, PaletteIndex, BACKGROUND_NAME, PALETTE_SIZE};
 pub(crate) mod branch_items;
 pub(crate) mod discriminators;
 use branch_items::BranchItems;
 pub(crate) mod parameter_name;
 pub(crate) mod scalar_pair;
-use scalar_pair::{SketchPairForm, DatumPairForm};
+use scalar_pair::{DatumPairForm, SketchPairForm};
 pub(crate) mod scalar_run;
 use scalar_run::FramedScalarRun;
 pub(crate) mod sketch_scalar;
-use sketch_scalar::{SketchScaledAtom, SketchMixedScalars, SketchScalarLaneForm};
+use sketch_scalar::{SketchMixedScalars, SketchScalarLaneForm, SketchScaledAtom};
 pub(crate) mod fixed;
-use fixed::{Q155, Q155Atom, Q155Marker, Q155LaneFrame};
+use fixed::{Q155Atom, Q155LaneFrame, Q155Marker, Q155};
 pub(crate) mod nonempty;
-pub(crate) mod state_tagged_value;
+pub(crate) mod source_span;
 pub(crate) mod state_index;
 pub(crate) mod state_slots;
-pub(crate) mod source_span;
+pub(crate) mod state_tagged_value;
 use source_span::SourceSpan;
 use state_slots::StateSlots;
 pub(crate) mod state_link;
 use state_link::StateLinkCode;
 pub(crate) mod state_group;
 use state_group::{OperationStateGroupCount, OperationStateGroupOpener, StateGroupMembers};
-use state_index::{OperationStateIndex, NonNullStateIndex};
+use state_index::{NonNullStateIndex, OperationStateIndex};
 pub(crate) mod state_message_text;
+use nonempty::NonEmpty;
 use state_message_text::StateMessageText;
 use state_tagged_value::StateTaggedValue;
-use nonempty::NonEmpty;
 pub(crate) mod pattern;
 use pattern::{PatternRow, PatternRows, PatternTerminal, PatternValue, PatternWideValues};
-pub(crate) mod swp104_state;
 pub(crate) mod scalar;
-use scalar::{LocatedBinary64, PayloadScalarAtom, RepeatedScalar, ShiftedBinary32, ShiftedBinary64, ShiftedScalar, shifted_ieee_f64};
-pub(crate) mod thru_curve_endings;
+pub(crate) mod swp104_state;
+use scalar::{
+    shifted_ieee_f64, LocatedBinary64, PayloadScalarAtom, RepeatedScalar, ShiftedBinary32,
+    ShiftedBinary64, ShiftedScalar,
+};
 pub(crate) mod thru_curve_controls;
+pub(crate) mod thru_curve_endings;
 use thru_curve_controls::ThruCurveControls;
 pub(crate) mod thru_curve_state;
-use thru_curve_state::ThruCurveBranchItems;
-use thru_curve_endings::{ThruCurveBranchSuffix, ThruCurveGroupTerminator};
+use discriminators::{DraftBinary32Branch, OperationStateCounterKind, OperationStatePairTag};
 use swp104_state::Swp104StateLane;
-use discriminators::{
-    DraftBinary32Branch, OperationStateCounterKind, OperationStatePairTag,
-};
-pub(crate) mod registry;
+use thru_curve_endings::{ThruCurveBranchSuffix, ThruCurveGroupTerminator};
+use thru_curve_state::ThruCurveBranchItems;
+pub(crate) mod audit;
 pub(crate) mod cache;
 pub(crate) mod product;
-pub(crate) mod audit;
+pub(crate) mod registry;
 use audit::{AuditRecord, AuditTrailRow};
 pub(crate) mod control_leading_value;
 use control_leading_value::ControlLeadingValue;
@@ -319,11 +323,20 @@ pub fn target_row_color_index(
 fn row_color_index(bytes: &[u8], row_offset: usize) -> Option<LinkedRowColorIndex> {
     const PRECEDING_SUFFIX: [u8; 5] = [0x01, 0xc0, 0x44, 0x04, 0x00];
     for width in [1, 2] {
-        let Some(offset) = row_offset.checked_sub(width) else { continue; };
-        let Some(prefix_offset) = offset.checked_sub(PRECEDING_SUFFIX.len()) else { continue; };
-        if bytes.get(prefix_offset..offset) != Some(&PRECEDING_SUFFIX) { continue; }
+        let Some(offset) = row_offset.checked_sub(width) else {
+            continue;
+        };
+        let Some(prefix_offset) = offset.checked_sub(PRECEDING_SUFFIX.len()) else {
+            continue;
+        };
+        if bytes.get(prefix_offset..offset) != Some(&PRECEDING_SUFFIX) {
+            continue;
+        }
         if let Some(color_index) = PaletteIndex::read_display(bytes.get(offset..row_offset)?) {
-            return Some(LinkedRowColorIndex { color_index, offset });
+            return Some(LinkedRowColorIndex {
+                color_index,
+                offset,
+            });
         }
     }
     None
@@ -401,12 +414,16 @@ pub struct ColorTable<'a> {
 }
 
 fn color_components(bytes: &[u8], at: &mut usize) -> Option<[(ColorComponent, usize); 3]> {
-    (0..3).map(|_| {
-        let offset = *at;
-        let component = ColorComponent::read(bytes.get(offset..)?)?;
-        *at += component.raw().len();
-        Some((component, offset))
-    }).collect::<Option<Vec<_>>>()?.try_into().ok()
+    (0..3)
+        .map(|_| {
+            let offset = *at;
+            let component = ColorComponent::read(bytes.get(offset..)?)?;
+            *at += component.raw().len();
+            Some((component, offset))
+        })
+        .collect::<Option<Vec<_>>>()?
+        .try_into()
+        .ok()
 }
 
 fn color_name_frame(bytes: &[u8], offset: usize) -> Option<(&str, usize)> {
@@ -462,7 +479,9 @@ fn color_table_end(bytes: &[u8], start: usize) -> Option<usize> {
         }
         at += 1;
         let (token, width) = color_index.definition_token();
-        if bytes.get(at..at + width) != Some(&token[..width]) { return None; }
+        if bytes.get(at..at + width) != Some(&token[..width]) {
+            return None;
+        }
         at += width;
         if bytes.get(at..at + 3) != Some(&[0x01, 0x80, 0xc8]) {
             return None;
@@ -548,7 +567,11 @@ pub fn offset_store_index_rows(bytes: &[u8]) -> Vec<OffsetStoreIndexRow> {
             start += 1;
             continue;
         }
-        let Some(flag) = bytes.get(marker + 2).copied().and_then(|value| discriminators::LinkedIndexFlag::try_from(value).ok()) else {
+        let Some(flag) = bytes
+            .get(marker + 2)
+            .copied()
+            .and_then(|value| discriminators::LinkedIndexFlag::try_from(value).ok())
+        else {
             start += 1;
             continue;
         };
@@ -732,11 +755,13 @@ pub fn offset_store_abr_reference_lanes(bytes: &[u8]) -> Vec<OffsetStoreAbrRefer
             continue;
         }
         let mut at = start + 1;
-        let tokens = (0..SLOT_COUNT).map(|_| {
-            let token = NullableCompactIndex::read(bytes, at)?;
-            at += token.raw().len();
-            Some(token)
-        }).collect::<Option<Vec<_>>>();
+        let tokens = (0..SLOT_COUNT)
+            .map(|_| {
+                let token = NullableCompactIndex::read(bytes, at)?;
+                at += token.raw().len();
+                Some(token)
+            })
+            .collect::<Option<Vec<_>>>();
         let Some(tokens) = tokens.and_then(|tokens| tokens.try_into().ok()) else {
             start += 1;
             continue;
@@ -746,7 +771,10 @@ pub fn offset_store_abr_reference_lanes(bytes: &[u8]) -> Vec<OffsetStoreAbrRefer
             continue;
         };
         if bytes.get(at..end) == Some(&TERMINATOR) {
-            lanes.push(OffsetStoreAbrReferenceLane { offset: start, slots: tokens });
+            lanes.push(OffsetStoreAbrReferenceLane {
+                offset: start,
+                slots: tokens,
+            });
             start = end;
         } else {
             start += 1;
@@ -820,9 +848,7 @@ const SHIFTED_BINARY64_SCALAR_FRAME_LEN: usize = 13;
 pub fn construction_payload_scalar_fields(bytes: &[u8]) -> Vec<ConstructionPayloadScalarField> {
     let mut fields = Vec::new();
     for start in 0..bytes.len().saturating_sub(12) {
-        if bytes.get(start..start + 3) != Some(b"PYf")
-            || bytes.get(start + 4) != Some(&0x00)
-        {
+        if bytes.get(start..start + 3) != Some(b"PYf") || bytes.get(start + 4) != Some(&0x00) {
             continue;
         }
         let Some(scalar) = bytes
@@ -1107,9 +1133,15 @@ impl<'a> UnlabeledOperationRecord<'a> {
         Some(Self { header, bytes })
     }
 
-    pub(crate) fn header(self) -> OperationHeader { self.header }
-    pub(crate) fn bytes(self) -> &'a [u8] { self.bytes }
-    pub(crate) fn payload(self) -> &'a [u8] { &self.bytes[usize::from(self.header.byte_len())..] }
+    pub(crate) fn header(self) -> OperationHeader {
+        self.header
+    }
+    pub(crate) fn bytes(self) -> &'a [u8] {
+        self.bytes
+    }
+    pub(crate) fn payload(self) -> &'a [u8] {
+        &self.bytes[usize::from(self.header.byte_len())..]
+    }
 }
 
 /// Terminal common-frame suffix with its independently matched preceding frame.
@@ -1580,8 +1612,16 @@ pub struct Swp104PayloadLeadingBranch {
 impl Swp104PayloadLeadingBranch {
     pub(crate) fn byte_len(&self) -> usize {
         40 + usize::from(self.leading_zero)
-            + self.members.as_slice().iter().map(|token| token.raw().len()).sum::<usize>()
-            + self.state_lane.byte_len() + 3 + self.terminal.raw().len() + 1
+            + self
+                .members
+                .as_slice()
+                .iter()
+                .map(|token| token.raw().len())
+                .sum::<usize>()
+            + self.state_lane.byte_len()
+            + 3
+            + self.terminal.raw().len()
+            + 1
     }
 }
 
@@ -1710,7 +1750,9 @@ pub struct SketchPayloadFixedPair {
 }
 
 impl SketchPayloadFixedPair {
-    pub fn discriminator(&self) -> &'static [u8] { self.form.discriminator() }
+    pub fn discriminator(&self) -> &'static [u8] {
+        self.form.discriminator()
+    }
     pub fn value_offsets(&self) -> [usize; 2] {
         let first = self.offset + self.discriminator().len();
         [first, first + 8 + self.form.separator_width()]
@@ -1727,7 +1769,9 @@ pub struct SketchPayloadMixedPair {
 }
 
 impl SketchPayloadMixedPair {
-    pub fn discriminator(&self) -> &'static [u8] { SketchPairForm::Legacy.discriminator() }
+    pub fn discriminator(&self) -> &'static [u8] {
+        SketchPairForm::Legacy.discriminator()
+    }
     pub fn value_offsets(&self) -> [usize; 2] {
         let first = self.offset + self.discriminator().len();
         [first, first + 8 + 1]
@@ -1746,7 +1790,9 @@ pub struct DatumCsysPayloadFixedPair {
 }
 
 impl DatumCsysPayloadFixedPair {
-    pub fn discriminator(&self) -> &'static [u8] { self.form.discriminator() }
+    pub fn discriminator(&self) -> &'static [u8] {
+        self.form.discriminator()
+    }
     pub fn value_offsets(&self) -> [usize; 2] {
         let first = self.offset + self.discriminator().len();
         [first, first + 8 + 1]
@@ -2298,8 +2344,10 @@ fn validated_operation_headers(bytes: &[u8], base_offset: usize) -> Vec<Operatio
         let Some(objects) = HeaderReferences::read(&bytes[scalar_at + SCALAR_LEN + 2..]) else {
             continue;
         };
-        let Some(header) = base_offset.checked_add(marker)
-            .and_then(|offset| OperationHeader::<usize>::new(offset, objects)) else {
+        let Some(header) = base_offset
+            .checked_add(marker)
+            .and_then(|offset| OperationHeader::<usize>::new(offset, objects))
+        else {
             continue;
         };
         headers.push(header);
@@ -2334,10 +2382,7 @@ fn operation_label_at(
     let Ok(value) = std::str::from_utf8(name) else {
         return None;
     };
-    Some(OperationLabel {
-        header,
-        value,
-    })
+    Some(OperationLabel { header, value })
 }
 
 fn operation_records_with_labels_and_ordinals<'a>(
@@ -2357,7 +2402,10 @@ fn operation_records_with_labels_and_ordinals<'a>(
             let end = headers
                 .get(ordinal + 1)
                 .map_or(bytes.len(), |next| next.offset() - base_offset);
-            Some((ordinal, OperationRecord::new(bytes.get(start..end)?, *label)?))
+            Some((
+                ordinal,
+                OperationRecord::new(bytes.get(start..end)?, *label)?,
+            ))
         })
         .collect()
 }
@@ -2414,7 +2462,10 @@ pub fn operation_payload_text_frames(
             at += 1;
             continue;
         };
-        let Some(value) = std::str::from_utf8(raw).ok().and_then(|value| crate::payload_text::PayloadText::new(value).ok()) else {
+        let Some(value) = std::str::from_utf8(raw)
+            .ok()
+            .and_then(|value| crate::payload_text::PayloadText::new(value).ok())
+        else {
             at += 1;
             continue;
         };
@@ -2484,10 +2535,15 @@ pub fn simple_hole_repeated_scalar_lane(
     {
         return None;
     }
-    NonEmpty::new(first.iter().zip(second).map(|(left, right)| RepeatedScalar {
-        scalar: left.0,
-        witness_offsets: [left.1, right.1],
-    }))
+    NonEmpty::new(
+        first
+            .iter()
+            .zip(second)
+            .map(|(left, right)| RepeatedScalar {
+                scalar: left.0,
+                witness_offsets: [left.1, right.1],
+            }),
+    )
 }
 
 /// Decode the two tagged block indices immediately following each witnessed
@@ -2600,9 +2656,7 @@ pub fn hole_package_construction_group_lane(
 }
 
 /// Decode the unique counted reference field in a bounded `SKETCH` payload.
-pub fn sketch_payload_references(
-    record: OperationPayload<'_>,
-) -> Option<SketchReferenceField> {
+pub fn sketch_payload_references(record: OperationPayload<'_>) -> Option<SketchReferenceField> {
     if record.name() != "SKETCH" {
         return None;
     }
@@ -2671,19 +2725,22 @@ pub fn projected_curve_payload_references(
             at += 6;
             references.push(decode_reference(&mut at)?);
             for anchor in 0..2 {
-                (record.payload().get(at..at + CMB_BRANCH_PREFIX.len()) == Some(&CMB_BRANCH_PREFIX))
-                    .then_some(())?;
+                (record.payload().get(at..at + CMB_BRANCH_PREFIX.len())
+                    == Some(&CMB_BRANCH_PREFIX))
+                .then_some(())?;
                 at += CMB_BRANCH_PREFIX.len();
                 let repeated = decode_reference(&mut at)?;
                 (repeated.token.value() == references[anchor].token.value()).then_some(())?;
-                (record.payload().get(at..at + CMB_BRANCH_MIDDLE.len()) == Some(&CMB_BRANCH_MIDDLE))
-                    .then_some(())?;
+                (record.payload().get(at..at + CMB_BRANCH_MIDDLE.len())
+                    == Some(&CMB_BRANCH_MIDDLE))
+                .then_some(())?;
                 at += CMB_BRANCH_MIDDLE.len();
                 (record.payload().get(at..at + 3) == Some(&[0xff, 0x01, 0x02])).then_some(())?;
                 at += 3;
                 references.push(decode_reference(&mut at)?);
-                (record.payload().get(at..at + CMB_BRANCH_SUFFIX.len()) == Some(&CMB_BRANCH_SUFFIX))
-                    .then_some(())?;
+                (record.payload().get(at..at + CMB_BRANCH_SUFFIX.len())
+                    == Some(&CMB_BRANCH_SUFFIX))
+                .then_some(())?;
                 at += CMB_BRANCH_SUFFIX.len();
             }
             (record.payload().get(at..at + CMB_TAIL_PREFIX.len()) == Some(&CMB_TAIL_PREFIX))
@@ -3012,7 +3069,9 @@ pub fn pattern_payload_transform_lane(
     };
     let decode = |start: usize| {
         (record.payload().get(start) == Some(&0x01)).then_some(())?;
-        let declared_count @ 2.. = *record.payload().get(start + 1)? else { return None; };
+        let declared_count @ 2.. = *record.payload().get(start + 1)? else {
+            return None;
+        };
         let row_schema_index = NonZeroU8::new(*record.payload().get(start + 2)?)?;
         let mut at = start + 2;
         let mut rows = Vec::new();
@@ -3062,7 +3121,9 @@ pub fn pattern_payload_transform_lane(
     let decode_wide = |start: usize| {
         (record.name() == "Pattern Feature").then_some(())?;
         (record.payload().get(start) == Some(&0x01)).then_some(())?;
-        let declared_count @ 2.. = *record.payload().get(start + 1)? else { return None; };
+        let declared_count @ 2.. = *record.payload().get(start + 1)? else {
+            return None;
+        };
         let row_schema_index = NonZeroU8::new(*record.payload().get(start + 2)?)?;
         let mut at = start + 2;
         let mut rows = Vec::new();
@@ -3181,7 +3242,8 @@ pub fn multi_instance_output_payload_lane(
             Vec::with_capacity(usize::from(instance_count.saturating_sub(1)));
         for _ in 1..instance_count {
             let reference_offset = at;
-            let object_index = reference_index::FeatureReferenceToken::read(record.payload().get(at..)?)?;
+            let object_index =
+                reference_index::FeatureReferenceToken::read(record.payload().get(at..)?)?;
             let end = at + object_index.raw().len();
             trailing_references.push(PayloadObjectReference {
                 offset: record.payload_offset() + reference_offset,
@@ -3211,7 +3273,8 @@ pub fn identical_instance_output_payload_lane(
     }
     let decode = |start: usize| {
         let leading_schema_index = *record.payload().get(start)?;
-        let count_schema_index = IdenticalInstanceSchemaIndex::new(*record.payload().get(start + 1)?)?;
+        let count_schema_index =
+            IdenticalInstanceSchemaIndex::new(*record.payload().get(start + 1)?)?;
         (record.payload().get(start + 2) == Some(&0x01)).then_some(())?;
         let declared_count = *record.payload().get(start + 3)?;
         (declared_count >= 2).then_some(())?;
@@ -3418,8 +3481,16 @@ pub fn draft_feature_terminal_lane(
     let tail = record.payload().get(at..at + 3)?.try_into().ok()?;
     (record.payload().get(at + 3) == Some(&0x00)).then_some(())?;
     Some(DraftFeatureTerminalLane {
-        indices: [LocatedCompactIndex { atom: first, offset: record.payload_offset() + start },
-            LocatedCompactIndex { atom: second, offset: record.payload_offset() + start + 2 }],
+        indices: [
+            LocatedCompactIndex {
+                atom: first,
+                offset: record.payload_offset() + start,
+            },
+            LocatedCompactIndex {
+                atom: second,
+                offset: record.payload_offset() + start + 2,
+            },
+        ],
         tail,
     })
 }
@@ -3477,7 +3548,8 @@ pub fn surface_feature_payload_references(
     for _ in 0..3 {
         references.push(decode_reference(&mut at)?);
     }
-    (record.payload().get(at..at + TRAILING_SUFFIX.len()) == Some(&TRAILING_SUFFIX)).then_some(())?;
+    (record.payload().get(at..at + TRAILING_SUFFIX.len()) == Some(&TRAILING_SUFFIX))
+        .then_some(())?;
     Some(SurfaceFeaturePayloadReferenceField {
         references: references.try_into().ok()?,
     })
@@ -3611,7 +3683,9 @@ pub fn thru_curve_payload_branch_group(
     }
     let terminator = ThruCurveGroupTerminator::ALL
         .into_iter()
-        .find(|terminator| record.payload().get(at..at + terminator.bytes().len()) == Some(terminator.bytes()))?;
+        .find(|terminator| {
+            record.payload().get(at..at + terminator.bytes().len()) == Some(terminator.bytes())
+        })?;
     Some(ThruCurvePayloadBranchGroup {
         offset: record.payload_offset() + group_offset,
         branches: BranchItems::new(branches).ok()?,
@@ -3666,8 +3740,10 @@ pub fn swp104_payload_leading_branch(
         5
     };
     let state_lane = Swp104StateLane::from_parts(
-        witnessed_count, record.payload().get(at..at + state_len)?.to_vec(),
-    ).ok()?;
+        witnessed_count,
+        record.payload().get(at..at + state_len)?.to_vec(),
+    )
+    .ok()?;
     at += state_len;
     (record.payload().get(at..at + 3) == Some(&[0xff, 0x01, 0x02])).then_some(())?;
     at += 3;
@@ -3784,7 +3860,9 @@ fn surface_feature_branch_paths(
             offset: payload_offset + terminal_offset,
             token: object_index,
         };
-        let Ok(members) = BranchItems::new(members) else { return Vec::new(); };
+        let Ok(members) = BranchItems::new(members) else {
+            return Vec::new();
+        };
         for mut continuation in continuations {
             let branch = SurfaceFeaturePayloadBranch {
                 offset: payload_offset + at,
@@ -3982,7 +4060,10 @@ pub fn operation_body_scalar_triples(
             let mut at = end + 2;
             let mut read = || {
                 let atom = PayloadScalarAtom::read(record.bytes().get(at..)?)?;
-                let scalar = PayloadScalar { offset: record.offset() + at, atom };
+                let scalar = PayloadScalar {
+                    offset: record.offset() + at,
+                    atom,
+                };
                 at += scalar.atom.raw().len();
                 Some(scalar)
             };
@@ -4032,8 +4113,7 @@ pub fn operation_body_members(record: OperationBodyInput<'_>) -> Vec<OperationBo
                 }
                 at += 1;
                 let member_at = at;
-                let Some(atom) = record.bytes().get(at..).and_then(CompactIndexAtom::read)
-                else {
+                let Some(atom) = record.bytes().get(at..).and_then(CompactIndexAtom::read) else {
                     return Vec::new();
                 };
                 at += atom.raw().len();
@@ -4045,7 +4125,10 @@ pub fn operation_body_members(record: OperationBodyInput<'_>) -> Vec<OperationBo
                     body_reference_ordinal: body_ordinal as u32,
                     body_object_index: reference.object_index.value(),
                     ordinal: ordinal as u32,
-                    member: LocatedCompactIndex { atom, offset: record.offset() + member_at },
+                    member: LocatedCompactIndex {
+                        atom,
+                        offset: record.offset() + member_at,
+                    },
                 });
             }
             members
@@ -4071,7 +4154,9 @@ pub fn operation_body_11_continuations(
             }
             let mut at = end + 2;
             for _ in 0..3 {
-                let width = PayloadScalarAtom::read(record.bytes().get(at..)?)?.raw().len();
+                let width = PayloadScalarAtom::read(record.bytes().get(at..)?)?
+                    .raw()
+                    .len();
                 at += width;
             }
             if record.bytes().get(at) != Some(&0x01) {
@@ -4137,10 +4222,15 @@ pub fn operation_body_reference_lanes(
         .filter_map(|(body_ordinal, reference)| {
             let token = reference.offset - record.offset();
             let end = token + reference.object_index.raw().len();
-            let branch = discriminators::OperationBodyReferenceBranch::try_from(*record.bytes().get(end + 1)?).ok()?;
+            let branch = discriminators::OperationBodyReferenceBranch::try_from(
+                *record.bytes().get(end + 1)?,
+            )
+            .ok()?;
             let mut at = end + 2;
             for _ in 0..3 {
-                let width = PayloadScalarAtom::read(record.bytes().get(at..)?)?.raw().len();
+                let width = PayloadScalarAtom::read(record.bytes().get(at..)?)?
+                    .raw()
+                    .len();
                 at += width;
             }
             if record.bytes().get(at) != Some(&0x01) {
@@ -4151,19 +4241,23 @@ pub fn operation_body_reference_lanes(
                 return None;
             }
             at += 2;
-            let compact = operation_body_reference_lane_values(record, at, count - 1, |bytes, offset| {
-                let atom = CompactIndexAtom::read(bytes)?;
-                let width = atom.raw().len();
-                Some((LocatedCompactIndex { atom, offset }, width))
-            });
-            let objects = operation_body_reference_lane_values(record, at, count - 1, |bytes, offset| {
-                let token = reference_index::PayloadIndexToken::read(bytes)?;
-                let width = token.raw().len();
-                Some((PayloadObjectReference { token, offset }, width))
-            });
+            let compact =
+                operation_body_reference_lane_values(record, at, count - 1, |bytes, offset| {
+                    let atom = CompactIndexAtom::read(bytes)?;
+                    let width = atom.raw().len();
+                    Some((LocatedCompactIndex { atom, offset }, width))
+                });
+            let objects =
+                operation_body_reference_lane_values(record, at, count - 1, |bytes, offset| {
+                    let token = reference_index::PayloadIndexToken::read(bytes)?;
+                    let width = token.raw().len();
+                    Some((PayloadObjectReference { token, offset }, width))
+                });
             let values = match (compact, objects) {
                 (Some(values), None) => OperationBodyReferenceLaneValues::CompactIndex(values),
-                (None, Some(values)) => OperationBodyReferenceLaneValues::PayloadObjectIndex(values),
+                (None, Some(values)) => {
+                    OperationBodyReferenceLaneValues::PayloadObjectIndex(values)
+                }
                 _ => return None,
             };
             Some(OperationBodyReferenceLane {
@@ -4295,7 +4389,10 @@ pub fn datum_csys_references(record: OperationPayload<'_>) -> Option<DatumCsysRe
         let (object_index, width) = payload_object_index(record.payload().get(at..)?)?;
         let offset = record.payload_offset() + at;
         at += width;
-        Some(PayloadObjectReference { offset, token: object_index })
+        Some(PayloadObjectReference {
+            offset,
+            token: object_index,
+        })
     });
     let [a, b, c, d, e, f, g, h] = references;
     let references = [a?, b?, c?, d?, e?, f?, g?, h?];
@@ -4346,7 +4443,10 @@ pub fn datum_plane_single_reference_branch(
     (record.payload().get(at..at + SUFFIX.len()) == Some(&SUFFIX)).then_some(())?;
     Some(DatumPlaneSingleReferenceBranch {
         descriptor,
-        object: PayloadObjectReference { token: object_index, offset: object_offset },
+        object: PayloadObjectReference {
+            token: object_index,
+            offset: object_offset,
+        },
     })
 }
 
@@ -4379,7 +4479,10 @@ pub fn datum_plane_descriptor_reference_branch(
     (record.payload().get(at..at + SUFFIX.len()) == Some(&SUFFIX)).then_some(())?;
     Some(DatumPlaneSingleReferenceBranch {
         descriptor,
-        object: PayloadObjectReference { token: object_index, offset: object_offset },
+        object: PayloadObjectReference {
+            token: object_index,
+            offset: object_offset,
+        },
     })
 }
 
@@ -4461,12 +4564,15 @@ pub fn datum_plane_object_index_lanes(bytes: &[u8]) -> Vec<DatumPlaneObjectIndex
             continue;
         }
         let mut at = start + 2;
-        let indices = (1..declared_count).map(|_| {
-            let token = LocatedCompactIndex::read(&bytes[..scan_at], at)?;
-            at += token.atom.raw().len();
-            Some(token)
-        }).collect::<Option<Vec<_>>>();
-        let Some(indices) = indices.and_then(|indices| CountedIndexMembers::new(indices).ok()) else {
+        let indices = (1..declared_count)
+            .map(|_| {
+                let token = LocatedCompactIndex::read(&bytes[..scan_at], at)?;
+                at += token.atom.raw().len();
+                Some(token)
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(indices) = indices.and_then(|indices| CountedIndexMembers::new(indices).ok())
+        else {
             continue;
         };
         let Some(trailer) = View::u32_be_at(bytes, scan_at + 1) else {
@@ -4495,7 +4601,8 @@ pub fn datum_plane_object_scalar_pairs(bytes: &[u8]) -> Vec<DatumPlaneObjectScal
             let first = offset + DISCRIMINATOR.len();
             let second = first + 9;
             (bytes.get(first + 8) == Some(&0x00)).then_some(())?;
-            let [first, second] = [first, second].map(|offset| LocatedBinary64::read(bytes, offset));
+            let [first, second] =
+                [first, second].map(|offset| LocatedBinary64::read(bytes, offset));
             Some(DatumPlaneObjectScalarPair {
                 offset,
                 values: [first?, second?],
@@ -4529,7 +4636,9 @@ pub fn object_payload_scalar_pairs(bytes: &[u8]) -> Vec<ObjectPayloadScalarPair>
             if bytes.get(first + 8) != Some(&0x00) {
                 continue;
             }
-            let [Some(first), Some(second)] = [first, second].map(|offset| LocatedBinary64::read(bytes, offset)) else {
+            let [Some(first), Some(second)] =
+                [first, second].map(|offset| LocatedBinary64::read(bytes, offset))
+            else {
                 continue;
             };
             pairs.push(ObjectPayloadScalarPair {
@@ -4565,7 +4674,9 @@ pub fn sketch_payload_scalar_pairs(bytes: &[u8]) -> Vec<ObjectPayloadScalarPair>
         }
         let first = offset + discriminator_len;
         let second = first + 8;
-        let [Some(first), Some(second)] = [first, second].map(|offset| LocatedBinary64::read(bytes, offset)) else {
+        let [Some(first), Some(second)] =
+            [first, second].map(|offset| LocatedBinary64::read(bytes, offset))
+        else {
             continue;
         };
         pairs.push(ObjectPayloadScalarPair {
@@ -4585,7 +4696,9 @@ pub fn sketch_payload_scalar_lanes(bytes: &[u8]) -> Vec<FramedScalarRun<SketchSc
         .into_iter()
         .flat_map(|form| {
             let discriminator = form.discriminator();
-            bytes.windows(discriminator.len()).enumerate()
+            bytes
+                .windows(discriminator.len())
+                .enumerate()
                 .filter_map(move |(offset, window)| {
                     (window == discriminator).then_some(())?;
                     let mut at = offset + discriminator.len();
@@ -4660,8 +4773,7 @@ pub fn sketch_payload_mixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadMixedPair> {
         else {
             continue;
         };
-        let Some(binary32_atom) = ShiftedBinary32::read(&binary32_raw_value)
-        else {
+        let Some(binary32_atom) = ShiftedBinary32::read(&binary32_raw_value) else {
             continue;
         };
         let Some(fixed) = sketch_fixed_atom(bytes, fixed_offset) else {
@@ -4669,14 +4781,19 @@ pub fn sketch_payload_mixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadMixedPair> {
         };
         pairs.push(SketchPayloadMixedPair {
             offset,
-            scalars: SketchMixedScalars { fixed, binary32: binary32_atom },
+            scalars: SketchMixedScalars {
+                fixed,
+                binary32: binary32_atom,
+            },
         });
     }
     pairs
 }
 
 fn sketch_fixed_atom(bytes: &[u8], offset: usize) -> Option<SketchScaledAtom> {
-    Some(SketchScaledAtom::from_raw(bytes.get(offset + 1..offset + 8)?.try_into().ok()?))
+    Some(SketchScaledAtom::from_raw(
+        bytes.get(offset + 1..offset + 8)?.try_into().ok()?,
+    ))
 }
 
 /// Decode every exactly framed signed Q1.55 pair in a datum-CSYS payload.
@@ -4730,7 +4847,13 @@ pub fn draft_construction_fixed_lanes(bytes: &[u8]) -> Vec<FramedScalarRun<Q155L
             let mut values = Vec::new();
             while let Some(marker) = bytes.get(at).copied().and_then(Q155Marker::read) {
                 let raw = bytes.get(at + 1..at + 8)?.try_into().ok()?;
-                values.push((Q155Atom { marker, scalar: Q155::from_raw(raw) }, ()));
+                values.push((
+                    Q155Atom {
+                        marker,
+                        scalar: Q155::from_raw(raw),
+                    },
+                    (),
+                ));
                 at += 8;
             }
             if bytes.get(at) != Some(&0x00) {
@@ -4742,7 +4865,9 @@ pub fn draft_construction_fixed_lanes(bytes: &[u8]) -> Vec<FramedScalarRun<Q155L
 }
 
 /// Decode every complete shifted-binary32 lane in a reconstructed draft graph payload.
-pub fn draft_construction_binary32_lanes(bytes: &[u8]) -> Vec<FramedScalarRun<DraftBinary32Branch, ()>> {
+pub fn draft_construction_binary32_lanes(
+    bytes: &[u8],
+) -> Vec<FramedScalarRun<DraftBinary32Branch, ()>> {
     let mut lanes = [DraftBinary32Branch::Form04, DraftBinary32Branch::Form03]
         .into_iter()
         .flat_map(|branch| {
@@ -4778,9 +4903,10 @@ pub fn datum_csys_descriptor_block(bytes: &[u8]) -> Option<csys_descriptor::Csys
 
 /// Decode every complete identity frame in a reconstructed draft construction payload.
 pub fn draft_construction_identity_frames(bytes: &[u8]) -> Vec<draft_identity::DraftIdentityFrame> {
-    (0..bytes.len()).filter_map(|offset| draft_identity::DraftIdentityFrame::read(bytes, offset)).collect()
+    (0..bytes.len())
+        .filter_map(|offset| draft_identity::DraftIdentityFrame::read(bytes, offset))
+        .collect()
 }
-
 
 /// Decode compact object IDs followed by their complete frame discriminator.
 pub fn data_block_object_frames(bytes: &[u8]) -> Vec<LocatedCompactIndex> {
@@ -4806,10 +4932,17 @@ pub fn data_block_object_frames(bytes: &[u8]) -> Vec<LocatedCompactIndex> {
     references
 }
 
-fn counted_u32_atoms(bytes: &[u8], at: &mut usize) -> Option<Vec<LocatedCompactIndex<usize, WrappedCompactIndex>>> {
-    if bytes.get(*at) != Some(&0x01) { return None; }
+fn counted_u32_atoms(
+    bytes: &[u8],
+    at: &mut usize,
+) -> Option<Vec<LocatedCompactIndex<usize, WrappedCompactIndex>>> {
+    if bytes.get(*at) != Some(&0x01) {
+        return None;
+    }
     let count = usize::from(*bytes.get(*at + 1)?);
-    if count < 2 { return None; }
+    if count < 2 {
+        return None;
+    }
     *at += 2;
     let mut values = Vec::with_capacity(count - 1);
     for _ in 1..count {
@@ -4837,7 +4970,6 @@ fn counted_compact_values(bytes: &[u8], at: &mut usize) -> Option<Vec<LocatedCom
     }
     Some(values)
 }
-
 
 fn extrude_profile_reference_field(
     record: OperationPayload<'_>,
@@ -4956,9 +5088,14 @@ fn operation_body_reference_candidates(
         let window = record.bytes().get(cursor..window_end)?;
         let marker = cursor;
         cursor += 1;
-        let body_write = marker.checked_sub(record.payload_start())
+        let body_write = marker
+            .checked_sub(record.payload_start())
             .and_then(|payload_marker| {
-                operation_body_write_frame_at(record.payload(), record.payload_offset(), payload_marker)
+                operation_body_write_frame_at(
+                    record.payload(),
+                    record.payload_offset(),
+                    payload_marker,
+                )
             });
         if let Some(body_write) = body_write {
             cursor = cursor.max(body_write.end_offset() - record.offset());
@@ -4966,7 +5103,9 @@ fn operation_body_reference_candidates(
         }
         if window == [0x01, 0x02, 0x10] {
             let token = marker + 3;
-            let Some(object_index) = reference_index::FeatureReferenceToken::read(&record.bytes()[token..]) else {
+            let Some(object_index) =
+                reference_index::FeatureReferenceToken::read(&record.bytes()[token..])
+            else {
                 continue;
             };
             let end = token + object_index.raw().len();
@@ -5028,7 +5167,13 @@ fn operation_body_write_frame_at(
     let image_at = first_end + 5;
     let body_image = BodyWriteIndex::read(payload.get(image_at..)?)?;
     (payload.get(image_at + body_image.raw().len()) == Some(&0xff)).then_some(())?;
-    BodyWriteFrame::<usize>::new(body_identity, group_node, endpoint_tag, body_image, payload_offset.checked_add(marker)?)
+    BodyWriteFrame::<usize>::new(
+        body_identity,
+        group_node,
+        endpoint_tag,
+        body_image,
+        payload_offset.checked_add(marker)?,
+    )
 }
 
 fn feature_object_index(bytes: &[u8], at: usize) -> Option<(Option<u32>, usize)> {
@@ -5055,7 +5200,11 @@ fn operation_state_counter_row(
     }
     let row_kind = OperationStateCounterKind::try_from(*bytes.get(at + 1)?).ok()?;
     let object_at = at.checked_add(2)?;
-    let object_index = NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, object_at, base_offset)?)?;
+    let object_index = NonNullStateIndex::from_index(OperationStateIndex::read_at(
+        bytes,
+        object_at,
+        base_offset,
+    )?)?;
     let state_at = object_at.checked_add(object_index.raw().len())?;
     let introduced_state = *bytes.get(state_at)?;
     let modified_state = *bytes.get(state_at + 1)?;
@@ -5319,9 +5468,7 @@ fn operation_state_block_before_boundary(
                 }
             });
         let message = operation_state_message_at(bytes, at, base_offset);
-        let message_next = message
-            .as_ref()
-            .map(|message| message.span.local_end());
+        let message_next = message.as_ref().map(|message| message.span.local_end());
         let message_length = operation_state_path_at(&message_paths, at)
             .filter(|path| path.end == path_end)
             .map_or(0, |path| path.length);
@@ -5416,7 +5563,11 @@ fn operation_state_link_payload(
         return None;
     }
     let linked_at = payload_at.checked_add(2)?;
-    let linked = NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, linked_at, base_offset)?)?;
+    let linked = NonNullStateIndex::from_index(OperationStateIndex::read_at(
+        bytes,
+        linked_at,
+        base_offset,
+    )?)?;
     let sentinel_at = linked_at.checked_add(linked.raw().len())?;
     if bytes.get(sentinel_at) != Some(&0xff) {
         return None;
@@ -5482,7 +5633,11 @@ fn operation_state_status_row_at<'a>(
     let status_code =
         NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, at, base_offset)?)?;
     let object_at = at.checked_add(status_code.raw().len())?;
-    let object_index = NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, object_at, base_offset)?)?;
+    let object_index = NonNullStateIndex::from_index(OperationStateIndex::read_at(
+        bytes,
+        object_at,
+        base_offset,
+    )?)?;
     let payload_at = object_at.checked_add(object_index.raw().len())?;
     if payload_at >= end {
         return None;
@@ -5585,9 +5740,17 @@ fn operation_state_group_row_at(
     match tag {
         0x4a => {
             let object_at = cursor.checked_add(1)?;
-            let object_index = NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, object_at, base_offset)?)?;
+            let object_index = NonNullStateIndex::from_index(OperationStateIndex::read_at(
+                bytes,
+                object_at,
+                base_offset,
+            )?)?;
             let position_at = object_at.checked_add(object_index.raw().len())?;
-            let position = NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, position_at, base_offset)?)?;
+            let position = NonNullStateIndex::from_index(OperationStateIndex::read_at(
+                bytes,
+                position_at,
+                base_offset,
+            )?)?;
             let sentinel_at = position_at.checked_add(position.raw().len())?;
             let row_end = sentinel_at.checked_add(1)?;
             (bytes.get(sentinel_at) == Some(&0xff)).then_some((
@@ -5602,9 +5765,17 @@ fn operation_state_group_row_at(
         tag => {
             let tag = OperationStatePairTag::try_from(tag).ok()?;
             let first_at = cursor.checked_add(1)?;
-            let first = NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, first_at, base_offset)?)?;
+            let first = NonNullStateIndex::from_index(OperationStateIndex::read_at(
+                bytes,
+                first_at,
+                base_offset,
+            )?)?;
             let second_at = first_at.checked_add(first.raw().len())?;
-            let second = NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, second_at, base_offset)?)?;
+            let second = NonNullStateIndex::from_index(OperationStateIndex::read_at(
+                bytes,
+                second_at,
+                base_offset,
+            )?)?;
             let sentinels_at = second_at.checked_add(second.raw().len())?;
             let row_end = sentinels_at.checked_add(2)?;
             (bytes.get(sentinels_at..row_end) == Some(&[0xff, 0xff])).then_some((
@@ -5782,9 +5953,17 @@ fn operation_state_journal_row_at(
     let timestamp = View::u32_be_at(bytes, at + 1)?;
     let value = StateTaggedValue::read_at(bytes, at + 5)?;
     let schema_at = at.checked_add(5 + value.raw().len())?;
-    let schema_id = NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, schema_at, base_offset)?)?;
+    let schema_id = NonNullStateIndex::from_index(OperationStateIndex::read_at(
+        bytes,
+        schema_at,
+        base_offset,
+    )?)?;
     let ordinal_at = schema_at.checked_add(schema_id.raw().len())?;
-    let ordinal = NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, ordinal_at, base_offset)?)?;
+    let ordinal = NonNullStateIndex::from_index(OperationStateIndex::read_at(
+        bytes,
+        ordinal_at,
+        base_offset,
+    )?)?;
     let terminator_at = ordinal_at.checked_add(ordinal.raw().len())?;
     if terminator_at >= end || bytes.get(terminator_at) != Some(&0x13) {
         return None;
@@ -5809,7 +5988,11 @@ fn audit_trail_row_at(
     if bytes.get(at) != Some(&0x04) {
         return None;
     }
-    let ordinal = NonNullStateIndex::from_index(OperationStateIndex::read_at(bytes, at.checked_add(1)?, base_offset)?)?;
+    let ordinal = NonNullStateIndex::from_index(OperationStateIndex::read_at(
+        bytes,
+        at.checked_add(1)?,
+        base_offset,
+    )?)?;
     let mut cursor = at.checked_add(1 + ordinal.raw().len())?;
     if bytes.get(cursor) != Some(&0x13) {
         return None;
@@ -5833,9 +6016,16 @@ fn audit_trail_row_at(
     let timestamp = View::u32_be_at(bytes, cursor + 1)?;
     cursor = cursor.checked_add(5)?;
     let value = StateTaggedValue::read_at(bytes, cursor)?;
-    AuditTrailRow::new(base_offset, at, AuditRecord {
-        ordinal: ordinal.token(), frame_selector, timestamp, value,
-    })
+    AuditTrailRow::new(
+        base_offset,
+        at,
+        AuditRecord {
+            ordinal: ordinal.token(),
+            frame_selector,
+            timestamp,
+            value,
+        },
+    )
 }
 
 /// Decode complete audit-trail rows from a bounded record-area suffix.
@@ -6017,18 +6207,29 @@ fn unique_candidate<T>(candidates: impl IntoIterator<Item = T>) -> Option<T> {
 /// Decode every exact common frame in one bounded operation payload.
 pub fn operation_common_frames(record: OperationPayload<'_>) -> Vec<CommonFrame<usize>> {
     let decode = |start: usize, marker| {
-        if marker == [1, 1, 1] && record.name() != "DELETE" { return None; }
+        if marker == [1, 1, 1] && record.name() != "DELETE" {
+            return None;
+        }
         let bytes = record.payload().get(start..)?;
         let prefix = CommonFramePrefix::read(bytes, marker)?;
         let state_at = prefix.byte_len();
         let state = bytes.get(state_at..state_at + 8)?.try_into().ok()?;
         let suffix = CommonFrameSuffix::read(bytes.get(state_at + 8..)?)?;
-        CommonFrame::<usize>::new(prefix, state, suffix, record.payload_offset().checked_add(start)?)
+        CommonFrame::<usize>::new(
+            prefix,
+            state,
+            suffix,
+            record.payload_offset().checked_add(start)?,
+        )
     };
     let mut frames = Vec::new();
     for start in 0..record.payload().len() {
-        if let Some(frame) = decode(start, [1, 3, 2]) { frames.push(frame); }
-        if let Some(frame) = decode(start, [1, 1, 1]) { frames.push(frame); }
+        if let Some(frame) = decode(start, [1, 3, 2]) {
+            frames.push(frame);
+        }
+        if let Some(frame) = decode(start, [1, 1, 1]) {
+            frames.push(frame);
+        }
     }
     frames.sort_by_key(CommonFrame::<usize>::offset);
     frames
@@ -6039,15 +6240,25 @@ pub fn operation_terminal_frame(record: OperationPayload<'_>) -> Option<Operatio
     let terminator = record.payload().len().checked_sub(1)?;
     (record.payload().get(terminator) == Some(&0)).then_some(())?;
     let common_frames = operation_common_frames(record);
-    unique_candidate((terminator.saturating_sub(9)..terminator).filter_map(|start| {
-        let suffix = CommonFrameSuffix::read(record.payload().get(start..)?)?;
-        (start + suffix.byte_len() == record.payload().len()).then_some(())?;
-        let frame = TerminalFrame::<usize>::new(suffix, record.payload_offset().checked_add(start)?)?;
-        let immediate_common_frame_offset = common_frames.iter().find(|common| {
-            common.local_ordinal_offset() == frame.offset() && common.end_offset() == frame.end_offset()
-        }).map(CommonFrame::<usize>::offset);
-        Some(OperationTerminalFrame { immediate_common_frame_offset, frame })
-    }))
+    unique_candidate(
+        (terminator.saturating_sub(9)..terminator).filter_map(|start| {
+            let suffix = CommonFrameSuffix::read(record.payload().get(start..)?)?;
+            (start + suffix.byte_len() == record.payload().len()).then_some(())?;
+            let frame =
+                TerminalFrame::<usize>::new(suffix, record.payload_offset().checked_add(start)?)?;
+            let immediate_common_frame_offset = common_frames
+                .iter()
+                .find(|common| {
+                    common.local_ordinal_offset() == frame.offset()
+                        && common.end_offset() == frame.end_offset()
+                })
+                .map(CommonFrame::<usize>::offset);
+            Some(OperationTerminalFrame {
+                immediate_common_frame_offset,
+                frame,
+            })
+        }),
+    )
 }
 
 /// Decode ordered `04 00, object_index, 02 0b` references from one bounded block.
@@ -6060,7 +6271,8 @@ pub fn data_block_object_references(bytes: &[u8]) -> Vec<DataBlockObjectReferenc
             continue;
         }
         let token = at + 2;
-        let Some(object_index) = reference_index::FeatureReferenceToken::read(&bytes[token..]) else {
+        let Some(object_index) = reference_index::FeatureReferenceToken::read(&bytes[token..])
+        else {
             at += 1;
             continue;
         };
@@ -6218,16 +6430,21 @@ pub fn record_references(bytes: &[u8], base_offset: usize) -> Vec<ReferenceValue
         .copied()
         .filter(|reference| reference.kind == ReferenceKind::PersistentHandle)
         .collect::<Vec<_>>();
-    out.extend(parsed.iter().zip(parsed.iter().skip(1)).filter_map(|(persistent, tagged)| {
-        let adjacent = persistent
-            .offset
-            .checked_add(5)
-            .is_some_and(|offset| tagged.offset == offset);
-        (persistent.kind == ReferenceKind::PersistentHandle
-            && tagged.kind == ReferenceKind::Tagged28
-            && adjacent)
-            .then_some(*tagged)
-    }));
+    out.extend(
+        parsed
+            .iter()
+            .zip(parsed.iter().skip(1))
+            .filter_map(|(persistent, tagged)| {
+                let adjacent = persistent
+                    .offset
+                    .checked_add(5)
+                    .is_some_and(|offset| tagged.offset == offset);
+                (persistent.kind == ReferenceKind::PersistentHandle
+                    && tagged.kind == ReferenceKind::Tagged28
+                    && adjacent)
+                    .then_some(*tagged)
+            }),
+    );
     out.sort_by_key(|reference| reference.offset);
     out
 }
@@ -6278,7 +6495,10 @@ pub fn string_values(bytes: &[u8], base_offset: usize) -> Vec<StringValue<'_>> {
             let raw = bytes.get(start..end)?;
             (bytes.get(end) == Some(&0)).then_some(())?;
             let value = PrintableString::new(std::str::from_utf8(raw).ok()?).ok()?;
-            Some(StringValue { offset: base_offset + offset, value })
+            Some(StringValue {
+                offset: base_offset + offset,
+                value,
+            })
         })
         .collect()
 }
@@ -6295,7 +6515,8 @@ pub fn uuid_string_values(bytes: &[u8], base_offset: usize) -> Vec<UuidStringVal
             let start = offset.checked_add(MARKER.len())?;
             let end = start.checked_add(TEXT_LEN)?;
             let raw = bytes.get(start..end)?;
-            let value = crate::canonical_uuid::CanonicalUuid::new(std::str::from_utf8(raw).ok()?).ok()?;
+            let value =
+                crate::canonical_uuid::CanonicalUuid::new(std::str::from_utf8(raw).ok()?).ok()?;
             (bytes.get(end) == Some(&0)).then_some(UuidStringValue {
                 offset: base_offset + offset,
                 value,
@@ -6314,13 +6535,25 @@ mod uuid_string_value_tests {
         let values = uuid_string_values(&bytes, 100);
         assert_eq!(values.len(), 1);
         assert_eq!(values[0].offset, 106);
-        assert_eq!(values[0].value.as_str(), "01234567-89ab-cdef-0123-456789abcdef");
+        assert_eq!(
+            values[0].value.as_str(),
+            "01234567-89ab-cdef-0123-456789abcdef"
+        );
 
         bytes[6 + 2 + 9] = b'A';
         assert!(uuid_string_values(&bytes, 0).is_empty());
-        assert!(crate::canonical_uuid::CanonicalUuid::new("01234567-89ab-cdef-0123-456789abcde").is_err());
-        assert!(crate::canonical_uuid::CanonicalUuid::new("01234567-89ab-cdef-0123_456789abcdef").is_err());
-        assert!(crate::canonical_uuid::CanonicalUuid::new("01234567-89ab-cdef-0123-456789abcdeg").is_err());
+        assert!(
+            crate::canonical_uuid::CanonicalUuid::new("01234567-89ab-cdef-0123-456789abcde")
+                .is_err()
+        );
+        assert!(
+            crate::canonical_uuid::CanonicalUuid::new("01234567-89ab-cdef-0123_456789abcdef")
+                .is_err()
+        );
+        assert!(
+            crate::canonical_uuid::CanonicalUuid::new("01234567-89ab-cdef-0123-456789abcdeg")
+                .is_err()
+        );
     }
 
     #[test]
@@ -6345,9 +6578,9 @@ pub fn surface_payload_strings(bytes: &[u8]) -> Vec<SurfacePayloadString<'_>> {
             let start = offset.checked_add(MARKER.len() + 1)?;
             let end = start.checked_add(text_len)?;
             let raw = bytes.get(start..end)?;
-            let value = crate::payload_text::PayloadText::new(std::str::from_utf8(raw).ok()?).ok()?;
-            (bytes.get(end) == Some(&0))
-            .then_some(SurfacePayloadString { offset, value })
+            let value =
+                crate::payload_text::PayloadText::new(std::str::from_utf8(raw).ok()?).ok()?;
+            (bytes.get(end) == Some(&0)).then_some(SurfacePayloadString { offset, value })
         })
         .collect()
 }
@@ -6433,8 +6666,8 @@ pub fn sections(bytes: &[u8]) -> Vec<Section<'_>> {
             offset: start,
             bytes: &bytes[start..end],
         });
-        let cached_operation_labels = record_area
-            .map_or_else(Vec::new, |area| operation_labels(area.bytes, area.offset));
+        let cached_operation_labels =
+            record_area.map_or_else(Vec::new, |area| operation_labels(area.bytes, area.offset));
         out.push(Section {
             offset,
             byte_len: end - offset,
@@ -6458,7 +6691,12 @@ fn section_record_area_pointer(
         let relative = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
         let target = section_offset.checked_add(relative)?;
         (target >= at.checked_add(4)? && target.checked_add(15)? <= section_end).then_some(())?;
-        ProductRecord::read(bytes.get(target.checked_add(12)?..section_end)?, ProductRecordForm::Modern).is_some().then_some((target, at))
+        ProductRecord::read(
+            bytes.get(target.checked_add(12)?..section_end)?,
+            ProductRecordForm::Modern,
+        )
+        .is_some()
+        .then_some((target, at))
     });
     let first = matches.next()?;
     matches.next().is_none().then_some(first)
@@ -6572,7 +6810,9 @@ fn product_record_count_within(ranges: &[ProductRecordRange], lower: usize, uppe
 /// admitted candidates sufficient to recognize every nested candidate. This
 /// keeps the admission pass linear after sorting and, more importantly, keeps
 /// rejected candidates as layout metadata rather than allocated records.
-fn select_outer_indexed_candidates(mut candidates: Vec<IndexedCandidate<'_>>) -> Vec<IndexedCandidate<'_>> {
+fn select_outer_indexed_candidates(
+    mut candidates: Vec<IndexedCandidate<'_>>,
+) -> Vec<IndexedCandidate<'_>> {
     candidates.sort_by(|left, right| {
         left.start()
             .cmp(&right.start())
@@ -6599,23 +6839,34 @@ fn materialize_indexed_candidate(candidate: IndexedCandidate<'_>) -> IndexedSect
         IndexedCandidateKind::OffsetOnly(_) => 0,
     };
     let type_registry = registry::type_registry(bytes, base, entity_index_offset);
-    let fields = registry::all_field_definitions(bytes, type_registry.field_start, entity_index_offset);
+    let fields =
+        registry::all_field_definitions(bytes, type_registry.field_start, entity_index_offset);
     let (object_id_table_offset, store) = match candidate.kind {
-        IndexedCandidateKind::Fixed(index) => (index.object_id_table_offset(), IndexedStore::Fixed {
-            records: index.records().collect::<Vec<_>>().into(),
-        }),
+        IndexedCandidateKind::Fixed(index) => (
+            index.object_id_table_offset(),
+            IndexedStore::Fixed {
+                records: index.records().collect::<Vec<_>>().into(),
+            },
+        ),
         IndexedCandidateKind::OffsetOnly(index) => {
             let control = index.control();
-            (control.offset, IndexedStore::OffsetOnly {
-                control,
-                column_storage: index.column_storage(),
-                records: index.records().collect::<Vec<_>>().into(),
-            })
+            (
+                control.offset,
+                IndexedStore::OffsetOnly {
+                    control,
+                    column_storage: index.column_storage(),
+                    records: index.records().collect::<Vec<_>>().into(),
+                },
+            )
         }
     };
     IndexedSection {
-        base, entity_index_offset, object_id_table_offset,
-        types: type_registry.definitions.into(), fields: fields.into(), store,
+        base,
+        entity_index_offset,
+        object_id_table_offset,
+        types: type_registry.definitions.into(),
+        fields: fields.into(),
+        store,
     }
 }
 
@@ -6664,10 +6915,13 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         let Some(base) = table_end.checked_sub(first) else {
             continue;
         };
-        let Some(index) = FixedIndex::new(&descending_u32_edges, index_start, count, base, table) else {
+        let Some(index) = FixedIndex::new(&descending_u32_edges, index_start, count, base, table)
+        else {
             continue;
         };
-        if !seen_record_starts.insert(table_end) { continue; }
+        if !seen_record_starts.insert(table_end) {
+            continue;
+        }
         candidates.push(IndexedCandidate {
             discovery_order: candidates.len(),
             kind: IndexedCandidateKind::Fixed(index),
@@ -6722,10 +6976,17 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         if product_record_count != 1 {
             continue;
         }
-        let Some(index) = OffsetIndex::new(&descending_u32_edges, index_start, offset_count, count_offset) else {
+        let Some(index) = OffsetIndex::new(
+            &descending_u32_edges,
+            index_start,
+            offset_count,
+            count_offset,
+        ) else {
             continue;
         };
-        if !seen_record_starts.insert(second) { continue; }
+        if !seen_record_starts.insert(second) {
+            continue;
+        }
         candidates.push(IndexedCandidate {
             discovery_order: candidates.len(),
             kind: IndexedCandidateKind::OffsetOnly(index),
@@ -6741,7 +7002,10 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
 pub fn store_version(bytes: &[u8], base_offset: usize) -> Option<StoreVersion<'_>> {
     (0..bytes.len().saturating_sub(3)).find_map(|at| {
         let product = ProductRecord::read(&bytes[at..], ProductRecordForm::Modern)?;
-        Some(StoreVersion { offset: base_offset.checked_add(at)?, value: product.text() })
+        Some(StoreVersion {
+            offset: base_offset.checked_add(at)?,
+            value: product.text(),
+        })
     })
 }
 
@@ -6750,9 +7014,12 @@ pub fn store_version(bytes: &[u8], base_offset: usize) -> Option<StoreVersion<'_
 /// Each word is serialized `00, value:u24 LE`. The complete form is atomic.
 pub fn offset_store_control_values(bytes: &[u8]) -> Option<NonEmpty<ControlWord24>> {
     bytes.len().is_multiple_of(4).then_some(())?;
-    NonEmpty::new(bytes.chunks_exact(4).map(|word| {
-        (word[0] == 0).then(|| ControlWord24::new([word[1], word[2], word[3]]))
-    }))?.transpose()
+    NonEmpty::new(
+        bytes
+            .chunks_exact(4)
+            .map(|word| (word[0] == 0).then(|| ControlWord24::new([word[1], word[2], word[3]]))),
+    )?
+    .transpose()
 }
 
 /// Decode the distinct leading class-registry identities in an offset-store
@@ -6763,7 +7030,10 @@ pub fn offset_store_control_values(bytes: &[u8]) -> Option<NonEmpty<ControlWord2
 /// instead the unique nonempty prefix whose identities are distinct and all
 /// smaller than every following metadata value.
 pub fn offset_store_control_class_ordinals(bytes: &[u8]) -> Option<Vec<u32>> {
-    let values = offset_store_control_values(bytes)?.into_iter().map(ControlWord24::value).collect::<Vec<_>>();
+    let values = offset_store_control_values(bytes)?
+        .into_iter()
+        .map(ControlWord24::value)
+        .collect::<Vec<_>>();
     let mut suffix_minima =
         alloc_filled(values.len(), u32::MAX, "nx offset-store suffix minima").ok()?;
     for index in (0..values.len().saturating_sub(1)).rev() {
@@ -6809,10 +7079,15 @@ fn offset_store_product_anchored_form(
 ) -> Option<OffsetStoreControlForm> {
     let product_offset = unique_candidate(
         (0..control.len())
-            .filter(|offset| ProductRecord::read(&control[*offset..], ProductRecordForm::Modern).is_some())
+            .filter(|offset| {
+                ProductRecord::read(&control[*offset..], ProductRecordForm::Modern).is_some()
+            })
             .chain(
                 (0..first_record.len())
-                    .filter(|offset| ProductRecord::read(&first_record[*offset..], ProductRecordForm::Modern).is_some())
+                    .filter(|offset| {
+                        ProductRecord::read(&first_record[*offset..], ProductRecordForm::Modern)
+                            .is_some()
+                    })
                     .map(|offset| control.len() + offset),
             ),
     )?;
@@ -6824,10 +7099,16 @@ fn offset_store_product_anchored_form(
     let leading_value = if leading_width == 0 {
         None
     } else {
-        Some(ControlLeadingValue::read(leading_width, control.iter().chain(first_record).copied())?)
+        Some(ControlLeadingValue::read(
+            leading_width,
+            control.iter().chain(first_record).copied(),
+        )?)
     };
-    let values = NonEmpty::new((0..(product_offset - leading_width) / 4)
-        .map(|index| joined_control_u32_le(control, first_record, leading_width + index * 4)))?.transpose()?;
+    let values = NonEmpty::new(
+        (0..(product_offset - leading_width) / 4)
+            .map(|index| joined_control_u32_le(control, first_record, leading_width + index * 4)),
+    )?
+    .transpose()?;
     Some(OffsetStoreControlForm::ProductAnchored {
         leading_value,
         values,

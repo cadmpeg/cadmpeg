@@ -3,8 +3,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_core::CodecError;
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Angle, DesignParameter, Length, ParameterId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -15,8 +15,8 @@ use cadmpeg_ir::sketches::{
 use serde::{Deserialize, Serialize};
 
 use crate::pmdc::{
-    Cursor, PmDcContentHeader, PmDcReference, PmDcReferenceList, content_header, reference_list,
-    type_id_string,
+    content_header, reference_list, type_id_string, Cursor, PmDcContentHeader, PmDcReference,
+    PmDcReferenceList,
 };
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};

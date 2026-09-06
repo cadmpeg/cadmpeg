@@ -59,7 +59,10 @@ impl TryFrom<HandlesWire> for ExtrefHandles {
 
     fn try_from(mut wire: HandlesWire) -> Result<Self, Self::Error> {
         if wire.closing_duplicate {
-            let last = *wire.handles.last().ok_or("closing_duplicate: requires a handle")?;
+            let last = *wire
+                .handles
+                .last()
+                .ok_or("closing_duplicate: requires a handle")?;
             wire.handles.push(last);
         }
         let value = Self::new(wire.handles)?;
@@ -92,7 +95,10 @@ mod tests {
                 "handles": handles, "closing_duplicate": closing, "prefix_byte_len": length,
             });
             assert_eq!(serde_json::to_value(&value).unwrap(), wire);
-            assert_eq!(serde_json::from_value::<ExtrefHandles>(wire).unwrap(), value);
+            assert_eq!(
+                serde_json::from_value::<ExtrefHandles>(wire).unwrap(),
+                value
+            );
         }
     }
 
@@ -109,7 +115,8 @@ mod tests {
         ] {
             let error = serde_json::from_value::<ExtrefHandles>(serde_json::json!({
                 "handles": handles, "closing_duplicate": closing, "prefix_byte_len": length,
-            })).unwrap_err();
+            }))
+            .unwrap_err();
             assert!(error.to_string().contains(field));
         }
     }

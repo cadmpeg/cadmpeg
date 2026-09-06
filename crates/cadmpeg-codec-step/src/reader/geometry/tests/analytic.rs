@@ -667,11 +667,17 @@ fn complex_geometry_instances_decode_named_partials() {
 
     assert!(decoded.ir().model.curves.iter().any(|curve| {
         curve.id.as_str() == "step:data:curve#16"
-            && matches!(*curve.geometry.solved_cache().unwrap_or(&curve.geometry), CurveGeometry::Line { .. })
+            && matches!(
+                *curve.geometry.solved_cache().unwrap_or(&curve.geometry),
+                CurveGeometry::Line { .. }
+            )
     }));
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#28"
-            && matches!(*surface.geometry.solved_cache().unwrap_or(&surface.geometry), SurfaceGeometry::Plane { .. })
+            && matches!(
+                *surface.geometry.solved_cache().unwrap_or(&surface.geometry),
+                SurfaceGeometry::Plane { .. }
+            )
     }));
     assert_eq!(decoded.ir().model.pcurves.len(), 1);
     assert!(matches!(
@@ -702,7 +708,10 @@ fn complex_points_and_directions_decode_named_partials() {
     assert_eq!(decoded.ir().model.vertices.len(), 3);
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#28"
-            && matches!(*surface.geometry.solved_cache().unwrap_or(&surface.geometry), SurfaceGeometry::Plane { .. })
+            && matches!(
+                *surface.geometry.solved_cache().unwrap_or(&surface.geometry),
+                SurfaceGeometry::Plane { .. }
+            )
     }));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);

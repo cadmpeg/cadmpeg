@@ -53,7 +53,9 @@ impl TryFrom<Vec<u8>> for ThruCurveGroupTerminator {
     type Error = &'static str;
 
     fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
-        Self::ALL.into_iter().find(|value| value.bytes() == bytes)
+        Self::ALL
+            .into_iter()
+            .find(|value| value.bytes() == bytes)
             .ok_or("terminator must be a THRU_CURVE group terminator")
     }
 }
@@ -85,7 +87,11 @@ mod tests {
             let value: ThruCurveGroupTerminator = serde_json::from_str(wire).unwrap();
             assert_eq!(serde_json::to_string(&value).unwrap(), wire);
         }
-        for wire in ["[]", "[0,0,0,0,0,0,255,255,0]", "[0,0,0,0,0,0,255,0,0,255,1]"] {
+        for wire in [
+            "[]",
+            "[0,0,0,0,0,0,255,255,0]",
+            "[0,0,0,0,0,0,255,0,0,255,1]",
+        ] {
             assert!(serde_json::from_str::<ThruCurveGroupTerminator>(wire).is_err());
         }
     }

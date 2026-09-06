@@ -5,18 +5,18 @@ use cadmpeg_core::container::ContainerRole;
 
 use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded, take_reference};
 use crate::container::ContainerScan;
-use crate::design::RECIPES;
 use crate::design::decode::sketch::next_indexed_record_offset;
+use crate::design::RECIPES;
 use crate::ids::{self, native_stream};
 use crate::layout::indexed_design_record_header as indexed_header;
 use crate::records::{
-    ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector, DESIGN_MODULE_BODY,
-    DesignBodyBinding, DesignBodyBounds, DesignBodyMember, DesignEntityHeader,
+    ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector, DesignBodyBinding,
+    DesignBodyBounds, DesignBodyMember, DesignEntityHeader, DESIGN_MODULE_BODY,
 };
 use cadmpeg_asm::brep::records::BodyNativeKey;
-use cadmpeg_core::CodecError;
 use cadmpeg_core::bytes::find_from;
 use cadmpeg_core::decode::View;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point3;
 use std::collections::{HashMap, HashSet};
 
@@ -263,14 +263,19 @@ pub(crate) fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<Constructi
                 continue;
             }
             let design = recipe_design_id(bytes, offset, name).map(|(value, design_id_at)| {
-                let selector = design_id_at.checked_add(value.len()).and_then(|selector_at| {
-                    Some(ConstructionRecipeSelector {
-                        value: View::u32_le_at(bytes, selector_at)?,
-                        byte_offset: u64::try_from(selector_at).ok()?,
-                    })
-                });
+                let selector = design_id_at
+                    .checked_add(value.len())
+                    .and_then(|selector_at| {
+                        Some(ConstructionRecipeSelector {
+                            value: View::u32_le_at(bytes, selector_at)?,
+                            byte_offset: u64::try_from(selector_at).ok()?,
+                        })
+                    });
                 crate::records::ConstructionRecipeDesign {
-                    id: crate::records::RecordedValue { value, offset: Some(design_id_at as u64) },
+                    id: crate::records::RecordedValue {
+                        value,
+                        offset: Some(design_id_at as u64),
+                    },
                     selector,
                 }
             });
@@ -362,7 +367,10 @@ pub(crate) struct BodyMapRecord {
 fn entity_has_type(meta: &crate::metastream::MetaStream, entity: u64, type_guid: &str) -> bool {
     meta.types.iter().any(|design_type| {
         design_type.type_guid.eq_ignore_ascii_case(type_guid)
-            && design_type.entities.values().any(|registered| *registered == entity)
+            && design_type
+                .entities
+                .values()
+                .any(|registered| *registered == entity)
     })
 }
 
@@ -465,9 +473,13 @@ pub(crate) fn snapshot_body_map_records(
             )));
         }
         if design_type.module != DESIGN_MODULE_BODY
-            || !design_type.base_type_guid.as_ref().map(|field| field.value.as_str()).is_some_and(|base| {
-                base.eq_ignore_ascii_case(crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID)
-            })
+            || !design_type
+                .base_type_guid
+                .as_ref()
+                .map(|field| field.value.as_str())
+                .is_some_and(|base| {
+                    base.eq_ignore_ascii_case(crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID)
+                })
         {
             return Err(crate::error::malformed(
                 "F3D Design snapshot body-map carrier has incompatible registration metadata",
@@ -670,9 +682,13 @@ fn body_map_records(
             )));
         }
         if design_type.module != DESIGN_MODULE_BODY
-            || !design_type.base_type_guid.as_ref().map(|field| field.value.as_str()).is_some_and(|base| {
-                base.eq_ignore_ascii_case(crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID)
-            })
+            || !design_type
+                .base_type_guid
+                .as_ref()
+                .map(|field| field.value.as_str())
+                .is_some_and(|base| {
+                    base.eq_ignore_ascii_case(crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID)
+                })
         {
             return Err(CodecError::Malformed(
                 "F3D Design body-map carrier type has incompatible registration metadata".into(),
@@ -1241,7 +1257,10 @@ mod tests {
             byte_offset: 0,
             type_guid: type_guid.into(),
             type_guid_offset: 0,
-            base_type_guid: base_type_guid.map(|value| crate::records::RecordedValue { value: value.to_owned(), offset: Some(0) }),
+            base_type_guid: base_type_guid.map(|value| crate::records::RecordedValue {
+                value: value.to_owned(),
+                offset: Some(0),
+            }),
             version,
             version_offset: 0,
             module: module.into(),
@@ -1303,11 +1322,19 @@ mod tests {
                     byte_offset: 0,
                     type_guid: crate::design::body::BODY_MAP_CARRIER_TYPE_GUID.into(),
                     type_guid_offset: 0,
-                    base_type_guid: Some(crate::records::RecordedValue { value: crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID.into(), offset: Some(0) }),
+                    base_type_guid: Some(crate::records::RecordedValue {
+                        value: crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID.into(),
+                        offset: Some(0),
+                    }),
                     version: crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
                     version_offset: 0,
                     module: DESIGN_MODULE_BODY.into(),
-                    entities: crate::records::ReferenceRun::Located(vec![crate::records::Located { value: 900, offset: 0 }]),
+                    entities: crate::records::ReferenceRun::Located(vec![
+                        crate::records::Located {
+                            value: 900,
+                            offset: 0,
+                        },
+                    ]),
                 },
                 presentation_type(
                     crate::design::body::SNAPSHOT_BODY_CONTAINER_TYPE_GUID,
@@ -1559,11 +1586,9 @@ mod tests {
                     .expect("empty body-map frame")
                     .expect("supported empty body-map variant");
             assert!(frame.is_empty());
-            assert!(
-                body_bindings(&bytes, &body_map_metadata())
-                    .expect("empty typed body map")
-                    .is_empty()
-            );
+            assert!(body_bindings(&bytes, &body_map_metadata())
+                .expect("empty typed body map")
+                .is_empty());
         }
     }
 
@@ -1580,11 +1605,9 @@ mod tests {
     #[test]
     fn truncated_body_map_frame_is_not_decoded() {
         let bytes = body_map_bytes(10, 2, &[(10, 20)]);
-        assert!(
-            body_bindings(&bytes, &body_map_metadata())
-                .expect("typed carrier record")
-                .is_empty()
-        );
+        assert!(body_bindings(&bytes, &body_map_metadata())
+            .expect("typed carrier record")
+            .is_empty());
     }
 
     #[test]
@@ -1594,11 +1617,9 @@ mod tests {
         bytes.extend_from_slice(&[0xff; 4]);
         bytes.extend(body_map_bytes(10, 1, &[(10, 20)]));
 
-        assert!(
-            body_bindings(&bytes, &body_map_metadata())
-                .expect("outer typed carrier record")
-                .is_empty()
-        );
+        assert!(body_bindings(&bytes, &body_map_metadata())
+            .expect("outer typed carrier record")
+            .is_empty());
     }
 
     fn push_browser_node(
@@ -1734,11 +1755,9 @@ mod tests {
         assert_eq!(candidates, [(0, values)]);
 
         bytes[0] = 0;
-        assert!(
-            body_bound_candidates(&bytes, 0, bytes.len())
-                .next()
-                .is_none()
-        );
+        assert!(body_bound_candidates(&bytes, 0, bytes.len())
+            .next()
+            .is_none());
     }
 
     #[test]
@@ -1770,10 +1789,25 @@ mod tests {
         let mut recipes = Vec::new();
         crate::design::decode::body::decode_stream(&body, "Design/BulkStream.dat", &mut recipes);
         assert_eq!(recipes.len(), 1);
-        assert_eq!(recipes[0].design.as_ref().map(|design| design.id.value.as_str()), Some("2265"));
-        assert_eq!(recipes[0].design.as_ref().and_then(|design| design.id.offset), Some(4));
         assert_eq!(
-            recipes[0].design.as_ref().and_then(|design| design.selector),
+            recipes[0]
+                .design
+                .as_ref()
+                .map(|design| design.id.value.as_str()),
+            Some("2265")
+        );
+        assert_eq!(
+            recipes[0]
+                .design
+                .as_ref()
+                .and_then(|design| design.id.offset),
+            Some(4)
+        );
+        assert_eq!(
+            recipes[0]
+                .design
+                .as_ref()
+                .and_then(|design| design.selector),
             Some(crate::records::ConstructionRecipeSelector {
                 value: 3,
                 byte_offset: 8,

@@ -14,12 +14,21 @@ pub(crate) struct RevisionLengths {
 impl RevisionLengths {
     pub(super) fn from_slices(prefix: &[u8], tail: &[u8]) -> Self {
         // Each byte slice is at most isize::MAX bytes; their sum fits u64.
-        Self { prefix: prefix.len() as u64, tail: tail.len() as u64 }
+        Self {
+            prefix: prefix.len() as u64,
+            tail: tail.len() as u64,
+        }
     }
 
-    pub(super) fn prefix(&self) -> u64 { self.prefix }
-    pub(super) fn tail(&self) -> u64 { self.tail }
-    pub(super) fn total(&self) -> u64 { self.prefix + self.tail }
+    pub(super) fn prefix(&self) -> u64 {
+        self.prefix
+    }
+    pub(super) fn tail(&self) -> u64 {
+        self.tail
+    }
+    pub(super) fn total(&self) -> u64 {
+        self.prefix + self.tail
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -58,7 +67,9 @@ impl TryFrom<RevisionWire> for ParasolidDeltasBodyRevision {
 
     fn try_from(wire: RevisionWire) -> Result<Self, Self::Error> {
         if wire.prefix_byte_len.checked_add(wire.state_tail_byte_len) != Some(wire.byte_len) {
-            return Err("byte_len: must equal prefix_byte_len + state_tail_byte_len without overflow");
+            return Err(
+                "byte_len: must equal prefix_byte_len + state_tail_byte_len without overflow",
+            );
         }
         Ok(Self {
             id: wire.id,
@@ -66,7 +77,10 @@ impl TryFrom<RevisionWire> for ParasolidDeltasBodyRevision {
             xmt: wire.xmt.try_into()?,
             node_id: wire.node_id,
             references: wire.references,
-            lengths: RevisionLengths { prefix: wire.prefix_byte_len, tail: wire.state_tail_byte_len },
+            lengths: RevisionLengths {
+                prefix: wire.prefix_byte_len,
+                tail: wire.state_tail_byte_len,
+            },
             state_tail_sha256: wire.state_tail_sha256,
             inflated_offset: wire.inflated_offset,
         })

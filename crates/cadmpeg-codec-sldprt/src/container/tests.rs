@@ -9,9 +9,9 @@ use std::io::Cursor;
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, Confidence};
 
-use crate::SldprtCodec;
 use crate::container::{self};
 use crate::test_support::*;
+use crate::SldprtCodec;
 
 use super::{looks_like_compound_file, looks_like_sldprt};
 
@@ -295,22 +295,16 @@ fn inspect_enumerates_every_structure() {
             .count(),
         2
     );
-    assert!(
-        summary
-            .entries
-            .iter()
-            .any(|e| e.role == ContainerRole::CacheCell)
-    );
-    assert!(
-        summary
-            .entries
-            .iter()
-            .any(|e| e.role == ContainerRole::DirectoryEntry)
-    );
-    assert!(
-        summary
-            .notes
-            .iter()
-            .any(|n| n.contains("active Parasolid B-rep candidate"))
-    );
+    assert!(summary
+        .entries
+        .iter()
+        .any(|e| e.role == ContainerRole::CacheCell));
+    assert!(summary
+        .entries
+        .iter()
+        .any(|e| e.role == ContainerRole::DirectoryEntry));
+    assert!(summary
+        .notes
+        .iter()
+        .any(|n| n.contains("active Parasolid B-rep candidate")));
 }

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Checked rolling-ball supports and source-admitted offset pairs.
 
-use serde::{Deserialize, Serialize};
 use crate::framing::xmt_reference::{NonNullXmt, XmtTarget};
+use serde::{Deserialize, Serialize};
 
 const EPS_SOURCE_OFFSET_METRES: f64 = 1.0e-9;
 const METRES_TO_MM: f64 = 1000.0;
@@ -13,7 +13,9 @@ struct BlendOffsets([f64; 2]);
 
 impl BlendOffsets {
     fn from_metres(offsets: [f64; 2]) -> Result<Self, &'static str> {
-        if offsets.iter().any(|value| !value.is_finite() || *value == 0.0)
+        if offsets
+            .iter()
+            .any(|value| !value.is_finite() || *value == 0.0)
             || (offsets[0].abs() - offsets[1].abs()).abs() > EPS_SOURCE_OFFSET_METRES
         {
             return Err("offsets: require finite nonzero offsets with equal source magnitudes");
@@ -27,14 +29,19 @@ impl BlendOffsets {
 }
 
 impl From<BlendOffsets> for [f64; 2] {
-    fn from(offsets: BlendOffsets) -> Self { offsets.0 }
+    fn from(offsets: BlendOffsets) -> Self {
+        offsets.0
+    }
 }
 
 impl TryFrom<[f64; 2]> for BlendOffsets {
     type Error = &'static str;
 
     fn try_from(offsets: [f64; 2]) -> Result<Self, Self::Error> {
-        if offsets.iter().any(|value| !value.is_finite() || *value == 0.0) {
+        if offsets
+            .iter()
+            .any(|value| !value.is_finite() || *value == 0.0)
+        {
             return Err("offsets: model distances must be finite and nonzero");
         }
         let (first_min, first_max) = source_interval(offsets[0].abs())
@@ -66,13 +73,23 @@ fn source_interval(millimetres: f64) -> Option<(f64, f64)> {
         while low < high {
             let middle = low + (high - low) / 2;
             let scaled = f64::from_bits(middle) * METRES_TO_MM;
-            let before = if strict { scaled <= millimetres } else { scaled < millimetres };
-            if before { low = middle + 1; } else { high = middle; }
+            let before = if strict {
+                scaled <= millimetres
+            } else {
+                scaled < millimetres
+            };
+            if before {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
         }
         low
     };
     let first = f64::from_bits(lower_bound(false));
-    if first * METRES_TO_MM != millimetres { return None; }
+    if first * METRES_TO_MM != millimetres {
+        return None;
+    }
     let last = f64::from_bits(lower_bound(true) - 1);
     Some((first, last))
 }
@@ -87,26 +104,56 @@ pub(crate) struct BlendSurfaceState {
 }
 
 impl BlendSurfaceState {
-    pub(crate) fn from_metres(supports: [u32; 2], spine: u32, offsets: [f64; 2], thumb_weights: [f64; 2]) -> Result<Self, &'static str> {
-        Self::new(supports, spine, BlendOffsets::from_metres(offsets)?, thumb_weights)
+    pub(crate) fn from_metres(
+        supports: [u32; 2],
+        spine: u32,
+        offsets: [f64; 2],
+        thumb_weights: [f64; 2],
+    ) -> Result<Self, &'static str> {
+        Self::new(
+            supports,
+            spine,
+            BlendOffsets::from_metres(offsets)?,
+            thumb_weights,
+        )
     }
 
-    fn new(supports: [u32; 2], spine: u32, offsets: BlendOffsets, thumb_weights: [f64; 2]) -> Result<Self, &'static str> {
+    fn new(
+        supports: [u32; 2],
+        spine: u32,
+        offsets: BlendOffsets,
+        thumb_weights: [f64; 2],
+    ) -> Result<Self, &'static str> {
         let supports = [
-            NonNullXmt::try_from(supports[0]).map_err(|_| "support_xmts: first support must be non-null")?,
-            NonNullXmt::try_from(supports[1]).map_err(|_| "support_xmts: second support must be non-null")?,
+            NonNullXmt::try_from(supports[0])
+                .map_err(|_| "support_xmts: first support must be non-null")?,
+            NonNullXmt::try_from(supports[1])
+                .map_err(|_| "support_xmts: second support must be non-null")?,
         ];
         if thumb_weights.iter().any(|value| !value.is_finite()) {
             return Err("thumb_weights: must be finite");
         }
-        Ok(Self { supports, spine: XmtTarget::from_wire(spine), offsets, thumb_weights })
+        Ok(Self {
+            supports,
+            spine: XmtTarget::from_wire(spine),
+            offsets,
+            thumb_weights,
+        })
     }
 
-    pub(crate) fn support_xmts(&self) -> [u32; 2] { self.supports.map(u32::from) }
-    pub(crate) fn spine_xmt(&self) -> u32 { XmtTarget::to_wire(self.spine) }
-    pub(crate) fn offsets(&self) -> [f64; 2] { self.offsets.into() }
+    pub(crate) fn support_xmts(&self) -> [u32; 2] {
+        self.supports.map(u32::from)
+    }
+    pub(crate) fn spine_xmt(&self) -> u32 {
+        XmtTarget::to_wire(self.spine)
+    }
+    pub(crate) fn offsets(&self) -> [f64; 2] {
+        self.offsets.into()
+    }
     #[cfg(test)]
-    pub(crate) fn thumb_weights(&self) -> [f64; 2] { self.thumb_weights }
+    pub(crate) fn thumb_weights(&self) -> [f64; 2] {
+        self.thumb_weights
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -119,20 +166,32 @@ struct StateWire {
 
 impl From<BlendSurfaceState> for StateWire {
     fn from(state: BlendSurfaceState) -> Self {
-        Self { support_xmts: state.support_xmts(), spine_xmt: state.spine_xmt(), offsets: state.offsets, thumb_weights: state.thumb_weights }
+        Self {
+            support_xmts: state.support_xmts(),
+            spine_xmt: state.spine_xmt(),
+            offsets: state.offsets,
+            thumb_weights: state.thumb_weights,
+        }
     }
 }
 
 impl TryFrom<StateWire> for BlendSurfaceState {
     type Error = &'static str;
     fn try_from(wire: StateWire) -> Result<Self, Self::Error> {
-        Self::new(wire.support_xmts, wire.spine_xmt, wire.offsets, wire.thumb_weights)
+        Self::new(
+            wire.support_xmts,
+            wire.spine_xmt,
+            wire.offsets,
+            wire.thumb_weights,
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{BlendOffsets, BlendSurfaceState, EPS_SOURCE_OFFSET_METRES, METRES_TO_MM, source_interval};
+    use super::{
+        source_interval, BlendOffsets, BlendSurfaceState, EPS_SOURCE_OFFSET_METRES, METRES_TO_MM,
+    };
 
     #[test]
     fn model_offsets_retain_source_tolerance_after_rounding() {
@@ -141,7 +200,10 @@ mod tests {
         let model: [f64; 2] = offsets.into();
         assert!((model[0] - model[1]).abs() > EPS_SOURCE_OFFSET_METRES * METRES_TO_MM);
         let json = serde_json::to_string(&offsets).unwrap();
-        assert_eq!(serde_json::from_str::<BlendOffsets>(&json).unwrap(), offsets);
+        assert_eq!(
+            serde_json::from_str::<BlendOffsets>(&json).unwrap(),
+            offsets
+        );
     }
 
     #[test]
@@ -152,7 +214,9 @@ mod tests {
             assert!(first <= value && value <= last);
             assert_eq!(first * METRES_TO_MM, model);
             assert_eq!(last * METRES_TO_MM, model);
-            assert!(first.to_bits() == 1 || f64::from_bits(first.to_bits() - 1) * METRES_TO_MM < model);
+            assert!(
+                first.to_bits() == 1 || f64::from_bits(first.to_bits() - 1) * METRES_TO_MM < model
+            );
             assert!(f64::from_bits(last.to_bits() + 1) * METRES_TO_MM > model);
         }
         assert!(BlendOffsets::try_from([f64::from_bits(1); 2]).is_err());
@@ -162,10 +226,17 @@ mod tests {
     #[test]
     fn surface_wire_preserves_open_spines_and_rejects_invalid_payloads() {
         for spine in [0, 1, 2] {
-            let state = BlendSurfaceState::from_metres([6, 7], spine, [-0.003, 0.003], [-0.0, -2.0]).unwrap();
-            let json = format!(r#"{{"support_xmts":[6,7],"spine_xmt":{spine},"offsets":[-3.0,3.0],"thumb_weights":[-0.0,-2.0]}}"#);
+            let state =
+                BlendSurfaceState::from_metres([6, 7], spine, [-0.003, 0.003], [-0.0, -2.0])
+                    .unwrap();
+            let json = format!(
+                r#"{{"support_xmts":[6,7],"spine_xmt":{spine},"offsets":[-3.0,3.0],"thumb_weights":[-0.0,-2.0]}}"#
+            );
             assert_eq!(serde_json::to_string(&state).unwrap(), json);
-            assert_eq!(serde_json::from_str::<BlendSurfaceState>(&json).unwrap(), state);
+            assert_eq!(
+                serde_json::from_str::<BlendSurfaceState>(&json).unwrap(),
+                state
+            );
         }
         for (supports, offsets, weights, field) in [
             ([1, 7], [-0.003, 0.003], [1.0, 1.0], "support_xmts"),
@@ -173,7 +244,11 @@ mod tests {
             ([6, 7], [f64::MAX; 2], [1.0, 1.0], "offsets"),
             ([6, 7], [-0.003, 0.003], [f64::NAN, 1.0], "thumb_weights"),
         ] {
-            assert!(BlendSurfaceState::from_metres(supports, 1, offsets, weights).unwrap_err().contains(field));
+            assert!(
+                BlendSurfaceState::from_metres(supports, 1, offsets, weights)
+                    .unwrap_err()
+                    .contains(field)
+            );
         }
     }
 }

@@ -157,7 +157,14 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     .expect("identity-qualified assembly occurrence paths");
     assert_eq!(identity_paths[0].class_tag, "390");
     assert_eq!(identity_paths[0].occurrence_guids.len(), 2);
-    assert_eq!(identity_paths[0].identity_guids.iter().map(|guid| &guid.value).collect::<Vec<_>>(), identities.iter().collect::<Vec<_>>());
+    assert_eq!(
+        identity_paths[0]
+            .identity_guids
+            .iter()
+            .map(|guid| &guid.value)
+            .collect::<Vec<_>>(),
+        identities.iter().collect::<Vec<_>>()
+    );
     for path_at in [first_identity_path_at, second_identity_path_at] {
         identity_path_bytes[path_at + 4..path_at + 7].copy_from_slice(b"386");
     }
@@ -186,10 +193,15 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     assert!(extended_class_329_paths.iter().all(|path| {
         path.class_tag == "329"
             && !path.occurrence_guids.is_empty()
-            && path.identity_guids.iter().map(|guid| guid.value.as_str()).eq(identities.iter().copied())
+            && path
+                .identity_guids
+                .iter()
+                .map(|guid| guid.value.as_str())
+                .eq(identities.iter().copied())
     }));
     let first_identity_length_at = usize::try_from(
-        extended_class_329_paths[0].identity_guids[0].offset
+        extended_class_329_paths[0].identity_guids[0]
+            .offset
             .checked_sub(4)
             .expect("identity length precedes text"),
     )
@@ -241,9 +253,15 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     assert_eq!(paths[0].link.wrapper_reference_offset, 822);
     assert_eq!(paths[0].link.path_reference_offset, 1_042);
     assert_eq!(
-        paths
-            .each_ref()
-            .map(|path| { (path.record_index, path.occurrence_guids.iter().map(|guid| guid.value.clone()).collect::<Vec<_>>()) }),
+        paths.each_ref().map(|path| {
+            (
+                path.record_index,
+                path.occurrence_guids
+                    .iter()
+                    .map(|guid| guid.value.clone())
+                    .collect::<Vec<_>>(),
+            )
+        }),
         [
             (
                 65,
@@ -418,7 +436,11 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     )
     .is_some_and(|alignment| alignment.operand_frames().is_none()));
 
-    scope.reference_members = { let mut values: Vec<u32> = scope.reference_members.values().copied().collect(); values.push(99); crate::records::ReferenceRun::Unlocated(values) };
+    scope.reference_members = {
+        let mut values: Vec<u32> = scope.reference_members.values().copied().collect();
+        values.push(99);
+        crate::records::ReferenceRun::Unlocated(values)
+    };
     assert_eq!(
         exact_assembly_alignment(
             &assembly_bytes,
@@ -473,7 +495,14 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
             companion_record_index: 1_100 + ordinal as u32,
         })
         .collect::<Vec<_>>();
-    let bytes = legacy_class_383_258_fixture(scope_record_index, &scope.reference_members.values().copied().collect::<Vec<_>>());
+    let bytes = legacy_class_383_258_fixture(
+        scope_record_index,
+        &scope
+            .reference_members
+            .values()
+            .copied()
+            .collect::<Vec<_>>(),
+    );
     let alignment = exact_assembly_alignment(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -484,8 +513,22 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
 
     assert_eq!(alignment.angle, 0.25);
     assert_eq!(alignment.offset, [1.0, 2.0, 3.0]);
-    assert_eq!(alignment.owners.iter().map(|owner| owner.value).collect::<Vec<_>>(), vec![108, 109, 110, 111]);
-    assert_eq!(alignment.owners.iter().map(|owner| owner.offset).collect::<Vec<_>>(), vec![2_008, 2_009, 2_010, 2_011]);
+    assert_eq!(
+        alignment
+            .owners
+            .iter()
+            .map(|owner| owner.value)
+            .collect::<Vec<_>>(),
+        vec![108, 109, 110, 111]
+    );
+    assert_eq!(
+        alignment
+            .owners
+            .iter()
+            .map(|owner| owner.offset)
+            .collect::<Vec<_>>(),
+        vec![2_008, 2_009, 2_010, 2_011]
+    );
     let frames = alignment.operand_frames().expect("legacy operand frames");
     assert_eq!(
         frames.each_ref().map(|frame| frame.reference_record_index),
@@ -545,12 +588,14 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     scope.frame_length = crate::layout::assembly_class_388_266_scope_968::LEN as u64;
     scope.paired_byte_offset = scope.frame_length;
     scope.feature_ordinal = std::num::NonZeroU32::new(4).expect("nonzero ordinal");
-    scope.reference_members = crate::records::ReferenceRun::Unlocated((0..24)
-        .map(|ordinal| 1_000 + ordinal)
-        .chain([1_200, 1_201, 1_202, 1_203, 1_204, 1_205])
-        .chain((24..28).map(|ordinal| 1_000 + ordinal))
-        .chain([1_034])
-        .collect());
+    scope.reference_members = crate::records::ReferenceRun::Unlocated(
+        (0..24)
+            .map(|ordinal| 1_000 + ordinal)
+            .chain([1_200, 1_201, 1_202, 1_203, 1_204, 1_205])
+            .chain((24..28).map(|ordinal| 1_000 + ordinal))
+            .chain([1_034])
+            .collect(),
+    );
     let owners = (0..28)
         .map(|ordinal| DesignParameterOwner {
             id: format!(
@@ -635,8 +680,22 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     .expect("legacy class-388 alignment");
     assert_eq!(alignment.angle, 0.25);
     assert_eq!(alignment.offset, [1.0, 2.0, 3.0]);
-    assert_eq!(alignment.owners.iter().map(|owner| owner.value).collect::<Vec<_>>(), [1_004, 1_005, 1_006, 1_007]);
-    assert_eq!(alignment.owners.iter().map(|owner| owner.offset).collect::<Vec<_>>(), [2_004, 2_005, 2_006, 2_007]);
+    assert_eq!(
+        alignment
+            .owners
+            .iter()
+            .map(|owner| owner.value)
+            .collect::<Vec<_>>(),
+        [1_004, 1_005, 1_006, 1_007]
+    );
+    assert_eq!(
+        alignment
+            .owners
+            .iter()
+            .map(|owner| owner.offset)
+            .collect::<Vec<_>>(),
+        [2_004, 2_005, 2_006, 2_007]
+    );
     let frames = alignment
         .operand_frames()
         .expect("legacy class-388 operand frames");
@@ -757,7 +816,11 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     assert_eq!(paths[0].class_tag, "412");
     assert_eq!(paths[0].byte_offset, (first_path_at + 425) as u64);
     assert_eq!(
-        paths[0].occurrence_guids.iter().map(|guid| guid.value.clone()).collect::<Vec<_>>(),
+        paths[0]
+            .occurrence_guids
+            .iter()
+            .map(|guid| guid.value.clone())
+            .collect::<Vec<_>>(),
         [
             "11111111-1111-1111-1111-111111111111".to_owned(),
             "22222222-2222-2222-2222-222222222222".to_owned(),
@@ -882,8 +945,22 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
     .expect("exact As-built alignment");
     assert_eq!(alignment.angle, 0.25);
     assert_eq!(alignment.offset, [1.0, 2.0, 3.0]);
-    assert_eq!(alignment.owners.iter().map(|owner| owner.value).collect::<Vec<_>>(), [50, 51, 52, 53]);
-    assert_eq!(alignment.owners.iter().map(|owner| owner.offset).collect::<Vec<_>>(), [501, 502, 503, 504]);
+    assert_eq!(
+        alignment
+            .owners
+            .iter()
+            .map(|owner| owner.value)
+            .collect::<Vec<_>>(),
+        [50, 51, 52, 53]
+    );
+    assert_eq!(
+        alignment
+            .owners
+            .iter()
+            .map(|owner| owner.offset)
+            .collect::<Vec<_>>(),
+        [501, 502, 503, 504]
+    );
     let frames = alignment.operand_frames().expect("locator transforms");
     assert_eq!(
         frames
@@ -1000,9 +1077,14 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
         scope.frame_length = 421;
         scope.paired_byte_offset = 421;
         scope.reference_count_offset = 185;
-        scope.reference_members = crate::records::ReferenceRun::from_columns(reference_members.to_vec(), (0..11)
-            .map(|ordinal| u64::try_from(190 + ordinal * 11).expect("offset fits u64"))
-            .collect(), "reference_members").unwrap();
+        scope.reference_members = crate::records::ReferenceRun::from_columns(
+            reference_members.to_vec(),
+            (0..11)
+                .map(|ordinal| u64::try_from(190 + ordinal * 11).expect("offset fits u64"))
+                .collect(),
+            "reference_members",
+        )
+        .unwrap();
         scope.feature_ordinal_offset = 334;
 
         let mut bytes = vec![0_u8; 421];
@@ -1088,8 +1170,22 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
         for (actual, expected) in alignment.offset.into_iter().zip([1.0, 2.0, 3.0]) {
             assert!((actual - expected).abs() <= EPS_EXACT_FIXTURE);
         }
-        assert_eq!(alignment.owners.iter().map(|owner| owner.value).collect::<Vec<_>>(), [103, 100, 101, 102]);
-        assert_eq!(alignment.owners.iter().map(|owner| owner.offset).collect::<Vec<_>>(), [1_003, 1_000, 1_001, 1_002]);
+        assert_eq!(
+            alignment
+                .owners
+                .iter()
+                .map(|owner| owner.value)
+                .collect::<Vec<_>>(),
+            [103, 100, 101, 102]
+        );
+        assert_eq!(
+            alignment
+                .owners
+                .iter()
+                .map(|owner| owner.offset)
+                .collect::<Vec<_>>(),
+            [1_003, 1_000, 1_001, 1_002]
+        );
         let limits = alignment.limits().expect("assembly limits");
         assert_eq!(limits.kind, expected_limit_kind);
         assert!((limits.minimum - -1.0).abs() <= EPS_EXACT_FIXTURE);
@@ -1157,11 +1253,13 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
         500,
     );
     assembly.frame_length = 772;
-    assembly.reference_members = crate::records::ReferenceRun::Unlocated(first_members
-        .into_iter()
-        .chain(second_members)
-        .chain([90, 91])
-        .collect());
+    assembly.reference_members = crate::records::ReferenceRun::Unlocated(
+        first_members
+            .into_iter()
+            .chain(second_members)
+            .chain([90, 91])
+            .collect(),
+    );
     if let crate::records::DesignScopePayload::Assemble(slot)
     | crate::records::DesignScopePayload::AsBuilt(slot) = &mut assembly.payload
     {
@@ -1178,9 +1276,15 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
     let targets = scopes[0]
         .assembly_alignment()
         .and_then(|alignment| {
-            let crate::records::DesignAssemblyAlignmentForm::Qualified(operands) = alignment.form.as_ref()? else { return None; };
+            let crate::records::DesignAssemblyAlignmentForm::Qualified(operands) =
+                alignment.form.as_ref()?
+            else {
+                return None;
+            };
             let [first, second] = operands.each_ref().map(|operand| match &operand.qualifier {
-                crate::records::DesignAssemblyOperandQualifier::AxialTarget { target } => Some(target.clone()),
+                crate::records::DesignAssemblyOperandQualifier::AxialTarget { target } => {
+                    Some(target.clone())
+                }
                 _ => None,
             });
             Some([first?, second?])
@@ -1223,7 +1327,10 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
     assert_eq!(component_insert_scope_record_index, 300);
     assert!(versioned_selectors[0].external_version.is_some());
     assert_eq!(
-        versioned_selectors[0].external_version.as_ref().map(|version| version.version_urn.value.as_str()),
+        versioned_selectors[0]
+            .external_version
+            .as_ref()
+            .map(|version| version.version_urn.value.as_str()),
         Some("urn:test:version:2")
     );
 
@@ -1239,10 +1346,19 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
     );
     assert!(mismatched_scopes[0]
         .assembly_alignment()
-        .is_some_and(|alignment| !matches!(alignment.form.as_ref(), Some(crate::records::DesignAssemblyAlignmentForm::Qualified([
-            crate::records::DesignQualifiedAssemblyOperand { qualifier: crate::records::DesignAssemblyOperandQualifier::AxialTarget { .. }, .. },
-            crate::records::DesignQualifiedAssemblyOperand { qualifier: crate::records::DesignAssemblyOperandQualifier::AxialTarget { .. }, .. },
-        ])))));
+        .is_some_and(|alignment| !matches!(
+            alignment.form.as_ref(),
+            Some(crate::records::DesignAssemblyAlignmentForm::Qualified([
+                crate::records::DesignQualifiedAssemblyOperand {
+                    qualifier: crate::records::DesignAssemblyOperandQualifier::AxialTarget { .. },
+                    ..
+                },
+                crate::records::DesignQualifiedAssemblyOperand {
+                    qualifier: crate::records::DesignAssemblyOperandQualifier::AxialTarget { .. },
+                    ..
+                },
+            ]))
+        )));
 }
 
 #[test]
@@ -1267,7 +1383,8 @@ fn axial_assembly_selector_binds_a_document_root_joint_origin() {
         500,
     );
     assembly.frame_length = 705;
-    assembly.reference_members = crate::records::ReferenceRun::Unlocated(members.into_iter().chain([90, 91]).collect());
+    assembly.reference_members =
+        crate::records::ReferenceRun::Unlocated(members.into_iter().chain([90, 91]).collect());
     if let crate::records::DesignScopePayload::Assemble(slot)
     | crate::records::DesignScopePayload::AsBuilt(slot) = &mut assembly.payload
     {
@@ -1285,9 +1402,15 @@ fn axial_assembly_selector_binds_a_document_root_joint_origin() {
     let targets = scopes[0]
         .assembly_alignment()
         .and_then(|alignment| {
-            let crate::records::DesignAssemblyAlignmentForm::Qualified(operands) = alignment.form.as_ref()? else { return None; };
+            let crate::records::DesignAssemblyAlignmentForm::Qualified(operands) =
+                alignment.form.as_ref()?
+            else {
+                return None;
+            };
             let [first, second] = operands.each_ref().map(|operand| match &operand.qualifier {
-                crate::records::DesignAssemblyOperandQualifier::AxialTarget { target } => Some(target.clone()),
+                crate::records::DesignAssemblyOperandQualifier::AxialTarget { target } => {
+                    Some(target.clone())
+                }
                 _ => None,
             });
             Some([first?, second?])
@@ -1928,7 +2051,16 @@ fn axial_test_alignment(transforms: [[[f64; 4]; 4]; 2]) -> DesignAssemblyAlignme
     DesignAssemblyAlignment {
         angle: 0.0,
         offset: [0.0; 3],
-        owners: vec![crate::records::Located { value: 90, offset: 1 }, crate::records::Located { value: 91, offset: 2 }],
+        owners: vec![
+            crate::records::Located {
+                value: 90,
+                offset: 1,
+            },
+            crate::records::Located {
+                value: 91,
+                offset: 2,
+            },
+        ],
         form: Some(crate::records::DesignAssemblyAlignmentForm::Frames {
             frames: [
                 DesignAssemblyOperandFrame {
@@ -1962,7 +2094,10 @@ fn axial_test_component_scope(record_index: u32, role: &str) -> DesignParameterS
             neutron_role: role.into(),
             neutron_role_offset: 0,
             placement: Some(crate::records::DesignComponentInsertMatrix {
-                scope: crate::records::Located { value: identity_matrix(), offset: 0 },
+                scope: crate::records::Located {
+                    value: identity_matrix(),
+                    offset: 0,
+                },
                 carrier_offset: Some(0),
             }),
         });

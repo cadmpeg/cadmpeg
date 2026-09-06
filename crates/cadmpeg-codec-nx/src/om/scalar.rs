@@ -27,9 +27,13 @@ impl ShiftedBinary64 {
         Self::try_from(<[u8; 8]>::try_from(bytes).ok()?).ok()
     }
 
-    pub(crate) fn raw(self) -> [u8; 8] { self.0 }
+    pub(crate) fn raw(self) -> [u8; 8] {
+        self.0
+    }
 
-    pub(crate) fn as_bytes(&self) -> &[u8; 8] { &self.0 }
+    pub(crate) fn as_bytes(&self) -> &[u8; 8] {
+        &self.0
+    }
 
     pub(crate) fn value(self) -> f64 {
         let mut bytes = self.0;
@@ -83,9 +87,13 @@ impl ShiftedBinary32 {
         matches!(raw[0], 0x40..=0x5f | 0xc0..=0xdf).then_some(Self(raw))
     }
 
-    pub(crate) fn raw(self) -> [u8; 4] { self.0 }
+    pub(crate) fn raw(self) -> [u8; 4] {
+        self.0
+    }
 
-    pub(crate) fn as_bytes(&self) -> &[u8; 4] { &self.0 }
+    pub(crate) fn as_bytes(&self) -> &[u8; 4] {
+        &self.0
+    }
 
     pub(crate) fn value(self) -> f64 {
         let mut bytes = self.0;
@@ -119,11 +127,17 @@ impl ShiftedScalar {
     }
 
     pub(crate) fn value(self) -> f64 {
-        match self { Self::Binary32(atom) => atom.value(), Self::Binary64(atom) => atom.value() }
+        match self {
+            Self::Binary32(atom) => atom.value(),
+            Self::Binary64(atom) => atom.value(),
+        }
     }
 
     pub(crate) fn raw(&self) -> &[u8] {
-        match self { Self::Binary32(atom) => atom.as_bytes(), Self::Binary64(atom) => atom.as_bytes() }
+        match self {
+            Self::Binary32(atom) => atom.as_bytes(),
+            Self::Binary64(atom) => atom.as_bytes(),
+        }
     }
 }
 
@@ -177,7 +191,11 @@ impl PayloadScalarAtom {
         }
     }
 
-    pub(crate) fn from_wire(value: f64, encoding: PayloadScalarEncoding, raw: &[u8]) -> Result<Self, &'static str> {
+    pub(crate) fn from_wire(
+        value: f64,
+        encoding: PayloadScalarEncoding,
+        raw: &[u8],
+    ) -> Result<Self, &'static str> {
         let atom = Self::read(raw).ok_or("raw_values must contain complete scalar atoms")?;
         if atom.raw().len() != raw.len() {
             return Err("raw_values must contain exactly one scalar atom per entry");
@@ -206,16 +224,27 @@ mod tests {
             let atom = PayloadScalarAtom::read(&raw).unwrap();
             assert_eq!(atom.value(), expected);
             assert_eq!(atom.raw(), raw);
-            assert_eq!(PayloadScalarAtom::from_wire(expected, atom.encoding(), &raw), Ok(atom));
+            assert_eq!(
+                PayloadScalarAtom::from_wire(expected, atom.encoding(), &raw),
+                Ok(atom)
+            );
             assert!(PayloadScalarAtom::from_wire(expected + 1.0, atom.encoding(), &raw).is_err());
             let mut oversized = raw;
             oversized.push(0);
             assert!(PayloadScalarAtom::from_wire(expected, atom.encoding(), &oversized).is_err());
         }
         for marker in [0x40, 0x5f, 0xc0, 0xdf] {
-            assert!(ShiftedBinary32::read(&[marker, 255, 255, 255]).unwrap().value().is_finite());
+            assert!(ShiftedBinary32::read(&[marker, 255, 255, 255])
+                .unwrap()
+                .value()
+                .is_finite());
         }
-        for bytes in [vec![], vec![1], vec![0x50, 0x40, 0], vec![0x2f, 0xf0, 0, 0, 0, 0, 0]] {
+        for bytes in [
+            vec![],
+            vec![1],
+            vec![0x50, 0x40, 0],
+            vec![0x2f, 0xf0, 0, 0, 0, 0, 0],
+        ] {
             assert!(PayloadScalarAtom::read(&bytes).is_none());
         }
     }

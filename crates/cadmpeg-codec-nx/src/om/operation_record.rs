@@ -22,12 +22,22 @@ impl<'a> OperationPayload<'a> {
     #[cfg(test)]
     pub(crate) fn new(payload: &'a [u8], payload_offset: usize, name: &'a str) -> Option<Self> {
         payload_offset.checked_add(payload.len())?;
-        Some(Self { payload, payload_offset, name })
+        Some(Self {
+            payload,
+            payload_offset,
+            name,
+        })
     }
 
-    pub(crate) fn payload(self) -> &'a [u8] { self.payload }
-    pub(crate) fn payload_offset(self) -> usize { self.payload_offset }
-    pub(crate) fn name(self) -> &'a str { self.name }
+    pub(crate) fn payload(self) -> &'a [u8] {
+        self.payload
+    }
+    pub(crate) fn payload_offset(self) -> usize {
+        self.payload_offset
+    }
+    pub(crate) fn name(self) -> &'a str {
+        self.name
+    }
 }
 
 /// Byte range scanned for body clauses, with a bounded post-label payload suffix.
@@ -41,20 +51,46 @@ pub(crate) struct OperationBodyInput<'a> {
 
 impl<'a> OperationBodyInput<'a> {
     #[cfg(test)]
-    pub(crate) fn new(bytes: &'a [u8], offset: usize, payload_start: usize, name: &'a str) -> Option<Self> {
+    pub(crate) fn new(
+        bytes: &'a [u8],
+        offset: usize,
+        payload_start: usize,
+        name: &'a str,
+    ) -> Option<Self> {
         bytes.get(payload_start..)?;
         offset.checked_add(bytes.len())?;
-        Some(Self { bytes, offset, payload_start, name })
+        Some(Self {
+            bytes,
+            offset,
+            payload_start,
+            name,
+        })
     }
 
-    pub(crate) fn bytes(self) -> &'a [u8] { self.bytes }
-    pub(crate) fn offset(self) -> usize { self.offset }
-    pub(crate) fn payload_start(self) -> usize { self.payload_start }
-    pub(crate) fn payload(self) -> &'a [u8] { &self.bytes[self.payload_start..] }
-    pub(crate) fn payload_offset(self) -> usize { self.offset + self.payload_start }
-    pub(crate) fn name(self) -> &'a str { self.name }
+    pub(crate) fn bytes(self) -> &'a [u8] {
+        self.bytes
+    }
+    pub(crate) fn offset(self) -> usize {
+        self.offset
+    }
+    pub(crate) fn payload_start(self) -> usize {
+        self.payload_start
+    }
+    pub(crate) fn payload(self) -> &'a [u8] {
+        &self.bytes[self.payload_start..]
+    }
+    pub(crate) fn payload_offset(self) -> usize {
+        self.offset + self.payload_start
+    }
+    pub(crate) fn name(self) -> &'a str {
+        self.name
+    }
     pub(crate) fn payload_view(self) -> OperationPayload<'a> {
-        OperationPayload { payload: self.payload(), payload_offset: self.payload_offset(), name: self.name }
+        OperationPayload {
+            payload: self.payload(),
+            payload_offset: self.payload_offset(),
+            name: self.name,
+        }
     }
 }
 
@@ -73,14 +109,31 @@ impl<'a> OperationRecord<'a> {
         Some(Self { bytes, label })
     }
 
-    pub(crate) fn label(self) -> OperationLabel<'a> { self.label }
-    pub(crate) fn bytes(self) -> &'a [u8] { self.bytes }
-    pub(crate) fn offset(self) -> usize { self.label.header.offset() }
-    fn payload_start(self) -> usize { usize::from(self.label.header.byte_len()) + self.label.value.len() + 3 }
-    pub(crate) fn payload(self) -> &'a [u8] { &self.bytes[self.payload_start()..] }
-    pub(crate) fn payload_offset(self) -> usize { self.offset() + self.payload_start() }
+    pub(crate) fn label(self) -> OperationLabel<'a> {
+        self.label
+    }
+    pub(crate) fn bytes(self) -> &'a [u8] {
+        self.bytes
+    }
+    pub(crate) fn offset(self) -> usize {
+        self.label.header.offset()
+    }
+    fn payload_start(self) -> usize {
+        usize::from(self.label.header.byte_len()) + self.label.value.len() + 3
+    }
+    pub(crate) fn payload(self) -> &'a [u8] {
+        &self.bytes[self.payload_start()..]
+    }
+    pub(crate) fn payload_offset(self) -> usize {
+        self.offset() + self.payload_start()
+    }
     pub(crate) fn body_view(self) -> OperationBodyInput<'a> {
-        OperationBodyInput { bytes: self.bytes, offset: self.offset(), payload_start: self.payload_start(), name: self.label.value }
+        OperationBodyInput {
+            bytes: self.bytes,
+            offset: self.offset(),
+            payload_start: self.payload_start(),
+            name: self.label.value,
+        }
     }
     pub(crate) fn payload_view(self) -> OperationPayload<'a> {
         self.body_view().payload_view()
@@ -93,8 +146,8 @@ mod tests {
     #![allow(clippy::unwrap_used)]
 
     use super::{OperationBodyInput, OperationPayload, OperationRecord};
-    use crate::om::OperationLabel;
     use crate::om::header_references::{HeaderReferences, OperationHeader};
+    use crate::om::OperationLabel;
 
     fn label(offset: usize) -> OperationLabel<'static> {
         OperationLabel {
@@ -124,7 +177,10 @@ mod tests {
         for end in 0..27 {
             assert!(OperationRecord::new(&bytes[..end], label(100)).is_none());
         }
-        assert!(OperationRecord::new(&bytes[..27], label(100)).unwrap().payload().is_empty());
+        assert!(OperationRecord::new(&bytes[..27], label(100))
+            .unwrap()
+            .payload()
+            .is_empty());
         assert!(OperationRecord::new(bytes, label(usize::MAX - bytes.len())).is_some());
         assert!(OperationRecord::new(bytes, label(usize::MAX - bytes.len() + 1)).is_none());
         for (offset, value) in [(19, 4), (20, 6), (21, b'X'), (26, 1)] {
@@ -145,8 +201,13 @@ mod tests {
         assert_eq!(body.payload(), &bytes[6..]);
         assert_eq!(body.payload_offset(), 106);
         assert!(OperationBodyInput::new(bytes, 100, bytes.len() + 1, "EXTRUDE").is_none());
-        assert!(OperationBodyInput::new(bytes, usize::MAX - bytes.len(), bytes.len(), "EXTRUDE").is_some());
-        assert!(OperationBodyInput::new(bytes, usize::MAX - bytes.len() + 1, 0, "EXTRUDE").is_none());
+        assert!(
+            OperationBodyInput::new(bytes, usize::MAX - bytes.len(), bytes.len(), "EXTRUDE")
+                .is_some()
+        );
+        assert!(
+            OperationBodyInput::new(bytes, usize::MAX - bytes.len() + 1, 0, "EXTRUDE").is_none()
+        );
     }
 
     #[test]

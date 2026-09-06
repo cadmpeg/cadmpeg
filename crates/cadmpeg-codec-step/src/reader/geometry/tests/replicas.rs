@@ -358,18 +358,16 @@ fn transformed_curves_and_surfaces_round_trip_through_step_replicas() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode replicas");
-    assert!(decoded
-        .ir()
-        .model
-        .curves
-        .iter()
-        .any(|curve| curve.geometry.solved_cache().unwrap_or(&curve.geometry) == &curve_geometry));
-    assert!(decoded
-        .ir()
-        .model
-        .surfaces
-        .iter()
-        .any(|surface| surface.geometry.solved_cache().unwrap_or(&surface.geometry) == &surface_geometry));
+    assert!(decoded.ir().model.curves.iter().any(|curve| curve
+        .geometry
+        .solved_cache()
+        .unwrap_or(&curve.geometry)
+        == &curve_geometry));
+    assert!(decoded.ir().model.surfaces.iter().any(|surface| surface
+        .geometry
+        .solved_cache()
+        .unwrap_or(&surface.geometry)
+        == &surface_geometry));
 }
 
 #[test]
@@ -392,7 +390,10 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
 
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#10"
-            && matches!(*surface.geometry.solved_cache().unwrap_or(&surface.geometry), SurfaceGeometry::Transformed { .. })
+            && matches!(
+                *surface.geometry.solved_cache().unwrap_or(&surface.geometry),
+                SurfaceGeometry::Transformed { .. }
+            )
     }));
     assert!(decoded
         .ir()
@@ -536,7 +537,8 @@ fn forward_replica_dependencies_resolve_to_nested_transforms() {
         .model
         .curves
         .iter()
-        .any(|curve| curve.id.as_str() == "step:data:curve#9" && curve.geometry.solved_cache().unwrap_or(&curve.geometry) == &expected_curve));
+        .any(|curve| curve.id.as_str() == "step:data:curve#9"
+            && curve.geometry.solved_cache().unwrap_or(&curve.geometry) == &expected_curve));
     assert_eq!(
         decoded
             .ir()
@@ -593,10 +595,12 @@ fn cartesian_transformation_operator_derives_optional_axes() {
             .curves
             .iter()
             .find(|curve| curve.id.as_str() == id)
-            .and_then(|curve| match curve.geometry.solved_cache().unwrap_or(&curve.geometry) {
-                CurveGeometry::Transformed { transform, .. } => Some(*transform),
-                _ => None,
-            })
+            .and_then(
+                |curve| match curve.geometry.solved_cache().unwrap_or(&curve.geometry) {
+                    CurveGeometry::Transformed { transform, .. } => Some(*transform),
+                    _ => None,
+                },
+            )
             .unwrap_or_else(|| panic!("missing transformed curve {id}"))
     };
     let assert_rows = |actual: Transform, expected: [[f64; 4]; 4]| {
@@ -691,7 +695,10 @@ fn long_forward_curve_replica_chain_resolves_with_a_worklist() {
     let decoded = decode_inline(&records);
     assert!(decoded.ir().model.curves.iter().any(|curve| {
         curve.id.as_str() == "step:data:curve#9"
-            && matches!(*curve.geometry.solved_cache().unwrap_or(&curve.geometry), CurveGeometry::Transformed { .. })
+            && matches!(
+                *curve.geometry.solved_cache().unwrap_or(&curve.geometry),
+                CurveGeometry::Transformed { .. }
+            )
     }));
     assert!(!decoded.report().losses.iter().any(|loss| {
         loss.message

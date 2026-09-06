@@ -14,9 +14,9 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use cadmpeg_ir::Exactness;
 
-use crate::CreoCodec;
 use crate::container::{self};
 use crate::test_support::*;
+use crate::CreoCodec;
 
 #[test]
 fn decode_refuses_when_max_entities_is_below_section_cardinality() {
@@ -121,16 +121,12 @@ fn decode_extracts_jpeg_thumbnail_as_native_asset() {
         source.attributes["section.0.role"],
         ContainerRole::Thumbnail.as_str()
     );
-    assert!(
-        source.attributes["section.0.offset"]
-            .parse::<usize>()
-            .is_ok()
-    );
-    assert!(
-        source.attributes["section.0.length"]
-            .parse::<usize>()
-            .is_ok()
-    );
+    assert!(source.attributes["section.0.offset"]
+        .parse::<usize>()
+        .is_ok());
+    assert!(source.attributes["section.0.length"]
+        .parse::<usize>()
+        .is_ok());
 }
 
 #[test]
@@ -144,12 +140,10 @@ fn decode_expands_and_retains_compressed_jpeg_thumbnail() {
     assert_eq!(scan.framing.expanded_sections[0].data, jpeg);
     assert!(container::has_thumbnail(&scan));
     let classification = crate::dialect::classify(&scan);
-    assert!(
-        container::summarize(&scan, &classification)
-            .notes
-            .iter()
-            .any(|note| note.contains("THMB_IMG_MAIN carries a JPEG preview"))
-    );
+    assert!(container::summarize(&scan, &classification)
+        .notes
+        .iter()
+        .any(|note| note.contains("THMB_IMG_MAIN carries a JPEG preview")));
 
     let source_offset = scan.framing.expanded_sections[0].source_offset;
     let result = CreoCodec
@@ -591,13 +585,11 @@ fn decode_is_honest_geometryless_with_preserved_sections() {
         Some("mmNs")
     );
     // A blocking loss note names the prototype-vs-instance limitation.
-    assert!(
-        result
-            .report()
-            .losses
-            .iter()
-            .any(|l| l.message.contains("prototype"))
-    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|l| l.message.contains("prototype")));
 }
 
 #[test]
@@ -649,11 +641,9 @@ fn container_only_preserves_sections_without_transferring_entities() {
     assert!(result.ir().model.surfaces.is_empty());
     assert!(result.ir().model.features.is_empty());
     assert_eq!(result.ir().native_unknowns("creo").unwrap().len(), 1);
-    assert!(
-        result
-            .report()
-            .losses
-            .iter()
-            .all(|loss| !loss.message.starts_with("Transferred "))
-    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .all(|loss| !loss.message.starts_with("Transferred ")));
 }

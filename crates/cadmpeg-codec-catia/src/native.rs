@@ -18,15 +18,20 @@ use edge_definition::CatiaConsolidatedEdgeDefinition;
 
 pub(crate) mod edge_node;
 use edge_node::{
-    CatiaConsolidatedEdgeNode, CatiaConsolidatedEdgeNodeWire, consolidated_vertex_identities,
-    edge_node_wires, load_edge_nodes,
+    consolidated_vertex_identities, edge_node_wires, load_edge_nodes, CatiaConsolidatedEdgeNode,
+    CatiaConsolidatedEdgeNodeWire,
 };
 
 pub(crate) mod entity_record;
-use entity_record::{CatiaEntityRecord, CatiaEntityRecordBody, CatiaEntityObjectProduction, CatiaEntityValueProduction};
+use entity_record::{
+    CatiaEntityObjectProduction, CatiaEntityRecord, CatiaEntityRecordBody,
+    CatiaEntityValueProduction,
+};
 
 pub(crate) mod schema_configuration_chain;
-use schema_configuration_chain::{derive_schema_configuration_row_chains, CatiaSchemaConfigurationRowChain};
+use schema_configuration_chain::{
+    derive_schema_configuration_row_chains, CatiaSchemaConfigurationRowChain,
+};
 
 pub(crate) mod owner_chart;
 use owner_chart::{
@@ -1988,7 +1993,9 @@ impl TryFrom<CatiaCatalogWire> for CatiaCatalog {
     type Error = &'static str;
 
     fn try_from(wire: CatiaCatalogWire) -> Result<Self, Self::Error> {
-        if u32::try_from(wire.entries.len()).ok().and_then(|count| count.checked_add(1))
+        if u32::try_from(wire.entries.len())
+            .ok()
+            .and_then(|count| count.checked_add(1))
             != Some(wire.declared_count)
         {
             return Err("catalog count disagrees with entries");
@@ -8633,7 +8640,7 @@ fn consolidated_edge_nodes(
                     .map(native_allocation_reference_encoding),
                 terminal_value: node.terminal_value,
                 terminal_encoding: native_allocation_reference_encoding(node.terminal_encoding),
-                    tail: node.tail,
+                tail: node.tail,
                 definition: use_runs.get(&node.pos).and_then(|(_, value)| value.clone()),
                 uses: use_runs.get(&node.pos).map(|(value, _)| value.clone()),
                 analytic_circle: analytic_circles.get(&node.pos).cloned(),
@@ -9193,8 +9200,12 @@ impl CatiaNative {
                 continue;
             };
             entity.object_production = object_production(
-                entity, object, &entity_references, &relation_expressions,
-                &relation_expression_entities, &parameter_bindings,
+                entity,
+                object,
+                &entity_references,
+                &relation_expressions,
+                &relation_expression_entities,
+                &parameter_bindings,
             );
         }
         let reference_signature_cohorts = derive_reference_signature_cohorts(&entity_records);
@@ -9556,11 +9567,10 @@ fn native_object_graph(
                 lead: record.lead,
                 head: record.head().to_vec(),
                 inline_body: record.inline_body().map(<[u8]>::to_vec),
-                owner: roles.owner_ref.map(CatiaObjectOwner::Entity).or_else(|| {
-                    roles
-                        .owner_literal
-                        .map(CatiaObjectOwner::UnassignedLiteral)
-                }),
+                owner: roles
+                    .owner_ref
+                    .map(CatiaObjectOwner::Entity)
+                    .or_else(|| roles.owner_literal.map(CatiaObjectOwner::UnassignedLiteral)),
                 class: roles.class_ref.map(|class_ref| CatiaObjectClass {
                     class_ref,
                     class_name: None,

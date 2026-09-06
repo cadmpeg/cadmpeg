@@ -2,7 +2,10 @@
 //! Exact non-null compact indices and bounded counted-lane members.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Encoding { Direct(u8), Extended(ExtendedCompactIndex) }
+enum Encoding {
+    Direct(u8),
+    Extended(ExtendedCompactIndex),
+}
 
 /// Exact compact-index encoding, excluding the `ff` null token.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,11 +58,15 @@ impl ExtendedCompactIndex {
         u32::from(self.0[0] - 0x80) * 256 + u32::from(self.0[1])
     }
 
-    pub(crate) fn raw(&self) -> &[u8; 2] { &self.0 }
+    pub(crate) fn raw(&self) -> &[u8; 2] {
+        &self.0
+    }
 
     pub(crate) fn from_wire(value: u32, raw: &[u8; 2]) -> Result<Self, &'static str> {
         let index = Self::read(raw).ok_or("invalid two-byte compact index")?;
-        if index.value() != value { return Err("index/raw token: value mismatch"); }
+        if index.value() != value {
+            return Err("index/raw token: value mismatch");
+        }
         Ok(index)
     }
 }
@@ -85,7 +92,9 @@ impl WrappedCompactIndex {
 
     pub(crate) fn from_wire(value: u32, raw: u32) -> Result<Self, &'static str> {
         let atom = Self::read(raw).ok_or("invalid wrapped compact index")?;
-        if atom.value() != value { return Err("index/raw word: value mismatch"); }
+        if atom.value() != value {
+            return Err("index/raw word: value mismatch");
+        }
         Ok(atom)
     }
 }
@@ -98,14 +107,21 @@ pub(crate) struct LocatedCompactIndex<O = usize, T = CompactIndexAtom> {
 
 impl LocatedCompactIndex {
     pub(crate) fn read(bytes: &[u8], offset: usize) -> Option<Self> {
-        Some(Self { atom: CompactIndexAtom::read(bytes.get(offset..)?)?, offset })
+        Some(Self {
+            atom: CompactIndexAtom::read(bytes.get(offset..)?)?,
+            offset,
+        })
     }
     pub(crate) fn read_array<const N: usize>(bytes: &[u8], at: &mut usize) -> Option<[Self; N]> {
-        (0..N).map(|_| {
-            let token = Self::read(bytes, *at)?;
-            *at += token.atom.raw().len();
-            Some(token)
-        }).collect::<Option<Vec<_>>>()?.try_into().ok()
+        (0..N)
+            .map(|_| {
+                let token = Self::read(bytes, *at)?;
+                *at += token.atom.raw().len();
+                Some(token)
+            })
+            .collect::<Option<Vec<_>>>()?
+            .try_into()
+            .ok()
     }
 }
 
@@ -117,8 +133,11 @@ pub(crate) struct NullableCompactIndex {
 
 impl NullableCompactIndex {
     pub(crate) fn read(bytes: &[u8], offset: usize) -> Option<Self> {
-        let atom = if *bytes.get(offset)? == 0xff { None }
-            else { Some(CompactIndexAtom::read(bytes.get(offset..)?)?) };
+        let atom = if *bytes.get(offset)? == 0xff {
+            None
+        } else {
+            Some(CompactIndexAtom::read(bytes.get(offset..)?)?)
+        };
         Some(Self { atom, offset })
     }
 
@@ -139,16 +158,25 @@ impl<T, const RESERVED: u8> CountedIndexMembers<T, RESERVED> {
         Ok(Self(members))
     }
 
-    pub(crate) fn declared_count(&self) -> u8 { (self.0.len() + usize::from(RESERVED)) as u8 }
+    pub(crate) fn declared_count(&self) -> u8 {
+        (self.0.len() + usize::from(RESERVED)) as u8
+    }
 
-    pub(crate) fn as_slice(&self) -> &[T] { &self.0 }
+    pub(crate) fn as_slice(&self) -> &[T] {
+        &self.0
+    }
 
     pub(crate) fn map<U>(self, f: impl FnMut(T) -> U) -> CountedIndexMembers<U, RESERVED> {
         CountedIndexMembers(self.0.into_iter().map(f).collect())
     }
 
-    pub(crate) fn try_map<U>(self, f: impl FnMut(T) -> Option<U>) -> Option<CountedIndexMembers<U, RESERVED>> {
-        Some(CountedIndexMembers(self.0.into_iter().map(f).collect::<Option<Vec<_>>>()?))
+    pub(crate) fn try_map<U>(
+        self,
+        f: impl FnMut(T) -> Option<U>,
+    ) -> Option<CountedIndexMembers<U, RESERVED>> {
+        Some(CountedIndexMembers(
+            self.0.into_iter().map(f).collect::<Option<Vec<_>>>()?,
+        ))
     }
 }
 
@@ -156,7 +184,9 @@ impl<T, const RESERVED: u8> IntoIterator for CountedIndexMembers<T, RESERVED> {
     type Item = T;
     type IntoIter = std::vec::IntoIter<T>;
 
-    fn into_iter(self) -> Self::IntoIter { self.0.into_iter() }
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
 }
 
 #[cfg(test)]
@@ -211,5 +241,4 @@ mod tests {
             assert!(CountedIndexMembers::<_, 1>::new(vec![0; len]).is_err());
         }
     }
-
 }

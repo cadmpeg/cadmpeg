@@ -39,7 +39,9 @@ fn projection_caches_end_after_history_consumers() {
             entity_ref: 3,
             record_ref: 4,
         }],
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(AsmHistoricalTopology::default()),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(
+            AsmHistoricalTopology::default(),
+        ),
         transition: Some(transition.clone()),
     };
     let mut histories = [AsmHistory {

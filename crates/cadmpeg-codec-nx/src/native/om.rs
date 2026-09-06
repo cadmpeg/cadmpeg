@@ -4,26 +4,28 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use crate::om::control_leading_value::ControlLeadingValue;
-use crate::printable_string::PrintableString;
 use crate::om::state_index::StateIndexToken;
-mod state_index_wire;
+use crate::printable_string::PrintableString;
 pub(crate) mod material_texture;
+mod state_index_wire;
 use material_texture::MaterialTextureAsset;
 
 use crate::om::compact::{CompactIndexAtom, CountedIndexMembers, LocatedCompactIndex};
-mod row_wire;
 mod membership_wire;
-use crate::container::membership::ObjectIdMembers;
+mod row_wire;
 use crate::container::extref_handles::ExtrefHandles;
-use crate::om::color::{ColorComponent, PaletteIndex, PALETTE_SIZE, BACKGROUND_NAME};
+use crate::container::membership::ObjectIdMembers;
+use crate::om::color::{ColorComponent, PaletteIndex, BACKGROUND_NAME, PALETTE_SIZE};
 mod color_wire;
 pub(crate) mod column_index;
 use column_index::ColumnIndexRows;
 
 use crate::native::segments::segment_om_links;
 use crate::om::parameter_name::ParameterName;
+use crate::om::state_group::{
+    OperationStateGroupCount, OperationStateGroupOpener, StateGroupMembers,
+};
 use crate::om::IndexedStore;
-use crate::om::state_group::{OperationStateGroupCount, OperationStateGroupOpener, StateGroupMembers};
 
 /// Semantic family declared by a linked OM section's class registry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -66,7 +68,10 @@ pub struct OmRecordArea {
 
 /// One complete row retained from an audit-trail record area.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "state_index_wire::OmAuditTrailRowWire", into = "state_index_wire::OmAuditTrailRowWire")]
+#[serde(
+    try_from = "state_index_wire::OmAuditTrailRowWire",
+    into = "state_index_wire::OmAuditTrailRowWire"
+)]
 pub struct OmAuditTrailRow {
     /// Globally unique audit-row identity.
     pub id: String,
@@ -81,20 +86,40 @@ pub struct OmAuditTrailRow {
 }
 
 impl OmAuditTrailRow {
-    fn new(id: String, section_link: String, record: crate::om::audit::AuditRecord,
-        source_entry: String, source_offset: u64) -> Option<Self> {
+    fn new(
+        id: String,
+        section_link: String,
+        record: crate::om::audit::AuditRecord,
+        source_entry: String,
+        source_offset: u64,
+    ) -> Option<Self> {
         source_offset.checked_add(record.byte_len() as u64)?;
-        Some(Self { id, section_link, record, source_entry, source_offset })
+        Some(Self {
+            id,
+            section_link,
+            record,
+            source_entry,
+            source_offset,
+        })
     }
 
-    pub fn record(&self) -> crate::om::audit::AuditRecord { self.record }
-    pub fn source_offset(&self) -> u64 { self.source_offset }
-    pub fn end_offset(&self) -> u64 { self.source_offset + self.record.byte_len() as u64 }
+    pub fn record(&self) -> crate::om::audit::AuditRecord {
+        self.record
+    }
+    pub fn source_offset(&self) -> u64 {
+        self.source_offset
+    }
+    pub fn end_offset(&self) -> u64 {
+        self.source_offset + self.record.byte_len() as u64
+    }
 }
 
 /// One row from the feature-history state journal.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "state_index_wire::OmOperationStateJournalRowWire", into = "state_index_wire::OmOperationStateJournalRowWire")]
+#[serde(
+    try_from = "state_index_wire::OmOperationStateJournalRowWire",
+    into = "state_index_wire::OmOperationStateJournalRowWire"
+)]
 pub struct OmOperationStateJournalRow {
     /// Big-endian Unix timestamp stored by the journal.
     pub timestamp: u32,
@@ -134,7 +159,10 @@ pub struct OmOperationStateJournalGroup {
 
 /// One row from the feature-history operation-state counter map.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "state_index_wire::OmOperationStateCounterWire", into = "state_index_wire::OmOperationStateCounterWire")]
+#[serde(
+    try_from = "state_index_wire::OmOperationStateCounterWire",
+    into = "state_index_wire::OmOperationStateCounterWire"
+)]
 pub struct OmOperationStateCounter {
     /// Globally unique counter-row identity.
     pub id: String,
@@ -245,7 +273,10 @@ impl From<OmRollForwardStateGroup> for OmRollForwardStateGroupWire {
             id: value.id,
             section_link: value.section_link,
             ordinal: value.ordinal,
-            rows: value.members.map_rows(state_index_wire::OmRollForwardStateRowWire::from_row).into_rows(),
+            rows: value
+                .members
+                .map_rows(state_index_wire::OmRollForwardStateRowWire::from_row)
+                .into_rows(),
             table_trailing_bytes: value.table_trailing_bytes,
             source_entry: value.source_entry,
             source_offset: value.source_offset,
@@ -267,7 +298,8 @@ impl TryFrom<OmRollForwardStateGroupWire> for OmRollForwardStateGroup {
             id: wire.id,
             section_link: wire.section_link,
             ordinal: wire.ordinal,
-            members: StateGroupMembers::new(count, wire.rows)?.try_map_rows(|ordinal, row| row.into_row(ordinal))?,
+            members: StateGroupMembers::new(count, wire.rows)?
+                .try_map_rows(|ordinal, row| row.into_row(ordinal))?,
             table_trailing_bytes: wire.table_trailing_bytes,
             source_entry: wire.source_entry,
             source_offset: wire.source_offset,
@@ -379,7 +411,10 @@ pub struct OmOperationStateMessage {
 
 /// Native payload retained by one operation-state status row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "state_index_wire::OmOperationStateStatusPayloadWire", into = "state_index_wire::OmOperationStateStatusPayloadWire")]
+#[serde(
+    try_from = "state_index_wire::OmOperationStateStatusPayloadWire",
+    into = "state_index_wire::OmOperationStateStatusPayloadWire"
+)]
 pub enum OmOperationStateStatusPayload {
     /// Normal built/healthy state marker.
     Plain,
@@ -401,7 +436,10 @@ pub enum OmOperationStateStatusPayload {
 
 /// One per-object operation-state status row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "state_index_wire::OmOperationStateStatusWire", into = "state_index_wire::OmOperationStateStatusWire")]
+#[serde(
+    try_from = "state_index_wire::OmOperationStateStatusWire",
+    into = "state_index_wire::OmOperationStateStatusWire"
+)]
 pub struct OmOperationStateStatus {
     /// Globally unique status-row identity.
     pub id: String,
@@ -508,7 +546,9 @@ pub fn audit_trail_rows(container: &Container) -> Vec<OmAuditTrailRow> {
                     let ordinal = record.ordinal.value();
                     OmAuditTrailRow::new(
                         format!("nx:audit-trail:row#{section_key}-{ordinal:010}"),
-                        link.id.clone(), record, entry.name.clone(),
+                        link.id.clone(),
+                        record,
+                        entry.name.clone(),
                         entry_offset.checked_add(row.offset() as u64)?,
                     )
                 })
@@ -1239,7 +1279,8 @@ impl From<ClassDefinition> for ClassDefinitionWire {
             ordinal: value.ordinal,
             trailing_code: value.trailing_code,
             registry_storage_code: registry.map(|layout| layout.storage_code.value()),
-            registry_base_class: registry.map(|layout| layout.base_class.map_or(0, std::num::NonZeroU32::get)),
+            registry_base_class: registry
+                .map(|layout| layout.base_class.map_or(0, std::num::NonZeroU32::get)),
             registry_reference: registry.map(|layout| layout.reference.get()),
             registry_suffix: value.registry_suffix,
             layout_prefix: layout
@@ -1703,7 +1744,10 @@ fn stable_object_record_graph_identity(
 
 /// Counted active-object membership table from `RMFastLoad`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "membership_wire::TableWire", into = "membership_wire::TableWire")]
+#[serde(
+    try_from = "membership_wire::TableWire",
+    into = "membership_wire::TableWire"
+)]
 pub struct RmFastLoadObjectIdTable {
     /// Globally unique table identity.
     pub id: String,
@@ -1719,7 +1763,10 @@ pub struct RmFastLoadObjectIdTable {
 
 /// One fixed-width active-object membership word from `RMFastLoad`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "membership_wire::MemberWire", into = "membership_wire::MemberWire")]
+#[serde(
+    try_from = "membership_wire::MemberWire",
+    into = "membership_wire::MemberWire"
+)]
 pub struct RmFastLoadObjectId {
     /// Globally unique member identity.
     pub id: String,
@@ -1737,10 +1784,14 @@ pub struct RmFastLoadObjectId {
 }
 
 impl RmFastLoadObjectIdTable {
-    pub fn raw_count(&self) -> [u8; 4] { self.members.count().to_le_bytes() }
+    pub fn raw_count(&self) -> [u8; 4] {
+        self.members.count().to_le_bytes()
+    }
 }
 impl RmFastLoadObjectId {
-    pub fn raw(&self) -> [u8; 4] { self.value.to_le_bytes() }
+    pub fn raw(&self) -> [u8; 4] {
+        self.value.to_le_bytes()
+    }
 }
 
 /// One externally bounded block in an NX OM offset-only column store.
@@ -1772,7 +1823,9 @@ pub struct DataBlock {
 /// Admitted complete grammar selected for one offset-store control block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DataBlockControlFormKind {
-    ZeroPrefixed { value_count: std::num::NonZeroU32 },
+    ZeroPrefixed {
+        value_count: std::num::NonZeroU32,
+    },
     ProductAnchored {
         leading: Option<ControlLeadingValue>,
         value_count: std::num::NonZeroU32,
@@ -1800,7 +1853,9 @@ pub struct DataBlockControlForm {
 impl DataBlockControlFormKind {
     pub fn value_count(self) -> u32 {
         match self {
-            Self::ZeroPrefixed { value_count } | Self::ProductAnchored { value_count, .. } => value_count.get(),
+            Self::ZeroPrefixed { value_count } | Self::ProductAnchored { value_count, .. } => {
+                value_count.get()
+            }
         }
     }
 
@@ -1870,12 +1925,18 @@ impl TryFrom<DataBlockControlFormWire> for DataBlockControlForm {
             (DataBlockControlFormKindWire::ZeroPrefixed, None, None) => {
                 let kind = DataBlockControlFormKind::ZeroPrefixed { value_count };
                 if kind.byte_len() != byte_len.get() {
-                    return Err("control-form byte_len must equal four times value_count".to_owned());
+                    return Err(
+                        "control-form byte_len must equal four times value_count".to_owned()
+                    );
                 }
                 kind
             }
             (DataBlockControlFormKindWire::ProductAnchored, None, None) => {
-                DataBlockControlFormKind::ProductAnchored { leading: None, value_count, byte_len }
+                DataBlockControlFormKind::ProductAnchored {
+                    leading: None,
+                    value_count,
+                    byte_len,
+                }
             }
             (DataBlockControlFormKindWire::ProductAnchored, Some(width), Some(value)) => {
                 DataBlockControlFormKind::ProductAnchored {
@@ -2061,8 +2122,11 @@ struct DataBlockReferenceWire {
 impl From<DataBlockReference> for DataBlockReferenceWire {
     fn from(value: DataBlockReference) -> Self {
         Self {
-            id: value.id, data_block: value.data_block, ordinal: value.ordinal,
-            object_id: value.object.value(), raw_object_id: value.object.raw().to_vec(),
+            id: value.id,
+            data_block: value.data_block,
+            ordinal: value.ordinal,
+            object_id: value.object.value(),
+            raw_object_id: value.object.raw().to_vec(),
             target_record: value.target_record,
             target_expression_declaration: value.target_expression_declaration,
             source_offset: value.source_offset,
@@ -2074,9 +2138,14 @@ impl TryFrom<DataBlockReferenceWire> for DataBlockReference {
     type Error = String;
     fn try_from(value: DataBlockReferenceWire) -> Result<Self, Self::Error> {
         Ok(Self {
-            id: value.id, data_block: value.data_block, ordinal: value.ordinal,
-            object: crate::om::reference_index::FeatureReferenceToken::from_wire(value.object_id, &value.raw_object_id)
-                .map_err(|error| format!("object_id/raw_object_id: {error}"))?,
+            id: value.id,
+            data_block: value.data_block,
+            ordinal: value.ordinal,
+            object: crate::om::reference_index::FeatureReferenceToken::from_wire(
+                value.object_id,
+                &value.raw_object_id,
+            )
+            .map_err(|error| format!("object_id/raw_object_id: {error}"))?,
             target_record: value.target_record,
             target_expression_declaration: value.target_expression_declaration,
             source_offset: value.source_offset,
@@ -2161,10 +2230,30 @@ impl From<DataBlockCountedIndexLane> for DataBlockCountedIndexLaneWire {
             anchor_data_block: value.anchor.target.data_block,
             source_offset: value.source_offset,
             anchor_source_offset: value.anchor.source_offset,
-            member_indices: value.members.as_slice().iter().map(|token| token.target.atom.value()).collect(),
-            raw_member_indices: value.members.as_slice().iter().map(|token| token.target.atom.raw().to_vec()).collect(),
-            member_data_blocks: value.members.as_slice().iter().map(|token| token.target.data_block.clone()).collect(),
-            member_source_offsets: value.members.as_slice().iter().map(|token| token.source_offset).collect(),
+            member_indices: value
+                .members
+                .as_slice()
+                .iter()
+                .map(|token| token.target.atom.value())
+                .collect(),
+            raw_member_indices: value
+                .members
+                .as_slice()
+                .iter()
+                .map(|token| token.target.atom.raw().to_vec())
+                .collect(),
+            member_data_blocks: value
+                .members
+                .as_slice()
+                .iter()
+                .map(|token| token.target.data_block.clone())
+                .collect(),
+            member_source_offsets: value
+                .members
+                .as_slice()
+                .iter()
+                .map(|token| token.source_offset)
+                .collect(),
         }
     }
 }
@@ -2178,17 +2267,29 @@ impl TryFrom<DataBlockCountedIndexLaneWire> for DataBlockCountedIndexLane {
         {
             return Err("counted index lane member columns must have equal lengths".to_owned());
         }
-        let members = wire.member_indices.into_iter().zip(wire.raw_member_indices)
-            .zip(wire.member_data_blocks).zip(wire.member_source_offsets)
+        let members = wire
+            .member_indices
+            .into_iter()
+            .zip(wire.raw_member_indices)
+            .zip(wire.member_data_blocks)
+            .zip(wire.member_source_offsets)
             .map(|(((index, raw), data_block), source_offset)| {
                 Ok(DataBlockIndexToken {
-                    target: DataBlockIndexTarget { atom: CompactIndexAtom::from_wire(index, &raw).map_err(|error| format!("member_indices/raw_member_indices: {error}"))?, data_block },
+                    target: DataBlockIndexTarget {
+                        atom: CompactIndexAtom::from_wire(index, &raw).map_err(|error| {
+                            format!("member_indices/raw_member_indices: {error}")
+                        })?,
+                        data_block,
+                    },
                     source_offset,
                 })
-            }).collect::<Result<Vec<_>, String>>()?;
+            })
+            .collect::<Result<Vec<_>, String>>()?;
         let members = CountedIndexMembers::new(members)?;
         if wire.declared_count != members.declared_count() {
-            return Err("declared_count: must equal member count plus anchor and terminator".into());
+            return Err(
+                "declared_count: must equal member count plus anchor and terminator".into(),
+            );
         }
         Ok(Self {
             members,
@@ -2197,7 +2298,8 @@ impl TryFrom<DataBlockCountedIndexLaneWire> for DataBlockCountedIndexLane {
             ordinal: wire.ordinal,
             anchor: DataBlockIndexToken {
                 target: DataBlockIndexTarget {
-                    atom: CompactIndexAtom::from_wire(wire.anchor_index, &wire.raw_anchor_index).map_err(|error| format!("anchor_index/raw_anchor_index: {error}"))?,
+                    atom: CompactIndexAtom::from_wire(wire.anchor_index, &wire.raw_anchor_index)
+                        .map_err(|error| format!("anchor_index/raw_anchor_index: {error}"))?,
                     data_block: wire.anchor_data_block,
                 },
                 source_offset: wire.anchor_source_offset,
@@ -2235,7 +2337,6 @@ pub struct DataBlockAbrSlot {
     pub source_offset: u64,
 }
 
-
 #[derive(Serialize, Deserialize)]
 struct DataBlockAbrReferenceLaneWire {
     /// Globally unique lane identity.
@@ -2270,7 +2371,11 @@ impl From<DataBlockAbrReferenceLane> for DataBlockAbrReferenceLaneWire {
                 .slots
                 .each_ref()
                 .map(|slot| slot.target.as_ref().map(|target| target.atom.value())),
-            raw_slot_indices: value.slots.each_ref().map(|slot| slot.target.as_ref().map_or_else(|| vec![0xff], |target| target.atom.raw().to_vec())),
+            raw_slot_indices: value.slots.each_ref().map(|slot| {
+                slot.target
+                    .as_ref()
+                    .map_or_else(|| vec![0xff], |target| target.atom.raw().to_vec())
+            }),
             slot_data_blocks: value
                 .slots
                 .each_ref()
@@ -2294,7 +2399,9 @@ impl TryFrom<DataBlockAbrReferenceLaneWire> for DataBlockAbrReferenceLane {
                 };
                 Ok(DataBlockAbrSlot { target, source_offset })
             }).collect::<Result<Vec<_>, String>>()?;
-        let slots = slots.try_into().map_err(|_: Vec<DataBlockAbrSlot>| "slot_indices: must contain sixteen slots")?;
+        let slots = slots
+            .try_into()
+            .map_err(|_: Vec<DataBlockAbrSlot>| "slot_indices: must contain sixteen slots")?;
         Ok(Self {
             slots,
             id: wire.id,
@@ -2308,7 +2415,10 @@ impl TryFrom<DataBlockAbrReferenceLaneWire> for DataBlockAbrReferenceLane {
 
 /// Self-framed index row in contiguous offset-store column storage.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "row_wire::DataBlockIndexRowWire", into = "row_wire::DataBlockIndexRowWire")]
+#[serde(
+    try_from = "row_wire::DataBlockIndexRowWire",
+    into = "row_wire::DataBlockIndexRowWire"
+)]
 pub struct DataBlockIndexRow {
     /// Globally unique row identity.
     pub id: String,
@@ -2334,7 +2444,10 @@ pub struct DataBlockIndexRow {
 
 /// Self-framed linked index row in contiguous column storage.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "row_wire::DataBlockLinkedIndexRowWire", into = "row_wire::DataBlockLinkedIndexRowWire")]
+#[serde(
+    try_from = "row_wire::DataBlockLinkedIndexRowWire",
+    into = "row_wire::DataBlockLinkedIndexRowWire"
+)]
 pub struct DataBlockLinkedIndexRow {
     /// Globally unique row identity.
     pub id: String,
@@ -2366,7 +2479,10 @@ pub struct DataBlockLinkedIndexRow {
 
 /// Self-framed target-index row in contiguous column storage.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "row_wire::DataBlockTargetIndexRowWire", into = "row_wire::DataBlockTargetIndexRowWire")]
+#[serde(
+    try_from = "row_wire::DataBlockTargetIndexRowWire",
+    into = "row_wire::DataBlockTargetIndexRowWire"
+)]
 pub struct DataBlockTargetIndexRow {
     /// Globally unique row identity.
     pub id: String,
@@ -2591,8 +2707,14 @@ impl TryFrom<RmCreationDisplayDataRelationWire> for RmCreationDisplayDataRelatio
                 Some(raw_first_index),
                 Some(first_index_source_offset),
             ) => RmCreationDisplayDataEncoding::Index {
-                first_index: row_wire::located_index(first_index, &raw_first_index, first_index_source_offset, "first_index/raw_first_index")?,
-                flag: crate::om::discriminators::LinkedIndexFlag::try_from(flag).map_err(|_| "flag: must be 3 or 7")?,
+                first_index: row_wire::located_index(
+                    first_index,
+                    &raw_first_index,
+                    first_index_source_offset,
+                    "first_index/raw_first_index",
+                )?,
+                flag: crate::om::discriminators::LinkedIndexFlag::try_from(flag)
+                    .map_err(|_| "flag: must be 3 or 7")?,
                 indices: row_wire::located_indices(indices, raw_indices, index_source_offsets)?,
             },
             (
@@ -2611,9 +2733,19 @@ impl TryFrom<RmCreationDisplayDataRelationWire> for RmCreationDisplayDataRelatio
                 Some(raw_first_index),
                 Some(first_index_source_offset),
             ) => RmCreationDisplayDataEncoding::Linked {
-                first_index: row_wire::located_index(first_index, &raw_first_index, first_index_source_offset, "first_index/raw_first_index")?,
+                first_index: row_wire::located_index(
+                    first_index,
+                    &raw_first_index,
+                    first_index_source_offset,
+                    "first_index/raw_first_index",
+                )?,
                 discriminator,
-                target_index: row_wire::located_index(target_index, &raw_target_index, target_index_source_offset, "target_index/raw_target_index")?,
+                target_index: row_wire::located_index(
+                    target_index,
+                    &raw_target_index,
+                    target_index_source_offset,
+                    "target_index/raw_target_index",
+                )?,
                 indices: row_wire::located_indices(indices, raw_indices, index_source_offsets)?,
                 flag,
                 mode,
@@ -2632,7 +2764,12 @@ impl TryFrom<RmCreationDisplayDataRelationWire> for RmCreationDisplayDataRelatio
                 None,
                 None,
             ) => RmCreationDisplayDataEncoding::Target {
-                target_index: row_wire::located_index(target_index, &raw_target_index, target_index_source_offset, "target_index/raw_target_index")?,
+                target_index: row_wire::located_index(
+                    target_index,
+                    &raw_target_index,
+                    target_index_source_offset,
+                    "target_index/raw_target_index",
+                )?,
                 indices: row_wire::located_indices(indices, raw_indices, index_source_offsets)?,
                 mode,
             },
@@ -2656,7 +2793,10 @@ impl TryFrom<RmCreationDisplayDataRelationWire> for RmCreationDisplayDataRelatio
 
 /// Complete named NX part palette for color indices 1 through 216.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "color_wire::PartColorTableWire", into = "color_wire::PartColorTableWire")]
+#[serde(
+    try_from = "color_wire::PartColorTableWire",
+    into = "color_wire::PartColorTableWire"
+)]
 pub struct PartColorTable {
     /// Globally unique table identity.
     pub id: String,
@@ -2674,7 +2814,10 @@ pub struct PartColorTable {
 
 /// One named RGB entry from an NX part palette.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "color_wire::PartColorDefinitionWire", into = "color_wire::PartColorDefinitionWire")]
+#[serde(
+    try_from = "color_wire::PartColorDefinitionWire",
+    into = "color_wire::PartColorDefinitionWire"
+)]
 pub struct PartColorDefinition {
     /// Globally unique color-definition identity.
     pub id: String,
@@ -2692,7 +2835,10 @@ pub struct PartColorDefinition {
 
 /// Exact row encoding carrying one `RMFastLoad` display-color assignment.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "row_wire::RmDisplayColorAssignmentEncodingWire", into = "row_wire::RmDisplayColorAssignmentEncodingWire")]
+#[serde(
+    try_from = "row_wire::RmDisplayColorAssignmentEncodingWire",
+    into = "row_wire::RmDisplayColorAssignmentEncodingWire"
+)]
 pub enum RmDisplayColorAssignmentEncoding {
     /// Linked row with an unresolved leading object identity.
     Linked {
@@ -2713,7 +2859,10 @@ pub enum RmDisplayColorAssignmentEncoding {
 
 /// Explicit color assignment carried by one complete `RMFastLoad` row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "color_wire::RmDisplayColorAssignmentWire", into = "color_wire::RmDisplayColorAssignmentWire")]
+#[serde(
+    try_from = "color_wire::RmDisplayColorAssignmentWire",
+    into = "color_wire::RmDisplayColorAssignmentWire"
+)]
 pub struct RmDisplayColorAssignment {
     /// Globally unique assignment identity.
     pub id: String,
@@ -2836,7 +2985,9 @@ mod printable_value_wire_tests {
             let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
             wire["value"] = invalid.into();
             assert!(serde_json::from_value::<StringValue>(wire)
-                .unwrap_err().to_string().contains("value"));
+                .unwrap_err()
+                .to_string()
+                .contains("value"));
         }
     }
 }
@@ -3362,7 +3513,9 @@ pub fn external_reference_tail_reference_pairs(
     records
         .iter()
         .flat_map(|record| {
-            let Some(source_offset) = record.source_offset.checked_add(record.handles.prefix_byte_len() as u64)
+            let Some(source_offset) = record
+                .source_offset
+                .checked_add(record.handles.prefix_byte_len() as u64)
             else {
                 return Vec::new();
             };
@@ -3921,7 +4074,13 @@ pub fn rmfastload_object_id_table(
     assign_rmfastload_object_id_identities(&mut object_ids);
     let native_table = RmFastLoadObjectIdTable {
         id: table_id,
-        members: ObjectIdMembers::new(object_ids.iter().map(|object_id| object_id.id.clone()).collect()).ok()?,
+        members: ObjectIdMembers::new(
+            object_ids
+                .iter()
+                .map(|object_id| object_id.id.clone())
+                .collect(),
+        )
+        .ok()?,
         source_entry: entry.name.clone(),
         registry_source_offset: entry_offset + table.registry_offset as u64,
         source_offset: entry_offset + table.count_offset as u64,
@@ -4040,13 +4199,11 @@ pub fn data_block_control_forms(container: &Container) -> Vec<DataBlockControlFo
                 crate::om::OffsetStoreControlForm::ProductAnchored {
                     leading_value,
                     values,
-                } => {
-                    DataBlockControlFormKind::ProductAnchored {
-                        leading: leading_value,
-                        value_count: std::num::NonZeroU32::new(u32::try_from(values.len()).ok()?)?,
-                        byte_len: std::num::NonZeroU64::new(control.bytes.len() as u64)?,
-                    }
-                }
+                } => DataBlockControlFormKind::ProductAnchored {
+                    leading: leading_value,
+                    value_count: std::num::NonZeroU32::new(u32::try_from(values.len()).ok()?)?,
+                    byte_len: std::num::NonZeroU64::new(control.bytes.len() as u64)?,
+                },
             };
             Some(DataBlockControlForm {
                 id: format!("nx:om-data-block-control-forms:form#{section_ordinal}"),
@@ -4268,7 +4425,9 @@ pub fn data_block_control_references(container: &Container) -> Vec<DataBlockCont
                 .into_iter()
                 .filter_map(|reference| {
                     let kind = match reference.kind {
-                        crate::om::ReferenceKind::PersistentHandle => ObjectReferenceKind::PersistentHandle,
+                        crate::om::ReferenceKind::PersistentHandle => {
+                            ObjectReferenceKind::PersistentHandle
+                        }
                         crate::om::ReferenceKind::Tagged28 => ObjectReferenceKind::Tagged28,
                         crate::om::ReferenceKind::RecordOrdinal16 => return None,
                     };
@@ -4497,16 +4656,27 @@ pub fn data_block_abr_reference_lanes(container: &Container) -> Vec<DataBlockAbr
             crate::om::offset_store_abr_reference_lanes(storage)
                 .into_iter()
                 .filter_map(|lane| {
-                    let slots = lane.slots.into_iter().map(|token| {
-                        let target = match token.atom {
-                            Some(atom) => Some(DataBlockIndexTarget {
-                                atom,
-                                data_block: control_index_data_block(section_ordinal, block_count, atom.value())?,
-                            }),
-                            None => None,
-                        };
-                        Some(DataBlockAbrSlot { target, source_offset: source_base + token.offset as u64 })
-                    }).collect::<Option<Vec<_>>>()?;
+                    let slots = lane
+                        .slots
+                        .into_iter()
+                        .map(|token| {
+                            let target = match token.atom {
+                                Some(atom) => Some(DataBlockIndexTarget {
+                                    atom,
+                                    data_block: control_index_data_block(
+                                        section_ordinal,
+                                        block_count,
+                                        atom.value(),
+                                    )?,
+                                }),
+                                None => None,
+                            };
+                            Some(DataBlockAbrSlot {
+                                target,
+                                source_offset: source_base + token.offset as u64,
+                            })
+                        })
+                        .collect::<Option<Vec<_>>>()?;
                     let slots = slots.try_into().ok()?;
                     Some((lane, slots))
                 })
@@ -4532,13 +4702,24 @@ fn resolve_column_indices<const N: usize>(
     source_base: u64,
     tokens: [LocatedCompactIndex; N],
 ) -> Option<[DataBlockIndexToken; N]> {
-    tokens.into_iter().map(|token| Some(DataBlockIndexToken {
-        target: DataBlockIndexTarget {
-            atom: token.atom,
-            data_block: control_index_data_block(section_ordinal, block_count, token.atom.value())?,
-        },
-        source_offset: source_base + token.offset as u64,
-    })).collect::<Option<Vec<_>>>()?.try_into().ok()
+    tokens
+        .into_iter()
+        .map(|token| {
+            Some(DataBlockIndexToken {
+                target: DataBlockIndexTarget {
+                    atom: token.atom,
+                    data_block: control_index_data_block(
+                        section_ordinal,
+                        block_count,
+                        token.atom.value(),
+                    )?,
+                },
+                source_offset: source_base + token.offset as u64,
+            })
+        })
+        .collect::<Option<Vec<_>>>()?
+        .try_into()
+        .ok()
 }
 
 /// Decode complete index rows from offset-store column storage.
@@ -4560,7 +4741,12 @@ pub fn data_block_index_rows(container: &Container) -> Vec<DataBlockIndexRow> {
             crate::om::offset_store_index_rows(storage)
                 .into_iter()
                 .filter_map(|row| {
-                    let tokens = resolve_column_indices(section_ordinal, block_count, source_base, row.indices)?;
+                    let tokens = resolve_column_indices(
+                        section_ordinal,
+                        block_count,
+                        source_base,
+                        row.indices,
+                    )?;
                     let opening = column_storage_block_at(
                         section_ordinal,
                         records,
@@ -4573,7 +4759,10 @@ pub fn data_block_index_rows(container: &Container) -> Vec<DataBlockIndexRow> {
                     id: format!("nx:om-data-block-index-rows-{section_ordinal}:row#{ordinal}"),
                     section_ordinal: section_ordinal as u32,
                     ordinal: ordinal as u32,
-                    first_index: LocatedCompactIndex { atom: row.first_index.atom, offset: source_base + row.first_index.offset as u64 },
+                    first_index: LocatedCompactIndex {
+                        atom: row.first_index.atom,
+                        offset: source_base + row.first_index.offset as u64,
+                    },
                     flag: row.flag,
                     indices,
                     source_entry: entry.name.clone(),
@@ -4605,7 +4794,17 @@ pub fn data_block_linked_index_rows(container: &Container) -> Vec<DataBlockLinke
             crate::om::offset_store_linked_index_rows(storage)
                 .into_iter()
                 .filter_map(|row| {
-                    let tokens = resolve_column_indices(section_ordinal, block_count, source_base, [row.target_index, row.indices[0], row.indices[1], row.indices[2]])?;
+                    let tokens = resolve_column_indices(
+                        section_ordinal,
+                        block_count,
+                        source_base,
+                        [
+                            row.target_index,
+                            row.indices[0],
+                            row.indices[1],
+                            row.indices[2],
+                        ],
+                    )?;
                     let opening = column_storage_block_at(
                         section_ordinal,
                         records,
@@ -4621,7 +4820,10 @@ pub fn data_block_linked_index_rows(container: &Container) -> Vec<DataBlockLinke
                         ),
                         section_ordinal: section_ordinal as u32,
                         ordinal: ordinal as u32,
-                        first_index: LocatedCompactIndex { atom: row.first_index.atom, offset: source_base + row.first_index.offset as u64 },
+                        first_index: LocatedCompactIndex {
+                            atom: row.first_index.atom,
+                            offset: source_base + row.first_index.offset as u64,
+                        },
                         discriminator: row.discriminator,
                         target,
                         indices: [a, b, c],
@@ -4657,7 +4859,17 @@ pub fn data_block_target_index_rows(container: &Container) -> Vec<DataBlockTarge
             crate::om::offset_store_target_index_rows(storage)
                 .into_iter()
                 .filter_map(|row| {
-                    let tokens = resolve_column_indices(section_ordinal, block_count, source_base, [row.target_index, row.indices[0], row.indices[1], row.indices[2]])?;
+                    let tokens = resolve_column_indices(
+                        section_ordinal,
+                        block_count,
+                        source_base,
+                        [
+                            row.target_index,
+                            row.indices[0],
+                            row.indices[1],
+                            row.indices[2],
+                        ],
+                    )?;
                     let opening = column_storage_block_at(
                         section_ordinal,
                         records,
@@ -4733,9 +4945,15 @@ pub fn rm_creation_display_data_relations(
                 class_name: CLASS_NAME.to_string(),
                 class_definition: class_definition.clone(),
                 encoding: RmCreationDisplayDataEncoding::Index {
-                    first_index: LocatedCompactIndex { atom: row.first_index.atom, offset: source_base + row.first_index.offset as u64 },
+                    first_index: LocatedCompactIndex {
+                        atom: row.first_index.atom,
+                        offset: source_base + row.first_index.offset as u64,
+                    },
                     flag: row.flag,
-                    indices: row.indices.map(|token| LocatedCompactIndex { atom: token.atom, offset: source_base + token.offset as u64 }),
+                    indices: row.indices.map(|token| LocatedCompactIndex {
+                        atom: token.atom,
+                        offset: source_base + token.offset as u64,
+                    }),
                 },
                 target_object_id: None,
                 source_entry: entry.name.clone(),
@@ -4752,14 +4970,26 @@ pub fn rm_creation_display_data_relations(
                 class_name: CLASS_NAME.to_string(),
                 class_definition: class_definition.clone(),
                 encoding: RmCreationDisplayDataEncoding::Linked {
-                    first_index: LocatedCompactIndex { atom: row.first_index.atom, offset: source_base + row.first_index.offset as u64 },
+                    first_index: LocatedCompactIndex {
+                        atom: row.first_index.atom,
+                        offset: source_base + row.first_index.offset as u64,
+                    },
                     discriminator: row.discriminator,
-                    target_index: LocatedCompactIndex { atom: row.target_index.atom, offset: source_base + row.target_index.offset as u64 },
-                    indices: row.indices.map(|token| LocatedCompactIndex { atom: token.atom, offset: source_base + token.offset as u64 }),
+                    target_index: LocatedCompactIndex {
+                        atom: row.target_index.atom,
+                        offset: source_base + row.target_index.offset as u64,
+                    },
+                    indices: row.indices.map(|token| LocatedCompactIndex {
+                        atom: token.atom,
+                        offset: source_base + token.offset as u64,
+                    }),
                     flag: row.flag,
                     mode: row.mode,
                 },
-                target_object_id: rmfastload_target_object_id(object_ids, row.target_index.atom.value()),
+                target_object_id: rmfastload_target_object_id(
+                    object_ids,
+                    row.target_index.atom.value(),
+                ),
                 source_entry: entry.name.clone(),
                 source_offset: source_base + row.offset as u64,
             });
@@ -4774,11 +5004,20 @@ pub fn rm_creation_display_data_relations(
                 class_name: CLASS_NAME.to_string(),
                 class_definition: class_definition.clone(),
                 encoding: RmCreationDisplayDataEncoding::Target {
-                    target_index: LocatedCompactIndex { atom: row.target_index.atom, offset: source_base + row.target_index.offset as u64 },
-                    indices: row.indices.map(|token| LocatedCompactIndex { atom: token.atom, offset: source_base + token.offset as u64 }),
+                    target_index: LocatedCompactIndex {
+                        atom: row.target_index.atom,
+                        offset: source_base + row.target_index.offset as u64,
+                    },
+                    indices: row.indices.map(|token| LocatedCompactIndex {
+                        atom: token.atom,
+                        offset: source_base + token.offset as u64,
+                    }),
                     mode: row.mode,
                 },
-                target_object_id: rmfastload_target_object_id(object_ids, row.target_index.atom.value()),
+                target_object_id: rmfastload_target_object_id(
+                    object_ids,
+                    row.target_index.atom.value(),
+                ),
                 source_entry: entry.name.clone(),
                 source_offset: source_base + row.offset as u64,
             });
@@ -4826,20 +5065,29 @@ pub fn part_color_tables(container: &Container) -> (Vec<PartColorTable>, Vec<Par
         let parsed_definitions = PaletteIndex::all().map(|color_index| {
             let definition = &table.definitions[usize::from(color_index.value()) - 1];
             PartColorDefinition {
-                id: format!("nx:part-color-definitions-{section_ordinal}:color#{}", color_index.value()),
+                id: format!(
+                    "nx:part-color-definitions-{section_ordinal}:color#{}",
+                    color_index.value()
+                ),
                 color_table: table_id.clone(),
                 color_index,
                 name: definition.name.to_string(),
-                components: definition.components.map(|(component, offset)| (component, source_base + offset as u64)),
+                components: definition
+                    .components
+                    .map(|(component, offset)| (component, source_base + offset as u64)),
                 source_offset: source_base + definition.offset as u64,
             }
         });
-        let definition_ids = parsed_definitions.each_ref().map(|definition| definition.id.clone());
+        let definition_ids = parsed_definitions
+            .each_ref()
+            .map(|definition| definition.id.clone());
         definitions.extend(parsed_definitions);
         tables.push(PartColorTable {
             id: table_id,
             class_definition: format!("nx:om-entry-{entry_index}:class#{}", class.offset),
-            background: table.background.map(|(component, offset)| (component, source_base + offset as u64)),
+            background: table
+                .background
+                .map(|(component, offset)| (component, source_base + offset as u64)),
             definitions: definition_ids,
             source_entry: entry.name.clone(),
             source_offset: source_base + table.offset as u64,
@@ -4885,14 +5133,26 @@ pub fn rm_display_color_assignments(
                 id: String::new(),
                 ordinal: 0,
                 encoding: RmDisplayColorAssignmentEncoding::Linked {
-                    object_index: LocatedCompactIndex { atom: row.first_index.atom, offset: source_base + row.first_index.offset as u64 },
+                    object_index: LocatedCompactIndex {
+                        atom: row.first_index.atom,
+                        offset: source_base + row.first_index.offset as u64,
+                    },
                     discriminator: row.discriminator,
-                    target_index: LocatedCompactIndex { atom: row.target_index.atom, offset: source_base + row.target_index.offset as u64 },
-                    indices: row.indices.map(|token| LocatedCompactIndex { atom: token.atom, offset: source_base + token.offset as u64 }),
+                    target_index: LocatedCompactIndex {
+                        atom: row.target_index.atom,
+                        offset: source_base + row.target_index.offset as u64,
+                    },
+                    indices: row.indices.map(|token| LocatedCompactIndex {
+                        atom: token.atom,
+                        offset: source_base + token.offset as u64,
+                    }),
                     flag: row.flag,
                     mode: row.mode,
                 },
-                target_object_id: rmfastload_target_object_id(object_ids, row.target_index.atom.value()),
+                target_object_id: rmfastload_target_object_id(
+                    object_ids,
+                    row.target_index.atom.value(),
+                ),
                 color_index: color.color_index,
                 color_definition: definition.id.clone(),
                 source_entry: entry.name.clone(),
@@ -4917,11 +5177,20 @@ pub fn rm_display_color_assignments(
                 id: String::new(),
                 ordinal: 0,
                 encoding: RmDisplayColorAssignmentEncoding::Target {
-                    target_index: LocatedCompactIndex { atom: row.target_index.atom, offset: source_base + row.target_index.offset as u64 },
-                    indices: row.indices.map(|token| LocatedCompactIndex { atom: token.atom, offset: source_base + token.offset as u64 }),
+                    target_index: LocatedCompactIndex {
+                        atom: row.target_index.atom,
+                        offset: source_base + row.target_index.offset as u64,
+                    },
+                    indices: row.indices.map(|token| LocatedCompactIndex {
+                        atom: token.atom,
+                        offset: source_base + token.offset as u64,
+                    }),
                     mode: row.mode,
                 },
-                target_object_id: rmfastload_target_object_id(object_ids, row.target_index.atom.value()),
+                target_object_id: rmfastload_target_object_id(
+                    object_ids,
+                    row.target_index.atom.value(),
+                ),
                 color_index: color.color_index,
                 color_definition: definition.id.clone(),
                 source_entry: entry.name.clone(),
@@ -4980,18 +5249,19 @@ pub fn data_block_column_index_tables(
             {
                 return None;
             }
-            let ordered = std::iter::once((opening.target.target.atom.value(), opening.source_offset))
-                .chain(
-                    targets
-                        .iter()
-                        .map(|row| (row.target.target.atom.value(), row.source_offset)),
-                )
-                .chain(
-                    suffix
-                        .iter()
-                        .map(|row| (row.target.target.atom.value(), row.source_offset)),
-                )
-                .collect::<Vec<_>>();
+            let ordered =
+                std::iter::once((opening.target.target.atom.value(), opening.source_offset))
+                    .chain(
+                        targets
+                            .iter()
+                            .map(|row| (row.target.target.atom.value(), row.source_offset)),
+                    )
+                    .chain(
+                        suffix
+                            .iter()
+                            .map(|row| (row.target.target.atom.value(), row.source_offset)),
+                    )
+                    .collect::<Vec<_>>();
             if ordered
                 .windows(2)
                 .any(|pair| pair[0].0.checked_sub(1) != Some(pair[1].0) || pair[0].1 >= pair[1].1)
@@ -5559,17 +5829,30 @@ mod tests {
     #![allow(unused_imports)]
     #[test]
     fn data_block_reference_wire_preserves_feature_token_and_rejects_mismatch() {
-        for (value, raw) in [(0, vec![0]), (0, vec![0x80, 0]), (0, vec![0x90, 0, 0]), (6466, vec![0x90, 0x19, 0x42])] {
+        for (value, raw) in [
+            (0, vec![0]),
+            (0, vec![0x80, 0]),
+            (0, vec![0x90, 0, 0]),
+            (6466, vec![0x90, 0x19, 0x42]),
+        ] {
             let wire = serde_json::json!({"id":"reference", "data_block":"block", "ordinal":0,
                 "object_id":value, "raw_object_id":raw, "source_offset":12});
             let record: super::DataBlockReference = serde_json::from_value(wire.clone()).unwrap();
             assert_eq!(serde_json::to_value(record).unwrap(), wire);
         }
-        for (value, raw) in [(1, vec![0]), (0, vec![0xff]), (0, vec![0xf0, 0]),
-            (0, vec![0x90, 0]), (0, vec![0, 0])] {
+        for (value, raw) in [
+            (1, vec![0]),
+            (0, vec![0xff]),
+            (0, vec![0xf0, 0]),
+            (0, vec![0x90, 0]),
+            (0, vec![0, 0]),
+        ] {
             let wire = serde_json::json!({"id":"reference", "data_block":"block", "ordinal":0,
                 "object_id":value, "raw_object_id":raw, "source_offset":12});
-            assert!(serde_json::from_value::<super::DataBlockReference>(wire).unwrap_err().to_string().contains("object_id/raw_object_id"));
+            assert!(serde_json::from_value::<super::DataBlockReference>(wire)
+                .unwrap_err()
+                .to_string()
+                .contains("object_id/raw_object_id"));
         }
     }
 
@@ -5603,7 +5886,10 @@ mod tests {
         assert_eq!(
             lane.members.as_slice(),
             [super::DataBlockIndexToken {
-                target: super::DataBlockIndexTarget { atom: CompactIndexAtom::read(&[2]).unwrap(), data_block: "member".to_owned() },
+                target: super::DataBlockIndexTarget {
+                    atom: CompactIndexAtom::read(&[2]).unwrap(),
+                    data_block: "member".to_owned()
+                },
                 source_offset: 12,
             }]
         );
@@ -5625,10 +5911,10 @@ mod tests {
         ] {
             let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
             malformed[field] = invalid;
-            let error = serde_json::from_value::<super::DataBlockCountedIndexLane>(malformed).unwrap_err();
+            let error =
+                serde_json::from_value::<super::DataBlockCountedIndexLane>(malformed).unwrap_err();
             assert!(error.to_string().contains(field), "{error}");
         }
-
     }
 
     #[test]
@@ -5665,10 +5951,10 @@ mod tests {
         for (slot, raw) in [(0, vec![3]), (1, vec![0])] {
             let mut malformed: serde_json::Value = serde_json::from_str(json).unwrap();
             malformed["raw_slot_indices"][slot] = serde_json::json!(raw);
-            let error = serde_json::from_value::<super::DataBlockAbrReferenceLane>(malformed).unwrap_err();
+            let error =
+                serde_json::from_value::<super::DataBlockAbrReferenceLane>(malformed).unwrap_err();
             assert!(error.to_string().contains("raw_slot_indices"), "{error}");
         }
-
     }
 
     #[test]
@@ -6421,7 +6707,8 @@ mod tests {
             id: "nx:feature-history:input-block#0-7-0".to_string(),
             operation_label: "nx:feature-history:operation-label#0-7".to_string(),
             input_slot: crate::om::header_references::HeaderSlot::Zero,
-            object: crate::om::reference_index::FeatureReferenceToken::from_wire(45, &[45]).unwrap(),
+            object: crate::om::reference_index::FeatureReferenceToken::from_wire(45, &[45])
+                .unwrap(),
             data_block: "nx:om-data-blocks-2:block#45".to_string(),
             source_offset: 700,
         };
@@ -6429,7 +6716,11 @@ mod tests {
             id: format!("nx:om-data-block-references-2-45:reference#{ordinal}"),
             data_block: input.data_block.clone(),
             ordinal,
-            object: crate::om::reference_index::FeatureReferenceToken::from_wire(201 + ordinal, &[0x80, (201 + ordinal) as u8]).unwrap(),
+            object: crate::om::reference_index::FeatureReferenceToken::from_wire(
+                201 + ordinal,
+                &[0x80, (201 + ordinal) as u8],
+            )
+            .unwrap(),
             target_record: Some(format!("nx:om-record-directory-0:entry#{ordinal}")),
             target_expression_declaration: declaration.map(str::to_string),
             source_offset: 800 + u64::from(ordinal),
@@ -6493,7 +6784,9 @@ mod tests {
         assert_eq!(
             crate::om::offset_store_control_form(&bytes, None),
             Some(crate::om::OffsetStoreControlForm::ProductAnchored {
-                leading_value: Some(crate::om::control_leading_value::ControlLeadingValue::from_wire(2, 0).unwrap()),
+                leading_value: Some(
+                    crate::om::control_leading_value::ControlLeadingValue::from_wire(2, 0).unwrap()
+                ),
                 values: crate::om::nonempty::NonEmpty::new([7, 0x1020]).unwrap(),
             })
         );
@@ -6504,7 +6797,10 @@ mod tests {
         assert_eq!(
             crate::om::offset_store_control_form(&nonzero_leading, None),
             Some(crate::om::OffsetStoreControlForm::ProductAnchored {
-                leading_value: Some(crate::om::control_leading_value::ControlLeadingValue::from_wire(3, 0x1234).unwrap()),
+                leading_value: Some(
+                    crate::om::control_leading_value::ControlLeadingValue::from_wire(3, 0x1234)
+                        .unwrap()
+                ),
                 values: crate::om::nonempty::NonEmpty::new([7]).unwrap(),
             })
         );
@@ -6536,7 +6832,12 @@ mod tests {
         let forms = super::data_block_control_forms(&container);
         assert_eq!(forms.len(), 1);
         assert_eq!(forms[0].data_block, blocks[0].id);
-        assert_eq!(forms[0].kind, super::DataBlockControlFormKind::ZeroPrefixed { value_count: std::num::NonZeroU32::new(2).unwrap() });
+        assert_eq!(
+            forms[0].kind,
+            super::DataBlockControlFormKind::ZeroPrefixed {
+                value_count: std::num::NonZeroU32::new(2).unwrap()
+            }
+        );
         assert_eq!(forms[0].kind.value_count(), 2);
         assert_eq!(forms[0].kind.byte_len(), blocks[0].byte_len);
         let control_values = super::data_block_control_values(&container);
@@ -6617,7 +6918,9 @@ mod tests {
             let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
             wire[field] = invalid.into();
             assert!(serde_json::from_value::<super::DataBlockControlForm>(wire)
-                .unwrap_err().to_string().contains(field));
+                .unwrap_err()
+                .to_string()
+                .contains(field));
         }
         let json = r#"{"id":"c","data_block":"b","kind":"product_anchored","value_count":2,"byte_len":1,"source_offset":0}"#;
         let value: super::DataBlockControlForm = serde_json::from_str(json).unwrap();
@@ -6626,7 +6929,9 @@ mod tests {
             let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
             wire[field] = 0.into();
             assert!(serde_json::from_value::<super::DataBlockControlForm>(wire)
-                .unwrap_err().to_string().contains(field));
+                .unwrap_err()
+                .to_string()
+                .contains(field));
         }
     }
 
@@ -6637,10 +6942,18 @@ mod tests {
         assert_eq!(serde_json::to_string(&value).unwrap(), json);
         let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
         wire["leading_value_width"] = 4.into();
-        assert!(serde_json::from_value::<super::DataBlockControlForm>(wire.clone()).unwrap_err().to_string().contains("leading_value_width"));
+        assert!(
+            serde_json::from_value::<super::DataBlockControlForm>(wire.clone())
+                .unwrap_err()
+                .to_string()
+                .contains("leading_value_width")
+        );
         wire["leading_value_width"] = 2.into();
         wire["leading_value"] = 65536.into();
-        assert!(serde_json::from_value::<super::DataBlockControlForm>(wire).unwrap_err().to_string().contains("leading_value"));
+        assert!(serde_json::from_value::<super::DataBlockControlForm>(wire)
+            .unwrap_err()
+            .to_string()
+            .contains("leading_value"));
     }
 
     #[test]
@@ -6656,7 +6969,9 @@ mod tests {
         assert_eq!(
             forms[0].kind,
             super::DataBlockControlFormKind::ProductAnchored {
-                leading: Some(crate::om::control_leading_value::ControlLeadingValue::from_wire(2, 0).unwrap()),
+                leading: Some(
+                    crate::om::control_leading_value::ControlLeadingValue::from_wire(2, 0).unwrap()
+                ),
                 value_count: std::num::NonZeroU32::new(2).unwrap(),
                 byte_len: std::num::NonZeroU64::new(26).unwrap(),
             }
@@ -6705,7 +7020,10 @@ mod tests {
         let lanes = super::data_block_abr_reference_lanes(&container);
         assert_eq!(lanes.len(), 1);
         assert_eq!(
-            lanes[0].slots[0].target.as_ref().map(|target| target.atom.value()),
+            lanes[0].slots[0]
+                .target
+                .as_ref()
+                .map(|target| target.atom.value()),
             Some(2)
         );
         assert_eq!(

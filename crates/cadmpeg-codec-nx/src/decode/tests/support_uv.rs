@@ -67,7 +67,8 @@ fn invalidation_preserves_lanes_with_a_prior_validation_proof() {
         ),
         (
             unvalidated_id.clone(),
-            crate::intersection::chart_samples::ChartSamples::from_test_values(points, parameters).unwrap(),
+            crate::intersection::chart_samples::ChartSamples::from_test_values(points, parameters)
+                .unwrap(),
             0.01,
             SerializedSupportUv::default(),
         ),
@@ -129,7 +130,11 @@ fn validated_support_uv_exposes_ordered_endpoint_witnesses() {
     let parameter_range = context.parameter_range;
     let pending = vec![(
         procedural.id.clone(),
-        crate::intersection::chart_samples::ChartSamples::from_test_values(points.clone(), parameters).unwrap(),
+        crate::intersection::chart_samples::ChartSamples::from_test_values(
+            points.clone(),
+            parameters,
+        )
+        .unwrap(),
         0.01,
         SerializedSupportUv::default(),
     )];
@@ -373,7 +378,8 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
         .collect::<Vec<_>>();
     let pending = vec![(
         procedural_id,
-        crate::intersection::chart_samples::ChartSamples::from_test_values(points, vec![0.0, 1.0]).unwrap(),
+        crate::intersection::chart_samples::ChartSamples::from_test_values(points, vec![0.0, 1.0])
+            .unwrap(),
         FIT_TOLERANCE,
         SerializedSupportUv::from_values([
             Some(

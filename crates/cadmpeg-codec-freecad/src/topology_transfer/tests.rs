@@ -567,10 +567,12 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
     let edge = EdgeId::mint("fcstd:test:edge#1").expect("identity grammar");
     let mut coedges = (0..3)
         .map(|index| {
-            let id = CoedgeId::mint(format!("fcstd:test:coedge#{index}")).expect("identity grammar");
+            let id =
+                CoedgeId::mint(format!("fcstd:test:coedge#{index}")).expect("identity grammar");
             Coedge {
                 id: id.clone(),
-                owner_loop: LoopId::mint(format!("fcstd:test:loop#{index}")).expect("identity grammar"),
+                owner_loop: LoopId::mint(format!("fcstd:test:loop#{index}"))
+                    .expect("identity grammar"),
                 edge: edge.clone(),
                 radial_next: id,
                 sense: Sense::Forward,
@@ -584,10 +586,12 @@ fn non_manifold_incidence_does_not_invent_a_radial_order() {
 
     let mut four = (0..4)
         .map(|index| {
-            let id = CoedgeId::mint(format!("fcstd:test:coedge#four-{index}")).expect("identity grammar");
+            let id = CoedgeId::mint(format!("fcstd:test:coedge#four-{index}"))
+                .expect("identity grammar");
             Coedge {
                 id: id.clone(),
-                owner_loop: LoopId::mint(format!("fcstd:test:loop#four-{index}")).expect("identity grammar"),
+                owner_loop: LoopId::mint(format!("fcstd:test:loop#four-{index}"))
+                    .expect("identity grammar"),
                 edge: edge.clone(),
                 radial_next: id,
                 sense: Sense::Forward,

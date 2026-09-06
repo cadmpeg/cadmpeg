@@ -30,7 +30,9 @@ fn state_pairs_are_resolved_within_one_reachable_history() {
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(AsmHistoricalTopology::default()),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(
+            AsmHistoricalTopology::default(),
+        ),
         transition: previous_state_id.map(|previous_state_id| {
             crate::history_records::AsmHistoricalTransition {
                 previous_state_id: Some(previous_state_id),
@@ -100,7 +102,9 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(AsmHistoricalTopology::default()),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(
+            AsmHistoricalTopology::default(),
+        ),
         transition: previous_state_id.map(|previous_state_id| {
             crate::history_records::AsmHistoricalTransition {
                 previous_state_id: Some(previous_state_id),
@@ -581,7 +585,11 @@ fn snapshot_edge_identity_requires_one_edge_record_and_positive_revision() {
         parent: "state".into(),
         revision_id,
         byte_offset: 0,
-        framing: crate::history_records::AsmHistoryRecordFraming::Framed { index: index, name: name.into(), entity_references: Vec::new() },
+        framing: crate::history_records::AsmHistoryRecordFraming::Framed {
+            index: index,
+            name: name.into(),
+            entity_references: Vec::new(),
+        },
         raw_bytes: Vec::new(),
     };
     let history = |records| AsmHistory {
@@ -757,7 +765,9 @@ fn terminal_edge_recipe_faces_use_exact_then_alternate_references() {
     );
     assert_eq!(
         reference_faces,
-        vec![vec![FaceId::mint("test:model:face#face-d").expect("identity grammar")]]
+        vec![vec![
+            FaceId::mint("test:model:face#face-d").expect("identity grammar")
+        ]]
     );
     assert_eq!(
         terminal_edge_recipe_faces(
@@ -1095,7 +1105,9 @@ fn topology_changes_span_only_complete_acyclic_state_chains() {
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(AsmHistoricalTopology::default()),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(
+            AsmHistoricalTopology::default(),
+        ),
         transition: None,
     };
     let preceding = state(1);
@@ -1261,12 +1273,18 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
             crate::records::DesignTopologyRecipeTriplet {
                 outer: std::num::NonZeroU32::new(1).unwrap(),
                 middle: 0,
-                incident: Some(crate::records::DesignTopologyIncident { ordinal: boundary_edge_count - 1, side: crate::records::DesignTopologyIncidentSide::Preceding }),
+                incident: Some(crate::records::DesignTopologyIncident {
+                    ordinal: boundary_edge_count - 1,
+                    side: crate::records::DesignTopologyIncidentSide::Preceding,
+                }),
             },
             crate::records::DesignTopologyRecipeTriplet {
                 outer: std::num::NonZeroU32::new(1).unwrap(),
                 middle: 1,
-                incident: Some(crate::records::DesignTopologyIncident { ordinal: 0, side: crate::records::DesignTopologyIncidentSide::Following }),
+                incident: Some(crate::records::DesignTopologyIncident {
+                    ordinal: 0,
+                    side: crate::records::DesignTopologyIncidentSide::Following,
+                }),
             },
         ],
     };
@@ -1319,7 +1337,13 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     assert_eq!(selectors[0].selector, 1);
     assert_eq!(selectors[0].boundary_count_matching_edge_slots, [8]);
     assert_eq!(
-        selectors[0].clauses.iter().map(|clause| clause.as_ref().map(|clause| clause.triplet_edge_slots.clone())).collect::<Vec<_>>(),
+        selectors[0]
+            .clauses
+            .iter()
+            .map(|clause| clause
+                .as_ref()
+                .map(|clause| clause.triplet_edge_slots.clone()))
+            .collect::<Vec<_>>(),
         [Some([vec![7, 8], vec![7, 8]]), Some([vec![8], vec![8]])]
     );
     assert_eq!(selectors[0].incidence_matching_edge_slots, [8]);
@@ -1329,7 +1353,13 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     assert_eq!(selectors[1].incidence_matching_edge_slots, [7, 8]);
     assert_eq!(selectors[1].unique_incidence_edge_slot(), None);
     assert_eq!(
-        selectors[1].clauses.iter().map(|clause| clause.as_ref().map(|clause| clause.triplet_edge_slots.clone())).collect::<Vec<_>>(),
+        selectors[1]
+            .clauses
+            .iter()
+            .map(|clause| clause
+                .as_ref()
+                .map(|clause| clause.triplet_edge_slots.clone()))
+            .collect::<Vec<_>>(),
         [Some([vec![7, 8], vec![7, 8]]), None]
     );
     assert!(incident_loop_counts_satisfy_sides(
@@ -1400,7 +1430,12 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         face_slot: 4,
         loops: vec![crate::records::DesignHistoricalFaceLoopContext {
             loop_slot: 5,
-            boundary: crate::records::DesignHistoricalLoopBoundary::Coedges(vec![crate::records::DesignHistoricalLoopCoedge { coedge_slot: 6, edge_slot: 7 }]),
+            boundary: crate::records::DesignHistoricalLoopBoundary::Coedges(vec![
+                crate::records::DesignHistoricalLoopCoedge {
+                    coedge_slot: 6,
+                    edge_slot: 7,
+                },
+            ]),
         }],
     };
     assert_eq!(context.result_face_boundaries, [boundary.clone()]);
@@ -1467,18 +1502,26 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         ..AsmHistoricalTopology::default()
     };
     let ordered_vertices = |edges: &[i64], topology: &AsmHistoricalTopology| {
-        let coedges = edges.iter().enumerate().map(|(ordinal, edge_slot)| crate::records::DesignHistoricalLoopCoedge {
-            coedge_slot: ordinal as i64, edge_slot: *edge_slot,
-        }).collect();
+        let coedges = edges
+            .iter()
+            .enumerate()
+            .map(
+                |(ordinal, edge_slot)| crate::records::DesignHistoricalLoopCoedge {
+                    coedge_slot: ordinal as i64,
+                    edge_slot: *edge_slot,
+                },
+            )
+            .collect();
         match historical_loop_boundary(coedges, topology) {
-            crate::records::DesignHistoricalLoopBoundary::Vertices(rows) => Some(rows.into_iter().map(|row| row.vertex_slot).collect::<Vec<_>>()),
+            crate::records::DesignHistoricalLoopBoundary::Vertices(rows) => Some(
+                rows.into_iter()
+                    .map(|row| row.vertex_slot)
+                    .collect::<Vec<_>>(),
+            ),
             _ => None,
         }
     };
-    assert_eq!(
-        ordered_vertices(&[7, 8, 9], &cyclic),
-        Some(vec![1, 2, 3])
-    );
+    assert_eq!(ordered_vertices(&[7, 8, 9], &cyclic), Some(vec![1, 2, 3]));
     let disconnected = AsmHistoricalTopology {
         edge_vertices: vec![
             AsmHistoricalEdge {
@@ -1600,9 +1643,13 @@ fn design_identity_resolves_only_one_invariant_history_family() {
         Some((AsmHistoricalEntityKind::Edge, 42, vec![3, 5]))
     );
     let mut incomplete_revision_history = reconstructed_revision_history.clone();
-    incomplete_revision_history.states[1].topology_cache = crate::history_records::AsmTopologyCache::Retained(
-        incomplete_revision_history.states[1].topology().unwrap().clone(),
-    );
+    incomplete_revision_history.states[1].topology_cache =
+        crate::history_records::AsmTopologyCache::Retained(
+            incomplete_revision_history.states[1]
+                .topology()
+                .unwrap()
+                .clone(),
+        );
     assert_eq!(
         historical_selection_identity_kind(std::slice::from_ref(&incomplete_revision_history), 700,),
         None

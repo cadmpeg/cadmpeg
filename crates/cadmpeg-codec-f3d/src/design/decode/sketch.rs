@@ -23,8 +23,8 @@ use crate::records::{
 use cadmpeg_core::bytes::find_from;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::geometry::knots_nondecreasing;
 use cadmpeg_ir::features::Angle;
+use cadmpeg_ir::geometry::knots_nondecreasing;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::TextPlacement;
 use cadmpeg_ir::topology::Color;
@@ -212,7 +212,9 @@ pub fn decode_sketch_placements(
         let Some(records) = record_offsets.get(stream) else {
             continue;
         };
-        let Some(mut placement) = parse_member_run_head_placement(bytes, entity.byte_offset, &entity.entity_id, records) else {
+        let Some(mut placement) =
+            parse_member_run_head_placement(bytes, entity.byte_offset, &entity.entity_id, records)
+        else {
             continue;
         };
         let next_entity_offset = entities
@@ -276,7 +278,9 @@ fn decode_sketch_visibilities_in_stream(
         if frame.design_type.module != DESIGN_MODULE_SKETCH
             || !frame
                 .design_type
-                .base_type_guid.as_ref().map(|field| field.value.as_str())
+                .base_type_guid
+                .as_ref()
+                .map(|field| field.value.as_str())
                 .is_some_and(|base| base.eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_TYPE_GUID))
         {
             return Err(CodecError::malformed(format_args!(
@@ -324,9 +328,13 @@ fn decode_sketch_visibilities_in_stream(
                     .eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_TYPE_GUID)
                     && member_type.version == SKETCH_CONTAINER_MEMBER_VERSION
                     && member_type.module == "Geometry"
-                    && member_type.base_type_guid.as_ref().map(|field| field.value.as_str()).is_some_and(|base| {
-                        base.eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_BASE_TYPE_GUID)
-                    })
+                    && member_type
+                        .base_type_guid
+                        .as_ref()
+                        .map(|field| field.value.as_str())
+                        .is_some_and(|base| {
+                            base.eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_BASE_TYPE_GUID)
+                        })
             })
         {
             return Err(CodecError::malformed(format_args!(
@@ -433,7 +441,9 @@ pub(crate) fn parse_member_run_head_placement(
             && bytes.get(head_at + 21..head_at + 24) == Some(&[1, 0, 1][..])
             && bytes.get(head_at + 28..head_at + 34) == Some(&[0u8; 6][..]) =>
         {
-            DesignSketchFrameForm::MemberCompact { paired_byte_offset: paired_at as u64 }
+            DesignSketchFrameForm::MemberCompact {
+                paired_byte_offset: paired_at as u64,
+            }
         }
         MEMBER_RUN_HEAD_FRAME if bytes.get(head_at + 11..head_at + 22) == Some(&[0u8; 11][..]) => {
             let values = f64s_at(bytes, head_at + 22, 16)?;
@@ -441,11 +451,13 @@ pub(crate) fn parse_member_run_head_placement(
             for (ordinal, value) in values.iter().copied().enumerate() {
                 transform[ordinal / 4][ordinal % 4] = value;
             }
-            if bytes.get(head_at + 150..head_at + 152) != Some(&[0, 1][..])
-            {
+            if bytes.get(head_at + 150..head_at + 152) != Some(&[0, 1][..]) {
                 return None;
             }
-            DesignSketchFrameForm::MemberExplicit { paired_byte_offset: paired_at as u64, transform: SketchPlacementMatrix::try_from(transform).ok()? }
+            DesignSketchFrameForm::MemberExplicit {
+                paired_byte_offset: paired_at as u64,
+                transform: SketchPlacementMatrix::try_from(transform).ok()?,
+            }
         }
         _ => return None,
     };
@@ -493,8 +505,13 @@ pub(crate) fn parse_sketch_placement_candidates(
         {
             continue;
         }
-        let Ok(class_tag) = crate::records::DesignClassTag::try_from(class_tag) else { continue; };
-        let Ok(paired_class_tag) = crate::records::DesignClassTag::try_from(paired_class_tag) else { continue; };
+        let Ok(class_tag) = crate::records::DesignClassTag::try_from(class_tag) else {
+            continue;
+        };
+        let Ok(paired_class_tag) = crate::records::DesignClassTag::try_from(paired_class_tag)
+        else {
+            continue;
+        };
         let form = match frame_length {
             201 => DesignSketchFrameForm::ScopeCompact,
             305 | 325 => {
@@ -505,8 +522,14 @@ pub(crate) fn parse_sketch_placement_candidates(
                 for (ordinal, value) in values.iter().copied().enumerate() {
                     transform[ordinal / 4][ordinal % 4] = value;
                 }
-                let Ok(transform) = SketchPlacementMatrix::try_from(transform) else { continue; };
-                if frame_length == 305 { DesignSketchFrameForm::ScopeLegacy305(transform) } else { DesignSketchFrameForm::ScopeLegacy325(transform) }
+                let Ok(transform) = SketchPlacementMatrix::try_from(transform) else {
+                    continue;
+                };
+                if frame_length == 305 {
+                    DesignSketchFrameForm::ScopeLegacy305(transform)
+                } else {
+                    DesignSketchFrameForm::ScopeLegacy325(transform)
+                }
             }
             329 => {
                 let Some(values) = f64s_at(bytes, start + 55, 16) else {
@@ -516,7 +539,9 @@ pub(crate) fn parse_sketch_placement_candidates(
                 for (ordinal, value) in values.iter().copied().enumerate() {
                     transform[ordinal / 4][ordinal % 4] = value;
                 }
-                let Ok(transform) = SketchPlacementMatrix::try_from(transform) else { continue; };
+                let Ok(transform) = SketchPlacementMatrix::try_from(transform) else {
+                    continue;
+                };
                 DesignSketchFrameForm::ScopeExplicit(transform)
             }
             // The `EntityGenesis`-flavor frame: `0x01` at offset 55, nine
@@ -541,7 +566,9 @@ pub(crate) fn parse_sketch_placement_candidates(
                         for (ordinal, value) in values.iter().copied().enumerate() {
                             transform[ordinal / 4][ordinal % 4] = value;
                         }
-                        let Ok(transform) = SketchPlacementMatrix::try_from(transform) else { continue; };
+                        let Ok(transform) = SketchPlacementMatrix::try_from(transform) else {
+                            continue;
+                        };
                         DesignSketchFrameForm::ScopeGenesisExplicit(transform)
                     }
                     _ => continue,
@@ -549,7 +576,9 @@ pub(crate) fn parse_sketch_placement_candidates(
             }
             _ => continue,
         };
-        let Ok(frame) = DesignSketchFrame::new(start as u64, form) else { continue; };
+        let Ok(frame) = DesignSketchFrame::new(start as u64, form) else {
+            continue;
+        };
         out.push(DesignSketchPlacement {
             id: String::new(),
             scope_record_index: Some(scope_record_index),
@@ -689,14 +718,22 @@ pub fn decode_lost_edge_references(
             else {
                 continue;
             };
-            if after_next_tag != next_byte_offset + 7
-            {
+            if after_next_tag != next_byte_offset + 7 {
                 continue;
             }
             let Some(next_record_index) = View::u32_le_at(bytes, after_next_tag) else {
                 continue;
             };
-            let Ok(reference) = LostEdgeReference::new(ids::native_lost_edge_reference_id(&entry.name, header_offset), header_offset as u64, class_tag, record_index, next_class_tag, next_record_index) else { continue; };
+            let Ok(reference) = LostEdgeReference::new(
+                ids::native_lost_edge_reference_id(&entry.name, header_offset),
+                header_offset as u64,
+                class_tag,
+                record_index,
+                next_class_tag,
+                next_record_index,
+            ) else {
+                continue;
+            };
             out.push(reference);
         }
     }
@@ -721,11 +758,7 @@ pub(crate) fn parse_settled_entity_header(
     };
     let (entity_id, end) = lp_utf16_bounded(bytes, string_offset, 1..=256)?;
     let entity_id = crate::records::DesignEntityId::try_from(entity_id).ok()?;
-    (entity_id.suffix() == entity_suffix).then_some((
-        entity_id,
-        optional_slot_present,
-        end,
-    ))
+    (entity_id.suffix() == entity_suffix).then_some((entity_id, optional_slot_present, end))
 }
 
 /// Parse the `EntityGenesis` entity-header layout at `start`: the u32 record
@@ -762,11 +795,7 @@ pub(crate) fn parse_genesis_entity_header(
     }
     let (entity_id, end) = lp_utf16_bounded(bytes, after_type + 8, 1..=256)?;
     let entity_id = crate::records::DesignEntityId::try_from(entity_id).ok()?;
-    (entity_id.suffix() == entity_suffix).then_some((
-        entity_id,
-        false,
-        end,
-    ))
+    (entity_id.suffix() == entity_suffix).then_some((entity_id, false, end))
 }
 
 /// Parse the counted member-record run of the paired same-index container
@@ -802,7 +831,10 @@ pub(crate) fn parse_sketch_member_run(
         return empty;
     };
     let mut members = Vec::with_capacity(count + 1);
-    members.push(crate::records::Located { value: base_point_index, offset: (paired + 57) as u64 });
+    members.push(crate::records::Located {
+        value: base_point_index,
+        offset: (paired + 57) as u64,
+    });
     for ordinal in 0..count {
         let marker = paired + 67 + ordinal * 11;
         if bytes.get(marker) != Some(&1)
@@ -813,7 +845,10 @@ pub(crate) fn parse_sketch_member_run(
         let Some(record_index) = View::u32_le_at(bytes, marker + 1) else {
             return empty;
         };
-        members.push(crate::records::Located { value: record_index, offset: (marker + 1) as u64 });
+        members.push(crate::records::Located {
+            value: record_index,
+            offset: (marker + 1) as u64,
+        });
     }
     members
 }
@@ -860,7 +895,10 @@ pub(crate) fn parse_legacy_sketch_member_run(
         {
             return None;
         }
-        members.push(crate::records::Located { value: View::u32_le_at(bytes, marker + 1)?, offset: (marker + 1) as u64 });
+        members.push(crate::records::Located {
+            value: View::u32_le_at(bytes, marker + 1)?,
+            offset: (marker + 1) as u64,
+        });
     }
     Some(members)
 }
@@ -918,7 +956,9 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
                 .or_default()
                 .extend(
                     design_type
-                        .entities.values().copied()
+                        .entities
+                        .values()
+                        .copied()
                         .filter_map(|identity| u32::try_from(identity).ok()),
                 );
         }
@@ -937,10 +977,16 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
             .and_then(|meta_scope| entity_modules.get(&meta_scope));
         let indexed_offsets = indexed_record_offsets(bytes).collect::<Vec<_>>();
         for &start in &indexed_offsets {
-            let Some(class_tag) = bytes.get(start + 4..start + 7).and_then(|bytes| std::str::from_utf8(bytes).ok()) else {
+            let Some(class_tag) = bytes
+                .get(start + 4..start + 7)
+                .and_then(|bytes| std::str::from_utf8(bytes).ok())
+            else {
                 continue;
             };
-            let Ok(class_tag) = crate::records::DesignClassTag::try_from(class_tag.to_owned()) else { continue; };
+            let Ok(class_tag) = crate::records::DesignClassTag::try_from(class_tag.to_owned())
+            else {
+                continue;
+            };
             let settled = parse_settled_entity_header(bytes, start);
             let genesis_form = settled.is_none();
             let Some((entity_id, optional_slot_present, end)) =
@@ -953,13 +999,41 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
                 .and_then(|modules| modules.get(&entity_suffix))
                 .cloned();
             let in_sketch_module = module.as_deref() == Some(DESIGN_MODULE_SKETCH);
-            let (record_reference, record_reference_offset, reference_count_present, references, record_end) = if in_sketch_module {
+            let (
+                record_reference,
+                record_reference_offset,
+                reference_count_present,
+                references,
+                record_end,
+            ) = if in_sketch_module {
                 decode_reference_list(bytes, end).map_or_else(
-                    || (None, None, false, crate::records::ReferenceRun::Unlocated(Vec::new()), end),
-                    |list| (list.record_reference.value, Some(list.record_reference.offset), true, crate::records::ReferenceRun::Located(list.references), list.end),
+                    || {
+                        (
+                            None,
+                            None,
+                            false,
+                            crate::records::ReferenceRun::Unlocated(Vec::new()),
+                            end,
+                        )
+                    },
+                    |list| {
+                        (
+                            list.record_reference.value,
+                            Some(list.record_reference.offset),
+                            true,
+                            crate::records::ReferenceRun::Located(list.references),
+                            list.end,
+                        )
+                    },
                 )
             } else {
-                (None, None, false, crate::records::ReferenceRun::Unlocated(Vec::new()), end)
+                (
+                    None,
+                    None,
+                    false,
+                    crate::records::ReferenceRun::Unlocated(Vec::new()),
+                    end,
+                )
             };
             let members = if genesis_form && in_sketch_module {
                 parse_sketch_member_run(bytes, record_end, entity_suffix)
@@ -1013,7 +1087,9 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
             else {
                 continue;
             };
-            let Ok(class_tag) = crate::records::DesignClassTag::try_from(class_tag) else { continue; };
+            let Ok(class_tag) = crate::records::DesignClassTag::try_from(class_tag) else {
+                continue;
+            };
             if after_tag != start + 7 {
                 continue;
             }
@@ -1027,7 +1103,10 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
                 id: ids::native_design_entity_header_id(&entry.name, start),
                 byte_offset: start as u64,
 
-                entity_id: crate::records::DesignEntityId::from_parts("Sketch", u64::from(entity_suffix)),
+                entity_id: crate::records::DesignEntityId::from_parts(
+                    "Sketch",
+                    u64::from(entity_suffix),
+                ),
                 class_tag,
                 optional_slot_present: false,
                 module: Some(DESIGN_MODULE_SKETCH.to_owned()),
@@ -1057,7 +1136,8 @@ pub fn decode_record_headers(
             let scope = native_stream(&entity.id)?;
             Some(
                 entity
-                    .references.values()
+                    .references
+                    .values()
                     .map(move |record_index| (scope.to_owned(), *record_index)),
             )
         })
@@ -1168,15 +1248,25 @@ pub fn decode_sketch_relations(
             }
             let pattern = decode_pattern_definition(payload, &parsed);
             let kind = crate::records::SketchRelationKind::from_pattern(pattern);
-            let Ok(definition) = crate::records::SketchRelationDefinition::new(parsed.state, kind) else {
+            let Ok(definition) = crate::records::SketchRelationDefinition::new(parsed.state, kind)
+            else {
                 continue;
             };
-            let members = crate::records::SketchRelationMembers::from_indices(parsed.members.into_iter().map(|member| (
-                member.reference.value, member.reference.offset as u32, member.relation_ordinal,
-            )));
-            let return_members = crate::records::SketchRelationReturnMembers::from_indices(parsed.return_members.into_iter().map(|member| (
-                member.value, member.offset as u32,
-            )));
+            let members = crate::records::SketchRelationMembers::from_indices(
+                parsed.members.into_iter().map(|member| {
+                    (
+                        member.reference.value,
+                        member.reference.offset as u32,
+                        member.relation_ordinal,
+                    )
+                }),
+            );
+            let return_members = crate::records::SketchRelationReturnMembers::from_indices(
+                parsed
+                    .return_members
+                    .into_iter()
+                    .map(|member| (member.value, member.offset as u32)),
+            );
             out.push(SketchRelation {
                 id: ids::native_sketch_relation_id(&entry.name, record.record_index),
                 record_index: record.record_index,
@@ -1186,7 +1276,16 @@ pub fn decode_sketch_relations(
                 owner_reference: parsed.owner_reference,
                 owner_entity_id: String::new(),
                 owner_reference_offset: parsed.owner_reference_offset as u32,
-                auxiliary_references: crate::records::ReferenceRun::Located(parsed.auxiliary_references.into_iter().map(|row| crate::records::Located { value: row.value, offset: row.offset as u32 }).collect()),
+                auxiliary_references: crate::records::ReferenceRun::Located(
+                    parsed
+                        .auxiliary_references
+                        .into_iter()
+                        .map(|row| crate::records::Located {
+                            value: row.value,
+                            offset: row.offset as u32,
+                        })
+                        .collect(),
+                ),
                 rectangular_counted_reference_count: parsed.rectangular_reference_count,
                 members,
                 definition,
@@ -1244,12 +1343,16 @@ pub(crate) fn decode_pattern_definition(
         let mut directions = Vec::with_capacity(2);
         let clauses = [
             (
-                parsed.auxiliary_references[clause_ordinal].offset.checked_sub(5)?,
+                parsed.auxiliary_references[clause_ordinal]
+                    .offset
+                    .checked_sub(5)?,
                 clause_ordinal,
                 clause_ordinal + 1,
             ),
             (
-                parsed.auxiliary_references[clause_ordinal + 2].offset.checked_sub(5)?,
+                parsed.auxiliary_references[clause_ordinal + 2]
+                    .offset
+                    .checked_sub(5)?,
                 clause_ordinal + 2,
                 clause_ordinal + 3,
             ),
@@ -1283,7 +1386,10 @@ pub(crate) fn decode_pattern_definition(
     }
     if parsed.state == 0x100_0000_0000
         && parsed.auxiliary_references.len() == 1
-        && parsed.members.iter().any(|member| member.reference.value == parsed.auxiliary_references[0].value)
+        && parsed
+            .members
+            .iter()
+            .any(|member| member.reference.value == parsed.auxiliary_references[0].value)
     {
         return Some(SketchPatternDefinition::TextFrame {
             text_reference: parsed.auxiliary_references[0].value,
@@ -1291,7 +1397,10 @@ pub(crate) fn decode_pattern_definition(
     }
     if parsed.state == 0x200_0000_0000
         && parsed.auxiliary_references.len() == 1
-        && parsed.members.iter().any(|member| member.reference.value == parsed.auxiliary_references[0].value)
+        && parsed
+            .members
+            .iter()
+            .any(|member| member.reference.value == parsed.auxiliary_references[0].value)
     {
         if let Some(glyph_transforms) = parsed.text_glyph_transforms.clone() {
             return Some(SketchPatternDefinition::TextPath {
@@ -1348,8 +1457,8 @@ pub(crate) fn decode_sketch_points_from_stream(
         let payload = &bytes[frame.start..frame.end];
         let record_index = u32::try_from(frame.entity_id)
             .map_err(|_| CodecError::Malformed("F3D sketch-point entity ID exceeds u32".into()))?;
-        let mut decoded =
-            decode_sketch_point_record(payload, frame.design_type.version).ok_or_else(|| {
+        let mut decoded = decode_sketch_point_record(payload, frame.design_type.version)
+            .ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "F3D sketch point {record_index} has an invalid version-{} member sequence",
                     frame.design_type.version
@@ -1407,7 +1516,10 @@ pub(crate) fn decode_sketch_points_from_stream(
                     "F3D sketch point {record_index} has no valid inverse companion"
                 ))
             })?;
-        decoded.record_form.set_companion(companion).map_err(CodecError::Malformed)?;
+        decoded
+            .record_form
+            .set_companion(companion)
+            .map_err(CodecError::Malformed)?;
         out.push(SketchPoint {
             id: ids::native_sketch_point_id(stream, frame.start),
             record_index,
@@ -2250,7 +2362,10 @@ fn decode_version_zero_sketch_point(
     Some(DecodedSketchPoint {
         owner_reference: Some(owner_reference),
         coordinate_offset,
-        record_form: SketchPointRecordForm::Version0 { flag: flag == 1, companion: None },
+        record_form: SketchPointRecordForm::Version0 {
+            flag: flag == 1,
+            companion: None,
+        },
         paired_reference,
         coordinates: [x, y],
     })
@@ -2810,7 +2925,12 @@ pub(crate) fn bind_sketch_graph(
                 ))
             })?
             .to_string();
-        scoped_relations.push((scope, relation.owner_reference, &mut relation.members, &mut relation.return_members));
+        scoped_relations.push((
+            scope,
+            relation.owner_reference,
+            &mut relation.members,
+            &mut relation.return_members,
+        ));
     }
     let typed_records = points
         .iter()
@@ -2857,8 +2977,15 @@ pub(crate) fn bind_sketch_graph(
         }
     }
     for &(scope, owner_reference, ref members, ref returned) in &scoped_relations {
-        for record_index in members.iter().map(|member| member.reference.record_index())
-            .chain(returned.iter().map(|member| member.reference.record_index())) {
+        for record_index in members
+            .iter()
+            .map(|member| member.reference.record_index())
+            .chain(
+                returned
+                    .iter()
+                    .map(|member| member.reference.record_index()),
+            )
+        {
             if !typed_records.contains(&(scope, record_index)) {
                 continue;
             }
@@ -2944,8 +3071,12 @@ pub(crate) fn bind_sketch_graph(
         }))
         .collect::<std::collections::HashMap<_, _>>();
     for (scope, _, members, returned) in scoped_relations {
-        let resolve = |record_index| operands.get(&(scope, record_index)).cloned()
-            .unwrap_or(SketchRelationOperand::Record { record_index });
+        let resolve = |record_index| {
+            operands
+                .get(&(scope, record_index))
+                .cloned()
+                .unwrap_or(SketchRelationOperand::Record { record_index })
+        };
         members.resolve(resolve);
         returned.resolve(resolve);
     }
@@ -3510,10 +3641,16 @@ pub(crate) fn relation_mask_width(record: &[u8]) -> Option<SketchRelationMaskWid
 /// byte offset of the target within the reference. Relation members address
 /// records in the relation's own segment, so a reference whose target does not
 /// fit a `u32` is a misparse.
-fn take_relation_reference(payload: &[u8], cursor: &mut usize) -> Option<crate::records::Located<u32, usize>> {
+fn take_relation_reference(
+    payload: &[u8],
+    cursor: &mut usize,
+) -> Option<crate::records::Located<u32, usize>> {
     let at = *cursor;
     let reference = take_reference(payload, cursor)?;
-    Some(crate::records::Located { value: u32::try_from(reference.target?).ok()?, offset: at + 1 })
+    Some(crate::records::Located {
+        value: u32::try_from(reference.target?).ok()?,
+        offset: at + 1,
+    })
 }
 
 /// Take one reference member that the class may leave absent, recording it in
@@ -3529,7 +3666,10 @@ fn take_auxiliary_relation_reference(
     let Some(target) = reference.target else {
         return Some(false);
     };
-    auxiliary_references.push(crate::records::Located { value: u32::try_from(target).ok()?, offset: at + 1 });
+    auxiliary_references.push(crate::records::Located {
+        value: u32::try_from(target).ok()?,
+        offset: at + 1,
+    });
     Some(true)
 }
 
@@ -3581,11 +3721,7 @@ fn parse_relation_class_members(
     };
     macro_rules! take {
         () => {
-            take_auxiliary_relation_reference(
-                payload,
-                cursor,
-                auxiliary_references,
-            )
+            take_auxiliary_relation_reference(payload, cursor, auxiliary_references)
         };
     }
     match class {
@@ -3651,7 +3787,10 @@ fn parse_relation_class_members(
                 *cursor += 1;
             }
             let (text_reference, transforms, end) = parse_text_glyph_run(payload, *cursor)?;
-            auxiliary_references.push(crate::records::Located { value: text_reference, offset: *cursor + 1 });
+            auxiliary_references.push(crate::records::Located {
+                value: text_reference,
+                offset: *cursor + 1,
+            });
             members.text_glyph_transforms = Some(transforms);
             *cursor = end;
         }
@@ -3689,7 +3828,10 @@ pub(crate) fn parse_classed_sketch_relation(
         members.reserve(member_count);
         for _ in 0..member_count {
             let reference = take_relation_reference(payload, &mut cursor)?;
-            members.push(ParsedSketchRelationMember { reference, relation_ordinal: View::u32_le_at(payload, cursor)? });
+            members.push(ParsedSketchRelationMember {
+                reference,
+                relation_ordinal: View::u32_le_at(payload, cursor)?,
+            });
             cursor += 4;
         }
     }
@@ -3701,12 +3843,8 @@ pub(crate) fn parse_classed_sketch_relation(
         .find(|(key, _)| key == "EntityGenesis")
         .map(|(_, value)| value);
     let mut auxiliary_references = Vec::new();
-    let class_members = parse_relation_class_members(
-        payload,
-        &mut cursor,
-        class,
-        &mut auxiliary_references,
-    )?;
+    let class_members =
+        parse_relation_class_members(payload, &mut cursor, class, &mut auxiliary_references)?;
     let rectangular_reference_count = class_members.rectangular_reference_count;
     let rectangular_clause_ordinal = class_members.rectangular_clause_ordinal;
     let text_glyph_transforms = class_members.text_glyph_transforms;
@@ -3875,11 +4013,17 @@ fn decode_reference_list(bytes: &[u8], position: usize) -> Option<SketchReferenc
         if probe.take(6) != Some(&[0; 6]) {
             break;
         }
-        references.push(crate::records::Located { value: reference, offset: offset as u64 });
+        references.push(crate::records::Located {
+            value: reference,
+            offset: offset as u64,
+        });
         view = probe;
     }
     (references.len() == declared_count as usize).then_some(SketchReferenceList {
-        record_reference: crate::records::Located { value: record_reference, offset: position as u64 },
+        record_reference: crate::records::Located {
+            value: record_reference,
+            offset: position as u64,
+        },
         references,
         end: view.position(),
     })

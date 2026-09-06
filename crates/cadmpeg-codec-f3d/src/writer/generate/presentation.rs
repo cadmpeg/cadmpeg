@@ -31,7 +31,10 @@ impl From<&SegmentType> for GeneratedDesignType {
     fn from(value: &SegmentType) -> Self {
         Self {
             type_guid: value.type_guid.clone(),
-            base_type_guid: value.base_type_guid.as_ref().map(|field| field.value.clone()),
+            base_type_guid: value
+                .base_type_guid
+                .as_ref()
+                .map(|field| field.value.clone()),
             version: value.version,
             module: value.module.clone(),
             entity_ids: value.entities.values().copied().collect(),
@@ -318,11 +321,19 @@ mod tests {
             byte_offset: 0,
             type_guid: crate::design::body::BODY_MAP_CARRIER_TYPE_GUID.into(),
             type_guid_offset: 0,
-            base_type_guid: Some(crate::records::RecordedValue { value: crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID.into(), offset: Some(0) }),
+            base_type_guid: Some(crate::records::RecordedValue {
+                value: crate::design::body::BODY_MAP_CARRIER_BASE_TYPE_GUID.into(),
+                offset: Some(0),
+            }),
             version: crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION,
             version_offset: 0,
             module: crate::records::DESIGN_MODULE_BODY.into(),
-            entities: crate::records::ReferenceRun::Located(entity_ids.into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect()),
+            entities: crate::records::ReferenceRun::Located(
+                entity_ids
+                    .into_iter()
+                    .map(|value| crate::records::Located { value, offset: 0 })
+                    .collect(),
+            ),
         }
     }
 
@@ -332,23 +343,31 @@ mod tests {
             byte_offset: 0,
             type_guid: crate::design::presentation::BROWSER_NODE_TYPE_GUID.into(),
             type_guid_offset: 0,
-            base_type_guid: Some(crate::records::RecordedValue { value: crate::design::presentation::BROWSER_NODE_BASE_TYPE_GUID.into(), offset: Some(0) }),
+            base_type_guid: Some(crate::records::RecordedValue {
+                value: crate::design::presentation::BROWSER_NODE_BASE_TYPE_GUID.into(),
+                offset: Some(0),
+            }),
             version: crate::design::presentation::BROWSER_NODE_TYPE_VERSION,
             version_offset: 0,
             module: crate::records::DESIGN_MODULE_FUSION.into(),
-            entities: crate::records::ReferenceRun::Located(entity_ids.into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect()),
+            entities: crate::records::ReferenceRun::Located(
+                entity_ids
+                    .into_iter()
+                    .map(|value| crate::records::Located { value, offset: 0 })
+                    .collect(),
+            ),
         }
     }
 
     fn node_guids_for_order(reverse: bool) -> std::collections::BTreeMap<u64, String> {
         let mut target = cadmpeg_ir::examples::unit_cube();
         let mut first = target.model.bodies[0].clone();
-        first.id =
-            cadmpeg_ir::ids::BodyId::mint("test:model:body#synthetic:stable-body:a").expect("identity grammar");
+        first.id = cadmpeg_ir::ids::BodyId::mint("test:model:body#synthetic:stable-body:a")
+            .expect("identity grammar");
         first.visible = Some(false);
         let mut second = first.clone();
-        second.id =
-            cadmpeg_ir::ids::BodyId::mint("test:model:body#synthetic:stable-body:b").expect("identity grammar");
+        second.id = cadmpeg_ir::ids::BodyId::mint("test:model:body#synthetic:stable-body:b")
+            .expect("identity grammar");
         second.visible = Some(true);
         target.model.bodies = if reverse {
             vec![second.clone(), first.clone()]

@@ -151,7 +151,12 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         previous_history_state_id: Some(2),
         previous_history_state_id_offset: None,
         reference_count_offset: 0,
-        reference_members: crate::records::ReferenceRun::from_columns(vec![301], vec![0], "reference_members").unwrap(),
+        reference_members: crate::records::ReferenceRun::from_columns(
+            vec![301],
+            vec![0],
+            "reference_members",
+        )
+        .unwrap(),
         payload: crate::records::DesignFeatureKind::BaseFeature.into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "261".into(),
@@ -167,10 +172,22 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     else {
         panic!("parallel Base Feature frame selected the wrong form");
     };
-    let body_entity_suffixes = &bodies.iter().map(|body| body.entity.value).collect::<Vec<_>>();
-    let body_entity_fields = &bodies.iter().map(|body| body.entity.field).collect::<Vec<_>>();
-    let body_reference_records = &bodies.iter().map(|body| body.reference.value).collect::<Vec<_>>();
-    let result_records = &bodies.iter().map(|body| body.result.value).collect::<Vec<_>>();
+    let body_entity_suffixes = &bodies
+        .iter()
+        .map(|body| body.entity.value)
+        .collect::<Vec<_>>();
+    let body_entity_fields = &bodies
+        .iter()
+        .map(|body| body.entity.field)
+        .collect::<Vec<_>>();
+    let body_reference_records = &bodies
+        .iter()
+        .map(|body| body.reference.value)
+        .collect::<Vec<_>>();
+    let result_records = &bodies
+        .iter()
+        .map(|body| body.result.value)
+        .collect::<Vec<_>>();
     assert_eq!(body_entity_suffixes, &[101, 202]);
     assert_eq!(body_reference_records, &[301, 302]);
     assert_eq!(*metadata_record, 401);
@@ -209,8 +226,14 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     else {
         panic!("expanded Base Feature frame selected the wrong form");
     };
-    let body_entity_suffixes = &bodies.iter().map(|body| body.entity.value).collect::<Vec<_>>();
-    let result_records = &bodies.iter().map(|body| body.result.value).collect::<Vec<_>>();
+    let body_entity_suffixes = &bodies
+        .iter()
+        .map(|body| body.entity.value)
+        .collect::<Vec<_>>();
+    let result_records = &bodies
+        .iter()
+        .map(|body| body.result.value)
+        .collect::<Vec<_>>();
     assert_eq!(body_entity_suffixes, &[101, 202]);
     assert_eq!(result_records, &[501, 502]);
     assert_eq!(metadata_field, &[0, 0]);
@@ -233,9 +256,18 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     else {
         panic!("legacy compact Base Feature frame selected the wrong form");
     };
-    let body_entity_suffixes = &bodies.iter().map(|body| body.entity.value).collect::<Vec<_>>();
-    let body_reference_records = &bodies.iter().map(|body| body.reference.value).collect::<Vec<_>>();
-    let result_records = &bodies.iter().map(|body| body.result.value).collect::<Vec<_>>();
+    let body_entity_suffixes = &bodies
+        .iter()
+        .map(|body| body.entity.value)
+        .collect::<Vec<_>>();
+    let body_reference_records = &bodies
+        .iter()
+        .map(|body| body.reference.value)
+        .collect::<Vec<_>>();
+    let result_records = &bodies
+        .iter()
+        .map(|body| body.result.value)
+        .collect::<Vec<_>>();
     assert_eq!(body_entity_suffixes, &[101, 202]);
     assert_eq!(body_reference_records, &[301, 302]);
     assert_eq!(result_records, &[501, 502]);
@@ -319,7 +351,9 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     snapshot_scope.previous_history_state_id = None;
     snapshot_scope.previous_history_state_id_offset = None;
     snapshot_scope.reference_count_offset = 350;
-    snapshot_scope.reference_members = crate::records::ReferenceRun::from_columns(vec![301], vec![355], "reference_members").unwrap();
+    snapshot_scope.reference_members =
+        crate::records::ReferenceRun::from_columns(vec![301], vec![355], "reference_members")
+            .unwrap();
     snapshot_scope.paired_class_tag = "259".into();
     snapshot_scope.paired_byte_offset = 485;
     let construction = exact_base_feature_construction(&snapshot_bytes, &snapshot_scope)
@@ -344,7 +378,10 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     else {
         panic!("body-snapshot Base Feature frame selected the wrong form");
     };
-    assert_eq!(bodies.iter().map(|body| body.value).collect::<Vec<_>>(), [101, 202]);
+    assert_eq!(
+        bodies.iter().map(|body| body.value).collect::<Vec<_>>(),
+        [101, 202]
+    );
     assert_eq!(bodies[0].field, [1, 2, 3, 4, 5, 6]);
     assert_eq!(
         decoded_guids,
@@ -435,9 +472,18 @@ fn base_feature_scope_decodes_class_452_compact_result_body_run() {
     else {
         panic!("class-452 compact Base Feature frame selected the wrong form");
     };
-    let body_entity_suffixes = bodies.iter().map(|body| body.entity.value).collect::<Vec<_>>();
-    let body_reference_records = bodies.iter().map(|body| body.reference.value).collect::<Vec<_>>();
-    let result_records = bodies.iter().map(|body| body.result.value).collect::<Vec<_>>();
+    let body_entity_suffixes = bodies
+        .iter()
+        .map(|body| body.entity.value)
+        .collect::<Vec<_>>();
+    let body_reference_records = bodies
+        .iter()
+        .map(|body| body.reference.value)
+        .collect::<Vec<_>>();
+    let result_records = bodies
+        .iter()
+        .map(|body| body.result.value)
+        .collect::<Vec<_>>();
     assert_eq!(body_entity_suffixes, [101]);
     assert_eq!(body_reference_records, [201]);
     assert_eq!(metadata_record, 301);
@@ -515,9 +561,18 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
         else {
             panic!("class-409/class-262 frame selected the wrong form");
         };
-        let body_entity_suffixes = bodies.iter().map(|body| body.entity.value).collect::<Vec<_>>();
-        let body_reference_records = bodies.iter().map(|body| body.reference.value).collect::<Vec<_>>();
-        let result_records = bodies.iter().map(|body| body.result.value).collect::<Vec<_>>();
+        let body_entity_suffixes = bodies
+            .iter()
+            .map(|body| body.entity.value)
+            .collect::<Vec<_>>();
+        let body_reference_records = bodies
+            .iter()
+            .map(|body| body.reference.value)
+            .collect::<Vec<_>>();
+        let result_records = bodies
+            .iter()
+            .map(|body| body.result.value)
+            .collect::<Vec<_>>();
         assert_eq!(body_entity_suffixes.len(), body_count);
         assert_eq!(body_reference_records.len(), body_count);
         assert_eq!(metadata_record, 301);
@@ -536,9 +591,18 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
         else {
             panic!("class-360/class-258 frame selected the wrong form");
         };
-        let body_entity_suffixes = bodies.iter().map(|body| body.entity.value).collect::<Vec<_>>();
-        let body_reference_records = bodies.iter().map(|body| body.reference.value).collect::<Vec<_>>();
-        let result_records = bodies.iter().map(|body| body.result.value).collect::<Vec<_>>();
+        let body_entity_suffixes = bodies
+            .iter()
+            .map(|body| body.entity.value)
+            .collect::<Vec<_>>();
+        let body_reference_records = bodies
+            .iter()
+            .map(|body| body.reference.value)
+            .collect::<Vec<_>>();
+        let result_records = bodies
+            .iter()
+            .map(|body| body.result.value)
+            .collect::<Vec<_>>();
         assert_eq!(body_entity_suffixes.len(), body_count);
         assert_eq!(body_reference_records.len(), body_count);
         assert_eq!(metadata_record, 301);
@@ -574,7 +638,10 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
     else {
         panic!("class-409/class-262 zero-body frame selected the wrong form");
     };
-    let body_entity_suffixes = bodies.iter().map(|body| body.entity.value).collect::<Vec<_>>();
+    let body_entity_suffixes = bodies
+        .iter()
+        .map(|body| body.entity.value)
+        .collect::<Vec<_>>();
     assert!(body_entity_suffixes.is_empty());
     assert_eq!(metadata_record, 701);
     assert_eq!(metadata_record_offset, (prefix + 33) as u64);
@@ -651,9 +718,18 @@ fn base_feature_scope_decodes_class_290_261_result_body_variant() {
     else {
         panic!("class-290/class-261 frame selected the wrong form");
     };
-    let body_entity_suffixes = bodies.iter().map(|body| body.entity.value).collect::<Vec<_>>();
-    let body_reference_records = bodies.iter().map(|body| body.reference.value).collect::<Vec<_>>();
-    let result_records = bodies.iter().map(|body| body.result.value).collect::<Vec<_>>();
+    let body_entity_suffixes = bodies
+        .iter()
+        .map(|body| body.entity.value)
+        .collect::<Vec<_>>();
+    let body_reference_records = bodies
+        .iter()
+        .map(|body| body.reference.value)
+        .collect::<Vec<_>>();
+    let result_records = bodies
+        .iter()
+        .map(|body| body.result.value)
+        .collect::<Vec<_>>();
     assert_eq!(body_entity_suffixes, [101, 102]);
     assert_eq!(body_reference_records, [201, 202]);
     assert_eq!(metadata_record, 301);
@@ -728,9 +804,18 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
         else {
             panic!("class-444/class-263 frame selected the wrong form");
         };
-        let body_entity_suffixes = bodies.iter().map(|body| body.entity.value).collect::<Vec<_>>();
-        let body_reference_records = bodies.iter().map(|body| body.reference.value).collect::<Vec<_>>();
-        let result_records = bodies.iter().map(|body| body.result.value).collect::<Vec<_>>();
+        let body_entity_suffixes = bodies
+            .iter()
+            .map(|body| body.entity.value)
+            .collect::<Vec<_>>();
+        let body_reference_records = bodies
+            .iter()
+            .map(|body| body.reference.value)
+            .collect::<Vec<_>>();
+        let result_records = bodies
+            .iter()
+            .map(|body| body.result.value)
+            .collect::<Vec<_>>();
         assert_eq!(body_entity_suffixes.len(), body_count);
         assert_eq!(body_reference_records.len(), body_count);
         assert_eq!(metadata_record, 301);
@@ -776,7 +861,12 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
     zero_scope.kind_offset = (prefix + 157) as u64;
     zero_scope.paired_byte_offset = (prefix + 258) as u64;
     zero_scope.reference_count_offset = (prefix + 134) as u64;
-    zero_scope.reference_members = crate::records::ReferenceRun::from_columns(vec![701], vec![(prefix + 139) as u64], "reference_members").unwrap();
+    zero_scope.reference_members = crate::records::ReferenceRun::from_columns(
+        vec![701],
+        vec![(prefix + 139) as u64],
+        "reference_members",
+    )
+    .unwrap();
     let construction = exact_base_feature_construction(&zero_body, &zero_scope)
         .expect("class-444/class-263 zero-body frame is canonical");
     let DesignBaseFeatureConstruction::ResultBodies {
@@ -789,7 +879,10 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
     else {
         panic!("class-444/class-263 zero-body frame selected the wrong form");
     };
-    let body_entity_suffixes = bodies.iter().map(|body| body.entity.value).collect::<Vec<_>>();
+    let body_entity_suffixes = bodies
+        .iter()
+        .map(|body| body.entity.value)
+        .collect::<Vec<_>>();
     assert!(body_entity_suffixes.is_empty());
     assert_eq!(metadata_record, 701);
     assert_eq!(metadata_record_offset, (prefix + 33) as u64);
@@ -889,7 +982,12 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
     scope.previous_history_state_id = Some(19);
     scope.previous_history_state_id_offset = Some(class_377::PREVIOUS_HISTORY_STATE_ID as u64);
     scope.reference_count_offset = class_377::REFERENCE_COUNT as u64;
-    scope.reference_members = crate::records::ReferenceRun::from_columns(vec![196], vec![class_377::GENERIC_SCOPE_REFERENCE_RECORD as u64], "reference_members").unwrap();
+    scope.reference_members = crate::records::ReferenceRun::from_columns(
+        vec![196],
+        vec![class_377::GENERIC_SCOPE_REFERENCE_RECORD as u64],
+        "reference_members",
+    )
+    .unwrap();
 
     let construction = exact_base_feature_construction(&bytes, &scope)
         .expect("class-377/class-259 Base Feature frame is canonical");
@@ -907,8 +1005,17 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
     else {
         panic!("class-377/class-259 frame selected the wrong form");
     };
-    assert_eq!(*body, crate::records::Located { value: 201, offset: class_377::BODY_ENTITY_SUFFIX as u64 });
-    assert_eq!(construction.body_reference_records().collect::<Vec<_>>(), [201]);
+    assert_eq!(
+        *body,
+        crate::records::Located {
+            value: 201,
+            offset: class_377::BODY_ENTITY_SUFFIX as u64
+        }
+    );
+    assert_eq!(
+        construction.body_reference_records().collect::<Vec<_>>(),
+        [201]
+    );
     assert_eq!(*parameter_body_record, 198);
     assert_eq!(
         *parameter_body_record_offset,
@@ -1039,7 +1146,12 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
         scope.paired_class_tag = "262".into();
         scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![scope_reference]);
         scope.reference_count_offset = reference_count as u64;
-        scope.reference_members = crate::records::ReferenceRun::from_columns(scope.reference_members.values().copied().collect(), vec![generic_record as u64], "reference_members").unwrap();
+        scope.reference_members = crate::records::ReferenceRun::from_columns(
+            scope.reference_members.values().copied().collect(),
+            vec![generic_record as u64],
+            "reference_members",
+        )
+        .unwrap();
         scope.history_state_id = Some(i64::from(current_state));
 
         scope.previous_history_state_id = Some(i64::from(previous_state));
@@ -1101,7 +1213,12 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     compact_scope.paired_byte_offset = compact::LEN as u64;
     compact_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![196]);
     compact_scope.reference_count_offset = compact::REFERENCE_COUNT as u64;
-    compact_scope.reference_members = crate::records::ReferenceRun::from_columns(compact_scope.reference_members.values().copied().collect(), vec![compact::GENERIC_SCOPE_REFERENCE_RECORD as u64], "reference_members").unwrap();
+    compact_scope.reference_members = crate::records::ReferenceRun::from_columns(
+        compact_scope.reference_members.values().copied().collect(),
+        vec![compact::GENERIC_SCOPE_REFERENCE_RECORD as u64],
+        "reference_members",
+    )
+    .unwrap();
     compact_scope.history_state_id = Some(20);
 
     compact_scope.previous_history_state_id = Some(19);
@@ -1127,7 +1244,16 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     let DesignBaseFeatureBodyReferenceForm::CompactOneBody { mode, body } = form else {
         panic!("compact frame requires one body");
     };
-    assert_eq!(crate::records::Located { value: mode.value as u8, offset: mode.offset }, crate::records::Located { value: 0, offset: compact::MODE as u64 });
+    assert_eq!(
+        crate::records::Located {
+            value: mode.value as u8,
+            offset: mode.offset
+        },
+        crate::records::Located {
+            value: 0,
+            offset: compact::MODE as u64
+        }
+    );
     let body_entity_suffixes = &[u64::from(body.entity.value)];
     let body_entity_suffix_offsets = &[body.entity.offset];
     let body_entity_fields = &[body.entity.field];
@@ -1157,7 +1283,10 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     assert_eq!(*scope_reference_offset, compact::SCOPE_REFERENCE as u64);
     assert_eq!(envelope_guid, "fcec56e3-832f-4468-88a4-d710e62e629f");
     assert_eq!(*envelope_guid_offset, compact::ENVELOPE_GUID as u64);
-    assert_eq!(serde_json::to_value(&compact_construction).unwrap()["tag_body_based_on_faces"], true);
+    assert_eq!(
+        serde_json::to_value(&compact_construction).unwrap()["tag_body_based_on_faces"],
+        true
+    );
     assert_eq!(
         *tag_body_based_on_faces_offset,
         compact::TAG_BODY_BASED_ON_FACES_VALUE as u64
@@ -1175,8 +1304,19 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     let DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces { form, .. } = mode_one else {
         panic!("class-452 compact mode-one frame selected the wrong form");
     };
-    let DesignBaseFeatureBodyReferenceForm::CompactOneBody { mode, .. } = form else { panic!("compact mode-one form"); };
-    assert_eq!(crate::records::Located { value: mode.value as u8, offset: mode.offset }, crate::records::Located { value: 1, offset: compact::MODE as u64 });
+    let DesignBaseFeatureBodyReferenceForm::CompactOneBody { mode, .. } = form else {
+        panic!("compact mode-one form");
+    };
+    assert_eq!(
+        crate::records::Located {
+            value: mode.value as u8,
+            offset: mode.offset
+        },
+        crate::records::Located {
+            value: 1,
+            offset: compact::MODE as u64
+        }
+    );
 
     let mut expanded_bytes = vec![0_u8; expanded::LEN];
     expanded_bytes[expanded::BODY_COUNT_MARKER] = expanded::BODY_COUNT_MARKER_VALUE;
@@ -1249,7 +1389,12 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     expanded_scope.frame_length = expanded::LEN as u64;
     expanded_scope.paired_byte_offset = expanded::LEN as u64;
     expanded_scope.reference_count_offset = expanded::REFERENCE_COUNT as u64;
-    expanded_scope.reference_members = crate::records::ReferenceRun::from_columns(expanded_scope.reference_members.values().copied().collect(), vec![expanded::GENERIC_SCOPE_REFERENCE_RECORD as u64], "reference_members").unwrap();
+    expanded_scope.reference_members = crate::records::ReferenceRun::from_columns(
+        expanded_scope.reference_members.values().copied().collect(),
+        vec![expanded::GENERIC_SCOPE_REFERENCE_RECORD as u64],
+        "reference_members",
+    )
+    .unwrap();
 
     expanded_scope.previous_history_state_id_offset =
         Some(expanded::PREVIOUS_HISTORY_STATE_ID as u64);

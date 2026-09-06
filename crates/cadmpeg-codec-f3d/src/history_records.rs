@@ -150,7 +150,9 @@ impl AsmDeltaState {
     pub(crate) fn topology(&self) -> Option<&AsmHistoricalTopology> {
         match &self.topology_cache {
             AsmTopologyCache::Absent => None,
-            AsmTopologyCache::Complete(topology) | AsmTopologyCache::Retained(topology) => Some(topology),
+            AsmTopologyCache::Complete(topology) | AsmTopologyCache::Retained(topology) => {
+                Some(topology)
+            }
         }
     }
 
@@ -158,7 +160,9 @@ impl AsmDeltaState {
     pub(crate) fn topology_mut(&mut self) -> Option<&mut AsmHistoricalTopology> {
         match &mut self.topology_cache {
             AsmTopologyCache::Absent => None,
-            AsmTopologyCache::Complete(topology) | AsmTopologyCache::Retained(topology) => Some(topology),
+            AsmTopologyCache::Complete(topology) | AsmTopologyCache::Retained(topology) => {
+                Some(topology)
+            }
         }
     }
 
@@ -242,7 +246,9 @@ impl From<AsmDeltaState> for AsmDeltaStateWire {
         let record_table_complete = state.record_table_complete();
         let topology = match state.topology_cache {
             AsmTopologyCache::Absent => None,
-            AsmTopologyCache::Complete(topology) | AsmTopologyCache::Retained(topology) => Some(topology),
+            AsmTopologyCache::Complete(topology) | AsmTopologyCache::Retained(topology) => {
+                Some(topology)
+            }
         };
         Self {
             id: state.id,
@@ -507,8 +513,14 @@ pub(crate) struct AsmHistoryRecord {
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum AsmHistoryRecordFraming {
-    Framed { index: u64, name: String, entity_references: Vec<i64> },
-    Opaque { error: String },
+    Framed {
+        index: u64,
+        name: String,
+        entity_references: Vec<i64>,
+    },
+    Opaque {
+        error: String,
+    },
 }
 
 impl AsmHistoryRecord {
@@ -560,29 +572,54 @@ impl TryFrom<AsmHistoryRecordWire> for AsmHistoryRecord {
     fn try_from(wire: AsmHistoryRecordWire) -> Result<Self, Self::Error> {
         let framing = match wire.framing_error {
             None => AsmHistoryRecordFraming::Framed {
-                index: wire.index, name: wire.name, entity_references: wire.entity_references,
+                index: wire.index,
+                name: wire.name,
+                entity_references: wire.entity_references,
             },
             Some(error) => {
-                if wire.index != 0 || wire.name != "opaque_history_payload" || !wire.entity_references.is_empty() {
+                if wire.index != 0
+                    || wire.name != "opaque_history_payload"
+                    || !wire.entity_references.is_empty()
+                {
                     return Err("framing_error requires index 0, name opaque_history_payload, and empty entity_references".into());
                 }
                 AsmHistoryRecordFraming::Opaque { error }
             }
         };
-        Ok(Self { id: wire.id, parent: wire.parent, revision_id: wire.revision_id,
-            byte_offset: wire.byte_offset, framing, raw_bytes: wire.raw_bytes })
+        Ok(Self {
+            id: wire.id,
+            parent: wire.parent,
+            revision_id: wire.revision_id,
+            byte_offset: wire.byte_offset,
+            framing,
+            raw_bytes: wire.raw_bytes,
+        })
     }
 }
 
 impl From<AsmHistoryRecord> for AsmHistoryRecordWire {
     fn from(record: AsmHistoryRecord) -> Self {
         let (index, name, framing_error, entity_references) = match record.framing {
-            AsmHistoryRecordFraming::Framed { index, name, entity_references } => (index, name, None, entity_references),
-            AsmHistoryRecordFraming::Opaque { error } => (0, "opaque_history_payload".into(), Some(error), Vec::new()),
+            AsmHistoryRecordFraming::Framed {
+                index,
+                name,
+                entity_references,
+            } => (index, name, None, entity_references),
+            AsmHistoryRecordFraming::Opaque { error } => {
+                (0, "opaque_history_payload".into(), Some(error), Vec::new())
+            }
         };
-        Self { id: record.id, parent: record.parent, revision_id: record.revision_id,
-            index, byte_offset: record.byte_offset, name, framing_error, entity_references,
-            raw_bytes: record.raw_bytes }
+        Self {
+            id: record.id,
+            parent: record.parent,
+            revision_id: record.revision_id,
+            index,
+            byte_offset: record.byte_offset,
+            name,
+            framing_error,
+            entity_references,
+            raw_bytes: record.raw_bytes,
+        }
     }
 }
 
@@ -719,7 +756,10 @@ mod tests {
         for (complete, fields) in [
             (false, String::new()),
             (false, format!(",\"topology\":{topology}")),
-            (true, format!(",\"record_table_complete\":true,\"topology\":{topology}")),
+            (
+                true,
+                format!(",\"record_table_complete\":true,\"topology\":{topology}"),
+            ),
         ] {
             let wire = format!("{prefix}{fields}}}");
             let state: AsmDeltaState = serde_json::from_str(&wire).unwrap();
@@ -734,13 +774,16 @@ mod tests {
             assert_eq!(serde_json::to_string(&state).unwrap(), wire);
         }
         let invalid = format!("{prefix},\"record_table_complete\":true}}");
-        let error = serde_json::from_str::<AsmDeltaState>(&invalid).unwrap_err().to_string();
+        let error = serde_json::from_str::<AsmDeltaState>(&invalid)
+            .unwrap_err()
+            .to_string();
         assert!(error.contains("record_table_complete"));
         assert!(error.contains("topology"));
     }
     #[test]
     fn history_record_framing_preserves_wire_and_rejects_opaque_metadata() {
-        let prefix = r#"{"id":"record","parent":"state","revision_id":7,"index":0,"byte_offset":12,"name":"#;
+        let prefix =
+            r#"{"id":"record","parent":"state","revision_id":7,"index":0,"byte_offset":12,"name":"#;
         for fields in [
             r#""edge","entity_references":[7,-1]"#,
             r#""opaque_history_payload","framing_error":"invalid frame""#,
@@ -754,9 +797,10 @@ mod tests {
             r#""opaque_history_payload","framing_error":"invalid frame","entity_references":[7]"#,
         ] {
             let wire = format!("{prefix}{fields},\"raw_bytes\":\"\"}}");
-            let error = serde_json::from_str::<super::AsmHistoryRecord>(&wire).unwrap_err().to_string();
+            let error = serde_json::from_str::<super::AsmHistoryRecord>(&wire)
+                .unwrap_err()
+                .to_string();
             assert!(error.contains("framing_error"));
         }
     }
-
 }

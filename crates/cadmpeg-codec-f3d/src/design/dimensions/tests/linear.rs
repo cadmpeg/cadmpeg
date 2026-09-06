@@ -698,11 +698,16 @@ fn counted_linear_graph_projects_exact_auxiliary_relations() {
 fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
     let stream = "f3d:A";
     let placement = DesignSketchPlacement {
-        frame: crate::records::DesignSketchFrame::new(0, crate::records::DesignSketchFrameForm::ScopeCompact).unwrap(),
+        frame: crate::records::DesignSketchFrame::new(
+            0,
+            crate::records::DesignSketchFrameForm::ScopeCompact,
+        )
+        .unwrap(),
 
         id: format!("{stream}:design-sketch-placement#0"),
         scope_record_index: Some(10),
-        entity_id: crate::records::DesignEntityId::try_from("0_100".to_owned()).expect("valid entity ID"),
+        entity_id: crate::records::DesignEntityId::try_from("0_100".to_owned())
+            .expect("valid entity ID"),
 
         visibility: None,
 
@@ -710,7 +715,6 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         record_index: 11,
 
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
-
     };
     let parameter = DesignParameter {
         id: format!("{stream}:design-parameter#20"),
@@ -718,12 +722,23 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         class_tag: "305".into(),
         record_index: 20,
         source_ordinal: 4,
-        source: crate::records::DesignParameterSource::new("Linear Dimension-4".into(), Some(21), Some(crate::records::Located { value: crate::records::DesignParameterDiscriminator::Code0, offset: 0 })).unwrap(),
+        source: crate::records::DesignParameterSource::new(
+            "Linear Dimension-4".into(),
+            Some(21),
+            Some(crate::records::Located {
+                value: crate::records::DesignParameterDiscriminator::Code0,
+                offset: 0,
+            }),
+        )
+        .unwrap(),
         expression: "2 mm".into(),
         expression_offset: 0,
         source_kind_offset: 0,
 
-        unit: Some(crate::records::RecordedValue { value: "mm".into(), offset: Some(0) }),
+        unit: Some(crate::records::RecordedValue {
+            value: "mm".into(),
+            offset: Some(0),
+        }),
         name: "d4".into(),
         name_offset: 0,
         evaluated_value: 0.2,
@@ -785,7 +800,10 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         record_index: 31,
         frame_length: 100,
         loci: vec![DesignDimensionLocus {
-                returned: crate::records::Located { value: 40, offset: 210 },
+            returned: crate::records::Located {
+                value: 40,
+                offset: 210,
+            },
             geometry_record_index: 40,
             geometry_reference_offset: 170,
             role: 0,
@@ -966,21 +984,30 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         frame_length: 100,
         loci: vec![
             DesignDimensionLocus {
-                returned: crate::records::Located { value: 40, offset: 0 },
+                returned: crate::records::Located {
+                    value: 40,
+                    offset: 0,
+                },
                 geometry_record_index: 42,
                 geometry_reference_offset: 0,
                 role: 5,
                 role_offset: 0,
             },
             DesignDimensionLocus {
-                returned: crate::records::Located { value: 41, offset: 0 },
+                returned: crate::records::Located {
+                    value: 41,
+                    offset: 0,
+                },
                 geometry_record_index: 40,
                 geometry_reference_offset: 0,
                 role: 0,
                 role_offset: 0,
             },
             DesignDimensionLocus {
-                returned: crate::records::Located { value: 42, offset: 0 },
+                returned: crate::records::Located {
+                    value: 42,
+                    offset: 0,
+                },
                 geometry_record_index: 41,
                 geometry_reference_offset: 0,
                 role: 0,
@@ -998,7 +1025,12 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         next_byte_offset: 0,
     };
     let mut symmetry_parameter = parameter.clone();
-    symmetry_parameter.source = crate::records::DesignParameterSource::new("Linear Dimension-6".into(), symmetry_parameter.owner_record_index(), symmetry_parameter.family_discriminator()).unwrap();
+    symmetry_parameter.source = crate::records::DesignParameterSource::new(
+        "Linear Dimension-6".into(),
+        symmetry_parameter.owner_record_index(),
+        symmetry_parameter.family_discriminator(),
+    )
+    .unwrap();
     let mut symmetry_entities = spatial_entities.clone();
     symmetry_entities.push(axis_entity.clone());
     let symmetry_constraints = project_spatial_dimension_constraints(

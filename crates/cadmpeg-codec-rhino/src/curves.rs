@@ -8,9 +8,9 @@ use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
 use cadmpeg_ir::math::{Point3, Vector3};
 
-use crate::chunks::{ArchiveVersion, BoundedReader, FramingError, checked_count_bytes};
+use crate::chunks::{checked_count_bytes, ArchiveVersion, BoundedReader, FramingError};
 use crate::objects::parse_class_wrapper;
-use crate::settings::{Point3 as NativePoint3, bbox, interval, plane};
+use crate::settings::{bbox, interval, plane, Point3 as NativePoint3};
 use crate::wire::Uuid;
 
 const EPS_CURVE_POSITION: f64 = 1.0e-8;

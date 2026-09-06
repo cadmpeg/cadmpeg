@@ -8,13 +8,13 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::ids::BodyId;
 
 use cadmpeg_core::decode::{DecodeMode, InspectOptions};
-use cadmpeg_ir::Exactness;
 use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::report::LossCategory;
+use cadmpeg_ir::Exactness;
 
-use crate::NxCodec;
 use crate::test_support::*;
+use crate::NxCodec;
 
 use super::*;
 
@@ -95,15 +95,13 @@ fn decode_retains_uncharted_intersection_without_inventing_a_range() {
         .find(|curve| curve.id == *owner)
         .expect("intersection carrier");
     assert!(matches!(curve.geometry, CurveGeometry::Procedural { .. }));
-    assert!(
-        result
-            .ir()
-            .model
-            .edges
-            .iter()
-            .filter(|edge| edge.curve.as_ref() == Some(owner))
-            .all(|edge| edge.param_range.is_none())
-    );
+    assert!(result
+        .ir()
+        .model
+        .edges
+        .iter()
+        .filter(|edge| edge.curve.as_ref() == Some(owner))
+        .all(|edge| edge.param_range.is_none()));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
@@ -646,13 +644,11 @@ fn decode_assembly_reports_external_dependency() {
     let mut cur = Cursor::new(assembly_prt());
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     assert!(!result.report().geometry_transferred());
-    assert!(
-        result
-            .report()
-            .losses
-            .iter()
-            .any(|l| l.message.contains("assembly"))
-    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|l| l.message.contains("assembly")));
 }
 
 #[test]
@@ -727,13 +723,11 @@ fn decode_retains_every_rmfastload_active_body() {
             .map(String::as_str),
         Some("2")
     );
-    assert!(
-        result
-            .report()
-            .losses
-            .iter()
-            .all(|loss| !loss.message.contains("sub-body partition"))
-    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .all(|loss| !loss.message.contains("sub-body partition")));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
@@ -773,14 +767,12 @@ fn decode_preselection_retains_skipped_rmfastload_stream_as_unknown() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     assert_eq!(result.ir().model.bodies.len(), 1);
-    assert!(
-        result
-            .ir()
-            .native_unknowns("nx")
-            .unwrap()
-            .iter()
-            .any(|unknown| unknown.id.0 == "nx:container:parasolid#1")
-    );
+    assert!(result
+        .ir()
+        .native_unknowns("nx")
+        .unwrap()
+        .iter()
+        .any(|unknown| unknown.id.0 == "nx:container:parasolid#1"));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
@@ -810,13 +802,11 @@ fn decode_resolves_all_terminal_feature_bodies_without_active_selection() {
             .map(String::as_str),
         Some("2")
     );
-    assert!(
-        result
-            .report()
-            .losses
-            .iter()
-            .all(|loss| !loss.message.contains("sub-body partition"))
-    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .all(|loss| !loss.message.contains("sub-body partition")));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
@@ -826,20 +816,16 @@ fn decode_selects_active_shell_when_body_record_is_absent() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     assert_eq!(result.ir().model.bodies.len(), 1);
-    assert!(
-        result.ir().model.bodies[0]
-            .id
-            .as_str()
-            .starts_with("nx:s0:")
-    );
+    assert!(result.ir().model.bodies[0]
+        .id
+        .as_str()
+        .starts_with("nx:s0:"));
     assert_eq!(result.ir().model.faces.len(), 50);
-    assert!(
-        result
-            .report()
-            .losses
-            .iter()
-            .all(|loss| !loss.message.contains("sub-body partition"))
-    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .all(|loss| !loss.message.contains("sub-body partition")));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
@@ -849,20 +835,16 @@ fn decode_keeps_bodies_when_rmfastload_overlap_is_weak() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     assert_eq!(result.ir().model.bodies.len(), 2);
-    assert!(
-        result
-            .ir()
-            .source
-            .as_ref()
-            .is_none_or(|source| !source.attributes.contains_key("active_body_selector"))
-    );
-    assert!(
-        result
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.message.contains("sub-body partition"))
-    );
+    assert!(result
+        .ir()
+        .source
+        .as_ref()
+        .is_none_or(|source| !source.attributes.contains_key("active_body_selector")));
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("sub-body partition")));
 }
 
 #[test]
@@ -885,14 +867,12 @@ fn container_only_does_not_decode_bounded_object_model_records() {
     assert_eq!(result.ir().model.entity_count(), 0);
     assert!(result.ir().model.features.is_empty());
     assert!(result.ir().model.sketches.is_empty());
-    assert!(
-        result
-            .ir()
-            .native_unknowns("nx")
-            .unwrap()
-            .iter()
-            .any(|unknown| unknown.id.as_str().starts_with("nx:om-section-"))
-    );
+    assert!(result
+        .ir()
+        .native_unknowns("nx")
+        .unwrap()
+        .iter()
+        .any(|unknown| unknown.id.as_str().starts_with("nx:om-section-")));
 }
 
 #[test]
@@ -903,12 +883,10 @@ fn inspect_enumerates_streams_and_names_schema() {
         .unwrap();
     assert_eq!(summary.format(), "nx");
     assert_eq!(summary.container_kind, "splmsstr");
-    assert!(
-        summary
-            .entries
-            .iter()
-            .any(|e| e.role.as_str() == "parasolid-stream")
-    );
+    assert!(summary
+        .entries
+        .iter()
+        .any(|e| e.role.as_str() == "parasolid-stream"));
     assert!(summary.notes.iter().any(|n| n.contains("partition")));
 }
 
@@ -999,13 +977,11 @@ fn decode_retains_unsupported_named_stream_payloads() {
         "/Root/UG_PART/LastSavedToggleInfoStream",
         "/Root/vendor/private",
     ] {
-        assert!(
-            result
-                .report()
-                .losses
-                .iter()
-                .any(|loss| loss.message.contains(name))
-        );
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(name)));
     }
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
@@ -1031,13 +1007,11 @@ fn decode_typed_saved_toggle_stream_is_not_retained_as_opaque() {
     assert_eq!(namespace.arenas["saved_toggle_streams"].len(), 1);
     assert_eq!(namespace.arenas["saved_toggle_entries"].len(), 1);
     assert!(result.ir().native_unknowns("nx").unwrap().is_empty());
-    assert!(
-        result
-            .report()
-            .losses
-            .iter()
-            .all(|loss| loss.code != crate::loss::NxLossCode::ContainerStreamOpaque.kind())
-    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code != crate::loss::NxLossCode::ContainerStreamOpaque.kind()));
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
 }
 
@@ -1063,13 +1037,11 @@ fn container_only_retains_typed_saved_toggle_payload() {
         result.source_fidelity().retained_records[0].byte_len(),
         toggle_len
     );
-    assert!(
-        result
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.code == crate::loss::NxLossCode::ContainerStreamOpaque.kind())
-    );
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::NxLossCode::ContainerStreamOpaque.kind()));
 }
 
 #[test]
@@ -1240,11 +1212,9 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
 
     assert_eq!(losses.len(), 7);
     assert_eq!(losses[0].code.category(), LossCategory::DesignIntent);
-    assert!(
-        losses[0]
-            .message
-            .contains("10 NX feature history operation")
-    );
+    assert!(losses[0]
+        .message
+        .contains("10 NX feature history operation"));
     assert_eq!(losses[1].code.category(), LossCategory::DesignIntent);
     assert!(losses[1].message.contains("2 NX design configuration"));
     assert_eq!(losses[2].code.category(), LossCategory::DesignIntent);
@@ -1431,16 +1401,12 @@ fn design_intent_losses_do_not_scope_to_retained_base_feature_alone() {
     crate::decode::append_design_intent_losses(&ir, &mut losses);
 
     assert_eq!(losses.len(), 2);
-    assert!(
-        losses[0]
-            .message
-            .contains("Suppression state remains unresolved for 1 NX feature history operation")
-    );
-    assert!(
-        losses[0]
-            .message
-            .contains("no admitted operation-to-state-object-to-typed-value relation is present")
-    );
+    assert!(losses[0]
+        .message
+        .contains("Suppression state remains unresolved for 1 NX feature history operation"));
+    assert!(losses[0]
+        .message
+        .contains("no admitted operation-to-state-object-to-typed-value relation is present"));
     assert!(losses[1].message.contains("DELETE (1)"));
 }
 
@@ -1477,11 +1443,9 @@ fn design_intent_losses_accept_output_free_local_body_operations() {
     crate::decode::append_design_intent_losses(&ir, &mut losses);
 
     assert_eq!(losses.len(), 1);
-    assert!(
-        losses[0]
-            .message
-            .contains("incomplete neutral construction fields")
-    );
+    assert!(losses[0]
+        .message
+        .contains("incomplete neutral construction fields"));
     assert!(losses[0].message.contains("pattern (1)"));
 }
 
@@ -1513,11 +1477,9 @@ fn design_intent_losses_accept_pattern_construction_without_body_reference() {
     crate::decode::append_design_intent_losses(&ir, &mut losses);
 
     assert_eq!(losses.len(), 1);
-    assert!(
-        losses[0]
-            .message
-            .contains("incomplete neutral construction fields")
-    );
+    assert!(losses[0]
+        .message
+        .contains("incomplete neutral construction fields"));
     assert!(losses[0].message.contains("pattern (1)"));
 
     ir.model.features[0]
@@ -1526,11 +1488,9 @@ fn design_intent_losses_accept_pattern_construction_without_body_reference() {
     losses.clear();
     crate::decode::append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
-    assert!(
-        losses[0]
-            .message
-            .contains("output lineage is missing, duplicated")
-    );
+    assert!(losses[0]
+        .message
+        .contains("output lineage is missing, duplicated"));
 }
 
 #[test]
@@ -1553,10 +1513,10 @@ fn design_intent_losses_accept_unbound_trim_surface_construction() {
         outputs: Vec::new(),
         definition: FeatureDefinition::TrimSurface {
             faces: FaceSelection::Faces(vec![
-                cadmpeg_ir::ids::FaceId::mint("face").expect("identity grammar"),
+                cadmpeg_ir::ids::FaceId::mint("face").expect("identity grammar")
             ]),
             tool: PathRef::Edges(vec![
-                cadmpeg_ir::ids::EdgeId::mint("edge").expect("identity grammar"),
+                cadmpeg_ir::ids::EdgeId::mint("edge").expect("identity grammar")
             ]),
             keep: TrimRegion::Inside,
         },
@@ -1572,11 +1532,9 @@ fn design_intent_losses_accept_unbound_trim_surface_construction() {
         .insert("body_reference.0".into(), "42".into());
     crate::decode::append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
-    assert!(
-        losses[0]
-            .message
-            .contains("output lineage is missing, duplicated")
-    );
+    assert!(losses[0]
+        .message
+        .contains("output lineage is missing, duplicated"));
 }
 
 #[test]

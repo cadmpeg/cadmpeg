@@ -10,11 +10,15 @@ pub(crate) struct UnicodeValue(String);
 
 impl UnicodeValue {
     pub(crate) fn new(value: String) -> Result<Self, &'static str> {
-        if value.is_empty() { return Err("value must contain at least one Unicode scalar"); }
+        if value.is_empty() {
+            return Err("value must contain at least one Unicode scalar");
+        }
         Ok(Self(value))
     }
 
-    pub(crate) fn as_str(&self) -> &str { &self.0 }
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 impl<'de> Deserialize<'de> for UnicodeValue {
@@ -28,7 +32,9 @@ pub(crate) struct UnicodeLane<'a>(&'a [u8]);
 
 impl<'a> UnicodeLane<'a> {
     pub(crate) fn new(bytes: &'a [u8]) -> Option<Self> {
-        if bytes.is_empty() || !bytes.len().is_multiple_of(2) { return None; }
+        if bytes.is_empty() || !bytes.len().is_multiple_of(2) {
+            return None;
+        }
         let mut high_surrogate = false;
         for bytes in bytes.chunks_exact(2) {
             let unit = View::u16_be_at(bytes, 0)?;
@@ -45,8 +51,11 @@ impl<'a> UnicodeLane<'a> {
     }
 
     pub(crate) fn materialize(self) -> Option<UnicodeValue> {
-        let code_units = self.0.chunks_exact(2)
-            .map(|bytes| View::u16_be_at(bytes, 0)).collect::<Option<Vec<_>>>()?;
+        let code_units = self
+            .0
+            .chunks_exact(2)
+            .map(|bytes| View::u16_be_at(bytes, 0))
+            .collect::<Option<Vec<_>>>()?;
         String::from_utf16(&code_units).ok().map(UnicodeValue)
     }
 }
@@ -62,9 +71,22 @@ mod tests {
         assert_eq!(serde_json::to_string(&value).unwrap(), wire);
         assert_eq!(serde_json::from_str::<UnicodeValue>(&wire).unwrap(), value);
         assert!(serde_json::from_str::<UnicodeValue>("\"\"").is_err());
-        let bytes = value.as_str().encode_utf16().flat_map(u16::to_be_bytes).collect::<Vec<_>>();
-        assert_eq!(UnicodeLane::new(&bytes).unwrap().materialize().unwrap(), value);
-        for bytes in [&[][..], &[0][..], &[0xd8, 0][..], &[0xdc, 0][..], &[0xd8, 0, 0, 0][..]] {
+        let bytes = value
+            .as_str()
+            .encode_utf16()
+            .flat_map(u16::to_be_bytes)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            UnicodeLane::new(&bytes).unwrap().materialize().unwrap(),
+            value
+        );
+        for bytes in [
+            &[][..],
+            &[0][..],
+            &[0xd8, 0][..],
+            &[0xdc, 0][..],
+            &[0xd8, 0, 0, 0][..],
+        ] {
             assert!(UnicodeLane::new(bytes).is_none());
         }
     }

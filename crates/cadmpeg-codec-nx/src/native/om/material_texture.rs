@@ -40,13 +40,24 @@ impl MaterialTextureAsset {
         source_entry: String,
         source_offset: u64,
     ) -> Result<Self, &'static str> {
-        if !source_entry.strip_prefix(TEXTURE_PREFIX).is_some_and(|name| !name.is_empty()) {
+        if !source_entry
+            .strip_prefix(TEXTURE_PREFIX)
+            .is_some_and(|name| !name.is_empty())
+        {
             return Err("source_entry: requires a nonempty materialsTif path");
         }
         if first_ifd_offset < 8 || u64::from(first_ifd_offset) >= byte_len {
             return Err("first_ifd_offset: must follow the TIFF header and be within byte_len");
         }
-        Ok(Self { id, byte_order, first_ifd_offset, byte_len, sha256, source_entry, source_offset })
+        Ok(Self {
+            id,
+            byte_order,
+            first_ifd_offset,
+            byte_len,
+            sha256,
+            source_entry,
+            source_offset,
+        })
     }
 
     pub(crate) fn name(&self) -> &str {
@@ -106,8 +117,15 @@ impl TryFrom<TextureWire> for MaterialTextureAsset {
         if wire.version != TIFF_VERSION {
             return Err("version: expected TIFF version 42");
         }
-        let value = Self::new(wire.id, wire.byte_order, wire.first_ifd_offset, wire.byte_len,
-            wire.sha256, wire.source_entry, wire.source_offset)?;
+        let value = Self::new(
+            wire.id,
+            wire.byte_order,
+            wire.first_ifd_offset,
+            wire.byte_len,
+            wire.sha256,
+            wire.source_entry,
+            wire.source_offset,
+        )?;
         if value.name() != wire.name {
             return Err("name: must equal the source_entry suffix");
         }
@@ -116,7 +134,9 @@ impl TryFrom<TextureWire> for MaterialTextureAsset {
 }
 
 pub(crate) fn material_texture_assets(container: &Container) -> Vec<MaterialTextureAsset> {
-    let mut entries = container.entries.iter()
+    let mut entries = container
+        .entries
+        .iter()
         .filter(|entry| entry.name.starts_with(TEXTURE_PREFIX))
         .collect::<Vec<_>>();
     entries.sort_by(|first, second| first.name.cmp(&second.name));
@@ -127,14 +147,22 @@ pub(crate) fn material_texture_assets(container: &Container) -> Vec<MaterialText
             let (start, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
             let payload = container.data.get(start..start.checked_add(size)?)?;
             let (byte_order, first_ifd_offset) = match payload.get(..8)? {
-                [b'I', b'I', 42, 0, ..] => (TiffByteOrder::LittleEndian, View::u32_le_at(payload, 4)?),
+                [b'I', b'I', 42, 0, ..] => {
+                    (TiffByteOrder::LittleEndian, View::u32_le_at(payload, 4)?)
+                }
                 [b'M', b'M', 0, 42, ..] => (TiffByteOrder::BigEndian, View::u32_be_at(payload, 4)?),
                 _ => return None,
             };
             MaterialTextureAsset::new(
-                format!("nx:container:material-texture#{}", assets.len()), byte_order,
-                first_ifd_offset, size as u64, sha256_hex(payload), entry.name.clone(), offset,
-            ).ok()
+                format!("nx:container:material-texture#{}", assets.len()),
+                byte_order,
+                first_ifd_offset,
+                size as u64,
+                sha256_hex(payload),
+                entry.name.clone(),
+                offset,
+            )
+            .ok()
         };
         if let Some(asset) = parse() {
             assets.push(asset);

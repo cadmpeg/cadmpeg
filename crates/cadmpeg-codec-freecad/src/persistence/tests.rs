@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Document.xml persistence-graph unit tests.
 
-use crate::FcstdCodec;
 use crate::test_support::*;
+use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
@@ -410,23 +410,17 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         assert_eq!(spans.last().map(|span| span.end), Some(entry.byte_len()));
         assert!(spans.windows(2).all(|pair| pair[0].end == pair[1].start));
     }
-    assert!(
-        ledger
-            .iter()
-            .filter(|span| span.entry == "Shape.brp")
-            .all(|span| span.classification.as_str() == "typed")
-    );
-    assert!(
-        ledger
-            .iter()
-            .filter(|span| span.entry == "Payload.bin")
-            .all(|span| span.classification.as_str() == "named_opaque")
-    );
-    assert!(
-        ledger
-            .iter()
-            .any(|span| span.entry == "Document.xml" && span.classification.as_str() == "typed")
-    );
+    assert!(ledger
+        .iter()
+        .filter(|span| span.entry == "Shape.brp")
+        .all(|span| span.classification.as_str() == "typed"));
+    assert!(ledger
+        .iter()
+        .filter(|span| span.entry == "Payload.bin")
+        .all(|span| span.classification.as_str() == "named_opaque"));
+    assert!(ledger
+        .iter()
+        .any(|span| span.entry == "Document.xml" && span.classification.as_str() == "typed"));
     assert!(ledger.iter().any(|span| {
         span.entry == "Document.xml" && span.classification.as_str() == "structural"
     }));
@@ -447,11 +441,9 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         coverage[0].classification_bytes.values().sum::<u64>(),
         coverage[0].logical_byte_len
     );
-    assert!(
-        coverage[0]
-            .named_opaque_entries
-            .contains(&"Payload.bin".to_owned())
-    );
+    assert!(coverage[0]
+        .named_opaque_entries
+        .contains(&"Payload.bin".to_owned()));
     let findings = crate::validate_native(result.ir());
     assert!(findings.is_empty(), "{findings:#?}");
 
@@ -480,11 +472,9 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .namespace_mut("fcstd", std::num::NonZeroU32::MIN)
         .set_arena("objects", &invalid_objects)
         .expect("replace objects");
-    assert!(
-        crate::validate_native(&corrupted)
-            .iter()
-            .any(|finding| finding.message.contains("invalid partial-load capability"))
-    );
+    assert!(crate::validate_native(&corrupted)
+        .iter()
+        .any(|finding| finding.message.contains("invalid partial-load capability")));
 }
 
 #[test]

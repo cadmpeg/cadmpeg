@@ -4,8 +4,8 @@
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{Consumption, EncodeInput, ExportBody, ResolvedWrite, WritePath};
 
-use crate::RhinoArchiveVersion;
 use crate::loss::RhinoLossCode;
+use crate::RhinoArchiveVersion;
 
 /// Why this writer cannot reproduce a source archive version outside
 /// [`RhinoArchiveVersion::TARGETS`].
@@ -13,7 +13,8 @@ use crate::loss::RhinoLossCode;
 /// Archives 1, 2, 3, 4, 5 and 90 decode without a writer, unknown words decode
 /// as residual, and 3DM has no retained-image path that could write any of
 /// them back.
-const OFF_CATALOG_SOURCE_REASON: &str = "the source archive version is one this writer cannot synthesize, and 3DM has no byte-replay \
+const OFF_CATALOG_SOURCE_REASON: &str =
+    "the source archive version is one this writer cannot synthesize, and 3DM has no byte-replay \
      path that could preserve it";
 
 /// Synthesize the resolved archive version.

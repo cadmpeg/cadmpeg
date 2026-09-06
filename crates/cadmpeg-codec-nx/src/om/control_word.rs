@@ -6,7 +6,9 @@
 pub(crate) struct ControlWord24([u8; 3]);
 
 impl ControlWord24 {
-    pub(crate) fn new(bytes: [u8; 3]) -> Self { Self(bytes) }
+    pub(crate) fn new(bytes: [u8; 3]) -> Self {
+        Self(bytes)
+    }
     pub(crate) fn value(self) -> u32 {
         u32::from(self.0[0]) | (u32::from(self.0[1]) << 8) | (u32::from(self.0[2]) << 16)
     }
@@ -15,12 +17,16 @@ impl ControlWord24 {
 impl TryFrom<u32> for ControlWord24 {
     type Error = &'static str;
     fn try_from(value: u32) -> Result<Self, Self::Error> {
-        if value > 0x00ff_ffff { return Err("value exceeds the unsigned 24-bit control-word range"); }
+        if value > 0x00ff_ffff {
+            return Err("value exceeds the unsigned 24-bit control-word range");
+        }
         Ok(Self([value as u8, (value >> 8) as u8, (value >> 16) as u8]))
     }
 }
 impl From<ControlWord24> for u32 {
-    fn from(value: ControlWord24) -> Self { value.value() }
+    fn from(value: ControlWord24) -> Self {
+        value.value()
+    }
 }
 
 #[cfg(test)]
@@ -34,6 +40,9 @@ mod tests {
             assert_eq!(serde_json::to_string(&word).unwrap(), json);
             assert_eq!(serde_json::from_str::<ControlWord24>(&json).unwrap(), word);
         }
-        assert!(serde_json::from_str::<ControlWord24>("16777216").unwrap_err().to_string().contains("value"));
+        assert!(serde_json::from_str::<ControlWord24>("16777216")
+            .unwrap_err()
+            .to_string()
+            .contains("value"));
     }
 }

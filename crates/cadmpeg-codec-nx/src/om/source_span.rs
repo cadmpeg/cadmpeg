@@ -10,15 +10,25 @@ pub(crate) struct SourceSpan {
 
 impl SourceSpan {
     pub(crate) fn new(base: usize, start: usize, end: usize) -> Option<Self> {
-        if start > end { return None; }
+        if start > end {
+            return None;
+        }
         base.checked_add(end)?;
         Some(Self { base, start, end })
     }
 
-    pub(crate) fn offset(self) -> usize { self.base + self.start }
-    pub(crate) fn end_offset(self) -> usize { self.base + self.end }
-    pub(crate) fn local_start(self) -> usize { self.start }
-    pub(crate) fn local_end(self) -> usize { self.end }
+    pub(crate) fn offset(self) -> usize {
+        self.base + self.start
+    }
+    pub(crate) fn end_offset(self) -> usize {
+        self.base + self.end
+    }
+    pub(crate) fn local_start(self) -> usize {
+        self.start
+    }
+    pub(crate) fn local_end(self) -> usize {
+        self.end
+    }
 }
 
 #[cfg(test)]

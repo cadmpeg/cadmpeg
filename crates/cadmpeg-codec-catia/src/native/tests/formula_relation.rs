@@ -258,9 +258,10 @@ fn native_namespace_types_and_validates_formula_relations() {
     native
         .store(&mut version_205_namespace)
         .expect("store current formula dependency candidates");
-    let mut version_205_entities: Vec<crate::native::entity_record::CatiaEntityRecord> = version_205_namespace
-        .arena_as("entity_records")
-        .expect("load version 205 entity records");
+    let mut version_205_entities: Vec<crate::native::entity_record::CatiaEntityRecord> =
+        version_205_namespace
+            .arena_as("entity_records")
+            .expect("load version 205 entity records");
     version_205_entities[0]
         .formula_relation_mut()
         .expect("complete formula relation")
@@ -384,7 +385,8 @@ fn formula_parameter_dependencies_exclude_string_literal_contents() {
     assert_eq!(dependencies[0].candidates.len(), 1);
 
     let expected_formula = native.entity_records[0]
-        .formula_relation().cloned()
+        .formula_relation()
+        .cloned()
         .expect("complete formula relation");
     let mut old_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     native
@@ -507,9 +509,10 @@ fn terminal_entity_identity_is_a_null_formula_output() {
     version_210_namespace
         .set_arena("object_graph_records", &version_210_records)
         .expect("store version 210 object records");
-    let mut version_210_entities: Vec<crate::native::entity_record::CatiaEntityRecord> = version_210_namespace
-        .arena_as("entity_records")
-        .expect("load version 210 entity records");
+    let mut version_210_entities: Vec<crate::native::entity_record::CatiaEntityRecord> =
+        version_210_namespace
+            .arena_as("entity_records")
+            .expect("load version 210 entity records");
     let cleared_output = version_210_entities[0]
         .formula_relation()
         .expect("complete formula relation")

@@ -24,13 +24,19 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         record_index: 90,
         byte_offset: 900,
         class_tag: "269".into(),
-        members: vec![crate::records::Located { value: 100, offset: 926 }],
+        members: vec![crate::records::Located {
+            value: 100,
+            offset: 926,
+        }],
         lost_edge_references: Vec::new(),
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 921,
             auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
-            trailing_records: vec![crate::records::Located { value: 200, offset: 943 }],
+            trailing_records: vec![crate::records::Located {
+                value: 200,
+                offset: 943,
+            }],
             trailing_transforms: Vec::new(),
             trailing_dual_transforms: Vec::new(),
             trailing_flags: Vec::new(),
@@ -82,10 +88,16 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         byte_offset: recipe_at as u64,
         record_index_offset: None,
         kind: ConstructionRecipeKind::Body,
-        design: Some(crate::records::ConstructionRecipeDesign { id: crate::records::RecordedValue { value: "2265".into(), offset: None }, selector: Some(crate::records::ConstructionRecipeSelector {
-            value: 9,
-            byte_offset: 0,
-        }) }),
+        design: Some(crate::records::ConstructionRecipeDesign {
+            id: crate::records::RecordedValue {
+                value: "2265".into(),
+                offset: None,
+            },
+            selector: Some(crate::records::ConstructionRecipeSelector {
+                value: 9,
+                byte_offset: 0,
+            }),
+        }),
         recipe_index: 0,
         record_index: 0,
     };
@@ -102,7 +114,10 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     assert_eq!(operand.references[0].form, 3);
     assert_eq!(operand.references[1].design_reference, 2266);
     assert_eq!(operand.references[1].form, 32);
-    assert_eq!(operand.selector_tail.map(|tail| tail.value), Some([7, 0, 0, 0]));
+    assert_eq!(
+        operand.selector_tail.map(|tail| tail.value),
+        Some([7, 0, 0, 0])
+    );
     assert_eq!(operand.selector_tail.map(|tail| tail.offset), Some(220));
     assert_eq!(
         operand.owner,
@@ -192,14 +207,21 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             keep_tools: false,
             keep_tools_offset: 0,
             target_record_index: 0,
-            tools: crate::records::DesignCombineTools { first: crate::records::DesignCombineBodySelection { record_index: record.record_index, external_identity: None }, additional: Vec::new() },
+            tools: crate::records::DesignCombineTools {
+                first: crate::records::DesignCombineBodySelection {
+                    record_index: record.record_index,
+                    external_identity: None,
+                },
+                additional: Vec::new(),
+            },
         });
     }
     let mut combine_recipe = recipe.clone();
-    combine_recipe.design.as_mut().unwrap().selector = Some(crate::records::ConstructionRecipeSelector {
-        value: 1,
-        byte_offset: 0,
-    });
+    combine_recipe.design.as_mut().unwrap().selector =
+        Some(crate::records::ConstructionRecipeSelector {
+            value: 1,
+            byte_offset: 0,
+        });
     let mut combine_operand = operand.clone();
     crate::design::decode::operands::bind_body_recipe_operand_candidates(
         std::slice::from_mut(&mut combine_operand),
@@ -280,7 +302,10 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
         record_index: 90,
         byte_offset: 0,
         class_tag: "287".into(),
-        members: vec![crate::records::Located { value: 100, offset: 21 }],
+        members: vec![crate::records::Located {
+            value: 100,
+            offset: 21,
+        }],
         lost_edge_references: Vec::new(),
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
@@ -313,10 +338,16 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
         byte_offset: recipe_at as u64,
         record_index_offset: None,
         kind: ConstructionRecipeKind::Body,
-        design: Some(crate::records::ConstructionRecipeDesign { id: crate::records::RecordedValue { value: "301".into(), offset: None }, selector: Some(crate::records::ConstructionRecipeSelector {
-            value: 6,
-            byte_offset: 0,
-        }) }),
+        design: Some(crate::records::ConstructionRecipeDesign {
+            id: crate::records::RecordedValue {
+                value: "301".into(),
+                offset: None,
+            },
+            selector: Some(crate::records::ConstructionRecipeSelector {
+                value: 6,
+                byte_offset: 0,
+            }),
+        }),
         recipe_index: 0,
         record_index: 0,
     };
@@ -326,7 +357,10 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
     assert_eq!(operand.references.len(), 1);
     assert_eq!(operand.references[0].design_reference, 301);
     assert_eq!(operand.references[0].form, 33);
-    assert_eq!(operand.selector_tail.map(|tail| tail.value), Some([1, 0, 0, 0]));
+    assert_eq!(
+        operand.selector_tail.map(|tail| tail.value),
+        Some([1, 0, 0, 0])
+    );
     assert_eq!(operand.selector_tail.map(|tail| tail.offset), Some(208));
     assert_eq!(operand.nested_record_index, 103);
     assert_eq!(operand.next_byte_offset, next_at as u64);
@@ -372,7 +406,12 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         previous_history_state_id: None,
         previous_history_state_id_offset: None,
         reference_count_offset: 1080,
-        reference_members: crate::records::ReferenceRun::from_columns(vec![100], vec![1085], "reference_members").unwrap(),
+        reference_members: crate::records::ReferenceRun::from_columns(
+            vec![100],
+            vec![1085],
+            "reference_members",
+        )
+        .unwrap(),
         payload: crate::records::DesignFeatureKind::Fillet.into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "261".into(),
@@ -677,14 +716,20 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         record_index: 90,
         byte_offset: 900,
         class_tag: "288".into(),
-        members: vec![crate::records::Located { value: 100, offset: 926 }],
+        members: vec![crate::records::Located {
+            value: 100,
+            offset: 926,
+        }],
         lost_edge_references: vec!["f3d:Design/BulkStream.dat:lost-edge#1".into()],
 
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 921,
             auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
-            trailing_records: vec![crate::records::Located { value: 91, offset: 950 }],
+            trailing_records: vec![crate::records::Located {
+                value: 91,
+                offset: 950,
+            }],
             trailing_transforms: Vec::new(),
             trailing_dual_transforms: Vec::new(),
             trailing_flags: Vec::new(),
@@ -715,7 +760,10 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     ));
     let mut terminal_group = recovered_group.clone();
     terminal_group.lost_edge_references.clear();
-    terminal_group.members = vec![100, 104].into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect();
+    terminal_group.members = vec![100, 104]
+        .into_iter()
+        .map(|value| crate::records::Located { value, offset: 0 })
+        .collect();
     let mut terminal_resolved = proven_operand.clone();
     terminal_resolved.recipe_state_id = Some(8);
     let mut terminal_unresolved = proven_operand.clone();
@@ -817,7 +865,10 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             ]
     ));
     let mut chain_group = terminal_group.clone();
-    chain_group.members = vec![100].into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect();
+    chain_group.members = vec![100]
+        .into_iter()
+        .map(|value| crate::records::Located { value, offset: 0 })
+        .collect();
     let mut chain_recipe = recipe_unresolved.clone();
     chain_recipe.changed_boundary_edge_slots = vec![17, 18];
     let mut chain_identity = identity(100, 0, None);
@@ -868,11 +919,15 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         3
     );
     assert_eq!(
-        structured.sides[0].entries[0].topology_triplets[0].incident.map(|incident| incident.ordinal),
+        structured.sides[0].entries[0].topology_triplets[0]
+            .incident
+            .map(|incident| incident.ordinal),
         Some(3)
     );
     assert_eq!(
-        structured.sides[0].entries[0].topology_triplets[0].incident.map(|incident| incident.side),
+        structured.sides[0].entries[0].topology_triplets[0]
+            .incident
+            .map(|incident| incident.side),
         Some(crate::records::DesignTopologyIncidentSide::Following)
     );
     assert_eq!(
@@ -886,11 +941,15 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         3
     );
     assert_eq!(
-        structured.sides[0].entries[0].topology_triplets[1].incident.map(|incident| incident.ordinal),
+        structured.sides[0].entries[0].topology_triplets[1]
+            .incident
+            .map(|incident| incident.ordinal),
         Some(2)
     );
     assert_eq!(
-        structured.sides[0].entries[0].topology_triplets[1].incident.map(|incident| incident.side),
+        structured.sides[0].entries[0].topology_triplets[1]
+            .incident
+            .map(|incident| incident.side),
         Some(crate::records::DesignTopologyIncidentSide::Preceding)
     );
     assert_eq!(structured.sides[1].field_count.get(), 3);
@@ -937,7 +996,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             .expect("signed topology middle is retained");
     assert_eq!(signed_middle[0].topology_triplets[0].middle, -2);
     assert_eq!(
-        signed_middle[0].topology_triplets[0].incident.map(|incident| incident.ordinal),
+        signed_middle[0].topology_triplets[0]
+            .incident
+            .map(|incident| incident.ordinal),
         None
     );
     let signed_face = crate::design::decode::operands::face_recipe_structure(&[
@@ -950,7 +1011,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         -2
     );
     assert_eq!(
-        signed_face.sides[0].entries[0].topology_triplets[0].incident.map(|incident| incident.ordinal),
+        signed_face.sides[0].entries[0].topology_triplets[0]
+            .incident
+            .map(|incident| incident.ordinal),
         None
     );
     let postlude_face = crate::design::decode::operands::face_recipe_structure(&[
@@ -989,10 +1052,17 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     let wrap =
         crate::design::decode::operands::edge_recipe_entries(&[1, 5, 1, 0, 1, 1, 1, 1]).unwrap();
     assert_eq!(wrap[0].topology_triplets[0].vertex_ordinal(), 0);
-    assert_eq!(wrap[0].topology_triplets[0].incident.map(|incident| incident.ordinal), Some(4));
+    assert_eq!(
+        wrap[0].topology_triplets[0]
+            .incident
+            .map(|incident| incident.ordinal),
+        Some(4)
+    );
     assert_eq!(wrap[0].common_incident_edge_ordinal(), None);
     assert_eq!(
-        wrap[0].topology_triplets[0].incident.map(|incident| incident.side),
+        wrap[0].topology_triplets[0]
+            .incident
+            .map(|incident| incident.side),
         Some(crate::records::DesignTopologyIncidentSide::Preceding)
     );
     let common =
@@ -1002,10 +1072,17 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         crate::design::decode::operands::edge_recipe_entries(&[0, 6, 6, 4, 6, 1, 1, 1]).unwrap();
     assert_eq!(underived[0].topology_triplets[0].vertex_ordinal(), 5);
     assert_eq!(
-        underived[0].topology_triplets[0].incident.map(|incident| incident.ordinal),
+        underived[0].topology_triplets[0]
+            .incident
+            .map(|incident| incident.ordinal),
         None
     );
-    assert_eq!(underived[0].topology_triplets[0].incident.map(|incident| incident.side), None);
+    assert_eq!(
+        underived[0].topology_triplets[0]
+            .incident
+            .map(|incident| incident.side),
+        None
+    );
     assert_eq!(
         crate::design::decode::operands::edge_recipe_entries(&[3, 5, 1, 1, 1, 2, 1, 2]).unwrap()[0]
             .selector,
@@ -1132,7 +1209,10 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     surface_patch_operand.recipe_state_id = Some(8);
     surface_patch_operand.resolved_edge_slot = Some(17);
     let mut surface_patch_group = terminal_group.clone();
-    surface_patch_group.members = vec![100].into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect();
+    surface_patch_group.members = vec![100]
+        .into_iter()
+        .map(|value| crate::records::Located { value, offset: 0 })
+        .collect();
     let surface_selection = crate::design::edge_resolve::resolved_edge_group(
         &surface_patch_group,
         std::slice::from_ref(&surface_patch_group),
@@ -1328,7 +1408,11 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         Some(FaceRecipeProgramKind::Counted { header_value: 4 })
     );
     assert_eq!(
-        operand.recipe_nodes.iter().map(|node| node.byte_offset).collect::<Vec<_>>(),
+        operand
+            .recipe_nodes
+            .iter()
+            .map(|node| node.byte_offset)
+            .collect::<Vec<_>>(),
         [
             face_recipe_name_at as u64 + 36,
             face_recipe_name_at as u64 + 52,
@@ -1532,13 +1616,19 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         record_index: 90,
         byte_offset: 900,
         class_tag: "306".into(),
-        members: vec![crate::records::Located { value: operand.record_index, offset: 924 }],
+        members: vec![crate::records::Located {
+            value: operand.record_index,
+            offset: 924,
+        }],
         lost_edge_references: Vec::new(),
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 920,
             auxiliary_records: Vec::new(),
             auxiliary_paths: Vec::new(),
-            trailing_records: vec![crate::records::Located { value: 91, offset: 935 }],
+            trailing_records: vec![crate::records::Located {
+                value: 91,
+                offset: 935,
+            }],
             trailing_transforms: Vec::new(),
             trailing_dual_transforms: Vec::new(),
             trailing_flags: Vec::new(),
@@ -1684,7 +1774,10 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     let mut split_group = group.clone();
     split_group.scope_reference_ordinal = 2;
     split_group.role = 0x0000_0010_0000_0000;
-    split_group.members = vec![operand.record_index, operand.record_index + 1].into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect();
+    split_group.members = vec![operand.record_index, operand.record_index + 1]
+        .into_iter()
+        .map(|value| crate::records::Located { value, offset: 0 })
+        .collect();
     let mut split_selected = operand.clone();
     split_selected.group = Some(crate::records::DesignOperandGroup {
         group_record_index: split_group.record_index,

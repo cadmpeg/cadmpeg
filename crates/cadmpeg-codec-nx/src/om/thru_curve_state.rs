@@ -6,7 +6,10 @@ use super::branch_items::BranchItems;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ThruCurveBranchItems<T> {
     Standard(BranchItems<T>),
-    Extended { members: [T; 4], values: [[u8; 4]; 2] },
+    Extended {
+        members: [T; 4],
+        values: [[u8; 4]; 2],
+    },
 }
 
 impl<T> ThruCurveBranchItems<T> {
@@ -15,40 +18,65 @@ impl<T> ThruCurveBranchItems<T> {
             return BranchItems::new(members).map(Self::Standard);
         }
         if let [0, 0, 0, 0, 1, 5, a, b, c, d, 1, 5, e, f, g, h, 0, 0] = lane {
-            let members = members.try_into().map_err(|_| "state_lane extended form requires four members")?;
-            return Ok(Self::Extended { members, values: [[*a, *b, *c, *d], [*e, *f, *g, *h]] });
+            let members = members
+                .try_into()
+                .map_err(|_| "state_lane extended form requires four members")?;
+            return Ok(Self::Extended {
+                members,
+                values: [[*a, *b, *c, *d], [*e, *f, *g, *h]],
+            });
         }
         Err("state_lane must be the member-count-sized zero lane or the four-member extended lane")
     }
 
     pub(crate) fn as_slice(&self) -> &[T] {
-        match self { Self::Standard(members) => members.as_slice(), Self::Extended { members, .. } => members }
+        match self {
+            Self::Standard(members) => members.as_slice(),
+            Self::Extended { members, .. } => members,
+        }
     }
 
-    pub(crate) fn len(&self) -> usize { self.as_slice().len() }
+    pub(crate) fn len(&self) -> usize {
+        self.as_slice().len()
+    }
 
     pub(crate) fn declared_count(&self) -> u8 {
-        match self { Self::Standard(members) => members.declared_count(), Self::Extended { .. } => 5 }
+        match self {
+            Self::Standard(members) => members.declared_count(),
+            Self::Extended { .. } => 5,
+        }
     }
 
     pub(crate) fn state_lane(&self) -> Vec<u8> {
         match self {
             Self::Standard(members) => [0; 258][..members.len() + 4].to_vec(),
-            Self::Extended { values: [[a, b, c, d], [e, f, g, h]], .. } =>
-                vec![0, 0, 0, 0, 1, 5, *a, *b, *c, *d, 1, 5, *e, *f, *g, *h, 0, 0],
+            Self::Extended {
+                values: [[a, b, c, d], [e, f, g, h]],
+                ..
+            } => vec![0, 0, 0, 0, 1, 5, *a, *b, *c, *d, 1, 5, *e, *f, *g, *h, 0, 0],
         }
     }
 
     pub(crate) fn into_members(self) -> Vec<T> {
-        match self { Self::Standard(members) => members.into_vec(), Self::Extended { members, .. } => members.into() }
+        match self {
+            Self::Standard(members) => members.into_vec(),
+            Self::Extended { members, .. } => members.into(),
+        }
     }
 
-    pub(crate) fn map_indexed<U>(self, mut f: impl FnMut(usize, T) -> U) -> ThruCurveBranchItems<U> {
+    pub(crate) fn map_indexed<U>(
+        self,
+        mut f: impl FnMut(usize, T) -> U,
+    ) -> ThruCurveBranchItems<U> {
         match self {
             Self::Standard(members) => ThruCurveBranchItems::Standard(members.map_indexed(f)),
             Self::Extended { members, values } => {
                 let mut index = 0;
-                let members = members.map(|member| { let mapped = f(index, member); index += 1; mapped });
+                let members = members.map(|member| {
+                    let mapped = f(index, member);
+                    index += 1;
+                    mapped
+                });
                 ThruCurveBranchItems::Extended { members, values }
             }
         }

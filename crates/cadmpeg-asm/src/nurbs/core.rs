@@ -9,10 +9,11 @@
 
 use crate::kernel_header::RefWidth;
 use crate::nurbs::reader::{
-    INT_WIDTHS, KnotLayout, LEN_TO_MM, construction_marker_positions, is_periodic, marker_at,
-    marker_positions, owned_marker_positions, read_control_points, read_knots, take_tagged_int,
+    construction_marker_positions, is_periodic, marker_at, marker_positions,
+    owned_marker_positions, read_control_points, read_knots, take_tagged_int, KnotLayout,
+    INT_WIDTHS, LEN_TO_MM,
 };
-use crate::nurbs::subtypes::{SubtypeTables, decode_cache_resolving_refs};
+use crate::nurbs::subtypes::{decode_cache_resolving_refs, SubtypeTables};
 use crate::nurbs::toks;
 use crate::nurbs::toks::Cur;
 use crate::sab::Token;

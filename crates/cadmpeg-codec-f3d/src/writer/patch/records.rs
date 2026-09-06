@@ -44,12 +44,22 @@ pub(crate) fn patch_material_assignments(
         )?;
         if let Some(field) = &assignment.physical_token {
             if let Some(offset) = field.offset {
-                patch_utf16_if_changed(bytes, offset, &field.value, "material-assignment physical token")?;
+                patch_utf16_if_changed(
+                    bytes,
+                    offset,
+                    &field.value,
+                    "material-assignment physical token",
+                )?;
             }
         }
         if let Some(field) = &assignment.visual_preset {
             if let Some(offset) = field.offset {
-                patch_utf16_if_changed(bytes, offset, &field.value, "material-assignment visual preset")?;
+                patch_utf16_if_changed(
+                    bytes,
+                    offset,
+                    &field.value,
+                    "material-assignment visual preset",
+                )?;
             }
         }
     }
@@ -93,17 +103,18 @@ pub(crate) fn patch_act_entities(bytes: &mut [u8], edits: &[ActEntity]) -> Resul
         {
             patch_bytes_at(bytes, offset, &encoded_id, "ACT entity id")?;
         }
-        for guid in entity.channel_group().into_iter().flat_map(|group| group.channels.values()) {
-            let encoded = guid.value.as_str()
+        for guid in entity
+            .channel_group()
+            .into_iter()
+            .flat_map(|group| group.channels.values())
+        {
+            let encoded = guid
+                .value
+                .as_str()
                 .encode_utf16()
                 .flat_map(u16::to_le_bytes)
                 .collect::<Vec<_>>();
-            patch_bytes_at(
-                bytes,
-                guid.offset,
-                &encoded,
-                "ACT channel GUID",
-            )?;
+            patch_bytes_at(bytes, guid.offset, &encoded, "ACT channel GUID")?;
         }
     }
     Ok(())
@@ -612,20 +623,23 @@ pub(crate) fn patch_sketch_curves(
                         "F3D compact planar-line edits require the implicit +Z normal".into(),
                     ));
                 }
-                ([
-                line_start.x / LEN_TO_MM,
-                line_start.y / LEN_TO_MM,
-                line_start.z / LEN_TO_MM,
-                (end.x - line_start.x) / LEN_TO_MM,
-                (end.y - line_start.y) / LEN_TO_MM,
-                (end.z - line_start.z) / LEN_TO_MM,
-                direction.x,
-                direction.y,
-                direction.z,
-                normal.x,
-                normal.y,
-                normal.z,
-            ], scalar_count)
+                (
+                    [
+                        line_start.x / LEN_TO_MM,
+                        line_start.y / LEN_TO_MM,
+                        line_start.z / LEN_TO_MM,
+                        (end.x - line_start.x) / LEN_TO_MM,
+                        (end.y - line_start.y) / LEN_TO_MM,
+                        (end.z - line_start.z) / LEN_TO_MM,
+                        direction.x,
+                        direction.y,
+                        direction.z,
+                        normal.x,
+                        normal.y,
+                        normal.z,
+                    ],
+                    scalar_count,
+                )
             }
             SketchCurveGeometry::Arc {
                 center,
@@ -634,21 +648,29 @@ pub(crate) fn patch_sketch_curves(
                 radius,
                 start_angle,
                 end_angle,
-            } => ([
-                center.x / LEN_TO_MM,
-                center.y / LEN_TO_MM,
-                center.z / LEN_TO_MM,
-                normal.x,
-                normal.y,
-                normal.z,
-                reference_direction.x,
-                reference_direction.y,
-                reference_direction.z,
-                radius / LEN_TO_MM,
-                *start_angle,
-                *end_angle,
-            ], 12),
-            SketchCurveGeometry::Nurbs { fit_tolerance, knots, poles, .. } => {
+            } => (
+                [
+                    center.x / LEN_TO_MM,
+                    center.y / LEN_TO_MM,
+                    center.z / LEN_TO_MM,
+                    normal.x,
+                    normal.y,
+                    normal.z,
+                    reference_direction.x,
+                    reference_direction.y,
+                    reference_direction.z,
+                    radius / LEN_TO_MM,
+                    *start_angle,
+                    *end_angle,
+                ],
+                12,
+            ),
+            SketchCurveGeometry::Nurbs {
+                fit_tolerance,
+                knots,
+                poles,
+                ..
+            } => {
                 patch_sketch_nurbs(bytes, start, *fit_tolerance, knots, poles)?;
                 continue;
             }

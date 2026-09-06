@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(unused_imports)]
 
-use crate::om::scalar_pair::{PairPosition, SketchPairForm};
 use super::*;
+use crate::om::scalar_pair::{PairPosition, SketchPairForm};
 
 #[test]
 fn sketch_fixed_points_require_one_owned_finite_point_pair() {
@@ -37,12 +37,16 @@ fn sketch_fixed_points_require_one_owned_finite_point_pair() {
         operation_label: "sketch".to_string(),
         construction_payload: "payload".to_string(),
         ordinal: 0,
-        values: [[0; 7], [8, 0, 0, 0, 0, 0, 0]].map(crate::om::sketch_scalar::SketchScaledAtom::from_raw),
+        values: [[0; 7], [8, 0, 0, 0, 0, 0, 0]]
+            .map(crate::om::sketch_scalar::SketchScaledAtom::from_raw),
         position: PairPosition::new(form, 20).unwrap(),
         source_offset: 1020,
         value_source_offsets: [1028, 1037],
     };
-    let pairs = [pair("pair-1", SketchPairForm::Legacy), pair("pair-2", SketchPairForm::Short)];
+    let pairs = [
+        pair("pair-1", SketchPairForm::Legacy),
+        pair("pair-2", SketchPairForm::Short),
+    ];
     assert!(feature_sketch_fixed_points(&[record], std::slice::from_ref(&name), &pairs).is_empty());
 
     let mut foreign = pairs[0].clone();
@@ -130,5 +134,4 @@ fn sketch_points_require_owned_finite_scalar_fields() {
         &[foreign, scalars[1].clone()]
     )
     .is_empty());
-
 }

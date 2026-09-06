@@ -444,7 +444,8 @@ pub(crate) fn writer_round_trips_product_body_ownership() {
             native_ref: None,
         });
     ir.model.occurrences.push(cadmpeg_ir::products::Occurrence {
-        id: cadmpeg_ir::ids::OccurrenceId::mint("test:model:occurrence#root-0").expect("identity grammar"),
+        id: cadmpeg_ir::ids::OccurrenceId::mint("test:model:occurrence#root-0")
+            .expect("identity grammar"),
         prototype: cadmpeg_ir::products::PrototypeReference::Local {
             definition: product,
         },
@@ -1102,7 +1103,12 @@ fn analytic_surfaces_map_to_their_step_entities() {
         });
         // Surfaces alone aren't reachable from a shell, so they won't be emitted
         // by the topology walk; emit directly via the geometry module instead.
-        let s = emit_surface_only(ir.model.surfaces[0].geometry.solved_cache().unwrap_or(&ir.model.surfaces[0].geometry));
+        let s = emit_surface_only(
+            ir.model.surfaces[0]
+                .geometry
+                .solved_cache()
+                .unwrap_or(&ir.model.surfaces[0].geometry),
+        );
         assert!(s.contains(kw), "missing {kw} in {s}");
     }
 }

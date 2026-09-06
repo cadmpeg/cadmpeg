@@ -74,6 +74,7 @@
 //! and attachment tier (record families, feature semantics, and IR writing) is
 //! crate-internal and reached only through the decode entry point.
 
+mod canonical_uuid;
 pub(crate) mod container;
 pub(crate) mod decode;
 pub(crate) mod deltas;
@@ -93,9 +94,8 @@ pub(crate) mod nurbs;
 pub(crate) mod om;
 pub(crate) mod om_tokens;
 pub(crate) mod parasolid;
-mod printable_string;
-mod canonical_uuid;
 mod payload_text;
+mod printable_string;
 pub(crate) mod topology;
 mod vec3_at;
 

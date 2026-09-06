@@ -184,7 +184,9 @@ fn remove_body_requires_resolved_bodies_and_a_retention_mode() {
     use cadmpeg_ir::ids::BodyId;
 
     let complete = FeatureDefinition::DeleteBody {
-        bodies: BodySelection::Bodies(vec![BodyId::mint("test:model:body#1").expect("identity grammar")]),
+        bodies: BodySelection::Bodies(vec![
+            BodyId::mint("test:model:body#1").expect("identity grammar")
+        ]),
         mode: BodyRetentionMode::DeleteSelected,
     };
     assert!(!feature_definition_is_incomplete(&complete));
@@ -197,7 +199,9 @@ fn remove_body_requires_resolved_bodies_and_a_retention_mode() {
     ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::DeleteBody {
-            bodies: BodySelection::Bodies(vec![BodyId::mint("test:model:body#1").expect("identity grammar")]),
+            bodies: BodySelection::Bodies(vec![
+                BodyId::mint("test:model:body#1").expect("identity grammar")
+            ]),
             mode: BodyRetentionMode::Unresolved,
         }
     ));
@@ -211,7 +215,8 @@ fn product_feature_definitions_require_neutral_reference_ids() {
 
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::InsertComponent {
-            occurrence: OccurrenceId::mint("model:test:occurrence#component").expect("identity grammar"),
+            occurrence: OccurrenceId::mint("model:test:occurrence#component")
+                .expect("identity grammar"),
         }
     ));
     assert!(!feature_definition_is_incomplete(

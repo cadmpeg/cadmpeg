@@ -133,7 +133,9 @@ fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
     ir.model
         .semantic_annotations
         .push(cadmpeg_ir::semantic_annotations::SemanticAnnotation {
-            id: cadmpeg_ir::semantic_annotations::SemanticAnnotationId("test:model:semantic#note".into()),
+            id: cadmpeg_ir::semantic_annotations::SemanticAnnotationId(
+                "test:model:semantic#note".into(),
+            ),
             object: "note".into(),
             kind: cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text,
             runtime_type: "TextNote".into(),
@@ -310,7 +312,8 @@ fn writer_reports_edge_loop_without_a_continuous_ordering() {
         .iter_mut()
         .find(|edge| edge.id == edge_id)
         .expect("loop edge exists")
-        .start = cadmpeg_ir::ids::VertexId::mint("test:model:vertex#missing-loop-vertex").expect("identity grammar");
+        .start = cadmpeg_ir::ids::VertexId::mint("test:model:vertex#missing-loop-vertex")
+        .expect("identity grammar");
 
     let report = write_step(
         &source,
@@ -422,7 +425,8 @@ fn writer_reports_occurrence_with_parent_without_local_product() {
         native_ref: None,
     });
     ir.model.occurrences.push(cadmpeg_ir::products::Occurrence {
-        id: cadmpeg_ir::ids::OccurrenceId::mint("test:model:occurrence#local-child").expect("identity grammar"),
+        id: cadmpeg_ir::ids::OccurrenceId::mint("test:model:occurrence#local-child")
+            .expect("identity grammar"),
         prototype: cadmpeg_ir::products::PrototypeReference::Local {
             definition: product,
         },
@@ -500,7 +504,10 @@ fn writer_reports_wire_region_without_connected_edges() {
     ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Wire;
     ir.model.shells[0].faces.clear();
     ir.model.shells[0].wire_edges =
-        vec![cadmpeg_ir::ids::EdgeId::mint("test:model:edge#missing-edge").expect("identity grammar")];
+        vec![
+            cadmpeg_ir::ids::EdgeId::mint("test:model:edge#missing-edge")
+                .expect("identity grammar"),
+        ];
 
     let report = write_step(
         &ir,
@@ -522,7 +529,10 @@ fn writer_reports_wire_region_with_missing_shell_record() {
     let mut ir = unit_cube();
     ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Wire;
     ir.model.regions[0].shells =
-        vec![cadmpeg_ir::ids::ShellId::mint("test:model:shell#missing-shell").expect("identity grammar")];
+        vec![
+            cadmpeg_ir::ids::ShellId::mint("test:model:shell#missing-shell")
+                .expect("identity grammar"),
+        ];
 
     let report = write_step(
         &ir,
@@ -785,7 +795,8 @@ fn writer_reports_reduced_tessellation_metadata_and_body_links() {
         )
         .expect("valid tessellation")
         .with_body(Some(
-            cadmpeg_ir::ids::BodyId::mint("test:model:body#test:missing-body").expect("identity grammar"),
+            cadmpeg_ir::ids::BodyId::mint("test:model:body#test:missing-body")
+                .expect("identity grammar"),
         ))
         .with_faces(vec![ir.model.faces[0].id.clone()])
         .with_chordal_deflection(Some(0.01)),
@@ -1525,7 +1536,8 @@ fn procedural_construction_reduction_is_reported() {
     let mut ir = unit_cube();
     let owner = ir.model.curves[0].id.clone();
     let procedural = cadmpeg_ir::geometry::ProceduralCurve::try_new(
-        ProceduralCurveId::mint("test:model:procedural-curve#generated_int_cur").expect("identity grammar"),
+        ProceduralCurveId::mint("test:model:procedural-curve#generated_int_cur")
+            .expect("identity grammar"),
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection {
             context: cadmpeg_ir::geometry::IntcurveSupportContext {
                 sides: std::array::from_fn(|_| cadmpeg_ir::geometry::IntcurveSupportSide {

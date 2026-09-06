@@ -397,11 +397,19 @@ fn legacy_coil_placement_identity_fixture() -> (Vec<u8>, DesignParameterScope, u
 fn compact_coil_spiral_placement_fixture() -> (Vec<u8>, DesignParameterScope, usize) {
     let (bytes, mut scope, transform_start) = compact_coil_placement_fixture(None);
     scope.frame_length = 411;
-    scope.reference_members = { let mut values: Vec<u32> = scope.reference_members.values().copied().collect(); values.pop(); crate::records::ReferenceRun::Unlocated(values) };
+    scope.reference_members = {
+        let mut values: Vec<u32> = scope.reference_members.values().copied().collect();
+        values.pop();
+        crate::records::ReferenceRun::Unlocated(values)
+    };
     if let crate::records::DesignScopePayload::SpirePrimitive(slot)
     | crate::records::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
     {
-        slot.get_or_insert_with(Default::default).coil_extent = Some(crate::records::RecordedValue { value: DesignCoilExtent::Spiral, offset: None });
+        slot.get_or_insert_with(Default::default).coil_extent =
+            Some(crate::records::RecordedValue {
+                value: DesignCoilExtent::Spiral,
+                offset: None,
+            });
     }
     (bytes, scope, transform_start)
 }
@@ -471,7 +479,13 @@ fn compact_coil_face_selection_fixture() -> (Vec<u8>, DesignParameterScope, Vec<
         byte_offset: recipe_byte_offset as u64,
         record_index_offset: None,
         kind: ConstructionRecipeKind::Face,
-        design: Some(crate::records::ConstructionRecipeDesign { id: crate::records::RecordedValue { value: "body".into(), offset: None }, selector: None }),
+        design: Some(crate::records::ConstructionRecipeDesign {
+            id: crate::records::RecordedValue {
+                value: "body".into(),
+                offset: None,
+            },
+            selector: None,
+        }),
         recipe_index: 0,
         record_index: 103,
     }];
@@ -504,7 +518,10 @@ fn compact_coil_placement_accepts_identity_and_matrix_frames() {
                 context_id: "22222222-2222-4222-8222-222222222222".into(),
                 identity_record_index: 103,
                 primary_identity: 1331,
-                secondary: Some(crate::records::DesignSecondaryIdentity { identity: 183, curve_identity: None }),
+                secondary: Some(crate::records::DesignSecondaryIdentity {
+                    identity: 183,
+                    curve_identity: None
+                }),
             }
         );
         assert_eq!(
@@ -585,7 +602,10 @@ fn compact_coil_placement_accepts_owner_referenced_identity_frame() {
             [0.0, 0.0, 0.0, 1.0],
         ]
     );
-    assert_eq!(placement.explicit_transform.map(|matrix| matrix.offset), None);
+    assert_eq!(
+        placement.explicit_transform.map(|matrix| matrix.offset),
+        None
+    );
     assert_eq!(
         placement.transform_record_byte_offset,
         transform_start as u64
@@ -599,7 +619,10 @@ fn legacy_coil_placement_accepts_identity_frame() {
         .expect("legacy Coil placement");
     assert_eq!(placement.selection_record_index, 100);
     assert_eq!(placement.transform_record_index, 200);
-    assert_eq!(placement.explicit_transform.map(|matrix| matrix.offset), None);
+    assert_eq!(
+        placement.explicit_transform.map(|matrix| matrix.offset),
+        None
+    );
     assert_eq!(
         placement.transform_record_byte_offset,
         transform_start as u64
@@ -659,7 +682,10 @@ fn compact_coil_seven_reference_form_requires_spiral_extent() {
     | crate::records::DesignScopePayload::CoilPrimitive(slot) = &mut scope.payload
     {
         slot.get_or_insert_with(Default::default).coil_extent =
-            Some(crate::records::RecordedValue { value: DesignCoilExtent::RevolutionsHeight, offset: None });
+            Some(crate::records::RecordedValue {
+                value: DesignCoilExtent::RevolutionsHeight,
+                offset: None,
+            });
     }
     assert_eq!(
         exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
@@ -716,7 +742,10 @@ fn compact_coil_placement_accepts_face_recipe_selection() {
             recipe_record_byte_offset: recipes[0].byte_offset - 15,
             recipe_id: recipes[0].id.clone(),
             recipe_kind: crate::records::DesignFaceRecipeKind::Face,
-            design: Some(crate::records::ConstructionRecipeDesign { id: "body".into(), selector: None }),
+            design: Some(crate::records::ConstructionRecipeDesign {
+                id: "body".into(),
+                selector: None
+            }),
         }
     );
 }
@@ -907,7 +936,11 @@ fn hole_point_stream_version(version: u32) -> (Vec<u8>, DesignParameterScope, us
         crate::records::DesignFeatureKind::Hole,
         12,
     );
-    scope.reference_members = { let mut values: Vec<u32> = scope.reference_members.values().copied().collect(); values.push(55); crate::records::ReferenceRun::Unlocated(values) };
+    scope.reference_members = {
+        let mut values: Vec<u32> = scope.reference_members.values().copied().collect();
+        values.push(55);
+        crate::records::ReferenceRun::Unlocated(values)
+    };
     (bytes, scope, position_at, input_reference_at)
 }
 
@@ -931,7 +964,13 @@ fn hole_construction_reads_the_versioned_point_and_direction_carrier() {
     assert_eq!(construction.direction_offset, (position_at + 24) as u64);
     assert_f64_array(construction.point_parameters, [0.125, -0.25]);
     assert_eq!(construction.reference_type, 19);
-    assert_eq!(construction.tangent_point_data.as_ref().map(|tangent| tangent.prefix), Some(0x7f));
+    assert_eq!(
+        construction
+            .tangent_point_data
+            .as_ref()
+            .map(|tangent| tangent.prefix),
+        Some(0x7f)
+    );
     assert_f64_array(
         construction
             .tangent_point_data
@@ -940,9 +979,20 @@ fn hole_construction_reads_the_versioned_point_and_direction_carrier() {
             .expect("version-four tangent point data"),
         [-1.0, -1.0, -1.0],
     );
-    assert_eq!(construction.input_records.iter().map(|reference| reference.value).collect::<Vec<_>>(), [378]);
     assert_eq!(
-        construction.input_records.iter().map(|reference| reference.offset).collect::<Vec<_>>(),
+        construction
+            .input_records
+            .iter()
+            .map(|reference| reference.value)
+            .collect::<Vec<_>>(),
+        [378]
+    );
+    assert_eq!(
+        construction
+            .input_records
+            .iter()
+            .map(|reference| reference.offset)
+            .collect::<Vec<_>>(),
         [(input_reference_at + 1) as u64]
     );
 }
@@ -965,12 +1015,35 @@ fn hole_construction_reads_the_legacy_point_and_direction_carrier_without_tangen
     assert_f64_array(construction.direction, [0.0, 0.0, 1.0]);
     assert_f64_array(construction.point_parameters, [0.125, -0.25]);
     assert_eq!(construction.reference_type, 19);
-    assert_eq!(construction.tangent_point_data.as_ref().map(|tangent| tangent.prefix), None);
-    assert_eq!(construction.tangent_point_data, None);
-    assert_eq!(construction.tangent_point_data.as_ref().map(|tangent| tangent.data.offset), None);
-    assert_eq!(construction.input_records.iter().map(|reference| reference.value).collect::<Vec<_>>(), [378]);
     assert_eq!(
-        construction.input_records.iter().map(|reference| reference.offset).collect::<Vec<_>>(),
+        construction
+            .tangent_point_data
+            .as_ref()
+            .map(|tangent| tangent.prefix),
+        None
+    );
+    assert_eq!(construction.tangent_point_data, None);
+    assert_eq!(
+        construction
+            .tangent_point_data
+            .as_ref()
+            .map(|tangent| tangent.data.offset),
+        None
+    );
+    assert_eq!(
+        construction
+            .input_records
+            .iter()
+            .map(|reference| reference.value)
+            .collect::<Vec<_>>(),
+        [378]
+    );
+    assert_eq!(
+        construction
+            .input_records
+            .iter()
+            .map(|reference| reference.offset)
+            .collect::<Vec<_>>(),
         [(input_reference_at + 1) as u64]
     );
 }
@@ -1004,7 +1077,11 @@ fn hole_face_selection_reads_the_direct_persistent_identity_envelope() {
         crate::records::DesignFeatureKind::Hole,
         12,
     );
-    scope.reference_members = { let mut values: Vec<u32> = scope.reference_members.values().copied().collect(); values.push(100); crate::records::ReferenceRun::Unlocated(values) };
+    scope.reference_members = {
+        let mut values: Vec<u32> = scope.reference_members.values().copied().collect();
+        values.push(100);
+        crate::records::ReferenceRun::Unlocated(values)
+    };
     let selection = exact_hole_face_selection(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -1214,10 +1291,13 @@ fn work_point_rule_codes_select_typed_input_arities() {
         assert_eq!(u32::try_from(frame.rule.inputs().len()).unwrap(), arity);
         assert!(match frame.rule.form() {
             crate::records::DesignWorkPointRuleForm::CircleCenter { .. } => reference_type == 5,
-            crate::records::DesignWorkPointRuleForm::TwoEdgeIntersection { .. } => reference_type == 7,
-            crate::records::DesignWorkPointRuleForm::ThreePlaneIntersection { .. } => reference_type == 8,
+            crate::records::DesignWorkPointRuleForm::TwoEdgeIntersection { .. } =>
+                reference_type == 7,
+            crate::records::DesignWorkPointRuleForm::ThreePlaneIntersection { .. } =>
+                reference_type == 8,
             crate::records::DesignWorkPointRuleForm::Vertex { .. } => reference_type == 10,
-            crate::records::DesignWorkPointRuleForm::EdgePlaneIntersection { .. } => reference_type == 14,
+            crate::records::DesignWorkPointRuleForm::EdgePlaneIntersection { .. } =>
+                reference_type == 14,
             crate::records::DesignWorkPointRuleForm::DistanceOnEdge { .. } => reference_type == 20,
             crate::records::DesignWorkPointRuleForm::Native { .. } => false,
         });

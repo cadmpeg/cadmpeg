@@ -261,7 +261,8 @@ fn encode_emits_the_legacy_plane_target_for_4_0_and_5_0() {
     for version in [IgesVersion::V4_0, IgesVersion::V5_0] {
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
-            id: SurfaceId::mint(format!("test:model:surface#{version:?}")).expect("identity grammar"),
+            id: SurfaceId::mint(format!("test:model:surface#{version:?}"))
+                .expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(4.0, 5.0, 6.0),
                 normal: Vector3::new(1.0, 0.0, 0.0),
@@ -289,7 +290,10 @@ fn encode_emits_the_legacy_plane_target_for_4_0_and_5_0() {
             origin,
             normal,
             u_axis,
-        } = decoded.ir().model.surfaces[0].geometry.solved_cache().unwrap_or(&decoded.ir().model.surfaces[0].geometry)
+        } = decoded.ir().model.surfaces[0]
+            .geometry
+            .solved_cache()
+            .unwrap_or(&decoded.ir().model.surfaces[0].geometry)
         else {
             panic!("{version:?}: expected a decoded plane");
         };
@@ -425,7 +429,10 @@ fn encode_regenerates_a_finite_line_from_neutral_ir() {
     assert_eq!(round_trip.ir().model.curves.len(), 1);
     assert_eq!(round_trip.ir().model.edges.len(), 1);
     assert!(matches!(
-        *round_trip.ir().model.curves[0].geometry.solved_cache().unwrap_or(&round_trip.ir().model.curves[0].geometry),
+        *round_trip.ir().model.curves[0]
+            .geometry
+            .solved_cache()
+            .unwrap_or(&round_trip.ir().model.curves[0].geometry),
         CurveGeometry::Line { .. }
     ));
     assert!(round_trip.report().losses.is_empty());
@@ -701,12 +708,10 @@ fn encode_reduces_exact_procedural_carriers_to_solved_geometry() {
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     assert_eq!(round_trip.ir().model.surfaces.len(), 1);
-    assert!(round_trip
-        .ir()
-        .model
-        .curves
-        .iter()
-        .any(|curve| matches!(*curve.geometry.solved_cache().unwrap_or(&curve.geometry), CurveGeometry::Nurbs(_))));
+    assert!(round_trip.ir().model.curves.iter().any(|curve| matches!(
+        *curve.geometry.solved_cache().unwrap_or(&curve.geometry),
+        CurveGeometry::Nurbs(_)
+    )));
     assert!(
         round_trip.report().losses.is_empty(),
         "{:#?}",
@@ -839,22 +844,34 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         Point3::new(0.0, 1.0, 0.0),
     ];
     let point_ids = (0..4)
-        .map(|index| PointId::mint(format!("test:model:point#sheet:{index}")).expect("identity grammar"))
+        .map(|index| {
+            PointId::mint(format!("test:model:point#sheet:{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let vertex_ids = (0..4)
-        .map(|index| VertexId::mint(format!("test:model:vertex#sheet:{index}")).expect("identity grammar"))
+        .map(|index| {
+            VertexId::mint(format!("test:model:vertex#sheet:{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let edge_ids = (0..4)
-        .map(|index| EdgeId::mint(format!("test:model:edge#sheet:{index}")).expect("identity grammar"))
+        .map(|index| {
+            EdgeId::mint(format!("test:model:edge#sheet:{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let curve_ids = (0..4)
-        .map(|index| CurveId::mint(format!("test:model:curve#sheet:{index}")).expect("identity grammar"))
+        .map(|index| {
+            CurveId::mint(format!("test:model:curve#sheet:{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let coedge_ids = (0..4)
-        .map(|index| CoedgeId::mint(format!("test:model:coedge#sheet:{index}")).expect("identity grammar"))
+        .map(|index| {
+            CoedgeId::mint(format!("test:model:coedge#sheet:{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let pcurve_ids = (0..4)
-        .map(|index| PcurveId::mint(format!("test:model:pcurve#sheet:{index}")).expect("identity grammar"))
+        .map(|index| {
+            PcurveId::mint(format!("test:model:pcurve#sheet:{index}")).expect("identity grammar")
+        })
         .collect::<Vec<_>>();
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
@@ -927,7 +944,8 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         }];
         if index == 0 {
             let midpoint = pcurve_end;
-            let split_pcurve_id = PcurveId::mint("test:model:pcurve#sheet:split").expect("identity grammar");
+            let split_pcurve_id =
+                PcurveId::mint("test:model:pcurve#sheet:split").expect("identity grammar");
             ir.model.pcurves.push(Pcurve {
                 id: split_pcurve_id.clone(),
                 geometry: PcurveGeometry::Nurbs {

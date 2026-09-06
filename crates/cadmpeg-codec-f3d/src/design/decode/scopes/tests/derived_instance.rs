@@ -129,7 +129,10 @@ fn fixture() -> (Vec<u8>, DesignParameterScope, DesignComponentOccurrence) {
         occurrence_guid_offset: 0,
         placement: crate::records::DesignComponentOccurrencePlacement::Explicit {
             ordinal: std::num::NonZeroU32::MIN,
-            transform: crate::records::Located { value: transform, offset: 209 },
+            transform: crate::records::Located {
+                value: transform,
+                offset: 209,
+            },
         },
     };
     (bytes, scope, occurrence)

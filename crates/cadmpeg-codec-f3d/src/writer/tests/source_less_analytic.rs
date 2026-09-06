@@ -778,12 +778,20 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
             class_tag: "305".into(),
             record_index: 700,
             source_ordinal: 0,
-            source: crate::records::DesignParameterSource::User { family_discriminator: crate::records::Located { value: crate::records::DesignParameterDiscriminator::Code0, offset: 22 } },
+            source: crate::records::DesignParameterSource::User {
+                family_discriminator: crate::records::Located {
+                    value: crate::records::DesignParameterDiscriminator::Code0,
+                    offset: 22,
+                },
+            },
             expression: "Width / 2".into(),
             expression_offset: 36,
             source_kind_offset: 70,
 
-            unit: Some(crate::records::RecordedValue { value: "mm".into(), offset: Some(110) }),
+            unit: Some(crate::records::RecordedValue {
+                value: "mm".into(),
+                offset: Some(110),
+            }),
             name: "HalfWidth".into(),
             name_offset: 120,
             evaluated_value: 3.0,
@@ -797,12 +805,20 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
             class_tag: "305".into(),
             record_index: 701,
             source_ordinal: 1,
-            source: crate::records::DesignParameterSource::User { family_discriminator: crate::records::Located { value: crate::records::DesignParameterDiscriminator::Code0, offset: 22 } },
+            source: crate::records::DesignParameterSource::User {
+                family_discriminator: crate::records::Located {
+                    value: crate::records::DesignParameterDiscriminator::Code0,
+                    offset: 22,
+                },
+            },
             expression: "60 mm".into(),
             expression_offset: 36,
             source_kind_offset: 70,
 
-            unit: Some(crate::records::RecordedValue { value: "mm".into(), offset: Some(110) }),
+            unit: Some(crate::records::RecordedValue {
+                value: "mm".into(),
+                offset: Some(110),
+            }),
             name: "Width".into(),
             name_offset: 120,
             evaluated_value: 6.0,

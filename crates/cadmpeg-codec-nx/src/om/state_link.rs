@@ -17,7 +17,9 @@ impl TryFrom<u8> for StateLinkCode {
 }
 
 impl From<StateLinkCode> for u8 {
-    fn from(value: StateLinkCode) -> Self { value.0 }
+    fn from(value: StateLinkCode) -> Self {
+        value.0
+    }
 }
 
 #[cfg(test)]
@@ -34,7 +36,9 @@ mod tests {
         }
         for code in [0x02, 0x03, 0x1e, 0x3f, 0xff] {
             assert!(serde_json::from_str::<StateLinkCode>(&code.to_string())
-                .unwrap_err().to_string().contains("link_code"));
+                .unwrap_err()
+                .to_string()
+                .contains("link_code"));
         }
     }
 }

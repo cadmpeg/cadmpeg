@@ -34,7 +34,8 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     );
     scope.history_state_id = Some(2);
     scope.previous_history_state_id = Some(1);
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![100, 200, 110, 210, 300, 301]);
+    scope.reference_members =
+        crate::records::ReferenceRun::Unlocated(vec![100, 200, 110, 210, 300, 301]);
     let group = |record_index, scope_reference_ordinal, member| DesignConstructionOperandGroup {
         id: format!("{stream}:design-construction-operand-group#{record_index}"),
         scope_record_index: 42,
@@ -42,7 +43,10 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         record_index,
         byte_offset: 0,
         class_tag: "282".into(),
-        members: vec![crate::records::Located { value: member, offset: 0 }],
+        members: vec![crate::records::Located {
+            value: member,
+            offset: 0,
+        }],
         lost_edge_references: Vec::new(),
         frame: DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
@@ -112,7 +116,9 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         bulletin_boards: Vec::new(),
         records: Vec::new(),
         entity_versions: Vec::new(),
-        topology_cache: crate::history_records::AsmTopologyCache::Complete(AsmHistoricalTopology::default()),
+        topology_cache: crate::history_records::AsmTopologyCache::Complete(
+            AsmHistoricalTopology::default(),
+        ),
         transition,
     };
     let history = AsmHistory {

@@ -23,8 +23,8 @@ use crate::native::F3dNative;
 use crate::records::{
     DesignBodyBinding, DesignDimensionLocusPair, DesignDimensionNullLocusPair,
     DesignDimensionRecipeRecord, DesignFeatureTimeline, DesignParameter, DesignParameterCompanion,
-    DesignParameterOwner, DesignParameterScope, DesignSketchPlacement,
-    LostEdgeReference, SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationKind,
+    DesignParameterOwner, DesignParameterScope, DesignSketchPlacement, LostEdgeReference,
+    SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationKind,
 };
 
 #[test]
@@ -351,7 +351,8 @@ fn face_selection_resolution_accepts_complete_generated_and_partial_members() {
     }));
     assert!(face_selection_is_resolved(
         &FaceSelection::HistoricalPartial {
-            state: FeatureInputTopologyId::mint("test:model:feature-input#state:1").expect("identity grammar"),
+            state: FeatureInputTopologyId::mint("test:model:feature-input#state:1")
+                .expect("identity grammar"),
             faces: vec![HistoricalFaceId::mint("test:model:face#1").expect("identity grammar")],
             unresolved: Vec::new(),
             native: "native:historical-face".into(),
@@ -359,7 +360,8 @@ fn face_selection_resolution_accepts_complete_generated_and_partial_members() {
     ));
     assert!(!face_selection_is_resolved(
         &FaceSelection::HistoricalPartial {
-            state: FeatureInputTopologyId::mint("test:model:feature-input#state:1").expect("identity grammar"),
+            state: FeatureInputTopologyId::mint("test:model:feature-input#state:1")
+                .expect("identity grammar"),
             faces: vec![HistoricalFaceId::mint("test:model:face#1").expect("identity grammar")],
             unresolved: vec!["native:missing-face".into()],
             native: "native:historical-face".into(),
@@ -399,7 +401,9 @@ fn filled_surface_completeness_requires_boundary_conditions_support_and_merge() 
         Some(true),
     )));
     assert!(!feature_definition_is_incomplete(&surface(
-        FaceSelection::Faces(vec![FaceId::mint("test:model:face#support").expect("identity grammar")]),
+        FaceSelection::Faces(vec![
+            FaceId::mint("test:model:face#support").expect("identity grammar")
+        ]),
         SurfaceContinuity::Curvature,
         Some(true),
     )));
@@ -839,7 +843,9 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
         construction,
         CoilResult::Boolean {
             operation: cadmpeg_ir::features::BooleanKind::Cut,
-            targets: BodySelection::Bodies(vec![BodyId::mint("test:model:body#1").expect("identity grammar")]),
+            targets: BodySelection::Bodies(vec![
+                BodyId::mint("test:model:body#1").expect("identity grammar")
+            ]),
         },
     )));
 }
@@ -1247,11 +1253,16 @@ fn design_projection_gaps_count_each_retained_selection_family() {
 
     let mut native = F3dNative::default();
     native.design_sketch_placements.push(DesignSketchPlacement {
-        frame: crate::records::DesignSketchFrame::new(0, crate::records::DesignSketchFrameForm::ScopeCompact).unwrap(),
+        frame: crate::records::DesignSketchFrame::new(
+            0,
+            crate::records::DesignSketchFrameForm::ScopeCompact,
+        )
+        .unwrap(),
 
         id: "native:sketch-placement".into(),
         scope_record_index: Some(10),
-        entity_id: crate::records::DesignEntityId::try_from("Sketch_1".to_owned()).expect("valid entity ID"),
+        entity_id: crate::records::DesignEntityId::try_from("Sketch_1".to_owned())
+            .expect("valid entity ID"),
 
         visibility: None,
 
@@ -1259,7 +1270,6 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         record_index: 10,
 
         paired_class_tag: crate::records::DesignClassTag::try_from("001".to_owned()).unwrap(),
-
     });
     native.sketch_points.push(SketchPoint {
         id: "native:sketch-point".into(),
@@ -1290,7 +1300,17 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         secondary_id: 2,
         geometry: None,
     });
-    native.lost_edge_references.push(LostEdgeReference::new("f3d:test:lost-edge-reference#2".into(), 0, "000".into(), 0, "001".into(), 1).expect("valid lost-edge record layout"));
+    native.lost_edge_references.push(
+        LostEdgeReference::new(
+            "f3d:test:lost-edge-reference#2".into(),
+            0,
+            "000".into(),
+            0,
+            "001".into(),
+            1,
+        )
+        .expect("valid lost-edge record layout"),
+    );
     native.sketch_relations.push(SketchRelation {
         id: "native:sketch-relation".into(),
         record_index: 1,
@@ -1303,7 +1323,11 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         rectangular_counted_reference_count: None,
         members: (Vec::new()).try_into().expect("uniform member resolution"),
         owner_reference_offset: 0,
-        definition: crate::records::SketchRelationDefinition::new(0, SketchRelationKind::Unpatterned).expect("valid relation definition"),
+        definition: crate::records::SketchRelationDefinition::new(
+            0,
+            SketchRelationKind::Unpatterned,
+        )
+        .expect("valid relation definition"),
         entity_genesis: None,
         return_members: (Vec::new()).try_into().expect("uniform member resolution"),
         raw_bytes: Vec::new(),
@@ -1314,12 +1338,23 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         class_tag: "000".into(),
         record_index: 2,
         source_ordinal: 2,
-        source: crate::records::DesignParameterSource::new("Linear Dimension-2".into(), Some(3), Some(crate::records::Located { value: crate::records::DesignParameterDiscriminator::Code0, offset: 0 })).unwrap(),
+        source: crate::records::DesignParameterSource::new(
+            "Linear Dimension-2".into(),
+            Some(3),
+            Some(crate::records::Located {
+                value: crate::records::DesignParameterDiscriminator::Code0,
+                offset: 0,
+            }),
+        )
+        .unwrap(),
         expression: "1 mm".into(),
         expression_offset: 0,
         source_kind_offset: 0,
 
-        unit: Some(crate::records::RecordedValue { value: "native-unit".into(), offset: Some(0) }),
+        unit: Some(crate::records::RecordedValue {
+            value: "native-unit".into(),
+            offset: Some(0),
+        }),
         name: "d2".into(),
         name_offset: 0,
         evaluated_value: 0.1,
@@ -1338,8 +1373,15 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         previous_history_state_id: None,
         previous_history_state_id_offset: None,
         reference_count_offset: 0,
-        reference_members: crate::records::ReferenceRun::from_columns(Vec::new(), Vec::new(), "reference_members").unwrap(),
-        payload: crate::records::DesignFeatureKind::try_from("Unsupported".to_owned()).expect("native family name").into(),
+        reference_members: crate::records::ReferenceRun::from_columns(
+            Vec::new(),
+            Vec::new(),
+            "reference_members",
+        )
+        .unwrap(),
+        payload: crate::records::DesignFeatureKind::try_from("Unsupported".to_owned())
+            .expect("native family name")
+            .into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "001".into(),
         paired_byte_offset: 1,
@@ -1412,8 +1454,10 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         unreachable!();
     };
     groups[2].edges = cadmpeg_ir::features::EdgeSelection::Historical {
-        state: cadmpeg_ir::ids::FeatureInputTopologyId::mint("test:model:feature-input#history-input")
-            .expect("identity grammar"),
+        state: cadmpeg_ir::ids::FeatureInputTopologyId::mint(
+            "test:model:feature-input#history-input",
+        )
+        .expect("identity grammar"),
         edges: vec![
             cadmpeg_ir::ids::HistoricalEdgeId::mint("history-edge").expect("identity grammar")
         ],
@@ -1496,8 +1540,15 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
         previous_history_state_id: previous,
         previous_history_state_id_offset: None,
         reference_count_offset: 0,
-        reference_members: crate::records::ReferenceRun::from_columns(Vec::new(), Vec::new(), "reference_members").unwrap(),
-        payload: crate::records::DesignFeatureKind::try_from("Unsupported".to_owned()).expect("native family name").into(),
+        reference_members: crate::records::ReferenceRun::from_columns(
+            Vec::new(),
+            Vec::new(),
+            "reference_members",
+        )
+        .unwrap(),
+        payload: crate::records::DesignFeatureKind::try_from("Unsupported".to_owned())
+            .expect("native family name")
+            .into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "001".into(),
         paired_byte_offset: u64::from(record_index) + 1,
@@ -1567,13 +1618,25 @@ fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scop
     successor.previous_history_state_id = Some(8);
     let scopes = vec![successor, internal, predecessor];
     let timeline = DesignFeatureTimeline {
-frame: crate::records::DesignTimelineFrame::test_items(0, vec![crate::records::Located { value: 100, offset: 0 }, crate::records::Located { value: 200, offset: 0 }]),
-id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
-class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
-record_index: std::num::NonZeroU64::new(1).unwrap(),
-source_ordinal: 0,
-context_record_index: std::num::NonZeroU64::new(2).unwrap(),
-};
+        frame: crate::records::DesignTimelineFrame::test_items(
+            0,
+            vec![
+                crate::records::Located {
+                    value: 100,
+                    offset: 0,
+                },
+                crate::records::Located {
+                    value: 200,
+                    offset: 0,
+                },
+            ],
+        ),
+        id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
+        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        record_index: std::num::NonZeroU64::new(1).unwrap(),
+        source_ordinal: 0,
+        context_record_index: std::num::NonZeroU64::new(2).unwrap(),
+    };
     let (features, _) =
         crate::design::feature_project::project_parameter_design_with_edge_identities(
             &crate::design::feature_project::ProjectInputs {
@@ -1621,12 +1684,23 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
         class_tag: "305".into(),
         record_index: 10,
         source_ordinal: 0,
-        source: crate::records::DesignParameterSource::new("Linear Dimension-2".into(), Some(20), Some(crate::records::Located { value: crate::records::DesignParameterDiscriminator::Code0, offset: 22 })).unwrap(),
+        source: crate::records::DesignParameterSource::new(
+            "Linear Dimension-2".into(),
+            Some(20),
+            Some(crate::records::Located {
+                value: crate::records::DesignParameterDiscriminator::Code0,
+                offset: 22,
+            }),
+        )
+        .unwrap(),
         expression: "5 mm".into(),
         expression_offset: 40,
         source_kind_offset: 60,
 
-        unit: Some(crate::records::RecordedValue { value: "mm".into(), offset: Some(90) }),
+        unit: Some(crate::records::RecordedValue {
+            value: "mm".into(),
+            offset: Some(90),
+        }),
         name: "d1".into(),
         name_offset: 100,
         evaluated_value: 0.5,

@@ -330,7 +330,7 @@ fn bounded_evaluable_curve(
     curve_id: &CurveId,
     tolerance: f64,
     index: &CompositeIndex,
-) -> Option<(CurveGeometry, [f64; 2])>{
+) -> Option<(CurveGeometry, [f64; 2])> {
     let curve = index.curve_by_id(ir, curve_id)?;
     let geometry = curve.geometry.solved_cache().unwrap_or(&curve.geometry);
     if matches!(

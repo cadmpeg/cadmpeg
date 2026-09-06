@@ -16,7 +16,10 @@ impl TryFrom<[f64; 3]> for PointCoordinates {
     type Error = &'static str;
 
     fn try_from(position: [f64; 3]) -> Result<Self, Self::Error> {
-        if position.iter().all(|value| *value == 0.0 || value.is_normal()) {
+        if position
+            .iter()
+            .all(|value| *value == 0.0 || value.is_normal())
+        {
             Ok(Self(position))
         } else {
             Err("position: POINT coordinates must be zero or finite normal numbers")
@@ -25,7 +28,9 @@ impl TryFrom<[f64; 3]> for PointCoordinates {
 }
 
 impl From<PointCoordinates> for [f64; 3] {
-    fn from(position: PointCoordinates) -> Self { position.0 }
+    fn from(position: PointCoordinates) -> Self {
+        position.0
+    }
 }
 
 /// Semantic family of one admitted deltas record.
@@ -51,7 +56,9 @@ pub enum RecordFamily {
         references: [u32; 8],
         node_id: u32,
     },
-    Fin { references: [u32; 9] },
+    Fin {
+        references: [u32; 9],
+    },
     Vertex {
         references: [u32; 6],
         node_id: u32,
@@ -108,7 +115,9 @@ pub enum RecordFamily {
         references: [u32; 12],
         node_id: u32,
     },
-    BlendBound { references: [u32; 7] },
+    BlendBound {
+        references: [u32; 7],
+    },
     OffsetSurf {
         references: [u32; 6],
         node_id: u32,
@@ -122,8 +131,13 @@ pub enum RecordFamily {
         trailing_reference: NonNullXmt,
         node_id: u32,
     },
-    AttdefList { slots: AttdefSlots },
-    Entity51 { leading_references: [u32; 5], trailing_references: EntityReferences },
+    AttdefList {
+        slots: AttdefSlots,
+    },
+    Entity51 {
+        leading_references: [u32; 5],
+        trailing_references: EntityReferences,
+    },
     Entity52,
     Entity53,
     Entity54,
@@ -139,9 +153,15 @@ pub enum RecordFamily {
         selector: GroupSelector,
         linked_reference_status: GroupReferenceStatus,
     },
-    IntersectionData { references: [u32; 11] },
-    Type91 { references: [u32; 6] },
-    Type101 { references: [u32; 15] },
+    IntersectionData {
+        references: [u32; 11],
+    },
+    Type91 {
+        references: [u32; 6],
+    },
+    Type101 {
+        references: [u32; 15],
+    },
     BSurface {
         references: [u32; 7],
         node_id: u32,
@@ -159,12 +179,16 @@ pub enum RecordFamily {
         node_id: u32,
     },
     BCurveData,
-    BCurveDescriptor { references: CurveDescriptorReferences },
+    BCurveDescriptor {
+        references: CurveDescriptorReferences,
+    },
     SpCurve {
         references: [u32; 8],
         node_id: u32,
     },
-    Type141 { references: [u32; 4] },
+    Type141 {
+        references: [u32; 4],
+    },
     SupportUv,
 }
 
@@ -331,11 +355,24 @@ impl RecordFamily {
             Self::BlendBound { references, .. } => references.to_vec(),
             Self::OffsetSurf { references, .. } => references.to_vec(),
             Self::Type67 { references, .. } => references.to_vec(),
-            Self::Type70 { references, trailing_reference, .. } => references.iter().copied()
-                .chain([u32::from(*trailing_reference); 2]).collect(),
+            Self::Type70 {
+                references,
+                trailing_reference,
+                ..
+            } => references
+                .iter()
+                .copied()
+                .chain([u32::from(*trailing_reference); 2])
+                .collect(),
             Self::AttdefList { slots } => std::iter::once(1).chain(slots.references()).collect(),
-            Self::Entity51 { leading_references, trailing_references } => leading_references.iter().copied()
-                .chain(trailing_references.values().iter().copied()).collect(),
+            Self::Entity51 {
+                leading_references,
+                trailing_references,
+            } => leading_references
+                .iter()
+                .copied()
+                .chain(trailing_references.values().iter().copied())
+                .collect(),
             Self::Group { references, .. } => references.to_vec(),
             Self::IntersectionData { references, .. } => references.to_vec(),
             Self::Type91 { references, .. } => references.to_vec(),
@@ -346,42 +383,126 @@ impl RecordFamily {
             Self::BCurveDescriptor { references, .. } => references.values(),
             Self::SpCurve { references, .. } => references.to_vec(),
             Self::Type141 { references, .. } => references.to_vec(),
-            Self::Chart | Self::TermUse | Self::Type45
-            | Self::Entity52 | Self::Entity53 | Self::Entity54 | Self::Entity55
-            | Self::Entity56 | Self::Entity57 | Self::Entity58 | Self::Entity59
-            | Self::Entity62 | Self::BSurfaceData | Self::BSurfaceDescriptor
-            | Self::Multiplicities | Self::Knots | Self::BCurveData | Self::SupportUv => Vec::new(),
+            Self::Chart
+            | Self::TermUse
+            | Self::Type45
+            | Self::Entity52
+            | Self::Entity53
+            | Self::Entity54
+            | Self::Entity55
+            | Self::Entity56
+            | Self::Entity57
+            | Self::Entity58
+            | Self::Entity59
+            | Self::Entity62
+            | Self::BSurfaceData
+            | Self::BSurfaceDescriptor
+            | Self::Multiplicities
+            | Self::Knots
+            | Self::BCurveData
+            | Self::SupportUv => Vec::new(),
         }
     }
 
-    pub(super) fn from_fixed(kind: u16, node_id: Option<u32>, position: Option<[f64; 3]>, references: Vec<u32>) -> Option<Self> {
+    pub(super) fn from_fixed(
+        kind: u16,
+        node_id: Option<u32>,
+        position: Option<[f64; 3]>,
+        references: Vec<u32>,
+    ) -> Option<Self> {
         Some(match kind {
-            13 => Self::Shell { references: references.try_into().ok()?, node_id: node_id? },
-            14 => Self::Face { references: references.try_into().ok()?, node_id: node_id? },
-            15 => Self::Loop { references: references.try_into().ok()?, node_id: node_id? },
-            16 => Self::Edge { references: references.try_into().ok()?, node_id: node_id? },
-            17 => Self::Fin { references: references.try_into().ok()? },
-            18 => Self::Vertex { references: references.try_into().ok()?, node_id: node_id? },
-            19 => Self::Region { references: references.try_into().ok()?, node_id: node_id? },
-            29 => Self::Point { references: references.try_into().ok()?,
+            13 => Self::Shell {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            14 => Self::Face {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            15 => Self::Loop {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            16 => Self::Edge {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            17 => Self::Fin {
+                references: references.try_into().ok()?,
+            },
+            18 => Self::Vertex {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            19 => Self::Region {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            29 => Self::Point {
+                references: references.try_into().ok()?,
                 node_id: node_id?,
                 position: position?.try_into().ok()?,
             },
-            30 => Self::Line { references: references.try_into().ok()?, node_id: node_id? },
-            31 => Self::Circle { references: references.try_into().ok()?, node_id: node_id? },
-            32 => Self::Ellipse { references: references.try_into().ok()?, node_id: node_id? },
-            38 => Self::Intersection { references: references.try_into().ok()?, node_id: node_id? },
-            50 => Self::Plane { references: references.try_into().ok()?, node_id: node_id? },
-            51 => Self::Cylinder { references: references.try_into().ok()?, node_id: node_id? },
-            52 => Self::Cone { references: references.try_into().ok()?, node_id: node_id? },
-            53 => Self::Sphere { references: references.try_into().ok()?, node_id: node_id? },
-            54 => Self::Torus { references: references.try_into().ok()?, node_id: node_id? },
-            56 => Self::BlendSurf { references: references.try_into().ok()?, node_id: node_id? },
-            60 => Self::OffsetSurf { references: references.try_into().ok()?, node_id: node_id? },
-            124 => Self::BSurface { references: references.try_into().ok()?, node_id: node_id? },
-            133 => Self::TrimmedCurve { references: references.try_into().ok()?, node_id: node_id? },
-            134 => Self::BCurve { references: references.try_into().ok()?, node_id: node_id? },
-            137 => Self::SpCurve { references: references.try_into().ok()?, node_id: node_id? },
+            30 => Self::Line {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            31 => Self::Circle {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            32 => Self::Ellipse {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            38 => Self::Intersection {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            50 => Self::Plane {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            51 => Self::Cylinder {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            52 => Self::Cone {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            53 => Self::Sphere {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            54 => Self::Torus {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            56 => Self::BlendSurf {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            60 => Self::OffsetSurf {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            124 => Self::BSurface {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            133 => Self::TrimmedCurve {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            134 => Self::BCurve {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            137 => Self::SpCurve {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
             _ => return None,
         })
     }
@@ -396,34 +517,105 @@ impl RecordFamily {
         references: Vec<u32>,
     ) -> Option<Self> {
         let family = match name {
-            "BODY" => Self::Body { references, node_id: node_id? },
-            "SHELL" => Self::Shell { references: references.try_into().ok()?, node_id: node_id? },
-            "FACE" => Self::Face { references: references.try_into().ok()?, node_id: node_id? },
-            "LOOP" => Self::Loop { references: references.try_into().ok()?, node_id: node_id? },
-            "EDGE" => Self::Edge { references: references.try_into().ok()?, node_id: node_id? },
-            "FIN" => Self::Fin { references: references.try_into().ok()? },
-            "VERTEX" => Self::Vertex { references: references.try_into().ok()?, node_id: node_id? },
-            "REGION" => Self::Region { references: references.try_into().ok()?, node_id: node_id? },
-            "POINT" => Self::Point { references: references.try_into().ok()?,
+            "BODY" => Self::Body {
+                references,
+                node_id: node_id?,
+            },
+            "SHELL" => Self::Shell {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            "FACE" => Self::Face {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            "LOOP" => Self::Loop {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            "EDGE" => Self::Edge {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            "FIN" => Self::Fin {
+                references: references.try_into().ok()?,
+            },
+            "VERTEX" => Self::Vertex {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            "REGION" => Self::Region {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            "POINT" => Self::Point {
+                references: references.try_into().ok()?,
                 node_id: node_id?,
                 position: position?,
             },
-            "LINE" => Self::Line { references: references.try_into().ok()?, node_id: node_id? },
-            "CIRCLE" => Self::Circle { references: references.try_into().ok()?, node_id: node_id? },
-            "ELLIPSE" => Self::Ellipse { references: references.try_into().ok()?, node_id: node_id? },
-            "INTERSECTION" => Self::Intersection { references: references.try_into().ok()?, node_id: node_id? },
-            "CHART" => { references.is_empty().then_some(())?; Self::Chart },
-            "TERM_USE" => { references.is_empty().then_some(())?; Self::TermUse },
-            "TYPE_45" => { references.is_empty().then_some(())?; Self::Type45 },
-            "PLANE" => Self::Plane { references: references.try_into().ok()?, node_id: node_id? },
-            "CYLINDER" => Self::Cylinder { references: references.try_into().ok()?, node_id: node_id? },
-            "CONE" => Self::Cone { references: references.try_into().ok()?, node_id: node_id? },
-            "SPHERE" => Self::Sphere { references: references.try_into().ok()?, node_id: node_id? },
-            "TORUS" => Self::Torus { references: references.try_into().ok()?, node_id: node_id? },
-            "BLEND_SURF" => Self::BlendSurf { references: references.try_into().ok()?, node_id: node_id? },
-            "BLEND_BOUND" => Self::BlendBound { references: references.try_into().ok()? },
-            "OFFSET_SURF" => Self::OffsetSurf { references: references.try_into().ok()?, node_id: node_id? },
-            "TYPE_67" => Self::Type67 { references: references.try_into().ok()?, node_id: node_id? },
+            "LINE" => Self::Line {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            "CIRCLE" => Self::Circle {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            "ELLIPSE" => Self::Ellipse {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            "INTERSECTION" => Self::Intersection {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            "CHART" => {
+                references.is_empty().then_some(())?;
+                Self::Chart
+            }
+            "TERM_USE" => {
+                references.is_empty().then_some(())?;
+                Self::TermUse
+            }
+            "TYPE_45" => {
+                references.is_empty().then_some(())?;
+                Self::Type45
+            }
+            "PLANE" => Self::Plane {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            "CYLINDER" => Self::Cylinder {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            "CONE" => Self::Cone {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            "SPHERE" => Self::Sphere {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            "TORUS" => Self::Torus {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            "BLEND_SURF" => Self::BlendSurf {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            "BLEND_BOUND" => Self::BlendBound {
+                references: references.try_into().ok()?,
+            },
+            "OFFSET_SURF" => Self::OffsetSurf {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            "TYPE_67" => Self::Type67 {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
             "TYPE_70" => {
                 let [a, b, c, d, trailing, repeated] = <[u32; 6]>::try_from(references).ok()?;
                 (trailing == repeated).then_some(())?;
@@ -432,42 +624,116 @@ impl RecordFamily {
                     trailing_reference: NonNullXmt::try_from(trailing).ok()?,
                     node_id: node_id?,
                 }
+            }
+            "ATTDEF_LIST" => Self::AttdefList {
+                slots: AttdefSlots::from_delta_references(references).ok()?,
             },
-            "ATTDEF_LIST" => Self::AttdefList { slots: AttdefSlots::from_delta_references(references).ok()? },
             "ENTITY_51" => {
                 let leading_references = references.get(..5)?.try_into().ok()?;
-                let trailing_references = EntityReferences::new(references.into_iter().skip(5).collect()).ok()?;
-                Self::Entity51 { leading_references, trailing_references }
-            },
-            "ENTITY_52" => { references.is_empty().then_some(())?; Self::Entity52 },
-            "ENTITY_53" => { references.is_empty().then_some(())?; Self::Entity53 },
-            "ENTITY_54" => { references.is_empty().then_some(())?; Self::Entity54 },
-            "ENTITY_55" => { references.is_empty().then_some(())?; Self::Entity55 },
-            "ENTITY_56" => { references.is_empty().then_some(())?; Self::Entity56 },
-            "ENTITY_57" => { references.is_empty().then_some(())?; Self::Entity57 },
-            "ENTITY_58" => { references.is_empty().then_some(())?; Self::Entity58 },
-            "ENTITY_59" => { references.is_empty().then_some(())?; Self::Entity59 },
-            "ENTITY_62" => { references.is_empty().then_some(())?; Self::Entity62 },
-            "GROUP" => Self::Group { references: references.try_into().ok()?,
+                let trailing_references =
+                    EntityReferences::new(references.into_iter().skip(5).collect()).ok()?;
+                Self::Entity51 {
+                    leading_references,
+                    trailing_references,
+                }
+            }
+            "ENTITY_52" => {
+                references.is_empty().then_some(())?;
+                Self::Entity52
+            }
+            "ENTITY_53" => {
+                references.is_empty().then_some(())?;
+                Self::Entity53
+            }
+            "ENTITY_54" => {
+                references.is_empty().then_some(())?;
+                Self::Entity54
+            }
+            "ENTITY_55" => {
+                references.is_empty().then_some(())?;
+                Self::Entity55
+            }
+            "ENTITY_56" => {
+                references.is_empty().then_some(())?;
+                Self::Entity56
+            }
+            "ENTITY_57" => {
+                references.is_empty().then_some(())?;
+                Self::Entity57
+            }
+            "ENTITY_58" => {
+                references.is_empty().then_some(())?;
+                Self::Entity58
+            }
+            "ENTITY_59" => {
+                references.is_empty().then_some(())?;
+                Self::Entity59
+            }
+            "ENTITY_62" => {
+                references.is_empty().then_some(())?;
+                Self::Entity62
+            }
+            "GROUP" => Self::Group {
+                references: references.try_into().ok()?,
                 node_id: node_id?,
                 selector: group_selector?,
                 linked_reference_status: group_linked_reference_status?,
             },
-            "INTERSECTION_DATA" => Self::IntersectionData { references: references.try_into().ok()? },
-            "TYPE_91" => Self::Type91 { references: references.try_into().ok()? },
-            "TYPE_101" => Self::Type101 { references: references.try_into().ok()? },
-            "B_SURFACE" => Self::BSurface { references: references.try_into().ok()?, node_id: node_id? },
-            "B_SURFACE_DATA" => { references.is_empty().then_some(())?; Self::BSurfaceData },
-            "B_SURFACE_DESCRIPTOR" => { references.is_empty().then_some(())?; Self::BSurfaceDescriptor },
-            "MULTIPLICITIES" => { references.is_empty().then_some(())?; Self::Multiplicities },
-            "KNOTS" => { references.is_empty().then_some(())?; Self::Knots },
-            "TRIMMED_CURVE" => Self::TrimmedCurve { references: references.try_into().ok()?, node_id: node_id? },
-            "B_CURVE" => Self::BCurve { references: references.try_into().ok()?, node_id: node_id? },
-            "B_CURVE_DATA" => { references.is_empty().then_some(())?; Self::BCurveData },
-            "B_CURVE_DESCRIPTOR" => Self::BCurveDescriptor { references: references.try_into().ok()? },
-            "SP_CURVE" => Self::SpCurve { references: references.try_into().ok()?, node_id: node_id? },
-            "TYPE_141" => Self::Type141 { references: references.try_into().ok()? },
-            "SUPPORT_UV" => { references.is_empty().then_some(())?; Self::SupportUv },
+            "INTERSECTION_DATA" => Self::IntersectionData {
+                references: references.try_into().ok()?,
+            },
+            "TYPE_91" => Self::Type91 {
+                references: references.try_into().ok()?,
+            },
+            "TYPE_101" => Self::Type101 {
+                references: references.try_into().ok()?,
+            },
+            "B_SURFACE" => Self::BSurface {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            "B_SURFACE_DATA" => {
+                references.is_empty().then_some(())?;
+                Self::BSurfaceData
+            }
+            "B_SURFACE_DESCRIPTOR" => {
+                references.is_empty().then_some(())?;
+                Self::BSurfaceDescriptor
+            }
+            "MULTIPLICITIES" => {
+                references.is_empty().then_some(())?;
+                Self::Multiplicities
+            }
+            "KNOTS" => {
+                references.is_empty().then_some(())?;
+                Self::Knots
+            }
+            "TRIMMED_CURVE" => Self::TrimmedCurve {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            "B_CURVE" => Self::BCurve {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            "B_CURVE_DATA" => {
+                references.is_empty().then_some(())?;
+                Self::BCurveData
+            }
+            "B_CURVE_DESCRIPTOR" => Self::BCurveDescriptor {
+                references: references.try_into().ok()?,
+            },
+            "SP_CURVE" => Self::SpCurve {
+                references: references.try_into().ok()?,
+                node_id: node_id?,
+            },
+            "TYPE_141" => Self::Type141 {
+                references: references.try_into().ok()?,
+            },
+            "SUPPORT_UV" => {
+                references.is_empty().then_some(())?;
+                Self::SupportUv
+            }
             _ => return None,
         };
         let group_ok = match family {
@@ -478,16 +744,10 @@ impl RecordFamily {
             Self::Point { .. } => true,
             _ => position.is_none(),
         };
-        (family.kind() == kind
-            && family.node_id() == node_id
-            && group_ok
-            && position_ok)
+        (family.kind() == kind && family.node_id() == node_id && group_ok && position_ok)
             .then_some(family)
     }
-
-
 }
-
 
 #[cfg(test)]
 mod point_coordinate_tests {
@@ -495,8 +755,16 @@ mod point_coordinate_tests {
 
     #[test]
     fn point_coordinates_reject_nonfinite_and_subnormal_values() {
-        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, f64::from_bits(1), -f64::from_bits(1)] {
-            assert!(PointCoordinates::try_from([0.0, value, 0.0]).unwrap_err().contains("position"));
+        for value in [
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::from_bits(1),
+            -f64::from_bits(1),
+        ] {
+            assert!(PointCoordinates::try_from([0.0, value, 0.0])
+                .unwrap_err()
+                .contains("position"));
         }
         for value in [0.0, -0.0, f64::MIN_POSITIVE, -f64::MIN_POSITIVE, f64::MAX] {
             let position = PointCoordinates::try_from([value, 0.0, 0.0]).unwrap();

@@ -247,12 +247,14 @@ pub(crate) fn neutral_combine_external_body_id(
     let link_name = identity_key_component(&identity.external_link_name);
     let property_key = identity
         .external_version
-        .as_ref().map(|version| version.property_key.value.as_str())
+        .as_ref()
+        .map(|version| version.property_key.value.as_str())
         .map(identity_key_component)
         .unwrap_or_default();
     let version_urn = identity
         .external_version
-        .as_ref().map(|version| version.version_urn.value.as_str())
+        .as_ref()
+        .map(|version| version.version_urn.value.as_str())
         .map(identity_key_component)
         .unwrap_or_default();
     format!(
@@ -288,12 +290,14 @@ pub(crate) fn neutral_assembly_axial_object_id(
     let link_name = identity_key_component(&identity.external_link_name);
     let property_key = identity
         .external_version
-        .as_ref().map(|version| version.property_key.value.as_str())
+        .as_ref()
+        .map(|version| version.property_key.value.as_str())
         .map(|value| identity_key_component(&value.to_ascii_lowercase()))
         .unwrap_or_default();
     let version_urn = identity
         .external_version
-        .as_ref().map(|version| version.version_urn.value.as_str())
+        .as_ref()
+        .map(|version| version.version_urn.value.as_str())
         .map(identity_key_component)
         .unwrap_or_default();
     format!(
@@ -389,7 +393,10 @@ pub(crate) fn neutral_spatial_sketch_id(
 /// identical between the planar and spatial variants.
 fn sketch_placement_id(segment: &str, placement: &DesignSketchPlacement) -> String {
     let stream = identity_key_component(native_stream(&placement.id).unwrap_or(DEFAULT_STREAM));
-    format!("f3d:model:{segment}#{stream}@{}", placement.entity_id.suffix())
+    format!(
+        "f3d:model:{segment}#{stream}@{}",
+        placement.entity_id.suffix()
+    )
 }
 
 /// The neutral planar-sketch point-entity key under `sketch`.

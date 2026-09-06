@@ -45,18 +45,14 @@ fn compound_pipeline_aligns_detection_inspection_blocks_cache_directory_and_meta
             .count(),
         2
     );
-    assert!(
-        summary
-            .entries
-            .iter()
-            .any(|entry| entry.role == ContainerRole::CacheCell)
-    );
-    assert!(
-        summary
-            .entries
-            .iter()
-            .any(|entry| entry.role == ContainerRole::DirectoryEntry)
-    );
+    assert!(summary
+        .entries
+        .iter()
+        .any(|entry| entry.role == ContainerRole::CacheCell));
+    assert!(summary
+        .entries
+        .iter()
+        .any(|entry| entry.role == ContainerRole::DirectoryEntry));
     let result = decode(bytes);
     assert!(!result.source_fidelity().retained_records.is_empty());
     assert_valid(&result);
@@ -414,12 +410,11 @@ fn the_patch_path_names_the_preserved_dialect() {
     assert!(plan.report().losses.iter().all(|loss| {
         loss.code != crate::loss::SldprtLossCode::SourcePreservedImageUnavailable.kind()
     }));
-    assert!(
-        plan.report()
-            .notes
-            .iter()
-            .any(|note| note == "preserved source container replayed with semantic patches")
-    );
+    assert!(plan
+        .report()
+        .notes
+        .iter()
+        .any(|note| note == "preserved source container replayed with semantic patches"));
     let claimed = named_target(&plan);
     assert_eq!(claimed, "sldprt:sw-version-12000-plus");
 

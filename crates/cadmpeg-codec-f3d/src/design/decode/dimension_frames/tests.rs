@@ -161,7 +161,9 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
     let tags = [
         PersistentSubentityTag {
             id: "matching".into(),
-            target: AttributeTarget::Face(FaceId::mint("test:model:face#face-b").expect("identity grammar")),
+            target: AttributeTarget::Face(
+                FaceId::mint("test:model:face#face-b").expect("identity grammar"),
+            ),
             selector: 1,
             token: "13".into(),
             design_references: vec![331],
@@ -169,7 +171,9 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
         PersistentSubentityTag {
             id: "other".into(),
-            target: AttributeTarget::Face(FaceId::mint("test:model:face#face-a").expect("identity grammar")),
+            target: AttributeTarget::Face(
+                FaceId::mint("test:model:face#face-a").expect("identity grammar"),
+            ),
             selector: 1,
             token: "13".into(),
             design_references: vec![999],
@@ -177,7 +181,9 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
         PersistentSubentityTag {
             id: "alternate-face".into(),
-            target: AttributeTarget::Face(FaceId::mint("test:model:face#face-c").expect("identity grammar")),
+            target: AttributeTarget::Face(
+                FaceId::mint("test:model:face#face-c").expect("identity grammar"),
+            ),
             selector: 2,
             token: "13".into(),
             design_references: vec![331],
@@ -185,7 +191,9 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
         PersistentSubentityTag {
             id: "matching-edge".into(),
-            target: AttributeTarget::Edge(EdgeId::mint("test:model:edge#edge-b").expect("identity grammar")),
+            target: AttributeTarget::Edge(
+                EdgeId::mint("test:model:edge#edge-b").expect("identity grammar"),
+            ),
             selector: 1,
             token: "13".into(),
             design_references: vec![331],
@@ -193,7 +201,9 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
         PersistentSubentityTag {
             id: "alternate-edge".into(),
-            target: AttributeTarget::Edge(EdgeId::mint("test:model:edge#edge-c").expect("identity grammar")),
+            target: AttributeTarget::Edge(
+                EdgeId::mint("test:model:edge#edge-c").expect("identity grammar"),
+            ),
             selector: 2,
             token: "13".into(),
             design_references: vec![331],
@@ -223,7 +233,9 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
     let stream_tags = [
         PersistentSubentityTag {
             id: "f3d:xref/A/occurrence-0/design:persistent-subentity-tag#1".into(),
-            target: AttributeTarget::Face(FaceId::mint("test:model:face#face-a").expect("identity grammar")),
+            target: AttributeTarget::Face(
+                FaceId::mint("test:model:face#face-a").expect("identity grammar"),
+            ),
             selector: 1,
             token: "13".into(),
             design_references: vec![331],
@@ -231,7 +243,9 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
         PersistentSubentityTag {
             id: "f3d:xref/B/occurrence-0/design:persistent-subentity-tag#1".into(),
-            target: AttributeTarget::Face(FaceId::mint("test:model:face#face-b").expect("identity grammar")),
+            target: AttributeTarget::Face(
+                FaceId::mint("test:model:face#face-b").expect("identity grammar"),
+            ),
             selector: 1,
             token: "13".into(),
             design_references: vec![331],
@@ -830,7 +844,14 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
     assert_eq!(group.loci[0].role, 2);
     assert_eq!(group.loci[1].geometry_record_index, 217);
     assert_eq!(group.loci[1].role, 1);
-    assert_eq!(group.loci.iter().map(|locus| locus.returned.value).collect::<Vec<_>>(), [217, 175]);
+    assert_eq!(
+        group
+            .loci
+            .iter()
+            .map(|locus| locus.returned.value)
+            .collect::<Vec<_>>(),
+        [217, 175]
+    );
     assert_eq!(group.next_class_tag, "314");
     assert_eq!(group.next_record_index, 250);
 
@@ -844,11 +865,36 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
         owner_entity_id: "0_172".into(),
         auxiliary_references: crate::records::ReferenceRun::Unlocated(Vec::new()),
         rectangular_counted_reference_count: None,
-        members: ([(175, 25), (217, 40)].into_iter().map(|(record_index, offset)| crate::records::SketchRelationMember { reference: crate::records::SketchRelationReference::Index(record_index), offset, relation_ordinal: Some(0), }).collect::<Vec<_>>()).try_into().expect("uniform member resolution"),
+        members: ([(175, 25), (217, 40)]
+            .into_iter()
+            .map(
+                |(record_index, offset)| crate::records::SketchRelationMember {
+                    reference: crate::records::SketchRelationReference::Index(record_index),
+                    offset,
+                    relation_ordinal: Some(0),
+                },
+            )
+            .collect::<Vec<_>>())
+        .try_into()
+        .expect("uniform member resolution"),
         owner_reference_offset: 56,
-        definition: crate::records::SketchRelationDefinition::new(0, SketchRelationKind::Unpatterned).expect("valid relation definition"),
+        definition: crate::records::SketchRelationDefinition::new(
+            0,
+            SketchRelationKind::Unpatterned,
+        )
+        .expect("valid relation definition"),
         entity_genesis: None,
-        return_members: ([(217, 79), (175, 90)].into_iter().map(|(record_index, offset)| crate::records::SketchRelationReturnMember { reference: crate::records::SketchRelationReference::Index(record_index), offset, }).collect::<Vec<_>>()).try_into().expect("uniform member resolution"),
+        return_members: ([(217, 79), (175, 90)]
+            .into_iter()
+            .map(
+                |(record_index, offset)| crate::records::SketchRelationReturnMember {
+                    reference: crate::records::SketchRelationReference::Index(record_index),
+                    offset,
+                },
+            )
+            .collect::<Vec<_>>())
+        .try_into()
+        .expect("uniform member resolution"),
         raw_bytes: bytes[..101].to_vec(),
     };
     let mut relations = vec![relation_at("native", 0), relation_at("other", 0)];
@@ -930,7 +976,14 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
     assert_eq!(frame.annotation_byte_offset, annotation_byte_offset as u64);
     assert_eq!(frame.annotation_bytes, [0xaa, 0xbb, 0xcc]);
     assert_eq!(frame.operands[0].geometry_record_index, None);
-    assert_eq!(frame.return_members.iter().map(|member| member.value.get()).collect::<Vec<_>>(), [376, 354]);
+    assert_eq!(
+        frame
+            .return_members
+            .iter()
+            .map(|member| member.value.get())
+            .collect::<Vec<_>>(),
+        [376, 354]
+    );
     assert_eq!(frame.paired_byte_offset, paired_byte_offset as u64);
     assert_eq!(frame.owner_reference, 201);
 

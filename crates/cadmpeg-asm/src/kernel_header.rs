@@ -144,9 +144,18 @@ mod tests {
     #[test]
     fn partial_binary_headers_retain_linear_tolerance_without_angular() {
         for (magic, header_len) in [
-            (b"ASM BinaryFile4".as_slice(), crate::layout::asmheader_binaryfile4::LEN),
-            (b"ASM BinaryFile8".as_slice(), crate::layout::asmheader_binaryfile8::LEN),
-            (b"ACIS BinaryFile".as_slice(), crate::layout::acisheader_binaryfile4::LEN),
+            (
+                b"ASM BinaryFile4".as_slice(),
+                crate::layout::asmheader_binaryfile4::LEN,
+            ),
+            (
+                b"ASM BinaryFile8".as_slice(),
+                crate::layout::asmheader_binaryfile8::LEN,
+            ),
+            (
+                b"ACIS BinaryFile".as_slice(),
+                crate::layout::acisheader_binaryfile4::LEN,
+            ),
         ] {
             let mut bytes = magic.to_vec();
             bytes.resize(header_len, 0);

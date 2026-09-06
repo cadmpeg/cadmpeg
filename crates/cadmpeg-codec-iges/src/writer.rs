@@ -161,7 +161,11 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
             append_surface_entities(&mut entities, ir, &surface.geometry, version)?;
         }
         for directrix in ir.model.surfaces.iter().filter_map(|surface| {
-            let SurfaceGeometry::Procedural { construction, cache: None } = &surface.geometry else {
+            let SurfaceGeometry::Procedural {
+                construction,
+                cache: None,
+            } = &surface.geometry
+            else {
                 return None;
             };
             ir.model

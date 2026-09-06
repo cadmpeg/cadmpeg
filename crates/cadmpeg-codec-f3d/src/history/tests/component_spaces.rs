@@ -115,7 +115,13 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
         members[0].historical.as_ref().map(|binding| binding.kind),
         Some(AsmHistoricalEntityKind::Loop)
     );
-    assert_eq!(members[0].historical.as_ref().map(|binding| binding.entity_ref), Some(42));
+    assert_eq!(
+        members[0]
+            .historical
+            .as_ref()
+            .map(|binding| binding.entity_ref),
+        Some(42)
+    );
     assert_eq!(members[0].historical.as_ref().unwrap().state_ids, [2]);
 }
 
@@ -150,7 +156,8 @@ fn historical_recipe_join_unions_fragments_without_raw_selector_equality() {
         design_reference: 301,
         design_reference_offset: 8,
         candidate_faces: vec![
-            cadmpeg_ir::ids::FaceId::mint("test:model:face#wrong-active-face").expect("identity grammar")
+            cadmpeg_ir::ids::FaceId::mint("test:model:face#wrong-active-face")
+                .expect("identity grammar"),
         ],
         candidate_edges: Vec::new(),
         alternate_selector_faces: Vec::new(),

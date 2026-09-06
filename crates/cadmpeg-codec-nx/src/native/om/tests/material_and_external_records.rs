@@ -19,7 +19,9 @@ fn decode_retains_strict_tiff_material_texture_assets() {
         .native
         .namespace("nx")
         .expect("required invariant")
-        .arena_as::<crate::native::om::material_texture::MaterialTextureAsset>("material_texture_assets")
+        .arena_as::<crate::native::om::material_texture::MaterialTextureAsset>(
+            "material_texture_assets",
+        )
         .expect("required invariant");
 
     assert_eq!(assets.len(), 1);
@@ -32,7 +34,10 @@ fn decode_retains_strict_tiff_material_texture_assets() {
     assert_eq!(assets[0].first_ifd_offset(), 8);
     assert_eq!(assets[0].byte_len(), texture.len() as u64);
     assert_eq!(assets[0].sha256, cadmpeg_ir::hash::sha256_hex(&texture));
-    assert_eq!(assets[0].source_entry(), "/Root/materialsTif/AISI Steel 4340");
+    assert_eq!(
+        assets[0].source_entry(),
+        "/Root/materialsTif/AISI Steel 4340"
+    );
 }
 
 #[test]
@@ -58,7 +63,9 @@ fn decode_joins_qaf_material_names_to_texture_assets() {
         .namespace("nx")
         .expect("required invariant");
     let assets = namespace
-        .arena_as::<crate::native::om::material_texture::MaterialTextureAsset>("material_texture_assets")
+        .arena_as::<crate::native::om::material_texture::MaterialTextureAsset>(
+            "material_texture_assets",
+        )
         .expect("required invariant");
     let catalog = namespace
         .arena_as::<super::super::MaterialTextureCatalogEntry>("material_texture_catalog_entries")
@@ -183,7 +190,11 @@ fn persistent_handle_identity_bridges_om_and_external_records() {
         record_id: 6,
         declared_count: 1,
         id_slots: [0; 4],
-        handles: crate::container::extref_handles::ExtrefHandles::new(vec![0x1020_3040, 0x1020_3040]).unwrap(),
+        handles: crate::container::extref_handles::ExtrefHandles::new(vec![
+            0x1020_3040,
+            0x1020_3040,
+        ])
+        .unwrap(),
         tail_byte_len: 0,
         source_entry: "external".into(),
         source_offset: 10,
@@ -394,19 +405,32 @@ fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
         id: id.into(),
         section_ordinal: 2,
         ordinal: 0,
-        first_index: crate::om::compact::LocatedCompactIndex { atom: crate::om::compact::CompactIndexAtom::from_wire(20, &[20]).unwrap(), offset: offset + 2 },
+        first_index: crate::om::compact::LocatedCompactIndex {
+            atom: crate::om::compact::CompactIndexAtom::from_wire(20, &[20]).unwrap(),
+            offset: offset + 2,
+        },
         discriminator: crate::om::discriminators::LinkedIndexDiscriminator::Form16,
         target: crate::native::om::DataBlockIndexToken {
-            target: crate::native::om::DataBlockIndexTarget { atom: crate::om::compact::CompactIndexAtom::from_wire(target, &[target as u8]).unwrap(), data_block: format!("block#{target}") },
+            target: crate::native::om::DataBlockIndexTarget {
+                atom: crate::om::compact::CompactIndexAtom::from_wire(target, &[target as u8])
+                    .unwrap(),
+                data_block: format!("block#{target}"),
+            },
             source_offset: offset + 7,
         },
         indices: [
             (5, [5], "block#5", offset + 12),
             (6, [6], "block#6", offset + 13),
             (7, [7], "block#7", offset + 14),
-        ].map(|(index, raw, data_block, source_offset)| crate::native::om::DataBlockIndexToken {
-            target: crate::native::om::DataBlockIndexTarget { atom: crate::om::compact::CompactIndexAtom::from_wire(index, &raw).unwrap(), data_block: data_block.into() },
-            source_offset,
+        ]
+        .map(|(index, raw, data_block, source_offset)| {
+            crate::native::om::DataBlockIndexToken {
+                target: crate::native::om::DataBlockIndexTarget {
+                    atom: crate::om::compact::CompactIndexAtom::from_wire(index, &raw).unwrap(),
+                    data_block: data_block.into(),
+                },
+                source_offset,
+            }
         }),
         flag: crate::om::discriminators::LinkedIndexFlag::Form03,
         mode,
@@ -423,16 +447,26 @@ fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
         section_ordinal: 2,
         ordinal: 0,
         target: crate::native::om::DataBlockIndexToken {
-            target: crate::native::om::DataBlockIndexTarget { atom: crate::om::compact::CompactIndexAtom::from_wire(index, &[index as u8]).unwrap(), data_block: format!("block#{index}") },
+            target: crate::native::om::DataBlockIndexTarget {
+                atom: crate::om::compact::CompactIndexAtom::from_wire(index, &[index as u8])
+                    .unwrap(),
+                data_block: format!("block#{index}"),
+            },
             source_offset: offset + 5,
         },
         indices: [
             (5, [5], "block#5", offset + 10),
             (6, [6], "block#6", offset + 11),
             (7, [7], "block#7", offset + 12),
-        ].map(|(index, raw, data_block, source_offset)| crate::native::om::DataBlockIndexToken {
-            target: crate::native::om::DataBlockIndexTarget { atom: crate::om::compact::CompactIndexAtom::from_wire(index, &raw).unwrap(), data_block: data_block.into() },
-            source_offset,
+        ]
+        .map(|(index, raw, data_block, source_offset)| {
+            crate::native::om::DataBlockIndexToken {
+                target: crate::native::om::DataBlockIndexTarget {
+                    atom: crate::om::compact::CompactIndexAtom::from_wire(index, &raw).unwrap(),
+                    data_block: data_block.into(),
+                },
+                source_offset,
+            }
         }),
         mode,
         source_entry: "entry".into(),

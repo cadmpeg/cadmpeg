@@ -5,40 +5,42 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU16;
 
-pub(crate) mod record_kind;
 pub(crate) mod record_family;
+pub(crate) mod record_kind;
 use record_family::RecordFamily;
-pub(crate) mod reference_lanes;
+pub(crate) mod attdef_state;
 pub(crate) mod inline_schema_fields;
 pub(crate) mod precision_state;
+pub(crate) mod reference_lanes;
 pub(crate) mod type101_state;
-pub(crate) mod attdef_state;
-pub(crate) mod type70_state;
 pub(crate) mod type38_state;
+pub(crate) mod type70_state;
+use attdef_state::AttdefState;
+use inline_schema_fields::{
+    BodyStateBytes, InlineBodyStateFields, InlineSchemaFields, TermUseValues,
+};
+use precision_state::PrecisionState;
+use reference_lanes::{MapEntries, TaggedReferences};
 use type38_state::{IntersectionMarker, ReferenceLaneForm, Type38State};
 use type70_state::{TrailingCopies, Type70State};
-use attdef_state::AttdefState;
-use precision_state::PrecisionState;
-use inline_schema_fields::{BodyStateBytes, InlineBodyStateFields, InlineSchemaFields, TermUseValues};
-use reference_lanes::{MapEntries, TaggedReferences};
 pub(crate) mod packet_marker;
-pub(crate) mod state_references;
 pub(crate) mod state_frame;
+pub(crate) mod state_references;
 pub(crate) mod transmit_state;
-use transmit_state::TransmitState;
+use crate::framing::xmt_reference::NonNullXmt;
 use state_frame::{ReferenceStateFrame, StateFrames};
 use state_references::StateReferences;
-use crate::framing::xmt_reference::NonNullXmt;
+use transmit_state::TransmitState;
 pub(crate) mod preamble_state;
 use preamble_state::PreambleState;
 pub(crate) mod type150_state;
-use type150_state::Type150State;
 use packet_marker::{ReferenceMarker, Type150Marker};
+use type150_state::Type150State;
 pub(crate) mod group;
 pub(crate) mod tails;
-use tails::{TerminalNullReferences, TermUseNumericTail};
-use group::{GroupSelector, GroupReferenceStatus};
+use group::{GroupReferenceStatus, GroupSelector};
 use record_kind::RecordKind;
+use tails::{TermUseNumericTail, TerminalNullReferences};
 
 use crate::framing::read_xmt_width as read_xmt;
 use crate::vec3_at::vec3_be_at;
@@ -746,7 +748,12 @@ fn transmit_header(stream: &[u8]) -> Option<TransmitHeader> {
     at = at.checked_add(2)?;
 
     Some(TransmitHeader {
-        state: TransmitState::new(String::from_utf8(description_bytes.to_vec()).ok()?, String::from_utf8(schema_bytes.to_vec()).ok()?, [first, second]).ok()?,
+        state: TransmitState::new(
+            String::from_utf8(description_bytes.to_vec()).ok()?,
+            String::from_utf8(schema_bytes.to_vec()).ok()?,
+            [first, second],
+        )
+        .ok()?,
         end: at,
     })
 }
@@ -791,7 +798,9 @@ fn term_use_numeric_tails(stream: &[u8], census: &Census) -> Vec<TermUseNumericT
             let tail = TermUseNumericTail::read(stream, record.end, term_use.xmt, term_use.form)?;
             let next_event =
                 event_starts.get(event_starts.partition_point(|start| *start <= record.end));
-            next_event.is_none_or(|start| *start >= tail.end()).then_some(tail)
+            next_event
+                .is_none_or(|start| *start >= tail.end())
+                .then_some(tail)
         })
         .collect()
 }
@@ -835,9 +844,8 @@ fn reference_type_maps(stream: &[u8], census: &Census) -> Vec<ReferenceTypeMap> 
                 let shared_end = end.checked_add(2)?;
                 let map =
                     reference_type_map(stream, offset, ReferenceTypeMapLimit::Bounded(shared_end))?;
-                (map.target_kind.is_none()
-                    && map.entries.last_kind() == following_kind)
-                .then_some(map)
+                (map.target_kind.is_none() && map.entries.last_kind() == following_kind)
+                    .then_some(map)
             })
         })
         .collect()
@@ -896,14 +904,12 @@ fn reference_type_map(
             }
             let target_kind = NonZeroU16::new(View::u16_be_at(stream, at)?)?;
             at = at.checked_add(2)?;
-            return (expected_end.is_none_or(|end| at <= end)).then_some(
-                ReferenceTypeMap {
-                    entries: MapEntries::try_from(entries).ok()?,
-                    target_kind: Some(target_kind),
-                    offset,
-                    end: at,
-                },
-            );
+            return (expected_end.is_none_or(|end| at <= end)).then_some(ReferenceTypeMap {
+                entries: MapEntries::try_from(entries).ok()?,
+                target_kind: Some(target_kind),
+                offset,
+                end: at,
+            });
         }
         let kind = View::u16_be_at(stream, at)?;
         at = at.checked_add(2)?;
@@ -1060,7 +1066,16 @@ fn schema_reference_preamble(
             let terminal_value = View::u16_be_at(stream, at)?;
             at = at.checked_add(2)?;
             return (at <= gap_end).then_some(SchemaReferencePreamble {
-                state: PreambleState::new(identity, references, state_references, state_words, count, entries, terminal_value).ok()?,
+                state: PreambleState::new(
+                    identity,
+                    references,
+                    state_references,
+                    state_words,
+                    count,
+                    entries,
+                    terminal_value,
+                )
+                .ok()?,
                 offset,
                 end: at,
             });
@@ -1286,8 +1301,12 @@ fn inline_schema_declaration(
         if let Some((linked_references, state_references, state_end)) =
             type_38_reference_lanes(stream, at, ReferenceLaneForm::TwoLinks)
         {
-            let (numeric_values, end) = if stream.get(state_end..state_end.checked_add(TYPE_41_SCHEMA_HEADER.len())?) == Some(TYPE_41_SCHEMA_HEADER) {
-                let (term_reference, numeric_values, end) = type_41_schema_state(stream, state_end, gap_end)?;
+            let (numeric_values, end) = if stream
+                .get(state_end..state_end.checked_add(TYPE_41_SCHEMA_HEADER.len())?)
+                == Some(TYPE_41_SCHEMA_HEADER)
+            {
+                let (term_reference, numeric_values, end) =
+                    type_41_schema_state(stream, state_end, gap_end)?;
                 (term_reference == state_references[1]).then_some(())?;
                 (Some(numeric_values), end)
             } else {
@@ -1296,17 +1315,38 @@ fn inline_schema_declaration(
             };
             return Some(InlineSchemaDeclaration {
                 fields: InlineSchemaFields::Type38 {
-                    state: Type38State::new(xmt, node_id, leading_references, leading_statuses, marker, linked_references, state_references, numeric_values).ok()?,
+                    state: Type38State::new(
+                        xmt,
+                        node_id,
+                        leading_references,
+                        leading_statuses,
+                        marker,
+                        linked_references,
+                        state_references,
+                        numeric_values,
+                    )
+                    .ok()?,
                 },
                 offset,
                 end,
             });
         }
-        let (linked_references, state_references, end) = type_38_reference_lanes(stream, at, ReferenceLaneForm::OneLink)?;
+        let (linked_references, state_references, end) =
+            type_38_reference_lanes(stream, at, ReferenceLaneForm::OneLink)?;
         (end <= gap_end).then_some(())?;
         return Some(InlineSchemaDeclaration {
             fields: InlineSchemaFields::Type38 {
-                state: Type38State::new(xmt, node_id, leading_references, leading_statuses, marker, linked_references, state_references, None).ok()?,
+                state: Type38State::new(
+                    xmt,
+                    node_id,
+                    leading_references,
+                    leading_statuses,
+                    marker,
+                    linked_references,
+                    state_references,
+                    None,
+                )
+                .ok()?,
             },
             offset,
             end,
@@ -1390,7 +1430,13 @@ fn inline_schema_declaration(
             .fold(0_u64, |value, byte| (value << 8) | u64::from(*byte));
         at = at.checked_add(5)?;
         (at <= gap_end).then_some(())?;
-        let state = type101_state::Type101State::new(references, anchor_reference, state_words, terminal_value).ok()?;
+        let state = type101_state::Type101State::new(
+            references,
+            anchor_reference,
+            state_words,
+            terminal_value,
+        )
+        .ok()?;
         (state.prefix_state() == prefix_state).then_some(())?;
         return Some(InlineSchemaDeclaration {
             fields: InlineSchemaFields::Type101 { state },
@@ -1485,7 +1531,9 @@ fn inline_body_state(stream: &[u8], offset: usize, gap_end: usize) -> Option<Inl
     let mut at = offset.checked_add(consumed)?;
     if stream.get(at) == Some(&0) && at.checked_add(1) == Some(expected_end) {
         return Some(InlineBodyState {
-            fields: InlineBodyStateFields::Compact { reference: NonNullXmt::try_from(first).ok()? },
+            fields: InlineBodyStateFields::Compact {
+                reference: NonNullXmt::try_from(first).ok()?,
+            },
             offset,
             end: expected_end,
         });
@@ -1726,7 +1774,6 @@ fn merged_event_spans(census: &Census, include_derived_events: bool) -> Vec<(usi
     }
     merged
 }
-
 
 fn consume_shared_record(
     stream: &[u8],
@@ -2316,10 +2363,14 @@ fn consume_variable(stream: &[u8], offset: usize, kind: u16) -> Option<Record> {
     let (xmt, byte_len, family) = match kind {
         81 => {
             let record = crate::parasolid::entity_51_record_at(stream, offset)?;
-            (record.xmt.into(), record.byte_len, RecordFamily::Entity51 {
-                leading_references: record.leading_references,
-                trailing_references: record.trailing_references,
-            })
+            (
+                record.xmt.into(),
+                record.byte_len,
+                RecordFamily::Entity51 {
+                    leading_references: record.leading_references,
+                    trailing_references: record.trailing_references,
+                },
+            )
         }
         82..=89 | 98 => {
             let (parsed_kind, xmt, byte_len) =
@@ -2390,7 +2441,9 @@ fn consume_attdef_list(stream: &[u8], offset: usize) -> Option<Record> {
     let (state, end) = select_enveloped_layout(escaped_marker, direct, escaped)?;
     let xmt = state.xmt();
     Some(Record {
-        family: RecordFamily::AttdefList { slots: state.into_slots() },
+        family: RecordFamily::AttdefList {
+            slots: state.into_slots(),
+        },
         xmt,
         canonical_bytes: stream.get(offset..end)?.to_vec(),
         offset,
@@ -2455,7 +2508,10 @@ fn type_70_body(
         (stream.get(at) == Some(&0)).then_some(())?;
         at += 1;
     }
-    Some((Type70State::new(xmt, node_id, references, count, trailing_reference).ok()?, at))
+    Some((
+        Type70State::new(xmt, node_id, references, count, trailing_reference).ok()?,
+        at,
+    ))
 }
 
 fn consume_type_101(stream: &[u8], offset: usize) -> Option<Record> {
@@ -2467,7 +2523,9 @@ fn consume_type_101(stream: &[u8], offset: usize) -> Option<Record> {
         .flatten();
     let (references, end) = select_enveloped_layout(escaped_marker, direct, escaped)?;
     Some(Record {
-        family: RecordFamily::Type101 { references: references.try_into().ok()? },
+        family: RecordFamily::Type101 {
+            references: references.try_into().ok()?,
+        },
         xmt: 2,
         canonical_bytes: stream.get(offset..end)?.to_vec(),
         offset,
@@ -2524,14 +2582,24 @@ fn attdef_list_body(stream: &[u8], body: usize) -> Option<(AttdefState, usize)> 
         at += 1;
         references.push(reference);
     }
-    Some((AttdefState::new(xmt, slot_count_value, active_count_value, references).ok()?, at))
+    Some((
+        AttdefState::new(xmt, slot_count_value, active_count_value, references).ok()?,
+        at,
+    ))
 }
 
 fn group_layout(
     stream: &[u8],
     offset: usize,
     envelope_len: usize,
-) -> Option<(u32, u32, Vec<u32>, GroupSelector, GroupReferenceStatus, usize)> {
+) -> Option<(
+    u32,
+    u32,
+    Vec<u32>,
+    GroupSelector,
+    GroupReferenceStatus,
+    usize,
+)> {
     group_layout_with_statuses(stream, offset, envelope_len)
         .or_else(|| group_layout_without_leading_statuses(stream, offset, envelope_len))
 }
@@ -2540,7 +2608,14 @@ fn group_layout_with_statuses(
     stream: &[u8],
     offset: usize,
     envelope_len: usize,
-) -> Option<(u32, u32, Vec<u32>, GroupSelector, GroupReferenceStatus, usize)> {
+) -> Option<(
+    u32,
+    u32,
+    Vec<u32>,
+    GroupSelector,
+    GroupReferenceStatus,
+    usize,
+)> {
     let (xmt, consumed) = read_xmt(stream, offset.checked_add(2 + envelope_len)?)?;
     (xmt > 1).then_some(())?;
     let mut at = offset.checked_add(2 + envelope_len + consumed)?;
@@ -2575,7 +2650,14 @@ fn group_layout_without_leading_statuses(
     stream: &[u8],
     offset: usize,
     envelope_len: usize,
-) -> Option<(u32, u32, Vec<u32>, GroupSelector, GroupReferenceStatus, usize)> {
+) -> Option<(
+    u32,
+    u32,
+    Vec<u32>,
+    GroupSelector,
+    GroupReferenceStatus,
+    usize,
+)> {
     let (xmt, consumed) = read_xmt(stream, offset.checked_add(2 + envelope_len)?)?;
     (xmt > 1).then_some(())?;
     let mut at = offset.checked_add(2 + envelope_len + consumed)?;
@@ -2617,7 +2699,9 @@ fn consume_type_91(stream: &[u8], offset: usize) -> Option<Record> {
         direct?
     };
     Some(Record {
-        family: RecordFamily::Type91 { references: references.try_into().ok()? },
+        family: RecordFamily::Type91 {
+            references: references.try_into().ok()?,
+        },
         xmt,
         canonical_bytes: stream.get(offset..end)?.to_vec(),
         offset,
@@ -2660,7 +2744,9 @@ fn consume_type_141(stream: &[u8], offset: usize) -> Option<Record> {
         direct?
     };
     Some(Record {
-        family: RecordFamily::Type141 { references: references.try_into().ok()? },
+        family: RecordFamily::Type141 {
+            references: references.try_into().ok()?,
+        },
         xmt,
         canonical_bytes: stream.get(offset..at)?.to_vec(),
         offset,
@@ -2694,7 +2780,10 @@ fn consume_type_67(stream: &[u8], offset: usize) -> Option<Record> {
         .flatten();
     let (xmt, node_id, references, end) = select_enveloped_layout(escaped_marker, direct, escaped)?;
     Some(Record {
-        family: RecordFamily::Type67 { node_id, references: references.try_into().ok()? },
+        family: RecordFamily::Type67 {
+            node_id,
+            references: references.try_into().ok()?,
+        },
         xmt,
         canonical_bytes: stream.get(offset..end)?.to_vec(),
         offset,
@@ -2819,7 +2908,9 @@ fn consume_intersection_data(
     let mut references = curve.header_references.to_vec();
     references.extend(curve.references);
     Some(Record {
-        family: RecordFamily::IntersectionData { references: references.try_into().ok()? },
+        family: RecordFamily::IntersectionData {
+            references: references.try_into().ok()?,
+        },
         xmt: curve.xmt,
         canonical_bytes: stream.get(offset..end)?.to_vec(),
         offset,
@@ -2828,19 +2919,30 @@ fn consume_intersection_data(
 }
 
 fn consume_intersection_auxiliary(stream: &[u8], offset: usize) -> Option<Record> {
-    let (family, xmt, end) = if let Some((chart, end)) =
-        crate::intersection::chart_source_record_at(
-            stream,
-            offset,
-            crate::intersection::ChartPointLayout::Ext11,
-        ) {
+    let (family, xmt, end) = if let Some((chart, end)) = crate::intersection::chart_source_record_at(
+        stream,
+        offset,
+        crate::intersection::ChartPointLayout::Ext11,
+    ) {
         (RecordFamily::Chart, chart.xmt, end)
     } else if let Some((term, end)) = crate::intersection::term_use_at(stream, offset) {
         (RecordFamily::TermUse, term.xmt, end)
     } else if let Some((bound, end)) = crate::intersection::blend_bound_at(stream, offset) {
         let [a, b, c, d, e] = bound.state.header_references();
-        let references = [a, b, c, d, e, bound.state.boundary_index(), bound.state.blend_surface()];
-        (RecordFamily::BlendBound { references }, bound.state.xmt(), end)
+        let references = [
+            a,
+            b,
+            c,
+            d,
+            e,
+            bound.state.boundary_index(),
+            bound.state.blend_surface(),
+        ];
+        (
+            RecordFamily::BlendBound { references },
+            bound.state.xmt(),
+            end,
+        )
     } else {
         let (support_uv, end) = crate::intersection::support_uv_record_at(stream, offset)?;
         (RecordFamily::SupportUv, support_uv.xmt, end)
@@ -3130,7 +3232,16 @@ mod schema_reference_preamble_tests {
         assert_eq!(
             parsed,
             SchemaReferencePreamble {
-                state: PreambleState::new(300, [40_000, 40_001], [1; 3], [2, 0, 1, 55], 7, vec![(81, 4), (82, 40_000), (81, 5)], 9).unwrap(),
+                state: PreambleState::new(
+                    300,
+                    [40_000, 40_001],
+                    [1; 3],
+                    [2, 0, 1, 55],
+                    7,
+                    vec![(81, 4), (82, 40_000), (81, 5)],
+                    9
+                )
+                .unwrap(),
                 offset: 0,
                 end: bytes.len(),
             }
@@ -3219,14 +3330,12 @@ mod inline_schema_tests {
 
         assert_eq!(declaration.fields, InlineSchemaFields::BodyHeader);
         assert_eq!(declaration.end, BODY_SCHEMA_HEADER.len());
-        assert!(
-            inline_schema_declaration(
-                &BODY_SCHEMA_HEADER[..BODY_SCHEMA_HEADER.len() - 1],
-                0,
-                BODY_SCHEMA_HEADER.len() - 1,
-            )
-            .is_none()
-        );
+        assert!(inline_schema_declaration(
+            &BODY_SCHEMA_HEADER[..BODY_SCHEMA_HEADER.len() - 1],
+            0,
+            BODY_SCHEMA_HEADER.len() - 1,
+        )
+        .is_none());
     }
 
     #[test]
@@ -3400,11 +3509,26 @@ mod inline_schema_tests {
             [InlineSchemaDeclaration {
                 fields: InlineSchemaFields::Type38 {
                     state: Type38State::new(
-                        40_000u32.try_into().unwrap(), 17, [1,7,8,9,1], [1;5], IntersectionMarker::Type2d,
-                        [11u32,12].into_iter().map(|value| value.try_into().unwrap()).collect(),
-                        [40_003u32,40_002,40_001].into_iter().map(|value| value.try_into().unwrap()).collect(),
-                        Some([0.5,-0.25,1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0].try_into().unwrap()),
-                    ).unwrap(),
+                        40_000u32.try_into().unwrap(),
+                        17,
+                        [1, 7, 8, 9, 1],
+                        [1; 5],
+                        IntersectionMarker::Type2d,
+                        [11u32, 12]
+                            .into_iter()
+                            .map(|value| value.try_into().unwrap())
+                            .collect(),
+                        [40_003u32, 40_002, 40_001]
+                            .into_iter()
+                            .map(|value| value.try_into().unwrap())
+                            .collect(),
+                        Some(
+                            [0.5, -0.25, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+                                .try_into()
+                                .unwrap()
+                        ),
+                    )
+                    .unwrap(),
                 },
                 offset: 0,
                 end: bytes.len(),
@@ -3545,7 +3669,9 @@ mod inline_schema_tests {
             [InlineSchemaDeclaration {
                 fields: InlineSchemaFields::Type41 {
                     reference: 86.try_into().unwrap(),
-                    numeric_values: [0.5, -0.25, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0,].try_into().unwrap(),
+                    numeric_values: [0.5, -0.25, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0,]
+                        .try_into()
+                        .unwrap(),
                 },
                 offset: 0,
                 end: bytes.len(),
@@ -3563,9 +3689,12 @@ mod inline_schema_tests {
             census.inline_schema_declarations,
             [InlineSchemaDeclaration {
                 fields: InlineSchemaFields::Type100 {
-                    state: PrecisionState::new(48, [2, 49, 1], [
-                        1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0,
-                    ]).unwrap(),
+                    state: PrecisionState::new(
+                        48,
+                        [2, 49, 1],
+                        [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0,]
+                    )
+                    .unwrap(),
                 },
                 offset: 0,
                 end: bytes.len(),
@@ -3613,7 +3742,13 @@ mod inline_schema_tests {
             census.inline_schema_declarations,
             [InlineSchemaDeclaration {
                 fields: InlineSchemaFields::Type101 {
-                    state: type101_state::Type101State::new([40_000, 3, 1, 9], Some(11), [19, 9, 27], 258).unwrap(),
+                    state: type101_state::Type101State::new(
+                        [40_000, 3, 1, 9],
+                        Some(11),
+                        [19, 9, 27],
+                        258
+                    )
+                    .unwrap(),
                 },
                 offset: 0,
                 end: bytes.len(),
@@ -3891,7 +4026,10 @@ mod nurbs_auxiliary_tests {
         assert_eq!(census.records.len(), 1);
         assert_eq!(census.records[0].kind(), 136);
         assert_eq!(census.records[0].xmt, 50_947);
-        assert_eq!(census.records[0].family.references(), [50_950, 50_949, 50_948]);
+        assert_eq!(
+            census.records[0].family.references(),
+            [50_950, 50_949, 50_948]
+        );
         assert_eq!(census.records[0].end, bytes.len());
         assert_eq!(census.bytes_decoded, bytes.len());
     }
@@ -3951,7 +4089,12 @@ mod reference_type_map_tests {
         let census = walk(&bytes);
 
         assert_eq!(census.reference_type_maps.len(), 1);
-        assert_eq!(census.reference_type_maps[0].target_kind.map(NonZeroU16::get), Some(1));
+        assert_eq!(
+            census.reference_type_maps[0]
+                .target_kind
+                .map(NonZeroU16::get),
+            Some(1)
+        );
         assert_eq!(census.bytes_decoded, bytes.len());
     }
 
@@ -3963,7 +4106,12 @@ mod reference_type_map_tests {
         let census = walk(&bytes);
 
         assert_eq!(census.reference_type_maps.len(), 1);
-        assert_eq!(census.reference_type_maps[0].target_kind.map(NonZeroU16::get), Some(323));
+        assert_eq!(
+            census.reference_type_maps[0]
+                .target_kind
+                .map(NonZeroU16::get),
+            Some(323)
+        );
         assert_eq!(census.bytes_decoded, bytes.len());
     }
 
@@ -4138,14 +4286,22 @@ mod terminal_null_reference_tests {
         let census = walk(&four_references);
 
         assert_eq!(
-            census.terminal_null_references.map(|tail| (tail.offset(), tail.end(), tail.form().references().len())),
+            census.terminal_null_references.map(|tail| (
+                tail.offset(),
+                tail.end(),
+                tail.form().references().len()
+            )),
             Some((0, four_references.len(), 4))
         );
         assert_eq!(census.bytes_decoded, four_references.len());
 
         let two_references = [0, 1, 0, 1];
         assert_eq!(
-            walk(&two_references).terminal_null_references.map(|tail| (tail.offset(), tail.end(), tail.form().references().len())),
+            walk(&two_references).terminal_null_references.map(|tail| (
+                tail.offset(),
+                tail.end(),
+                tail.form().references().len()
+            )),
             Some((0, two_references.len(), 2))
         );
 
@@ -4200,11 +4356,9 @@ mod transmit_header_tests {
         let nonconsecutive = header(&[0x04, 0x27, 0x04, 0x29]);
         let complete = header(&[0x04, 0x27, 0x04, 0x28]);
         assert!(walk(&nonconsecutive).transmit_header.is_none());
-        assert!(
-            walk(&complete[..complete.len() - 1])
-                .transmit_header
-                .is_none()
-        );
+        assert!(walk(&complete[..complete.len() - 1])
+            .transmit_header
+            .is_none());
     }
 }
 

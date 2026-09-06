@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Stable JSON columns for checked common-frame structures.
 
-use serde::{Serialize, Deserialize};
 use super::{FeatureOperationCommonFrame, FeatureOperationTerminalFrame};
 use crate::om::common_frame::{CommonFrame, CommonFramePrefix, CommonFrameSuffix, TerminalFrame};
+use serde::{Deserialize, Serialize};
 
 /// Exactly framed common record in one bounded feature operation.
 #[derive(Serialize, Deserialize)]
@@ -95,15 +95,28 @@ impl From<FeatureOperationCommonFrame> for CommonFrameWire {
     fn from(value: FeatureOperationCommonFrame) -> Self {
         let frame = value.frame;
         Self {
-            id: value.id, operation_record: value.operation_record, ordinal: value.ordinal,
-            indices: frame.prefix().indices(), raw_indices: frame.prefix().raw_indices(), marker: frame.prefix().marker(),
-            state: frame.state(), legacy_inactive_modules: frame.legacy_inactive_modules(),
-            modifies_parasolid_data: frame.modifies_parasolid_data(), split_tracking_data: frame.split_tracking_data(), group_count: frame.group_count(),
-            local_ordinal: frame.suffix().local_ordinal(), raw_local_ordinal: frame.suffix().raw_local_ordinal().to_vec(),
-            object_index: frame.suffix().object_index(), raw_object_index: frame.suffix().raw_object_index().to_vec(),
-            data_block: frame.suffix().target().cloned().flatten(), byte_len: frame.byte_len() as u64,
-            source_offset: frame.offset(), index_source_offsets: frame.index_offsets(), state_source_offset: frame.state_offset(),
-            local_ordinal_source_offset: frame.local_ordinal_offset(), object_index_source_offset: frame.object_index_offset(),
+            id: value.id,
+            operation_record: value.operation_record,
+            ordinal: value.ordinal,
+            indices: frame.prefix().indices(),
+            raw_indices: frame.prefix().raw_indices(),
+            marker: frame.prefix().marker(),
+            state: frame.state(),
+            legacy_inactive_modules: frame.legacy_inactive_modules(),
+            modifies_parasolid_data: frame.modifies_parasolid_data(),
+            split_tracking_data: frame.split_tracking_data(),
+            group_count: frame.group_count(),
+            local_ordinal: frame.suffix().local_ordinal(),
+            raw_local_ordinal: frame.suffix().raw_local_ordinal().to_vec(),
+            object_index: frame.suffix().object_index(),
+            raw_object_index: frame.suffix().raw_object_index().to_vec(),
+            data_block: frame.suffix().target().cloned().flatten(),
+            byte_len: frame.byte_len() as u64,
+            source_offset: frame.offset(),
+            index_source_offsets: frame.index_offsets(),
+            state_source_offset: frame.state_offset(),
+            local_ordinal_source_offset: frame.local_ordinal_offset(),
+            object_index_source_offset: frame.object_index_offset(),
         }
     }
 }
@@ -112,28 +125,68 @@ impl TryFrom<CommonFrameWire> for FeatureOperationCommonFrame {
     type Error = &'static str;
     fn try_from(wire: CommonFrameWire) -> Result<Self, Self::Error> {
         let prefix = CommonFramePrefix::from_wire(wire.indices, &wire.raw_indices, wire.marker)?;
-        let suffix = CommonFrameSuffix::from_wire(wire.local_ordinal, &wire.raw_local_ordinal, wire.object_index, &wire.raw_object_index)?;
-        let frame = CommonFrame::<u64, Option<String>>::new(prefix, wire.state, suffix.with_target(wire.data_block)?, wire.source_offset).ok_or("source_offset: common-frame end overflows")?;
-        if wire.byte_len != frame.byte_len() as u64 { return Err("byte_len disagrees with common frame"); }
-        if wire.index_source_offsets != frame.index_offsets() { return Err("index_source_offsets disagree with common frame"); }
-        if wire.state_source_offset != frame.state_offset() { return Err("state_source_offset disagrees with common frame"); }
-        if wire.local_ordinal_source_offset != frame.local_ordinal_offset() { return Err("local_ordinal_source_offset disagrees with common frame"); }
-        if wire.object_index_source_offset != frame.object_index_offset() { return Err("object_index_source_offset disagrees with common frame"); }
-        if wire.legacy_inactive_modules != frame.legacy_inactive_modules() { return Err("legacy_inactive_modules disagrees with state"); }
-        if wire.modifies_parasolid_data != frame.modifies_parasolid_data() { return Err("modifies_parasolid_data disagrees with state"); }
-        if wire.split_tracking_data != frame.split_tracking_data() { return Err("split_tracking_data disagrees with state"); }
-        if wire.group_count != frame.group_count() { return Err("group_count disagrees with state"); }
-        Ok(Self { id: wire.id, operation_record: wire.operation_record, ordinal: wire.ordinal, frame })
+        let suffix = CommonFrameSuffix::from_wire(
+            wire.local_ordinal,
+            &wire.raw_local_ordinal,
+            wire.object_index,
+            &wire.raw_object_index,
+        )?;
+        let frame = CommonFrame::<u64, Option<String>>::new(
+            prefix,
+            wire.state,
+            suffix.with_target(wire.data_block)?,
+            wire.source_offset,
+        )
+        .ok_or("source_offset: common-frame end overflows")?;
+        if wire.byte_len != frame.byte_len() as u64 {
+            return Err("byte_len disagrees with common frame");
+        }
+        if wire.index_source_offsets != frame.index_offsets() {
+            return Err("index_source_offsets disagree with common frame");
+        }
+        if wire.state_source_offset != frame.state_offset() {
+            return Err("state_source_offset disagrees with common frame");
+        }
+        if wire.local_ordinal_source_offset != frame.local_ordinal_offset() {
+            return Err("local_ordinal_source_offset disagrees with common frame");
+        }
+        if wire.object_index_source_offset != frame.object_index_offset() {
+            return Err("object_index_source_offset disagrees with common frame");
+        }
+        if wire.legacy_inactive_modules != frame.legacy_inactive_modules() {
+            return Err("legacy_inactive_modules disagrees with state");
+        }
+        if wire.modifies_parasolid_data != frame.modifies_parasolid_data() {
+            return Err("modifies_parasolid_data disagrees with state");
+        }
+        if wire.split_tracking_data != frame.split_tracking_data() {
+            return Err("split_tracking_data disagrees with state");
+        }
+        if wire.group_count != frame.group_count() {
+            return Err("group_count disagrees with state");
+        }
+        Ok(Self {
+            id: wire.id,
+            operation_record: wire.operation_record,
+            ordinal: wire.ordinal,
+            frame,
+        })
     }
 }
 
 impl From<FeatureOperationTerminalFrame> for TerminalFrameWire {
     fn from(value: FeatureOperationTerminalFrame) -> Self {
         Self {
-            id: value.id, operation_record: value.operation_record, immediate_common_frame: value.immediate_common_frame,
-            local_ordinal: value.frame.suffix().local_ordinal(), raw_local_ordinal: value.frame.suffix().raw_local_ordinal().to_vec(),
-            object_index: value.frame.suffix().object_index(), raw_object_index: value.frame.suffix().raw_object_index().to_vec(),
-            data_block: value.frame.suffix().target().cloned().flatten(), source_offset: value.frame.offset(), object_index_source_offset: value.frame.object_index_offset(),
+            id: value.id,
+            operation_record: value.operation_record,
+            immediate_common_frame: value.immediate_common_frame,
+            local_ordinal: value.frame.suffix().local_ordinal(),
+            raw_local_ordinal: value.frame.suffix().raw_local_ordinal().to_vec(),
+            object_index: value.frame.suffix().object_index(),
+            raw_object_index: value.frame.suffix().raw_object_index().to_vec(),
+            data_block: value.frame.suffix().target().cloned().flatten(),
+            source_offset: value.frame.offset(),
+            object_index_source_offset: value.frame.object_index_offset(),
         }
     }
 }
@@ -141,10 +194,26 @@ impl From<FeatureOperationTerminalFrame> for TerminalFrameWire {
 impl TryFrom<TerminalFrameWire> for FeatureOperationTerminalFrame {
     type Error = &'static str;
     fn try_from(wire: TerminalFrameWire) -> Result<Self, Self::Error> {
-        let suffix = CommonFrameSuffix::from_wire(wire.local_ordinal, &wire.raw_local_ordinal, wire.object_index, &wire.raw_object_index)?;
-        let frame = TerminalFrame::<u64, Option<String>>::new(suffix.with_target(wire.data_block)?, wire.source_offset).ok_or("source_offset: terminal-frame end overflows")?;
-        if wire.object_index_source_offset != frame.object_index_offset() { return Err("object_index_source_offset disagrees with terminal frame"); }
-        Ok(Self { id: wire.id, operation_record: wire.operation_record, immediate_common_frame: wire.immediate_common_frame, frame })
+        let suffix = CommonFrameSuffix::from_wire(
+            wire.local_ordinal,
+            &wire.raw_local_ordinal,
+            wire.object_index,
+            &wire.raw_object_index,
+        )?;
+        let frame = TerminalFrame::<u64, Option<String>>::new(
+            suffix.with_target(wire.data_block)?,
+            wire.source_offset,
+        )
+        .ok_or("source_offset: terminal-frame end overflows")?;
+        if wire.object_index_source_offset != frame.object_index_offset() {
+            return Err("object_index_source_offset disagrees with terminal frame");
+        }
+        Ok(Self {
+            id: wire.id,
+            operation_record: wire.operation_record,
+            immediate_common_frame: wire.immediate_common_frame,
+            frame,
+        })
     }
 }
 
@@ -159,36 +228,53 @@ mod tests {
         let frame: FeatureOperationCommonFrame = serde_json::from_str(COMMON).unwrap();
         assert_eq!(serde_json::to_string(&frame).unwrap(), COMMON);
         for (field, value) in [
-            ("indices", serde_json::json!([0,4098,0])), ("marker", serde_json::json!([1,1,1])),
-            ("legacy_inactive_modules", serde_json::json!(true)), ("modifies_parasolid_data", serde_json::json!(false)),
-            ("split_tracking_data", serde_json::json!([0,0])), ("group_count", serde_json::json!(8)),
-            ("raw_local_ordinal", serde_json::json!([128,1])), ("raw_object_index", serde_json::json!([0])),
-            ("byte_len", serde_json::json!(21)), ("index_source_offsets", serde_json::json!([100,102,103])),
-            ("state_source_offset", serde_json::json!(109)), ("local_ordinal_source_offset", serde_json::json!(117)),
-            ("object_index_source_offset", serde_json::json!(119)), ("source_offset", serde_json::json!(u64::MAX)), ("data_block", serde_json::json!("block")),
+            ("indices", serde_json::json!([0, 4098, 0])),
+            ("marker", serde_json::json!([1, 1, 1])),
+            ("legacy_inactive_modules", serde_json::json!(true)),
+            ("modifies_parasolid_data", serde_json::json!(false)),
+            ("split_tracking_data", serde_json::json!([0, 0])),
+            ("group_count", serde_json::json!(8)),
+            ("raw_local_ordinal", serde_json::json!([128, 1])),
+            ("raw_object_index", serde_json::json!([0])),
+            ("byte_len", serde_json::json!(21)),
+            ("index_source_offsets", serde_json::json!([100, 102, 103])),
+            ("state_source_offset", serde_json::json!(109)),
+            ("local_ordinal_source_offset", serde_json::json!(117)),
+            ("object_index_source_offset", serde_json::json!(119)),
+            ("source_offset", serde_json::json!(u64::MAX)),
+            ("data_block", serde_json::json!("block")),
         ] {
             let mut wire: serde_json::Value = serde_json::from_str(COMMON).unwrap();
             wire[field] = value;
-            let error = serde_json::from_value::<FeatureOperationCommonFrame>(wire).unwrap_err().to_string();
-            assert!(error.contains(field) || (field == "indices" && error.contains("index")), "{error}");
+            let error = serde_json::from_value::<FeatureOperationCommonFrame>(wire)
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error.contains(field) || (field == "indices" && error.contains("index")),
+                "{error}"
+            );
         }
     }
 
     #[test]
     fn common_frame_preserves_delete_prefix_unknown_flags_and_resolved_target() {
         let mut wire: serde_json::Value = serde_json::from_str(COMMON).unwrap();
-        wire["indices"] = serde_json::json!([0,0,0]);
-        wire["raw_indices"] = serde_json::json!([[0],[0],[0]]);
-        wire["marker"] = serde_json::json!([1,1,1]);
+        wire["indices"] = serde_json::json!([0, 0, 0]);
+        wire["raw_indices"] = serde_json::json!([[0], [0], [0]]);
+        wire["marker"] = serde_json::json!([1, 1, 1]);
         wire["byte_len"] = serde_json::json!(18);
-        wire["index_source_offsets"] = serde_json::json!([100,101,102]);
+        wire["index_source_offsets"] = serde_json::json!([100, 101, 102]);
         wire["state_source_offset"] = serde_json::json!(106);
         wire["local_ordinal_source_offset"] = serde_json::json!(114);
         wire["object_index_source_offset"] = serde_json::json!(116);
-        wire["state"] = serde_json::json!([0,0,0,2,3,5,6,9]);
-        wire.as_object_mut().unwrap().remove("legacy_inactive_modules");
-        wire.as_object_mut().unwrap().remove("modifies_parasolid_data");
-        wire["split_tracking_data"] = serde_json::json!([5,6]);
+        wire["state"] = serde_json::json!([0, 0, 0, 2, 3, 5, 6, 9]);
+        wire.as_object_mut()
+            .unwrap()
+            .remove("legacy_inactive_modules");
+        wire.as_object_mut()
+            .unwrap()
+            .remove("modifies_parasolid_data");
+        wire["split_tracking_data"] = serde_json::json!([5, 6]);
         wire["group_count"] = serde_json::json!(9);
         wire["object_index"] = serde_json::json!(0);
         wire["raw_object_index"] = serde_json::json!([0]);
@@ -200,12 +286,19 @@ mod tests {
     #[test]
     fn terminal_frame_preserves_nullable_wire_and_derives_object_position() {
         for (value, raw) in [("null", "[255]"), ("4096", "[144,16,0]")] {
-            let wire = format!(r#"{{"id":"terminal","operation_record":"record","local_ordinal":128,"raw_local_ordinal":[128,128],"object_index":{value},"raw_object_index":{raw},"source_offset":100,"object_index_source_offset":104}}"#);
+            let wire = format!(
+                r#"{{"id":"terminal","operation_record":"record","local_ordinal":128,"raw_local_ordinal":[128,128],"object_index":{value},"raw_object_index":{raw},"source_offset":100,"object_index_source_offset":104}}"#
+            );
             let frame: FeatureOperationTerminalFrame = serde_json::from_str(&wire).unwrap();
             assert_eq!(serde_json::to_string(&frame).unwrap(), wire);
             let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
             invalid["object_index_source_offset"] = serde_json::json!(103);
-            assert!(serde_json::from_value::<FeatureOperationTerminalFrame>(invalid).unwrap_err().to_string().contains("object_index_source_offset"));
+            assert!(
+                serde_json::from_value::<FeatureOperationTerminalFrame>(invalid)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("object_index_source_offset")
+            );
         }
     }
 }

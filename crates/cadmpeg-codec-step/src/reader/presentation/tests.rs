@@ -1582,7 +1582,8 @@ pub(crate) fn face_appearance_binding_styles_the_advanced_face() {
     let mut ir = unit_cube();
     let face = ir.model.faces[0].id.clone();
     ir.model.appearances.push(Appearance {
-        id: AppearanceId::mint("test:model:appearance#black".to_string()).expect("identity grammar"),
+        id: AppearanceId::mint("test:model:appearance#black".to_string())
+            .expect("identity grammar"),
         name: None,
         asset_guid: None,
         library_id: None,
@@ -1632,7 +1633,8 @@ fn vertex_appearance_binding_styles_the_vertex_point() {
     let mut ir = unit_cube();
     let vertex = ir.model.vertices[0].id.clone();
     ir.model.appearances.push(Appearance {
-        id: AppearanceId::mint("test:model:appearance#vertex".to_string()).expect("identity grammar"),
+        id: AppearanceId::mint("test:model:appearance#vertex".to_string())
+            .expect("identity grammar"),
         name: Some("vertex green".to_string()),
         asset_guid: None,
         library_id: None,
@@ -1868,7 +1870,8 @@ pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
     // Black override on a single face, via an appearance binding.
     let face = ir.model.faces[0].id.clone();
     ir.model.appearances.push(Appearance {
-        id: AppearanceId::mint("test:model:appearance#black".to_string()).expect("identity grammar"),
+        id: AppearanceId::mint("test:model:appearance#black".to_string())
+            .expect("identity grammar"),
         name: None,
         asset_guid: None,
         library_id: None,

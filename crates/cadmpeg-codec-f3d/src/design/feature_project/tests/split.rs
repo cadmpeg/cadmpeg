@@ -24,8 +24,10 @@ fn group(
         byte_offset: 0,
         class_tag: "262".into(),
 
-
-        members: members.into_iter().map(|value| crate::records::Located { value, offset: 0 }).collect(),
+        members: members
+            .into_iter()
+            .map(|value| crate::records::Located { value, offset: 0 })
+            .collect(),
         lost_edge_references: Vec::new(),
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 0,

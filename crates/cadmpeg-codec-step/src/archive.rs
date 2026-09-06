@@ -6,8 +6,8 @@ use cadmpeg_core::container::ContainerRole;
 use std::path::Path;
 
 use cadmpeg_container::{ArchiveSnapshot, ZipCompression};
-use cadmpeg_core::CodecError;
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 
 /// The required root member name from Part 21 Annex A.4.
 pub(crate) const ROOT_NAME: &str = "ISO-10303.p21";

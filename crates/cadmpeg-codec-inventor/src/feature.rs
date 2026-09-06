@@ -16,11 +16,11 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::Sketch;
 use serde::{Deserialize, Serialize};
 
-use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::pmdc::{
     content_header, reference_list, type_id_string, u32_list, Cursor, PmDcContentHeader,
     PmDcReferenceList, PmDcU32List,
 };
+use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 use crate::{design::DesignInventory, sketch::SketchInventory};
 

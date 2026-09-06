@@ -19,8 +19,8 @@ use cadmpeg_core::container::{ContainerRole, EntryCompression};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::ContainerEntry;
 use cadmpeg_core::bytes::find_from as find;
+use cadmpeg_core::ContainerEntry;
 use cadmpeg_ir::ContainerSummary;
 
 use crate::curve::{
@@ -537,8 +537,8 @@ fn scan_sections(data: &[u8], body_start: usize) -> Vec<Section> {
         };
         let name_bytes = &data[name_start..nl];
         i = nl; // continue scanning after this line regardless of acceptance
-        // A real section name is a printable run with at least one alphanumeric
-        // character; this rejects TOC/EOF padding lines made only of `#`.
+                // A real section name is a printable run with at least one alphanumeric
+                // character; this rejects TOC/EOF padding lines made only of `#`.
         if !name_bytes.iter().all(|&b| is_name_byte(b))
             || name_bytes.len() < 2
             || !name_bytes.iter().any(u8::is_ascii_alphanumeric)

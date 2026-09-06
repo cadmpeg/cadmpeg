@@ -18,9 +18,9 @@ use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
 
-use cadmpeg_core::ContainerEntry;
 use cadmpeg_core::bytes::{find, find_from};
 use cadmpeg_core::decode::View;
+use cadmpeg_core::ContainerEntry;
 use cadmpeg_ir::ContainerSummary;
 
 use crate::layout::extent_struct as extent;

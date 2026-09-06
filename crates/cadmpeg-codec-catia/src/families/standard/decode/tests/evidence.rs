@@ -737,7 +737,8 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
     }
     for index in 0..2 {
         ir.model.surfaces.push(Surface {
-            id: SurfaceId::mint(format!("catia:test:surface#surface-{index}")).expect("identity grammar"),
+            id: SurfaceId::mint(format!("catia:test:surface#surface-{index}"))
+                .expect("identity grammar"),
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(0.0, 0.0, 0.0),
                 normal: if index == 0 {
@@ -761,23 +762,27 @@ fn standard_planar_spline_edge_solves_line_and_retains_intersection_construction
         &mut annotations,
         &[
             (
-                SurfaceId::mint("catia:test:surface#surface-0".to_string()).expect("identity grammar"),
+                SurfaceId::mint("catia:test:surface#surface-0".to_string())
+                    .expect("identity grammar"),
                 false,
                 0,
             ),
             (
-                SurfaceId::mint("catia:test:surface#surface-1".to_string()).expect("identity grammar"),
+                SurfaceId::mint("catia:test:surface#surface-1".to_string())
+                    .expect("identity grammar"),
                 false,
                 1,
             ),
         ],
         &HashMap::from([
             (
-                SurfaceId::mint("catia:test:surface#surface-0".to_string()).expect("identity grammar"),
+                SurfaceId::mint("catia:test:surface#surface-0".to_string())
+                    .expect("identity grammar"),
                 0,
             ),
             (
-                SurfaceId::mint("catia:test:surface#surface-1".to_string()).expect("identity grammar"),
+                SurfaceId::mint("catia:test:surface#surface-1".to_string())
+                    .expect("identity grammar"),
                 1,
             ),
         ]),
@@ -833,8 +838,10 @@ fn standard_sphere_plane_spline_edge_derives_unbounded_circle_carrier() {
             source_object: None,
         }),
     );
-    let sphere_id = SurfaceId::mint("catia:test:surface#sphere".to_string()).expect("identity grammar");
-    let plane_id = SurfaceId::mint("catia:test:surface#plane".to_string()).expect("identity grammar");
+    let sphere_id =
+        SurfaceId::mint("catia:test:surface#sphere".to_string()).expect("identity grammar");
+    let plane_id =
+        SurfaceId::mint("catia:test:surface#plane".to_string()).expect("identity grammar");
     ir.model.surfaces.extend([
         Surface {
             id: sphere_id.clone(),
@@ -909,8 +916,10 @@ fn standard_cylinder_plane_spline_edge_derives_ellipse_carrier() {
             source_object: None,
         }),
     );
-    let cylinder_id = SurfaceId::mint("catia:test:surface#cylinder".to_string()).expect("identity grammar");
-    let plane_id = SurfaceId::mint("catia:test:surface#plane".to_string()).expect("identity grammar");
+    let cylinder_id =
+        SurfaceId::mint("catia:test:surface#cylinder".to_string()).expect("identity grammar");
+    let plane_id =
+        SurfaceId::mint("catia:test:surface#plane".to_string()).expect("identity grammar");
     ir.model.surfaces.extend([
         Surface {
             id: cylinder_id.clone(),
@@ -990,13 +999,16 @@ fn standard_equal_perpendicular_cylinders_select_one_ellipse_branch() {
             .into_iter()
             .enumerate()
             .map(|(index, position)| Point {
-                id: PointId::mint(format!("catia:test:point#point-{index}")).expect("identity grammar"),
+                id: PointId::mint(format!("catia:test:point#point-{index}"))
+                    .expect("identity grammar"),
                 position,
                 source_object: None,
             }),
     );
-    let first_id = SurfaceId::mint("catia:test:surface#first-cylinder".to_string()).expect("identity grammar");
-    let second_id = SurfaceId::mint("catia:test:surface#second-cylinder".to_string()).expect("identity grammar");
+    let first_id =
+        SurfaceId::mint("catia:test:surface#first-cylinder".to_string()).expect("identity grammar");
+    let second_id = SurfaceId::mint("catia:test:surface#second-cylinder".to_string())
+        .expect("identity grammar");
     ir.model.surfaces.extend([
         Surface {
             id: first_id.clone(),
@@ -1074,7 +1086,8 @@ fn standard_spline_uses_identity_bound_native_support_pcurves() {
             .into_iter()
             .enumerate()
             .map(|(index, position)| Point {
-                id: PointId::mint(format!("catia:test:point#point-{index}")).expect("identity grammar"),
+                id: PointId::mint(format!("catia:test:point#point-{index}"))
+                    .expect("identity grammar"),
                 position,
                 source_object: None,
             }),
@@ -1208,7 +1221,8 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
     );
 
     points.push(Point {
-        id: PointId::mint("catia:test:point#ambiguous-start".to_string()).expect("identity grammar"),
+        id: PointId::mint("catia:test:point#ambiguous-start".to_string())
+            .expect("identity grammar"),
         position: Point3::new(1.0, 0.0, 0.0),
         source_object: None,
     });
@@ -1258,12 +1272,14 @@ fn limit_curve_binding_retains_correlated_edge_candidates() {
             .into_iter()
             .enumerate()
             .map(|(index, position)| Point {
-                id: PointId::mint(format!("catia:test:point#point-{index}")).expect("identity grammar"),
+                id: PointId::mint(format!("catia:test:point#point-{index}"))
+                    .expect("identity grammar"),
                 position,
                 source_object: None,
             }),
     );
-    let surface_id = SurfaceId::mint("catia:test:surface#surface".to_string()).expect("identity grammar");
+    let surface_id =
+        SurfaceId::mint("catia:test:surface#surface".to_string()).expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Plane {
@@ -1355,7 +1371,8 @@ fn standard_spline_retains_a_procedural_rolling_ball_support() {
             .into_iter()
             .enumerate()
             .map(|(index, position)| Point {
-                id: PointId::mint(format!("catia:test:point#point-{index}")).expect("identity grammar"),
+                id: PointId::mint(format!("catia:test:point#point-{index}"))
+                    .expect("identity grammar"),
                 position,
                 source_object: None,
             }),
@@ -1454,7 +1471,8 @@ fn same_surface_spline_requires_an_exact_ruled_surface_generator() {
     let solve = |geometry, points: [Point3; 2]| {
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
-            id: SurfaceId::mint("catia:test:surface#surface".to_string()).expect("identity grammar"),
+            id: SurfaceId::mint("catia:test:surface#surface".to_string())
+                .expect("identity grammar"),
             geometry,
             source_object: None,
         });
@@ -1463,7 +1481,8 @@ fn same_surface_spline_requires_an_exact_ruled_surface_generator() {
                 .into_iter()
                 .enumerate()
                 .map(|(index, position)| Point {
-                    id: PointId::mint(format!("catia:test:point#point-{index}")).expect("identity grammar"),
+                    id: PointId::mint(format!("catia:test:point#point-{index}"))
+                        .expect("identity grammar"),
                     position,
                     source_object: None,
                 }),
@@ -1471,12 +1490,14 @@ fn same_surface_spline_requires_an_exact_ruled_surface_generator() {
         standard_spline_line(
             &ir,
             &[(
-                SurfaceId::mint("catia:test:surface#surface".to_string()).expect("identity grammar"),
+                SurfaceId::mint("catia:test:surface#surface".to_string())
+                    .expect("identity grammar"),
                 false,
                 0,
             )],
             &HashMap::from([(
-                SurfaceId::mint("catia:test:surface#surface".to_string()).expect("identity grammar"),
+                SurfaceId::mint("catia:test:surface#surface".to_string())
+                    .expect("identity grammar"),
                 0,
             )]),
             &support,
@@ -1595,7 +1616,8 @@ fn standard_line_edge_accepts_a_finite_nonzero_distance() {
 #[test]
 fn witnessed_cylinder_circle_edge_uses_complementary_angular_range() {
     let mut ir = CadIr::empty();
-    let surface_id = SurfaceId::mint("catia:test:surface#cylinder".to_string()).expect("identity grammar");
+    let surface_id =
+        SurfaceId::mint("catia:test:surface#cylinder".to_string()).expect("identity grammar");
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Cylinder {

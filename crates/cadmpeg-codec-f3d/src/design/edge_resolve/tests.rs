@@ -217,7 +217,16 @@ fn only_edge_treatments_use_single_member_transition_chains() {
 #[test]
 fn multiple_full_layout_members_do_not_use_the_operation_transition_chain() {
     let mut selection_group = group(2, 10);
-    selection_group.members = vec![crate::records::Located { value: 10, offset: 0 }, crate::records::Located { value: 11, offset: 0 }];
+    selection_group.members = vec![
+        crate::records::Located {
+            value: 10,
+            offset: 0,
+        },
+        crate::records::Located {
+            value: 11,
+            offset: 0,
+        },
+    ];
     let mut first = identity(10, &[(17, 0.0), (18, 0.0), (19, 0.0)]);
     first.compact_layout = false;
     let mut second = identity(11, &[(17, 0.0), (18, 0.0), (19, 0.0)]);
@@ -350,7 +359,24 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
     use crate::records::{DesignEdgeTreatmentVertexOperand, DesignVertexRecipe};
 
     let mut selection_group = group(2, 10);
-    selection_group.members = vec![crate::records::Located { value: 10, offset: 0 }, crate::records::Located { value: 11, offset: 0 }, crate::records::Located { value: 12, offset: 0 }, crate::records::Located { value: 13, offset: 0 }];
+    selection_group.members = vec![
+        crate::records::Located {
+            value: 10,
+            offset: 0,
+        },
+        crate::records::Located {
+            value: 11,
+            offset: 0,
+        },
+        crate::records::Located {
+            value: 12,
+            offset: 0,
+        },
+        crate::records::Located {
+            value: 13,
+            offset: 0,
+        },
+    ];
     let mut first_edge = recipe_edge_operand(11, &[], &[]);
     first_edge.recipe_state_id = Some(7);
     first_edge.resolved_edge_slot = Some(17);
@@ -377,7 +403,9 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
             recipe_references: Vec::new(),
             recipe_program_offset: 4,
             recipe_program: vec![0],
-            resolution: Some(crate::records::DesignVertexResolution::new(7, vertex).expect("valid vertex slot")),
+            resolution: Some(
+                crate::records::DesignVertexResolution::new(7, vertex).expect("valid vertex slot"),
+            ),
             next_record_index: record_index + 5,
             next_byte_offset: 5,
         },
@@ -523,13 +551,29 @@ fn grouped_surface_patch_recipe_rejects_ambiguous_or_repeated_edges() {
 #[test]
 fn grouped_surface_patch_recipe_projects_historical_edges() {
     let mut group = group(2, 10);
-    group.members = vec![crate::records::Located { value: 10, offset: 0 }, crate::records::Located { value: 11, offset: 0 }];
+    group.members = vec![
+        crate::records::Located {
+            value: 10,
+            offset: 0,
+        },
+        crate::records::Located {
+            value: 11,
+            offset: 0,
+        },
+    ];
     let mut first = recipe_edge_operand(10, &[], &[]);
     first.recipe_references = vec![recipe_reference(&[17])];
     first.surface_patch_recipe_structure =
         Some(crate::records::DesignSurfacePatchRecipeStructure {
             clauses: std::array::from_fn(|_| crate::records::DesignSurfacePatchRecipeClause {
-                fields: vec![vec![0], vec![0], vec![2, 0], vec![0, 0], vec![0], vec![0, 0]],
+                fields: vec![
+                    vec![0],
+                    vec![0],
+                    vec![2, 0],
+                    vec![0, 0],
+                    vec![0],
+                    vec![0, 0],
+                ],
                 face_reference_ordinals: [0, 0],
                 edge_reference_ordinals: [0, 0],
                 payload_entry_count: 0,
@@ -762,7 +806,16 @@ fn edge_treatment_chain_requires_complete_recipe_boundary_coverage() {
 #[test]
 fn compact_identity_group_uses_selected_recipe_context_boundaries() {
     let mut selection_group = group(2, 10);
-    selection_group.members = vec![crate::records::Located { value: 10, offset: 0 }, crate::records::Located { value: 11, offset: 0 }];
+    selection_group.members = vec![
+        crate::records::Located {
+            value: 10,
+            offset: 0,
+        },
+        crate::records::Located {
+            value: 11,
+            offset: 0,
+        },
+    ];
     let first_identity = identity(10, &[(17, 0.0), (18, 0.0)]);
     let mut second_identity = identity(11, &[(17, 0.0), (18, 0.0)]);
     second_identity.group_member_ordinal = 1;
@@ -812,7 +865,16 @@ fn compact_identity_group_uses_selected_recipe_context_boundaries() {
 #[test]
 fn lost_references_preserve_a_complete_compact_transition_chain() {
     let mut selection_group = group(2, 10);
-    selection_group.members = vec![crate::records::Located { value: 10, offset: 0 }, crate::records::Located { value: 11, offset: 0 }];
+    selection_group.members = vec![
+        crate::records::Located {
+            value: 10,
+            offset: 0,
+        },
+        crate::records::Located {
+            value: 11,
+            offset: 0,
+        },
+    ];
     let first_identity = identity(10, &[(17, 0.0), (18, 0.0)]);
     let mut second_identity = identity(11, &[(17, 0.0), (18, 0.0)]);
     second_identity.group_member_ordinal = 1;
@@ -890,7 +952,16 @@ fn compact_identity_group_does_not_displace_a_possible_support_group() {
 #[test]
 fn compact_edge_treatment_group_selects_exact_deleted_edge_cardinality() {
     let mut selection_group = group(2, 10);
-    selection_group.members = vec![crate::records::Located { value: 10, offset: 0 }, crate::records::Located { value: 11, offset: 0 }];
+    selection_group.members = vec![
+        crate::records::Located {
+            value: 10,
+            offset: 0,
+        },
+        crate::records::Located {
+            value: 11,
+            offset: 0,
+        },
+    ];
     let first = identity(10, &[(17, 5.0), (19, 5.0)]);
     let mut second = identity(11, &[(17, 5.0), (19, 5.0)]);
     second.group_member_ordinal = 1;
@@ -1070,7 +1141,8 @@ fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
             [("operand-a", None), ("operand-b", None)],
             41,
             "feature",
-            FeatureInputTopologyId::mint("test:model:feature-input#state").expect("identity grammar"),
+            FeatureInputTopologyId::mint("test:model:feature-input#state")
+                .expect("identity grammar"),
             "group",
         ),
         None
@@ -1229,14 +1301,20 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
     let triplet = DesignTopologyRecipeTriplet {
         outer: std::num::NonZeroU32::new(3).unwrap(),
         middle: 2,
-        incident: Some(crate::records::DesignTopologyIncident { ordinal: 1, side: DesignTopologyIncidentSide::Preceding }),
+        incident: Some(crate::records::DesignTopologyIncident {
+            ordinal: 1,
+            side: DesignTopologyIncidentSide::Preceding,
+        }),
     };
     let mut common = selector(0, &[]);
-    common.clauses[0] = Some(crate::records::DesignEdgeRecipeSelectorClause { entry: DesignTopologyRecipeEntry {
-        selector: 0,
-        boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
-        topology_triplets: [triplet.clone(), triplet.clone()],
-    }, triplet_edge_slots: [vec![17, 18], vec![17]] });
+    common.clauses[0] = Some(crate::records::DesignEdgeRecipeSelectorClause {
+        entry: DesignTopologyRecipeEntry {
+            selector: 0,
+            boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
+            topology_triplets: [triplet.clone(), triplet.clone()],
+        },
+        triplet_edge_slots: [vec![17, 18], vec![17]],
+    });
     assert_eq!(
         resolved_edge_candidate_intersection(&[common.clone()], [&[17, 18][..]]),
         Some(17)
@@ -1246,11 +1324,14 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
         Some(17)
     );
     let mut common = selector(0, &[]);
-    common.clauses[0] = Some(crate::records::DesignEdgeRecipeSelectorClause { entry: DesignTopologyRecipeEntry {
-        selector: 0,
-        boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
-        topology_triplets: [triplet.clone(), triplet.clone()],
-    }, triplet_edge_slots: [vec![17, 18, 19], vec![17, 18]] });
+    common.clauses[0] = Some(crate::records::DesignEdgeRecipeSelectorClause {
+        entry: DesignTopologyRecipeEntry {
+            selector: 0,
+            boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
+            topology_triplets: [triplet.clone(), triplet.clone()],
+        },
+        triplet_edge_slots: [vec![17, 18, 19], vec![17, 18]],
+    });
     assert_eq!(
         resolved_edge_candidate_intersection(&[common.clone()], [&[17][..]]),
         Some(17)
@@ -1259,18 +1340,31 @@ fn edge_recipe_candidate_intersection_must_be_uniquely_corroborated() {
         resolved_edge_candidate_intersection(&[common], [&[19][..]]),
         None
     );
-    let clause = |triplet_edge_slots| Some(crate::records::DesignEdgeRecipeSelectorClause {
-        entry: DesignTopologyRecipeEntry {
-            selector: 0,
-            boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
-            topology_triplets: [triplet.clone(), DesignTopologyRecipeTriplet {
-                outer: std::num::NonZeroU32::new(4).unwrap(), incident: Some(crate::records::DesignTopologyIncident { ordinal: 2, side: DesignTopologyIncidentSide::Preceding }), ..triplet.clone()
-            }],
-        },
-        triplet_edge_slots,
-    });
+    let clause = |triplet_edge_slots| {
+        Some(crate::records::DesignEdgeRecipeSelectorClause {
+            entry: DesignTopologyRecipeEntry {
+                selector: 0,
+                boundary_edge_count: std::num::NonZeroU32::new(4).unwrap(),
+                topology_triplets: [
+                    triplet.clone(),
+                    DesignTopologyRecipeTriplet {
+                        outer: std::num::NonZeroU32::new(4).unwrap(),
+                        incident: Some(crate::records::DesignTopologyIncident {
+                            ordinal: 2,
+                            side: DesignTopologyIncidentSide::Preceding,
+                        }),
+                        ..triplet.clone()
+                    },
+                ],
+            },
+            triplet_edge_slots,
+        })
+    };
     let mut cross_clause = selector(0, &[]);
-    cross_clause.clauses = vec![clause([vec![18], vec![17, 19]]), clause([vec![20], vec![17]])];
+    cross_clause.clauses = vec![
+        clause([vec![18], vec![17, 19]]),
+        clause([vec![20], vec![17]]),
+    ];
     assert_eq!(
         resolved_edge_candidate_intersection(&[cross_clause.clone()], std::iter::empty::<&[i64]>(),),
         Some(17)

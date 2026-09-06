@@ -7,11 +7,11 @@ use std::ops::Range;
 use cadmpeg_ir::transform::Transform;
 
 use crate::chunks::{
-    ArchiveVersion, BoundedReader, ChecksumStatus, FramingError, checked_count_bytes, chunk_at,
-    direct_checksum_ranges, verify_checksum, verify_checksum_ranges,
+    checked_count_bytes, chunk_at, direct_checksum_ranges, verify_checksum, verify_checksum_ranges,
+    ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
 };
 use crate::container::{OpaqueRecord, Record};
-use crate::objects::{UserdataDescriptor, parse_class_wrapper_with_userdata};
+use crate::objects::{parse_class_wrapper_with_userdata, UserdataDescriptor};
 use crate::settings::{bbox, utf16};
 use crate::wire::Uuid;
 
@@ -818,13 +818,11 @@ fn parse_v6(
             ));
         }
         linked_file = Some(file_reference(data, &mut linked, archive, warnings)?);
-        let mut linked_children = vec![
-            linked_file
-                .as_ref()
-                .expect("file reference assigned")
-                .source_range
-                .clone(),
-        ];
+        let mut linked_children = vec![linked_file
+            .as_ref()
+            .expect("file reference assigned")
+            .source_range
+            .clone()];
         linked_depth = linked.i32()?;
         linked_appearance = linked.u32()?;
         if linked.bool()? {

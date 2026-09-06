@@ -9,11 +9,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::deltas::record_family::RecordFamily;
 use crate::framing::read_xmt_width as read_xmt;
 use crate::framing::xmt_reference::NonNullXmt;
-use crate::deltas::record_family::RecordFamily;
 pub(crate) mod curve_references;
-use curve_references::CurveDescriptorReferences;
 use crate::layout::nurbs_curve_descriptor_prefix as curve_desc;
 use crate::layout::nurbs_surface_descriptor_prefix as surf_desc;
 use crate::topology::Graph;
@@ -22,6 +21,7 @@ use cadmpeg_ir::geometry::{
     knots_nondecreasing, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Point3};
+use curve_references::CurveDescriptorReferences;
 
 /// A decoded NURBS surface and its source descriptor offset.
 #[derive(Debug, Clone)]
@@ -860,7 +860,14 @@ fn curve_descriptor_at(
             return Some((
                 xmt,
                 CurveDescriptor {
-                    basis: CurveBasis { degree, poles, dimension, distinct, knot_type, periodic },
+                    basis: CurveBasis {
+                        degree,
+                        poles,
+                        dimension,
+                        distinct,
+                        knot_type,
+                        periodic,
+                    },
                     references: CurveDescriptorReferences::Status(references),
                 },
                 at,
@@ -873,7 +880,14 @@ fn curve_descriptor_at(
     Some((
         xmt,
         CurveDescriptor {
-            basis: CurveBasis { degree, poles, dimension, distinct, knot_type, periodic },
+            basis: CurveBasis {
+                degree,
+                poles,
+                dimension,
+                distinct,
+                knot_type,
+                periodic,
+            },
             references: CurveDescriptorReferences::Compact([mult, knots]),
         },
         pos + 23 + shift + mult_len + knots_len,
@@ -905,7 +919,11 @@ pub(crate) fn auxiliary_record_at(bytes: &[u8], pos: usize) -> Option<AuxiliaryR
         }
         127 | 128 => {
             let record = array_record_at(bytes, pos)?;
-            let family = if kind == 127 { RecordFamily::Multiplicities } else { RecordFamily::Knots };
+            let family = if kind == 127 {
+                RecordFamily::Multiplicities
+            } else {
+                RecordFamily::Knots
+            };
             (record.reference, family, record.end)
         }
         135 => curve_payload_at(bytes, pos)
@@ -914,7 +932,13 @@ pub(crate) fn auxiliary_record_at(bytes: &[u8], pos: usize) -> Option<AuxiliaryR
             .map(|(xmt, end)| (xmt, RecordFamily::BCurveData, end))?,
         136 => {
             let (xmt, descriptor, end) = curve_descriptor_at(bytes, pos, false)?;
-            (xmt, RecordFamily::BCurveDescriptor { references: descriptor.references }, end)
+            (
+                xmt,
+                RecordFamily::BCurveDescriptor {
+                    references: descriptor.references,
+                },
+                end,
+            )
         }
         _ => return None,
     };

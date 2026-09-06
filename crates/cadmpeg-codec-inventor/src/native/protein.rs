@@ -2,7 +2,7 @@
 //! Protein state and its owned package entries on the native wire.
 
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
-use serde::{Deserialize, Serialize, de::Error as _};
+use serde::{de::Error as _, Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ProteinRecord {
@@ -239,12 +239,10 @@ mod tests {
         namespace
             .set_arena("protein", &wire)
             .expect("valid test fixture");
-        assert!(
-            ProteinRecord::read(&namespace)
-                .expect_err("invalid test fixture")
-                .to_string()
-                .contains("entry_count")
-        );
+        assert!(ProteinRecord::read(&namespace)
+            .expect_err("invalid test fixture")
+            .to_string()
+            .contains("entry_count"));
         let absent = ProteinRecord::Absent {
             id: "inventor:protein:state#root".into(),
         };

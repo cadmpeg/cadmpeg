@@ -15,7 +15,8 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
     scope.paired_class_tag = "264".into();
     scope.frame_length = 637;
     scope.paired_byte_offset = 637;
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![200, 201, 202, 203, 108, 109, 110, 111, 204]);
+    scope.reference_members =
+        crate::records::ReferenceRun::Unlocated(vec![200, 201, 202, 203, 108, 109, 110, 111, 204]);
     let owners = (0_u32..12)
         .map(|local_ordinal| DesignParameterOwner {
             id: format!(
@@ -46,7 +47,14 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
     .expect("variable-reference assembly alignment");
     assert_eq!(alignment.angle, 8.0);
     assert_eq!(alignment.offset, [9.0, 10.0, 11.0]);
-    assert_eq!(alignment.owners.iter().map(|owner| owner.value).collect::<Vec<_>>(), [108, 109, 110, 111]);
+    assert_eq!(
+        alignment
+            .owners
+            .iter()
+            .map(|owner| owner.value)
+            .collect::<Vec<_>>(),
+        [108, 109, 110, 111]
+    );
     assert!(alignment.operand_frames().is_some());
 
     let write_reference = |bytes: &mut [u8], at: usize, record_index: u32| {

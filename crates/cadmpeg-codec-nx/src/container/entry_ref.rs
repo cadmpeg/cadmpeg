@@ -15,13 +15,17 @@ impl<'a> EntryRef<'a> {
         Some(Self { entries, index })
     }
 
-    pub(crate) fn index(self) -> usize { self.index }
+    pub(crate) fn index(self) -> usize {
+        self.index
+    }
 }
 
 impl std::ops::Deref for EntryRef<'_> {
     type Target = DirEntry;
 
-    fn deref(&self) -> &Self::Target { &self.entries[self.index] }
+    fn deref(&self) -> &Self::Target {
+        &self.entries[self.index]
+    }
 }
 
 #[cfg(test)]
@@ -31,7 +35,11 @@ mod tests {
 
     #[test]
     fn entry_reference_preserves_duplicate_entry_positions() {
-        let entry = DirEntry { name: "same".into(), region: Region::Header, file_span: None };
+        let entry = DirEntry {
+            name: "same".into(),
+            region: Region::Header,
+            file_span: None,
+        };
         let entries = [entry.clone(), entry];
         let first = EntryRef::new(&entries, 0).unwrap();
         let second = EntryRef::new(&entries, 1).unwrap();

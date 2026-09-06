@@ -542,11 +542,7 @@ fn owner_chart_admits_the_scalar_free_eight_reference_bridge() {
     let [chart] = crate::families::b2::records::b2_owner_charts_from_records(&bytes, &records)
         .try_into()
         .unwrap_or_else(|charts: Vec<_>| panic!("one extended owner chart, got {charts:?}"));
-    let B2OwnerChartBridge::Extended {
-        references,
-        ..
-    } = chart.bridge
-    else {
+    let B2OwnerChartBridge::Extended { references, .. } = chart.bridge else {
         panic!("eight-reference extended bridge")
     };
     assert_eq!(
@@ -558,8 +554,9 @@ fn owner_chart_admits_the_scalar_free_eight_reference_bridge() {
         .expect("serialize extended owner chart");
     let controls: [u8; 4] = serde_json::from_value(wire["bridge"]["controls"].clone())
         .expect("four extended bridge controls");
-    let terminal_controls: [u8; 2] = serde_json::from_value(wire["bridge"]["terminal_controls"].clone())
-        .expect("two extended bridge terminal controls");
+    let terminal_controls: [u8; 2] =
+        serde_json::from_value(wire["bridge"]["terminal_controls"].clone())
+            .expect("two extended bridge terminal controls");
     assert_eq!(controls, [0x11, 0x09, 0x05, 0x05]);
     assert_eq!(terminal_controls, [0x01, 0x05]);
 }
@@ -654,9 +651,9 @@ fn b2_class5b5c_parser_retains_complete_source_local_control_lanes() {
             .collect::<Vec<_>>(),
         [0x13, 0x03, 0x83]
     );
-    assert!(records.iter().all(|record| {
-        record.source_index == 0 && record.source_offset == record.frame.pos
-    }));
+    assert!(records
+        .iter()
+        .all(|record| { record.source_index == 0 && record.source_offset == record.frame.pos }));
 
     let mut invalid_flag = bytes;
     invalid_flag[1] = 0x04;

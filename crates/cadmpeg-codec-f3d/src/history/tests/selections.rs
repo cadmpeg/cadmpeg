@@ -167,7 +167,10 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
         reference_type: 0,
         reference_type_offset: 0,
         tangent_point_data: None,
-        input_records: vec![crate::records::Located { value: 55, offset: 0 }],
+        input_records: vec![crate::records::Located {
+            value: 55,
+            offset: 0,
+        }],
         face_selection: Some(face_selection),
     };
     let mut scope = crate::records::DesignParameterScope::empty(
@@ -381,7 +384,8 @@ fn body_selection_proofs_distinguish_stable_and_topology_changing_operations() {
         ..AsmHistoricalTopology::default()
     };
     let mut split_previous = state(20, None);
-    split_previous.topology_cache = crate::history_records::AsmTopologyCache::Complete(topology(&[7, 8]));
+    split_previous.topology_cache =
+        crate::history_records::AsmTopologyCache::Complete(topology(&[7, 8]));
     let mut split_transition = AsmHistoricalTransition {
         previous_state_id: Some(20),
         records: AsmHistoricalEntityDelta::default(),
@@ -390,7 +394,8 @@ fn body_selection_proofs_distinguish_stable_and_topology_changing_operations() {
     split_transition.topology.bodies.updated.push(7);
     split_transition.topology.bodies.inserted.push(9);
     let mut split_result = state(21, Some(split_transition.clone()));
-    split_result.topology_cache = crate::history_records::AsmTopologyCache::Complete(topology(&[7, 8, 9]));
+    split_result.topology_cache =
+        crate::history_records::AsmTopologyCache::Complete(topology(&[7, 8, 9]));
     let split_states = HashMap::from([(20, Some(&split_previous)), (21, Some(&split_result))]);
     assert_eq!(
         singleton_revised_input_body_across_state_chain(&split_result, 20, &split_states),
@@ -399,7 +404,8 @@ fn body_selection_proofs_distinguish_stable_and_topology_changing_operations() {
 
     split_transition.topology.bodies.updated.push(8);
     let mut ambiguous_split = state(21, Some(split_transition));
-    ambiguous_split.topology_cache = crate::history_records::AsmTopologyCache::Complete(topology(&[7, 8, 9]));
+    ambiguous_split.topology_cache =
+        crate::history_records::AsmTopologyCache::Complete(topology(&[7, 8, 9]));
     let ambiguous_states =
         HashMap::from([(20, Some(&split_previous)), (21, Some(&ambiguous_split))]);
     assert_eq!(
@@ -447,10 +453,16 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
         byte_offset: 0,
         record_index_offset: None,
         kind: ConstructionRecipeKind::Body,
-        design: Some(crate::records::ConstructionRecipeDesign { id: crate::records::RecordedValue { value: design_id.into(), offset: None }, selector: Some(ConstructionRecipeSelector {
-            value: selector,
-            byte_offset: 0,
-        }) }),
+        design: Some(crate::records::ConstructionRecipeDesign {
+            id: crate::records::RecordedValue {
+                value: design_id.into(),
+                offset: None,
+            },
+            selector: Some(ConstructionRecipeSelector {
+                value: selector,
+                byte_offset: 0,
+            }),
+        }),
         recipe_index: 0,
         record_index: 0,
     };
@@ -478,7 +490,12 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
                 selector_tail: None,
 
                 references: vec![DesignBodyRecipeReference {
-                    design_reference: if recipe.design.as_ref().map(|design| design.id.value.as_str()) == Some("family") {
+                    design_reference: if recipe
+                        .design
+                        .as_ref()
+                        .map(|design| design.id.value.as_str())
+                        == Some("family")
+                    {
                         413
                     } else {
                         409
@@ -528,7 +545,8 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
 
     operands[1].references[0].preceding_body_slots.clear();
     let mut duplicate_selector = recipes.clone();
-    duplicate_selector[1].design.as_mut().unwrap().selector = duplicate_selector[2].design.as_ref().unwrap().selector;
+    duplicate_selector[1].design.as_mut().unwrap().selector =
+        duplicate_selector[2].design.as_ref().unwrap().selector;
     assert!(combine_recipe_family_tool_slots(
         stream,
         10,
@@ -581,7 +599,10 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
             keep_tools: false,
             keep_tools_offset: 0,
             target_record_index: 11,
-            tools: crate::records::DesignCombineTools { first: tool(12, 500), additional: vec![tool(13, 501)] },
+            tools: crate::records::DesignCombineTools {
+                first: tool(12, 500),
+                additional: vec![tool(13, 501)],
+            },
         });
     }
     let BodySelection::Local { bodies, native } =
@@ -596,7 +617,8 @@ fn combine_external_tools_retain_complete_occurrence_local_identities() {
     scope
         .combine_operation_mut()
         .expect("Combine operation")
-        .tools.additional[0] = tool(13, 500);
+        .tools
+        .additional[0] = tool(13, 500);
     assert!(super::super::combine_external_local_tools(&scope).is_none());
 }
 
@@ -718,7 +740,11 @@ fn snapshot_ordinals_bind_the_sorted_revision_interval() {
                 parent: state_id.clone(),
                 revision_id: None,
                 byte_offset: index,
-                framing: crate::history_records::AsmHistoryRecordFraming::Framed { index: index, name: "edge".into(), entity_references: Vec::new() },
+                framing: crate::history_records::AsmHistoryRecordFraming::Framed {
+                    index: index,
+                    name: "edge".into(),
+                    entity_references: Vec::new(),
+                },
                 raw_bytes: vec![0x11],
             })
             .collect(),
@@ -778,7 +804,11 @@ fn insert_only_history_uses_the_active_record_table_as_revisions() {
                 parent: state_id,
                 revision_id: None,
                 byte_offset: node_index as u64,
-                framing: crate::history_records::AsmHistoryRecordFraming::Framed { index: 0, name: "End-of-ASM-History-Section".into(), entity_references: Vec::new() },
+                framing: crate::history_records::AsmHistoryRecordFraming::Framed {
+                    index: 0,
+                    name: "End-of-ASM-History-Section".into(),
+                    entity_references: Vec::new(),
+                },
                 raw_bytes: vec![0x11],
             }],
             entity_versions: Vec::new(),
@@ -841,7 +871,11 @@ fn insert_only_history_rejects_gaps_and_updates() {
             parent: "state".into(),
             revision_id: None,
             byte_offset: 0,
-            framing: crate::history_records::AsmHistoryRecordFraming::Framed { index: 0, name: "End-of-ASM-History-Section".into(), entity_references: Vec::new() },
+            framing: crate::history_records::AsmHistoryRecordFraming::Framed {
+                index: 0,
+                name: "End-of-ASM-History-Section".into(),
+                entity_references: Vec::new(),
+            },
             raw_bytes: vec![0x11],
         }],
         entity_versions: Vec::new(),
@@ -914,7 +948,11 @@ fn materialized_record_table_normalizes_revision_references() {
             parent: state_id,
             revision_id: Some(2),
             byte_offset: 0,
-            framing: crate::history_records::AsmHistoryRecordFraming::Framed { index: 0, name: "edge".into(), entity_references: vec![2] },
+            framing: crate::history_records::AsmHistoryRecordFraming::Framed {
+                index: 0,
+                name: "edge".into(),
+                entity_references: vec![2],
+            },
             raw_bytes: archived_bytes.clone(),
         }],
         entity_versions: vec![
@@ -1004,7 +1042,11 @@ fn qualified_history_marker_remains_an_archived_record() {
             parent: state_id,
             revision_id: Some(2),
             byte_offset: 0,
-            framing: crate::history_records::AsmHistoryRecordFraming::Framed { index: 0, name: "End-of-ASM-History-Section".into(), entity_references: vec![2] },
+            framing: crate::history_records::AsmHistoryRecordFraming::Framed {
+                index: 0,
+                name: "End-of-ASM-History-Section".into(),
+                entity_references: vec![2],
+            },
             raw_bytes: archived_bytes.clone(),
         }],
         entity_versions: vec![
@@ -1101,7 +1143,11 @@ fn reverse_history_builds_complete_entity_version_maps() {
             parent: states[0].id.clone(),
             revision_id: Some(revision_id),
             byte_offset: 0,
-            framing: crate::history_records::AsmHistoryRecordFraming::Framed { index: revision_id as u64 - 3, name: "edge".into(), entity_references: Vec::new() },
+            framing: crate::history_records::AsmHistoryRecordFraming::Framed {
+                index: revision_id as u64 - 3,
+                name: "edge".into(),
+                entity_references: Vec::new(),
+            },
             raw_bytes: vec![0x11],
         })
         .into();
@@ -1366,7 +1412,16 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
     );
     scope.history_state_id = Some(2);
     scope.previous_history_state_id = Some(1);
-    scope.reference_members = { let reference_values: Vec<u32> = vec![100, 110, 111, 120, 121]; let reference_offsets = vec![0; reference_values.len()]; crate::records::ReferenceRun::from_columns(reference_values, reference_offsets, "reference_members").unwrap() };
+    scope.reference_members = {
+        let reference_values: Vec<u32> = vec![100, 110, 111, 120, 121];
+        let reference_offsets = vec![0; reference_values.len()];
+        crate::records::ReferenceRun::from_columns(
+            reference_values,
+            reference_offsets,
+            "reference_members",
+        )
+        .unwrap()
+    };
     let groups = vec![
         group(100, 0, vec![110, 120]),
         group(110, 1, vec![111]),
@@ -1401,7 +1456,10 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         [0, 1]
     );
     let mut repeated_child = groups.clone();
-    repeated_child[0].members.push(crate::records::Located { value: 110, offset: 0 });
+    repeated_child[0].members.push(crate::records::Located {
+        value: 110,
+        offset: 0,
+    });
     assert!(
         crate::design::face_resolve::extrude_profile_group_roots(&scope, &repeated_child).is_none()
     );
@@ -1442,14 +1500,22 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         topology_cache,
         transition,
     };
-    let previous = state(1, crate::history_records::AsmTopologyCache::Complete(previous_topology), None);
+    let previous = state(
+        1,
+        crate::history_records::AsmTopologyCache::Complete(previous_topology),
+        None,
+    );
     let mut transition = AsmHistoricalTransition {
         previous_state_id: Some(1),
         records: AsmHistoricalEntityDelta::default(),
         topology: AsmHistoricalTopologyDelta::default(),
     };
     transition.topology.faces.deleted = vec![11, 10];
-    let current = state(2, crate::history_records::AsmTopologyCache::Absent, Some(transition));
+    let current = state(
+        2,
+        crate::history_records::AsmTopologyCache::Absent,
+        Some(transition),
+    );
     let history = AsmHistory {
         id: "f3d:history".into(),
         byte_offset: 0,

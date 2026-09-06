@@ -9,13 +9,23 @@ pub(crate) struct OperationRecordSpan {
 }
 
 impl OperationRecordSpan {
-    pub(crate) fn new(source_offset: u64, payload_source_offset: u64, payload_byte_len: u64) -> Option<Self> {
+    pub(crate) fn new(
+        source_offset: u64,
+        payload_source_offset: u64,
+        payload_byte_len: u64,
+    ) -> Option<Self> {
         payload_source_offset.checked_sub(source_offset)?;
         payload_source_offset.checked_add(payload_byte_len)?;
-        Some(Self { source_offset, payload_source_offset, payload_byte_len })
+        Some(Self {
+            source_offset,
+            payload_source_offset,
+            payload_byte_len,
+        })
     }
 
-    pub(crate) fn source_offset(self) -> u64 { self.source_offset }
+    pub(crate) fn source_offset(self) -> u64 {
+        self.source_offset
+    }
     pub(crate) fn byte_len(self) -> u64 {
         self.payload_source_offset - self.source_offset + self.payload_byte_len
     }
@@ -51,9 +61,13 @@ struct OperationRecordWire {
 impl From<FeatureOperationRecord> for OperationRecordWire {
     fn from(value: FeatureOperationRecord) -> Self {
         Self {
-            id: value.id, operation_label: value.operation_label, ordinal: value.ordinal,
-            byte_len: value.span.byte_len(), sha256: value.sha256,
-            payload_byte_len: value.span.payload_byte_len, payload_sha256: value.payload_sha256,
+            id: value.id,
+            operation_label: value.operation_label,
+            ordinal: value.ordinal,
+            byte_len: value.span.byte_len(),
+            sha256: value.sha256,
+            payload_byte_len: value.span.payload_byte_len,
+            payload_sha256: value.payload_sha256,
             stable_identity: value.stable_identity,
             payload_source_offset: value.span.payload_source_offset,
             source_offset: value.span.source_offset,
@@ -71,9 +85,13 @@ impl TryFrom<OperationRecordWire> for FeatureOperationRecord {
             return Err("byte_len: length disagrees with record and payload span");
         }
         Ok(Self {
-            id: wire.id, operation_label: wire.operation_label, ordinal: wire.ordinal,
-            sha256: wire.sha256, payload_sha256: wire.payload_sha256,
-            stable_identity: wire.stable_identity, span,
+            id: wire.id,
+            operation_label: wire.operation_label,
+            ordinal: wire.ordinal,
+            sha256: wire.sha256,
+            payload_sha256: wire.payload_sha256,
+            stable_identity: wire.stable_identity,
+            span,
         })
     }
 }
@@ -85,14 +103,23 @@ mod tests {
     #[test]
     fn operation_record_wire_preserves_optional_identity_and_exact_span() {
         for identity in ["", r#","stable_identity":"stable""#] {
-            let wire = format!(r#"{{"id":"record","operation_label":"label","ordinal":0,"byte_len":70,"sha256":"record-hash","payload_byte_len":40,"payload_sha256":"payload-hash"{identity},"payload_source_offset":120,"source_offset":90}}"#);
+            let wire = format!(
+                r#"{{"id":"record","operation_label":"label","ordinal":0,"byte_len":70,"sha256":"record-hash","payload_byte_len":40,"payload_sha256":"payload-hash"{identity},"payload_source_offset":120,"source_offset":90}}"#
+            );
             let record: FeatureOperationRecord = serde_json::from_str(&wire).unwrap();
             assert_eq!(serde_json::to_string(&record).unwrap(), wire);
-            for (field, value) in [("byte_len", 80), ("payload_source_offset", 89),
-                ("payload_byte_len", u64::MAX), ("source_offset", 121)] {
+            for (field, value) in [
+                ("byte_len", 80),
+                ("payload_source_offset", 89),
+                ("payload_byte_len", u64::MAX),
+                ("source_offset", 121),
+            ] {
                 let mut invalid: serde_json::Value = serde_json::from_str(&wire).unwrap();
                 invalid[field] = serde_json::json!(value);
-                assert!(serde_json::from_value::<FeatureOperationRecord>(invalid).unwrap_err().to_string().contains(field));
+                assert!(serde_json::from_value::<FeatureOperationRecord>(invalid)
+                    .unwrap_err()
+                    .to_string()
+                    .contains(field));
             }
         }
     }

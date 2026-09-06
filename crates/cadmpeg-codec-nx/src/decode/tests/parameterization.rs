@@ -745,7 +745,9 @@ fn decode_replaces_partition_trimmed_curve_from_status_framed_deltas() {
     let deltas = deltas_trimmed_curve_partition_stream();
     let merged = crate::deltas::merge_full_records(&partition, &deltas);
     assert_eq!(
-        crate::topology::trimmed_curves(&merged)[0].state.parameters(),
+        crate::topology::trimmed_curves(&merged)[0]
+            .state
+            .parameters(),
         [0.000_3, 0.000_7]
     );
     let result = NxCodec
@@ -765,7 +767,9 @@ fn decode_replaces_partition_surface_curve_from_status_framed_deltas() {
     let deltas = deltas_surface_curve_partition_stream();
     let merged = crate::deltas::merge_full_records(&partition, &deltas);
     assert_eq!(
-        crate::topology::surface_curves(&merged)[0].state.tolerance(),
+        crate::topology::surface_curves(&merged)[0]
+            .state
+            .tolerance(),
         0.000_02
     );
     let result = NxCodec
@@ -1444,7 +1448,8 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
         .collect::<Vec<_>>();
     let pending = vec![(
         procedural_id,
-        crate::intersection::chart_samples::ChartSamples::from_test_values(points, vec![0.0, 1.0]).unwrap(),
+        crate::intersection::chart_samples::ChartSamples::from_test_values(points, vec![0.0, 1.0])
+            .unwrap(),
         FIT_TOLERANCE,
         SerializedSupportUv::from_values([
             Some(
@@ -1583,8 +1588,11 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
     let parameters = vec![0.0, 2.0, 5.0];
     let pending = vec![(
         procedural_id,
-        crate::intersection::chart_samples::ChartSamples::from_test_values(points.clone(), parameters.clone())
-            .unwrap(),
+        crate::intersection::chart_samples::ChartSamples::from_test_values(
+            points.clone(),
+            parameters.clone(),
+        )
+        .unwrap(),
         1.0e-3,
         SerializedSupportUv::default(),
     )];
@@ -1755,8 +1763,11 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
     let pending = vec![
         (
             dependent_id,
-            crate::intersection::chart_samples::ChartSamples::from_test_values(points, parameters.clone())
-                .unwrap(),
+            crate::intersection::chart_samples::ChartSamples::from_test_values(
+                points,
+                parameters.clone(),
+            )
+            .unwrap(),
             0.01,
             SerializedSupportUv::default(),
         ),

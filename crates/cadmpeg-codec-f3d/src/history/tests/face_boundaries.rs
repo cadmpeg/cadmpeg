@@ -153,7 +153,20 @@ fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
                 face_slot: 50,
                 loops: vec![DesignHistoricalFaceLoopContext {
                     loop_slot: 60,
-                    boundary: crate::records::DesignHistoricalLoopBoundary::Coedges(vec![crate::records::DesignHistoricalLoopCoedge { coedge_slot: 70, edge_slot: 8 }, crate::records::DesignHistoricalLoopCoedge { coedge_slot: 71, edge_slot: 6 }, crate::records::DesignHistoricalLoopCoedge { coedge_slot: 72, edge_slot: 7 }]),
+                    boundary: crate::records::DesignHistoricalLoopBoundary::Coedges(vec![
+                        crate::records::DesignHistoricalLoopCoedge {
+                            coedge_slot: 70,
+                            edge_slot: 8,
+                        },
+                        crate::records::DesignHistoricalLoopCoedge {
+                            coedge_slot: 71,
+                            edge_slot: 6,
+                        },
+                        crate::records::DesignHistoricalLoopCoedge {
+                            coedge_slot: 72,
+                            edge_slot: 7,
+                        },
+                    ]),
                 }],
             }],
             changed_preceding_face_slots: vec![50],

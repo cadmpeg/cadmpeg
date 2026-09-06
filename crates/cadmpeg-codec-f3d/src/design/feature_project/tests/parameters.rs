@@ -234,7 +234,12 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         previous_history_state_id: None,
         previous_history_state_id_offset: None,
         reference_count_offset: 180,
-        reference_members: crate::records::ReferenceRun::from_columns(vec![44, 44], vec![185, 196], "reference_members").unwrap(),
+        reference_members: crate::records::ReferenceRun::from_columns(
+            vec![44, 44],
+            vec![185, 196],
+            "reference_members",
+        )
+        .unwrap(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "261".into(),
         paired_byte_offset: 300,
@@ -362,7 +367,12 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         previous_history_state_id: None,
         previous_history_state_id_offset: None,
         reference_count_offset: 0,
-        reference_members: crate::records::ReferenceRun::from_columns(Vec::new(), Vec::new(), "reference_members").unwrap(),
+        reference_members: crate::records::ReferenceRun::from_columns(
+            Vec::new(),
+            Vec::new(),
+            "reference_members",
+        )
+        .unwrap(),
         payload: crate::records::DesignFeatureKind::CustomFeature.into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "302".into(),
@@ -498,8 +508,15 @@ fn parameter_expressions_project_feature_dependencies() {
         previous_history_state_id: None,
         previous_history_state_id_offset: None,
         reference_count_offset: byte_offset + 80,
-        reference_members: crate::records::ReferenceRun::from_columns(vec![record_index + 1], vec![byte_offset + 85], "reference_members").unwrap(),
-        payload: crate::records::DesignFeatureKind::try_from(kind.to_owned()).expect("nonempty family name").into(),
+        reference_members: crate::records::ReferenceRun::from_columns(
+            vec![record_index + 1],
+            vec![byte_offset + 85],
+            "reference_members",
+        )
+        .unwrap(),
+        payload: crate::records::DesignFeatureKind::try_from(kind.to_owned())
+            .expect("nonempty family name")
+            .into(),
         unclosed_construction_operand_groups: Vec::new(),
         paired_class_tag: "261".into(),
         paired_byte_offset: byte_offset + 200,

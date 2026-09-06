@@ -87,7 +87,11 @@ pub(crate) fn project_local_components(
                 construction.transform,
             );
         }
-        let Some(crate::records::DesignRectangularPatternInstances::Components { component_guid, seed, generated }) = scope
+        let Some(crate::records::DesignRectangularPatternInstances::Components {
+            component_guid,
+            seed,
+            generated,
+        }) = scope
             .rectangular_pattern_construction()
             .and_then(|construction| construction.instances.as_ref())
         else {
@@ -357,7 +361,10 @@ mod tests {
             occurrence_guid_offset: 0,
             placement: crate::records::DesignComponentOccurrencePlacement::Explicit {
                 ordinal: std::num::NonZeroU32::MIN,
-                transform: crate::records::Located { value: identity_matrix(), offset: 209 },
+                transform: crate::records::Located {
+                    value: identity_matrix(),
+                    offset: 209,
+                },
             },
         };
         let (definitions, occurrences) =

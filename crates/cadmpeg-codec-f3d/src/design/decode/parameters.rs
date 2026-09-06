@@ -7,7 +7,7 @@ use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded};
 use crate::container::ContainerScan;
 use crate::design::decode::body::decode_stream;
 use crate::design::decode::dimension_frames::companion_owned_interval;
-use crate::design::decode::sketch::{IndexedRecordOffsets, next_indexed_record_offset};
+use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOffsets};
 use crate::ids::{self, native_stream};
 use crate::layout::design_parameter_legacy_287_prefix as legacy_287;
 use crate::layout::design_parameter_legacy_287_tail as legacy_287_tail;
@@ -20,8 +20,8 @@ use crate::records::{
     ConstructionRecipe, DesignEntityHeader, DesignParameter, DesignParameterCompanion,
     DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
 };
-use cadmpeg_core::CodecError;
 use cadmpeg_core::decode::View;
+use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
 /// Decode every parametric construction-recipe record (`body_recipe_data`,
@@ -106,7 +106,10 @@ pub(crate) fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> 
     }
     let (family_discriminator, source_ordinal, owner_record_index, expression_at, trailer_len) =
         if discriminated {
-            let discriminator = crate::records::DesignParameterDiscriminator::try_from(View::u64_le_at(payload, 22)?).ok()?;
+            let discriminator = crate::records::DesignParameterDiscriminator::try_from(
+                View::u64_le_at(payload, 22)?,
+            )
+            .ok()?;
             let owner = match payload.get(35)? {
                 0 => (None, 36, 9),
                 1 if payload.get(40..46) == Some(&[0; 6]) => {
@@ -156,24 +159,26 @@ pub(crate) fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> 
     if discriminated && View::u32_le_at(payload, source_kind_end) != Some(0) {
         return None;
     }
-    let (unit, name, name_at, name_end) =
-        if View::u32_le_at(payload, first_at) == Some(0) {
-            let name_at = first_at + 4;
-            let (name, name_end) = lp_utf16_bounded(payload, name_at, 1..=256)?;
-            (None, name, name_at, name_end)
+    let (unit, name, name_at, name_end) = if View::u32_le_at(payload, first_at) == Some(0) {
+        let name_at = first_at + 4;
+        let (name, name_end) = lp_utf16_bounded(payload, name_at, 1..=256)?;
+        (None, name, name_at, name_end)
+    } else {
+        let (first, first_end) = lp_utf16_bounded(payload, first_at, 1..=256)?;
+        if let Some((second, second_end)) = lp_utf16_bounded(payload, first_end, 1..=256) {
+            (
+                Some(crate::records::RecordedValue {
+                    value: first,
+                    offset: Some((first_at + 4) as u64),
+                }),
+                second,
+                first_end,
+                second_end,
+            )
         } else {
-            let (first, first_end) = lp_utf16_bounded(payload, first_at, 1..=256)?;
-            if let Some((second, second_end)) = lp_utf16_bounded(payload, first_end, 1..=256) {
-                (
-                    Some(crate::records::RecordedValue { value: first, offset: Some((first_at + 4) as u64) }),
-                    second,
-                    first_end,
-                    second_end,
-                )
-            } else {
-                (None, first, first_at, first_end)
-            }
-        };
+            (None, first, first_at, first_end)
+        }
+    };
     let evaluated_value = View::f64_le_at(payload, name_end)?;
     let tail = payload.get(name_end + 8..)?;
     if tail.len() != 12
@@ -193,7 +198,12 @@ pub(crate) fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> 
         class_tag,
         record_index,
         source_ordinal,
-        source: crate::records::DesignParameterSource::new(source_kind, owner_record_index, family_discriminator.map(|value| crate::records::Located { value, offset: 22 })).ok()?,
+        source: crate::records::DesignParameterSource::new(
+            source_kind,
+            owner_record_index,
+            family_discriminator.map(|value| crate::records::Located { value, offset: 22 }),
+        )
+        .ok()?,
         expression,
         expression_offset: (expression_at + 4) as u64,
         source_kind_offset: (source_kind_at + 4) as u64,
@@ -231,22 +241,24 @@ fn parse_legacy_287_design_parameter(
     }
     let source_kind_at = expression_trailer_end;
     let (source_kind, source_kind_end) = lp_utf16_bounded(payload, source_kind_at, 1..=256)?;
-    let (unit, name, name_at, name_end) =
-        if View::u32_le_at(payload, source_kind_end) == Some(0) {
-            let name_at = source_kind_end.checked_add(4)?;
-            let (name, name_end) = lp_utf16_bounded(payload, name_at, 1..=256)?;
-            (None, name, name_at, name_end)
-        } else {
-            let (unit, unit_end) = lp_utf16_bounded(payload, source_kind_end, 1..=64)?;
-            let (name, name_end) = lp_utf16_bounded(payload, unit_end, 1..=256)?;
-            let unit_offset = source_kind_end.checked_add(4)?;
-            (
-                Some(crate::records::RecordedValue { value: unit, offset: Some(u64::try_from(unit_offset).ok()?) }),
-                name,
-                unit_end,
-                name_end,
-            )
-        };
+    let (unit, name, name_at, name_end) = if View::u32_le_at(payload, source_kind_end) == Some(0) {
+        let name_at = source_kind_end.checked_add(4)?;
+        let (name, name_end) = lp_utf16_bounded(payload, name_at, 1..=256)?;
+        (None, name, name_at, name_end)
+    } else {
+        let (unit, unit_end) = lp_utf16_bounded(payload, source_kind_end, 1..=64)?;
+        let (name, name_end) = lp_utf16_bounded(payload, unit_end, 1..=256)?;
+        let unit_offset = source_kind_end.checked_add(4)?;
+        (
+            Some(crate::records::RecordedValue {
+                value: unit,
+                offset: Some(u64::try_from(unit_offset).ok()?),
+            }),
+            name,
+            unit_end,
+            name_end,
+        )
+    };
     let evaluated_value = View::f64_le_at(payload, name_end)?;
     let tail_start = name_end.checked_add(8)?;
     let tail = payload.get(tail_start..)?;
@@ -269,7 +281,12 @@ fn parse_legacy_287_design_parameter(
         class_tag,
         record_index,
         source_ordinal,
-        source: crate::records::DesignParameterSource::new(source_kind, Some(owner_record_index), None).ok()?,
+        source: crate::records::DesignParameterSource::new(
+            source_kind,
+            Some(owner_record_index),
+            None,
+        )
+        .ok()?,
         expression,
         expression_offset: u64::try_from(legacy_287::EXPRESSION_LENGTH + 4).ok()?,
         source_kind_offset: u64::try_from(source_kind_at.checked_add(4)?).ok()?,
@@ -324,11 +341,19 @@ fn parse_legacy_design_parameter(
         class_tag,
         record_index,
         source_ordinal,
-        source: crate::records::DesignParameterSource::new(source_kind, Some(owner_record_index), None).ok()?,
+        source: crate::records::DesignParameterSource::new(
+            source_kind,
+            Some(owner_record_index),
+            None,
+        )
+        .ok()?,
         expression,
         expression_offset: (expression_at + 4) as u64,
         source_kind_offset: (source_kind_at + 4) as u64,
-        unit: Some(crate::records::RecordedValue { value: unit, offset: Some((unit_at + 4) as u64) }),
+        unit: Some(crate::records::RecordedValue {
+            value: unit,
+            offset: Some((unit_at + 4) as u64),
+        }),
         name,
         name_offset: (name_at + 4) as u64,
         evaluated_value,
@@ -359,14 +384,20 @@ pub(crate) fn is_legacy_parameter_owner_88_class(class_tag: &str) -> bool {
     matches!(class_tag, "284" | "282" | "336" | "325" | "297")
 }
 
-fn valid_design_parameter_family(discriminator: Option<crate::records::DesignParameterDiscriminator>, source_kind: &str, tail: u8) -> bool {
+fn valid_design_parameter_family(
+    discriminator: Option<crate::records::DesignParameterDiscriminator>,
+    source_kind: &str,
+    tail: u8,
+) -> bool {
     use crate::records::DesignParameterDiscriminator::{Code0, Code3, Code4, Code5, Code6};
     match tail {
         16 => {
-            (discriminator == Some(Code5) && source_kind == "ScaleFactor") || discriminator == Some(Code6)
+            (discriminator == Some(Code5) && source_kind == "ScaleFactor")
+                || discriminator == Some(Code6)
         }
         19 => discriminator.is_none_or(|value| {
-            matches!(value, Code0 | Code3 | Code4) || (value == Code6 && source_kind == "TangencyWeight")
+            matches!(value, Code0 | Code3 | Code4)
+                || (value == Code6 && source_kind == "TangencyWeight")
         }),
         _ => false,
     }
@@ -785,9 +816,8 @@ pub(crate) fn parse_parameter_companion(prefix: &[u8]) -> Option<DesignParameter
     {
         return None;
     }
-    let timestamp_micros = std::num::NonZeroU64::new(
-        View::u64_le_at(prefix, companion_prefix::TIMESTAMP_MICROS)?,
-    )?;
+    let timestamp_micros =
+        std::num::NonZeroU64::new(View::u64_le_at(prefix, companion_prefix::TIMESTAMP_MICROS)?)?;
     Some(DesignParameterCompanion {
         id: String::new(),
         byte_offset: 0,

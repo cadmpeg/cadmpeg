@@ -21,7 +21,10 @@ fn legacy_scale_resolves_explicit_point_data_center() {
 
         assert_eq!(operation.body_group_record_index, 102);
         assert_eq!(operation.center_record_index, 105);
-        assert_eq!(operation.center_position.map(|center| center.offset), Some(position_at as u64));
+        assert_eq!(
+            operation.center_position.map(|center| center.offset),
+            Some(position_at as u64)
+        );
         assert_eq!(operation.uniform_factor_offset, 21);
         assert!((operation.uniform_factor - 2.5).abs() < EPS_SCALE_VALUE);
 
@@ -41,7 +44,10 @@ fn modern_localized_scale_resolves_explicit_point_data_center() {
 
     assert_eq!(operation.body_group_record_index, 102);
     assert_eq!(operation.center_record_index, 105);
-    assert_eq!(operation.center_position.map(|center| center.offset), Some(position_at as u64));
+    assert_eq!(
+        operation.center_position.map(|center| center.offset),
+        Some(position_at as u64)
+    );
     assert_eq!(operation.uniform_factor_offset, 25);
     assert!((operation.uniform_factor - 2.5).abs() < EPS_SCALE_VALUE);
 
@@ -70,7 +76,8 @@ fn modern_scale_fixture() -> (Vec<u8>, DesignParameterScope, usize) {
         100,
     );
     scope.frame_length = 317;
-    scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![101, 102, 103, 104, 105]);
+    scope.reference_members =
+        crate::records::ReferenceRun::Unlocated(vec![101, 102, 103, 104, 105]);
     (bytes, scope, position_at)
 }
 

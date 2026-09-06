@@ -15,8 +15,12 @@ pub(crate) trait CountedValue: Sized {
 impl CountedValue for u32 {
     const WIDTH: usize = 4;
 
-    fn read(bytes: &[u8]) -> Option<Self> { View::u32_be_at(bytes, 0) }
-    fn is_finite(&self) -> bool { true }
+    fn read(bytes: &[u8]) -> Option<Self> {
+        View::u32_be_at(bytes, 0)
+    }
+    fn is_finite(&self) -> bool {
+        true
+    }
 }
 
 impl CountedValue for f64 {

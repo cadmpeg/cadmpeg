@@ -3295,7 +3295,8 @@ mod route_tests {
         let surfaces = HashMap::from([(
             100,
             (
-                SurfaceId::mint("catia:test:surface#surface".to_string()).expect("identity grammar"),
+                SurfaceId::mint("catia:test:surface#surface".to_string())
+                    .expect("identity grammar"),
                 &surface,
             ),
         )]);
@@ -3357,7 +3358,8 @@ mod route_tests {
         let surfaces = HashMap::from([(
             100,
             (
-                SurfaceId::mint("catia:test:surface#surface".to_string()).expect("identity grammar"),
+                SurfaceId::mint("catia:test:surface#surface".to_string())
+                    .expect("identity grammar"),
                 &surface,
             ),
         )]);
@@ -3471,7 +3473,8 @@ mod route_tests {
         let surfaces = HashMap::from([(
             100,
             (
-                SurfaceId::mint("catia:test:surface#surface".to_string()).expect("identity grammar"),
+                SurfaceId::mint("catia:test:surface#surface".to_string())
+                    .expect("identity grammar"),
                 &surface,
             ),
         )]);
@@ -3544,25 +3547,31 @@ mod route_tests {
         let mut ir = CadIr::empty();
         ir.model.points.extend([
             Point {
-                id: PointId::mint("catia:test:point#point-10".to_string()).expect("identity grammar"),
+                id: PointId::mint("catia:test:point#point-10".to_string())
+                    .expect("identity grammar"),
                 position: Point3::new(0.0, 0.0, 0.0),
                 source_object: None,
             },
             Point {
-                id: PointId::mint("catia:test:point#point-11".to_string()).expect("identity grammar"),
+                id: PointId::mint("catia:test:point#point-11".to_string())
+                    .expect("identity grammar"),
                 position: Point3::new(1.0, 0.0, 0.0),
                 source_object: None,
             },
         ]);
         ir.model.vertices.extend([
             Vertex {
-                id: VertexId::mint("catia:test:vertex#vertex-10".to_string()).expect("identity grammar"),
-                point: PointId::mint("catia:test:point#point-10".to_string()).expect("identity grammar"),
+                id: VertexId::mint("catia:test:vertex#vertex-10".to_string())
+                    .expect("identity grammar"),
+                point: PointId::mint("catia:test:point#point-10".to_string())
+                    .expect("identity grammar"),
                 tolerance: None,
             },
             Vertex {
-                id: VertexId::mint("catia:test:vertex#vertex-11".to_string()).expect("identity grammar"),
-                point: PointId::mint("catia:test:point#point-11".to_string()).expect("identity grammar"),
+                id: VertexId::mint("catia:test:vertex#vertex-11".to_string())
+                    .expect("identity grammar"),
+                point: PointId::mint("catia:test:point#point-11".to_string())
+                    .expect("identity grammar"),
                 tolerance: None,
             },
         ]);
@@ -4500,7 +4509,8 @@ mod route_tests {
     fn occurrence_intersection_maps_distinct_local_ranges_to_support_range() {
         let sides = vec![
             E5OccurrenceIntersectionSide {
-                surface: SurfaceId::mint("catia:test:surface#left".to_string()).expect("identity grammar"),
+                surface: SurfaceId::mint("catia:test:surface#left".to_string())
+                    .expect("identity grammar"),
                 pcurve: PcurveGeometry::Line {
                     origin: Point2::new(0.0, 0.0),
                     direction: Point2::new(1.0, 0.0),
@@ -4509,7 +4519,8 @@ mod route_tests {
                 curve: None,
             },
             E5OccurrenceIntersectionSide {
-                surface: SurfaceId::mint("catia:test:surface#right".to_string()).expect("identity grammar"),
+                surface: SurfaceId::mint("catia:test:surface#right".to_string())
+                    .expect("identity grammar"),
                 pcurve: PcurveGeometry::Line {
                     origin: Point2::new(0.0, 1.0),
                     direction: Point2::new(1.0, 0.0),
@@ -4566,7 +4577,8 @@ mod route_tests {
         );
         let mut sides = vec![
             E5OccurrenceIntersectionSide {
-                surface: SurfaceId::mint("catia:test:surface#left".to_string()).expect("identity grammar"),
+                surface: SurfaceId::mint("catia:test:surface#left".to_string())
+                    .expect("identity grammar"),
                 pcurve: PcurveGeometry::Line {
                     origin: Point2::new(0.0, 0.0),
                     direction: Point2::new(1.0, 0.0),
@@ -4575,7 +4587,8 @@ mod route_tests {
                 curve: Some((line.clone(), [0.0, 1.0])),
             },
             E5OccurrenceIntersectionSide {
-                surface: SurfaceId::mint("catia:test:surface#right".to_string()).expect("identity grammar"),
+                surface: SurfaceId::mint("catia:test:surface#right".to_string())
+                    .expect("identity grammar"),
                 pcurve: PcurveGeometry::Line {
                     origin: Point2::new(0.0, 1.0),
                     direction: Point2::new(1.0, 0.0),

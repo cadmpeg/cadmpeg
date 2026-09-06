@@ -31,7 +31,9 @@ fn generated_source_less_rejects_act_without_segment_metadata() {
         id: "generated:act-entity#0".into(),
         record_index: 7,
         entity_id: "0_985".into(),
-        membership: crate::records::ActEntityMembership::TableOnly(crate::records::ActTableRow::new(0).unwrap()),
+        membership: crate::records::ActEntityMembership::TableOnly(
+            crate::records::ActTableRow::new(0).unwrap(),
+        ),
     }];
     drop(native);
     let error = F3dCodec
@@ -55,7 +57,11 @@ fn generated_f3d_rejects_act_binding_divergence() {
             .channel_group_mut()
             .unwrap()
             .channels
-            .get_mut("Appearance").unwrap().value = String::from("dddddddd-1111-2222-3333-eeeeeeeeeeee").try_into().unwrap();
+            .get_mut("Appearance")
+            .unwrap()
+            .value = String::from("dddddddd-1111-2222-3333-eeeeeeeeeeee")
+            .try_into()
+            .unwrap();
     });
 
     let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())

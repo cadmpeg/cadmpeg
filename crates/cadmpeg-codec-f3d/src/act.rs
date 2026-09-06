@@ -5,15 +5,15 @@ use cadmpeg_core::container::ContainerRole;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::CodecError;
 use cadmpeg_core::decode::View;
+use cadmpeg_core::CodecError;
 
 use crate::bytes::{is_guid_hyphenated, lp_ascii_strict, lp_utf16_bounded};
 use crate::container::ContainerScan;
 use crate::metastream::MetaStream;
 use crate::records::{
-    ActChannelGroup, ActClassTail, ActEntity, ActEntityMembership, ActGuid, ActRegistryChannel, ActRootComponent,
-    ActTableReference, ActTableRow, Located,
+    ActChannelGroup, ActClassTail, ActEntity, ActEntityMembership, ActGuid, ActRegistryChannel,
+    ActRootComponent, ActTableReference, ActTableRow, Located,
 };
 
 pub struct DecodedAct {
@@ -110,11 +110,12 @@ fn decode_record_frames(
                         "F3D ACT class tag is outside the dynamic registry: {stream}@{start}"
                     ))
                 })?;
-            if !meta
-                .types
-                .get(class_index)
-                .is_some_and(|record_type| record_type.entities.values().any(|registered| *registered == record.entity_id))
-            {
+            if !meta.types.get(class_index).is_some_and(|record_type| {
+                record_type
+                    .entities
+                    .values()
+                    .any(|registered| *registered == record.entity_id)
+            }) {
                 return Err(CodecError::malformed(format_args!(
                     "F3D ACT class tag conflicts with its MetaStream type: {stream}@{start}"
                 )));
@@ -226,14 +227,10 @@ pub fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError> {
             .ok_or_else(|| {
                 CodecError::Malformed("F3D ACT component-link count overflows".into())
             })?;
-        root_components.extend(
-            links
-                .into_iter()
-                .filter_map(|link| match link {
-                    ComponentLink::Root(root) => Some(root),
-                    ComponentLink::NonRoot => None,
-                }),
-        );
+        root_components.extend(links.into_iter().filter_map(|link| match link {
+            ComponentLink::Root(root) => Some(root),
+            ComponentLink::NonRoot => None,
+        }));
 
         entities.extend(merge_entities(&entry.name, table, groups)?);
         guids.extend(stream_guids);
@@ -326,12 +323,15 @@ fn decode_table(
     {
         let byte_offset = cursor;
         let ordinal = u32::try_from(guids.len()).map_err(|_| malformed("GUID ordinal"))?;
-        guids.push(ActGuid::new(
-            crate::ids::native_scoped_id(stream, "act-guid", byte_offset),
-            byte_offset as u64,
-            ordinal,
-            guid,
-        ).map_err(|_| malformed("GUID offset"))?);
+        guids.push(
+            ActGuid::new(
+                crate::ids::native_scoped_id(stream, "act-guid", byte_offset),
+                byte_offset as u64,
+                ordinal,
+                guid,
+            )
+            .map_err(|_| malformed("GUID offset"))?,
+        );
         cursor = end;
     }
 
@@ -350,12 +350,15 @@ fn decode_table(
         let byte_offset = cursor;
         let (target_record, end) =
             marker_ref(bytes, cursor, 6, frame.end).ok_or_else(|| malformed("table reference"))?;
-        table_references.push(ActTableReference::new(
-            crate::ids::native_scoped_id(stream, "act-table-reference", byte_offset),
-            u32::try_from(ordinal).map_err(|_| malformed("table-reference ordinal"))?,
-            byte_offset as u64,
-            target_record,
-        ).map_err(CodecError::malformed)?);
+        table_references.push(
+            ActTableReference::new(
+                crate::ids::native_scoped_id(stream, "act-table-reference", byte_offset),
+                u32::try_from(ordinal).map_err(|_| malformed("table-reference ordinal"))?,
+                byte_offset as u64,
+                target_record,
+            )
+            .map_err(CodecError::malformed)?,
+        );
         cursor = end;
     }
 
@@ -382,13 +385,16 @@ fn decode_table(
         let (guid, end) = lp_utf16_bounded(bytes, after_name, 36..=36)
             .filter(|(guid, end)| *end <= frame.end && is_guid_hyphenated(guid))
             .ok_or_else(|| malformed("channel-registry GUID"))?;
-        registry_channels.push(ActRegistryChannel::new(
-            crate::ids::native_scoped_id(stream, "act-registry-channel", byte_offset),
-            u32::try_from(ordinal).map_err(|_| malformed("channel-registry ordinal"))?,
-            byte_offset as u64,
-            name,
-            guid,
-        ).map_err(|_| malformed("channel-registry entry"))?);
+        registry_channels.push(
+            ActRegistryChannel::new(
+                crate::ids::native_scoped_id(stream, "act-registry-channel", byte_offset),
+                u32::try_from(ordinal).map_err(|_| malformed("channel-registry ordinal"))?,
+                byte_offset as u64,
+                name,
+                guid,
+            )
+            .map_err(|_| malformed("channel-registry entry"))?,
+        );
         cursor = end;
     }
     if cursor != frame.end {
@@ -520,7 +526,16 @@ fn decode_channel_group(
         else {
             return Ok(None);
         };
-        if channels.insert(name.clone(), Located { value: guid.try_into().map_err(CodecError::malformed)?, offset: (after_name + 4) as u64 }).is_some() {
+        if channels
+            .insert(
+                name.clone(),
+                Located {
+                    value: guid.try_into().map_err(CodecError::malformed)?,
+                    offset: (after_name + 4) as u64,
+                },
+            )
+            .is_some()
+        {
             return Err(CodecError::malformed(format_args!(
                 "duplicate F3D ACT channel {name:?}: {stream}@{}",
                 frame.start
@@ -528,11 +543,16 @@ fn decode_channel_group(
         }
         cursor = after_guid;
     }
-    let (entity_id, end) = if let Some((entity_id, end)) =
-        lp_utf16_bounded(bytes, cursor, 1..=1024)
-            .filter(|(entity_id, end)| *end <= frame.end && is_entity_key(entity_id))
+    let (entity_id, end) = if let Some((entity_id, end)) = lp_utf16_bounded(bytes, cursor, 1..=1024)
+        .filter(|(entity_id, end)| *end <= frame.end && is_entity_key(entity_id))
     {
-        (Some(Located { value: entity_id, offset: cursor + 4 }), end)
+        (
+            Some(Located {
+                value: entity_id,
+                offset: cursor + 4,
+            }),
+            end,
+        )
     } else {
         (None, cursor)
     };
@@ -557,11 +577,7 @@ enum ComponentLink {
     NonRoot,
 }
 
-fn decode_component_link(
-    bytes: &[u8],
-    frame: &RecordFrame,
-    stream: &str,
-) -> Option<ComponentLink> {
+fn decode_component_link(bytes: &[u8], frame: &RecordFrame, stream: &str) -> Option<ComponentLink> {
     let mut cursor = frame.payload_offset.checked_add(10)?;
     if cursor > frame.end || bytes.get(frame.payload_offset..cursor)? != [0; 10] {
         return None;
@@ -601,8 +617,12 @@ fn decode_component_link(
         return Some(ComponentLink::NonRoot);
     }
     let layout = crate::records::ActRootLayout::new(
-        frame.start as u64, entity_id, display_name, (components_marker - cursor) as u64,
-    ).ok()?;
+        frame.start as u64,
+        entity_id,
+        display_name,
+        (components_marker - cursor) as u64,
+    )
+    .ok()?;
     Some(ComponentLink::Root(ActRootComponent {
         id: crate::ids::native_scoped_id(stream, "act-root-component", frame.start),
         record_index: frame.record_index,
@@ -680,11 +700,19 @@ mod tests {
         ChannelGroup {
             record_index: 7,
             record_index_offset: 100,
-            entity_id: Some(Located { value: entity_id.into(), offset: 200 }),
+            entity_id: Some(Located {
+                value: entity_id.into(),
+                offset: 200,
+            }),
             class_tag: "261".into(),
             channels: BTreeMap::from([(
                 "Appearance".into(),
-                Located { value: String::from("11111111-2222-3333-4444-555555555555").try_into().unwrap(), offset: 120 },
+                Located {
+                    value: String::from("11111111-2222-3333-4444-555555555555")
+                        .try_into()
+                        .unwrap(),
+                    offset: 120,
+                },
             )]),
             class_tail: None,
         }
@@ -717,11 +745,9 @@ mod tests {
             vec![channel_group("0_985"), channel_group("0_985")],
         )
         .expect_err("one record index cannot own two change groups");
-        assert!(
-            duplicate
-                .to_string()
-                .contains("duplicate F3D ACT change group")
-        );
+        assert!(duplicate
+            .to_string()
+            .contains("duplicate F3D ACT change group"));
 
         let table_only = merge_entities(stream, vec![table_entry("0_985")], Vec::new())
             .expect_err("every table reference must resolve to a change group");
@@ -764,7 +790,10 @@ mod tests {
             .expect("well-framed group")
             .expect("zero padding belongs to the group frame");
         assert_eq!(group.record_index, 7);
-        assert_eq!(group.entity_id.as_ref().map(|id| id.value.as_str()), Some("0_985"));
+        assert_eq!(
+            group.entity_id.as_ref().map(|id| id.value.as_str()),
+            Some("0_985")
+        );
         assert!(group.class_tail.is_none());
 
         let keyless_frame = RecordFrame {

@@ -61,11 +61,18 @@ impl<T, O> ReferenceRun<T, O> {
         })
     }
 
-    pub fn values_in(&self, range: std::ops::Range<usize>) -> Option<impl ExactSizeIterator<Item = &T> + DoubleEndedIterator + Clone> {
+    pub fn values_in(
+        &self,
+        range: std::ops::Range<usize>,
+    ) -> Option<impl ExactSizeIterator<Item = &T> + DoubleEndedIterator + Clone> {
         if range.start > range.end || range.end > self.len() {
             return None;
         }
-        Some(self.values().skip(range.start).take(range.end - range.start))
+        Some(
+            self.values()
+                .skip(range.start)
+                .take(range.end - range.start),
+        )
     }
 
     pub fn values_array<const N: usize>(&self) -> Option<[&T; N]> {
@@ -95,7 +102,9 @@ impl<T, O> ReferenceRun<T, O> {
             Self::Unlocated(values) => (values, &mut []),
             Self::Located(values) => (&mut [], values),
         };
-        unlocated.iter_mut().chain(located.iter_mut().map(|row| &mut row.value))
+        unlocated
+            .iter_mut()
+            .chain(located.iter_mut().map(|row| &mut row.value))
     }
 
     pub fn len(&self) -> usize {
@@ -112,20 +121,35 @@ impl<T, O> ReferenceRun<T, O> {
         }
     }
 
-    pub(crate) fn from_columns(values: Vec<T>, offsets: Vec<O>, field: &str) -> Result<Self, String> {
+    pub(crate) fn from_columns(
+        values: Vec<T>,
+        offsets: Vec<O>,
+        field: &str,
+    ) -> Result<Self, String> {
         if offsets.is_empty() {
             return Ok(Self::Unlocated(values));
         }
         if values.len() != offsets.len() {
-            return Err(format!("{field} offsets must be absent or match every value"));
+            return Err(format!(
+                "{field} offsets must be absent or match every value"
+            ));
         }
-        Ok(Self::Located(values.into_iter().zip(offsets).map(|(value, offset)| Located { value, offset }).collect()))
+        Ok(Self::Located(
+            values
+                .into_iter()
+                .zip(offsets)
+                .map(|(value, offset)| Located { value, offset })
+                .collect(),
+        ))
     }
 
     fn into_wire(self) -> (Vec<T>, Vec<O>) {
         match self {
             Self::Unlocated(values) => (values, Vec::new()),
-            Self::Located(values) => values.into_iter().map(|row| (row.value, row.offset)).unzip(),
+            Self::Located(values) => values
+                .into_iter()
+                .map(|row| (row.value, row.offset))
+                .unzip(),
         }
     }
 }
@@ -167,7 +191,11 @@ pub struct RecordedValue<T> {
 }
 
 impl<T> RecordedValue<T> {
-    fn from_wire(value: Option<T>, offset: Option<u64>, field: &str) -> Result<Option<Self>, String> {
+    fn from_wire(
+        value: Option<T>,
+        offset: Option<u64>,
+        field: &str,
+    ) -> Result<Option<Self>, String> {
         match (value, offset) {
             (Some(value), offset) => Ok(Some(Self { value, offset })),
             (None, None) => Ok(None),
@@ -192,8 +220,8 @@ fn deserialize_absent_u64_offset<'de, D: Deserializer<'de>>(
 
 use cadmpeg_ir::assets::AssetId;
 use cadmpeg_ir::attributes::AttributeTarget;
-use cadmpeg_ir::ids::{BodyId, EdgeId, FaceId};
 use cadmpeg_ir::features::Angle;
+use cadmpeg_ir::ids::{BodyId, EdgeId, FaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::TextPlacement;
 use cadmpeg_ir::topology::Color;
@@ -444,7 +472,9 @@ impl TryFrom<ConstructionRecipeWire> for ConstructionRecipe {
         let design = match (id, wire.design_selector) {
             (Some(id), selector) => Some(ConstructionRecipeDesign { id, selector }),
             (None, None) => None,
-            (None, Some(_)) => return Err("construction recipe design_selector requires design_id".into()),
+            (None, Some(_)) => {
+                return Err("construction recipe design_selector requires design_id".into())
+            }
         };
         Ok(Self {
             id: wire.id,
@@ -528,7 +558,9 @@ impl TryFrom<u64> for DesignParameterDiscriminator {
             4 => Ok(Self::Code4),
             5 => Ok(Self::Code5),
             6 => Ok(Self::Code6),
-            _ => Err(format!("invalid design parameter family_discriminator {value}")),
+            _ => Err(format!(
+                "invalid design parameter family_discriminator {value}"
+            )),
         }
     }
 }
@@ -536,7 +568,9 @@ impl TryFrom<u64> for DesignParameterDiscriminator {
 /// Source family and ownership of one Design parameter.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DesignParameterSource {
-    User { family_discriminator: Located<DesignParameterDiscriminator> },
+    User {
+        family_discriminator: Located<DesignParameterDiscriminator>,
+    },
     Owned(OwnedDesignParameter),
 }
 
@@ -557,17 +591,31 @@ impl DesignParameterSource {
         match (source_kind.as_str(), owner_record_index) {
             ("", _) => Err("design parameter source_kind is empty".into()),
             ("User Parameter", None) => family_discriminator
-                .map(|family_discriminator| Self::User { family_discriminator })
-                .ok_or_else(|| "design parameter family_discriminator is missing for user source_kind".into()),
-            ("User Parameter", Some(_)) => Err("design parameter owner_record_index is present for user source_kind".into()),
-            (_, Some(owner_record_index)) => Ok(Self::Owned(OwnedDesignParameter { source_kind, owner_record_index, family_discriminator })),
-            (_, None) => Err("design parameter owner_record_index is missing for owned source_kind".into()),
+                .map(|family_discriminator| Self::User {
+                    family_discriminator,
+                })
+                .ok_or_else(|| {
+                    "design parameter family_discriminator is missing for user source_kind".into()
+                }),
+            ("User Parameter", Some(_)) => {
+                Err("design parameter owner_record_index is present for user source_kind".into())
+            }
+            (_, Some(owner_record_index)) => Ok(Self::Owned(OwnedDesignParameter {
+                source_kind,
+                owner_record_index,
+                family_discriminator,
+            })),
+            (_, None) => {
+                Err("design parameter owner_record_index is missing for owned source_kind".into())
+            }
         }
     }
 
     pub(crate) fn translate_discriminator_offset(&mut self, offset: u64) {
         let discriminator = match self {
-            Self::User { family_discriminator } => Some(family_discriminator),
+            Self::User {
+                family_discriminator,
+            } => Some(family_discriminator),
             Self::Owned(source) => source.family_discriminator.as_mut(),
         };
         if let Some(discriminator) = discriminator {
@@ -617,7 +665,9 @@ pub struct DesignParameter {
 impl DesignParameter {
     pub(crate) fn family_discriminator(&self) -> Option<Located<DesignParameterDiscriminator>> {
         match &self.source {
-            DesignParameterSource::User { family_discriminator } => Some(*family_discriminator),
+            DesignParameterSource::User {
+                family_discriminator,
+            } => Some(*family_discriminator),
             DesignParameterSource::Owned(source) => source.family_discriminator,
         }
     }
@@ -688,10 +738,23 @@ impl TryFrom<DesignParameterSerde> for DesignParameter {
         if wire.kind != derived {
             return Err("design parameter kind disagrees with source_kind".into());
         }
-        let family_discriminator = Located::from_wire(wire.family_discriminator, wire.family_discriminator_offset, "DesignParameter.family_discriminator")?
-            .map(|field| Ok::<_, String>(Located { value: DesignParameterDiscriminator::try_from(field.value)?, offset: field.offset }))
-            .transpose()?;
-        let source = DesignParameterSource::new(wire.source_kind, wire.owner_record_index, family_discriminator)?;
+        let family_discriminator = Located::from_wire(
+            wire.family_discriminator,
+            wire.family_discriminator_offset,
+            "DesignParameter.family_discriminator",
+        )?
+        .map(|field| {
+            Ok::<_, String>(Located {
+                value: DesignParameterDiscriminator::try_from(field.value)?,
+                offset: field.offset,
+            })
+        })
+        .transpose()?;
+        let source = DesignParameterSource::new(
+            wire.source_kind,
+            wire.owner_record_index,
+            family_discriminator,
+        )?;
         Ok(Self {
             id: wire.id,
             byte_offset: wire.byte_offset,
@@ -793,7 +856,10 @@ pub struct DesignParameterCompanion {
     /// Indexed parameter-owner record referenced by this prefix.
     pub owner_record_index: u32,
     /// Nonzero Unix-epoch timestamp in microseconds.
-    #[serde(alias = "opaque_value", deserialize_with = "deserialize_companion_timestamp")]
+    #[serde(
+        alias = "opaque_value",
+        deserialize_with = "deserialize_companion_timestamp"
+    )]
     pub timestamp_micros: NonZeroU64,
     /// Byte offset of `timestamp_micros`.
     #[serde(alias = "opaque_value_offset")]
@@ -809,7 +875,9 @@ pub struct DesignParameterCompanion {
     pub owned_recipe_ids: Vec<String>,
 }
 
-fn deserialize_companion_timestamp<'de, D: Deserializer<'de>>(deserializer: D) -> Result<NonZeroU64, D::Error> {
+fn deserialize_companion_timestamp<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<NonZeroU64, D::Error> {
     NonZeroU64::new(u64::deserialize(deserializer)?)
         .ok_or_else(|| serde::de::Error::custom("timestamp_micros must be nonzero"))
 }
@@ -993,14 +1061,20 @@ mod annotation_geometry_index {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use std::num::NonZeroU32;
 
-    pub fn serialize<S: Serializer>(index: &Option<NonZeroU32>, serializer: S) -> Result<S::Ok, S::Error> {
+    pub fn serialize<S: Serializer>(
+        index: &Option<NonZeroU32>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
         match index {
             Some(index) => index.get(),
             None => 0,
-        }.serialize(serializer)
+        }
+        .serialize(serializer)
     }
 
-    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<NonZeroU32>, D::Error> {
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<NonZeroU32>, D::Error> {
         Ok(NonZeroU32::new(u32::deserialize(deserializer)?))
     }
 }
@@ -1020,7 +1094,9 @@ pub struct DesignDimensionPresentationOperand {
     pub role_offset: u64,
 }
 
-fn deserialize_presentation_geometry_index<'de, D: Deserializer<'de>>(deserializer: D) -> Result<NonZeroU32, D::Error> {
+fn deserialize_presentation_geometry_index<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<NonZeroU32, D::Error> {
     NonZeroU32::new(u32::deserialize(deserializer)?)
         .ok_or_else(|| serde::de::Error::custom("geometry_record_index must be nonzero"))
 }
@@ -1028,8 +1104,14 @@ fn deserialize_presentation_geometry_index<'de, D: Deserializer<'de>>(deserializ
 /// Paired `EntityGenesis` dimension frame carrying annotation geometry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "DesignDimensionAnnotationFrameWire"))]
-#[serde(try_from = "DesignDimensionAnnotationFrameWire", into = "DesignDimensionAnnotationFrameWire")]
+#[cfg_attr(
+    feature = "schema",
+    schemars(with = "DesignDimensionAnnotationFrameWire")
+)]
+#[serde(
+    try_from = "DesignDimensionAnnotationFrameWire",
+    into = "DesignDimensionAnnotationFrameWire"
+)]
 pub struct DesignDimensionAnnotationFrame {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -1122,10 +1204,16 @@ impl TryFrom<DesignDimensionAnnotationFrameWire> for DesignDimensionAnnotationFr
             return Err("return_members and return_member_offsets must have equal lengths".into());
         }
         Ok(Self {
-            return_members: wire.return_members.into_iter().zip(wire.return_member_offsets).map(|(value, offset)| {
-                let value = NonZeroU32::new(value).ok_or("return_members must contain nonzero geometry indices")?;
-                Ok(Located { value, offset })
-            }).collect::<Result<_, Self::Error>>()?,
+            return_members: wire
+                .return_members
+                .into_iter()
+                .zip(wire.return_member_offsets)
+                .map(|(value, offset)| {
+                    let value = NonZeroU32::new(value)
+                        .ok_or("return_members must contain nonzero geometry indices")?;
+                    Ok(Located { value, offset })
+                })
+                .collect::<Result<_, Self::Error>>()?,
             id: wire.id,
             companion_record_index: wire.companion_record_index,
             governing_companion_record_index: wire.governing_companion_record_index,
@@ -1148,8 +1236,14 @@ impl TryFrom<DesignDimensionAnnotationFrameWire> for DesignDimensionAnnotationFr
 }
 impl From<DesignDimensionAnnotationFrame> for DesignDimensionAnnotationFrameWire {
     fn from(value: DesignDimensionAnnotationFrame) -> Self {
-        let (return_members, return_member_offsets) = value.return_members.into_iter().map(|member| (member.value.get(), member.offset)).unzip();
-        Self { return_members, return_member_offsets,
+        let (return_members, return_member_offsets) = value
+            .return_members
+            .into_iter()
+            .map(|member| (member.value.get(), member.offset))
+            .unzip();
+        Self {
+            return_members,
+            return_member_offsets,
             id: value.id,
             companion_record_index: value.companion_record_index,
             governing_companion_record_index: value.governing_companion_record_index,
@@ -1229,7 +1323,10 @@ pub struct DesignDimensionLocus {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "DesignDimensionLocusGroupWire"))]
-#[serde(try_from = "DesignDimensionLocusGroupWire", into = "DesignDimensionLocusGroupWire")]
+#[serde(
+    try_from = "DesignDimensionLocusGroupWire",
+    into = "DesignDimensionLocusGroupWire"
+)]
 pub struct DesignDimensionLocusGroup {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -1347,16 +1444,30 @@ impl TryFrom<DesignDimensionLocusGroupWire> for DesignDimensionLocusGroup {
             return Err("return_member_offsets must match loci".into());
         }
         let (kinds, unknown) = constraint_kinds_from_state(u64::from(wire.state));
-        if wire.constraint_kinds != kinds { return Err("constraint_kinds must match state".into()); }
-        if u64::from(wire.unknown_constraint_bits) != unknown { return Err("unknown_constraint_bits must match state".into()); }
-        let loci = wire.loci.into_iter().zip(wire.return_members.into_iter().zip(wire.return_member_offsets)).map(|(locus, (value, offset))| DesignDimensionLocus {
-            geometry_record_index: locus.geometry_record_index,
-            geometry_reference_offset: locus.geometry_reference_offset,
-            role: locus.role,
-            role_offset: locus.role_offset,
-            returned: Located { value, offset },
-        }).collect();
-        Ok(Self { loci,
+        if wire.constraint_kinds != kinds {
+            return Err("constraint_kinds must match state".into());
+        }
+        if u64::from(wire.unknown_constraint_bits) != unknown {
+            return Err("unknown_constraint_bits must match state".into());
+        }
+        let loci = wire
+            .loci
+            .into_iter()
+            .zip(
+                wire.return_members
+                    .into_iter()
+                    .zip(wire.return_member_offsets),
+            )
+            .map(|(locus, (value, offset))| DesignDimensionLocus {
+                geometry_record_index: locus.geometry_record_index,
+                geometry_reference_offset: locus.geometry_reference_offset,
+                role: locus.role,
+                role_offset: locus.role_offset,
+                returned: Located { value, offset },
+            })
+            .collect();
+        Ok(Self {
+            loci,
             id: wire.id,
             companion_record_index: wire.companion_record_index,
             byte_offset: wire.byte_offset,
@@ -1392,7 +1503,12 @@ impl From<DesignDimensionLocusGroup> for DesignDimensionLocusGroupWire {
                 role_offset: locus.role_offset,
             });
         }
-        Self { loci, return_members, return_member_offsets, constraint_kinds, unknown_constraint_bits,
+        Self {
+            loci,
+            return_members,
+            return_member_offsets,
+            constraint_kinds,
+            unknown_constraint_bits,
             id: value.id,
             companion_record_index: value.companion_record_index,
             byte_offset: value.byte_offset,
@@ -1468,7 +1584,10 @@ pub enum DesignExtrudeStart {
 /// Indexed-record prefix preceding a reference-aware Extrude prologue.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "DesignExtrudePrologueReferenceWire", into = "DesignExtrudePrologueReferenceWire")]
+#[serde(
+    try_from = "DesignExtrudePrologueReferenceWire",
+    into = "DesignExtrudePrologueReferenceWire"
+)]
 pub struct DesignExtrudePrologueReference {
     /// Referenced Design record.
     pub record_index: u32,
@@ -1538,7 +1657,10 @@ pub struct DesignExtrudeTargetOrdinal {
 /// Fixed fields preceding an Extrude parameter scope's reference table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "DesignExtrudePrologueWire", into = "DesignExtrudePrologueWire")]
+#[serde(
+    try_from = "DesignExtrudePrologueWire",
+    into = "DesignExtrudePrologueWire"
+)]
 pub enum DesignExtrudePrologue {
     /// Early distance-only layout with a nullable prefix field.
     LegacyDistance {
@@ -1845,10 +1967,121 @@ impl TryFrom<DesignExtrudePrologueWire> for DesignExtrudePrologue {
 impl From<DesignExtrudePrologue> for DesignExtrudePrologueWire {
     fn from(record: DesignExtrudePrologue) -> Self {
         match record {
-            DesignExtrudePrologue::LegacyDistance { prefix_zero_offset, operation, operation_offset, extent_kind_offset, direction_reversed, direction_reversed_offset, solid_operation, solid_operation_offset } => Self::LegacyDistance { prefix_value: prefix_zero_offset.map(|_| 0), prefix_value_offset: prefix_zero_offset, operation, operation_offset, extent_kind: 2, extent_kind_offset, direction_reversed, direction_reversed_offset, geometry_kind: u32::from(solid_operation), geometry_kind_offset: solid_operation_offset },
-            DesignExtrudePrologue::ReferenceAware { reference, operation, operation_offset, direction_face_extend_values, side_extent_discriminators, side_extent_discriminator_offsets, first_side_target_ordinal, extent, direction_face_extend_offsets, direction_reversed, direction_reversed_offset, solid_operation, solid_operation_offset, start, start_offset } => Self::ReferenceAware { reference, operation, operation_offset, direction_face_extend_values, side_extent_discriminators, side_extent_discriminator_offsets, first_side_target_ordinal, extent, direction_face_extend_offsets, direction_reversed, direction_reversed_offset, solid_operation, solid_operation_offset, start, start_offset },
-            DesignExtrudePrologue::ShiftedReferenceAware { operation, operation_offset, direction_face_extend_values, side_extent_discriminators, side_extent_discriminator_offsets, extent, direction_face_extend_offsets, direction_reversed, direction_reversed_offset, solid_operation, solid_operation_offset, start, start_offset } => Self::ShiftedReferenceAware { operation, operation_offset, direction_face_extend_values, side_extent_discriminators, side_extent_discriminator_offsets, extent, direction_face_extend_offsets, direction_reversed, direction_reversed_offset, solid_operation, solid_operation_offset, start, start_offset },
-            DesignExtrudePrologue::LegacyShifted { operation_prefix_marker_offset, operation, operation_offset, direction_face_extend_values, side_extent_discriminators, side_extent_discriminator_offsets, extent, direction_face_extend_offsets, direction_reversed, direction_reversed_offset, solid_operation, solid_operation_offset, start, start_offset } => Self::LegacyShifted { operation_prefix_marker: operation_prefix_marker_offset.map(|_| 1), operation_prefix_marker_offset, operation, operation_offset, direction_face_extend_values, side_extent_discriminators, side_extent_discriminator_offsets, extent, direction_face_extend_offsets, direction_reversed, direction_reversed_offset, solid_operation, solid_operation_offset, start, start_offset },
+            DesignExtrudePrologue::LegacyDistance {
+                prefix_zero_offset,
+                operation,
+                operation_offset,
+                extent_kind_offset,
+                direction_reversed,
+                direction_reversed_offset,
+                solid_operation,
+                solid_operation_offset,
+            } => Self::LegacyDistance {
+                prefix_value: prefix_zero_offset.map(|_| 0),
+                prefix_value_offset: prefix_zero_offset,
+                operation,
+                operation_offset,
+                extent_kind: 2,
+                extent_kind_offset,
+                direction_reversed,
+                direction_reversed_offset,
+                geometry_kind: u32::from(solid_operation),
+                geometry_kind_offset: solid_operation_offset,
+            },
+            DesignExtrudePrologue::ReferenceAware {
+                reference,
+                operation,
+                operation_offset,
+                direction_face_extend_values,
+                side_extent_discriminators,
+                side_extent_discriminator_offsets,
+                first_side_target_ordinal,
+                extent,
+                direction_face_extend_offsets,
+                direction_reversed,
+                direction_reversed_offset,
+                solid_operation,
+                solid_operation_offset,
+                start,
+                start_offset,
+            } => Self::ReferenceAware {
+                reference,
+                operation,
+                operation_offset,
+                direction_face_extend_values,
+                side_extent_discriminators,
+                side_extent_discriminator_offsets,
+                first_side_target_ordinal,
+                extent,
+                direction_face_extend_offsets,
+                direction_reversed,
+                direction_reversed_offset,
+                solid_operation,
+                solid_operation_offset,
+                start,
+                start_offset,
+            },
+            DesignExtrudePrologue::ShiftedReferenceAware {
+                operation,
+                operation_offset,
+                direction_face_extend_values,
+                side_extent_discriminators,
+                side_extent_discriminator_offsets,
+                extent,
+                direction_face_extend_offsets,
+                direction_reversed,
+                direction_reversed_offset,
+                solid_operation,
+                solid_operation_offset,
+                start,
+                start_offset,
+            } => Self::ShiftedReferenceAware {
+                operation,
+                operation_offset,
+                direction_face_extend_values,
+                side_extent_discriminators,
+                side_extent_discriminator_offsets,
+                extent,
+                direction_face_extend_offsets,
+                direction_reversed,
+                direction_reversed_offset,
+                solid_operation,
+                solid_operation_offset,
+                start,
+                start_offset,
+            },
+            DesignExtrudePrologue::LegacyShifted {
+                operation_prefix_marker_offset,
+                operation,
+                operation_offset,
+                direction_face_extend_values,
+                side_extent_discriminators,
+                side_extent_discriminator_offsets,
+                extent,
+                direction_face_extend_offsets,
+                direction_reversed,
+                direction_reversed_offset,
+                solid_operation,
+                solid_operation_offset,
+                start,
+                start_offset,
+            } => Self::LegacyShifted {
+                operation_prefix_marker: operation_prefix_marker_offset.map(|_| 1),
+                operation_prefix_marker_offset,
+                operation,
+                operation_offset,
+                direction_face_extend_values,
+                side_extent_discriminators,
+                side_extent_discriminator_offsets,
+                extent,
+                direction_face_extend_offsets,
+                direction_reversed,
+                direction_reversed_offset,
+                solid_operation,
+                solid_operation_offset,
+                start,
+                start_offset,
+            },
         }
     }
 }
@@ -1867,9 +2100,7 @@ impl DesignExtrudePrologue {
     /// Decoded extent form.
     pub fn extent(self) -> Option<DesignExtrudeExtent> {
         match self {
-            Self::LegacyDistance { .. } => {
-                Some(DesignExtrudeExtent::OneSidedDistance)
-            }
+            Self::LegacyDistance { .. } => Some(DesignExtrudeExtent::OneSidedDistance),
             Self::ReferenceAware { extent, .. } => Some(extent),
             Self::ShiftedReferenceAware { extent, .. } => Some(extent),
             Self::LegacyShifted { extent, .. } => extent,
@@ -1897,7 +2128,9 @@ impl DesignExtrudePrologue {
     /// Whether the operation creates solid rather than sheet geometry.
     pub fn solid_operation(self) -> bool {
         match self {
-            Self::LegacyDistance { solid_operation, .. }
+            Self::LegacyDistance {
+                solid_operation, ..
+            }
             | Self::ReferenceAware {
                 solid_operation, ..
             }
@@ -1970,14 +2203,20 @@ pub enum DesignCoilSectionPlacement {
 pub struct DesignSecondaryIdentity<Id> {
     #[serde(rename = "secondary_identity")]
     pub identity: Id,
-    #[serde(rename = "curve_secondary_identity", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "curve_secondary_identity",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub curve_identity: Option<Id>,
 }
 
 impl<Id> DesignSecondaryIdentity<Id> {
     fn from_wire(identity: Option<Id>, curve_identity: Option<Id>) -> Result<Option<Self>, String> {
         match (identity, curve_identity) {
-            (Some(identity), curve_identity) => Ok(Some(Self { identity, curve_identity })),
+            (Some(identity), curve_identity) => Ok(Some(Self {
+                identity,
+                curve_identity,
+            })),
             (None, None) => Ok(None),
             (None, Some(_)) => Err("curve_secondary_identity requires secondary_identity".into()),
         }
@@ -2001,7 +2240,9 @@ impl TryFrom<ConstructionRecipeKind> for DesignFaceRecipeKind {
         match kind {
             ConstructionRecipeKind::Face => Ok(Self::Face),
             ConstructionRecipeKind::BoundedFace => Ok(Self::BoundedFace),
-            ConstructionRecipeKind::Body | ConstructionRecipeKind::Edge | ConstructionRecipeKind::Vertex => {
+            ConstructionRecipeKind::Body
+            | ConstructionRecipeKind::Edge
+            | ConstructionRecipeKind::Vertex => {
                 Err("recipe_kind must be face or bounded_face".into())
             }
         }
@@ -2017,7 +2258,9 @@ impl From<DesignFaceRecipeKind> for ConstructionRecipeKind {
     }
 }
 
-fn deserialize_coil_secondary_identity<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<DesignSecondaryIdentity<u64>>, D::Error> {
+fn deserialize_coil_secondary_identity<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<DesignSecondaryIdentity<u64>>, D::Error> {
     #[derive(Deserialize)]
     struct Wire {
         secondary_identity: Option<u64>,
@@ -2028,7 +2271,9 @@ fn deserialize_coil_secondary_identity<'de, D: Deserializer<'de>>(deserializer: 
         .map_err(serde::de::Error::custom)
 }
 
-fn deserialize_coil_recipe_design<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<ConstructionRecipeDesign<String>>, D::Error> {
+fn deserialize_coil_recipe_design<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<ConstructionRecipeDesign<String>>, D::Error> {
     #[derive(Deserialize)]
     struct Wire {
         design_id: Option<String>,
@@ -2038,7 +2283,9 @@ fn deserialize_coil_recipe_design<'de, D: Deserializer<'de>>(deserializer: D) ->
     match (wire.design_id, wire.design_selector) {
         (Some(id), selector) => Ok(Some(ConstructionRecipeDesign { id, selector })),
         (None, None) => Ok(None),
-        (None, Some(_)) => Err(serde::de::Error::custom("design_selector requires design_id")),
+        (None, Some(_)) => Err(serde::de::Error::custom(
+            "design_selector requires design_id",
+        )),
     }
 }
 
@@ -2108,7 +2355,9 @@ impl DesignCoilPlacement {
     /// Row-major local-to-model matrix with translation in source centimetres.
     #[must_use]
     pub fn transform(&self) -> &[[f64; 4]; 4] {
-        self.explicit_transform.as_ref().map_or(&IDENTITY_MATRIX, |matrix| &matrix.value)
+        self.explicit_transform
+            .as_ref()
+            .map_or(&IDENTITY_MATRIX, |matrix| &matrix.value)
     }
 }
 
@@ -2142,10 +2391,18 @@ impl TryFrom<DesignCoilPlacementWire> for DesignCoilPlacement {
     type Error = String;
     fn try_from(wire: DesignCoilPlacementWire) -> Result<Self, Self::Error> {
         let explicit_transform = match wire.transform_offset {
-            Some(offset) => Some(Located { value: wire.transform, offset }),
+            Some(offset) => Some(Located {
+                value: wire.transform,
+                offset,
+            }),
             None => {
-                if wire.transform.iter().flatten().zip(IDENTITY_MATRIX.iter().flatten())
-                    .any(|(value, identity)| value.to_bits() != identity.to_bits()) {
+                if wire
+                    .transform
+                    .iter()
+                    .flatten()
+                    .zip(IDENTITY_MATRIX.iter().flatten())
+                    .any(|(value, identity)| value.to_bits() != identity.to_bits())
+                {
                     return Err("transform must be identity when transform_offset is absent".into());
                 }
                 None
@@ -2250,7 +2507,10 @@ pub struct DesignBoxPrimitive {
 /// Exact `Cylinder` primitive construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "DesignCylinderPrimitiveWire", into = "DesignCylinderPrimitiveWire")]
+#[serde(
+    try_from = "DesignCylinderPrimitiveWire",
+    into = "DesignCylinderPrimitiveWire"
+)]
 pub struct DesignCylinderPrimitive {
     /// Axial height in source centimetres.
     pub height: f64,
@@ -2334,7 +2594,6 @@ impl TryFrom<DesignCylinderPrimitiveWire> for DesignCylinderPrimitive {
     }
 }
 
-
 /// Exact `Sphere` primitive construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2380,7 +2639,6 @@ pub struct DesignTorusPrimitive {
     /// Byte offset of the operation enum.
     pub operation_offset: u64,
 }
-
 
 impl From<DesignSolidPrimitive> for DesignScopePayload {
     fn from(value: DesignSolidPrimitive) -> Self {
@@ -2445,7 +2703,6 @@ pub struct DesignThickenOperation {
     /// Byte offset of the scalar.
     pub thickness_offset: u64,
 }
-
 
 /// Exact rigid transform carried by a Move feature scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2541,7 +2798,10 @@ pub struct DesignFixedFilletParameters {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "DesignFixedFilletGroupWire"))]
-#[serde(try_from = "DesignFixedFilletGroupWire", into = "DesignFixedFilletGroupWire")]
+#[serde(
+    try_from = "DesignFixedFilletGroupWire",
+    into = "DesignFixedFilletGroupWire"
+)]
 pub struct DesignFixedFilletGroup {
     pub tangency_weight: Option<DesignFixedFilletScalar>,
     pub law: DesignFixedFilletLaw,
@@ -2567,9 +2827,15 @@ impl DesignFixedFilletLaw {
     pub(crate) fn radii(&self) -> impl Iterator<Item = &DesignFixedFilletScalar> {
         let (first, second, intermediate) = match self {
             Self::Constant(radius) => (radius, None, &[][..]),
-            Self::Variable { start, end, intermediate } => (start, Some(end), intermediate.as_slice()),
+            Self::Variable {
+                start,
+                end,
+                intermediate,
+            } => (start, Some(end), intermediate.as_slice()),
         };
-        std::iter::once(first).chain(second).chain(intermediate.iter().map(|row| &row.radius))
+        std::iter::once(first)
+            .chain(second)
+            .chain(intermediate.iter().map(|row| &row.radius))
     }
 
     pub(crate) fn intermediate(&self) -> &[DesignFixedFilletIntermediate] {
@@ -2609,30 +2875,71 @@ impl TryFrom<DesignFixedFilletGroupWire> for DesignFixedFilletGroup {
     type Error = String;
 
     fn try_from(wire: DesignFixedFilletGroupWire) -> Result<Self, Self::Error> {
-        if wire.radii.len() != wire.radius_record_indexes.len() || wire.radii.len() != wire.radius_offsets.len() {
-            return Err("radii, radius_record_indexes, and radius_offsets must have equal lengths".into());
+        if wire.radii.len() != wire.radius_record_indexes.len()
+            || wire.radii.len() != wire.radius_offsets.len()
+        {
+            return Err(
+                "radii, radius_record_indexes, and radius_offsets must have equal lengths".into(),
+            );
         }
         if wire.intermediate_parameters.len() != wire.intermediate_parameter_record_indexes.len()
-            || wire.intermediate_parameters.len() != wire.intermediate_parameter_offsets.len() {
+            || wire.intermediate_parameters.len() != wire.intermediate_parameter_offsets.len()
+        {
             return Err("intermediate_parameters, intermediate_parameter_record_indexes, and intermediate_parameter_offsets must have equal lengths".into());
         }
-        let mut radii = wire.radii.into_iter().zip(wire.radius_record_indexes).zip(wire.radius_offsets)
-            .map(|((value, record_index), value_offset)| DesignFixedFilletScalar { value, record_index, value_offset });
-        let start = radii.next().ok_or("radii requires a constant radius or two endpoints")?;
+        let mut radii = wire
+            .radii
+            .into_iter()
+            .zip(wire.radius_record_indexes)
+            .zip(wire.radius_offsets)
+            .map(
+                |((value, record_index), value_offset)| DesignFixedFilletScalar {
+                    value,
+                    record_index,
+                    value_offset,
+                },
+            );
+        let start = radii
+            .next()
+            .ok_or("radii requires a constant radius or two endpoints")?;
         let law = match radii.next() {
-            None if wire.intermediate_parameters.is_empty() => DesignFixedFilletLaw::Constant(start),
+            None if wire.intermediate_parameters.is_empty() => {
+                DesignFixedFilletLaw::Constant(start)
+            }
             None => return Err("intermediate_parameters requires two endpoint radii".into()),
             Some(end) => {
                 if radii.len() != wire.intermediate_parameters.len() {
                     return Err("radii must contain two endpoints and one radius per intermediate_parameters entry".into());
                 }
-                let parameters = wire.intermediate_parameters.into_iter().zip(wire.intermediate_parameter_record_indexes).zip(wire.intermediate_parameter_offsets)
-                    .map(|((value, record_index), value_offset)| DesignFixedFilletScalar { value, record_index, value_offset });
-                DesignFixedFilletLaw::Variable { start, end, intermediate: radii.zip(parameters)
-                    .map(|(radius, parameter)| DesignFixedFilletIntermediate { radius, parameter }).collect() }
+                let parameters = wire
+                    .intermediate_parameters
+                    .into_iter()
+                    .zip(wire.intermediate_parameter_record_indexes)
+                    .zip(wire.intermediate_parameter_offsets)
+                    .map(
+                        |((value, record_index), value_offset)| DesignFixedFilletScalar {
+                            value,
+                            record_index,
+                            value_offset,
+                        },
+                    );
+                DesignFixedFilletLaw::Variable {
+                    start,
+                    end,
+                    intermediate: radii
+                        .zip(parameters)
+                        .map(|(radius, parameter)| DesignFixedFilletIntermediate {
+                            radius,
+                            parameter,
+                        })
+                        .collect(),
+                }
             }
         };
-        Ok(Self { tangency_weight: wire.tangency_weight, law })
+        Ok(Self {
+            tangency_weight: wire.tangency_weight,
+            law,
+        })
     }
 }
 
@@ -2641,11 +2948,34 @@ impl From<DesignFixedFilletGroup> for DesignFixedFilletGroupWire {
         Self {
             tangency_weight: group.tangency_weight,
             radii: group.law.radii().map(|scalar| scalar.value).collect(),
-            radius_record_indexes: group.law.radii().map(|scalar| scalar.record_index).collect(),
-            radius_offsets: group.law.radii().map(|scalar| scalar.value_offset).collect(),
-            intermediate_parameters: group.law.intermediate().iter().map(|row| row.parameter.value).collect(),
-            intermediate_parameter_record_indexes: group.law.intermediate().iter().map(|row| row.parameter.record_index).collect(),
-            intermediate_parameter_offsets: group.law.intermediate().iter().map(|row| row.parameter.value_offset).collect(),
+            radius_record_indexes: group
+                .law
+                .radii()
+                .map(|scalar| scalar.record_index)
+                .collect(),
+            radius_offsets: group
+                .law
+                .radii()
+                .map(|scalar| scalar.value_offset)
+                .collect(),
+            intermediate_parameters: group
+                .law
+                .intermediate()
+                .iter()
+                .map(|row| row.parameter.value)
+                .collect(),
+            intermediate_parameter_record_indexes: group
+                .law
+                .intermediate()
+                .iter()
+                .map(|row| row.parameter.record_index)
+                .collect(),
+            intermediate_parameter_offsets: group
+                .law
+                .intermediate()
+                .iter()
+                .map(|row| row.parameter.value_offset)
+                .collect(),
         }
     }
 }
@@ -2703,7 +3033,10 @@ pub struct DesignPlane {
 /// Axis construction carried by a fixed circular-pattern scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "DesignCircularPatternAxisWire", into = "DesignCircularPatternAxisWire")]
+#[serde(
+    try_from = "DesignCircularPatternAxisWire",
+    into = "DesignCircularPatternAxisWire"
+)]
 #[cfg_attr(feature = "schema", schemars(with = "DesignCircularPatternAxisWire"))]
 pub enum DesignCircularPatternAxis {
     /// Axis coordinates stored directly in the Design record.
@@ -2772,11 +3105,29 @@ impl TryFrom<DesignCircularPatternAxisWire> for DesignCircularPatternAxis {
 
     fn try_from(wire: DesignCircularPatternAxisWire) -> Result<Self, Self::Error> {
         match wire {
-            DesignCircularPatternAxisWire::Inline { origin, origin_offset, direction, direction_offset } =>
-                Ok(Self::Inline { origin, origin_offset, direction, direction_offset }),
-            DesignCircularPatternAxisWire::HistoricalEdge { wrapper_record_indices, persistent_identities, identity_offsets, resolved_origin, resolved_direction } => {
+            DesignCircularPatternAxisWire::Inline {
+                origin,
+                origin_offset,
+                direction,
+                direction_offset,
+            } => Ok(Self::Inline {
+                origin,
+                origin_offset,
+                direction,
+                direction_offset,
+            }),
+            DesignCircularPatternAxisWire::HistoricalEdge {
+                wrapper_record_indices,
+                persistent_identities,
+                identity_offsets,
+                resolved_origin,
+                resolved_direction,
+            } => {
                 if wrapper_record_indices.len() != identity_offsets.len() {
-                    return Err("wrapper_record_indices and identity_offsets must have equal lengths".into());
+                    return Err(
+                        "wrapper_record_indices and identity_offsets must have equal lengths"
+                            .into(),
+                    );
                 }
                 let [persistent_identity] = persistent_identities.as_slice() else {
                     return Err("persistent_identities must contain one shared identity".into());
@@ -2784,11 +3135,21 @@ impl TryFrom<DesignCircularPatternAxisWire> for DesignCircularPatternAxis {
                 let resolved = match (resolved_origin, resolved_direction) {
                     (None, None) => None,
                     (Some(origin), Some(direction)) => Some(DesignAxis { origin, direction }),
-                    _ => return Err("resolved_origin and resolved_direction must occur together".into()),
+                    _ => {
+                        return Err(
+                            "resolved_origin and resolved_direction must occur together".into()
+                        )
+                    }
                 };
                 Ok(Self::HistoricalEdge {
-                    wrappers: wrapper_record_indices.into_iter().zip(identity_offsets)
-                        .map(|(record_index, identity_offset)| DesignPatternAxisWrapper { record_index, identity_offset }).collect(),
+                    wrappers: wrapper_record_indices
+                        .into_iter()
+                        .zip(identity_offsets)
+                        .map(|(record_index, identity_offset)| DesignPatternAxisWrapper {
+                            record_index,
+                            identity_offset,
+                        })
+                        .collect(),
                     persistent_identity: *persistent_identity,
                     resolved,
                 })
@@ -2800,12 +3161,31 @@ impl TryFrom<DesignCircularPatternAxisWire> for DesignCircularPatternAxis {
 impl From<DesignCircularPatternAxis> for DesignCircularPatternAxisWire {
     fn from(axis: DesignCircularPatternAxis) -> Self {
         match axis {
-            DesignCircularPatternAxis::Inline { origin, origin_offset, direction, direction_offset } =>
-                Self::Inline { origin, origin_offset, direction, direction_offset },
-            DesignCircularPatternAxis::HistoricalEdge { wrappers, persistent_identity, resolved } => Self::HistoricalEdge {
-                wrapper_record_indices: wrappers.iter().map(|wrapper| wrapper.record_index).collect(),
+            DesignCircularPatternAxis::Inline {
+                origin,
+                origin_offset,
+                direction,
+                direction_offset,
+            } => Self::Inline {
+                origin,
+                origin_offset,
+                direction,
+                direction_offset,
+            },
+            DesignCircularPatternAxis::HistoricalEdge {
+                wrappers,
+                persistent_identity,
+                resolved,
+            } => Self::HistoricalEdge {
+                wrapper_record_indices: wrappers
+                    .iter()
+                    .map(|wrapper| wrapper.record_index)
+                    .collect(),
                 persistent_identities: vec![persistent_identity],
-                identity_offsets: wrappers.iter().map(|wrapper| wrapper.identity_offset).collect(),
+                identity_offsets: wrappers
+                    .iter()
+                    .map(|wrapper| wrapper.identity_offset)
+                    .collect(),
                 resolved_origin: resolved.map(|axis| axis.origin),
                 resolved_direction: resolved.map(|axis| axis.direction),
             },
@@ -2837,8 +3217,14 @@ pub struct DesignRectangularPatternConstruction {
 /// Serialized placements of one linearized rectangular-pattern instance run.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "DesignRectangularPatternInstancesWire"))]
-#[serde(try_from = "DesignRectangularPatternInstancesWire", into = "DesignRectangularPatternInstancesWire")]
+#[cfg_attr(
+    feature = "schema",
+    schemars(with = "DesignRectangularPatternInstancesWire")
+)]
+#[serde(
+    try_from = "DesignRectangularPatternInstancesWire",
+    into = "DesignRectangularPatternInstancesWire"
+)]
 pub enum DesignRectangularPatternInstances {
     Bodies(Vec<DesignPatternInstance>),
     Components {
@@ -2869,11 +3255,20 @@ impl DesignRectangularPatternInstances {
     }
 
     pub fn frames(&self) -> impl DoubleEndedIterator<Item = &DesignPatternInstance> {
-        let (bodies, seed, generated): (&[DesignPatternInstance], Option<&DesignPatternInstance>, &[DesignPatternComponentInstance]) = match self {
+        let (bodies, seed, generated): (
+            &[DesignPatternInstance],
+            Option<&DesignPatternInstance>,
+            &[DesignPatternComponentInstance],
+        ) = match self {
             Self::Bodies(instances) => (instances, None, &[]),
-            Self::Components { seed, generated, .. } => (&[], Some(&seed.instance), generated),
+            Self::Components {
+                seed, generated, ..
+            } => (&[], Some(&seed.instance), generated),
         };
-        bodies.iter().chain(seed).chain(generated.iter().map(|row| &row.instance))
+        bodies
+            .iter()
+            .chain(seed)
+            .chain(generated.iter().map(|row| &row.instance))
     }
 }
 
@@ -2907,23 +3302,49 @@ struct DesignComponentPatternOccurrencesWire {
 impl TryFrom<DesignRectangularPatternInstancesWire> for DesignRectangularPatternInstances {
     type Error = String;
     fn try_from(wire: DesignRectangularPatternInstancesWire) -> Result<Self, Self::Error> {
-        if wire.record_indices.len() != wire.transforms.len() || wire.record_indices.len() != wire.transform_offsets.len() {
-            return Err("record_indices, transforms, and transform_offsets must have equal lengths".into());
+        if wire.record_indices.len() != wire.transforms.len()
+            || wire.record_indices.len() != wire.transform_offsets.len()
+        {
+            return Err(
+                "record_indices, transforms, and transform_offsets must have equal lengths".into(),
+            );
         }
-        let frames = wire.record_indices.into_iter().zip(wire.transforms).zip(wire.transform_offsets)
-            .map(|((record_index, value), offset)| DesignPatternInstance { record_index, transform: Located { value, offset } });
+        let frames = wire
+            .record_indices
+            .into_iter()
+            .zip(wire.transforms)
+            .zip(wire.transform_offsets)
+            .map(|((record_index, value), offset)| DesignPatternInstance {
+                record_index,
+                transform: Located { value, offset },
+            });
         let Some(component) = wire.component_occurrences else {
             return Ok(Self::Bodies(frames.collect()));
         };
         let mut frames = frames;
-        let seed = frames.next().ok_or("component_occurrences requires a seed frame")?;
+        let seed = frames
+            .next()
+            .ok_or("component_occurrences requires a seed frame")?;
         if frames.len() != component.generated_occurrence_guids.len() {
-            return Err("generated_occurrence_guids must match the generated instance frames".into());
+            return Err(
+                "generated_occurrence_guids must match the generated instance frames".into(),
+            );
         }
         Ok(Self::Components {
             component_guid: component.component_guid,
-            seed: DesignPatternComponentInstance { instance: seed, occurrence_guid: component.seed_occurrence_guid },
-            generated: frames.zip(component.generated_occurrence_guids).map(|(instance, occurrence_guid)| DesignPatternComponentInstance { instance, occurrence_guid }).collect(),
+            seed: DesignPatternComponentInstance {
+                instance: seed,
+                occurrence_guid: component.seed_occurrence_guid,
+            },
+            generated: frames
+                .zip(component.generated_occurrence_guids)
+                .map(
+                    |(instance, occurrence_guid)| DesignPatternComponentInstance {
+                        instance,
+                        occurrence_guid,
+                    },
+                )
+                .collect(),
         })
     }
 }
@@ -2935,13 +3356,25 @@ impl From<DesignRectangularPatternInstances> for DesignRectangularPatternInstanc
         let transform_offsets = instances.frames().map(|row| row.transform.offset).collect();
         let component_occurrences = match instances {
             DesignRectangularPatternInstances::Bodies(_) => None,
-            DesignRectangularPatternInstances::Components { component_guid, seed, generated } => Some(DesignComponentPatternOccurrencesWire {
+            DesignRectangularPatternInstances::Components {
+                component_guid,
+                seed,
+                generated,
+            } => Some(DesignComponentPatternOccurrencesWire {
                 component_guid,
                 seed_occurrence_guid: seed.occurrence_guid,
-                generated_occurrence_guids: generated.into_iter().map(|row| row.occurrence_guid).collect(),
+                generated_occurrence_guids: generated
+                    .into_iter()
+                    .map(|row| row.occurrence_guid)
+                    .collect(),
             }),
         };
-        Self { record_indices, transforms, transform_offsets, component_occurrences }
+        Self {
+            record_indices,
+            transforms,
+            transform_offsets,
+            component_occurrences,
+        }
     }
 }
 
@@ -3011,8 +3444,14 @@ pub struct DesignAssemblyLegacyOperands {
 impl DesignAssemblyLegacyOperands {
     pub(crate) fn references(&self) -> [Located<u32>; 2] {
         [
-            Located { value: self.point.construction.point_record_index, offset: self.point.reference_offset },
-            Located { value: self.hole.construction.point_record_index, offset: self.hole.reference_offset },
+            Located {
+                value: self.point.construction.point_record_index,
+                offset: self.point.reference_offset,
+            },
+            Located {
+                value: self.hole.construction.point_record_index,
+                offset: self.hole.reference_offset,
+            },
         ]
     }
 
@@ -3020,9 +3459,15 @@ impl DesignAssemblyLegacyOperands {
         [&self.point.selection, &self.hole.selection]
     }
 
-    pub(crate) fn frames(&self, solved: &DesignAssemblySolvedFrame) -> [DesignAssemblyOperandFrame; 2] {
+    pub(crate) fn frames(
+        &self,
+        solved: &DesignAssemblySolvedFrame,
+    ) -> [DesignAssemblyOperandFrame; 2] {
         let references = self.references();
-        let positions = [self.point.construction.position, self.hole.construction.position];
+        let positions = [
+            self.point.construction.position,
+            self.hole.construction.position,
+        ];
         [0, 1].map(|index| {
             let mut transform = solved.transform;
             for (row, value) in positions[index].into_iter().enumerate() {
@@ -3037,7 +3482,10 @@ impl DesignAssemblyLegacyOperands {
         })
     }
 
-    fn from_wire(wire: [DesignAssemblyLegacyOperandWire; 2], solved: &DesignAssemblySolvedFrame) -> Result<Self, String> {
+    fn from_wire(
+        wire: [DesignAssemblyLegacyOperandWire; 2],
+        solved: &DesignAssemblySolvedFrame,
+    ) -> Result<Self, String> {
         let [point, hole] = wire;
         let DesignAssemblyLegacyConstruction::Point(point_construction) = point.construction else {
             return Err("legacy_operand_carriers[0].construction requires a point".into());
@@ -3046,12 +3494,20 @@ impl DesignAssemblyLegacyOperands {
             return Err("legacy_operand_carriers[1].construction requires a hole".into());
         };
         if point.construction_record_index != point_construction.point_record_index
-            || hole.construction_record_index != hole_construction.point_record_index {
-            return Err("legacy_operand_carriers construction_record_index disagrees with construction".into());
+            || hole.construction_record_index != hole_construction.point_record_index
+        {
+            return Err(
+                "legacy_operand_carriers construction_record_index disagrees with construction"
+                    .into(),
+            );
         }
         if point.construction_byte_offset != point_construction.point_record_byte_offset
-            || hole.construction_byte_offset != hole_construction.point_record_byte_offset {
-            return Err("legacy_operand_carriers construction_byte_offset disagrees with construction".into());
+            || hole.construction_byte_offset != hole_construction.point_record_byte_offset
+        {
+            return Err(
+                "legacy_operand_carriers construction_byte_offset disagrees with construction"
+                    .into(),
+            );
         }
         let carriers = Self {
             point: DesignAssemblyLegacyOperand {
@@ -3068,7 +3524,9 @@ impl DesignAssemblyLegacyOperands {
             },
         };
         if [point.frame, hole.frame] != carriers.frames(solved) {
-            return Err("legacy_operand_carriers frame disagrees with construction and solved_frame".into());
+            return Err(
+                "legacy_operand_carriers frame disagrees with construction and solved_frame".into(),
+            );
         }
         Ok(carriers)
     }
@@ -3163,7 +3621,10 @@ pub struct DesignAssemblyLegacySelection {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "DesignAssemblyAlignmentSerde"))]
-#[serde(try_from = "DesignAssemblyAlignmentSerde", into = "DesignAssemblyAlignmentSerde")]
+#[serde(
+    try_from = "DesignAssemblyAlignmentSerde",
+    into = "DesignAssemblyAlignmentSerde"
+)]
 pub struct DesignAssemblyAlignment {
     /// Signed alignment rotation in radians.
     pub angle: f64,
@@ -3185,8 +3646,12 @@ pub struct DesignQualifiedAssemblyOperand {
 /// Native evidence retained by an assembly-alignment form.
 #[derive(Debug, Clone, PartialEq)]
 pub enum DesignAssemblyAlignmentForm {
-    DatumEnvelope { joint_origin_scope_record_index: u32 },
-    LimitsOnly { limits: DesignAssemblyLimits },
+    DatumEnvelope {
+        joint_origin_scope_record_index: u32,
+    },
+    LimitsOnly {
+        limits: DesignAssemblyLimits,
+    },
     SolvedOnly {
         solved_frame: DesignAssemblySolvedFrame,
         limits: Option<DesignAssemblyLimits>,
@@ -3198,7 +3663,9 @@ pub enum DesignAssemblyAlignmentForm {
         /// Preserve omission of the redundant frame field in older native records.
         frames_field_present: bool,
     },
-    Frames { frames: [DesignAssemblyOperandFrame; 2] },
+    Frames {
+        frames: [DesignAssemblyOperandFrame; 2],
+    },
     Qualified([DesignQualifiedAssemblyOperand; 2]),
     /// The two locator paths are known, but their connector frames did not decode.
     UnframedPaths([DesignAssemblyOperandPath; 2]),
@@ -3212,8 +3679,14 @@ impl DesignAssemblyAlignmentForm {
         let [first_frame, second_frame] = frames;
         let [first_qualifier, second_qualifier] = qualifiers;
         Self::Qualified([
-            DesignQualifiedAssemblyOperand { frame: first_frame, qualifier: first_qualifier },
-            DesignQualifiedAssemblyOperand { frame: second_frame, qualifier: second_qualifier },
+            DesignQualifiedAssemblyOperand {
+                frame: first_frame,
+                qualifier: first_qualifier,
+            },
+            DesignQualifiedAssemblyOperand {
+                frame: second_frame,
+                qualifier: second_qualifier,
+            },
         ])
     }
 }
@@ -3222,8 +3695,14 @@ impl DesignAssemblyAlignment {
     pub(crate) fn operand_frames(&self) -> Option<[DesignAssemblyOperandFrame; 2]> {
         match self.form.as_ref()? {
             DesignAssemblyAlignmentForm::Frames { frames } => Some(frames.clone()),
-            DesignAssemblyAlignmentForm::Qualified(operands) => Some(operands.each_ref().map(|operand| operand.frame.clone())),
-            DesignAssemblyAlignmentForm::LegacyAsBuilt421 { carriers, solved_frame, .. } => Some(carriers.frames(solved_frame)),
+            DesignAssemblyAlignmentForm::Qualified(operands) => {
+                Some(operands.each_ref().map(|operand| operand.frame.clone()))
+            }
+            DesignAssemblyAlignmentForm::LegacyAsBuilt421 {
+                carriers,
+                solved_frame,
+                ..
+            } => Some(carriers.frames(solved_frame)),
             DesignAssemblyAlignmentForm::DatumEnvelope { .. }
             | DesignAssemblyAlignmentForm::LimitsOnly { .. }
             | DesignAssemblyAlignmentForm::SolvedOnly { .. }
@@ -3234,15 +3713,23 @@ impl DesignAssemblyAlignment {
     pub(crate) fn solved_frame(&self) -> Option<&DesignAssemblySolvedFrame> {
         match self.form.as_ref()? {
             DesignAssemblyAlignmentForm::SolvedOnly { solved_frame, .. }
-            | DesignAssemblyAlignmentForm::LegacyAsBuilt421 { solved_frame, .. } => Some(solved_frame),
+            | DesignAssemblyAlignmentForm::LegacyAsBuilt421 { solved_frame, .. } => {
+                Some(solved_frame)
+            }
             _ => None,
         }
     }
 
     pub(crate) fn operand_qualifiers(&self) -> Option<[DesignAssemblyOperandQualifier; 2]> {
         match self.form.as_ref()? {
-            DesignAssemblyAlignmentForm::Qualified(operands) => Some(operands.each_ref().map(|operand| operand.qualifier.clone())),
-            DesignAssemblyAlignmentForm::UnframedPaths(paths) => Some(paths.clone().map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })),
+            DesignAssemblyAlignmentForm::Qualified(operands) => {
+                Some(operands.each_ref().map(|operand| operand.qualifier.clone()))
+            }
+            DesignAssemblyAlignmentForm::UnframedPaths(paths) => Some(
+                paths
+                    .clone()
+                    .map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path }),
+            ),
             _ => None,
         }
     }
@@ -3252,7 +3739,12 @@ impl DesignAssemblyAlignment {
         match self.form.as_ref()? {
             DesignAssemblyAlignmentForm::UnframedPaths(paths) => Some(paths.clone()),
             DesignAssemblyAlignmentForm::Qualified(operands) => {
-                let [Some(first), Some(second)] = operands.each_ref().map(|operand| operand.qualifier.occurrence_path()) else { return None; };
+                let [Some(first), Some(second)] = operands
+                    .each_ref()
+                    .map(|operand| operand.qualifier.occurrence_path())
+                else {
+                    return None;
+                };
                 Some([first.clone(), second.clone()])
             }
             _ => None,
@@ -3270,7 +3762,9 @@ impl DesignAssemblyAlignment {
 
     pub(crate) fn joint_origin_scope_record_index(&self) -> Option<u32> {
         match self.form.as_ref()? {
-            DesignAssemblyAlignmentForm::DatumEnvelope { joint_origin_scope_record_index } => Some(*joint_origin_scope_record_index),
+            DesignAssemblyAlignmentForm::DatumEnvelope {
+                joint_origin_scope_record_index,
+            } => Some(*joint_origin_scope_record_index),
             _ => None,
         }
     }
@@ -3298,7 +3792,6 @@ struct DesignAssemblyAlignmentSerde {
     joint_origin_scope_record_index: Option<u32>,
 }
 
-
 impl TryFrom<DesignAssemblyAlignmentSerde> for DesignAssemblyAlignment {
     type Error = String;
 
@@ -3306,8 +3799,12 @@ impl TryFrom<DesignAssemblyAlignmentSerde> for DesignAssemblyAlignment {
         if wire.owner_record_indices.len() != wire.value_offsets.len() {
             return Err("owner_record_indices and value_offsets must have equal lengths".into());
         }
-        let owners = wire.owner_record_indices.into_iter().zip(wire.value_offsets)
-            .map(|(value, offset)| Located { value, offset }).collect();
+        let owners = wire
+            .owner_record_indices
+            .into_iter()
+            .zip(wire.value_offsets)
+            .map(|(value, offset)| Located { value, offset })
+            .collect();
         let form = match (
             wire.legacy_operand_carriers,
             wire.solved_frame,
@@ -3345,30 +3842,93 @@ impl TryFrom<DesignAssemblyAlignmentSerde> for DesignAssemblyAlignment {
             (None, None, None, None, None, None) => None,
             _ => return Err("assembly alignment operand_frames, legacy_operand_carriers, solved_frame, operand_qualifiers, limits, and joint_origin_scope_record_index disagree with one form".into()),
         };
-        Ok(Self { angle: wire.angle, offset: wire.offset, owners, form })
+        Ok(Self {
+            angle: wire.angle,
+            offset: wire.offset,
+            owners,
+            form,
+        })
     }
 }
 
 impl From<DesignAssemblyAlignment> for DesignAssemblyAlignmentSerde {
     fn from(alignment: DesignAssemblyAlignment) -> Self {
-        let (operand_frames, legacy_operand_carriers, solved_frame, operand_qualifiers, limits, joint_origin_scope_record_index) = match alignment.form {
+        let (
+            operand_frames,
+            legacy_operand_carriers,
+            solved_frame,
+            operand_qualifiers,
+            limits,
+            joint_origin_scope_record_index,
+        ) = match alignment.form {
             None => (None, None, None, None, None, None),
-            Some(DesignAssemblyAlignmentForm::DatumEnvelope { joint_origin_scope_record_index }) => (None, None, None, None, None, Some(joint_origin_scope_record_index)),
-            Some(DesignAssemblyAlignmentForm::LimitsOnly { limits }) => (None, None, None, None, Some(limits), None),
-            Some(DesignAssemblyAlignmentForm::SolvedOnly { solved_frame, limits }) => (None, None, Some(solved_frame), None, limits, None),
-            Some(DesignAssemblyAlignmentForm::LegacyAsBuilt421 { carriers, solved_frame, limits, frames_field_present }) => {
+            Some(DesignAssemblyAlignmentForm::DatumEnvelope {
+                joint_origin_scope_record_index,
+            }) => (
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(joint_origin_scope_record_index),
+            ),
+            Some(DesignAssemblyAlignmentForm::LimitsOnly { limits }) => {
+                (None, None, None, None, Some(limits), None)
+            }
+            Some(DesignAssemblyAlignmentForm::SolvedOnly {
+                solved_frame,
+                limits,
+            }) => (None, None, Some(solved_frame), None, limits, None),
+            Some(DesignAssemblyAlignmentForm::LegacyAsBuilt421 {
+                carriers,
+                solved_frame,
+                limits,
+                frames_field_present,
+            }) => {
                 let frames = frames_field_present.then(|| carriers.frames(&solved_frame));
                 let carriers = carriers.into_wire(&solved_frame);
-                (frames, Some(carriers), Some(solved_frame), None, limits, None)
+                (
+                    frames,
+                    Some(carriers),
+                    Some(solved_frame),
+                    None,
+                    limits,
+                    None,
+                )
             }
-            Some(DesignAssemblyAlignmentForm::Frames { frames }) => (Some(frames), None, None, None, None, None),
-            Some(DesignAssemblyAlignmentForm::Qualified([
-                DesignQualifiedAssemblyOperand { frame: first_frame, qualifier: first_qualifier },
-                DesignQualifiedAssemblyOperand { frame: second_frame, qualifier: second_qualifier },
-            ])) => (Some([first_frame, second_frame]), None, None, Some([first_qualifier, second_qualifier]), None, None),
-            Some(DesignAssemblyAlignmentForm::UnframedPaths(paths)) => (None, None, None, Some(paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })), None, None),
+            Some(DesignAssemblyAlignmentForm::Frames { frames }) => {
+                (Some(frames), None, None, None, None, None)
+            }
+            Some(DesignAssemblyAlignmentForm::Qualified(
+                [DesignQualifiedAssemblyOperand {
+                    frame: first_frame,
+                    qualifier: first_qualifier,
+                }, DesignQualifiedAssemblyOperand {
+                    frame: second_frame,
+                    qualifier: second_qualifier,
+                }],
+            )) => (
+                Some([first_frame, second_frame]),
+                None,
+                None,
+                Some([first_qualifier, second_qualifier]),
+                None,
+                None,
+            ),
+            Some(DesignAssemblyAlignmentForm::UnframedPaths(paths)) => (
+                None,
+                None,
+                None,
+                Some(paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })),
+                None,
+                None,
+            ),
         };
-        let (owner_record_indices, value_offsets) = alignment.owners.into_iter().map(|owner| (owner.value, owner.offset)).unzip();
+        let (owner_record_indices, value_offsets) = alignment
+            .owners
+            .into_iter()
+            .map(|owner| (owner.value, owner.offset))
+            .unzip();
         Self {
             angle: alignment.angle,
             offset: alignment.offset,
@@ -3418,7 +3978,10 @@ pub enum DesignAssemblyAxialOperandTarget {
 /// Persistent connector identity carried by one axial assembly selector.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "DesignAssemblyAxialSelectorIdentityWire", into = "DesignAssemblyAxialSelectorIdentityWire")]
+#[serde(
+    try_from = "DesignAssemblyAxialSelectorIdentityWire",
+    into = "DesignAssemblyAxialSelectorIdentityWire"
+)]
 pub struct DesignAssemblyAxialSelectorIdentity {
     /// Axis record named by the operand construction carrier.
     pub axis_record_index: u32,
@@ -3638,10 +4201,22 @@ impl From<DesignAssemblyAxialSelectorIdentity> for DesignAssemblyAxialSelectorId
             external_asset_id_offset: record.external_asset_id_offset,
             external_link_name: record.external_link_name,
             external_link_name_offset: record.external_link_name_offset,
-            external_property_key: record.external_version.as_ref().map(|version| version.property_key.value.clone()),
-            external_property_key_offset: record.external_version.as_ref().map(|version| version.property_key.offset),
-            external_version_urn: record.external_version.as_ref().map(|version| version.version_urn.value.clone()),
-            external_version_urn_offset: record.external_version.as_ref().map(|version| version.version_urn.offset),
+            external_property_key: record
+                .external_version
+                .as_ref()
+                .map(|version| version.property_key.value.clone()),
+            external_property_key_offset: record
+                .external_version
+                .as_ref()
+                .map(|version| version.property_key.offset),
+            external_version_urn: record
+                .external_version
+                .as_ref()
+                .map(|version| version.version_urn.value.clone()),
+            external_version_urn_offset: record
+                .external_version
+                .as_ref()
+                .map(|version| version.version_urn.offset),
             role_record_index: record.role_record_index,
             role_class_tag: record.role_class_tag,
             role_byte_offset: record.role_byte_offset,
@@ -3654,7 +4229,6 @@ impl From<DesignAssemblyAxialSelectorIdentity> for DesignAssemblyAxialSelectorId
 impl DesignAssemblyAxialSelectorIdentity {
     /// Report whether two axis selectors carry the same persistent connector identity.
     pub(crate) fn selects_same_object(&self, other: &Self) -> bool {
-
         self.selector_asset_id
             .eq_ignore_ascii_case(&other.selector_asset_id)
             && self
@@ -3669,7 +4243,10 @@ impl DesignAssemblyAxialSelectorIdentity {
             && match (&self.external_version, &other.external_version) {
                 (None, None) => true,
                 (Some(first), Some(second)) => {
-                    first.property_key.value.eq_ignore_ascii_case(&second.property_key.value)
+                    first
+                        .property_key
+                        .value
+                        .eq_ignore_ascii_case(&second.property_key.value)
                         && first.version_urn.value == second.version_urn.value
                 }
                 _ => false,
@@ -3707,7 +4284,10 @@ pub struct DesignAssemblyOperandPathLink {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "DesignAssemblyOperandPathWire"))]
-#[serde(try_from = "DesignAssemblyOperandPathWire", into = "DesignAssemblyOperandPathWire")]
+#[serde(
+    try_from = "DesignAssemblyOperandPathWire",
+    into = "DesignAssemblyOperandPathWire"
+)]
 pub struct DesignAssemblyOperandPath {
     pub link: DesignAssemblyOperandPathLink,
     pub record_index: u32,
@@ -3748,32 +4328,55 @@ impl TryFrom<DesignAssemblyOperandPathWire> for DesignAssemblyOperandPath {
 
     fn try_from(wire: DesignAssemblyOperandPathWire) -> Result<Self, Self::Error> {
         if wire.occurrence_guids.len() != wire.occurrence_guid_offsets.len() {
-            return Err("occurrence_guids and occurrence_guid_offsets must have equal lengths".into());
+            return Err(
+                "occurrence_guids and occurrence_guid_offsets must have equal lengths".into(),
+            );
         }
         if wire.identity_guids.len() != wire.identity_guid_offsets.len() {
             return Err("identity_guids and identity_guid_offsets must have equal lengths".into());
         }
         Ok(Self {
-            link: wire.link, record_index: wire.record_index,
-            class_tag: wire.class_tag, byte_offset: wire.byte_offset,
-            occurrence_guids: wire.occurrence_guids.into_iter().zip(wire.occurrence_guid_offsets)
-                .map(|(value, offset)| Located { value, offset }).collect(),
-            identity_guids: wire.identity_guids.into_iter().zip(wire.identity_guid_offsets)
-                .map(|(value, offset)| Located { value, offset }).collect(),
+            link: wire.link,
+            record_index: wire.record_index,
+            class_tag: wire.class_tag,
+            byte_offset: wire.byte_offset,
+            occurrence_guids: wire
+                .occurrence_guids
+                .into_iter()
+                .zip(wire.occurrence_guid_offsets)
+                .map(|(value, offset)| Located { value, offset })
+                .collect(),
+            identity_guids: wire
+                .identity_guids
+                .into_iter()
+                .zip(wire.identity_guid_offsets)
+                .map(|(value, offset)| Located { value, offset })
+                .collect(),
         })
     }
 }
 
 impl From<DesignAssemblyOperandPath> for DesignAssemblyOperandPathWire {
     fn from(path: DesignAssemblyOperandPath) -> Self {
-        let (occurrence_guids, occurrence_guid_offsets) = path.occurrence_guids.into_iter()
-            .map(|guid| (guid.value, guid.offset)).unzip();
-        let (identity_guids, identity_guid_offsets) = path.identity_guids.into_iter()
-            .map(|guid| (guid.value, guid.offset)).unzip();
+        let (occurrence_guids, occurrence_guid_offsets) = path
+            .occurrence_guids
+            .into_iter()
+            .map(|guid| (guid.value, guid.offset))
+            .unzip();
+        let (identity_guids, identity_guid_offsets) = path
+            .identity_guids
+            .into_iter()
+            .map(|guid| (guid.value, guid.offset))
+            .unzip();
         Self {
-            link: path.link, record_index: path.record_index,
-            class_tag: path.class_tag, byte_offset: path.byte_offset,
-            occurrence_guids, occurrence_guid_offsets, identity_guids, identity_guid_offsets,
+            link: path.link,
+            record_index: path.record_index,
+            class_tag: path.class_tag,
+            byte_offset: path.byte_offset,
+            occurrence_guids,
+            occurrence_guid_offsets,
+            identity_guids,
+            identity_guid_offsets,
         }
     }
 }
@@ -3816,7 +4419,6 @@ impl DesignAssemblyOperandQualifier {
             Self::AxialTarget { .. } | Self::JointOrigin { .. } => None,
         }
     }
-
 }
 
 /// One operand frame embedded by an assembly-operation scope.
@@ -3836,7 +4438,10 @@ pub struct DesignAssemblyOperandFrame {
 /// External occurrence and placement joined through a `Component Insert` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "DesignComponentInsertConstructionWire", into = "DesignComponentInsertConstructionWire")]
+#[serde(
+    try_from = "DesignComponentInsertConstructionWire",
+    into = "DesignComponentInsertConstructionWire"
+)]
 pub struct DesignComponentInsertConstruction {
     /// Scope-owned relation record.
     pub relation_record_index: u32,
@@ -3864,7 +4469,9 @@ pub struct DesignComponentInsertMatrix {
 impl DesignComponentInsertConstruction {
     #[must_use]
     pub fn transform(&self) -> &[[f64; 4]; 4] {
-        self.placement.as_ref().map_or(&IDENTITY_MATRIX, |matrix| &matrix.scope.value)
+        self.placement
+            .as_ref()
+            .map_or(&IDENTITY_MATRIX, |matrix| &matrix.scope.value)
     }
 
     #[must_use]
@@ -3874,7 +4481,9 @@ impl DesignComponentInsertConstruction {
 
     #[must_use]
     pub fn carrier_transform_offset(&self) -> Option<u64> {
-        self.placement.as_ref().and_then(|matrix| matrix.carrier_offset)
+        self.placement
+            .as_ref()
+            .and_then(|matrix| matrix.carrier_offset)
     }
 }
 
@@ -3910,17 +4519,27 @@ impl TryFrom<DesignComponentInsertConstructionWire> for DesignComponentInsertCon
     fn try_from(wire: DesignComponentInsertConstructionWire) -> Result<Self, Self::Error> {
         let placement = match (wire.transform_offset, wire.carrier_transform_offset) {
             (Some(offset), carrier_offset) => Some(DesignComponentInsertMatrix {
-                scope: Located { value: wire.transform, offset },
+                scope: Located {
+                    value: wire.transform,
+                    offset,
+                },
                 carrier_offset,
             }),
             (None, None) => {
-                if wire.transform.iter().flatten().zip(IDENTITY_MATRIX.iter().flatten())
-                    .any(|(value, identity)| value.to_bits() != identity.to_bits()) {
+                if wire
+                    .transform
+                    .iter()
+                    .flatten()
+                    .zip(IDENTITY_MATRIX.iter().flatten())
+                    .any(|(value, identity)| value.to_bits() != identity.to_bits())
+                {
                     return Err("transform must be identity when transform_offset is absent".into());
                 }
                 None
             }
-            (None, Some(_)) => return Err("carrier_transform_offset requires transform_offset".into()),
+            (None, Some(_)) => {
+                return Err("carrier_transform_offset requires transform_offset".into())
+            }
         };
         Ok(Self {
             relation_record_index: wire.relation_record_index,
@@ -3974,7 +4593,10 @@ pub struct DesignDerivedInstanceConstruction {
 /// One exact local component-occurrence carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "DesignComponentOccurrenceWire", into = "DesignComponentOccurrenceWire")]
+#[serde(
+    try_from = "DesignComponentOccurrenceWire",
+    into = "DesignComponentOccurrenceWire"
+)]
 pub struct DesignComponentOccurrence {
     /// Stable native record identity.
     pub id: String,
@@ -4136,7 +4758,10 @@ pub struct DesignCopyPasteComponentOperation {
 /// Exact construction carried by a Mirror scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "DesignMirrorConstructionWire", into = "DesignMirrorConstructionWire")]
+#[serde(
+    try_from = "DesignMirrorConstructionWire",
+    into = "DesignMirrorConstructionWire"
+)]
 #[cfg_attr(feature = "schema", schemars(with = "DesignMirrorConstructionWire"))]
 pub struct DesignMirrorConstruction {
     /// Parameter-owner record carrying the fixed count two.
@@ -4252,7 +4877,8 @@ impl TryFrom<DesignMirrorConstructionWire> for DesignMirrorConstruction {
 
 impl From<DesignMirrorConstruction> for DesignMirrorConstructionWire {
     fn from(record: DesignMirrorConstruction) -> Self {
-        let (stitch_tolerance_record_index, stitch_tolerance_scope) = match record.tolerance_source {
+        let (stitch_tolerance_record_index, stitch_tolerance_scope) = match record.tolerance_source
+        {
             DesignMirrorToleranceSource::Owner { record_index } => (Some(record_index), None),
             DesignMirrorToleranceSource::Scope(scope) => (None, Some(scope)),
         };
@@ -4266,10 +4892,18 @@ impl From<DesignMirrorConstruction> for DesignMirrorConstructionWire {
             stitch_tolerance_scope,
             seed_group_record_index: record.seed_group_record_index,
             plane_group_record_index: record.plane_group_record_index,
-            seed_feature_scope_record_index: record.seed_feature_scope_record_index.map(|reference| reference.value),
-            seed_feature_reference_offset: record.seed_feature_scope_record_index.map(|reference| reference.offset),
-            plane_scope_record_index: record.plane_scope_record_index.map(|reference| reference.value),
-            plane_reference_offset: record.plane_scope_record_index.map(|reference| reference.offset),
+            seed_feature_scope_record_index: record
+                .seed_feature_scope_record_index
+                .map(|reference| reference.value),
+            seed_feature_reference_offset: record
+                .seed_feature_scope_record_index
+                .map(|reference| reference.offset),
+            plane_scope_record_index: record
+                .plane_scope_record_index
+                .map(|reference| reference.value),
+            plane_reference_offset: record
+                .plane_scope_record_index
+                .map(|reference| reference.offset),
             plane_selection_record_index: record.plane_selection_record_index,
             plane_origin: record.plane.map(|plane| plane.origin),
             plane_normal: record.plane.map(|plane| plane.normal),
@@ -4280,7 +4914,10 @@ impl From<DesignMirrorConstruction> for DesignMirrorConstructionWire {
 /// Exact inline carrier for a legacy Mirror stitch tolerance.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "DesignMirrorScopeToleranceWire", into = "DesignMirrorScopeToleranceWire")]
+#[serde(
+    try_from = "DesignMirrorScopeToleranceWire",
+    into = "DesignMirrorScopeToleranceWire"
+)]
 pub struct DesignMirrorScopeTolerance {
     /// Fixed scalar-lane marker preceding the tolerance value.
     pub marker: DesignMirrorToleranceMarker,
@@ -4320,7 +4957,9 @@ impl DesignMirrorToleranceMarker {
     pub fn repeated_offset(self) -> Option<u64> {
         match self {
             Self::Single61 => None,
-            Self::Repeated89(offset) | Self::Repeated94(offset) | Self::Repeated100(offset) => Some(offset),
+            Self::Repeated89(offset) | Self::Repeated94(offset) | Self::Repeated100(offset) => {
+                Some(offset)
+            }
         }
     }
 }
@@ -4364,7 +5003,10 @@ impl TryFrom<DesignMirrorScopeToleranceWire> for DesignMirrorScopeTolerance {
     type Error = String;
     fn try_from(wire: DesignMirrorScopeToleranceWire) -> Result<Self, Self::Error> {
         Ok(Self {
-            marker: DesignMirrorToleranceMarker::try_from((wire.marker, wire.repeated_marker_offset))?,
+            marker: DesignMirrorToleranceMarker::try_from((
+                wire.marker,
+                wire.repeated_marker_offset,
+            ))?,
             marker_offset: wire.marker_offset,
             first_reference: wire.first_reference,
             first_reference_offset: wire.first_reference_offset,
@@ -4437,7 +5079,10 @@ pub enum DesignPathFeatureConstruction {
 /// Fixed construction of a `Revolve` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "DesignRevolveConstructionWire", into = "DesignRevolveConstructionWire")]
+#[serde(
+    try_from = "DesignRevolveConstructionWire",
+    into = "DesignRevolveConstructionWire"
+)]
 pub struct DesignRevolveConstruction {
     /// Boolean result operation.
     pub operation: DesignExtrudeOperation,
@@ -4498,15 +5143,22 @@ impl TryFrom<DesignRevolveConstructionWire> for DesignRevolveConstruction {
             angle: value.angle,
             angle_record_index: value.angle_record_index,
             angle_offset: value.angle_offset,
-            opposite_angle: match (value.opposite_angle_record_index, value.opposite_angle_offset) {
+            opposite_angle: match (
+                value.opposite_angle_record_index,
+                value.opposite_angle_offset,
+            ) {
                 (None, None) => None,
                 (Some(value), Some(offset)) => Some(Located { value, offset }),
-                _ => return Err("opposite_angle_record_index and opposite_angle_offset must occur together".into()),
+                _ => {
+                    return Err(
+                        "opposite_angle_record_index and opposite_angle_offset must occur together"
+                            .into(),
+                    )
+                }
             },
         })
     }
 }
-
 
 /// Fixed construction of a `Loft` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -4560,7 +5212,6 @@ pub struct DesignPipeConstruction {
     pub value_offsets: [u64; 4],
 }
 
-
 /// Serialized prologue form of a `Combine` scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4585,7 +5236,10 @@ pub struct DesignExternalVersion {
 /// Cross-document persistent body identity carried by a `Combine` tool selector.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "DesignCombineExternalBodyIdentityWire", into = "DesignCombineExternalBodyIdentityWire")]
+#[serde(
+    try_from = "DesignCombineExternalBodyIdentityWire",
+    into = "DesignCombineExternalBodyIdentityWire"
+)]
 pub struct DesignCombineExternalBodyIdentity {
     /// Asset GUID of the enclosing body selector.
     pub selector_asset_id: String,
@@ -4722,10 +5376,22 @@ impl From<DesignCombineExternalBodyIdentity> for DesignCombineExternalBodyIdenti
             external_asset_id_offset: record.external_asset_id_offset,
             external_link_name: record.external_link_name,
             external_link_name_offset: record.external_link_name_offset,
-            external_property_key: record.external_version.as_ref().map(|version| version.property_key.value.clone()),
-            external_property_key_offset: record.external_version.as_ref().map(|version| version.property_key.offset),
-            external_version_urn: record.external_version.as_ref().map(|version| version.version_urn.value.clone()),
-            external_version_urn_offset: record.external_version.as_ref().map(|version| version.version_urn.offset),
+            external_property_key: record
+                .external_version
+                .as_ref()
+                .map(|version| version.property_key.value.clone()),
+            external_property_key_offset: record
+                .external_version
+                .as_ref()
+                .map(|version| version.property_key.offset),
+            external_version_urn: record
+                .external_version
+                .as_ref()
+                .map(|version| version.version_urn.value.clone()),
+            external_version_urn_offset: record
+                .external_version
+                .as_ref()
+                .map(|version| version.version_urn.offset),
             tail_values: record.tail_values,
             tail_value_offsets: record.tail_value_offsets,
         }
@@ -4746,7 +5412,10 @@ pub struct DesignCombineBodySelection {
 /// Exact Boolean construction carried by a `Combine` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "DesignCombineOperationWire", into = "DesignCombineOperationWire")]
+#[serde(
+    try_from = "DesignCombineOperationWire",
+    into = "DesignCombineOperationWire"
+)]
 pub struct DesignCombineOperation {
     /// Serialized scope-prologue form.
     pub form: DesignCombineForm,
@@ -4798,7 +5467,9 @@ struct DesignCombineOperationWire {
     tools: Vec<DesignCombineBodySelection>,
 }
 
-fn deserialize_combine_operation_kind<'de, D: Deserializer<'de>>(deserializer: D) -> Result<cadmpeg_ir::features::BooleanKind, D::Error> {
+fn deserialize_combine_operation_kind<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<cadmpeg_ir::features::BooleanKind, D::Error> {
     cadmpeg_ir::features::BooleanKind::deserialize(deserializer)
         .map_err(|error| serde::de::Error::custom(format!("operation: {error}")))
 }
@@ -4810,7 +5481,9 @@ impl TryFrom<DesignCombineOperationWire> for DesignCombineOperation {
             return Err("target.external_identity must be absent".into());
         }
         let mut tools = wire.tools.into_iter();
-        let first = tools.next().ok_or("tools must contain at least one body selection")?;
+        let first = tools
+            .next()
+            .ok_or("tools must contain at least one body selection")?;
         Ok(Self {
             form: wire.form,
             operation: wire.operation,
@@ -4818,7 +5491,10 @@ impl TryFrom<DesignCombineOperationWire> for DesignCombineOperation {
             keep_tools: wire.keep_tools,
             keep_tools_offset: wire.keep_tools_offset,
             target_record_index: wire.target.record_index,
-            tools: DesignCombineTools { first, additional: tools.collect() },
+            tools: DesignCombineTools {
+                first,
+                additional: tools.collect(),
+            },
         })
     }
 }
@@ -4831,8 +5507,13 @@ impl From<DesignCombineOperation> for DesignCombineOperationWire {
             operation_offset: operation.operation_offset,
             keep_tools: operation.keep_tools,
             keep_tools_offset: operation.keep_tools_offset,
-            target: DesignCombineBodySelection { record_index: operation.target_record_index, external_identity: None },
-            tools: std::iter::once(operation.tools.first).chain(operation.tools.additional).collect(),
+            target: DesignCombineBodySelection {
+                record_index: operation.target_record_index,
+                external_identity: None,
+            },
+            tools: std::iter::once(operation.tools.first)
+                .chain(operation.tools.additional)
+                .collect(),
         }
     }
 }
@@ -4885,7 +5566,10 @@ pub struct DesignThreadNominalSize(String);
 impl TryFrom<String> for DesignThreadNominalSize {
     type Error = String;
     fn try_from(text: String) -> Result<Self, Self::Error> {
-        if !text.parse::<f64>().is_ok_and(|value| value.is_finite() && value > 0.0) {
+        if !text
+            .parse::<f64>()
+            .is_ok_and(|value| value.is_finite() && value > 0.0)
+        {
             return Err("nominal_size_text must encode a finite positive number".into());
         }
         Ok(Self(text))
@@ -4961,7 +5645,10 @@ struct DesignThreadConstructionWire {
 impl TryFrom<DesignThreadConstruction> for DesignThreadConstructionWire {
     type Error = String;
     fn try_from(value: DesignThreadConstruction) -> Result<Self, Self::Error> {
-        let nominal_size = value.nominal_size.value().map_err(|error| format!("nominal_size_text: {error}"))?;
+        let nominal_size = value
+            .nominal_size
+            .value()
+            .map_err(|error| format!("nominal_size_text: {error}"))?;
         let (form, trailing_reference) = match value.form {
             DesignThreadForm::Standard => (DesignThreadFormWire::Standard, None),
             DesignThreadForm::Compact(reference) => (DesignThreadFormWire::Compact, reference),
@@ -4990,20 +5677,37 @@ impl TryFrom<DesignThreadConstructionWire> for DesignThreadConstruction {
     type Error = String;
     fn try_from(value: DesignThreadConstructionWire) -> Result<Self, Self::Error> {
         let nominal_size = DesignThreadNominalSize::try_from(value.nominal_size_text)?;
-        if nominal_size.value().map_err(|error| format!("nominal_size_text: {error}"))?.to_bits() != value.nominal_size.to_bits() {
+        if nominal_size
+            .value()
+            .map_err(|error| format!("nominal_size_text: {error}"))?
+            .to_bits()
+            != value.nominal_size.to_bits()
+        {
             return Err("nominal_size must match nominal_size_text".into());
         }
-        let reference = match (value.trailing_reference_record_index, value.trailing_reference_offset) {
+        let reference = match (
+            value.trailing_reference_record_index,
+            value.trailing_reference_offset,
+        ) {
             (None, None) => None,
-            (Some(value), Some(offset)) => Some(Located { value: NonZeroU32::new(value).ok_or("trailing_reference_record_index must be nonzero")?, offset }),
-            _ => return Err("trailing_reference_record_index and trailing_reference_offset must occur together".into()),
+            (Some(value), Some(offset)) => Some(Located {
+                value: NonZeroU32::new(value)
+                    .ok_or("trailing_reference_record_index must be nonzero")?,
+                offset,
+            }),
+            _ => return Err(
+                "trailing_reference_record_index and trailing_reference_offset must occur together"
+                    .into(),
+            ),
         };
         let form = match (value.form, reference) {
             (DesignThreadFormWire::Compact, reference) => DesignThreadForm::Compact(reference),
             (DesignThreadFormWire::Standard, None) => DesignThreadForm::Standard,
             (DesignThreadFormWire::StandardLegacy, None) => DesignThreadForm::StandardLegacy,
             (DesignThreadFormWire::CompactLegacy, None) => DesignThreadForm::CompactLegacy,
-            _ => return Err("trailing_reference_record_index is only valid for compact form".into()),
+            _ => {
+                return Err("trailing_reference_record_index is only valid for compact form".into())
+            }
         };
         Ok(Self {
             form,
@@ -5019,7 +5723,6 @@ impl TryFrom<DesignThreadConstructionWire> for DesignThreadConstruction {
         })
     }
 }
-
 
 /// Exact signed-angle lanes carried by a `Draft` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -5125,7 +5828,10 @@ pub struct DesignVertexResolution {
 
 impl DesignVertexResolution {
     pub fn new(state_id: i64, vertex_slot: i64) -> Option<Self> {
-        (vertex_slot >= 0).then_some(Self { state_id, vertex_slot })
+        (vertex_slot >= 0).then_some(Self {
+            state_id,
+            vertex_slot,
+        })
     }
 
     pub fn vertex_slot(self) -> i64 {
@@ -5249,7 +5955,11 @@ impl TryFrom<DesignVertexRecipeWire> for DesignVertexRecipe {
                 DesignVertexResolution::new(state_id, vertex_slot)
                     .ok_or("resolved_vertex_slot must be nonnegative")?,
             ),
-            _ => return Err("recipe_state_id and resolved_vertex_slot must be present together".into()),
+            _ => {
+                return Err(
+                    "recipe_state_id and resolved_vertex_slot must be present together".into(),
+                )
+            }
         };
         Ok(Self {
             record_index: value.record_index,
@@ -5293,7 +6003,10 @@ pub struct DesignEdgeTreatmentVertexOperand {
 /// Plane through three persistent B-rep vertices.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(from = "DesignWorkPlaneConstructionWire", into = "DesignWorkPlaneConstructionWire")]
+#[serde(
+    from = "DesignWorkPlaneConstructionWire",
+    into = "DesignWorkPlaneConstructionWire"
+)]
 pub struct DesignWorkPlaneConstruction {
     /// Solved placement-frame record named by the scope.
     pub placement_record_index: u32,
@@ -5322,8 +6035,14 @@ impl From<DesignWorkPlaneConstruction> for DesignWorkPlaneConstructionWire {
 
 impl From<DesignWorkPlaneConstructionWire> for DesignWorkPlaneConstruction {
     fn from(value: DesignWorkPlaneConstructionWire) -> Self {
-        let DesignWorkPlaneConstructionWire::ThreePoint { placement_record_index, inputs } = value;
-        Self { placement_record_index, inputs }
+        let DesignWorkPlaneConstructionWire::ThreePoint {
+            placement_record_index,
+            inputs,
+        } = value;
+        Self {
+            placement_record_index,
+            inputs,
+        }
     }
 }
 
@@ -5400,7 +6119,10 @@ pub struct DesignWorkPointRule {
 }
 
 impl DesignWorkPointRule {
-    pub(crate) fn from_serialized(reference_type: u32, inputs: Vec<DesignWorkPointInput>) -> Result<Self, String> {
+    pub(crate) fn from_serialized(
+        reference_type: u32,
+        inputs: Vec<DesignWorkPointInput>,
+    ) -> Result<Self, String> {
         let form = match (reference_type, inputs.as_slice()) {
             (5, [input]) => DesignWorkPointRuleForm::CircleCenter {
                 input: input.clone(),
@@ -5426,24 +6148,41 @@ impl DesignWorkPointRule {
             },
         };
         let is_edge = |input: &DesignWorkPointInput| {
-            input.carrier.as_deref().is_none_or(|carrier| matches!(carrier, DesignWorkPointInputCarrier::EdgeRecipe { .. }))
+            input.carrier.as_deref().is_none_or(|carrier| {
+                matches!(carrier, DesignWorkPointInputCarrier::EdgeRecipe { .. })
+            })
         };
         let is_vertex = |input: &DesignWorkPointInput| {
-            input.carrier.as_deref().is_none_or(|carrier| matches!(carrier, DesignWorkPointInputCarrier::VertexRecipe { .. } | DesignWorkPointInputCarrier::SketchPoint { .. }))
+            input.carrier.as_deref().is_none_or(|carrier| {
+                matches!(
+                    carrier,
+                    DesignWorkPointInputCarrier::VertexRecipe { .. }
+                        | DesignWorkPointInputCarrier::SketchPoint { .. }
+                )
+            })
         };
         let is_plane = |input: &DesignWorkPointInput| {
-            input.carrier.as_deref().is_none_or(|carrier| matches!(carrier, DesignWorkPointInputCarrier::WorkPlane { .. }))
+            input.carrier.as_deref().is_none_or(|carrier| {
+                matches!(carrier, DesignWorkPointInputCarrier::WorkPlane { .. })
+            })
         };
         let compatible = match &form {
-            DesignWorkPointRuleForm::CircleCenter { input } | DesignWorkPointRuleForm::DistanceOnEdge { input } => is_edge(input),
+            DesignWorkPointRuleForm::CircleCenter { input }
+            | DesignWorkPointRuleForm::DistanceOnEdge { input } => is_edge(input),
             DesignWorkPointRuleForm::TwoEdgeIntersection { inputs } => inputs.iter().all(is_edge),
-            DesignWorkPointRuleForm::ThreePlaneIntersection { inputs } => inputs.iter().all(is_plane),
+            DesignWorkPointRuleForm::ThreePlaneIntersection { inputs } => {
+                inputs.iter().all(is_plane)
+            }
             DesignWorkPointRuleForm::Vertex { input } => is_vertex(input),
-            DesignWorkPointRuleForm::EdgePlaneIntersection { inputs } => is_edge(&inputs[0]) && is_plane(&inputs[1]),
+            DesignWorkPointRuleForm::EdgePlaneIntersection { inputs } => {
+                is_edge(&inputs[0]) && is_plane(&inputs[1])
+            }
             DesignWorkPointRuleForm::Native { .. } => true,
         };
         if !compatible {
-            return Err("WorkPoint rule input carrier conflicts with its reference_type role".into());
+            return Err(
+                "WorkPoint rule input carrier conflicts with its reference_type role".into(),
+            );
         }
         Ok(Self { form })
     }
@@ -5482,7 +6221,10 @@ impl TryFrom<DesignWorkPointRuleForm> for DesignWorkPointRule {
     fn try_from(value: DesignWorkPointRuleForm) -> Result<Self, Self::Error> {
         let canonical = Self::from_serialized(value.reference_type(), value.inputs().to_vec())?;
         if std::mem::discriminant(&value) != std::mem::discriminant(canonical.form()) {
-            return Err("WorkPoint native rule reference_type and input arity identify a supported rule".into());
+            return Err(
+                "WorkPoint native rule reference_type and input arity identify a supported rule"
+                    .into(),
+            );
         }
         Ok(canonical)
     }
@@ -5568,7 +6310,6 @@ impl DesignWorkPointRuleForm {
             Self::Native { inputs, .. } => inputs,
         }
     }
-
 }
 
 /// Exact solved construction carried by a `WorkPoint` scope.
@@ -5605,7 +6346,10 @@ pub struct DesignHoleTangentPoint {
 /// records without reparsing the byte stream.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "DesignHoleConstructionWire", into = "DesignHoleConstructionWire")]
+#[serde(
+    try_from = "DesignHoleConstructionWire",
+    into = "DesignHoleConstructionWire"
+)]
 pub struct DesignHoleConstruction {
     /// Point-data record selected by the Hole scope.
     pub point_record_index: u32,
@@ -5681,7 +6425,9 @@ impl TryFrom<DesignHoleConstructionWire> for DesignHoleConstruction {
     type Error = String;
     fn try_from(wire: DesignHoleConstructionWire) -> Result<Self, Self::Error> {
         if wire.input_record_indices.len() != wire.input_record_offsets.len() {
-            return Err("input_record_indices and input_record_offsets must have equal lengths".into());
+            return Err(
+                "input_record_indices and input_record_offsets must have equal lengths".into(),
+            );
         }
         Ok(Self {
             point_record_index: wire.point_record_index,
@@ -5718,11 +6464,28 @@ impl From<DesignHoleConstruction> for DesignHoleConstructionWire {
             point_parameter_offsets: record.point_parameter_offsets,
             reference_type: record.reference_type,
             reference_type_offset: record.reference_type_offset,
-            tangent_point_data: record.tangent_point_data.as_ref().map(|tangent| tangent.data.value),
-            tangent_point_data_prefix: record.tangent_point_data.as_ref().map(|tangent| tangent.prefix),
-            tangent_point_data_offset: record.tangent_point_data.as_ref().map(|tangent| tangent.data.offset),
-            input_record_indices: record.input_records.iter().map(|reference| reference.value).collect(),
-            input_record_offsets: record.input_records.iter().map(|reference| reference.offset).collect(),
+            tangent_point_data: record
+                .tangent_point_data
+                .as_ref()
+                .map(|tangent| tangent.data.value),
+            tangent_point_data_prefix: record
+                .tangent_point_data
+                .as_ref()
+                .map(|tangent| tangent.prefix),
+            tangent_point_data_offset: record
+                .tangent_point_data
+                .as_ref()
+                .map(|tangent| tangent.data.offset),
+            input_record_indices: record
+                .input_records
+                .iter()
+                .map(|reference| reference.value)
+                .collect(),
+            input_record_offsets: record
+                .input_records
+                .iter()
+                .map(|reference| reference.offset)
+                .collect(),
             face_selection: record.face_selection,
         }
     }
@@ -5736,7 +6499,10 @@ impl From<DesignHoleConstruction> for DesignHoleConstructionWire {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "DesignHoleFaceSelectionWire"))]
-#[serde(try_from = "DesignHoleFaceSelectionWire", into = "DesignHoleFaceSelectionWire")]
+#[serde(
+    try_from = "DesignHoleFaceSelectionWire",
+    into = "DesignHoleFaceSelectionWire"
+)]
 pub struct DesignHoleFaceSelection {
     /// Indexed record carrying the persistent selection envelope.
     pub record_index: u32,
@@ -5833,8 +6599,16 @@ impl TryFrom<DesignHoleFaceSelectionWire> for DesignHoleFaceSelection {
             primary_identity: wire.primary_identity,
             primary_identity_offset: wire.primary_identity_offset,
             secondary: DesignSecondaryIdentity::from_wire(
-                Located::from_wire(wire.secondary_identity, wire.secondary_identity_offset, "secondary_identity")?,
-                Located::from_wire(wire.curve_secondary_identity, wire.curve_secondary_identity_offset, "curve_secondary_identity")?,
+                Located::from_wire(
+                    wire.secondary_identity,
+                    wire.secondary_identity_offset,
+                    "secondary_identity",
+                )?,
+                Located::from_wire(
+                    wire.curve_secondary_identity,
+                    wire.curve_secondary_identity_offset,
+                    "curve_secondary_identity",
+                )?,
             )?,
             historical_face_candidates: wire.historical_face_candidates,
             next_record_index: wire.next_record_index,
@@ -5859,8 +6633,14 @@ impl From<DesignHoleFaceSelection> for DesignHoleFaceSelectionWire {
             primary_identity_offset: record.primary_identity_offset,
             secondary_identity: record.secondary.map(|secondary| secondary.identity.value),
             secondary_identity_offset: record.secondary.map(|secondary| secondary.identity.offset),
-            curve_secondary_identity: record.secondary.and_then(|secondary| secondary.curve_identity).map(|identity| identity.value),
-            curve_secondary_identity_offset: record.secondary.and_then(|secondary| secondary.curve_identity).map(|identity| identity.offset),
+            curve_secondary_identity: record
+                .secondary
+                .and_then(|secondary| secondary.curve_identity)
+                .map(|identity| identity.value),
+            curve_secondary_identity_offset: record
+                .secondary
+                .and_then(|secondary| secondary.curve_identity)
+                .map(|identity| identity.offset),
             historical_face_candidates: record.historical_face_candidates,
             next_record_index: record.next_record_index,
             next_byte_offset: record.next_byte_offset,
@@ -6299,15 +7079,26 @@ struct WorkPlaneFrameWire {
     work_plane_construction: Option<DesignWorkPlaneConstruction>,
 }
 
-fn deserialize_work_plane_frame<'de, D>(deserializer: D) -> Result<Option<DesignWorkPlaneTransform>, D::Error>
+fn deserialize_work_plane_frame<'de, D>(
+    deserializer: D,
+) -> Result<Option<DesignWorkPlaneTransform>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     let wire = WorkPlaneFrameWire::deserialize(deserializer)?;
     let reference = match (wire.work_plane_reference, wire.work_plane_reference_offset) {
         (None, None) => None,
-        (Some(work_plane_reference), Some(work_plane_reference_offset)) => Some(DesignWorkPlaneReference { work_plane_reference, work_plane_reference_offset }),
-        _ => return Err(serde::de::Error::custom("work_plane_reference and work_plane_reference_offset must occur together")),
+        (Some(work_plane_reference), Some(work_plane_reference_offset)) => {
+            Some(DesignWorkPlaneReference {
+                work_plane_reference,
+                work_plane_reference_offset,
+            })
+        }
+        _ => {
+            return Err(serde::de::Error::custom(
+                "work_plane_reference and work_plane_reference_offset must occur together",
+            ))
+        }
     };
     match (wire.work_plane_transform, wire.work_plane_transform_offset) {
         (None, None) if reference.is_none() && wire.work_plane_construction.is_none() => Ok(None),
@@ -6323,7 +7114,8 @@ where
 
 impl<'de> Deserialize<'de> for DesignWorkPlaneTransform {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserialize_work_plane_frame(deserializer)?.ok_or_else(|| serde::de::Error::missing_field("work_plane_transform"))
+        deserialize_work_plane_frame(deserializer)?
+            .ok_or_else(|| serde::de::Error::missing_field("work_plane_transform"))
     }
 }
 
@@ -6335,15 +7127,29 @@ struct JointOriginFrameWire {
     joint_origin_reference_offset: Option<u64>,
 }
 
-fn deserialize_joint_origin_frame<'de, D>(deserializer: D) -> Result<Option<DesignJointOriginTransform>, D::Error>
+fn deserialize_joint_origin_frame<'de, D>(
+    deserializer: D,
+) -> Result<Option<DesignJointOriginTransform>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     let wire = JointOriginFrameWire::deserialize(deserializer)?;
-    let reference = match (wire.joint_origin_reference, wire.joint_origin_reference_offset) {
+    let reference = match (
+        wire.joint_origin_reference,
+        wire.joint_origin_reference_offset,
+    ) {
         (None, None) => None,
-        (Some(joint_origin_reference), Some(joint_origin_reference_offset)) => Some(DesignJointOriginReference { joint_origin_reference, joint_origin_reference_offset }),
-        _ => return Err(serde::de::Error::custom("joint_origin_reference and joint_origin_reference_offset must occur together")),
+        (Some(joint_origin_reference), Some(joint_origin_reference_offset)) => {
+            Some(DesignJointOriginReference {
+                joint_origin_reference,
+                joint_origin_reference_offset,
+            })
+        }
+        _ => {
+            return Err(serde::de::Error::custom(
+                "joint_origin_reference and joint_origin_reference_offset must occur together",
+            ))
+        }
     };
     match (wire.joint_origin_transform, wire.joint_origin_transform_offset) {
         (None, None) if reference.is_none() => Ok(None),
@@ -6358,7 +7164,8 @@ where
 
 impl<'de> Deserialize<'de> for DesignJointOriginTransform {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserialize_joint_origin_frame(deserializer)?.ok_or_else(|| serde::de::Error::missing_field("joint_origin_transform"))
+        deserialize_joint_origin_frame(deserializer)?
+            .ok_or_else(|| serde::de::Error::missing_field("joint_origin_transform"))
     }
 }
 
@@ -6369,15 +7176,31 @@ struct SketchEntityWire {
     entity_reference_offset: Option<u64>,
 }
 
-fn deserialize_sketch_entity<'de, D>(deserializer: D) -> Result<Option<DesignSketchEntityBinding>, D::Error>
+fn deserialize_sketch_entity<'de, D>(
+    deserializer: D,
+) -> Result<Option<DesignSketchEntityBinding>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     let wire = SketchEntityWire::deserialize(deserializer)?;
-    match (wire.entity_id, wire.entity_suffix, wire.entity_reference_offset) {
+    match (
+        wire.entity_id,
+        wire.entity_suffix,
+        wire.entity_reference_offset,
+    ) {
         (None, None, None) => Ok(None),
-        (Some(entity_id), Some(entity_suffix), Some(entity_reference_offset)) => DesignSketchEntityBinding::try_from(DesignSketchEntityBindingWire { entity_id, entity_suffix, entity_reference_offset }).map(Some).map_err(serde::de::Error::custom),
-        _ => Err(serde::de::Error::custom("entity_id, entity_suffix, and entity_reference_offset must occur together")),
+        (Some(entity_id), Some(entity_suffix), Some(entity_reference_offset)) => {
+            DesignSketchEntityBinding::try_from(DesignSketchEntityBindingWire {
+                entity_id,
+                entity_suffix,
+                entity_reference_offset,
+            })
+            .map(Some)
+            .map_err(serde::de::Error::custom)
+        }
+        _ => Err(serde::de::Error::custom(
+            "entity_id, entity_suffix, and entity_reference_offset must occur together",
+        )),
     }
 }
 
@@ -6466,7 +7289,10 @@ impl From<DesignPathFeatureConstruction> for DesignScopePayload {
             DesignPathFeatureConstruction::Revolve(value) => Self::Revolve(Some(value)),
             DesignPathFeatureConstruction::Loft(value) => Self::Loft(Some(value)),
             DesignPathFeatureConstruction::Pipe(value) => Self::Pipe(Some(value)),
-            DesignPathFeatureConstruction::Sweep(value) => Self::Sweep(Some(DesignSweepScope { construction: Some(value), sweep_profile: None })),
+            DesignPathFeatureConstruction::Sweep(value) => Self::Sweep(Some(DesignSweepScope {
+                construction: Some(value),
+                sweep_profile: None,
+            })),
         }
     }
 }
@@ -6543,11 +7369,31 @@ impl TryFrom<DesignCoilScopeWire> for DesignCoilScope {
     type Error = String;
     fn try_from(wire: DesignCoilScopeWire) -> Result<Self, Self::Error> {
         Ok(Self {
-            coil_operation: RecordedValue::from_wire(wire.coil_operation, wire.coil_operation_offset, "coil_operation")?,
-            coil_extent: RecordedValue::from_wire(wire.coil_extent, wire.coil_extent_offset, "coil_extent")?,
-            coil_section: RecordedValue::from_wire(wire.coil_section, wire.coil_section_offset, "coil_section")?,
-            coil_section_placement: RecordedValue::from_wire(wire.coil_section_placement, wire.coil_section_placement_offset, "coil_section_placement")?,
-            coil_clockwise: RecordedValue::from_wire(wire.coil_clockwise, wire.coil_clockwise_offset, "coil_clockwise")?,
+            coil_operation: RecordedValue::from_wire(
+                wire.coil_operation,
+                wire.coil_operation_offset,
+                "coil_operation",
+            )?,
+            coil_extent: RecordedValue::from_wire(
+                wire.coil_extent,
+                wire.coil_extent_offset,
+                "coil_extent",
+            )?,
+            coil_section: RecordedValue::from_wire(
+                wire.coil_section,
+                wire.coil_section_offset,
+                "coil_section",
+            )?,
+            coil_section_placement: RecordedValue::from_wire(
+                wire.coil_section_placement,
+                wire.coil_section_placement_offset,
+                "coil_section_placement",
+            )?,
+            coil_clockwise: RecordedValue::from_wire(
+                wire.coil_clockwise,
+                wire.coil_clockwise_offset,
+                "coil_clockwise",
+            )?,
             coil_placement: wire.coil_placement,
             coil_transform: wire.coil_transform,
         })
@@ -6564,7 +7410,9 @@ impl From<DesignCoilScope> for DesignCoilScopeWire {
             coil_section: value.coil_section.map(|field| field.value),
             coil_section_offset: value.coil_section.and_then(|field| field.offset),
             coil_section_placement: value.coil_section_placement.map(|field| field.value),
-            coil_section_placement_offset: value.coil_section_placement.and_then(|field| field.offset),
+            coil_section_placement_offset: value
+                .coil_section_placement
+                .and_then(|field| field.offset),
             coil_clockwise: value.coil_clockwise.map(|field| field.value),
             coil_clockwise_offset: value.coil_clockwise.and_then(|field| field.offset),
             coil_placement: value.coil_placement,
@@ -6581,8 +7429,12 @@ impl TryFrom<String> for DesignEntityId {
     type Error = String;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        let (_, suffix) = value.rsplit_once('_').ok_or("entity_id requires a decimal suffix")?;
-        suffix.parse::<u64>().map_err(|_| "entity_id requires a decimal u64 suffix")?;
+        let (_, suffix) = value
+            .rsplit_once('_')
+            .ok_or("entity_id requires a decimal suffix")?;
+        suffix
+            .parse::<u64>()
+            .map_err(|_| "entity_id requires a decimal u64 suffix")?;
         Ok(Self(value))
     }
 }
@@ -6592,13 +7444,15 @@ impl DesignEntityId {
         Self(format!("{prefix}_{suffix}"))
     }
 
-
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
     pub fn suffix(&self) -> u64 {
-        self.0.rsplit('_').take(1).flat_map(str::bytes)
+        self.0
+            .rsplit('_')
+            .take(1)
+            .flat_map(str::bytes)
             .filter(|byte| *byte != b'+')
             .fold(0, |value, digit| value * 10 + u64::from(digit - b'0'))
     }
@@ -6607,7 +7461,10 @@ impl DesignEntityId {
 /// Sketch-module entity named by a sketch parameter scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "DesignSketchEntityBindingWire", into = "DesignSketchEntityBindingWire")]
+#[serde(
+    try_from = "DesignSketchEntityBindingWire",
+    into = "DesignSketchEntityBindingWire"
+)]
 #[cfg_attr(feature = "schema", schemars(with = "DesignSketchEntityBindingWire"))]
 pub struct DesignSketchEntityBinding {
     /// Full Design entity id of a sketch scope.
@@ -6652,7 +7509,6 @@ impl From<DesignSketchEntityBinding> for DesignSketchEntityBindingWire {
         }
     }
 }
-
 
 /// Explicit 16-f64 frame carried by a `WorkPlane` scope.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -7023,7 +7879,9 @@ impl TryFrom<u8> for UnrecognizedDecalMappingMode {
     fn try_from(code: u8) -> Result<Self, Self::Error> {
         if code == DESIGN_DECAL_FIT_TO_FACES_CODE {
             Err("mapping_mode unknown payload must exclude the fit-to-faces code".into())
-        } else { Ok(Self(code)) }
+        } else {
+            Ok(Self(code))
+        }
     }
 }
 
@@ -7262,21 +8120,42 @@ pub struct DesignFlangeEdgeWidth<T> {
 /// Flange extent, with width owners attached to the edges they describe.
 #[derive(Debug, Clone, PartialEq)]
 pub enum DesignEdgeFlangeShape {
-    FullEdge { edges: Vec<DesignEdgeFlangeEdge>, height: DesignEdgeFlangeHeightExtent },
-    Symmetric { edges: Vec<DesignEdgeFlangeEdge>, owner: u32 },
-    TwoSides { edges: Vec<DesignEdgeFlangeEdge>, owners: [u32; 2] },
+    FullEdge {
+        edges: Vec<DesignEdgeFlangeEdge>,
+        height: DesignEdgeFlangeHeightExtent,
+    },
+    Symmetric {
+        edges: Vec<DesignEdgeFlangeEdge>,
+        owner: u32,
+    },
+    TwoSides {
+        edges: Vec<DesignEdgeFlangeEdge>,
+        owners: [u32; 2],
+    },
     SymmetricPerEdge(Vec<DesignFlangeEdgeWidth<u32>>),
-    TwoSidesPerEdge { edges: Vec<DesignFlangeEdgeWidth<[u32; 2]>>, source: DesignEdgeFlangeWidthParameterSource },
+    TwoSidesPerEdge {
+        edges: Vec<DesignFlangeEdgeWidth<[u32; 2]>>,
+        source: DesignEdgeFlangeWidthParameterSource,
+    },
 }
 
 impl DesignEdgeFlangeShape {
     pub(crate) fn edges(&self) -> impl Iterator<Item = &DesignEdgeFlangeEdge> {
-        let (shared, symmetric, two_sided): (&[DesignEdgeFlangeEdge], &[DesignFlangeEdgeWidth<u32>], &[DesignFlangeEdgeWidth<[u32; 2]>]) = match self {
-            Self::FullEdge { edges, .. } | Self::Symmetric { edges, .. } | Self::TwoSides { edges, .. } => (edges, &[], &[]),
+        let (shared, symmetric, two_sided): (
+            &[DesignEdgeFlangeEdge],
+            &[DesignFlangeEdgeWidth<u32>],
+            &[DesignFlangeEdgeWidth<[u32; 2]>],
+        ) = match self {
+            Self::FullEdge { edges, .. }
+            | Self::Symmetric { edges, .. }
+            | Self::TwoSides { edges, .. } => (edges, &[], &[]),
             Self::SymmetricPerEdge(edges) => (&[], edges, &[]),
             Self::TwoSidesPerEdge { edges, .. } => (&[], &[], edges),
         };
-        shared.iter().chain(symmetric.iter().map(|row| &row.edge)).chain(two_sided.iter().map(|row| &row.edge))
+        shared
+            .iter()
+            .chain(symmetric.iter().map(|row| &row.edge))
+            .chain(two_sided.iter().map(|row| &row.edge))
     }
 
     pub(crate) fn mode(&self) -> DesignEdgeWidthMode {
@@ -7304,14 +8183,21 @@ impl DesignEdgeFlangeShape {
     }
 
     pub(crate) fn owner_indices(&self) -> impl Iterator<Item = &u32> {
-        let (shared, symmetric, two_sided): (&[u32], &[DesignFlangeEdgeWidth<u32>], &[DesignFlangeEdgeWidth<[u32; 2]>]) = match self {
+        let (shared, symmetric, two_sided): (
+            &[u32],
+            &[DesignFlangeEdgeWidth<u32>],
+            &[DesignFlangeEdgeWidth<[u32; 2]>],
+        ) = match self {
             Self::FullEdge { .. } => (&[], &[], &[]),
             Self::Symmetric { owner, .. } => (std::slice::from_ref(owner), &[], &[]),
             Self::TwoSides { owners, .. } => (owners, &[], &[]),
             Self::SymmetricPerEdge(edges) => (&[], edges, &[]),
             Self::TwoSidesPerEdge { edges, .. } => (&[], &[], edges),
         };
-        shared.iter().chain(symmetric.iter().map(|row| &row.owners)).chain(two_sided.iter().flat_map(|row| &row.owners))
+        shared
+            .iter()
+            .chain(symmetric.iter().map(|row| &row.owners))
+            .chain(two_sided.iter().flat_map(|row| &row.owners))
     }
 
     pub(crate) fn from_wire(
@@ -7327,10 +8213,16 @@ impl DesignEdgeFlangeShape {
             1 => DesignEdgeWidthMode::Symmetric,
             _ => DesignEdgeWidthMode::TwoSides,
         });
-        if source == DesignEdgeFlangeWidthParameterSource::EdgeOffset && mode != DesignEdgeWidthMode::TwoSidesPerEdge {
-            return Err("width_parameter_source edge_offset requires width_mode two_sides_per_edge".into());
+        if source == DesignEdgeFlangeWidthParameterSource::EdgeOffset
+            && mode != DesignEdgeWidthMode::TwoSidesPerEdge
+        {
+            return Err(
+                "width_parameter_source edge_offset requires width_mode two_sides_per_edge".into(),
+            );
         }
-        if !matches!(height, DesignEdgeFlangeHeightExtent::Distance) && mode != DesignEdgeWidthMode::FullEdge {
+        if !matches!(height, DesignEdgeFlangeHeightExtent::Distance)
+            && mode != DesignEdgeWidthMode::FullEdge
+        {
             return Err("height_extent to_object requires width_mode full_edge".into());
         }
         match mode {
@@ -7525,9 +8417,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 DesignScopePayload::Combine(wire.combine_operation.take())
             }
             DesignFeatureKind::Draft => DesignScopePayload::Draft(wire.draft_operation.take()),
-            DesignFeatureKind::ReplaceFace => {
-                DesignScopePayload::ReplaceFace
-            }
+            DesignFeatureKind::ReplaceFace => DesignScopePayload::ReplaceFace,
             DesignFeatureKind::CPattern => {
                 DesignScopePayload::CPattern(wire.circular_pattern_construction.take())
             }
@@ -7554,40 +8444,71 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 DesignScopePayload::OffsetFaces(match wire.direct_face_operation.take() {
                     None => None,
                     Some(DesignDirectFaceOperation::OffsetFaces(value)) => Some(value),
-                    Some(_) => return Err(DesignParameterScopePayloadError("direct_face_operation.operation does not match OffsetFaces".into())),
+                    Some(_) => {
+                        return Err(DesignParameterScopePayloadError(
+                            "direct_face_operation.operation does not match OffsetFaces".into(),
+                        ))
+                    }
                 })
             }
             DesignFeatureKind::DecalerLesFaces => {
                 DesignScopePayload::DecalerLesFaces(match wire.direct_face_operation.take() {
                     None => None,
                     Some(DesignDirectFaceOperation::OffsetFaces(value)) => Some(value),
-                    Some(_) => return Err(DesignParameterScopePayloadError("direct_face_operation.operation does not match DecalerLesFaces".into())),
+                    Some(_) => {
+                        return Err(DesignParameterScopePayloadError(
+                            "direct_face_operation.operation does not match DecalerLesFaces".into(),
+                        ))
+                    }
                 })
             }
-            DesignFeatureKind::Revolve => DesignScopePayload::Revolve(match wire.path_feature.take() {
-                None => None,
-                Some(DesignPathFeatureWire { path_feature_construction: Some(DesignPathFeatureConstruction::Revolve(value)), sweep_profile: None }) => Some(value),
-                Some(_) => return Err(DesignParameterScopePayloadError("path_feature_construction or sweep_profile does not match Revolve".into())),
-            }),
+            DesignFeatureKind::Revolve => {
+                DesignScopePayload::Revolve(match wire.path_feature.take() {
+                    None => None,
+                    Some(DesignPathFeatureWire {
+                        path_feature_construction:
+                            Some(DesignPathFeatureConstruction::Revolve(value)),
+                        sweep_profile: None,
+                    }) => Some(value),
+                    Some(_) => {
+                        return Err(DesignParameterScopePayloadError(
+                            "path_feature_construction or sweep_profile does not match Revolve"
+                                .into(),
+                        ))
+                    }
+                })
+            }
             DesignFeatureKind::Shell => {
                 DesignScopePayload::Shell(match wire.direct_face_operation.take() {
                     None => None,
                     Some(DesignDirectFaceOperation::Shell(value)) => Some(value),
-                    Some(_) => return Err(DesignParameterScopePayloadError("direct_face_operation.operation does not match Shell".into())),
+                    Some(_) => {
+                        return Err(DesignParameterScopePayloadError(
+                            "direct_face_operation.operation does not match Shell".into(),
+                        ))
+                    }
                 })
             }
             DesignFeatureKind::Schale => {
                 DesignScopePayload::Schale(match wire.direct_face_operation.take() {
                     None => None,
                     Some(DesignDirectFaceOperation::Shell(value)) => Some(value),
-                    Some(_) => return Err(DesignParameterScopePayloadError("direct_face_operation.operation does not match Schale".into())),
+                    Some(_) => {
+                        return Err(DesignParameterScopePayloadError(
+                            "direct_face_operation.operation does not match Schale".into(),
+                        ))
+                    }
                 })
             }
             DesignFeatureKind::Thicken => {
                 DesignScopePayload::Thicken(match wire.direct_face_operation.take() {
                     None => None,
                     Some(DesignDirectFaceOperation::Thicken(value)) => Some(value),
-                    Some(_) => return Err(DesignParameterScopePayloadError("direct_face_operation.operation does not match Thicken".into())),
+                    Some(_) => {
+                        return Err(DesignParameterScopePayloadError(
+                            "direct_face_operation.operation does not match Thicken".into(),
+                        ))
+                    }
                 })
             }
             DesignFeatureKind::SpirePrimitive => {
@@ -7596,24 +8517,48 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             DesignFeatureKind::CoilPrimitive => DesignScopePayload::CoilPrimitive(wire.coil.take()),
             DesignFeatureKind::Loft => DesignScopePayload::Loft(match wire.path_feature.take() {
                 None => None,
-                Some(DesignPathFeatureWire { path_feature_construction: Some(DesignPathFeatureConstruction::Loft(value)), sweep_profile: None }) => Some(value),
-                Some(_) => return Err(DesignParameterScopePayloadError("path_feature_construction or sweep_profile does not match Loft".into())),
+                Some(DesignPathFeatureWire {
+                    path_feature_construction: Some(DesignPathFeatureConstruction::Loft(value)),
+                    sweep_profile: None,
+                }) => Some(value),
+                Some(_) => {
+                    return Err(DesignParameterScopePayloadError(
+                        "path_feature_construction or sweep_profile does not match Loft".into(),
+                    ))
+                }
             }),
             DesignFeatureKind::Sweep => DesignScopePayload::Sweep(match wire.path_feature.take() {
                 None => None,
-                Some(DesignPathFeatureWire { path_feature_construction, sweep_profile }) => {
+                Some(DesignPathFeatureWire {
+                    path_feature_construction,
+                    sweep_profile,
+                }) => {
                     let construction = match path_feature_construction {
                         None => None,
                         Some(DesignPathFeatureConstruction::Sweep(value)) => Some(value),
-                        Some(_) => return Err(DesignParameterScopePayloadError("path_feature_construction.kind does not match Sweep".into())),
+                        Some(_) => {
+                            return Err(DesignParameterScopePayloadError(
+                                "path_feature_construction.kind does not match Sweep".into(),
+                            ))
+                        }
                     };
-                    Some(DesignSweepScope { construction, sweep_profile })
+                    Some(DesignSweepScope {
+                        construction,
+                        sweep_profile,
+                    })
                 }
             }),
             DesignFeatureKind::Pipe => DesignScopePayload::Pipe(match wire.path_feature.take() {
                 None => None,
-                Some(DesignPathFeatureWire { path_feature_construction: Some(DesignPathFeatureConstruction::Pipe(value)), sweep_profile: None }) => Some(value),
-                Some(_) => return Err(DesignParameterScopePayloadError("path_feature_construction or sweep_profile does not match Pipe".into())),
+                Some(DesignPathFeatureWire {
+                    path_feature_construction: Some(DesignPathFeatureConstruction::Pipe(value)),
+                    sweep_profile: None,
+                }) => Some(value),
+                Some(_) => {
+                    return Err(DesignParameterScopePayloadError(
+                        "path_feature_construction or sweep_profile does not match Pipe".into(),
+                    ))
+                }
             }),
             DesignFeatureKind::SurfacePatch => {
                 DesignScopePayload::SurfacePatch(std::mem::take(&mut wire.surface_patch_boundaries))
@@ -7689,28 +8634,44 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 DesignScopePayload::SpherePrimitive(match wire.solid_primitive.take() {
                     None => None,
                     Some(DesignSolidPrimitive::Sphere(value)) => Some(value),
-                    Some(_) => return Err(DesignParameterScopePayloadError("solid_primitive.primitive does not match SpherePrimitive".into())),
+                    Some(_) => {
+                        return Err(DesignParameterScopePayloadError(
+                            "solid_primitive.primitive does not match SpherePrimitive".into(),
+                        ))
+                    }
                 })
             }
             DesignFeatureKind::TorusPrimitive => {
                 DesignScopePayload::TorusPrimitive(match wire.solid_primitive.take() {
                     None => None,
                     Some(DesignSolidPrimitive::Torus(value)) => Some(value),
-                    Some(_) => return Err(DesignParameterScopePayloadError("solid_primitive.primitive does not match TorusPrimitive".into())),
+                    Some(_) => {
+                        return Err(DesignParameterScopePayloadError(
+                            "solid_primitive.primitive does not match TorusPrimitive".into(),
+                        ))
+                    }
                 })
             }
             DesignFeatureKind::BoxPrimitive => {
                 DesignScopePayload::BoxPrimitive(match wire.solid_primitive.take() {
                     None => None,
                     Some(DesignSolidPrimitive::Box(value)) => Some(value),
-                    Some(_) => return Err(DesignParameterScopePayloadError("solid_primitive.primitive does not match BoxPrimitive".into())),
+                    Some(_) => {
+                        return Err(DesignParameterScopePayloadError(
+                            "solid_primitive.primitive does not match BoxPrimitive".into(),
+                        ))
+                    }
                 })
             }
             DesignFeatureKind::CylinderPrimitive => {
                 DesignScopePayload::CylinderPrimitive(match wire.solid_primitive.take() {
                     None => None,
                     Some(DesignSolidPrimitive::Cylinder(value)) => Some(value),
-                    Some(_) => return Err(DesignParameterScopePayloadError("solid_primitive.primitive does not match CylinderPrimitive".into())),
+                    Some(_) => {
+                        return Err(DesignParameterScopePayloadError(
+                            "solid_primitive.primitive does not match CylinderPrimitive".into(),
+                        ))
+                    }
                 })
             }
             DesignFeatureKind::Native(name) => DesignScopePayload::Native(name.clone()),
@@ -7768,14 +8729,20 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             record_index: wire.record_index,
             frame_length: wire.frame_length,
             kind_offset: wire.kind_offset,
-            feature_ordinal: std::num::NonZeroU32::new(wire.feature_ordinal).ok_or_else(|| DesignParameterScopePayloadError("feature_ordinal must be nonzero".into()))?,
+            feature_ordinal: std::num::NonZeroU32::new(wire.feature_ordinal).ok_or_else(|| {
+                DesignParameterScopePayloadError("feature_ordinal must be nonzero".into())
+            })?,
             feature_ordinal_offset: wire.feature_ordinal_offset,
             history_state_id: wire.history_state_id,
             previous_history_state_id: wire.previous_history_state_id,
             previous_history_state_id_offset: wire.previous_history_state_id_offset,
             reference_count_offset: wire.reference_count_offset,
-            reference_members: ReferenceRun::from_columns(wire.reference_members, wire.reference_member_offsets, "reference_members/reference_member_offsets")
-                .map_err(DesignParameterScopePayloadError)?,
+            reference_members: ReferenceRun::from_columns(
+                wire.reference_members,
+                wire.reference_member_offsets,
+                "reference_members/reference_member_offsets",
+            )
+            .map_err(DesignParameterScopePayloadError)?,
             payload,
             unclosed_construction_operand_groups: wire.unclosed_construction_operand_groups,
             paired_class_tag: wire.paired_class_tag,
@@ -7852,24 +8819,60 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             DesignScopePayload::SpirePrimitive(value)
             | DesignScopePayload::CoilPrimitive(value) => wire.coil = value,
             DesignScopePayload::BaseFlange(value) => wire.base_flange = value,
-            DesignScopePayload::Revolve(value) => wire.path_feature = value.map(|value| DesignPathFeatureWire { path_feature_construction: Some(DesignPathFeatureConstruction::Revolve(value)), sweep_profile: None }),
-            DesignScopePayload::Loft(value) => wire.path_feature = value.map(|value| DesignPathFeatureWire { path_feature_construction: Some(DesignPathFeatureConstruction::Loft(value)), sweep_profile: None }),
-            DesignScopePayload::Sweep(value) => wire.path_feature = value.map(|sweep| DesignPathFeatureWire { path_feature_construction: sweep.construction.map(DesignPathFeatureConstruction::Sweep), sweep_profile: sweep.sweep_profile }),
-            DesignScopePayload::Pipe(value) => wire.path_feature = value.map(|value| DesignPathFeatureWire { path_feature_construction: Some(DesignPathFeatureConstruction::Pipe(value)), sweep_profile: None }),
+            DesignScopePayload::Revolve(value) => {
+                wire.path_feature = value.map(|value| DesignPathFeatureWire {
+                    path_feature_construction: Some(DesignPathFeatureConstruction::Revolve(value)),
+                    sweep_profile: None,
+                })
+            }
+            DesignScopePayload::Loft(value) => {
+                wire.path_feature = value.map(|value| DesignPathFeatureWire {
+                    path_feature_construction: Some(DesignPathFeatureConstruction::Loft(value)),
+                    sweep_profile: None,
+                })
+            }
+            DesignScopePayload::Sweep(value) => {
+                wire.path_feature = value.map(|sweep| DesignPathFeatureWire {
+                    path_feature_construction: sweep
+                        .construction
+                        .map(DesignPathFeatureConstruction::Sweep),
+                    sweep_profile: sweep.sweep_profile,
+                })
+            }
+            DesignScopePayload::Pipe(value) => {
+                wire.path_feature = value.map(|value| DesignPathFeatureWire {
+                    path_feature_construction: Some(DesignPathFeatureConstruction::Pipe(value)),
+                    sweep_profile: None,
+                })
+            }
             DesignScopePayload::WorkPlane(value) => wire.work_plane_frame = value,
             DesignScopePayload::JointOrigin(value) => wire.joint_origin_frame = value,
             DesignScopePayload::Sketch(value)
             | DesignScopePayload::Esquisse(value)
             | DesignScopePayload::Skizze(value)
             | DesignScopePayload::Esboco(value) => wire.sketch_entity = value,
-            DesignScopePayload::SpherePrimitive(value) => wire.solid_primitive = value.map(DesignSolidPrimitive::Sphere),
-            DesignScopePayload::TorusPrimitive(value) => wire.solid_primitive = value.map(DesignSolidPrimitive::Torus),
-            DesignScopePayload::BoxPrimitive(value) => wire.solid_primitive = value.map(DesignSolidPrimitive::Box),
-            DesignScopePayload::CylinderPrimitive(value) => wire.solid_primitive = value.map(DesignSolidPrimitive::Cylinder),
-            DesignScopePayload::ReplaceFace => {},
-            DesignScopePayload::OffsetFaces(value) | DesignScopePayload::DecalerLesFaces(value) => wire.direct_face_operation = value.map(DesignDirectFaceOperation::OffsetFaces),
-            DesignScopePayload::Shell(value) | DesignScopePayload::Schale(value) => wire.direct_face_operation = value.map(DesignDirectFaceOperation::Shell),
-            DesignScopePayload::Thicken(value) => wire.direct_face_operation = value.map(DesignDirectFaceOperation::Thicken),
+            DesignScopePayload::SpherePrimitive(value) => {
+                wire.solid_primitive = value.map(DesignSolidPrimitive::Sphere)
+            }
+            DesignScopePayload::TorusPrimitive(value) => {
+                wire.solid_primitive = value.map(DesignSolidPrimitive::Torus)
+            }
+            DesignScopePayload::BoxPrimitive(value) => {
+                wire.solid_primitive = value.map(DesignSolidPrimitive::Box)
+            }
+            DesignScopePayload::CylinderPrimitive(value) => {
+                wire.solid_primitive = value.map(DesignSolidPrimitive::Cylinder)
+            }
+            DesignScopePayload::ReplaceFace => {}
+            DesignScopePayload::OffsetFaces(value) | DesignScopePayload::DecalerLesFaces(value) => {
+                wire.direct_face_operation = value.map(DesignDirectFaceOperation::OffsetFaces)
+            }
+            DesignScopePayload::Shell(value) | DesignScopePayload::Schale(value) => {
+                wire.direct_face_operation = value.map(DesignDirectFaceOperation::Shell)
+            }
+            DesignScopePayload::Thicken(value) => {
+                wire.direct_face_operation = value.map(DesignDirectFaceOperation::Thicken)
+            }
             DesignScopePayload::Move(value) => wire.move_operation = value,
             DesignScopePayload::Scale(value) | DesignScopePayload::Massstab(value) => {
                 wire.scale_operation = value
@@ -8326,35 +9329,43 @@ impl DesignParameterScope {
     }
 
     pub(crate) fn coil_operation(&self) -> Option<DesignExtrudeOperation> {
-        self.coil().and_then(|coil| coil.coil_operation.map(|field| field.value))
+        self.coil()
+            .and_then(|coil| coil.coil_operation.map(|field| field.value))
     }
 
     pub(crate) fn coil_operation_offset(&self) -> Option<u64> {
-        self.coil().and_then(|coil| coil.coil_operation.and_then(|field| field.offset))
+        self.coil()
+            .and_then(|coil| coil.coil_operation.and_then(|field| field.offset))
     }
 
     pub(crate) fn coil_extent(&self) -> Option<DesignCoilExtent> {
-        self.coil().and_then(|coil| coil.coil_extent.map(|field| field.value))
+        self.coil()
+            .and_then(|coil| coil.coil_extent.map(|field| field.value))
     }
 
     pub(crate) fn coil_section(&self) -> Option<DesignCoilSection> {
-        self.coil().and_then(|coil| coil.coil_section.map(|field| field.value))
+        self.coil()
+            .and_then(|coil| coil.coil_section.map(|field| field.value))
     }
 
     pub(crate) fn coil_section_placement(&self) -> Option<DesignCoilSectionPlacement> {
-        self.coil().and_then(|coil| coil.coil_section_placement.map(|field| field.value))
+        self.coil()
+            .and_then(|coil| coil.coil_section_placement.map(|field| field.value))
     }
 
     pub(crate) fn coil_clockwise(&self) -> Option<bool> {
-        self.coil().and_then(|coil| coil.coil_clockwise.map(|field| field.value))
+        self.coil()
+            .and_then(|coil| coil.coil_clockwise.map(|field| field.value))
     }
 
     pub(crate) fn coil_extent_offset(&self) -> Option<u64> {
-        self.coil().and_then(|coil| coil.coil_extent.and_then(|field| field.offset))
+        self.coil()
+            .and_then(|coil| coil.coil_extent.and_then(|field| field.offset))
     }
 
     pub(crate) fn coil_section_offset(&self) -> Option<u64> {
-        self.coil().and_then(|coil| coil.coil_section.and_then(|field| field.offset))
+        self.coil()
+            .and_then(|coil| coil.coil_section.and_then(|field| field.offset))
     }
 
     pub(crate) fn coil_section_placement_offset(&self) -> Option<u64> {
@@ -8363,7 +9374,8 @@ impl DesignParameterScope {
     }
 
     pub(crate) fn coil_clockwise_offset(&self) -> Option<u64> {
-        self.coil().and_then(|coil| coil.coil_clockwise.and_then(|field| field.offset))
+        self.coil()
+            .and_then(|coil| coil.coil_clockwise.and_then(|field| field.offset))
     }
 
     pub(crate) fn coil_placement(&self) -> Option<&DesignCoilPlacement> {
@@ -8379,14 +9391,18 @@ impl DesignParameterScope {
             DesignScopePayload::Revolve(value) => value.is_some(),
             DesignScopePayload::Loft(value) => value.is_some(),
             DesignScopePayload::Pipe(value) => value.is_some(),
-            DesignScopePayload::Sweep(value) => value.as_ref().is_some_and(|sweep| sweep.construction.is_some()),
+            DesignScopePayload::Sweep(value) => value
+                .as_ref()
+                .is_some_and(|sweep| sweep.construction.is_some()),
             _ => false,
         }
     }
 
     pub(crate) fn sweep_profile(&self) -> Option<&DesignSketchProfileOperand> {
         match &self.payload {
-            DesignScopePayload::Sweep(value) => value.as_ref().and_then(|sweep| sweep.sweep_profile.as_ref()),
+            DesignScopePayload::Sweep(value) => value
+                .as_ref()
+                .and_then(|sweep| sweep.sweep_profile.as_ref()),
             _ => None,
         }
     }
@@ -8537,10 +9553,23 @@ impl DesignEdgeFlangeEdge {
         {
             return Err("edge_wrapper_record_indices, edge_group_record_indices, edge_operand_record_indices, and aggregate_operand_record_indices must have equal lengths".into());
         }
-        Ok(wrappers.into_iter().zip(groups).zip(operands).zip(aggregate_operands)
-            .map(|(((wrapper_record_index, group_record_index), operand_record_index), aggregate_operand_record_index)| Self {
-                wrapper_record_index, group_record_index, operand_record_index, aggregate_operand_record_index,
-            }).collect())
+        Ok(wrappers
+            .into_iter()
+            .zip(groups)
+            .zip(operands)
+            .zip(aggregate_operands)
+            .map(
+                |(
+                    ((wrapper_record_index, group_record_index), operand_record_index),
+                    aggregate_operand_record_index,
+                )| Self {
+                    wrapper_record_index,
+                    group_record_index,
+                    operand_record_index,
+                    aggregate_operand_record_index,
+                },
+            )
+            .collect())
     }
 }
 
@@ -8635,17 +9664,20 @@ impl TryFrom<DesignEdgeFlangeOperationSerde> for DesignEdgeFlangeOperation {
         )?;
         Ok(Self {
             shape: DesignEdgeFlangeShape::from_wire(
-                edges, wire.width_mode,
+                edges,
+                wire.width_mode,
                 wire.width_distance_owner_record_indices,
                 wire.width_distance_owner_record_indices_by_edge,
-                wire.width_parameter_source, wire.height_extent,
+                wire.width_parameter_source,
+                wire.height_extent,
             )?,
             aggregate_group_record_index: wire.aggregate_group_record_index,
             height_owner_record_index: wire.height_owner_record_index,
             angle_owner_record_index: wire.angle_owner_record_index,
             auxiliary_reference_record_indices: wire.auxiliary_reference_record_indices,
             settings_record_index: wire.settings_record_index,
-            bend_radius: DesignBendRadius::new(wire.bend_radius).ok_or("bend_radius must be positive and finite")?,
+            bend_radius: DesignBendRadius::new(wire.bend_radius)
+                .ok_or("bend_radius must be positive and finite")?,
             bend_radius_offset: wire.bend_radius_offset,
             height_datum: wire.height_datum,
             bend_position: wire.bend_position,
@@ -8656,17 +9688,36 @@ impl TryFrom<DesignEdgeFlangeOperationSerde> for DesignEdgeFlangeOperation {
 impl From<DesignEdgeFlangeOperation> for DesignEdgeFlangeOperationSerde {
     fn from(operation: DesignEdgeFlangeOperation) -> Self {
         let width_mode = Some(operation.shape.mode());
-        let width_distance_owner_record_indices = operation.shape.owner_indices().copied().collect();
+        let width_distance_owner_record_indices =
+            operation.shape.owner_indices().copied().collect();
         let width_distance_owner_record_indices_by_edge = match &operation.shape {
-            DesignEdgeFlangeShape::TwoSidesPerEdge { edges, .. } => edges.iter().map(|row| row.owners).collect(),
+            DesignEdgeFlangeShape::TwoSidesPerEdge { edges, .. } => {
+                edges.iter().map(|row| row.owners).collect()
+            }
             _ => Vec::new(),
         };
         Self {
-            edge_wrapper_record_indices: operation.shape.edges().map(|edge| edge.wrapper_record_index).collect(),
-            edge_group_record_indices: operation.shape.edges().map(|edge| edge.group_record_index).collect(),
-            edge_operand_record_indices: operation.shape.edges().map(|edge| edge.operand_record_index).collect(),
+            edge_wrapper_record_indices: operation
+                .shape
+                .edges()
+                .map(|edge| edge.wrapper_record_index)
+                .collect(),
+            edge_group_record_indices: operation
+                .shape
+                .edges()
+                .map(|edge| edge.group_record_index)
+                .collect(),
+            edge_operand_record_indices: operation
+                .shape
+                .edges()
+                .map(|edge| edge.operand_record_index)
+                .collect(),
             aggregate_group_record_index: operation.aggregate_group_record_index,
-            aggregate_operand_record_indices: operation.shape.edges().map(|edge| edge.aggregate_operand_record_index).collect(),
+            aggregate_operand_record_indices: operation
+                .shape
+                .edges()
+                .map(|edge| edge.aggregate_operand_record_index)
+                .collect(),
             height_owner_record_index: operation.height_owner_record_index,
             height_extent: operation.shape.height(),
             angle_owner_record_index: operation.angle_owner_record_index,
@@ -8793,7 +9844,8 @@ impl TryFrom<DesignHemOperationWire> for DesignHemOperation {
             aggregate_operand_record_index: wire.aggregate_operand_record_index,
             parameter_owners: wire.parameter_owners,
             settings_record_index: wire.settings_record_index,
-            bend_radius: DesignBendRadius::new(wire.bend_radius).ok_or("bend_radius must be positive and finite")?,
+            bend_radius: DesignBendRadius::new(wire.bend_radius)
+                .ok_or("bend_radius must be positive and finite")?,
             bend_radius_offset: wire.bend_radius_offset,
         })
     }
@@ -8822,7 +9874,10 @@ impl From<DesignHemOperation> for DesignHemOperationWire {
 /// Fixed construction carried by a uniform body-scale scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "DesignScaleOperationWire", into = "DesignScaleOperationWire")]
+#[serde(
+    try_from = "DesignScaleOperationWire",
+    into = "DesignScaleOperationWire"
+)]
 pub struct DesignScaleOperation {
     /// Counted construction group selecting the transformed bodies.
     pub body_group_record_index: u32,
@@ -8876,7 +9931,11 @@ impl TryFrom<DesignScaleOperationWire> for DesignScaleOperation {
         Ok(Self {
             body_group_record_index: value.body_group_record_index,
             center_record_index: value.center_record_index,
-            center_position: Located::from_wire(value.center_position, value.center_position_offset, "center_position")?,
+            center_position: Located::from_wire(
+                value.center_position,
+                value.center_position_offset,
+                "center_position",
+            )?,
             uniform_factor: value.uniform_factor,
             uniform_factor_offset: value.uniform_factor_offset,
         })
@@ -8886,8 +9945,14 @@ impl TryFrom<DesignScaleOperationWire> for DesignScaleOperation {
 /// Source and copied Design body identities carried by `CopyPasteBodies`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "DesignCopyPasteBodiesOperationWire"))]
-#[serde(try_from = "DesignCopyPasteBodiesOperationWire", into = "DesignCopyPasteBodiesOperationWire")]
+#[cfg_attr(
+    feature = "schema",
+    schemars(with = "DesignCopyPasteBodiesOperationWire")
+)]
+#[serde(
+    try_from = "DesignCopyPasteBodiesOperationWire",
+    into = "DesignCopyPasteBodiesOperationWire"
+)]
 pub struct DesignCopyPasteBodiesOperation {
     pub bodies: Vec<DesignCopiedBody>,
     /// Counted body-selection group named by the scope prefix and reference table.
@@ -8946,21 +10011,63 @@ impl TryFrom<DesignCopyPasteBodiesOperationWire> for DesignCopyPasteBodiesOperat
     type Error = String;
     fn try_from(wire: DesignCopyPasteBodiesOperationWire) -> Result<Self, Self::Error> {
         let count = wire.body_operand_record_indices.len();
-        if wire.body_operand_record_offsets.len() != count { return Err("body_operand_record_offsets must match body_operand_record_indices".into()); }
-        if wire.source_body_entity_suffixes.len() != count { return Err("source_body_entity_suffixes must match body_operand_record_indices".into()); }
-        if wire.source_body_entity_suffix_offsets.len() != count { return Err("source_body_entity_suffix_offsets must match body_operand_record_indices".into()); }
-        if wire.copied_body_entity_suffixes.len() != count { return Err("copied_body_entity_suffixes must match body_operand_record_indices".into()); }
-        if wire.copied_body_entity_suffix_offsets.len() != count { return Err("copied_body_entity_suffix_offsets must match body_operand_record_indices".into()); }
-        let bodies = wire.body_operand_record_indices.into_iter()
+        if wire.body_operand_record_offsets.len() != count {
+            return Err(
+                "body_operand_record_offsets must match body_operand_record_indices".into(),
+            );
+        }
+        if wire.source_body_entity_suffixes.len() != count {
+            return Err(
+                "source_body_entity_suffixes must match body_operand_record_indices".into(),
+            );
+        }
+        if wire.source_body_entity_suffix_offsets.len() != count {
+            return Err(
+                "source_body_entity_suffix_offsets must match body_operand_record_indices".into(),
+            );
+        }
+        if wire.copied_body_entity_suffixes.len() != count {
+            return Err(
+                "copied_body_entity_suffixes must match body_operand_record_indices".into(),
+            );
+        }
+        if wire.copied_body_entity_suffix_offsets.len() != count {
+            return Err(
+                "copied_body_entity_suffix_offsets must match body_operand_record_indices".into(),
+            );
+        }
+        let bodies = wire
+            .body_operand_record_indices
+            .into_iter()
             .zip(wire.body_operand_record_offsets)
-            .zip(wire.source_body_entity_suffixes.into_iter().zip(wire.source_body_entity_suffix_offsets))
-            .zip(wire.copied_body_entity_suffixes.into_iter().zip(wire.copied_body_entity_suffix_offsets))
-            .map(|(((value, offset), (source, source_offset)), (copied, copied_offset))| DesignCopiedBody {
-                operand: Located { value, offset },
-                source: Located { value: source, offset: source_offset },
-                copied: Located { value: copied, offset: copied_offset },
-            }).collect();
-        Ok(Self { bodies,
+            .zip(
+                wire.source_body_entity_suffixes
+                    .into_iter()
+                    .zip(wire.source_body_entity_suffix_offsets),
+            )
+            .zip(
+                wire.copied_body_entity_suffixes
+                    .into_iter()
+                    .zip(wire.copied_body_entity_suffix_offsets),
+            )
+            .map(
+                |(((value, offset), (source, source_offset)), (copied, copied_offset))| {
+                    DesignCopiedBody {
+                        operand: Located { value, offset },
+                        source: Located {
+                            value: source,
+                            offset: source_offset,
+                        },
+                        copied: Located {
+                            value: copied,
+                            offset: copied_offset,
+                        },
+                    }
+                },
+            )
+            .collect();
+        Ok(Self {
+            bodies,
             body_group_record_index: wire.body_group_record_index,
             body_group_class_tag: wire.body_group_class_tag,
             body_group_byte_offset: wire.body_group_byte_offset,
@@ -8979,12 +10086,36 @@ impl From<DesignCopyPasteBodiesOperation> for DesignCopyPasteBodiesOperationWire
             relation_record_index: value.relation_record_index,
             relation_class_tag: value.relation_class_tag,
             relation_byte_offset: value.relation_byte_offset,
-            body_operand_record_indices: value.bodies.iter().map(|body| body.operand.value).collect(),
-            body_operand_record_offsets: value.bodies.iter().map(|body| body.operand.offset).collect(),
-            source_body_entity_suffixes: value.bodies.iter().map(|body| body.source.value).collect(),
-            source_body_entity_suffix_offsets: value.bodies.iter().map(|body| body.source.offset).collect(),
-            copied_body_entity_suffixes: value.bodies.iter().map(|body| body.copied.value).collect(),
-            copied_body_entity_suffix_offsets: value.bodies.iter().map(|body| body.copied.offset).collect(),
+            body_operand_record_indices: value
+                .bodies
+                .iter()
+                .map(|body| body.operand.value)
+                .collect(),
+            body_operand_record_offsets: value
+                .bodies
+                .iter()
+                .map(|body| body.operand.offset)
+                .collect(),
+            source_body_entity_suffixes: value
+                .bodies
+                .iter()
+                .map(|body| body.source.value)
+                .collect(),
+            source_body_entity_suffix_offsets: value
+                .bodies
+                .iter()
+                .map(|body| body.source.offset)
+                .collect(),
+            copied_body_entity_suffixes: value
+                .bodies
+                .iter()
+                .map(|body| body.copied.value)
+                .collect(),
+            copied_body_entity_suffix_offsets: value
+                .bodies
+                .iter()
+                .map(|body| body.copied.offset)
+                .collect(),
         }
     }
 }
@@ -9015,9 +10146,14 @@ impl TryFrom<u8> for DesignBaseFeatureCompactMode {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum DesignBaseFeatureBodyReferenceForm {
     /// One output body with an encoded compact mode.
-    CompactOneBody { mode: Located<DesignBaseFeatureCompactMode>, body: DesignLegacyBaseFeatureBody },
+    CompactOneBody {
+        mode: Located<DesignBaseFeatureCompactMode>,
+        body: DesignLegacyBaseFeatureBody,
+    },
     /// Two output bodies with no mode slot.
-    ExpandedTwoBody { bodies: [DesignLegacyBaseFeatureBody; 2] },
+    ExpandedTwoBody {
+        bodies: [DesignLegacyBaseFeatureBody; 2],
+    },
 }
 
 /// One body in a legacy Base Feature envelope.
@@ -9041,7 +10177,10 @@ impl DesignBaseFeatureBodyReferenceForm {
 /// Typed construction data carried by a Fusion direct-modeling Base Feature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "DesignBaseFeatureConstructionWire", into = "DesignBaseFeatureConstructionWire")]
+#[serde(
+    try_from = "DesignBaseFeatureConstructionWire",
+    into = "DesignBaseFeatureConstructionWire"
+)]
 pub enum DesignBaseFeatureConstruction {
     /// Counted body, passive-reference, metadata, and result runs.
     ResultBodies {
@@ -9294,43 +10433,108 @@ impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstructio
     type Error = String;
     fn try_from(wire: DesignBaseFeatureConstructionWire) -> Result<Self, Self::Error> {
         Ok(match wire {
-            DesignBaseFeatureConstructionWire::ResultBodies { body_entity_suffixes, body_entity_suffix_offsets, body_entity_fields, body_reference_records, body_reference_record_offsets, body_reference_fields, repeated_reference_fields, metadata_record, metadata_record_offset, metadata_field, result_records, result_record_offsets, result_fields } => {
+            DesignBaseFeatureConstructionWire::ResultBodies {
+                body_entity_suffixes,
+                body_entity_suffix_offsets,
+                body_entity_fields,
+                body_reference_records,
+                body_reference_record_offsets,
+                body_reference_fields,
+                repeated_reference_fields,
+                metadata_record,
+                metadata_record_offset,
+                metadata_field,
+                result_records,
+                result_record_offsets,
+                result_fields,
+            } => {
                 let count = body_entity_suffixes.len();
                 for (field, len) in [
-                    ("body_entity_suffix_offsets", body_entity_suffix_offsets.len()),
+                    (
+                        "body_entity_suffix_offsets",
+                        body_entity_suffix_offsets.len(),
+                    ),
                     ("body_entity_fields", body_entity_fields.len()),
                     ("body_reference_records", body_reference_records.len()),
-                    ("body_reference_record_offsets", body_reference_record_offsets.len()),
+                    (
+                        "body_reference_record_offsets",
+                        body_reference_record_offsets.len(),
+                    ),
                     ("body_reference_fields", body_reference_fields.len()),
                     ("result_records", result_records.len()),
                     ("result_record_offsets", result_record_offsets.len()),
                     ("result_fields", result_fields.len()),
                 ] {
                     if len != count {
-                        return Err(format!("{field} must have the same length as body_entity_suffixes"));
+                        return Err(format!(
+                            "{field} must have the same length as body_entity_suffixes"
+                        ));
                     }
                 }
-                if !repeated_reference_fields.is_empty() && repeated_reference_fields.len() != count {
+                if !repeated_reference_fields.is_empty() && repeated_reference_fields.len() != count
+                {
                     return Err("repeated_reference_fields must be empty or have the same length as body_entity_suffixes".into());
                 }
                 let bodies = (0..count).map(|index| DesignBaseFeatureResultBody {
-                    entity: DesignBaseFeatureEntry { value: body_entity_suffixes[index], offset: body_entity_suffix_offsets[index], field: body_entity_fields[index] },
-                    reference: DesignBaseFeatureEntry { value: body_reference_records[index], offset: body_reference_record_offsets[index], field: body_reference_fields[index] },
-                    result: DesignBaseFeatureEntry { value: result_records[index], offset: result_record_offsets[index], field: result_fields[index] },
+                    entity: DesignBaseFeatureEntry {
+                        value: body_entity_suffixes[index],
+                        offset: body_entity_suffix_offsets[index],
+                        field: body_entity_fields[index],
+                    },
+                    reference: DesignBaseFeatureEntry {
+                        value: body_reference_records[index],
+                        offset: body_reference_record_offsets[index],
+                        field: body_reference_fields[index],
+                    },
+                    result: DesignBaseFeatureEntry {
+                        value: result_records[index],
+                        offset: result_record_offsets[index],
+                        field: result_fields[index],
+                    },
                 });
                 let bodies = if repeated_reference_fields.is_empty() {
                     DesignBaseFeatureResults::WithoutRepeatedFields(bodies.collect())
                 } else {
                     let mut repeated = bodies.zip(repeated_reference_fields);
                     match repeated.next() {
-                        Some(first) => DesignBaseFeatureResults::WithRepeatedFields { first, rest: repeated.collect() },
-                        None => return Err("repeated_reference_fields require body_entity_suffixes".into()),
+                        Some(first) => DesignBaseFeatureResults::WithRepeatedFields {
+                            first,
+                            rest: repeated.collect(),
+                        },
+                        None => {
+                            return Err(
+                                "repeated_reference_fields require body_entity_suffixes".into()
+                            )
+                        }
                     }
                 };
-                Self::ResultBodies { bodies, metadata_record, metadata_record_offset, metadata_field }
-            },
-            DesignBaseFeatureConstructionWire::BodyBasedOnFaces { body_entity_suffixes, body_entity_suffix_offsets, body_reference_records, body_reference_record_offsets, parameter_body_record, parameter_body_record_offset, auxiliary_record, auxiliary_record_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces, tag_body_based_on_faces_offset } => {
-                let ([suffix], [offset], [reference], [reference_offset]) = (body_entity_suffixes.as_slice(), body_entity_suffix_offsets.as_slice(), body_reference_records.as_slice(), body_reference_record_offsets.as_slice()) else {
+                Self::ResultBodies {
+                    bodies,
+                    metadata_record,
+                    metadata_record_offset,
+                    metadata_field,
+                }
+            }
+            DesignBaseFeatureConstructionWire::BodyBasedOnFaces {
+                body_entity_suffixes,
+                body_entity_suffix_offsets,
+                body_reference_records,
+                body_reference_record_offsets,
+                parameter_body_record,
+                parameter_body_record_offset,
+                auxiliary_record,
+                auxiliary_record_offset,
+                envelope_guid,
+                envelope_guid_offset,
+                tag_body_based_on_faces,
+                tag_body_based_on_faces_offset,
+            } => {
+                let ([suffix], [offset], [reference], [reference_offset]) = (
+                    body_entity_suffixes.as_slice(),
+                    body_entity_suffix_offsets.as_slice(),
+                    body_reference_records.as_slice(),
+                    body_reference_record_offsets.as_slice(),
+                ) else {
                     return Err("body_entity_suffixes, body_entity_suffix_offsets, body_reference_records, and body_reference_record_offsets require one body".into());
                 };
                 if *suffix != u64::from(*reference) || offset != reference_offset {
@@ -9339,36 +10543,92 @@ impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstructio
                 if !tag_body_based_on_faces {
                     return Err("tag_body_based_on_faces must be true for BodyBasedOnFaces".into());
                 }
-                Self::BodyBasedOnFaces { body: Located { value: *reference, offset: *offset }, parameter_body_record, parameter_body_record_offset, auxiliary_record, auxiliary_record_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces_offset }
-            },
-            DesignBaseFeatureConstructionWire::LegacyBodyBasedOnFaces { form, mode, mode_offset, body_entity_suffixes, body_entity_suffix_offsets, body_entity_fields, body_reference_records, body_reference_record_offsets, parameter_body_records, parameter_body_record_offsets, auxiliary_records, auxiliary_record_offsets, scope_reference, scope_reference_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces, tag_body_based_on_faces_offset } => {
+                Self::BodyBasedOnFaces {
+                    body: Located {
+                        value: *reference,
+                        offset: *offset,
+                    },
+                    parameter_body_record,
+                    parameter_body_record_offset,
+                    auxiliary_record,
+                    auxiliary_record_offset,
+                    envelope_guid,
+                    envelope_guid_offset,
+                    tag_body_based_on_faces_offset,
+                }
+            }
+            DesignBaseFeatureConstructionWire::LegacyBodyBasedOnFaces {
+                form,
+                mode,
+                mode_offset,
+                body_entity_suffixes,
+                body_entity_suffix_offsets,
+                body_entity_fields,
+                body_reference_records,
+                body_reference_record_offsets,
+                parameter_body_records,
+                parameter_body_record_offsets,
+                auxiliary_records,
+                auxiliary_record_offsets,
+                scope_reference,
+                scope_reference_offset,
+                envelope_guid,
+                envelope_guid_offset,
+                tag_body_based_on_faces,
+                tag_body_based_on_faces_offset,
+            } => {
                 let count = body_entity_suffixes.len();
                 for (field, len) in [
-                    ("body_entity_suffix_offsets", body_entity_suffix_offsets.len()),
+                    (
+                        "body_entity_suffix_offsets",
+                        body_entity_suffix_offsets.len(),
+                    ),
                     ("body_entity_fields", body_entity_fields.len()),
                     ("body_reference_records", body_reference_records.len()),
-                    ("body_reference_record_offsets", body_reference_record_offsets.len()),
+                    (
+                        "body_reference_record_offsets",
+                        body_reference_record_offsets.len(),
+                    ),
                     ("parameter_body_records", parameter_body_records.len()),
-                    ("parameter_body_record_offsets", parameter_body_record_offsets.len()),
+                    (
+                        "parameter_body_record_offsets",
+                        parameter_body_record_offsets.len(),
+                    ),
                     ("auxiliary_records", auxiliary_records.len()),
                     ("auxiliary_record_offsets", auxiliary_record_offsets.len()),
                 ] {
                     if len != count {
-                        return Err(format!("{field} must have the same length as body_entity_suffixes"));
+                        return Err(format!(
+                            "{field} must have the same length as body_entity_suffixes"
+                        ));
                     }
                 }
                 if !tag_body_based_on_faces {
-                    return Err("tag_body_based_on_faces must be true for LegacyBodyBasedOnFaces".into());
+                    return Err(
+                        "tag_body_based_on_faces must be true for LegacyBodyBasedOnFaces".into(),
+                    );
                 }
                 let mut bodies = Vec::with_capacity(count);
                 for index in 0..count {
-                    if body_entity_suffixes[index] != u64::from(body_reference_records[index]) || body_entity_suffix_offsets[index] != body_reference_record_offsets[index] {
+                    if body_entity_suffixes[index] != u64::from(body_reference_records[index])
+                        || body_entity_suffix_offsets[index] != body_reference_record_offsets[index]
+                    {
                         return Err("body_reference_records and body_reference_record_offsets must match body_entity_suffixes and body_entity_suffix_offsets".into());
                     }
                     bodies.push(DesignLegacyBaseFeatureBody {
-                        entity: DesignBaseFeatureEntry { value: body_reference_records[index], offset: body_entity_suffix_offsets[index], field: body_entity_fields[index] },
-                        parameter_body: Located { value: parameter_body_records[index], offset: parameter_body_record_offsets[index] },
-                        auxiliary: Located { value: auxiliary_records[index], offset: auxiliary_record_offsets[index] },
+                        entity: DesignBaseFeatureEntry {
+                            value: body_reference_records[index],
+                            offset: body_entity_suffix_offsets[index],
+                            field: body_entity_fields[index],
+                        },
+                        parameter_body: Located {
+                            value: parameter_body_records[index],
+                            offset: parameter_body_record_offsets[index],
+                        },
+                        auxiliary: Located {
+                            value: auxiliary_records[index],
+                            offset: auxiliary_record_offsets[index],
+                        },
                     });
                 }
                 let form = match (form, mode, mode_offset, bodies.as_slice()) {
@@ -9376,16 +10636,51 @@ impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstructio
                     (DesignBaseFeatureBodyReferenceFormWire::ExpandedTwoBody, None, None, [first, second]) => DesignBaseFeatureBodyReferenceForm::ExpandedTwoBody { bodies: [*first, *second] },
                     _ => return Err("form requires one body with mode and mode_offset for compact_one_body, or two bodies without mode for expanded_two_body".into()),
                 };
-                Self::LegacyBodyBasedOnFaces { form, scope_reference, scope_reference_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces_offset }
-            },
-            DesignBaseFeatureConstructionWire::BodySnapshot { body_entity_suffixes, body_entity_suffix_offsets, body_entity_fields, related_guids, related_guid_offsets, linkage_record, linkage_record_offset, auxiliary_record, auxiliary_record_offset } => {
-                if body_entity_suffixes.len() != body_entity_suffix_offsets.len() || body_entity_suffixes.len() != body_entity_fields.len() {
+                Self::LegacyBodyBasedOnFaces {
+                    form,
+                    scope_reference,
+                    scope_reference_offset,
+                    envelope_guid,
+                    envelope_guid_offset,
+                    tag_body_based_on_faces_offset,
+                }
+            }
+            DesignBaseFeatureConstructionWire::BodySnapshot {
+                body_entity_suffixes,
+                body_entity_suffix_offsets,
+                body_entity_fields,
+                related_guids,
+                related_guid_offsets,
+                linkage_record,
+                linkage_record_offset,
+                auxiliary_record,
+                auxiliary_record_offset,
+            } => {
+                if body_entity_suffixes.len() != body_entity_suffix_offsets.len()
+                    || body_entity_suffixes.len() != body_entity_fields.len()
+                {
                     return Err("body_entity_suffixes, body_entity_suffix_offsets, and body_entity_fields must have equal lengths".into());
                 }
-                let bodies = body_entity_suffixes.into_iter().zip(body_entity_suffix_offsets).zip(body_entity_fields)
-                    .map(|((value, offset), field)| DesignBaseFeatureEntry { value, offset, field }).collect();
-                Self::BodySnapshot { bodies, related_guids, related_guid_offsets, linkage_record, linkage_record_offset, auxiliary_record, auxiliary_record_offset }
-            },
+                let bodies = body_entity_suffixes
+                    .into_iter()
+                    .zip(body_entity_suffix_offsets)
+                    .zip(body_entity_fields)
+                    .map(|((value, offset), field)| DesignBaseFeatureEntry {
+                        value,
+                        offset,
+                        field,
+                    })
+                    .collect();
+                Self::BodySnapshot {
+                    bodies,
+                    related_guids,
+                    related_guid_offsets,
+                    linkage_record,
+                    linkage_record_offset,
+                    auxiliary_record,
+                    auxiliary_record_offset,
+                }
+            }
         })
     }
 }
@@ -9393,43 +10688,144 @@ impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstructio
 impl From<DesignBaseFeatureConstruction> for DesignBaseFeatureConstructionWire {
     fn from(value: DesignBaseFeatureConstruction) -> Self {
         match value {
-            DesignBaseFeatureConstruction::ResultBodies { bodies, metadata_record, metadata_record_offset, metadata_field } => {
+            DesignBaseFeatureConstruction::ResultBodies {
+                bodies,
+                metadata_record,
+                metadata_record_offset,
+                metadata_field,
+            } => {
                 let body_entity_suffixes = bodies.iter().map(|body| body.entity.value).collect();
-                let body_entity_suffix_offsets = bodies.iter().map(|body| body.entity.offset).collect();
+                let body_entity_suffix_offsets =
+                    bodies.iter().map(|body| body.entity.offset).collect();
                 let body_entity_fields = bodies.iter().map(|body| body.entity.field).collect();
-                let body_reference_records = bodies.iter().map(|body| body.reference.value).collect();
-                let body_reference_record_offsets = bodies.iter().map(|body| body.reference.offset).collect();
-                let body_reference_fields = bodies.iter().map(|body| body.reference.field).collect();
+                let body_reference_records =
+                    bodies.iter().map(|body| body.reference.value).collect();
+                let body_reference_record_offsets =
+                    bodies.iter().map(|body| body.reference.offset).collect();
+                let body_reference_fields =
+                    bodies.iter().map(|body| body.reference.field).collect();
                 let result_records = bodies.iter().map(|body| body.result.value).collect();
                 let result_record_offsets = bodies.iter().map(|body| body.result.offset).collect();
                 let result_fields = bodies.iter().map(|body| body.result.field).collect();
                 let repeated_reference_fields = match bodies {
                     DesignBaseFeatureResults::WithoutRepeatedFields(_) => Vec::new(),
-                    DesignBaseFeatureResults::WithRepeatedFields { first, rest } => std::iter::once(first.1).chain(rest.into_iter().map(|(_, field)| field)).collect(),
+                    DesignBaseFeatureResults::WithRepeatedFields { first, rest } => {
+                        std::iter::once(first.1)
+                            .chain(rest.into_iter().map(|(_, field)| field))
+                            .collect()
+                    }
                 };
-                Self::ResultBodies { body_entity_suffixes, body_entity_suffix_offsets, body_entity_fields, body_reference_records, body_reference_record_offsets, body_reference_fields, repeated_reference_fields, metadata_record, metadata_record_offset, metadata_field, result_records, result_record_offsets, result_fields }
+                Self::ResultBodies {
+                    body_entity_suffixes,
+                    body_entity_suffix_offsets,
+                    body_entity_fields,
+                    body_reference_records,
+                    body_reference_record_offsets,
+                    body_reference_fields,
+                    repeated_reference_fields,
+                    metadata_record,
+                    metadata_record_offset,
+                    metadata_field,
+                    result_records,
+                    result_record_offsets,
+                    result_fields,
+                }
+            }
+            DesignBaseFeatureConstruction::BodyBasedOnFaces {
+                body,
+                parameter_body_record,
+                parameter_body_record_offset,
+                auxiliary_record,
+                auxiliary_record_offset,
+                envelope_guid,
+                envelope_guid_offset,
+                tag_body_based_on_faces_offset,
+            } => Self::BodyBasedOnFaces {
+                body_entity_suffixes: vec![u64::from(body.value)],
+                body_entity_suffix_offsets: vec![body.offset],
+                body_reference_records: vec![body.value],
+                body_reference_record_offsets: vec![body.offset],
+                tag_body_based_on_faces: true,
+                parameter_body_record,
+                parameter_body_record_offset,
+                auxiliary_record,
+                auxiliary_record_offset,
+                envelope_guid,
+                envelope_guid_offset,
+                tag_body_based_on_faces_offset,
             },
-            DesignBaseFeatureConstruction::BodyBasedOnFaces { body, parameter_body_record, parameter_body_record_offset, auxiliary_record, auxiliary_record_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces_offset } => {
-                Self::BodyBasedOnFaces { body_entity_suffixes: vec![u64::from(body.value)], body_entity_suffix_offsets: vec![body.offset], body_reference_records: vec![body.value], body_reference_record_offsets: vec![body.offset], tag_body_based_on_faces: true, parameter_body_record, parameter_body_record_offset, auxiliary_record, auxiliary_record_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces_offset }
-            },
-            DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces { form, scope_reference, scope_reference_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces_offset } => {
+            DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces {
+                form,
+                scope_reference,
+                scope_reference_offset,
+                envelope_guid,
+                envelope_guid_offset,
+                tag_body_based_on_faces_offset,
+            } => {
                 let bodies = form.bodies();
-                let body_entity_suffixes = bodies.iter().map(|body| u64::from(body.entity.value)).collect();
-                let body_entity_suffix_offsets = bodies.iter().map(|body| body.entity.offset).collect();
+                let body_entity_suffixes = bodies
+                    .iter()
+                    .map(|body| u64::from(body.entity.value))
+                    .collect();
+                let body_entity_suffix_offsets =
+                    bodies.iter().map(|body| body.entity.offset).collect();
                 let body_entity_fields = bodies.iter().map(|body| body.entity.field).collect();
                 let body_reference_records = bodies.iter().map(|body| body.entity.value).collect();
-                let body_reference_record_offsets = bodies.iter().map(|body| body.entity.offset).collect();
-                let parameter_body_records = bodies.iter().map(|body| body.parameter_body.value).collect();
-                let parameter_body_record_offsets = bodies.iter().map(|body| body.parameter_body.offset).collect();
+                let body_reference_record_offsets =
+                    bodies.iter().map(|body| body.entity.offset).collect();
+                let parameter_body_records = bodies
+                    .iter()
+                    .map(|body| body.parameter_body.value)
+                    .collect();
+                let parameter_body_record_offsets = bodies
+                    .iter()
+                    .map(|body| body.parameter_body.offset)
+                    .collect();
                 let auxiliary_records = bodies.iter().map(|body| body.auxiliary.value).collect();
-                let auxiliary_record_offsets = bodies.iter().map(|body| body.auxiliary.offset).collect();
+                let auxiliary_record_offsets =
+                    bodies.iter().map(|body| body.auxiliary.offset).collect();
                 let (form, mode, mode_offset) = match form {
-                    DesignBaseFeatureBodyReferenceForm::CompactOneBody { mode, .. } => (DesignBaseFeatureBodyReferenceFormWire::CompactOneBody, Some(mode.value as u8), Some(mode.offset)),
-                    DesignBaseFeatureBodyReferenceForm::ExpandedTwoBody { .. } => (DesignBaseFeatureBodyReferenceFormWire::ExpandedTwoBody, None, None),
+                    DesignBaseFeatureBodyReferenceForm::CompactOneBody { mode, .. } => (
+                        DesignBaseFeatureBodyReferenceFormWire::CompactOneBody,
+                        Some(mode.value as u8),
+                        Some(mode.offset),
+                    ),
+                    DesignBaseFeatureBodyReferenceForm::ExpandedTwoBody { .. } => (
+                        DesignBaseFeatureBodyReferenceFormWire::ExpandedTwoBody,
+                        None,
+                        None,
+                    ),
                 };
-                Self::LegacyBodyBasedOnFaces { form, mode, mode_offset, body_entity_suffixes, body_entity_suffix_offsets, body_entity_fields, body_reference_records, body_reference_record_offsets, parameter_body_records, parameter_body_record_offsets, auxiliary_records, auxiliary_record_offsets, scope_reference, scope_reference_offset, envelope_guid, envelope_guid_offset, tag_body_based_on_faces: true, tag_body_based_on_faces_offset }
-            },
-            DesignBaseFeatureConstruction::BodySnapshot { bodies, related_guids, related_guid_offsets, linkage_record, linkage_record_offset, auxiliary_record, auxiliary_record_offset } => {
+                Self::LegacyBodyBasedOnFaces {
+                    form,
+                    mode,
+                    mode_offset,
+                    body_entity_suffixes,
+                    body_entity_suffix_offsets,
+                    body_entity_fields,
+                    body_reference_records,
+                    body_reference_record_offsets,
+                    parameter_body_records,
+                    parameter_body_record_offsets,
+                    auxiliary_records,
+                    auxiliary_record_offsets,
+                    scope_reference,
+                    scope_reference_offset,
+                    envelope_guid,
+                    envelope_guid_offset,
+                    tag_body_based_on_faces: true,
+                    tag_body_based_on_faces_offset,
+                }
+            }
+            DesignBaseFeatureConstruction::BodySnapshot {
+                bodies,
+                related_guids,
+                related_guid_offsets,
+                linkage_record,
+                linkage_record_offset,
+                auxiliary_record,
+                auxiliary_record_offset,
+            } => {
                 let mut body_entity_suffixes = Vec::with_capacity(bodies.len());
                 let mut body_entity_suffix_offsets = Vec::with_capacity(bodies.len());
                 let mut body_entity_fields = Vec::with_capacity(bodies.len());
@@ -9438,8 +10834,18 @@ impl From<DesignBaseFeatureConstruction> for DesignBaseFeatureConstructionWire {
                     body_entity_suffix_offsets.push(body.offset);
                     body_entity_fields.push(body.field);
                 }
-                Self::BodySnapshot { body_entity_suffixes, body_entity_suffix_offsets, body_entity_fields, related_guids, related_guid_offsets, linkage_record, linkage_record_offset, auxiliary_record, auxiliary_record_offset }
-            },
+                Self::BodySnapshot {
+                    body_entity_suffixes,
+                    body_entity_suffix_offsets,
+                    body_entity_fields,
+                    related_guids,
+                    related_guid_offsets,
+                    linkage_record,
+                    linkage_record_offset,
+                    auxiliary_record,
+                    auxiliary_record_offset,
+                }
+            }
         }
     }
 }
@@ -9457,11 +10863,19 @@ impl DesignBaseFeatureConstruction {
             Self::BodySnapshot { bodies, .. } => bodies[index].value,
             Self::BodyBasedOnFaces { body, .. } => u64::from(body.value),
             Self::ResultBodies { bodies, .. } => match bodies {
-                DesignBaseFeatureResults::WithoutRepeatedFields(bodies) => bodies[index].entity.value,
-                DesignBaseFeatureResults::WithRepeatedFields { first, .. } if index == 0 => first.0.entity.value,
-                DesignBaseFeatureResults::WithRepeatedFields { rest, .. } => rest[index - 1].0.entity.value,
+                DesignBaseFeatureResults::WithoutRepeatedFields(bodies) => {
+                    bodies[index].entity.value
+                }
+                DesignBaseFeatureResults::WithRepeatedFields { first, .. } if index == 0 => {
+                    first.0.entity.value
+                }
+                DesignBaseFeatureResults::WithRepeatedFields { rest, .. } => {
+                    rest[index - 1].0.entity.value
+                }
             },
-            Self::LegacyBodyBasedOnFaces { form, .. } => u64::from(form.bodies()[index].entity.value),
+            Self::LegacyBodyBasedOnFaces { form, .. } => {
+                u64::from(form.bodies()[index].entity.value)
+            }
         })
     }
 
@@ -9473,16 +10887,22 @@ impl DesignBaseFeatureConstruction {
             Self::BodyBasedOnFaces { body, .. } => (None, &[][..], Some(body.value)),
             Self::BodySnapshot { .. } => (None, &[][..], None),
         };
-        results.into_iter().flat_map(DesignBaseFeatureResults::iter).map(|body| body.reference.value)
-            .chain(legacy.iter().map(|body| body.entity.value)).chain(single)
+        results
+            .into_iter()
+            .flat_map(DesignBaseFeatureResults::iter)
+            .map(|body| body.reference.value)
+            .chain(legacy.iter().map(|body| body.entity.value))
+            .chain(single)
     }
-
 }
 
 /// Sketch-profile selection frame named by a profile-based feature scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "DesignSketchProfileOperandWire", into = "DesignSketchProfileOperandWire")]
+#[serde(
+    try_from = "DesignSketchProfileOperandWire",
+    into = "DesignSketchProfileOperandWire"
+)]
 #[cfg_attr(feature = "schema", schemars(with = "DesignSketchProfileOperandWire"))]
 pub struct DesignSketchProfileOperand {
     /// Zero-based position in the scope's ordered reference table.
@@ -9584,7 +11004,6 @@ impl From<DesignSketchProfileOperand> for DesignSketchProfileOperandWire {
     }
 }
 
-
 /// Nested ordered region selection carried by a sketch-profile operand.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -9618,7 +11037,10 @@ pub struct DesignSketchProfileRegion {
 /// One fixed-width persistent curve member of a selected sketch region.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "DesignSketchProfileRegionMemberWire", into = "DesignSketchProfileRegionMemberWire")]
+#[serde(
+    try_from = "DesignSketchProfileRegionMemberWire",
+    into = "DesignSketchProfileRegionMemberWire"
+)]
 pub struct DesignSketchProfileRegionMember {
     /// Byte offset of the member-kind code.
     pub kind_offset: u64,
@@ -9685,7 +11107,8 @@ impl TryFrom<DesignSketchProfileRegionMemberWire> for DesignSketchProfileRegionM
         if wire.kind != 3 {
             return Err("kind must be 3 for a profile-region curve member".into());
         }
-        let curve_primary_id = u32::try_from(wire.curve_primary_id).ok()
+        let curve_primary_id = u32::try_from(wire.curve_primary_id)
+            .ok()
             .and_then(std::num::NonZeroU32::new)
             .ok_or("curve_primary_id must be a nonzero u32")?;
         let [0, 0, 0, flag, first, second, 0, 0] = wire.incidence_words else {
@@ -9701,7 +11124,10 @@ impl TryFrom<DesignSketchProfileRegionMemberWire> for DesignSketchProfileRegionM
             curve_primary_id,
             curve_primary_id_offset: wire.curve_primary_id_offset,
             incidence_flag,
-            incidence_values: [DesignRegionIncidence::try_from(first)?, DesignRegionIncidence::try_from(second)?],
+            incidence_values: [
+                DesignRegionIncidence::try_from(first)?,
+                DesignRegionIncidence::try_from(second)?,
+            ],
             incidence_words_offset: wire.incidence_words_offset,
         })
     }
@@ -9714,7 +11140,16 @@ impl From<DesignSketchProfileRegionMember> for DesignSketchProfileRegionMemberWi
             kind_offset: member.kind_offset,
             curve_primary_id: u64::from(member.curve_primary_id.get()),
             curve_primary_id_offset: member.curve_primary_id_offset,
-            incidence_words: [0, 0, 0, u32::from(member.incidence_flag), member.incidence_values[0].into(), member.incidence_values[1].into(), 0, 0],
+            incidence_words: [
+                0,
+                0,
+                0,
+                u32::from(member.incidence_flag),
+                member.incidence_values[0].into(),
+                member.incidence_values[1].into(),
+                0,
+                0,
+            ],
             incidence_words_offset: member.incidence_words_offset,
         }
     }
@@ -9723,7 +11158,10 @@ impl From<DesignSketchProfileRegionMember> for DesignSketchProfileRegionMemberWi
 /// Counted selection group owned by an Extrude parameter scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "DesignExtrudeSelectionGroupWire", into = "DesignExtrudeSelectionGroupWire")]
+#[serde(
+    try_from = "DesignExtrudeSelectionGroupWire",
+    into = "DesignExtrudeSelectionGroupWire"
+)]
 pub struct DesignExtrudeSelectionGroup {
     /// Globally unique deterministic identifier for this native group.
     pub id: String,
@@ -9802,7 +11240,12 @@ impl TryFrom<DesignExtrudeSelectionGroupWire> for DesignExtrudeSelectionGroup {
             return Err("members and member_offsets must have equal lengths".into());
         }
         Ok(Self {
-            members: wire.members.into_iter().zip(wire.member_offsets).map(|(value, offset)| Located { value, offset }).collect(),
+            members: wire
+                .members
+                .into_iter()
+                .zip(wire.member_offsets)
+                .map(|(value, offset)| Located { value, offset })
+                .collect(),
             id: wire.id,
             scope_record_index: wire.scope_record_index,
             scope_reference_ordinal: wire.scope_reference_ordinal,
@@ -9823,7 +11266,11 @@ impl TryFrom<DesignExtrudeSelectionGroupWire> for DesignExtrudeSelectionGroup {
 
 impl From<DesignExtrudeSelectionGroup> for DesignExtrudeSelectionGroupWire {
     fn from(group: DesignExtrudeSelectionGroup) -> Self {
-        let (members, member_offsets) = group.members.into_iter().map(|member| (member.value, member.offset)).unzip();
+        let (members, member_offsets) = group
+            .members
+            .into_iter()
+            .map(|member| (member.value, member.offset))
+            .unzip();
         Self {
             members,
             member_offsets,
@@ -9957,9 +11404,9 @@ impl TryFrom<DesignConstructionOperandGroupSerde> for DesignConstructionOperandG
 
     fn try_from(wire: DesignConstructionOperandGroupSerde) -> Result<Self, Self::Error> {
         if wire.members.len() != wire.member_offsets.len() {
- return Err("members and member_offsets must have equal lengths".into());
-}
-let extrude_role = match (wire.extrude_role, wire.extrude_face_role) {
+            return Err("members and member_offsets must have equal lengths".into());
+        }
+        let extrude_role = match (wire.extrude_role, wire.extrude_face_role) {
             (Some(DesignExtrudeOperandRoleTag::Bodies), None) => {
                 Some(DesignExtrudeOperandRole::Bodies)
             }
@@ -9981,7 +11428,12 @@ let extrude_role = match (wire.extrude_role, wire.extrude_face_role) {
             record_index: wire.record_index,
             byte_offset: wire.byte_offset,
             class_tag: wire.class_tag,
-            members: wire.members.into_iter().zip(wire.member_offsets).map(|(value, offset)| Located { value, offset }).collect(),
+            members: wire
+                .members
+                .into_iter()
+                .zip(wire.member_offsets)
+                .map(|(value, offset)| Located { value, offset })
+                .collect(),
             lost_edge_references: wire.lost_edge_references,
             frame: wire.frame,
             role: wire.role,
@@ -9995,8 +11447,12 @@ let extrude_role = match (wire.extrude_role, wire.extrude_face_role) {
 
 impl From<DesignConstructionOperandGroup> for DesignConstructionOperandGroupSerde {
     fn from(group: DesignConstructionOperandGroup) -> Self {
-        let (members, member_offsets) = group.members.into_iter().map(|member| (member.value, member.offset)).unzip();
-let (extrude_role, extrude_face_role) = match group.extrude_role {
+        let (members, member_offsets) = group
+            .members
+            .into_iter()
+            .map(|member| (member.value, member.offset))
+            .unzip();
+        let (extrude_role, extrude_face_role) = match group.extrude_role {
             Some(DesignExtrudeOperandRole::Bodies) => {
                 (Some(DesignExtrudeOperandRoleTag::Bodies), None)
             }
@@ -10032,7 +11488,10 @@ let (extrude_role, extrude_face_role) = match group.extrude_role {
 /// Serialized framing of a construction-operand group.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "DesignConstructionOperandGroupFrameWire", into = "DesignConstructionOperandGroupFrameWire")]
+#[serde(
+    try_from = "DesignConstructionOperandGroupFrameWire",
+    into = "DesignConstructionOperandGroupFrameWire"
+)]
 pub struct DesignConstructionOperandGroupFrame {
     /// Byte offset of the member count.
     pub member_count_offset: u64,
@@ -10106,9 +11565,19 @@ impl TryFrom<DesignConstructionOperandGroupFrameWire> for DesignConstructionOper
         }
         Ok(Self {
             member_count_offset: wire.member_count_offset,
-            auxiliary_records: wire.auxiliary_record_indices.into_iter().zip(wire.auxiliary_record_offsets).map(|(value, offset)| Located { value, offset }).collect(),
+            auxiliary_records: wire
+                .auxiliary_record_indices
+                .into_iter()
+                .zip(wire.auxiliary_record_offsets)
+                .map(|(value, offset)| Located { value, offset })
+                .collect(),
             auxiliary_paths: wire.auxiliary_paths,
-            trailing_records: wire.trailing_record_indices.into_iter().zip(wire.trailing_record_offsets).map(|(value, offset)| Located { value, offset }).collect(),
+            trailing_records: wire
+                .trailing_record_indices
+                .into_iter()
+                .zip(wire.trailing_record_offsets)
+                .map(|(value, offset)| Located { value, offset })
+                .collect(),
             trailing_transforms: wire.trailing_transforms,
             trailing_dual_transforms: wire.trailing_dual_transforms,
             trailing_flags: wire.trailing_flags,
@@ -10125,11 +11594,27 @@ impl From<DesignConstructionOperandGroupFrame> for DesignConstructionOperandGrou
     fn from(frame: DesignConstructionOperandGroupFrame) -> Self {
         Self {
             member_count_offset: frame.member_count_offset,
-            auxiliary_record_indices: frame.auxiliary_records.iter().map(|record| record.value).collect(),
-            auxiliary_record_offsets: frame.auxiliary_records.iter().map(|record| record.offset).collect(),
+            auxiliary_record_indices: frame
+                .auxiliary_records
+                .iter()
+                .map(|record| record.value)
+                .collect(),
+            auxiliary_record_offsets: frame
+                .auxiliary_records
+                .iter()
+                .map(|record| record.offset)
+                .collect(),
             auxiliary_paths: frame.auxiliary_paths,
-            trailing_record_indices: frame.trailing_records.iter().map(|record| record.value).collect(),
-            trailing_record_offsets: frame.trailing_records.iter().map(|record| record.offset).collect(),
+            trailing_record_indices: frame
+                .trailing_records
+                .iter()
+                .map(|record| record.value)
+                .collect(),
+            trailing_record_offsets: frame
+                .trailing_records
+                .iter()
+                .map(|record| record.offset)
+                .collect(),
             trailing_transforms: frame.trailing_transforms,
             trailing_dual_transforms: frame.trailing_dual_transforms,
             trailing_flags: frame.trailing_flags,
@@ -10203,7 +11688,10 @@ pub struct DesignConstructionOperandDualTransform {
 /// One persistent-entity step in a construction operand's selection path.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "DesignConstructionOperandPathWire", into = "DesignConstructionOperandPathWire")]
+#[serde(
+    try_from = "DesignConstructionOperandPathWire",
+    into = "DesignConstructionOperandPathWire"
+)]
 pub struct DesignConstructionOperandPath {
     /// Indexed path-record identity.
     pub record_index: u32,
@@ -10299,7 +11787,9 @@ impl TryFrom<DesignConstructionOperandPathWire> for DesignConstructionOperandPat
 impl From<DesignConstructionOperandPath> for DesignConstructionOperandPathWire {
     fn from(record: DesignConstructionOperandPath) -> Self {
         let (transform, transform_offset, compact_variant) = match record.placement {
-            DesignConstructionPathPlacement::Transform(transform) => (Some(transform.value), Some(transform.offset), None),
+            DesignConstructionPathPlacement::Transform(transform) => {
+                (Some(transform.value), Some(transform.offset), None)
+            }
             DesignConstructionPathPlacement::Compact(variant) => (None, None, Some(variant)),
         };
         Self {
@@ -10330,11 +11820,13 @@ pub enum DesignConstructionPathPlacement {
     Compact(bool),
 }
 
-
 /// Nested identity chain named by a construction-operand group.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "DesignConstructionOperandIdentityWire", into = "DesignConstructionOperandIdentityWire")]
+#[serde(
+    try_from = "DesignConstructionOperandIdentityWire",
+    into = "DesignConstructionOperandIdentityWire"
+)]
 pub struct DesignConstructionOperandIdentity {
     /// Globally unique deterministic identifier.
     pub id: String,
@@ -10408,8 +11900,19 @@ impl TryFrom<DesignConstructionOperandIdentityWire> for DesignConstructionOperan
             following_class_tag: wire.following_class_tag,
             tracking_path: wire.tracking_path,
             persistent_identity: wire.persistent_identity,
-            wrappers: wire.wrapper_record_indices.into_iter().zip(wire.wrapper_byte_offsets).zip(wire.wrapper_class_tags)
-                .map(|((record_index, byte_offset), class_tag)| DesignIdentityWrapper { record_index, byte_offset, class_tag }).collect(),
+            wrappers: wire
+                .wrapper_record_indices
+                .into_iter()
+                .zip(wire.wrapper_byte_offsets)
+                .zip(wire.wrapper_class_tags)
+                .map(
+                    |((record_index, byte_offset), class_tag)| DesignIdentityWrapper {
+                        record_index,
+                        byte_offset,
+                        class_tag,
+                    },
+                )
+                .collect(),
         })
     }
 }
@@ -10442,8 +11945,14 @@ impl From<DesignConstructionOperandIdentity> for DesignConstructionOperandIdenti
 /// Entity-tracking path embedded in a construction-operand identity chain.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "DesignConstructionTrackingPathWire"))]
-#[serde(try_from = "DesignConstructionTrackingPathWire", into = "DesignConstructionTrackingPathWire")]
+#[cfg_attr(
+    feature = "schema",
+    schemars(with = "DesignConstructionTrackingPathWire")
+)]
+#[serde(
+    try_from = "DesignConstructionTrackingPathWire",
+    into = "DesignConstructionTrackingPathWire"
+)]
 pub struct DesignConstructionTrackingPath {
     /// Outer tracking-wrapper record identity.
     pub wrapper_record_index: u32,
@@ -10527,8 +12036,16 @@ impl TryFrom<DesignConstructionTrackingPathWire> for DesignConstructionTrackingP
             selector_offset: wire.selector_offset,
             kind: wire.kind,
             kind_offset: wire.kind_offset,
-            first_related_identity: Located::from_wire(wire.first_related_identity, wire.first_related_identity_offset, "first_related_identity")?,
-            second_related_identity: Located::from_wire(wire.second_related_identity, wire.second_related_identity_offset, "second_related_identity")?,
+            first_related_identity: Located::from_wire(
+                wire.first_related_identity,
+                wire.first_related_identity_offset,
+                "first_related_identity",
+            )?,
+            second_related_identity: Located::from_wire(
+                wire.second_related_identity,
+                wire.second_related_identity_offset,
+                "second_related_identity",
+            )?,
             following_record_index: wire.following_record_index,
             following_byte_offset: wire.following_byte_offset,
             following_class_tag: wire.following_class_tag,
@@ -10552,16 +12069,19 @@ impl From<DesignConstructionTrackingPath> for DesignConstructionTrackingPathWire
             kind: value.kind,
             kind_offset: value.kind_offset,
             first_related_identity: value.first_related_identity.map(|located| located.value),
-            first_related_identity_offset: value.first_related_identity.map(|located| located.offset),
+            first_related_identity_offset: value
+                .first_related_identity
+                .map(|located| located.offset),
             second_related_identity: value.second_related_identity.map(|located| located.value),
-            second_related_identity_offset: value.second_related_identity.map(|located| located.offset),
+            second_related_identity_offset: value
+                .second_related_identity
+                .map(|located| located.offset),
             following_record_index: value.following_record_index,
             following_byte_offset: value.following_byte_offset,
             following_class_tag: value.following_class_tag,
         }
     }
 }
-
 
 /// Fixed-width persistent identity following a construction-operand identity chain.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -10616,7 +12136,10 @@ pub struct DesignFilletRadiusGroup {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "DesignFilletRadiusLawWire"))]
-#[serde(try_from = "DesignFilletRadiusLawWire", into = "DesignFilletRadiusLawWire")]
+#[serde(
+    try_from = "DesignFilletRadiusLawWire",
+    into = "DesignFilletRadiusLawWire"
+)]
 pub enum DesignFilletRadiusLaw {
     /// One radius applies along the complete edge group.
     Constant {
@@ -10691,15 +12214,48 @@ impl TryFrom<DesignFilletRadiusLawWire> for DesignFilletRadiusLaw {
     type Error = String;
     fn try_from(wire: DesignFilletRadiusLawWire) -> Result<Self, Self::Error> {
         Ok(match wire {
-            DesignFilletRadiusLawWire::Constant { radius_parameter_record_index } => Self::Constant { radius_parameter_record_index },
-            DesignFilletRadiusLawWire::Chordal { chord_length_parameter_record_index } => Self::Chordal { chord_length_parameter_record_index },
-            DesignFilletRadiusLawWire::Asymmetric { offset_one_parameter_record_index, offset_two_parameter_record_index } => Self::Asymmetric { offset_one_parameter_record_index, offset_two_parameter_record_index },
-            DesignFilletRadiusLawWire::Variable { start_radius_parameter_record_index, end_radius_parameter_record_index, middle_radius_parameter_record_indices, middle_parameter_record_indices } => {
-                if middle_radius_parameter_record_indices.len() != middle_parameter_record_indices.len() {
+            DesignFilletRadiusLawWire::Constant {
+                radius_parameter_record_index,
+            } => Self::Constant {
+                radius_parameter_record_index,
+            },
+            DesignFilletRadiusLawWire::Chordal {
+                chord_length_parameter_record_index,
+            } => Self::Chordal {
+                chord_length_parameter_record_index,
+            },
+            DesignFilletRadiusLawWire::Asymmetric {
+                offset_one_parameter_record_index,
+                offset_two_parameter_record_index,
+            } => Self::Asymmetric {
+                offset_one_parameter_record_index,
+                offset_two_parameter_record_index,
+            },
+            DesignFilletRadiusLawWire::Variable {
+                start_radius_parameter_record_index,
+                end_radius_parameter_record_index,
+                middle_radius_parameter_record_indices,
+                middle_parameter_record_indices,
+            } => {
+                if middle_radius_parameter_record_indices.len()
+                    != middle_parameter_record_indices.len()
+                {
                     return Err("middle_radius_parameter_record_indices and middle_parameter_record_indices must have equal lengths".into());
                 }
-                Self::Variable { start_radius_parameter_record_index, end_radius_parameter_record_index,
-                    middle: middle_radius_parameter_record_indices.into_iter().zip(middle_parameter_record_indices).map(|(radius_parameter_record_index, parameter_record_index)| DesignFilletMidpoint { radius_parameter_record_index, parameter_record_index }).collect() }
+                Self::Variable {
+                    start_radius_parameter_record_index,
+                    end_radius_parameter_record_index,
+                    middle: middle_radius_parameter_record_indices
+                        .into_iter()
+                        .zip(middle_parameter_record_indices)
+                        .map(|(radius_parameter_record_index, parameter_record_index)| {
+                            DesignFilletMidpoint {
+                                radius_parameter_record_index,
+                                parameter_record_index,
+                            }
+                        })
+                        .collect(),
+                }
             }
         })
     }
@@ -10708,12 +12264,44 @@ impl TryFrom<DesignFilletRadiusLawWire> for DesignFilletRadiusLaw {
 impl From<DesignFilletRadiusLaw> for DesignFilletRadiusLawWire {
     fn from(law: DesignFilletRadiusLaw) -> Self {
         match law {
-            DesignFilletRadiusLaw::Constant { radius_parameter_record_index } => Self::Constant { radius_parameter_record_index },
-            DesignFilletRadiusLaw::Chordal { chord_length_parameter_record_index } => Self::Chordal { chord_length_parameter_record_index },
-            DesignFilletRadiusLaw::Asymmetric { offset_one_parameter_record_index, offset_two_parameter_record_index } => Self::Asymmetric { offset_one_parameter_record_index, offset_two_parameter_record_index },
-            DesignFilletRadiusLaw::Variable { start_radius_parameter_record_index, end_radius_parameter_record_index, middle } => {
-                let (middle_radius_parameter_record_indices, middle_parameter_record_indices) = middle.into_iter().map(|row| (row.radius_parameter_record_index, row.parameter_record_index)).unzip();
-                Self::Variable { start_radius_parameter_record_index, end_radius_parameter_record_index, middle_radius_parameter_record_indices, middle_parameter_record_indices }
+            DesignFilletRadiusLaw::Constant {
+                radius_parameter_record_index,
+            } => Self::Constant {
+                radius_parameter_record_index,
+            },
+            DesignFilletRadiusLaw::Chordal {
+                chord_length_parameter_record_index,
+            } => Self::Chordal {
+                chord_length_parameter_record_index,
+            },
+            DesignFilletRadiusLaw::Asymmetric {
+                offset_one_parameter_record_index,
+                offset_two_parameter_record_index,
+            } => Self::Asymmetric {
+                offset_one_parameter_record_index,
+                offset_two_parameter_record_index,
+            },
+            DesignFilletRadiusLaw::Variable {
+                start_radius_parameter_record_index,
+                end_radius_parameter_record_index,
+                middle,
+            } => {
+                let (middle_radius_parameter_record_indices, middle_parameter_record_indices) =
+                    middle
+                        .into_iter()
+                        .map(|row| {
+                            (
+                                row.radius_parameter_record_index,
+                                row.parameter_record_index,
+                            )
+                        })
+                        .unzip();
+                Self::Variable {
+                    start_radius_parameter_record_index,
+                    end_radius_parameter_record_index,
+                    middle_radius_parameter_record_indices,
+                    middle_parameter_record_indices,
+                }
             }
         }
     }
@@ -10743,7 +12331,9 @@ struct OptionalHistoricalBindingWire {
     historical_state_ids: Vec<i64>,
 }
 
-fn deserialize_historical_binding<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<HistoricalBinding>, D::Error> {
+fn deserialize_historical_binding<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<HistoricalBinding>, D::Error> {
     let wire = OptionalHistoricalBindingWire::deserialize(deserializer)?;
     match (wire.historical_entity_kind, wire.historical_entity_ref) {
         (None, None) if wire.historical_state_ids.is_empty() => Ok(None),
@@ -10803,12 +12393,17 @@ pub struct DesignExtrudeSelectionMember {
     pub next_byte_offset: u64,
 }
 
-
 /// Persistent Design entity selected through a nested indexed-record frame.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "DesignEntitySelectionOperandWire"))]
-#[serde(try_from = "DesignEntitySelectionOperandWire", into = "DesignEntitySelectionOperandWire")]
+#[cfg_attr(
+    feature = "schema",
+    schemars(with = "DesignEntitySelectionOperandWire")
+)]
+#[serde(
+    try_from = "DesignEntitySelectionOperandWire",
+    into = "DesignEntitySelectionOperandWire"
+)]
 pub struct DesignEntitySelectionOperand {
     /// Globally unique deterministic identifier for this native operand.
     pub id: String,
@@ -10940,8 +12535,16 @@ impl TryFrom<DesignEntitySelectionOperandWire> for DesignEntitySelectionOperand 
             primary_identity: wire.primary_identity,
             primary_identity_offset: wire.primary_identity_offset,
             secondary: DesignSecondaryIdentity::from_wire(
-                Located::from_wire(wire.secondary_identity, wire.secondary_identity_offset, "secondary_identity")?,
-                Located::from_wire(wire.curve_secondary_identity, wire.curve_secondary_identity_offset, "curve_secondary_identity")?,
+                Located::from_wire(
+                    wire.secondary_identity,
+                    wire.secondary_identity_offset,
+                    "secondary_identity",
+                )?,
+                Located::from_wire(
+                    wire.curve_secondary_identity,
+                    wire.curve_secondary_identity_offset,
+                    "curve_secondary_identity",
+                )?,
             )?,
             historical_edge_candidates: wire.historical_edge_candidates,
             historical_face_candidates: wire.historical_face_candidates,
@@ -10972,8 +12575,14 @@ impl From<DesignEntitySelectionOperand> for DesignEntitySelectionOperandWire {
             primary_identity_offset: record.primary_identity_offset,
             secondary_identity: record.secondary.map(|secondary| secondary.identity.value),
             secondary_identity_offset: record.secondary.map(|secondary| secondary.identity.offset),
-            curve_secondary_identity: record.secondary.and_then(|secondary| secondary.curve_identity).map(|identity| identity.value),
-            curve_secondary_identity_offset: record.secondary.and_then(|secondary| secondary.curve_identity).map(|identity| identity.offset),
+            curve_secondary_identity: record
+                .secondary
+                .and_then(|secondary| secondary.curve_identity)
+                .map(|identity| identity.value),
+            curve_secondary_identity_offset: record
+                .secondary
+                .and_then(|secondary| secondary.curve_identity)
+                .map(|identity| identity.offset),
             historical_edge_candidates: record.historical_edge_candidates,
             historical_face_candidates: record.historical_face_candidates,
             resolved_edge_slot: record.resolved_edge_slot,
@@ -11125,8 +12734,10 @@ impl TryFrom<DesignLoftLegacyBodyCarrierSerde> for DesignLoftLegacyBodyCarrier {
             (Some(_), Some(_)) => return Err("trailing_scope_record_index disagrees with scope_record_index".into()),
             _ => return Err("trailing_scope_record_index and trailing_scope_reference_offset must occur together".into()),
         };
-        let opaque_index = u8::try_from(wire.opaque_index).ok()
-            .and_then(std::num::NonZeroU8::new).ok_or("opaque_index must be in 1..=255")?;
+        let opaque_index = u8::try_from(wire.opaque_index)
+            .ok()
+            .and_then(std::num::NonZeroU8::new)
+            .ok_or("opaque_index must be in 1..=255")?;
         Ok(Self {
             id: wire.id,
             scope_record_index: wire.scope_record_index,
@@ -11181,7 +12792,9 @@ impl From<DesignLoftLegacyBodyCarrier> for DesignLoftLegacyBodyCarrierSerde {
             flags_offset: carrier.flags_offset,
             next_record_index: carrier.next_record_index,
             next_reference_offset: carrier.next_reference_offset,
-            trailing_scope_record_index: carrier.trailing_scope_reference_offset.map(|_| carrier.scope_record_index),
+            trailing_scope_record_index: carrier
+                .trailing_scope_reference_offset
+                .map(|_| carrier.scope_record_index),
             trailing_scope_reference_offset: carrier.trailing_scope_reference_offset,
             paired_class_tag: carrier.paired_class_tag,
             paired_byte_offset: carrier.paired_byte_offset,
@@ -11208,7 +12821,10 @@ pub struct DesignEntitySelectionEdgeCandidate {
 /// Whole-body construction operand carrying a persistent body-recipe reference.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "DesignBodyRecipeOperandWire", into = "DesignBodyRecipeOperandWire")]
+#[serde(
+    try_from = "DesignBodyRecipeOperandWire",
+    into = "DesignBodyRecipeOperandWire"
+)]
 pub struct DesignBodyRecipeOperand {
     /// Globally unique deterministic identifier for this native operand.
     pub id: String,
@@ -11336,7 +12952,11 @@ impl TryFrom<DesignBodyRecipeOperandWire> for DesignBodyRecipeOperand {
             asset_id_offset: wire.asset_id_offset,
             context_id: wire.context_id,
             context_id_offset: wire.context_id_offset,
-            selector_tail: Located::from_wire(wire.selector_tail, wire.selector_tail_offset, "selector_tail")?,
+            selector_tail: Located::from_wire(
+                wire.selector_tail,
+                wire.selector_tail_offset,
+                "selector_tail",
+            )?,
             references: wire.references,
             nested_record_index: wire.nested_record_index,
             nested_record_index_offset: wire.nested_record_index_offset,
@@ -11534,7 +13154,6 @@ pub struct DesignEdgeIdentityOperand {
     pub resolution_identity_id: Option<String>,
 }
 
-
 /// Edge-selection operand owned by an edge-selecting parameter scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -11651,7 +13270,11 @@ pub struct DesignEdgeOperand {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolved_edge_slot: Option<i64>,
     /// Selected historical carrier axis, when exact.
-    #[serde(flatten, serialize_with = "serialize_edge_resolved_axis", deserialize_with = "deserialize_edge_resolved_axis")]
+    #[serde(
+        flatten,
+        serialize_with = "serialize_edge_resolved_axis",
+        deserialize_with = "deserialize_edge_resolved_axis"
+    )]
     #[cfg_attr(feature = "schema", schemars(with = "EdgeResolvedAxisWire"))]
     pub resolved_axis: Option<DesignAxis>,
     /// Identity of the indexed record following the operand frame.
@@ -11669,19 +13292,27 @@ struct EdgeResolvedAxisWire {
     resolved_axis_direction: Option<Vector3>,
 }
 
-fn serialize_edge_resolved_axis<S: serde::Serializer>(axis: &Option<DesignAxis>, serializer: S) -> Result<S::Ok, S::Error> {
+fn serialize_edge_resolved_axis<S: serde::Serializer>(
+    axis: &Option<DesignAxis>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
     EdgeResolvedAxisWire {
         resolved_axis_origin: axis.map(|axis| axis.origin),
         resolved_axis_direction: axis.map(|axis| axis.direction),
-    }.serialize(serializer)
+    }
+    .serialize(serializer)
 }
 
-fn deserialize_edge_resolved_axis<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<DesignAxis>, D::Error> {
+fn deserialize_edge_resolved_axis<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<DesignAxis>, D::Error> {
     let wire = EdgeResolvedAxisWire::deserialize(deserializer)?;
     match (wire.resolved_axis_origin, wire.resolved_axis_direction) {
         (None, None) => Ok(None),
         (Some(origin), Some(direction)) => Ok(Some(DesignAxis { origin, direction })),
-        _ => Err(serde::de::Error::custom("resolved_axis_origin and resolved_axis_direction must occur together")),
+        _ => Err(serde::de::Error::custom(
+            "resolved_axis_origin and resolved_axis_direction must occur together",
+        )),
     }
 }
 
@@ -11766,7 +13397,10 @@ pub struct DesignHistoricalFaceBoundaryContext {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "DesignHistoricalFaceLoopWire"))]
-#[serde(try_from = "DesignHistoricalFaceLoopWire", into = "DesignHistoricalFaceLoopWire")]
+#[serde(
+    try_from = "DesignHistoricalFaceLoopWire",
+    into = "DesignHistoricalFaceLoopWire"
+)]
 pub struct DesignHistoricalFaceLoopContext {
     pub loop_slot: i64,
     pub boundary: DesignHistoricalLoopBoundary,
@@ -11807,14 +13441,17 @@ pub struct DesignHistoricalLoopPosition {
 
 impl DesignHistoricalLoopBoundary {
     pub(crate) fn coedges(&self) -> impl Iterator<Item = &DesignHistoricalLoopCoedge> {
-        let (mut coedges, mut vertices, mut points, mut positions): (&[_], &[_], &[_], &[_]) = (&[], &[], &[], &[]);
+        let (mut coedges, mut vertices, mut points, mut positions): (&[_], &[_], &[_], &[_]) =
+            (&[], &[], &[], &[]);
         match self {
             Self::Coedges(rows) => coedges = rows,
             Self::Vertices(rows) => vertices = rows,
             Self::Points(rows) => points = rows,
             Self::Positions(rows) => positions = rows,
         }
-        coedges.iter().chain(vertices.iter().map(|row| &row.coedge))
+        coedges
+            .iter()
+            .chain(vertices.iter().map(|row| &row.coedge))
             .chain(points.iter().map(|row| &row.vertex.coedge))
             .chain(positions.iter().map(|row| &row.point.vertex.coedge))
     }
@@ -11858,31 +13495,61 @@ impl TryFrom<DesignHistoricalFaceLoopWire> for DesignHistoricalFaceLoopContext {
         if !wire.positions.is_empty() && wire.positions.len() != wire.point_slots.len() {
             return Err("positions must be empty or match point_slots".into());
         }
-        let coedges = wire.coedge_slots.into_iter().zip(wire.edge_slots)
-            .map(|(coedge_slot, edge_slot)| DesignHistoricalLoopCoedge { coedge_slot, edge_slot });
+        let coedges =
+            wire.coedge_slots
+                .into_iter()
+                .zip(wire.edge_slots)
+                .map(|(coedge_slot, edge_slot)| DesignHistoricalLoopCoedge {
+                    coedge_slot,
+                    edge_slot,
+                });
         let boundary = if wire.vertex_slots.is_empty() {
             DesignHistoricalLoopBoundary::Coedges(coedges.collect())
         } else {
-            let vertices = coedges.zip(wire.vertex_slots).map(|(coedge, vertex_slot)| DesignHistoricalLoopVertex { coedge, vertex_slot });
+            let vertices = coedges.zip(wire.vertex_slots).map(|(coedge, vertex_slot)| {
+                DesignHistoricalLoopVertex {
+                    coedge,
+                    vertex_slot,
+                }
+            });
             if wire.point_slots.is_empty() {
                 DesignHistoricalLoopBoundary::Vertices(vertices.collect())
             } else {
-                let points = vertices.zip(wire.point_slots).map(|(vertex, point_slot)| DesignHistoricalLoopPoint { vertex, point_slot });
+                let points = vertices
+                    .zip(wire.point_slots)
+                    .map(|(vertex, point_slot)| DesignHistoricalLoopPoint { vertex, point_slot });
                 if wire.positions.is_empty() {
                     DesignHistoricalLoopBoundary::Points(points.collect())
                 } else {
-                    DesignHistoricalLoopBoundary::Positions(points.zip(wire.positions)
-                        .map(|(point, position)| DesignHistoricalLoopPosition { point, position }).collect())
+                    DesignHistoricalLoopBoundary::Positions(
+                        points
+                            .zip(wire.positions)
+                            .map(|(point, position)| DesignHistoricalLoopPosition {
+                                point,
+                                position,
+                            })
+                            .collect(),
+                    )
                 }
             }
         };
-        Ok(Self { loop_slot: wire.loop_slot, boundary })
+        Ok(Self {
+            loop_slot: wire.loop_slot,
+            boundary,
+        })
     }
 }
 
 impl From<DesignHistoricalFaceLoopContext> for DesignHistoricalFaceLoopWire {
     fn from(context: DesignHistoricalFaceLoopContext) -> Self {
-        let mut wire = Self { loop_slot: context.loop_slot, coedge_slots: Vec::new(), edge_slots: Vec::new(), vertex_slots: Vec::new(), point_slots: Vec::new(), positions: Vec::new() };
+        let mut wire = Self {
+            loop_slot: context.loop_slot,
+            coedge_slots: Vec::new(),
+            edge_slots: Vec::new(),
+            vertex_slots: Vec::new(),
+            point_slots: Vec::new(),
+            positions: Vec::new(),
+        };
         match context.boundary {
             DesignHistoricalLoopBoundary::Coedges(rows) => {
                 for row in rows {
@@ -11951,9 +13618,15 @@ pub struct DesignHistoricalEdgeLoopContext {
 
 /// Edge-recipe topology entries sharing one selector value.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "DesignEdgeRecipeSelectorContextWire", into = "DesignEdgeRecipeSelectorContextWire")]
+#[serde(
+    try_from = "DesignEdgeRecipeSelectorContextWire",
+    into = "DesignEdgeRecipeSelectorContextWire"
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "DesignEdgeRecipeSelectorContextWire"))]
+#[cfg_attr(
+    feature = "schema",
+    schemars(with = "DesignEdgeRecipeSelectorContextWire")
+)]
 pub struct DesignEdgeRecipeSelectorContext {
     pub selector: i32,
     pub clauses: Vec<Option<DesignEdgeRecipeSelectorClause>>,
@@ -12008,12 +13681,24 @@ impl TryFrom<DesignEdgeRecipeSelectorContextWire> for DesignEdgeRecipeSelectorCo
         if wire.clause_entries.len() != wire.clause_triplet_edge_slots.len() {
             return Err("clause_triplet_edge_slots must match clause_entries length".into());
         }
-        let clauses = wire.clause_entries.into_iter().zip(wire.clause_triplet_edge_slots)
+        let clauses = wire
+            .clause_entries
+            .into_iter()
+            .zip(wire.clause_triplet_edge_slots)
             .map(|(entry, slots)| match (entry, slots) {
                 (None, None) => Ok(None),
-                (Some(entry), Some(triplet_edge_slots)) => Ok(Some(DesignEdgeRecipeSelectorClause { entry, triplet_edge_slots })),
-                _ => Err("clause_entries and clause_triplet_edge_slots must be present together".to_owned()),
-            }).collect::<Result<_, _>>()?;
+                (Some(entry), Some(triplet_edge_slots)) => {
+                    Ok(Some(DesignEdgeRecipeSelectorClause {
+                        entry,
+                        triplet_edge_slots,
+                    }))
+                }
+                _ => Err(
+                    "clause_entries and clause_triplet_edge_slots must be present together"
+                        .to_owned(),
+                ),
+            })
+            .collect::<Result<_, _>>()?;
         let context = Self {
             selector: wire.selector,
             clauses,
@@ -12021,7 +13706,10 @@ impl TryFrom<DesignEdgeRecipeSelectorContextWire> for DesignEdgeRecipeSelectorCo
             boundary_count_matching_edge_slots: wire.boundary_count_matching_edge_slots,
         };
         if context.unique_incidence_edge_slot() != wire.unique_incidence_edge_slot {
-            return Err("unique_incidence_edge_slot must name the singleton incidence_matching_edge_slots".into());
+            return Err(
+                "unique_incidence_edge_slot must name the singleton incidence_matching_edge_slots"
+                    .into(),
+            );
         }
         Ok(context)
     }
@@ -12030,11 +13718,14 @@ impl TryFrom<DesignEdgeRecipeSelectorContextWire> for DesignEdgeRecipeSelectorCo
 impl From<DesignEdgeRecipeSelectorContext> for DesignEdgeRecipeSelectorContextWire {
     fn from(context: DesignEdgeRecipeSelectorContext) -> Self {
         let unique_incidence_edge_slot = context.unique_incidence_edge_slot();
-        let (clause_entries, clause_triplet_edge_slots) = context.clauses.into_iter()
+        let (clause_entries, clause_triplet_edge_slots) = context
+            .clauses
+            .into_iter()
             .map(|clause| match clause {
                 Some(clause) => (Some(clause.entry), Some(clause.triplet_edge_slots)),
                 None => (None, None),
-            }).unzip();
+            })
+            .unzip();
         Self {
             selector: context.selector,
             clause_entries,
@@ -12060,8 +13751,14 @@ pub struct DesignEdgeRecipeStructure {
 /// edge recipe.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "DesignSurfacePatchRecipeStructureWire", into = "DesignSurfacePatchRecipeStructureWire")]
-#[cfg_attr(feature = "schema", schemars(with = "DesignSurfacePatchRecipeStructureWire"))]
+#[serde(
+    try_from = "DesignSurfacePatchRecipeStructureWire",
+    into = "DesignSurfacePatchRecipeStructureWire"
+)]
+#[cfg_attr(
+    feature = "schema",
+    schemars(with = "DesignSurfacePatchRecipeStructureWire")
+)]
 pub struct DesignSurfacePatchRecipeStructure {
     /// Ordered clauses in the recipe program.
     pub clauses: [DesignSurfacePatchRecipeClause; 2],
@@ -12081,15 +13778,19 @@ impl TryFrom<DesignSurfacePatchRecipeStructureWire> for DesignSurfacePatchRecipe
         if wire.root != 2 {
             return Err("surface patch recipe root must be 2".into());
         }
-        let clauses = wire.clauses.try_into()
-            .map_err(|_| "surface patch recipe clauses must contain exactly two clauses".to_owned())?;
+        let clauses = wire.clauses.try_into().map_err(|_| {
+            "surface patch recipe clauses must contain exactly two clauses".to_owned()
+        })?;
         Ok(Self { clauses })
     }
 }
 
 impl From<DesignSurfacePatchRecipeStructure> for DesignSurfacePatchRecipeStructureWire {
     fn from(value: DesignSurfacePatchRecipeStructure) -> Self {
-        Self { root: 2, clauses: value.clauses.into() }
+        Self {
+            root: 2,
+            clauses: value.clauses.into(),
+        }
     }
 }
 
@@ -12130,7 +13831,10 @@ pub struct DesignTopologyRecipeSide {
 /// One eight-word topology entry in an edge-recipe side clause.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "DesignTopologyRecipeEntryWire", into = "DesignTopologyRecipeEntryWire")]
+#[serde(
+    try_from = "DesignTopologyRecipeEntryWire",
+    into = "DesignTopologyRecipeEntryWire"
+)]
 #[cfg_attr(feature = "schema", schemars(with = "DesignTopologyRecipeEntryWire"))]
 pub struct DesignTopologyRecipeEntry {
     /// Nonnegative clause-local selector, strictly increasing within one clause.
@@ -12158,7 +13862,15 @@ struct DesignTopologyRecipeEntryWire {
 impl DesignTopologyRecipeEntry {
     /// Return the incident edge ordinal shared by both triplets.
     pub fn common_incident_edge_ordinal(&self) -> Option<u32> {
-        self.topology_triplets[0].incident.map(|incident| incident.ordinal).filter(|ordinal| self.topology_triplets[1].incident.map(|incident| incident.ordinal) == Some(*ordinal))
+        self.topology_triplets[0]
+            .incident
+            .map(|incident| incident.ordinal)
+            .filter(|ordinal| {
+                self.topology_triplets[1]
+                    .incident
+                    .map(|incident| incident.ordinal)
+                    == Some(*ordinal)
+            })
     }
 }
 
@@ -12189,11 +13901,13 @@ impl From<DesignTopologyRecipeEntry> for DesignTopologyRecipeEntryWire {
     }
 }
 
-
 /// One three-word invariant in an edge-recipe entry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "DesignTopologyRecipeTripletWire", into = "DesignTopologyRecipeTripletWire")]
+#[serde(
+    try_from = "DesignTopologyRecipeTripletWire",
+    into = "DesignTopologyRecipeTripletWire"
+)]
 #[cfg_attr(feature = "schema", schemars(with = "DesignTopologyRecipeTripletWire"))]
 pub struct DesignTopologyRecipeTriplet {
     /// Equal positive first and third words, not exceeding the containing
@@ -12262,7 +13976,6 @@ impl From<DesignTopologyRecipeTriplet> for DesignTopologyRecipeTripletWire {
         }
     }
 }
-
 
 /// One incident boundary edge and its side at the selected vertex.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -12444,13 +14157,25 @@ struct DesignFaceOperandWire {
 impl TryFrom<DesignFaceOperandWire> for DesignFaceOperand {
     type Error = String;
     fn try_from(wire: DesignFaceOperandWire) -> Result<Self, Self::Error> {
-        if !wire.recipe_node_offsets.iter().copied().eq(wire.recipe_nodes.iter().map(|node| node.byte_offset)) {
+        if !wire
+            .recipe_node_offsets
+            .iter()
+            .copied()
+            .eq(wire.recipe_nodes.iter().map(|node| node.byte_offset))
+        {
             return Err("recipe_node_offsets must match recipe_nodes byte_offset values".into());
         }
         let group = match (wire.group_record_index, wire.group_member_ordinal) {
             (None, None) => None,
-            (Some(group_record_index), Some(group_member_ordinal)) => Some(DesignOperandGroup { group_record_index, group_member_ordinal }),
-            _ => return Err("group_record_index and group_member_ordinal must occur together".into()),
+            (Some(group_record_index), Some(group_member_ordinal)) => Some(DesignOperandGroup {
+                group_record_index,
+                group_member_ordinal,
+            }),
+            _ => {
+                return Err(
+                    "group_record_index and group_member_ordinal must occur together".into(),
+                )
+            }
         };
         Ok(Self {
             id: wire.id,
@@ -12488,7 +14213,11 @@ impl TryFrom<DesignFaceOperandWire> for DesignFaceOperand {
 
 impl From<DesignFaceOperand> for DesignFaceOperandWire {
     fn from(operand: DesignFaceOperand) -> Self {
-        let recipe_node_offsets = operand.recipe_nodes.iter().map(|node| node.byte_offset).collect();
+        let recipe_node_offsets = operand
+            .recipe_nodes
+            .iter()
+            .map(|node| node.byte_offset)
+            .collect();
         Self {
             id: operand.id,
             scope_record_index: operand.scope_record_index,
@@ -12539,7 +14268,10 @@ impl DesignFaceOperand {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "DesignFaceSourceGroupWire"))]
-#[serde(try_from = "DesignFaceSourceGroupWire", into = "DesignFaceSourceGroupWire")]
+#[serde(
+    try_from = "DesignFaceSourceGroupWire",
+    into = "DesignFaceSourceGroupWire"
+)]
 pub struct DesignFaceSourceGroup {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -12595,7 +14327,9 @@ impl TryFrom<DesignFaceSourceGroupWire> for DesignFaceSourceGroup {
     type Error = String;
     fn try_from(wire: DesignFaceSourceGroupWire) -> Result<Self, Self::Error> {
         if wire.source_members.len() != wire.source_reference_offsets.len() {
-            return Err("source_members and source_reference_offsets must have equal lengths".into());
+            return Err(
+                "source_members and source_reference_offsets must have equal lengths".into(),
+            );
         }
         let carrier_span = NonEmptyByteSpan::new(wire.carrier_byte_offset, wire.paired_byte_offset)
             .ok_or("paired_byte_offset must follow carrier_byte_offset")?;
@@ -12604,7 +14338,12 @@ impl TryFrom<DesignFaceSourceGroupWire> for DesignFaceSourceGroup {
         }
         Ok(Self {
             carrier_span,
-            source_members: wire.source_members.into_iter().zip(wire.source_reference_offsets).map(|(value, offset)| Located { value, offset }).collect(),
+            source_members: wire
+                .source_members
+                .into_iter()
+                .zip(wire.source_reference_offsets)
+                .map(|(value, offset)| Located { value, offset })
+                .collect(),
             id: wire.id,
             scope_record_index: wire.scope_record_index,
             carrier_reference_ordinal: wire.carrier_reference_ordinal,
@@ -12618,7 +14357,11 @@ impl TryFrom<DesignFaceSourceGroupWire> for DesignFaceSourceGroup {
 
 impl From<DesignFaceSourceGroup> for DesignFaceSourceGroupWire {
     fn from(group: DesignFaceSourceGroup) -> Self {
-        let (source_members, source_reference_offsets) = group.source_members.into_iter().map(|member| (member.value, member.offset)).unzip();
+        let (source_members, source_reference_offsets) = group
+            .source_members
+            .into_iter()
+            .map(|member| (member.value, member.offset))
+            .unzip();
         Self {
             source_members,
             source_reference_offsets,
@@ -12675,31 +14418,47 @@ pub struct DesignFaceRecipeStructure {
     /// Two ordered topology side clauses.
     pub sides: [DesignTopologyRecipeSide; 2],
     /// Scalar carried by the optional `[-1, value, -1, 0, 0, -1]` postlude.
-    #[serde(default, rename = "postlude", skip_serializing_if = "Option::is_none", serialize_with = "serialize_face_recipe_postlude", deserialize_with = "deserialize_face_recipe_postlude")]
+    #[serde(
+        default,
+        rename = "postlude",
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_face_recipe_postlude",
+        deserialize_with = "deserialize_face_recipe_postlude"
+    )]
     #[cfg_attr(feature = "schema", schemars(with = "Vec<i32>"))]
     pub postlude_value: Option<i32>,
 }
 
-fn serialize_face_recipe_postlude<S: serde::Serializer>(value: &Option<i32>, serializer: S) -> Result<S::Ok, S::Error> {
+fn serialize_face_recipe_postlude<S: serde::Serializer>(
+    value: &Option<i32>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
     match value {
         Some(value) => [-1, *value, -1, 0, 0, -1].as_slice().serialize(serializer),
         None => <[i32]>::serialize(&[], serializer),
     }
 }
 
-fn deserialize_face_recipe_postlude<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<i32>, D::Error> {
+fn deserialize_face_recipe_postlude<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<i32>, D::Error> {
     let words = Vec::<i32>::deserialize(deserializer)?;
     match words.as_slice() {
         [] => Ok(None),
         [-1, value, -1, 0, 0, -1] => Ok(Some(*value)),
-        _ => Err(serde::de::Error::custom("postlude must be empty or [-1, value, -1, 0, 0, -1]")),
+        _ => Err(serde::de::Error::custom(
+            "postlude must be empty or [-1, value, -1, 0, 0, -1]",
+        )),
     }
 }
 
 /// Typed sketch-container visibility bound to a Design sketch entity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "DesignSketchVisibilityWire", into = "DesignSketchVisibilityWire")]
+#[serde(
+    try_from = "DesignSketchVisibilityWire",
+    into = "DesignSketchVisibilityWire"
+)]
 #[cfg_attr(feature = "schema", schemars(with = "DesignSketchVisibilityWire"))]
 pub struct DesignSketchVisibility {
     /// One-based ordinal among sketch Geometry members in the Design stream.
@@ -12710,14 +14469,28 @@ pub struct DesignSketchVisibility {
 }
 
 impl DesignSketchVisibility {
-    pub fn new(stream_ordinal: NonZeroU32, stream_ordinal_offset: u64, visible: bool) -> Result<Self, String> {
-        stream_ordinal_offset.checked_add(5).ok_or("stream_ordinal_offset overflows visible_offset")?;
-        Ok(Self { stream_ordinal, stream_ordinal_offset, visible })
+    pub fn new(
+        stream_ordinal: NonZeroU32,
+        stream_ordinal_offset: u64,
+        visible: bool,
+    ) -> Result<Self, String> {
+        stream_ordinal_offset
+            .checked_add(5)
+            .ok_or("stream_ordinal_offset overflows visible_offset")?;
+        Ok(Self {
+            stream_ordinal,
+            stream_ordinal_offset,
+            visible,
+        })
     }
 
-    pub fn stream_ordinal_offset(&self) -> u64 { self.stream_ordinal_offset }
+    pub fn stream_ordinal_offset(&self) -> u64 {
+        self.stream_ordinal_offset
+    }
 
-    pub fn visible_offset(&self) -> u64 { self.stream_ordinal_offset + 5 }
+    pub fn visible_offset(&self) -> u64 {
+        self.stream_ordinal_offset + 5
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -12733,7 +14506,11 @@ impl TryFrom<DesignSketchVisibilityWire> for DesignSketchVisibility {
     type Error = String;
 
     fn try_from(wire: DesignSketchVisibilityWire) -> Result<Self, Self::Error> {
-        let value = Self::new(NonZeroU32::new(wire.stream_ordinal).ok_or("stream_ordinal must be nonzero")?, wire.stream_ordinal_offset, wire.visible)?;
+        let value = Self::new(
+            NonZeroU32::new(wire.stream_ordinal).ok_or("stream_ordinal must be nonzero")?,
+            wire.stream_ordinal_offset,
+            wire.visible,
+        )?;
         if wire.visible_offset != value.visible_offset() {
             return Err("visible_offset must equal stream_ordinal_offset + 5".into());
         }
@@ -12755,7 +14532,10 @@ impl From<DesignSketchVisibility> for DesignSketchVisibilityWire {
 /// Local-to-model placement frame referenced by a Design sketch scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "DesignSketchPlacementWire", into = "DesignSketchPlacementWire")]
+#[serde(
+    try_from = "DesignSketchPlacementWire",
+    into = "DesignSketchPlacementWire"
+)]
 #[cfg_attr(feature = "schema", schemars(with = "DesignSketchPlacementWire"))]
 pub struct DesignSketchPlacement {
     /// Globally unique deterministic identifier for this native record.
@@ -12831,8 +14611,13 @@ pub enum DesignSketchFrameForm {
     ScopeLegacy325(SketchPlacementMatrix),
     ScopeExplicit(SketchPlacementMatrix),
     ScopeGenesisExplicit(SketchPlacementMatrix),
-    MemberCompact { paired_byte_offset: u64 },
-    MemberExplicit { paired_byte_offset: u64, transform: SketchPlacementMatrix },
+    MemberCompact {
+        paired_byte_offset: u64,
+    },
+    MemberExplicit {
+        paired_byte_offset: u64,
+        transform: SketchPlacementMatrix,
+    },
 }
 
 /// A placement layout whose complete byte extent fits in its address space.
@@ -12843,10 +14628,14 @@ pub struct DesignSketchFrame {
 }
 
 impl DesignSketchFrame {
-    pub(crate) fn form(&self) -> &DesignSketchFrameForm { &self.form }
+    pub(crate) fn form(&self) -> &DesignSketchFrameForm {
+        &self.form
+    }
     pub(crate) fn new(byte_offset: u64, form: DesignSketchFrameForm) -> Result<Self, String> {
         let value = Self { byte_offset, form };
-        byte_offset.checked_add(value.frame_length()).ok_or("byte_offset overflows the sketch frame extent")?;
+        byte_offset
+            .checked_add(value.frame_length())
+            .ok_or("byte_offset overflows the sketch frame extent")?;
         Ok(value)
     }
     fn frame_length(&self) -> u64 {
@@ -12863,18 +14652,26 @@ impl DesignSketchFrame {
     }
     fn transform(&self) -> &[[f64; 4]; 4] {
         match &self.form {
-            DesignSketchFrameForm::ScopeCompact | DesignSketchFrameForm::ScopeGenesisCompact
+            DesignSketchFrameForm::ScopeCompact
+            | DesignSketchFrameForm::ScopeGenesisCompact
             | DesignSketchFrameForm::MemberCompact { .. } => &IDENTITY_MATRIX,
-            DesignSketchFrameForm::ScopeLegacy305(matrix) | DesignSketchFrameForm::ScopeLegacy325(matrix)
-            | DesignSketchFrameForm::ScopeExplicit(matrix) | DesignSketchFrameForm::ScopeGenesisExplicit(matrix)
-            | DesignSketchFrameForm::MemberExplicit { transform: matrix, .. } => &matrix.0,
+            DesignSketchFrameForm::ScopeLegacy305(matrix)
+            | DesignSketchFrameForm::ScopeLegacy325(matrix)
+            | DesignSketchFrameForm::ScopeExplicit(matrix)
+            | DesignSketchFrameForm::ScopeGenesisExplicit(matrix)
+            | DesignSketchFrameForm::MemberExplicit {
+                transform: matrix, ..
+            } => &matrix.0,
         }
     }
     fn transform_offset(&self) -> Option<u64> {
         let relative = match self.form {
-            DesignSketchFrameForm::ScopeCompact | DesignSketchFrameForm::ScopeGenesisCompact
+            DesignSketchFrameForm::ScopeCompact
+            | DesignSketchFrameForm::ScopeGenesisCompact
             | DesignSketchFrameForm::MemberCompact { .. } => return None,
-            DesignSketchFrameForm::ScopeLegacy305(_) | DesignSketchFrameForm::ScopeLegacy325(_) => 48,
+            DesignSketchFrameForm::ScopeLegacy305(_) | DesignSketchFrameForm::ScopeLegacy325(_) => {
+                48
+            }
             DesignSketchFrameForm::ScopeExplicit(_) => 55,
             DesignSketchFrameForm::ScopeGenesisExplicit(_) => 66,
             DesignSketchFrameForm::MemberExplicit { .. } => 22,
@@ -12884,20 +14681,36 @@ impl DesignSketchFrame {
     fn paired_byte_offset(&self) -> u64 {
         match self.form {
             DesignSketchFrameForm::MemberCompact { paired_byte_offset }
-            | DesignSketchFrameForm::MemberExplicit { paired_byte_offset, .. } => paired_byte_offset,
+            | DesignSketchFrameForm::MemberExplicit {
+                paired_byte_offset, ..
+            } => paired_byte_offset,
             _ => self.byte_offset + self.frame_length(),
         }
     }
 }
 
 impl DesignSketchPlacement {
-    pub(crate) fn byte_offset(&self) -> u64 { self.frame.byte_offset }
-    pub(crate) fn frame_length(&self) -> u64 { self.frame.frame_length() }
-    pub(crate) fn transform(&self) -> &[[f64; 4]; 4] { self.frame.transform() }
-    pub(crate) fn transform_offset(&self) -> Option<u64> { self.frame.transform_offset() }
-    pub(crate) fn paired_byte_offset(&self) -> u64 { self.frame.paired_byte_offset() }
+    pub(crate) fn byte_offset(&self) -> u64 {
+        self.frame.byte_offset
+    }
+    pub(crate) fn frame_length(&self) -> u64 {
+        self.frame.frame_length()
+    }
+    pub(crate) fn transform(&self) -> &[[f64; 4]; 4] {
+        self.frame.transform()
+    }
+    pub(crate) fn transform_offset(&self) -> Option<u64> {
+        self.frame.transform_offset()
+    }
+    pub(crate) fn paired_byte_offset(&self) -> u64 {
+        self.frame.paired_byte_offset()
+    }
     pub(crate) fn member_run_head(&self) -> bool {
-        matches!(self.frame.form, DesignSketchFrameForm::MemberCompact { .. } | DesignSketchFrameForm::MemberExplicit { .. })
+        matches!(
+            self.frame.form,
+            DesignSketchFrameForm::MemberCompact { .. }
+                | DesignSketchFrameForm::MemberExplicit { .. }
+        )
     }
 }
 
@@ -12957,12 +14770,23 @@ impl TryFrom<DesignSketchPlacementWire> for DesignSketchPlacement {
             (false, 325) => Form::ScopeLegacy325(wire.transform.try_into()?),
             (false, 329) => Form::ScopeExplicit(wire.transform.try_into()?),
             (false, 341) => Form::ScopeGenesisExplicit(wire.transform.try_into()?),
-            (true, 34) => Form::MemberCompact { paired_byte_offset: wire.paired_byte_offset },
-            (true, 162) => Form::MemberExplicit { paired_byte_offset: wire.paired_byte_offset, transform: wire.transform.try_into()? },
+            (true, 34) => Form::MemberCompact {
+                paired_byte_offset: wire.paired_byte_offset,
+            },
+            (true, 162) => Form::MemberExplicit {
+                paired_byte_offset: wire.paired_byte_offset,
+                transform: wire.transform.try_into()?,
+            },
             _ => return Err("frame_length is invalid for member_run_head".into()),
         };
         let frame = DesignSketchFrame::new(wire.byte_offset, form)?;
-        if frame.transform().iter().flatten().zip(wire.transform.iter().flatten()).any(|(left, right)| left.to_bits() != right.to_bits()) {
+        if frame
+            .transform()
+            .iter()
+            .flatten()
+            .zip(wire.transform.iter().flatten())
+            .any(|(left, right)| left.to_bits() != right.to_bits())
+        {
             return Err("transform disagrees with the compact frame identity".into());
         }
         if wire.transform_offset != frame.transform_offset() {
@@ -12978,7 +14802,8 @@ impl TryFrom<DesignSketchPlacementWire> for DesignSketchPlacement {
             visibility: wire.visibility,
             class_tag: DesignClassTag::try_from(wire.class_tag)?,
             record_index: wire.record_index,
-            paired_class_tag: DesignClassTag::try_from(wire.paired_class_tag).map_err(|error| format!("paired_class_tag: {error}"))?,
+            paired_class_tag: DesignClassTag::try_from(wire.paired_class_tag)
+                .map_err(|error| format!("paired_class_tag: {error}"))?,
             frame,
         })
     }
@@ -13049,21 +14874,27 @@ pub struct PersistentReference {
 pub struct DesignClassTag(String);
 
 impl TryFrom<String> for DesignClassTag {
-type Error = String;
-fn try_from(value: String) -> Result<Self, Self::Error> {
-if value.len() == 3 && value.bytes().all(|byte| byte.is_ascii_digit()) {
-Ok(Self(value))
-} else {
-Err("class_tag must contain three ASCII digits".into())
-}
-}
+    type Error = String;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if value.len() == 3 && value.bytes().all(|byte| byte.is_ascii_digit()) {
+            Ok(Self(value))
+        } else {
+            Err("class_tag must contain three ASCII digits".into())
+        }
+    }
 }
 impl From<DesignClassTag> for String {
-fn from(tag: DesignClassTag) -> Self { tag.0 }
+    fn from(tag: DesignClassTag) -> Self {
+        tag.0
+    }
 }
 impl DesignClassTag {
-pub(crate) fn as_str(&self) -> &str { &self.0 }
-pub(crate) fn as_bytes(&self) -> &[u8] { self.0.as_bytes() }
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
+    pub(crate) fn as_bytes(&self) -> &[u8] {
+        self.0.as_bytes()
+    }
 }
 
 /// A construction-history edge selection that Fusion could not re-resolve.
@@ -13087,15 +14918,42 @@ pub struct LostEdgeReference {
 }
 
 impl LostEdgeReference {
-pub(crate) fn new(id: String, record_byte_offset: u64, class_tag: String, record_index: u32, next_class_tag: String, next_record_index: u32) -> Result<Self, String> {
-record_byte_offset.checked_add(48).ok_or("lost_edge_reference.record_byte_offset overflows the record extent")?;
-Ok(Self { id, record_byte_offset, class_tag: DesignClassTag::try_from(class_tag)?, record_index, next_class_tag: DesignClassTag::try_from(next_class_tag).map_err(|error| format!("lost_edge_reference.next_class_tag: {error}"))?, next_record_index })
-}
-pub(crate) fn record_byte_offset(&self) -> u64 { self.record_byte_offset }
-pub(crate) fn class_tag_offset(&self) -> u64 { self.record_byte_offset + 4 }
-pub(crate) fn record_index_offset(&self) -> u64 { self.record_byte_offset + 7 }
-pub(crate) fn byte_offset(&self) -> u64 { self.record_byte_offset + 29 }
-pub(crate) fn next_byte_offset(&self) -> u64 { self.record_byte_offset + 48 }
+    pub(crate) fn new(
+        id: String,
+        record_byte_offset: u64,
+        class_tag: String,
+        record_index: u32,
+        next_class_tag: String,
+        next_record_index: u32,
+    ) -> Result<Self, String> {
+        record_byte_offset
+            .checked_add(48)
+            .ok_or("lost_edge_reference.record_byte_offset overflows the record extent")?;
+        Ok(Self {
+            id,
+            record_byte_offset,
+            class_tag: DesignClassTag::try_from(class_tag)?,
+            record_index,
+            next_class_tag: DesignClassTag::try_from(next_class_tag)
+                .map_err(|error| format!("lost_edge_reference.next_class_tag: {error}"))?,
+            next_record_index,
+        })
+    }
+    pub(crate) fn record_byte_offset(&self) -> u64 {
+        self.record_byte_offset
+    }
+    pub(crate) fn class_tag_offset(&self) -> u64 {
+        self.record_byte_offset + 4
+    }
+    pub(crate) fn record_index_offset(&self) -> u64 {
+        self.record_byte_offset + 7
+    }
+    pub(crate) fn byte_offset(&self) -> u64 {
+        self.record_byte_offset + 29
+    }
+    pub(crate) fn next_byte_offset(&self) -> u64 {
+        self.record_byte_offset + 48
+    }
 }
 
 /// A construction-history edge selection that Fusion could not re-resolve.
@@ -13125,37 +14983,61 @@ struct LostEdgeReferenceWire {
 }
 
 impl TryFrom<LostEdgeReferenceWire> for LostEdgeReference {
-type Error = String;
-fn try_from(wire: LostEdgeReferenceWire) -> Result<Self, Self::Error> {
-let record = Self::new(wire.id, wire.record_byte_offset, wire.class_tag, wire.record_index, wire.next_class_tag, wire.next_record_index)?;
-if wire.class_tag_offset != record.class_tag_offset() { return Err("lost_edge_reference.class_tag_offset disagrees with record_byte_offset".into()); }
-if wire.record_index_offset != record.record_index_offset() { return Err("lost_edge_reference.record_index_offset disagrees with record_byte_offset".into()); }
-if wire.byte_offset != record.byte_offset() { return Err("lost_edge_reference.byte_offset disagrees with record_byte_offset".into()); }
-if wire.next_byte_offset != record.next_byte_offset() { return Err("lost_edge_reference.next_byte_offset disagrees with record_byte_offset".into()); }
-Ok(record)
-}
+    type Error = String;
+    fn try_from(wire: LostEdgeReferenceWire) -> Result<Self, Self::Error> {
+        let record = Self::new(
+            wire.id,
+            wire.record_byte_offset,
+            wire.class_tag,
+            wire.record_index,
+            wire.next_class_tag,
+            wire.next_record_index,
+        )?;
+        if wire.class_tag_offset != record.class_tag_offset() {
+            return Err(
+                "lost_edge_reference.class_tag_offset disagrees with record_byte_offset".into(),
+            );
+        }
+        if wire.record_index_offset != record.record_index_offset() {
+            return Err(
+                "lost_edge_reference.record_index_offset disagrees with record_byte_offset".into(),
+            );
+        }
+        if wire.byte_offset != record.byte_offset() {
+            return Err("lost_edge_reference.byte_offset disagrees with record_byte_offset".into());
+        }
+        if wire.next_byte_offset != record.next_byte_offset() {
+            return Err(
+                "lost_edge_reference.next_byte_offset disagrees with record_byte_offset".into(),
+            );
+        }
+        Ok(record)
+    }
 }
 impl From<LostEdgeReference> for LostEdgeReferenceWire {
-fn from(record: LostEdgeReference) -> Self {
-Self {
-record_byte_offset: record.record_byte_offset(),
-class_tag_offset: record.class_tag_offset(),
-record_index_offset: record.record_index_offset(),
-byte_offset: record.byte_offset(),
-next_byte_offset: record.next_byte_offset(),
-id: record.id,
-class_tag: record.class_tag.into(),
-record_index: record.record_index,
-next_class_tag: record.next_class_tag.into(),
-next_record_index: record.next_record_index,
-}
-}
+    fn from(record: LostEdgeReference) -> Self {
+        Self {
+            record_byte_offset: record.record_byte_offset(),
+            class_tag_offset: record.class_tag_offset(),
+            record_index_offset: record.record_index_offset(),
+            byte_offset: record.byte_offset(),
+            next_byte_offset: record.next_byte_offset(),
+            id: record.id,
+            class_tag: record.class_tag.into(),
+            record_index: record.record_index,
+            next_class_tag: record.next_class_tag.into(),
+            next_record_index: record.next_record_index,
+        }
+    }
 }
 
 /// One Design `BulkStream` material assignment joining a design entity to visual assets.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "DesignMaterialAssignmentWire", into = "DesignMaterialAssignmentWire")]
+#[serde(
+    try_from = "DesignMaterialAssignmentWire",
+    into = "DesignMaterialAssignmentWire"
+)]
 #[cfg_attr(feature = "schema", schemars(with = "DesignMaterialAssignmentWire"))]
 pub struct DesignMaterialAssignment {
     /// Globally unique deterministic identifier for this native record.
@@ -13232,8 +15114,16 @@ impl TryFrom<DesignMaterialAssignmentWire> for DesignMaterialAssignment {
             entity_id_offset: wire.entity_id_offset,
             visual_guid: wire.visual_guid,
             visual_guid_offset: wire.visual_guid_offset,
-            physical_token: RecordedValue::from_wire(wire.physical_token, wire.physical_token_offset, "physical_token")?,
-            visual_preset: RecordedValue::from_wire(wire.visual_preset, wire.visual_preset_offset, "visual_preset")?,
+            physical_token: RecordedValue::from_wire(
+                wire.physical_token,
+                wire.physical_token_offset,
+                "physical_token",
+            )?,
+            visual_preset: RecordedValue::from_wire(
+                wire.visual_preset,
+                wire.visual_preset_offset,
+                "visual_preset",
+            )?,
         })
     }
 }
@@ -13379,8 +15269,16 @@ impl TryFrom<SegmentTypeWire> for SegmentType {
             version: wire.version,
             version_offset: wire.version_offset,
             module: wire.module,
-            entities: ReferenceRun::from_columns(wire.entity_ids, wire.entity_id_offsets, "entity_ids/entity_id_offsets")?,
-            base_type_guid: RecordedValue::from_wire(wire.base_type_guid, wire.base_type_guid_offset, "base_type_guid")?,
+            entities: ReferenceRun::from_columns(
+                wire.entity_ids,
+                wire.entity_id_offsets,
+                "entity_ids/entity_id_offsets",
+            )?,
+            base_type_guid: RecordedValue::from_wire(
+                wire.base_type_guid,
+                wire.base_type_guid_offset,
+                "base_type_guid",
+            )?,
         })
     }
 }
@@ -13415,34 +15313,91 @@ pub struct DesignTimelineFrame {
 }
 
 impl DesignTimelineFrame {
-    pub fn new(byte_offset: u64, frame_length: u64, context_record_index_offset: u64, item_count_offset: u64, items: Vec<Located<u64>>) -> Result<Self, String> {
-        let end = byte_offset.checked_add(frame_length).ok_or("timeline.frame_length overflows byte_offset")?;
-        if context_record_index_offset <= byte_offset || context_record_index_offset.checked_add(10).is_none_or(|after| after > item_count_offset) {
+    pub fn new(
+        byte_offset: u64,
+        frame_length: u64,
+        context_record_index_offset: u64,
+        item_count_offset: u64,
+        items: Vec<Located<u64>>,
+    ) -> Result<Self, String> {
+        let end = byte_offset
+            .checked_add(frame_length)
+            .ok_or("timeline.frame_length overflows byte_offset")?;
+        if context_record_index_offset <= byte_offset
+            || context_record_index_offset
+                .checked_add(10)
+                .is_none_or(|after| after > item_count_offset)
+        {
             return Err("timeline.context_record_index_offset is outside the context span".into());
         }
-        if item_count_offset.checked_add(4).is_none_or(|after| after > end) {
+        if item_count_offset
+            .checked_add(4)
+            .is_none_or(|after| after > end)
+        {
             return Err("timeline.item_count_offset is outside the frame".into());
         }
-        if items.first().is_some_and(|item| item_count_offset.checked_add(5) != Some(item.offset)) {
-            return Err("timeline.item_record_index_offsets must start after the item count".into());
+        if items
+            .first()
+            .is_some_and(|item| item_count_offset.checked_add(5) != Some(item.offset))
+        {
+            return Err(
+                "timeline.item_record_index_offsets must start after the item count".into(),
+            );
         }
-        if items.windows(2).any(|pair| pair[0].offset.checked_add(11).is_none_or(|minimum| pair[1].offset < minimum)) || items.iter().any(|item| item.offset.checked_add(10).is_none_or(|after| after > end)) {
+        if items.windows(2).any(|pair| {
+            pair[0]
+                .offset
+                .checked_add(11)
+                .is_none_or(|minimum| pair[1].offset < minimum)
+        }) || items
+            .iter()
+            .any(|item| item.offset.checked_add(10).is_none_or(|after| after > end))
+        {
             return Err("timeline.item_record_index_offsets overlap or exceed the frame".into());
         }
         let mut unique = std::collections::HashSet::with_capacity(items.len());
-        if items.iter().any(|item| item.value == 0 || !unique.insert(item.value)) {
+        if items
+            .iter()
+            .any(|item| item.value == 0 || !unique.insert(item.value))
+        {
             return Err("timeline.item_record_indices must be nonzero and unique".into());
         }
-        Ok(Self { byte_offset, frame_length, context_record_index_offset, item_count_offset, items })
+        Ok(Self {
+            byte_offset,
+            frame_length,
+            context_record_index_offset,
+            item_count_offset,
+            items,
+        })
     }
-    pub fn byte_offset(&self) -> u64 { self.byte_offset }
-    pub fn frame_length(&self) -> u64 { self.frame_length }
-    pub fn items(&self) -> &[Located<u64>] { &self.items }
+    pub fn byte_offset(&self) -> u64 {
+        self.byte_offset
+    }
+    pub fn frame_length(&self) -> u64 {
+        self.frame_length
+    }
+    pub fn items(&self) -> &[Located<u64>] {
+        &self.items
+    }
 
     #[cfg(test)]
     pub fn test_items(byte_offset: u64, items: Vec<Located<u64>>) -> Self {
-        let items = items.into_iter().enumerate().map(|(index, item)| Located { value: item.value, offset: byte_offset + 35 + index as u64 * 11 }).collect::<Vec<_>>();
-        Self::new(byte_offset, 34 + items.len() as u64 * 11, byte_offset + 20, byte_offset + 30, items).unwrap()
+        let items = items
+            .into_iter()
+            .enumerate()
+            .map(|(index, item)| Located {
+                value: item.value,
+                offset: byte_offset + 35 + index as u64 * 11,
+            })
+            .collect::<Vec<_>>();
+        Self::new(
+            byte_offset,
+            34 + items.len() as u64 * 11,
+            byte_offset + 20,
+            byte_offset + 30,
+            items,
+        )
+        .unwrap()
     }
 }
 
@@ -13450,7 +15405,10 @@ impl DesignTimelineFrame {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "DesignFeatureTimelineWire"))]
-#[serde(try_from = "DesignFeatureTimelineWire", into = "DesignFeatureTimelineWire")]
+#[serde(
+    try_from = "DesignFeatureTimelineWire",
+    into = "DesignFeatureTimelineWire"
+)]
 pub struct DesignFeatureTimeline {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -13498,23 +15456,45 @@ impl TryFrom<DesignFeatureTimelineWire> for DesignFeatureTimeline {
     type Error = String;
     fn try_from(wire: DesignFeatureTimelineWire) -> Result<Self, Self::Error> {
         if wire.item_record_indices.len() != wire.item_record_index_offsets.len() {
-            return Err("item_record_indices and item_record_index_offsets must have equal lengths".into());
+            return Err(
+                "item_record_indices and item_record_index_offsets must have equal lengths".into(),
+            );
         }
-        let items = wire.item_record_indices.into_iter().zip(wire.item_record_index_offsets).map(|(value, offset)| Located { value, offset }).collect();
+        let items = wire
+            .item_record_indices
+            .into_iter()
+            .zip(wire.item_record_index_offsets)
+            .map(|(value, offset)| Located { value, offset })
+            .collect();
         Ok(Self {
-            frame: DesignTimelineFrame::new(wire.byte_offset, wire.frame_length, wire.context_record_index_offset, wire.item_count_offset, items)?,
+            frame: DesignTimelineFrame::new(
+                wire.byte_offset,
+                wire.frame_length,
+                wire.context_record_index_offset,
+                wire.item_count_offset,
+                items,
+            )?,
             id: wire.id,
             class_tag: DesignClassTag::try_from(wire.class_tag)?,
-            record_index: std::num::NonZeroU64::new(wire.record_index).ok_or("timeline.record_index must be nonzero")?,
+            record_index: std::num::NonZeroU64::new(wire.record_index)
+                .ok_or("timeline.record_index must be nonzero")?,
             source_ordinal: wire.source_ordinal,
-            context_record_index: std::num::NonZeroU64::new(wire.context_record_index).ok_or("timeline.context_record_index must be nonzero")?,
+            context_record_index: std::num::NonZeroU64::new(wire.context_record_index)
+                .ok_or("timeline.context_record_index must be nonzero")?,
         })
     }
 }
 impl From<DesignFeatureTimeline> for DesignFeatureTimelineWire {
     fn from(value: DesignFeatureTimeline) -> Self {
-        let (item_record_indices, item_record_index_offsets) = value.frame.items.into_iter().map(|item| (item.value, item.offset)).unzip();
-        Self { item_record_indices, item_record_index_offsets,
+        let (item_record_indices, item_record_index_offsets) = value
+            .frame
+            .items
+            .into_iter()
+            .map(|item| (item.value, item.offset))
+            .unzip();
+        Self {
+            item_record_indices,
+            item_record_index_offsets,
             id: value.id,
             byte_offset: value.frame.byte_offset,
             class_tag: value.class_tag.into(),
@@ -13558,7 +15538,6 @@ pub struct DesignEntityHeader {
     /// Counted member-record run from the paired same-index container record.
     pub members: ReferenceRun<u32>,
 }
-
 
 impl DesignEntityHeader {
     pub fn declared_reference_count(&self) -> Option<usize> {
@@ -13617,7 +15596,10 @@ struct DesignEntityHeaderWire {
 impl TryFrom<DesignEntityHeaderWire> for DesignEntityHeader {
     type Error = String;
     fn try_from(wire: DesignEntityHeaderWire) -> Result<Self, Self::Error> {
-        if wire.declared_reference_count.is_some_and(|count| count != wire.reference_indices.len()) {
+        if wire
+            .declared_reference_count
+            .is_some_and(|count| count != wire.reference_indices.len())
+        {
             return Err("declared_reference_count must match reference_indices".into());
         }
         let entity_id = DesignEntityId::try_from(wire.entity_id)?;
@@ -13626,8 +15608,16 @@ impl TryFrom<DesignEntityHeaderWire> for DesignEntityHeader {
         }
         Ok(Self {
             reference_count_present: wire.declared_reference_count.is_some(),
-            references: ReferenceRun::from_columns(wire.reference_indices, wire.reference_offsets, "reference_indices/reference_offsets")?,
-            members: ReferenceRun::from_columns(wire.member_indices, wire.member_offsets, "member_indices/member_offsets")?,
+            references: ReferenceRun::from_columns(
+                wire.reference_indices,
+                wire.reference_offsets,
+                "reference_indices/reference_offsets",
+            )?,
+            members: ReferenceRun::from_columns(
+                wire.member_indices,
+                wire.member_offsets,
+                "member_indices/member_offsets",
+            )?,
             id: wire.id,
             byte_offset: wire.byte_offset,
             entity_id,
@@ -13668,7 +15658,10 @@ impl From<DesignEntityHeader> for DesignEntityHeaderWire {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(with = "DesignMeshRecordIdentityWire"))]
-#[serde(try_from = "DesignMeshRecordIdentityWire", into = "DesignMeshRecordIdentityWire")]
+#[serde(
+    try_from = "DesignMeshRecordIdentityWire",
+    into = "DesignMeshRecordIdentityWire"
+)]
 pub struct DesignMeshRecordIdentity {
     class_tag: DesignClassTag,
     record_index: std::num::NonZeroU32,
@@ -13677,16 +15670,39 @@ pub struct DesignMeshRecordIdentity {
 }
 
 impl DesignMeshRecordIdentity {
-    pub fn new(class_tag: DesignClassTag, record_index: u32, byte_offset: u64, frame_length: u64) -> Result<Self, String> {
-        let record_index = std::num::NonZeroU32::new(record_index).ok_or("mesh record_index must be nonzero")?;
-        if frame_length < 11 { return Err("mesh frame_length must contain the indexed header".into()); }
-        byte_offset.checked_add(frame_length).ok_or("mesh frame_length overflows byte_offset")?;
-        Ok(Self { class_tag, record_index, byte_offset, frame_length })
+    pub fn new(
+        class_tag: DesignClassTag,
+        record_index: u32,
+        byte_offset: u64,
+        frame_length: u64,
+    ) -> Result<Self, String> {
+        let record_index =
+            std::num::NonZeroU32::new(record_index).ok_or("mesh record_index must be nonzero")?;
+        if frame_length < 11 {
+            return Err("mesh frame_length must contain the indexed header".into());
+        }
+        byte_offset
+            .checked_add(frame_length)
+            .ok_or("mesh frame_length overflows byte_offset")?;
+        Ok(Self {
+            class_tag,
+            record_index,
+            byte_offset,
+            frame_length,
+        })
     }
-    pub fn class_tag(&self) -> &str { self.class_tag.as_str() }
-    pub fn record_index(&self) -> u32 { self.record_index.get() }
-    pub fn byte_offset(&self) -> u64 { self.byte_offset }
-    pub fn frame_length(&self) -> u64 { self.frame_length }
+    pub fn class_tag(&self) -> &str {
+        self.class_tag.as_str()
+    }
+    pub fn record_index(&self) -> u32 {
+        self.record_index.get()
+    }
+    pub fn byte_offset(&self) -> u64 {
+        self.byte_offset
+    }
+    pub fn frame_length(&self) -> u64 {
+        self.frame_length
+    }
 }
 
 /// Exact identity and source extent of one indexed Design mesh record.
@@ -13706,12 +15722,22 @@ struct DesignMeshRecordIdentityWire {
 impl TryFrom<DesignMeshRecordIdentityWire> for DesignMeshRecordIdentity {
     type Error = String;
     fn try_from(wire: DesignMeshRecordIdentityWire) -> Result<Self, Self::Error> {
-        Self::new(DesignClassTag::try_from(wire.class_tag)?, wire.record_index, wire.byte_offset, wire.frame_length)
+        Self::new(
+            DesignClassTag::try_from(wire.class_tag)?,
+            wire.record_index,
+            wire.byte_offset,
+            wire.frame_length,
+        )
     }
 }
 impl From<DesignMeshRecordIdentity> for DesignMeshRecordIdentityWire {
     fn from(record: DesignMeshRecordIdentity) -> Self {
-        Self { class_tag: record.class_tag.into(), record_index: record.record_index.get(), byte_offset: record.byte_offset, frame_length: record.frame_length }
+        Self {
+            class_tag: record.class_tag.into(),
+            record_index: record.record_index.get(),
+            byte_offset: record.byte_offset,
+            frame_length: record.frame_length,
+        }
     }
 }
 
@@ -13723,8 +15749,12 @@ pub struct DesignMeshFixedRecord<const LENGTH: u64> {
     byte_offset: u64,
 }
 impl<const LENGTH: u64> DesignMeshFixedRecord<LENGTH> {
-    pub fn record_index(&self) -> u32 { self.record_index.get() }
-    pub fn byte_offset(&self) -> u64 { self.byte_offset }
+    pub fn record_index(&self) -> u32 {
+        self.record_index.get()
+    }
+    pub fn byte_offset(&self) -> u64 {
+        self.byte_offset
+    }
 }
 impl<const LENGTH: u64> TryFrom<DesignMeshRecordIdentity> for DesignMeshFixedRecord<LENGTH> {
     type Error = String;
@@ -13732,12 +15762,21 @@ impl<const LENGTH: u64> TryFrom<DesignMeshRecordIdentity> for DesignMeshFixedRec
         if record.frame_length() != LENGTH {
             return Err(format!("record.frame_length must be {LENGTH}"));
         }
-        Ok(Self { class_tag: record.class_tag, record_index: record.record_index, byte_offset: record.byte_offset })
+        Ok(Self {
+            class_tag: record.class_tag,
+            record_index: record.record_index,
+            byte_offset: record.byte_offset,
+        })
     }
 }
 impl<const LENGTH: u64> From<DesignMeshFixedRecord<LENGTH>> for DesignMeshRecordIdentity {
     fn from(record: DesignMeshFixedRecord<LENGTH>) -> Self {
-        Self { class_tag: record.class_tag, record_index: record.record_index, byte_offset: record.byte_offset, frame_length: LENGTH }
+        Self {
+            class_tag: record.class_tag,
+            record_index: record.record_index,
+            byte_offset: record.byte_offset,
+            frame_length: LENGTH,
+        }
     }
 }
 
@@ -13749,7 +15788,9 @@ impl<const LENGTH: u64> From<DesignMeshFixedRecord<LENGTH>> for DesignMeshRecord
 pub struct DesignGuidText(String);
 
 impl DesignGuidText {
-    pub fn as_str(&self) -> &str { &self.0 }
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 impl TryFrom<String> for DesignGuidText {
     type Error = String;
@@ -13761,7 +15802,9 @@ impl TryFrom<String> for DesignGuidText {
     }
 }
 impl From<DesignGuidText> for String {
-    fn from(value: DesignGuidText) -> Self { value.0 }
+    fn from(value: DesignGuidText) -> Self {
+        value.0
+    }
 }
 
 /// One texture resource owned by a Design mesh feature.
@@ -13789,24 +15832,40 @@ pub struct DesignMeshTextureFile {
 }
 
 impl DesignMeshTextureFile {
-    pub fn new(record: DesignMeshRecordIdentity, filename: &str, archive_entry_name: String) -> Result<Self, String> {
-        let value = Self { record, archive_entry_name };
+    pub fn new(
+        record: DesignMeshRecordIdentity,
+        filename: &str,
+        archive_entry_name: String,
+    ) -> Result<Self, String> {
+        let value = Self {
+            record,
+            archive_entry_name,
+        };
         if filename.is_empty() || value.filename() != filename {
             return Err("archive_entry_name basename must match nonempty filename".into());
         }
-        let byte_length = u64::try_from(filename.encode_utf16().count()).ok()
+        let byte_length = u64::try_from(filename.encode_utf16().count())
+            .ok()
             .and_then(|units| units.checked_mul(2))
-            .and_then(|bytes| bytes.checked_add(crate::layout::paramesh_texture_filename_prefix::LEN as u64));
+            .and_then(|bytes| {
+                bytes.checked_add(crate::layout::paramesh_texture_filename_prefix::LEN as u64)
+            });
         if byte_length != Some(value.record.frame_length()) {
             return Err("filename_record.frame_length must contain exactly filename".into());
         }
         Ok(value)
     }
-    pub fn record(&self) -> &DesignMeshRecordIdentity { &self.record }
-    pub fn filename(&self) -> &str {
-        self.archive_entry_name.rsplit_once('/').map_or(self.archive_entry_name.as_str(), |(_, basename)| basename)
+    pub fn record(&self) -> &DesignMeshRecordIdentity {
+        &self.record
     }
-    pub fn archive_entry_name(&self) -> &str { &self.archive_entry_name }
+    pub fn filename(&self) -> &str {
+        self.archive_entry_name
+            .rsplit_once('/')
+            .map_or(self.archive_entry_name.as_str(), |(_, basename)| basename)
+    }
+    pub fn archive_entry_name(&self) -> &str {
+        &self.archive_entry_name
+    }
     pub fn filename_offset(&self) -> u64 {
         self.record.byte_offset() + crate::layout::paramesh_texture_filename_prefix::LEN as u64
     }
@@ -13844,7 +15903,6 @@ struct DesignMeshTextureResourceWire {
     asset: AssetId,
 }
 
-
 const MESH_TEXTURE_FLAGS_ENTRY_BYTES: u64 = 4 + 36 + 4;
 const MESH_TEXTURE_FILENAME_ENTRY_BYTES: u64 = 4 + 36 + 11;
 
@@ -13855,12 +15913,20 @@ pub struct DesignMeshTextureTable {
     resources: Vec<DesignMeshTextureResource>,
 }
 impl DesignMeshTextureTable {
-    pub fn new(record: DesignMeshRecordIdentity, resources: Vec<DesignMeshTextureResource>) -> Result<Self, String> {
-        let count = u32::try_from(resources.len()).map_err(|_| "textures exceeds the u32 map count")?;
-        let expected = crate::layout::paramesh_texture_table_prefix::LEN as u64 + 4
-            + u64::from(count) * (MESH_TEXTURE_FLAGS_ENTRY_BYTES + MESH_TEXTURE_FILENAME_ENTRY_BYTES);
+    pub fn new(
+        record: DesignMeshRecordIdentity,
+        resources: Vec<DesignMeshTextureResource>,
+    ) -> Result<Self, String> {
+        let count =
+            u32::try_from(resources.len()).map_err(|_| "textures exceeds the u32 map count")?;
+        let expected = crate::layout::paramesh_texture_table_prefix::LEN as u64
+            + 4
+            + u64::from(count)
+                * (MESH_TEXTURE_FLAGS_ENTRY_BYTES + MESH_TEXTURE_FILENAME_ENTRY_BYTES);
         if record.frame_length() != expected {
-            return Err("texture_table_record.frame_length must contain exactly both texture maps".into());
+            return Err(
+                "texture_table_record.frame_length must contain exactly both texture maps".into(),
+            );
         }
         let mut flags = std::collections::HashSet::new();
         let mut filenames = std::collections::HashSet::new();
@@ -13878,8 +15944,12 @@ impl DesignMeshTextureTable {
         }
         Ok(Self { record, resources })
     }
-    pub fn record(&self) -> &DesignMeshRecordIdentity { &self.record }
-    pub fn resources(&self) -> &[DesignMeshTextureResource] { &self.resources }
+    pub fn record(&self) -> &DesignMeshRecordIdentity {
+        &self.record
+    }
+    pub fn resources(&self) -> &[DesignMeshTextureResource] {
+        &self.resources
+    }
     /// Borrow resources in the serialized flags-map order.
     pub fn resources_in_flags_order(&self) -> Vec<&DesignMeshTextureResource> {
         let mut resources = self.resources.iter().collect::<Vec<_>>();
@@ -13887,59 +15957,114 @@ impl DesignMeshTextureTable {
         resources
     }
     fn flags_count_offset(&self) -> u64 {
-        self.record.byte_offset() + crate::layout::paramesh_texture_table_prefix::FLAGS_MAP_COUNT as u64
+        self.record.byte_offset()
+            + crate::layout::paramesh_texture_table_prefix::FLAGS_MAP_COUNT as u64
     }
     fn filename_count_offset(&self) -> u64 {
-        self.record.byte_offset() + crate::layout::paramesh_texture_table_prefix::LEN as u64
+        self.record.byte_offset()
+            + crate::layout::paramesh_texture_table_prefix::LEN as u64
             + MESH_TEXTURE_FLAGS_ENTRY_BYTES * self.resources.len() as u64
     }
-    fn from_wire(record: DesignMeshRecordIdentity, flags_count_offset: u64, filename_count_offset: u64, rows: Vec<DesignMeshTextureResourceWire>) -> Result<Self, String> {
+    fn from_wire(
+        record: DesignMeshRecordIdentity,
+        flags_count_offset: u64,
+        filename_count_offset: u64,
+        rows: Vec<DesignMeshTextureResourceWire>,
+    ) -> Result<Self, String> {
         let count = u32::try_from(rows.len()).map_err(|_| "textures exceeds the u32 map count")?;
-        let flags_start = record.byte_offset().checked_add(crate::layout::paramesh_texture_table_prefix::LEN as u64);
-        let filenames_start = flags_start.and_then(|start| start.checked_add(MESH_TEXTURE_FLAGS_ENTRY_BYTES * u64::from(count) + 4));
+        let flags_start = record
+            .byte_offset()
+            .checked_add(crate::layout::paramesh_texture_table_prefix::LEN as u64);
+        let filenames_start = flags_start.and_then(|start| {
+            start.checked_add(MESH_TEXTURE_FLAGS_ENTRY_BYTES * u64::from(count) + 4)
+        });
         let mut resources = Vec::with_capacity(rows.len());
         for row in rows {
-            let flags_guid = flags_start.and_then(|start| start.checked_add(MESH_TEXTURE_FLAGS_ENTRY_BYTES * u64::from(row.ordinal) + 4));
-            let filename_guid = filenames_start.and_then(|start| start.checked_add(MESH_TEXTURE_FILENAME_ENTRY_BYTES * u64::from(row.filename_ordinal) + 4));
-            if flags_guid != Some(row.flags_guid_offset) || flags_guid.and_then(|offset| offset.checked_add(36)) != Some(row.flags_offset) {
-                return Err("flags_guid_offset/flags_offset must match the texture map ordinal".into());
+            let flags_guid = flags_start.and_then(|start| {
+                start.checked_add(MESH_TEXTURE_FLAGS_ENTRY_BYTES * u64::from(row.ordinal) + 4)
+            });
+            let filename_guid = filenames_start.and_then(|start| {
+                start.checked_add(
+                    MESH_TEXTURE_FILENAME_ENTRY_BYTES * u64::from(row.filename_ordinal) + 4,
+                )
+            });
+            if flags_guid != Some(row.flags_guid_offset)
+                || flags_guid.and_then(|offset| offset.checked_add(36)) != Some(row.flags_offset)
+            {
+                return Err(
+                    "flags_guid_offset/flags_offset must match the texture map ordinal".into(),
+                );
             }
-            if filename_guid != Some(row.filename_guid_offset) || filename_guid.and_then(|offset| offset.checked_add(36)) != Some(row.filename_record_reference_offset) {
+            if filename_guid != Some(row.filename_guid_offset)
+                || filename_guid.and_then(|offset| offset.checked_add(36))
+                    != Some(row.filename_record_reference_offset)
+            {
                 return Err("filename_guid_offset/filename_record_reference_offset must match the texture map ordinal".into());
             }
-            let file = DesignMeshTextureFile::new(row.filename_record, &row.filename, row.archive_entry_name)?;
+            let file = DesignMeshTextureFile::new(
+                row.filename_record,
+                &row.filename,
+                row.archive_entry_name,
+            )?;
             if file.filename_offset() != row.filename_offset {
                 return Err("filename_offset must follow filename_record header".into());
             }
             resources.push(DesignMeshTextureResource {
-                ordinal: row.ordinal, resource_guid: row.resource_guid, flags: row.flags,
-                filename_ordinal: row.filename_ordinal, file, asset: row.asset,
+                ordinal: row.ordinal,
+                resource_guid: row.resource_guid,
+                flags: row.flags,
+                filename_ordinal: row.filename_ordinal,
+                file,
+                asset: row.asset,
             });
         }
         let table = Self::new(record, resources)?;
-        if table.flags_count_offset() != flags_count_offset || table.filename_count_offset() != filename_count_offset {
+        if table.flags_count_offset() != flags_count_offset
+            || table.filename_count_offset() != filename_count_offset
+        {
             return Err("texture_flags_count_offset/texture_filename_count_offset must match the texture maps".into());
         }
         Ok(table)
     }
-    fn into_wire(self) -> (DesignMeshRecordIdentity, u64, u64, Vec<DesignMeshTextureResourceWire>) {
+    fn into_wire(
+        self,
+    ) -> (
+        DesignMeshRecordIdentity,
+        u64,
+        u64,
+        Vec<DesignMeshTextureResourceWire>,
+    ) {
         let flags_count_offset = self.flags_count_offset();
         let filename_count_offset = self.filename_count_offset();
-        let flags_start = self.record.byte_offset() + crate::layout::paramesh_texture_table_prefix::LEN as u64;
+        let flags_start =
+            self.record.byte_offset() + crate::layout::paramesh_texture_table_prefix::LEN as u64;
         let filenames_start = filename_count_offset + 4;
-        let rows = self.resources.into_iter().map(|value| {
-            let flags_guid_offset = flags_start + MESH_TEXTURE_FLAGS_ENTRY_BYTES * u64::from(value.ordinal) + 4;
-            let filename_guid_offset = filenames_start + MESH_TEXTURE_FILENAME_ENTRY_BYTES * u64::from(value.filename_ordinal) + 4;
-            DesignMeshTextureResourceWire {
-                ordinal: value.ordinal, resource_guid: value.resource_guid,
-                flags_guid_offset, flags: value.flags, flags_offset: flags_guid_offset + 36,
-                filename_ordinal: value.filename_ordinal, filename_guid_offset,
-                filename_record_reference_offset: filename_guid_offset + 36,
-                filename: value.file.filename().to_owned(), filename_offset: value.file.filename_offset(),
-                filename_record: value.file.record, archive_entry_name: value.file.archive_entry_name,
-                asset: value.asset,
-            }
-        }).collect();
+        let rows = self
+            .resources
+            .into_iter()
+            .map(|value| {
+                let flags_guid_offset =
+                    flags_start + MESH_TEXTURE_FLAGS_ENTRY_BYTES * u64::from(value.ordinal) + 4;
+                let filename_guid_offset = filenames_start
+                    + MESH_TEXTURE_FILENAME_ENTRY_BYTES * u64::from(value.filename_ordinal)
+                    + 4;
+                DesignMeshTextureResourceWire {
+                    ordinal: value.ordinal,
+                    resource_guid: value.resource_guid,
+                    flags_guid_offset,
+                    flags: value.flags,
+                    flags_offset: flags_guid_offset + 36,
+                    filename_ordinal: value.filename_ordinal,
+                    filename_guid_offset,
+                    filename_record_reference_offset: filename_guid_offset + 36,
+                    filename: value.file.filename().to_owned(),
+                    filename_offset: value.file.filename_offset(),
+                    filename_record: value.file.record,
+                    archive_entry_name: value.file.archive_entry_name,
+                    asset: value.asset,
+                }
+            })
+            .collect();
         (self.record, flags_count_offset, filename_count_offset, rows)
     }
 }
@@ -13952,16 +16077,28 @@ pub struct DesignMeshSceneBounds {
 }
 impl DesignMeshSceneBounds {
     pub fn new(maximum: [f64; 3], minimum: [f64; 3]) -> Result<Self, String> {
-        if !maximum.iter().chain(&minimum).all(|value| value.is_finite()) {
+        if !maximum
+            .iter()
+            .chain(&minimum)
+            .all(|value| value.is_finite())
+        {
             return Err("scene bounds maximum and minimum must be finite".into());
         }
-        if minimum.iter().zip(maximum).any(|(minimum, maximum)| *minimum > maximum) {
+        if minimum
+            .iter()
+            .zip(maximum)
+            .any(|(minimum, maximum)| *minimum > maximum)
+        {
             return Err("scene bounds minimum exceeds maximum".into());
         }
         Ok(Self { maximum, minimum })
     }
-    pub fn maximum(&self) -> [f64; 3] { self.maximum }
-    pub fn minimum(&self) -> [f64; 3] { self.minimum }
+    pub fn maximum(&self) -> [f64; 3] {
+        self.maximum
+    }
+    pub fn minimum(&self) -> [f64; 3] {
+        self.minimum
+    }
     fn from_wire(wire: DesignMeshSceneBoundsWire, offsets: [u64; 2]) -> Result<Self, String> {
         if wire.offsets != offsets {
             return Err("scene bounds offsets must match their owning record".into());
@@ -13969,7 +16106,11 @@ impl DesignMeshSceneBounds {
         Self::new(wire.maximum, wire.minimum)
     }
     fn into_wire(self, offsets: [u64; 2]) -> DesignMeshSceneBoundsWire {
-        DesignMeshSceneBoundsWire { maximum: self.maximum(), minimum: self.minimum(), offsets }
+        DesignMeshSceneBoundsWire {
+            maximum: self.maximum(),
+            minimum: self.minimum(),
+            offsets,
+        }
     }
 }
 
@@ -13991,22 +16132,37 @@ pub struct DesignMeshSceneState {
     bounds: Option<DesignMeshSceneBounds>,
 }
 impl DesignMeshSceneState {
-    pub fn new(record: DesignMeshFixedRecord<{ crate::layout::paramesh_scene_state::LEN as u64 }>, bounds: Option<DesignMeshSceneBounds>) -> Self {
+    pub fn new(
+        record: DesignMeshFixedRecord<{ crate::layout::paramesh_scene_state::LEN as u64 }>,
+        bounds: Option<DesignMeshSceneBounds>,
+    ) -> Self {
         Self { record, bounds }
     }
-    pub fn record(&self) -> &DesignMeshFixedRecord<{ crate::layout::paramesh_scene_state::LEN as u64 }> { &self.record }
+    pub fn record(
+        &self,
+    ) -> &DesignMeshFixedRecord<{ crate::layout::paramesh_scene_state::LEN as u64 }> {
+        &self.record
+    }
     fn bounds_offsets(&self) -> [u64; 2] {
-        let start = self.record.byte_offset() + crate::layout::paramesh_scene_state::FOOTER_MASK as u64;
+        let start =
+            self.record.byte_offset() + crate::layout::paramesh_scene_state::FOOTER_MASK as u64;
         [start, start + 24]
     }
-    fn from_wire(record: DesignMeshRecordIdentity, bounds: Option<DesignMeshSceneBoundsWire>) -> Result<Self, String> {
+    fn from_wire(
+        record: DesignMeshRecordIdentity,
+        bounds: Option<DesignMeshSceneBoundsWire>,
+    ) -> Result<Self, String> {
         let record = DesignMeshFixedRecord::try_from(record)?;
         let mut state = Self::new(record, None);
-        state.bounds = bounds.map(|bounds| DesignMeshSceneBounds::from_wire(bounds, state.bounds_offsets())).transpose()?;
+        state.bounds = bounds
+            .map(|bounds| DesignMeshSceneBounds::from_wire(bounds, state.bounds_offsets()))
+            .transpose()?;
         Ok(state)
     }
     fn into_wire(self) -> (DesignMeshRecordIdentity, Option<DesignMeshSceneBoundsWire>) {
-        let bounds = self.bounds.map(|bounds| bounds.into_wire(self.bounds_offsets()));
+        let bounds = self
+            .bounds
+            .map(|bounds| bounds.into_wire(self.bounds_offsets()));
         (self.record.into(), bounds)
     }
 }
@@ -14026,10 +16182,17 @@ enum DesignMeshSceneNodeForm {
     },
 }
 impl DesignMeshSceneNode {
-    pub fn new(record: DesignMeshRecordIdentity, bounds: Option<DesignMeshSceneBounds>, transform: Option<MeshAffineTransform>) -> Result<Self, String> {
+    pub fn new(
+        record: DesignMeshRecordIdentity,
+        bounds: Option<DesignMeshSceneBounds>,
+        transform: Option<MeshAffineTransform>,
+    ) -> Result<Self, String> {
         let form = match transform {
             None => DesignMeshSceneNodeForm::Compact(record.try_into()?),
-            Some(transform) => DesignMeshSceneNodeForm::Placed { record: record.try_into()?, transform },
+            Some(transform) => DesignMeshSceneNodeForm::Placed {
+                record: record.try_into()?,
+                transform,
+            },
         };
         Ok(Self { form, bounds })
     }
@@ -14048,14 +16211,20 @@ impl DesignMeshSceneNode {
     pub fn frame_length(&self) -> u64 {
         match &self.form {
             DesignMeshSceneNodeForm::Compact(_) => crate::layout::paramesh_scene_node::LEN as u64,
-            DesignMeshSceneNodeForm::Placed { .. } => crate::layout::paramesh_scene_node_placed::LEN as u64,
+            DesignMeshSceneNodeForm::Placed { .. } => {
+                crate::layout::paramesh_scene_node_placed::LEN as u64
+            }
         }
     }
-    pub fn bounds(&self) -> Option<&DesignMeshSceneBounds> { self.bounds.as_ref() }
+    pub fn bounds(&self) -> Option<&DesignMeshSceneBounds> {
+        self.bounds.as_ref()
+    }
     pub fn bounds_offsets(&self) -> [u64; 2] {
         let relative = match &self.form {
             DesignMeshSceneNodeForm::Compact(_) => crate::layout::paramesh_scene_node::FOOTER_MASK,
-            DesignMeshSceneNodeForm::Placed { .. } => crate::layout::paramesh_scene_node_placed::FOOTER_MASK,
+            DesignMeshSceneNodeForm::Placed { .. } => {
+                crate::layout::paramesh_scene_node_placed::FOOTER_MASK
+            }
         };
         let start = self.byte_offset() + relative as u64;
         [start, start + 24]
@@ -14065,7 +16234,8 @@ impl DesignMeshSceneNode {
             DesignMeshSceneNodeForm::Compact(_) => None,
             DesignMeshSceneNodeForm::Placed { record, transform } => Some(Located {
                 value: *transform,
-                offset: record.byte_offset() + crate::layout::paramesh_scene_node_placed::TRANSFORM as u64,
+                offset: record.byte_offset()
+                    + crate::layout::paramesh_scene_node_placed::TRANSFORM as u64,
             }),
         }
     }
@@ -14075,17 +16245,33 @@ impl DesignMeshSceneNode {
     pub fn auxiliary_reference_offset(&self) -> u64 {
         self.byte_offset() + crate::layout::paramesh_scene_node::AUXILIARY_RECORD_REFERENCE as u64
     }
-    fn from_wire(record: DesignMeshRecordIdentity, bounds: Option<DesignMeshSceneBoundsWire>, transform: Option<Located<MeshAffineTransform>>) -> Result<Self, String> {
+    fn from_wire(
+        record: DesignMeshRecordIdentity,
+        bounds: Option<DesignMeshSceneBoundsWire>,
+        transform: Option<Located<MeshAffineTransform>>,
+    ) -> Result<Self, String> {
         let mut node = Self::new(record, None, transform.map(|located| located.value))?;
-        if node.transform().map(|located| located.offset) != transform.map(|located| located.offset) {
+        if node.transform().map(|located| located.offset) != transform.map(|located| located.offset)
+        {
             return Err("scene_node_transform_offset must match the placed record layout".into());
         }
-        node.bounds = bounds.map(|bounds| DesignMeshSceneBounds::from_wire(bounds, node.bounds_offsets())).transpose()?;
+        node.bounds = bounds
+            .map(|bounds| DesignMeshSceneBounds::from_wire(bounds, node.bounds_offsets()))
+            .transpose()?;
         Ok(node)
     }
-    fn into_wire(self) -> (DesignMeshRecordIdentity, Option<DesignMeshSceneBoundsWire>, Option<Located<MeshAffineTransform>>) {
+    fn into_wire(
+        self,
+    ) -> (
+        DesignMeshRecordIdentity,
+        Option<DesignMeshSceneBoundsWire>,
+        Option<Located<MeshAffineTransform>>,
+    ) {
         let transform = self.transform();
-        let bounds = self.bounds().copied().map(|bounds| bounds.into_wire(self.bounds_offsets()));
+        let bounds = self
+            .bounds()
+            .copied()
+            .map(|bounds| bounds.into_wire(self.bounds_offsets()));
         let record = match self.form {
             DesignMeshSceneNodeForm::Compact(record) => record.into(),
             DesignMeshSceneNodeForm::Placed { record, .. } => record.into(),
@@ -14102,21 +16288,28 @@ impl DesignMeshSceneNode {
 pub struct DesignMeshUuid(DesignGuidText);
 
 impl DesignMeshUuid {
-    pub fn as_str(&self) -> &str { self.0.as_str() }
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
 }
 impl TryFrom<String> for DesignMeshUuid {
     type Error = String;
     fn try_from(value: String) -> Result<Self, Self::Error> {
         let value = Self(DesignGuidText::try_from(value)?);
         let bytes = value.as_str().as_bytes();
-        if bytes.iter().any(u8::is_ascii_uppercase) || bytes[14] != b'4' || !matches!(bytes[19], b'8' | b'9' | b'a' | b'b') {
+        if bytes.iter().any(u8::is_ascii_uppercase)
+            || bytes[14] != b'4'
+            || !matches!(bytes[19], b'8' | b'9' | b'a' | b'b')
+        {
             return Err("mesh UUID must be a lowercase version-4 UUID".into());
         }
         Ok(value)
     }
 }
 impl From<DesignMeshUuid> for String {
-    fn from(value: DesignMeshUuid) -> Self { value.0.into() }
+    fn from(value: DesignMeshUuid) -> Self {
+        value.0.into()
+    }
 }
 
 /// A container GUID in a record with the complete fixed join prefix.
@@ -14128,17 +16321,24 @@ pub struct DesignMeshGuid {
 impl DesignMeshGuid {
     pub fn new(record: DesignMeshRecordIdentity, value: DesignGuidText) -> Result<Self, String> {
         if record.frame_length() < crate::layout::paramesh_guid_join_prefix::LEN as u64 {
-            return Err("guid_record.frame_length must contain the complete GUID join prefix".into());
+            return Err(
+                "guid_record.frame_length must contain the complete GUID join prefix".into(),
+            );
         }
         Ok(Self { record, value })
     }
-    pub fn record(&self) -> &DesignMeshRecordIdentity { &self.record }
-    pub fn value(&self) -> &str { self.value.as_str() }
+    pub fn record(&self) -> &DesignMeshRecordIdentity {
+        &self.record
+    }
+    pub fn value(&self) -> &str {
+        self.value.as_str()
+    }
     pub fn value_offset(&self) -> u64 {
         self.record.byte_offset() + crate::layout::paramesh_guid_join_prefix::FUSION_UUID as u64 + 4
     }
     pub fn entry_reference_offset(&self) -> u64 {
-        self.record.byte_offset() + crate::layout::paramesh_guid_join_prefix::ENTRY_NAME_BACKLINK as u64
+        self.record.byte_offset()
+            + crate::layout::paramesh_guid_join_prefix::ENTRY_NAME_BACKLINK as u64
     }
 }
 
@@ -14150,21 +16350,32 @@ pub struct DesignMeshEntryName {
 }
 impl DesignMeshEntryName {
     pub fn new(record: DesignMeshRecordIdentity, name: String) -> Result<Self, String> {
-        let expected = u64::try_from(name.encode_utf16().count()).ok()
+        let expected = u64::try_from(name.encode_utf16().count())
+            .ok()
             .and_then(|units| units.checked_mul(2))
-            .and_then(|bytes| bytes.checked_add(crate::layout::paramesh_entry_name_prefix::LEN as u64 + 4));
+            .and_then(|bytes| {
+                bytes.checked_add(crate::layout::paramesh_entry_name_prefix::LEN as u64 + 4)
+            });
         if name.is_empty() || expected != Some(record.frame_length()) {
-            return Err("entry_name_record.frame_length must contain exactly its nonempty entry_name".into());
+            return Err(
+                "entry_name_record.frame_length must contain exactly its nonempty entry_name"
+                    .into(),
+            );
         }
         Ok(Self { record, name })
     }
-    pub fn record(&self) -> &DesignMeshRecordIdentity { &self.record }
-    pub fn name(&self) -> &str { &self.name }
+    pub fn record(&self) -> &DesignMeshRecordIdentity {
+        &self.record
+    }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
     pub fn name_offset(&self) -> u64 {
         self.record.byte_offset() + crate::layout::paramesh_entry_name_prefix::LEN as u64 + 4
     }
     pub fn guid_reference_offset(&self) -> u64 {
-        self.record.byte_offset() + crate::layout::paramesh_entry_name_prefix::GUID_RECORD_REFERENCE as u64
+        self.record.byte_offset()
+            + crate::layout::paramesh_entry_name_prefix::GUID_RECORD_REFERENCE as u64
     }
 }
 
@@ -14175,32 +16386,48 @@ pub struct DesignMeshPlacement {
     transform: MeshAffineTransform,
 }
 impl DesignMeshPlacement {
-    pub fn new(record: DesignMeshRecordIdentity, transform: MeshAffineTransform) -> Result<Self, String> {
+    pub fn new(
+        record: DesignMeshRecordIdentity,
+        transform: MeshAffineTransform,
+    ) -> Result<Self, String> {
         if record.frame_length() < crate::layout::paramesh_mesh_body_join_prefix::LEN as u64 + 11 {
             return Err("body_record.frame_length must contain the join prefix and final collection reference".into());
         }
         Ok(Self { record, transform })
     }
-    pub fn record(&self) -> &DesignMeshRecordIdentity { &self.record }
-    pub fn transform(&self) -> MeshAffineTransform { self.transform }
+    pub fn record(&self) -> &DesignMeshRecordIdentity {
+        &self.record
+    }
+    pub fn transform(&self) -> MeshAffineTransform {
+        self.transform
+    }
     pub fn transform_offsets(&self) -> [u64; 2] {
-        [self.record.byte_offset() + crate::layout::paramesh_mesh_body_join_prefix::FIRST_TRANSFORM as u64,
-         self.record.byte_offset() + crate::layout::paramesh_mesh_body_join_prefix::SECOND_TRANSFORM as u64]
+        [
+            self.record.byte_offset()
+                + crate::layout::paramesh_mesh_body_join_prefix::FIRST_TRANSFORM as u64,
+            self.record.byte_offset()
+                + crate::layout::paramesh_mesh_body_join_prefix::SECOND_TRANSFORM as u64,
+        ]
     }
     pub fn scope_reference_offset(&self) -> u64 {
-        self.record.byte_offset() + crate::layout::paramesh_mesh_body_join_prefix::FEATURE_SCOPE_REFERENCE as u64
+        self.record.byte_offset()
+            + crate::layout::paramesh_mesh_body_join_prefix::FEATURE_SCOPE_REFERENCE as u64
     }
     pub fn wrapper_reference_offset(&self) -> u64 {
-        self.record.byte_offset() + crate::layout::paramesh_mesh_body_join_prefix::WRAPPER_REFERENCE as u64
+        self.record.byte_offset()
+            + crate::layout::paramesh_mesh_body_join_prefix::WRAPPER_REFERENCE as u64
     }
     pub fn owner_reference_offset(&self) -> u64 {
-        self.record.byte_offset() + crate::layout::paramesh_mesh_body_join_prefix::BODY_OWNER_REFERENCE as u64
+        self.record.byte_offset()
+            + crate::layout::paramesh_mesh_body_join_prefix::BODY_OWNER_REFERENCE as u64
     }
     pub fn guid_reference_offset(&self) -> u64 {
-        self.record.byte_offset() + crate::layout::paramesh_mesh_body_join_prefix::CONTAINER_GUID_REFERENCE as u64
+        self.record.byte_offset()
+            + crate::layout::paramesh_mesh_body_join_prefix::CONTAINER_GUID_REFERENCE as u64
     }
     pub fn scene_node_reference_offset(&self) -> u64 {
-        self.record.byte_offset() + crate::layout::paramesh_mesh_body_join_prefix::SCENE_NODE_REFERENCE as u64
+        self.record.byte_offset()
+            + crate::layout::paramesh_mesh_body_join_prefix::SCENE_NODE_REFERENCE as u64
     }
     pub fn collection_reference_offset(&self) -> u64 {
         self.record.byte_offset() + self.record.frame_length() - 11
@@ -14326,7 +16553,8 @@ impl From<DesignMeshBody> for DesignMeshBodyWire {
         let scene_state_reference_offset = value.scene_node.state_reference_offset();
         let scene_auxiliary_reference_offset = value.scene_node.auxiliary_reference_offset();
         let (scene_state_record, scene_state_bounds) = value.scene_state.into_wire();
-        let (scene_node_record, scene_node_bounds, scene_node_transform) = value.scene_node.into_wire();
+        let (scene_node_record, scene_node_bounds, scene_node_transform) =
+            value.scene_node.into_wire();
         Self {
             body_record: value.placement.record,
             entry_name_record: value.entry.record,
@@ -14365,26 +16593,50 @@ impl From<DesignMeshBody> for DesignMeshBodyWire {
 
 impl DesignMeshBody {
     pub fn wrapper_body_reference_offset(&self) -> u64 {
-        self.wrapper_record.byte_offset() + crate::layout::paramesh_body_wrapper::BODY_REFERENCE as u64
+        self.wrapper_record.byte_offset()
+            + crate::layout::paramesh_body_wrapper::BODY_REFERENCE as u64
     }
     fn from_wire(value: DesignMeshBodyWire) -> Result<Self, String> {
         let wrapper_record = DesignMeshFixedRecord::try_from(value.wrapper_record)?;
-        if wrapper_record.byte_offset() + crate::layout::paramesh_body_wrapper::BODY_REFERENCE as u64 != value.wrapper_body_reference_offset {
+        if wrapper_record.byte_offset()
+            + crate::layout::paramesh_body_wrapper::BODY_REFERENCE as u64
+            != value.wrapper_body_reference_offset
+        {
             return Err("wrapper_body_reference_offset must match wrapper_record layout".into());
         }
-        let scene_state = DesignMeshSceneState::from_wire(value.scene_state_record, value.scene_state_bounds)?;
-        let scene_node = DesignMeshSceneNode::from_wire(value.scene_node_record, value.scene_node_bounds,
-            Located::from_wire(value.scene_node_transform, value.scene_node_transform_offset, "scene_node_transform")?)?;
-        if scene_node.state_reference_offset() != value.scene_state_reference_offset || scene_node.auxiliary_reference_offset() != value.scene_auxiliary_reference_offset {
+        let scene_state =
+            DesignMeshSceneState::from_wire(value.scene_state_record, value.scene_state_bounds)?;
+        let scene_node = DesignMeshSceneNode::from_wire(
+            value.scene_node_record,
+            value.scene_node_bounds,
+            Located::from_wire(
+                value.scene_node_transform,
+                value.scene_node_transform_offset,
+                "scene_node_transform",
+            )?,
+        )?;
+        if scene_node.state_reference_offset() != value.scene_state_reference_offset
+            || scene_node.auxiliary_reference_offset() != value.scene_auxiliary_reference_offset
+        {
             return Err("scene_state_reference_offset/scene_auxiliary_reference_offset must match scene_node_record layout".into());
         }
         let guid = DesignMeshGuid::new(value.guid_record, value.fusion_uuid)?;
-        if value.fusion_uuid_offset != guid.value_offset() || value.guid_entry_reference_offset != guid.entry_reference_offset() {
-            return Err("fusion_uuid_offset/guid_entry_reference_offset must match guid_record layout".into());
+        if value.fusion_uuid_offset != guid.value_offset()
+            || value.guid_entry_reference_offset != guid.entry_reference_offset()
+        {
+            return Err(
+                "fusion_uuid_offset/guid_entry_reference_offset must match guid_record layout"
+                    .into(),
+            );
         }
         let entry = DesignMeshEntryName::new(value.entry_name_record, value.entry_name)?;
-        if entry.name_offset() != value.entry_name_offset || entry.guid_reference_offset() != value.entry_guid_reference_offset {
-            return Err("entry_name_offset/entry_guid_reference_offset must match entry_name_record layout".into());
+        if entry.name_offset() != value.entry_name_offset
+            || entry.guid_reference_offset() != value.entry_guid_reference_offset
+        {
+            return Err(
+                "entry_name_offset/entry_guid_reference_offset must match entry_name_record layout"
+                    .into(),
+            );
         }
         let placement = DesignMeshPlacement::new(value.body_record, value.transform)?;
         if placement.transform_offsets() != value.transform_offsets {
@@ -14423,7 +16675,6 @@ impl DesignMeshBody {
     }
 }
 
-
 /// A finite, nonsingular row-major affine map.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -14439,8 +16690,7 @@ impl MeshAffineTransform {
         if !cells.iter().all(|cell| cell.is_finite()) || rows[3] != [0.0, 0.0, 0.0, 1.0] {
             return Err("transform must be finite and affine".into());
         }
-        let determinant = rows[0][0]
-            * (rows[1][1] * rows[2][2] - rows[1][2] * rows[2][1])
+        let determinant = rows[0][0] * (rows[1][1] * rows[2][2] - rows[1][2] * rows[2][1])
             - rows[0][1] * (rows[1][0] * rows[2][2] - rows[1][2] * rows[2][0])
             + rows[0][2] * (rows[1][0] * rows[2][1] - rows[1][1] * rows[2][0]);
         if !determinant.is_finite() || determinant == 0.0 {
@@ -14464,7 +16714,6 @@ impl MeshAffineTransform {
             [cells[12], cells[13], cells[14], cells[15]],
         ]
     }
-
 }
 
 impl TryFrom<[[f64; 4]; 4]> for MeshAffineTransform {
@@ -14494,12 +16743,19 @@ enum DesignMeshCollectionBacklink {
 }
 impl DesignMeshCollectionOwner {
     pub fn new(record: DesignMeshRecordIdentity, backlink_offset: u64) -> Result<Self, String> {
-        let relative = backlink_offset.checked_sub(record.byte_offset()).ok_or("collection_owner_backlink_offset precedes its record")?;
-        let backlink = if relative == crate::layout::paramesh_collection_owner_v17::COLLECTION_BACKLINK as u64
-            && record.frame_length() >= crate::layout::paramesh_collection_owner_v17::LEN as u64 {
+        let relative = backlink_offset
+            .checked_sub(record.byte_offset())
+            .ok_or("collection_owner_backlink_offset precedes its record")?;
+        let backlink = if relative
+            == crate::layout::paramesh_collection_owner_v17::COLLECTION_BACKLINK as u64
+            && record.frame_length() >= crate::layout::paramesh_collection_owner_v17::LEN as u64
+        {
             DesignMeshCollectionBacklink::Fixed241
-        } else if relative == crate::layout::paramesh_collection_owner_backlink_prefix::COLLECTION_BACKLINK as u64
-            && record.frame_length() >= crate::layout::paramesh_collection_owner_backlink_prefix::LEN as u64 {
+        } else if relative
+            == crate::layout::paramesh_collection_owner_backlink_prefix::COLLECTION_BACKLINK as u64
+            && record.frame_length()
+                >= crate::layout::paramesh_collection_owner_backlink_prefix::LEN as u64
+        {
             DesignMeshCollectionBacklink::Fixed262
         } else if relative == record.frame_length() - 11 {
             DesignMeshCollectionBacklink::Terminal
@@ -14508,11 +16764,17 @@ impl DesignMeshCollectionOwner {
         };
         Ok(Self { record, backlink })
     }
-    pub fn record(&self) -> &DesignMeshRecordIdentity { &self.record }
+    pub fn record(&self) -> &DesignMeshRecordIdentity {
+        &self.record
+    }
     pub fn backlink_offset(&self) -> u64 {
         let relative = match self.backlink {
-            DesignMeshCollectionBacklink::Fixed241 => crate::layout::paramesh_collection_owner_v17::COLLECTION_BACKLINK as u64,
-            DesignMeshCollectionBacklink::Fixed262 => crate::layout::paramesh_collection_owner_backlink_prefix::COLLECTION_BACKLINK as u64,
+            DesignMeshCollectionBacklink::Fixed241 => {
+                crate::layout::paramesh_collection_owner_v17::COLLECTION_BACKLINK as u64
+            }
+            DesignMeshCollectionBacklink::Fixed262 => {
+                crate::layout::paramesh_collection_owner_backlink_prefix::COLLECTION_BACKLINK as u64
+            }
             DesignMeshCollectionBacklink::Terminal => self.record.frame_length() - 11,
         };
         self.record.byte_offset() + relative
@@ -14527,29 +16789,51 @@ pub struct DesignMeshScope {
     owner_record_index: std::num::NonZeroU32,
 }
 impl DesignMeshScope {
-    pub fn new(record: DesignMeshRecordIdentity, base_record: DesignMeshRecordIdentity, owner_record_index: u32) -> Result<Self, String> {
+    pub fn new(
+        record: DesignMeshRecordIdentity,
+        base_record: DesignMeshRecordIdentity,
+        owner_record_index: u32,
+    ) -> Result<Self, String> {
         let base_length = crate::layout::paramesh_feature_scope_base::LEN as u64;
-        if record.frame_length() < crate::layout::paramesh_feature_scope_prefix::LEN as u64 + base_length {
-            return Err("scope_record.frame_length must contain the prefix and closing base".into());
+        if record.frame_length()
+            < crate::layout::paramesh_feature_scope_prefix::LEN as u64 + base_length
+        {
+            return Err(
+                "scope_record.frame_length must contain the prefix and closing base".into(),
+            );
         }
         if base_record.record_index() != record.record_index()
             || base_record.frame_length() != base_length
-            || base_record.byte_offset() != record.byte_offset() + record.frame_length() - base_length {
-            return Err("scope_base_record must be the same-index closing base of scope_record".into());
+            || base_record.byte_offset()
+                != record.byte_offset() + record.frame_length() - base_length
+        {
+            return Err(
+                "scope_base_record must be the same-index closing base of scope_record".into(),
+            );
         }
-        let owner_record_index = std::num::NonZeroU32::new(owner_record_index).ok_or("scope_owner_record_index must be nonzero")?;
-        Ok(Self { record, base_class_tag: base_record.class_tag, owner_record_index })
+        let owner_record_index = std::num::NonZeroU32::new(owner_record_index)
+            .ok_or("scope_owner_record_index must be nonzero")?;
+        Ok(Self {
+            record,
+            base_class_tag: base_record.class_tag,
+            owner_record_index,
+        })
     }
-    pub fn record(&self) -> &DesignMeshRecordIdentity { &self.record }
+    pub fn record(&self) -> &DesignMeshRecordIdentity {
+        &self.record
+    }
     pub fn base_record(&self) -> DesignMeshRecordIdentity {
         let frame_length = crate::layout::paramesh_feature_scope_base::LEN as u64;
         DesignMeshRecordIdentity {
-            class_tag: self.base_class_tag.clone(), record_index: self.record.record_index,
+            class_tag: self.base_class_tag.clone(),
+            record_index: self.record.record_index,
             byte_offset: self.record.byte_offset() + self.record.frame_length() - frame_length,
             frame_length,
         }
     }
-    pub fn owner_record_index(&self) -> u32 { self.owner_record_index.get() }
+    pub fn owner_record_index(&self) -> u32 {
+        self.owner_record_index.get()
+    }
     pub fn owner_reference_offset(&self) -> u64 {
         self.record.byte_offset() + self.record.frame_length()
             - crate::layout::paramesh_feature_scope_base::LEN as u64
@@ -14564,38 +16848,62 @@ pub struct DesignMeshCollection {
     base_class_tag: DesignClassTag,
 }
 impl DesignMeshCollection {
-    pub fn new(record: DesignMeshRecordIdentity, base_record: DesignMeshRecordIdentity) -> Result<Self, String> {
+    pub fn new(
+        record: DesignMeshRecordIdentity,
+        base_record: DesignMeshRecordIdentity,
+    ) -> Result<Self, String> {
         let prefix = crate::layout::paramesh_mesh_collection_prefix::LEN as u64;
-        let fixed_length = prefix + crate::layout::paramesh_mesh_collection_base_prefix::LEN as u64 + 11;
-        let body_bytes = record.frame_length().checked_sub(fixed_length)
-            .ok_or("collection_record.frame_length must contain both prefixes and the owner reference")?;
+        let fixed_length =
+            prefix + crate::layout::paramesh_mesh_collection_base_prefix::LEN as u64 + 11;
+        let body_bytes = record.frame_length().checked_sub(fixed_length).ok_or(
+            "collection_record.frame_length must contain both prefixes and the owner reference",
+        )?;
         if body_bytes % 11 != 0 || u32::try_from(body_bytes / 11).is_err() {
-            return Err("collection_record.frame_length must contain a u32-counted body-reference run".into());
+            return Err(
+                "collection_record.frame_length must contain a u32-counted body-reference run"
+                    .into(),
+            );
         }
         if base_record.record_index() != record.record_index()
             || base_record.byte_offset() != record.byte_offset() + prefix
-            || base_record.frame_length() != record.frame_length() - prefix {
-            return Err("collection_base_record must be the same-index nested base of collection_record".into());
+            || base_record.frame_length() != record.frame_length() - prefix
+        {
+            return Err(
+                "collection_base_record must be the same-index nested base of collection_record"
+                    .into(),
+            );
         }
-        Ok(Self { record, base_class_tag: base_record.class_tag })
+        Ok(Self {
+            record,
+            base_class_tag: base_record.class_tag,
+        })
     }
-    pub fn record(&self) -> &DesignMeshRecordIdentity { &self.record }
+    pub fn record(&self) -> &DesignMeshRecordIdentity {
+        &self.record
+    }
     pub fn base_record(&self) -> DesignMeshRecordIdentity {
         let prefix = crate::layout::paramesh_mesh_collection_prefix::LEN as u64;
         DesignMeshRecordIdentity {
-            class_tag: self.base_class_tag.clone(), record_index: self.record.record_index,
+            class_tag: self.base_class_tag.clone(),
+            record_index: self.record.record_index,
             byte_offset: self.record.byte_offset() + prefix,
             frame_length: self.record.frame_length() - prefix,
         }
     }
     pub fn body_count(&self) -> u64 {
-        (self.record.frame_length() - crate::layout::paramesh_mesh_collection_prefix::LEN as u64
-            - crate::layout::paramesh_mesh_collection_base_prefix::LEN as u64 - 11) / 11
+        (self.record.frame_length()
+            - crate::layout::paramesh_mesh_collection_prefix::LEN as u64
+            - crate::layout::paramesh_mesh_collection_base_prefix::LEN as u64
+            - 11)
+            / 11
     }
     pub fn texture_table_reference_offset(&self) -> u64 {
-        self.record.byte_offset() + crate::layout::paramesh_mesh_collection_prefix::TEXTURE_TABLE_REFERENCE as u64
+        self.record.byte_offset()
+            + crate::layout::paramesh_mesh_collection_prefix::TEXTURE_TABLE_REFERENCE as u64
     }
-    pub fn owner_reference_offset(&self) -> u64 { self.record.byte_offset() + self.record.frame_length() - 11 }
+    pub fn owner_reference_offset(&self) -> u64 {
+        self.record.byte_offset() + self.record.frame_length() - 11
+    }
 }
 
 /// One complete `Base Mesh Feature` Design graph.
@@ -14619,9 +16927,14 @@ pub struct DesignMeshFeature {
 }
 
 impl DesignMeshFeature {
-    pub fn new(id: String, scope: DesignMeshScope, collection: DesignMeshCollection,
-        texture_table: DesignMeshTextureTable, collection_owner: DesignMeshCollectionOwner,
-        bodies: Vec<DesignMeshBody>) -> Result<Self, String> {
+    pub fn new(
+        id: String,
+        scope: DesignMeshScope,
+        collection: DesignMeshCollection,
+        texture_table: DesignMeshTextureTable,
+        collection_owner: DesignMeshCollectionOwner,
+        bodies: Vec<DesignMeshBody>,
+    ) -> Result<Self, String> {
         let body_count = u32::try_from(bodies.len()).map_err(|_| "bodies count must fit u32")?;
         if collection.body_count() != u64::from(body_count) {
             return Err("bodies count must match collection_record.frame_length".into());
@@ -14632,24 +16945,46 @@ impl DesignMeshFeature {
         if scope_body_bytes > scope.record().frame_length() - scope_prefix - scope_base_length {
             return Err("bodies reference run must end before scope_base_record".into());
         }
-        Ok(Self { id, scope, collection, texture_table, collection_owner, bodies })
+        Ok(Self {
+            id,
+            scope,
+            collection,
+            texture_table,
+            collection_owner,
+            bodies,
+        })
     }
-    pub fn scope(&self) -> &DesignMeshScope { &self.scope }
-    pub fn collection(&self) -> &DesignMeshCollection { &self.collection }
-    pub fn bodies(&self) -> &[DesignMeshBody] { &self.bodies }
-    pub fn bodies_mut(&mut self) -> &mut [DesignMeshBody] { &mut self.bodies }
+    pub fn scope(&self) -> &DesignMeshScope {
+        &self.scope
+    }
+    pub fn collection(&self) -> &DesignMeshCollection {
+        &self.collection
+    }
+    pub fn bodies(&self) -> &[DesignMeshBody] {
+        &self.bodies
+    }
+    pub fn bodies_mut(&mut self) -> &mut [DesignMeshBody] {
+        &mut self.bodies
+    }
     fn body_count_offsets(&self) -> [u64; 3] {
-        [self.scope.record().byte_offset() + crate::layout::paramesh_feature_scope_prefix::BODY_COUNT as u64,
-         self.collection.record().byte_offset() + crate::layout::paramesh_mesh_collection_prefix::BODY_COUNT as u64,
-         self.collection.record().byte_offset() + crate::layout::paramesh_mesh_collection_prefix::LEN as u64
-            + crate::layout::paramesh_mesh_collection_base_prefix::BODY_COUNT as u64]
+        [
+            self.scope.record().byte_offset()
+                + crate::layout::paramesh_feature_scope_prefix::BODY_COUNT as u64,
+            self.collection.record().byte_offset()
+                + crate::layout::paramesh_mesh_collection_prefix::BODY_COUNT as u64,
+            self.collection.record().byte_offset()
+                + crate::layout::paramesh_mesh_collection_prefix::LEN as u64
+                + crate::layout::paramesh_mesh_collection_base_prefix::BODY_COUNT as u64,
+        ]
     }
     fn scope_body_reference_offsets(&self) -> impl Iterator<Item = u64> + '_ {
-        let start = self.scope.record().byte_offset() + crate::layout::paramesh_feature_scope_prefix::LEN as u64;
+        let start = self.scope.record().byte_offset()
+            + crate::layout::paramesh_feature_scope_prefix::LEN as u64;
         (0..self.collection.body_count()).map(move |ordinal| start + 11 * ordinal)
     }
     fn collection_body_reference_offsets(&self) -> impl Iterator<Item = u64> + '_ {
-        let start = self.collection.record().byte_offset() + crate::layout::paramesh_mesh_collection_prefix::LEN as u64
+        let start = self.collection.record().byte_offset()
+            + crate::layout::paramesh_mesh_collection_prefix::LEN as u64
             + crate::layout::paramesh_mesh_collection_base_prefix::LEN as u64;
         (0..self.collection.body_count()).map(move |ordinal| start + 11 * ordinal)
     }
@@ -14710,32 +17045,74 @@ impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
         if wire.collection_body_reference_offsets.len() != wire.bodies.len() {
             return Err("collection_body_reference_offsets must match bodies".into());
         }
-        if !wire.body_record_indices.iter().copied().eq(wire.bodies.iter().map(|body| body.body_record.record_index())) {
-            return Err("body_record_indices must repeat bodies.body_record.record_index in order".into());
+        if !wire.body_record_indices.iter().copied().eq(wire
+            .bodies
+            .iter()
+            .map(|body| body.body_record.record_index()))
+        {
+            return Err(
+                "body_record_indices must repeat bodies.body_record.record_index in order".into(),
+            );
         }
-        let bodies = wire.bodies.into_iter().map(DesignMeshBody::from_wire)
+        let bodies = wire
+            .bodies
+            .into_iter()
+            .map(DesignMeshBody::from_wire)
             .collect::<Result<Vec<_>, _>>()?;
-        let scope = DesignMeshScope::new(wire.scope_record, wire.scope_base_record, wire.scope_owner_record_index)?;
+        let scope = DesignMeshScope::new(
+            wire.scope_record,
+            wire.scope_base_record,
+            wire.scope_owner_record_index,
+        )?;
         if scope.owner_reference_offset() != wire.scope_owner_reference_offset {
-            return Err("scope_owner_reference_offset must locate the closing base owner reference".into());
+            return Err(
+                "scope_owner_reference_offset must locate the closing base owner reference".into(),
+            );
         }
-        let collection = DesignMeshCollection::new(wire.collection_record, wire.collection_base_record)?;
+        let collection =
+            DesignMeshCollection::new(wire.collection_record, wire.collection_base_record)?;
         if collection.texture_table_reference_offset() != wire.texture_table_reference_offset {
-            return Err("texture_table_reference_offset must locate the collection texture-table reference".into());
+            return Err(
+                "texture_table_reference_offset must locate the collection texture-table reference"
+                    .into(),
+            );
         }
         if collection.owner_reference_offset() != wire.collection_owner_reference_offset {
             return Err("collection_owner_reference_offset must locate the terminal collection owner reference".into());
         }
-        let feature = Self::new(wire.id, scope, collection,
-            DesignMeshTextureTable::from_wire(wire.texture_table_record, wire.texture_flags_count_offset, wire.texture_filename_count_offset, wire.textures)?,
-            DesignMeshCollectionOwner::new(wire.collection_owner_record, wire.collection_owner_backlink_offset)?, bodies)?;
+        let feature = Self::new(
+            wire.id,
+            scope,
+            collection,
+            DesignMeshTextureTable::from_wire(
+                wire.texture_table_record,
+                wire.texture_flags_count_offset,
+                wire.texture_filename_count_offset,
+                wire.textures,
+            )?,
+            DesignMeshCollectionOwner::new(
+                wire.collection_owner_record,
+                wire.collection_owner_backlink_offset,
+            )?,
+            bodies,
+        )?;
         if wire.body_count_offsets != feature.body_count_offsets() {
             return Err("body_count_offsets must locate the scope and collection counts".into());
         }
-        if !wire.scope_body_reference_offsets.into_iter().eq(feature.scope_body_reference_offsets()) {
-            return Err("scope_body_reference_offsets must locate the ordered scope body references".into());
+        if !wire
+            .scope_body_reference_offsets
+            .into_iter()
+            .eq(feature.scope_body_reference_offsets())
+        {
+            return Err(
+                "scope_body_reference_offsets must locate the ordered scope body references".into(),
+            );
         }
-        if !wire.collection_body_reference_offsets.into_iter().eq(feature.collection_body_reference_offsets()) {
+        if !wire
+            .collection_body_reference_offsets
+            .into_iter()
+            .eq(feature.collection_body_reference_offsets())
+        {
             return Err("collection_body_reference_offsets must locate the ordered collection body references".into());
         }
         Ok(feature)
@@ -14754,7 +17131,12 @@ impl From<DesignMeshFeature> for DesignMeshFeatureWire {
             bodies.push(body.into());
         }
         let collection_owner_backlink_offset = value.collection_owner.backlink_offset();
-        let (texture_table_record, texture_flags_count_offset, texture_filename_count_offset, textures) = value.texture_table.into_wire();
+        let (
+            texture_table_record,
+            texture_flags_count_offset,
+            texture_filename_count_offset,
+            textures,
+        ) = value.texture_table.into_wire();
         Self {
             body_record_indices,
             scope_body_reference_offsets,
@@ -14794,17 +17176,31 @@ pub struct DesignCanvasGeometryPayload {
 impl TryFrom<&[u8]> for DesignCanvasGeometryPayload {
     type Error = String;
     fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
-        if bytes.len() != 77 { return Err("geometry_payload must contain 77 bytes".into()); }
+        if bytes.len() != 77 {
+            return Err("geometry_payload must contain 77 bytes".into());
+        }
         let mut view = cadmpeg_core::decode::View::over_retained(bytes);
-        let opacity = view.req_f32_le().map_err(|error| format!("geometry_payload: {error:?}"))?;
-        let reserved = view.req_u8().map_err(|error| format!("geometry_payload: {error:?}"))?;
+        let opacity = view
+            .req_f32_le()
+            .map_err(|error| format!("geometry_payload: {error:?}"))?;
+        let reserved = view
+            .req_u8()
+            .map_err(|error| format!("geometry_payload: {error:?}"))?;
         if !opacity.is_finite() || !(0.0..=1.0).contains(&opacity) || reserved != 0 {
-            return Err("geometry_payload must contain normalized finite opacity and a zero reserved byte".into());
+            return Err(
+                "geometry_payload must contain normalized finite opacity and a zero reserved byte"
+                    .into(),
+            );
         }
         let mut vector = || -> Result<[f64; 3], String> {
-            Ok([view.req_f64_le().map_err(|error| format!("geometry_payload: {error:?}"))?,
-                view.req_f64_le().map_err(|error| format!("geometry_payload: {error:?}"))?,
-                view.req_f64_le().map_err(|error| format!("geometry_payload: {error:?}"))?])
+            Ok([
+                view.req_f64_le()
+                    .map_err(|error| format!("geometry_payload: {error:?}"))?,
+                view.req_f64_le()
+                    .map_err(|error| format!("geometry_payload: {error:?}"))?,
+                view.req_f64_le()
+                    .map_err(|error| format!("geometry_payload: {error:?}"))?,
+            ])
         };
         let origin_centimetres = vector()?;
         let u = vector()?;
@@ -14814,27 +17210,44 @@ impl TryFrom<&[u8]> for DesignCanvasGeometryPayload {
         if !origin_centimetres.into_iter().all(f64::is_finite)
             || (u_axis.norm() - 1.0).abs() > EPS_CANVAS_DECODE_GEOMETRY_PAYLOAD_E9
             || (v_axis.norm() - 1.0).abs() > EPS_CANVAS_DECODE_GEOMETRY_PAYLOAD_E9
-            || u_axis.dot(v_axis).abs() > EPS_CANVAS_DECODE_GEOMETRY_PAYLOAD_E9 {
-            return Err("geometry_payload must contain a finite origin and an admitted orthonormal frame".into());
+            || u_axis.dot(v_axis).abs() > EPS_CANVAS_DECODE_GEOMETRY_PAYLOAD_E9
+        {
+            return Err(
+                "geometry_payload must contain a finite origin and an admitted orthonormal frame"
+                    .into(),
+            );
         }
-        Ok(Self { opacity, origin_centimetres, u_axis, v_axis })
+        Ok(Self {
+            opacity,
+            origin_centimetres,
+            u_axis,
+            v_axis,
+        })
     }
 }
 impl DesignCanvasGeometryPayload {
     pub fn decoded(&self) -> (f32, Point3, Vector3, Vector3) {
-        (self.opacity, Point3::new(
-            self.origin_centimetres[0] * DESIGN_CANVAS_LENGTH_TO_MM,
-            self.origin_centimetres[1] * DESIGN_CANVAS_LENGTH_TO_MM,
-            self.origin_centimetres[2] * DESIGN_CANVAS_LENGTH_TO_MM,
-        ), self.u_axis, self.v_axis)
+        (
+            self.opacity,
+            Point3::new(
+                self.origin_centimetres[0] * DESIGN_CANVAS_LENGTH_TO_MM,
+                self.origin_centimetres[1] * DESIGN_CANVAS_LENGTH_TO_MM,
+                self.origin_centimetres[2] * DESIGN_CANVAS_LENGTH_TO_MM,
+            ),
+            self.u_axis,
+            self.v_axis,
+        )
     }
     pub fn bytes(&self) -> [u8; 77] {
         let mut bytes = [0; 77];
         bytes[..4].copy_from_slice(&self.opacity.to_le_bytes());
         let mut at = 5;
-        for value in self.origin_centimetres.into_iter()
+        for value in self
+            .origin_centimetres
+            .into_iter()
             .chain([self.u_axis.x, self.u_axis.y, self.u_axis.z])
-            .chain([self.v_axis.x, self.v_axis.y, self.v_axis.z]) {
+            .chain([self.v_axis.x, self.v_axis.y, self.v_axis.z])
+        {
             bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
             at += 8;
         }
@@ -14855,23 +17268,35 @@ enum DesignCanvasBoundaryForm {
 impl TryFrom<[[Point2; 2]; 2]> for DesignCanvasBounds {
     type Error = String;
     fn try_from(segments: [[Point2; 2]; 2]) -> Result<Self, Self::Error> {
-        if segments.iter().flatten().any(|point| !point.u.is_finite() || !point.v.is_finite()) {
+        if segments
+            .iter()
+            .flatten()
+            .any(|point| !point.u.is_finite() || !point.v.is_finite())
+        {
             return Err("boundary_segments must contain finite coordinates".into());
         }
         let [[a, b], [c, d]] = segments;
         let close = |left: f64, right: f64| {
             (left - right).abs() <= 64.0 * f64::EPSILON * left.abs().max(right.abs()).max(1.0)
         };
-        let horizontal = close(a.v, b.v) && close(c.v, d.v) && close(a.u, c.u)
-            && close(b.u, d.u) && !close(a.v, c.v);
-        let vertical = close(a.u, b.u) && close(c.u, d.u) && close(a.v, c.v)
-            && close(b.v, d.v) && !close(a.u, c.u);
+        let horizontal = close(a.v, b.v)
+            && close(c.v, d.v)
+            && close(a.u, c.u)
+            && close(b.u, d.u)
+            && !close(a.v, c.v);
+        let vertical = close(a.u, b.u)
+            && close(c.u, d.u)
+            && close(a.v, c.v)
+            && close(b.v, d.v)
+            && !close(a.u, c.u);
         let form = if horizontal {
             DesignCanvasBoundaryForm::Horizontal(segments)
         } else if vertical {
             DesignCanvasBoundaryForm::Vertical(segments)
         } else {
-            return Err("boundary_segments must form an admitted horizontal or vertical pair".into());
+            return Err(
+                "boundary_segments must form an admitted horizontal or vertical pair".into(),
+            );
         };
         Ok(Self { form })
     }
@@ -14879,7 +17304,8 @@ impl TryFrom<[[Point2; 2]; 2]> for DesignCanvasBounds {
 impl DesignCanvasBounds {
     pub fn segments(self) -> [[Point2; 2]; 2] {
         match self.form {
-            DesignCanvasBoundaryForm::Horizontal(segments) | DesignCanvasBoundaryForm::Vertical(segments) => segments,
+            DesignCanvasBoundaryForm::Horizontal(segments)
+            | DesignCanvasBoundaryForm::Vertical(segments) => segments,
         }
     }
     pub fn mirroring(self) -> (bool, bool) {
@@ -14890,10 +17316,14 @@ impl DesignCanvasBounds {
     }
     pub fn extents(self) -> [Point2; 2] {
         let [[a, b], [c, d]] = self.segments();
-        let (minimum, maximum) = [b, c, d].into_iter().fold((a, a), |(minimum, maximum), point| {
-            (Point2::new(minimum.u.min(point.u), minimum.v.min(point.v)),
-             Point2::new(maximum.u.max(point.u), maximum.v.max(point.v)))
-        });
+        let (minimum, maximum) = [b, c, d]
+            .into_iter()
+            .fold((a, a), |(minimum, maximum), point| {
+                (
+                    Point2::new(minimum.u.min(point.u), minimum.v.min(point.v)),
+                    Point2::new(maximum.u.max(point.u), maximum.v.max(point.v)),
+                )
+            });
         [minimum, maximum]
     }
 }
@@ -14907,15 +17337,26 @@ pub struct DesignCanvasPrologue {
 impl TryFrom<[u8; 15]> for DesignCanvasPrologue {
     type Error = String;
     fn try_from(bytes: [u8; 15]) -> Result<Self, Self::Error> {
-        if bytes[..10] != [0; 10] || !matches!(bytes[10], 0 | 1)
-            || bytes[11..14] != [0; 3] || !matches!(bytes[14], 0 | 1) {
-            return Err("geometry_prologue must contain only its two boolean flags and fixed zero bytes".into());
+        if bytes[..10] != [0; 10]
+            || !matches!(bytes[10], 0 | 1)
+            || bytes[11..14] != [0; 3]
+            || !matches!(bytes[14], 0 | 1)
+        {
+            return Err(
+                "geometry_prologue must contain only its two boolean flags and fixed zero bytes"
+                    .into(),
+            );
         }
-        Ok(Self { first_flag: bytes[10] != 0, visible: bytes[14] != 0 })
+        Ok(Self {
+            first_flag: bytes[10] != 0,
+            visible: bytes[14] != 0,
+        })
     }
 }
 impl DesignCanvasPrologue {
-    pub fn visible(self) -> bool { self.visible }
+    pub fn visible(self) -> bool {
+        self.visible
+    }
     pub fn bytes(self) -> [u8; 15] {
         let mut bytes = [0; 15];
         bytes[10] = u8::from(self.first_flag);
@@ -14943,34 +17384,79 @@ pub struct DesignCanvasGeometry {
     pub payload: DesignCanvasGeometryPayload,
 }
 impl DesignCanvasGeometry {
-    pub fn new(class_tags: [String; 2], record_index: u32, byte_offset: u64, label: String,
-        prologue: DesignCanvasPrologue, boundary: DesignCanvasBounds, payload: DesignCanvasGeometryPayload) -> Result<Self, String> {
-        for (name, tag) in ["geometry_class_tag", "paired_geometry_class_tag"].into_iter().zip(&class_tags) {
+    pub fn new(
+        class_tags: [String; 2],
+        record_index: u32,
+        byte_offset: u64,
+        label: String,
+        prologue: DesignCanvasPrologue,
+        boundary: DesignCanvasBounds,
+        payload: DesignCanvasGeometryPayload,
+    ) -> Result<Self, String> {
+        for (name, tag) in ["geometry_class_tag", "paired_geometry_class_tag"]
+            .into_iter()
+            .zip(&class_tags)
+        {
             if tag.is_empty() || !tag.bytes().all(|byte| byte.is_ascii_graphic()) {
                 return Err(format!("{name} must contain printable ASCII characters"));
             }
         }
-        if label.is_empty() { return Err("label must be nonempty".into()); }
-        let units = u32::try_from(label.encode_utf16().count()).map_err(|_| "label UTF-16 count must fit u32")?;
+        if label.is_empty() {
+            return Err("label must be nonempty".into());
+        }
+        let units = u32::try_from(label.encode_utf16().count())
+            .map_err(|_| "label UTF-16 count must fit u32")?;
         let frame_length = CANVAS_GEOMETRY_PREFIX_BYTES + 2 * u64::from(units);
-        byte_offset.checked_add(frame_length).and_then(|end| end.checked_add(CANVAS_PAIRED_GEOMETRY_BYTES))
+        byte_offset
+            .checked_add(frame_length)
+            .and_then(|end| end.checked_add(CANVAS_PAIRED_GEOMETRY_BYTES))
             .ok_or("geometry_byte_offset and label must leave a complete paired geometry record")?;
-        Ok(Self { class_tags, record_index, byte_offset, label, prologue, boundary, payload })
+        Ok(Self {
+            class_tags,
+            record_index,
+            byte_offset,
+            label,
+            prologue,
+            boundary,
+            payload,
+        })
     }
-    pub fn record_index(&self) -> u32 { self.record_index }
-    fn frame_length(&self) -> u64 { CANVAS_GEOMETRY_PREFIX_BYTES + 2 * self.label.encode_utf16().count() as u64 }
-    fn paired_byte_offset(&self) -> u64 { self.byte_offset + self.frame_length() }
-    fn scope_reference_offset(&self) -> u64 { self.byte_offset + 147 }
-    fn visibility_offset(&self) -> u64 { self.byte_offset + 25 }
-    fn paired_component_reference_offset(&self) -> u64 { self.paired_byte_offset() + 20 }
+    pub fn record_index(&self) -> u32 {
+        self.record_index
+    }
+    fn frame_length(&self) -> u64 {
+        CANVAS_GEOMETRY_PREFIX_BYTES + 2 * self.label.encode_utf16().count() as u64
+    }
+    fn paired_byte_offset(&self) -> u64 {
+        self.byte_offset + self.frame_length()
+    }
+    fn scope_reference_offset(&self) -> u64 {
+        self.byte_offset + 147
+    }
+    fn visibility_offset(&self) -> u64 {
+        self.byte_offset + 25
+    }
+    fn paired_component_reference_offset(&self) -> u64 {
+        self.paired_byte_offset() + 20
+    }
     fn boundary_coordinate_offsets(&self) -> [u64; 8] {
         [26, 34, 42, 50, 181, 189, 197, 205].map(|relative| self.byte_offset + relative)
     }
-    fn second_boundary_present_offset(&self) -> u64 { self.byte_offset + 180 }
-    fn plane_reference_offset(&self) -> u64 { self.byte_offset + 59 }
-    fn component_reference_offset(&self) -> u64 { self.byte_offset + 158 }
-    fn asset_reference_offset(&self) -> u64 { self.byte_offset + 170 }
-    fn label_offset(&self) -> u64 { self.byte_offset + CANVAS_GEOMETRY_PREFIX_BYTES }
+    fn second_boundary_present_offset(&self) -> u64 {
+        self.byte_offset + 180
+    }
+    fn plane_reference_offset(&self) -> u64 {
+        self.byte_offset + 59
+    }
+    fn component_reference_offset(&self) -> u64 {
+        self.byte_offset + 158
+    }
+    fn asset_reference_offset(&self) -> u64 {
+        self.byte_offset + 170
+    }
+    fn label_offset(&self) -> u64 {
+        self.byte_offset + CANVAS_GEOMETRY_PREFIX_BYTES
+    }
 }
 
 /// Canvas image-asset record with a nonempty UTF-16 name.
@@ -14985,17 +17471,34 @@ impl DesignCanvasAsset {
         if class_tag.is_empty() || !class_tag.bytes().all(|byte| byte.is_ascii_graphic()) {
             return Err("asset_class_tag must contain printable ASCII characters".into());
         }
-        if name.is_empty() { return Err("asset_name must be nonempty".into()); }
-        u32::try_from(name.encode_utf16().count()).map_err(|_| "asset_name UTF-16 count must fit u32")?;
-        Ok(Self { class_tag, record_index, name })
+        if name.is_empty() {
+            return Err("asset_name must be nonempty".into());
+        }
+        u32::try_from(name.encode_utf16().count())
+            .map_err(|_| "asset_name UTF-16 count must fit u32")?;
+        Ok(Self {
+            class_tag,
+            record_index,
+            name,
+        })
     }
-    fn frame_length(&self) -> u64 { CANVAS_IMAGE_ASSET_PREFIX_BYTES + 2 * self.name.encode_utf16().count() as u64 }
+    fn frame_length(&self) -> u64 {
+        CANVAS_IMAGE_ASSET_PREFIX_BYTES + 2 * self.name.encode_utf16().count() as u64
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DesignCanvasScopeForm { Compact, Expanded }
+enum DesignCanvasScopeForm {
+    Compact,
+    Expanded,
+}
 impl DesignCanvasScopeForm {
-    fn reference_offset(self) -> u64 { match self { Self::Compact => 22, Self::Expanded => 26 } }
+    fn reference_offset(self) -> u64 {
+        match self {
+            Self::Compact => 22,
+            Self::Expanded => 26,
+        }
+    }
 }
 
 /// Exact image-plane binding owned by one Design `Canvas` scope.
@@ -15017,13 +17520,21 @@ pub struct DesignCanvasImage {
     scope_form: DesignCanvasScopeForm,
 }
 impl DesignCanvasImage {
-    pub fn new(id: String, scope_record_index: u32, geometry_reference_offset: u64,
-        geometry: DesignCanvasGeometry, asset: DesignCanvasAsset,
-        plane_entity_suffix: u32, component_entity_suffix: u32) -> Result<Self, String> {
+    pub fn new(
+        id: String,
+        scope_record_index: u32,
+        geometry_reference_offset: u64,
+        geometry: DesignCanvasGeometry,
+        asset: DesignCanvasAsset,
+        plane_entity_suffix: u32,
+        component_entity_suffix: u32,
+    ) -> Result<Self, String> {
         if geometry.record_index == asset.record_index {
             return Err("asset_record_index must differ from geometry_record_index".into());
         }
-        let scope_offset = geometry.paired_byte_offset().checked_add(CANVAS_PAIRED_GEOMETRY_BYTES)
+        let scope_offset = geometry
+            .paired_byte_offset()
+            .checked_add(CANVAS_PAIRED_GEOMETRY_BYTES)
             .and_then(|offset| offset.checked_add(asset.frame_length()))
             .ok_or("asset_name must end at a representable scope byte offset")?;
         let scope_form = match geometry_reference_offset.checked_sub(scope_offset) {
@@ -15031,15 +17542,37 @@ impl DesignCanvasImage {
             Some(26) => DesignCanvasScopeForm::Expanded,
             _ => return Err("geometry_reference_offset must locate a compact or expanded Canvas scope reference".into()),
         };
-        geometry_reference_offset.checked_add(4).ok_or("geometry_reference_offset must leave a complete u32 reference")?;
-        Ok(Self { id, scope_record_index, plane_entity_suffix, component_entity_suffix, geometry, asset, scope_form })
+        geometry_reference_offset
+            .checked_add(4)
+            .ok_or("geometry_reference_offset must leave a complete u32 reference")?;
+        Ok(Self {
+            id,
+            scope_record_index,
+            plane_entity_suffix,
+            component_entity_suffix,
+            geometry,
+            asset,
+            scope_form,
+        })
     }
-    pub fn geometry(&self) -> &DesignCanvasGeometry { &self.geometry }
-    pub fn asset_name(&self) -> &str { &self.asset.name }
-    pub fn scope_byte_offset(&self) -> u64 { self.asset_byte_offset() + self.asset.frame_length() }
-    fn asset_byte_offset(&self) -> u64 { self.geometry.paired_byte_offset() + CANVAS_PAIRED_GEOMETRY_BYTES }
-    fn asset_name_offset(&self) -> u64 { self.asset_byte_offset() + CANVAS_IMAGE_ASSET_PREFIX_BYTES }
-    fn geometry_reference_offset(&self) -> u64 { self.scope_byte_offset() + self.scope_form.reference_offset() }
+    pub fn geometry(&self) -> &DesignCanvasGeometry {
+        &self.geometry
+    }
+    pub fn asset_name(&self) -> &str {
+        &self.asset.name
+    }
+    pub fn scope_byte_offset(&self) -> u64 {
+        self.asset_byte_offset() + self.asset.frame_length()
+    }
+    fn asset_byte_offset(&self) -> u64 {
+        self.geometry.paired_byte_offset() + CANVAS_PAIRED_GEOMETRY_BYTES
+    }
+    fn asset_name_offset(&self) -> u64 {
+        self.asset_byte_offset() + CANVAS_IMAGE_ASSET_PREFIX_BYTES
+    }
+    fn geometry_reference_offset(&self) -> u64 {
+        self.scope_byte_offset() + self.scope_form.reference_offset()
+    }
 }
 
 /// Exact image-plane binding owned by one Design `Canvas` scope.
@@ -15123,41 +17656,125 @@ impl TryFrom<DesignCanvasImageWire> for DesignCanvasImage {
         if geometry_prologue.visible() != wire.visible {
             return Err("visible must match geometry_prologue".into());
         }
-        let geometry_payload = DesignCanvasGeometryPayload::try_from(wire.geometry_payload.as_slice())?;
+        let geometry_payload =
+            DesignCanvasGeometryPayload::try_from(wire.geometry_payload.as_slice())?;
         let (opacity, origin, u_axis, v_axis) = geometry_payload.decoded();
         if wire.opacity.to_bits() != opacity.to_bits() {
             return Err("opacity must match geometry_payload".into());
         }
         for (name, declared, decoded) in [
-            ("origin", [wire.origin.x, wire.origin.y, wire.origin.z], [origin.x, origin.y, origin.z]),
-            ("u_axis", [wire.u_axis.x, wire.u_axis.y, wire.u_axis.z], [u_axis.x, u_axis.y, u_axis.z]),
-            ("v_axis", [wire.v_axis.x, wire.v_axis.y, wire.v_axis.z], [v_axis.x, v_axis.y, v_axis.z]),
+            (
+                "origin",
+                [wire.origin.x, wire.origin.y, wire.origin.z],
+                [origin.x, origin.y, origin.z],
+            ),
+            (
+                "u_axis",
+                [wire.u_axis.x, wire.u_axis.y, wire.u_axis.z],
+                [u_axis.x, u_axis.y, u_axis.z],
+            ),
+            (
+                "v_axis",
+                [wire.v_axis.x, wire.v_axis.y, wire.v_axis.z],
+                [v_axis.x, v_axis.y, v_axis.z],
+            ),
         ] {
-            if declared.into_iter().zip(decoded).any(|(left, right)| left.to_bits() != right.to_bits()) {
+            if declared
+                .into_iter()
+                .zip(decoded)
+                .any(|(left, right)| left.to_bits() != right.to_bits())
+            {
                 return Err(format!("{name} must match geometry_payload"));
             }
         }
-        let geometry = DesignCanvasGeometry::new([wire.geometry_class_tag, wire.paired_geometry_class_tag],
-            wire.geometry_record_index, wire.geometry_byte_offset, wire.label, geometry_prologue,
-            DesignCanvasBounds::try_from(wire.boundary_segments)?, geometry_payload)?;
-        let asset = DesignCanvasAsset::new(wire.asset_class_tag, wire.asset_record_index, wire.asset_name)?;
-        let image = Self::new(wire.id, wire.scope_record_index, wire.geometry_reference_offset,
-            geometry, asset, wire.plane_entity_suffix, wire.component_entity_suffix)?;
+        let geometry = DesignCanvasGeometry::new(
+            [wire.geometry_class_tag, wire.paired_geometry_class_tag],
+            wire.geometry_record_index,
+            wire.geometry_byte_offset,
+            wire.label,
+            geometry_prologue,
+            DesignCanvasBounds::try_from(wire.boundary_segments)?,
+            geometry_payload,
+        )?;
+        let asset = DesignCanvasAsset::new(
+            wire.asset_class_tag,
+            wire.asset_record_index,
+            wire.asset_name,
+        )?;
+        let image = Self::new(
+            wire.id,
+            wire.scope_record_index,
+            wire.geometry_reference_offset,
+            geometry,
+            asset,
+            wire.plane_entity_suffix,
+            wire.component_entity_suffix,
+        )?;
         for (name, declared, derived) in [
-            ("scope_reference_offset", wire.scope_reference_offset, image.geometry.scope_reference_offset()),
-            ("visibility_offset", wire.visibility_offset, image.geometry.visibility_offset()),
-            ("geometry_frame_length", wire.geometry_frame_length, image.geometry.frame_length()),
-            ("paired_geometry_byte_offset", wire.paired_geometry_byte_offset, image.geometry.paired_byte_offset()),
-            ("paired_component_reference_offset", wire.paired_component_reference_offset, image.geometry.paired_component_reference_offset()),
-            ("second_boundary_present_offset", wire.second_boundary_present_offset, image.geometry.second_boundary_present_offset()),
-            ("plane_reference_offset", wire.plane_reference_offset, image.geometry.plane_reference_offset()),
-            ("component_reference_offset", wire.component_reference_offset, image.geometry.component_reference_offset()),
-            ("asset_reference_offset", wire.asset_reference_offset, image.geometry.asset_reference_offset()),
-            ("asset_byte_offset", wire.asset_byte_offset, image.asset_byte_offset()),
-            ("asset_name_offset", wire.asset_name_offset, image.asset_name_offset()),
-            ("label_offset", wire.label_offset, image.geometry.label_offset()),
+            (
+                "scope_reference_offset",
+                wire.scope_reference_offset,
+                image.geometry.scope_reference_offset(),
+            ),
+            (
+                "visibility_offset",
+                wire.visibility_offset,
+                image.geometry.visibility_offset(),
+            ),
+            (
+                "geometry_frame_length",
+                wire.geometry_frame_length,
+                image.geometry.frame_length(),
+            ),
+            (
+                "paired_geometry_byte_offset",
+                wire.paired_geometry_byte_offset,
+                image.geometry.paired_byte_offset(),
+            ),
+            (
+                "paired_component_reference_offset",
+                wire.paired_component_reference_offset,
+                image.geometry.paired_component_reference_offset(),
+            ),
+            (
+                "second_boundary_present_offset",
+                wire.second_boundary_present_offset,
+                image.geometry.second_boundary_present_offset(),
+            ),
+            (
+                "plane_reference_offset",
+                wire.plane_reference_offset,
+                image.geometry.plane_reference_offset(),
+            ),
+            (
+                "component_reference_offset",
+                wire.component_reference_offset,
+                image.geometry.component_reference_offset(),
+            ),
+            (
+                "asset_reference_offset",
+                wire.asset_reference_offset,
+                image.geometry.asset_reference_offset(),
+            ),
+            (
+                "asset_byte_offset",
+                wire.asset_byte_offset,
+                image.asset_byte_offset(),
+            ),
+            (
+                "asset_name_offset",
+                wire.asset_name_offset,
+                image.asset_name_offset(),
+            ),
+            (
+                "label_offset",
+                wire.label_offset,
+                image.geometry.label_offset(),
+            ),
         ] {
-            if declared != derived { return Err(format!("{name} must match the Canvas record layout")); }
+            if declared != derived {
+                return Err(format!("{name} must match the Canvas record layout"));
+            }
         }
         if wire.boundary_coordinate_offsets != image.geometry.boundary_coordinate_offsets() {
             return Err("boundary_coordinate_offsets must match the Canvas record layout".into());
@@ -15240,36 +17857,73 @@ pub struct DesignDecalAsset {
     name: String,
 }
 impl DesignDecalAsset {
-    pub fn new(class_tags: [String; 2], record_indices: [u32; 2], byte_offset: u64,
-        entity_suffix: u32, name: String) -> Result<Self, String> {
+    pub fn new(
+        class_tags: [String; 2],
+        record_indices: [u32; 2],
+        byte_offset: u64,
+        entity_suffix: u32,
+        name: String,
+    ) -> Result<Self, String> {
         if record_indices[0].checked_add(1) != Some(record_indices[1]) {
             return Err("name_record_index must immediately follow asset_record_index".into());
         }
-        for (field, tag) in ["asset_class_tag", "name_class_tag"].into_iter().zip(&class_tags) {
+        for (field, tag) in ["asset_class_tag", "name_class_tag"]
+            .into_iter()
+            .zip(&class_tags)
+        {
             if tag.is_empty() || !tag.bytes().all(|byte| byte.is_ascii_graphic()) {
                 return Err(format!("{field} must contain printable ASCII characters"));
             }
         }
-        if name.is_empty() { return Err("asset_name must be nonempty".into()); }
-        let units = u32::try_from(name.encode_utf16().count()).map_err(|_| "asset_name UTF-16 count must fit u32")?;
+        if name.is_empty() {
+            return Err("asset_name must be nonempty".into());
+        }
+        let units = u32::try_from(name.encode_utf16().count())
+            .map_err(|_| "asset_name UTF-16 count must fit u32")?;
         let length = crate::layout::design_decal_image_asset_record::LEN as u64
-            + crate::layout::design_decal_image_name_prefix::LEN as u64 + 2 * u64::from(units);
-        byte_offset.checked_add(length).ok_or("asset_byte_offset and asset_name must leave a complete name record")?;
-        Ok(Self { class_tags, record_index: record_indices[0], byte_offset, entity_suffix, name })
+            + crate::layout::design_decal_image_name_prefix::LEN as u64
+            + 2 * u64::from(units);
+        byte_offset
+            .checked_add(length)
+            .ok_or("asset_byte_offset and asset_name must leave a complete name record")?;
+        Ok(Self {
+            class_tags,
+            record_index: record_indices[0],
+            byte_offset,
+            entity_suffix,
+            name,
+        })
     }
-    pub fn record_index(&self) -> u32 { self.record_index }
-    pub fn entity_suffix(&self) -> u32 { self.entity_suffix }
-    pub fn name(&self) -> &str { &self.name }
-    pub fn primary_frame_length(&self) -> u64 { crate::layout::design_decal_image_asset_record::LEN as u64 }
+    pub fn record_index(&self) -> u32 {
+        self.record_index
+    }
+    pub fn entity_suffix(&self) -> u32 {
+        self.entity_suffix
+    }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn primary_frame_length(&self) -> u64 {
+        crate::layout::design_decal_image_asset_record::LEN as u64
+    }
     pub fn name_frame_length(&self) -> u64 {
-        crate::layout::design_decal_image_name_prefix::LEN as u64 + 2 * self.name.encode_utf16().count() as u64
+        crate::layout::design_decal_image_name_prefix::LEN as u64
+            + 2 * self.name.encode_utf16().count() as u64
     }
-    fn name_record_index(&self) -> u32 { self.record_index + 1 }
-    fn name_byte_offset(&self) -> u64 { self.byte_offset + self.primary_frame_length() }
+    fn name_record_index(&self) -> u32 {
+        self.record_index + 1
+    }
+    fn name_byte_offset(&self) -> u64 {
+        self.byte_offset + self.primary_frame_length()
+    }
     fn entity_reference_offset(&self) -> u64 {
-        self.byte_offset + crate::layout::design_decal_image_asset_record::DESIGN_ENTITY_SUFFIX_REFERENCE as u64 + 1
+        self.byte_offset
+            + crate::layout::design_decal_image_asset_record::DESIGN_ENTITY_SUFFIX_REFERENCE as u64
+            + 1
     }
-    fn name_offset(&self) -> u64 { self.name_byte_offset() + crate::layout::design_decal_image_name_prefix::LEN as u64 }
+    fn name_offset(&self) -> u64 {
+        self.name_byte_offset() + crate::layout::design_decal_image_name_prefix::LEN as u64
+    }
 }
 
 /// Exact image and target binding owned by one Design `Decal` scope.
@@ -15289,20 +17943,41 @@ pub struct DesignDecalImage {
     pub asset: DesignDecalAsset,
 }
 impl DesignDecalImage {
-    pub fn new(id: String, scope: Located<u32>, mapping_mode: DesignDecalMappingMode,
-        target_group_record_index: u32, asset: DesignDecalAsset) -> Result<Self, String> {
-        scope.offset.checked_add(crate::layout::design_decal_scope_prefix::LEN as u64)
+    pub fn new(
+        id: String,
+        scope: Located<u32>,
+        mapping_mode: DesignDecalMappingMode,
+        target_group_record_index: u32,
+        asset: DesignDecalAsset,
+    ) -> Result<Self, String> {
+        scope
+            .offset
+            .checked_add(crate::layout::design_decal_scope_prefix::LEN as u64)
             .ok_or("asset_reference_offset must belong to a complete Decal scope prefix")?;
-        Ok(Self { id, scope, mapping_mode, target_group_record_index, asset })
+        Ok(Self {
+            id,
+            scope,
+            mapping_mode,
+            target_group_record_index,
+            asset,
+        })
     }
-    pub fn scope_record_index(&self) -> u32 { self.scope.value }
-    pub fn scope_byte_offset(&self) -> u64 { self.scope.offset }
+    pub fn scope_record_index(&self) -> u32 {
+        self.scope.value
+    }
+    pub fn scope_byte_offset(&self) -> u64 {
+        self.scope.offset
+    }
     fn asset_reference_offset(&self) -> u64 {
         self.scope.offset + crate::layout::design_decal_scope_prefix::ASSET_REFERENCE as u64 + 1
     }
-    fn mapping_mode_offset(&self) -> u64 { self.scope.offset + crate::layout::design_decal_scope_prefix::MAPPING_MODE as u64 }
+    fn mapping_mode_offset(&self) -> u64 {
+        self.scope.offset + crate::layout::design_decal_scope_prefix::MAPPING_MODE as u64
+    }
     fn target_group_reference_offset(&self) -> u64 {
-        self.scope.offset + crate::layout::design_decal_scope_prefix::TARGET_GROUP_REFERENCE as u64 + 1
+        self.scope.offset
+            + crate::layout::design_decal_scope_prefix::TARGET_GROUP_REFERENCE as u64
+            + 1
     }
 }
 
@@ -15353,24 +18028,67 @@ struct DesignDecalImageWire {
 impl TryFrom<DesignDecalImageWire> for DesignDecalImage {
     type Error = String;
     fn try_from(wire: DesignDecalImageWire) -> Result<Self, Self::Error> {
-        let scope_offset = wire.asset_reference_offset
+        let scope_offset = wire
+            .asset_reference_offset
             .checked_sub(crate::layout::design_decal_scope_prefix::ASSET_REFERENCE as u64 + 1)
             .ok_or("asset_reference_offset precedes the Decal scope prefix")?;
-        let asset = DesignDecalAsset::new([wire.asset_class_tag, wire.name_class_tag],
-            [wire.asset_record_index, wire.name_record_index], wire.asset_byte_offset,
-            wire.asset_entity_suffix, wire.asset_name)?;
-        let image = Self::new(wire.id, Located { value: wire.scope_record_index, offset: scope_offset },
-            wire.mapping_mode, wire.target_group_record_index, asset)?;
+        let asset = DesignDecalAsset::new(
+            [wire.asset_class_tag, wire.name_class_tag],
+            [wire.asset_record_index, wire.name_record_index],
+            wire.asset_byte_offset,
+            wire.asset_entity_suffix,
+            wire.asset_name,
+        )?;
+        let image = Self::new(
+            wire.id,
+            Located {
+                value: wire.scope_record_index,
+                offset: scope_offset,
+            },
+            wire.mapping_mode,
+            wire.target_group_record_index,
+            asset,
+        )?;
         for (name, declared, derived) in [
-            ("mapping_mode_offset", wire.mapping_mode_offset, image.mapping_mode_offset()),
-            ("target_group_reference_offset", wire.target_group_reference_offset, image.target_group_reference_offset()),
-            ("asset_frame_length", wire.asset_frame_length, image.asset.primary_frame_length()),
-            ("asset_entity_reference_offset", wire.asset_entity_reference_offset, image.asset.entity_reference_offset()),
-            ("name_byte_offset", wire.name_byte_offset, image.asset.name_byte_offset()),
-            ("name_frame_length", wire.name_frame_length, image.asset.name_frame_length()),
-            ("asset_name_offset", wire.asset_name_offset, image.asset.name_offset()),
+            (
+                "mapping_mode_offset",
+                wire.mapping_mode_offset,
+                image.mapping_mode_offset(),
+            ),
+            (
+                "target_group_reference_offset",
+                wire.target_group_reference_offset,
+                image.target_group_reference_offset(),
+            ),
+            (
+                "asset_frame_length",
+                wire.asset_frame_length,
+                image.asset.primary_frame_length(),
+            ),
+            (
+                "asset_entity_reference_offset",
+                wire.asset_entity_reference_offset,
+                image.asset.entity_reference_offset(),
+            ),
+            (
+                "name_byte_offset",
+                wire.name_byte_offset,
+                image.asset.name_byte_offset(),
+            ),
+            (
+                "name_frame_length",
+                wire.name_frame_length,
+                image.asset.name_frame_length(),
+            ),
+            (
+                "asset_name_offset",
+                wire.asset_name_offset,
+                image.asset.name_offset(),
+            ),
         ] {
-            if declared != derived { return Err(format!("{name} must match the Decal record layout")); }
+            if declared != derived {
+                return Err(format!("{name} must match the Decal record layout"));
+            }
         }
         Ok(image)
     }
@@ -15431,27 +18149,27 @@ pub struct DesignRecordHeader {
 }
 
 const SKETCH_CONSTRAINT_DEFINITIONS: [(u64, SketchConstraintKind); 20] = [
-        (0x0000_0001, SketchConstraintKind::Coincident),
-        (0x0000_0002, SketchConstraintKind::Colinear),
-        (0x0000_0004, SketchConstraintKind::Concentric),
-        (0x0000_0008, SketchConstraintKind::EqualLength),
-        (0x0000_0010, SketchConstraintKind::Parallel),
-        (0x0000_0020, SketchConstraintKind::Perpendicular),
-        (0x0000_0040, SketchConstraintKind::Horizontal),
-        (0x0000_0080, SketchConstraintKind::Vertical),
-        (0x0000_0100, SketchConstraintKind::Tangent),
-        (0x0000_0200, SketchConstraintKind::Curvature),
-        (0x0000_0400, SketchConstraintKind::Symmetry),
-        (0x0000_0800, SketchConstraintKind::Equal),
-        (0x0000_1000, SketchConstraintKind::Midpoint),
-        (0x0000_2000, SketchConstraintKind::Polygon),
-        (0x1000_0000, SketchConstraintKind::CircularPattern),
-        (0x2000_0000, SketchConstraintKind::RectangularPattern),
-        (0x8000_0000, SketchConstraintKind::SplineGroup),
-        (0x20_0000_0000, SketchConstraintKind::Offset),
-        (0x100_0000_0000, SketchConstraintKind::TextFrame),
-        (0x200_0000_0000, SketchConstraintKind::TextPath),
-    ];
+    (0x0000_0001, SketchConstraintKind::Coincident),
+    (0x0000_0002, SketchConstraintKind::Colinear),
+    (0x0000_0004, SketchConstraintKind::Concentric),
+    (0x0000_0008, SketchConstraintKind::EqualLength),
+    (0x0000_0010, SketchConstraintKind::Parallel),
+    (0x0000_0020, SketchConstraintKind::Perpendicular),
+    (0x0000_0040, SketchConstraintKind::Horizontal),
+    (0x0000_0080, SketchConstraintKind::Vertical),
+    (0x0000_0100, SketchConstraintKind::Tangent),
+    (0x0000_0200, SketchConstraintKind::Curvature),
+    (0x0000_0400, SketchConstraintKind::Symmetry),
+    (0x0000_0800, SketchConstraintKind::Equal),
+    (0x0000_1000, SketchConstraintKind::Midpoint),
+    (0x0000_2000, SketchConstraintKind::Polygon),
+    (0x1000_0000, SketchConstraintKind::CircularPattern),
+    (0x2000_0000, SketchConstraintKind::RectangularPattern),
+    (0x8000_0000, SketchConstraintKind::SplineGroup),
+    (0x20_0000_0000, SketchConstraintKind::Offset),
+    (0x100_0000_0000, SketchConstraintKind::TextFrame),
+    (0x200_0000_0000, SketchConstraintKind::TextPath),
+];
 
 pub(crate) const SKETCH_CONSTRAINT_MASK: u64 = {
     let mut mask = 0;
@@ -15507,11 +18225,17 @@ impl SketchRelationReference {
         }
     }
 
-    fn from_wire(record_index: u32, resolved: Option<SketchRelationOperand>, field: &str) -> Result<Self, SketchRelationPayloadError> {
+    fn from_wire(
+        record_index: u32,
+        resolved: Option<SketchRelationOperand>,
+        field: &str,
+    ) -> Result<Self, SketchRelationPayloadError> {
         match resolved {
             None => Ok(Self::Index(record_index)),
             Some(operand) if operand.record_index() == record_index => Ok(Self::Resolved(operand)),
-            Some(_) => Err(SketchRelationPayloadError(format!("sketch relation {field} record_index disagrees with its reference"))),
+            Some(_) => Err(SketchRelationPayloadError(format!(
+                "sketch relation {field} record_index disagrees with its reference"
+            ))),
         }
     }
 }
@@ -15552,7 +18276,10 @@ impl SketchRelationReturnMember {
     /// An unresolved return member with zero offset.
     #[must_use]
     pub fn from_index(record_index: u32) -> Self {
-        Self { reference: SketchRelationReference::Index(record_index), offset: 0 }
+        Self {
+            reference: SketchRelationReference::Index(record_index),
+            offset: 0,
+        }
     }
 }
 
@@ -15578,10 +18305,15 @@ impl SketchRelationMembers {
 
     /// Resolve every member while retaining its position metadata.
     pub(crate) fn resolve(&mut self, mut resolve: impl FnMut(u32) -> SketchRelationOperand) {
-        self.0 = self.0.iter().map(|row| SketchRelationMember {
-            reference: SketchRelationReference::Resolved(resolve(row.reference.record_index())),
-            offset: row.offset, relation_ordinal: row.relation_ordinal,
-        }).collect();
+        self.0 = self
+            .0
+            .iter()
+            .map(|row| SketchRelationMember {
+                reference: SketchRelationReference::Resolved(resolve(row.reference.record_index())),
+                offset: row.offset,
+                relation_ordinal: row.relation_ordinal,
+            })
+            .collect();
     }
 }
 
@@ -15589,8 +18321,12 @@ impl TryFrom<Vec<SketchRelationMember>> for SketchRelationMembers {
     type Error = SketchRelationPayloadError;
 
     fn try_from(rows: Vec<SketchRelationMember>) -> Result<Self, Self::Error> {
-        if rows.windows(2).any(|pair| pair[0].reference.resolved().is_some() != pair[1].reference.resolved().is_some()) {
-            return Err(SketchRelationPayloadError("sketch relation members run mixes resolved and unresolved references".into()));
+        if rows.windows(2).any(|pair| {
+            pair[0].reference.resolved().is_some() != pair[1].reference.resolved().is_some()
+        }) {
+            return Err(SketchRelationPayloadError(
+                "sketch relation members run mixes resolved and unresolved references".into(),
+            ));
         }
         if rows
             .windows(2)
@@ -15607,7 +18343,9 @@ impl TryFrom<Vec<SketchRelationMember>> for SketchRelationMembers {
 impl std::ops::Deref for SketchRelationMembers {
     type Target = [SketchRelationMember];
 
-    fn deref(&self) -> &Self::Target { &self.0 }
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 /// A complete return member run, either unresolved or resolved throughout.
@@ -15617,25 +18355,40 @@ pub struct SketchRelationReturnMembers(Vec<SketchRelationReturnMember>);
 impl SketchRelationReturnMembers {
     /// Construct the unresolved source run with its member locations.
     pub(crate) fn from_indices(rows: impl IntoIterator<Item = (u32, u32)>) -> Self {
-        Self(rows.into_iter().map(|(record_index, offset)| SketchRelationReturnMember { reference: SketchRelationReference::Index(record_index), offset }).collect())
+        Self(
+            rows.into_iter()
+                .map(|(record_index, offset)| SketchRelationReturnMember {
+                    reference: SketchRelationReference::Index(record_index),
+                    offset,
+                })
+                .collect(),
+        )
     }
 
     /// Resolve every member while retaining its position metadata.
     pub(crate) fn resolve(&mut self, mut resolve: impl FnMut(u32) -> SketchRelationOperand) {
-        self.0 = self.0.iter().map(|row| SketchRelationReturnMember {
-            reference: SketchRelationReference::Resolved(resolve(row.reference.record_index())),
-            offset: row.offset,
-        }).collect();
+        self.0 = self
+            .0
+            .iter()
+            .map(|row| SketchRelationReturnMember {
+                reference: SketchRelationReference::Resolved(resolve(row.reference.record_index())),
+                offset: row.offset,
+            })
+            .collect();
     }
-
 }
 
 impl TryFrom<Vec<SketchRelationReturnMember>> for SketchRelationReturnMembers {
     type Error = SketchRelationPayloadError;
 
     fn try_from(rows: Vec<SketchRelationReturnMember>) -> Result<Self, Self::Error> {
-        if rows.windows(2).any(|pair| pair[0].reference.resolved().is_some() != pair[1].reference.resolved().is_some()) {
-            return Err(SketchRelationPayloadError("sketch relation return_members run mixes resolved and unresolved references".into()));
+        if rows.windows(2).any(|pair| {
+            pair[0].reference.resolved().is_some() != pair[1].reference.resolved().is_some()
+        }) {
+            return Err(SketchRelationPayloadError(
+                "sketch relation return_members run mixes resolved and unresolved references"
+                    .into(),
+            ));
         }
         Ok(Self(rows))
     }
@@ -15644,7 +18397,9 @@ impl TryFrom<Vec<SketchRelationReturnMember>> for SketchRelationReturnMembers {
 impl std::ops::Deref for SketchRelationReturnMembers {
     type Target = [SketchRelationReturnMember];
 
-    fn deref(&self) -> &Self::Target { &self.0 }
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 /// Finite row-major native glyph placement in centimetres.
@@ -15657,7 +18412,9 @@ pub struct SketchGlyphTransform([[f64; 4]; 4]);
 impl SketchGlyphTransform {
     /// Native coefficients, without an affine or invertibility restriction.
     #[must_use]
-    pub fn rows(self) -> [[f64; 4]; 4] { self.0 }
+    pub fn rows(self) -> [[f64; 4]; 4] {
+        self.0
+    }
 }
 
 impl TryFrom<[[f64; 4]; 4]> for SketchGlyphTransform {
@@ -15665,14 +18422,18 @@ impl TryFrom<[[f64; 4]; 4]> for SketchGlyphTransform {
 
     fn try_from(rows: [[f64; 4]; 4]) -> Result<Self, Self::Error> {
         if rows.iter().flatten().any(|value| !value.is_finite()) {
-            return Err(SketchRelationPayloadError("sketch relation glyph_transforms contains a non-finite coefficient".into()));
+            return Err(SketchRelationPayloadError(
+                "sketch relation glyph_transforms contains a non-finite coefficient".into(),
+            ));
         }
         Ok(Self(rows))
     }
 }
 
 impl From<SketchGlyphTransform> for [[f64; 4]; 4] {
-    fn from(transform: SketchGlyphTransform) -> Self { transform.0 }
+    fn from(transform: SketchGlyphTransform) -> Self {
+        transform.0
+    }
 }
 
 /// Pattern or text payload a sketch relation carries, when the mask names one.
@@ -15756,12 +18517,12 @@ impl SketchRelationKind {
                 evaluated_angle,
                 evaluated_count,
             }),
-            Self::Rectangular { directions } => Some(SketchPatternDefinition::Rectangular {
-                directions,
-            }),
-            Self::TextFrame { text_reference } => Some(SketchPatternDefinition::TextFrame {
-                text_reference,
-            }),
+            Self::Rectangular { directions } => {
+                Some(SketchPatternDefinition::Rectangular { directions })
+            }
+            Self::TextFrame { text_reference } => {
+                Some(SketchPatternDefinition::TextFrame { text_reference })
+            }
             Self::TextPath {
                 text_reference,
                 glyph_transforms,
@@ -15771,7 +18532,6 @@ impl SketchRelationKind {
             }),
         }
     }
-
 }
 
 /// Constraint mask and its matching pattern or text payload.
@@ -15783,16 +18543,28 @@ pub struct SketchRelationDefinition {
 
 impl SketchRelationDefinition {
     /// Reject a payload that does not match the mask's first constraint kind.
-    pub(crate) fn new(state: u64, kind: SketchRelationKind) -> Result<Self, SketchRelationPayloadError> {
+    pub(crate) fn new(
+        state: u64,
+        kind: SketchRelationKind,
+    ) -> Result<Self, SketchRelationPayloadError> {
         let (kinds, _) = constraint_kinds_from_state(state);
         let first = kinds.first().copied();
         let agrees = match &kind {
-            SketchRelationKind::Unpatterned => !matches!(first, Some(
-                SketchConstraintKind::CircularPattern | SketchConstraintKind::RectangularPattern
-                | SketchConstraintKind::TextFrame | SketchConstraintKind::TextPath
-            )),
-            SketchRelationKind::Circular { .. } => first == Some(SketchConstraintKind::CircularPattern),
-            SketchRelationKind::Rectangular { .. } => first == Some(SketchConstraintKind::RectangularPattern),
+            SketchRelationKind::Unpatterned => !matches!(
+                first,
+                Some(
+                    SketchConstraintKind::CircularPattern
+                        | SketchConstraintKind::RectangularPattern
+                        | SketchConstraintKind::TextFrame
+                        | SketchConstraintKind::TextPath
+                )
+            ),
+            SketchRelationKind::Circular { .. } => {
+                first == Some(SketchConstraintKind::CircularPattern)
+            }
+            SketchRelationKind::Rectangular { .. } => {
+                first == Some(SketchConstraintKind::RectangularPattern)
+            }
             SketchRelationKind::TextFrame { .. } => first == Some(SketchConstraintKind::TextFrame),
             SketchRelationKind::TextPath { .. } => first == Some(SketchConstraintKind::TextPath),
         };
@@ -15806,11 +18578,15 @@ impl SketchRelationDefinition {
 
     /// Source sketch-constraint bitmask.
     #[must_use]
-    pub fn state(&self) -> u64 { self.state }
+    pub fn state(&self) -> u64 {
+        self.state
+    }
 
     /// Pattern or text payload selected by the mask.
     #[must_use]
-    pub fn kind(&self) -> &SketchRelationKind { &self.kind }
+    pub fn kind(&self) -> &SketchRelationKind {
+        &self.kind
+    }
 }
 
 /// Rejected sketch-relation payload or inconsistent native wire columns.
@@ -15903,19 +18679,29 @@ impl SketchRelation {
         self.members
             .iter()
             .map(|member| member.reference.record_index())
-            .chain(self.return_members.iter().map(|member| member.reference.record_index()))
+            .chain(
+                self.return_members
+                    .iter()
+                    .map(|member| member.reference.record_index()),
+            )
     }
 
     /// Resolved first-run members, empty for an unresolved run.
     #[must_use]
     pub fn resolved_members(&self) -> Vec<SketchRelationOperand> {
-        self.members.iter().filter_map(|member| member.reference.resolved().cloned()).collect()
+        self.members
+            .iter()
+            .filter_map(|member| member.reference.resolved().cloned())
+            .collect()
     }
 
     /// Resolved return-run members, empty for an unresolved run.
     #[must_use]
     pub fn resolved_return_members(&self) -> Vec<SketchRelationOperand> {
-        self.return_members.iter().filter_map(|member| member.reference.resolved().cloned()).collect()
+        self.return_members
+            .iter()
+            .filter_map(|member| member.reference.resolved().cloned())
+            .collect()
     }
 }
 
@@ -15937,24 +18723,50 @@ fn zip_relation_members(
         ));
     };
     let resolved = pad_resolved("resolved_members", resolved, len)?;
-    members.into_iter().zip(offsets).zip(ordinals).zip(resolved)
-        .map(|(((record_index, offset), relation_ordinal), resolved)| Ok(SketchRelationMember {
-            reference: SketchRelationReference::from_wire(record_index, resolved, "resolved_members")?, offset, relation_ordinal,
-        }))
-        .collect::<Result<Vec<_>, SketchRelationPayloadError>>()?.try_into()
+    members
+        .into_iter()
+        .zip(offsets)
+        .zip(ordinals)
+        .zip(resolved)
+        .map(|(((record_index, offset), relation_ordinal), resolved)| {
+            Ok(SketchRelationMember {
+                reference: SketchRelationReference::from_wire(
+                    record_index,
+                    resolved,
+                    "resolved_members",
+                )?,
+                offset,
+                relation_ordinal,
+            })
+        })
+        .collect::<Result<Vec<_>, SketchRelationPayloadError>>()?
+        .try_into()
 }
 
 fn zip_return_members(
-    members: Vec<u32>, offsets: Vec<u32>, resolved: Vec<SketchRelationOperand>,
+    members: Vec<u32>,
+    offsets: Vec<u32>,
+    resolved: Vec<SketchRelationOperand>,
 ) -> Result<SketchRelationReturnMembers, SketchRelationPayloadError> {
     let len = members.len();
     let offsets = pad_or_check("return_member_offsets", offsets, len)?;
     let resolved = pad_resolved("resolved_return_members", resolved, len)?;
-    members.into_iter().zip(offsets).zip(resolved)
-        .map(|((record_index, offset), resolved)| Ok(SketchRelationReturnMember {
-            reference: SketchRelationReference::from_wire(record_index, resolved, "resolved_return_members")?, offset,
-        }))
-        .collect::<Result<Vec<_>, SketchRelationPayloadError>>()?.try_into()
+    members
+        .into_iter()
+        .zip(offsets)
+        .zip(resolved)
+        .map(|((record_index, offset), resolved)| {
+            Ok(SketchRelationReturnMember {
+                reference: SketchRelationReference::from_wire(
+                    record_index,
+                    resolved,
+                    "resolved_return_members",
+                )?,
+                offset,
+            })
+        })
+        .collect::<Result<Vec<_>, SketchRelationPayloadError>>()?
+        .try_into()
 }
 
 fn pad_or_check(
@@ -16052,7 +18864,10 @@ impl TryFrom<SketchRelationSerde> for SketchRelation {
                 "sketch relation unknown_constraint_bits disagrees with state".into(),
             ));
         }
-        let definition = SketchRelationDefinition::new(wire.state, SketchRelationKind::from_pattern(wire.pattern))?;
+        let definition = SketchRelationDefinition::new(
+            wire.state,
+            SketchRelationKind::from_pattern(wire.pattern),
+        )?;
         Ok(Self {
             id: wire.id,
             record_index: wire.record_index,
@@ -16061,7 +18876,12 @@ impl TryFrom<SketchRelationSerde> for SketchRelation {
             state_offset: wire.state_offset,
             owner_reference: wire.owner_reference,
             owner_entity_id: wire.owner_entity_id,
-            auxiliary_references: ReferenceRun::from_columns(wire.auxiliary_references, wire.auxiliary_reference_offsets, "auxiliary_reference").map_err(SketchRelationPayloadError)?,
+            auxiliary_references: ReferenceRun::from_columns(
+                wire.auxiliary_references,
+                wire.auxiliary_reference_offsets,
+                "auxiliary_reference",
+            )
+            .map_err(SketchRelationPayloadError)?,
             rectangular_counted_reference_count: wire.rectangular_counted_reference_count,
             members: zip_relation_members(
                 wire.members,
@@ -16086,7 +18906,8 @@ impl From<SketchRelation> for SketchRelationSerde {
     fn from(relation: SketchRelation) -> Self {
         let (constraint_kinds, unknown_constraint_bits) =
             constraint_kinds_from_state(relation.definition.state());
-        let (auxiliary_references, auxiliary_reference_offsets) = relation.auxiliary_references.into_wire();
+        let (auxiliary_references, auxiliary_reference_offsets) =
+            relation.auxiliary_references.into_wire();
         Self {
             id: relation.id,
             record_index: relation.record_index,
@@ -16103,7 +18924,11 @@ impl From<SketchRelation> for SketchRelationSerde {
                 .iter()
                 .map(|member| member.reference.record_index())
                 .collect(),
-            resolved_members: relation.members.iter().filter_map(|member| member.reference.resolved().cloned()).collect(),
+            resolved_members: relation
+                .members
+                .iter()
+                .filter_map(|member| member.reference.resolved().cloned())
+                .collect(),
             member_offsets: relation
                 .members
                 .iter()
@@ -16113,8 +18938,11 @@ impl From<SketchRelation> for SketchRelationSerde {
             state: relation.definition.state(),
             constraint_kinds,
             unknown_constraint_bits,
-            member_relation_ordinals: relation.members.iter()
-                .filter_map(|member| member.relation_ordinal).collect(),
+            member_relation_ordinals: relation
+                .members
+                .iter()
+                .filter_map(|member| member.relation_ordinal)
+                .collect(),
             entity_genesis: relation.entity_genesis,
             pattern: relation.definition.kind.into_pattern(),
             return_members: relation
@@ -16122,7 +18950,11 @@ impl From<SketchRelation> for SketchRelationSerde {
                 .iter()
                 .map(|member| member.reference.record_index())
                 .collect(),
-            resolved_return_members: relation.return_members.iter().filter_map(|member| member.reference.resolved().cloned()).collect(),
+            resolved_return_members: relation
+                .return_members
+                .iter()
+                .filter_map(|member| member.reference.resolved().cloned())
+                .collect(),
             return_member_offsets: relation
                 .return_members
                 .iter()
@@ -16174,8 +19006,10 @@ impl SketchRelationOperand {
     #[must_use]
     pub fn record_index(&self) -> u32 {
         match self {
-            Self::Point { record_index, .. } | Self::Curve { record_index, .. }
-            | Self::Surface { record_index, .. } | Self::Record { record_index } => *record_index,
+            Self::Point { record_index, .. }
+            | Self::Curve { record_index, .. }
+            | Self::Surface { record_index, .. }
+            | Self::Record { record_index } => *record_index,
         }
     }
 }
@@ -16745,12 +19579,15 @@ impl SketchPointRecordForm {
             | Self::Version10 { companion, .. }
             | Self::Version10InlineTyped { companion, .. } => {
                 if value.prefix_present_zero {
-                    return Err("sketch point companion.prefix_present_zero requires version 11".into());
+                    return Err(
+                        "sketch point companion.prefix_present_zero requires version 11".into(),
+                    );
                 }
                 *companion = Some(value.incident_curves);
             }
-            Self::Version11 { companion, .. }
-            | Self::Version11InlineTyped { companion, .. } => *companion = Some(value),
+            Self::Version11 { companion, .. } | Self::Version11InlineTyped { companion, .. } => {
+                *companion = Some(value)
+            }
         }
         Ok(())
     }
@@ -16898,12 +19735,12 @@ impl SketchPoint {
             SketchPointRecordForm::Version0 { companion, .. }
             | SketchPointRecordForm::Version8 { companion, .. }
             | SketchPointRecordForm::Version10 { companion, .. }
-            | SketchPointRecordForm::Version10InlineTyped { companion, .. } => {
-                companion.as_deref().map(|incident_curves| SketchPointCompanionRef {
+            | SketchPointRecordForm::Version10InlineTyped { companion, .. } => companion
+                .as_deref()
+                .map(|incident_curves| SketchPointCompanionRef {
                     prefix_present_zero: false,
                     incident_curves,
-                })
-            }
+                }),
             SketchPointRecordForm::Version11 { companion, .. }
             | SketchPointRecordForm::Version11InlineTyped { companion, .. } => {
                 companion.as_ref().map(|companion| SketchPointCompanionRef {
@@ -17102,9 +19939,12 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
             return Err("sketch point flags beyond the form width must be zero".into());
         }
         if let Some(companion) = wire.companion {
-            let inline_typed = companion.reference_encoding == SketchPointCompanionReferenceEncoding::InlineTyped;
+            let inline_typed =
+                companion.reference_encoding == SketchPointCompanionReferenceEncoding::InlineTyped;
             if inline_typed != record_form.uses_inline_typed_references() {
-                return Err("sketch point companion.reference_encoding disagrees with record_form".into());
+                return Err(
+                    "sketch point companion.reference_encoding disagrees with record_form".into(),
+                );
             }
             record_form.set_companion(SketchPointCompanion {
                 prefix_present_zero: companion.prefix_present_zero,
@@ -17136,13 +19976,13 @@ impl From<SketchPoint> for SketchPointSerde {
             SketchPointRecordForm::Version0 { companion, .. }
             | SketchPointRecordForm::Version8 { companion, .. }
             | SketchPointRecordForm::Version10 { companion, .. }
-            | SketchPointRecordForm::Version10InlineTyped { companion, .. } => {
-                companion.take().map(|incident_curves| SketchPointCompanionWire {
+            | SketchPointRecordForm::Version10InlineTyped { companion, .. } => companion
+                .take()
+                .map(|incident_curves| SketchPointCompanionWire {
                     prefix_present_zero: false,
                     reference_encoding,
                     incident_curves,
-                })
-            }
+                }),
             SketchPointRecordForm::Version11 { companion, .. }
             | SketchPointRecordForm::Version11InlineTyped { companion, .. } => {
                 companion.take().map(|companion| SketchPointCompanionWire {
@@ -17373,9 +20213,52 @@ impl TryFrom<SketchCurveGeometryWire> for SketchCurveGeometry {
     type Error = String;
     fn try_from(wire: SketchCurveGeometryWire) -> Result<Self, Self::Error> {
         Ok(match wire {
-            SketchCurveGeometryWire::Line { start, end, direction, normal } => Self::Line { start, end, direction, normal },
-            SketchCurveGeometryWire::Arc { center, normal, reference_direction, radius, start_angle, end_angle } => Self::Arc { center, normal, reference_direction, radius, start_angle, end_angle },
-            SketchCurveGeometryWire::Nurbs { carrier_reference, subtype_class_tag, subtype_record_index, degree, fit_tolerance, scalar_width, knots, weights, control_points } => Self::Nurbs { carrier_reference, subtype_class_tag, subtype_record_index, degree, fit_tolerance, scalar_width, knots, poles: SketchNurbsPoles::from_wire(control_points, weights)? },
+            SketchCurveGeometryWire::Line {
+                start,
+                end,
+                direction,
+                normal,
+            } => Self::Line {
+                start,
+                end,
+                direction,
+                normal,
+            },
+            SketchCurveGeometryWire::Arc {
+                center,
+                normal,
+                reference_direction,
+                radius,
+                start_angle,
+                end_angle,
+            } => Self::Arc {
+                center,
+                normal,
+                reference_direction,
+                radius,
+                start_angle,
+                end_angle,
+            },
+            SketchCurveGeometryWire::Nurbs {
+                carrier_reference,
+                subtype_class_tag,
+                subtype_record_index,
+                degree,
+                fit_tolerance,
+                scalar_width,
+                knots,
+                weights,
+                control_points,
+            } => Self::Nurbs {
+                carrier_reference,
+                subtype_class_tag,
+                subtype_record_index,
+                degree,
+                fit_tolerance,
+                scalar_width,
+                knots,
+                poles: SketchNurbsPoles::from_wire(control_points, weights)?,
+            },
         })
     }
 }
@@ -17383,14 +20266,60 @@ impl TryFrom<SketchCurveGeometryWire> for SketchCurveGeometry {
 impl From<SketchCurveGeometry> for SketchCurveGeometryWire {
     fn from(geometry: SketchCurveGeometry) -> Self {
         match geometry {
-            SketchCurveGeometry::Line { start, end, direction, normal } => Self::Line { start, end, direction, normal },
-            SketchCurveGeometry::Arc { center, normal, reference_direction, radius, start_angle, end_angle } => Self::Arc { center, normal, reference_direction, radius, start_angle, end_angle },
-            SketchCurveGeometry::Nurbs { carrier_reference, subtype_class_tag, subtype_record_index, degree, fit_tolerance, scalar_width, knots, poles } => {
+            SketchCurveGeometry::Line {
+                start,
+                end,
+                direction,
+                normal,
+            } => Self::Line {
+                start,
+                end,
+                direction,
+                normal,
+            },
+            SketchCurveGeometry::Arc {
+                center,
+                normal,
+                reference_direction,
+                radius,
+                start_angle,
+                end_angle,
+            } => Self::Arc {
+                center,
+                normal,
+                reference_direction,
+                radius,
+                start_angle,
+                end_angle,
+            },
+            SketchCurveGeometry::Nurbs {
+                carrier_reference,
+                subtype_class_tag,
+                subtype_record_index,
+                degree,
+                fit_tolerance,
+                scalar_width,
+                knots,
+                poles,
+            } => {
                 let (control_points, weights) = match poles {
                     SketchNurbsPoles::Polynomial(points) => (points, Vec::new()),
-                    SketchNurbsPoles::Rational(poles) => poles.into_iter().map(|pole| (pole.point, pole.weight)).unzip(),
+                    SketchNurbsPoles::Rational(poles) => poles
+                        .into_iter()
+                        .map(|pole| (pole.point, pole.weight))
+                        .unzip(),
                 };
-                Self::Nurbs { carrier_reference, subtype_class_tag, subtype_record_index, degree, fit_tolerance, scalar_width, knots, weights, control_points }
+                Self::Nurbs {
+                    carrier_reference,
+                    subtype_class_tag,
+                    subtype_record_index,
+                    degree,
+                    fit_tolerance,
+                    scalar_width,
+                    knots,
+                    weights,
+                    control_points,
+                }
             }
         }
     }
@@ -17423,7 +20352,13 @@ impl SketchNurbsPoles {
         if points.len() != weights.len() {
             return Err("weights must be absent or match every control_points entry".into());
         }
-        Ok(Self::Rational(points.into_iter().zip(weights).map(|(point, weight)| SketchNurbsPole { point, weight }).collect()))
+        Ok(Self::Rational(
+            points
+                .into_iter()
+                .zip(weights)
+                .map(|(point, weight)| SketchNurbsPole { point, weight })
+                .collect(),
+        ))
     }
 
     pub fn point_count(&self) -> usize {
@@ -17455,7 +20390,9 @@ impl SketchNurbsPoles {
             Self::Polynomial(points) => (points, &mut []),
             Self::Rational(poles) => (&mut [], poles),
         };
-        points.iter_mut().chain(poles.iter_mut().map(|pole| &mut pole.point))
+        points
+            .iter_mut()
+            .chain(poles.iter_mut().map(|pole| &mut pole.point))
     }
 }
 
@@ -17560,10 +20497,14 @@ impl ActTableRow {
         if record_index_offset.checked_add(14).is_none() {
             return Err("table_record_index_offset overflows table_entity_id_offset".into());
         }
-        Ok(Self { record_index_offset })
+        Ok(Self {
+            record_index_offset,
+        })
     }
 
-    fn entity_id_offset(&self) -> u64 { self.record_index_offset + 14 }
+    fn entity_id_offset(&self) -> u64 {
+        self.record_index_offset + 14
+    }
 }
 
 /// Non-padding bytes following an ACT channel group.
@@ -17578,16 +20519,24 @@ impl ActClassTail {
         if bytes.iter().all(|byte| *byte == 0) {
             return Err("channel_class_tail must contain non-padding bytes".into());
         }
-        if u64::try_from(bytes.len()).ok().and_then(|len| offset.checked_add(len)).is_none() {
+        if u64::try_from(bytes.len())
+            .ok()
+            .and_then(|len| offset.checked_add(len))
+            .is_none()
+        {
             return Err("channel_class_tail_offset and channel_class_tail length overflow".into());
         }
         Ok(Self { bytes, offset })
     }
 
     #[cfg(test)]
-    pub(crate) fn bytes(&self) -> &[u8] { &self.bytes }
+    pub(crate) fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
 
-    pub(crate) fn offset(&self) -> u64 { self.offset }
+    pub(crate) fn offset(&self) -> u64 {
+        self.offset
+    }
 }
 
 /// Channel-group payload owned by one ACT entity.
@@ -17735,10 +20684,13 @@ impl TryFrom<ActEntitySerde> for ActEntity {
             (true, Some(record_index_offset), Some(entity_id_offset)) => {
                 let row = ActTableRow::new(record_index_offset)?;
                 if row.entity_id_offset() != entity_id_offset {
-                    return Err("table_entity_id_offset must follow table_record_index_offset by 14 bytes".into());
+                    return Err(
+                        "table_entity_id_offset must follow table_record_index_offset by 14 bytes"
+                            .into(),
+                    );
                 }
                 Some(row)
-            },
+            }
             (false, None, None) => None,
             _ => {
                 return Err(
@@ -17761,8 +20713,19 @@ impl TryFrom<ActEntitySerde> for ActEntity {
                 record_index_offset,
                 entity_id_offset: wire.channel_entity_id_offset,
                 class_tag,
-                channels: wire.channels.into_iter().zip(wire.channel_guid_offsets)
-                    .map(|((name, value), (_, offset))| Ok((name, Located { value: value.try_into()?, offset })))
+                channels: wire
+                    .channels
+                    .into_iter()
+                    .zip(wire.channel_guid_offsets)
+                    .map(|((name, value), (_, offset))| {
+                        Ok((
+                            name,
+                            Located {
+                                value: value.try_into()?,
+                                offset,
+                            },
+                        ))
+                    })
                     .collect::<Result<_, String>>()?,
                 class_tail: match (wire.channel_class_tail, wire.channel_class_tail_offset) {
                     (bytes, None) if bytes.is_empty() => None,
@@ -17802,19 +20765,29 @@ impl From<ActEntity> for ActEntitySerde {
         let channel_record_index_offset = entity.channel_record_index_offset();
         let channel_entity_id_offset = entity.channel_entity_id_offset();
         let channel_class_tag = entity.channel_class_tag().map(str::to_owned);
-        let (channels, channel_guid_offsets, channel_class_tail, channel_class_tail_offset) = match entity.membership {
-            ActEntityMembership::TableOnly(_) => (BTreeMap::new(), BTreeMap::new(), Vec::new(), None),
-            ActEntityMembership::GroupOnly(group) | ActEntityMembership::Both(_, group) => {
-                let (channels, offsets) = group.channels.into_iter()
-                    .map(|(name, guid)| ((name.clone(), guid.value.as_str().to_owned()), (name, guid.offset)))
-                    .unzip();
-                let (tail, tail_offset) = match group.class_tail {
-                    Some(tail) => (tail.bytes, Some(tail.offset)),
-                    None => (Vec::new(), None),
-                };
-                (channels, offsets, tail, tail_offset)
-            }
-        };
+        let (channels, channel_guid_offsets, channel_class_tail, channel_class_tail_offset) =
+            match entity.membership {
+                ActEntityMembership::TableOnly(_) => {
+                    (BTreeMap::new(), BTreeMap::new(), Vec::new(), None)
+                }
+                ActEntityMembership::GroupOnly(group) | ActEntityMembership::Both(_, group) => {
+                    let (channels, offsets) = group
+                        .channels
+                        .into_iter()
+                        .map(|(name, guid)| {
+                            (
+                                (name.clone(), guid.value.as_str().to_owned()),
+                                (name, guid.offset),
+                            )
+                        })
+                        .unzip();
+                    let (tail, tail_offset) = match group.class_tail {
+                        Some(tail) => (tail.bytes, Some(tail.offset)),
+                        None => (Vec::new(), None),
+                    };
+                    (channels, offsets, tail, tail_offset)
+                }
+            };
         Self {
             id: entity.id,
             record_index: entity.record_index,
@@ -17850,13 +20823,24 @@ pub struct ActGuid {
 
 impl ActGuid {
     pub fn new(id: String, byte_offset: u64, ordinal: u32, guid: String) -> Result<Self, String> {
-        byte_offset.checked_add(4).ok_or("ACT GUID byte_offset overflows guid_offset")?;
-        Ok(Self { id, byte_offset, ordinal, guid: guid.try_into()? })
+        byte_offset
+            .checked_add(4)
+            .ok_or("ACT GUID byte_offset overflows guid_offset")?;
+        Ok(Self {
+            id,
+            byte_offset,
+            ordinal,
+            guid: guid.try_into()?,
+        })
     }
 
-    pub fn byte_offset(&self) -> u64 { self.byte_offset }
+    pub fn byte_offset(&self) -> u64 {
+        self.byte_offset
+    }
 
-    pub fn guid_offset(&self) -> u64 { self.byte_offset + 4 }
+    pub fn guid_offset(&self) -> u64 {
+        self.byte_offset + 4
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -17884,8 +20868,13 @@ impl TryFrom<ActGuidWire> for ActGuid {
 impl From<ActGuid> for ActGuidWire {
     fn from(guid: ActGuid) -> Self {
         let guid_offset = guid.guid_offset();
-        Self { id: guid.id, byte_offset: guid.byte_offset, guid_offset,
-            ordinal: guid.ordinal, guid: guid.guid.into() }
+        Self {
+            id: guid.id,
+            byte_offset: guid.byte_offset,
+            guid_offset,
+            ordinal: guid.ordinal,
+            guid: guid.guid.into(),
+        }
     }
 }
 
@@ -17905,14 +20894,30 @@ pub struct ActTableReference {
 }
 
 impl ActTableReference {
-    pub fn new(id: String, ordinal: u32, byte_offset: u64, target_record: u32) -> Result<Self, String> {
-        byte_offset.checked_add(1).ok_or("ACT table reference byte_offset overflows target_record_offset")?;
-        Ok(Self { id, ordinal, byte_offset, target_record })
+    pub fn new(
+        id: String,
+        ordinal: u32,
+        byte_offset: u64,
+        target_record: u32,
+    ) -> Result<Self, String> {
+        byte_offset
+            .checked_add(1)
+            .ok_or("ACT table reference byte_offset overflows target_record_offset")?;
+        Ok(Self {
+            id,
+            ordinal,
+            byte_offset,
+            target_record,
+        })
     }
 
-    pub fn byte_offset(&self) -> u64 { self.byte_offset }
+    pub fn byte_offset(&self) -> u64 {
+        self.byte_offset
+    }
 
-    fn target_record_offset(&self) -> u64 { self.byte_offset + 1 }
+    fn target_record_offset(&self) -> u64 {
+        self.byte_offset + 1
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -17940,8 +20945,13 @@ impl TryFrom<ActTableReferenceWire> for ActTableReference {
 impl From<ActTableReference> for ActTableReferenceWire {
     fn from(reference: ActTableReference) -> Self {
         let target_record_offset = reference.target_record_offset();
-        Self { id: reference.id, ordinal: reference.ordinal, byte_offset: reference.byte_offset,
-            target_record: reference.target_record, target_record_offset }
+        Self {
+            id: reference.id,
+            ordinal: reference.ordinal,
+            byte_offset: reference.byte_offset,
+            target_record: reference.target_record,
+            target_record_offset,
+        }
     }
 }
 
@@ -17958,17 +20968,39 @@ pub struct ActRegistryChannel {
 }
 
 impl ActRegistryChannel {
-    pub fn new(id: String, ordinal: u32, byte_offset: u64, name: String, guid: String) -> Result<Self, String> {
+    pub fn new(
+        id: String,
+        ordinal: u32,
+        byte_offset: u64,
+        name: String,
+        guid: String,
+    ) -> Result<Self, String> {
         if name.is_empty() || name.len() > 128 || !name.is_ascii() {
             return Err("ACT registry name must contain 1 through 128 ASCII bytes".into());
         }
-        byte_offset.checked_add(8 + name.len() as u64).ok_or("ACT registry offset overflow")?;
-        Ok(Self { id, ordinal, byte_offset, name, guid: guid.try_into()? })
+        byte_offset
+            .checked_add(8 + name.len() as u64)
+            .ok_or("ACT registry offset overflow")?;
+        Ok(Self {
+            id,
+            ordinal,
+            byte_offset,
+            name,
+            guid: guid.try_into()?,
+        })
     }
-    pub fn byte_offset(&self) -> u64 { self.byte_offset }
-    pub fn name(&self) -> &str { &self.name }
-    pub fn name_offset(&self) -> u64 { self.byte_offset + 4 }
-    pub fn guid_offset(&self) -> u64 { self.byte_offset + 8 + self.name.len() as u64 }
+    pub fn byte_offset(&self) -> u64 {
+        self.byte_offset
+    }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn name_offset(&self) -> u64 {
+        self.byte_offset + 4
+    }
+    pub fn guid_offset(&self) -> u64 {
+        self.byte_offset + 8 + self.name.len() as u64
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -17986,7 +21018,13 @@ struct ActRegistryChannelWire {
 impl TryFrom<ActRegistryChannelWire> for ActRegistryChannel {
     type Error = String;
     fn try_from(wire: ActRegistryChannelWire) -> Result<Self, Self::Error> {
-        let channel = Self::new(wire.id, wire.ordinal, wire.byte_offset, wire.name, wire.guid)?;
+        let channel = Self::new(
+            wire.id,
+            wire.ordinal,
+            wire.byte_offset,
+            wire.name,
+            wire.guid,
+        )?;
         if wire.name_offset != channel.name_offset() || wire.guid_offset != channel.guid_offset() {
             return Err("ACT registry offsets must follow the stored name layout".into());
         }
@@ -17998,8 +21036,15 @@ impl From<ActRegistryChannel> for ActRegistryChannelWire {
     fn from(channel: ActRegistryChannel) -> Self {
         let name_offset = channel.name_offset();
         let guid_offset = channel.guid_offset();
-        Self { id: channel.id, ordinal: channel.ordinal, byte_offset: channel.byte_offset,
-            name: channel.name, name_offset, guid: channel.guid.as_str().into(), guid_offset }
+        Self {
+            id: channel.id,
+            ordinal: channel.ordinal,
+            byte_offset: channel.byte_offset,
+            name: channel.name,
+            name_offset,
+            guid: channel.guid.as_str().into(),
+            guid_offset,
+        }
     }
 }
 
@@ -18074,13 +21119,17 @@ impl TryFrom<ActRootComponentWire> for ActRootComponent {
             return Err("tracked_entity_record must identify document root record 3".into());
         }
         let display_bytes = u64::try_from(wire.display_name.encode_utf16().count())
-            .ok().and_then(|length| length.checked_mul(2))
+            .ok()
+            .and_then(|length| length.checked_mul(2))
             .ok_or("display_name length overflows")?;
-        let padding = wire.display_name_offset.checked_add(display_bytes)
+        let padding = wire
+            .display_name_offset
+            .checked_add(display_bytes)
             .and_then(|end| wire.components_root_record_offset.checked_sub(end))
             .and_then(|gap| gap.checked_sub(1))
             .ok_or("components_root_record_offset does not follow display_name")?;
-        let layout = ActRootLayout::new(wire.byte_offset, wire.entity_id, wire.display_name, padding)?;
+        let layout =
+            ActRootLayout::new(wire.byte_offset, wire.entity_id, wire.display_name, padding)?;
         if wire.record_index_offset != layout.record_index_offset() {
             return Err("record_index_offset disagrees with ACT root layout".into());
         }
@@ -18145,43 +21194,78 @@ pub struct ActRootLayout {
 }
 
 impl ActRootLayout {
-    pub fn new(byte_offset: u64, entity_id: String, display_name: String, padding: u64) -> Result<Self, String> {
+    pub fn new(
+        byte_offset: u64,
+        entity_id: String,
+        display_name: String,
+        padding: u64,
+    ) -> Result<Self, String> {
         if !crate::act::is_entity_key(&entity_id) {
             return Err("entity_id must be an ACT entity key".into());
         }
         if !(1..=8).contains(&padding) {
-            return Err("components_root_record_offset requires one through eight padding bytes".into());
+            return Err(
+                "components_root_record_offset requires one through eight padding bytes".into(),
+            );
         }
-        let string_bytes = entity_id.encode_utf16().count().checked_add(display_name.encode_utf16().count())
+        let string_bytes = entity_id
+            .encode_utf16()
+            .count()
+            .checked_add(display_name.encode_utf16().count())
             .and_then(|length| u64::try_from(length).ok())
             .and_then(|length| length.checked_mul(2))
             .ok_or("ACT root string lengths overflow")?;
-        byte_offset.checked_add(56).and_then(|offset| offset.checked_add(string_bytes))
+        byte_offset
+            .checked_add(56)
+            .and_then(|offset| offset.checked_add(string_bytes))
             .and_then(|offset| offset.checked_add(padding))
             .ok_or("components_root_record_offset overflows ACT root layout")?;
-        Ok(Self { byte_offset, entity_id, display_name, padding })
+        Ok(Self {
+            byte_offset,
+            entity_id,
+            display_name,
+            padding,
+        })
     }
 
     pub fn with_strings(&self, entity_id: String, display_name: String) -> Result<Self, String> {
         Self::new(self.byte_offset, entity_id, display_name, self.padding)
     }
 
-    pub fn byte_offset(&self) -> u64 { self.byte_offset }
-    pub fn entity_id(&self) -> &str { &self.entity_id }
-    pub fn display_name(&self) -> &str { &self.display_name }
-    pub fn record_index_offset(&self) -> u64 { self.byte_offset + 7 }
-    pub fn instance_root_record_offset(&self) -> u64 { self.byte_offset + 22 }
-    pub fn entity_id_offset(&self) -> u64 { self.byte_offset + 36 }
+    pub fn byte_offset(&self) -> u64 {
+        self.byte_offset
+    }
+    pub fn entity_id(&self) -> &str {
+        &self.entity_id
+    }
+    pub fn display_name(&self) -> &str {
+        &self.display_name
+    }
+    pub fn record_index_offset(&self) -> u64 {
+        self.byte_offset + 7
+    }
+    pub fn instance_root_record_offset(&self) -> u64 {
+        self.byte_offset + 22
+    }
+    pub fn entity_id_offset(&self) -> u64 {
+        self.byte_offset + 36
+    }
     pub fn tracked_entity_record_offset(&self) -> u64 {
         self.entity_id_offset() + self.entity_id.encode_utf16().count() as u64 * 2 + 1
     }
-    pub fn registry_flag_offset(&self) -> u64 { self.tracked_entity_record_offset() + 10 }
-    pub fn display_name_offset(&self) -> u64 { self.registry_flag_offset() + 8 }
+    pub fn registry_flag_offset(&self) -> u64 {
+        self.tracked_entity_record_offset() + 10
+    }
+    pub fn display_name_offset(&self) -> u64 {
+        self.registry_flag_offset() + 8
+    }
     pub fn components_root_record_offset(&self) -> u64 {
-        self.display_name_offset() + self.display_name.encode_utf16().count() as u64 * 2 + self.padding + 1
+        self.display_name_offset()
+            + self.display_name.encode_utf16().count() as u64 * 2
+            + self.padding
+            + 1
     }
 }
-
 
 /// One design entry of the top-level `RedirectionsStream.dat` table
 /// ([spec §1.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#14-external-references)).
@@ -18235,7 +21319,6 @@ pub struct XrefReference {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transform: Option<[[f64; 4]; 4]>,
 }
-
 
 #[cfg(test)]
 mod tests;

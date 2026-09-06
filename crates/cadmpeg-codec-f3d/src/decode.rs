@@ -3237,7 +3237,9 @@ fn project_mesh_bodies(
             name: Some(texture.file.filename().to_owned()),
             media_type,
             content: cadmpeg_ir::assets::AssetContent::Embedded {
-                data: scan.entry_bytes(texture.file.archive_entry_name())?.to_vec(),
+                data: scan
+                    .entry_bytes(texture.file.archive_entry_name())?
+                    .to_vec(),
             },
             native_ref: Some(crate::ids::native_scope(texture.file.archive_entry_name())),
         });
@@ -3245,9 +3247,16 @@ fn project_mesh_bodies(
     extend_unique_assets(&mut ir.model.assets, texture_assets)?;
     let mut texture_tables = std::collections::HashMap::new();
     for feature in &native.design_mesh_features {
-        let texture_table = feature.texture_table.resources_in_flags_order()
+        let texture_table = feature
+            .texture_table
+            .resources_in_flags_order()
             .into_iter()
-            .map(|texture| (texture.resource_guid.as_str().to_owned(), texture.asset.clone()))
+            .map(|texture| {
+                (
+                    texture.resource_guid.as_str().to_owned(),
+                    texture.asset.clone(),
+                )
+            })
             .collect::<Vec<_>>();
         for body in feature.bodies() {
             if let Some(tessellation_id) = &body.tessellation_id {
@@ -3350,7 +3359,10 @@ fn project_mesh_bodies(
             .to_owned();
         if projection
             .tessellations_by_scope
-            .insert((stream, feature.scope().record().record_index()), tessellations)
+            .insert(
+                (stream, feature.scope().record().record_index()),
+                tessellations,
+            )
             .is_some()
         {
             return Err(CodecError::Malformed(
@@ -4345,12 +4357,14 @@ fn extend_related_design_records(
                     .to_owned();
                 group
                     .members
-                    .iter().map(|member| member.value)
+                    .iter()
+                    .map(|member| member.value)
                     .chain(
                         group
                             .frame
                             .trailing_records
-                            .iter().map(|record| &record.value)
+                            .iter()
+                            .map(|record| &record.value)
                             .flat_map(|record_index| {
                                 std::iter::once(*record_index)
                                     .chain(record_index.checked_add(1))
@@ -4362,7 +4376,8 @@ fn extend_related_design_records(
                         group
                             .frame
                             .auxiliary_records
-                            .iter().map(|record| &record.value)
+                            .iter()
+                            .map(|record| &record.value)
                             .flat_map(|record_index| {
                                 std::iter::once(*record_index)
                                     .chain(record_index.checked_add(1))
@@ -4494,7 +4509,8 @@ fn extend_related_design_records(
                     Some(
                         group
                             .members
-                            .iter().map(|member| member.value)
+                            .iter()
+                            .map(|member| member.value)
                             .map(move |record_index| (stream.clone(), record_index)),
                     )
                 })

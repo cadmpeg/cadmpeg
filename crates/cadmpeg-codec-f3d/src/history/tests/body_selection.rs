@@ -28,7 +28,10 @@ fn move_body_selection_uses_unique_owning_history() {
         record_index: 20,
         byte_offset: 0,
         class_tag: "280".into(),
-        members: vec![crate::records::Located { value: 21, offset: 0 }],
+        members: vec![crate::records::Located {
+            value: 21,
+            offset: 0,
+        }],
         lost_edge_references: Vec::new(),
         frame: crate::records::DesignConstructionOperandGroupFrame {
             member_count_offset: 0,

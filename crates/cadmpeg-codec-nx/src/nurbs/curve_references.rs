@@ -43,7 +43,9 @@ impl TryFrom<Vec<u32>> for CurveDescriptorReferences {
                 NonNullXmt::try_from(multiplicities)?,
                 NonNullXmt::try_from(knots)?,
             ])),
-            _ => Err("references: B_CURVE_DESCRIPTOR requires two compact or three status references"),
+            _ => Err(
+                "references: B_CURVE_DESCRIPTOR requires two compact or three status references",
+            ),
         }
     }
 }

@@ -9,8 +9,8 @@ use crate::layout::link_array_side_entry_header as link_array;
 use crate::native::{
     ContainerNode, LinkOccurrence, ObjectRecord, ProductNode, ProductNodeRecord, PropertyRecord,
 };
-use cadmpeg_core::CodecError;
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{
     CopyOnChange, CopyOnChangePolicy, ExternalDocumentReference, LinkState, Occurrence,

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Complete multi-instance selector groups and their trailing references.
 
-use std::collections::BTreeMap;
 use super::compact::LocatedCompactIndex;
 use super::reference_index::FeatureReferenceToken;
 use super::PayloadObjectReference;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct MultiInstanceOutputs<O> {
@@ -31,7 +31,10 @@ impl<O> MultiInstanceOutputs<O> {
                 return Err("ordinals: each selector must enumerate instances from two");
             }
         }
-        if ordinals.values().any(|ordinal| *ordinal != references.len() + 1) {
+        if ordinals
+            .values()
+            .any(|ordinal| *ordinal != references.len() + 1)
+        {
             return Err("trailing_object_indices: each selector must cover every instance");
         }
         Ok(Self {
@@ -40,7 +43,9 @@ impl<O> MultiInstanceOutputs<O> {
         })
     }
 
-    pub(crate) fn selectors(&self) -> &[LocatedCompactIndex<O>] { &self.selectors }
+    pub(crate) fn selectors(&self) -> &[LocatedCompactIndex<O>] {
+        &self.selectors
+    }
 
     pub(crate) fn references(&self) -> &[PayloadObjectReference<FeatureReferenceToken, O>] {
         &self.references
@@ -57,12 +62,22 @@ impl<O> MultiInstanceOutputs<O> {
 
     pub(crate) fn map_offsets<P>(self, mut map: impl FnMut(O) -> P) -> MultiInstanceOutputs<P> {
         MultiInstanceOutputs {
-            selectors: self.selectors.into_iter().map(|selector| LocatedCompactIndex {
-                atom: selector.atom, offset: map(selector.offset),
-            }).collect(),
-            references: self.references.into_iter().map(|reference| PayloadObjectReference {
-                token: reference.token, offset: map(reference.offset),
-            }).collect(),
+            selectors: self
+                .selectors
+                .into_iter()
+                .map(|selector| LocatedCompactIndex {
+                    atom: selector.atom,
+                    offset: map(selector.offset),
+                })
+                .collect(),
+            references: self
+                .references
+                .into_iter()
+                .map(|reference| PayloadObjectReference {
+                    token: reference.token,
+                    offset: map(reference.offset),
+                })
+                .collect(),
         }
     }
 }
@@ -74,15 +89,28 @@ mod tests {
 
     #[test]
     fn instance_ordinal_derivation_reaches_the_byte_limit() {
-        let rows = (2..=u8::MAX).map(|ordinal| (
-            LocatedCompactIndex { atom: CompactIndexAtom::from_wire(7, &[7]).unwrap(), offset: usize::from(ordinal) },
-            ordinal,
-        )).collect();
-        let references = (2..=u8::MAX).map(|ordinal| PayloadObjectReference {
-            token: FeatureReferenceToken::from_wire(9, &[9]).unwrap(), offset: usize::from(ordinal),
-        }).collect();
+        let rows = (2..=u8::MAX)
+            .map(|ordinal| {
+                (
+                    LocatedCompactIndex {
+                        atom: CompactIndexAtom::from_wire(7, &[7]).unwrap(),
+                        offset: usize::from(ordinal),
+                    },
+                    ordinal,
+                )
+            })
+            .collect();
+        let references = (2..=u8::MAX)
+            .map(|ordinal| PayloadObjectReference {
+                token: FeatureReferenceToken::from_wire(9, &[9]).unwrap(),
+                offset: usize::from(ordinal),
+            })
+            .collect();
         let outputs = MultiInstanceOutputs::new(rows, references).unwrap();
-        assert_eq!(outputs.ordinals().collect::<Vec<_>>(), (2..=u8::MAX).collect::<Vec<_>>());
+        assert_eq!(
+            outputs.ordinals().collect::<Vec<_>>(),
+            (2..=u8::MAX).collect::<Vec<_>>()
+        );
         let mapped = outputs.map_offsets(|offset| offset as u64 + 1000);
         assert_eq!(mapped.selectors().len(), 254);
         assert_eq!(mapped.references().len(), 254);
@@ -93,11 +121,23 @@ mod tests {
 
     #[test]
     fn instance_groups_require_nonempty_byte_counted_rows_and_references() {
-        let selector = LocatedCompactIndex { atom: CompactIndexAtom::from_wire(7, &[7]).unwrap(), offset: 0 };
-        let reference = PayloadObjectReference { token: FeatureReferenceToken::from_wire(9, &[9]).unwrap(), offset: 0 };
-        assert!(MultiInstanceOutputs::new(Vec::<(LocatedCompactIndex, u8)>::new(), vec![reference.clone()]).is_err());
+        let selector = LocatedCompactIndex {
+            atom: CompactIndexAtom::from_wire(7, &[7]).unwrap(),
+            offset: 0,
+        };
+        let reference = PayloadObjectReference {
+            token: FeatureReferenceToken::from_wire(9, &[9]).unwrap(),
+            offset: 0,
+        };
+        assert!(MultiInstanceOutputs::new(
+            Vec::<(LocatedCompactIndex, u8)>::new(),
+            vec![reference.clone()]
+        )
+        .is_err());
         assert!(MultiInstanceOutputs::new(vec![(selector, 2)], Vec::new()).is_err());
-        assert!(MultiInstanceOutputs::new(vec![(selector, 2); 255], vec![reference.clone()]).is_err());
+        assert!(
+            MultiInstanceOutputs::new(vec![(selector, 2); 255], vec![reference.clone()]).is_err()
+        );
         assert!(MultiInstanceOutputs::new(vec![(selector, 2)], vec![reference; 255]).is_err());
     }
 }

@@ -114,28 +114,32 @@ pub fn write_semantic(
         .model
         .curves
         .iter()
-        .filter_map(|curve| match curve.geometry.solved_cache().unwrap_or(&curve.geometry) {
-            CurveGeometry::Nurbs(nurbs) if edited_curves.contains(curve.id.as_str()) => {
-                let before = baseline
-                    .ir()
-                    .model
-                    .curves
-                    .iter()
-                    .find(|before| before.id == curve.id)?;
-                let CurveGeometry::Nurbs(before) = before.geometry.solved_cache().unwrap_or(&before.geometry) else {
-                    return None;
-                };
-                Some((
-                    curve.id.0.clone(),
-                    NurbsCurveEdit {
-                        curve: nurbs.clone(),
-                        periodic: (before.periodic() != nurbs.periodic())
-                            .then_some(nurbs.periodic()),
-                    },
-                ))
-            }
-            _ => None,
-        })
+        .filter_map(
+            |curve| match curve.geometry.solved_cache().unwrap_or(&curve.geometry) {
+                CurveGeometry::Nurbs(nurbs) if edited_curves.contains(curve.id.as_str()) => {
+                    let before = baseline
+                        .ir()
+                        .model
+                        .curves
+                        .iter()
+                        .find(|before| before.id == curve.id)?;
+                    let CurveGeometry::Nurbs(before) =
+                        before.geometry.solved_cache().unwrap_or(&before.geometry)
+                    else {
+                        return None;
+                    };
+                    Some((
+                        curve.id.0.clone(),
+                        NurbsCurveEdit {
+                            curve: nurbs.clone(),
+                            periodic: (before.periodic() != nurbs.periodic())
+                                .then_some(nurbs.periodic()),
+                        },
+                    ))
+                }
+                _ => None,
+            },
+        )
         .collect::<BTreeMap<_, _>>();
     let pcurve_edits = validate_pcurve_edits(&baseline.ir().model, &target.model)?;
     let edited_surfaces =
@@ -144,29 +148,33 @@ pub fn write_semantic(
         .model
         .surfaces
         .iter()
-        .filter_map(|surface| match surface.geometry.solved_cache().unwrap_or(&surface.geometry) {
-            SurfaceGeometry::Nurbs(nurbs) if edited_surfaces.contains(surface.id.as_str()) => {
-                let before = baseline
-                    .ir()
-                    .model
-                    .surfaces
-                    .iter()
-                    .find(|before| before.id == surface.id)?;
-                let SurfaceGeometry::Nurbs(before) = before.geometry.solved_cache().unwrap_or(&before.geometry) else {
-                    return None;
-                };
-                Some((
-                    surface.id.0.clone(),
-                    NurbsSurfaceEdit {
-                        surface: nurbs.clone(),
-                        periodic: (before.u_periodic() != nurbs.u_periodic()
-                            || before.v_periodic() != nurbs.v_periodic())
-                        .then_some([nurbs.u_periodic(), nurbs.v_periodic()]),
-                    },
-                ))
-            }
-            _ => None,
-        })
+        .filter_map(
+            |surface| match surface.geometry.solved_cache().unwrap_or(&surface.geometry) {
+                SurfaceGeometry::Nurbs(nurbs) if edited_surfaces.contains(surface.id.as_str()) => {
+                    let before = baseline
+                        .ir()
+                        .model
+                        .surfaces
+                        .iter()
+                        .find(|before| before.id == surface.id)?;
+                    let SurfaceGeometry::Nurbs(before) =
+                        before.geometry.solved_cache().unwrap_or(&before.geometry)
+                    else {
+                        return None;
+                    };
+                    Some((
+                        surface.id.0.clone(),
+                        NurbsSurfaceEdit {
+                            surface: nurbs.clone(),
+                            periodic: (before.u_periodic() != nurbs.u_periodic()
+                                || before.v_periodic() != nurbs.v_periodic())
+                            .then_some([nurbs.u_periodic(), nurbs.v_periodic()]),
+                        },
+                    ))
+                }
+                _ => None,
+            },
+        )
         .collect::<BTreeMap<_, _>>();
     let extrusion_direction_edits = validate_procedural_surface_edits(baseline.ir(), target)?;
     let procedural_surface_fit_edits =

@@ -27,7 +27,10 @@ fn group(scope_record_index: u32, record_index: u32, role: u64) -> DesignConstru
         record_index,
         byte_offset: 0,
         class_tag: "282".into(),
-        members: vec![crate::records::Located { value: record_index + 1, offset: 0 }],
+        members: vec![crate::records::Located {
+            value: record_index + 1,
+            offset: 0,
+        }],
         lost_edge_references: Vec::new(),
         frame: DesignConstructionOperandGroupFrame {
             member_count_offset: 0,
@@ -65,18 +68,18 @@ fn mirror_scope(seed_group_record_index: u32) -> DesignParameterScope {
             count_offset: 0,
             stitch_tolerance: 0.001,
             stitch_tolerance_offset: 0,
-            tolerance_source: crate::records::DesignMirrorToleranceSource::Owner { record_index: 12 },
+            tolerance_source: crate::records::DesignMirrorToleranceSource::Owner {
+                record_index: 12,
+            },
             seed_group_record_index,
             plane_group_record_index: 30,
             seed_feature_scope_record_index: None,
             plane_scope_record_index: None,
             plane_selection_record_index: None,
-            plane: Some(
-                crate::records::DesignPlane {
-                    origin: Point3::new(0.0, 0.0, 0.0),
-                    normal: Vector3::new(0.0, 0.0, 1.0),
-                },
-            ),
+            plane: Some(crate::records::DesignPlane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+            }),
         });
     }
     scope

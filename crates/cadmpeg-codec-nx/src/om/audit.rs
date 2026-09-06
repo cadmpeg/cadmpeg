@@ -21,7 +21,9 @@ impl AuditRecord {
         bytes.push(0x04);
         bytes.extend_from_slice(self.ordinal.raw());
         bytes.push(0x13);
-        if let Some(selector) = self.frame_selector { bytes.extend_from_slice(&[0x04, 0x05, selector, 0x00]); }
+        if let Some(selector) = self.frame_selector {
+            bytes.extend_from_slice(&[0x04, 0x05, selector, 0x00]);
+        }
         bytes.push(0xe0);
         bytes.extend_from_slice(&self.timestamp.to_be_bytes());
         bytes.extend_from_slice(self.value.raw());
@@ -43,11 +45,19 @@ impl AuditTrailRow {
         Some(Self { record, base, at })
     }
 
-    pub(crate) fn record(self) -> AuditRecord { self.record }
-    pub(crate) fn offset(self) -> usize { self.base + self.at }
+    pub(crate) fn record(self) -> AuditRecord {
+        self.record
+    }
+    pub(crate) fn offset(self) -> usize {
+        self.base + self.at
+    }
     #[cfg(test)]
-    pub(crate) fn end_offset(self) -> usize { self.base + self.local_end() }
-    pub(crate) fn local_end(self) -> usize { self.at + self.record.byte_len() }
+    pub(crate) fn end_offset(self) -> usize {
+        self.base + self.local_end()
+    }
+    pub(crate) fn local_end(self) -> usize {
+        self.at + self.record.byte_len()
+    }
 }
 
 #[cfg(test)]
@@ -64,8 +74,14 @@ mod tests {
             value: StateTaggedValue::read_at(&[0xa0, 0, 0], 0).unwrap(),
         };
         assert_eq!(record.raw(), [4, 2, 19, 224, 1, 2, 3, 4, 160, 0, 0]);
-        let selected = AuditRecord { frame_selector: Some(7), ..record };
-        assert_eq!(selected.raw(), [4, 2, 19, 4, 5, 7, 0, 224, 1, 2, 3, 4, 160, 0, 0]);
+        let selected = AuditRecord {
+            frame_selector: Some(7),
+            ..record
+        };
+        assert_eq!(
+            selected.raw(),
+            [4, 2, 19, 4, 5, 7, 0, 224, 1, 2, 3, 4, 160, 0, 0]
+        );
         assert_eq!(selected.byte_len(), 15);
         let row = AuditTrailRow::new(100, 2, selected).unwrap();
         assert_eq!((row.offset(), row.end_offset()), (102, 117));

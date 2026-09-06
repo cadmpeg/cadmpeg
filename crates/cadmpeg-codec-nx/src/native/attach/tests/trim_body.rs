@@ -38,7 +38,8 @@ fn nx_trim_body_rejects_mixed_store_and_target_alias_tools() {
     );
 
     let mut duplicate_block_operand = operand.clone();
-    duplicate_block_operand.operand.atom = crate::om::compact::CompactIndexAtom::read(&[112]).unwrap();
+    duplicate_block_operand.operand.atom =
+        crate::om::compact::CompactIndexAtom::read(&[112]).unwrap();
     assert_eq!(
         super::offset_store_trim_body_feature_definition(
             std::slice::from_ref(&body),

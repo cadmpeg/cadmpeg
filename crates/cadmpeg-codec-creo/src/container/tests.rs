@@ -5,12 +5,12 @@ use cadmpeg_core::container::ContainerRole;
 
 use std::io::Cursor;
 
-use cadmpeg_ir::Exactness;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
+use cadmpeg_ir::Exactness;
 
-use crate::CreoCodec;
 use crate::container::{self, Layout, UnknownLayout};
 use crate::test_support::*;
+use crate::CreoCodec;
 
 #[test]
 fn detect_matches_ugc_magic_only() {
@@ -506,11 +506,9 @@ fn visible_geometry_namespace_excludes_invisible_and_depdb_rows() {
     );
     assert_eq!(surface_parameters[0].fields()["slots"][0]["value"], 1.0);
     let surface_prototypes = &namespace.arenas["nonvisible_surface_prototypes"];
-    assert!(
-        surface_prototypes[0]
-            .id()
-            .starts_with("creo:novisgeom:surface_prototype#")
-    );
+    assert!(surface_prototypes[0]
+        .id()
+        .starts_with("creo:novisgeom:surface_prototype#"));
     assert_eq!(
         surface_prototypes[0].fields()["source_section"],
         "NovisGeom"
@@ -531,18 +529,16 @@ fn depdb_data_with_sparse_sections_selects_depdb() {
     let data = build_prt("c", &[("VisibGeom", vec![0x00]), ("DEPDB_DATA", depdb)]);
     let scan = container::scan_bytes(data);
     assert_eq!(scan.framing.layout, Layout::Depdb);
-    assert!(
-        scan.surfaces
-            .rows
-            .iter()
-            .any(|row| row.id == 7 && row.feature_id == 4)
-    );
-    assert!(
-        scan.features
-            .definitions
-            .iter()
-            .any(|definition| definition.id == 12)
-    );
+    assert!(scan
+        .surfaces
+        .rows
+        .iter()
+        .any(|row| row.id == 7 && row.feature_id == 4));
+    assert!(scan
+        .features
+        .definitions
+        .iter()
+        .any(|definition| definition.id == 12));
     assert_eq!(scan.features.operations.len(), 1);
     assert_eq!(scan.features.operations[0].feature_id, 17);
     assert_eq!(

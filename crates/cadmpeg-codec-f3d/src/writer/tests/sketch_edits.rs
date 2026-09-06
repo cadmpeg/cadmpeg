@@ -91,18 +91,37 @@ fn generated_f3d_rewrites_native_sketch_constraint_mask() {
     let (mut edited, _, fidelity) = decoded.into_parts();
     let expected_references = update_f3d_native(&mut edited, |native| {
         let relation = &mut native.sketch_relations[0];
-        relation.definition = crate::records::SketchRelationDefinition::new(0x40, relation.definition.kind().clone()).expect("valid relation definition");
-        relation.members = relation.members.iter().zip(relation.members.iter().rev())
+        relation.definition =
+            crate::records::SketchRelationDefinition::new(0x40, relation.definition.kind().clone())
+                .expect("valid relation definition");
+        relation.members = relation
+            .members
+            .iter()
+            .zip(relation.members.iter().rev())
             .map(|(position, value)| crate::records::SketchRelationMember {
-                reference: value.reference.clone(), offset: position.offset, relation_ordinal: position.relation_ordinal,
-            }).collect::<Vec<_>>().try_into().expect("uniform member resolution");
+                reference: value.reference.clone(),
+                offset: position.offset,
+                relation_ordinal: position.relation_ordinal,
+            })
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("uniform member resolution");
         for reference in relation.auxiliary_references.values_mut() {
             *reference = reference.saturating_add(1);
         }
-        relation.return_members = relation.return_members.iter().zip(relation.return_members.iter().rev())
-            .map(|(position, value)| crate::records::SketchRelationReturnMember {
-                reference: value.reference.clone(), offset: position.offset,
-            }).collect::<Vec<_>>().try_into().expect("uniform member resolution");
+        relation.return_members = relation
+            .return_members
+            .iter()
+            .zip(relation.return_members.iter().rev())
+            .map(
+                |(position, value)| crate::records::SketchRelationReturnMember {
+                    reference: value.reference.clone(),
+                    offset: position.offset,
+                },
+            )
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("uniform member resolution");
         (
             relation.members.clone(),
             relation.auxiliary_references.clone(),
@@ -149,7 +168,10 @@ fn generated_f3d_rewrites_native_sketch_nurbs_values() {
             panic!("generated sketch curve must be NURBS")
         };
         *fit_tolerance = 0.125;
-        let point = poles.points_mut().nth(1).expect("second spline control point");
+        let point = poles
+            .points_mut()
+            .nth(1)
+            .expect("second spline control point");
         point.x += 15.0;
         point.y -= 5.0;
         curve.geometry.clone()

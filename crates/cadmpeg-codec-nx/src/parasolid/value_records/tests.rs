@@ -18,11 +18,16 @@ fn parasolid_entity_54_strings_require_exact_length_and_terminator() {
         crate::parasolid::value_records::entity_54_string_record_at(&bytes, 1),
         Some(records[0].clone())
     );
-    assert!(crate::parasolid::value_records::entity_54_string_record_at(&bytes, bytes.len() - 12).is_none());
+    assert!(
+        crate::parasolid::value_records::entity_54_string_record_at(&bytes, bytes.len() - 12)
+            .is_none()
+    );
 
     let minimum = [0, 0x54, 0, 0, 0, 1, 0, 2, b'a', 0];
     assert_eq!(
-        crate::parasolid::value_records::entity_value_records(&minimum).strings[0].value.as_str(),
+        crate::parasolid::value_records::entity_value_records(&minimum).strings[0]
+            .value
+            .as_str(),
         "a"
     );
 }
@@ -50,7 +55,10 @@ fn parasolid_entity_52_integers_require_complete_counted_values() {
             .integers
             .is_empty()
     );
-    assert!(crate::parasolid::value_records::entity_52_integer_record_at(&bytes[..bytes.len() - 1], 1).is_none());
+    assert!(
+        crate::parasolid::value_records::entity_52_integer_record_at(&bytes[..bytes.len() - 1], 1)
+            .is_none()
+    );
 }
 
 #[test]
@@ -74,9 +82,11 @@ fn parasolid_entity_53_doubles_require_complete_finite_values() {
 
     let last = bytes.len() - 8;
     bytes[last..].copy_from_slice(&f64::NAN.to_be_bytes());
-    assert!(crate::parasolid::value_records::entity_value_records(&bytes)
-        .doubles
-        .is_empty());
+    assert!(
+        crate::parasolid::value_records::entity_value_records(&bytes)
+            .doubles
+            .is_empty()
+    );
     assert!(crate::parasolid::value_records::entity_53_double_record_at(&bytes, 1).is_none());
 }
 
@@ -99,20 +109,29 @@ fn parasolid_transformable_attribute_values_preserve_vector_and_axis_grouping() 
     };
     let vectors = [[1.0, 2.0, 3.0], [-4.0, 5.0, 6.0]];
 
-    let points = crate::parasolid::value_records::entity_value_records(&vector_record(0x55, 20, &vectors)).points;
+    let points =
+        crate::parasolid::value_records::entity_value_records(&vector_record(0x55, 20, &vectors))
+            .points;
     assert_eq!(points.len(), 1);
     assert_eq!(points[0].value.as_slice(), vectors);
     let vector_values =
-        crate::parasolid::value_records::entity_value_records(&vector_record(0x56, 21, &vectors)).vectors;
+        crate::parasolid::value_records::entity_value_records(&vector_record(0x56, 21, &vectors))
+            .vectors;
     assert_eq!(vector_values.len(), 1);
     assert_eq!(vector_values[0].value.as_slice(), vectors);
     let directions =
-        crate::parasolid::value_records::entity_value_records(&vector_record(0x59, 22, &vectors)).directions;
+        crate::parasolid::value_records::entity_value_records(&vector_record(0x59, 22, &vectors))
+            .directions;
     assert_eq!(directions.len(), 1);
     assert_eq!(directions[0].value.as_slice(), vectors);
 
     let four_vectors = [vectors[0], vectors[1], [7.0, 8.0, 9.0], [0.0, 1.0, 0.0]];
-    let axes = crate::parasolid::value_records::entity_value_records(&vector_record(0x57, 23, &four_vectors)).axes;
+    let axes = crate::parasolid::value_records::entity_value_records(&vector_record(
+        0x57,
+        23,
+        &four_vectors,
+    ))
+    .axes;
     assert_eq!(axes.len(), 1);
     assert_eq!(
         axes[0].value.as_slice(),
@@ -122,9 +141,13 @@ fn parasolid_transformable_attribute_values_preserve_vector_and_axis_grouping() 
         ]
     );
     assert!(
-        crate::parasolid::value_records::entity_value_records(&vector_record(0x57, 23, &four_vectors[..3]))
-            .axes
-            .is_empty()
+        crate::parasolid::value_records::entity_value_records(&vector_record(
+            0x57,
+            23,
+            &four_vectors[..3]
+        ))
+        .axes
+        .is_empty()
     );
 
     let mut nonfinite = vectors;
@@ -267,7 +290,9 @@ fn parasolid_tag_and_unicode_attribute_values_require_complete_counted_lanes() {
     let mut invalid = unicode;
     invalid[15..17].copy_from_slice(&0xd800u16.to_be_bytes());
     invalid[17..19].copy_from_slice(&0x0041u16.to_be_bytes());
-    assert!(crate::parasolid::value_records::entity_value_records(&invalid)
-        .unicode
-        .is_empty());
+    assert!(
+        crate::parasolid::value_records::entity_value_records(&invalid)
+            .unicode
+            .is_empty()
+    );
 }

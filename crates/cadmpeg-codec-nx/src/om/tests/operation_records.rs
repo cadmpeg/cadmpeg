@@ -62,7 +62,9 @@ fn every_body_identity_opens_a_body_write_frame() {
     for endpoint_tag in [0x12, 0x15] {
         let mut generation = payload;
         generation[9] = endpoint_tag;
-        let writes = operation_body_write_frames(OperationPayload::new(&generation, record.payload_offset(), record.name()).unwrap());
+        let writes = operation_body_write_frames(
+            OperationPayload::new(&generation, record.payload_offset(), record.name()).unwrap(),
+        );
         let [write] = writes.as_slice() else {
             panic!("generation body-write frame");
         };
@@ -71,7 +73,9 @@ fn every_body_identity_opens_a_body_write_frame() {
 
     let mut invalid_endpoint = payload;
     invalid_endpoint[9] = 0x11;
-    assert!(operation_body_write_frames(OperationPayload::new(&invalid_endpoint, record.payload_offset(), record.name()).unwrap())
+    assert!(operation_body_write_frames(
+        OperationPayload::new(&invalid_endpoint, record.payload_offset(), record.name()).unwrap()
+    )
     .is_empty());
 }
 

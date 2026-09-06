@@ -3,9 +3,8 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_core::decode::{bounded_len, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_core::decode::{View, bounded_len};
-use cadmpeg_ir::SourceObjectAssociation;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, ProceduralCurve, ProceduralCurveDefinition,
     ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
@@ -13,6 +12,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::SourceObjectAssociation;
 use serde::{Deserialize, Serialize};
 
 use crate::native::{self, EntryRecord, PropertyRecord};
@@ -5051,8 +5051,8 @@ pub(crate) fn append_text_surface(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::FcstdCodec;
     use crate::test_support::*;
+    use crate::FcstdCodec;
     use cadmpeg_ir::{Codec, DecodeOptions};
     use std::io::Cursor;
 
@@ -5573,20 +5573,16 @@ pub(crate) mod tests {
     #[test]
     fn rejects_oversized_and_out_of_order_text_tables() {
         let oversized = b"CASCADE Topology V1, (c) Matra-Datavision\nLocations 1000001\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
-        assert!(
-            parse_text(oversized)
-                .expect_err("oversized table")
-                .to_string()
-                .contains("count limit")
-        );
+        assert!(parse_text(oversized)
+            .expect_err("oversized table")
+            .to_string()
+            .contains("count limit"));
 
         let out_of_order = b"CASCADE Topology V1, (c) Matra-Datavision\nCurve2ds 0\nLocations 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
-        assert!(
-            parse_text(out_of_order)
-                .expect_err("out-of-order table")
-                .to_string()
-                .contains("out of order")
-        );
+        assert!(parse_text(out_of_order)
+            .expect_err("out-of-order table")
+            .to_string()
+            .contains("out of order"));
     }
 
     #[test]

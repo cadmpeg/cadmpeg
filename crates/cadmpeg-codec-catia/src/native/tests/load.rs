@@ -272,14 +272,18 @@ fn native_load_rejects_noncanonical_entity_frame_lengths() {
 
     for mutate in [
         |record: &mut crate::native::entity_record::CatiaEntityRecord| {
-            if let crate::native::entity_record::CatiaEntityRecordBody::Nested { definition_len, .. } =
-                &mut record.body
+            if let crate::native::entity_record::CatiaEntityRecordBody::Nested {
+                definition_len,
+                ..
+            } = &mut record.body
             {
                 *definition_len += 1;
             }
         },
         |record: &mut crate::native::entity_record::CatiaEntityRecord| {
-            if let crate::native::entity_record::CatiaEntityRecordBody::Nested { value_len, .. } = &mut record.body
+            if let crate::native::entity_record::CatiaEntityRecordBody::Nested {
+                value_len, ..
+            } = &mut record.body
             {
                 *value_len += 1;
             }
@@ -947,11 +951,11 @@ fn native_load_migrates_and_validates_configuration_incidences() {
     assert_eq!(migrated, expected_nulls);
 
     let mut malformed_chain = native.clone();
-    malformed_chain.schema_configuration_row_chains[0].terminal =
-        malformed_chain.schema_configuration_row_chains[0]
-            .terminal
-            .clone()
-            .with_entity_id(6);
+    malformed_chain.schema_configuration_row_chains[0].terminal = malformed_chain
+        .schema_configuration_row_chains[0]
+        .terminal
+        .clone()
+        .with_entity_id(6);
     let mut current = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     malformed_chain
         .store(&mut current)
@@ -962,8 +966,8 @@ fn native_load_migrates_and_validates_configuration_incidences() {
     ));
 
     let mut malformed_chain_offset = native.clone();
-    malformed_chain_offset.schema_configuration_row_chains[0].links_mut()[0].successor_payload_offset +=
-        1;
+    malformed_chain_offset.schema_configuration_row_chains[0].links_mut()[0]
+        .successor_payload_offset += 1;
     let mut current = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
     malformed_chain_offset
         .store(&mut current)

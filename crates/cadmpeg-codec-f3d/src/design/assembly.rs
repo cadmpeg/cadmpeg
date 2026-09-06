@@ -11,8 +11,8 @@ use cadmpeg_ir::products::{
 
 use crate::ids::native_stream;
 use crate::records::{
-    DesignAssemblyAxialOperandTarget, DesignAssemblyLimitKind,
-    DesignAssemblyOperandQualifier, DesignComponentOccurrence, DesignParameterScope,
+    DesignAssemblyAxialOperandTarget, DesignAssemblyLimitKind, DesignAssemblyOperandQualifier,
+    DesignComponentOccurrence, DesignParameterScope,
 };
 
 /// One exact generation of the legacy 421-byte `As-built` alignment grammar.
@@ -284,18 +284,36 @@ pub(crate) fn project_assembly_joints(
             continue;
         };
         let (frames, operands, limits) = match alignment.form.as_ref() {
-            Some(crate::records::DesignAssemblyAlignmentForm::LegacyAsBuilt421 { carriers, solved_frame, limits, .. }) => (
+            Some(crate::records::DesignAssemblyAlignmentForm::LegacyAsBuilt421 {
+                carriers,
+                solved_frame,
+                limits,
+                ..
+            }) => (
                 carriers.frames(solved_frame),
-                carriers.selections().map(|selection| JointOperand::root(
-                    crate::ids::neutral_assembly_legacy_object_id(selection), Vec::new()
-                )),
+                carriers.selections().map(|selection| {
+                    JointOperand::root(
+                        crate::ids::neutral_assembly_legacy_object_id(selection),
+                        Vec::new(),
+                    )
+                }),
                 limits.as_ref(),
             ),
             Some(crate::records::DesignAssemblyAlignmentForm::Qualified(operands)) => {
                 let Some(projected) = project_qualified_operands(
-                    operands.each_ref().map(|operand| &operand.qualifier), stream, &occurrences, scopes, features
-                ) else { continue; };
-                (operands.each_ref().map(|operand| operand.frame.clone()), projected, None)
+                    operands.each_ref().map(|operand| &operand.qualifier),
+                    stream,
+                    &occurrences,
+                    scopes,
+                    features,
+                ) else {
+                    continue;
+                };
+                (
+                    operands.each_ref().map(|operand| operand.frame.clone()),
+                    projected,
+                    None,
+                )
             }
             _ => continue,
         };
@@ -354,66 +372,65 @@ fn project_qualified_operands(
     features: &[Feature],
 ) -> Option<[JointOperand; 2]> {
     let projected = qualifiers.map(|qualifier| match qualifier {
-            DesignAssemblyOperandQualifier::OccurrencePath { path } => {
-                let root_guid = &path.occurrence_guids.first()?.value;
-                let occurrence = occurrences
-                    .get(&(stream, root_guid.to_ascii_lowercase()))
-                    .copied()
-                    .flatten();
-                if occurrence.is_none() && !matches!(path.class_tag.as_str(), "330" | "386") {
-                    return None;
-                }
-                let object = root_guid.to_ascii_lowercase();
-                let subelements = path.occurrence_guids[1..]
-                    .iter()
-                    .map(|guid| guid.value.to_ascii_lowercase())
-                    .collect();
-                Some(match occurrence {
-                    Some(_) => JointOperand::occurrence(
-                        crate::ids::neutral_component_occurrence_id(root_guid),
-                        object,
-                        subelements,
-                    ),
-                    None => JointOperand::external(
-                        ExternalDocumentReference::document_id(
-                            path.identity_guids.first()?.value.clone(),
-                        ),
-                        object,
-                        subelements,
-                    ),
-                })
+        DesignAssemblyOperandQualifier::OccurrencePath { path } => {
+            let root_guid = &path.occurrence_guids.first()?.value;
+            let occurrence = occurrences
+                .get(&(stream, root_guid.to_ascii_lowercase()))
+                .copied()
+                .flatten();
+            if occurrence.is_none() && !matches!(path.class_tag.as_str(), "330" | "386") {
+                return None;
             }
-            DesignAssemblyOperandQualifier::AxialTarget { target } => match target {
-                DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
-                    component_insert_scope_record_index,
-                    selectors,
-                    ..
-                } => {
-                    let target_scope = unique_scope(
-                        scopes,
-                        stream,
-                        *component_insert_scope_record_index,
-                        &crate::records::DesignFeatureKind::ComponentInsert,
-                    )?;
-                    let feature = unique_feature(features, &target_scope.id)?;
-                    let FeatureDefinition::InsertComponent { occurrence } = &feature.definition
-                    else {
-                        return None;
-                    };
-                    Some(JointOperand::occurrence(
-                        occurrence.clone(),
-                        crate::ids::neutral_assembly_axial_object_id(&selectors[0]),
-                        Vec::new(),
-                    ))
-                }
-                DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
-                    scope_record_index,
-                } => project_joint_origin_operand(*scope_record_index, stream, scopes, features),
-            },
-            DesignAssemblyOperandQualifier::JointOrigin {
-                scope_record_index, ..
-            } => project_joint_origin_operand(*scope_record_index, stream, scopes, features),
-        });
+            let object = root_guid.to_ascii_lowercase();
+            let subelements = path.occurrence_guids[1..]
+                .iter()
+                .map(|guid| guid.value.to_ascii_lowercase())
+                .collect();
+            Some(match occurrence {
+                Some(_) => JointOperand::occurrence(
+                    crate::ids::neutral_component_occurrence_id(root_guid),
+                    object,
+                    subelements,
+                ),
+                None => JointOperand::external(
+                    ExternalDocumentReference::document_id(
+                        path.identity_guids.first()?.value.clone(),
+                    ),
+                    object,
+                    subelements,
+                ),
+            })
+        }
+        DesignAssemblyOperandQualifier::AxialTarget { target } => match target {
+            DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
+                component_insert_scope_record_index,
+                selectors,
+                ..
+            } => {
+                let target_scope = unique_scope(
+                    scopes,
+                    stream,
+                    *component_insert_scope_record_index,
+                    &crate::records::DesignFeatureKind::ComponentInsert,
+                )?;
+                let feature = unique_feature(features, &target_scope.id)?;
+                let FeatureDefinition::InsertComponent { occurrence } = &feature.definition else {
+                    return None;
+                };
+                Some(JointOperand::occurrence(
+                    occurrence.clone(),
+                    crate::ids::neutral_assembly_axial_object_id(&selectors[0]),
+                    Vec::new(),
+                ))
+            }
+            DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin { scope_record_index } => {
+                project_joint_origin_operand(*scope_record_index, stream, scopes, features)
+            }
+        },
+        DesignAssemblyOperandQualifier::JointOrigin {
+            scope_record_index, ..
+        } => project_joint_origin_operand(*scope_record_index, stream, scopes, features),
+    });
     let [first, second] = projected;
     Some([first?, second?])
 }

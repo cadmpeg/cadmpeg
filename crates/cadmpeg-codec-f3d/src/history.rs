@@ -685,7 +685,9 @@ pub(crate) fn discard_projection_caches(histories: &mut [AsmHistory]) {
             let topology = match std::mem::take(&mut state.topology_cache) {
                 crate::history_records::AsmTopologyCache::Absent => None,
                 crate::history_records::AsmTopologyCache::Complete(topology)
-                    | crate::history_records::AsmTopologyCache::Retained(topology) => retain_mirror_plane_topology(topology),
+                | crate::history_records::AsmTopologyCache::Retained(topology) => {
+                    retain_mirror_plane_topology(topology)
+                }
             };
             if let Some(topology) = topology {
                 let slots = topology_entity_slots(&topology);
@@ -1690,7 +1692,9 @@ fn bind_direct_body_recipe_body_selection(
                 return;
             }
             let mut selected = Vec::with_capacity(group.members.len());
-            for (ordinal, record_index) in group.members.iter().map(|member| member.value).enumerate() {
+            for (ordinal, record_index) in
+                group.members.iter().map(|member| member.value).enumerate()
+            {
                 let Ok(ordinal) = u32::try_from(ordinal) else {
                     return;
                 };
@@ -2237,14 +2241,25 @@ fn bind_surface_stitch_face_selection(
         .collect::<Vec<_>>();
     matching_groups.sort_by_key(|group| group.scope_reference_ordinal);
     if matching_groups.len().checked_mul(2) != Some(input_end)
-        || matching_groups.iter().enumerate().zip(
-            scope.reference_members.values().step_by(2)
-                .zip(scope.reference_members.values().skip(1).step_by(2))
-        ).any(|((ordinal, group), (group_reference, member_reference))| {
-            u32::try_from(ordinal * 2) != Ok(group.scope_reference_ordinal)
-                || group.record_index != *group_reference
-                || !group.members.iter().map(|member| member.value).eq([*member_reference])
-        })
+        || matching_groups
+            .iter()
+            .enumerate()
+            .zip(
+                scope
+                    .reference_members
+                    .values()
+                    .step_by(2)
+                    .zip(scope.reference_members.values().skip(1).step_by(2)),
+            )
+            .any(|((ordinal, group), (group_reference, member_reference))| {
+                u32::try_from(ordinal * 2) != Ok(group.scope_reference_ordinal)
+                    || group.record_index != *group_reference
+                    || !group
+                        .members
+                        .iter()
+                        .map(|member| member.value)
+                        .eq([*member_reference])
+            })
     {
         return;
     }
@@ -2779,7 +2794,8 @@ pub(crate) fn bind_edge_treatment_vertex_history(
         let Some(vertex) = recipe_reference_common_vertex(&operand.recipe, topology) else {
             continue;
         };
-        operand.recipe.resolution = crate::records::DesignVertexResolution::new(previous_state_id, vertex);
+        operand.recipe.resolution =
+            crate::records::DesignVertexResolution::new(previous_state_id, vertex);
     }
 }
 
@@ -3392,26 +3408,22 @@ pub(crate) fn bind_scope_histories(
         let Some(construction) = scope.base_feature_construction() else {
             continue;
         };
-        let mut referenced_histories =
-            construction
-                .body_reference_records()
-                .filter_map(|suffix| {
-                    let mut bindings = body_bindings.iter().filter(|binding| {
-                        crate::ids::same_native_occurrence(&binding.id, &scope.id)
-                            && binding.entity_suffix == u64::from(suffix)
-                    });
-                    let binding = bindings.next()?;
-                    if bindings.next().is_some() {
-                        return None;
-                    }
-                    let mut matching = candidates.iter().filter(|history| {
-                        historical_brep_source(&history.id).is_some_and(|source| {
-                            binding.blob_name.strip_prefix("BREP.") == Some(source)
-                        })
-                    });
-                    let history = matching.next()?;
-                    matching.next().is_none().then_some(history.id.as_str())
-                });
+        let mut referenced_histories = construction.body_reference_records().filter_map(|suffix| {
+            let mut bindings = body_bindings.iter().filter(|binding| {
+                crate::ids::same_native_occurrence(&binding.id, &scope.id)
+                    && binding.entity_suffix == u64::from(suffix)
+            });
+            let binding = bindings.next()?;
+            if bindings.next().is_some() {
+                return None;
+            }
+            let mut matching = candidates.iter().filter(|history| {
+                historical_brep_source(&history.id)
+                    .is_some_and(|source| binding.blob_name.strip_prefix("BREP.") == Some(source))
+            });
+            let history = matching.next()?;
+            matching.next().is_none().then_some(history.id.as_str())
+        });
         let Some(history_id) = referenced_histories.next() else {
             continue;
         };
@@ -3556,7 +3568,11 @@ fn exact_face_selection_group<'a>(
             && group.scope_record_index == scope.record_index
             && group.record_index == group_record_index
             && group.role == 0x0000_0010_0000_0000
-            && group.members.get(group_member_ordinal).map(|member| &member.value) == Some(&operand.record_index)
+            && group
+                .members
+                .get(group_member_ordinal)
+                .map(|member| &member.value)
+                == Some(&operand.record_index)
     });
     let group = groups.next()?;
     groups.next().is_none().then_some(group)
@@ -3843,7 +3859,8 @@ pub(crate) fn bind_face_operand_history_candidates(
                             == Some(crate::records::DesignExtrudeFaceRole::Termination)
                 });
         operand.resolved_face_slots = match &scope.payload {
-            crate::records::DesignScopePayload::OffsetFaces(Some(_)) | crate::records::DesignScopePayload::DecalerLesFaces(Some(_)) => {
+            crate::records::DesignScopePayload::OffsetFaces(Some(_))
+            | crate::records::DesignScopePayload::DecalerLesFaces(Some(_)) => {
                 let direct = resolve_direct_face_recipe_clauses(
                     &operand.recipe_references,
                     topology,
@@ -3936,17 +3953,18 @@ pub(crate) fn bind_face_operand_history_candidates(
                 .as_ref()
                 .is_some_and(|transition| transition.previous_state_id == Some(previous_state_id))
         {
-            if let Some(face) = state
-                .topology()
-                .zip(state.transition.as_ref())
-                .and_then(|(result, transition)| {
-                    resolve_bounded_face_recipe_target(
-                        operand,
-                        topology,
-                        result,
-                        &transition.topology.bodies.inserted,
-                    )
-                })
+            if let Some(face) =
+                state
+                    .topology()
+                    .zip(state.transition.as_ref())
+                    .and_then(|(result, transition)| {
+                        resolve_bounded_face_recipe_target(
+                            operand,
+                            topology,
+                            result,
+                            &transition.topology.bodies.inserted,
+                        )
+                    })
             {
                 operand.resolved_face_slots = vec![face];
             }
@@ -4397,8 +4415,15 @@ fn resolve_bounded_face_recipe_target(
         let [loop_] = context.loops.as_slice() else {
             return None;
         };
-        let crate::records::DesignHistoricalLoopBoundary::Positions(rows) = &loop_.boundary else { return None; };
-        (!rows.is_empty()).then(|| (rows.len(), rows.iter().map(|row| row.position).collect::<Vec<_>>()))
+        let crate::records::DesignHistoricalLoopBoundary::Positions(rows) = &loop_.boundary else {
+            return None;
+        };
+        (!rows.is_empty()).then(|| {
+            (
+                rows.len(),
+                rows.iter().map(|row| row.position).collect::<Vec<_>>(),
+            )
+        })
     };
     let mut matches = target_candidates
         .into_iter()
@@ -5193,13 +5218,28 @@ fn face_boundary_contexts_for_slots(
                     if loop_relations.next().is_some() {
                         return None;
                     }
-                    let coedges = loop_relation.member_refs.iter().map(|coedge_slot| {
-                        let mut matches = topology.coedge_topology.iter().filter(|coedge| coedge.coedge == *coedge_slot);
-                        let edge_slot = matches.next()?.edge;
-                        matches.next().is_none().then_some(crate::records::DesignHistoricalLoopCoedge { coedge_slot: *coedge_slot, edge_slot })
-                    }).collect::<Option<Vec<_>>>()?;
+                    let coedges = loop_relation
+                        .member_refs
+                        .iter()
+                        .map(|coedge_slot| {
+                            let mut matches = topology
+                                .coedge_topology
+                                .iter()
+                                .filter(|coedge| coedge.coedge == *coedge_slot);
+                            let edge_slot = matches.next()?.edge;
+                            matches.next().is_none().then_some(
+                                crate::records::DesignHistoricalLoopCoedge {
+                                    coedge_slot: *coedge_slot,
+                                    edge_slot,
+                                },
+                            )
+                        })
+                        .collect::<Option<Vec<_>>>()?;
                     let boundary = historical_loop_boundary(coedges, topology);
-                    Some(crate::records::DesignHistoricalFaceLoopContext { loop_slot: *loop_slot, boundary })
+                    Some(crate::records::DesignHistoricalFaceLoopContext {
+                        loop_slot: *loop_slot,
+                        boundary,
+                    })
                 })
                 .collect::<Option<Vec<_>>>()?;
             Some(crate::records::DesignHistoricalFaceBoundaryContext {
@@ -5214,36 +5254,83 @@ fn historical_loop_boundary(
     coedges: Vec<crate::records::DesignHistoricalLoopCoedge>,
     topology: &AsmHistoricalTopology,
 ) -> crate::records::DesignHistoricalLoopBoundary {
-    use crate::records::{DesignHistoricalLoopBoundary, DesignHistoricalLoopPoint, DesignHistoricalLoopPosition, DesignHistoricalLoopVertex};
-    let vertices = coedges.iter().enumerate().map(|(ordinal, coedge)| {
-        let previous = coedges[(ordinal + coedges.len() - 1) % coedges.len()].edge_slot;
-        let endpoints = |slot| {
-            let mut edges = topology.edge_vertices.iter().filter(|candidate| candidate.edge == slot);
-            let edge = edges.next()?;
-            edges.next().is_none().then_some([edge.start_vertex, edge.end_vertex])
-        };
-        let previous = endpoints(previous)?;
-        let current = endpoints(coedge.edge_slot)?;
-        let mut shared = previous.into_iter().filter(|vertex| current.contains(vertex)).collect::<Vec<_>>();
-        shared.sort_unstable();
-        shared.dedup();
-        let [vertex_slot] = shared.as_slice() else { return None; };
-        Some(DesignHistoricalLoopVertex { coedge: coedge.clone(), vertex_slot: *vertex_slot })
-    }).collect::<Option<Vec<_>>>();
+    use crate::records::{
+        DesignHistoricalLoopBoundary, DesignHistoricalLoopPoint, DesignHistoricalLoopPosition,
+        DesignHistoricalLoopVertex,
+    };
+    let vertices = coedges
+        .iter()
+        .enumerate()
+        .map(|(ordinal, coedge)| {
+            let previous = coedges[(ordinal + coedges.len() - 1) % coedges.len()].edge_slot;
+            let endpoints = |slot| {
+                let mut edges = topology
+                    .edge_vertices
+                    .iter()
+                    .filter(|candidate| candidate.edge == slot);
+                let edge = edges.next()?;
+                edges
+                    .next()
+                    .is_none()
+                    .then_some([edge.start_vertex, edge.end_vertex])
+            };
+            let previous = endpoints(previous)?;
+            let current = endpoints(coedge.edge_slot)?;
+            let mut shared = previous
+                .into_iter()
+                .filter(|vertex| current.contains(vertex))
+                .collect::<Vec<_>>();
+            shared.sort_unstable();
+            shared.dedup();
+            let [vertex_slot] = shared.as_slice() else {
+                return None;
+            };
+            Some(DesignHistoricalLoopVertex {
+                coedge: coedge.clone(),
+                vertex_slot: *vertex_slot,
+            })
+        })
+        .collect::<Option<Vec<_>>>();
     let Some(vertices) = vertices.filter(|rows| !rows.is_empty()) else {
         return DesignHistoricalLoopBoundary::Coedges(coedges);
     };
-    let points = vertices.iter().map(|vertex| {
-        let mut bindings = topology.vertex_points.iter().filter(|binding| binding.entity == vertex.vertex_slot);
-        let point_slot = bindings.next()?.carrier;
-        bindings.next().is_none().then_some(DesignHistoricalLoopPoint { vertex: vertex.clone(), point_slot })
-    }).collect::<Option<Vec<_>>>();
-    let Some(points) = points else { return DesignHistoricalLoopBoundary::Vertices(vertices); };
-    let positions = points.iter().map(|point| {
-        let mut values = topology.point_positions.iter().filter(|value| value.point == point.point_slot);
-        let position = values.next()?.position;
-        values.next().is_none().then_some(DesignHistoricalLoopPosition { point: point.clone(), position })
-    }).collect::<Option<Vec<_>>>();
+    let points = vertices
+        .iter()
+        .map(|vertex| {
+            let mut bindings = topology
+                .vertex_points
+                .iter()
+                .filter(|binding| binding.entity == vertex.vertex_slot);
+            let point_slot = bindings.next()?.carrier;
+            bindings
+                .next()
+                .is_none()
+                .then_some(DesignHistoricalLoopPoint {
+                    vertex: vertex.clone(),
+                    point_slot,
+                })
+        })
+        .collect::<Option<Vec<_>>>();
+    let Some(points) = points else {
+        return DesignHistoricalLoopBoundary::Vertices(vertices);
+    };
+    let positions = points
+        .iter()
+        .map(|point| {
+            let mut values = topology
+                .point_positions
+                .iter()
+                .filter(|value| value.point == point.point_slot);
+            let position = values.next()?.position;
+            values
+                .next()
+                .is_none()
+                .then_some(DesignHistoricalLoopPosition {
+                    point: point.clone(),
+                    position,
+                })
+        })
+        .collect::<Option<Vec<_>>>();
     match positions {
         Some(positions) => DesignHistoricalLoopBoundary::Positions(positions),
         None => DesignHistoricalLoopBoundary::Points(points),
@@ -5482,7 +5569,8 @@ pub(crate) fn bind_edge_operand_history_candidates(
         ) else {
             continue;
         };
-        let (Some(result_topology), Some(topology)) = (state.topology(), previous.topology()) else {
+        let (Some(result_topology), Some(topology)) = (state.topology(), previous.topology())
+        else {
             continue;
         };
         for reference in &mut operand.recipe_references {
@@ -5659,8 +5747,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
                 .resolved_edge_slot
                 .and_then(|edge| historical_edge_axis(edge, topology))
             {
-                operand.resolved_axis =
-                    Some(crate::records::DesignAxis { origin, direction });
+                operand.resolved_axis = Some(crate::records::DesignAxis { origin, direction });
             }
             continue;
         }
@@ -6158,25 +6245,30 @@ fn recipe_selector_candidates(
                         .iter()
                         .find(|entry| entry.selector == *selector)
                         .map(|entry| {
-                        let triplet_edge_slots = entry.topology_triplets.each_ref().map(|triplet| {
-                            contexts
-                                .iter()
-                                .filter(|context| {
-                                    context.incident_loops.iter().any(|incident| {
-                                        incident.boundary_edge_count
-                                            == entry.boundary_edge_count.get()
-                                            && triplet.incident.map(|incident| incident.ordinal).is_some_and(
-                                                |ordinal| incident.coedge_ordinal == ordinal,
-                                            )
-                                    })
-                                })
-                                .map(|context| context.edge_slot)
-                                .collect()
-                        });
-                        crate::records::DesignEdgeRecipeSelectorClause {
-                            entry: entry.clone(), triplet_edge_slots,
-                        }
-                    })
+                            let triplet_edge_slots =
+                                entry.topology_triplets.each_ref().map(|triplet| {
+                                    contexts
+                                        .iter()
+                                        .filter(|context| {
+                                            context.incident_loops.iter().any(|incident| {
+                                                incident.boundary_edge_count
+                                                    == entry.boundary_edge_count.get()
+                                                    && triplet
+                                                        .incident
+                                                        .map(|incident| incident.ordinal)
+                                                        .is_some_and(|ordinal| {
+                                                            incident.coedge_ordinal == ordinal
+                                                        })
+                                            })
+                                        })
+                                        .map(|context| context.edge_slot)
+                                        .collect()
+                                });
+                            crate::records::DesignEdgeRecipeSelectorClause {
+                                entry: entry.clone(),
+                                triplet_edge_slots,
+                            }
+                        })
                 })
                 .collect::<Vec<_>>();
             let required = clauses
@@ -6208,7 +6300,8 @@ fn recipe_selector_candidates(
                             context.incident_loops.iter().any(|incident| {
                                 incident.boundary_edge_count == entry.boundary_edge_count.get()
                                     && triplet
-                                        .incident.map(|incident| incident.ordinal)
+                                        .incident
+                                        .map(|incident| incident.ordinal)
                                         .is_some_and(|ordinal| incident.coedge_ordinal == ordinal)
                             })
                         })
@@ -6529,13 +6622,16 @@ impl HistoricalIdentityIndex {
         // bulletin-board chain after their geometry caches are compacted.
         for history in histories.iter().filter(|history| {
             !history.states.is_empty()
-                && history.states.iter().all(|state| {
-                    match &state.topology_cache {
+                && history
+                    .states
+                    .iter()
+                    .all(|state| match &state.topology_cache {
                         crate::history_records::AsmTopologyCache::Absent => false,
                         crate::history_records::AsmTopologyCache::Complete(_) => true,
-                        crate::history_records::AsmTopologyCache::Retained(_) => history.projection_finalized,
-                    }
-                })
+                        crate::history_records::AsmTopologyCache::Retained(_) => {
+                            history.projection_finalized
+                        }
+                    })
         }) {
             for change in history
                 .states
@@ -6792,7 +6888,8 @@ pub(crate) fn bind_entity_selection_history(
     let identities = HistoricalIdentityIndex::build(
         histories,
         operands.iter().flat_map(|operand| {
-            std::iter::once(operand.primary_identity).chain(operand.secondary.map(|secondary| secondary.identity.value))
+            std::iter::once(operand.primary_identity)
+                .chain(operand.secondary.map(|secondary| secondary.identity.value))
         }),
     );
     for operand in operands {
@@ -6828,7 +6925,8 @@ pub(crate) fn bind_entity_selection_history(
         let Some(topology) = state.topology() else {
             continue;
         };
-        let identity_pair = operand.secondary
+        let identity_pair = operand
+            .secondary
             .map(|secondary| [operand.primary_identity, secondary.identity.value]);
         operand.historical_edge_candidates = identity_pair.as_ref().map_or_else(
             || {
@@ -6873,7 +6971,9 @@ pub(crate) fn bind_hole_selection_history(
         if selection.historical_face_candidates.is_empty() {
             if let Some(candidate) = hole_transition_face_candidate(
                 selection.primary_identity,
-                selection.secondary.map(|secondary| secondary.identity.value),
+                selection
+                    .secondary
+                    .map(|secondary| secondary.identity.value),
                 construction.position,
                 construction.direction,
                 history_state_id,
@@ -7067,11 +7167,15 @@ pub(crate) fn bind_circular_pattern_axes(
             continue;
         };
         *resolved = None;
-        let identities = HistoricalIdentityIndex::build(
-            std::slice::from_ref(*history),
-            [*persistent_identity],
-        );
-        let mut axes = historical_pattern_identity_axes(*persistent_identity, &identities, history, input_state_id).into_iter();
+        let identities =
+            HistoricalIdentityIndex::build(std::slice::from_ref(*history), [*persistent_identity]);
+        let mut axes = historical_pattern_identity_axes(
+            *persistent_identity,
+            &identities,
+            history,
+            input_state_id,
+        )
+        .into_iter();
         let Some((origin, direction)) = axes.next() else {
             continue;
         };
@@ -7126,7 +7230,9 @@ fn snapshot_edge_identity_revision(identity: u64, history: &AsmHistory) -> Optio
         .iter()
         .flat_map(|state| &state.records)
         .filter(|record| match &record.framing {
-            crate::history_records::AsmHistoryRecordFraming::Framed { index, .. } => *index == identity,
+            crate::history_records::AsmHistoryRecordFraming::Framed { index, .. } => {
+                *index == identity
+            }
             crate::history_records::AsmHistoryRecordFraming::Opaque { .. } => identity == 0,
         })
         .collect::<Vec<_>>();
@@ -7292,7 +7398,11 @@ pub(crate) fn bind_mirror_selection_planes(
                 && group.scope_record_index == record_index
                 && group.record_index == construction.plane_group_record_index
                 && group.role == 0x0000_0005_0000_0000
-                && group.members.iter().map(|member| member.value).eq([selection_record_index])
+                && group
+                    .members
+                    .iter()
+                    .map(|member| member.value)
+                    .eq([selection_record_index])
         });
         let Some(group) = matching_groups.next() else {
             continue;
@@ -7365,12 +7475,10 @@ pub(crate) fn bind_mirror_selection_planes(
         if !norm.is_finite() || (norm - 1.0).abs() > EPS_HISTORY_BIND_MIRROR_SELECTION_PLANES_E9 {
             continue;
         }
-        construction.plane = Some(
-            crate::records::DesignPlane {
-                origin: plane.origin,
-                normal: plane.normal,
-            },
-        );
+        construction.plane = Some(crate::records::DesignPlane {
+            origin: plane.origin,
+            normal: plane.normal,
+        });
     }
 }
 
@@ -8014,9 +8122,12 @@ pub(crate) fn bind_edge_identity_history(
             }
         }
         let direct = operand
-            .historical.as_ref()
+            .historical
+            .as_ref()
             .filter(|binding| binding.state_ids.contains(&previous_state_id))
-            .and_then(|binding| historical_identity_edge(binding.kind, binding.entity_ref, topology));
+            .and_then(|binding| {
+                historical_identity_edge(binding.kind, binding.entity_ref, topology)
+            });
         if let Some(edge) = direct {
             operand.resolved_edge_slot = Some(edge);
             operand.resolution_identity_id = Some(operand.id.clone());
@@ -8109,9 +8220,10 @@ pub(crate) fn bind_edge_identity_bounded_face_rules(
                     .count()
                     != 1
                     || !support.preceding_face_slots.contains(&boundary.face_slot)
-                    || boundary.loops.iter().any(|loop_| {
-                        loop_.boundary.coedges().next().is_none()
-                    })
+                    || boundary
+                        .loops
+                        .iter()
+                        .any(|loop_| loop_.boundary.coedges().next().is_none())
             })
         {
             continue;
@@ -8899,7 +9011,11 @@ fn decode_history_records(
                     parent: state_id.to_string(),
                     revision_id: None,
                     byte_offset: record.offset as u64,
-                    framing: crate::history_records::AsmHistoryRecordFraming::Framed { index: record.index as u64, name: record.name, entity_references },
+                    framing: crate::history_records::AsmHistoryRecordFraming::Framed {
+                        index: record.index as u64,
+                        name: record.name,
+                        entity_references,
+                    },
                     raw_bytes: bytes[record.offset..record.offset + record.len].to_vec(),
                 }
             })
@@ -8914,7 +9030,9 @@ fn decode_history_records(
                 parent: state_id.to_string(),
                 revision_id: None,
                 byte_offset: start as u64,
-                framing: crate::history_records::AsmHistoryRecordFraming::Opaque { error: error.to_string() },
+                framing: crate::history_records::AsmHistoryRecordFraming::Opaque {
+                    error: error.to_string(),
+                },
                 raw_bytes: bytes[start..limit].to_vec(),
             }]
         }

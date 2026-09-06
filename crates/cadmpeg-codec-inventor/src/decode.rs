@@ -3,10 +3,10 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
 use cadmpeg_asm::brep::AsmBrep;
-use cadmpeg_asm::brep::transfer::{AsmTransferRemainder, transfer_into_ir};
-use cadmpeg_core::CodecError;
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -19,7 +19,7 @@ use cadmpeg_ir::{AnnotationBuilder, NativeUnknownRecord, SourceFidelity, Unknown
 
 use crate::container::InventorContainer;
 use crate::database::{RevisionPayload, VersionTuple};
-use crate::dialect::{DialectRecovery, dialect_loss, kernel_dialect_loss};
+use crate::dialect::{dialect_loss, kernel_dialect_loss, DialectRecovery};
 use crate::external_reference::UfrxState;
 use crate::kernel::ActiveCarrierState;
 use crate::loss::InventorLossCode;
@@ -32,14 +32,13 @@ use crate::native::ufrx::{
 };
 use crate::native::{
     ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord, DatabaseIssueRecord,
-    DatabaseRecord, INVENTOR_NATIVE_VERSION, MetaSectionRecord, MetaTypeRecord,
-    PmAppDefaultStyleRecord, PmAppRenderingStyleRecord, PmGraphicsFaceRecord,
-    PmGraphicsPrimaryColorStyleRecord, PmGraphicsStyleCollectionRecord, PropertyRecord,
-    PropertySectionRecord, PropertySetIssueRecord, PropertySetRecord, PropertyValueKind,
-    RevisionPayloadForm, RevisionRecord, RseRecordRecord, SegmentBulkIssueRecord,
-    SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord,
-    SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord, UnpairedMember,
-    UnpairedSegmentRecord, VersionTupleRecord,
+    DatabaseRecord, MetaSectionRecord, MetaTypeRecord, PmAppDefaultStyleRecord,
+    PmAppRenderingStyleRecord, PmGraphicsFaceRecord, PmGraphicsPrimaryColorStyleRecord,
+    PmGraphicsStyleCollectionRecord, PropertyRecord, PropertySectionRecord, PropertySetIssueRecord,
+    PropertySetRecord, PropertyValueKind, RevisionPayloadForm, RevisionRecord, RseRecordRecord,
+    SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord,
+    SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord,
+    UnpairedMember, UnpairedSegmentRecord, VersionTupleRecord, INVENTOR_NATIVE_VERSION,
 };
 use crate::property_set::{PropertySection, PropertySetState, PropertyValue};
 use crate::protein::ProteinState;
