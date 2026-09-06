@@ -3596,13 +3596,6 @@ impl TryFrom<FeaturePatternTransformLaneWire> for FeaturePatternTransformLane {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureIndexToken {
-    pub value: u32,
-    pub raw: Vec<u8>,
-    pub source_offset: u64,
-}
-
 /// Exact counted instance-output lane carried by a bounded operation payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(
@@ -3977,12 +3970,6 @@ pub struct FeatureDraftConstructionIndexLane {
 pub enum FeatureDraftConstructionIndices {
     Unresolved(CountedIndexMembers<LocatedCompactIndex<u64>, 1>),
     Resolved(CountedIndexMembers<ConstructionReference<String, CompactIndexAtom>, 1>),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FeatureResolvedIndexToken {
-    pub token: FeatureIndexToken,
-    pub data_block: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -8222,15 +8209,12 @@ pub fn feature_datum_plane_payloads(
     headers
         .iter()
         .filter(|header| {
-            !header
-                .resolved_references(DatumPlaneBlockLane::Object)
-                .is_empty()
+            header.resolved_data_blocks(DatumPlaneBlockLane::Object).next().is_some()
         })
         .filter_map(|header| {
             let data_blocks = header
-                .resolved_references(DatumPlaneBlockLane::Object)
-                .iter()
-                .map(|reference| reference.data_block.clone())
+                .resolved_data_blocks(DatumPlaneBlockLane::Object)
+                .cloned()
                 .collect::<Vec<_>>();
             let (payload, content) = FeaturePayloadContent::from_source(data_blocks, &blocks)?;
             let lanes = crate::om::datum_plane_object_index_lanes(&payload);
@@ -8500,11 +8484,9 @@ pub fn feature_datum_plane_descriptors(
         .iter()
         .flat_map(|header| {
             header
-                .resolved_references(DatumPlaneBlockLane::Descriptor)
-                .iter()
+                .resolved_data_blocks(DatumPlaneBlockLane::Descriptor)
                 .enumerate()
-                .filter_map(|(ordinal, reference)| {
-                    let data_block = &reference.data_block;
+                .filter_map(|(ordinal, data_block)| {
                     let (bytes, source_offset) = blocks.get(data_block)?.to_owned();
                     let descriptor = crate::om::datum_plane_descriptor_block(bytes)?;
                     Some(FeatureDatumPlaneDescriptor {
@@ -8534,10 +8516,9 @@ pub fn feature_datum_plane_block_uses(
             .rsplit_once('#')
             .map_or(header.operation_label.as_str(), |(_, key)| key);
         for lane in [DatumPlaneBlockLane::Descriptor, DatumPlaneBlockLane::Object] {
-            for (reference_ordinal, reference) in
-                header.resolved_references(lane).iter().enumerate()
+            for (reference_ordinal, data_block) in
+                header.resolved_data_blocks(lane).enumerate()
             {
-                let data_block = &reference.data_block;
                 for input in inputs
                     .iter()
                     .filter(|input| input.data_block == *data_block)

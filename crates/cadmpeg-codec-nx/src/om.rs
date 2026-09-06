@@ -1750,14 +1750,14 @@ pub struct DatumPlaneSingleReferenceBranch {
     /// Non-null compact descriptor with its absolute source offset.
     pub descriptor: LocatedCompactIndex,
     /// Canonical payload object reference with its absolute source offset.
-    pub object: PayloadObjectReference,
+    pub object: PayloadObjectReference<reference_index::PayloadIndexToken>,
 }
 
 /// Two canonical references carried by a tag-`29` datum-plane branch.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatumPlaneDoubleReferenceBranch {
     /// Canonical payload object indices in branch order.
-    pub references: [PayloadObjectReference; 2],
+    pub references: [PayloadObjectReference<reference_index::PayloadIndexToken>; 2],
 }
 
 /// Complete terminal compact-index lane in a reconstructed datum-plane payload.
@@ -4719,8 +4719,8 @@ pub fn datum_plane_single_reference_branch(
     (record.payload.get(at) == Some(&0x01)).then_some(())?;
     at += 1;
     let object_offset = record.payload_offset + at;
-    let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
-    at += width;
+    let object_index = reference_index::PayloadIndexToken::read(record.payload.get(at..)?)?;
+    at += object_index.raw().len();
     (record.payload.get(at..at + SUFFIX.len()) == Some(&SUFFIX)).then_some(())?;
     Some(DatumPlaneSingleReferenceBranch {
         descriptor,
@@ -4752,8 +4752,8 @@ pub fn datum_plane_descriptor_reference_branch(
     (record.payload.get(at..at + SEPARATOR.len()) == Some(&SEPARATOR)).then_some(())?;
     at += SEPARATOR.len();
     let object_offset = record.payload_offset + at;
-    let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
-    at += width;
+    let object_index = reference_index::PayloadIndexToken::read(record.payload.get(at..)?)?;
+    at += object_index.raw().len();
     (record.payload.get(at..at + SUFFIX.len()) == Some(&SUFFIX)).then_some(())?;
     Some(DatumPlaneSingleReferenceBranch {
         descriptor,
@@ -4783,12 +4783,12 @@ pub fn datum_plane_double_reference_branch(
         return None;
     }
     let mut at = 10;
-    let (first_index, first_width) = payload_object_index(record.payload.get(at..)?)?;
+    let first_index = reference_index::PayloadIndexToken::read(record.payload.get(at..)?)?;
     let first = PayloadObjectReference {
         offset: record.payload_offset + at,
         token: first_index,
     };
-    at += first_width;
+    at += first_index.raw().len();
     let middle = if header.declared_count == 2 {
         COUNT_TWO_MIDDLE.as_slice()
     } else {
@@ -4796,12 +4796,12 @@ pub fn datum_plane_double_reference_branch(
     };
     (record.payload.get(at..at + middle.len()) == Some(middle)).then_some(())?;
     at += middle.len();
-    let (second_index, second_width) = payload_object_index(record.payload.get(at..)?)?;
+    let second_index = reference_index::PayloadIndexToken::read(record.payload.get(at..)?)?;
     let second = PayloadObjectReference {
         offset: record.payload_offset + at,
         token: second_index,
     };
-    at += second_width;
+    at += second_index.raw().len();
     let suffix = if header.declared_count == 2 {
         COUNT_TWO_SUFFIX.as_slice()
     } else {
