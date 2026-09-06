@@ -967,9 +967,18 @@ fn om_operation_terminal_discriminator_requires_one_complete_lane() {
     };
     let lane = super::operation_terminal_discriminator(record).unwrap();
     assert_eq!(lane.offset, 200);
-    assert_eq!(lane.type_indices, [351, 171]);
-    assert_eq!(lane.raw_type_indices, [vec![0x81, 0x5f], vec![0x80, 0xab]]);
-    assert_eq!(lane.type_index_offsets, [203, 205]);
+    assert_eq!(
+        lane.type_indices.each_ref().map(|token| token.value),
+        [351, 171]
+    );
+    assert_eq!(
+        lane.type_indices.each_ref().map(|token| token.raw.clone()),
+        [vec![0x81, 0x5f], vec![0x80, 0xab]]
+    );
+    assert_eq!(
+        lane.type_indices.each_ref().map(|token| token.offset),
+        [203, 205]
+    );
     assert_eq!(lane.flags, [1, 2, 1, 1]);
     assert_eq!(
         lane.trailing_indices

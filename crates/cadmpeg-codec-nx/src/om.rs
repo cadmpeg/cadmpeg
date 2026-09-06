@@ -2703,11 +2703,7 @@ pub struct OperationTerminalDiscriminator {
     /// Payload-relative offset of the fixed footer prelude.
     pub offset: usize,
     /// Two compact type indices following `01 01 02`.
-    pub type_indices: [u32; 2],
-    /// Exact compact-index tokens for the two type indices.
-    pub raw_type_indices: [Vec<u8>; 2],
-    /// Absolute offsets of the two type-index tokens.
-    pub type_index_offsets: [usize; 2],
+    pub type_indices: [LaneToken<u32>; 2],
     /// Four serialized one-byte flags.
     pub flags: [u8; 4],
     /// Compact values between `29 29` and the terminal zero, with source tokens.
@@ -5460,13 +5456,9 @@ pub fn operation_terminal_discriminator(
             offset: 0,
             width: 0,
         }; 2];
-        let mut type_indices = [0; 2];
-        let mut type_index_offsets = [0; 2];
-        for slot in 0..2 {
+        for type_token in &mut type_tokens {
             let token = compact_value_token(record.payload, at)?;
-            type_indices[slot] = token.value;
-            type_index_offsets[slot] = record.payload_offset + at;
-            type_tokens[slot] = token;
+            *type_token = token;
             at += token.width;
         }
         if record.payload.get(at..at + 4) != Some(&[0x01, 0x03, 0x02, 0x01]) {
@@ -5511,11 +5503,11 @@ pub fn operation_terminal_discriminator(
 
         Some(OperationTerminalDiscriminator {
             offset: record.payload_offset + start,
-            type_indices,
-            raw_type_indices: std::array::from_fn(|slot| {
-                raw_compact_token(record.payload, type_tokens[slot])
+            type_indices: type_tokens.map(|token| LaneToken {
+                value: token.value,
+                raw: raw_compact_token(record.payload, token),
+                offset: record.payload_offset + token.offset,
             }),
-            type_index_offsets,
             flags,
             trailing_indices,
         })

@@ -10169,10 +10169,10 @@ pub fn feature_operation_terminal_discriminators(
                 operation_label: format!(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
-                type_indices: std::array::from_fn(|slot| FeatureIndexToken {
-                    value: lane.type_indices[slot],
-                    raw: lane.raw_type_indices[slot].clone(),
-                    source_offset: entry_offset + lane.type_index_offsets[slot] as u64,
+                type_indices: lane.type_indices.map(|token| FeatureIndexToken {
+                    value: token.value,
+                    raw: token.raw,
+                    source_offset: entry_offset + token.offset as u64,
                 }),
                 flags: lane.flags,
                 trailing_indices: lane.trailing_indices.into_iter().map(|token| FeatureIndexToken {
