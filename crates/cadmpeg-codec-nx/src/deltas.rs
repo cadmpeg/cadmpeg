@@ -11,7 +11,7 @@ pub(crate) mod inline_schema_fields;
 pub(crate) mod precision_state;
 pub(crate) mod type101_state;
 use precision_state::PrecisionState;
-use inline_schema_fields::{InlineBodyStateFields, InlineSchemaFields, TermUseValues};
+use inline_schema_fields::{BodyStateBytes, InlineBodyStateFields, InlineSchemaFields, TermUseValues};
 use reference_lanes::{MapEntries, TaggedReferences};
 pub(crate) mod packet_marker;
 pub(crate) mod xmt_reference;
@@ -2104,9 +2104,9 @@ fn inline_body_state(stream: &[u8], offset: usize, gap_end: usize) -> Option<Inl
     let expected_end = next_header.unwrap_or(gap_end);
     let (first, consumed) = read_xmt(stream, offset)?;
     let mut at = offset.checked_add(consumed)?;
-    if first > 1 && stream.get(at) == Some(&0) && at.checked_add(1) == Some(expected_end) {
+    if stream.get(at) == Some(&0) && at.checked_add(1) == Some(expected_end) {
         return Some(InlineBodyState {
-            fields: InlineBodyStateFields::Compact { reference: first },
+            fields: InlineBodyStateFields::Compact { reference: NonNullXmt::try_from(first).ok()? },
             offset,
             end: expected_end,
         });
@@ -2123,8 +2123,7 @@ fn inline_body_state(stream: &[u8], offset: usize, gap_end: usize) -> Option<Inl
         at = at.checked_add(1)?;
         *reference = value;
     }
-    (at < expected_end).then_some(())?;
-    let state_bytes = stream.get(at..expected_end)?.to_vec();
+    let state_bytes = BodyStateBytes::try_from(stream.get(at..expected_end)?.to_vec()).ok()?;
     Some(InlineBodyState {
         fields: InlineBodyStateFields::Revision {
             node_id,
@@ -3901,7 +3900,7 @@ mod inline_schema_tests {
                 compact_census.inline_body_states,
                 [InlineBodyState {
                     fields: InlineBodyStateFields::Compact {
-                        reference: u32::from(reference),
+                        reference: NonNullXmt::try_from(u32::from(reference)).unwrap(),
                     },
                     offset: BODY_SCHEMA_HEADER.len(),
                     end: compact.len(),
@@ -3932,7 +3931,7 @@ mod inline_schema_tests {
                 fields: InlineBodyStateFields::Revision {
                     node_id: 7,
                     references: [8, 1, 2, 3, 4, 5, 6, 7],
-                    state_bytes: vec![0xaa, 0xbb],
+                    state_bytes: vec![0xaa, 0xbb].try_into().unwrap(),
                 },
                 offset: state_offset,
                 end: state_end,
