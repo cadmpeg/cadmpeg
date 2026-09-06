@@ -1173,7 +1173,6 @@ fn nx_datum_plane_csys_identity_uses_join_only_equal_typed_identities() {
         identity: plane.identity.clone(),
         suffix: vec![b'?', b'A'],
         source_offset: 20,
-        identity_source_offset: 22,
     };
     let uses = super::feature_datum_plane_csys_identity_uses(&[plane], &[csys]);
     assert_eq!(uses.len(), 1);

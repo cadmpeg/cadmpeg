@@ -2567,8 +2567,6 @@ pub struct DatumCsysDescriptorBlock {
     pub identity: String,
     /// Exact bytes following the identity.
     pub suffix: Vec<u8>,
-    /// Block-relative identity offset.
-    pub identity_offset: usize,
 }
 
 /// Complete identity frame in a reconstructed draft construction payload.
@@ -2582,8 +2580,12 @@ pub struct DraftConstructionIdentityFrame {
     pub form: DraftConstructionIdentityFrameForm,
     /// Nonempty lowercase hexadecimal identity.
     pub identity: String,
-    /// Payload-relative identity offset.
-    pub identity_offset: usize,
+}
+
+impl DraftConstructionIdentityFrame {
+    pub fn identity_offset(&self) -> usize {
+        self.offset + self.prefix.len()
+    }
 }
 
 /// Typed prefix form of a draft construction identity frame.
@@ -2852,7 +2854,7 @@ pub struct BlockConstructionReferenceField {
     /// Payload control byte preceding the field framing.
     pub control: u8,
     /// Eighteen leading references followed by the terminal reference.
-    pub references: Vec<PayloadObjectReference>,
+    pub references: [PayloadObjectReference; 19],
 }
 
 /// Self-framed NX parameter name in one bounded expression declaration record.
@@ -5884,7 +5886,7 @@ pub fn block_construction_references(
     }
     Some(BlockConstructionReferenceField {
         control: record.payload[0],
-        references,
+        references: references.try_into().ok()?,
     })
 }
 
@@ -6618,7 +6620,6 @@ pub fn datum_csys_descriptor_block(bytes: &[u8]) -> Option<DatumCsysDescriptorBl
         prefix: bytes[..start].to_vec(),
         identity: std::str::from_utf8(&bytes[start..end]).ok()?.to_string(),
         suffix: bytes[end..].to_vec(),
-        identity_offset: start,
     })
 }
 
@@ -6649,7 +6650,6 @@ pub fn draft_construction_identity_frames(bytes: &[u8]) -> Vec<DraftConstruction
             form,
             identity: String::from_utf8(bytes[identity_start..identity_end].to_vec())
                 .expect("lowercase hexadecimal bytes are UTF-8"),
-            identity_offset: identity_start,
         });
     }
     frames

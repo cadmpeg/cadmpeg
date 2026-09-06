@@ -1492,6 +1492,7 @@ impl FeatureScalarPayload {
 
 /// Typed descriptor from one of the final three datum-CSYS construction lanes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "FeatureDatumCsysDescriptorWire", into = "FeatureDatumCsysDescriptorWire")]
 pub struct FeatureDatumCsysDescriptor {
     /// Globally unique descriptor identity.
     pub id: String,
@@ -1511,9 +1512,77 @@ pub struct FeatureDatumCsysDescriptor {
     pub suffix: Vec<u8>,
     /// Absolute source offset of the block.
     pub source_offset: u64,
-    /// Absolute source offset of the identity.
-    pub identity_source_offset: u64,
 }
+
+impl FeatureDatumCsysDescriptor {
+    pub fn identity_source_offset(&self) -> u64 {
+        self.source_offset + self.prefix.len() as u64
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureDatumCsysDescriptorWire {
+    /// Globally unique descriptor identity.
+    id: String,
+    /// Owning `DATUM_CSYS` operation label.
+    operation_label: String,
+    /// Construction carrying the descriptor lane.
+    construction: String,
+    /// Construction reference ordinal in the range 5–7.
+    reference_ordinal: u8,
+    /// Resolved source block.
+    data_block: String,
+    /// Exact bytes preceding the hexadecimal identity.
+    prefix: Vec<u8>,
+    /// Lowercase 30–32 digit hexadecimal identity.
+    identity: String,
+    /// Exact bytes following the hexadecimal identity.
+    suffix: Vec<u8>,
+    /// Absolute source offset of the block.
+    source_offset: u64,
+    /// Absolute source offset of the identity.
+    identity_source_offset: u64,
+}
+
+impl From<FeatureDatumCsysDescriptor> for FeatureDatumCsysDescriptorWire {
+    fn from(value: FeatureDatumCsysDescriptor) -> Self {
+        let identity_source_offset = value.identity_source_offset();
+        Self {
+            id: value.id,
+            operation_label: value.operation_label,
+            construction: value.construction,
+            reference_ordinal: value.reference_ordinal,
+            data_block: value.data_block,
+            prefix: value.prefix,
+            identity: value.identity,
+            suffix: value.suffix,
+            source_offset: value.source_offset,
+            identity_source_offset,
+        }
+    }
+}
+
+impl TryFrom<FeatureDatumCsysDescriptorWire> for FeatureDatumCsysDescriptor {
+    type Error = String;
+
+    fn try_from(wire: FeatureDatumCsysDescriptorWire) -> Result<Self, Self::Error> {
+        if wire.source_offset.checked_add(wire.prefix.len() as u64) != Some(wire.identity_source_offset) {
+            return Err("identity_source_offset must equal source_offset plus prefix length".into());
+        }
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            construction: wire.construction,
+            reference_ordinal: wire.reference_ordinal,
+            data_block: wire.data_block,
+            prefix: wire.prefix,
+            identity: wire.identity,
+            suffix: wire.suffix,
+            source_offset: wire.source_offset,
+        })
+    }
+}
+
 
 /// Exact shared descriptor identity between datum-plane and datum-CSYS history.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -3916,6 +3985,7 @@ pub struct FeatureDraftConstructionGraphString {
 
 /// Complete identity frame in a reconstructed draft construction payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "FeatureDraftConstructionIdentityFrameWire", into = "FeatureDraftConstructionIdentityFrameWire")]
 pub struct FeatureDraftConstructionIdentityFrame {
     /// Globally unique frame identity.
     pub id: String,
@@ -3933,13 +4003,85 @@ pub struct FeatureDraftConstructionIdentityFrame {
     pub identity: String,
     /// Payload-relative offset of the opening marker.
     pub payload_offset: u64,
-    /// Payload-relative identity offset.
-    pub identity_payload_offset: u64,
     /// Absolute source offset of the opening marker.
     pub source_offset: u64,
     /// Absolute source offset of the identity.
     pub identity_source_offset: u64,
 }
+
+impl FeatureDraftConstructionIdentityFrame {
+    pub fn identity_payload_offset(&self) -> u64 {
+        self.payload_offset + self.prefix.len() as u64
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureDraftConstructionIdentityFrameWire {
+    /// Globally unique frame identity.
+    id: String,
+    /// Owning `DRAFT` operation label.
+    operation_label: String,
+    /// Reconstructed payload carrying the frame.
+    draft_construction_payload: String,
+    /// Zero-based frame order in the reconstructed payload.
+    ordinal: u32,
+    /// Exact bytes from the opening marker through the identity introducer.
+    prefix: Vec<u8>,
+    /// Typed frame form selected by the exact prefix.
+    form: FeatureDraftConstructionIdentityFrameForm,
+    /// Nonempty lowercase hexadecimal identity.
+    identity: String,
+    /// Payload-relative offset of the opening marker.
+    payload_offset: u64,
+    /// Payload-relative identity offset.
+    identity_payload_offset: u64,
+    /// Absolute source offset of the opening marker.
+    source_offset: u64,
+    /// Absolute source offset of the identity.
+    identity_source_offset: u64,
+}
+
+impl From<FeatureDraftConstructionIdentityFrame> for FeatureDraftConstructionIdentityFrameWire {
+    fn from(value: FeatureDraftConstructionIdentityFrame) -> Self {
+        let identity_payload_offset = value.identity_payload_offset();
+        Self {
+            id: value.id,
+            operation_label: value.operation_label,
+            draft_construction_payload: value.draft_construction_payload,
+            ordinal: value.ordinal,
+            prefix: value.prefix,
+            form: value.form,
+            identity: value.identity,
+            payload_offset: value.payload_offset,
+            identity_payload_offset,
+            source_offset: value.source_offset,
+            identity_source_offset: value.identity_source_offset,
+        }
+    }
+}
+
+impl TryFrom<FeatureDraftConstructionIdentityFrameWire> for FeatureDraftConstructionIdentityFrame {
+    type Error = String;
+
+    fn try_from(wire: FeatureDraftConstructionIdentityFrameWire) -> Result<Self, Self::Error> {
+        if wire.payload_offset.checked_add(wire.prefix.len() as u64) != Some(wire.identity_payload_offset) {
+            return Err("identity_payload_offset must equal payload_offset plus prefix length".into());
+        }
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            draft_construction_payload: wire.draft_construction_payload,
+            ordinal: wire.ordinal,
+            prefix: wire.prefix,
+            form: wire.form,
+            identity: wire.identity,
+            payload_offset: wire.payload_offset,
+            source_offset: wire.source_offset,
+            identity_source_offset: wire.identity_source_offset,
+        })
+    }
+}
+
 
 /// Typed prefix form of a draft construction identity frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -7713,7 +7855,6 @@ pub fn feature_datum_csys_descriptors(
                         identity: descriptor.identity,
                         suffix: descriptor.suffix,
                         source_offset,
-                        identity_source_offset: source_offset + descriptor.identity_offset as u64,
                     })
                 })
                 .collect::<Vec<_>>()
@@ -10274,7 +10415,7 @@ pub fn feature_draft_construction_identity_frames(
                 .enumerate()
                 .filter_map(|(ordinal, frame)| {
                     let payload_offset = frame.offset as u64;
-                    let identity_payload_offset = frame.identity_offset as u64;
+                    let identity_payload_offset = frame.identity_offset() as u64;
                     let form = match frame.form {
                         crate::om::DraftConstructionIdentityFrameForm::IndexedBranch {
                             first_index,
@@ -10298,7 +10439,6 @@ pub fn feature_draft_construction_identity_frames(
                         form,
                         identity: frame.identity,
                         payload_offset,
-                        identity_payload_offset,
                         source_offset: joined_payload_source_offset(
                             payload_offset,
                             &starts,

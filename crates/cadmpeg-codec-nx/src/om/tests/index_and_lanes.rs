@@ -902,7 +902,7 @@ fn om_datum_csys_descriptor_requires_one_maximal_hex_identity() {
     let descriptor = super::datum_csys_descriptor_block(bytes).unwrap();
     assert_eq!(descriptor.prefix, [0x02, 0x01]);
     assert_eq!(descriptor.identity, "ae166162820ea2d993e1fdf49091850e");
-    assert_eq!(descriptor.identity_offset, 2);
+    assert_eq!(descriptor.prefix.len(), 2);
     assert_eq!(descriptor.suffix, b"?A\x80\xa0\xf0\x26");
 
     let mut ambiguous = bytes.to_vec();
@@ -926,7 +926,7 @@ fn om_draft_identity_frames_require_complete_typed_framing() {
         }
     );
     assert_eq!(frames[0].identity, "abc123");
-    assert_eq!(frames[0].identity_offset, 8);
+    assert_eq!(frames[0].identity_offset(), 8);
     assert_eq!(frames[1].offset, 15);
     assert_eq!(frames[1].prefix, b"A\xf0\x27\xff\x02\x01");
     assert_eq!(
