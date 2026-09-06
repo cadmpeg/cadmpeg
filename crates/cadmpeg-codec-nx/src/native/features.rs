@@ -11,6 +11,8 @@ mod common_frame_wire;
 mod body_write_wire;
 pub(crate) mod unlabeled_record;
 pub(crate) mod operation_record;
+pub(crate) mod block_reference;
+use block_reference::{BlockReferencePosition, FeatureBlockConstructionReference};
 use operation_record::{FeatureOperationRecord, OperationRecordSpan};
 use unlabeled_record::FeatureUnlabeledOperationRecord;
 use crate::printable_string::PrintableString;
@@ -5695,29 +5697,6 @@ pub struct FeatureExtrude32Construction {
     pub second_data_blocks: Vec<String>,
 }
 
-/// Ordered construction reference carried by a bounded `BLOCK` payload.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureBlockConstructionReference {
-    /// Globally unique construction-reference identity.
-    pub id: String,
-    /// Owning `BLOCK` operation label.
-    pub operation_label: String,
-    /// Payload control byte preceding the construction field.
-    pub control: u8,
-    /// Zero-based reference order across the complete field.
-    pub ordinal: u32,
-    /// Whether this is the reference following the separator byte.
-    pub terminal: bool,
-    /// Checked index retaining the exact serialized token.
-    #[serde(flatten)]
-    pub token: crate::om::reference_index::ReferenceIndexToken,
-    /// Unique target in the native `data_blocks` arena.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub data_block: Option<String>,
-    /// Absolute file offset of the width marker.
-    pub source_offset: u64,
-}
-
 /// Completely resolved construction-reference field of one `BLOCK` feature.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "FeatureBlockConstructionWire", into = "FeatureBlockConstructionWire")]
@@ -11366,18 +11345,16 @@ pub fn feature_block_construction_references(
             let Some(field) = crate::om::block_construction_references(record.payload_view()) else {
                 return;
             };
-            let terminal_ordinal = field.references.len() - 1;
-            references.extend(field.references.into_iter().enumerate().map(
-                |(ordinal, reference)| FeatureBlockConstructionReference {
+            references.extend(BlockReferencePosition::enumerate(field.references).map(
+                |(position, reference)| FeatureBlockConstructionReference {
                     id: format!(
-                        "nx:feature-history:block-construction-reference#{section_key}-{operation_ordinal:010}-{ordinal:010}"
+                        "nx:feature-history:block-construction-reference#{section_key}-{operation_ordinal:010}-{ordinal:010}", ordinal = position.ordinal()
                     ),
                     operation_label: format!(
                         "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                     ),
                     control: field.control,
-                    ordinal: ordinal as u32,
-                    terminal: ordinal == terminal_ordinal,
+                    position,
                     token: reference.token,
                     data_block: unique_offset_data_block(&indexed, reference.token.value()),
                     source_offset: entry_offset + reference.offset as u64,
@@ -11401,30 +11378,26 @@ pub fn feature_block_constructions(
     }
     let mut constructions = Vec::new();
     for (operation_label, mut field) in by_operation {
-        field.sort_by_key(|reference| reference.ordinal);
+        field.sort_by_key(|reference| reference.position.ordinal());
         let Ok(field): Result<[_; 19], _> = field.try_into() else { continue; };
         if field.iter().enumerate().any(|(ordinal, reference)| {
-                reference.ordinal != ordinal as u32
+                reference.position.ordinal() != ordinal as u32
                     || reference.control != field[0].control
-                    || reference.terminal != (ordinal == 18)
             })
         {
             continue;
         }
         let [members @ .., terminal] = &field;
-        let Some(members) = members
-            .iter()
-            .map(|reference| Some(FeatureConstructionMember {
-                reference: reference.id.clone(), data_block: reference.data_block.clone()?,
-            }))
-            .collect::<Option<Vec<_>>>()
-        else {
-            continue;
-        };
+        let resolved = members.map(|reference| reference.data_block.as_ref().map(|data_block| FeatureConstructionMember {
+            reference: reference.id.clone(), data_block: data_block.clone(),
+        }));
+        let [Some(a), Some(b), Some(c), Some(d), Some(e), Some(f),
+            Some(g), Some(h), Some(i), Some(j), Some(k), Some(l),
+            Some(m), Some(n), Some(o), Some(p), Some(q), Some(r)] = resolved else { continue; };
+        let members = [a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r];
         let Some(terminal_data_block) = terminal.data_block.clone() else {
             continue;
         };
-        let Ok(members) = members.try_into() else { continue; };
         constructions.push(FeatureBlockConstruction {
             id: operation_label.replacen("operation-label", "block-construction", 1),
             operation_label: operation_label.to_string(),

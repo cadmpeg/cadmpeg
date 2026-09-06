@@ -1443,12 +1443,11 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
 #[test]
 fn nx_block_construction_requires_complete_resolved_reference_field() {
     let references = (0..19)
-        .map(|ordinal| super::FeatureBlockConstructionReference {
+        .map(|ordinal| crate::native::features::block_reference::FeatureBlockConstructionReference {
             id: format!("reference#{ordinal}"),
             operation_label: "operation".to_string(),
             control: 0x26,
-            ordinal,
-            terminal: ordinal == 18,
+            position: crate::native::features::block_reference::BlockReferencePosition::new(ordinal).unwrap(),
             token: crate::om::reference_index::ReferenceIndexToken::from_wire(ordinal + 100, &[(ordinal + 100) as u8]).unwrap(),
             data_block: Some(format!("block#{ordinal}")),
             source_offset: u64::from(ordinal),
@@ -1460,6 +1459,10 @@ fn nx_block_construction_requires_complete_resolved_reference_field() {
     assert_eq!(constructions[0].members.len(), 18);
     assert_eq!(constructions[0].terminal_reference, "reference#18");
     assert_eq!(constructions[0].terminal_data_block, "block#18");
+
+    let mut duplicate = references.clone();
+    duplicate[7].position = crate::native::features::block_reference::BlockReferencePosition::new(8).unwrap();
+    assert!(super::feature_block_constructions(&duplicate).is_empty());
 
     let mut unresolved = references;
     unresolved[7].data_block = None;

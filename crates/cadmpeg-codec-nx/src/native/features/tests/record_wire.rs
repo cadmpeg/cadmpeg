@@ -306,7 +306,7 @@ fn construction_reference_records_preserve_wire_and_check_tokens() {
     check::<super::FeatureSurfaceConstructionReference>(r#"{"id":"r","operation_label":"o","ordinal":0,"object_index":1,"raw_object_index":[240,1],"source_offset":10}"#);
     check::<super::FeatureSurfaceBranchReference>(r#"{"ordinal":0,"object_index":1,"raw_object_index":[240,1],"source_offset":10}"#);
     check::<super::FeatureExtrudeProfileReference>(r#"{"id":"r","operation_label":"o","ordinal":0,"field_tag":1,"object_index":1,"raw_object_index":[240,1],"source_offset":10}"#);
-    check::<super::FeatureBlockConstructionReference>(r#"{"id":"r","operation_label":"o","control":1,"ordinal":0,"terminal":true,"object_index":1,"raw_object_index":[240,1],"source_offset":10}"#);
+    check::<crate::native::features::block_reference::FeatureBlockConstructionReference>(r#"{"id":"r","operation_label":"o","control":1,"ordinal":0,"terminal":false,"object_index":1,"raw_object_index":[240,1],"source_offset":10}"#);
 }
 
 #[test]
