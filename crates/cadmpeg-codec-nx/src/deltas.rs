@@ -3,6 +3,7 @@
 #![deny(clippy::disallowed_methods)]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroU16;
 
 pub(crate) mod record_kind;
 pub(crate) mod packet_marker;
@@ -563,7 +564,7 @@ pub struct ReferenceTypeMap {
     /// Ordered `(reference, type_code)` entries.
     pub entries: Vec<(u32, u16)>,
     /// Type code of the optional terminal map target.
-    pub target_kind: Option<u16>,
+    pub target_kind: Option<NonZeroU16>,
     /// First byte of the map.
     pub offset: usize,
     /// First byte following the map.
@@ -1526,8 +1527,7 @@ fn reference_type_map(
                     end: at,
                 });
             }
-            let target_kind = View::u16_be_at(stream, at)?;
-            (target_kind > 0).then_some(())?;
+            let target_kind = NonZeroU16::new(View::u16_be_at(stream, at)?)?;
             at = at.checked_add(2)?;
             return (expected_end.is_none_or(|end| at <= end) && !entries.is_empty()).then_some(
                 ReferenceTypeMap {
@@ -4742,7 +4742,7 @@ mod reference_type_map_tests {
             census.reference_type_maps,
             [ReferenceTypeMap {
                 entries: vec![(40_000, 81), (3, 100)],
-                target_kind: Some(55),
+                target_kind: NonZeroU16::new(55),
                 offset: 0,
                 end: bytes.len(),
             }]
@@ -4761,7 +4761,7 @@ mod reference_type_map_tests {
             census.reference_type_maps,
             [ReferenceTypeMap {
                 entries: vec![(40_000, 81), (3, 100)],
-                target_kind: Some(55),
+                target_kind: NonZeroU16::new(55),
                 offset: 0,
                 end: bytes.len(),
             }]
@@ -4777,7 +4777,7 @@ mod reference_type_map_tests {
         let census = walk(&bytes);
 
         assert_eq!(census.reference_type_maps.len(), 1);
-        assert_eq!(census.reference_type_maps[0].target_kind, Some(1));
+        assert_eq!(census.reference_type_maps[0].target_kind.map(NonZeroU16::get), Some(1));
         assert_eq!(census.bytes_decoded, bytes.len());
     }
 
@@ -4789,7 +4789,7 @@ mod reference_type_map_tests {
         let census = walk(&bytes);
 
         assert_eq!(census.reference_type_maps.len(), 1);
-        assert_eq!(census.reference_type_maps[0].target_kind, Some(323));
+        assert_eq!(census.reference_type_maps[0].target_kind.map(NonZeroU16::get), Some(323));
         assert_eq!(census.bytes_decoded, bytes.len());
     }
 
@@ -4806,7 +4806,7 @@ mod reference_type_map_tests {
             census.reference_type_maps,
             [ReferenceTypeMap {
                 entries: vec![(3, 82)],
-                target_kind: Some(612),
+                target_kind: NonZeroU16::new(612),
                 offset: 0,
                 end: map.len(),
             }]
@@ -4891,7 +4891,7 @@ mod reference_type_map_tests {
             census.reference_type_maps,
             [ReferenceTypeMap {
                 entries: vec![(3, 67), (4, 11)],
-                target_kind: Some(61),
+                target_kind: NonZeroU16::new(61),
                 offset: 0,
                 end: bytes.len(),
             }]

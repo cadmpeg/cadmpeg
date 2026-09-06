@@ -570,13 +570,23 @@ pub struct ParasolidDeltasReferenceTypeMap {
     /// Ordered `(XMT identity, Parasolid type code)` entries.
     pub entries: Vec<(u32, u16)>,
     /// Type code of the optional terminal map target.
-    pub target_kind: Option<u16>,
+    #[serde(default, deserialize_with = "deserialize_map_target_kind")]
+    pub target_kind: Option<std::num::NonZeroU16>,
     /// Exact map byte length.
     pub byte_len: u64,
     /// SHA-256 of the exact map bytes.
     pub sha256: String,
     /// First map byte offset in the inflated stream.
     pub inflated_offset: u64,
+}
+
+fn deserialize_map_target_kind<'de, D>(deserializer: D) -> Result<Option<std::num::NonZeroU16>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<u16>::deserialize(deserializer)?
+        .map(|kind| std::num::NonZeroU16::new(kind).ok_or_else(|| serde::de::Error::custom("target_kind: must be nonzero when present")))
+        .transpose()
 }
 
 /// Reference-state packet in a Parasolid deltas stream.
@@ -3845,7 +3855,7 @@ mod tests {
         assert_eq!(events.reference_type_maps.len(), 1);
         let map = &events.reference_type_maps[0];
         assert_eq!(map.entries, [(40_000, 81), (3, 100)]);
-        assert_eq!(map.target_kind, Some(55));
+        assert_eq!(map.target_kind.map(std::num::NonZeroU16::get), Some(55));
         assert_eq!(map.byte_len, 20);
         assert_eq!(map.inflated_offset, map_offset as u64);
         assert_eq!(
