@@ -222,4 +222,16 @@ mod tests {
             .is_none());
         }
     }
+
+    #[test]
+    fn source_span_retains_local_positions_and_bounds_absolute_projections() {
+        let bytes = [0, 0, 0x41, 1, 2, 1, 0x11, 0x41, 1, 2, 1, 0x11];
+        let span = operation_state_status_row_at(&bytes, 2, 7, 100, None).unwrap();
+        assert_eq!((span.offset(), span.end_offset()), (102, 107));
+        assert_eq!((span.offset() - 100, span.end_offset() - 100), (2, 7));
+        let boundary = operation_state_status_row_at(&bytes, 2, 7, usize::MAX - 7, None).unwrap();
+        assert_eq!(boundary.end_offset(), usize::MAX);
+        assert!(operation_state_status_row_at(&bytes, 2, 7, usize::MAX - 6, None).is_none());
+        assert!(operation_state_status_row_at(&bytes, 7, 2, 0, None).is_none());
+    }
 }

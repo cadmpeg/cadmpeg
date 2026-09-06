@@ -60,8 +60,6 @@ use sketch_scalar::{SketchMixedScalars, SketchScalarLaneForm, SketchScaledAtom};
 pub(crate) mod fixed;
 use fixed::{Q155Atom, Q155LaneFrame, Q155Marker, Q155};
 pub(crate) mod nonempty;
-#[cfg(test)]
-mod source_span;
 pub(crate) mod state_index;
 pub(crate) mod state_slots;
 pub(crate) mod state_tagged_value;
