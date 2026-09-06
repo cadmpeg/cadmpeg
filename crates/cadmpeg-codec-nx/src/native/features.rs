@@ -26,6 +26,8 @@ use crate::om::thru_curve_endings::{ThruCurveBranchSuffix, ThruCurveGroupTermina
 
 pub(crate) mod datum_plane_header;
 mod payload_content;
+mod joined_payload;
+use joined_payload::JoinedPayload;
 use datum_plane_header::FeatureDatumPlaneHeader;
 use payload_content::{FeaturePayloadBlock, FeaturePayloadContent};
 
@@ -8170,15 +8172,15 @@ fn construction_payload_frames<P, S, R>(
     payloads
         .iter()
         .flat_map(|payload| {
-            let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(data_blocks(payload).iter().map(|block| &block.id), &blocks)
+            let Some(joined) =
+                JoinedPayload::from_source(data_blocks(payload).iter().map(|block| &block.id), &blocks)
             else {
                 return Vec::new();
             };
             let source_offset = |relative: usize| {
-                joined_payload_source_offset(relative as u64, &starts, &lengths, &sources)
+                joined.source_offset(relative as u64)
             };
-            scan(&bytes)
+            scan(joined.bytes())
                 .into_iter()
                 .enumerate()
                 .filter_map(|(ordinal, row)| build(payload, ordinal, row, &source_offset))
@@ -8760,30 +8762,19 @@ pub fn feature_sketch_payload_scalars(
         .filter_map(|construction| {
             let mut data_blocks = construction.members.iter().map(|member| member.data_block.clone()).collect::<Vec<_>>();
             data_blocks.push(construction.terminal_data_block.clone());
-            let (payload, block_payload_offsets, block_byte_lengths, block_source_offsets) =
-                join_data_block_bytes(data_blocks.iter(), &blocks)?;
+            let joined = JoinedPayload::from_source(data_blocks.iter(), &blocks)?;
             let construction_payload = construction.id.replacen(
                 "sketch-construction-inputs",
                 "sketch-construction-payload",
                 1,
             );
             Some(
-                crate::om::construction_payload_scalar_fields(&payload)
+                crate::om::construction_payload_scalar_fields(joined.bytes())
                     .into_iter()
                     .enumerate()
-                    .map(|(ordinal, field)| {
-                        let source_offset = block_payload_offsets
-                            .iter()
-                            .zip(&block_byte_lengths)
-                            .zip(&block_source_offsets)
-                            .find_map(|((payload_start, byte_len), source_start)| {
-                                let relative = u64::try_from(field.offset).ok()?;
-                                (relative >= *payload_start
-                                    && relative < payload_start.saturating_add(*byte_len))
-                                .then_some(source_start + relative - payload_start)
-                            })
-                            .expect("field lies in joined payload");
-                        FeaturePayloadScalar {
+                    .filter_map(|(ordinal, field)| {
+                        let source_offset = joined.source_offset(field.offset as u64)?;
+                        Some(FeaturePayloadScalar {
                             id: format!(
                                 "nx:feature-history:sketch-payload-scalar#{}-{ordinal:010}",
                                 construction_payload
@@ -8799,7 +8790,7 @@ pub fn feature_sketch_payload_scalars(
                             scalar: field.scalar,
                             payload_offset: field.offset as u64,
                             source_offset,
-                        }
+                        })
                     })
                     .collect::<Vec<_>>(),
             )
@@ -8846,8 +8837,7 @@ pub fn feature_sketch_payload_names(
         .flat_map(|construction| {
             let mut data_blocks = construction.members.iter().map(|member| member.data_block.clone()).collect::<Vec<_>>();
             data_blocks.push(construction.terminal_data_block.clone());
-            let Some((payload, block_payload_offsets, block_byte_lengths, block_source_offsets)) =
-                join_data_block_bytes(data_blocks.iter(), &blocks)
+            let Some(joined) = JoinedPayload::from_source(data_blocks.iter(), &blocks)
             else {
                 return Vec::new();
             };
@@ -8856,22 +8846,13 @@ pub fn feature_sketch_payload_names(
                 "sketch-construction-payload",
                 1,
             );
-            crate::om::construction_payload_named_fields(&payload)
+            crate::om::construction_payload_named_fields(joined.bytes())
                 .into_iter()
                 .enumerate()
-                .map(|(ordinal, field)| {
+                .filter_map(|(ordinal, field)| {
                     let relative = field.offset as u64;
-                    let source_offset = block_payload_offsets
-                        .iter()
-                        .zip(&block_byte_lengths)
-                        .zip(&block_source_offsets)
-                        .find_map(|((payload_start, byte_len), source_start)| {
-                            (relative >= *payload_start
-                                && relative < payload_start.saturating_add(*byte_len))
-                            .then_some(source_start + relative - payload_start)
-                        })
-                        .expect("field lies in joined payload");
-                    FeatureSketchPayloadName {
+                    let source_offset = joined.source_offset(relative)?;
+                    Some(FeatureSketchPayloadName {
                         id: format!(
                             "nx:feature-history:sketch-payload-name#{}-{ordinal:010}",
                             construction_payload
@@ -8885,17 +8866,12 @@ pub fn feature_sketch_payload_names(
                             value: code.value,
                             raw: code.raw,
                             payload_offset: code.offset as u64,
-                            source_offset: joined_payload_source_offset(
-                                code.offset as u64,
-                                &block_payload_offsets,
-                                &block_byte_lengths,
-                                &block_source_offsets,
-                            ),
+                            source_offset: joined.source_offset(code.offset as u64),
                         }),
                         value: field.value.to_string(),
                         payload_offset: relative,
                         source_offset,
-                    }
+                    })
                 })
                 .collect::<Vec<_>>()
         })
@@ -9535,39 +9511,6 @@ pub(crate) fn parse_sketch_point_name(value: &str) -> Option<u32> {
     (ordinal != 0).then_some(ordinal)
 }
 
-pub(crate) type JoinedDataBlockBytes = (Vec<u8>, Vec<u64>, Vec<u64>, Vec<u64>);
-
-pub(crate) fn join_data_block_bytes<'a>(
-    ids: impl ExactSizeIterator<Item = &'a String> + Clone,
-    blocks: &BTreeMap<String, (&[u8], u64)>,
-) -> Option<JoinedDataBlockBytes> {
-    let byte_len = ids.clone().try_fold(0usize, |total, id| {
-        let (bytes, _) = blocks.get(id).copied()?;
-        total.checked_add(bytes.len())
-    })?;
-    let mut payload = Vec::new();
-    payload.try_reserve_exact(byte_len).ok()?;
-    let mut block_payload_offsets = Vec::new();
-    block_payload_offsets.try_reserve_exact(ids.len()).ok()?;
-    let mut block_byte_lengths = Vec::new();
-    block_byte_lengths.try_reserve_exact(ids.len()).ok()?;
-    let mut block_source_offsets = Vec::new();
-    block_source_offsets.try_reserve_exact(ids.len()).ok()?;
-    for id in ids {
-        let (bytes, source_offset) = blocks.get(id).copied()?;
-        block_payload_offsets.push(payload.len() as u64);
-        block_byte_lengths.push(bytes.len() as u64);
-        block_source_offsets.push(source_offset);
-        payload.extend_from_slice(bytes);
-    }
-    Some((
-        payload,
-        block_payload_offsets,
-        block_byte_lengths,
-        block_source_offsets,
-    ))
-}
-
 /// Decode and resolve the ordered counted-reference field in sketch payloads.
 pub fn feature_sketch_references(container: &Container) -> Vec<FeatureSketchReference> {
     let indexed = container.indexed_om_sections();
@@ -9941,12 +9884,12 @@ pub fn feature_projected_curve_construction_strings(
     payloads
         .iter()
         .flat_map(|payload| {
-            let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(payload.content.block_ids(), &blocks)
+            let Some(joined) =
+                JoinedPayload::from_source(payload.content.block_ids(), &blocks)
             else {
                 return Vec::new();
             };
-            crate::om::string_values(&bytes, 0)
+            crate::om::string_values(joined.bytes(), 0)
                 .into_iter()
                 .enumerate()
                 .filter_map(|(ordinal, value)| {
@@ -9958,12 +9901,7 @@ pub fn feature_projected_curve_construction_strings(
                         ordinal: ordinal as u32,
                         value: value.value.to_string(),
                         payload_offset,
-                        source_offset: joined_payload_source_offset(
-                            payload_offset,
-                            &starts,
-                            &lengths,
-                            &sources,
-                        )?,
+                        source_offset: joined.source_offset(payload_offset)?,
                     })
                 })
                 .collect()
@@ -10125,12 +10063,12 @@ pub fn feature_pattern_construction_strings(
     payloads
         .iter()
         .flat_map(|payload| {
-            let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(payload.content.block_ids(), &blocks)
+            let Some(joined) =
+                JoinedPayload::from_source(payload.content.block_ids(), &blocks)
             else {
                 return Vec::new();
             };
-            crate::om::string_values(&bytes, 0)
+            crate::om::string_values(joined.bytes(), 0)
                 .into_iter()
                 .enumerate()
                 .filter_map(|(ordinal, value)| {
@@ -10142,12 +10080,7 @@ pub fn feature_pattern_construction_strings(
                         ordinal: ordinal as u32,
                         value: value.value.to_string(),
                         payload_offset,
-                        source_offset: joined_payload_source_offset(
-                            payload_offset,
-                            &starts,
-                            &lengths,
-                            &sources,
-                        )?,
+                        source_offset: joined.source_offset(payload_offset)?,
                     })
                 })
                 .collect()
@@ -10164,29 +10097,24 @@ pub fn feature_pattern_construction_fixed_lanes(
     payloads
         .iter()
         .flat_map(|payload| {
-            let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(payload.content.block_ids(), &blocks)
+            let Some(joined) =
+                JoinedPayload::from_source(payload.content.block_ids(), &blocks)
             else {
                 return Vec::new();
             };
-            crate::om::draft_construction_fixed_lanes(&bytes)
+            crate::om::draft_construction_fixed_lanes(joined.bytes())
                 .into_iter()
                 .enumerate()
                 .filter_map(|(ordinal, lane)| {
                     let payload_offset = lane.offset();
-                    let lane = lane.try_map_locations(|offset, ()| joined_payload_source_offset(offset, &starts, &lengths, &sources))?;
+                    let lane = lane.try_map_locations(|offset, ()| joined.source_offset(offset))?;
                     Some(FeaturePatternConstructionFixedLane {
                         id: format!("{}-fixed-lane-{ordinal:010}", payload.id),
                         operation_label: payload.operation_label.clone(),
                         construction_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
                         lane,
-                        source_offset: joined_payload_source_offset(
-                            payload_offset,
-                            &starts,
-                            &lengths,
-                            &sources,
-                        )?,
+                        source_offset: joined.source_offset(payload_offset)?,
                     })
                 })
                 .collect()
@@ -10572,29 +10500,24 @@ pub fn feature_draft_construction_fixed_lanes(
     payloads
         .iter()
         .flat_map(|payload| {
-            let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(payload.content.block_ids(), &blocks)
+            let Some(joined) =
+                JoinedPayload::from_source(payload.content.block_ids(), &blocks)
             else {
                 return Vec::new();
             };
-            crate::om::draft_construction_fixed_lanes(&bytes)
+            crate::om::draft_construction_fixed_lanes(joined.bytes())
                 .into_iter()
                 .enumerate()
                 .filter_map(|(ordinal, lane)| {
                     let payload_offset = lane.offset();
-                    let lane = lane.try_map_locations(|offset, ()| joined_payload_source_offset(offset, &starts, &lengths, &sources))?;
+                    let lane = lane.try_map_locations(|offset, ()| joined.source_offset(offset))?;
                     Some(FeatureDraftConstructionFixedLane {
                         id: format!("{}-fixed-lane-{ordinal:010}", payload.id),
                         operation_label: payload.operation_label.clone(),
                         graph_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
                         lane,
-                        source_offset: joined_payload_source_offset(
-                            payload_offset,
-                            &starts,
-                            &lengths,
-                            &sources,
-                        )?,
+                        source_offset: joined.source_offset(payload_offset)?,
                     })
                 })
                 .collect::<Vec<_>>()
@@ -10611,29 +10534,24 @@ pub fn feature_draft_construction_binary32_lanes(
     payloads
         .iter()
         .flat_map(|payload| {
-            let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(payload.content.block_ids(), &blocks)
+            let Some(joined) =
+                JoinedPayload::from_source(payload.content.block_ids(), &blocks)
             else {
                 return Vec::new();
             };
-            crate::om::draft_construction_binary32_lanes(&bytes)
+            crate::om::draft_construction_binary32_lanes(joined.bytes())
                 .into_iter()
                 .enumerate()
                 .filter_map(|(ordinal, lane)| {
                     let payload_offset = lane.offset();
-                    let lane = lane.try_map_locations(|offset, ()| joined_payload_source_offset(offset, &starts, &lengths, &sources))?;
+                    let lane = lane.try_map_locations(|offset, ()| joined.source_offset(offset))?;
                     Some(FeatureDraftConstructionBinary32Lane {
                         id: format!("{}-binary32-lane-{ordinal:010}", payload.id),
                         operation_label: payload.operation_label.clone(),
                         graph_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
                         lane,
-                        source_offset: joined_payload_source_offset(
-                            payload_offset,
-                            &starts,
-                            &lengths,
-                            &sources,
-                        )?,
+                        source_offset: joined.source_offset(payload_offset)?,
                     })
                 })
                 .collect::<Vec<_>>()
@@ -10650,12 +10568,12 @@ pub fn feature_draft_construction_graph_strings(
     payloads
         .iter()
         .flat_map(|payload| {
-            let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(payload.content.block_ids(), &blocks)
+            let Some(joined) =
+                JoinedPayload::from_source(payload.content.block_ids(), &blocks)
             else {
                 return Vec::new();
             };
-            crate::om::string_values(&bytes, 0)
+            crate::om::string_values(joined.bytes(), 0)
                 .into_iter()
                 .enumerate()
                 .filter_map(|(ordinal, value)| {
@@ -10667,12 +10585,7 @@ pub fn feature_draft_construction_graph_strings(
                         ordinal: ordinal as u32,
                         value: value.value.to_string(),
                         payload_offset,
-                        source_offset: joined_payload_source_offset(
-                            payload_offset,
-                            &starts,
-                            &lengths,
-                            &sources,
-                        )?,
+                        source_offset: joined.source_offset(payload_offset)?,
                     })
                 })
                 .collect::<Vec<_>>()
@@ -10689,12 +10602,12 @@ pub fn feature_draft_construction_identity_frames(
     payloads
         .iter()
         .flat_map(|payload| {
-            let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(payload.content.block_ids(), &blocks)
+            let Some(joined) =
+                JoinedPayload::from_source(payload.content.block_ids(), &blocks)
             else {
                 return Vec::new();
             };
-            crate::om::draft_construction_identity_frames(&bytes)
+            crate::om::draft_construction_identity_frames(joined.bytes())
                 .into_iter()
                 .enumerate()
                 .filter_map(|(ordinal, frame)| {
@@ -10723,18 +10636,8 @@ pub fn feature_draft_construction_identity_frames(
                         form,
                         identity: frame.identity,
                         payload_offset,
-                        source_offset: joined_payload_source_offset(
-                            payload_offset,
-                            &starts,
-                            &lengths,
-                            &sources,
-                        )?,
-                        identity_source_offset: joined_payload_source_offset(
-                            identity_payload_offset,
-                            &starts,
-                            &lengths,
-                            &sources,
-                        )?,
+                        source_offset: joined.source_offset(payload_offset)?,
+                        identity_source_offset: joined.source_offset(identity_payload_offset)?,
                     })
                 })
                 .collect::<Vec<_>>()
@@ -10980,12 +10883,12 @@ pub fn feature_surface_construction_scalar_pairs(
     payloads
         .iter()
         .flat_map(|payload| {
-            let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(payload.content.block_ids(), &blocks)
+            let Some(joined) =
+                JoinedPayload::from_source(payload.content.block_ids(), &blocks)
             else {
                 return Vec::new();
             };
-            crate::om::object_payload_scalar_pairs(&bytes)
+            crate::om::object_payload_scalar_pairs(joined.bytes())
                 .into_iter()
                 .enumerate()
                 .filter_map(|(ordinal, pair)| {
@@ -10997,14 +10900,9 @@ pub fn feature_surface_construction_scalar_pairs(
                             discriminator: pair.discriminator,
                         },
                         ordinal: ordinal as u32,
-                        values: resolved_payload_scalar_pair(pair.values, |offset| joined_payload_source_offset(offset as u64, &starts, &lengths, &sources))?,
+                        values: resolved_payload_scalar_pair(pair.values, |offset| joined.source_offset(offset as u64))?,
                         payload_offset: pair.offset as u64,
-                        source_offset: joined_payload_source_offset(
-                            pair.offset as u64,
-                            &starts,
-                            &lengths,
-                            &sources,
-                        )?,
+                        source_offset: joined.source_offset(pair.offset as u64)?,
                     })
                 })
                 .collect()
@@ -11021,12 +10919,12 @@ pub fn feature_surface_construction_strings(
     payloads
         .iter()
         .flat_map(|payload| {
-            let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(payload.content.block_ids(), &blocks)
+            let Some(joined) =
+                JoinedPayload::from_source(payload.content.block_ids(), &blocks)
             else {
                 return Vec::new();
             };
-            crate::om::surface_payload_strings(&bytes)
+            crate::om::surface_payload_strings(joined.bytes())
                 .into_iter()
                 .enumerate()
                 .filter_map(|(ordinal, value)| {
@@ -11038,12 +10936,7 @@ pub fn feature_surface_construction_strings(
                         ordinal: ordinal as u32,
                         value: value.value.to_string(),
                         payload_offset,
-                        source_offset: joined_payload_source_offset(
-                            payload_offset,
-                            &starts,
-                            &lengths,
-                            &sources,
-                        )?,
+                        source_offset: joined.source_offset(payload_offset)?,
                     })
                 })
                 .collect()
@@ -11725,21 +11618,16 @@ pub fn feature_block_payload_scalars(
     payloads
         .iter()
         .flat_map(|payload| {
-            let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(payload.content.block_ids(), &blocks)
+            let Some(joined) =
+                JoinedPayload::from_source(payload.content.block_ids(), &blocks)
             else {
                 return Vec::new();
             };
-            crate::om::construction_payload_scalar_fields(&bytes)
+            crate::om::construction_payload_scalar_fields(joined.bytes())
                 .into_iter()
                 .enumerate()
                 .filter_map(|(ordinal, field)| {
-                    let source_offset = joined_payload_source_offset(
-                        field.offset as u64,
-                        &starts,
-                        &lengths,
-                        &sources,
-                    )?;
+                    let source_offset = joined.source_offset(field.offset as u64)?;
                     Some(FeaturePayloadScalar {
                         id: format!("{}-scalar-{ordinal}", payload.id),
                         operation_label: payload.operation_label.clone(),
@@ -11767,21 +11655,16 @@ pub fn feature_block_payload_names(
     payloads
         .iter()
         .flat_map(|payload| {
-            let Some((bytes, starts, lengths, sources)) =
-                join_data_block_bytes(payload.content.block_ids(), &blocks)
+            let Some(joined) =
+                JoinedPayload::from_source(payload.content.block_ids(), &blocks)
             else {
                 return Vec::new();
             };
-            crate::om::construction_payload_named_fields(&bytes)
+            crate::om::construction_payload_named_fields(joined.bytes())
                 .into_iter()
                 .enumerate()
                 .filter_map(|(ordinal, field)| {
-                    let source_offset = joined_payload_source_offset(
-                        field.offset as u64,
-                        &starts,
-                        &lengths,
-                        &sources,
-                    )?;
+                    let source_offset = joined.source_offset(field.offset as u64)?;
                     Some(FeatureBlockPayloadName {
                         id: format!("{}-name-{ordinal}", payload.id),
                         operation_label: payload.operation_label.clone(),
@@ -11791,12 +11674,7 @@ pub fn feature_block_payload_names(
                             value: code.value,
                             raw: code.raw,
                             payload_offset: code.offset as u64,
-                            source_offset: joined_payload_source_offset(
-                                code.offset as u64,
-                                &starts,
-                                &lengths,
-                                &sources,
-                            ),
+                            source_offset: joined.source_offset(code.offset as u64),
                         }),
                         value: field.value.to_string(),
                         payload_offset: field.offset as u64,
@@ -11925,22 +11803,6 @@ pub fn feature_block_payload_point_groups(
         });
     }
     groups
-}
-
-fn joined_payload_source_offset(
-    relative: u64,
-    starts: &[u64],
-    lengths: &[u64],
-    sources: &[u64],
-) -> Option<u64> {
-    starts
-        .iter()
-        .zip(lengths)
-        .zip(sources)
-        .find_map(|((start, length), source)| {
-            (relative >= *start && relative < start.saturating_add(*length))
-                .then_some(source + relative - start)
-        })
 }
 
 /// Resolve the consecutive three-parameter dimension run of `BLOCK` features.
