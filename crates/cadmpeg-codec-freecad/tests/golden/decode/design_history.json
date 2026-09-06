@@ -6038,7 +6038,6 @@
               "extent": {
                 "kind": "one_sided",
                 "side": {
-                  "offset": 0.0,
                   "termination": {
                     "kind": "blind",
                     "length": 10.0
@@ -6122,7 +6121,6 @@
               "extent": {
                 "kind": "one_sided",
                 "side": {
-                  "offset": 0.0,
                   "termination": {
                     "kind": "blind",
                     "length": 6.0

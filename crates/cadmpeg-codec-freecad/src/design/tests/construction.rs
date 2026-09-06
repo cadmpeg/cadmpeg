@@ -1193,7 +1193,7 @@ fn distinguishes_absent_and_malformed_loft_sweep_boolean_flags() {
     assert!(matches!(
         definition(&result, "SweepAbsent"),
         FeatureDefinition::Sweep {
-            mode: cadmpeg_ir::features::SweepMode::Solid { .. },
+            mode: cadmpeg_ir::features::SweepMode::NewBody,
             orientation: Some(SweepOrientation::Frenet),
             path_tangent: false,
             linearize: false,

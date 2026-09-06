@@ -208,14 +208,15 @@ pub(crate) fn writer_rejects_unserialized_declaration_and_stale_payload_edits() 
         .native
         .namespace_mut("fcstd", std::num::NonZeroU32::MIN);
     let mut entries = namespace
-        .arena_as::<crate::native::EntryRecord>("entries")
+        .arena_as::<serde_json::Value>("entries")
         .expect("entries");
     entries
         .iter_mut()
-        .find(|entry| entry.name != "Document.xml")
-        .expect("side entry")
-        .data
-        .push(0);
+        .find(|entry| entry["name"] != "Document.xml")
+        .expect("side entry")["data"]
+        .as_array_mut()
+        .expect("entry bytes")
+        .push(serde_json::json!(0));
     namespace
         .set_arena("entries", &entries)
         .expect("replace entries");
@@ -223,5 +224,5 @@ pub(crate) fn writer_rejects_unserialized_declaration_and_stale_payload_edits() 
         .plan(EncodeInput::new(&stale_entry, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("stale entry metadata must fail");
-    assert!(error.to_string().contains("stale length or digest"));
+    assert!(error.to_string().contains("entry byte_len/sha256 disagrees with data"));
 }

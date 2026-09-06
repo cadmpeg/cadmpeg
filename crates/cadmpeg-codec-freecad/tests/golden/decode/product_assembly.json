@@ -192,15 +192,6 @@
               ]
             }
           ],
-          "properties": {
-            "Angle": "12.0000000000000000",
-            "AngleMax": "55.0000000000000000",
-            "AngleMin": "-35.0000000000000000",
-            "Detach1": "true",
-            "EnableAngleMax": "true",
-            "EnableAngleMin": "true",
-            "Suppressed": "false"
-          },
           "suppressed": false
         }
       ],
@@ -1472,7 +1463,6 @@
       "occurrences": [
         {
           "id": "fcstd:model:occurrence#Assembly:container",
-          "link_transform": false,
           "name": "fcstd:native:object#Assembly",
           "native_ref": "fcstd:native:object#Assembly",
           "ordinal": 8,
@@ -1543,7 +1533,6 @@
         },
         {
           "id": "fcstd:model:occurrence#BracketOccurrence:container",
-          "link_transform": false,
           "name": "fcstd:native:object#BracketOccurrence",
           "native_ref": "fcstd:native:object#BracketOccurrence",
           "ordinal": 2,
@@ -1692,7 +1681,6 @@
         },
         {
           "id": "fcstd:model:occurrence#BracketPrototype:container",
-          "link_transform": false,
           "name": "fcstd:native:object#BracketPrototype",
           "native_ref": "fcstd:native:object#BracketPrototype",
           "ordinal": 0,
@@ -1764,7 +1752,6 @@
         },
         {
           "id": "fcstd:model:occurrence#ExternalOccurrence:container",
-          "link_transform": false,
           "name": "fcstd:native:object#ExternalOccurrence",
           "native_ref": "fcstd:native:object#ExternalOccurrence",
           "ordinal": 9,
@@ -1915,7 +1902,6 @@
         },
         {
           "id": "fcstd:model:occurrence#GroundBracket:container",
-          "link_transform": false,
           "name": "fcstd:native:object#GroundBracket",
           "native_ref": "fcstd:native:object#GroundBracket",
           "ordinal": 3,
@@ -1987,7 +1973,6 @@
         },
         {
           "id": "fcstd:model:occurrence#NestedBracketOccurrence:container",
-          "link_transform": false,
           "name": "fcstd:native:object#NestedBracketOccurrence",
           "native_ref": "fcstd:native:object#NestedBracketOccurrence",
           "ordinal": 10,
@@ -2134,7 +2119,6 @@
         },
         {
           "id": "fcstd:model:occurrence#OccurrenceGroup:container",
-          "link_transform": false,
           "name": "fcstd:native:object#OccurrenceGroup",
           "native_ref": "fcstd:native:object#OccurrenceGroup",
           "ordinal": 4,
@@ -2437,7 +2421,6 @@
         },
         {
           "id": "fcstd:model:occurrence#PinArray:container",
-          "link_transform": false,
           "name": "fcstd:native:object#PinArray",
           "native_ref": "fcstd:native:object#PinArray",
           "ordinal": 11,
@@ -2508,7 +2491,6 @@
         },
         {
           "id": "fcstd:model:occurrence#PinArray_i0:container",
-          "link_transform": false,
           "name": "fcstd:native:object#PinArray_i0",
           "native_ref": "fcstd:native:object#PinArray_i0",
           "ordinal": 12,
@@ -2654,7 +2636,6 @@
         },
         {
           "id": "fcstd:model:occurrence#PinArray_i1:container",
-          "link_transform": false,
           "name": "fcstd:native:object#PinArray_i1",
           "native_ref": "fcstd:native:object#PinArray_i1",
           "ordinal": 13,
@@ -2800,7 +2781,6 @@
         },
         {
           "id": "fcstd:model:occurrence#PinArray_i2:container",
-          "link_transform": false,
           "name": "fcstd:native:object#PinArray_i2",
           "native_ref": "fcstd:native:object#PinArray_i2",
           "ordinal": 14,
@@ -3023,7 +3003,6 @@
         },
         {
           "id": "fcstd:model:occurrence#PinPrototype:container",
-          "link_transform": false,
           "name": "fcstd:native:object#PinPrototype",
           "native_ref": "fcstd:native:object#PinPrototype",
           "ordinal": 1,
@@ -3095,7 +3074,6 @@
         },
         {
           "id": "fcstd:model:occurrence#PrototypeGroup:container",
-          "link_transform": false,
           "name": "fcstd:native:object#PrototypeGroup",
           "native_ref": "fcstd:native:object#PrototypeGroup",
           "ordinal": 15,
@@ -3166,7 +3144,6 @@
         },
         {
           "id": "fcstd:model:occurrence#RevoluteJoint:container",
-          "link_transform": false,
           "name": "fcstd:native:object#RevoluteJoint",
           "native_ref": "fcstd:native:object#RevoluteJoint",
           "ordinal": 5,

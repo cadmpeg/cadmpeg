@@ -3,8 +3,9 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::decode::{bounded_len, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{View, bounded_len};
+use cadmpeg_ir::SourceObjectAssociation;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, ProceduralCurve, ProceduralCurveDefinition,
     ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
@@ -12,7 +13,6 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::SourceObjectAssociation;
 use serde::{Deserialize, Serialize};
 
 use crate::native::{self, EntryRecord, PropertyRecord};
@@ -1762,7 +1762,7 @@ pub(crate) fn parse_binary_prefix(bytes: &[u8]) -> Result<ShapeSet, CodecError> 
             other => {
                 return Err(CodecError::malformed(format_args!(
                     "invalid binary location type {other}"
-                )))
+                )));
             }
         };
         locations.push(location);
@@ -1982,7 +1982,7 @@ fn parse_binary_tshape(
         other => {
             return Err(CodecError::malformed(format_args!(
                 "invalid binary TShape kind {other}"
-            )))
+            )));
         }
     };
     let geometry = match kind {
@@ -2057,7 +2057,7 @@ fn parse_binary_tshape(
                     other => {
                         return Err(CodecError::malformed(format_args!(
                             "invalid binary vertex representation kind {other}"
-                        )))
+                        )));
                     }
                 };
                 representations.push(representation);
@@ -2131,7 +2131,7 @@ fn parse_binary_tshape(
                 other => {
                     return Err(CodecError::malformed(format_args!(
                         "invalid binary face triangulation marker {other}"
-                    )))
+                    )));
                 }
             };
             TextTShapeGeometry::Face {
@@ -2569,25 +2569,17 @@ fn parse_binary_surface(
                     weights.push(cursor.f64("binary B-spline surface weight")?);
                 }
             }
-            let surface = NurbsSurface::new(
-                u_degree,
-                v_degree,
-                cursor.expanded_knots(u_knot_count, "binary B-spline u knots")?,
-                cursor.expanded_knots(v_knot_count, "binary B-spline v knots")?,
-                u32::try_from(u_count).map_err(|_| {
-                    CodecError::Malformed("binary B-spline u count exceeds u32".into())
-                })?,
-                u32::try_from(v_count).map_err(|_| {
-                    CodecError::Malformed("binary B-spline v count exceeds u32".into())
-                })?,
+            TextSurface::Nurbs(normalize_periodic_surface(
+                [u_degree, v_degree],
+                [
+                    cursor.expanded_knots(u_knot_count, "binary B-spline u knots")?,
+                    cursor.expanded_knots(v_knot_count, "binary B-spline v knots")?,
+                ],
+                [u_count, v_count],
                 control_points,
                 weights,
-                false,
-                u_periodic,
-                v_periodic,
-            )
-            .map_err(|error| CodecError::Malformed(error.to_string()))?;
-            TextSurface::Nurbs(normalize_periodic_surface(surface)?)
+                [u_periodic, v_periodic],
+            )?)
         }
         10 => TextSurface::Trimmed {
             parameter_ranges: [
@@ -2609,7 +2601,7 @@ fn parse_binary_surface(
         other => {
             return Err(CodecError::malformed(format_args!(
                 "invalid binary surface kind {other}"
-            )))
+            )));
         }
     })
 }
@@ -2753,7 +2745,7 @@ fn parse_binary_curve(
         other => {
             return Err(CodecError::malformed(format_args!(
                 "invalid binary 3D curve kind {other}"
-            )))
+            )));
         }
     })
 }
@@ -2868,7 +2860,7 @@ fn parse_binary_curve2d(
         other => {
             return Err(CodecError::malformed(format_args!(
                 "invalid binary parameter-curve kind {other}"
-            )))
+            )));
         }
     })
 }
@@ -3109,7 +3101,7 @@ fn parse_locations(
                 return Err(CodecError::malformed(format_args!(
                     "invalid location type {other} at table index {}",
                     index + 1
-                )))
+                )));
             }
         };
         locations.push(location);
@@ -3214,7 +3206,7 @@ fn parse_curve2d(
         other => {
             return Err(CodecError::NotImplemented(format!(
                 "text B-rep 2D curve family {other} at table index {table_index}"
-            )))
+            )));
         }
     })
 }
@@ -3625,7 +3617,7 @@ fn parse_vertex_geometry(
             other => {
                 return Err(CodecError::malformed(format_args!(
                     "invalid vertex representation kind {other}"
-                )))
+                )));
             }
         };
         representations.push(representation);
@@ -3879,7 +3871,7 @@ fn parse_shape_use(
         _ => {
             return Err(CodecError::malformed(format_args!(
                 "invalid shape use {token:?}"
-            )))
+            )));
         }
     };
     let encoded = encoded
@@ -4039,7 +4031,7 @@ fn parse_surface(
         other => {
             return Err(CodecError::NotImplemented(format!(
                 "text B-rep surface family {other} at table index {table_index}"
-            )))
+            )));
         }
     })
 }
@@ -4133,21 +4125,14 @@ fn parse_nurbs_surface(cursor: &mut TokenCursor<'_>) -> Result<NurbsSurface, Cod
     }
     let u_knots = parse_knots(cursor, u_knot_count, u_degree, "B-spline u")?;
     let v_knots = parse_knots(cursor, v_knot_count, v_degree, "B-spline v")?;
-    let surface = NurbsSurface::new(
-        u_degree as u32,
-        v_degree as u32,
-        u_knots,
-        v_knots,
-        u_count as u32,
-        v_count as u32,
+    normalize_periodic_surface(
+        [u_degree as u32, v_degree as u32],
+        [u_knots, v_knots],
+        [u_count, v_count],
         control_points,
         weights,
-        false,
-        u_periodic,
-        v_periodic,
+        [u_periodic, v_periodic],
     )
-    .map_err(|error| CodecError::Malformed(error.to_string()))?;
-    normalize_periodic_surface(surface)
 }
 
 fn parse_bezier_surface(cursor: &mut TokenCursor<'_>) -> Result<NurbsSurface, CodecError> {
@@ -4289,21 +4274,28 @@ fn append_periodic_curve_poles<T: Clone>(
     Ok(())
 }
 
-fn normalize_periodic_surface(surface: NurbsSurface) -> Result<NurbsSurface, CodecError> {
-    let (u_knots, u_padding) = normalize_periodic_knots(
-        surface.u_knots().to_vec(),
-        surface.u_degree(),
-        surface.u_periodic(),
-    )?;
-    let (v_knots, v_padding) = normalize_periodic_knots(
-        surface.v_knots().to_vec(),
-        surface.v_degree(),
-        surface.v_periodic(),
-    )?;
-    let old_u = usize::try_from(surface.u_count())
-        .map_err(|_| CodecError::Malformed("B-spline u pole count exceeds usize".into()))?;
-    let old_v = usize::try_from(surface.v_count())
-        .map_err(|_| CodecError::Malformed("B-spline v pole count exceeds usize".into()))?;
+fn normalize_periodic_surface(
+    degrees: [u32; 2],
+    knots: [Vec<f64>; 2],
+    counts: [usize; 2],
+    control_points: Vec<Point3>,
+    weights: Option<Vec<f64>>,
+    periodic: [bool; 2],
+) -> Result<NurbsSurface, CodecError> {
+    let [u_source_knots, v_source_knots] = knots;
+    let (u_knots, u_padding) = normalize_periodic_knots(u_source_knots, degrees[0], periodic[0])?;
+    let (v_knots, v_padding) = normalize_periodic_knots(v_source_knots, degrees[1], periodic[1])?;
+    let [old_u, old_v] = counts;
+    let source_count = checked_grid_count(old_u, old_v, "B-spline")?;
+    if control_points.len() != source_count
+        || weights
+            .as_ref()
+            .is_some_and(|values| values.len() != source_count)
+    {
+        return Err(CodecError::Malformed(
+            "B-spline pole grid cardinality mismatch".into(),
+        ));
+    }
     if old_u == 0 || old_v == 0 {
         return Err(CodecError::Malformed(
             "periodic B-spline pole grid is empty".into(),
@@ -4320,8 +4312,8 @@ fn normalize_periodic_surface(surface: NurbsSurface) -> Result<NurbsSurface, Cod
         .filter(|count| *count <= 2_000_000)
         .ok_or_else(|| CodecError::Malformed("periodic B-spline pole limit exceeded".into()))?;
     let (control_points, weights) = if u_padding != 0 || v_padding != 0 {
-        let old_points = surface.control_points();
-        let old_weights = surface.weights();
+        let old_points = &control_points;
+        let old_weights = weights.as_deref();
         let mut points = Vec::with_capacity(new_count);
         let mut weights = old_weights.map(|_| Vec::with_capacity(new_count));
         for u in 0..new_u {
@@ -4335,27 +4327,24 @@ fn normalize_periodic_surface(surface: NurbsSurface) -> Result<NurbsSurface, Cod
         }
         (points, weights)
     } else {
-        (
-            surface.control_points().to_vec(),
-            surface.weights().map(<[f64]>::to_vec),
-        )
+        (control_points, weights)
     };
     let u_count = u32::try_from(new_u)
         .map_err(|_| CodecError::Malformed("periodic B-spline u pole count exceeds u32".into()))?;
     let v_count = u32::try_from(new_v)
         .map_err(|_| CodecError::Malformed("periodic B-spline v pole count exceeds u32".into()))?;
     NurbsSurface::new(
-        surface.u_degree(),
-        surface.v_degree(),
+        degrees[0],
+        degrees[1],
         u_knots,
         v_knots,
         u_count,
         v_count,
         control_points,
         weights,
-        surface.normal_reversed(),
-        surface.u_periodic(),
-        surface.v_periodic(),
+        false,
+        periodic[0],
+        periodic[1],
     )
     .map_err(|error| CodecError::Malformed(error.to_string()))
 }
@@ -4486,7 +4475,7 @@ fn parse_curve(
         other => {
             return Err(CodecError::NotImplemented(format!(
                 "text B-rep 3D curve family {other} at table index {table_index}"
-            )))
+            )));
         }
     })
 }
@@ -5062,20 +5051,20 @@ pub(crate) fn append_text_surface(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::test_support::*;
     use crate::FcstdCodec;
+    use crate::test_support::*;
     use cadmpeg_ir::{Codec, DecodeOptions};
     use std::io::Cursor;
 
     #[test]
     fn expands_occt_periodic_knots_and_cyclic_surface_poles() {
-        let surface = NurbsSurface::new(
-            3,
-            1,
-            vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0],
-            vec![0.0, 0.0, 1.0, 1.0],
-            6,
-            2,
+        let normalized = normalize_periodic_surface(
+            [3, 1],
+            [
+                vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0],
+                vec![0.0, 0.0, 1.0, 1.0],
+            ],
+            [6, 2],
             (0..6)
                 .flat_map(|u| {
                     [
@@ -5085,13 +5074,10 @@ pub(crate) mod tests {
                 })
                 .collect(),
             None,
-            false,
-            true,
-            false,
+            [true, false],
         )
         .expect("valid periodic surface");
 
-        let normalized = normalize_periodic_surface(surface).expect("periodic surface");
         assert_eq!(normalized.u_count(), 7);
         assert_eq!(
             normalized.u_knots(),
@@ -5587,16 +5573,20 @@ pub(crate) mod tests {
     #[test]
     fn rejects_oversized_and_out_of_order_text_tables() {
         let oversized = b"CASCADE Topology V1, (c) Matra-Datavision\nLocations 1000001\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
-        assert!(parse_text(oversized)
-            .expect_err("oversized table")
-            .to_string()
-            .contains("count limit"));
+        assert!(
+            parse_text(oversized)
+                .expect_err("oversized table")
+                .to_string()
+                .contains("count limit")
+        );
 
         let out_of_order = b"CASCADE Topology V1, (c) Matra-Datavision\nCurve2ds 0\nLocations 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*";
-        assert!(parse_text(out_of_order)
-            .expect_err("out-of-order table")
-            .to_string()
-            .contains("out of order"));
+        assert!(
+            parse_text(out_of_order)
+                .expect_err("out-of-order table")
+                .to_string()
+                .contains("out of order")
+        );
     }
 
     #[test]
@@ -5767,7 +5757,7 @@ pub(crate) mod tests {
 
         let geometry = crate::brep::append_text_curve(
             &curve,
-            cadmpeg_ir::ids::CurveId::mint("curve").expect("identity grammar"),
+            cadmpeg_ir::ids::CurveId::mint("fcstd:test:curve#1").expect("identity grammar"),
             &association,
             &mut transfer,
         );
