@@ -1965,7 +1965,7 @@ fn attach_feature_operations(
                 };
                 if let Some(writer) = boolean_participant_writer(
                     target,
-                    operation.target_object_index,
+                    operation.target.value,
                     offset_store_body_blocks,
                     &body_alias_roots,
                     &body_writer_history,
@@ -1974,10 +1974,10 @@ fn attach_feature_operations(
                         dependencies.push(writer.clone());
                     }
                 }
-                for body in &operation.tool_object_indices {
+                for body in &operation.tools {
                     if let Some(writer) = boolean_participant_writer(
                         tools,
-                        *body,
+                        body.value,
                         offset_store_body_blocks,
                         &body_alias_roots,
                         &body_writer_history,
@@ -3600,10 +3600,8 @@ fn attach_feature_operations(
                 boolean_offset_store_resolution.as_ref(),
                 Some(BooleanOffsetStoreResolution::Unresolved)
             ) {
-                let (native_target, offset_store_target) = boolean_target_writer(
-                    &definition,
-                    canonical_body(operation.target_object_index),
-                );
+                let (native_target, offset_store_target) =
+                    boolean_target_writer(&definition, canonical_body(operation.target.value));
                 body_writer_history.record_writer(native_target, offset_store_target, &[], &id);
             }
         }
@@ -8106,13 +8104,13 @@ pub(crate) fn boolean_feature_definition(
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> FeatureDefinition {
     let empty_offset_store_body_blocks = BTreeMap::new();
-    let native_target = format!("nx:om-object-index#{}", operation.target_object_index);
+    let native_target = format!("nx:om-object-index#{}", operation.target.value);
     let native_tools = format!(
         "nx:om-object-indices#{}",
         operation
-            .tool_object_indices
+            .tools
             .iter()
-            .map(u32::to_string)
+            .map(|token| token.value.to_string())
             .collect::<Vec<_>>()
             .join(",")
     );
@@ -8129,14 +8127,18 @@ pub(crate) fn boolean_feature_definition(
             };
             atomic_disjoint_body_selections(
                 feature_body_selection_with_offset_blocks(
-                    &[operation.target_object_index],
+                    &[operation.target.value],
                     body_alias_roots,
                     offset_store_body_blocks,
                     bodies_by_object_index,
                     native_target.clone(),
                 ),
                 feature_body_selection_with_offset_blocks(
-                    &operation.tool_object_indices,
+                    &operation
+                        .tools
+                        .iter()
+                        .map(|token| token.value)
+                        .collect::<Vec<_>>(),
                     body_alias_roots,
                     offset_store_body_blocks,
                     bodies_by_object_index,
@@ -8610,10 +8612,11 @@ fn body_writes_match_boolean_target(
     let [write] = writes else {
         return false;
     };
-    write.body_image_object_index == boolean.target_object_index
+    write.body_image_object_index == boolean.target.value
         && !boolean
-            .tool_object_indices
-            .contains(&write.body_image_object_index)
+            .tools
+            .iter()
+            .any(|token| token.value == write.body_image_object_index)
 }
 
 pub(crate) fn attach_expression_parameters(

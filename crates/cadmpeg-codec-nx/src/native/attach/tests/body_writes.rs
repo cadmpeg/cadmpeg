@@ -123,12 +123,19 @@ fn native_boolean(
         id: "boolean".into(),
         operation_label: "operation".into(),
         kind: crate::native::features::FeatureBooleanKind::Subtract,
-        target_object_index,
-        raw_target_object_index: vec![1],
-        target_source_offset: 0,
-        raw_tool_object_indices: vec![vec![2]; tool_object_indices.len()],
-        tool_source_offsets: vec![0; tool_object_indices.len()],
-        tool_object_indices,
+        target: crate::native::features::FeatureIndexToken {
+            value: target_object_index,
+            raw: vec![1],
+            source_offset: 0,
+        },
+        tools: tool_object_indices
+            .into_iter()
+            .map(|value| crate::native::features::FeatureIndexToken {
+                value,
+                raw: vec![2],
+                source_offset: 0,
+            })
+            .collect(),
         source_offset: 0,
     }
 }

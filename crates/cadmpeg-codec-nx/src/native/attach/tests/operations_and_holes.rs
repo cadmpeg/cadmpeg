@@ -15,12 +15,16 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
         id: "boolean#mixed-namespaces".to_string(),
         operation_label: "operation#mixed-namespaces".to_string(),
         kind: crate::native::features::FeatureBooleanKind::Subtract,
-        target_object_index: 94,
-        raw_target_object_index: vec![94],
-        target_source_offset: 0,
-        tool_object_indices: vec![122],
-        raw_tool_object_indices: vec![vec![122]],
-        tool_source_offsets: vec![1],
+        target: crate::native::features::FeatureIndexToken {
+            value: 94,
+            raw: vec![94],
+            source_offset: 0,
+        },
+        tools: vec![crate::native::features::FeatureIndexToken {
+            value: 122,
+            raw: vec![122],
+            source_offset: 1,
+        }],
         source_offset: 0,
     };
     let body = BodyId::mint("nx:s18:body#3".to_string()).expect("identity grammar");
@@ -95,12 +99,23 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
         id: "boolean#mixed-stores".to_string(),
         operation_label: "operation#mixed-stores".to_string(),
         kind: crate::native::features::FeatureBooleanKind::Unite,
-        target_object_index: 401,
-        raw_target_object_index: Vec::new(),
-        target_source_offset: 0,
-        tool_object_indices: vec![402, 403],
-        raw_tool_object_indices: vec![Vec::new(), Vec::new()],
-        tool_source_offsets: vec![1, 2],
+        target: crate::native::features::FeatureIndexToken {
+            value: 401,
+            raw: Vec::new(),
+            source_offset: 0,
+        },
+        tools: vec![
+            crate::native::features::FeatureIndexToken {
+                value: 402,
+                raw: Vec::new(),
+                source_offset: 1,
+            },
+            crate::native::features::FeatureIndexToken {
+                value: 403,
+                raw: Vec::new(),
+                source_offset: 2,
+            },
+        ],
         source_offset: 0,
     };
     assert_eq!(

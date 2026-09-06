@@ -280,7 +280,7 @@ pub fn terminal_feature_body_indices(
             .filter(|operation| segment_boolean_operations.contains(&operation.operation_label))
         {
             let position = *positions.get(operation.operation_label.as_str())?;
-            record_writer(canonical(operation.target_object_index), position);
+            record_writer(canonical(operation.target.value), position);
         }
     }
     let mut consumed = BTreeSet::new();
@@ -289,8 +289,8 @@ pub fn terminal_feature_body_indices(
         .filter(|operation| segment_boolean_operations.contains(&operation.operation_label))
     {
         let position = *positions.get(operation.operation_label.as_str())?;
-        for tool in &operation.tool_object_indices {
-            let tool = canonical(*tool);
+        for tool in &operation.tools {
+            let tool = canonical(tool.value);
             if last_writers
                 .get(&tool)
                 .is_some_and(|writer| writer.is_none_or(|writer| writer < position))
@@ -415,8 +415,8 @@ pub(crate) fn boolean_offset_store_resolution(
     operation: &FeatureBooleanOperation,
     data_blocks: &[DataBlock],
 ) -> BooleanOffsetStoreResolution {
-    let participants = std::iter::once(operation.target_object_index)
-        .chain(operation.tool_object_indices.iter().copied())
+    let participants = std::iter::once(operation.target.value)
+        .chain(operation.tools.iter().map(|token| token.value))
         .collect::<Vec<_>>();
     let mut blocks_by_ordinal = BTreeMap::<u32, Vec<&DataBlock>>::new();
     for block in data_blocks {
@@ -943,12 +943,16 @@ mod tests {
             id: "boolean#0".to_string(),
             operation_label: "operation#2".to_string(),
             kind: FeatureBooleanKind::Unite,
-            target_object_index: 10,
-            raw_target_object_index: vec![10],
-            target_source_offset: 0,
-            tool_object_indices: vec![20],
-            raw_tool_object_indices: vec![vec![20]],
-            tool_source_offsets: vec![0],
+            target: crate::native::features::FeatureIndexToken {
+                value: 10,
+                raw: vec![10],
+                source_offset: 0,
+            },
+            tools: vec![crate::native::features::FeatureIndexToken {
+                value: 20,
+                raw: vec![20],
+                source_offset: 0,
+            }],
             source_offset: 0,
         }];
 
@@ -989,12 +993,19 @@ mod tests {
             id: format!("boolean#{ordinal}"),
             operation_label: format!("operation#{ordinal}"),
             kind: FeatureBooleanKind::Unite,
-            target_object_index: target,
-            raw_target_object_index: vec![target as u8],
-            target_source_offset: ordinal as u64,
-            tool_object_indices: tools,
-            raw_tool_object_indices: Vec::new(),
-            tool_source_offsets: Vec::new(),
+            target: crate::native::features::FeatureIndexToken {
+                value: target,
+                raw: vec![target as u8],
+                source_offset: ordinal as u64,
+            },
+            tools: tools
+                .into_iter()
+                .map(|value| crate::native::features::FeatureIndexToken {
+                    value,
+                    raw: Vec::new(),
+                    source_offset: 0,
+                })
+                .collect(),
             source_offset: ordinal as u64,
         };
         let booleans = [boolean(0, 20, vec![10]), boolean(1, 10, vec![20])];
@@ -1066,12 +1077,19 @@ mod tests {
             id: format!("boolean#{ordinal}"),
             operation_label: format!("operation#{ordinal}"),
             kind: FeatureBooleanKind::Unite,
-            target_object_index: target,
-            raw_target_object_index: vec![target as u8],
-            target_source_offset: ordinal as u64,
-            tool_object_indices: tools,
-            raw_tool_object_indices: Vec::new(),
-            tool_source_offsets: Vec::new(),
+            target: crate::native::features::FeatureIndexToken {
+                value: target,
+                raw: vec![target as u8],
+                source_offset: ordinal as u64,
+            },
+            tools: tools
+                .into_iter()
+                .map(|value| crate::native::features::FeatureIndexToken {
+                    value,
+                    raw: Vec::new(),
+                    source_offset: 0,
+                })
+                .collect(),
             source_offset: ordinal as u64,
         };
         let booleans = [boolean(0, 10, Vec::new()), boolean(1, 20, vec![10])];
@@ -1430,12 +1448,16 @@ mod tests {
             id: "boolean#offset-store".to_string(),
             operation_label,
             kind: FeatureBooleanKind::Unite,
-            target_object_index: 11,
-            raw_target_object_index: vec![11],
-            target_source_offset: 0,
-            tool_object_indices: vec![21],
-            raw_tool_object_indices: vec![vec![21]],
-            tool_source_offsets: vec![0],
+            target: crate::native::features::FeatureIndexToken {
+                value: 11,
+                raw: vec![11],
+                source_offset: 0,
+            },
+            tools: vec![crate::native::features::FeatureIndexToken {
+                value: 21,
+                raw: vec![21],
+                source_offset: 0,
+            }],
             source_offset: 0,
         }];
         let block = |ordinal| DataBlock {
@@ -1501,12 +1523,16 @@ mod tests {
             id: "boolean#unresolved-offset-store".to_string(),
             operation_label,
             kind: FeatureBooleanKind::Unite,
-            target_object_index: 11,
-            raw_target_object_index: vec![11],
-            target_source_offset: 0,
-            tool_object_indices: vec![21],
-            raw_tool_object_indices: vec![vec![21]],
-            tool_source_offsets: vec![0],
+            target: crate::native::features::FeatureIndexToken {
+                value: 11,
+                raw: vec![11],
+                source_offset: 0,
+            },
+            tools: vec![crate::native::features::FeatureIndexToken {
+                value: 21,
+                raw: vec![21],
+                source_offset: 0,
+            }],
             source_offset: 0,
         }];
         let blocks = [DataBlock {
@@ -1684,12 +1710,16 @@ mod tests {
             id: "boolean#0".to_string(),
             operation_label: "operation#late".to_string(),
             kind: FeatureBooleanKind::Unite,
-            target_object_index: 10,
-            raw_target_object_index: vec![10],
-            target_source_offset: 1,
-            tool_object_indices: vec![20],
-            raw_tool_object_indices: vec![vec![20]],
-            tool_source_offsets: vec![1],
+            target: crate::native::features::FeatureIndexToken {
+                value: 10,
+                raw: vec![10],
+                source_offset: 1,
+            },
+            tools: vec![crate::native::features::FeatureIndexToken {
+                value: 20,
+                raw: vec![20],
+                source_offset: 1,
+            }],
             source_offset: 1,
         }];
 
@@ -1738,12 +1768,16 @@ mod tests {
             id: "boolean#0".to_string(),
             operation_label: "operation#1".to_string(),
             kind: FeatureBooleanKind::Unite,
-            target_object_index: 10,
-            raw_target_object_index: vec![10],
-            target_source_offset: 0,
-            tool_object_indices: vec![94],
-            raw_tool_object_indices: vec![vec![94]],
-            tool_source_offsets: vec![0],
+            target: crate::native::features::FeatureIndexToken {
+                value: 10,
+                raw: vec![10],
+                source_offset: 0,
+            },
+            tools: vec![crate::native::features::FeatureIndexToken {
+                value: 94,
+                raw: vec![94],
+                source_offset: 0,
+            }],
             source_offset: 0,
         }];
         let bindings = [SegmentBodyBinding {

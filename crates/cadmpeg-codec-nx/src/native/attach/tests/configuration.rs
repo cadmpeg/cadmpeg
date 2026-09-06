@@ -1080,12 +1080,16 @@ fn boolean_target_is_an_independent_intermediate_result_writer() {
         id: "nx:test:boolean#0".into(),
         operation_label: "nx:test:operation#0".into(),
         kind: FeatureBooleanKind::Unite,
-        target_object_index: 7,
-        raw_target_object_index: vec![7],
-        target_source_offset: 1,
-        tool_object_indices: vec![8],
-        raw_tool_object_indices: vec![vec![8]],
-        tool_source_offsets: vec![2],
+        target: crate::native::features::FeatureIndexToken {
+            value: 7,
+            raw: vec![7],
+            source_offset: 1,
+        },
+        tools: vec![crate::native::features::FeatureIndexToken {
+            value: 8,
+            raw: vec![8],
+            source_offset: 2,
+        }],
         source_offset: 0,
     };
     assert_eq!(
@@ -1793,12 +1797,16 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
         id: "boolean#0".to_string(),
         operation_label: "operation#0".to_string(),
         kind: crate::native::features::FeatureBooleanKind::Subtract,
-        target_object_index: 94,
-        raw_target_object_index: vec![94],
-        target_source_offset: 0,
-        tool_object_indices: vec![122],
-        raw_tool_object_indices: vec![vec![122]],
-        tool_source_offsets: vec![1],
+        target: crate::native::features::FeatureIndexToken {
+            value: 94,
+            raw: vec![94],
+            source_offset: 0,
+        },
+        tools: vec![crate::native::features::FeatureIndexToken {
+            value: 122,
+            raw: vec![122],
+            source_offset: 1,
+        }],
         source_offset: 0,
     };
     let body = BodyId::mint("nx:s18:body#3".to_string()).expect("identity grammar");
@@ -1850,12 +1858,23 @@ fn nx_boolean_projects_unique_offset_store_body_blocks_as_local_bodies() {
         id: "boolean#offset".to_string(),
         operation_label: "operation#offset".to_string(),
         kind: crate::native::features::FeatureBooleanKind::Unite,
-        target_object_index: 401,
-        raw_target_object_index: Vec::new(),
-        target_source_offset: 0,
-        tool_object_indices: vec![402, 403],
-        raw_tool_object_indices: vec![Vec::new(), Vec::new()],
-        tool_source_offsets: vec![1, 2],
+        target: crate::native::features::FeatureIndexToken {
+            value: 401,
+            raw: Vec::new(),
+            source_offset: 0,
+        },
+        tools: vec![
+            crate::native::features::FeatureIndexToken {
+                value: 402,
+                raw: Vec::new(),
+                source_offset: 1,
+            },
+            crate::native::features::FeatureIndexToken {
+                value: 403,
+                raw: Vec::new(),
+                source_offset: 2,
+            },
+        ],
         source_offset: 0,
     };
     let blocks = BTreeMap::from([
@@ -1898,12 +1917,16 @@ fn nx_boolean_writers_follow_selected_identity_namespace() {
         id: "boolean#writer-namespace".to_string(),
         operation_label: "nx:feature-history:operation-label#section-7".to_string(),
         kind: crate::native::features::FeatureBooleanKind::Unite,
-        target_object_index: 401,
-        raw_target_object_index: Vec::new(),
-        target_source_offset: 0,
-        tool_object_indices: vec![402],
-        raw_tool_object_indices: vec![Vec::new()],
-        tool_source_offsets: vec![1],
+        target: crate::native::features::FeatureIndexToken {
+            value: 401,
+            raw: Vec::new(),
+            source_offset: 0,
+        },
+        tools: vec![crate::native::features::FeatureIndexToken {
+            value: 402,
+            raw: Vec::new(),
+            source_offset: 1,
+        }],
         source_offset: 0,
     };
     let blocks = BTreeMap::from([
@@ -1962,12 +1985,23 @@ fn nx_boolean_offset_store_resolution_requires_one_unique_store() {
         id: "boolean#offset-store".to_string(),
         operation_label: "nx:feature-history:operation-label#section-7".to_string(),
         kind: FeatureBooleanKind::Unite,
-        target_object_index: 401,
-        raw_target_object_index: Vec::new(),
-        target_source_offset: 0,
-        tool_object_indices: vec![402, 403],
-        raw_tool_object_indices: vec![Vec::new(), Vec::new()],
-        tool_source_offsets: vec![1, 2],
+        target: crate::native::features::FeatureIndexToken {
+            value: 401,
+            raw: Vec::new(),
+            source_offset: 0,
+        },
+        tools: vec![
+            crate::native::features::FeatureIndexToken {
+                value: 402,
+                raw: Vec::new(),
+                source_offset: 1,
+            },
+            crate::native::features::FeatureIndexToken {
+                value: 403,
+                raw: Vec::new(),
+                source_offset: 2,
+            },
+        ],
         source_offset: 0,
     };
     let block = |section_ordinal, block_ordinal| DataBlock {
@@ -2003,8 +2037,20 @@ fn nx_boolean_offset_store_resolution_requires_one_unique_store() {
     let mut control = block(3, 0);
     control.role = DataBlockRole::Control;
     let control_operation = crate::native::features::FeatureBooleanOperation {
-        target_object_index: 0,
-        tool_object_indices: vec![401, 402],
+        target: crate::native::features::FeatureIndexToken {
+            value: 0,
+            ..operation.target.clone()
+        },
+        tools: [401, 402]
+            .into_iter()
+            .zip(operation.tools.iter())
+            .map(
+                |(value, token)| crate::native::features::FeatureIndexToken {
+                    value,
+                    ..token.clone()
+                },
+            )
+            .collect(),
         ..operation.clone()
     };
     assert!(matches!(

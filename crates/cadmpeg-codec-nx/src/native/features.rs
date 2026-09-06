@@ -5030,27 +5030,100 @@ pub enum FeatureBooleanKind {
 
 /// Ordered target/tool binding from a feature-history Boolean operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "FeatureBooleanOperationWire",
+    into = "FeatureBooleanOperationWire"
+)]
 pub struct FeatureBooleanOperation {
-    /// Globally unique Boolean identity.
     pub id: String,
-    /// Owning operation-label identity.
     pub operation_label: String,
-    /// Boolean operation kind.
     pub kind: FeatureBooleanKind,
-    /// Object index of the target body.
-    pub target_object_index: u32,
-    /// Exact serialized target object-index token.
-    pub raw_target_object_index: Vec<u8>,
-    /// Absolute file offset of the target object-index token.
-    pub target_source_offset: u64,
-    /// Ordered object indices of the tool bodies.
-    pub tool_object_indices: Vec<u32>,
-    /// Exact serialized tool object-index tokens in tool order.
-    pub raw_tool_object_indices: Vec<Vec<u8>>,
-    /// Absolute file offsets of the tool object-index tokens in tool order.
-    pub tool_source_offsets: Vec<u64>,
-    /// Absolute file offset of the operation label tag.
+    pub target: FeatureIndexToken,
+    pub tools: Vec<FeatureIndexToken>,
     pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeatureBooleanOperationWire {
+    /// Globally unique Boolean identity.
+    id: String,
+    /// Owning operation-label identity.
+    operation_label: String,
+    /// Boolean operation kind.
+    kind: FeatureBooleanKind,
+    /// Object index of the target body.
+    target_object_index: u32,
+    /// Exact serialized target object-index token.
+    raw_target_object_index: Vec<u8>,
+    /// Absolute file offset of the target object-index token.
+    target_source_offset: u64,
+    /// Ordered object indices of the tool bodies.
+    tool_object_indices: Vec<u32>,
+    /// Exact serialized tool object-index tokens in tool order.
+    raw_tool_object_indices: Vec<Vec<u8>>,
+    /// Absolute file offsets of the tool object-index tokens in tool order.
+    tool_source_offsets: Vec<u64>,
+    /// Absolute file offset of the operation label tag.
+    source_offset: u64,
+}
+
+impl From<FeatureBooleanOperation> for FeatureBooleanOperationWire {
+    fn from(operation: FeatureBooleanOperation) -> Self {
+        Self {
+            id: operation.id,
+            operation_label: operation.operation_label,
+            kind: operation.kind,
+            target_object_index: operation.target.value,
+            raw_target_object_index: operation.target.raw,
+            target_source_offset: operation.target.source_offset,
+            tool_object_indices: operation.tools.iter().map(|token| token.value).collect(),
+            raw_tool_object_indices: operation
+                .tools
+                .iter()
+                .map(|token| token.raw.clone())
+                .collect(),
+            tool_source_offsets: operation
+                .tools
+                .iter()
+                .map(|token| token.source_offset)
+                .collect(),
+            source_offset: operation.source_offset,
+        }
+    }
+}
+
+impl TryFrom<FeatureBooleanOperationWire> for FeatureBooleanOperation {
+    type Error = String;
+
+    fn try_from(wire: FeatureBooleanOperationWire) -> Result<Self, Self::Error> {
+        if wire.tool_object_indices.len() != wire.raw_tool_object_indices.len()
+            || wire.tool_object_indices.len() != wire.tool_source_offsets.len()
+        {
+            return Err("Boolean tool columns must have equal lengths".into());
+        }
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            kind: wire.kind,
+            target: FeatureIndexToken {
+                value: wire.target_object_index,
+                raw: wire.raw_target_object_index,
+                source_offset: wire.target_source_offset,
+            },
+            tools: wire
+                .tool_object_indices
+                .into_iter()
+                .zip(wire.raw_tool_object_indices)
+                .zip(wire.tool_source_offsets)
+                .map(|((value, raw), source_offset)| FeatureIndexToken {
+                    value,
+                    raw,
+                    source_offset,
+                })
+                .collect(),
+            source_offset: wire.source_offset,
+        })
+    }
 }
 
 fn feature_history_sections(container: &Container) -> Vec<(usize, SegmentOmLink)> {
@@ -5302,23 +5375,19 @@ pub fn feature_boolean_operations(container: &Container) -> Vec<FeatureBooleanOp
                 id: format!("nx:feature-history:boolean#{section_key}-{operation_ordinal:010}"),
                 operation_label,
                 kind,
-                target_object_index: operation.target.object_index,
-                raw_target_object_index: operation.target.raw_object_index,
-                target_source_offset: entry_offset + operation.target.offset as u64,
-                tool_object_indices: operation
+                target: FeatureIndexToken {
+                    value: operation.target.object_index,
+                    raw: operation.target.raw_object_index,
+                    source_offset: entry_offset + operation.target.offset as u64,
+                },
+                tools: operation
                     .tools
-                    .iter()
-                    .map(|tool| tool.object_index)
-                    .collect(),
-                raw_tool_object_indices: operation
-                    .tools
-                    .iter()
-                    .map(|tool| tool.raw_object_index.clone())
-                    .collect(),
-                tool_source_offsets: operation
-                    .tools
-                    .iter()
-                    .map(|tool| entry_offset + tool.offset as u64)
+                    .into_iter()
+                    .map(|tool| FeatureIndexToken {
+                        value: tool.object_index,
+                        raw: tool.raw_object_index,
+                        source_offset: entry_offset + tool.offset as u64,
+                    })
                     .collect(),
                 source_offset: entry_offset + operation.offset as u64,
             });

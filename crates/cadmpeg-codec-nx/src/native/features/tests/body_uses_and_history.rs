@@ -48,12 +48,16 @@ fn segment_body_lineage_statuses_cover_every_bound_image() {
         id: "boolean#0".to_string(),
         operation_label: "operation#1".to_string(),
         kind: FeatureBooleanKind::Unite,
-        target_object_index: 10,
-        raw_target_object_index: vec![10],
-        target_source_offset: 1,
-        tool_object_indices: vec![21],
-        raw_tool_object_indices: vec![vec![21]],
-        tool_source_offsets: vec![1],
+        target: crate::native::features::FeatureIndexToken {
+            value: 10,
+            raw: vec![10],
+            source_offset: 1,
+        },
+        tools: vec![crate::native::features::FeatureIndexToken {
+            value: 21,
+            raw: vec![21],
+            source_offset: 1,
+        }],
         source_offset: 1,
     }];
     let binding =
@@ -601,12 +605,16 @@ fn feature_body_lineage_closes_overlapping_alias_pairs_transitively() {
         id: "boolean#0".to_string(),
         operation_label: "operation#1".to_string(),
         kind: FeatureBooleanKind::Unite,
-        target_object_index: 99,
-        raw_target_object_index: vec![99],
-        target_source_offset: 1,
-        tool_object_indices: vec![10],
-        raw_tool_object_indices: vec![vec![10]],
-        tool_source_offsets: vec![1],
+        target: crate::native::features::FeatureIndexToken {
+            value: 99,
+            raw: vec![99],
+            source_offset: 1,
+        },
+        tools: vec![crate::native::features::FeatureIndexToken {
+            value: 10,
+            raw: vec![10],
+            source_offset: 1,
+        }],
         source_offset: 1,
     }];
     let binding = |id: &str, stream_ordinal, body, alias| SegmentBodyBinding {

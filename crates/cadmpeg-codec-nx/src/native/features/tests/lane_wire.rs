@@ -212,3 +212,15 @@ fn block_dimensions_preserve_wire_and_require_three_complete_parameters() {
         &["declarations", "expressions", "values"],
     );
 }
+
+#[test]
+fn boolean_operation_preserves_wire_and_requires_complete_tools() {
+    check_lane_wire::<FeatureBooleanOperation>(
+        r#"{"id":"boolean","operation_label":"operation","kind":"subtract","target_object_index":10,"raw_target_object_index":[10],"target_source_offset":100,"tool_object_indices":[20,30],"raw_tool_object_indices":[[20],[30]],"tool_source_offsets":[110,120],"source_offset":90}"#,
+        &[
+            "tool_object_indices",
+            "raw_tool_object_indices",
+            "tool_source_offsets",
+        ],
+    );
+}
