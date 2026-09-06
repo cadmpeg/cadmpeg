@@ -2512,7 +2512,10 @@ impl<'a> Builder<'a> {
                 .get(surface_id)
                 .map(|procedural| (procedural.id.0.clone(), procedural.definition().clone()));
             let emitted = procedural.and_then(|(id, definition)| {
-                self.emit_procedural_surface(&surf.geometry, &definition)
+                self.emit_procedural_surface(
+                    surf.geometry.solved_cache().unwrap_or(&surf.geometry),
+                    &definition,
+                )
                     .map(|reference| (id, reference))
             });
             let r = if let Some((id, reference)) = emitted {

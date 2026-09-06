@@ -25,7 +25,9 @@ const EPS_APLL_POINT: f64 = 1.0e-12;
 const EPS_TP03_PARAMETER_SCALE: f64 = 1.0e-12;
 
 fn assert_tessellated_curve_polyline(curve: &Curve, expected: &[(f64, f64, f64)]) {
-    let CurveGeometry::Polyline(polyline) = &curve.geometry else {
+    let CurveGeometry::Polyline(polyline) =
+        curve.geometry.solved_cache().unwrap_or(&curve.geometry)
+    else {
         panic!("expected tessellated curve to transfer as a polyline");
     };
     assert!(polyline.parameters().is_none());
@@ -353,7 +355,7 @@ fn swept_surface_chart_ignores_pcurve_population() {
             .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#22")
             .expect("swept-surface pcurve");
         assert!(matches!(
-            pcurve.geometry,
+            &pcurve.geometry,
             PcurveGeometry::Line { direction, .. }
                 if direction.u == expected_pcurve_u && direction.v == 0.0
         ));
@@ -425,7 +427,7 @@ fn reversed_step_ellipse_axes_are_canonicalized() {
         .find(|curve| curve.id.as_str() == "step:data:curve#10")
         .expect("ellipse carrier");
     assert!(matches!(
-        ellipse.geometry,
+        *ellipse.geometry.solved_cache().unwrap_or(&ellipse.geometry),
         CurveGeometry::Ellipse {
             major_radius,
             minor_radius,
@@ -493,7 +495,7 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
         .find(|curve| curve.id.as_str() == "step:data:curve#9")
         .expect("reversed ellipse");
     assert!(matches!(
-        reversed.geometry,
+        *reversed.geometry.solved_cache().unwrap_or(&reversed.geometry),
         CurveGeometry::Ellipse {
             major_direction,
             major_radius,
@@ -512,7 +514,7 @@ fn ellipse_witness_preserves_source_axes_through_canonical_carriers() {
         .find(|curve| curve.id.as_str() == "step:data:curve#10")
         .expect("ordered ellipse");
     assert!(matches!(
-        ordered.geometry,
+        *ordered.geometry.solved_cache().unwrap_or(&ordered.geometry),
         CurveGeometry::Ellipse {
             major_direction,
             major_radius,
@@ -630,7 +632,7 @@ fn conical_surface_accepts_a_finite_zero_half_angle() {
 
     assert!(result.ir().model.surfaces.iter().any(|surface| {
         matches!(
-            surface.geometry,
+            *surface.geometry.solved_cache().unwrap_or(&surface.geometry),
             cadmpeg_ir::geometry::SurfaceGeometry::Cone { half_angle, .. }
                 if half_angle == 0.0
         )
@@ -665,15 +667,15 @@ fn complex_geometry_instances_decode_named_partials() {
 
     assert!(decoded.ir().model.curves.iter().any(|curve| {
         curve.id.as_str() == "step:data:curve#16"
-            && matches!(curve.geometry, CurveGeometry::Line { .. })
+            && matches!(*curve.geometry.solved_cache().unwrap_or(&curve.geometry), CurveGeometry::Line { .. })
     }));
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#28"
-            && matches!(surface.geometry, SurfaceGeometry::Plane { .. })
+            && matches!(*surface.geometry.solved_cache().unwrap_or(&surface.geometry), SurfaceGeometry::Plane { .. })
     }));
     assert_eq!(decoded.ir().model.pcurves.len(), 1);
     assert!(matches!(
-        decoded.ir().model.pcurves[0].geometry,
+        &decoded.ir().model.pcurves[0].geometry,
         cadmpeg_ir::geometry::PcurveGeometry::Line { .. }
     ));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
@@ -700,7 +702,7 @@ fn complex_points_and_directions_decode_named_partials() {
     assert_eq!(decoded.ir().model.vertices.len(), 3);
     assert!(decoded.ir().model.surfaces.iter().any(|surface| {
         surface.id.as_str() == "step:data:surface#28"
-            && matches!(surface.geometry, SurfaceGeometry::Plane { .. })
+            && matches!(*surface.geometry.solved_cache().unwrap_or(&surface.geometry), SurfaceGeometry::Plane { .. })
     }));
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);

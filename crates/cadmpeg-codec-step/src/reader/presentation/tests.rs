@@ -1357,7 +1357,7 @@ fn body_layers_and_visibility_cover_every_region_shape_item() {
     ir.model.regions.push(region);
     ir.model.bodies[0].visible = Some(false);
     ir.model.presentation_layers.push(PresentationLayer {
-        id: LayerId::mint("test:layer#body").expect("identity grammar"),
+        id: LayerId::mint("test:model:layer#body").expect("identity grammar"),
         name: "all body regions".into(),
         description: None,
         visible: None,
@@ -1582,7 +1582,7 @@ pub(crate) fn face_appearance_binding_styles_the_advanced_face() {
     let mut ir = unit_cube();
     let face = ir.model.faces[0].id.clone();
     ir.model.appearances.push(Appearance {
-        id: AppearanceId::mint("test:appearance#black".to_string()).expect("identity grammar"),
+        id: AppearanceId::mint("test:model:appearance#black".to_string()).expect("identity grammar"),
         name: None,
         asset_guid: None,
         library_id: None,
@@ -1600,9 +1600,9 @@ pub(crate) fn face_appearance_binding_styles_the_advanced_face() {
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
-        id: "test:appearance-binding#face".into(),
+        id: "test:model:appearance-binding#face".into(),
         target: AppearanceTarget::Face(face),
-        appearance: AppearanceId::mint("test:appearance#black".to_string())
+        appearance: AppearanceId::mint("test:model:appearance#black".to_string())
             .expect("identity grammar"),
         source_entity_id: None,
         object_type: None,
@@ -1632,7 +1632,7 @@ fn vertex_appearance_binding_styles_the_vertex_point() {
     let mut ir = unit_cube();
     let vertex = ir.model.vertices[0].id.clone();
     ir.model.appearances.push(Appearance {
-        id: AppearanceId::mint("test:appearance#vertex".to_string()).expect("identity grammar"),
+        id: AppearanceId::mint("test:model:appearance#vertex".to_string()).expect("identity grammar"),
         name: Some("vertex green".to_string()),
         asset_guid: None,
         library_id: None,
@@ -1650,9 +1650,9 @@ fn vertex_appearance_binding_styles_the_vertex_point() {
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
-        id: "test:appearance-binding#vertex".into(),
+        id: "test:model:appearance-binding#vertex".into(),
         target: AppearanceTarget::Vertex(vertex),
-        appearance: AppearanceId::mint("test:appearance#vertex".to_string())
+        appearance: AppearanceId::mint("test:model:appearance#vertex".to_string())
             .expect("identity grammar"),
         source_entity_id: None,
         object_type: None,
@@ -1688,7 +1688,7 @@ fn point_presentation_layer_writes_the_cartesian_point_carrier() {
     let mut ir = unit_cube();
     let point = ir.model.points[0].id.clone();
     ir.model.presentation_layers.push(PresentationLayer {
-        id: LayerId::mint("test:layer#point".to_string()).expect("identity grammar"),
+        id: LayerId::mint("test:model:layer#point".to_string()).expect("identity grammar"),
         name: "point layer".to_string(),
         description: Some("standalone points".to_string()),
         visible: None,
@@ -1721,8 +1721,9 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
     let mut ir = unit_cube();
     let body = ir.model.bodies[0].id.clone();
     let parent_product =
-        ProductDefinitionId::mint("test:product#parent").expect("identity grammar");
-    let child_product = ProductDefinitionId::mint("test:product#child").expect("identity grammar");
+        ProductDefinitionId::mint("test:model:product#parent").expect("identity grammar");
+    let child_product =
+        ProductDefinitionId::mint("test:model:product#child").expect("identity grammar");
     ir.model.product_definitions.extend([
         ProductDefinition {
             id: parent_product.clone(),
@@ -1747,8 +1748,8 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
             native_ref: None,
         },
     ]);
-    let root = OccurrenceId::mint("test:occurrence#root").expect("identity grammar");
-    let child = OccurrenceId::mint("test:occurrence#child").expect("identity grammar");
+    let root = OccurrenceId::mint("test:model:occurrence#root").expect("identity grammar");
+    let child = OccurrenceId::mint("test:model:occurrence#child").expect("identity grammar");
     ir.model.occurrences.extend([
         Occurrence {
             id: root.clone(),
@@ -1787,7 +1788,7 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
             native_ref: None,
         },
     ]);
-    let annotation = PmiId::mint("test:pmi#note").expect("identity grammar");
+    let annotation = PmiId::mint("test:model:pmi#note").expect("identity grammar");
     ir.model.pmi.push(PmiAnnotation {
         id: annotation.clone(),
         name: Some("inspection note".into()),
@@ -1800,7 +1801,7 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
         },
     });
     ir.model.presentation_layers.push(PresentationLayer {
-        id: LayerId::mint("test:layer#mixed").expect("identity grammar"),
+        id: LayerId::mint("test:model:layer#mixed").expect("identity grammar"),
         name: "mixed layer".into(),
         description: None,
         visible: None,
@@ -1867,7 +1868,7 @@ pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
     // Black override on a single face, via an appearance binding.
     let face = ir.model.faces[0].id.clone();
     ir.model.appearances.push(Appearance {
-        id: AppearanceId::mint("test:appearance#black".to_string()).expect("identity grammar"),
+        id: AppearanceId::mint("test:model:appearance#black".to_string()).expect("identity grammar"),
         name: None,
         asset_guid: None,
         library_id: None,
@@ -1885,9 +1886,9 @@ pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
-        id: "test:appearance-binding#face".into(),
+        id: "test:model:appearance-binding#face".into(),
         target: AppearanceTarget::Face(face),
-        appearance: AppearanceId::mint("test:appearance#black".to_string())
+        appearance: AppearanceId::mint("test:model:appearance#black".to_string())
             .expect("identity grammar"),
         source_entity_id: None,
         object_type: None,

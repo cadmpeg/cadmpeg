@@ -24,7 +24,7 @@
     {
       "attributes": {
         "entity_count": "25",
-        "unknown_entities": ""
+        "unknown_entities": "DIMENSIONAL_SIZE_WITH_DATUM_FEATURE:1,LIMITS_AND_FITS:1,PLUS_MINUS_TOLERANCE:2"
       },
       "compressed_size": 0,
       "compression": "none",
@@ -43,6 +43,51 @@
       },
       "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
       "severity": "error"
+    },
+    {
+      "code": {
+        "code": "decode.warning",
+        "kind": "decode_diagnostic",
+        "namespace": "step"
+      },
+      "message": "PLUS_MINUS_TOLERANCE #24 is an additional tolerance for one dimension",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.warning",
+        "kind": "decode_diagnostic",
+        "namespace": "step"
+      },
+      "message": "PLUS_MINUS_TOLERANCE #26 has no resolvable dimension and limits",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step"
+      },
+      "message": "preserved 1 DIMENSIONAL_SIZE_WITH_DATUM_FEATURE instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step"
+      },
+      "message": "preserved 1 LIMITS_AND_FITS instance(s) as named opaque STEP records",
+      "severity": "warning"
+    },
+    {
+      "code": {
+        "code": "decode.opaque-record-preserved",
+        "kind": "record_not_typed",
+        "namespace": "step"
+      },
+      "message": "preserved 2 PLUS_MINUS_TOLERANCE instance(s) as named opaque STEP records",
+      "severity": "warning"
     }
   ],
   "notes": [

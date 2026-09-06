@@ -895,7 +895,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .model
                 .curves
                 .get(parent_index.0)
-                .map(|curve| curve.geometry.clone())
+                .map(|curve| {
+                    curve.geometry.solved_cache().unwrap_or(&curve.geometry).clone()
+                })
             else {
                 continue;
             };
@@ -950,7 +952,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .curves
                 .get(&basis_step)
                 .and_then(|index| ir.model.curves.get(index.0))
-                .map(|candidate| candidate.geometry.clone())
+                .map(|candidate| {
+                    candidate.geometry.solved_cache().unwrap_or(&candidate.geometry).clone()
+                })
             else {
                 continue;
             };
@@ -1083,7 +1087,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
             .curves
             .get(&source_step)
             .and_then(|index| ir.model.curves.get(index.0))
-            .map(|candidate| candidate.geometry.clone())
+            .map(|candidate| {
+                candidate.geometry.solved_cache().unwrap_or(&candidate.geometry).clone()
+            })
         else {
             continue;
         };
@@ -1479,7 +1485,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .surfaces
                 .get(&support_step)
                 .and_then(|index| ir.model.surfaces.get(index.0))
-                .map(|surface| surface.geometry.clone())
+                .map(|surface| {
+                    surface.geometry.solved_cache().unwrap_or(&surface.geometry).clone()
+                })
             else {
                 surface_waiting_on.entry(support_step).or_default().push(id);
                 continue;
@@ -1593,7 +1601,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .model
                 .surfaces
                 .get(support_index.0)
-                .map(|surface| surface.geometry.clone())
+                .map(|surface| {
+                    surface.geometry.solved_cache().unwrap_or(&surface.geometry).clone()
+                })
                 .zip(boundaries)
                 .zip(implicit_outer)
                 .map(|((geometry, boundaries), implicit_outer)| {
@@ -1702,7 +1712,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> StageOutcome<Geomet
                 .model
                 .surfaces
                 .get(parent_index.0)
-                .map(|surface| surface.geometry.clone())
+                .map(|surface| {
+                    surface.geometry.solved_cache().unwrap_or(&surface.geometry).clone()
+                })
             else {
                 continue;
             };

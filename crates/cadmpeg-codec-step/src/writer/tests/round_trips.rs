@@ -235,7 +235,7 @@ fn buf_line_count(buf: &[u8]) -> usize {
 pub(crate) fn cylinder_surface_doc() -> CadIr {
     let mut ir = CadIr::empty();
     ir.model.surfaces.push(Surface {
-        id: SurfaceId::mint("cyl").expect("identity grammar"),
+        id: SurfaceId::mint("test:model:surface#cyl").expect("identity grammar"),
         geometry: SurfaceGeometry::Cylinder {
             origin: Point3::new(0.0, 0.0, 0.0),
             axis: Vector3::new(0.0, 0.0, 1.0),
@@ -428,7 +428,8 @@ pub(crate) fn writer_round_trips_rigid_body_placements() {
 pub(crate) fn writer_round_trips_product_body_ownership() {
     let mut ir = unit_cube();
     let product =
-        cadmpeg_ir::ids::ProductDefinitionId::mint("product-0").expect("identity grammar");
+        cadmpeg_ir::ids::ProductDefinitionId::mint("test:model:product-definition#product-0")
+            .expect("identity grammar");
     ir.model
         .product_definitions
         .push(cadmpeg_ir::products::ProductDefinition {
@@ -443,7 +444,7 @@ pub(crate) fn writer_round_trips_product_body_ownership() {
             native_ref: None,
         });
     ir.model.occurrences.push(cadmpeg_ir::products::Occurrence {
-        id: cadmpeg_ir::ids::OccurrenceId::mint("root-0").expect("identity grammar"),
+        id: cadmpeg_ir::ids::OccurrenceId::mint("test:model:occurrence#root-0").expect("identity grammar"),
         prototype: cadmpeg_ir::products::PrototypeReference::Local {
             definition: product,
         },
@@ -644,12 +645,12 @@ pub(crate) fn analytic_conics_round_trip_through_step() {
     let mut source = CadIr::empty();
     source.model.curves.extend([
         Curve {
-            id: CurveId::mint("parabola").expect("identity grammar"),
+            id: CurveId::mint("test:model:curve#parabola").expect("identity grammar"),
             geometry: parabola.clone(),
             source_object: None,
         },
         Curve {
-            id: CurveId::mint("hyperbola").expect("identity grammar"),
+            id: CurveId::mint("test:model:curve#hyperbola").expect("identity grammar"),
             geometry: hyperbola.clone(),
             source_object: None,
         },
@@ -684,7 +685,7 @@ pub(crate) fn analytic_conics_round_trip_through_step() {
 pub(crate) fn standalone_geometry_uses_general_shape_representation() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(Curve {
-        id: CurveId::mint("line").expect("identity grammar"),
+        id: CurveId::mint("test:model:curve#line").expect("identity grammar"),
         geometry: CurveGeometry::Line {
             origin: Point3::new(0.0, 0.0, 0.0),
             direction: Vector3::new(1.0, 0.0, 0.0),
@@ -814,7 +815,7 @@ fn writer_round_trips_binding_scoped_appearance_visibility() {
     use cadmpeg_ir::ids::AppearanceId;
 
     let mut ir = unit_cube();
-    let appearance = AppearanceId::mint("test:appearance#hidden").expect("identity grammar");
+    let appearance = AppearanceId::mint("test:model:appearance#hidden").expect("identity grammar");
     ir.model.appearances.push(Appearance {
         id: appearance.clone(),
         name: Some("hidden face".into()),
@@ -834,7 +835,7 @@ fn writer_round_trips_binding_scoped_appearance_visibility() {
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
-        id: "test:appearance-binding#hidden-face".into(),
+        id: "test:model:appearance-binding#hidden-face".into(),
         target: AppearanceTarget::Face(ir.model.faces[0].id.clone()),
         appearance,
         source_entity_id: None,
@@ -874,9 +875,10 @@ fn writer_round_trips_surface_appearance_transparency() {
     use cadmpeg_ir::ids::AppearanceId;
 
     let mut ir = unit_cube();
-    let appearance = AppearanceId::mint("test:appearance#transparent").expect("identity grammar");
+    let appearance =
+        AppearanceId::mint("test:model:appearance#transparent").expect("identity grammar");
     let second_appearance =
-        AppearanceId::mint("test:appearance#more-transparent").expect("identity grammar");
+        AppearanceId::mint("test:model:appearance#more-transparent").expect("identity grammar");
     ir.model.appearances.push(Appearance {
         id: appearance.clone(),
         name: Some("transparent face".into()),
@@ -914,7 +916,7 @@ fn writer_round_trips_surface_appearance_transparency() {
         textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
-        id: "test:appearance-binding#transparent-face".into(),
+        id: "test:model:appearance-binding#transparent-face".into(),
         target: AppearanceTarget::Face(ir.model.faces[0].id.clone()),
         appearance,
         source_entity_id: None,
@@ -923,7 +925,7 @@ fn writer_round_trips_surface_appearance_transparency() {
         channels: std::collections::BTreeMap::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
-        id: "test:appearance-binding#more-transparent-face".into(),
+        id: "test:model:appearance-binding#more-transparent-face".into(),
         target: AppearanceTarget::Face(ir.model.faces[1].id.clone()),
         appearance: second_appearance,
         source_entity_id: None,
@@ -968,7 +970,7 @@ fn writer_round_trips_presentation_layer_visibility() {
     let mut ir = unit_cube();
     let body = ir.model.bodies[0].id.clone();
     ir.model.presentation_layers.push(PresentationLayer {
-        id: LayerId::mint("test:layer#hidden").expect("identity grammar"),
+        id: LayerId::mint("test:model:layer#hidden").expect("identity grammar"),
         name: "hidden layer".into(),
         description: Some("layer visibility".into()),
         visible: Some(false),
@@ -1010,7 +1012,7 @@ fn writer_round_trips_empty_presentation_layer_label() {
     let mut ir = unit_cube();
     let body = ir.model.bodies[0].id.clone();
     ir.model.presentation_layers.push(PresentationLayer {
-        id: LayerId::mint("test:layer#unnamed").expect("identity grammar"),
+        id: LayerId::mint("test:model:layer#unnamed").expect("identity grammar"),
         name: String::new(),
         description: Some("unnamed layer".into()),
         visible: Some(false),
@@ -1094,13 +1096,13 @@ fn analytic_surfaces_map_to_their_step_entities() {
     for (geom, kw) in cases {
         let mut ir = CadIr::empty();
         ir.model.surfaces.push(Surface {
-            id: SurfaceId::mint("s").expect("identity grammar"),
+            id: SurfaceId::mint("test:model:surface#s").expect("identity grammar"),
             geometry: geom,
             source_object: None,
         });
         // Surfaces alone aren't reachable from a shell, so they won't be emitted
         // by the topology walk; emit directly via the geometry module instead.
-        let s = emit_surface_only(&ir.model.surfaces[0].geometry);
+        let s = emit_surface_only(ir.model.surfaces[0].geometry.solved_cache().unwrap_or(&ir.model.surfaces[0].geometry));
         assert!(s.contains(kw), "missing {kw} in {s}");
     }
 }
