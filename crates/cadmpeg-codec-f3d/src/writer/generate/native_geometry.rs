@@ -3677,11 +3677,6 @@ fn encode_native_revision_compound_loft(
             "revision-gated cl_loft_spl_sur requires a positive revision".into(),
         ));
     }
-    if construction.kind != 0 {
-        return Err(CodecError::NotImplemented(
-            "revision-gated cl_loft_spl_sur defines only the kind-zero payload".into(),
-        ));
-    }
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
     native_ident(bytes, "cl_loft_spl_sur")?;
@@ -3713,7 +3708,7 @@ fn encode_native_revision_compound_loft(
     for flag in construction.flags {
         bytes.push(native_bool(flag));
     }
-    native_i64(bytes, construction.kind);
+    native_i64(bytes, 0);
     for flag in construction.kind_flags {
         bytes.push(native_bool(flag));
     }
@@ -3727,19 +3722,10 @@ fn encode_native_revision_compound_loft(
             native_nurbs_curve(bytes, &curve)?;
         }
     }
-    // The trailing curve pairs with the parameter values: a reader recovers it
-    // from their presence alone, so the two have to agree or the record is
-    // unreadable.
-    if construction.interval.iter().all(Option::is_some) != construction.trailing_curve.is_some() {
-        return Err(CodecError::Malformed(
-            "revision-gated cl_loft_spl_sur pairs its trailing curve with both parameter values"
-                .into(),
-        ));
-    }
-    for value in construction.interval {
+    for value in construction.tail.interval() {
         native_optional_f64(bytes, value);
     }
-    if let Some(curve) = &construction.trailing_curve {
+    if let Some(curve) = construction.tail.curve() {
         let curve = native_loft_curve_in_range(target, curve, None)?;
         native_nurbs_curve(bytes, &curve)?;
     }

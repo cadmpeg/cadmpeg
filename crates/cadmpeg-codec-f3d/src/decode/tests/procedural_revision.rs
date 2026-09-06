@@ -641,16 +641,13 @@ fn generated_revision_compound_loft_rejects_present_parameters_without_a_curve()
         .expect("legal revision compound loft decode")
         .into_parts()
         .0;
-    let mut edited = legal.clone();
-    edited.source = None;
-    edited.set_native_unknowns("f3d", &[]).unwrap();
-    edited.model.procedural_surfaces[0].edit_definition(|definition| {
-        let ProceduralSurfaceDefinition::RevisionCompoundLoft { construction } = definition else {
-            panic!("expected revision compound loft")
-        };
-        construction.trailing_curve = None;
-    });
-    let error = F3dCodec.encode(&edited, &mut Vec::new()).unwrap_err();
+    let mut wire = serde_json::to_value(&legal.model.procedural_surfaces[0]).unwrap();
+    wire["definition"]["construction"]
+        .as_object_mut()
+        .unwrap()
+        .remove("trailing_curve");
+    let error =
+        serde_json::from_value::<cadmpeg_ir::geometry::ProceduralSurface>(wire).unwrap_err();
     assert!(error
         .to_string()
         .contains("pairs its trailing curve with both parameter values"));

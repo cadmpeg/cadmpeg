@@ -381,7 +381,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                                 Some(curve)
                             }
                         },
-                        construction.trailing_curve.as_ref(),
+                        construction.tail.curve(),
                     ]
                     .into_iter()
                     .flatten()

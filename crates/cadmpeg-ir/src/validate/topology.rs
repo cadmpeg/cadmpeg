@@ -859,7 +859,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                         crate::geometry::CompoundLoftDirection::Vector { .. } => None,
                         crate::geometry::CompoundLoftDirection::Curve { curve, .. } => Some(curve),
                     })
-                    .chain(construction.trailing_curve.iter())
+                    .chain(construction.tail.curve())
                 {
                     if ids.curves(&curve.0).is_none() {
                         ref_error(findings, &procedural.id.0, "curve", &curve.0);

@@ -798,16 +798,12 @@ pub struct EmbeddedRevisionCompoundLoft {
     pub entries: Vec<EmbeddedLoftSectionEntry>,
     /// Two booleans serialized after the entries.
     pub flags: [bool; 2],
-    /// The kind integer of the loft.
-    pub kind: i64,
     /// Two booleans serialized after the kind.
     pub kind_flags: [bool; 2],
     /// The loft direction selected after the kind flags.
     pub direction: EmbeddedCompoundLoftDirection,
-    /// Optional parameter bounds; `None` marks an unbounded end.
-    pub interval: [Option<f64>; 2],
-    /// An embedded curve closing the record, when present.
-    pub trailing_curve: Option<NurbsCurve>,
+    /// Trailing bounds and their dependent curve.
+    pub tail: cadmpeg_ir::geometry::RevisionCompoundLoftTail<NurbsCurve>,
 }
 
 /// One section entry of an embedded loft.
@@ -1978,14 +1974,18 @@ fn revision_compound_loft(
         cur.take_optional_range_value()?.value(),
         cur.take_optional_range_value()?.value(),
     ];
-    // Both parameter values select a trailing curve. The stream has no separate
-    // marker; the parameter pair selects it.
-    let trailing_curve = if interval.iter().all(Option::is_some) {
-        let (curve, curve_end) = curve_block(span, cur.pos())?;
-        cur.set_pos(curve_end);
-        Some(curve)
-    } else {
-        None
+    let tail = match interval {
+        [None, None] => cadmpeg_ir::geometry::RevisionCompoundLoftTail::Unbounded,
+        [Some(value), None] => cadmpeg_ir::geometry::RevisionCompoundLoftTail::LowerBound(value),
+        [None, Some(value)] => cadmpeg_ir::geometry::RevisionCompoundLoftTail::UpperBound(value),
+        [Some(lower), Some(upper)] => {
+            let (curve, curve_end) = curve_block(span, cur.pos())?;
+            cur.set_pos(curve_end);
+            cadmpeg_ir::geometry::RevisionCompoundLoftTail::Curve {
+                interval: [lower, upper],
+                curve,
+            }
+        }
     };
     cur.at_scope_end().then_some(())?;
     Some(DecodedProceduralSurface {
@@ -1999,11 +1999,9 @@ fn revision_compound_loft(
                 base_path,
                 entries,
                 flags,
-                kind,
                 kind_flags,
                 direction,
-                interval,
-                trailing_curve,
+                tail,
             },
         )),
         cache_fit_tolerance: fit_tolerance,

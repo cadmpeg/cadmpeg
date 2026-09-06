@@ -4772,8 +4772,6 @@ pub struct RevisionCompoundLoftConstruction {
     pub entries: Vec<LoftSectionEntry>,
     /// Two flags following the entries.
     pub flags: [bool; 2],
-    /// Tail-kind integer following the two flags.
-    pub kind: i64,
     /// Two flags opening the kind-zero payload.
     pub kind_flags: [bool; 2],
     /// Direction carrier selected by the kind-zero direction tag.
@@ -4783,12 +4781,120 @@ pub struct RevisionCompoundLoftConstruction {
         schemars(with = "RevisionCompoundLoftDirectionSchemaWire")
     )]
     pub direction: CompoundLoftDirection,
-    /// Two optional trailing parameter values.
-    #[serde(default)]
-    pub interval: [Option<f64>; 2],
-    /// Optional trailing BS3 curve closing the payload.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub trailing_curve: Option<CurveId>,
+    /// Trailing bounds and their dependent BS3 curve.
+    #[serde(flatten, with = "revision_compound_loft_tail_wire")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "revision_compound_loft_tail_wire::WriteWire<'_, CurveId>")
+    )]
+    pub tail: RevisionCompoundLoftTail<CurveId>,
+}
+
+/// Trailing parameter bounds of a revision compound loft.
+/// Both bounds select a trailing curve; all other forms contain no curve.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum RevisionCompoundLoftTail<T> {
+    /// Neither parameter bound is present.
+    Unbounded,
+    /// Only the lower parameter bound is present.
+    LowerBound(f64),
+    /// Only the upper parameter bound is present.
+    UpperBound(f64),
+    /// Both parameter bounds and their selected curve.
+    Curve {
+        /// Ordered lower and upper parameter bounds.
+        interval: [f64; 2],
+        /// Curve selected by the complete parameter pair.
+        curve: T,
+    },
+}
+
+impl<T> RevisionCompoundLoftTail<T> {
+    /// Optional bounds in native order.
+    #[must_use]
+    pub const fn interval(&self) -> [Option<f64>; 2] {
+        match self {
+            Self::Unbounded => [None, None],
+            Self::LowerBound(value) => [Some(*value), None],
+            Self::UpperBound(value) => [None, Some(*value)],
+            Self::Curve { interval, .. } => [Some(interval[0]), Some(interval[1])],
+        }
+    }
+
+    /// Curve selected by a complete parameter pair.
+    #[must_use]
+    pub const fn curve(&self) -> Option<&T> {
+        match self {
+            Self::Curve { curve, .. } => Some(curve),
+            _ => None,
+        }
+    }
+
+    /// Transform the curve payload while retaining its parameter bounds.
+    #[must_use]
+    pub fn map<U>(self, map: impl FnOnce(T) -> U) -> RevisionCompoundLoftTail<U> {
+        match self {
+            Self::Unbounded => RevisionCompoundLoftTail::Unbounded,
+            Self::LowerBound(value) => RevisionCompoundLoftTail::LowerBound(value),
+            Self::UpperBound(value) => RevisionCompoundLoftTail::UpperBound(value),
+            Self::Curve { interval, curve } => RevisionCompoundLoftTail::Curve {
+                interval,
+                curve: map(curve),
+            },
+        }
+    }
+}
+
+mod revision_compound_loft_tail_wire {
+    use super::RevisionCompoundLoftTail;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Serialize)]
+    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+    pub(super) struct WriteWire<'a, T> {
+        interval: [Option<f64>; 2],
+        #[serde(skip_serializing_if = "Option::is_none")]
+        trailing_curve: Option<&'a T>,
+    }
+
+    #[derive(Deserialize)]
+    #[serde(bound(deserialize = "T: Deserialize<'de>"))]
+    struct ReadWire<T> {
+        #[serde(default)]
+        interval: [Option<f64>; 2],
+        #[serde(default)]
+        trailing_curve: Option<T>,
+    }
+
+    pub fn serialize<T: Serialize, S: Serializer>(
+        value: &RevisionCompoundLoftTail<T>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        WriteWire {
+            interval: value.interval(),
+            trailing_curve: value.curve(),
+        }
+        .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<RevisionCompoundLoftTail<T>, D::Error> {
+        let wire = ReadWire::deserialize(deserializer)?;
+        match (wire.interval, wire.trailing_curve) {
+            ([None, None], None) => Ok(RevisionCompoundLoftTail::Unbounded),
+            ([Some(value), None], None) => Ok(RevisionCompoundLoftTail::LowerBound(value)),
+            ([None, Some(value)], None) => Ok(RevisionCompoundLoftTail::UpperBound(value)),
+            ([Some(lower), Some(upper)], Some(curve)) => Ok(RevisionCompoundLoftTail::Curve {
+                interval: [lower, upper],
+                curve,
+            }),
+            _ => Err(serde::de::Error::custom(
+                "revision compound loft pairs its trailing curve with both parameter values",
+            )),
+        }
+    }
 }
 
 /// One boundary record in a native vertex-blend patch.
@@ -5019,6 +5125,7 @@ impl CompoundLoftDirection {
     reason = "fields define the revision compound-loft direction wire schema"
 )]
 struct RevisionCompoundLoftDirectionSchemaWire {
+    kind: i64,
     selector: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     direction: Option<Vector3>,
@@ -5033,6 +5140,7 @@ mod revision_compound_loft_direction_wire {
 
     #[derive(Serialize, Deserialize)]
     struct Wire {
+        kind: i64,
         selector: i64,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         direction: Option<Vector3>,
@@ -5046,11 +5154,13 @@ mod revision_compound_loft_direction_wire {
     {
         let wire = match value {
             CompoundLoftDirection::Vector { value } => Wire {
+                kind: 0,
                 selector: 0,
                 direction: Some(*value),
                 direction_curve: None,
             },
             CompoundLoftDirection::Curve { curve, selector } => Wire {
+                kind: 0,
                 selector: selector.get(),
                 direction: None,
                 direction_curve: Some(curve.clone()),
@@ -5064,6 +5174,11 @@ mod revision_compound_loft_direction_wire {
         D: Deserializer<'de>,
     {
         let wire = Wire::deserialize(deserializer)?;
+        if wire.kind != 0 {
+            return Err(serde::de::Error::custom(
+                "revision compound loft requires kind zero",
+            ));
+        }
         match (wire.selector, wire.direction, wire.direction_curve) {
             (0, Some(value), None) => Ok(CompoundLoftDirection::Vector { value }),
             (selector, None, Some(curve)) => NonZeroI64::new(selector)

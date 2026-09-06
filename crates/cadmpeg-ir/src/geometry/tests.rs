@@ -167,6 +167,7 @@ fn revision_compound_loft_direction_keeps_the_flat_wire_shape() {
     assert_eq!(
         wire,
         serde_json::json!({
+            "kind": 0,
             "selector": 4,
             "direction_curve": "test:model:curve#direction"
         })
@@ -181,6 +182,7 @@ fn revision_compound_loft_direction_keeps_the_flat_wire_shape() {
 fn revision_compound_loft_direction_rejects_a_mismatched_selector() {
     let error =
         serde_json::from_value::<RevisionCompoundLoftDirectionWireTest>(serde_json::json!({
+            "kind": 0,
             "selector": 0,
             "direction_curve": "test:model:curve#direction"
         }))
@@ -713,3 +715,5 @@ mod compound_loft;
 mod vertex_blend_twists;
 
 mod variable_blend_cache;
+
+mod revision_compound_loft_tail;

@@ -2185,7 +2185,7 @@ fn emit_revision_compound_loft_surface(
             }
         }
     };
-    let trailing_curve = construction.trailing_curve.map(|geometry| {
+    let tail = construction.tail.map(|geometry| {
         let id = CurveId::mint(format!(
             "{format}:brep:procedural_surface#{i}:cloft:trailing"
         ))
@@ -2207,11 +2207,9 @@ fn emit_revision_compound_loft_surface(
             base_path,
             entries,
             flags: construction.flags,
-            kind: construction.kind,
             kind_flags: construction.kind_flags,
             direction,
-            interval: construction.interval,
-            trailing_curve,
+            tail,
         }),
     }
 }

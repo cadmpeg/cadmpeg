@@ -5762,3 +5762,17 @@ crate = "cadmpeg-asm"
 kind = "field"
 item = "cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend"
 reason = "IR-85: bind the approximation-current flag to the variable-blend cache state and remove contradictory flag/tolerance combinations; preserve the flat wire fields."
+
+[[change]]
+commit = "08b80c2786c5365f0a207af8bbb1c8b20e0f79e4"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::geometry::RevisionCompoundLoftConstruction"
+reason = "IR-85: derive the fixed kind-zero field and pair complete trailing parameter bounds with their required curve; retain the flat JSON through checked conversion."
+
+[[change]]
+commit = "08b80c2786c5365f0a207af8bbb1c8b20e0f79e4"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::nurbs::proc_surface::EmbeddedRevisionCompoundLoft"
+reason = "IR-85: derive the fixed kind-zero field and pair complete trailing parameter bounds with their required curve; retain the flat JSON through checked conversion."
