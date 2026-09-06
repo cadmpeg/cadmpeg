@@ -9757,7 +9757,7 @@ impl CatiaValueBlock {
             id,
             byte_offset: block.pos as u64,
             byte_len: block.total_len() as u64,
-            declared_len: block.declared_len as u64,
+            declared_len: block.declared_len() as u64,
             object_graph: object_graph.map(|graph| graph.id.clone()),
             catalog: catalog.id.clone(),
             payload: block.payload,

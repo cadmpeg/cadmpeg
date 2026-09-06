@@ -11,22 +11,58 @@ use crate::layout::value_block_7c0b as value_block;
 /// One exact `7C0B` value block immediately preceding a schema catalog.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "ValueBlockWire", into = "ValueBlockWire")]
 pub struct ValueBlock {
     /// Byte offset of the `7C0B` marker.
     pub pos: usize,
-    /// Stored length from the marker through the byte before the terminator.
-    pub declared_len: usize,
     /// Value payload between the six-byte header and terminator.
     pub payload: Vec<u8>,
 }
 
 impl ValueBlock {
+    pub fn declared_len(&self) -> usize {
+        value_block::LEN + self.payload.len()
+    }
+
     pub fn total_len(&self) -> usize {
-        self.declared_len + 1
+        self.declared_len() + 1
     }
 
     pub fn fields(&self) -> Vec<ValueField> {
         tokenize(&self.payload)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct ValueBlockWire {
+    pos: usize,
+    declared_len: usize,
+    payload: Vec<u8>,
+}
+
+impl From<ValueBlock> for ValueBlockWire {
+    fn from(block: ValueBlock) -> Self {
+        Self {
+            pos: block.pos,
+            declared_len: block.declared_len(),
+            payload: block.payload,
+        }
+    }
+}
+
+impl TryFrom<ValueBlockWire> for ValueBlock {
+    type Error = &'static str;
+
+    fn try_from(wire: ValueBlockWire) -> Result<Self, Self::Error> {
+        let block = Self {
+            pos: wire.pos,
+            payload: wire.payload,
+        };
+        if wire.declared_len != block.declared_len() {
+            return Err("value block length disagrees with payload");
+        }
+        Ok(block)
     }
 }
 
@@ -155,7 +191,6 @@ fn parse_candidate(bytes: &[u8], pos: usize) -> Option<ValueBlock> {
     }
     Some(ValueBlock {
         pos,
-        declared_len,
         payload: bytes[pos + value_block::LEN..terminator].to_vec(),
     })
 }
