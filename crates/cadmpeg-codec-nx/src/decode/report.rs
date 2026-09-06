@@ -55,9 +55,7 @@ pub(crate) struct CompletionBudgetStatus {
     pub(crate) coupled_support_uv_geometry_exhausted: bool,
     pub(crate) support_uv_lane_geometry_exhausted: bool,
     pub(crate) transfer_limit: usize,
-    pub(crate) support_uv_validation_limit: usize,
     pub(crate) support_uv_limit: usize,
-    pub(crate) coupled_support_uv_limit: usize,
 }
 
 // Keep the independent report facts explicit at the decode/report boundary.
@@ -197,9 +195,9 @@ pub(crate) fn build_geometry_report(
             bounded_phases.join(" and "),
             MAX_EXACT_BOUNDARY_TRANSFER_SAMPLES,
             completion_budget.transfer_limit,
-            completion_budget.support_uv_validation_limit,
             completion_budget.support_uv_limit,
-            completion_budget.coupled_support_uv_limit,
+            completion_budget.support_uv_limit,
+            completion_budget.support_uv_limit,
             MAX_PCURVE_COMPLETION_GEOMETRY_WORK,
             MAX_SERIALIZED_SUPPORT_UV_GEOMETRY_WORK,
             MAX_SUPPORT_UV_COMPLETION_GEOMETRY_WORK,

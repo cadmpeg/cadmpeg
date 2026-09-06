@@ -1134,9 +1134,7 @@ pub(crate) fn try_decode_geometry(
         coupled_support_uv_geometry_exhausted: coupled_support_uv_geometry_budget.exhausted(),
         support_uv_lane_geometry_exhausted,
         transfer_limit,
-        support_uv_validation_limit: support_uv_limit,
         support_uv_limit,
-        coupled_support_uv_limit: support_uv_limit,
     };
     let mut report = build_geometry_report(
         scan,

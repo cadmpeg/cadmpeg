@@ -757,8 +757,12 @@ pub enum ParasolidDeltasInlineSchemaFields {
         xmt: u32,
         node_id: u32,
         leading_references: [u32; 5],
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        leading_statuses: Option<[u8; 5]>,
+        #[serde(
+            default = "default_type38_leading_statuses",
+            deserialize_with = "deserialize_type38_leading_statuses",
+            skip_serializing_if = "type38_leading_statuses_are_default"
+        )]
+        leading_statuses: [u8; 5],
         marker: u8,
         linked_references: Vec<u32>,
         state_references: Vec<u32>,
@@ -769,6 +773,21 @@ pub enum ParasolidDeltasInlineSchemaFields {
         reference: u32,
         numeric_values: [f64; 11],
     },
+}
+
+fn default_type38_leading_statuses() -> [u8; 5] {
+    [1; 5]
+}
+
+fn type38_leading_statuses_are_default(statuses: &[u8; 5]) -> bool {
+    *statuses == default_type38_leading_statuses()
+}
+
+fn deserialize_type38_leading_statuses<'de, D>(deserializer: D) -> Result<[u8; 5], D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<[u8; 5]>::deserialize(deserializer)?.unwrap_or_else(default_type38_leading_statuses))
 }
 
 /// Inline schema declaration in a Parasolid deltas stream.
@@ -1221,7 +1240,7 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
                     xmt,
                     node_id,
                     leading_references,
-                    leading_statuses: (leading_statuses != [1; 5]).then_some(leading_statuses),
+                    leading_statuses,
                     marker,
                     linked_references,
                     state_references,
@@ -3281,6 +3300,35 @@ mod tests {
     use crate::parasolid::Stream;
     use crate::test_support::many_face_partition_stream;
     use crate::topology::Graph;
+
+    #[test]
+    fn type38_leading_statuses_preserve_default_omission_and_nondefault_values() {
+        use super::ParasolidDeltasInlineSchemaFields;
+        let base = serde_json::json!({
+            "schema": "type38", "xmt": 3, "node_id": 7,
+            "leading_references": [1, 2, 3, 4, 5], "marker": 4,
+            "linked_references": [], "state_references": [], "numeric_values": null
+        });
+        for statuses in [None, Some([1; 5]), Some([0, 1, 2, 1, 1])] {
+            let mut wire = base.clone();
+            if let Some(statuses) = statuses {
+                wire["leading_statuses"] = serde_json::json!(statuses);
+            }
+            let fields: ParasolidDeltasInlineSchemaFields = serde_json::from_value(wire.clone()).unwrap();
+            let ParasolidDeltasInlineSchemaFields::Type38 { leading_statuses, .. } = &fields else {
+                panic!("type38 wire must decode as Type38");
+            };
+            assert_eq!(*leading_statuses, statuses.unwrap_or([1; 5]));
+            if *leading_statuses == [1; 5] {
+                wire.as_object_mut().unwrap().remove("leading_statuses");
+            }
+            assert_eq!(serde_json::to_value(fields).unwrap(), wire);
+        }
+        let mut null = base.clone();
+        null["leading_statuses"] = serde_json::Value::Null;
+        let fields: ParasolidDeltasInlineSchemaFields = serde_json::from_value(null).unwrap();
+        assert_eq!(serde_json::to_value(fields).unwrap(), base);
+    }
 
     fn group_record(xmt: u16, node_id: u32, linked_reference: u16) -> Vec<u8> {
         let mut bytes = vec![0, 90];
