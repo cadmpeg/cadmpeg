@@ -1572,11 +1572,17 @@ pub struct Swp104PayloadLeadingBranch {
     /// Exact state lane preceding the terminal marker.
     pub state_lane: Swp104StateLane,
     /// Ordered nonterminal references.
-    pub members: BranchItems<PayloadObjectReference<reference_index::PayloadIndexToken>>,
+    pub members: BranchItems<reference_index::PayloadIndexToken>,
     /// Terminal reference.
-    pub terminal: PayloadObjectReference<reference_index::PayloadIndexToken>,
-    /// Absolute offset immediately after the terminal zero.
-    pub end_offset: usize,
+    pub terminal: reference_index::PayloadIndexToken,
+}
+
+impl Swp104PayloadLeadingBranch {
+    pub(crate) fn byte_len(&self) -> usize {
+        40 + usize::from(self.leading_zero)
+            + self.members.as_slice().iter().map(|token| token.raw().len()).sum::<usize>()
+            + self.state_lane.byte_len() + 3 + self.terminal.raw().len() + 1
+    }
 }
 
 /// One counted construction branch in a surface-feature payload.
@@ -3634,13 +3640,11 @@ pub fn swp104_payload_leading_branch(
     let discriminator = NonZeroU8::new(*record.payload().first()?)?;
     (record.payload().get(1..5) == Some(&HEADER)).then_some(())?;
 
-    let mut at = 5;
-    let mut scalars = Vec::with_capacity(4);
-    for _ in 0..4 {
-        scalars.push(ShiftedBinary64::read(record.payload().get(at..at + 8)?)?);
-        at += 8;
-    }
-    let scalars = scalars.try_into().ok()?;
+    let [a, b, c, d] = std::array::from_fn::<_, 4, _>(|i| {
+        ShiftedBinary64::read(record.payload().get(5 + i * 8..13 + i * 8)?)
+    });
+    let scalars = [a?, b?, c?, d?];
+    let mut at = 37;
 
     let leading_zero = record.payload().get(at) == Some(&0x00);
     at += usize::from(leading_zero);
@@ -3652,14 +3656,10 @@ pub fn swp104_payload_leading_branch(
     at += 3;
     let mut members = Vec::with_capacity(usize::from(declared_count) - 1);
     for _ in 1..declared_count {
-        let offset = at;
         let object_index = reference_index::PayloadIndexToken::read(record.payload().get(at..)?)?;
         let width = object_index.raw().len();
         at += width;
-        members.push(PayloadObjectReference {
-            offset: record.payload_offset() + offset,
-            token: object_index,
-        });
+        members.push(object_index);
     }
 
     let witnessed_count = if record.payload().get(at) == Some(&0x01) {
@@ -3682,16 +3682,11 @@ pub fn swp104_payload_leading_branch(
     at += state_len;
     (record.payload().get(at..at + 3) == Some(&[0xff, 0x01, 0x02])).then_some(())?;
     at += 3;
-    let terminal_offset = at;
     let object_index = reference_index::PayloadIndexToken::read(record.payload().get(at..)?)?;
     let width = object_index.raw().len();
     at += width;
-    let terminal = PayloadObjectReference {
-        offset: record.payload_offset() + terminal_offset,
-        token: object_index,
-    };
+    let terminal = object_index;
     (*record.payload().get(at)? == 0x00).then_some(())?;
-    at += 1;
 
     Some(Swp104PayloadLeadingBranch {
         discriminator,
@@ -3701,7 +3696,6 @@ pub fn swp104_payload_leading_branch(
         state_lane,
         members: BranchItems::new(members).ok()?,
         terminal,
-        end_offset: record.payload_offset() + at,
     })
 }
 

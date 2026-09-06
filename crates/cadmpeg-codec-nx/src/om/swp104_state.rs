@@ -23,6 +23,11 @@ impl Swp104StateLane {
             .map(|bytes| (bytes.len() - 3) as u8)
     }
 
+    /// Encoded state bytes including the optional witness marker and count.
+    pub(crate) fn byte_len(&self) -> usize {
+        self.bytes().len() + if self.witnessed_bytes.is_some() { 2 } else { 0 }
+    }
+
     pub(crate) fn bytes(&self) -> &[u8] {
         self.witnessed_bytes.as_deref().unwrap_or(&[0; 5])
     }

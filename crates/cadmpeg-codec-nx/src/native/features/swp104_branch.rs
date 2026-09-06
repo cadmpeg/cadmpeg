@@ -54,24 +54,23 @@ impl FeatureSwp104LeadingBranch {
         branch: Swp104PayloadLeadingBranch,
         resolve: impl Fn(PayloadIndexToken) -> Option<String>,
     ) -> Option<Self> {
+        source_offset.checked_add(branch.byte_len() as u64)?;
         let reference = |token| Reference { token, data_block: resolve(token) };
-        let value = Self {
+        Some(Self {
             id, operation_label, source_offset,
             discriminator: branch.discriminator,
             scalars: branch.scalars,
             leading_zero: branch.leading_zero,
             mode: branch.mode,
             state_lane: branch.state_lane,
-            members: branch.members.map_indexed(|_, item| reference(item.token)),
-            terminal: reference(branch.terminal.token),
-        };
-        value.source_offset.checked_add(value.byte_len())?;
-        Some(value)
+            members: branch.members.map_indexed(|_, item| reference(item)),
+            terminal: reference(branch.terminal),
+        })
     }
 
     fn members_offset(&self) -> u64 { 40 + u64::from(self.leading_zero) }
     fn state_len(&self) -> u64 {
-        self.state_lane.bytes().len() as u64 + if self.state_lane.witnessed_count().is_some() { 2 } else { 0 }
+        self.state_lane.byte_len() as u64
     }
     fn byte_len(&self) -> u64 {
         self.members_offset()
@@ -145,7 +144,7 @@ impl TryFrom<FeatureSwp104LeadingBranchWire> for FeatureSwp104LeadingBranch {
             if item.source_offset != at { return Err("members source_offset does not match serialized position".to_owned()); }
             at = at.checked_add(item.token.raw().len() as u64).ok_or("source_offset overflow")?;
         }
-        at = at.checked_add(state_lane.bytes().len() as u64 + if state_lane.witnessed_count().is_some() { 2 } else { 0 } + 3).ok_or("source_offset overflow")?;
+        at = at.checked_add(state_lane.byte_len() as u64 + 3).ok_or("source_offset overflow")?;
         if wire.terminal.ordinal != wire.members.len() as u32 { return Err("terminal ordinal does not match serialized order".to_owned()); }
         if wire.terminal.source_offset != at { return Err("terminal source_offset does not match serialized position".to_owned()); }
         let end = at.checked_add(wire.terminal.token.raw().len() as u64 + 1).ok_or("source_offset overflow")?;

@@ -615,12 +615,12 @@ fn om_swp104_leading_branch_preserves_counts_state_and_references() {
             .members
             .as_slice()
             .iter()
-            .map(|reference| reference.token.value())
+            .map(|reference| reference.value())
             .collect::<Vec<_>>(),
         [0x31, 0x32]
     );
-    assert_eq!(branch.terminal.token.value(), 0x33);
-    assert_eq!(branch.end_offset, 259);
+    assert_eq!(branch.terminal.value(), 0x33);
+    assert_eq!(record.payload_offset() + branch.byte_len(), 259);
 
     let mut malformed_witness = payload.clone();
     malformed_witness[45] = 1;
