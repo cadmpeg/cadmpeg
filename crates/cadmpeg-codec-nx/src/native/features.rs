@@ -2,7 +2,7 @@
 //! Feature-history record extractors and their record types.
 
 mod reference;
-use reference::ConstructionReference;
+use reference::{ConstructionReference, NullableConstructionReference};
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
@@ -3091,6 +3091,7 @@ pub enum FeatureFsetReferenceGroup {
 
 /// Exact counted nullable reference field carried by a `DELETE` payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "reference::DeleteReferenceFieldWire", into = "reference::DeleteReferenceFieldWire")]
 pub struct FeatureDeleteReferenceField {
     /// Globally unique field identity.
     pub id: String,
@@ -3098,16 +3099,10 @@ pub struct FeatureDeleteReferenceField {
     pub operation_label: String,
     /// Leading operation-local control byte.
     pub control: u8,
-    /// Five serialized object-index slots in field order.
-    pub object_indices: [Option<u32>; 5],
-    /// Exact object-index tokens in field order.
-    pub raw_object_indices: [Vec<u8>; 5],
-    /// Independently resolved offset-store blocks; null and unresolved slots are `None`.
-    pub data_blocks: [Option<String>; 5],
+    /// Five nullable references with their resolved targets and source positions.
+    pub references: [NullableConstructionReference; 5],
     /// Absolute source offset of the leading control byte.
     pub source_offset: u64,
-    /// Absolute source offsets of the five object-index tokens.
-    pub object_index_source_offsets: [u64; 5],
 }
 
 /// Exact logical payload reconstructed from a complete non-null `DELETE` field.
@@ -9840,24 +9835,14 @@ pub fn feature_delete_reference_fields(container: &Container) -> Vec<FeatureDele
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
                 control: field.control,
-                object_indices: field
-                    .references
-                    .each_ref()
-                    .map(|reference| reference.object_index),
-                raw_object_indices: field
-                    .references
-                    .each_ref()
-                    .map(|reference| reference.raw_object_index.clone()),
-                data_blocks: field.references.each_ref().map(|reference| {
-                    reference
-                        .object_index
-                        .and_then(|object_index| unique_offset_data_block(&indexed, object_index))
+                references: field.references.map(|reference| NullableConstructionReference {
+                    target: reference.token.map(|token| {
+                        let data_block = unique_offset_data_block(&indexed, token.value());
+                        (token, data_block)
+                    }),
+                    source_offset: entry_offset + reference.offset as u64,
                 }),
                 source_offset: entry_offset + field.offset as u64,
-                object_index_source_offsets: field
-                    .references
-                    .each_ref()
-                    .map(|reference| entry_offset + reference.offset as u64),
             });
         },
     );
@@ -9875,9 +9860,9 @@ pub fn feature_delete_construction_payloads(
         .iter()
         .filter_map(|field| {
             let data_blocks = field
-                .data_blocks
-                .clone()
-                .into_iter()
+                .references
+                .iter()
+                .map(|reference| reference.target.as_ref()?.1.clone())
                 .collect::<Option<Vec<_>>>()?;
             let store = data_blocks.first()?.rsplit_once(":block#")?.0;
             if data_blocks.iter().any(|block| {

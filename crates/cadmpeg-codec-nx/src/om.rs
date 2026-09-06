@@ -1501,9 +1501,7 @@ pub struct FsetPayloadReferenceGraph {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeletePayloadReferenceSlot {
     /// Decoded object index, or `None` for the exact `ff` null token.
-    pub object_index: Option<u32>,
-    /// Exact serialized object-index token.
-    pub raw_object_index: Vec<u8>,
+    pub token: Option<reference_index::ReferenceIndexToken>,
     /// Absolute offset of the token.
     pub offset: usize,
 }
@@ -3301,23 +3299,22 @@ pub fn delete_payload_references(
     }
     let control = *record.payload.first()?;
     let mut at = 1 + PREFIX.len();
-    let mut references = Vec::with_capacity(5);
-    for _ in 0..5 {
+    let references = std::array::from_fn::<_, 5, _>(|_| {
         let offset = at;
         let (object_index, width) = if record.payload.get(at) == Some(&0xff) {
             (None, 1)
         } else {
             let (object_index, width) = payload_object_index(&record.payload[at..])?;
-            (Some(object_index.value()), width)
+            (Some(object_index), width)
         };
         at += width;
-        references.push(DeletePayloadReferenceSlot {
-            object_index,
-            raw_object_index: record.payload[offset..at].to_vec(),
+        Some(DeletePayloadReferenceSlot {
+            token: object_index,
             offset: record.payload_offset + offset,
-        });
-    }
-    let references = references.try_into().ok()?;
+        })
+    });
+    let [a, b, c, d, e] = references;
+    let references = [a?, b?, c?, d?, e?];
     (record.payload.get(at) == Some(&0x00)).then_some(DeletePayloadReferenceField {
         control,
         references,

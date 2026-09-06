@@ -1430,7 +1430,7 @@ fn om_delete_reference_field_requires_five_canonical_nullable_slots() {
         field
             .references
             .each_ref()
-            .map(|reference| reference.object_index),
+            .map(|reference| reference.token.as_ref().map(|token| token.value())),
         [Some(0x20), None, Some(0x208), Some(0x209), None]
     );
     assert_eq!(
