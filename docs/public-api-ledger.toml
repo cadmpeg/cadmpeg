@@ -5664,3 +5664,17 @@ crate = "cadmpeg-asm"
 kind = "field"
 item = "cadmpeg_asm::nurbs::proc_surface::EmbeddedCompoundLoftTail::Zero::selector"
 reason = "IR-85: the embedded direction owns the selector before projection into the neutral compound-loft tail."
+
+[[change]]
+commit = "b9de0c84d9968f559c11e44e4bbd56447c2dd3a7"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::geometry::ScaledCompoundLoftBranch::Direct::selector"
+reason = "IR-85: derive the direct scaled-compound-loft selector from its direction carrier; preserve the flat JSON through checked conversion."
+
+[[change]]
+commit = "b9de0c84d9968f559c11e44e4bbd56447c2dd3a7"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::nurbs::proc_surface::EmbeddedScaledCompoundLoftBranch::Direct::selector"
+reason = "IR-85: derive the direct scaled-compound-loft selector from its direction carrier; preserve the flat JSON through checked conversion."

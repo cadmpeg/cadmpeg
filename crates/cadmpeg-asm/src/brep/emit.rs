@@ -995,11 +995,9 @@ fn emit_scaled_compound_loft_surface(
         }
         EmbeddedScaledCompoundLoftBranch::Direct {
             flag,
-            selector,
             direction,
         } => cadmpeg_ir::geometry::ScaledCompoundLoftBranch::Direct {
             flag,
-            selector,
             direction: map_direction(&mut *out, "branch:direction", direction),
         },
     };

@@ -1843,23 +1843,17 @@ fn encode_native_scaled_compound_loft(
         }
         ScaledCompoundLoftBranch::Direct {
             flag,
-            selector,
             direction,
         } => {
             bytes.push(native_bool(false));
             bytes.push(native_bool(*flag));
-            native_i64(bytes, *selector);
+            native_i64(bytes, direction.selector());
             match direction {
-                CompoundLoftDirection::Vector { value } if *selector == 0 => {
+                CompoundLoftDirection::Vector { value } => {
                     native_vector(bytes, [value.x, value.y, value.z]);
                 }
-                CompoundLoftDirection::Curve { curve, .. } if *selector != 0 => {
+                CompoundLoftDirection::Curve { curve, .. } => {
                     native_nurbs_curve(bytes, &native_loft_curve(target, curve)?)?;
-                }
-                _ => {
-                    return Err(CodecError::Malformed(
-                        "scaled compound-loft direction conflicts with its selector".into(),
-                    ));
                 }
             }
         }

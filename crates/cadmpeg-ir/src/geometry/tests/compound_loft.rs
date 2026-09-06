@@ -28,3 +28,20 @@ fn direction_selector_round_trips_without_duplicate_state() {
         assert!(serde_json::from_value::<CompoundLoftTail>(wire).is_err());
     }
 }
+
+#[test]
+fn scaled_direction_selector_preserves_exact_nonzero_value() {
+    use crate::geometry::ScaledCompoundLoftBranch;
+    let branch = ScaledCompoundLoftBranch::Direct {
+        flag: true,
+        direction: CompoundLoftDirection::Curve {
+            curve: "test:model:curve#0".into(),
+            selector: std::num::NonZeroI64::new(-4).unwrap(),
+        },
+    };
+    let mut wire = serde_json::to_value(&branch).unwrap();
+    assert_eq!(wire["selector"], -4);
+    assert_eq!(serde_json::from_value::<ScaledCompoundLoftBranch>(wire.clone()).unwrap(), branch);
+    wire["selector"] = serde_json::json!(0);
+    assert!(serde_json::from_value::<ScaledCompoundLoftBranch>(wire).is_err());
+}

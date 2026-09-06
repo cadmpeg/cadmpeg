@@ -367,7 +367,6 @@ fn generated_scaled_compound_loft_decodes_full_direct_branch() {
         construction.branch,
         ScaledCompoundLoftBranch::Direct {
             flag: true,
-            selector: 0,
             direction: CompoundLoftDirection::Vector { .. },
         }
     ));
@@ -449,7 +448,6 @@ fn generated_scaled_compound_loft_writes_all_middle_branches_source_less() {
             ScaledCompoundLoftShape::Full,
             ScaledCompoundLoftBranch::Direct {
                 flag: false,
-                selector: 4,
                 direction: CompoundLoftDirection::Curve {
                     curve: curve.clone(),
                     selector: std::num::NonZeroI64::new(4).unwrap(),

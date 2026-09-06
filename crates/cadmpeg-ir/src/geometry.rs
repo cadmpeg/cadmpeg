@@ -5090,9 +5090,9 @@ pub enum ScaledCompoundLoftBranch {
     Direct {
         /// Native branch flag.
         flag: bool,
-        /// Native direction selector.
-        selector: i64,
-        /// Vector or BS3 curve selected structurally.
+        /// Vector or BS3 curve with its derived native selector.
+        #[serde(flatten, with = "compound_loft_direction_wire")]
+        #[cfg_attr(feature = "schema", schemars(with = "CompoundLoftDirectionWire"))]
         direction: CompoundLoftDirection,
     },
 }

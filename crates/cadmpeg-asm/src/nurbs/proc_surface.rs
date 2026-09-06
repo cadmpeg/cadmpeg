@@ -967,8 +967,6 @@ pub enum EmbeddedScaledCompoundLoftBranch {
     Direct {
         /// The boolean opening the branch.
         flag: bool,
-        /// The integer selector serialized after the flag.
-        selector: i64,
         /// The direction carrier of the branch.
         direction: EmbeddedCompoundLoftDirection,
     },
@@ -2198,7 +2196,6 @@ fn scaled_compound_loft_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurfa
         };
         EmbeddedScaledCompoundLoftBranch::Direct {
             flag,
-            selector,
             direction,
         }
     };

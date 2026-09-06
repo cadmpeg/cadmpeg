@@ -677,14 +677,13 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     true
                 }
                 crate::geometry::ScaledCompoundLoftBranch::Direct {
-                    selector,
-                    direction,
+                            direction,
                     ..
                 } => match direction {
                     crate::geometry::CompoundLoftDirection::Vector { value } => {
-                        *selector == 0 && vector_finite(value)
+                        vector_finite(value)
                     }
-                    crate::geometry::CompoundLoftDirection::Curve { .. } => *selector != 0,
+                    crate::geometry::CompoundLoftDirection::Curve { .. } => true,
                 },
             };
             let scales_valid = scales.iter().all(|scale| {
