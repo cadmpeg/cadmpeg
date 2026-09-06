@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(unused_imports)]
 
+use crate::native::features::payload_name::FeaturePayloadName;
 use crate::om::scalar_pair::{PairPosition, SketchPairForm};
 use super::*;
 
 #[test]
 fn sketch_fixed_points_require_one_owned_finite_point_pair() {
-    let name = FeatureSketchPayloadName {
+    let name = FeaturePayloadName {
         id: "name".to_string(),
         operation_label: "sketch".to_string(),
         construction_payload: "payload".to_string(),
@@ -61,7 +62,7 @@ fn sketch_fixed_points_require_one_owned_finite_point_pair() {
 
 #[test]
 fn sketch_points_require_owned_finite_scalar_fields() {
-    let name = FeatureSketchPayloadName {
+    let name = FeaturePayloadName {
         id: "name".to_string(),
         operation_label: "sketch".to_string(),
         construction_payload: "payload".to_string(),

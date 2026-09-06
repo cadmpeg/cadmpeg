@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature-history record extractors and their record types.
 
+pub(crate) mod payload_name;
+use payload_name::FeaturePayloadName;
+
 mod reference;
 use crate::om::header_references::HeaderSlot;
 use reference::{ConstructionReference, NullableConstructionReference};
@@ -2347,116 +2350,6 @@ impl TryFrom<FeatureSketchPayloadScalarLaneWire> for FeatureSketchPayloadScalarL
             lane,
             source_offset: wire.source_offset,
             terminator_source_offset: wire.terminator_source_offset,
-        })
-    }
-}
-
-fn payload_name_from_wire(
-    type_code: Option<u32>,
-    raw_type_code: Option<Vec<u8>>,
-    type_code_payload_offset: Option<u64>,
-    type_code_source_offset: Option<u64>,
-    payload_leading: bool,
-    value: String,
-    payload_offset: u64,
-) -> Result<crate::om::name_field::NameField<String>, String> {
-    let code = match (type_code, raw_type_code, type_code_payload_offset, type_code_source_offset, payload_leading) {
-        (None, None, None, None, true) => None,
-        (Some(value), Some(raw), Some(offset), source_offset, false) => {
-            if payload_offset.checked_add(1) != Some(offset) {
-                return Err("type_code_payload_offset: expected payload_offset + 1".to_owned());
-            }
-            Some(crate::om::compact::CompactIndexTarget {
-                atom: crate::om::compact::CompactIndexAtom::from_wire(value, &raw)
-                    .map_err(|error| format!("type_code/raw_type_code: {error}"))?,
-                target: source_offset,
-            })
-        }
-        _ => return Err("payload name type code is present exactly when payload_leading is false".to_owned()),
-    };
-    crate::om::name_field::NameField::new(value, payload_offset, code).map_err(str::to_owned)
-}
-
-/// Exact framed name retained from one reconstructed sketch payload.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureSketchPayloadNameWire",
-    into = "FeatureSketchPayloadNameWire"
-)]
-pub struct FeatureSketchPayloadName {
-    /// Globally unique name-field identity.
-    pub id: String,
-    /// Owning `SKETCH` operation label.
-    pub operation_label: String,
-    /// Reconstructed sketch payload carrying this field.
-    pub construction_payload: String,
-    /// Zero-based name-field order within the reconstructed payload.
-    pub ordinal: u32,
-    /// Checked name text and its leading or compact-typed frame.
-    pub frame: crate::om::name_field::NameField<String>,
-    /// Absolute file offset of the opening marker.
-    pub source_offset: u64,
-}
-
-#[derive(Serialize, Deserialize)]
-struct FeatureSketchPayloadNameWire {
-    id: String,
-    operation_label: String,
-    construction_payload: String,
-    ordinal: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    type_code: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    raw_type_code: Option<Vec<u8>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    type_code_payload_offset: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    type_code_source_offset: Option<u64>,
-    payload_leading: bool,
-    value: String,
-    payload_offset: u64,
-    source_offset: u64,
-}
-
-impl From<FeatureSketchPayloadName> for FeatureSketchPayloadNameWire {
-    fn from(value: FeatureSketchPayloadName) -> Self {
-        let code = value.frame.code();
-        Self {
-            id: value.id,
-            operation_label: value.operation_label,
-            construction_payload: value.construction_payload,
-            ordinal: value.ordinal,
-            type_code: code.as_ref().map(|code| code.atom.value()),
-            raw_type_code: code.as_ref().map(|code| code.atom.raw().to_vec()),
-            type_code_payload_offset: code.as_ref().map(|code| code.offset),
-            type_code_source_offset: code.and_then(|code| *code.target),
-            payload_leading: value.frame.code().is_none(),
-            value: value.frame.value().to_owned(),
-            payload_offset: value.frame.offset(),
-            source_offset: value.source_offset,
-        }
-    }
-}
-
-impl TryFrom<FeatureSketchPayloadNameWire> for FeatureSketchPayloadName {
-    type Error = String;
-
-    fn try_from(wire: FeatureSketchPayloadNameWire) -> Result<Self, Self::Error> {
-        Ok(Self {
-            id: wire.id,
-            operation_label: wire.operation_label,
-            construction_payload: wire.construction_payload,
-            ordinal: wire.ordinal,
-            frame: payload_name_from_wire(
-                wire.type_code,
-                wire.raw_type_code,
-                wire.type_code_payload_offset,
-                wire.type_code_source_offset,
-                wire.payload_leading,
-                wire.value,
-                wire.payload_offset,
-            )?,
-            source_offset: wire.source_offset,
         })
     }
 }
@@ -5598,90 +5491,6 @@ impl TryFrom<FeatureBlockConstructionWire> for FeatureBlockConstruction {
 }
 
 
-/// One complete compact-code name field in a reconstructed `BLOCK` payload.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureBlockPayloadNameWire",
-    into = "FeatureBlockPayloadNameWire"
-)]
-pub struct FeatureBlockPayloadName {
-    /// Globally unique name-field identity.
-    pub id: String,
-    /// Owning `BLOCK` operation label.
-    pub operation_label: String,
-    /// Reconstructed payload containing the field.
-    pub construction_payload: String,
-    /// Zero-based name order in the reconstructed payload.
-    pub ordinal: u32,
-    /// Checked name text and its leading or compact-typed frame.
-    pub frame: crate::om::name_field::NameField<String>,
-    /// Absolute source offset of the opening marker.
-    pub source_offset: u64,
-}
-
-#[derive(Serialize, Deserialize)]
-struct FeatureBlockPayloadNameWire {
-    id: String,
-    operation_label: String,
-    construction_payload: String,
-    ordinal: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    type_code: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    raw_type_code: Option<Vec<u8>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    type_code_payload_offset: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    type_code_source_offset: Option<u64>,
-    payload_leading: bool,
-    value: String,
-    payload_offset: u64,
-    source_offset: u64,
-}
-
-impl From<FeatureBlockPayloadName> for FeatureBlockPayloadNameWire {
-    fn from(value: FeatureBlockPayloadName) -> Self {
-        let code = value.frame.code();
-        Self {
-            id: value.id,
-            operation_label: value.operation_label,
-            construction_payload: value.construction_payload,
-            ordinal: value.ordinal,
-            type_code: code.as_ref().map(|code| code.atom.value()),
-            raw_type_code: code.as_ref().map(|code| code.atom.raw().to_vec()),
-            type_code_payload_offset: code.as_ref().map(|code| code.offset),
-            type_code_source_offset: code.and_then(|code| *code.target),
-            payload_leading: value.frame.code().is_none(),
-            value: value.frame.value().to_owned(),
-            payload_offset: value.frame.offset(),
-            source_offset: value.source_offset,
-        }
-    }
-}
-
-impl TryFrom<FeatureBlockPayloadNameWire> for FeatureBlockPayloadName {
-    type Error = String;
-
-    fn try_from(wire: FeatureBlockPayloadNameWire) -> Result<Self, Self::Error> {
-        Ok(Self {
-            id: wire.id,
-            operation_label: wire.operation_label,
-            construction_payload: wire.construction_payload,
-            ordinal: wire.ordinal,
-            frame: payload_name_from_wire(
-                wire.type_code,
-                wire.raw_type_code,
-                wire.type_code_payload_offset,
-                wire.type_code_source_offset,
-                wire.payload_leading,
-                wire.value,
-                wire.payload_offset,
-            )?,
-            source_offset: wire.source_offset,
-        })
-    }
-}
-
 /// Name-delimited interval in a reconstructed `BLOCK` payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureBlockPayloadNamedRecord {
@@ -8566,7 +8375,7 @@ pub fn feature_sketch_payload_scalar_lanes(
 pub fn feature_sketch_payload_names(
     container: &Container,
     constructions: &[FeatureSketchConstructionInputs],
-) -> Vec<FeatureSketchPayloadName> {
+) -> Vec<FeaturePayloadName> {
     let blocks = offset_data_block_bytes(container);
     constructions
         .iter()
@@ -8588,7 +8397,7 @@ pub fn feature_sketch_payload_names(
                 .filter_map(|(ordinal, field)| {
                     let relative = field.offset() as u64;
                     let source_offset = joined.source_offset(relative)?;
-                    Some(FeatureSketchPayloadName {
+                    Some(FeaturePayloadName {
                         id: format!(
                             "nx:feature-history:sketch-payload-name#{}-{ordinal:010}",
                             construction_payload
@@ -8610,7 +8419,7 @@ pub fn feature_sketch_payload_names(
 /// Join complete name-delimited intervals to their framed scalar fields.
 pub fn feature_sketch_payload_named_records(
     payloads: &[FeatureConstructionPayload],
-    names: &[FeatureSketchPayloadName],
+    names: &[FeaturePayloadName],
     scalars: &[FeaturePayloadScalar],
     fixed_pairs: &[FeatureSketchPayloadFixedPair],
     mixed_pairs: &[FeatureSketchPayloadMixedPair],
@@ -8687,7 +8496,7 @@ pub fn feature_sketch_payload_named_records(
 /// Decode complete `Point<decimal>` records with exactly two scalar fields.
 pub fn feature_sketch_points(
     records: &[FeatureSketchPayloadNamedRecord],
-    names: &[FeatureSketchPayloadName],
+    names: &[FeaturePayloadName],
     scalars: &[FeaturePayloadScalar],
 ) -> Vec<FeatureSketchPoint> {
     let names = names
@@ -8737,7 +8546,7 @@ pub fn feature_sketch_points(
 /// Decode `Point<positive decimal>` records containing exactly one fixed pair.
 pub fn feature_sketch_fixed_points(
     records: &[FeatureSketchPayloadNamedRecord],
-    names: &[FeatureSketchPayloadName],
+    names: &[FeaturePayloadName],
     fixed_pairs: &[FeatureSketchPayloadFixedPair],
 ) -> Vec<FeatureSketchFixedPoint> {
     let names = names
@@ -11249,7 +11058,7 @@ pub fn feature_block_payload_scalars(
 pub fn feature_block_payload_names(
     container: &Container,
     payloads: &[FeatureConstructionPayload],
-) -> Vec<FeatureBlockPayloadName> {
+) -> Vec<FeaturePayloadName> {
     let blocks = offset_data_block_bytes(container);
     payloads
         .iter()
@@ -11264,7 +11073,7 @@ pub fn feature_block_payload_names(
                 .enumerate()
                 .filter_map(|(ordinal, field)| {
                     let source_offset = joined.source_offset(field.offset() as u64)?;
-                    Some(FeatureBlockPayloadName {
+                    Some(FeaturePayloadName {
                         id: format!("{}-name-{ordinal}", payload.id),
                         operation_label: payload.operation_label.clone(),
                         construction_payload: payload.id.clone(),
@@ -11281,7 +11090,7 @@ pub fn feature_block_payload_names(
 /// Join complete `BLOCK` payload names to scalar fields in their intervals.
 pub fn feature_block_payload_named_records(
     payloads: &[FeatureConstructionPayload],
-    names: &[FeatureBlockPayloadName],
+    names: &[FeaturePayloadName],
     scalars: &[FeaturePayloadScalar],
 ) -> Vec<FeatureBlockPayloadNamedRecord> {
     let mut records = Vec::new();
@@ -11324,7 +11133,7 @@ pub fn feature_block_payload_named_records(
 /// Type exact two-scalar `Point<positive decimal>` `BLOCK` payload intervals.
 pub fn feature_block_payload_points(
     records: &[FeatureBlockPayloadNamedRecord],
-    names: &[FeatureBlockPayloadName],
+    names: &[FeaturePayloadName],
     scalars: &[FeaturePayloadScalar],
 ) -> Vec<FeatureBlockPayloadPoint> {
     let names = names

@@ -5,6 +5,7 @@
 //! record vectors into domain sub-structs. Extraction is infallible: malformed
 //! data is omitted, never surfaced as an error.
 
+use crate::native::features::payload_name::FeaturePayloadName;
 use crate::native::om::compact_lane::{DataBlockCountedIndexLane, DataBlockAbrReferenceLane, data_block_counted_index_lanes, data_block_abr_reference_lanes};
 use crate::native::om::column_row::{DataBlockIndexRow, DataBlockLinkedIndexRow, DataBlockTargetIndexRow, data_block_index_rows, data_block_linked_index_rows, data_block_target_index_rows};
 use crate::native::om::creation_display::{RmCreationDisplayDataRelation, rm_creation_display_data_relations};
@@ -243,7 +244,7 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_block_constructions: Vec<FeatureBlockConstruction>,
     pub(crate) feature_block_construction_payloads: Vec<FeatureConstructionPayload>,
     pub(crate) feature_block_payload_scalars: Vec<FeaturePayloadScalar>,
-    pub(crate) feature_block_payload_names: Vec<FeatureBlockPayloadName>,
+    pub(crate) feature_block_payload_names: Vec<FeaturePayloadName>,
     pub(crate) feature_block_payload_named_records: Vec<FeatureBlockPayloadNamedRecord>,
     pub(crate) feature_block_payload_points: Vec<FeatureBlockPayloadPoint>,
     pub(crate) feature_block_payload_point_groups: Vec<FeatureBlockPayloadPointGroup>,
@@ -255,7 +256,7 @@ pub(crate) struct FeatureRecords {
     pub(crate) feature_sketch_payload_mixed_pairs: Vec<FeatureSketchPayloadMixedPair>,
     pub(crate) feature_sketch_payload_scalars: Vec<FeaturePayloadScalar>,
     pub(crate) feature_sketch_payload_scalar_lanes: Vec<FeatureSketchPayloadScalarLane>,
-    pub(crate) feature_sketch_payload_names: Vec<FeatureSketchPayloadName>,
+    pub(crate) feature_sketch_payload_names: Vec<FeaturePayloadName>,
     pub(crate) feature_sketch_payload_named_records: Vec<FeatureSketchPayloadNamedRecord>,
     pub(crate) feature_sketch_fixed_points: Vec<FeatureSketchFixedPoint>,
     pub(crate) feature_sketch_points: Vec<FeatureSketchPoint>,

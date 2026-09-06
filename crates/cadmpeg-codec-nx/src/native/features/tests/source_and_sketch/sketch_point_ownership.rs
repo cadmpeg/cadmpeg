@@ -1,3 +1,4 @@
+use crate::native::features::payload_name::FeaturePayloadName;
 use crate::om::scalar_pair::{PairPosition, SketchPairForm};
 use super::*;
 
@@ -6,7 +7,6 @@ fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
     use super::super::{
         feature_sketch_fixed_points, feature_sketch_payload_named_records,
         FeatureConstructionPayload, FeatureSketchPayloadFixedPair,
-        FeatureSketchPayloadName,
     };
     let payload = FeatureConstructionPayload {
         id: "payload".to_string(),
@@ -21,7 +21,7 @@ fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
             "00".repeat(32),
         ).unwrap(),
     };
-    let name = |id: &str, ordinal, offset| FeatureSketchPayloadName {
+    let name = |id: &str, ordinal, offset| FeaturePayloadName {
         id: id.to_string(),
         operation_label: "sketch".to_string(),
         construction_payload: "payload".to_string(),

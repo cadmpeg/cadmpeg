@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::native::features::payload_name::FeaturePayloadName;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -842,13 +843,13 @@ fn nx_hole_package_group_uses_require_one_exact_lane_and_group() {
 #[test]
 fn nx_block_payload_points_require_exactly_two_named_scalars() {
     use super::{
-        FeatureBlockPayloadName, FeatureBlockPayloadNamedRecord, FeaturePayloadScalar,
+        FeatureBlockPayloadNamedRecord, FeaturePayloadScalar,
         feature_block_payload_point_groups, feature_block_payload_points,
     };
 
     let operation_label = "operation".to_string();
     let construction_payload = "payload".to_string();
-    let name = FeatureBlockPayloadName {
+    let name = FeaturePayloadName {
         id: "name".to_string(),
         operation_label: operation_label.clone(),
         construction_payload: construction_payload.clone(),
