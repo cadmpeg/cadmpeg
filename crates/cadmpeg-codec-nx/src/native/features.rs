@@ -20,7 +20,7 @@ use crate::om::scalar::{LocatedBinary64, PayloadScalarAtom, PayloadScalarEncodin
 use crate::om::branch_items::BranchItems;
 use crate::om::nonempty::NonEmpty;
 use crate::om::reference_index::{PayloadIndexToken, ReferenceIndexToken};
-use crate::om::compact::{CompactIndexAtom, WrappedCompactIndex};
+use crate::om::compact::{CompactIndexAtom, LocatedCompactIndex, WrappedCompactIndex};
 use crate::om::sketch_scalar::{SketchScaledAtom, SketchMixedScalars, SketchScalarLaneForm};
 use crate::om::fixed::{Q155, Q155Atom, Q155Marker, Q155LaneFrame};
 use crate::om::scalar_run::FramedScalarRun;
@@ -4938,9 +4938,9 @@ impl TryFrom<FeatureExtrudePayloadHeaderWire> for FeatureExtrudePayloadHeader {
 pub struct FeatureOperationTerminalDiscriminator {
     pub id: String,
     pub operation_label: String,
-    pub type_indices: [FeatureIndexToken; 2],
+    pub type_indices: [LocatedCompactIndex<u64>; 2],
     pub flags: [u8; 4],
-    pub trailing_indices: Vec<FeatureIndexToken>,
+    pub trailing_indices: Vec<LocatedCompactIndex<u64>>,
     pub source_offset: u64,
 }
 
@@ -4973,27 +4973,27 @@ impl From<FeatureOperationTerminalDiscriminator> for FeatureOperationTerminalDis
         Self {
             id: lane.id,
             operation_label: lane.operation_label,
-            type_indices: lane.type_indices.each_ref().map(|token| token.value),
-            raw_type_indices: lane.type_indices.each_ref().map(|token| token.raw.clone()),
+            type_indices: lane.type_indices.each_ref().map(|token| token.atom.value()),
+            raw_type_indices: lane.type_indices.each_ref().map(|token| token.atom.raw().to_vec()),
             type_index_source_offsets: lane
                 .type_indices
                 .each_ref()
-                .map(|token| token.source_offset),
+                .map(|token| token.offset),
             flags: lane.flags,
             trailing_indices: lane
                 .trailing_indices
                 .iter()
-                .map(|token| token.value)
+                .map(|token| token.atom.value())
                 .collect(),
             raw_trailing_indices: lane
                 .trailing_indices
                 .iter()
-                .map(|token| token.raw.clone())
+                .map(|token| token.atom.raw().to_vec())
                 .collect(),
             trailing_index_source_offsets: lane
                 .trailing_indices
                 .iter()
-                .map(|token| token.source_offset)
+                .map(|token| token.offset)
                 .collect(),
             source_offset: lane.source_offset,
         }
@@ -5011,32 +5011,32 @@ impl TryFrom<FeatureOperationTerminalDiscriminatorWire> for FeatureOperationTerm
                 "terminal discriminator trailing token columns must have equal lengths".into(),
             );
         }
-        let mut slot = 0;
-        let type_indices = wire.raw_type_indices.map(|raw| {
-            let token = FeatureIndexToken {
-                value: wire.type_indices[slot],
-                raw,
-                source_offset: wire.type_index_source_offsets[slot],
-            };
-            slot += 1;
-            token
+        let [first, second] = std::array::from_fn::<_, 2, _>(|slot| {
+            Ok::<_, String>(LocatedCompactIndex {
+                atom: CompactIndexAtom::from_wire(wire.type_indices[slot], &wire.raw_type_indices[slot])
+                    .map_err(|error| format!("type_indices[{slot}]: {error}"))?,
+                offset: wire.type_index_source_offsets[slot],
+            })
         });
         Ok(Self {
             id: wire.id,
             operation_label: wire.operation_label,
-            type_indices,
+            type_indices: [first?, second?],
             flags: wire.flags,
             trailing_indices: wire
                 .trailing_indices
                 .into_iter()
                 .zip(wire.raw_trailing_indices)
                 .zip(wire.trailing_index_source_offsets)
-                .map(|((value, raw), source_offset)| FeatureIndexToken {
-                    value,
-                    raw,
-                    source_offset,
+                .enumerate()
+                .map(|(slot, ((value, raw), source_offset))| {
+                    Ok::<_, String>(LocatedCompactIndex {
+                        atom: CompactIndexAtom::from_wire(value, &raw)
+                            .map_err(|error| format!("trailing_indices[{slot}]: {error}"))?,
+                        offset: source_offset,
+                    })
                 })
-                .collect(),
+                .collect::<Result<_, _>>()?,
             source_offset: wire.source_offset,
         })
     }
@@ -11112,16 +11112,14 @@ pub fn feature_operation_terminal_discriminators(
                 operation_label: format!(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
-                type_indices: lane.type_indices.map(|token| FeatureIndexToken {
-                    value: token.value,
-                    raw: token.raw,
-                    source_offset: entry_offset + token.offset as u64,
+                type_indices: lane.type_indices.map(|token| LocatedCompactIndex {
+                    atom: token.atom,
+                    offset: entry_offset + token.offset as u64,
                 }),
                 flags: lane.flags,
-                trailing_indices: lane.trailing_indices.into_iter().map(|token| FeatureIndexToken {
-                    value: token.value,
-                    raw: token.raw,
-                    source_offset: entry_offset + token.offset as u64,
+                trailing_indices: lane.trailing_indices.into_iter().map(|token| LocatedCompactIndex {
+                    atom: token.atom,
+                    offset: entry_offset + token.offset as u64,
                 }).collect(),
                 source_offset: entry_offset + lane.offset as u64,
             });

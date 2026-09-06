@@ -244,18 +244,6 @@ fn compact_token(bytes: &[u8], offset: usize) -> Option<CompactToken> {
     })
 }
 
-fn compact_value_token(bytes: &[u8], offset: usize) -> Option<CompactToken<u32>> {
-    let token = compact_token(bytes, offset)?;
-    let CompactIndex::Value(value) = token.value else {
-        return None;
-    };
-    Some(CompactToken {
-        value,
-        offset: token.offset,
-        width: token.width,
-    })
-}
-
 fn raw_compact_token<T>(bytes: &[u8], token: CompactToken<T>) -> Vec<u8> {
     bytes[token.offset..token.offset + token.width].to_vec()
 }
@@ -1884,11 +1872,11 @@ pub struct OperationTerminalDiscriminator {
     /// Payload-relative offset of the fixed footer prelude.
     pub offset: usize,
     /// Two compact type indices following `01 01 02`.
-    pub type_indices: [LaneToken<u32>; 2],
+    pub type_indices: [LocatedCompactIndex; 2],
     /// Four serialized one-byte flags.
     pub flags: [u8; 4],
     /// Compact values between `29 29` and the terminal zero, with source tokens.
-    pub trailing_indices: Vec<LaneToken<u32>>,
+    pub trailing_indices: Vec<LocatedCompactIndex>,
 }
 
 /// Two tagged offset-store indices following each repeated scalar-lane witness.
@@ -4264,16 +4252,7 @@ pub fn operation_terminal_discriminator(
             return None;
         }
         let mut at = start + 3;
-        let mut type_tokens = [CompactToken {
-            value: 0,
-            offset: 0,
-            width: 0,
-        }; 2];
-        for type_token in &mut type_tokens {
-            let token = compact_value_token(record.payload, at)?;
-            *type_token = token;
-            at += token.width;
-        }
+        let type_tokens = LocatedCompactIndex::read_array::<2>(record.payload, &mut at)?;
         if record.payload.get(at..at + 4) != Some(&[0x01, 0x03, 0x02, 0x01]) {
             return None;
         }
@@ -4289,36 +4268,32 @@ pub fn operation_terminal_discriminator(
         at += 5;
 
         let trailing_end = record.payload.len() - 1;
-        let mut trailing_at = at;
+        let trailing_bytes = record.payload.get(at..trailing_end)?;
+        let mut scan = 0;
         let mut trailing_count = 0;
-        while trailing_at < trailing_end {
-            let token = compact_value_token(record.payload, trailing_at)?;
-            trailing_at += token.width;
+        while scan < trailing_bytes.len() {
+            let token = LocatedCompactIndex::read(trailing_bytes, scan)?;
+            scan += token.atom.raw().len();
             trailing_count += 1;
         }
-        (trailing_at == trailing_end).then_some(())?;
 
-        // Validate the complete trailing lane before allocating its owned
-        // representation. A terminal candidate is tested at every payload
-        // offset, so malformed prefixes must remain allocation-free.
+        // Candidates are scanned at every payload offset. Validate the bounded
+        // trailing bytes before allocating their owned representation.
         let mut trailing_indices = Vec::with_capacity(trailing_count);
-        trailing_at = at;
-        while trailing_at < trailing_end {
-            let token = compact_value_token(record.payload, trailing_at)?;
-            let value = token.value;
-            trailing_indices.push(LaneToken {
-                value,
-                raw: raw_compact_token(record.payload, token),
-                offset: record.payload_offset + trailing_at,
+        let mut scan = 0;
+        while scan < trailing_bytes.len() {
+            let token = LocatedCompactIndex::read(trailing_bytes, scan)?;
+            scan += token.atom.raw().len();
+            trailing_indices.push(LocatedCompactIndex {
+                atom: token.atom,
+                offset: record.payload_offset + at + token.offset,
             });
-            trailing_at += token.width;
         }
 
         Some(OperationTerminalDiscriminator {
             offset: record.payload_offset + start,
-            type_indices: type_tokens.map(|token| LaneToken {
-                value: token.value,
-                raw: raw_compact_token(record.payload, token),
+            type_indices: type_tokens.map(|token| LocatedCompactIndex {
+                atom: token.atom,
                 offset: record.payload_offset + token.offset,
             }),
             flags,

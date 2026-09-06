@@ -172,6 +172,26 @@ fn terminal_discriminator_preserves_wire_and_requires_complete_tokens() {
 }
 
 #[test]
+fn terminal_discriminator_rejects_inconsistent_compact_tokens() {
+    let json = r#"{"id":"lane","operation_label":"operation","type_indices":[4096,8],"raw_type_indices":[[144,0],[8]],"type_index_source_offsets":[110,120],"flags":[1,2,3,4],"trailing_indices":[9],"raw_trailing_indices":[[128,9]],"trailing_index_source_offsets":[130],"source_offset":100}"#;
+    check_lane_wire::<FeatureOperationTerminalDiscriminator>(json, &[]);
+    for (field, raw_field, raw) in [
+        ("type_indices", "raw_type_indices", serde_json::json!([[144, 0, 0], [8]])),
+        ("type_indices", "raw_type_indices", serde_json::json!([[255], [8]])),
+        ("type_indices", "raw_type_indices", serde_json::json!([[144], [8]])),
+        ("type_indices", "raw_type_indices", serde_json::json!([[7], [8]])),
+        ("trailing_indices", "raw_trailing_indices", serde_json::json!([[10]])),
+        ("trailing_indices", "raw_trailing_indices", serde_json::json!([[9, 0]])),
+        ("trailing_indices", "raw_trailing_indices", serde_json::json!([[255]])),
+    ] {
+        let mut wire: serde_json::Value = serde_json::from_str(json).unwrap();
+        wire[raw_field] = raw;
+        let error = serde_json::from_value::<FeatureOperationTerminalDiscriminator>(wire).unwrap_err();
+        assert!(error.to_string().contains(field));
+    }
+}
+
+#[test]
 fn point_scalar_lane_preserves_wire_and_requires_six_complete_tokens() {
     check_lane_wire::<FeaturePointConstructionScalarLane>(
         r#"{"id":"lane","operation_label":"operation","construction_header":"header","data_blocks":["first","second"],"values":[1.0,2.0,3.0,4.0,5.0,6.0],"raw_values":[[47,240,0,0,0,0,0,0],[48,0,0,0,0,0,0,0],[48,8,0,0,0,0,0,0],[48,16,0,0,0,0,0,0],[48,20,0,0,0,0,0,0],[48,24,0,0,0,0,0,0]],"source_offsets":[100,110,120,200,210,220]}"#,
