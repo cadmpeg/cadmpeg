@@ -608,7 +608,7 @@ fn om_surface_feature_branches_require_one_complete_counted_group() {
     let payload = b"\xa0\x5a\x14\x13\x01\x02\x40\x01\x04\xf1\x1b\xf4\xf1\x1b\xf5\xf1\x1b\xf6\x01\x04\x00\x00\x00\x00\x00\x00\x00\xff\x01\x02\xf1\x1b\xf7\x00\x81\x58\x01\x02\x40\x01\x05\xf1\x1b\xf8\xf1\x1b\xf9\xf1\x1b\xfa\xf1\x1b\xfb\x00\x00\x00\x00\x00\xff\x01\x02\xf1\x1b\xfc\x00\x81\x1c\x00\x00\x00\x01\x03\x00\x00\x00\xff\xff\x01";
     let record = crate::om::operation_record::OperationPayload::new(payload, 200, label).unwrap();
     let group = super::surface_feature_payload_branches(record).expect("complete group");
-    assert_eq!(group.family, 0x14);
+    assert_eq!(u8::from(group.family), 0x14);
     assert_eq!(group.header_code, 0x13);
     assert_eq!(group.branches.len(), 2);
     assert_eq!(u8::from(group.branches.as_slice()[0].mode), 0x40);
@@ -617,14 +617,17 @@ fn om_surface_feature_branches_require_one_complete_counted_group() {
     assert_eq!(group.branches.as_slice()[0].members.len(), 3);
     assert_eq!(group.branches.as_slice()[0].terminal.token.value(), 7159);
     assert_eq!(
-        group.branches.as_slice()[0].suffix,
+        group.branches.as_slice()[0].suffix.clone().into_vec(),
         [0x81, 0x58, 0x01, 0x02]
     );
     assert_eq!(group.branches.as_slice()[1].members.declared_count(), 5);
     assert!(!group.branches.as_slice()[1].witnessed);
     assert_eq!(group.branches.as_slice()[1].members.len(), 4);
     assert_eq!(group.branches.as_slice()[1].terminal.token.value(), 7164);
-    assert_eq!(group.branches.as_slice()[1].suffix, [0x81, 0x1c]);
+    assert_eq!(
+        group.branches.as_slice()[1].suffix.clone().into_vec(),
+        [0x81, 0x1c]
+    );
 
     let studio_payload = [
         &payload[..payload.len() - 11],

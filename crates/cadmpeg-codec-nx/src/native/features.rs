@@ -2857,7 +2857,7 @@ pub struct FeatureSurfaceConstructionBranch {
     /// Zero-based branch order.
     pub ordinal: u32,
     /// Serialized construction family byte following `a0 5a`.
-    pub family: u8,
+    pub family: crate::om::surface_branches::SurfaceFamily,
     /// Serialized branch-group header code.
     pub header_code: u8,
     /// Serialized `16` or `40` branch mode.
@@ -2869,7 +2869,7 @@ pub struct FeatureSurfaceConstructionBranch {
     /// Terminal reference.
     pub terminal: FeatureSurfaceBranchReference,
     /// Opaque bytes separating the terminal from the next branch or terminator.
-    pub suffix: Vec<u8>,
+    pub suffix: crate::om::surface_branches::SurfaceSuffix,
     /// Absolute file offset of the branch mode byte.
     pub source_offset: u64,
 }
@@ -2879,7 +2879,7 @@ struct FeatureSurfaceConstructionBranchWire {
     id: String,
     operation_label: String,
     ordinal: u32,
-    family: u8,
+    family: crate::om::surface_branches::SurfaceFamily,
     header_code: u8,
     mode: crate::om::discriminators::SurfaceBranchMode,
     declared_count: u8,
@@ -2903,7 +2903,7 @@ impl From<FeatureSurfaceConstructionBranch> for FeatureSurfaceConstructionBranch
             witnessed: value.witnessed,
             members: value.members,
             terminal: value.terminal,
-            suffix: value.suffix,
+            suffix: value.suffix.into_vec(),
             source_offset: value.source_offset,
         }
     }
@@ -2925,7 +2925,7 @@ impl TryFrom<FeatureSurfaceConstructionBranchWire> for FeatureSurfaceConstructio
             witnessed: wire.witnessed,
             members: wire.members,
             terminal: wire.terminal,
-            suffix: wire.suffix,
+            suffix: crate::om::surface_branches::SurfaceSuffix::new(wire.suffix)?,
             source_offset: wire.source_offset,
         })
     }

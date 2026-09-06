@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Frame NX object-model entities using external boundary and identity arrays.
 
-pub(crate) mod state_journal;
 pub(crate) mod journal_group;
+pub(crate) mod state_journal;
 use journal_group::JournalGroup;
 pub(crate) mod state_counter;
 use state_counter::StateCounterMap;
@@ -45,6 +45,8 @@ pub(crate) mod compact;
 use compact::{CompactIndexAtom, LocatedCompactIndex, NullableCompactIndex, WrappedCompactIndex};
 pub(crate) mod color;
 use color::{ColorComponent, PaletteIndex, BACKGROUND_NAME, PALETTE_SIZE};
+pub(crate) mod surface_branches;
+use surface_branches::{SurfaceFamily, SurfaceSuffix};
 pub(crate) mod branch_items;
 pub(crate) mod discriminators;
 use branch_items::BranchItems;
@@ -61,17 +63,19 @@ pub(crate) mod fixed;
 use fixed::{Q155Atom, Q155LaneFrame, Q155Marker, Q155};
 pub(crate) mod nonempty;
 pub(crate) mod state_index;
-pub(crate) mod state_slots;
-pub(crate) mod state_tagged_value;
-pub(crate) mod state_status;
 pub(crate) mod state_slot_lane;
+pub(crate) mod state_slots;
+pub(crate) mod state_status;
 pub(crate) mod state_table;
+pub(crate) mod state_tagged_value;
 use state_table::OperationStateStatusTable;
 pub(crate) mod state_block;
 use state_block::{operation_state_block_before_boundary, OperationStateBlock};
-pub(crate) mod state_link;
 pub(crate) mod roll_forward;
-use roll_forward::{operation_state_group_at, operation_state_group_end_at, OperationStateGroupTable};
+pub(crate) mod state_link;
+use roll_forward::{
+    operation_state_group_at, operation_state_group_end_at, OperationStateGroupTable,
+};
 pub(crate) mod state_group;
 use state_index::OperationStateIndex;
 pub(crate) mod state_message_text;
@@ -79,12 +83,12 @@ use nonempty::NonEmpty;
 pub(crate) mod state_message;
 use state_message::OperationStateMessage;
 use state_tagged_value::StateTaggedValue;
-pub(crate) mod projected_references;
-pub(crate) mod pattern_references;
 pub(crate) mod counted_pattern_references;
-pub(crate) mod fset_references;
 pub(crate) mod delete_references;
+pub(crate) mod fset_references;
 pub(crate) mod pattern;
+pub(crate) mod pattern_references;
+pub(crate) mod projected_references;
 use pattern::{PatternRow, PatternRows, PatternTerminal, PatternValue, PatternWideValues};
 pub(crate) mod scalar;
 pub(crate) mod swp104_state;
@@ -853,14 +857,14 @@ pub struct SurfaceFeaturePayloadBranch {
     /// Terminal reference.
     pub terminal: PayloadObjectReference,
     /// Opaque bytes separating the terminal from the next branch or terminator.
-    pub suffix: Vec<u8>,
+    pub suffix: SurfaceSuffix,
 }
 
 /// Exact counted branch group in a surface-feature payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SurfaceFeaturePayloadBranches {
     /// Serialized construction family byte following `a0 5a`.
-    pub family: u8,
+    pub family: SurfaceFamily,
     /// Serialized group header code.
     pub header_code: u8,
     /// Ordered branches matching the declared group count.
@@ -1443,7 +1447,8 @@ impl<'a> Section<'a> {
             .checked_sub(base_offset)?;
         let mut ends = Vec::with_capacity(2);
         if let Some(table) = &group {
-            let overlap_end = terminal.checked_add(table.groups().first().opener().bytes().len())?;
+            let overlap_end =
+                terminal.checked_add(table.groups().first().opener().bytes().len())?;
             ends.push(overlap_end);
         }
         ends.push(terminal);
@@ -2619,6 +2624,9 @@ fn surface_feature_branch_paths(
         let Ok(members) = BranchItems::new(members) else {
             return Vec::new();
         };
+        let Ok(suffix) = SurfaceSuffix::new(suffix.to_vec()) else {
+            continue;
+        };
         for mut continuation in continuations {
             let branch = SurfaceFeaturePayloadBranch {
                 offset: payload_offset + at,
@@ -2626,7 +2634,7 @@ fn surface_feature_branch_paths(
                 witnessed,
                 members: members.clone(),
                 terminal: terminal.clone(),
-                suffix: suffix.to_vec(),
+                suffix: suffix.clone(),
             };
             continuation.insert(0, branch);
             paths.push(continuation);
@@ -2657,7 +2665,12 @@ pub fn surface_feature_payload_branches(
         if record.payload().get(start..start + 2) != Some(&[0xa0, 0x5a]) {
             continue;
         }
-        let Some(family @ (0x14 | 0x50)) = record.payload().get(start + 2).copied() else {
+        let Some(family) = record
+            .payload()
+            .get(start + 2)
+            .copied()
+            .and_then(|byte| SurfaceFamily::try_from(byte).ok())
+        else {
             continue;
         };
         let Some(header_code) = record.payload().get(start + 3).copied() else {
@@ -4058,9 +4071,7 @@ fn operation_state_journal_groups_before_boundary(
             while bytes.get(next..next + 2) == Some(&[0x04, 0x00]) {
                 next += 2;
             }
-            if next == at
-                || JournalGroup::read(bytes, next, end, base_offset).is_none()
-            {
+            if next == at || JournalGroup::read(bytes, next, end, base_offset).is_none() {
                 break;
             }
             at = next;
