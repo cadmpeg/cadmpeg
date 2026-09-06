@@ -2839,33 +2839,201 @@ pub enum FeaturePatternTransformLayout {
 
 /// Exact counted transform lane carried by a bounded pattern payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(
+    try_from = "FeaturePatternTransformLaneWire",
+    into = "FeaturePatternTransformLaneWire"
+)]
 pub struct FeaturePatternTransformLane {
-    /// Globally unique transform-lane identity.
     pub id: String,
-    /// Owning `Pattern Feature` or `Pattern Geometry` operation label.
     pub operation_label: String,
-    /// Schema index framing every row in the lane.
     pub row_schema_index: u8,
-    /// Row byte layout selected by the terminal mode.
-    pub layout: FeaturePatternTransformLayout,
-    /// Count including the implicit seed row.
     pub declared_count: u8,
-    /// Scalar encodings selected independently in row order.
-    pub encodings: Vec<FeaturePatternTransformEncoding>,
-    /// Ordered finite row scalars.
-    pub values: Vec<f64>,
-    /// Exact scalar encodings in row order.
-    pub raw_values: Vec<Vec<u8>>,
-    /// Ordered non-null compact selectors.
-    pub selectors: Vec<u32>,
-    /// Exact compact-index selector tokens in row order.
-    pub raw_selectors: Vec<Vec<u8>>,
-    /// Absolute source offset of the opening `01, count` field.
+    pub rows: FeaturePatternTransformRows,
     pub source_offset: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum FeaturePatternTransformRows {
+    Scalar(Vec<FeaturePatternTransformRow<1>>),
+    Wide(Vec<FeaturePatternTransformRow<5>>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FeaturePatternTransformRow<const N: usize> {
+    pub values: [FeaturePatternScalarToken; N],
+    pub selector: FeatureIndexToken,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FeaturePatternScalarToken {
+    pub encoding: FeaturePatternTransformEncoding,
+    pub value: f64,
+    pub raw: Vec<u8>,
+    pub source_offset: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct FeaturePatternTransformLaneWire {
+    /// Globally unique transform-lane identity.
+    id: String,
+    /// Owning `Pattern Feature` or `Pattern Geometry` operation label.
+    operation_label: String,
+    /// Schema index framing every row in the lane.
+    row_schema_index: u8,
+    /// Row byte layout selected by the terminal mode.
+    layout: FeaturePatternTransformLayout,
+    /// Count including the implicit seed row.
+    declared_count: u8,
+    /// Scalar encodings selected independently in row order.
+    encodings: Vec<FeaturePatternTransformEncoding>,
+    /// Ordered finite row scalars.
+    values: Vec<f64>,
+    /// Exact scalar encodings in row order.
+    raw_values: Vec<Vec<u8>>,
+    /// Ordered non-null compact selectors.
+    selectors: Vec<u32>,
+    /// Exact compact-index selector tokens in row order.
+    raw_selectors: Vec<Vec<u8>>,
+    /// Absolute source offset of the opening `01, count` field.
+    source_offset: u64,
     /// Absolute source offsets of the scalar encodings.
-    pub value_source_offsets: Vec<u64>,
+    value_source_offsets: Vec<u64>,
     /// Absolute source offsets of the selector tokens.
-    pub selector_source_offsets: Vec<u64>,
+    selector_source_offsets: Vec<u64>,
+}
+
+impl From<FeaturePatternTransformLane> for FeaturePatternTransformLaneWire {
+    fn from(lane: FeaturePatternTransformLane) -> Self {
+        let (layout, scalar, wide): (
+            _,
+            &[FeaturePatternTransformRow<1>],
+            &[FeaturePatternTransformRow<5>],
+        ) = match &lane.rows {
+            FeaturePatternTransformRows::Scalar(rows) => {
+                (FeaturePatternTransformLayout::ScalarRows, rows, &[])
+            }
+            FeaturePatternTransformRows::Wide(rows) => {
+                (FeaturePatternTransformLayout::WideRows, &[], rows)
+            }
+        };
+        let rows = scalar
+            .iter()
+            .map(|row| (row.values.as_slice(), &row.selector))
+            .chain(
+                wide.iter()
+                    .map(|row| (row.values.as_slice(), &row.selector)),
+            );
+        let mut wire = Self {
+            id: lane.id,
+            operation_label: lane.operation_label,
+            row_schema_index: lane.row_schema_index,
+            layout,
+            declared_count: lane.declared_count,
+            encodings: Vec::new(),
+            values: Vec::new(),
+            raw_values: Vec::new(),
+            selectors: Vec::new(),
+            raw_selectors: Vec::new(),
+            source_offset: lane.source_offset,
+            value_source_offsets: Vec::new(),
+            selector_source_offsets: Vec::new(),
+        };
+        for (values, selector) in rows {
+            for token in values {
+                wire.encodings.push(token.encoding);
+                wire.values.push(token.value);
+                wire.raw_values.push(token.raw.clone());
+                wire.value_source_offsets.push(token.source_offset);
+            }
+            wire.selectors.push(selector.value);
+            wire.raw_selectors.push(selector.raw.clone());
+            wire.selector_source_offsets.push(selector.source_offset);
+        }
+        wire
+    }
+}
+
+impl TryFrom<FeaturePatternTransformLaneWire> for FeaturePatternTransformLane {
+    type Error = String;
+
+    fn try_from(wire: FeaturePatternTransformLaneWire) -> Result<Self, Self::Error> {
+        let width = match wire.layout {
+            FeaturePatternTransformLayout::ScalarRows => 1,
+            FeaturePatternTransformLayout::WideRows => 5,
+        };
+        let count = wire.values.len();
+        if wire.selectors.len().checked_mul(width) != Some(count)
+            || wire.encodings.len() != count
+            || wire.raw_values.len() != count
+            || wire.value_source_offsets.len() != count
+            || wire.raw_selectors.len() != wire.selectors.len()
+            || wire.selector_source_offsets.len() != wire.selectors.len()
+        {
+            return Err(
+                "pattern transform columns must contain complete rows for the selected layout"
+                    .into(),
+            );
+        }
+        let values = wire
+            .encodings
+            .into_iter()
+            .zip(wire.values)
+            .zip(wire.raw_values)
+            .zip(wire.value_source_offsets)
+            .map(
+                |(((encoding, value), raw), source_offset)| FeaturePatternScalarToken {
+                    encoding,
+                    value,
+                    raw,
+                    source_offset,
+                },
+            )
+            .collect::<Vec<_>>();
+        let selectors = wire
+            .selectors
+            .into_iter()
+            .zip(wire.raw_selectors)
+            .zip(wire.selector_source_offsets)
+            .map(|((value, raw), source_offset)| FeatureIndexToken {
+                value,
+                raw,
+                source_offset,
+            });
+        let rows = match wire.layout {
+            FeaturePatternTransformLayout::ScalarRows => FeaturePatternTransformRows::Scalar(
+                values
+                    .as_chunks::<1>()
+                    .0
+                    .iter()
+                    .zip(selectors)
+                    .map(|(values, selector)| FeaturePatternTransformRow {
+                        values: values.clone(),
+                        selector,
+                    })
+                    .collect(),
+            ),
+            FeaturePatternTransformLayout::WideRows => FeaturePatternTransformRows::Wide(
+                values
+                    .as_chunks::<5>()
+                    .0
+                    .iter()
+                    .zip(selectors)
+                    .map(|(values, selector)| FeaturePatternTransformRow {
+                        values: values.clone(),
+                        selector,
+                    })
+                    .collect(),
+            ),
+        };
+        Ok(Self {
+            id: wire.id,
+            operation_label: wire.operation_label,
+            row_schema_index: wire.row_schema_index,
+            declared_count: wire.declared_count,
+            rows,
+            source_offset: wire.source_offset,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -9162,49 +9330,47 @@ pub fn feature_pattern_transform_lanes(container: &Container) -> Vec<FeaturePatt
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
                 row_schema_index: lane.row_schema_index,
-                layout: match lane.layout() {
-                    crate::om::PatternTransformLayout::ScalarRows => {
-                        FeaturePatternTransformLayout::ScalarRows
-                    }
-                    crate::om::PatternTransformLayout::WideRows => {
-                        FeaturePatternTransformLayout::WideRows
-                    }
-                },
                 declared_count: lane.declared_count,
-                encodings: lane
-                    .rows()
-                    .flat_map(|(values, _)| values)
-                    .map(|token| match token.encoding {
-                        crate::om::PatternTransformEncoding::ExactOne => {
-                            FeaturePatternTransformEncoding::ExactOne
-                        }
-                        crate::om::PatternTransformEncoding::Binary32 => {
-                            FeaturePatternTransformEncoding::Binary32
-                        }
-                        crate::om::PatternTransformEncoding::Binary64 => {
-                            FeaturePatternTransformEncoding::Binary64
-                        }
-                    })
-                    .collect(),
-                values: lane.rows().flat_map(|(values, _)| values).map(|token| token.value).collect(),
-                raw_values: lane.rows().flat_map(|(values, _)| values).map(|token| token.raw.clone()).collect(),
-                selectors: lane.rows().map(|(_, selector)| selector).map(|token| token.value).collect(),
-                raw_selectors: lane.rows().map(|(_, selector)| selector).map(|token| token.raw.clone()).collect(),
+                rows: match lane.rows {
+                    crate::om::PatternTransformRows::Scalar(rows) => FeaturePatternTransformRows::Scalar(
+                        rows.into_iter().map(|row| native_pattern_transform_row(row, entry_offset)).collect()),
+                    crate::om::PatternTransformRows::Wide(rows) => FeaturePatternTransformRows::Wide(
+                        rows.into_iter().map(|row| native_pattern_transform_row(row, entry_offset)).collect()),
+                },
                 source_offset: entry_offset + lane.offset as u64,
-                value_source_offsets: lane
-                    .rows()
-                    .flat_map(|(values, _)| values)
-                    .map(|token| entry_offset + token.offset as u64)
-                    .collect(),
-                selector_source_offsets: lane
-                    .rows()
-                    .map(|(_, selector)| selector)
-                    .map(|token| entry_offset + token.offset as u64)
-                    .collect(),
             });
         },
     );
     lanes
+}
+
+fn native_pattern_transform_row<const N: usize>(
+    row: crate::om::PatternTransformRow<N>,
+    entry_offset: u64,
+) -> FeaturePatternTransformRow<N> {
+    FeaturePatternTransformRow {
+        values: row.values.map(|token| FeaturePatternScalarToken {
+            encoding: match token.encoding {
+                crate::om::PatternTransformEncoding::ExactOne => {
+                    FeaturePatternTransformEncoding::ExactOne
+                }
+                crate::om::PatternTransformEncoding::Binary32 => {
+                    FeaturePatternTransformEncoding::Binary32
+                }
+                crate::om::PatternTransformEncoding::Binary64 => {
+                    FeaturePatternTransformEncoding::Binary64
+                }
+            },
+            value: token.value,
+            raw: token.raw,
+            source_offset: entry_offset + token.offset as u64,
+        }),
+        selector: FeatureIndexToken {
+            value: row.selector.value,
+            raw: row.selector.raw,
+            source_offset: entry_offset + row.selector.offset as u64,
+        },
+    }
 }
 
 /// Decode exact counted output lanes from bounded multi-instance payloads.

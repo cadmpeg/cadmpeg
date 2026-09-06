@@ -1,3 +1,25 @@
+use crate::om::{
+    LaneToken, PatternPayloadTransformLane, PatternScalarToken, PatternTransformRow,
+    PatternTransformRows,
+};
+
+impl PatternPayloadTransformLane {
+    fn rows(&self) -> impl Iterator<Item = (&[PatternScalarToken], &LaneToken<u32>)> {
+        let (scalar, wide): (&[PatternTransformRow<1>], &[PatternTransformRow<5>]) =
+            match &self.rows {
+                PatternTransformRows::Scalar(rows) => (rows, &[]),
+                PatternTransformRows::Wide(rows) => (&[], rows),
+            };
+        scalar
+            .iter()
+            .map(|row| (row.values.as_slice(), &row.selector))
+            .chain(
+                wide.iter()
+                    .map(|row| (row.values.as_slice(), &row.selector)),
+            )
+    }
+}
+
 #[test]
 fn om_surface_payload_strings_require_exact_length_utf8_and_terminator() {
     let bytes = b"\x66\x1b\x03\x05Steel\0\xaa\x66\x1b\x03\x02\xc3\x97\0";
@@ -228,10 +250,10 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
     let lane = super::super::pattern_payload_transform_lane(record).expect("feature lane");
     assert_eq!(lane.offset, 201);
     assert_eq!(lane.row_schema_index, 0x60);
-    assert_eq!(
-        lane.layout(),
-        super::super::PatternTransformLayout::ScalarRows
-    );
+    assert!(matches!(
+        lane.rows,
+        super::super::PatternTransformRows::Scalar(_)
+    ));
     assert_eq!(lane.declared_count, 3);
     assert_eq!(
         lane.rows()
@@ -292,10 +314,10 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
     let lane =
         super::super::pattern_payload_transform_lane(geometry_record).expect("geometry lane");
     assert_eq!(lane.row_schema_index, 0x60);
-    assert_eq!(
-        lane.layout(),
-        super::super::PatternTransformLayout::ScalarRows
-    );
+    assert!(matches!(
+        lane.rows,
+        super::super::PatternTransformRows::Scalar(_)
+    ));
     assert_eq!(
         lane.rows()
             .flat_map(|(values, _)| values)
@@ -348,10 +370,10 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
         })
         .expect("schema-relative feature lane");
     assert_eq!(relative_lane.row_schema_index, 0x3d);
-    assert_eq!(
-        relative_lane.layout(),
-        super::super::PatternTransformLayout::ScalarRows
-    );
+    assert!(matches!(
+        relative_lane.rows,
+        super::super::PatternTransformRows::Scalar(_)
+    ));
     assert_eq!(relative_lane.declared_count, 4);
     assert_eq!(
         relative_lane
@@ -385,10 +407,10 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
     })
     .expect("wide feature lane");
     assert_eq!(wide_lane.row_schema_index, 0x35);
-    assert_eq!(
-        wide_lane.layout(),
-        super::super::PatternTransformLayout::WideRows
-    );
+    assert!(matches!(
+        wide_lane.rows,
+        super::super::PatternTransformRows::Wide(_)
+    ));
     assert_eq!(wide_lane.declared_count, 3);
     assert_eq!(
         wide_lane

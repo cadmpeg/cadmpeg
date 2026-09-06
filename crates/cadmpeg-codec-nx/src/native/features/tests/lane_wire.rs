@@ -162,3 +162,24 @@ fn draft_index_lane_preserves_wire_and_groups_resolution_with_tokens() {
         &["indices", "raw_indices", "source_offsets"],
     );
 }
+
+#[test]
+fn pattern_transform_lane_preserves_wire_and_requires_complete_rows() {
+    let columns = &[
+        "encodings",
+        "values",
+        "raw_values",
+        "selectors",
+        "raw_selectors",
+        "value_source_offsets",
+        "selector_source_offsets",
+    ];
+    check_lane_wire::<FeaturePatternTransformLane>(
+        r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"scalar_rows","declared_count":3,"encodings":["binary32","binary64"],"values":[2.5,4.0],"raw_values":[[1,2,3,4],[1,2,3,4,5,6,7,8]],"selectors":[7,8],"raw_selectors":[[7],[8]],"source_offset":100,"value_source_offsets":[110,120],"selector_source_offsets":[114,128]}"#,
+        columns,
+    );
+    check_lane_wire::<FeaturePatternTransformLane>(
+        r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"wide_rows","declared_count":2,"encodings":["binary64","binary64","binary64","binary64","exact_one"],"values":[2.5,4.0,5.0,6.0,1.0],"raw_values":[[1,2,3,4,5,6,7,8],[2,3,4,5,6,7,8,9],[3,4,5,6,7,8,9,10],[4,5,6,7,8,9,10,11],[1]],"selectors":[7],"raw_selectors":[[7]],"source_offset":100,"value_source_offsets":[110,118,126,134,142],"selector_source_offsets":[143]}"#,
+        columns,
+    );
+}

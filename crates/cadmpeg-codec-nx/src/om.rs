@@ -2154,15 +2154,6 @@ pub enum PatternTransformEncoding {
     Binary64,
 }
 
-/// Byte layout selected by a counted pattern-transform lane.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PatternTransformLayout {
-    /// One shifted scalar per row and terminal mode `01`.
-    ScalarRows,
-    /// Four shifted binary64 values and one terminal value per row, with terminal mode `02`.
-    WideRows,
-}
-
 /// One pattern-transform scalar and its source encoding.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PatternScalarToken {
@@ -2196,30 +2187,6 @@ pub struct PatternPayloadTransformLane {
     /// Count including the implicit seed row.
     pub declared_count: u8,
     pub rows: PatternTransformRows,
-}
-
-impl PatternPayloadTransformLane {
-    pub fn layout(&self) -> PatternTransformLayout {
-        match self.rows {
-            PatternTransformRows::Scalar(_) => PatternTransformLayout::ScalarRows,
-            PatternTransformRows::Wide(_) => PatternTransformLayout::WideRows,
-        }
-    }
-
-    pub fn rows(&self) -> impl Iterator<Item = (&[PatternScalarToken], &LaneToken<u32>)> {
-        let (scalar, wide): (&[PatternTransformRow<1>], &[PatternTransformRow<5>]) =
-            match &self.rows {
-                PatternTransformRows::Scalar(rows) => (rows, &[]),
-                PatternTransformRows::Wide(rows) => (&[], rows),
-            };
-        scalar
-            .iter()
-            .map(|row| (row.values.as_slice(), &row.selector))
-            .chain(
-                wide.iter()
-                    .map(|row| (row.values.as_slice(), &row.selector)),
-            )
-    }
 }
 
 /// One multi-instance output row and its compact selector token.
