@@ -1197,23 +1197,16 @@ fn om_operation_body_decodes_homogeneous_unwrapped_reference_lanes() {
     let lanes = super::operation_body_reference_lanes(record);
     assert_eq!(lanes.len(), 1);
     assert_eq!(lanes[0].body_object_index, 110);
+    let super::OperationBodyReferenceLaneValues::CompactIndex(values) = &lanes[0].values else { panic!("expected CompactIndex lane") };
     assert_eq!(
-        lanes[0].encoding,
-        super::OperationBodyReferenceLaneEncoding::CompactIndex
-    );
-    assert_eq!(
-        lanes[0]
-            .values
-            .iter()
-            .map(|value| (value.object_index, value.offset))
+        values.iter()
+            .map(|value| (value.atom.value(), value.offset))
             .collect::<Vec<_>>(),
         [(13, 111), (105, 113)]
     );
     assert_eq!(
-        lanes[0]
-            .values
-            .iter()
-            .map(|value| value.raw_value.as_slice())
+        values.iter()
+            .map(|value| value.atom.raw())
             .collect::<Vec<_>>(),
         [b"\x80\x0d".as_slice(), b"\x69".as_slice()]
     );
@@ -1226,23 +1219,16 @@ fn om_operation_body_decodes_homogeneous_unwrapped_reference_lanes() {
         ..record
     };
     let lanes = super::operation_body_reference_lanes(object_record);
+    let super::OperationBodyReferenceLaneValues::PayloadObjectIndex(values) = &lanes[0].values else { panic!("expected PayloadObjectIndex lane") };
     assert_eq!(
-        lanes[0].encoding,
-        super::OperationBodyReferenceLaneEncoding::PayloadObjectIndex
-    );
-    assert_eq!(
-        lanes[0]
-            .values
-            .iter()
-            .map(|value| value.object_index)
+        values.iter()
+            .map(|value| value.token.value())
             .collect::<Vec<_>>(),
         [670, 68]
     );
     assert_eq!(
-        lanes[0]
-            .values
-            .iter()
-            .map(|value| value.raw_value.as_slice())
+        values.iter()
+            .map(|value| value.token.raw())
             .collect::<Vec<_>>(),
         [b"\xf1\x02\x9e".as_slice(), b"\xf0\x44".as_slice()]
     );
@@ -1266,11 +1252,10 @@ fn om_operation_body_decodes_homogeneous_unwrapped_reference_lanes() {
     });
     assert_eq!(lanes.len(), 1);
     assert_eq!(lanes[0].branch, 0x11);
+    let super::OperationBodyReferenceLaneValues::PayloadObjectIndex(values) = &lanes[0].values else { panic!("expected payload lane") };
     assert_eq!(
-        lanes[0]
-            .values
-            .iter()
-            .map(|value| value.object_index)
+        values.iter()
+            .map(|value| value.token.value())
             .collect::<Vec<_>>(),
         [670, 68]
     );

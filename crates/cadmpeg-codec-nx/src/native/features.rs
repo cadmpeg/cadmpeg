@@ -11338,13 +11338,25 @@ pub fn feature_operation_body_reference_lanes(
         container,
         |_section, section_key, entry_offset, operation_ordinal, record| {
             for lane in crate::om::operation_body_reference_lanes(record) {
-                let encoding = match lane.encoding {
-                    crate::om::OperationBodyReferenceLaneEncoding::CompactIndex => {
-                        FeatureOperationBodyReferenceLaneEncoding::CompactIndex
-                    }
-                    crate::om::OperationBodyReferenceLaneEncoding::PayloadObjectIndex => {
-                        FeatureOperationBodyReferenceLaneEncoding::PayloadObjectIndex
-                    }
+                let (encoding, references) = match lane.values {
+                    crate::om::OperationBodyReferenceLaneValues::CompactIndex(values) => (
+                        FeatureOperationBodyReferenceLaneEncoding::CompactIndex,
+                        values.into_iter().map(|value| FeatureDataBlockToken {
+                            value: value.atom.value(),
+                            raw: value.atom.raw().to_vec(),
+                            data_block: unique_offset_data_block(&indexed, value.atom.value()),
+                            source_offset: entry_offset + value.offset as u64,
+                        }).collect(),
+                    ),
+                    crate::om::OperationBodyReferenceLaneValues::PayloadObjectIndex(values) => (
+                        FeatureOperationBodyReferenceLaneEncoding::PayloadObjectIndex,
+                        values.into_iter().map(|value| FeatureDataBlockToken {
+                            value: value.token.value(),
+                            raw: value.token.raw().to_vec(),
+                            data_block: unique_offset_data_block(&indexed, value.token.value()),
+                            source_offset: entry_offset + value.offset as u64,
+                        }).collect(),
+                    ),
                 };
                 lanes.push(FeatureOperationBodyReferenceLane {
                     id: format!(
@@ -11358,12 +11370,7 @@ pub fn feature_operation_body_reference_lanes(
                     body_object_index: lane.body_object_index,
                     branch: lane.branch,
                     encoding,
-                    references: lane.values.into_iter().map(|value| FeatureDataBlockToken {
-                        value: value.object_index,
-                        raw: value.raw_value,
-                        data_block: unique_offset_data_block(&indexed, value.object_index),
-                        source_offset: entry_offset + value.offset as u64,
-                    }).collect(),
+                    references,
                 });
             }
         },
