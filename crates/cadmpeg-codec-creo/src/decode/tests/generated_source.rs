@@ -36,6 +36,7 @@ use crate::decode::sweep::{
     extrusion_side_uvs, ordered_extrusion_profiles, oriented_arc_parameterization,
     oriented_full_turn_angles, point_on_profile_arc, profile_arc, resolved_sketch_profiles,
 };
+use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     Angle, FeatureDefinition as IrFeatureDefinition, HoleForm, HoleKind, Length, LinearTermination,
@@ -785,7 +786,7 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
             &scan,
             &CadIr::empty(),
             9,
-            911,
+            Some(SchemaClass::Hole),
             "Hole"
         ),
         IrFeatureDefinition::Hole {
@@ -835,7 +836,7 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
         crate::surface::SurfaceKind::Cylinder,
     ));
     assert!(matches!(
-        schema_feature_definition(&scan, &CadIr::empty(), 9, 911, "Hole"),
+        schema_feature_definition(&scan, &CadIr::empty(), 9, Some(SchemaClass::Hole), "Hole"),
         IrFeatureDefinition::Hole {
             construction: cadmpeg_ir::features::HoleConstruction::Form {
                 kind: HoleKind::Simple,

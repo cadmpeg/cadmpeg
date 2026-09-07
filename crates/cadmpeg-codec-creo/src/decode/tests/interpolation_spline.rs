@@ -28,6 +28,7 @@ use crate::decode::sweep::{
     profile_strictly_contains, resolved_sketch_profiles, ExtrusionProfile,
 };
 use crate::decode::uniqueness::unique_feature_profile_definition;
+use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     Angle, AngularTermination, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeDirection,
@@ -356,12 +357,27 @@ fn equal_opposite_cap_planes_define_symmetric_extent() {
 fn cap_proof_classifies_section_sweeps_without_overriding_revolves() {
     use crate::feature::FeatureRecipeKind::{Extrude, Revolve};
 
-    assert!(section_sweep_allows_linear_extrusion(916, None));
-    assert!(section_sweep_allows_linear_extrusion(917, None));
-    assert!(section_sweep_allows_linear_extrusion(917, Some(Extrude)));
-    assert!(section_sweep_allows_linear_extrusion(0, Some(Extrude)));
-    assert!(!section_sweep_allows_linear_extrusion(917, Some(Revolve)));
-    assert!(!section_sweep_allows_linear_extrusion(923, None));
+    assert!(section_sweep_allows_linear_extrusion(
+        Some(SchemaClass::Cut),
+        None
+    ));
+    assert!(section_sweep_allows_linear_extrusion(
+        Some(SchemaClass::Protrusion),
+        None
+    ));
+    assert!(section_sweep_allows_linear_extrusion(
+        Some(SchemaClass::Protrusion),
+        Some(Extrude)
+    ));
+    assert!(section_sweep_allows_linear_extrusion(None, Some(Extrude)));
+    assert!(!section_sweep_allows_linear_extrusion(
+        Some(SchemaClass::Protrusion),
+        Some(Revolve)
+    ));
+    assert!(!section_sweep_allows_linear_extrusion(
+        Some(SchemaClass::DatumPlane),
+        None
+    ));
 }
 
 #[test]
@@ -377,7 +393,7 @@ fn unresolved_display_state_family_blocks_schema_sweep_fallback() {
             recipe_conflict: false,
             display_state_conflict: true,
             depdb: Some(crate::feature::DepdbPrefix {
-                schema: 917,
+                schema: crate::feature::schema::SchemaClass::Protrusion,
                 parent: 0,
             }),
             offset: 0,
@@ -406,7 +422,7 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
             recipe_conflict: false,
             display_state_conflict: false,
             depdb: Some(crate::feature::DepdbPrefix {
-                schema: 942,
+                schema: crate::feature::schema::SchemaClass::Surface,
                 parent: 0,
             }),
             offset: 0,
@@ -429,7 +445,13 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
         Some(BodyKind::Sheet)
     );
     assert!(matches!(
-        schema_feature_definition(&scan, &CadIr::empty(), 942, 942, "Surface"),
+        schema_feature_definition(
+            &scan,
+            &CadIr::empty(),
+            942,
+            Some(SchemaClass::Surface),
+            "Surface"
+        ),
         IrFeatureDefinition::Extrude {
             profile: ProfileRef::Unresolved(_),
             op: BooleanOp::NewBody,
@@ -446,7 +468,13 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
         None
     );
     assert!(matches!(
-        schema_feature_definition(&scan, &CadIr::empty(), 942, 942, "Surface"),
+        schema_feature_definition(
+            &scan,
+            &CadIr::empty(),
+            942,
+            Some(SchemaClass::Surface),
+            "Surface"
+        ),
         IrFeatureDefinition::BoundarySurfaceUnresolved
     ));
 }
@@ -468,7 +496,7 @@ fn class_942_schema_state_precedes_surface_body_tree_fallback() {
             recipe_conflict: false,
             display_state_conflict: false,
             depdb: Some(crate::feature::DepdbPrefix {
-                schema: 942,
+                schema: crate::feature::schema::SchemaClass::Surface,
                 parent: 0,
             }),
             offset: 0,
@@ -476,7 +504,7 @@ fn class_942_schema_state_precedes_surface_body_tree_fallback() {
         });
 
     assert!(matches!(
-        schema_feature_definition(&scan, &CadIr::empty(), 942, 942, "Surface"),
+        schema_feature_definition(&scan, &CadIr::empty(), 942, Some(SchemaClass::Surface), "Surface"),
         IrFeatureDefinition::Native { kind, .. } if kind.as_str() == "Surface"
     ));
 }
@@ -498,7 +526,7 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
             recipe_conflict: false,
             display_state_conflict: false,
             depdb: Some(crate::feature::DepdbPrefix {
-                schema: 942,
+                schema: crate::feature::schema::SchemaClass::Surface,
                 parent: 0,
             }),
             offset: 0,
@@ -570,7 +598,7 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
     ir.model.surfaces.extend([plane(31, 2.0), plane(32, 8.0)]);
 
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, 942, 942, "Surface"),
+        schema_feature_definition(&scan, &ir, 942, Some(SchemaClass::Surface), "Surface"),
         IrFeatureDefinition::Extrude {
             direction: cadmpeg_ir::features::ExtrudeDirection::Explicit {
                 vector: direction,
@@ -1243,7 +1271,7 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
     });
 
     assert_eq!(
-        schema_feature_definition(&scan, &ir, 5, 923, "Datum Plane"),
+        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::DatumPlane), "Datum Plane"),
         IrFeatureDefinition::DatumPlane {
             origin: Point3::new(0.0, 1.0, 0.0),
             normal: Vector3::new(0.0, 1.0, 0.0),
@@ -1251,7 +1279,7 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
         }
     );
     assert_eq!(
-        schema_feature_definition(&scan, &ir, 5, 0, "Native Feature"),
+        schema_feature_definition(&scan, &ir, 5, None, "Native Feature"),
         IrFeatureDefinition::DatumPlane {
             origin: Point3::new(0.0, 1.0, 0.0),
             normal: Vector3::new(0.0, 1.0, 0.0),
@@ -1269,11 +1297,11 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
         offset: 1,
     });
     assert_eq!(
-        schema_feature_definition(&scan, &ir, 5, 923, "Datum Plane"),
+        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::DatumPlane), "Datum Plane"),
         IrFeatureDefinition::DatumPlaneUnresolved
     );
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, 5, 0, "Native Feature"),
+        schema_feature_definition(&scan, &ir, 5, None, "Native Feature"),
         IrFeatureDefinition::Native { .. }
     ));
 }
@@ -1299,7 +1327,13 @@ fn datum_feature_preserves_its_unique_transferred_plane_chart() {
     });
 
     assert_eq!(
-        schema_feature_definition(&scan, &CadIr::empty(), 5, 923, "Datum Plane",),
+        schema_feature_definition(
+            &scan,
+            &CadIr::empty(),
+            5,
+            Some(SchemaClass::DatumPlane),
+            "Datum Plane",
+        ),
         IrFeatureDefinition::DatumPlane {
             origin: Point3::new(0.0, 1.0, 0.0),
             normal: Vector3::new(0.0, 1.0, 0.0),
@@ -1349,7 +1383,13 @@ fn datum_feature_uses_its_unique_complete_local_system() {
         });
 
     assert_eq!(
-        schema_feature_definition(&scan, &CadIr::empty(), 5, 923, "Datum Plane"),
+        schema_feature_definition(
+            &scan,
+            &CadIr::empty(),
+            5,
+            Some(SchemaClass::DatumPlane),
+            "Datum Plane"
+        ),
         IrFeatureDefinition::DatumPlane {
             origin: Point3::new(3.0, 4.0, 5.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -1399,7 +1439,13 @@ fn coordinate_system_feature_uses_its_unique_complete_local_system() {
         });
 
     assert_eq!(
-        schema_feature_definition(&scan, &CadIr::empty(), 7, 979, "PRT_CSYS_DEF"),
+        schema_feature_definition(
+            &scan,
+            &CadIr::empty(),
+            7,
+            Some(SchemaClass::CoordinateSystem),
+            "PRT_CSYS_DEF"
+        ),
         IrFeatureDefinition::DatumCoordinateSystem {
             origin: Point3::new(5.0, 6.0, 7.0),
             x_axis: Vector3::new(0.0, 1.0, 0.0),
@@ -1442,7 +1488,13 @@ fn coordinate_system_feature_rejects_a_reflected_local_system() {
         });
 
     assert_eq!(
-        schema_feature_definition(&scan, &CadIr::empty(), 7, 979, "PRT_CSYS_DEF"),
+        schema_feature_definition(
+            &scan,
+            &CadIr::empty(),
+            7,
+            Some(SchemaClass::CoordinateSystem),
+            "PRT_CSYS_DEF"
+        ),
         IrFeatureDefinition::DatumCoordinateSystemUnresolved
     );
 }
@@ -1523,7 +1575,7 @@ fn current_feature_state_controls_recipe_and_parent_projection() {
         recipe_conflict: false,
         display_state_conflict: false,
         depdb: Some(crate::feature::DepdbPrefix {
-            schema: 917,
+            schema: crate::feature::schema::SchemaClass::Protrusion,
             parent: parent_feature_id,
         }),
         offset,

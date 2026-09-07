@@ -193,7 +193,7 @@ fn scan_bounds_known_allfeatur_feature_rows() {
 
     assert_eq!(scan.features.rows.len(), 2);
     assert_eq!(scan.features.rows[0].feature_id, 4);
-    assert_eq!(scan.features.rows[0].header, [0xeb, 0x04]);
+    assert_eq!(scan.features.rows[0].body[..2], [0xeb, 0x04]);
     assert_eq!(
         scan.features.rows[0].body,
         vec![
@@ -233,8 +233,18 @@ fn scan_decodes_allfeatur_root_featdefs_schema_class() {
     );
     let scan = container::scan_bytes(data.clone());
 
-    assert_eq!(scan.features.rows[0].root_schema_class, Some(917));
-    assert_eq!(scan.features.rows[1].root_schema_class, Some(913));
+    assert_eq!(
+        scan.features.rows[0]
+            .root_schema_class
+            .map(crate::feature::schema::SchemaClass::code),
+        Some(917)
+    );
+    assert_eq!(
+        scan.features.rows[1]
+            .root_schema_class
+            .map(crate::feature::schema::SchemaClass::code),
+        Some(913)
+    );
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
@@ -710,12 +720,16 @@ fn scan_partitions_multiple_depdb_recipe_rows() {
     assert_eq!(scan.features.depdb_recipe_rows.len(), 2);
     assert_eq!(scan.features.depdb_recipe_rows[0].feature_id, 8053);
     assert_eq!(
-        scan.features.depdb_recipe_rows[0].root_schema_class,
+        scan.features.depdb_recipe_rows[0]
+            .root_schema_class
+            .map(crate::feature::schema::SchemaClass::code),
         Some(917)
     );
     assert_eq!(scan.features.depdb_recipe_rows[1].feature_id, 8055);
     assert_eq!(
-        scan.features.depdb_recipe_rows[1].root_schema_class,
+        scan.features.depdb_recipe_rows[1]
+            .root_schema_class
+            .map(crate::feature::schema::SchemaClass::code),
         Some(916)
     );
     assert!(scan.features.depdb_recipe_rows[0].offset < scan.features.depdb_recipe_rows[1].offset);

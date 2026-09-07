@@ -1753,30 +1753,43 @@ fn structural_feature_ids(
     ids
 }
 
-fn stored_operation_schema_class(operation: &FeatureOperation) -> Option<u32> {
+fn stored_operation_schema_class(
+    operation: &FeatureOperation,
+) -> Option<crate::feature::schema::SchemaClass> {
+    use crate::feature::schema::SchemaClass;
     operation
         .root_schema_class()
         .or_else(|| match operation.kind.as_str() {
-            "Hole" => Some(911),
-            "Round" | "Rundung" => Some(913),
-            "Chamfer" => Some(914),
-            "Cut" => Some(916),
-            "Protrusion" => Some(917),
-            "Datum Plane" | "Bezugsebene" => Some(923),
-            "Section" => Some(926),
-            "Draft" | "Schräge" => Some(927),
-            "Surface Merge" => Some(946),
+            "Hole" => Some(SchemaClass::Hole),
+            "Round" | "Rundung" => Some(SchemaClass::Round),
+            "Chamfer" => Some(SchemaClass::Chamfer),
+            "Cut" => Some(SchemaClass::Cut),
+            "Protrusion" => Some(SchemaClass::Protrusion),
+            "Datum Plane" | "Bezugsebene" => Some(SchemaClass::DatumPlane),
+            "Section" => Some(SchemaClass::Section),
+            "Draft" | "Schräge" => Some(SchemaClass::Draft),
+            "Surface Merge" => Some(SchemaClass::SurfaceMerge),
             _ => operation.recipe.map(|recipe| match recipe.effect() {
-                feature::FeatureRecipeEffect::Cut => 916,
-                feature::FeatureRecipeEffect::Protrude => 917,
+                feature::FeatureRecipeEffect::Cut => SchemaClass::Cut,
+                feature::FeatureRecipeEffect::Protrude => SchemaClass::Protrusion,
             }),
         })
 }
 
-fn registered_feature_schema_class(schema_class: u32) -> bool {
+fn registered_feature_schema_class(schema_class: crate::feature::schema::SchemaClass) -> bool {
+    use crate::feature::schema::SchemaClass;
     matches!(
         schema_class,
-        911 | 913 | 914 | 916 | 917 | 923 | 926 | 927 | 946 | 979
+        SchemaClass::Hole
+            | SchemaClass::Round
+            | SchemaClass::Chamfer
+            | SchemaClass::Cut
+            | SchemaClass::Protrusion
+            | SchemaClass::DatumPlane
+            | SchemaClass::Section
+            | SchemaClass::Draft
+            | SchemaClass::SurfaceMerge
+            | SchemaClass::CoordinateSystem
     )
 }
 
@@ -1786,6 +1799,7 @@ fn feature_row_has_model_identity(
     operations: &[FeatureOperation],
     reference_names: &[FeatureReferenceName],
 ) -> bool {
+    use crate::feature::schema::SchemaClass;
     structural_ids.contains(&row.feature_id)
         || operations.iter().any(|operation| {
             operation.feature_id == row.feature_id
@@ -1812,9 +1826,10 @@ fn feature_row_has_model_identity(
                     !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
                 });
             reference.feature_id == row.feature_id
-                && (row.root_schema_class == Some(926)
-                    || (row.root_schema_class == Some(923) && named_datum)
-                    || (row.root_schema_class == Some(979) && name == "PRT_CSYS_DEF"))
+                && (row.root_schema_class == Some(SchemaClass::Section)
+                    || (row.root_schema_class == Some(SchemaClass::DatumPlane) && named_datum)
+                    || (row.root_schema_class == Some(SchemaClass::CoordinateSystem)
+                        && name == "PRT_CSYS_DEF"))
         })
 }
 
@@ -1857,16 +1872,11 @@ fn feature_rows(data: &[u8], sections: &[Section], feature_ids: &[u32]) -> Vec<F
         .filter(|section| section.name == "AllFeatur")
     {
         let end = (section.offset + section.length).min(data.len());
-        rows.extend(
-            feature::rows(&data[section.offset..end], &feature_ids)
-                .into_iter()
-                .map(|mut row| {
-                    row.stream_offset = section.offset;
-                    row.offset += section.offset;
-                    row.body_offset += section.offset;
-                    row
-                }),
-        );
+        rows.extend(feature::rows(
+            &data[section.offset..end],
+            &feature_ids,
+            section.offset,
+        ));
     }
     rows.sort_by_key(|row| row.offset);
     rows
@@ -2205,7 +2215,6 @@ fn depdb_recipe_rows(data: &[u8], sections: &[Section]) -> Vec<FeatureRow> {
             }
             rows.push(FeatureRow {
                 feature_id: operation.feature_id,
-                header: [0; 2],
                 root_schema_class: operation.root_schema_class(),
                 stream_offset: section.offset,
                 body: payload[body_start..body_end].to_vec(),
@@ -2992,8 +3001,7 @@ mod feature_row_definition_tests {
 
         let row = |feature_id, root_schema_class| FeatureRow {
             feature_id,
-            header: [0xe3, 0xf6],
-            root_schema_class: Some(root_schema_class),
+            root_schema_class: Some(crate::feature::schema::SchemaClass::from(root_schema_class)),
             stream_offset: 0,
             body: Vec::new(),
             body_offset: 0,
@@ -3037,8 +3045,7 @@ mod feature_row_definition_tests {
     fn embedded_section_definition_retains_separate_history_feature_owner() {
         let row = FeatureRow {
             feature_id: 42,
-            header: [0xe3, 0xf6],
-            root_schema_class: Some(917),
+            root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
             stream_offset: 100,
             body: b"prefix gsec2d_ptr\0\xe0\x0aname\0S2D0002\0".to_vec(),
             body_offset: 120,
@@ -3057,8 +3064,7 @@ mod feature_row_definition_tests {
     fn embedded_section_definition_uses_the_bounded_feature_row_for_chain_binding() {
         let row = FeatureRow {
             feature_id: 247,
-            header: [0xe3, 0xf6],
-            root_schema_class: Some(917),
+            root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
             stream_offset: 100,
             body: b"prefix gsec2d_ptr\0\xe0\x0aname\0S2D0002\0\
                     \xe0\x00gsec3d_ptr\0\xf1\xe3\

@@ -14,6 +14,7 @@ use super::{
     sweep_output_kind, sweep_solid, thicken_feature_definition,
 };
 use crate::container::ContainerScan;
+use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     BodySelection, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, FaceSelection,
@@ -120,18 +121,18 @@ pub(in super::super) fn named_feature_definition(
         ));
     }
     let schema_class = match kind {
-        "Datum Plane" | "Bezugsebene" => 923,
-        "Hole" => 911,
-        "Round" | "Rundung" => 913,
-        "Chamfer" => 914,
-        "Draft" | "Schräge" => 927,
+        "Datum Plane" | "Bezugsebene" => SchemaClass::DatumPlane,
+        "Hole" => SchemaClass::Hole,
+        "Round" | "Rundung" => SchemaClass::Round,
+        "Chamfer" => SchemaClass::Chamfer,
+        "Draft" | "Schräge" => SchemaClass::Draft,
         _ => return None,
     };
     Some(schema_feature_definition(
         scan,
         ir,
         feature_id,
-        schema_class,
+        Some(schema_class),
         kind,
     ))
 }

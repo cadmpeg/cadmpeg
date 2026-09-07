@@ -16,13 +16,17 @@ fn rows_retain_distinct_root_schema_classes_for_one_feature_id() {
     ];
     let feature_ids = BTreeSet::from([7]);
 
-    let decoded = rows(&payload, &feature_ids);
+    let decoded = rows(&payload, &feature_ids, 0);
 
     assert_eq!(decoded.len(), 2);
     assert_eq!(
         decoded
             .iter()
-            .map(|row| (row.header, row.root_schema_class))
+            .map(|row| (
+                [row.body[0], row.body[1]],
+                row.root_schema_class
+                    .map(crate::feature::schema::SchemaClass::code)
+            ))
             .collect::<Vec<_>>(),
         [([0xeb, 0x04], Some(917)), ([0x90, 0x01], Some(913))]
     );
@@ -36,10 +40,15 @@ fn rows_suppress_repeated_same_class_candidates() {
     ];
     let feature_ids = BTreeSet::from([7]);
 
-    let decoded = rows(&payload, &feature_ids);
+    let decoded = rows(&payload, &feature_ids, 0);
 
     assert_eq!(decoded.len(), 1);
-    assert_eq!(decoded[0].root_schema_class, Some(917));
+    assert_eq!(
+        decoded[0]
+            .root_schema_class
+            .map(crate::feature::schema::SchemaClass::code),
+        Some(917)
+    );
 }
 
 #[test]
@@ -49,11 +58,16 @@ fn rows_accept_an_unlisted_header_with_the_fixed_root_prefix() {
     ];
     let feature_ids = BTreeSet::from([7]);
 
-    let decoded = rows(&payload, &feature_ids);
+    let decoded = rows(&payload, &feature_ids, 0);
 
     assert_eq!(decoded.len(), 1);
-    assert_eq!(decoded[0].header, [0x88, 0x01]);
-    assert_eq!(decoded[0].root_schema_class, Some(949));
+    assert_eq!(decoded[0].body[..2], [0x88, 0x01]);
+    assert_eq!(
+        decoded[0]
+            .root_schema_class
+            .map(crate::feature::schema::SchemaClass::code),
+        Some(949)
+    );
 }
 
 #[test]
@@ -61,7 +75,7 @@ fn rows_require_the_root_marker_after_the_row_header() {
     let payload = [7, 0x88, 0x01, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff];
     let feature_ids = BTreeSet::from([7]);
 
-    assert!(rows(&payload, &feature_ids).is_empty());
+    assert!(rows(&payload, &feature_ids, 0).is_empty());
 }
 
 #[test]
@@ -69,7 +83,7 @@ fn rows_accept_a_root_marker_immediately_after_the_header() {
     let payload = [40, 0xeb, 0x04, 0xe3, 0xf6, 0x83, 0x95, 0xe1, 0xaa];
     let feature_ids = BTreeSet::from([40]);
 
-    assert_eq!(rows(&payload, &feature_ids).len(), 1);
+    assert_eq!(rows(&payload, &feature_ids, 0).len(), 1);
 }
 
 #[test]
@@ -78,10 +92,24 @@ fn rows_accept_a_row_after_the_raw_section_header() {
     payload.extend_from_slice(&[7, 0x88, 0x01, 0xe3, 0xf6, 0x83, 0xb5, 0xe1, 0xbb]);
     let feature_ids = BTreeSet::from([7]);
 
-    let decoded = rows(&payload, &feature_ids);
+    let decoded = rows(&payload, &feature_ids, 0);
 
     assert_eq!(decoded.len(), 1);
     assert_eq!(decoded[0].offset, b"#AllFeatur\n".len());
+}
+
+#[test]
+fn rows_construct_absolute_offsets_from_the_stream_origin() {
+    let mut payload = b"#AllFeatur\n".to_vec();
+    payload.extend_from_slice(&[7, 0x88, 0x01, 0xe3, 0xf6, 0x83, 0xb5, 0xe1, 0xbb]);
+    let feature_ids = BTreeSet::from([7]);
+    let decoded = rows(&payload, &feature_ids, 200);
+
+    assert_eq!(decoded.len(), 1);
+    assert_eq!(decoded[0].stream_offset, 200);
+    assert_eq!(decoded[0].offset, 200 + b"#AllFeatur\n".len());
+    assert_eq!(decoded[0].body_offset, 201 + b"#AllFeatur\n".len());
+    assert_eq!(decoded[0].body, payload[b"#AllFeatur\n".len() + 1..]);
 }
 
 #[test]
@@ -92,10 +120,10 @@ fn rows_ignore_a_valid_prefix_inside_an_existing_row() {
     ];
     let feature_ids = BTreeSet::from([7]);
 
-    let decoded = rows(&payload, &feature_ids);
+    let decoded = rows(&payload, &feature_ids, 0);
 
     assert_eq!(decoded.len(), 1);
-    assert_eq!(decoded[0].header, [0xeb, 0x04]);
+    assert_eq!(decoded[0].body[..2], [0xeb, 0x04]);
 }
 
 #[test]
@@ -119,8 +147,7 @@ fn class_913_round_replay_scalars_use_bounded_short_form_lane() {
     let rows = [
         FeatureRow {
             feature_id: 17,
-            header: [0xeb, 0x04],
-            root_schema_class: Some(913),
+            root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
             stream_offset: 300,
             body: body.clone(),
             body_offset: 400,
@@ -128,8 +155,7 @@ fn class_913_round_replay_scalars_use_bounded_short_form_lane() {
         },
         FeatureRow {
             feature_id: 18,
-            header: [0xeb, 0x04],
-            root_schema_class: Some(917),
+            root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
             stream_offset: 300,
             body: body.clone(),
             body_offset: 500,
@@ -137,8 +163,7 @@ fn class_913_round_replay_scalars_use_bounded_short_form_lane() {
         },
         FeatureRow {
             feature_id: 19,
-            header: [0xeb, 0x04],
-            root_schema_class: Some(913),
+            root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
             stream_offset: 300,
             body: incomplete.to_vec(),
             body_offset: 600,
@@ -278,8 +303,7 @@ fn final_procedural_choice_ends_before_post_choice_fields() {
         .to_vec();
     let rows = [FeatureRow {
         feature_id: 7,
-        header: [0xeb, 0x04],
-        root_schema_class: Some(917),
+        root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
         stream_offset: 10,
         body,
         body_offset: 100,
@@ -299,8 +323,7 @@ fn final_procedural_choice_ends_before_post_choice_fields() {
 fn positional_datum_table_replays_the_named_stream_schema() {
     let row = |feature_id, stream_offset, body: Vec<u8>| FeatureRow {
         feature_id,
-        header: [0xeb, 0x04],
-        root_schema_class: Some(917),
+        root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
         stream_offset,
         body,
         body_offset: feature_id as usize * 100,
@@ -358,8 +381,7 @@ fn loop_history_roster_uses_declared_loop_count_and_stored_order() {
     body.extend_from_slice(b"\xe0\x00next\0");
     let rows = [FeatureRow {
         feature_id: 7,
-        header: [0xeb, 0x04],
-        root_schema_class: Some(917),
+        root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
         stream_offset: 10,
         body,
         body_offset: 1_000,
@@ -434,8 +456,7 @@ fn loop_history_roster_rejects_incomplete_and_early_boundaries() {
         .to_vec();
     let rows = [FeatureRow {
         feature_id: 7,
-        header: [0xeb, 0x04],
-        root_schema_class: Some(917),
+        root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
         stream_offset: 10,
         body,
         body_offset: 1_000,
@@ -481,8 +502,7 @@ fn replay_row(feature_id: u32, operands: &[u8]) -> FeatureRow {
     body.extend_from_slice(&[0xf5, 0x96, 0x92]);
     FeatureRow {
         feature_id,
-        header: [0xeb, 0x04],
-        root_schema_class: Some(913),
+        root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 100,
         body,
         body_offset: 200,
@@ -544,8 +564,7 @@ fn surface_merge_row(feature_id: u32, row_id: u8, operands: &[u8]) -> FeatureRow
     ]);
     FeatureRow {
         feature_id,
-        header: [0xeb, 0x04],
-        root_schema_class: Some(946),
+        root_schema_class: Some(crate::feature::schema::SchemaClass::SurfaceMerge),
         stream_offset: 100,
         body,
         body_offset: 200,
@@ -664,7 +683,7 @@ fn positional_round_replay_uses_repeated_row_id_suffix() {
 #[test]
 fn positional_chamfer_replay_uses_referenced_row_id_suffix() {
     let mut row = unanchored_replay_row(1, 40, Some(74), &[0xf8, 2, 10, 11, 0xf8, 2, 20, 21]);
-    row.root_schema_class = Some(914);
+    row.root_schema_class = Some(crate::feature::schema::SchemaClass::Chamfer);
 
     let decoded = replay_affected_ids(&[row]);
 

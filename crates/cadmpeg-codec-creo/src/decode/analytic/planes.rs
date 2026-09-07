@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Carrier point tests, plane reconciliation, and placed planes.
 
+use crate::feature::schema::SchemaClass;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
@@ -1329,7 +1330,7 @@ fn round_edge_envelopes_for_plane(
                             && crate::decode::sketch_transfer::feature_schema_class(
                                 scan,
                                 row.feature_id,
-                            ) == Some(913)
+                            ) == Some(SchemaClass::Round)
                     })
             })?;
             if !topology.faces.contains(&plane_id) {

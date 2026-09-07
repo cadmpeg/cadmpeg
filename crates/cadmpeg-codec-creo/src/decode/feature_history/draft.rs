@@ -40,6 +40,7 @@ use super::{
     unresolved_extrude_extent,
 };
 use crate::container::ContainerScan;
+use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent, FaceSelection,
@@ -173,7 +174,7 @@ pub(in super::super) fn schema_feature_definition(
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
-    schema_class: u32,
+    schema_class: Option<SchemaClass>,
     kind: &str,
 ) -> IrFeatureDefinition {
     if numbered_feature_name_has_family(kind, "Fill") {
@@ -188,7 +189,7 @@ pub(in super::super) fn schema_feature_definition(
     if let Some(definition) = reference_named_feature_definition(kind) {
         return definition;
     }
-    if schema_class == 926 {
+    if schema_class == Some(SchemaClass::Section) {
         let sketch =
             section_definition_for_history_feature(scan, feature_id).and_then(|definition| {
                 let section = definition.section_3d.as_ref()?;
@@ -208,7 +209,7 @@ pub(in super::super) fn schema_feature_definition(
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(sketch),
         };
     }
-    if schema_class == 911 {
+    if schema_class == Some(SchemaClass::Hole) {
         let stepped_form = stepped_hole_form(
             feature_id,
             &scan.features.entity_tables,
@@ -412,7 +413,7 @@ pub(in super::super) fn schema_feature_definition(
             allow_multi_profile_faces: None,
         };
     }
-    if schema_class == 913 {
+    if schema_class == Some(SchemaClass::Round) {
         let mut observed_radii = round_observed_radii(scan, feature_id);
         observed_radii.extend(round_placed_cylinder_radii(scan, ir, feature_id));
         let radius = round_constant_radius(scan, ir, feature_id).map_or_else(
@@ -436,7 +437,7 @@ pub(in super::super) fn schema_feature_definition(
             }],
         };
     }
-    if schema_class == 914 {
+    if schema_class == Some(SchemaClass::Chamfer) {
         return IrFeatureDefinition::Chamfer {
             groups: vec![cadmpeg_ir::features::ChamferGroup {
                 edges: feature_edge_selection(scan, ir, feature_id)
@@ -451,7 +452,7 @@ pub(in super::super) fn schema_feature_definition(
             flip_direction: false,
         };
     }
-    if schema_class == 927 {
+    if schema_class == Some(SchemaClass::Draft) {
         let neutral_plane = draft_neutral_plane_selection(scan, feature_id);
         let anchor = cadmpeg_ir::features::DraftAnchor::NeutralPlane {
             plane: neutral_plane,
@@ -464,7 +465,7 @@ pub(in super::super) fn schema_feature_definition(
             outward: None,
         };
     }
-    if schema_class == 917
+    if schema_class == Some(SchemaClass::Protrusion)
         && !feature_section_sweep_semantics_conflict(scan, feature_id)
         && section_sweep_allows_linear_extrusion(schema_class, feature_recipe(scan, feature_id))
     {
@@ -577,7 +578,7 @@ pub(in super::super) fn schema_feature_definition(
             allow_multi_profile_faces: None,
         };
     }
-    if schema_class == 923 {
+    if schema_class == Some(SchemaClass::DatumPlane) {
         if let Some(datum) = unique_feature_datum_plane(&scan.planes.datums, feature_id) {
             return datum_plane_feature_definition(&datum.plane);
         }
@@ -637,10 +638,10 @@ pub(in super::super) fn schema_feature_definition(
         }
         return IrFeatureDefinition::DatumPlaneUnresolved;
     }
-    if schema_class == 946 {
+    if schema_class == Some(SchemaClass::SurfaceMerge) {
         return knit_surface_feature_definition(scan, feature_id);
     }
-    if schema_class == 979 && kind == "PRT_CSYS_DEF" {
+    if schema_class == Some(SchemaClass::CoordinateSystem) && kind == "PRT_CSYS_DEF" {
         let definitions = scan
             .features
             .definitions
@@ -684,7 +685,7 @@ pub(in super::super) fn schema_feature_definition(
         );
         return extrude_feature_definition_with_profile(scan, ir, feature_id, op);
     }
-    if schema_class == 942
+    if schema_class == Some(SchemaClass::Surface)
         && class_942_boundary_surface_entity_graph(
             feature_id,
             &scan.features.entity_tables,
@@ -693,7 +694,7 @@ pub(in super::super) fn schema_feature_definition(
     {
         return IrFeatureDefinition::BoundarySurfaceUnresolved;
     }
-    if schema_operation_kind(schema_class).is_none() {
+    if schema_class.and_then(schema_operation_kind).is_none() {
         if let Some(definition) = named_or_referenced_feature_definition(scan, ir, feature_id, kind)
         {
             return definition;
@@ -792,16 +793,18 @@ pub(in super::super) fn numbered_feature_name_has_family(name: &str, family: &st
 }
 
 pub(in super::super) fn section_sweep_allows_linear_extrusion(
-    schema_class: u32,
+    schema_class: Option<SchemaClass>,
     recipe: Option<crate::feature::FeatureRecipeKind>,
 ) -> bool {
     recipe == Some(crate::feature::FeatureRecipeKind::Extrude)
-        || (matches!(schema_class, 916 | 917)
-            && recipe != Some(crate::feature::FeatureRecipeKind::Revolve))
+        || (matches!(
+            schema_class,
+            Some(SchemaClass::Cut | SchemaClass::Protrusion)
+        ) && recipe != Some(crate::feature::FeatureRecipeKind::Revolve))
 }
 
 pub(in super::super) fn feature_is_sheet_extrusion(scan: &ContainerScan, feature_id: u32) -> bool {
-    feature_schema_class(scan, feature_id) == Some(942)
+    feature_schema_class(scan, feature_id) == Some(SchemaClass::Surface)
         && feature_reference_name(scan, feature_id)
             .is_some_and(|name| numbered_feature_name_has_family(&name, "Extrude"))
 }
@@ -812,7 +815,10 @@ pub(in super::super) fn feature_allows_linear_extrusion(
 ) -> bool {
     (!feature_section_sweep_semantics_conflict(scan, feature_id)
         && feature_schema_class(scan, feature_id).is_some_and(|schema_class| {
-            section_sweep_allows_linear_extrusion(schema_class, feature_recipe(scan, feature_id))
+            section_sweep_allows_linear_extrusion(
+                Some(schema_class),
+                feature_recipe(scan, feature_id),
+            )
         }))
         || feature_is_sheet_extrusion(scan, feature_id)
 }
@@ -822,8 +828,11 @@ pub(in super::super) fn feature_allows_additive_linear_extrusion(
     feature_id: u32,
 ) -> bool {
     !feature_section_sweep_semantics_conflict(scan, feature_id)
-        && feature_schema_class(scan, feature_id) == Some(917)
-        && section_sweep_allows_linear_extrusion(917, feature_recipe(scan, feature_id))
+        && feature_schema_class(scan, feature_id) == Some(SchemaClass::Protrusion)
+        && section_sweep_allows_linear_extrusion(
+            Some(SchemaClass::Protrusion),
+            feature_recipe(scan, feature_id),
+        )
         && feature_recipe_effect(scan, feature_id)
             .is_none_or(|effect| effect == crate::feature::FeatureRecipeEffect::Protrude)
 }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Positional spheres, tori, extrusion planes, and tabulated cylinders.
 
+use crate::feature::schema::SchemaClass;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
@@ -146,7 +147,7 @@ pub(in super::super) fn transfer_positional_tori(
         .iter()
         .filter(|row| row.kind == crate::surface::SurfaceKind::TorusOrSphere)
         .map(|row| row.feature_id)
-        .filter(|feature_id| feature_schema_class(scan, *feature_id) == Some(913))
+        .filter(|feature_id| feature_schema_class(scan, *feature_id) == Some(SchemaClass::Round))
         .collect::<BTreeSet<_>>()
         .into_iter()
         .filter(|feature_id| round_constant_radius(scan, ir, *feature_id).is_some())
@@ -172,7 +173,7 @@ pub(in super::super) fn transfer_positional_tori(
         let inline_non_plane = record.has_inline_non_plane_envelope()
             || record.has_inline_non_plane_local_system_suffix();
         if row.kind == crate::surface::SurfaceKind::TorusOrSphere
-            && feature_schema_class(scan, row.feature_id) == Some(913)
+            && feature_schema_class(scan, row.feature_id) == Some(SchemaClass::Round)
             && !constant_round_feature_ids.contains(&row.feature_id)
             && !inline_non_plane
         {

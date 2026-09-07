@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Hole, split, round, and positional cylinders and cones.
 
+use crate::feature::schema::SchemaClass;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
@@ -156,7 +157,7 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
         .features
         .rows
         .iter()
-        .filter(|row| row.root_schema_class == Some(913))
+        .filter(|row| row.root_schema_class == Some(SchemaClass::Round))
         .map(|row| row.feature_id)
         .collect::<BTreeSet<_>>();
     let mut transferred = 0;
@@ -262,7 +263,7 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
         .features
         .rows
         .iter()
-        .filter(|row| row.root_schema_class == Some(913))
+        .filter(|row| row.root_schema_class == Some(SchemaClass::Round))
         .map(|row| row.feature_id)
         .collect::<BTreeSet<_>>();
     let mut transferred = 0;
@@ -333,7 +334,7 @@ pub(in super::super) fn transfer_hole_cylinders(
         .features
         .rows
         .iter()
-        .filter(|row| row.root_schema_class == Some(911))
+        .filter(|row| row.root_schema_class == Some(SchemaClass::Hole))
         .map(|row| row.feature_id)
         .collect::<BTreeSet<_>>();
     let mut transferred = 0;
@@ -842,7 +843,7 @@ pub(in super::super) fn transfer_positional_cylinders(
         .iter()
         .filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
         .map(|row| row.feature_id)
-        .filter(|feature_id| feature_schema_class(scan, *feature_id) == Some(913))
+        .filter(|feature_id| feature_schema_class(scan, *feature_id) == Some(SchemaClass::Round))
         .collect::<BTreeSet<_>>()
         .into_iter()
         .filter_map(|feature_id| {
@@ -900,19 +901,22 @@ pub(in super::super) fn transfer_positional_cylinders(
         let inline_non_plane = record.has_inline_non_plane_envelope()
             || record.has_inline_non_plane_local_system_suffix();
         let selector_corner_interval = record.selector_corner_interval_cylinder_frame().is_some();
-        let axial_interval_corner_candidates =
-            if feature_class == Some(913) && !inline_non_plane && !selector_corner_interval {
-                record.type24_axial_interval_corner_candidates()
-            } else {
-                Vec::new()
-            };
-        let round_edge_envelope = (feature_class == Some(913) && !selector_corner_interval)
+        let axial_interval_corner_candidates = if feature_class == Some(SchemaClass::Round)
+            && !inline_non_plane
+            && !selector_corner_interval
+        {
+            record.type24_axial_interval_corner_candidates()
+        } else {
+            Vec::new()
+        };
+        let round_edge_envelope = (feature_class == Some(SchemaClass::Round)
+            && !selector_corner_interval)
             .then(|| record.type24_round_edge_envelope())
             .flatten();
         if round_edge_envelope.is_some() {
             summary.round_edge_complete_envelopes += 1;
         }
-        let round_support_frame = (feature_class == Some(913))
+        let round_support_frame = (feature_class == Some(SchemaClass::Round))
             .then(|| record.type24_scalar_frame_round_envelope())
             .flatten()
             .and_then(|envelope| {
@@ -1002,8 +1006,8 @@ pub(in super::super) fn transfer_positional_cylinders(
         if row.kind == crate::surface::SurfaceKind::Cylinder
             && !inline_non_plane
             && !selector_corner_interval
-            && (matches!(feature_class, Some(916))
-                || matches!(feature_class, Some(913))
+            && (matches!(feature_class, Some(SchemaClass::Cut))
+                || matches!(feature_class, Some(SchemaClass::Round))
                     && !constant_round_radii.contains_key(&row.feature_id)
                     && round_support_frame.is_none()
                     && round_edge_frame.is_none()
@@ -1078,7 +1082,7 @@ pub(in super::super) fn transfer_positional_cylinders(
             "round_edge_endpoint_cylinder" | "support_tangent_cylinder"
         );
         let row_local_frame_selected = (stored_frame_agrees || witnessed_frame_replaces_stored)
-            && (feature_class != Some(913)
+            && (feature_class != Some(SchemaClass::Round)
                 || matches!(
                     mechanism,
                     "inline_positional_surface_row"
@@ -1086,7 +1090,7 @@ pub(in super::super) fn transfer_positional_cylinders(
                         | "round_edge_endpoint_cylinder"
                         | "support_tangent_cylinder"
                 ));
-        if feature_class == Some(911)
+        if feature_class == Some(SchemaClass::Hole)
             && counterbore_dimensions(scan, ir, row.feature_id).is_some_and(|dimensions| {
                 !counterbore_dimension_tuple_matches_radius(dimensions, frame.radius)
             })
@@ -1377,9 +1381,12 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
         .rows
         .iter()
         .filter(|row| {
-            row.root_schema_class == Some(917)
+            row.root_schema_class == Some(SchemaClass::Protrusion)
                 && !feature_section_sweep_semantics_conflict(scan, row.feature_id)
-                && section_sweep_allows_linear_extrusion(917, feature_recipe(scan, row.feature_id))
+                && section_sweep_allows_linear_extrusion(
+                    Some(SchemaClass::Protrusion),
+                    feature_recipe(scan, row.feature_id),
+                )
         })
         .map(|row| row.feature_id)
         .collect::<BTreeSet<_>>();

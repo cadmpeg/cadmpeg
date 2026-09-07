@@ -850,11 +850,21 @@ fn binds_depdb_recipe_records_to_compact_feature_ids() {
     assert_eq!(operations.len(), 2);
     assert_eq!(operations[0].feature_id, 247);
     assert_eq!(operations[0].recipe, Some(FeatureRecipe::ProtrudeRevolve));
-    assert_eq!(operations[0].root_schema_class(), Some(917));
+    assert_eq!(
+        operations[0]
+            .root_schema_class()
+            .map(crate::feature::schema::SchemaClass::code),
+        Some(917)
+    );
     assert_eq!(operations[0].parent_feature_id(), Some(32));
     assert_eq!(operations[1].feature_id, 8053);
     assert_eq!(operations[1].recipe, Some(FeatureRecipe::ProtrudeExtrude));
-    assert_eq!(operations[1].root_schema_class(), Some(917));
+    assert_eq!(
+        operations[1]
+            .root_schema_class()
+            .map(crate::feature::schema::SchemaClass::code),
+        Some(917)
+    );
     assert_eq!(operations[1].parent_feature_id(), Some(8051));
 }
 
@@ -868,11 +878,21 @@ fn preserves_competing_depdb_recipe_bindings() {
     assert_eq!(states[0].feature_id, 8053);
     assert_eq!(states[0].recipe, Some(FeatureRecipe::ProtrudeExtrude));
     assert!(states[0].recipe_conflict);
-    assert_eq!(states[0].root_schema_class(), Some(917));
+    assert_eq!(
+        states[0]
+            .root_schema_class()
+            .map(crate::feature::schema::SchemaClass::code),
+        Some(917)
+    );
     assert_eq!(states[1].feature_id, 8053);
     assert_eq!(states[1].recipe, Some(FeatureRecipe::CutExtrude));
     assert!(states[1].recipe_conflict);
-    assert_eq!(states[1].root_schema_class(), Some(916));
+    assert_eq!(
+        states[1]
+            .root_schema_class()
+            .map(crate::feature::schema::SchemaClass::code),
+        Some(916)
+    );
 
     let current = operations(payload);
     assert_eq!(current.len(), 1);
@@ -880,7 +900,12 @@ fn preserves_competing_depdb_recipe_bindings() {
     assert_eq!(current[0].kind.as_str(), "Native Feature");
     assert_eq!(current[0].recipe, None);
     assert!(current[0].recipe_conflict);
-    assert_eq!(current[0].root_schema_class(), None);
+    assert_eq!(
+        current[0]
+            .root_schema_class()
+            .map(crate::feature::schema::SchemaClass::code),
+        None
+    );
     assert_eq!(current[0].parent_feature_id(), None);
 
     let repeated = b"\xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 1\0\xf6\0protextrude\0\
@@ -896,7 +921,12 @@ fn preserves_competing_depdb_recipe_bindings() {
         repeated_current[0].recipe,
         Some(FeatureRecipe::ProtrudeExtrude)
     );
-    assert_eq!(repeated_current[0].root_schema_class(), Some(917));
+    assert_eq!(
+        repeated_current[0]
+            .root_schema_class()
+            .map(crate::feature::schema::SchemaClass::code),
+        Some(917)
+    );
     assert_eq!(repeated_current[0].parent_feature_id(), Some(8051));
 }
 
@@ -914,7 +944,12 @@ fn conflicting_bindings_do_not_use_an_inline_recipe_fallback() {
     assert_eq!(display.kind.as_str(), "Extrude");
     assert_eq!(display.recipe, None);
     assert!(display.recipe_conflict);
-    assert_eq!(display.root_schema_class(), None);
+    assert_eq!(
+        display
+            .root_schema_class()
+            .map(crate::feature::schema::SchemaClass::code),
+        None
+    );
     assert_eq!(display.parent_feature_id(), None);
 
     let current = operations(payload);
@@ -939,7 +974,12 @@ fn leaves_inline_recipe_conflicts_unresolved() {
     assert_eq!(state.kind.as_str(), "Extrude");
     assert_eq!(state.recipe, None);
     assert!(state.recipe_conflict);
-    assert_eq!(state.root_schema_class(), None);
+    assert_eq!(
+        state
+            .root_schema_class()
+            .map(crate::feature::schema::SchemaClass::code),
+        None
+    );
     assert_eq!(state.parent_feature_id(), None);
 }
 
@@ -953,7 +993,12 @@ fn promotes_depdb_recipe_without_operation_display_name() {
     assert_eq!(operations[0].feature_id, 8053);
     assert_eq!(operations[0].kind.as_str(), "Extrude");
     assert_eq!(operations[0].recipe, Some(FeatureRecipe::ProtrudeExtrude));
-    assert_eq!(operations[0].root_schema_class(), Some(917));
+    assert_eq!(
+        operations[0]
+            .root_schema_class()
+            .map(crate::feature::schema::SchemaClass::code),
+        Some(917)
+    );
     assert_eq!(operations[0].parent_feature_id(), Some(8051));
     assert_eq!(operations[0].offset, 1);
 }

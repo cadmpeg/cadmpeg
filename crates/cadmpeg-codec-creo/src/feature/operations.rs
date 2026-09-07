@@ -4,6 +4,7 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
+use super::schema::SchemaClass;
 use crate::psb;
 
 /// Exact procedural recipe stored in a feature-state record.
@@ -183,7 +184,7 @@ impl OperationKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DepdbPrefix {
     /// Root feature-definition schema class.
-    pub schema: u32,
+    pub schema: SchemaClass,
     /// Previous or parent feature identifier.
     pub parent: u32,
 }
@@ -232,7 +233,7 @@ impl FeatureOperation {
         self.name.stored_name_prefix()
     }
 
-    pub fn root_schema_class(&self) -> Option<u32> {
+    pub fn root_schema_class(&self) -> Option<SchemaClass> {
         self.depdb.map(|prefix| prefix.schema)
     }
 
@@ -314,7 +315,7 @@ pub fn reference_names(payload: &[u8]) -> Vec<FeatureReferenceName> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct FeatureRecipeBinding {
     recipe: FeatureRecipe,
-    root_schema_class: u32,
+    root_schema_class: SchemaClass,
     parent_feature_id: u32,
     offset: usize,
 }
@@ -359,7 +360,7 @@ fn recipe_bindings(payload: &[u8]) -> Vec<(u32, FeatureRecipeBinding)> {
                 feature_id,
                 FeatureRecipeBinding {
                     recipe: *recipe,
-                    root_schema_class: schema_class,
+                    root_schema_class: SchemaClass::from(schema_class),
                     parent_feature_id,
                     offset: marker,
                 },

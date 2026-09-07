@@ -10,16 +10,15 @@ use crate::psb;
 use crate::scalar;
 
 use super::helpers::decode_exact_scalars;
+use super::schema::SchemaClass;
 
 /// One byte-bounded positional `AllFeatur` row for a known model feature.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureRow {
     /// Feature identifier decoded from the row prefix.
     pub feature_id: u32,
-    /// Two-byte row header retained for downstream row-family dispatch.
-    pub header: [u8; 2],
     /// Root `FeatDefs` schema class from the fixed row prefix.
-    pub root_schema_class: Option<u32>,
+    pub root_schema_class: Option<SchemaClass>,
     /// Absolute offset of the containing `AllFeatur` section. Replay state is
     /// scoped to this stream.
     pub stream_offset: usize,
@@ -382,7 +381,7 @@ pub(super) fn row_spans(payload: &[u8], feature_ids: &BTreeSet<u32>) -> Vec<(usi
 }
 
 /// Read the fixed-prefix root schema class from one candidate row span.
-fn row_root_schema_class(payload: &[u8], start: usize, end: usize) -> Option<u32> {
+fn row_root_schema_class(payload: &[u8], start: usize, end: usize) -> Option<SchemaClass> {
     let (_, body_start) = psb::reference_id(payload, start).ok()?;
     let body = payload.get(body_start..end)?;
     body[..body.len().min(16)]
@@ -393,28 +392,26 @@ fn row_root_schema_class(payload: &[u8], start: usize, end: usize) -> Option<u32
             let value_offset = body_start + relative + 2;
             let (value, after) = psb::compact_int(payload, value_offset);
             (after > value_offset && after < end && payload.get(after) == Some(&0xe1))
-                .then_some(value)
+                .then_some(SchemaClass::from(value))
         })
 }
 
 /// Decode positional `AllFeatur` rows whose identifiers exist in a decoded
 /// model-feature namespace. Unknown feature-like byte sequences remain unclaimed.
-pub fn rows(payload: &[u8], feature_ids: &BTreeSet<u32>) -> Vec<FeatureRow> {
+pub fn rows(payload: &[u8], feature_ids: &BTreeSet<u32>, stream_offset: usize) -> Vec<FeatureRow> {
     row_spans(payload, feature_ids)
         .into_iter()
         .filter_map(|(start, end, feature_id)| {
             let (_, body_start) = psb::reference_id(payload, start).ok()?;
             let body = payload.get(body_start..end)?;
-            let header = payload.get(body_start..body_start + 2)?.try_into().ok()?;
             let root_schema_class = row_root_schema_class(payload, start, end);
             Some(FeatureRow {
                 feature_id,
-                header,
                 root_schema_class,
-                stream_offset: 0,
+                stream_offset,
                 body: body.to_vec(),
-                body_offset: body_start,
-                offset: start,
+                body_offset: stream_offset + body_start,
+                offset: stream_offset + start,
             })
         })
         .collect()
@@ -431,7 +428,10 @@ pub(crate) fn round_replay_scalars(rows: &[FeatureRow]) -> Vec<FeatureRoundRepla
     const CR_FLAGS_ANCHOR: &[u8] = &[0xf2, 0xf7, 0x80, 0xa0];
     const MISC_CHOICE_ANCHOR: &[u8] = &[0xf3, 0xf7, 0x80, 0x97, 0xe2];
     let mut result = Vec::new();
-    for row in rows.iter().filter(|row| row.root_schema_class == Some(913)) {
+    for row in rows
+        .iter()
+        .filter(|row| row.root_schema_class == Some(SchemaClass::Round))
+    {
         let record_ends = row
             .body
             .windows(MISC_CHOICE_ANCHOR.len())
@@ -1125,9 +1125,11 @@ pub fn replay_affected_ids(rows: &[FeatureRow]) -> Vec<FeatureReplayAffectedIds>
     const ANCHOR_LEN: usize = ANCHOR_PREFIX.len() + 1 + ANCHOR_SUFFIX.len();
     const TERMINATOR: &[u8] = &[0xf5, 0x96, 0x92];
     let mut result = Vec::new();
-    let mut extents = BTreeMap::<(usize, u32), [Option<u32>; 2]>::new();
+    let mut extents = BTreeMap::<(usize, SchemaClass), [Option<u32>; 2]>::new();
     for row in rows {
-        let Some(schema_class @ (913 | 914)) = row.root_schema_class else {
+        let Some(schema_class @ (SchemaClass::Round | SchemaClass::Chamfer)) =
+            row.root_schema_class
+        else {
             continue;
         };
         let anchor = row.body.windows(ANCHOR_LEN).rposition(|window| {
@@ -1267,7 +1269,7 @@ pub fn surface_merge_replay_affected_ids(
     let mut result = Vec::new();
     let mut extents = BTreeMap::<usize, [Option<u32>; 3]>::new();
     for row in rows {
-        if row.root_schema_class != Some(946) {
+        if row.root_schema_class != Some(SchemaClass::SurfaceMerge) {
             continue;
         }
         let state = extents.entry(row.stream_offset).or_default();
@@ -1498,7 +1500,10 @@ pub fn revolution_extents(rows: &[FeatureRow]) -> Vec<FeatureRevolutionExtent> {
     ];
     let mut result = Vec::new();
     for row in rows {
-        if !matches!(row.root_schema_class, Some(916 | 917)) {
+        if !matches!(
+            row.root_schema_class,
+            Some(SchemaClass::Cut | SchemaClass::Protrusion)
+        ) {
             continue;
         }
         let Some(schema_end) = (0..row.body.len().min(20)).find_map(|offset| {
@@ -1506,8 +1511,9 @@ pub fn revolution_extents(rows: &[FeatureRow]) -> Vec<FeatureRevolutionExtent> {
                 return None;
             }
             let (schema_class, after) = psb::compact_int(&row.body, offset + 2);
-            (Some(schema_class) == row.root_schema_class && row.body.get(after) == Some(&0xe1))
-                .then_some(after + 1)
+            (Some(SchemaClass::from(schema_class)) == row.root_schema_class
+                && row.body.get(after) == Some(&0xe1))
+            .then_some(after + 1)
         }) else {
             continue;
         };

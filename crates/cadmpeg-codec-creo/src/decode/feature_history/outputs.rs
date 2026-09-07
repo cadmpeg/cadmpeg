@@ -10,6 +10,7 @@ use super::super::uniqueness::{exactly_one, unique_feature_definition_for_transf
 use super::dependencies::feature_generated_dependencies;
 use super::{agreed_feature_geometry_ids, feature_edge_selection, feature_is_sheet_extrusion};
 use crate::container::ContainerScan;
+use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{EdgeSelection, GeneratedEdgeRef};
 use cadmpeg_ir::ids::{BodyId, EdgeId, SurfaceId};
@@ -584,17 +585,17 @@ pub(in super::super) fn feature_parameters(
     parameters
 }
 
-pub(in super::super) fn schema_operation_kind(schema_class: u32) -> Option<&'static str> {
+pub(in super::super) fn schema_operation_kind(schema_class: SchemaClass) -> Option<&'static str> {
     match schema_class {
-        911 => Some("Hole"),
-        913 => Some("Round"),
-        914 => Some("Chamfer"),
-        916 => Some("Cut"),
-        917 => Some("Protrusion"),
-        923 => Some("Datum Plane"),
-        926 => Some("Section"),
-        927 => Some("Draft"),
-        946 => Some("Surface Merge"),
+        SchemaClass::Hole => Some("Hole"),
+        SchemaClass::Round => Some("Round"),
+        SchemaClass::Chamfer => Some("Chamfer"),
+        SchemaClass::Cut => Some("Cut"),
+        SchemaClass::Protrusion => Some("Protrusion"),
+        SchemaClass::DatumPlane => Some("Datum Plane"),
+        SchemaClass::Section => Some("Section"),
+        SchemaClass::Draft => Some("Draft"),
+        SchemaClass::SurfaceMerge => Some("Surface Merge"),
         _ => None,
     }
 }
@@ -632,7 +633,7 @@ pub(in super::super) fn owned_section_feature_id(
         .rows
         .iter()
         .filter(|row| {
-            row.root_schema_class == Some(926)
+            row.root_schema_class == Some(SchemaClass::Section)
                 && definition.offset >= row.body_offset
                 && definition.offset < row.body_offset.saturating_add(row.body.len())
         })
@@ -651,7 +652,9 @@ pub(in super::super) fn section_definition_for_history_feature<'a>(
         .features
         .rows
         .iter()
-        .filter(|row| row.feature_id == feature_id && row.root_schema_class == Some(926))
+        .filter(|row| {
+            row.feature_id == feature_id && row.root_schema_class == Some(SchemaClass::Section)
+        })
         .collect::<Vec<_>>();
     let [row] = rows.as_slice() else {
         return None;
@@ -692,7 +695,7 @@ pub(in super::super) fn feature_source_properties(
             "featdefs_row_schema_classes".to_string(),
             row_schema_classes
                 .iter()
-                .map(u32::to_string)
+                .map(SchemaClass::to_string)
                 .collect::<Vec<_>>()
                 .join(","),
         );

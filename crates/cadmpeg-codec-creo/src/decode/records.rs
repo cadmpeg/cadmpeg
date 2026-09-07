@@ -16,6 +16,7 @@ pub(super) mod double_xar;
 
 use crate::container::ContainerScan;
 use crate::feature::definitions::{ScalarLane, VariableType};
+use crate::feature::schema::SchemaClass;
 
 use super::coverage::{
     source_section, surface_family, surface_named_parameter_record, surface_prototype_family_name,
@@ -926,8 +927,8 @@ pub(super) fn feature_row_records(scan: &ContainerScan) -> Vec<CreoFeatureRowRec
         .map(|row| CreoFeatureRowRecord {
             id: format!("creo:allfeatur:feature_row#{}", row.offset),
             owner_feature_id: row.feature_id,
-            header: row.header,
-            root_schema_class: row.root_schema_class,
+            header: [row.body[0], row.body[1]],
+            root_schema_class: row.root_schema_class.map(SchemaClass::code),
             stream_offset: row.stream_offset,
             body: row.body.clone(),
             body_offset: row.body_offset,
@@ -944,8 +945,8 @@ pub(super) fn depdb_recipe_row_records(scan: &ContainerScan) -> Vec<CreoFeatureR
         .map(|row| CreoFeatureRowRecord {
             id: format!("creo:depdb:recipe_row#{}", row.offset),
             owner_feature_id: row.feature_id,
-            header: row.header,
-            root_schema_class: row.root_schema_class,
+            header: [0; 2],
+            root_schema_class: row.root_schema_class.map(SchemaClass::code),
             stream_offset: row.stream_offset,
             body: row.body.clone(),
             body_offset: row.body_offset,
@@ -1966,7 +1967,7 @@ pub(super) fn feature_operation_state_records(
                 recipe: state.recipe.map(crate::feature::FeatureRecipe::name),
                 recipe_conflict: state.recipe_conflict.then_some(true),
                 display_state_conflict: state.display_state_conflict.then_some(true),
-                root_schema_class: state.root_schema_class(),
+                root_schema_class: state.root_schema_class().map(SchemaClass::code),
                 parent_feature_id: state.parent_feature_id(),
                 offset: state.offset,
                 state_offset: state.state_offset,

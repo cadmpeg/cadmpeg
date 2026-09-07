@@ -11,6 +11,7 @@ mod entity;
 mod helpers;
 mod operations;
 mod rows;
+pub(crate) mod schema;
 
 #[cfg(test)]
 mod tests;

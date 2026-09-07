@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{schema_feature_definition, unbounded_feature_plane_definition};
+use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FeatureDefinition as IrFeatureDefinition;
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
@@ -39,7 +40,7 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
         source_object: None,
     });
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, 5, 923, "Datum Plane"),
+        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::DatumPlane), "Datum Plane"),
         IrFeatureDefinition::DatumPlane { .. }
     ));
 
@@ -48,7 +49,7 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
         _ => panic!("transferred datum plane"),
     }
     assert_eq!(
-        schema_feature_definition(&scan, &ir, 5, 923, "Datum Plane"),
+        schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::DatumPlane), "Datum Plane"),
         IrFeatureDefinition::DatumPlaneUnresolved
     );
 }
@@ -129,7 +130,7 @@ fn unbounded_plane_rejects_conflicting_carriers() {
 
     assert!(unbounded_feature_plane_definition(&scan, &ir, 5).is_none());
     assert!(matches!(
-        schema_feature_definition(&scan, &ir, 5, 0, "Unbounded Plane"),
+        schema_feature_definition(&scan, &ir, 5, None, "Unbounded Plane"),
         IrFeatureDefinition::Native { .. }
     ));
 }

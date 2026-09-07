@@ -171,8 +171,7 @@ fn placed_carriers_keeps_non_inline_class913_model_carrier() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.rows.push(crate::feature::FeatureRow {
         feature_id: 913,
-        header: [0, 0],
-        root_schema_class: Some(913),
+        root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 0,
         body: Vec::new(),
         body_offset: 0,

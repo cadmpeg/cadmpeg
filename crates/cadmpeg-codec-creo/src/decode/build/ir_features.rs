@@ -11,6 +11,7 @@ use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
 
 use crate::container::ContainerScan;
+use crate::feature::schema::SchemaClass;
 
 use super::super::curve_expressions::transfer_curve_expression_features;
 use super::super::feature_history::{
@@ -145,7 +146,7 @@ pub(super) fn emit_model_features(
                 .iter()
                 .any(|round| round.feature_id == feature_id)
             {
-                schema_feature_definition(scan, ir, feature_id, 913, "Fillet")
+                schema_feature_definition(scan, ir, feature_id, Some(SchemaClass::Round), "Fillet")
             } else {
                 IrFeatureDefinition::StoredGeometry
             },
@@ -179,7 +180,7 @@ pub(super) fn emit_model_features(
                             scan,
                             ir,
                             operation.feature_id,
-                            0,
+                            None,
                             operation.kind.as_str(),
                         )
                     })
@@ -206,7 +207,7 @@ pub(super) fn emit_model_features(
                     scan,
                     ir,
                     operation.feature_id,
-                    schema_class,
+                    Some(schema_class),
                     operation.kind.as_str(),
                 )
             },
@@ -365,7 +366,9 @@ pub(super) fn emit_model_features(
                         parameters: parameters.clone(),
                     })
             },
-            |schema_class| schema_feature_definition(scan, ir, feature_id, schema_class, kind),
+            |schema_class| {
+                schema_feature_definition(scan, ir, feature_id, Some(schema_class), kind)
+            },
         );
         let row_schema_classes = row_feature_schema_classes(&scan.features.rows, feature_id);
         if schema_class.is_none() {
@@ -384,7 +387,7 @@ pub(super) fn emit_model_features(
                 "featdefs_row_schema_classes".to_string(),
                 row_schema_classes
                     .iter()
-                    .map(u32::to_string)
+                    .map(SchemaClass::to_string)
                     .collect::<Vec<_>>()
                     .join(","),
             );

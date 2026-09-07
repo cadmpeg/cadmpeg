@@ -3,6 +3,7 @@
 
 use super::super::uniqueness::unique_feature_definition_for_transform;
 use crate::container::ContainerScan;
+use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::features::{Angle, AngularTermination, RevolveExtent};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -85,7 +86,11 @@ pub(in super::super) fn feature_is_first_material_operation(
                     | crate::feature::FeatureRecipeEffect::Cut
             )
         });
-        if !recipe_is_material && !matches!(feature_schema_class(scan, candidate), Some(916 | 917))
+        if !recipe_is_material
+            && !matches!(
+                feature_schema_class(scan, candidate),
+                Some(SchemaClass::Cut | SchemaClass::Protrusion)
+            )
         {
             continue;
         }
@@ -135,7 +140,10 @@ pub(in super::super) fn current_feature_operation(
     matches.next().is_none().then_some(operation)
 }
 
-pub(in super::super) fn feature_schema_class(scan: &ContainerScan, feature_id: u32) -> Option<u32> {
+pub(in super::super) fn feature_schema_class(
+    scan: &ContainerScan,
+    feature_id: u32,
+) -> Option<SchemaClass> {
     resolved_feature_schema_class_from_classes(
         &scan.features.operations,
         feature_row_schema_classes(scan, feature_id),
@@ -146,15 +154,15 @@ pub(in super::super) fn feature_schema_class(scan: &ContainerScan, feature_id: u
             .legacy_rounds
             .iter()
             .any(|round| round.feature_id == feature_id)
-            .then_some(913)
+            .then_some(SchemaClass::Round)
     })
 }
 
 pub(in super::super) fn resolved_feature_schema_class_from_classes(
     operations: &[crate::feature::FeatureOperation],
-    classes: BTreeSet<u32>,
+    classes: BTreeSet<SchemaClass>,
     feature_id: u32,
-) -> Option<u32> {
+) -> Option<SchemaClass> {
     if let Some(schema_class) = current_feature_operation(operations, feature_id)
         .and_then(crate::feature::FeatureOperation::root_schema_class)
     {
@@ -171,7 +179,7 @@ pub(in super::super) fn resolved_feature_schema_class_from_classes(
 pub(in super::super) fn feature_row_schema_classes(
     scan: &ContainerScan,
     feature_id: u32,
-) -> BTreeSet<u32> {
+) -> BTreeSet<SchemaClass> {
     row_feature_schema_classes(&scan.features.rows, feature_id)
         .into_iter()
         .chain(row_feature_schema_classes(
@@ -184,7 +192,7 @@ pub(in super::super) fn feature_row_schema_classes(
 pub(in super::super) fn row_feature_schema_classes(
     rows: &[crate::feature::FeatureRow],
     feature_id: u32,
-) -> BTreeSet<u32> {
+) -> BTreeSet<SchemaClass> {
     rows.iter()
         .filter(|row| row.feature_id == feature_id)
         .filter_map(|row| row.root_schema_class)

@@ -1402,8 +1402,7 @@ fn model_feature_ids_include_row_backed_generated_producers() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.rows.push(crate::feature::FeatureRow {
         feature_id: 50,
-        header: [0xeb, 0x04],
-        root_schema_class: Some(913),
+        root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 0,
         body: Vec::new(),
         body_offset: 1,

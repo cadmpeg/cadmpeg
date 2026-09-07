@@ -88,8 +88,7 @@ fn slot_fillet_scan() -> crate::container::ContainerScan<'static> {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.rows.push(crate::feature::FeatureRow {
         feature_id: 913,
-        header: [0, 0],
-        root_schema_class: Some(913),
+        root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 0,
         body: Vec::new(),
         body_offset: 0,
@@ -346,8 +345,7 @@ fn section_feature_type24_frame_is_not_admitted_as_round_cylinder() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.rows.push(crate::feature::FeatureRow {
         feature_id: 916,
-        header: [0, 0],
-        root_schema_class: Some(916),
+        root_schema_class: Some(crate::feature::schema::SchemaClass::Cut),
         stream_offset: 0,
         body: Vec::new(),
         body_offset: 0,
@@ -406,8 +404,7 @@ fn unresolved_round_type24_frame_is_not_admitted_as_constant_cylinder() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.rows.push(crate::feature::FeatureRow {
         feature_id: 913,
-        header: [0, 0],
-        root_schema_class: Some(913),
+        root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 0,
         body: Vec::new(),
         body_offset: 0,
@@ -478,8 +475,7 @@ fn inline_type24_frame_is_admitted_in_a_round_feature() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.rows.push(crate::feature::FeatureRow {
         feature_id: 913,
-        header: [0, 0],
-        root_schema_class: Some(913),
+        root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 0,
         body: Vec::new(),
         body_offset: 0,
@@ -542,8 +538,7 @@ fn positional_frame_reconciles_an_existing_model_cylinder() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.rows.push(crate::feature::FeatureRow {
         feature_id: 917,
-        header: [0, 0],
-        root_schema_class: Some(917),
+        root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
         stream_offset: 0,
         body: Vec::new(),
         body_offset: 0,
@@ -700,8 +695,7 @@ fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerSc
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.rows.push(crate::feature::FeatureRow {
         feature_id: 42,
-        header: [0, 0],
-        root_schema_class: Some(911),
+        root_schema_class: Some(crate::feature::schema::SchemaClass::Hole),
         stream_offset: 0,
         body: Vec::new(),
         body_offset: 0,
@@ -910,8 +904,7 @@ fn rowless_round_cylinder_rejects_duplicate_sibling_model_surfaces() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.rows.push(crate::feature::FeatureRow {
         feature_id: 23,
-        header: [0, 0],
-        root_schema_class: Some(913),
+        root_schema_class: Some(crate::feature::schema::SchemaClass::Round),
         stream_offset: 0,
         body: Vec::new(),
         body_offset: 0,

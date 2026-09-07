@@ -1051,6 +1051,7 @@ fn decode_retains_conflicting_recipe_candidates_without_projecting_one() {
             .depdb_recipe_rows
             .iter()
             .filter_map(|row| row.root_schema_class)
+            .map(crate::feature::schema::SchemaClass::code)
             .collect::<Vec<_>>(),
         [917, 917]
     );

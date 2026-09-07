@@ -14,7 +14,6 @@ use std::collections::BTreeMap;
 fn generated_edge_outputs_follow_producer_history_before_ir_feature_insertion() {
     let feature_row = |feature_id| crate::feature::FeatureRow {
         feature_id,
-        header: [0xeb, 0x04],
         root_schema_class: None,
         stream_offset: 0,
         body: Vec::new(),

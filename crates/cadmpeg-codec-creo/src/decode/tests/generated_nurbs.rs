@@ -1281,7 +1281,7 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
         recipe_conflict: false,
         display_state_conflict: false,
         depdb: Some(crate::feature::DepdbPrefix {
-            schema: 917,
+            schema: crate::feature::schema::SchemaClass::Protrusion,
             parent: 0,
         }),
         offset: 10,
@@ -1290,7 +1290,7 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
     assert_eq!(
         current_feature_operation(std::slice::from_ref(&operation), 6)
             .and_then(crate::feature::FeatureOperation::root_schema_class),
-        Some(917)
+        Some(crate::feature::schema::SchemaClass::Protrusion)
     );
     assert!(current_feature_operation(&[operation.clone(), operation.clone()], 6).is_none());
     assert_eq!(
@@ -1305,7 +1305,7 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
     );
     let mut parented_operation = operation.clone();
     parented_operation.depdb = Some(crate::feature::DepdbPrefix {
-        schema: 917,
+        schema: crate::feature::schema::SchemaClass::Protrusion,
         parent: 5,
     });
     assert_eq!(
@@ -1314,7 +1314,7 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
     );
     let mut conflicting_parent = parented_operation.clone();
     conflicting_parent.depdb = Some(crate::feature::DepdbPrefix {
-        schema: 917,
+        schema: crate::feature::schema::SchemaClass::Protrusion,
         parent: 4,
     });
     assert_eq!(
@@ -1323,8 +1323,7 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
     );
     let row = |schema_class, offset| crate::feature::FeatureRow {
         feature_id: 6,
-        header: [0xeb, 0x04],
-        root_schema_class: Some(schema_class),
+        root_schema_class: Some(crate::feature::schema::SchemaClass::from(schema_class)),
         stream_offset: 0,
         body: Vec::new(),
         body_offset: offset + 1,
@@ -1336,7 +1335,7 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
             row_feature_schema_classes(&[row(917, 20), row(917, 30)], 6),
             6,
         ),
-        Some(917)
+        Some(crate::feature::schema::SchemaClass::Protrusion)
     );
     assert_eq!(
         resolved_feature_schema_class_from_classes(
@@ -1352,7 +1351,7 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
             row_feature_schema_classes(&[row(913, 20), row(914, 30)], 6),
             6,
         ),
-        Some(917)
+        Some(crate::feature::schema::SchemaClass::Protrusion)
     );
     assert_eq!(
         resolved_feature_schema_class_from_classes(
@@ -1360,11 +1359,14 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
             row_feature_schema_classes(&[row(913, 20), row(913, 30)], 6),
             6,
         ),
-        Some(917)
+        Some(crate::feature::schema::SchemaClass::Protrusion)
     );
     assert_eq!(
         row_feature_schema_classes(&[row(913, 20), row(914, 30)], 6),
-        BTreeSet::from([913, 914])
+        BTreeSet::from([
+            crate::feature::schema::SchemaClass::Round,
+            crate::feature::schema::SchemaClass::Chamfer
+        ])
     );
     let extent =
         |feature_id, offset| crate::feature::FeatureRevolutionExtent { feature_id, offset };
@@ -1516,8 +1518,10 @@ fn unresolved_material_join_does_not_hide_exact_base_body_candidate() {
             recipe,
             recipe_conflict: false,
             display_state_conflict: false,
-            depdb: root_schema_class
-                .map(|schema: u32| crate::feature::DepdbPrefix { schema, parent: 0 }),
+            depdb: root_schema_class.map(|schema: u32| crate::feature::DepdbPrefix {
+                schema: crate::feature::schema::SchemaClass::from(schema),
+                parent: 0,
+            }),
             offset: feature_id as usize,
             state_offset: feature_id as usize,
         };

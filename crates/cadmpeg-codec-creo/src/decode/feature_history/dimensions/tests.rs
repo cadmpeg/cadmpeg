@@ -13,8 +13,7 @@ fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features.rows.push(crate::feature::FeatureRow {
         feature_id: 40,
-        header: [0xeb, 0x04],
-        root_schema_class: Some(926),
+        root_schema_class: Some(crate::feature::schema::SchemaClass::Section),
         stream_offset: 0,
         body: vec![0; 20],
         body_offset: 0,

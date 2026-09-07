@@ -2,6 +2,7 @@
 //! Placed carriers, topology-bound plane transfer, and face orientations.
 
 use crate::container::SectionRole;
+use crate::feature::schema::SchemaClass;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -392,12 +393,14 @@ fn positional_cylinder_carrier(
     let inline = record.has_inline_non_plane_envelope()
         || record.has_inline_non_plane_local_system_suffix()
         || record.selector_corner_interval_cylinder_frame().is_some();
-    if crate::decode::sketch_transfer::feature_schema_class(scan, row.feature_id) == Some(913)
+    if crate::decode::sketch_transfer::feature_schema_class(scan, row.feature_id)
+        == Some(SchemaClass::Round)
         && !inline
     {
         return None;
     }
-    if crate::decode::sketch_transfer::feature_schema_class(scan, row.feature_id) == Some(913)
+    if crate::decode::sketch_transfer::feature_schema_class(scan, row.feature_id)
+        == Some(SchemaClass::Round)
         && inline
     {
         let id = native_surface_id(scan, row.id);
@@ -782,7 +785,7 @@ pub fn native_face_orientations(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u3
         .features
         .rows
         .iter()
-        .filter(|row| row.root_schema_class == Some(913))
+        .filter(|row| row.root_schema_class == Some(SchemaClass::Round))
         .map(|row| row.feature_id)
         .collect::<BTreeSet<_>>();
     let available_surfaces = ir
