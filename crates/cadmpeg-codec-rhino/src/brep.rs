@@ -817,6 +817,12 @@ struct LegacyCurveMeta {
     endpoints: [Point3; 2],
 }
 
+struct LegacyVertex {
+    vertex: RawBrepVertex,
+    point_sum: [f64; 3],
+    point_count: usize,
+}
+
 fn parse_legacy_major2(
     bytes: &[u8],
     range: Range<usize>,
@@ -1079,99 +1085,70 @@ fn parse_legacy_major2(
     }
     let mut root_vertices = BTreeMap::new();
     let mut vertices = Vec::new();
+    let mut endpoint_vertices = Vec::with_capacity(endpoint_count);
     for endpoint in 0..endpoint_count {
         let root = legacy_find(&mut endpoint_parent, endpoint);
-        if let Entry::Vacant(entry) = root_vertices.entry(root) {
-            let index = i32::try_from(vertices.len())
-                .map_err(|_| error(reader.position(), "legacy Brep vertex index overflow"))?;
-            entry.insert(index);
-            vertices.push(RawBrepVertex {
-                index,
-                point: Point3([0.0, 0.0, 0.0]),
-                edges: Vec::new(),
-                tolerance: 0.0,
-                source_range: 0..0,
-            });
-        }
+        let index = match root_vertices.entry(root) {
+            Entry::Occupied(entry) => *entry.get(),
+            Entry::Vacant(entry) => {
+                let index = i32::try_from(vertices.len())
+                    .map_err(|_| error(reader.position(), "legacy Brep vertex index overflow"))?;
+                entry.insert(index);
+                vertices.push(LegacyVertex {
+                    vertex: RawBrepVertex {
+                        index,
+                        point: Point3([0.0, 0.0, 0.0]),
+                        edges: Vec::new(),
+                        tolerance: 0.0,
+                        source_range: 0..0,
+                    },
+                    point_sum: [0.0; 3],
+                    point_count: 0,
+                });
+                index
+            }
+        };
+        endpoint_vertices.push(index);
     }
     let mut edge_endpoints = Vec::with_capacity(c3_meta.len());
-    let mut point_sums = Vec::new();
-    point_sums.try_reserve_exact(vertices.len()).map_err(|_| {
-        error(
-            reader.position(),
-            "legacy Brep vertex sum allocation failed",
-        )
-    })?;
-    point_sums.resize(vertices.len(), [0.0; 3]);
-    let mut point_counts = Vec::new();
-    point_counts
-        .try_reserve_exact(vertices.len())
-        .map_err(|_| {
-            error(
-                reader.position(),
-                "legacy Brep vertex count allocation failed",
-            )
-        })?;
-    point_counts.resize(vertices.len(), 0_usize);
     for (edge_index, curve) in c3_meta.iter().enumerate() {
         let endpoints = if let Some(trim_index) = edge_trim_indexes[edge_index].first() {
             let trim = &trims[*trim_index as usize];
-            let start_root =
-                legacy_find(&mut endpoint_parent, legacy_trim_endpoint_for_edge(trim, 0));
-            let end_root =
-                legacy_find(&mut endpoint_parent, legacy_trim_endpoint_for_edge(trim, 1));
             [
-                *root_vertices
-                    .get(&start_root)
-                    .expect("legacy edge start root has a vertex"),
-                *root_vertices
-                    .get(&end_root)
-                    .expect("legacy edge end root has a vertex"),
+                endpoint_vertices[legacy_trim_endpoint_for_edge(trim, 0)],
+                endpoint_vertices[legacy_trim_endpoint_for_edge(trim, 1)],
             ]
         } else {
             let start = legacy_vertex(&mut vertices, curve.endpoints[0]);
             let end = legacy_vertex(&mut vertices, curve.endpoints[1]);
-            if vertices.len() > point_sums.len() {
-                let additional = vertices.len() - point_sums.len();
-                point_sums.try_reserve_exact(additional).map_err(|_| {
-                    error(
-                        reader.position(),
-                        "legacy Brep vertex sum allocation failed",
-                    )
-                })?;
-                point_sums.resize(vertices.len(), [0.0; 3]);
-                point_counts.try_reserve_exact(additional).map_err(|_| {
-                    error(
-                        reader.position(),
-                        "legacy Brep vertex count allocation failed",
-                    )
-                })?;
-                point_counts.resize(vertices.len(), 0);
-            }
             [start, end]
         };
         for (vertex, point) in endpoints
             .into_iter()
             .zip([curve.endpoints[0], curve.endpoints[1]])
         {
-            let index = vertex as usize;
-            point_sums[index][0] += point.0[0];
-            point_sums[index][1] += point.0[1];
-            point_sums[index][2] += point.0[2];
-            point_counts[index] += 1;
+            let vertex = &mut vertices[vertex as usize];
+            vertex.point_sum[0] += point.0[0];
+            vertex.point_sum[1] += point.0[1];
+            vertex.point_sum[2] += point.0[2];
+            vertex.point_count += 1;
         }
         edge_endpoints.push(endpoints);
     }
-    for (index, vertex) in vertices.iter_mut().enumerate() {
-        if point_counts[index] != 0 {
-            let count = point_counts[index] as f64;
-            vertex.point = Point3([
-                point_sums[index][0] / count,
-                point_sums[index][1] / count,
-                point_sums[index][2] / count,
-            ]);
-        }
-    }
+    let mut vertices = vertices
+        .into_iter()
+        .map(|mut accumulated| {
+            if accumulated.point_count != 0 {
+                let count = accumulated.point_count as f64;
+                accumulated.vertex.point = Point3([
+                    accumulated.point_sum[0] / count,
+                    accumulated.point_sum[1] / count,
+                    accumulated.point_sum[2] / count,
+                ]);
+            }
+            accumulated.vertex
+        })
+        .collect::<Vec<_>>();
     let mut edges = Vec::with_capacity(edge_count);
     for (edge_index, curve) in c3_meta.iter().enumerate() {
         let edge_index_i32 = i32::try_from(edge_index)
@@ -1195,15 +1172,9 @@ fn parse_legacy_major2(
         });
     }
     for trim in &mut trims {
-        let start_root = legacy_find(&mut endpoint_parent, legacy_trim_endpoint(trim.index, 0));
-        let end_root = legacy_find(&mut endpoint_parent, legacy_trim_endpoint(trim.index, 1));
         trim.vertices = [
-            *root_vertices
-                .get(&start_root)
-                .expect("legacy trim start root has a vertex"),
-            *root_vertices
-                .get(&end_root)
-                .expect("legacy trim end root has a vertex"),
+            endpoint_vertices[legacy_trim_endpoint(trim.index, 0)],
+            endpoint_vertices[legacy_trim_endpoint(trim.index, 1)],
         ];
     }
     for edge in &edges {
@@ -1420,21 +1391,25 @@ fn legacy_union(parent: &mut [usize], left: usize, right: usize) {
     }
 }
 
-fn legacy_vertex(vertices: &mut Vec<RawBrepVertex>, point: Point3) -> i32 {
+fn legacy_vertex(vertices: &mut Vec<LegacyVertex>, point: Point3) -> i32 {
     if let Some((index, _)) = vertices
         .iter()
         .enumerate()
-        .find(|(_, value)| value.point == point)
+        .find(|(_, value)| value.vertex.point == point)
     {
         return index as i32;
     }
     let index = vertices.len();
-    vertices.push(RawBrepVertex {
-        index: index as i32,
-        point,
-        edges: Vec::new(),
-        tolerance: 0.0,
-        source_range: 0..0,
+    vertices.push(LegacyVertex {
+        vertex: RawBrepVertex {
+            index: index as i32,
+            point,
+            edges: Vec::new(),
+            tolerance: 0.0,
+            source_range: 0..0,
+        },
+        point_sum: [0.0; 3],
+        point_count: 0,
     });
     index as i32
 }
