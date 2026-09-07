@@ -288,7 +288,7 @@ mod tests {
         let occurrence = |record_index: u32, component_record_index: u64, occurrence_guid: &str| {
             DesignComponentOccurrence {
                 id: format!("f3d:Design/BulkStream.dat:design-component-occurrence#{record_index}"),
-                class_tag: "256".into(),
+                class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
                 record_index,
                 byte_offset: u64::from(record_index),
                 component_record_index,
@@ -356,7 +356,7 @@ mod tests {
         }
         let native_occurrence = DesignComponentOccurrence {
             id: "f3d:Design/BulkStream.dat:design-component-occurrence#382".into(),
-            class_tag: "380".into(),
+            class_tag: crate::records::DesignClassTag::try_from("380".to_owned()).unwrap(),
             record_index: 382,
             byte_offset: 0,
             component_record_index: 305,

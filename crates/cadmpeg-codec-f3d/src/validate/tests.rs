@@ -251,7 +251,7 @@ fn validation_accepts_carrier_local_component_references() {
                       component_record_index: u64,
                       occurrence_guid: &str| DesignComponentOccurrence {
         id: format!("f3d:Design/BulkStream.dat:design-component-occurrence#{record_index}"),
-        class_tag: "256".into(),
+        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
         record_index,
         byte_offset,
         component_record_index,

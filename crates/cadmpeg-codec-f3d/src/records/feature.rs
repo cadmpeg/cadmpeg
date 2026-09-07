@@ -3070,7 +3070,7 @@ pub struct DesignComponentOccurrence {
     /// Stable native record identity.
     pub id: String,
     /// Indexed-record class carrying this occurrence.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Indexed carrier record.
     pub record_index: u32,
     /// Byte offset of the indexed header.
@@ -3156,7 +3156,7 @@ impl From<DesignComponentOccurrence> for DesignComponentOccurrenceWire {
         let transform = value.transform();
         Self {
             id: value.id,
-            class_tag: value.class_tag,
+            class_tag: value.class_tag.into(),
             record_index: value.record_index,
             byte_offset: value.byte_offset,
             component_record_index: value.component_record_index,
@@ -3185,7 +3185,7 @@ impl TryFrom<DesignComponentOccurrenceWire> for DesignComponentOccurrence {
         };
         Ok(Self {
             id: value.id,
-            class_tag: value.class_tag,
+            class_tag: value.class_tag.try_into()?,
             record_index: value.record_index,
             byte_offset: value.byte_offset,
             component_record_index: value.component_record_index,

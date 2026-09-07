@@ -2075,7 +2075,7 @@ pub(crate) fn exact_derived_instance_construction(
         .iter()
         .filter(|occurrence| {
             native_stream(&occurrence.id) == Some(stream)
-                && occurrence.class_tag == "380"
+                && occurrence.class_tag.as_str() == "380"
                 && occurrence.record_index == carrier_record_index
                 && occurrence.byte_offset < relation_at as u64
                 && occurrence.transform().map(|frame| frame.value) == Some(transform)

@@ -119,7 +119,7 @@ fn fixture() -> (Vec<u8>, DesignParameterScope, DesignComponentOccurrence) {
 
     let occurrence = DesignComponentOccurrence {
         id: "f3d:Design/BulkStream.dat:design-component-occurrence#0".into(),
-        class_tag: "380".into(),
+        class_tag: crate::records::DesignClassTag::try_from("380".to_owned()).unwrap(),
         record_index: 382,
         byte_offset: 0,
         component_record_index: 305,

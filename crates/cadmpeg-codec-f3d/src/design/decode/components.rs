@@ -111,7 +111,7 @@ pub(crate) fn exact_component_occurrence(
     };
     Some(DesignComponentOccurrence {
         id: format!("{stream}:design-component-occurrence#{start}"),
-        class_tag,
+        class_tag: class_tag.try_into().ok()?,
         record_index,
         byte_offset: u64::try_from(start).ok()?,
         component_record_index,
@@ -233,7 +233,7 @@ mod tests {
         header(&mut dynamic_tag, b"325", 21);
         let dynamic_tag = exact_component_occurrence(&dynamic_tag, 0, "f3d:Design/BulkStream.dat")
             .expect("dynamic-tag placed occurrence");
-        assert_eq!(dynamic_tag.class_tag, "336");
+        assert_eq!(dynamic_tag.class_tag.as_str(), "336");
         assert_eq!(dynamic_tag.occurrence_ordinal(), 1);
         assert_eq!(
             dynamic_tag.transform().map(|frame| frame.value),

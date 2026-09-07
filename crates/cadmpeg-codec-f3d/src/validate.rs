@@ -4230,7 +4230,7 @@ fn validate_component_occurrences(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     ordinal,
                     transform,
                 } => {
-                    (occurrence.class_tag == "327" || ordinal.get() > 1)
+                    (occurrence.class_tag.as_str() == "327" || ordinal.get() > 1)
                         && transform.offset == occurrence.byte_offset + 209
                         && crate::records::valid_sketch_transform(&transform.value)
                 }
