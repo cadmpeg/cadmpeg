@@ -1,4 +1,4 @@
-# generated at eca025858
+# generated at 5526cd5f7
 pub mod cadmpeg_core
 pub mod cadmpeg_core::bytes
 pub const fn cadmpeg_core::bytes::assemble_f32_be([u8; 4]) -> f32
@@ -540,7 +540,6 @@ pub fn cadmpeg_core::target::TargetToken::as_str(&self) -> &str
 pub fn cadmpeg_core::target::TargetToken::new(impl core::convert::Into<alloc::string::String>) -> Self
 impl core::fmt::Display for cadmpeg_core::target::TargetToken
 pub fn cadmpeg_core::target::TargetToken::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-pub fn cadmpeg_core::target::assert_valid_target_catalog(cadmpeg_core::target::TargetCatalog)
 #[non_exhaustive] pub enum cadmpeg_core::CodecError
 pub cadmpeg_core::CodecError::InvalidInput(alloc::string::String)
 pub cadmpeg_core::CodecError::Io(core::io::error::Error)

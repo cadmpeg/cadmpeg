@@ -1,4 +1,4 @@
-# generated at eca025858
+# generated at 5526cd5f7
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -2803,6 +2803,12 @@ pub cadmpeg_ir::geometry::DeformableSurfaceData::SurfaceCurve::second_parameter:
 pub cadmpeg_ir::geometry::DeformableSurfaceData::SurfaceCurve::selector: i64
 pub cadmpeg_ir::geometry::DeformableSurfaceData::SurfaceCurve::surface: cadmpeg_ir::ids::SurfaceId
 pub cadmpeg_ir::geometry::DeformableSurfaceData::SurfaceCurve::vectors: [cadmpeg_ir::math::Vector3; 4]
+pub enum cadmpeg_ir::geometry::EdgeOffsetDiscriminator
+pub cadmpeg_ir::geometry::EdgeOffsetDiscriminator::One
+pub cadmpeg_ir::geometry::EdgeOffsetDiscriminator::Zero
+impl cadmpeg_ir::geometry::EdgeOffsetDiscriminator
+pub const fn cadmpeg_ir::geometry::EdgeOffsetDiscriminator::code(self) -> i64
+pub const fn cadmpeg_ir::geometry::EdgeOffsetDiscriminator::from_code(i64) -> core::option::Option<Self>
 pub enum cadmpeg_ir::geometry::ExactSpline
 pub cadmpeg_ir::geometry::ExactSpline::Legacy
 pub cadmpeg_ir::geometry::ExactSpline::Legacy::extension: i64
@@ -3314,6 +3320,7 @@ pub enum cadmpeg_ir::geometry::SkinSurfaceLayout
 pub cadmpeg_ir::geometry::SkinSurfaceLayout::Compact
 pub cadmpeg_ir::geometry::SkinSurfaceLayout::Compact::curve: cadmpeg_ir::ids::CurveId
 pub cadmpeg_ir::geometry::SkinSurfaceLayout::Compact::first_tail: i64
+pub cadmpeg_ir::geometry::SkinSurfaceLayout::Compact::inner_count: i64
 pub cadmpeg_ir::geometry::SkinSurfaceLayout::Compact::second_tail: i64
 pub cadmpeg_ir::geometry::SkinSurfaceLayout::Compact::secondary_curve: cadmpeg_ir::ids::CurveId
 pub cadmpeg_ir::geometry::SkinSurfaceLayout::Compact::subdata: cadmpeg_ir::geometry::LoftSubdata
@@ -3321,6 +3328,8 @@ pub cadmpeg_ir::geometry::SkinSurfaceLayout::Profiles
 pub cadmpeg_ir::geometry::SkinSurfaceLayout::Profiles::path: cadmpeg_ir::ids::CurveId
 pub cadmpeg_ir::geometry::SkinSurfaceLayout::Profiles::profiles: alloc::vec::Vec<cadmpeg_ir::geometry::SkinSurfaceProfile>
 pub cadmpeg_ir::geometry::SkinSurfaceLayout::Profiles::tail: [i64; 2]
+impl cadmpeg_ir::geometry::SkinSurfaceLayout
+pub fn cadmpeg_ir::geometry::SkinSurfaceLayout::inner_count(&self) -> i64
 pub enum cadmpeg_ir::geometry::SplineSurfaceParameters
 pub cadmpeg_ir::geometry::SplineSurfaceParameters::OrderedRanges
 pub cadmpeg_ir::geometry::SplineSurfaceParameters::OrderedRanges::ranges: [[f64; 2]; 2]
@@ -3573,25 +3582,33 @@ pub cadmpeg_ir::geometry::VariableBlendSurfaceSubtype::CurveSurface
 pub cadmpeg_ir::geometry::VariableBlendSurfaceSubtype::SurfaceCurveFree
 pub cadmpeg_ir::geometry::VariableBlendSurfaceSubtype::SurfaceSurface
 pub cadmpeg_ir::geometry::VariableBlendSurfaceSubtype::VariableBlend
+pub enum cadmpeg_ir::geometry::VariableBlendTerminal
+pub cadmpeg_ir::geometry::VariableBlendTerminal::Double(f64)
+pub cadmpeg_ir::geometry::VariableBlendTerminal::Text(alloc::string::String)
 pub enum cadmpeg_ir::geometry::VariableBlendValuePayload
 pub cadmpeg_ir::geometry::VariableBlendValuePayload::Constant
 pub cadmpeg_ir::geometry::VariableBlendValuePayload::Constant::chamfer_type: i64
+pub cadmpeg_ir::geometry::VariableBlendValuePayload::Constant::discriminator: i64
 pub cadmpeg_ir::geometry::VariableBlendValuePayload::Constant::nested: alloc::boxed::Box<cadmpeg_ir::geometry::VariableBlendValue>
 pub cadmpeg_ir::geometry::VariableBlendValuePayload::Constant::parameters: [f64; 2]
 pub cadmpeg_ir::geometry::VariableBlendValuePayload::Constant::radius: f64
 pub cadmpeg_ir::geometry::VariableBlendValuePayload::Constant::variable_chamfer: i64
 pub cadmpeg_ir::geometry::VariableBlendValuePayload::EdgeOffset
-pub cadmpeg_ir::geometry::VariableBlendValuePayload::EdgeOffset::lengths: alloc::vec::Vec<f64>
-pub cadmpeg_ir::geometry::VariableBlendValuePayload::EdgeOffset::scalars: alloc::vec::Vec<f64>
+pub cadmpeg_ir::geometry::VariableBlendValuePayload::EdgeOffset::discriminator: cadmpeg_ir::geometry::EdgeOffsetDiscriminator
+pub cadmpeg_ir::geometry::VariableBlendValuePayload::EdgeOffset::lengths: [f64; 1]
+pub cadmpeg_ir::geometry::VariableBlendValuePayload::EdgeOffset::scalars: [f64; 2]
 pub cadmpeg_ir::geometry::VariableBlendValuePayload::FixedWidth
+pub cadmpeg_ir::geometry::VariableBlendValuePayload::FixedWidth::discriminator: i64
 pub cadmpeg_ir::geometry::VariableBlendValuePayload::FixedWidth::parameters: [f64; 2]
 pub cadmpeg_ir::geometry::VariableBlendValuePayload::FixedWidth::width: f64
 pub cadmpeg_ir::geometry::VariableBlendValuePayload::Functional
+pub cadmpeg_ir::geometry::VariableBlendValuePayload::Functional::discriminator: i64
 pub cadmpeg_ir::geometry::VariableBlendValuePayload::Functional::function: cadmpeg_ir::geometry::PcurveGeometry
 pub cadmpeg_ir::geometry::VariableBlendValuePayload::Functional::parameter: f64
 pub cadmpeg_ir::geometry::VariableBlendValuePayload::Functional::radius: f64
-pub cadmpeg_ir::geometry::VariableBlendValuePayload::Functional::terminal: cadmpeg_ir::geometry::LoftBridgeToken
+pub cadmpeg_ir::geometry::VariableBlendValuePayload::Functional::terminal: cadmpeg_ir::geometry::VariableBlendTerminal
 pub cadmpeg_ir::geometry::VariableBlendValuePayload::Interpolated
+pub cadmpeg_ir::geometry::VariableBlendValuePayload::Interpolated::discriminator: i64
 pub cadmpeg_ir::geometry::VariableBlendValuePayload::Interpolated::enum_count: i64
 pub cadmpeg_ir::geometry::VariableBlendValuePayload::Interpolated::enum_tagged: bool
 pub cadmpeg_ir::geometry::VariableBlendValuePayload::Interpolated::function: cadmpeg_ir::geometry::PcurveGeometry
@@ -3599,8 +3616,12 @@ pub cadmpeg_ir::geometry::VariableBlendValuePayload::Interpolated::parameter: f6
 pub cadmpeg_ir::geometry::VariableBlendValuePayload::Interpolated::points: alloc::vec::Vec<cadmpeg_ir::geometry::VariableBlendInterpolationPoint>
 pub cadmpeg_ir::geometry::VariableBlendValuePayload::Interpolated::radius: f64
 pub cadmpeg_ir::geometry::VariableBlendValuePayload::TwoEnds
+pub cadmpeg_ir::geometry::VariableBlendValuePayload::TwoEnds::discriminator: i64
 pub cadmpeg_ir::geometry::VariableBlendValuePayload::TwoEnds::parameters: [f64; 2]
 pub cadmpeg_ir::geometry::VariableBlendValuePayload::TwoEnds::radii: [f64; 2]
+impl cadmpeg_ir::geometry::VariableBlendValuePayload
+pub const fn cadmpeg_ir::geometry::VariableBlendValuePayload::discriminator(&self) -> i64
+pub const fn cadmpeg_ir::geometry::VariableBlendValuePayload::native_name(&self) -> &'static str
 pub enum cadmpeg_ir::geometry::VertexBlendBoundaryGeometry
 pub cadmpeg_ir::geometry::VertexBlendBoundaryGeometry::Circle
 pub cadmpeg_ir::geometry::VertexBlendBoundaryGeometry::Circle::curve: cadmpeg_ir::ids::CurveId
@@ -4085,17 +4106,27 @@ pub struct cadmpeg_ir::geometry::RollingBallJetStation
 pub cadmpeg_ir::geometry::RollingBallJetStation::knot: f64
 pub cadmpeg_ir::geometry::RollingBallJetStation::multiplicity: u32
 pub cadmpeg_ir::geometry::RollingBallJetStation::site: cadmpeg_ir::geometry::RollingBallJetSite
-pub struct cadmpeg_ir::geometry::RollingBallSide
-pub cadmpeg_ir::geometry::RollingBallSide::curve: core::option::Option<cadmpeg_ir::ids::CurveId>
-pub cadmpeg_ir::geometry::RollingBallSide::curve_range: [core::option::Option<f64>; 2]
-pub cadmpeg_ir::geometry::RollingBallSide::extension: core::option::Option<i64>
+pub struct cadmpeg_ir::geometry::RollingBallSide<S, C, P>
+pub cadmpeg_ir::geometry::RollingBallSide::curve: core::option::Option<cadmpeg_ir::geometry::RollingBallSupportCurve<C>>
+pub cadmpeg_ir::geometry::RollingBallSide::extension: core::option::Option<cadmpeg_ir::geometry::RollingBallSideExtension<P>>
 pub cadmpeg_ir::geometry::RollingBallSide::location: cadmpeg_ir::math::Point3
-pub cadmpeg_ir::geometry::RollingBallSide::pcurve: core::option::Option<cadmpeg_ir::geometry::PcurveGeometry>
-pub cadmpeg_ir::geometry::RollingBallSide::secondary_pcurve: core::option::Option<cadmpeg_ir::geometry::PcurveGeometry>
+pub cadmpeg_ir::geometry::RollingBallSide::pcurve: core::option::Option<P>
+pub cadmpeg_ir::geometry::RollingBallSide::secondary_pcurve: core::option::Option<P>
 pub cadmpeg_ir::geometry::RollingBallSide::support_kind: cadmpeg_ir::geometry::VariableBlendSupportKind
-pub cadmpeg_ir::geometry::RollingBallSide::surface: core::option::Option<cadmpeg_ir::ids::SurfaceId>
-pub cadmpeg_ir::geometry::RollingBallSide::surface_ranges: [[core::option::Option<f64>; 2]; 2]
-pub cadmpeg_ir::geometry::RollingBallSide::tertiary_pcurve: core::option::Option<cadmpeg_ir::geometry::PcurveGeometry>
+pub cadmpeg_ir::geometry::RollingBallSide::surface: core::option::Option<cadmpeg_ir::geometry::RollingBallSupportSurface<S>>
+impl<'de, S: serde_core::de::Deserialize<'de>, C: serde_core::de::Deserialize<'de>, P: serde_core::de::Deserialize<'de>> serde_core::de::Deserialize<'de> for cadmpeg_ir::geometry::RollingBallSide<S, C, P>
+pub fn cadmpeg_ir::geometry::RollingBallSide<S, C, P>::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
+impl<S: serde_core::ser::Serialize, C: serde_core::ser::Serialize, P: serde_core::ser::Serialize> serde_core::ser::Serialize for cadmpeg_ir::geometry::RollingBallSide<S, C, P>
+pub fn cadmpeg_ir::geometry::RollingBallSide<S, C, P>::serialize<W: serde_core::ser::Serializer>(&self, W) -> core::result::Result<<W as serde_core::ser::Serializer>::Ok, <W as serde_core::ser::Serializer>::Error>
+pub struct cadmpeg_ir::geometry::RollingBallSideExtension<P>
+pub cadmpeg_ir::geometry::RollingBallSideExtension::pcurve: core::option::Option<P>
+pub cadmpeg_ir::geometry::RollingBallSideExtension::value: i64
+pub struct cadmpeg_ir::geometry::RollingBallSupportCurve<C>
+pub cadmpeg_ir::geometry::RollingBallSupportCurve::curve: C
+pub cadmpeg_ir::geometry::RollingBallSupportCurve::parameter_range: [core::option::Option<f64>; 2]
+pub struct cadmpeg_ir::geometry::RollingBallSupportSurface<S>
+pub cadmpeg_ir::geometry::RollingBallSupportSurface::parameter_ranges: [[core::option::Option<f64>; 2]; 2]
+pub cadmpeg_ir::geometry::RollingBallSupportSurface::surface: S
 pub struct cadmpeg_ir::geometry::RollingBallThirdSide
 pub cadmpeg_ir::geometry::RollingBallThirdSide::curve: cadmpeg_ir::ids::CurveId
 pub cadmpeg_ir::geometry::RollingBallThirdSide::direction: cadmpeg_ir::math::Vector3
@@ -4126,7 +4157,6 @@ pub cadmpeg_ir::geometry::SkinSurfaceConstruction::direction: cadmpeg_ir::math::
 pub cadmpeg_ir::geometry::SkinSurfaceConstruction::discontinuities: [alloc::vec::Vec<f64>; 6]
 pub cadmpeg_ir::geometry::SkinSurfaceConstruction::discontinuity_flag: bool
 pub cadmpeg_ir::geometry::SkinSurfaceConstruction::formula: cadmpeg_ir::geometry::LawFormula
-pub cadmpeg_ir::geometry::SkinSurfaceConstruction::inner_count: i64
 pub cadmpeg_ir::geometry::SkinSurfaceConstruction::layout: cadmpeg_ir::geometry::SkinSurfaceLayout
 pub cadmpeg_ir::geometry::SkinSurfaceConstruction::parameter: f64
 pub cadmpeg_ir::geometry::SkinSurfaceConstruction::parameter_curve: cadmpeg_ir::ids::CurveId
@@ -4235,8 +4265,7 @@ pub cadmpeg_ir::geometry::VariableBlendConstruction::post_range: [core::option::
 pub cadmpeg_ir::geometry::VariableBlendConstruction::radii: cadmpeg_ir::geometry::VariableBlendRadii
 pub cadmpeg_ir::geometry::VariableBlendConstruction::render_mode: cadmpeg_ir::geometry::VariableBlendRenderMode
 pub cadmpeg_ir::geometry::VariableBlendConstruction::revision: i64
-pub cadmpeg_ir::geometry::VariableBlendConstruction::secondary_curve: core::option::Option<cadmpeg_ir::ids::CurveId>
-pub cadmpeg_ir::geometry::VariableBlendConstruction::secondary_range: [core::option::Option<f64>; 2]
+pub cadmpeg_ir::geometry::VariableBlendConstruction::secondary_curve: core::option::Option<cadmpeg_ir::geometry::RollingBallSupportCurve>
 pub cadmpeg_ir::geometry::VariableBlendConstruction::shape_length: f64
 pub cadmpeg_ir::geometry::VariableBlendConstruction::shape_parameter: f64
 pub cadmpeg_ir::geometry::VariableBlendConstruction::shape_tail: i64
@@ -4256,10 +4285,12 @@ pub cadmpeg_ir::geometry::VariableBlendInterpolationPoint::radius: f64
 pub cadmpeg_ir::geometry::VariableBlendInterpolationPoint::tangents: [core::option::Option<f64>; 2]
 pub struct cadmpeg_ir::geometry::VariableBlendValue
 pub cadmpeg_ir::geometry::VariableBlendValue::calibrated: i64
-pub cadmpeg_ir::geometry::VariableBlendValue::discriminator: i64
 pub cadmpeg_ir::geometry::VariableBlendValue::modern_flag: bool
-pub cadmpeg_ir::geometry::VariableBlendValue::name: alloc::string::String
 pub cadmpeg_ir::geometry::VariableBlendValue::payload: cadmpeg_ir::geometry::VariableBlendValuePayload
+impl serde_core::ser::Serialize for cadmpeg_ir::geometry::VariableBlendValue
+pub fn cadmpeg_ir::geometry::VariableBlendValue::serialize<S: serde_core::ser::Serializer>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error>
+impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::geometry::VariableBlendValue
+pub fn cadmpeg_ir::geometry::VariableBlendValue::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub struct cadmpeg_ir::geometry::VectorOffsetRoles
 pub cadmpeg_ir::geometry::VectorOffsetRoles::offset_code: i64
 pub cadmpeg_ir::geometry::VectorOffsetRoles::source_code: i64

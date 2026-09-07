@@ -1,4 +1,4 @@
-# generated at eca025858
+# generated at 5526cd5f7
 pub mod cadmpeg_codec_catia
 pub struct cadmpeg_codec_catia::CatiaCodec
 impl cadmpeg_ir::codec::CodecBackend for cadmpeg_codec_catia::CatiaCodec

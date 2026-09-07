@@ -1,4 +1,4 @@
-# generated at eca025858
+# generated at 5526cd5f7
 pub mod cadmpeg_protein
 pub mod cadmpeg_protein::property
 pub enum cadmpeg_protein::property::PropertyContent
