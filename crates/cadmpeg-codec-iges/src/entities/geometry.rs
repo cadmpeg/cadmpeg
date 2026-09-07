@@ -2,7 +2,7 @@
 //! Point and analytic curve entity projection.
 
 use super::curve_conversion::angularly_equal;
-use crate::directory::{BlankStatus, DirectoryEntry, Subordinate, UseFlag};
+use crate::directory::{DirectoryEntry, Subordinate, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal, RealPrecision};
 use crate::loss::IgesLossCode;
 use crate::parameter::{ParameterRecord, TrailingPointerAnalysis};
@@ -1182,7 +1182,7 @@ pub(super) fn source_object(entry: &DirectoryEntry) -> SourceObjectAssociation {
             .filter(|value| !value.is_empty())
             .map(str::to_owned),
         color: None,
-        visible: Some(entry.status.blank() == Some(BlankStatus::Visible)),
+        visible: Some(entry.status.is_visible()),
         layer: Some(entry.level.to_string()),
         instance_path: Vec::new(),
     }
