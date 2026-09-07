@@ -7,6 +7,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+mod debug;
 pub(crate) mod relation_scalars;
 pub(crate) mod sketch_code;
 
@@ -182,6 +183,8 @@ mod tree_parent_wire {
         parent_source_id: Option<String>,
     }
 
+    // Serde's field adapter borrows the complete optional parent field.
+    #[allow(clippy::ref_option)]
     pub(super) fn serialize<S: Serializer>(
         parent: &Option<TreeParent>,
         serializer: S,
@@ -224,7 +227,7 @@ impl Feature {
 }
 
 /// One parametric construction-history feature (e.g. an extrude or fillet operation).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Feature {
     /// Globally unique deterministic identifier for this native record.
