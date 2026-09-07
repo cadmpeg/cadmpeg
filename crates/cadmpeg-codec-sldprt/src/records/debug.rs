@@ -81,3 +81,22 @@ impl Debug for super::FeatureInputRelationInstance {
             .finish()
     }
 }
+
+impl Debug for super::FeatureInputSurfaceSelection {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> Result {
+        formatter
+            .debug_struct("FeatureInputSurfaceSelection")
+            .field("id", &self.id)
+            .field("parent", &self.parent)
+            .field("ordinal", &self.ordinal)
+            .field("offset", &self.offset)
+            .field("selector", &self.selector)
+            .field("endpoint_selector", &self.endpoint_selector())
+            .field("object_name_ref", &self.object_name_ref)
+            .field("feature_ref", &self.feature_ref)
+            .field("producer_feature_refs", &self.producer_feature_refs)
+            .field("terminal_feature_ref", &self.terminal_feature_ref)
+            .field("components", &self.components)
+            .finish()
+    }
+}

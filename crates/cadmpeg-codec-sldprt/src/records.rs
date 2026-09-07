@@ -432,7 +432,7 @@ pub struct FeatureInputEdgeSelection {
 }
 
 /// One compact feature-local surface-component selection.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FeatureInputSurfaceSelection {
     /// Globally unique deterministic identifier.
@@ -497,6 +497,8 @@ mod surface_selection_kind_wire {
         endpoint_selector: Option<u32>,
     }
 
+    // Serde field adapters borrow the field even when its type is Copy.
+    #[allow(clippy::trivially_copy_pass_by_ref)]
     pub(super) fn serialize<S: Serializer>(
         kind: &FeatureInputSurfaceSelectionKind,
         serializer: S,
