@@ -917,40 +917,61 @@ fn linear_boundary_geometry(
     }
 }
 
-fn linear_ring_is_simple(points: &[[f64; 2]]) -> bool {
-    let Some(last) = points.len().checked_sub(1) else {
-        return false;
-    };
-    if points.len() < 4
-        || points.first() != points.last()
-        || points
-            .iter()
-            .flatten()
-            .any(|coordinate| !coordinate.is_finite())
-    {
-        return false;
-    }
-    if points.windows(2).any(|segment| segment[0] == segment[1]) {
-        return false;
-    }
-    for first in 0..last {
-        for second in first + 1..last {
-            if points[first] == points[second] {
-                return false;
+#[derive(Debug)]
+struct SimpleRing(Vec<[f64; 2]>);
+
+#[derive(Debug)]
+struct NonSimpleRing;
+
+impl SimpleRing {
+    fn new(points: Vec<[f64; 2]>) -> Result<Self, NonSimpleRing> {
+        if points.len() < 4
+            || points.first() != points.last()
+            || points
+                .iter()
+                .flatten()
+                .any(|coordinate| !coordinate.is_finite())
+        {
+            return Err(NonSimpleRing);
+        }
+        if points.windows(2).any(|segment| segment[0] == segment[1]) {
+            return Err(NonSimpleRing);
+        }
+        let last = points.len() - 1;
+        for first in 0..last {
+            for second in first + 1..last {
+                if points[first] == points[second] {
+                    return Err(NonSimpleRing);
+                }
             }
         }
+        if planar_polyline_has_self_intersection(&points) {
+            return Err(NonSimpleRing);
+        }
+        Ok(Self(points))
     }
-    !planar_polyline_has_self_intersection(points)
+
+    fn first(&self) -> [f64; 2] {
+        self.0[0]
+    }
+
+    fn interior(&self) -> &[[f64; 2]] {
+        &self.0[..self.0.len() - 1]
+    }
+
+    fn points(&self) -> &[[f64; 2]] {
+        &self.0
+    }
 }
 
-fn planar_point_is_strictly_inside(point: [f64; 2], ring: &[[f64; 2]]) -> bool {
-    if ring.windows(2).any(|segment| {
+fn planar_point_is_strictly_inside(point: [f64; 2], ring: &SimpleRing) -> bool {
+    if ring.points().windows(2).any(|segment| {
         super::geometry::planar_segments_contain_point(point, [segment[0], segment[1]])
     }) {
         return false;
     }
     let mut inside = false;
-    for segment in ring.windows(2) {
+    for segment in ring.points().windows(2) {
         let [left, right] = [segment[0], segment[1]];
         if (left[1] > point[1]) != (right[1] > point[1]) {
             let crossing =
@@ -966,24 +987,26 @@ fn planar_point_is_strictly_inside(point: [f64; 2], ring: &[[f64; 2]]) -> bool {
 fn linear_boundary_rings(
     candidates: &[Option<LinearBoundaryGeometry>],
     parameter: bool,
-) -> Option<Vec<Vec<[f64; 2]>>> {
+) -> Option<Result<Vec<SimpleRing>, NonSimpleRing>> {
     if candidates.is_empty() {
         return None;
     }
-    candidates
+    let rings = candidates
         .iter()
         .map(|candidate| match (parameter, candidate.as_ref()) {
             (true, Some(LinearBoundaryGeometry::Parameter(points)))
             | (false, Some(LinearBoundaryGeometry::Model(points))) => Some(points.clone()),
             _ => None,
         })
-        .collect()
+        .collect::<Option<Vec<_>>>()?;
+    Some(rings.into_iter().map(SimpleRing::new).collect())
 }
 
-fn inner_boundaries_are_disjoint_and_inside(outer: &[[f64; 2]], inners: &[Vec<[f64; 2]>]) -> bool {
+fn inner_boundaries_are_disjoint_and_inside(outer: &SimpleRing, inners: &[SimpleRing]) -> bool {
     for inner in inners {
-        if planar_polylines_intersect(outer, inner)
-            || inner[..inner.len() - 1]
+        if planar_polylines_intersect(outer.points(), inner.points())
+            || inner
+                .interior()
                 .iter()
                 .any(|point| !planar_point_is_strictly_inside(*point, outer))
         {
@@ -992,24 +1015,21 @@ fn inner_boundaries_are_disjoint_and_inside(outer: &[[f64; 2]], inners: &[Vec<[f
     }
     inners.iter().enumerate().all(|(left_index, left)| {
         inners.iter().skip(left_index + 1).all(|right| {
-            !planar_polylines_intersect(left, right)
-                && !planar_point_is_strictly_inside(left[0], right)
-                && !planar_point_is_strictly_inside(right[0], left)
+            !planar_polylines_intersect(left.points(), right.points())
+                && !planar_point_is_strictly_inside(left.first(), right)
+                && !planar_point_is_strictly_inside(right.first(), left)
         })
     })
 }
 
 fn linear_boundary_relationship_is_valid(
-    rings: &[Vec<[f64; 2]>],
+    rings: &[SimpleRing],
     trimmed_surface: bool,
     has_explicit_outer: bool,
     support: &SurfaceGeometry,
     support_bounds: Option<[Option<f64>; 4]>,
     periodic_parameters: [bool; 2],
 ) -> Option<bool> {
-    if !rings.iter().all(|ring| linear_ring_is_simple(ring)) {
-        return Some(false);
-    }
     if !trimmed_surface {
         return Some(true);
     }
@@ -1030,7 +1050,7 @@ fn linear_boundary_relationship_is_valid(
                 && v_lower < v_upper =>
         {
             if rings.iter().any(|ring| {
-                ring[..ring.len() - 1].iter().any(|point| {
+                ring.interior().iter().any(|point| {
                     point[0] <= u_lower
                         || point[0] >= u_upper
                         || point[1] <= v_lower
@@ -1046,9 +1066,9 @@ fn linear_boundary_relationship_is_valid(
     }
     Some(rings.iter().enumerate().all(|(left_index, left)| {
         rings.iter().skip(left_index + 1).all(|right| {
-            !planar_polylines_intersect(left, right)
-                && !planar_point_is_strictly_inside(left[0], right)
-                && !planar_point_is_strictly_inside(right[0], left)
+            !planar_polylines_intersect(left.points(), right.points())
+                && !planar_point_is_strictly_inside(left.first(), right)
+                && !planar_point_is_strictly_inside(right.first(), left)
         })
     }))
 }
@@ -2221,26 +2241,27 @@ pub(super) fn project(
         }
         let linear_rings = linear_boundary_rings(&linear_boundary_candidates, true)
             .or_else(|| linear_boundary_rings(&linear_boundary_candidates, false));
-        if let Some(rings) = linear_rings {
-            if linear_boundary_relationship_is_valid(
+        let linear_relationship = linear_rings.and_then(|rings| match rings {
+            Ok(rings) => linear_boundary_relationship_is_valid(
                 &rings,
                 trimmed_surface,
                 has_explicit_outer,
                 &support_geometry,
                 support_parameter_bounds,
                 periodic_parameters,
-            ) == Some(false)
-            {
-                losses.push(entity_loss(
-                    entry,
-                    if trimmed_surface {
-                        "trimmed-surface boundary loops are not simple, disjoint, and correctly nested"
-                    } else {
-                        "boundary loop is not a simple closed carrier"
-                    },
-                ));
-                continue;
-            }
+            ),
+            Err(NonSimpleRing) => Some(false),
+        });
+        if linear_relationship == Some(false) {
+            losses.push(entity_loss(
+                entry,
+                if trimmed_surface {
+                    "trimmed-surface boundary loops are not simple, disjoint, and correctly nested"
+                } else {
+                    "boundary loop is not a simple closed carrier"
+                },
+            ));
+            continue;
         }
         let face_surface_id = if implicit_outer_domain {
             let derived_surface_id = SurfaceId::mint(format!(
