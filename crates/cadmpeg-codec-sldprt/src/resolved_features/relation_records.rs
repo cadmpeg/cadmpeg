@@ -1678,7 +1678,7 @@ pub(super) fn bind_detached_relation_drivers(
         .collect::<HashMap<_, _>>();
     let claimed = relations
         .iter()
-        .flat_map(|relation| relation.scalar_refs())
+        .flat_map(crate::records::FeatureInputRelationInstance::scalar_refs)
         .map(String::as_str)
         .collect::<HashSet<_>>();
     let mut drivers = HashMap::<(String, String), Vec<&FeatureInputScalar>>::new();

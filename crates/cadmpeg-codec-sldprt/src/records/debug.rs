@@ -62,3 +62,22 @@ impl Debug for super::FeatureInputScalar {
             .finish()
     }
 }
+
+impl Debug for super::FeatureInputRelationInstance {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> Result {
+        formatter
+            .debug_struct("FeatureInputRelationInstance")
+            .field("id", &self.id)
+            .field("parent", &self.parent)
+            .field("ordinal", &self.ordinal)
+            .field("offset", &self.offset)
+            .field("family", &self.family)
+            .field("class_ref", &self.class_ref)
+            .field("feature_ref", &self.feature_ref)
+            .field("scalar_refs", &self.scalar_refs())
+            .field("parameter_scalar_ref", &self.parameter_scalar_ref())
+            .field("display_scalar_ref", &self.display_scalar_ref())
+            .field("operands", &self.operands)
+            .finish()
+    }
+}

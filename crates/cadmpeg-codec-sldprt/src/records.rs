@@ -582,7 +582,7 @@ pub struct FeatureInputRelationBinding {
 }
 
 /// One compact sketch-relation instance represented by related scalar records.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FeatureInputRelationInstance {
     /// Globally unique deterministic identifier for this relation instance.
