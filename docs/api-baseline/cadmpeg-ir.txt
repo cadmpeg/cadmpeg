@@ -1,4 +1,4 @@
-# generated at c7701c8c2
+# generated at ff4df993a
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -1306,9 +1306,6 @@ pub cadmpeg_ir::features::FeatureDefinition::Block::placement: core::option::Opt
 pub cadmpeg_ir::features::FeatureDefinition::BoundaryFill
 pub cadmpeg_ir::features::FeatureDefinition::BoundaryFill::cells: alloc::vec::Vec<cadmpeg_ir::features::BodySelection>
 pub cadmpeg_ir::features::FeatureDefinition::BoundaryFill::tools: cadmpeg_ir::features::BodySelection
-pub cadmpeg_ir::features::FeatureDefinition::BoundarySurfaceUnresolved
-pub cadmpeg_ir::features::FeatureDefinition::BrepUnresolved
-pub cadmpeg_ir::features::FeatureDefinition::BridgeCurveUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::Chamfer
 pub cadmpeg_ir::features::FeatureDefinition::Chamfer::flip_direction: bool
 pub cadmpeg_ir::features::FeatureDefinition::Chamfer::groups: alloc::vec::Vec<cadmpeg_ir::features::ChamferGroup>
@@ -1331,8 +1328,6 @@ pub cadmpeg_ir::features::FeatureDefinition::CompositeCurve::closed: bool
 pub cadmpeg_ir::features::FeatureDefinition::CompositeCurve::segments: alloc::vec::Vec<cadmpeg_ir::features::PathRef>
 pub cadmpeg_ir::features::FeatureDefinition::Compound
 pub cadmpeg_ir::features::FeatureDefinition::Compound::members: cadmpeg_ir::features::BodySelection
-pub cadmpeg_ir::features::FeatureDefinition::ConeUnresolved
-pub cadmpeg_ir::features::FeatureDefinition::CopyFaceUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::CosmeticThread
 pub cadmpeg_ir::features::FeatureDefinition::CosmeticThread::diameter: core::option::Option<cadmpeg_ir::features::Length>
 pub cadmpeg_ir::features::FeatureDefinition::CosmeticThread::extent: core::option::Option<cadmpeg_ir::features::CosmeticThreadExtent>
@@ -1341,17 +1336,14 @@ pub cadmpeg_ir::features::FeatureDefinition::CutWithSurface
 pub cadmpeg_ir::features::FeatureDefinition::CutWithSurface::reverse: core::option::Option<bool>
 pub cadmpeg_ir::features::FeatureDefinition::CutWithSurface::targets: cadmpeg_ir::features::BodySelection
 pub cadmpeg_ir::features::FeatureDefinition::CutWithSurface::tools: cadmpeg_ir::features::FaceSelection
-pub cadmpeg_ir::features::FeatureDefinition::CylinderUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::DatumAxis
 pub cadmpeg_ir::features::FeatureDefinition::DatumAxis::direction: cadmpeg_ir::math::Vector3
 pub cadmpeg_ir::features::FeatureDefinition::DatumAxis::origin: cadmpeg_ir::math::Point3
-pub cadmpeg_ir::features::FeatureDefinition::DatumAxisUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::DatumCoordinateSystem
 pub cadmpeg_ir::features::FeatureDefinition::DatumCoordinateSystem::origin: cadmpeg_ir::math::Point3
 pub cadmpeg_ir::features::FeatureDefinition::DatumCoordinateSystem::x_axis: cadmpeg_ir::math::Vector3
 pub cadmpeg_ir::features::FeatureDefinition::DatumCoordinateSystem::y_axis: cadmpeg_ir::math::Vector3
 pub cadmpeg_ir::features::FeatureDefinition::DatumCoordinateSystem::z_axis: cadmpeg_ir::math::Vector3
-pub cadmpeg_ir::features::FeatureDefinition::DatumCoordinateSystemUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::DatumOffsetPlane
 pub cadmpeg_ir::features::FeatureDefinition::DatumOffsetPlane::distance: cadmpeg_ir::features::Length
 pub cadmpeg_ir::features::FeatureDefinition::DatumOffsetPlane::reference: core::option::Option<cadmpeg_ir::features::DatumPlaneReference>
@@ -1359,11 +1351,9 @@ pub cadmpeg_ir::features::FeatureDefinition::DatumPlane
 pub cadmpeg_ir::features::FeatureDefinition::DatumPlane::normal: cadmpeg_ir::math::Vector3
 pub cadmpeg_ir::features::FeatureDefinition::DatumPlane::origin: cadmpeg_ir::math::Point3
 pub cadmpeg_ir::features::FeatureDefinition::DatumPlane::u_axis: cadmpeg_ir::math::Vector3
-pub cadmpeg_ir::features::FeatureDefinition::DatumPlaneUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::DatumPoint
 pub cadmpeg_ir::features::FeatureDefinition::DatumPoint::construction: core::option::Option<alloc::boxed::Box<cadmpeg_ir::features::DatumPointConstruction>>
 pub cadmpeg_ir::features::FeatureDefinition::DatumPoint::position: cadmpeg_ir::math::Point3
-pub cadmpeg_ir::features::FeatureDefinition::DatumPointUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::DatumPrincipalPlane
 pub cadmpeg_ir::features::FeatureDefinition::DatumPrincipalPlane::plane: cadmpeg_ir::features::PrincipalPlane
 pub cadmpeg_ir::features::FeatureDefinition::DatumThreePointPlane
@@ -1382,10 +1372,8 @@ pub cadmpeg_ir::features::FeatureDefinition::DeleteBody::mode: cadmpeg_ir::featu
 pub cadmpeg_ir::features::FeatureDefinition::DeleteFace
 pub cadmpeg_ir::features::FeatureDefinition::DeleteFace::faces: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::features::FeatureDefinition::DeleteFace::heal: bool
-pub cadmpeg_ir::features::FeatureDefinition::DeleteFaceUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::DerivedGeometry
 pub cadmpeg_ir::features::FeatureDefinition::DerivedGeometry::source: cadmpeg_ir::features::FeatureId
-pub cadmpeg_ir::features::FeatureDefinition::DetailedThreadUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::Dome
 pub cadmpeg_ir::features::FeatureDefinition::Dome::elliptical: core::option::Option<bool>
 pub cadmpeg_ir::features::FeatureDefinition::Dome::faces: cadmpeg_ir::features::FaceSelection
@@ -1396,7 +1384,6 @@ pub cadmpeg_ir::features::FeatureDefinition::Draft::anchor: cadmpeg_ir::features
 pub cadmpeg_ir::features::FeatureDefinition::Draft::angle: core::option::Option<cadmpeg_ir::features::Angle>
 pub cadmpeg_ir::features::FeatureDefinition::Draft::faces: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::features::FeatureDefinition::Draft::outward: core::option::Option<bool>
-pub cadmpeg_ir::features::FeatureDefinition::DraftUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::EllipticArc
 pub cadmpeg_ir::features::FeatureDefinition::EllipticArc::center: cadmpeg_ir::math::Point3
 pub cadmpeg_ir::features::FeatureDefinition::EllipticArc::end_angle: cadmpeg_ir::features::Angle
@@ -1418,7 +1405,6 @@ pub cadmpeg_ir::features::FeatureDefinition::ExtendSurface::faces: cadmpeg_ir::f
 pub cadmpeg_ir::features::FeatureDefinition::ExtendSurface::method: cadmpeg_ir::features::SurfaceExtension
 pub cadmpeg_ir::features::FeatureDefinition::ExtractBody
 pub cadmpeg_ir::features::FeatureDefinition::ExtractBody::source: cadmpeg_ir::features::BodySelection
-pub cadmpeg_ir::features::FeatureDefinition::ExtractFaceUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::Extrude
 pub cadmpeg_ir::features::FeatureDefinition::Extrude::allow_multi_profile_faces: core::option::Option<bool>
 pub cadmpeg_ir::features::FeatureDefinition::Extrude::direction: cadmpeg_ir::features::ExtrudeDirection
@@ -1430,7 +1416,6 @@ pub cadmpeg_ir::features::FeatureDefinition::Extrude::op: cadmpeg_ir::features::
 pub cadmpeg_ir::features::FeatureDefinition::Extrude::profile: cadmpeg_ir::features::ProfileRef
 pub cadmpeg_ir::features::FeatureDefinition::Extrude::solid: core::option::Option<bool>
 pub cadmpeg_ir::features::FeatureDefinition::Extrude::start: cadmpeg_ir::features::ExtrudeStart
-pub cadmpeg_ir::features::FeatureDefinition::ExtrudeUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::FaceBlend
 pub cadmpeg_ir::features::FeatureDefinition::FaceBlend::first_faces: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::features::FeatureDefinition::FaceBlend::radius: cadmpeg_ir::features::RadiusSpec
@@ -1438,7 +1423,6 @@ pub cadmpeg_ir::features::FeatureDefinition::FaceBlend::second_faces: cadmpeg_ir
 pub cadmpeg_ir::features::FeatureDefinition::FaceFromShapes
 pub cadmpeg_ir::features::FeatureDefinition::FaceFromShapes::face_maker: cadmpeg_ir::features::FaceMaker
 pub cadmpeg_ir::features::FeatureDefinition::FaceFromShapes::sources: cadmpeg_ir::features::BodySelection
-pub cadmpeg_ir::features::FeatureDefinition::FillHoleUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::FilledSurface
 pub cadmpeg_ir::features::FeatureDefinition::FilledSurface::boundary: cadmpeg_ir::features::SurfaceBoundary
 pub cadmpeg_ir::features::FeatureDefinition::FilledSurface::continuity: cadmpeg_ir::features::FilledSurfaceContinuityState
@@ -1446,13 +1430,11 @@ pub cadmpeg_ir::features::FeatureDefinition::FilledSurface::merge_result: core::
 pub cadmpeg_ir::features::FeatureDefinition::FilledSurface::support_faces: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::features::FeatureDefinition::Fillet
 pub cadmpeg_ir::features::FeatureDefinition::Fillet::groups: alloc::vec::Vec<cadmpeg_ir::features::FilletGroup>
-pub cadmpeg_ir::features::FeatureDefinition::FilletUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::Flex
 pub cadmpeg_ir::features::FeatureDefinition::Flex::axis: core::option::Option<cadmpeg_ir::math::Vector3>
 pub cadmpeg_ir::features::FeatureDefinition::Flex::mode: cadmpeg_ir::features::FlexMode
 pub cadmpeg_ir::features::FeatureDefinition::Form
 pub cadmpeg_ir::features::FeatureDefinition::Form::cages: alloc::vec::Vec<cadmpeg_ir::ids::SubdId>
-pub cadmpeg_ir::features::FeatureDefinition::FreeformSurfaceUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::FullRoundFillet
 pub cadmpeg_ir::features::FeatureDefinition::FullRoundFillet::groups: alloc::vec::Vec<cadmpeg_ir::features::FullRoundFilletGroup>
 pub cadmpeg_ir::features::FeatureDefinition::HelicalSweep
@@ -1503,7 +1485,6 @@ pub cadmpeg_ir::features::FeatureDefinition::KnitSurface::merge_entities: core::
 pub cadmpeg_ir::features::FeatureDefinition::LineSegment
 pub cadmpeg_ir::features::FeatureDefinition::LineSegment::end: cadmpeg_ir::math::Point3
 pub cadmpeg_ir::features::FeatureDefinition::LineSegment::start: cadmpeg_ir::math::Point3
-pub cadmpeg_ir::features::FeatureDefinition::LinkedFaceUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::Loft
 pub cadmpeg_ir::features::FeatureDefinition::Loft::allow_multi_profile_faces: core::option::Option<bool>
 pub cadmpeg_ir::features::FeatureDefinition::Loft::centerline: core::option::Option<cadmpeg_ir::features::PathRef>
@@ -1515,10 +1496,8 @@ pub cadmpeg_ir::features::FeatureDefinition::Loft::op: cadmpeg_ir::features::Boo
 pub cadmpeg_ir::features::FeatureDefinition::Loft::ruled: bool
 pub cadmpeg_ir::features::FeatureDefinition::Loft::sections: alloc::vec::Vec<cadmpeg_ir::features::LoftSection>
 pub cadmpeg_ir::features::FeatureDefinition::Loft::solid: bool
-pub cadmpeg_ir::features::FeatureDefinition::LoftUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::MeshImport
 pub cadmpeg_ir::features::FeatureDefinition::MeshImport::tessellations: alloc::vec::Vec<alloc::string::String>
-pub cadmpeg_ir::features::FeatureDefinition::MirrorFaceUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::MirrorShape
 pub cadmpeg_ir::features::FeatureDefinition::MirrorShape::plane_normal: cadmpeg_ir::math::Vector3
 pub cadmpeg_ir::features::FeatureDefinition::MirrorShape::plane_origin: cadmpeg_ir::math::Point3
@@ -1532,8 +1511,6 @@ pub cadmpeg_ir::features::FeatureDefinition::MoveBody::translation: cadmpeg_ir::
 pub cadmpeg_ir::features::FeatureDefinition::MoveFace
 pub cadmpeg_ir::features::FeatureDefinition::MoveFace::faces: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::features::FeatureDefinition::MoveFace::motion: cadmpeg_ir::features::FaceMotion
-pub cadmpeg_ir::features::FeatureDefinition::MoveFaceUnresolved
-pub cadmpeg_ir::features::FeatureDefinition::MoveObjectUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::Native
 pub cadmpeg_ir::features::FeatureDefinition::Native::kind: cadmpeg_ir::features::NativeFeatureKind
 pub cadmpeg_ir::features::FeatureDefinition::Native::parameters: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
@@ -1602,7 +1579,6 @@ pub cadmpeg_ir::features::FeatureDefinition::ReverseShape::source: cadmpeg_ir::f
 pub cadmpeg_ir::features::FeatureDefinition::Revolve
 pub cadmpeg_ir::features::FeatureDefinition::Revolve::construction: cadmpeg_ir::features::RevolveConstruction
 pub cadmpeg_ir::features::FeatureDefinition::Revolve::op: cadmpeg_ir::features::BooleanOp
-pub cadmpeg_ir::features::FeatureDefinition::RevolveUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::Rib
 pub cadmpeg_ir::features::FeatureDefinition::Rib::construction: cadmpeg_ir::features::RibConstruction
 pub cadmpeg_ir::features::FeatureDefinition::Rib::op: cadmpeg_ir::features::BooleanOp
@@ -1667,7 +1643,6 @@ pub cadmpeg_ir::features::FeatureDefinition::Sphere
 pub cadmpeg_ir::features::FeatureDefinition::Sphere::center: cadmpeg_ir::math::Point3
 pub cadmpeg_ir::features::FeatureDefinition::Sphere::op: cadmpeg_ir::features::BooleanOp
 pub cadmpeg_ir::features::FeatureDefinition::Sphere::radius: cadmpeg_ir::features::Length
-pub cadmpeg_ir::features::FeatureDefinition::SphereUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::SplitBody
 pub cadmpeg_ir::features::FeatureDefinition::SplitBody::targets: cadmpeg_ir::features::BodySelection
 pub cadmpeg_ir::features::FeatureDefinition::SplitBody::tools: cadmpeg_ir::features::FaceSelection
@@ -1675,7 +1650,6 @@ pub cadmpeg_ir::features::FeatureDefinition::SplitFace
 pub cadmpeg_ir::features::FeatureDefinition::SplitFace::targets: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::features::FeatureDefinition::SplitFace::tool: cadmpeg_ir::features::SplitFaceTool
 pub cadmpeg_ir::features::FeatureDefinition::StoredGeometry
-pub cadmpeg_ir::features::FeatureDefinition::SubdivisionBodyUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::Sweep
 pub cadmpeg_ir::features::FeatureDefinition::Sweep::allow_multi_profile_faces: core::option::Option<bool>
 pub cadmpeg_ir::features::FeatureDefinition::Sweep::guide_rail: core::option::Option<cadmpeg_ir::features::SweepGuideRail>
@@ -1696,9 +1670,6 @@ pub cadmpeg_ir::features::FeatureDefinition::Thicken
 pub cadmpeg_ir::features::FeatureDefinition::Thicken::faces: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::features::FeatureDefinition::Thicken::side: core::option::Option<cadmpeg_ir::features::ThickenSide>
 pub cadmpeg_ir::features::FeatureDefinition::Thicken::thickness: core::option::Option<cadmpeg_ir::features::Length>
-pub cadmpeg_ir::features::FeatureDefinition::ThreadUnresolved
-pub cadmpeg_ir::features::FeatureDefinition::ThroughCurveMeshUnresolved
-pub cadmpeg_ir::features::FeatureDefinition::TopologyOptimizationUnresolved
 pub cadmpeg_ir::features::FeatureDefinition::Torus
 pub cadmpeg_ir::features::FeatureDefinition::Torus::axis: cadmpeg_ir::math::Vector3
 pub cadmpeg_ir::features::FeatureDefinition::Torus::center: cadmpeg_ir::math::Point3
@@ -1717,12 +1688,15 @@ pub cadmpeg_ir::features::FeatureDefinition::TrimSurface
 pub cadmpeg_ir::features::FeatureDefinition::TrimSurface::faces: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::features::FeatureDefinition::TrimSurface::keep: cadmpeg_ir::features::TrimRegion
 pub cadmpeg_ir::features::FeatureDefinition::TrimSurface::tool: cadmpeg_ir::features::PathRef
+pub cadmpeg_ir::features::FeatureDefinition::Unresolved
+pub cadmpeg_ir::features::FeatureDefinition::Unresolved::family: cadmpeg_ir::features::UnresolvedFamily
 pub cadmpeg_ir::features::FeatureDefinition::Wrap
 pub cadmpeg_ir::features::FeatureDefinition::Wrap::face: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::features::FeatureDefinition::Wrap::mode: cadmpeg_ir::features::WrapMode
 pub cadmpeg_ir::features::FeatureDefinition::Wrap::profile: cadmpeg_ir::features::ProfileRef
 impl cadmpeg_ir::features::FeatureDefinition
 pub fn cadmpeg_ir::features::FeatureDefinition::body_output_family(&self) -> core::option::Option<&'static str>
+pub fn cadmpeg_ir::features::FeatureDefinition::unresolved_family(&self) -> core::option::Option<cadmpeg_ir::features::UnresolvedFamily>
 pub enum cadmpeg_ir::features::FeatureSourceContent
 pub cadmpeg_ir::features::FeatureSourceContent::Feature(cadmpeg_ir::features::FeatureId)
 pub cadmpeg_ir::features::FeatureSourceContent::Parameter(cadmpeg_ir::features::ParameterId)
@@ -2369,6 +2343,36 @@ pub cadmpeg_ir::features::TrimRegion::Cells(cadmpeg_ir::features::TrimCellSelect
 pub cadmpeg_ir::features::TrimRegion::Inside
 pub cadmpeg_ir::features::TrimRegion::Outside
 pub cadmpeg_ir::features::TrimRegion::Unresolved
+pub enum cadmpeg_ir::features::UnresolvedFamily
+pub cadmpeg_ir::features::UnresolvedFamily::BoundarySurface
+pub cadmpeg_ir::features::UnresolvedFamily::Brep
+pub cadmpeg_ir::features::UnresolvedFamily::BridgeCurve
+pub cadmpeg_ir::features::UnresolvedFamily::Cone
+pub cadmpeg_ir::features::UnresolvedFamily::CopyFace
+pub cadmpeg_ir::features::UnresolvedFamily::Cylinder
+pub cadmpeg_ir::features::UnresolvedFamily::DatumAxis
+pub cadmpeg_ir::features::UnresolvedFamily::DatumCoordinateSystem
+pub cadmpeg_ir::features::UnresolvedFamily::DatumPlane
+pub cadmpeg_ir::features::UnresolvedFamily::DatumPoint
+pub cadmpeg_ir::features::UnresolvedFamily::DeleteFace
+pub cadmpeg_ir::features::UnresolvedFamily::DetailedThread
+pub cadmpeg_ir::features::UnresolvedFamily::Draft
+pub cadmpeg_ir::features::UnresolvedFamily::ExtractFace
+pub cadmpeg_ir::features::UnresolvedFamily::Extrude
+pub cadmpeg_ir::features::UnresolvedFamily::FillHole
+pub cadmpeg_ir::features::UnresolvedFamily::Fillet
+pub cadmpeg_ir::features::UnresolvedFamily::FreeformSurface
+pub cadmpeg_ir::features::UnresolvedFamily::LinkedFace
+pub cadmpeg_ir::features::UnresolvedFamily::Loft
+pub cadmpeg_ir::features::UnresolvedFamily::MirrorFace
+pub cadmpeg_ir::features::UnresolvedFamily::MoveFace
+pub cadmpeg_ir::features::UnresolvedFamily::MoveObject
+pub cadmpeg_ir::features::UnresolvedFamily::Revolve
+pub cadmpeg_ir::features::UnresolvedFamily::Sphere
+pub cadmpeg_ir::features::UnresolvedFamily::SubdivisionBody
+pub cadmpeg_ir::features::UnresolvedFamily::Thread
+pub cadmpeg_ir::features::UnresolvedFamily::ThroughCurveMesh
+pub cadmpeg_ir::features::UnresolvedFamily::TopologyOptimization
 pub enum cadmpeg_ir::features::VertexSelection
 pub cadmpeg_ir::features::VertexSelection::Generated
 pub cadmpeg_ir::features::VertexSelection::Generated::native: alloc::string::String
@@ -7532,9 +7536,6 @@ pub cadmpeg_ir::FeatureDefinition::Block::placement: core::option::Option<cadmpe
 pub cadmpeg_ir::FeatureDefinition::BoundaryFill
 pub cadmpeg_ir::FeatureDefinition::BoundaryFill::cells: alloc::vec::Vec<cadmpeg_ir::features::BodySelection>
 pub cadmpeg_ir::FeatureDefinition::BoundaryFill::tools: cadmpeg_ir::features::BodySelection
-pub cadmpeg_ir::FeatureDefinition::BoundarySurfaceUnresolved
-pub cadmpeg_ir::FeatureDefinition::BrepUnresolved
-pub cadmpeg_ir::FeatureDefinition::BridgeCurveUnresolved
 pub cadmpeg_ir::FeatureDefinition::Chamfer
 pub cadmpeg_ir::FeatureDefinition::Chamfer::flip_direction: bool
 pub cadmpeg_ir::FeatureDefinition::Chamfer::groups: alloc::vec::Vec<cadmpeg_ir::features::ChamferGroup>
@@ -7557,8 +7558,6 @@ pub cadmpeg_ir::FeatureDefinition::CompositeCurve::closed: bool
 pub cadmpeg_ir::FeatureDefinition::CompositeCurve::segments: alloc::vec::Vec<cadmpeg_ir::features::PathRef>
 pub cadmpeg_ir::FeatureDefinition::Compound
 pub cadmpeg_ir::FeatureDefinition::Compound::members: cadmpeg_ir::features::BodySelection
-pub cadmpeg_ir::FeatureDefinition::ConeUnresolved
-pub cadmpeg_ir::FeatureDefinition::CopyFaceUnresolved
 pub cadmpeg_ir::FeatureDefinition::CosmeticThread
 pub cadmpeg_ir::FeatureDefinition::CosmeticThread::diameter: core::option::Option<cadmpeg_ir::features::Length>
 pub cadmpeg_ir::FeatureDefinition::CosmeticThread::extent: core::option::Option<cadmpeg_ir::features::CosmeticThreadExtent>
@@ -7567,17 +7566,14 @@ pub cadmpeg_ir::FeatureDefinition::CutWithSurface
 pub cadmpeg_ir::FeatureDefinition::CutWithSurface::reverse: core::option::Option<bool>
 pub cadmpeg_ir::FeatureDefinition::CutWithSurface::targets: cadmpeg_ir::features::BodySelection
 pub cadmpeg_ir::FeatureDefinition::CutWithSurface::tools: cadmpeg_ir::features::FaceSelection
-pub cadmpeg_ir::FeatureDefinition::CylinderUnresolved
 pub cadmpeg_ir::FeatureDefinition::DatumAxis
 pub cadmpeg_ir::FeatureDefinition::DatumAxis::direction: cadmpeg_ir::math::Vector3
 pub cadmpeg_ir::FeatureDefinition::DatumAxis::origin: cadmpeg_ir::math::Point3
-pub cadmpeg_ir::FeatureDefinition::DatumAxisUnresolved
 pub cadmpeg_ir::FeatureDefinition::DatumCoordinateSystem
 pub cadmpeg_ir::FeatureDefinition::DatumCoordinateSystem::origin: cadmpeg_ir::math::Point3
 pub cadmpeg_ir::FeatureDefinition::DatumCoordinateSystem::x_axis: cadmpeg_ir::math::Vector3
 pub cadmpeg_ir::FeatureDefinition::DatumCoordinateSystem::y_axis: cadmpeg_ir::math::Vector3
 pub cadmpeg_ir::FeatureDefinition::DatumCoordinateSystem::z_axis: cadmpeg_ir::math::Vector3
-pub cadmpeg_ir::FeatureDefinition::DatumCoordinateSystemUnresolved
 pub cadmpeg_ir::FeatureDefinition::DatumOffsetPlane
 pub cadmpeg_ir::FeatureDefinition::DatumOffsetPlane::distance: cadmpeg_ir::features::Length
 pub cadmpeg_ir::FeatureDefinition::DatumOffsetPlane::reference: core::option::Option<cadmpeg_ir::features::DatumPlaneReference>
@@ -7585,11 +7581,9 @@ pub cadmpeg_ir::FeatureDefinition::DatumPlane
 pub cadmpeg_ir::FeatureDefinition::DatumPlane::normal: cadmpeg_ir::math::Vector3
 pub cadmpeg_ir::FeatureDefinition::DatumPlane::origin: cadmpeg_ir::math::Point3
 pub cadmpeg_ir::FeatureDefinition::DatumPlane::u_axis: cadmpeg_ir::math::Vector3
-pub cadmpeg_ir::FeatureDefinition::DatumPlaneUnresolved
 pub cadmpeg_ir::FeatureDefinition::DatumPoint
 pub cadmpeg_ir::FeatureDefinition::DatumPoint::construction: core::option::Option<alloc::boxed::Box<cadmpeg_ir::features::DatumPointConstruction>>
 pub cadmpeg_ir::FeatureDefinition::DatumPoint::position: cadmpeg_ir::math::Point3
-pub cadmpeg_ir::FeatureDefinition::DatumPointUnresolved
 pub cadmpeg_ir::FeatureDefinition::DatumPrincipalPlane
 pub cadmpeg_ir::FeatureDefinition::DatumPrincipalPlane::plane: cadmpeg_ir::features::PrincipalPlane
 pub cadmpeg_ir::FeatureDefinition::DatumThreePointPlane
@@ -7608,10 +7602,8 @@ pub cadmpeg_ir::FeatureDefinition::DeleteBody::mode: cadmpeg_ir::features::BodyR
 pub cadmpeg_ir::FeatureDefinition::DeleteFace
 pub cadmpeg_ir::FeatureDefinition::DeleteFace::faces: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::FeatureDefinition::DeleteFace::heal: bool
-pub cadmpeg_ir::FeatureDefinition::DeleteFaceUnresolved
 pub cadmpeg_ir::FeatureDefinition::DerivedGeometry
 pub cadmpeg_ir::FeatureDefinition::DerivedGeometry::source: cadmpeg_ir::features::FeatureId
-pub cadmpeg_ir::FeatureDefinition::DetailedThreadUnresolved
 pub cadmpeg_ir::FeatureDefinition::Dome
 pub cadmpeg_ir::FeatureDefinition::Dome::elliptical: core::option::Option<bool>
 pub cadmpeg_ir::FeatureDefinition::Dome::faces: cadmpeg_ir::features::FaceSelection
@@ -7622,7 +7614,6 @@ pub cadmpeg_ir::FeatureDefinition::Draft::anchor: cadmpeg_ir::features::DraftAnc
 pub cadmpeg_ir::FeatureDefinition::Draft::angle: core::option::Option<cadmpeg_ir::features::Angle>
 pub cadmpeg_ir::FeatureDefinition::Draft::faces: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::FeatureDefinition::Draft::outward: core::option::Option<bool>
-pub cadmpeg_ir::FeatureDefinition::DraftUnresolved
 pub cadmpeg_ir::FeatureDefinition::EllipticArc
 pub cadmpeg_ir::FeatureDefinition::EllipticArc::center: cadmpeg_ir::math::Point3
 pub cadmpeg_ir::FeatureDefinition::EllipticArc::end_angle: cadmpeg_ir::features::Angle
@@ -7644,7 +7635,6 @@ pub cadmpeg_ir::FeatureDefinition::ExtendSurface::faces: cadmpeg_ir::features::F
 pub cadmpeg_ir::FeatureDefinition::ExtendSurface::method: cadmpeg_ir::features::SurfaceExtension
 pub cadmpeg_ir::FeatureDefinition::ExtractBody
 pub cadmpeg_ir::FeatureDefinition::ExtractBody::source: cadmpeg_ir::features::BodySelection
-pub cadmpeg_ir::FeatureDefinition::ExtractFaceUnresolved
 pub cadmpeg_ir::FeatureDefinition::Extrude
 pub cadmpeg_ir::FeatureDefinition::Extrude::allow_multi_profile_faces: core::option::Option<bool>
 pub cadmpeg_ir::FeatureDefinition::Extrude::direction: cadmpeg_ir::features::ExtrudeDirection
@@ -7656,7 +7646,6 @@ pub cadmpeg_ir::FeatureDefinition::Extrude::op: cadmpeg_ir::features::BooleanOp
 pub cadmpeg_ir::FeatureDefinition::Extrude::profile: cadmpeg_ir::features::ProfileRef
 pub cadmpeg_ir::FeatureDefinition::Extrude::solid: core::option::Option<bool>
 pub cadmpeg_ir::FeatureDefinition::Extrude::start: cadmpeg_ir::features::ExtrudeStart
-pub cadmpeg_ir::FeatureDefinition::ExtrudeUnresolved
 pub cadmpeg_ir::FeatureDefinition::FaceBlend
 pub cadmpeg_ir::FeatureDefinition::FaceBlend::first_faces: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::FeatureDefinition::FaceBlend::radius: cadmpeg_ir::features::RadiusSpec
@@ -7664,7 +7653,6 @@ pub cadmpeg_ir::FeatureDefinition::FaceBlend::second_faces: cadmpeg_ir::features
 pub cadmpeg_ir::FeatureDefinition::FaceFromShapes
 pub cadmpeg_ir::FeatureDefinition::FaceFromShapes::face_maker: cadmpeg_ir::features::FaceMaker
 pub cadmpeg_ir::FeatureDefinition::FaceFromShapes::sources: cadmpeg_ir::features::BodySelection
-pub cadmpeg_ir::FeatureDefinition::FillHoleUnresolved
 pub cadmpeg_ir::FeatureDefinition::FilledSurface
 pub cadmpeg_ir::FeatureDefinition::FilledSurface::boundary: cadmpeg_ir::features::SurfaceBoundary
 pub cadmpeg_ir::FeatureDefinition::FilledSurface::continuity: cadmpeg_ir::features::FilledSurfaceContinuityState
@@ -7672,13 +7660,11 @@ pub cadmpeg_ir::FeatureDefinition::FilledSurface::merge_result: core::option::Op
 pub cadmpeg_ir::FeatureDefinition::FilledSurface::support_faces: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::FeatureDefinition::Fillet
 pub cadmpeg_ir::FeatureDefinition::Fillet::groups: alloc::vec::Vec<cadmpeg_ir::features::FilletGroup>
-pub cadmpeg_ir::FeatureDefinition::FilletUnresolved
 pub cadmpeg_ir::FeatureDefinition::Flex
 pub cadmpeg_ir::FeatureDefinition::Flex::axis: core::option::Option<cadmpeg_ir::math::Vector3>
 pub cadmpeg_ir::FeatureDefinition::Flex::mode: cadmpeg_ir::features::FlexMode
 pub cadmpeg_ir::FeatureDefinition::Form
 pub cadmpeg_ir::FeatureDefinition::Form::cages: alloc::vec::Vec<cadmpeg_ir::ids::SubdId>
-pub cadmpeg_ir::FeatureDefinition::FreeformSurfaceUnresolved
 pub cadmpeg_ir::FeatureDefinition::FullRoundFillet
 pub cadmpeg_ir::FeatureDefinition::FullRoundFillet::groups: alloc::vec::Vec<cadmpeg_ir::features::FullRoundFilletGroup>
 pub cadmpeg_ir::FeatureDefinition::HelicalSweep
@@ -7729,7 +7715,6 @@ pub cadmpeg_ir::FeatureDefinition::KnitSurface::merge_entities: core::option::Op
 pub cadmpeg_ir::FeatureDefinition::LineSegment
 pub cadmpeg_ir::FeatureDefinition::LineSegment::end: cadmpeg_ir::math::Point3
 pub cadmpeg_ir::FeatureDefinition::LineSegment::start: cadmpeg_ir::math::Point3
-pub cadmpeg_ir::FeatureDefinition::LinkedFaceUnresolved
 pub cadmpeg_ir::FeatureDefinition::Loft
 pub cadmpeg_ir::FeatureDefinition::Loft::allow_multi_profile_faces: core::option::Option<bool>
 pub cadmpeg_ir::FeatureDefinition::Loft::centerline: core::option::Option<cadmpeg_ir::features::PathRef>
@@ -7741,10 +7726,8 @@ pub cadmpeg_ir::FeatureDefinition::Loft::op: cadmpeg_ir::features::BooleanOp
 pub cadmpeg_ir::FeatureDefinition::Loft::ruled: bool
 pub cadmpeg_ir::FeatureDefinition::Loft::sections: alloc::vec::Vec<cadmpeg_ir::features::LoftSection>
 pub cadmpeg_ir::FeatureDefinition::Loft::solid: bool
-pub cadmpeg_ir::FeatureDefinition::LoftUnresolved
 pub cadmpeg_ir::FeatureDefinition::MeshImport
 pub cadmpeg_ir::FeatureDefinition::MeshImport::tessellations: alloc::vec::Vec<alloc::string::String>
-pub cadmpeg_ir::FeatureDefinition::MirrorFaceUnresolved
 pub cadmpeg_ir::FeatureDefinition::MirrorShape
 pub cadmpeg_ir::FeatureDefinition::MirrorShape::plane_normal: cadmpeg_ir::math::Vector3
 pub cadmpeg_ir::FeatureDefinition::MirrorShape::plane_origin: cadmpeg_ir::math::Point3
@@ -7758,8 +7741,6 @@ pub cadmpeg_ir::FeatureDefinition::MoveBody::translation: cadmpeg_ir::math::Vect
 pub cadmpeg_ir::FeatureDefinition::MoveFace
 pub cadmpeg_ir::FeatureDefinition::MoveFace::faces: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::FeatureDefinition::MoveFace::motion: cadmpeg_ir::features::FaceMotion
-pub cadmpeg_ir::FeatureDefinition::MoveFaceUnresolved
-pub cadmpeg_ir::FeatureDefinition::MoveObjectUnresolved
 pub cadmpeg_ir::FeatureDefinition::Native
 pub cadmpeg_ir::FeatureDefinition::Native::kind: cadmpeg_ir::features::NativeFeatureKind
 pub cadmpeg_ir::FeatureDefinition::Native::parameters: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
@@ -7828,7 +7809,6 @@ pub cadmpeg_ir::FeatureDefinition::ReverseShape::source: cadmpeg_ir::features::B
 pub cadmpeg_ir::FeatureDefinition::Revolve
 pub cadmpeg_ir::FeatureDefinition::Revolve::construction: cadmpeg_ir::features::RevolveConstruction
 pub cadmpeg_ir::FeatureDefinition::Revolve::op: cadmpeg_ir::features::BooleanOp
-pub cadmpeg_ir::FeatureDefinition::RevolveUnresolved
 pub cadmpeg_ir::FeatureDefinition::Rib
 pub cadmpeg_ir::FeatureDefinition::Rib::construction: cadmpeg_ir::features::RibConstruction
 pub cadmpeg_ir::FeatureDefinition::Rib::op: cadmpeg_ir::features::BooleanOp
@@ -7893,7 +7873,6 @@ pub cadmpeg_ir::FeatureDefinition::Sphere
 pub cadmpeg_ir::FeatureDefinition::Sphere::center: cadmpeg_ir::math::Point3
 pub cadmpeg_ir::FeatureDefinition::Sphere::op: cadmpeg_ir::features::BooleanOp
 pub cadmpeg_ir::FeatureDefinition::Sphere::radius: cadmpeg_ir::features::Length
-pub cadmpeg_ir::FeatureDefinition::SphereUnresolved
 pub cadmpeg_ir::FeatureDefinition::SplitBody
 pub cadmpeg_ir::FeatureDefinition::SplitBody::targets: cadmpeg_ir::features::BodySelection
 pub cadmpeg_ir::FeatureDefinition::SplitBody::tools: cadmpeg_ir::features::FaceSelection
@@ -7901,7 +7880,6 @@ pub cadmpeg_ir::FeatureDefinition::SplitFace
 pub cadmpeg_ir::FeatureDefinition::SplitFace::targets: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::FeatureDefinition::SplitFace::tool: cadmpeg_ir::features::SplitFaceTool
 pub cadmpeg_ir::FeatureDefinition::StoredGeometry
-pub cadmpeg_ir::FeatureDefinition::SubdivisionBodyUnresolved
 pub cadmpeg_ir::FeatureDefinition::Sweep
 pub cadmpeg_ir::FeatureDefinition::Sweep::allow_multi_profile_faces: core::option::Option<bool>
 pub cadmpeg_ir::FeatureDefinition::Sweep::guide_rail: core::option::Option<cadmpeg_ir::features::SweepGuideRail>
@@ -7922,9 +7900,6 @@ pub cadmpeg_ir::FeatureDefinition::Thicken
 pub cadmpeg_ir::FeatureDefinition::Thicken::faces: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::FeatureDefinition::Thicken::side: core::option::Option<cadmpeg_ir::features::ThickenSide>
 pub cadmpeg_ir::FeatureDefinition::Thicken::thickness: core::option::Option<cadmpeg_ir::features::Length>
-pub cadmpeg_ir::FeatureDefinition::ThreadUnresolved
-pub cadmpeg_ir::FeatureDefinition::ThroughCurveMeshUnresolved
-pub cadmpeg_ir::FeatureDefinition::TopologyOptimizationUnresolved
 pub cadmpeg_ir::FeatureDefinition::Torus
 pub cadmpeg_ir::FeatureDefinition::Torus::axis: cadmpeg_ir::math::Vector3
 pub cadmpeg_ir::FeatureDefinition::Torus::center: cadmpeg_ir::math::Point3
@@ -7943,12 +7918,15 @@ pub cadmpeg_ir::FeatureDefinition::TrimSurface
 pub cadmpeg_ir::FeatureDefinition::TrimSurface::faces: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::FeatureDefinition::TrimSurface::keep: cadmpeg_ir::features::TrimRegion
 pub cadmpeg_ir::FeatureDefinition::TrimSurface::tool: cadmpeg_ir::features::PathRef
+pub cadmpeg_ir::FeatureDefinition::Unresolved
+pub cadmpeg_ir::FeatureDefinition::Unresolved::family: cadmpeg_ir::features::UnresolvedFamily
 pub cadmpeg_ir::FeatureDefinition::Wrap
 pub cadmpeg_ir::FeatureDefinition::Wrap::face: cadmpeg_ir::features::FaceSelection
 pub cadmpeg_ir::FeatureDefinition::Wrap::mode: cadmpeg_ir::features::WrapMode
 pub cadmpeg_ir::FeatureDefinition::Wrap::profile: cadmpeg_ir::features::ProfileRef
 impl cadmpeg_ir::features::FeatureDefinition
 pub fn cadmpeg_ir::features::FeatureDefinition::body_output_family(&self) -> core::option::Option<&'static str>
+pub fn cadmpeg_ir::features::FeatureDefinition::unresolved_family(&self) -> core::option::Option<cadmpeg_ir::features::UnresolvedFamily>
 pub enum cadmpeg_ir::FidelityResolution
 pub cadmpeg_ir::FidelityResolution::Degraded
 pub cadmpeg_ir::FidelityResolution::Degraded::reason: alloc::string::String
