@@ -2030,7 +2030,7 @@ pub struct CatiaEntitySchemaValue {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
-    try_from = "CatiaRelationExpressionWire",
+    from = "CatiaRelationExpressionWire",
     into = "CatiaRelationExpressionWire"
 )]
 pub struct CatiaRelationExpression {
@@ -2087,17 +2087,15 @@ impl From<CatiaRelationExpression> for CatiaRelationExpressionWire {
     }
 }
 
-impl TryFrom<CatiaRelationExpressionWire> for CatiaRelationExpression {
-    type Error = String;
-
-    fn try_from(wire: CatiaRelationExpressionWire) -> Result<Self, Self::Error> {
-        Ok(Self {
+impl From<CatiaRelationExpressionWire> for CatiaRelationExpression {
+    fn from(wire: CatiaRelationExpressionWire) -> Self {
+        Self {
             framing: wire.framing,
             expression: wire.expression,
             parameter_role: wire.parameter_role,
             type_signature: wire.type_signature,
             function_role: wire.function_role,
-        })
+        }
     }
 }
 
@@ -2804,10 +2802,7 @@ fn stored_payload_entity_reference(
 /// One stored entity identity and its optional same-graph resolution.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(
-    try_from = "CatiaEntityReferenceWire",
-    into = "CatiaEntityReferenceWire"
-)]
+#[serde(from = "CatiaEntityReferenceWire", into = "CatiaEntityReferenceWire")]
 pub enum CatiaEntityReference {
     /// The stored identity is the graph's terminal null identity.
     Null { entity_id: u32 },
@@ -2929,22 +2924,20 @@ impl From<CatiaEntityReference> for CatiaEntityReferenceWire {
     }
 }
 
-impl TryFrom<CatiaEntityReferenceWire> for CatiaEntityReference {
-    type Error = String;
-
-    fn try_from(wire: CatiaEntityReferenceWire) -> Result<Self, Self::Error> {
+impl From<CatiaEntityReferenceWire> for CatiaEntityReference {
+    fn from(wire: CatiaEntityReferenceWire) -> Self {
         match (wire.is_null, wire.entity) {
-            (true, _) => Ok(Self::Null {
+            (true, _) => Self::Null {
                 entity_id: wire.entity_id,
-            }),
-            (false, None) => Ok(Self::Unresolved {
+            },
+            (false, None) => Self::Unresolved {
                 entity_id: wire.entity_id,
-            }),
-            (false, Some(entity)) => Ok(Self::Resolved {
+            },
+            (false, Some(entity)) => Self::Resolved {
                 entity_id: wire.entity_id,
                 entity,
                 class_name: wire.class_name,
-            }),
+            },
         }
     }
 }
@@ -3486,7 +3479,7 @@ impl TryFrom<CatiaObjectRecordWire> for CatiaObjectRecord {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
-    try_from = "CatiaObjectRecordReferenceWire",
+    from = "CatiaObjectRecordReferenceWire",
     into = "CatiaObjectRecordReferenceWire"
 )]
 pub enum CatiaObjectRecordReference {
@@ -3644,18 +3637,16 @@ impl From<CatiaObjectRecordReference> for CatiaObjectRecordReferenceWire {
     }
 }
 
-impl TryFrom<CatiaObjectRecordReferenceWire> for CatiaObjectRecordReference {
-    type Error = String;
-
-    fn try_from(wire: CatiaObjectRecordReferenceWire) -> Result<Self, Self::Error> {
-        Ok(Self::from_parts(
+impl From<CatiaObjectRecordReferenceWire> for CatiaObjectRecordReference {
+    fn from(wire: CatiaObjectRecordReferenceWire) -> Self {
+        Self::from_parts(
             wire.entity_id,
             wire.payload_offset,
             wire.source,
             wire.is_null,
             wire.target,
             wire.design_object,
-        ))
+        )
     }
 }
 
@@ -3726,7 +3717,7 @@ pub enum CatiaDesignObjectRelationSource {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
-    try_from = "CatiaDesignReferenceCellWire",
+    from = "CatiaDesignReferenceCellWire",
     into = "CatiaDesignReferenceCellWire"
 )]
 pub enum CatiaDesignReferenceCell {
@@ -3929,18 +3920,16 @@ impl From<CatiaDesignReferenceCell> for CatiaDesignReferenceCellWire {
     }
 }
 
-impl TryFrom<CatiaDesignReferenceCellWire> for CatiaDesignReferenceCell {
-    type Error = String;
-
-    fn try_from(wire: CatiaDesignReferenceCellWire) -> Result<Self, Self::Error> {
-        Ok(Self::from_parts(
+impl From<CatiaDesignReferenceCellWire> for CatiaDesignReferenceCell {
+    fn from(wire: CatiaDesignReferenceCellWire) -> Self {
+        Self::from_parts(
             wire.payload_offset,
             wire.entity_id,
             wire.is_null,
             wire.field,
             wire.field_class,
             wire.design_object,
-        ))
+        )
     }
 }
 
