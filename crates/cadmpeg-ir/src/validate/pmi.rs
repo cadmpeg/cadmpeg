@@ -156,10 +156,10 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                 nominal, tolerance, ..
             } => {
                 let deviations = match tolerance {
-                    Some(DimensionTolerance::PlusMinus { lower, upper })
-                    | Some(DimensionTolerance::PlusMinusFit { lower, upper, .. }) => {
-                        Some((lower, upper))
-                    }
+                    Some(
+                        DimensionTolerance::PlusMinus { lower, upper }
+                        | DimensionTolerance::PlusMinusFit { lower, upper, .. },
+                    ) => Some((lower, upper)),
                     Some(DimensionTolerance::Fit(_)) | None => None,
                 };
                 let non_finite = nominal

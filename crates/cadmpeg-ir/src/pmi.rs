@@ -623,10 +623,6 @@ mod tests {
         for value in [
             serde_json::json!({
                 "kind": "dimension",
-                "dimension": "size"
-            }),
-            serde_json::json!({
-                "kind": "dimension",
                 "dimension": "size",
                 "nominal": {"value": 12.0, "quantity": "length"},
                 "lower_deviation": {"value": -0.1, "quantity": "length"}
@@ -635,8 +631,12 @@ mod tests {
                 "kind": "dimension",
                 "dimension": "size",
                 "nominal": {"value": 12.0, "quantity": "length"},
+                "upper_deviation": {"value": 0.2, "quantity": "length"}
+            }),
+            serde_json::json!({
+                "kind": "dimension",
+                "dimension": "size",
                 "lower_deviation": {"value": -0.1, "quantity": "length"},
-                "upper_deviation": {"value": 0.2, "quantity": "length"},
                 "limits_and_fits": {
                     "form_variance": "H",
                     "zone_variance": "",
@@ -647,6 +647,51 @@ mod tests {
         ] {
             assert!(serde_json::from_value::<PmiDefinition>(value).is_err());
         }
+    }
+
+    #[test]
+    fn dimension_wire_carries_an_absent_nominal_and_a_combined_tolerance() {
+        let value = serde_json::json!({
+            "kind": "dimension",
+            "dimension": "diameter",
+            "lower_deviation": {"value": -0.1, "quantity": "length"},
+            "upper_deviation": {"value": 0.2, "quantity": "length"}
+        });
+        let definition =
+            serde_json::from_value::<PmiDefinition>(value.clone()).expect("absent nominal");
+        assert!(matches!(
+            definition,
+            PmiDefinition::Dimension {
+                dimension: DimensionKind::Diameter,
+                nominal: None,
+                tolerance: Some(DimensionTolerance::PlusMinus { .. }),
+            }
+        ));
+        assert_eq!(serde_json::to_value(&definition).expect("wire"), value);
+
+        let value = serde_json::json!({
+            "kind": "dimension",
+            "dimension": "size",
+            "nominal": {"value": 12.0, "quantity": "length"},
+            "lower_deviation": {"value": -0.1, "quantity": "length"},
+            "upper_deviation": {"value": 0.2, "quantity": "length"},
+            "limits_and_fits": {
+                "form_variance": "H",
+                "zone_variance": "",
+                "grade": "7",
+                "source": "ISO 286"
+            }
+        });
+        let definition =
+            serde_json::from_value::<PmiDefinition>(value.clone()).expect("combined tolerance");
+        assert!(matches!(
+            definition,
+            PmiDefinition::Dimension {
+                tolerance: Some(DimensionTolerance::PlusMinusFit { .. }),
+                ..
+            }
+        ));
+        assert_eq!(serde_json::to_value(&definition).expect("wire"), value);
     }
 
     #[test]
