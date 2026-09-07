@@ -2246,11 +2246,11 @@ pub struct DesignEdgeIdentityOperand {
     /// Byte offset of `local_id`.
     pub local_id_offset: u64,
     /// Asset UUID qualifying the local selection identity.
-    pub asset_id: String,
+    pub asset_id: DesignGuidText,
     /// Byte offset of the asset UUID's UTF-16LE code units.
     pub asset_id_offset: u64,
     /// UUID of the local selection-identity context.
-    pub context_id: String,
+    pub context_id: DesignGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
     pub context_id_offset: u64,
     /// Stable ASM history family, entity slot, and states carrying `local_id`.

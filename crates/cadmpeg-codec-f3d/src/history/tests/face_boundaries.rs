@@ -105,9 +105,15 @@ fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
         compact_layout: false,
         local_id: 13,
         local_id_offset: 123,
-        asset_id: "asset".into(),
+        asset_id: crate::records::DesignGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
         asset_id_offset: 0,
-        context_id: "context".into(),
+        context_id: crate::records::DesignGuidText::try_from(
+            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+        )
+        .unwrap(),
         context_id_offset: 0,
         historical: None,
         treatment_radius_candidates: Vec::new(),

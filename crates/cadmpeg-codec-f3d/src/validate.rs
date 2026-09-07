@@ -6025,8 +6025,6 @@ fn validate_edge_identity_operands<'a>(
         }) && local_id_offset_is_valid
             && operand.asset_id_offset == operand.local_id_offset.saturating_add(18)
             && operand.context_id_offset == operand.asset_id_offset.saturating_add(76)
-            && valid_design_guid(&operand.asset_id)
-            && valid_design_guid(&operand.context_id)
             && expected_edge_identity_operands.get(operand.id.as_str()) == Some(&operand)
             && edge_identity_slots.insert((
                 native_stream,

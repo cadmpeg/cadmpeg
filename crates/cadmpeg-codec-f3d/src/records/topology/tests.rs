@@ -675,6 +675,16 @@ fn historical_binding_wire_rejects_partial_identity_and_orphan_states() {
     member["scope_record_index"] = serde_json::json!(4);
     member["compact_layout"] = serde_json::json!(false);
     check::<crate::records::topology::DesignEdgeIdentityOperand>(&member);
+    for field in ["asset_id", "context_id"] {
+        let mut invalid = member.clone();
+        invalid[field] = serde_json::json!("asset");
+        assert!(
+            serde_json::from_value::<crate::records::topology::DesignEdgeIdentityOperand>(invalid)
+                .expect_err("non-GUID edge identity")
+                .to_string()
+                .contains("GUID")
+        );
+    }
 }
 
 #[test]

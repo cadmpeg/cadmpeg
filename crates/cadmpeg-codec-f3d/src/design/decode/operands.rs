@@ -625,6 +625,12 @@ pub fn decode_edge_identity_operands(
             let Ok(group_member_ordinal) = u32::try_from(ordinal) else {
                 continue;
             };
+            let (Ok(asset_id), Ok(context_id)) = (
+                crate::records::DesignGuidText::try_from(parsed.asset_id),
+                crate::records::DesignGuidText::try_from(parsed.context_id),
+            ) else {
+                continue;
+            };
             out.push(DesignEdgeIdentityOperand {
                 id: ids::native_design_edge_identity_operand_id(&entry.name, header.byte_offset),
                 scope_record_index: scope.record_index,
@@ -636,9 +642,9 @@ pub fn decode_edge_identity_operands(
                 compact_layout: parsed.compact_layout,
                 local_id: parsed.local_id,
                 local_id_offset: parsed.local_id_offset,
-                asset_id: parsed.asset_id,
+                asset_id,
                 asset_id_offset: parsed.asset_id_offset,
-                context_id: parsed.context_id,
+                context_id,
                 context_id_offset: parsed.context_id_offset,
                 historical: None,
                 treatment_radius_candidates: Vec::new(),

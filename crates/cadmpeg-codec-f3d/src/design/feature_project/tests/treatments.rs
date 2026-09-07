@@ -1400,9 +1400,15 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             compact_layout: false,
             local_id: u64::from(record_index),
             local_id_offset: 0,
-            asset_id: "asset".into(),
+            asset_id: crate::records::DesignGuidText::try_from(
+                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+            )
+            .unwrap(),
             asset_id_offset: 0,
-            context_id: "context".into(),
+            context_id: crate::records::DesignGuidText::try_from(
+                "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+            )
+            .unwrap(),
             context_id_offset: 0,
             historical: None,
             treatment_radius_candidates: Vec::new(),
