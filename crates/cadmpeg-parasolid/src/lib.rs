@@ -30,12 +30,6 @@ impl<'a> SchemaToken<'a> {
         self.value
     }
 
-    /// Byte offset of the `S` in the supplied prologue.
-    #[must_use]
-    pub const fn offset(self) -> usize {
-        self.offset
-    }
-
     /// Exclusive byte end of the token in the supplied prologue.
     #[must_use]
     pub const fn end(self) -> usize {
@@ -242,7 +236,7 @@ mod tests {
         let token =
             find_schema_token(b"prologue\0SCH_3501171_35102_13006\0body").expect("complete token");
         assert_eq!(token.value(), "SCH_3501171_35102_13006");
-        assert_eq!(token.offset(), 9);
+        assert_eq!(token.offset, 9);
         assert_eq!(token.end(), 32);
 
         assert!(find_schema_token(b"SCH_").is_none());
