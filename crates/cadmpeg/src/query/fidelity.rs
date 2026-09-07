@@ -163,12 +163,12 @@ pub fn run(file: &Path, mode: FidelityMode<'_>) -> Result<()> {
 /// Reassembles one stream's retained bytes and writes them byte-exactly.
 fn extract(payload: &cadmpeg_ir::SourceFidelity, stream: &str, sink: Sink<'_>) -> Result<()> {
     const SHOWN: usize = 20;
-    let mut matched: Vec<&cadmpeg_ir::RetainedSourceRecord> = payload
+    let selected: Vec<&cadmpeg_ir::RetainedSourceRecord> = payload
         .retained_records
         .iter()
         .filter(|record| record.stream() == stream)
         .collect();
-    if matched.is_empty() {
+    if selected.is_empty() {
         if payload.retained_records.is_empty() {
             bail!("this sidecar retains no source records");
         }
@@ -186,11 +186,14 @@ fn extract(payload: &cadmpeg_ir::SourceFidelity, stream: &str, sink: Sink<'_>) -
             if streams.len() > SHOWN { ", …" } else { "" }
         );
     }
-    let missing: Vec<&str> = matched
-        .iter()
-        .filter(|record| record.data().is_none())
-        .map(|record| record.id())
-        .collect();
+    let mut matched = Vec::with_capacity(selected.len());
+    let mut missing = Vec::new();
+    for record in selected {
+        match record.data() {
+            Some(data) => matched.push((record, data)),
+            None => missing.push(record.id()),
+        }
+    }
     if !missing.is_empty() {
         bail!(
             "stream {stream:?} is retained without bytes (extent and digest \
@@ -198,16 +201,15 @@ fn extract(payload: &cadmpeg_ir::SourceFidelity, stream: &str, sink: Sink<'_>) -
             missing.join(", ")
         );
     }
-    matched.sort_by_key(|record| record.offset());
+    matched.sort_by_key(|(record, _)| record.offset());
     let mut assembled: Vec<u8> = Vec::new();
     let mut expected_offset: Option<u64> = None;
-    for record in &matched {
-        let data = record.data().expect("missing data handled above");
+    for (record, data) in &matched {
         if let Some(expected) = expected_offset {
             if record.offset() != expected {
                 let extents: Vec<String> = matched
                     .iter()
-                    .map(|record| {
+                    .map(|(record, _)| {
                         format!(
                             "{}+{} ({})",
                             record.offset(),
