@@ -124,8 +124,8 @@ fn sketch_profile_region_selection_preserves_region_and_curve_order() {
         parse_sketch_profile_region_selection(&bytes, 100, 0).expect("profile-region selection");
     assert_eq!(selection.record_index, 103);
     assert_eq!(selection.byte_offset, selection_at as u64);
-    assert_eq!(selection.class_tag, "327");
-    assert_eq!(selection.companion_class_tag, "261");
+    assert_eq!(selection.class_tag.as_str(), "327");
+    assert_eq!(selection.companion_class_tag.as_str(), "261");
     assert_eq!(
         selection
             .regions

@@ -131,13 +131,13 @@ pub struct DesignSketchProfileRegionSelection {
     /// Byte offset of the region-selection indexed header.
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII region-selection class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Byte offset of the selected-region count.
     pub region_count_offset: u64,
     /// Selected regions in source order.
     pub regions: Vec<DesignSketchProfileRegion>,
     /// Source per-file dynamic three-digit ASCII companion class tag.
-    pub companion_class_tag: String,
+    pub companion_class_tag: DesignClassTag,
     /// Byte offset of the same-index companion header.
     pub companion_byte_offset: u64,
 }

@@ -628,7 +628,7 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
         region_selection: Some(DesignSketchProfileRegionSelection {
             record_index: 13,
             byte_offset: 0,
-            class_tag: "303".into(),
+            class_tag: crate::records::DesignClassTag::try_from("303".to_owned()).unwrap(),
             region_count_offset: 0,
             regions: vec![
                 DesignSketchProfileRegion {
@@ -644,7 +644,8 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
                     ],
                 },
             ],
-            companion_class_tag: "304".into(),
+            companion_class_tag: crate::records::DesignClassTag::try_from("304".to_owned())
+                .unwrap(),
             companion_byte_offset: 0,
         }),
         paired_class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
@@ -1043,7 +1044,7 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
         region_selection: Some(DesignSketchProfileRegionSelection {
             record_index: 11,
             byte_offset: 0,
-            class_tag: "301".into(),
+            class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
             region_count_offset: 0,
             regions: vec![
                 DesignSketchProfileRegion {
@@ -1055,7 +1056,8 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
                     members: vec![profile_region_member(100)],
                 },
             ],
-            companion_class_tag: "302".into(),
+            companion_class_tag: crate::records::DesignClassTag::try_from("302".to_owned())
+                .unwrap(),
             companion_byte_offset: 0,
         }),
         paired_class_tag: crate::records::DesignClassTag::try_from("303".to_owned()).unwrap(),

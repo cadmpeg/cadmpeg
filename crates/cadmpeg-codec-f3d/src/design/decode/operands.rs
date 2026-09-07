@@ -4282,13 +4282,13 @@ fn parse_sketch_profile_region_selection(
     Some(DesignSketchProfileRegionSelection {
         record_index: selection_record_index,
         byte_offset: u64::try_from(selection_at).ok()?,
-        class_tag,
+        class_tag: class_tag.try_into().ok()?,
         region_count_offset: u64::try_from(
             selection_at.checked_add(region_selection::REGION_COUNT)?,
         )
         .ok()?,
         regions,
-        companion_class_tag,
+        companion_class_tag: companion_class_tag.try_into().ok()?,
         companion_byte_offset: u64::try_from(companion_at).ok()?,
     })
 }

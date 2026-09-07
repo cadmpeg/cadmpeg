@@ -244,18 +244,8 @@ fn valid_sketch_profile_region_selection(
     };
     if profile.record_index.checked_add(3) != Some(selection.record_index)
         || selection.byte_offset <= profile.paired_byte_offset
-        || selection.class_tag.len() != 3
-        || !selection
-            .class_tag
-            .bytes()
-            .all(|byte| byte.is_ascii_digit())
         || selection.region_count_offset != expected_region_count_offset
         || selection.regions.is_empty()
-        || selection.companion_class_tag.len() != 3
-        || !selection
-            .companion_class_tag
-            .bytes()
-            .all(|byte| byte.is_ascii_digit())
     {
         return false;
     }
