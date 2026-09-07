@@ -626,8 +626,12 @@ fn emit_loft_surface(
     embedded: EmbeddedLoft,
     format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
-    let sections = embedded.sections.into_iter().enumerate().map(
-                                |(section_index, entries)| {
+    let mut section_index = 0;
+    let sections = embedded.sections.map(
+                                |entries| {
+                                    let current_section = section_index;
+                                    section_index += 1;
+                                    let section_index = current_section;
                                     let entries = entries.into_iter().enumerate().map(
                                         |(entry_index, entry)| {
                                             let profile = entry.profile.into_iter().enumerate().map(
@@ -695,7 +699,7 @@ fn emit_loft_surface(
                                     ).collect();
                                     cadmpeg_ir::geometry::LoftSection { entries }
                                 },
-                            ).collect::<Vec<_>>().try_into().expect("two loft sections");
+                            );
     ProceduralSurfaceDefinition::Loft {
         sections,
         revision_form: embedded.revision_form,
@@ -766,16 +770,12 @@ fn emit_compound_loft_surface(
             tail: scale.tail,
         }
     };
-    let scales = embedded
-        .scales
-        .into_iter()
-        .enumerate()
-        .map(|(index, scale)| {
-            scale.map(|scale| map_scale(&mut *out, &format!("scale{index}"), scale))
-        })
-        .collect::<Vec<_>>()
-        .try_into()
-        .expect("four compound-loft scales");
+    let mut scale_index = 0;
+    let scales = (*embedded.scales).map(|scale| {
+        let name = format!("scale{scale_index}");
+        scale_index += 1;
+        scale.map(|scale| map_scale(&mut *out, &name, scale))
+    });
     let fifth_scale = embedded
         .fifth_scale
         .map(|scale| Box::new(map_scale(&mut *out, "fifth", *scale)));
@@ -926,16 +926,12 @@ fn emit_scaled_compound_loft_surface(
             tail: scale.tail,
         }
     };
-    let scales = embedded
-        .scales
-        .into_iter()
-        .enumerate()
-        .map(|(index, scale)| {
-            scale.map(|scale| map_scale(&mut *out, &format!("scale{index}"), scale))
-        })
-        .collect::<Vec<_>>()
-        .try_into()
-        .expect("three scaled compound-loft scales");
+    let mut scale_index = 0;
+    let scales = (*embedded.scales).map(|scale| {
+        let name = format!("scale{scale_index}");
+        scale_index += 1;
+        scale.map(|scale| map_scale(&mut *out, &name, scale))
+    });
     let map_direction = |out: &mut AsmBrep, name: &str, direction| match direction {
         EmbeddedCompoundLoftDirection::Vector(value) => {
             cadmpeg_ir::geometry::CompoundLoftDirection::Vector { value }
