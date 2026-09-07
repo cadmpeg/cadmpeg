@@ -8213,7 +8213,7 @@ pub(crate) fn bind_edge_identity_bounded_face_rules(
                     && face.group_record_index() == Some(operand.group_record_index)
                     && face.group_member_ordinal() == Some(operand.group_member_ordinal)
                     && face.record_index == operand.record_index
-                    && face.class_tag.as_str() == operand.class_tag.as_str()
+                    && face.class_tag == operand.class_tag
                     && face.recipe_kind == ConstructionRecipeKind::BoundedFace
                     && u64::from(face.recipe_record_index) == operand.local_id
             })

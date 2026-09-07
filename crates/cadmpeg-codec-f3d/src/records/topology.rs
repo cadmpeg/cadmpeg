@@ -3140,11 +3140,11 @@ pub struct DesignFaceOperand {
     /// Byte offset of the primary indexed-record header.
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII primary class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Byte offset of the same-index paired header.
     pub paired_byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII paired class tag.
-    pub paired_class_tag: String,
+    pub paired_class_tag: DesignClassTag,
     /// Indexed record containing the face regeneration recipe.
     pub recipe_record_index: u32,
     /// Byte offset of the recipe record's indexed header.
@@ -3310,9 +3310,9 @@ impl TryFrom<DesignFaceOperandWire> for DesignFaceOperand {
             group,
             record_index: wire.record_index,
             byte_offset: wire.byte_offset,
-            class_tag: wire.class_tag,
+            class_tag: wire.class_tag.try_into()?,
             paired_byte_offset: wire.paired_byte_offset,
-            paired_class_tag: wire.paired_class_tag,
+            paired_class_tag: wire.paired_class_tag.try_into()?,
             recipe_record_index: wire.recipe_record_index,
             recipe_record_byte_offset: wire.recipe_record_byte_offset,
             recipe_id: wire.recipe_id,
@@ -3352,9 +3352,9 @@ impl From<DesignFaceOperand> for DesignFaceOperandWire {
             group_member_ordinal: operand.group.map(|group| group.group_member_ordinal),
             record_index: operand.record_index,
             byte_offset: operand.byte_offset,
-            class_tag: operand.class_tag,
+            class_tag: operand.class_tag.into(),
             paired_byte_offset: operand.paired_byte_offset,
-            paired_class_tag: operand.paired_class_tag,
+            paired_class_tag: operand.paired_class_tag.into(),
             recipe_record_index: operand.recipe_record_index,
             recipe_record_byte_offset: operand.recipe_record_byte_offset,
             recipe_id: operand.recipe_id,

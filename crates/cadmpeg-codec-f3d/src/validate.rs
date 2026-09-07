@@ -7121,196 +7121,171 @@ fn validate_face_operands<'a>(
                 None => false,
             };
         let expected_history = expected_face_operands.get(operand.id.as_str());
-        let valid = operand.class_tag.len() == 3
-            && operand.class_tag.bytes().all(|byte| byte.is_ascii_digit())
-            && operand.paired_class_tag.len() == 3
-            && operand
-                .paired_class_tag
-                .bytes()
-                .all(|byte| byte.is_ascii_digit())
-            && scope.is_some_and(|scope| {
-                let family = design::design_feature_family(&scope.kind());
-                match (operand.group_record_index(), operand.group_member_ordinal()) {
-                    (Some(group_record_index), Some(group_member_ordinal)) => {
-                        let group = face_groups_by_index
-                            .get(&(native_stream, group_record_index))
-                            .copied();
-                        let exact_group_member = group.is_some_and(|group| {
-                            group.scope_record_index == operand.scope_record_index
-                                && usize::try_from(operand.scope_reference_ordinal)
-                                    .ok()
-                                    .and_then(|ordinal| {
-                                        scope.reference_members.values().nth(ordinal)
-                                    })
-                                    == Some(&group_record_index)
-                                && usize::try_from(group_member_ordinal)
-                                    .ok()
-                                    .and_then(|ordinal| {
-                                        group.members.get(ordinal).map(|member| &member.value)
-                                    })
-                                    == Some(&operand.record_index)
-                        });
-                        exact_group_member
-                            && match family {
-                                Some(
-                                    design::DesignFeatureFamily::Extrude
-                                    | design::DesignFeatureFamily::OffsetFaces
-                                    | design::DesignFeatureFamily::Shell
-                                    | design::DesignFeatureFamily::Thicken
-                                    | design::DesignFeatureFamily::Split,
-                                ) => true,
-                                Some(design::DesignFeatureFamily::ReplaceFace) => {
-                                    group.is_some_and(|group| group.role == 0x0000_0010_0000_0000)
-                                        && operand.recipe_kind
-                                            == records::ConstructionRecipeKind::BoundedFace
-                                }
-                                Some(design::DesignFeatureFamily::Loft) => {
-                                    group.is_some_and(|group| {
-                                        matches!(
-                                            group.role,
-                                            0x0000_0041_0000_0000 | 0x0000_0043_0000_0000
-                                        )
-                                    }) && operand.recipe_kind
+        let valid = scope.is_some_and(|scope| {
+            let family = design::design_feature_family(&scope.kind());
+            match (operand.group_record_index(), operand.group_member_ordinal()) {
+                (Some(group_record_index), Some(group_member_ordinal)) => {
+                    let group = face_groups_by_index
+                        .get(&(native_stream, group_record_index))
+                        .copied();
+                    let exact_group_member = group.is_some_and(|group| {
+                        group.scope_record_index == operand.scope_record_index
+                            && usize::try_from(operand.scope_reference_ordinal)
+                                .ok()
+                                .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
+                                == Some(&group_record_index)
+                            && usize::try_from(group_member_ordinal)
+                                .ok()
+                                .and_then(|ordinal| {
+                                    group.members.get(ordinal).map(|member| &member.value)
+                                })
+                                == Some(&operand.record_index)
+                    });
+                    exact_group_member
+                        && match family {
+                            Some(
+                                design::DesignFeatureFamily::Extrude
+                                | design::DesignFeatureFamily::OffsetFaces
+                                | design::DesignFeatureFamily::Shell
+                                | design::DesignFeatureFamily::Thicken
+                                | design::DesignFeatureFamily::Split,
+                            ) => true,
+                            Some(design::DesignFeatureFamily::ReplaceFace) => {
+                                group.is_some_and(|group| group.role == 0x0000_0010_0000_0000)
+                                    && operand.recipe_kind
                                         == records::ConstructionRecipeKind::BoundedFace
-                                }
-                                Some(design::DesignFeatureFamily::Sweep) => {
-                                    group.is_some_and(|group| group.role == 0x0000_0011_0000_0000)
-                                        && operand.recipe_kind
+                            }
+                            Some(design::DesignFeatureFamily::Loft) => {
+                                group.is_some_and(|group| {
+                                    matches!(
+                                        group.role,
+                                        0x0000_0041_0000_0000 | 0x0000_0043_0000_0000
+                                    )
+                                }) && operand.recipe_kind
+                                    == records::ConstructionRecipeKind::BoundedFace
+                            }
+                            Some(design::DesignFeatureFamily::Sweep) => {
+                                group.is_some_and(|group| group.role == 0x0000_0011_0000_0000)
+                                    && operand.recipe_kind
+                                        == records::ConstructionRecipeKind::BoundedFace
+                            }
+                            Some(design::DesignFeatureFamily::SurfaceOffset) => {
+                                group.is_some_and(|group| group.role == 0x0000_0041_0000_0000)
+                                    && operand.recipe_kind
+                                        == records::ConstructionRecipeKind::BoundedFace
+                            }
+                            Some(design::DesignFeatureFamily::Draft) => {
+                                group.is_some_and(|group| match group.role {
+                                    0x0000_0010_0000_0000 => {
+                                        operand.recipe_kind
                                             == records::ConstructionRecipeKind::BoundedFace
-                                }
-                                Some(design::DesignFeatureFamily::SurfaceOffset) => {
-                                    group.is_some_and(|group| group.role == 0x0000_0041_0000_0000)
-                                        && operand.recipe_kind
-                                            == records::ConstructionRecipeKind::BoundedFace
-                                }
-                                Some(design::DesignFeatureFamily::Draft) => {
-                                    group.is_some_and(|group| match group.role {
-                                        0x0000_0010_0000_0000 => {
-                                            operand.recipe_kind
-                                                == records::ConstructionRecipeKind::BoundedFace
-                                        }
-                                        0x0000_0021_0000_0000 => {
-                                            operand.recipe_kind
-                                                == records::ConstructionRecipeKind::Face
-                                        }
-                                        _ => false,
+                                    }
+                                    0x0000_0021_0000_0000 => {
+                                        operand.recipe_kind == records::ConstructionRecipeKind::Face
+                                    }
+                                    _ => false,
+                                })
+                            }
+                            Some(design::DesignFeatureFamily::Revolve) => {
+                                group.is_some_and(|group| group.role == 0x0000_0021_0000_0000)
+                                    && operand.recipe_kind == records::ConstructionRecipeKind::Face
+                            }
+                            Some(design::DesignFeatureFamily::CircularPattern) => {
+                                group.is_some_and(|group| group.role == 0x0000_0008_0000_0000)
+                                    && operand.recipe_kind == records::ConstructionRecipeKind::Face
+                            }
+                            Some(design::DesignFeatureFamily::Mirror) => {
+                                group.is_some_and(|group| group.role == 0x0000_0008_0000_0000)
+                                    && operand.recipe_kind == records::ConstructionRecipeKind::Face
+                            }
+                            Some(design::DesignFeatureFamily::Thread) => {
+                                group.is_some_and(|group| {
+                                    group.role == 0x0000_0010_0000_0000
+                                        && scope.thread_construction().is_some_and(|construction| {
+                                            construction
+                                                .face_group_record_indices
+                                                .contains(&group.record_index)
+                                        })
+                                }) && operand.recipe_kind
+                                    == records::ConstructionRecipeKind::BoundedFace
+                            }
+                            Some(
+                                design::DesignFeatureFamily::Fillet
+                                | design::DesignFeatureFamily::Chamfer,
+                            ) => {
+                                operand.recipe_kind == records::ConstructionRecipeKind::BoundedFace
+                                    && native.design_edge_identity_operands.iter().any(|identity| {
+                                        design_stream(&identity.id) == native_stream
+                                            && identity.scope_record_index
+                                                == operand.scope_record_index
+                                            && identity.group_record_index == group_record_index
+                                            && identity.group_member_ordinal == group_member_ordinal
+                                            && identity.record_index == operand.record_index
+                                            && identity.class_tag == operand.class_tag
                                     })
-                                }
-                                Some(design::DesignFeatureFamily::Revolve) => {
-                                    group.is_some_and(|group| group.role == 0x0000_0021_0000_0000)
-                                        && operand.recipe_kind
-                                            == records::ConstructionRecipeKind::Face
-                                }
-                                Some(design::DesignFeatureFamily::CircularPattern) => {
-                                    group.is_some_and(|group| group.role == 0x0000_0008_0000_0000)
-                                        && operand.recipe_kind
-                                            == records::ConstructionRecipeKind::Face
-                                }
-                                Some(design::DesignFeatureFamily::Mirror) => {
-                                    group.is_some_and(|group| group.role == 0x0000_0008_0000_0000)
-                                        && operand.recipe_kind
-                                            == records::ConstructionRecipeKind::Face
-                                }
-                                Some(design::DesignFeatureFamily::Thread) => {
-                                    group.is_some_and(|group| {
-                                        group.role == 0x0000_0010_0000_0000
-                                            && scope.thread_construction().is_some_and(
-                                                |construction| {
-                                                    construction
-                                                        .face_group_record_indices
-                                                        .contains(&group.record_index)
-                                                },
-                                            )
-                                    }) && operand.recipe_kind
+                            }
+                            None if scope.kind()
+                                == crate::records::feature::DesignFeatureKind::SplitFace =>
+                            {
+                                group.is_some_and(|group| group.role == 0x0000_0010_0000_0000)
+                                    && operand.recipe_kind
                                         == records::ConstructionRecipeKind::BoundedFace
-                                }
-                                Some(
-                                    design::DesignFeatureFamily::Fillet
-                                    | design::DesignFeatureFamily::Chamfer,
-                                ) => {
-                                    operand.recipe_kind
-                                        == records::ConstructionRecipeKind::BoundedFace
-                                        && native.design_edge_identity_operands.iter().any(
-                                            |identity| {
-                                                design_stream(&identity.id) == native_stream
-                                                    && identity.scope_record_index
-                                                        == operand.scope_record_index
-                                                    && identity.group_record_index
-                                                        == group_record_index
-                                                    && identity.group_member_ordinal
-                                                        == group_member_ordinal
-                                                    && identity.record_index == operand.record_index
-                                                    && identity.class_tag.as_str()
-                                                        == operand.class_tag.as_str()
-                                            },
-                                        )
-                                }
-                                None if scope.kind()
-                                    == crate::records::feature::DesignFeatureKind::SplitFace =>
-                                {
-                                    group.is_some_and(|group| group.role == 0x0000_0010_0000_0000)
-                                        && operand.recipe_kind
-                                            == records::ConstructionRecipeKind::BoundedFace
-                                }
-                                None if matches!(
+                            }
+                            None if matches!(
                                 scope.kind(),
                                 crate::records::feature::DesignFeatureKind::DeleteFace
                                     | crate::records::feature::DesignFeatureKind::SurfaceDeleteFace
                             ) =>
-                                {
-                                    group.is_some_and(|group| group.role == 0x0000_0010_0000_0000)
-                                        && operand.recipe_kind
-                                            == records::ConstructionRecipeKind::BoundedFace
-                                }
-                                _ => false,
-                            }
-                    }
-                    (None, None) => {
-                        let direct_member = usize::try_from(operand.scope_reference_ordinal)
-                            .ok()
-                            .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
-                            == Some(&operand.record_index);
-                        direct_member
-                            && match family {
-                                Some(
-                                    design::DesignFeatureFamily::OffsetFaces
-                                    | design::DesignFeatureFamily::Shell
-                                    | design::DesignFeatureFamily::Thicken,
-                                ) => true,
-                                Some(design::DesignFeatureFamily::Split) => {
-                                    operand.scope_reference_ordinal == 1
-                                }
-                                Some(design::DesignFeatureFamily::Hole) => {
-                                    operand.recipe_kind
+                            {
+                                group.is_some_and(|group| group.role == 0x0000_0010_0000_0000)
+                                    && operand.recipe_kind
                                         == records::ConstructionRecipeKind::BoundedFace
-                                }
-                                Some(design::DesignFeatureFamily::Assemble)
-                                    if scope.kind()
-                                        == crate::records::feature::DesignFeatureKind::AsBuilt
-                                        && design::assembly::legacy_as_built_421_generation(
-                                            scope.frame_length,
-                                            scope.class_tag.as_str(),
-                                            scope.paired_class_tag.as_str(),
-                                        )
-                                        .is_some() =>
-                                {
-                                    matches!(
-                                        (operand.scope_reference_ordinal, operand.recipe_kind),
-                                        (1, records::ConstructionRecipeKind::BoundedFace)
-                                            | (3, records::ConstructionRecipeKind::Face)
-                                    )
-                                }
-                                _ => false,
                             }
-                    }
-                    _ => false,
+                            _ => false,
+                        }
                 }
-            })
-            && header.is_some_and(|header| {
-                header.byte_offset == operand.byte_offset
-                    && header.class_tag.as_str() == operand.class_tag
-            })
-            && operand.paired_byte_offset > operand.byte_offset
+                (None, None) => {
+                    let direct_member = usize::try_from(operand.scope_reference_ordinal)
+                        .ok()
+                        .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
+                        == Some(&operand.record_index);
+                    direct_member
+                        && match family {
+                            Some(
+                                design::DesignFeatureFamily::OffsetFaces
+                                | design::DesignFeatureFamily::Shell
+                                | design::DesignFeatureFamily::Thicken,
+                            ) => true,
+                            Some(design::DesignFeatureFamily::Split) => {
+                                operand.scope_reference_ordinal == 1
+                            }
+                            Some(design::DesignFeatureFamily::Hole) => {
+                                operand.recipe_kind == records::ConstructionRecipeKind::BoundedFace
+                            }
+                            Some(design::DesignFeatureFamily::Assemble)
+                                if scope.kind()
+                                    == crate::records::feature::DesignFeatureKind::AsBuilt
+                                    && design::assembly::legacy_as_built_421_generation(
+                                        scope.frame_length,
+                                        scope.class_tag.as_str(),
+                                        scope.paired_class_tag.as_str(),
+                                    )
+                                    .is_some() =>
+                            {
+                                matches!(
+                                    (operand.scope_reference_ordinal, operand.recipe_kind),
+                                    (1, records::ConstructionRecipeKind::BoundedFace)
+                                        | (3, records::ConstructionRecipeKind::Face)
+                                )
+                            }
+                            _ => false,
+                        }
+                }
+                _ => false,
+            }
+        }) && header.is_some_and(|header| {
+            header.byte_offset == operand.byte_offset && header.class_tag == operand.class_tag
+        }) && operand.paired_byte_offset > operand.byte_offset
             && operand.recipe_record_index == operand.record_index.saturating_add(3)
             && operand.recipe_record_byte_offset > operand.paired_byte_offset
             && operand.next_byte_offset > operand.recipe_record_byte_offset
