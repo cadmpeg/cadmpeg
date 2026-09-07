@@ -666,15 +666,7 @@ pub(crate) fn parse(
     let version_offset = reader.position();
     let version = reader.u8()?;
     if version >> 4 == 2 {
-        return parse_legacy_major2(
-            bytes,
-            range,
-            archive,
-            writer_version,
-            userdata,
-            version,
-            reader,
-        );
+        return parse_legacy_major2(bytes, range, archive, version, reader);
     }
     if version >> 4 != 3 {
         return Err(GeometryError::unsupported(
@@ -817,6 +809,16 @@ struct LegacyCurveMeta {
     endpoints: [Point3; 2],
 }
 
+impl LegacyCurveMeta {
+    fn into_child(self) -> RawBrepChild {
+        RawBrepChild {
+            class_uuid: crate::curves::POLYCURVE,
+            class_data_range: self.range.clone(),
+            source_range: self.range,
+        }
+    }
+}
+
 struct LegacyVertex {
     vertex: RawBrepVertex,
     point_sum: [f64; 3],
@@ -827,8 +829,6 @@ fn parse_legacy_major2(
     bytes: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
-    _writer_version: Option<i64>,
-    _userdata: &[UserdataDescriptor],
     version: u8,
     mut reader: BoundedReader<'_>,
 ) -> Result<BrepParse, GeometryError> {
@@ -847,7 +847,6 @@ fn parse_legacy_major2(
     let bounds = bbox(&mut reader)?;
 
     let c2_start = reader.position();
-    let mut c2_slots = Vec::with_capacity(trim_count);
     let mut c2_meta = Vec::with_capacity(trim_count);
     for _ in 0..trim_count {
         let curve_range = crate::curves::consume_legacy_polycurve_2d(bytes, &mut reader, archive)?;
@@ -859,20 +858,14 @@ fn parse_legacy_major2(
         )?;
         let (domain, endpoints) = legacy_curve_shape(&decoded, curve_range.start)?;
         c2_meta.push(LegacyCurveMeta {
-            range: curve_range.clone(),
+            range: curve_range,
             domain,
             endpoints,
         });
-        c2_slots.push(Some(RawBrepChild {
-            class_uuid: crate::curves::POLYCURVE,
-            class_data_range: curve_range.clone(),
-            source_range: curve_range,
-        }));
     }
     let c2_range = c2_start..reader.position();
 
     let c3_start = reader.position();
-    let mut c3_slots = Vec::with_capacity(edge_count);
     let mut c3_meta = Vec::with_capacity(edge_count);
     for _ in 0..edge_count {
         let curve_range =
@@ -886,15 +879,10 @@ fn parse_legacy_major2(
         )?;
         let (domain, endpoints) = legacy_curve_shape(&decoded, curve_range.start)?;
         c3_meta.push(LegacyCurveMeta {
-            range: curve_range.clone(),
+            range: curve_range,
             domain,
             endpoints,
         });
-        c3_slots.push(Some(RawBrepChild {
-            class_uuid: crate::curves::POLYCURVE,
-            class_data_range: curve_range.clone(),
-            source_range: curve_range,
-        }));
     }
     let c3_range = c3_start..reader.position();
 
@@ -1110,7 +1098,7 @@ fn parse_legacy_major2(
         };
         endpoint_vertices.push(index);
     }
-    let mut edge_endpoints = Vec::with_capacity(c3_meta.len());
+    let mut edges = Vec::with_capacity(edge_count);
     for (edge_index, curve) in c3_meta.iter().enumerate() {
         let endpoints = if let Some(trim_index) = edge_trim_indexes[edge_index].first() {
             let trim = &trims[*trim_index as usize];
@@ -1133,7 +1121,25 @@ fn parse_legacy_major2(
             vertex.point_sum[2] += point.0[2];
             vertex.point_count += 1;
         }
-        edge_endpoints.push(endpoints);
+        let edge_index_i32 = i32::try_from(edge_index)
+            .map_err(|_| error(curve.range.start, "legacy Brep edge index overflow"))?;
+        let trim_indexes = edge_trim_indexes[edge_index].clone();
+        let tolerance = trim_indexes
+            .iter()
+            .map(|trim| trims[*trim as usize].legacy_tolerances[1])
+            .filter(|value| value.is_finite() && *value >= 0.0)
+            .fold(0.0, f64::max);
+        edges.push(RawBrepEdge {
+            index: edge_index_i32,
+            curve: edge_index_i32,
+            proxy_reversed: 0,
+            proxy_domain: curve.domain,
+            vertices: endpoints,
+            trims: trim_indexes,
+            tolerance,
+            domain: curve.domain,
+            source_range: 0..0,
+        });
     }
     let mut vertices = vertices
         .into_iter()
@@ -1149,28 +1155,6 @@ fn parse_legacy_major2(
             accumulated.vertex
         })
         .collect::<Vec<_>>();
-    let mut edges = Vec::with_capacity(edge_count);
-    for (edge_index, curve) in c3_meta.iter().enumerate() {
-        let edge_index_i32 = i32::try_from(edge_index)
-            .map_err(|_| error(curve.range.start, "legacy Brep edge index overflow"))?;
-        let trim_indexes = edge_trim_indexes[edge_index].clone();
-        let tolerance = trim_indexes
-            .iter()
-            .map(|trim| trims[*trim as usize].legacy_tolerances[1])
-            .filter(|value| value.is_finite() && *value >= 0.0)
-            .fold(0.0, f64::max);
-        edges.push(RawBrepEdge {
-            index: edge_index_i32,
-            curve: edge_index_i32,
-            proxy_reversed: 0,
-            proxy_domain: curve.domain,
-            vertices: edge_endpoints[edge_index],
-            trims: trim_indexes,
-            tolerance,
-            domain: curve.domain,
-            source_range: 0..0,
-        });
-    }
     for trim in &mut trims {
         trim.vertices = [
             endpoint_vertices[legacy_trim_endpoint(trim.index, 0)],
@@ -1238,12 +1222,18 @@ fn parse_legacy_major2(
         losses: Vec::new(),
         minor,
         c2: RawBrepChildren {
-            slots: c2_slots,
+            slots: c2_meta
+                .into_iter()
+                .map(|curve| Some(curve.into_child()))
+                .collect(),
             source_range: c2_range,
             expected_type: RawBrepBaseType::Curve,
         },
         c3: RawBrepChildren {
-            slots: c3_slots,
+            slots: c3_meta
+                .into_iter()
+                .map(|curve| Some(curve.into_child()))
+                .collect(),
             source_range: c3_range,
             expected_type: RawBrepBaseType::Curve,
         },
