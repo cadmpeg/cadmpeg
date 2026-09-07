@@ -478,13 +478,6 @@ pub struct PhysicalSpan {
     pub role: SpanRole,
 }
 
-#[derive(Debug)]
-struct Region {
-    start: u64,
-    end: u64,
-    role: SpanRole,
-}
-
 fn u16_at(bytes: &[u8], offset: u64) -> Result<u16, CodecError> {
     let start = usize::try_from(offset)
         .map_err(|_| CodecError::Malformed("ZIP offset does not fit memory".into()))?;
@@ -519,9 +512,9 @@ fn signature_at(bytes: &[u8], offset: u64) -> Option<[u8; 4]> {
         .map(|raw| [raw[0], raw[1], raw[2], raw[3]])
 }
 
-fn push_region(regions: &mut Vec<Region>, start: u64, end: u64, role: SpanRole) {
+fn push_region(regions: &mut Vec<PhysicalSpan>, start: u64, end: u64, role: SpanRole) {
     if start < end {
-        regions.push(Region { start, end, role });
+        regions.push(PhysicalSpan { start, end, role });
     }
 }
 
@@ -730,7 +723,7 @@ fn classify_end_records(
     bytes: &[u8],
     mut offset: u64,
     len: u64,
-    regions: &mut Vec<Region>,
+    regions: &mut Vec<PhysicalSpan>,
 ) -> Result<(), CodecError> {
     while offset < len {
         let (role, size) = match signature_at(bytes, offset) {
@@ -771,7 +764,7 @@ fn classify_end_records(
     Ok(())
 }
 
-fn partition(len: u64, regions: &[Region]) -> Result<Vec<PhysicalSpan>, CodecError> {
+fn partition(len: u64, regions: &[PhysicalSpan]) -> Result<Vec<PhysicalSpan>, CodecError> {
     let mut boundaries = BTreeSet::from([0_u64, len]);
     for region in regions {
         if region.end > len || region.start > region.end {
@@ -789,9 +782,6 @@ fn partition(len: u64, regions: &[Region]) -> Result<Vec<PhysicalSpan>, CodecErr
     let mut spans = Vec::new();
     for pair in points.windows(2) {
         let (start, end) = (pair[0], pair[1]);
-        if start == end {
-            continue;
-        }
         while ordered_regions
             .get(region_index)
             .is_some_and(|region| region.end <= start)
@@ -809,16 +799,9 @@ fn partition(len: u64, regions: &[Region]) -> Result<Vec<PhysicalSpan>, CodecErr
             })?;
         spans.push(PhysicalSpan {
             start,
-            end: end.min(len),
+            end,
             role: owner.role.clone(),
         });
-    }
-    for pair in spans.windows(2) {
-        if pair[0].end != pair[1].start {
-            return Err(CodecError::Malformed(
-                "physical ZIP ledger has a gap or overlap".into(),
-            ));
-        }
     }
     Ok(spans)
 }
