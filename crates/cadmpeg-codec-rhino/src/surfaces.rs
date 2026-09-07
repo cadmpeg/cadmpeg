@@ -67,8 +67,6 @@ pub(crate) enum DecodedSurface {
         geometry: NurbsSurface,
         /// Native construction fields.
         definition: DecodedProceduralSurface,
-        /// Ordered embedded child curves.
-        children: Vec<DecodedCurve>,
     },
 }
 
@@ -91,11 +89,12 @@ impl PlaneParameterization {
     }
 }
 
-/// Native procedural fields before deterministic child IDs are assigned.
-#[derive(Debug, Clone, Copy)]
+/// Native procedural fields and their fixed-cardinality child curves.
+#[derive(Debug, Clone)]
 pub(crate) enum DecodedProceduralSurface {
     /// Revolution of the first child.
     Revolution {
+        children: Box<[DecodedCurve; 1]>,
         /// Scaled axis origin.
         axis_origin: Point3,
         /// Unit axis direction.
@@ -109,9 +108,54 @@ pub(crate) enum DecodedProceduralSurface {
     },
     /// Sum of the first and second children.
     Sum {
+        children: Box<[DecodedCurve; 2]>,
         /// Scaled basepoint vector.
         basepoint: Vector3,
     },
+}
+
+impl DecodedProceduralSurface {
+    pub(crate) fn into_definition(
+        self,
+        mut commit_child: impl FnMut(usize, &'static str, DecodedCurve) -> cadmpeg_ir::ids::CurveId,
+    ) -> cadmpeg_ir::geometry::ProceduralSurfaceDefinition {
+        use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+
+        match self {
+            Self::Revolution {
+                children,
+                axis_origin,
+                axis_direction,
+                angular_interval,
+                parameter_interval,
+                transposed,
+            } => {
+                let [directrix] = *children;
+                ProceduralSurfaceDefinition::Revolution {
+                    directrix: commit_child(0, "directrix", directrix),
+                    axis_origin,
+                    axis_direction,
+                    angular_interval,
+                    angular_parameter_interval: None,
+                    parameter_interval: Some(parameter_interval),
+                    transposed,
+                    revision_form: None,
+                }
+            }
+            Self::Sum {
+                children,
+                basepoint,
+            } => {
+                let [first, second] = *children;
+                ProceduralSurfaceDefinition::Sum {
+                    first: commit_child(0, "first", first),
+                    second: commit_child(1, "second", second),
+                    basepoint,
+                    revision_form: None,
+                }
+            }
+        }
+    }
 }
 
 pub(crate) fn decode(
@@ -388,13 +432,13 @@ fn read_revolution(
     Ok(DecodedSurface::Procedural {
         geometry,
         definition: DecodedProceduralSurface::Revolution {
+            children: Box::new([child]),
             axis_origin: from,
             axis_direction,
             angular_interval,
             parameter_interval,
             transposed,
         },
-        children: vec![child],
     })
 }
 
@@ -430,8 +474,10 @@ fn read_sum(
     reader.skip_remaining()?;
     Ok(DecodedSurface::Procedural {
         geometry,
-        definition: DecodedProceduralSurface::Sum { basepoint },
-        children: vec![first, second],
+        definition: DecodedProceduralSurface::Sum {
+            children: Box::new([first, second]),
+            basepoint,
+        },
     })
 }
 

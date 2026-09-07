@@ -779,14 +779,13 @@ fn revolution_major_versions_decode_child_and_scale_coordinates_once() {
         let super::DecodedSurface::Procedural {
             geometry,
             definition,
-            children,
         } = decoded
         else {
             panic!("expected procedural revolution");
         };
         assert_eq!(reader.remaining(), 0);
-        assert_eq!(children.len(), 1);
         let super::DecodedProceduralSurface::Revolution {
+            children,
             axis_origin,
             axis_direction,
             angular_interval,
@@ -796,6 +795,7 @@ fn revolution_major_versions_decode_child_and_scale_coordinates_once() {
         else {
             panic!("expected revolution fields");
         };
+        assert_eq!(children.len(), 1);
         assert!((axis_origin.x - 25.4).abs() < 1.0e-12);
         assert!((axis_origin.y - 50.8).abs() < 1.0e-12);
         assert!((axis_origin.z - 76.2).abs() < 1.0e-12);
@@ -827,16 +827,19 @@ fn sum_surface_decodes_ordered_children_and_scales_once() {
     let super::DecodedSurface::Procedural {
         geometry,
         definition,
-        children,
     } = decoded
     else {
         panic!("expected procedural sum");
     };
     assert_eq!(reader.remaining(), 0);
-    assert_eq!(children.len(), 2);
-    let super::DecodedProceduralSurface::Sum { basepoint } = definition else {
+    let super::DecodedProceduralSurface::Sum {
+        basepoint,
+        children,
+    } = definition
+    else {
         panic!("expected sum fields");
     };
+    assert_eq!(children.len(), 2);
     assert!((basepoint.x - 25.4).abs() < 1.0e-12);
     assert!((basepoint.y - 50.8).abs() < 1.0e-12);
     assert!((basepoint.z - 76.2).abs() < 1.0e-12);

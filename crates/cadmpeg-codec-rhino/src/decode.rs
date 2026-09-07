@@ -2866,7 +2866,6 @@ impl<'a> DecodeContext<'a> {
                 crate::surfaces::DecodedSurface::Procedural {
                     geometry,
                     definition,
-                    children,
                 } => {
                     return self.commit_procedural_surface(
                         source_order,
@@ -2874,7 +2873,6 @@ impl<'a> DecodeContext<'a> {
                         association,
                         geometry,
                         definition,
-                        children,
                     );
                 }
             },
@@ -2890,15 +2888,7 @@ impl<'a> DecodeContext<'a> {
         association: SourceObjectAssociation,
         geometry: cadmpeg_ir::geometry::NurbsSurface,
         definition: crate::surfaces::DecodedProceduralSurface,
-        children: Vec<crate::curves::DecodedCurve>,
     ) -> bool {
-        let expected_children = match &definition {
-            crate::surfaces::DecodedProceduralSurface::Revolution { .. } => 1,
-            crate::surfaces::DecodedProceduralSurface::Sum { .. } => 2,
-        };
-        if children.len() != expected_children {
-            return false;
-        }
         let Some(unknown) = self
             .unknowns
             .get(source_order)
@@ -2907,15 +2897,8 @@ impl<'a> DecodeContext<'a> {
             return false;
         };
         let result = self.validate_candidate(|candidate, candidate_annotations| {
-            let mut child_ids = Vec::with_capacity(children.len());
-            for (index, child) in children.into_iter().enumerate() {
-                let path = match (expected_children, index) {
-                    (1, 0) => "directrix",
-                    (2, 0) => "first",
-                    (2, 1) => "second",
-                    _ => unreachable!("child cardinality checked"),
-                };
-                child_ids.push(commit_curve_tree(
+            let ir_definition = definition.into_definition(|_, path, child| {
+                commit_curve_tree(
                     candidate,
                     candidate_annotations,
                     child,
@@ -2923,8 +2906,8 @@ impl<'a> DecodeContext<'a> {
                     &association,
                     Some(unknown.clone()),
                     path,
-                ));
-            }
+                )
+            });
             let surface_id: cadmpeg_ir::ids::SurfaceId = format!("rhino:object:surface#{key}")
                 .try_into()
                 .expect("valid identity");
@@ -2937,32 +2920,6 @@ impl<'a> DecodeContext<'a> {
                 format!("rhino:object:procedural-surface#{key}")
                     .try_into()
                     .expect("valid identity");
-            let ir_definition = match definition {
-                crate::surfaces::DecodedProceduralSurface::Revolution {
-                    axis_origin,
-                    axis_direction,
-                    angular_interval,
-                    parameter_interval,
-                    transposed,
-                } => ProceduralSurfaceDefinition::Revolution {
-                    directrix: child_ids.remove(0),
-                    axis_origin,
-                    axis_direction,
-                    angular_interval,
-                    angular_parameter_interval: None,
-                    parameter_interval: Some(parameter_interval),
-                    transposed,
-                    revision_form: None,
-                },
-                crate::surfaces::DecodedProceduralSurface::Sum { basepoint } => {
-                    ProceduralSurfaceDefinition::Sum {
-                        first: child_ids.remove(0),
-                        second: child_ids.remove(0),
-                        basepoint,
-                        revision_form: None,
-                    }
-                }
-            };
             let _attached = candidate.model.add_procedural_surface(
                 surface_id.clone(),
                 ProceduralSurface::new(procedural_id.clone(), ir_definition, None),
@@ -4063,14 +4020,12 @@ fn stage_brep_carriers(input: BrepCarrierInput<'_>) -> BrepCarrierDraft {
                     crate::surfaces::DecodedSurface::Procedural {
                         geometry,
                         definition,
-                        children,
                     },
             }) => match stage_brep_procedural_surface(
                 &mut staged,
                 index,
                 geometry,
                 definition,
-                children,
                 &BrepStageContext {
                     key,
                     association,
@@ -4644,33 +4599,18 @@ fn stage_brep_procedural_surface(
     index: usize,
     geometry: cadmpeg_ir::geometry::NurbsSurface,
     definition: crate::surfaces::DecodedProceduralSurface,
-    children: Vec<crate::curves::DecodedCurve>,
     context: &BrepStageContext<'_>,
 ) -> Result<cadmpeg_ir::ids::SurfaceId, crate::curves::GeometryError> {
-    let expected_children = match definition {
-        crate::surfaces::DecodedProceduralSurface::Revolution { .. } => 1,
-        crate::surfaces::DecodedProceduralSurface::Sum { .. } => 2,
-    };
-    if children.len() != expected_children {
-        return Err(crate::curves::error(
-            0,
-            "procedural surface child count mismatch",
-        ));
-    }
-    let child_ids = children
-        .into_iter()
-        .enumerate()
-        .map(|(child_index, child)| {
-            stage_curve_tree(
-                staged,
-                child,
-                context.key,
-                &format!("surface-{index}.child-{child_index}"),
-                context.association,
-                context.unknown,
-            )
-        })
-        .collect::<Vec<_>>();
+    let definition = definition.into_definition(|child_index, _, child| {
+        stage_curve_tree(
+            staged,
+            child,
+            context.key,
+            &format!("surface-{index}.child-{child_index}"),
+            context.association,
+            context.unknown,
+        )
+    });
     let surface_id: cadmpeg_ir::ids::SurfaceId =
         format!("rhino:object:surface#{}.slot-{index}", context.key)
             .try_into()
@@ -4680,32 +4620,6 @@ fn stage_brep_procedural_surface(
         geometry: SurfaceGeometry::Nurbs(geometry),
         source_object: Some(context.association.clone()),
     });
-    let definition = match definition {
-        crate::surfaces::DecodedProceduralSurface::Revolution {
-            axis_origin,
-            axis_direction,
-            angular_interval,
-            parameter_interval,
-            transposed,
-        } => ProceduralSurfaceDefinition::Revolution {
-            directrix: child_ids[0].clone(),
-            axis_origin,
-            axis_direction,
-            angular_interval,
-            angular_parameter_interval: None,
-            parameter_interval: Some(parameter_interval),
-            transposed,
-            revision_form: None,
-        },
-        crate::surfaces::DecodedProceduralSurface::Sum { basepoint } => {
-            ProceduralSurfaceDefinition::Sum {
-                first: child_ids[0].clone(),
-                second: child_ids[1].clone(),
-                basepoint,
-                revision_form: None,
-            }
-        }
-    };
     let procedural_id: cadmpeg_ir::ids::ProceduralSurfaceId = format!(
         "rhino:object:procedural-surface#{}.slot-{index}",
         context.key
