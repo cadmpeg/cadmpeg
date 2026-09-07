@@ -4206,7 +4206,8 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> NativeInstall {
             archive_index: layer.index,
             source_uuid: layer.id.map(|id| id.to_string()),
             parent_uuid: layer
-                .parent_id
+                .hierarchy
+                .map(|hierarchy| hierarchy.parent_id)
                 .filter(|id| !id.is_nil())
                 .map(|id| id.to_string()),
             name: layer.name.clone(),
@@ -4214,12 +4215,12 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> NativeInstall {
             iges_level: (layer.iges_level != -1).then_some(layer.iges_level),
             visible: layer.visible,
             locked: layer.locked,
-            expanded: layer.expanded,
+            expanded: layer.hierarchy.map(|hierarchy| hierarchy.expanded),
             color: layer.color,
             material_index: layer.render_material_index,
             linetype_index: layer.linetype_index,
-            plot_color: layer.plot_color,
-            plot_weight_mm: layer.plot_weight,
+            plot_color: layer.plot.map(|plot| plot.color),
+            plot_weight_mm: layer.plot.map(|plot| plot.weight_mm),
             display_material_uuid: layer
                 .display_material_id
                 .filter(|id| !id.is_nil())

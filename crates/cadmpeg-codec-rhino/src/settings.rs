@@ -471,6 +471,20 @@ pub(crate) struct DocumentSettings {
     pub(crate) unsupported: Vec<SettingDescriptor>,
 }
 
+/// Layer hierarchy fields carried by the same versioned prefix.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct LayerHierarchy {
+    pub(crate) parent_id: Uuid,
+    pub(crate) expanded: bool,
+}
+
+/// Layer plot fields carried by the same versioned prefix.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct LayerPlot {
+    pub(crate) color: [u8; 4],
+    pub(crate) weight_mm: f64,
+}
+
 /// Layer metadata decoded without attributes or geometry.
 #[derive(Debug, Clone)]
 pub(crate) struct LayerRecord {
@@ -494,16 +508,12 @@ pub(crate) struct LayerRecord {
     pub(crate) locked: bool,
     /// Layer UUID.
     pub(crate) id: Option<Uuid>,
-    /// Parent UUID.
-    pub(crate) parent_id: Option<Uuid>,
-    /// Expanded state.
-    pub(crate) expanded: Option<bool>,
+    /// Parent UUID and expanded state.
+    pub(crate) hierarchy: Option<LayerHierarchy>,
     /// Referenced linetype index.
     pub(crate) linetype_index: Option<i32>,
-    /// Plot color.
-    pub(crate) plot_color: Option<[u8; 4]>,
-    /// Plot weight in millimeters.
-    pub(crate) plot_weight: Option<f64>,
+    /// Plot color and weight.
+    pub(crate) plot: Option<LayerPlot>,
     /// Display material UUID.
     pub(crate) display_material_id: Option<Uuid>,
     /// Whether clipping planes are disabled.
@@ -1911,14 +1921,13 @@ fn parse_layer(
         obsolete_mode != 1
     };
     let linetype_index = (version.1 >= 2).then(|| reader.i32()).transpose()?;
-    let plot_color = if version.1 >= 3 {
-        Some(color(&mut reader)?)
-    } else {
-        None
-    };
-    let plot_weight = if version.1 >= 3 {
+    let plot = if version.1 >= 3 {
+        let color = color(&mut reader)?;
         let plot_weight_raw = reader.f64()?;
-        Some(finite(&reader, plot_weight_raw, "plot weight")?)
+        Some(LayerPlot {
+            color,
+            weight_mm: finite(&reader, plot_weight_raw, "plot weight")?,
+        })
     } else {
         None
     };
@@ -1934,13 +1943,11 @@ fn parse_layer(
             "layer parent link and expanded state were not read because the archive has no writer-version stamp",
         ));
     }
-    let parent_id = if version.1 >= 6 && parent_compatible {
-        Some(uuid(&mut reader)?)
-    } else {
-        None
-    };
-    let expanded = if version.1 >= 6 && parent_compatible {
-        Some(reader.bool_with_writer_version(writer_version)?)
+    let hierarchy = if version.1 >= 6 && parent_compatible {
+        Some(LayerHierarchy {
+            parent_id: uuid(&mut reader)?,
+            expanded: reader.bool_with_writer_version(writer_version)?,
+        })
     } else {
         None
     };
@@ -1982,11 +1989,9 @@ fn parse_layer(
         visible,
         locked,
         id,
-        parent_id,
-        expanded,
+        hierarchy,
         linetype_index,
-        plot_color,
-        plot_weight,
+        plot,
         display_material_id,
         no_clipping_planes: None,
         visible_in_new_details: None,
@@ -2006,7 +2011,12 @@ fn parse_layer(
                     && descriptor.item_uuid == LAYER_EXTENSIONS
             })
     {
-        match parse_layer_extensions(data, descriptor, archive, layer.parent_id) {
+        match parse_layer_extensions(
+            data,
+            descriptor,
+            archive,
+            layer.hierarchy.map(|hierarchy| hierarchy.parent_id),
+        ) {
             Ok(settings) => layer.per_viewport_settings = settings,
             Err(error) => {
                 userdata_degraded = true;
@@ -2251,7 +2261,7 @@ pub(crate) fn parse_metadata(
         .filter_map(|layer| layer.id)
         .collect();
     for layer in &metadata.layers {
-        if let Some(parent) = layer.parent_id {
+        if let Some(parent) = layer.hierarchy.map(|hierarchy| hierarchy.parent_id) {
             if !parent.is_nil() && !known_ids.contains(&parent) {
                 warnings.push(format!(
                     "layer {} references missing parent UUID {parent}",

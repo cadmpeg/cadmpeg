@@ -687,8 +687,18 @@ fn unstamped_layer_charges_the_parent_link_stamp_loss() {
     // record and the difference between them is only the stamp.
     let (unstamped_metadata, unstamped) = layer_metadata(&[0], None);
     assert_eq!(unstamped_metadata.layers.len(), 1, "{unstamped:?}");
-    assert_eq!(unstamped_metadata.layers[0].parent_id, None);
-    assert_eq!(unstamped_metadata.layers[0].expanded, None);
+    assert_eq!(
+        unstamped_metadata.layers[0]
+            .hierarchy
+            .map(|hierarchy| hierarchy.parent_id),
+        None
+    );
+    assert_eq!(
+        unstamped_metadata.layers[0]
+            .hierarchy
+            .map(|hierarchy| hierarchy.expanded),
+        None
+    );
     assert!(
         unstamped_metadata
             .losses
@@ -702,10 +712,17 @@ fn unstamped_layer_charges_the_parent_link_stamp_loss() {
     let (stamped_metadata, stamped) = layer_metadata(&[0], Some(200_912_010));
     assert_eq!(stamped_metadata.layers.len(), 1, "{stamped:?}");
     assert_eq!(
-        stamped_metadata.layers[0].parent_id,
+        stamped_metadata.layers[0]
+            .hierarchy
+            .map(|hierarchy| hierarchy.parent_id),
         Some(Uuid::from_canonical([0x44; 16]))
     );
-    assert_eq!(stamped_metadata.layers[0].expanded, Some(true));
+    assert_eq!(
+        stamped_metadata.layers[0]
+            .hierarchy
+            .map(|hierarchy| hierarchy.expanded),
+        Some(true)
+    );
     assert!(
         !stamped
             .iter()
@@ -1150,11 +1167,9 @@ fn duplicate_layer_indices_reassign_later_records_without_rebinding_originals() 
         visible: true,
         locked: false,
         id: None,
-        parent_id: None,
-        expanded: None,
+        hierarchy: None,
         linetype_index: None,
-        plot_color: None,
-        plot_weight: None,
+        plot: None,
         display_material_id: None,
         no_clipping_planes: None,
         visible_in_new_details: None,
