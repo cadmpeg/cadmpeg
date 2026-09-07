@@ -30,6 +30,7 @@ mod pmdc;
 mod presentation;
 mod property_set;
 mod protein;
+mod record_identity;
 mod record_issue;
 mod records;
 mod rse;

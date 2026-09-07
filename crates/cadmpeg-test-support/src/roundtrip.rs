@@ -97,8 +97,6 @@ where
 pub enum SemanticOutcome {
     /// The writer ran and produced bytes.
     Written {
-        /// The document that was written, with its baseline removed.
-        ir: Box<CadIr>,
         /// The encoder's report, whose `write_path` is not
         /// [`WritePath::VerbatimReplay`].
         report: Box<ExportReport>,
@@ -173,7 +171,6 @@ pub fn semantic_roundtrip<C>(
                  describe this document, yet it replayed them"
             );
             SemanticOutcome::Written {
-                ir: Box::new(ir),
                 report: Box::new(report),
                 bytes,
             }
@@ -189,12 +186,8 @@ pub fn semantic_roundtrip<C>(
 pub enum MutationOutcome {
     /// The writer ran and produced bytes.
     Written {
-        /// The document as decoded, before the mutation.
-        baseline: Box<CadIr>,
-        /// The document that was written: `baseline` with the mutation applied.
+        /// The document that was written with the mutation applied.
         edited: Box<CadIr>,
-        /// The encoder's report, whose `write_path` is the one the caller named.
-        report: Box<ExportReport>,
         /// The bytes the writer produced.
         bytes: Vec<u8>,
     },
@@ -268,24 +261,21 @@ where
         Ok(plan) => {
             let path = plan.report().write_path();
             let mut bytes = Vec::new();
-            let report = plan
-                .write_to(&mut bytes)
+            plan.write_to(&mut bytes)
                 .unwrap_or_else(|error| panic!("{label}: write failed: {error}"));
-            Ok((path, report, bytes))
+            Ok((path, bytes))
         }
         Err(error) => Err(error),
     };
     let outcome = match written {
-        Ok((path, report, bytes)) => {
+        Ok((path, bytes)) => {
             assert_eq!(
                 path, expected_path,
                 "{label}: the document was edited, so the encoder was expected to write by the \
                  {expected_path} path, but it took the {path} path"
             );
             MutationOutcome::Written {
-                baseline: Box::new(baseline),
                 edited: Box::new(edited),
-                report: Box::new(report),
                 bytes,
             }
         }

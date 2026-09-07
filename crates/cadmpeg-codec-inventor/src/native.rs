@@ -7,7 +7,7 @@ pub(crate) mod ufrx;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 
-use crate::pmdc::PmDcReference;
+use crate::pmdc::{PmDcPairedReferenceList, PmDcReference};
 use crate::presentation::RenderingStyleExtension;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -548,15 +548,11 @@ pub(crate) struct PmGraphicsFaceRecord {
     pub(crate) header_value: u32,
     pub(crate) header_id: u16,
     pub(crate) flags: u32,
-    pub(crate) styles_reference: u32,
-    pub(crate) styles_reference_qualified: bool,
-    pub(crate) surface_reference: u32,
-    pub(crate) surface_reference_qualified: bool,
-    pub(crate) parent_reference: u32,
-    pub(crate) parent_reference_qualified: bool,
+    pub(crate) styles: PmDcReference,
+    pub(crate) surface: PmDcReference,
+    pub(crate) parent: PmDcReference,
     pub(crate) state: u32,
-    pub(crate) edge_references: Vec<PmDcReference>,
-    pub(crate) edge_list_metadata: Option<[u32; 2]>,
+    pub(crate) edge_references: PmDcPairedReferenceList<[u32; 2]>,
     pub(crate) visibility_state: u8,
     pub(crate) bounds: [f64; 6],
     pub(crate) key: u32,
@@ -591,7 +587,7 @@ struct PmGraphicsFaceRecordWire {
 impl From<PmGraphicsFaceRecord> for PmGraphicsFaceRecordWire {
     fn from(value: PmGraphicsFaceRecord) -> Self {
         let (edge_references, edge_reference_qualifiers) =
-            PmDcReference::unzip(&value.edge_references);
+            PmDcReference::unzip(value.edge_references.references());
         Self {
             id: value.id,
             segment_token: value.segment_token,
@@ -600,16 +596,16 @@ impl From<PmGraphicsFaceRecord> for PmGraphicsFaceRecordWire {
             header_value: value.header_value,
             header_id: value.header_id,
             flags: value.flags,
-            styles_reference: value.styles_reference,
-            styles_reference_qualified: value.styles_reference_qualified,
-            surface_reference: value.surface_reference,
-            surface_reference_qualified: value.surface_reference_qualified,
-            parent_reference: value.parent_reference,
-            parent_reference_qualified: value.parent_reference_qualified,
+            styles_reference: value.styles.index,
+            styles_reference_qualified: value.styles.qualified,
+            surface_reference: value.surface.index,
+            surface_reference_qualified: value.surface.qualified,
+            parent_reference: value.parent.index,
+            parent_reference_qualified: value.parent.qualified,
             state: value.state,
             edge_references,
             edge_reference_qualifiers,
-            edge_list_metadata: value.edge_list_metadata,
+            edge_list_metadata: value.edge_references.metadata().copied(),
             visibility_state: value.visibility_state,
             bounds: value.bounds,
             key: value.key,
@@ -630,18 +626,24 @@ impl TryFrom<PmGraphicsFaceRecordWire> for PmGraphicsFaceRecord {
             header_value: wire.header_value,
             header_id: wire.header_id,
             flags: wire.flags,
-            styles_reference: wire.styles_reference,
-            styles_reference_qualified: wire.styles_reference_qualified,
-            surface_reference: wire.surface_reference,
-            surface_reference_qualified: wire.surface_reference_qualified,
-            parent_reference: wire.parent_reference,
-            parent_reference_qualified: wire.parent_reference_qualified,
+            styles: PmDcReference {
+                index: wire.styles_reference,
+                qualified: wire.styles_reference_qualified,
+            },
+            surface: PmDcReference {
+                index: wire.surface_reference,
+                qualified: wire.surface_reference_qualified,
+            },
+            parent: PmDcReference {
+                index: wire.parent_reference,
+                qualified: wire.parent_reference_qualified,
+            },
             state: wire.state,
-            edge_references: PmDcReference::zip(
-                wire.edge_references,
-                wire.edge_reference_qualifiers,
-            )?,
-            edge_list_metadata: wire.edge_list_metadata,
+            edge_references: PmDcPairedReferenceList::new(
+                wire.edge_list_metadata,
+                PmDcReference::zip(wire.edge_references, wire.edge_reference_qualifiers)?,
+            )
+            .ok_or("edge_list_metadata disagrees with edge_references")?,
             visibility_state: wire.visibility_state,
             bounds: wire.bounds,
             key: wire.key,
@@ -660,8 +662,7 @@ pub(crate) struct PmGraphicsStyleCollectionRecord {
     pub(crate) segment_token: String,
     pub(crate) record_ordinal: u32,
     pub(crate) segment_version_major: u8,
-    pub(crate) style_references: Vec<PmDcReference>,
-    pub(crate) list_metadata: Option<[u32; 2]>,
+    pub(crate) style_references: PmDcPairedReferenceList<[u32; 2]>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -678,7 +679,7 @@ struct PmGraphicsStyleCollectionRecordWire {
 impl From<PmGraphicsStyleCollectionRecord> for PmGraphicsStyleCollectionRecordWire {
     fn from(value: PmGraphicsStyleCollectionRecord) -> Self {
         let (style_references, style_reference_qualifiers) =
-            PmDcReference::unzip(&value.style_references);
+            PmDcReference::unzip(value.style_references.references());
         Self {
             id: value.id,
             segment_token: value.segment_token,
@@ -686,7 +687,7 @@ impl From<PmGraphicsStyleCollectionRecord> for PmGraphicsStyleCollectionRecordWi
             segment_version_major: value.segment_version_major,
             style_references,
             style_reference_qualifiers,
-            list_metadata: value.list_metadata,
+            list_metadata: value.style_references.metadata().copied(),
         }
     }
 }
@@ -700,11 +701,11 @@ impl TryFrom<PmGraphicsStyleCollectionRecordWire> for PmGraphicsStyleCollectionR
             segment_token: wire.segment_token,
             record_ordinal: wire.record_ordinal,
             segment_version_major: wire.segment_version_major,
-            style_references: PmDcReference::zip(
-                wire.style_references,
-                wire.style_reference_qualifiers,
-            )?,
-            list_metadata: wire.list_metadata,
+            style_references: PmDcPairedReferenceList::new(
+                wire.list_metadata,
+                PmDcReference::zip(wire.style_references, wire.style_reference_qualifiers)?,
+            )
+            .ok_or("list_metadata disagrees with style_references")?,
         })
     }
 }
@@ -965,19 +966,108 @@ impl TryFrom<SegmentBulkRecordWire> for SegmentBulkRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "RseRecordRecordWire", into = "RseRecordRecordWire")]
 pub(crate) struct RseRecordRecord {
     pub(crate) id: String,
     pub(crate) token: String,
     pub(crate) ordinal: u32,
-    pub(crate) selector: u32,
-    pub(crate) type_index: u8,
+    selector: u32,
+    type_index: u8,
     pub(crate) type_id: String,
     pub(crate) payload_offset: u64,
-    pub(crate) payload_len: u64,
+    payload_len: u64,
     pub(crate) payload_sha256: String,
-    pub(crate) trailing_payload_len: u32,
+    trailing_payload_len: u32,
     pub(crate) trailer_len: u64,
     pub(crate) trailer_sha256: String,
+}
+
+impl RseRecordRecord {
+    pub(crate) fn from_frame(token: &str, frame: &crate::records::RseRecordFrame<'_>) -> Self {
+        Self {
+            id: format!("inventor:rse:record#{token}-{}", frame.ordinal),
+            token: token.into(),
+            ordinal: frame.ordinal,
+            selector: frame.selector,
+            type_index: frame.type_index(),
+            type_id: crate::pmdc::type_id_string(frame.type_id),
+            payload_offset: frame.payload_offset,
+            payload_len: u64::from(frame.payload_len()),
+            payload_sha256: cadmpeg_ir::hash::sha256_hex(frame.payload.window()),
+            trailing_payload_len: frame.trailing_payload_len(),
+            trailer_len: frame.trailer.window().len() as u64,
+            trailer_sha256: cadmpeg_ir::hash::sha256_hex(frame.trailer.window()),
+        }
+    }
+    pub(crate) fn type_index(&self) -> u8 {
+        self.type_index
+    }
+    pub(crate) fn payload_len(&self) -> u64 {
+        self.payload_len
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct RseRecordRecordWire {
+    id: String,
+    token: String,
+    ordinal: u32,
+    selector: u32,
+    type_index: u8,
+    type_id: String,
+    payload_offset: u64,
+    payload_len: u64,
+    payload_sha256: String,
+    trailing_payload_len: u32,
+    trailer_len: u64,
+    trailer_sha256: String,
+}
+
+impl From<RseRecordRecord> for RseRecordRecordWire {
+    fn from(record: RseRecordRecord) -> Self {
+        Self {
+            id: record.id,
+            token: record.token,
+            ordinal: record.ordinal,
+            selector: record.selector,
+            type_index: record.type_index,
+            type_id: record.type_id,
+            payload_offset: record.payload_offset,
+            payload_len: record.payload_len,
+            payload_sha256: record.payload_sha256,
+            trailing_payload_len: record.trailing_payload_len,
+            trailer_len: record.trailer_len,
+            trailer_sha256: record.trailer_sha256,
+        }
+    }
+}
+
+impl TryFrom<RseRecordRecordWire> for RseRecordRecord {
+    type Error = String;
+    fn try_from(wire: RseRecordRecordWire) -> Result<Self, Self::Error> {
+        if wire.type_index != wire.selector as u8 {
+            return Err("type_index disagrees with selector".into());
+        }
+        if wire.trailing_payload_len != 0
+            && u64::from(wire.trailing_payload_len) != wire.payload_len
+        {
+            return Err("trailing_payload_len disagrees with payload_len".into());
+        }
+        Ok(Self {
+            id: wire.id,
+            token: wire.token,
+            ordinal: wire.ordinal,
+            selector: wire.selector,
+            type_index: wire.type_index,
+            type_id: wire.type_id,
+            payload_offset: wire.payload_offset,
+            payload_len: wire.payload_len,
+            payload_sha256: wire.payload_sha256,
+            trailing_payload_len: wire.trailing_payload_len,
+            trailer_len: wire.trailer_len,
+            trailer_sha256: wire.trailer_sha256,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

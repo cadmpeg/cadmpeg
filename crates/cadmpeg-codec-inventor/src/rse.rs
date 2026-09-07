@@ -246,13 +246,13 @@ impl SegmentMetaState<'_> {
 }
 
 #[derive(Debug)]
-pub(crate) struct SegmentDescriptor<'a> {
+pub(crate) struct SegmentDescriptor<'a, B = SegmentBulk<'a>> {
     pub(crate) pair: SegmentPair,
     pub(crate) registry: Option<RegistryJoin>,
     pub(crate) kind: SegmentKind,
     pub(crate) identity_issues: Vec<String>,
     pub(crate) meta: SegmentMetaState<'a>,
-    pub(crate) bulk: SegmentBulkState<'a>,
+    pub(crate) bulk: SegmentBulkState<B>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -270,7 +270,15 @@ pub(crate) struct SegmentBulk<'a> {
     pub(crate) form: BulkForm,
     pub(crate) compressed: View<'a>,
     pub(crate) expanded: View<'a>,
-    pub(crate) records: Option<RecordFrameState<'a>>,
+    pub(crate) records: RecordFrameState<'a>,
+}
+
+#[derive(Debug)]
+struct BulkEnvelope<'a> {
+    prefix: [u8; 16],
+    form: BulkForm,
+    compressed: View<'a>,
+    expanded: View<'a>,
 }
 
 #[derive(Debug)]
@@ -280,8 +288,8 @@ pub(crate) enum RecordFrameState<'a> {
 }
 
 #[derive(Debug)]
-pub(crate) enum SegmentBulkState<'a> {
-    Framed(SegmentBulk<'a>),
+pub(crate) enum SegmentBulkState<B> {
+    Framed(B),
     Malformed(String),
 }
 
@@ -429,39 +437,43 @@ impl<'a> RseInventory<'a> {
             .collect::<Vec<_>>();
         let mut segments = pairs
             .into_iter()
-            .map(|pair| -> Result<SegmentDescriptor<'a>, CodecError> {
-                let meta = snapshot
-                    .stream_by_id(pair.metadata)
-                    .ok_or_else(|| {
-                        CodecError::Malformed("RSe metadata stream handle is absent".into())
+            .map(
+                |pair| -> Result<SegmentDescriptor<'a, BulkEnvelope<'a>>, CodecError> {
+                    let meta = snapshot
+                        .stream_by_id(pair.metadata)
+                        .ok_or_else(|| {
+                            CodecError::Malformed("RSe metadata stream handle is absent".into())
+                        })
+                        .and_then(|entry| snapshot.open(ctx, entry))
+                        .and_then(|view| parse_meta_stream(ctx, view));
+                    let meta = match meta {
+                        Ok(meta) => meta,
+                        Err(error) => SegmentMetaState::Malformed {
+                            declared: None,
+                            detail: crate::issue_detail(error)?,
+                        },
+                    };
+                    let bulk = snapshot
+                        .stream_by_id(pair.bulk)
+                        .ok_or_else(|| {
+                            CodecError::Malformed("RSe bulk stream handle is absent".into())
+                        })
+                        .and_then(|entry| snapshot.open(ctx, entry))
+                        .and_then(|view| parse_bulk_stream(ctx, view));
+                    let bulk = match bulk {
+                        Ok(bulk) => SegmentBulkState::Framed(bulk),
+                        Err(error) => SegmentBulkState::Malformed(crate::issue_detail(error)?),
+                    };
+                    Ok(SegmentDescriptor {
+                        pair,
+                        registry: None,
+                        kind: SegmentKind::Unresolved,
+                        identity_issues: Vec::new(),
+                        meta,
+                        bulk,
                     })
-                    .and_then(|entry| snapshot.open(ctx, entry))
-                    .and_then(|view| parse_meta_stream(ctx, view));
-                let meta = match meta {
-                    Ok(meta) => meta,
-                    Err(error) => SegmentMetaState::Malformed {
-                        declared: None,
-                        detail: crate::issue_detail(error)?,
-                    },
-                };
-                let bulk = snapshot
-                    .stream_by_id(pair.bulk)
-                    .ok_or_else(|| CodecError::Malformed("RSe bulk stream handle is absent".into()))
-                    .and_then(|entry| snapshot.open(ctx, entry))
-                    .and_then(|view| parse_bulk_stream(ctx, view));
-                let bulk = match bulk {
-                    Ok(bulk) => SegmentBulkState::Framed(bulk),
-                    Err(error) => SegmentBulkState::Malformed(crate::issue_detail(error)?),
-                };
-                Ok(SegmentDescriptor {
-                    pair,
-                    registry: None,
-                    kind: SegmentKind::Unresolved,
-                    identity_issues: Vec::new(),
-                    meta,
-                    bulk,
-                })
-            })
+                },
+            )
             .collect::<Result<Vec<_>, _>>()?;
         if let ParsedState::Parsed(registry) = &registry {
             join_registry(&mut segments, registry);
@@ -477,7 +489,7 @@ impl<'a> RseInventory<'a> {
                     .push("segment registry is unavailable".into());
             }
         }
-        frame_segment_records(ctx, &mut segments)?;
+        let segments = frame_segment_records(ctx, segments)?;
         let unpaired_metadata = metadata
             .keys()
             .filter(|token| !bulk.contains_key(*token))
@@ -537,7 +549,7 @@ fn document_kind_for_segments(segments: &[SegmentDescriptor<'_>]) -> DocumentKin
     }
 }
 
-fn join_registry(segments: &mut [SegmentDescriptor<'_>], registry: &SegmentRegistry) {
+fn join_registry<B>(segments: &mut [SegmentDescriptor<'_, B>], registry: &SegmentRegistry) {
     for segment in segments {
         let SegmentMetaState::Parsed(meta) = &segment.meta else {
             segment
@@ -576,7 +588,7 @@ fn join_registry(segments: &mut [SegmentDescriptor<'_>], registry: &SegmentRegis
 fn parse_bulk_stream<'a>(
     ctx: &DecodeContext<'a>,
     source: View<'a>,
-) -> Result<SegmentBulk<'a>, CodecError> {
+) -> Result<BulkEnvelope<'a>, CodecError> {
     let bytes = source.window();
     let header = bytes
         .get(..envelope::LEN)
@@ -593,41 +605,61 @@ fn parse_bulk_stream<'a>(
         .child(source.start() + header.len(), source.end())
         .ok_or_else(|| CodecError::Malformed("RSe bulk member range is invalid".into()))?;
     let expanded = inflate_zlib_exact(ctx, compressed)?;
-    Ok(SegmentBulk {
+    Ok(BulkEnvelope {
         prefix,
         form,
         compressed,
         expanded,
-        records: None,
     })
 }
 
 fn frame_segment_records<'a>(
     ctx: &DecodeContext<'a>,
-    segments: &mut [SegmentDescriptor<'a>],
-) -> Result<(), CodecError> {
-    for segment in segments {
-        let SegmentBulkState::Framed(bulk) = &mut segment.bulk else {
-            continue;
-        };
-        let expanded = bulk.expanded;
-        let result = match (&segment.meta, segment.registry) {
-            (SegmentMetaState::Parsed(meta), Some(registry)) => {
-                frame_bulk_records(ctx, expanded, &meta.tables, registry.version_major)
-            }
-            (SegmentMetaState::Parsed(_), None) => Err(CodecError::Malformed(
-                "RSe record framing requires the segment registry version".into(),
-            )),
-            _ => Err(CodecError::Malformed(
-                "RSe record framing requires parsed segment metadata".into(),
-            )),
-        };
-        bulk.records = Some(match result {
-            Ok(records) => RecordFrameState::Framed(records),
-            Err(error) => RecordFrameState::Unavailable(crate::issue_detail(error)?),
-        });
-    }
-    Ok(())
+    segments: Vec<SegmentDescriptor<'a, BulkEnvelope<'a>>>,
+) -> Result<Vec<SegmentDescriptor<'a>>, CodecError> {
+    segments
+        .into_iter()
+        .map(|segment| {
+            let bulk = match segment.bulk {
+                SegmentBulkState::Malformed(detail) => SegmentBulkState::Malformed(detail),
+                SegmentBulkState::Framed(bulk) => {
+                    let result = match (&segment.meta, segment.registry) {
+                        (SegmentMetaState::Parsed(meta), Some(registry)) => frame_bulk_records(
+                            ctx,
+                            bulk.expanded,
+                            &meta.tables,
+                            registry.version_major,
+                        ),
+                        (SegmentMetaState::Parsed(_), None) => Err(CodecError::Malformed(
+                            "RSe record framing requires the segment registry version".into(),
+                        )),
+                        _ => Err(CodecError::Malformed(
+                            "RSe record framing requires parsed segment metadata".into(),
+                        )),
+                    };
+                    let records = match result {
+                        Ok(records) => RecordFrameState::Framed(records),
+                        Err(error) => RecordFrameState::Unavailable(crate::issue_detail(error)?),
+                    };
+                    SegmentBulkState::Framed(SegmentBulk {
+                        prefix: bulk.prefix,
+                        form: bulk.form,
+                        compressed: bulk.compressed,
+                        expanded: bulk.expanded,
+                        records,
+                    })
+                }
+            };
+            Ok(SegmentDescriptor {
+                pair: segment.pair,
+                registry: segment.registry,
+                kind: segment.kind,
+                identity_issues: segment.identity_issues,
+                meta: segment.meta,
+                bulk,
+            })
+        })
+        .collect()
 }
 
 /// Reads one `RSe` metadata stream, keeping its declaration through failure.

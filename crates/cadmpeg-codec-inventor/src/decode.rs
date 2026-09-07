@@ -215,7 +215,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                             fmtid: hex(&section.fmtid),
                             property_id: property.id,
                             name: property_name,
-                            value_kind: property_value_kind(&property.value, property.type_code),
+                            value_kind: property_value_kind(&property.value),
                             scalar_value,
                             raw_len: property.raw.window().len() as u64,
                             raw_sha256: sha256_hex(property.raw.window()),
@@ -430,7 +430,6 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                     UfrxRepresentationRecord {
                         prefix: state.prefix,
                         active_representation: state.active_representation.clone(),
-                        active_representation_kind: state.active_representation_kind.clone(),
                         secondary_active_lod_state: state.secondary_active_lod_state,
                         active_model_state: state.active_model_state.clone(),
                         active_model_state_state: state.active_model_state_state,
@@ -549,8 +548,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 kind: entry.kind,
                 payload_form: match entry.payload {
                     RevisionPayload::None => RevisionPayloadForm::None,
-                    RevisionPayload::Short { .. } => RevisionPayloadForm::Short,
-                    RevisionPayload::Long { .. } => RevisionPayloadForm::Long,
+                    RevisionPayload::Short(..) => RevisionPayloadForm::Short,
+                    RevisionPayload::Long(..) => RevisionPayloadForm::Long,
                 },
             })
             .collect(),
@@ -695,30 +694,13 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             let SegmentBulkState::Framed(bulk) = &segment.bulk else {
                 return Vec::new();
             };
-            let Some(RecordFrameState::Framed(table)) = &bulk.records else {
+            let RecordFrameState::Framed(table) = &bulk.records else {
                 return Vec::new();
             };
             table
                 .records
                 .iter()
-                .map(|record| RseRecordRecord {
-                    id: format!(
-                        "inventor:rse:record#{}-{}",
-                        segment.pair.token.as_str(),
-                        record.ordinal
-                    ),
-                    token: segment.pair.token.as_str().into(),
-                    ordinal: record.ordinal,
-                    selector: record.selector,
-                    type_index: record.type_index,
-                    type_id: hex(&record.type_id),
-                    payload_offset: record.payload_offset,
-                    payload_len: record.declared_payload_len as u64,
-                    payload_sha256: sha256_hex(record.payload.window()),
-                    trailing_payload_len: record.trailing_payload_len,
-                    trailer_len: record.trailer.window().len() as u64,
-                    trailer_sha256: sha256_hex(record.trailer.window()),
-                })
+                .map(|record| RseRecordRecord::from_frame(segment.pair.token.as_str(), record))
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
@@ -731,19 +713,16 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 return None;
             };
             let records = match &bulk.records {
-                Some(RecordFrameState::Framed(table)) => crate::native::SegmentBulkFrame::Framed {
+                RecordFrameState::Framed(table) => crate::native::SegmentBulkFrame::Framed {
                     record_count: table.records.len() as u64,
                     stream_trailer_len: table.stream_trailer.window().len() as u64,
                     stream_trailer_sha256: sha256_hex(table.stream_trailer.window()),
                 },
-                Some(RecordFrameState::Unavailable(detail)) => {
+                RecordFrameState::Unavailable(detail) => {
                     crate::native::SegmentBulkFrame::Unavailable {
                         detail: detail.clone(),
                     }
                 }
-                None => crate::native::SegmentBulkFrame::Unavailable {
-                    detail: "records are not framed".into(),
-                },
             };
             Some(SegmentBulkRecord {
                 id: format!("inventor:rse:segment-bulk#{}", segment.pair.token.as_str()),
@@ -882,10 +861,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             PmAppDefaultStyleRecord {
                 id: format!(
                     "inventor:presentation:default-style#{}-{}",
-                    style.segment_token, style.record_ordinal
+                    style.identity.segment_token, style.identity.record_ordinal
                 ),
-                segment_token: style.segment_token.clone(),
-                record_ordinal: style.record_ordinal,
+                segment_token: style.identity.segment_token.clone(),
+                record_ordinal: style.identity.record_ordinal,
                 segment_version_major: style.segment_version_major,
                 header_value: style.header_value,
                 header_id: style.header_id,
@@ -907,10 +886,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             PmAppRenderingStyleRecord {
                 id: format!(
                     "inventor:presentation:rendering-style#{}-{}",
-                    style.segment_token, style.record_ordinal
+                    style.identity.segment_token, style.identity.record_ordinal
                 ),
-                segment_token: style.segment_token.clone(),
-                record_ordinal: style.record_ordinal,
+                segment_token: style.identity.segment_token.clone(),
+                record_ordinal: style.identity.record_ordinal,
                 segment_version_major: style.segment_version_major,
                 header_value: style.header_value,
                 header_id: style.header_id,
@@ -918,7 +897,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 flags: style.flags,
                 values: style.values,
                 default_state: style.default_state,
-                value: style.value.value,
+                value: style.value,
                 name_reference: style.name_reference,
                 name: style.name.clone(),
                 comment: style.comment.clone(),
@@ -935,23 +914,19 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         .map(|face| PmGraphicsFaceRecord {
             id: format!(
                 "inventor:presentation:graphics-face#{}-{}",
-                face.segment_token, face.record_ordinal
+                face.identity.segment_token, face.identity.record_ordinal
             ),
-            segment_token: face.segment_token.clone(),
-            record_ordinal: face.record_ordinal,
+            segment_token: face.identity.segment_token.clone(),
+            record_ordinal: face.identity.record_ordinal,
             segment_version_major: face.segment_version_major,
             header_value: face.header_value,
             header_id: face.header_id,
             flags: face.flags,
-            styles_reference: face.styles_reference,
-            styles_reference_qualified: face.styles_reference_qualified,
-            surface_reference: face.surface_reference,
-            surface_reference_qualified: face.surface_reference_qualified,
-            parent_reference: face.parent_reference,
-            parent_reference_qualified: face.parent_reference_qualified,
+            styles: face.styles,
+            surface: face.surface,
+            parent: face.parent,
             state: face.state,
             edge_references: face.edge_references.clone(),
-            edge_list_metadata: face.edge_list_metadata,
             visibility_state: face.visibility_state,
             bounds: face.bounds,
             key: face.key,
@@ -964,13 +939,12 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         .map(|collection| PmGraphicsStyleCollectionRecord {
             id: format!(
                 "inventor:presentation:graphics-style-collection#{}-{}",
-                collection.segment_token, collection.record_ordinal
+                collection.identity.segment_token, collection.identity.record_ordinal
             ),
-            segment_token: collection.segment_token.clone(),
-            record_ordinal: collection.record_ordinal,
+            segment_token: collection.identity.segment_token.clone(),
+            record_ordinal: collection.identity.record_ordinal,
             segment_version_major: collection.segment_version_major,
             style_references: collection.style_references.clone(),
-            list_metadata: collection.list_metadata,
         })
         .collect::<Vec<_>>();
     let pm_graphics_primary_color_styles = presentation_inventory
@@ -979,10 +953,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         .map(|style| PmGraphicsPrimaryColorStyleRecord {
             id: format!(
                 "inventor:presentation:graphics-primary-color#{}-{}",
-                style.segment_token, style.record_ordinal
+                style.identity.segment_token, style.identity.record_ordinal
             ),
-            segment_token: style.segment_token.clone(),
-            record_ordinal: style.record_ordinal,
+            segment_token: style.identity.segment_token.clone(),
+            record_ordinal: style.identity.record_ordinal,
             segment_version_major: style.segment_version_major,
             header_value: style.header_value,
             controls: style.controls,
@@ -1962,34 +1936,53 @@ fn built_in_property_name(set_name: &str, id: u32) -> Option<&'static str> {
     }
 }
 
-fn property_value_kind(value: &PropertyValue<'_>, type_code: Option<u16>) -> PropertyValueKind {
-    let Some(type_code) = type_code else {
-        return PropertyValueKind::Dictionary;
-    };
+fn property_value_kind(value: &PropertyValue<'_>) -> PropertyValueKind {
     match value {
-        PropertyValue::Empty => PropertyValueKind::Empty { type_code },
-        PropertyValue::Signed(_) => PropertyValueKind::Signed { type_code },
-        PropertyValue::Unsigned(_) => PropertyValueKind::Unsigned { type_code },
-        PropertyValue::Float(_) => PropertyValueKind::Float { type_code },
-        PropertyValue::Bool(_) => PropertyValueKind::Bool { type_code },
-        PropertyValue::Filetime(_) => PropertyValueKind::Filetime { type_code },
-        PropertyValue::String(_) => PropertyValueKind::String { type_code },
-        PropertyValue::Guid(_) => PropertyValueKind::Guid { type_code },
-        PropertyValue::Binary(data) => PropertyValueKind::Binary {
-            type_code,
-            len: data.window().len(),
+        PropertyValue::Empty { type_code, .. } => PropertyValueKind::Empty {
+            type_code: *type_code,
         },
-        PropertyValue::Clipboard { format, data } => PropertyValueKind::Clipboard {
+        PropertyValue::Signed { type_code, .. } => PropertyValueKind::Signed {
+            type_code: *type_code,
+        },
+        PropertyValue::Unsigned { type_code, .. } => PropertyValueKind::Unsigned {
+            type_code: *type_code,
+        },
+        PropertyValue::Float { type_code, .. } => PropertyValueKind::Float {
+            type_code: *type_code,
+        },
+        PropertyValue::Bool { type_code, .. } => PropertyValueKind::Bool {
+            type_code: *type_code,
+        },
+        PropertyValue::Filetime { type_code, .. } => PropertyValueKind::Filetime {
+            type_code: *type_code,
+        },
+        PropertyValue::String { type_code, .. } => PropertyValueKind::String {
+            type_code: *type_code,
+        },
+        PropertyValue::Guid { type_code, .. } => PropertyValueKind::Guid {
+            type_code: *type_code,
+        },
+        PropertyValue::Binary { type_code, value } => PropertyValueKind::Binary {
+            type_code: *type_code,
+            len: value.window().len(),
+        },
+        PropertyValue::Clipboard {
             type_code,
+            format,
+            data,
+        } => PropertyValueKind::Clipboard {
+            type_code: *type_code,
             format: *format,
             len: data.window().len(),
         },
-        PropertyValue::Vector(values) => PropertyValueKind::Vector {
-            type_code,
+        PropertyValue::Vector { type_code, values } => PropertyValueKind::Vector {
+            type_code: *type_code,
             len: values.len(),
         },
         PropertyValue::Dictionary => PropertyValueKind::Dictionary,
-        PropertyValue::Unknown => PropertyValueKind::Unknown { type_code },
+        PropertyValue::Unknown { type_code } => PropertyValueKind::Unknown {
+            type_code: *type_code,
+        },
     }
 }
 
@@ -2005,8 +1998,8 @@ fn is_preview(fmtid: &[u8; 16], property_id: u32, name: Option<&str>) -> bool {
 
 fn preview_bytes<'a>(value: &'a PropertyValue<'a>) -> Option<(&'a [u8], &'static str)> {
     let bytes = match value {
-        PropertyValue::Binary(view) => view.window(),
-        PropertyValue::Clipboard { format, data } if *format == u32::MAX => {
+        PropertyValue::Binary { value: view, .. } => view.window(),
+        PropertyValue::Clipboard { format, data, .. } if *format == u32::MAX => {
             let bytes = data.window();
             let mut header = View::over_retained(bytes);
             let image_kind = header.u32_le()?;

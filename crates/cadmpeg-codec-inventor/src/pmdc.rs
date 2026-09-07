@@ -52,6 +52,7 @@ pub(crate) struct PmDcContentHeader {
     pub(crate) source_index: u32,
 }
 
+/// A reference list with metadata, carrying the marker its format prefixes it with.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "PmDcReferenceListWire", into = "PmDcReferenceListWire")]
 pub(crate) struct PmDcReferenceList {
@@ -78,31 +79,27 @@ impl PmDcReferenceList {
         })
     }
 
-    #[cfg(test)]
-    pub(crate) fn metadata(&self) -> Option<&PmDcListMetadata> {
-        self.items.as_ref().map(|(metadata, _)| metadata)
-    }
-
     pub(crate) fn references(&self) -> &[PmDcReference] {
         self.items
             .as_ref()
-            .map_or(&[] as &[_], |(_, references)| references.as_slice())
+            .map_or(&[], |(_, references)| references.as_slice())
+    }
+
+    pub(crate) fn into_parts(self) -> (u16, Option<PmDcListMetadata>, Vec<PmDcReference>) {
+        match self.items {
+            None => (self.marker, None, Vec::new()),
+            Some((metadata, references)) => (self.marker, Some(metadata), references),
+        }
     }
 }
 
 impl From<PmDcReferenceList> for PmDcReferenceListWire {
     fn from(value: PmDcReferenceList) -> Self {
-        match value.items {
-            None => Self {
-                marker: value.marker,
-                metadata: None,
-                references: Vec::new(),
-            },
-            Some((metadata, references)) => Self {
-                marker: value.marker,
-                metadata: Some(metadata),
-                references,
-            },
+        let (marker, metadata, references) = value.into_parts();
+        Self {
+            marker,
+            metadata,
+            references,
         }
     }
 }
@@ -113,6 +110,42 @@ impl TryFrom<PmDcReferenceListWire> for PmDcReferenceList {
     fn try_from(wire: PmDcReferenceListWire) -> Result<Self, Self::Error> {
         Self::new(wire.marker, wire.metadata, wire.references)
             .ok_or_else(|| "PmDc reference list metadata disagrees with length".to_owned())
+    }
+}
+
+/// A reference list with metadata whose format prefixes it with no marker.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PmDcPairedReferenceList<M> {
+    items: Option<(M, Vec<PmDcReference>)>,
+}
+
+impl<M> PmDcPairedReferenceList<M> {
+    pub(crate) fn new(metadata: Option<M>, references: Vec<PmDcReference>) -> Option<Self> {
+        Some(Self {
+            items: paired_items(metadata, references)?,
+        })
+    }
+
+    pub(crate) fn metadata(&self) -> Option<&M> {
+        self.items.as_ref().map(|(metadata, _)| metadata)
+    }
+
+    pub(crate) fn references(&self) -> &[PmDcReference] {
+        self.items
+            .as_ref()
+            .map_or(&[], |(_, references)| references.as_slice())
+    }
+
+    pub(crate) fn into_references(self) -> Vec<PmDcReference> {
+        self.items
+            .map(|(_, references)| references)
+            .unwrap_or_default()
+    }
+}
+
+impl<M> Default for PmDcPairedReferenceList<M> {
+    fn default() -> Self {
+        Self { items: None }
     }
 }
 
