@@ -20,8 +20,8 @@ use cadmpeg_ir::topology::{
 };
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::unknown::{NativeUnknownRecord, UnknownRecord};
+use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::SourceProvenance;
-use cadmpeg_ir::{AnnotationBuilder, Annotations};
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroUsize;
@@ -87,11 +87,6 @@ struct ArenaLengths {
     semantic_annotations: usize,
 }
 
-#[derive(Debug)]
-struct AnnotationCheckpoint {
-    annotations: Annotations,
-}
-
 #[derive(Clone, Debug, Default)]
 struct ReportBuckets {
     phase_warnings: Vec<String>,
@@ -119,18 +114,6 @@ impl ReportBuckets {
         self.phase_warnings.truncate(checkpoint.phase_warnings);
         self.phase_losses.truncate(checkpoint.phase_losses);
         self.typed_losses.truncate(checkpoint.typed_losses);
-    }
-}
-
-impl AnnotationCheckpoint {
-    fn capture(annotations: &cadmpeg_ir::Annotations) -> Self {
-        Self {
-            annotations: annotations.clone(),
-        }
-    }
-
-    fn rollback(self, annotations: &mut cadmpeg_ir::Annotations) {
-        *annotations = self.annotations;
     }
 }
 
@@ -458,6 +441,19 @@ impl ExpansionBudget {
     }
 }
 
+#[derive(Clone)]
+struct InstanceSelection {
+    source_order: usize,
+    key: String,
+    path: Vec<String>,
+}
+
+#[derive(Clone, Copy)]
+struct InstanceDisplay {
+    color: Option<Color>,
+    visible: bool,
+}
+
 /// Mutable decode state shared by metadata and geometry phases.
 #[derive(Clone)]
 pub(crate) struct DecodeContext<'a> {
@@ -474,11 +470,8 @@ pub(crate) struct DecodeContext<'a> {
     geometry_transferred: bool,
     /// Transactional report buckets produced by semantic decode phases.
     report: ReportBuckets,
-    selected_object: Option<usize>,
-    instance_key: Option<String>,
-    instance_path: Vec<String>,
-    instance_color: Option<Color>,
-    instance_visible: Option<bool>,
+    instance_selection: Option<InstanceSelection>,
+    instance_display: Option<InstanceDisplay>,
     object_candidates: BTreeMap<crate::wire::Uuid, Vec<usize>>,
     definition_candidates: BTreeMap<crate::wire::Uuid, usize>,
     expansion_budget: ExpansionBudget,
@@ -509,11 +502,8 @@ impl<'a> DecodeContext<'a> {
             mesh_budget: crate::mesh::MeshBudget::from_session(expand.ctx()),
             geometry_transferred: false,
             report: ReportBuckets::default(),
-            selected_object: None,
-            instance_key: None,
-            instance_path: Vec::new(),
-            instance_color: None,
-            instance_visible: None,
+            instance_selection: None,
+            instance_display: None,
             object_candidates,
             definition_candidates: scan
                 .definitions
@@ -625,12 +615,12 @@ impl<'a> DecodeContext<'a> {
         apply: impl FnOnce(&mut CadIr, &mut cadmpeg_ir::Annotations) -> Result<T, String>,
     ) -> Result<T, String> {
         let before = ArenaLengths::capture(&self.ir);
-        let annotation_checkpoint = AnnotationCheckpoint::capture(&self.annotations);
+        let annotation_checkpoint = self.annotations.clone();
         let value = match apply(&mut self.ir, &mut self.annotations) {
             Ok(value) => value,
             Err(error) => {
                 before.truncate(&mut self.ir);
-                annotation_checkpoint.rollback(&mut self.annotations);
+                self.annotations = annotation_checkpoint;
                 return Err(error);
             }
         };
@@ -651,7 +641,7 @@ impl<'a> DecodeContext<'a> {
                 Ok(unknowns) => unknowns,
                 Err(error) => {
                     before.truncate(&mut self.ir);
-                    annotation_checkpoint.rollback(&mut self.annotations);
+                    self.annotations = annotation_checkpoint;
                     return Err(error.to_string());
                 }
             };
@@ -663,19 +653,19 @@ impl<'a> DecodeContext<'a> {
                     .position(|record| record.id() == &reference.id)
                 else {
                     before.truncate(&mut self.ir);
-                    annotation_checkpoint.rollback(&mut self.annotations);
+                    self.annotations = annotation_checkpoint;
                     return Err(format!("candidate introduced unknown {}", reference.id));
                 };
                 link_updates.push((index, reference.links));
             }
             if let Err(error) = self.expansion_budget.entities(appended.len()) {
                 before.truncate(&mut self.ir);
-                annotation_checkpoint.rollback(&mut self.annotations);
+                self.annotations = annotation_checkpoint;
                 return Err(error);
             }
             if let Err(error) = self.charge_session_entities(appended.len()) {
                 before.truncate(&mut self.ir);
-                annotation_checkpoint.rollback(&mut self.annotations);
+                self.annotations = annotation_checkpoint;
                 return Err(error);
             }
             for (index, links) in link_updates {
@@ -685,7 +675,7 @@ impl<'a> DecodeContext<'a> {
             Ok(value)
         } else {
             before.truncate(&mut self.ir);
-            annotation_checkpoint.rollback(&mut self.annotations);
+            self.annotations = annotation_checkpoint;
             Err(validation_findings(&validation))
         }
     }
@@ -779,15 +769,16 @@ impl<'a> DecodeContext<'a> {
         }
         for source_order in 0..self.scan.objects.len() {
             if self
-                .selected_object
-                .is_some_and(|selected| selected != source_order)
+                .instance_selection
+                .as_ref()
+                .is_some_and(|selected| selected.source_order != source_order)
             {
                 continue;
             }
             let Some(object) = self.scan.objects[source_order].framed() else {
                 continue;
             };
-            if self.selected_object.is_none() && self.is_definition_member(object) {
+            if self.instance_selection.is_none() && self.is_definition_member(object) {
                 continue;
             }
             if crate::instances::is_reference_class(object.class_uuid) {
@@ -1821,12 +1812,15 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn object_key(&self, identity: &crate::objects::SourceIdentity, source_order: usize) -> String {
-        self.instance_key.clone().unwrap_or_else(|| {
-            identity
-                .source_id
-                .rsplit_once('#')
-                .map_or_else(|| source_order.to_string(), |(_, key)| key.to_string())
-        })
+        self.instance_selection
+            .as_ref()
+            .map(|selected| selected.key.clone())
+            .unwrap_or_else(|| {
+                identity
+                    .source_id
+                    .rsplit_once('#')
+                    .map_or_else(|| source_order.to_string(), |(_, key)| key.to_string())
+            })
     }
 
     fn reference_segment(
@@ -1852,9 +1846,11 @@ impl<'a> DecodeContext<'a> {
     ) -> SourceObjectAssociation {
         source_association(
             identity,
-            &self.instance_path,
-            self.instance_color,
-            self.instance_visible,
+            self.instance_selection
+                .as_ref()
+                .map_or(&[], |selected| selected.path.as_slice()),
+            self.instance_display.and_then(|display| display.color),
+            self.instance_display.map(|display| display.visible),
         )
     }
 
@@ -1862,7 +1858,7 @@ impl<'a> DecodeContext<'a> {
         let original_ids = ArenaLengths::EMPTY
             .appended_ids(&self.ir)
             .expect("capturing all Rhino IR identifiers cannot shrink arenas");
-        let annotation_checkpoint = AnnotationCheckpoint::capture(&self.annotations);
+        let annotation_checkpoint = self.annotations.clone();
         let original_links = self
             .unknowns
             .iter()
@@ -1871,19 +1867,18 @@ impl<'a> DecodeContext<'a> {
         let original_statuses = self.statuses.clone();
         let original_geometry_transferred = self.geometry_transferred;
         let report_checkpoint = self.report.checkpoint();
-        let original_selection = self.selected_object;
-        let original_key = self.instance_key.clone();
-        let original_path = self.instance_path.clone();
-        let original_color = self.instance_color;
-        let original_visible = self.instance_visible;
+        let original_selection = self.instance_selection.clone();
+        let original_display = self.instance_display;
         let original_expansion_budget = self.expansion_budget;
         let mut stack = Vec::new();
-        let mut path = self.instance_path.clone();
+        let mut path = self
+            .instance_selection
+            .as_ref()
+            .map_or_else(Vec::new, |selected| selected.path.clone());
         let parent = Transform::identity();
         let outcome = self.expand_reference_inner(source_order, parent, &mut path, &mut stack);
         // Mesh buffers stay charged in the session arena even on rollback.
-        let mut rejection_warning = None;
-        let accepted = match outcome {
+        let rejection_warning = match outcome {
             Ok(links) => {
                 let validation =
                     cadmpeg_ir::admit(&self.ir, cadmpeg_ir::RHINO_INSTANCE_CHECKS, Vec::new());
@@ -1891,23 +1886,15 @@ impl<'a> DecodeContext<'a> {
                     self.append_links(source_order, &links);
                     self.mark_decoded(source_order);
                     self.geometry_transferred = true;
-                    true
-                } else {
-                    rejection_warning = Some(format!(
-                        "instance expansion rejected atomically by IR admission: {}",
-                        validation_findings(&validation)
-                    ));
-                    false
+                    return true;
                 }
+                format!(
+                    "instance expansion rejected atomically by IR admission: {}",
+                    validation_findings(&validation)
+                )
             }
-            Err(message) => {
-                rejection_warning = Some(format!("instance retained: {message}"));
-                false
-            }
+            Err(message) => format!("instance retained: {message}"),
         };
-        if accepted {
-            return true;
-        }
 
         let current_ids = ArenaLengths::EMPTY
             .appended_ids(&self.ir)
@@ -1917,25 +1904,20 @@ impl<'a> DecodeContext<'a> {
             .cloned()
             .collect::<BTreeSet<_>>();
         ArenaLengths::remove_ids(&mut self.ir, &added_ids);
-        annotation_checkpoint.rollback(&mut self.annotations);
+        self.annotations = annotation_checkpoint;
         for (record, links) in self.unknowns.iter_mut().zip(original_links) {
             *record.links_mut() = links;
         }
         self.statuses = original_statuses;
         self.geometry_transferred = original_geometry_transferred;
         self.report.rollback(report_checkpoint);
-        self.selected_object = original_selection;
-        self.instance_key = original_key;
-        self.instance_path = original_path;
-        self.instance_color = original_color;
-        self.instance_visible = original_visible;
+        self.instance_selection = original_selection;
+        self.instance_display = original_display;
         self.expansion_budget = original_expansion_budget;
         self.ir
             .set_native_unknowns_from("rhino", self.unknowns.iter().map(NativeUnknownRecord::from))
             .expect("Rhino unknown records serialize");
-        if let Some(warning) = rejection_warning {
-            self.scan_warning(source_order, &warning);
-        }
+        self.scan_warning(source_order, &rejection_warning);
         false
     }
 
@@ -2022,11 +2004,15 @@ impl<'a> DecodeContext<'a> {
         let definition_members = definition.members.clone();
         stack.push(definition_id);
         path.push(self.reference_segment(source_order, identity));
-        let previous_color = self.instance_color;
-        self.instance_color = identity.effective_color.map(color).or(previous_color);
-        let previous_visible = self.instance_visible;
-        self.instance_visible =
-            Some(previous_visible.unwrap_or(true) && identity.effective_visible);
+        let previous_display = self.instance_display;
+        self.instance_display = Some(InstanceDisplay {
+            color: identity
+                .effective_color
+                .map(color)
+                .or(previous_display.and_then(|display| display.color)),
+            visible: previous_display.is_none_or(|display| display.visible)
+                && identity.effective_visible,
+        });
         let mut links = Vec::new();
         for member_id in definition_members {
             self.expansion_budget.member()?;
@@ -2052,23 +2038,20 @@ impl<'a> DecodeContext<'a> {
                 continue;
             }
             let before = ModelCheckpoint::capture(&self.ir.model);
-            let previous_selection = self.selected_object.replace(member_order);
-            let previous_key =
-                self.instance_key
-                    .replace(format!("{}.{}", path.join("."), member_id));
-            let previous_path = std::mem::replace(&mut self.instance_path, path.clone());
+            let previous_selection = self.instance_selection.replace(InstanceSelection {
+                source_order: member_order,
+                key: format!("{}.{}", path.join("."), member_id),
+                path: path.clone(),
+            });
             self.decode_geometry();
-            self.selected_object = previous_selection;
-            self.instance_key = previous_key;
-            self.instance_path = previous_path;
+            self.instance_selection = previous_selection;
             let after = ModelCheckpoint::capture(&self.ir.model);
             if before == after {
                 return Err(format!("definition member {member_id} did not decode"));
             }
             links.extend(self.transform_new_entities(&before, transform)?);
         }
-        self.instance_color = previous_color;
-        self.instance_visible = previous_visible;
+        self.instance_display = previous_display;
         path.pop();
         stack.pop();
         Ok(links)
