@@ -84,6 +84,8 @@ impl Debug for super::FeatureInputRelationInstance {
     }
 }
 
+// The kind is rendered as its legacy endpoint selector for persisted hashes.
+#[allow(clippy::missing_fields_in_debug)]
 impl Debug for super::FeatureInputSurfaceSelection {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> Result {
         formatter
