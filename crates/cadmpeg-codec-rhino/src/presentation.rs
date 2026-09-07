@@ -638,6 +638,8 @@ struct RenderingMaterialBackFace {
     material_source: u8,
 }
 
+// Serde passes the field by reference to this adapter.
+#[allow(clippy::ref_option)]
 fn serialize_material_back_face<S: serde::Serializer>(
     back_face: &Option<RenderingMaterialBackFace>,
     serializer: S,
