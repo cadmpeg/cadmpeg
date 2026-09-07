@@ -1012,7 +1012,10 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         record_index: 20,
         byte_offset: 200,
         class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
-        asset_id: "asset".into(),
+        asset_id: crate::records::DesignGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
         asset_id_offset: 230,
         entity_id: crate::records::DesignEntityId::try_from("0_10".to_owned())
             .expect("valid entity identity"),

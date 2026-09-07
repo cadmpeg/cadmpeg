@@ -648,20 +648,31 @@ fn sketch_entity_identity_derives_suffix_without_changing_its_spelling() {
     }
     let wire = serde_json::json!({
         "scope_reference_ordinal": 0, "record_index": 1, "byte_offset": 10,
-        "class_tag": "300", "asset_id": "asset", "asset_id_offset": 20,
+        "class_tag": "300", "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+        "asset_id_offset": 20,
         "entity_id": "Sketch_00017", "entity_suffix": 17, "entity_reference_offset": 30,
         "paired_class_tag": "301", "paired_byte_offset": 40
     });
     let profile: crate::records::topology::DesignSketchProfileOperand =
         serde_json::from_value(wire.clone()).expect("valid profile ID");
     assert_eq!(serde_json::to_value(profile).unwrap(), wire);
-    let mut mismatch = wire;
+    let mut mismatch = wire.clone();
     mismatch["entity_suffix"] = 18.into();
     assert!(
         serde_json::from_value::<crate::records::topology::DesignSketchProfileOperand>(mismatch)
             .expect_err("mismatched profile suffix")
             .to_string()
             .contains("entity_suffix")
+    );
+    let mut invalid_asset = wire;
+    invalid_asset["asset_id"] = "asset".into();
+    assert!(
+        serde_json::from_value::<crate::records::topology::DesignSketchProfileOperand>(
+            invalid_asset
+        )
+        .expect_err("non-GUID profile asset identity")
+        .to_string()
+        .contains("GUID")
     );
 }
 

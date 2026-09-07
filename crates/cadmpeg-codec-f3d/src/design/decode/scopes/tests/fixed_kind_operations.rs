@@ -1444,7 +1444,10 @@ pub(super) fn continue_fixed_kind_operations(
             record_index: 2795,
             byte_offset: 32_000,
             class_tag: crate::records::DesignClassTag::try_from("312".to_owned()).unwrap(),
-            asset_id: "asset".into(),
+            asset_id: crate::records::DesignGuidText::try_from(
+                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+            )
+            .unwrap(),
             asset_id_offset: 32_040,
             entity_id: crate::records::DesignEntityId::try_from("0_2718".to_owned())
                 .expect("valid entity identity"),

@@ -698,7 +698,10 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 record_index: 300,
                 byte_offset: 3000,
                 class_tag: crate::records::DesignClassTag::try_from("308".to_owned()).unwrap(),
-                asset_id: "df9087bd-02a6-4a3f-a132-7e69990f323c".into(),
+                asset_id: crate::records::DesignGuidText::try_from(
+                    "df9087bd-02a6-4a3f-a132-7e69990f323c".to_owned(),
+                )
+                .unwrap(),
                 asset_id_offset: 3040,
                 entity_id: crate::records::DesignEntityId::try_from("0_172".to_owned())
                     .expect("valid entity identity"),

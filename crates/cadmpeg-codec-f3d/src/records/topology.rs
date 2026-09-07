@@ -5,7 +5,7 @@ use super::feature::DesignAxis;
 use super::{
     ConstructionRecipeKind, DesignRecipeReference, Located, NonEmptyByteSpan, SketchRelationOperand,
 };
-use super::{DesignClassTag, DesignEntityId, DesignSecondaryIdentity};
+use super::{DesignClassTag, DesignEntityId, DesignGuidText, DesignSecondaryIdentity};
 use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 #[cfg(feature = "schema")]
@@ -32,7 +32,7 @@ pub struct DesignSketchProfileOperand {
     /// Source per-file dynamic three-digit ASCII primary class tag.
     pub class_tag: DesignClassTag,
     /// Asset UUID qualifying the selected Sketch reference.
-    pub asset_id: String,
+    pub asset_id: DesignGuidText,
     /// Byte offset of the asset UUID's UTF-16LE code units.
     pub asset_id_offset: u64,
     /// Full Design entity id of the selected Sketch.
@@ -91,7 +91,7 @@ impl TryFrom<DesignSketchProfileOperandWire> for DesignSketchProfileOperand {
             record_index: wire.record_index,
             byte_offset: wire.byte_offset,
             class_tag: wire.class_tag.try_into()?,
-            asset_id: wire.asset_id,
+            asset_id: wire.asset_id.try_into()?,
             asset_id_offset: wire.asset_id_offset,
             entity_id,
             entity_reference_offset: wire.entity_reference_offset,
@@ -110,7 +110,7 @@ impl From<DesignSketchProfileOperand> for DesignSketchProfileOperandWire {
             record_index: value.record_index,
             byte_offset: value.byte_offset,
             class_tag: value.class_tag.into(),
-            asset_id: value.asset_id,
+            asset_id: value.asset_id.into(),
             asset_id_offset: value.asset_id_offset,
             entity_id: value.entity_id.0,
             entity_suffix,

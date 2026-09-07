@@ -4124,7 +4124,7 @@ pub(crate) fn parse_sketch_profile(
         record_index: header.record_index,
         byte_offset: header.byte_offset,
         class_tag: header.class_tag.clone(),
-        asset_id,
+        asset_id: asset_id.try_into().ok()?,
         asset_id_offset: u64::try_from(start + 40).ok()?,
         entity_id: entity.entity_id.clone(),
         entity_reference_offset: u64::try_from(after_asset_id + 4).ok()?,

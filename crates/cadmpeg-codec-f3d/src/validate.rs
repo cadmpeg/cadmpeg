@@ -1841,7 +1841,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 && entity.is_some_and(|entity| {
                     entity.in_sketch_module() && entity.entity_id == profile.entity_id
                 })
-                && valid_design_guid(&profile.asset_id)
                 && profile.asset_id_offset > profile.byte_offset
                 && profile.entity_reference_offset > profile.asset_id_offset
                 && profile.paired_byte_offset > profile.entity_reference_offset
@@ -5900,7 +5899,7 @@ fn validate_construction_operand_identities<'a>(
                     && valid_design_guid(&persistent.asset_id)
                     && valid_design_guid(&persistent.context_id)
                     && selected_profile
-                        .is_none_or(|profile| profile.asset_id == persistent.asset_id)
+                        .is_none_or(|profile| profile.asset_id.as_str() == persistent.asset_id)
                     && (persistent.next_byte_offset
                         == identity.following_byte_offset.saturating_add(190)
                         || (persistent.tail_slot_offset
@@ -6515,7 +6514,7 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && member.context_id_offset > member.asset_id_offset
             && valid_design_guid(&member.asset_id)
             && valid_design_guid(&member.context_id)
-            && selected_profile.is_none_or(|profile| profile.asset_id == member.asset_id)
+            && selected_profile.is_none_or(|profile| profile.asset_id.as_str() == member.asset_id)
             && member.resolved_geometry == expected_target
             && member
                 .operand_identity_ids

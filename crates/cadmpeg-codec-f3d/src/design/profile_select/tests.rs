@@ -621,7 +621,10 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
         record_index: 10,
         byte_offset: 0,
         class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
-        asset_id: "asset".into(),
+        asset_id: crate::records::DesignGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
         asset_id_offset: 0,
         entity_id: placement.entity_id.clone(),
         entity_reference_offset: 0,
@@ -1037,7 +1040,10 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
         record_index: 10,
         byte_offset: 0,
         class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
-        asset_id: placement.entity_id.as_str().to_owned(),
+        asset_id: crate::records::DesignGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
         asset_id_offset: 0,
         entity_id: placement.entity_id,
         entity_reference_offset: 0,

@@ -174,7 +174,10 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 record_index: 100,
                 byte_offset: 300,
                 class_tag: crate::records::DesignClassTag::try_from("308".to_owned()).unwrap(),
-                asset_id: "e72ed0d8-58b4-4b8e-800d-5eaeea9c0c4b".into(),
+                asset_id: crate::records::DesignGuidText::try_from(
+                    "e72ed0d8-58b4-4b8e-800d-5eaeea9c0c4b".to_owned(),
+                )
+                .unwrap(),
                 asset_id_offset: 330,
                 entity_id: crate::records::DesignEntityId::try_from("0_172".to_owned())
                     .expect("valid entity identity"),
