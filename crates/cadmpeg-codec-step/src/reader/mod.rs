@@ -44,6 +44,7 @@ pub(crate) enum Packaging {
     },
 }
 
+#[derive(Clone, Copy)]
 enum DecodeMode {
     Decode(Packaging),
     Inspect,
