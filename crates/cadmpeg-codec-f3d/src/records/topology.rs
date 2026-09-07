@@ -972,7 +972,7 @@ pub struct DesignConstructionOperandIdentity {
 pub struct DesignIdentityWrapper {
     pub record_index: u32,
     pub byte_offset: u64,
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1023,14 +1023,16 @@ impl TryFrom<DesignConstructionOperandIdentityWire> for DesignConstructionOperan
                 .into_iter()
                 .zip(wire.wrapper_byte_offsets)
                 .zip(wire.wrapper_class_tags)
-                .map(
-                    |((record_index, byte_offset), class_tag)| DesignIdentityWrapper {
+                .map(|((record_index, byte_offset), class_tag)| {
+                    Ok(DesignIdentityWrapper {
                         record_index,
                         byte_offset,
-                        class_tag,
-                    },
-                )
-                .collect(),
+                        class_tag: class_tag
+                            .try_into()
+                            .map_err(|error| format!("wrapper_class_tags: {error}"))?,
+                    })
+                })
+                .collect::<Result<_, String>>()?,
         })
     }
 }
@@ -1045,7 +1047,7 @@ impl From<DesignConstructionOperandIdentity> for DesignConstructionOperandIdenti
         for wrapper in identity.wrappers {
             wrapper_record_indices.push(wrapper.record_index);
             wrapper_byte_offsets.push(wrapper.byte_offset);
-            wrapper_class_tags.push(wrapper.class_tag);
+            wrapper_class_tags.push(wrapper.class_tag.into());
         }
         Self {
             id: identity.id,

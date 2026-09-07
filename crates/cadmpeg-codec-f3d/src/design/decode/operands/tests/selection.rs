@@ -663,7 +663,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         wrappers: vec![crate::records::topology::DesignIdentityWrapper {
             record_index: 150,
             byte_offset: 50,
-            class_tag: "289".into(),
+            class_tag: crate::records::DesignClassTag::try_from("289".to_owned()).unwrap(),
         }],
         following_record_index: 200,
         following_byte_offset: 0,

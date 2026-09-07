@@ -5794,14 +5794,12 @@ fn validate_construction_operand_identities<'a>(
                 wrappers[1].byte_offset == wrappers[0].byte_offset.saturating_add(24)
             })
             && identity.wrappers.iter().all(|wrapper| {
-                wrapper.class_tag.len() == 3
-                    && wrapper.class_tag.bytes().all(|byte| byte.is_ascii_digit())
-                    && records_by_index
-                        .get(&(native_stream, wrapper.record_index))
-                        .is_some_and(|header| {
-                            header.byte_offset == wrapper.byte_offset
-                                && header.class_tag.as_str() == wrapper.class_tag
-                        })
+                records_by_index
+                    .get(&(native_stream, wrapper.record_index))
+                    .is_some_and(|header| {
+                        header.byte_offset == wrapper.byte_offset
+                            && header.class_tag == wrapper.class_tag
+                    })
             });
         let transform = group.and_then(|group| group.frame.trailing_transforms.first());
         let tracking_shape = identity.tracking_path.as_ref().is_none_or(|path| {

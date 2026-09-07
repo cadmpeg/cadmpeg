@@ -2692,7 +2692,7 @@ pub(crate) fn parse_construction_operand_identity(
         wrappers.push(crate::records::topology::DesignIdentityWrapper {
             record_index: current_record_index,
             byte_offset: u64::try_from(current_at).ok()?,
-            class_tag: current_class_tag,
+            class_tag: current_class_tag.try_into().ok()?,
         });
         current_at = current_at.checked_add(24)?;
         let (next_class_tag, after_next_tag) =

@@ -1202,7 +1202,7 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
         wrappers: vec![crate::records::topology::DesignIdentityWrapper {
             record_index: 101,
             byte_offset: 1_100,
-            class_tag: "384".into(),
+            class_tag: crate::records::DesignClassTag::try_from("384".to_owned()).unwrap(),
         }],
         following_record_index: 102,
         following_byte_offset: 1_124,
