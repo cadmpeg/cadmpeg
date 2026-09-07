@@ -146,7 +146,7 @@ struct ComponentBase {
 struct RawVertex {
     base: ComponentBase,
     point: Point3,
-    tag: u8,
+    tag: Option<SubdVertexTag>,
     edges: Vec<ComponentPointer>,
     faces: Vec<ComponentPointer>,
 }
@@ -154,7 +154,7 @@ struct RawVertex {
 #[derive(Debug, Clone)]
 struct RawEdge {
     base: ComponentBase,
-    tag: u8,
+    tag: Option<SubdEdgeTag>,
     sector_coefficients: [f64; 2],
     sharpness: [f64; 2],
     vertices: [ComponentPointer; 2],
@@ -519,10 +519,14 @@ fn read_vertex(
     warnings: &mut Vec<String>,
 ) -> Result<RawVertex, SubdError> {
     let base = read_base(reader, archive, expected_id, level, warnings)?;
-    let tag = reader.u8()?;
-    if tag > 4 {
-        return Err(malformed(reader.position() - 1, "invalid SubD vertex tag"));
-    }
+    let tag = match reader.u8()? {
+        0 => None,
+        1 => Some(SubdVertexTag::Smooth),
+        2 => Some(SubdVertexTag::Crease),
+        3 => Some(SubdVertexTag::Corner),
+        4 => Some(SubdVertexTag::Dart),
+        _ => return Err(malformed(reader.position() - 1, "invalid SubD vertex tag")),
+    };
     let point = point(reader, "SubD control point")?;
     let edge_count = usize::from(reader.u16()?);
     let face_count = usize::from(reader.u16()?);
@@ -584,10 +588,13 @@ fn read_edge(
     warnings: &mut Vec<String>,
 ) -> Result<RawEdge, SubdError> {
     let base = read_base(reader, archive, expected_id, level, warnings)?;
-    let tag = reader.u8()?;
-    if !matches!(tag, 0 | 1 | 2 | 4) {
-        return Err(malformed(reader.position() - 1, "invalid SubD edge tag"));
-    }
+    let tag = match reader.u8()? {
+        0 => None,
+        1 => Some(SubdEdgeTag::Smooth),
+        2 => Some(SubdEdgeTag::Crease),
+        4 => Some(SubdEdgeTag::SmoothX),
+        _ => return Err(malformed(reader.position() - 1, "invalid SubD edge tag")),
+    };
     let face_count = usize::from(reader.u16()?);
     let sector_coefficients = [reader.f64()?, reader.f64()?];
     if sector_coefficients.iter().any(|value| !value.is_finite()) {
@@ -978,10 +985,10 @@ fn validate_level(level: &RawLevel, expected_level: usize) -> Result<(), SubdErr
         )?;
     }
     if expected_level == 0 {
-        if level.vertices.iter().any(|vertex| vertex.tag == 0) {
+        if level.vertices.iter().any(|vertex| vertex.tag.is_none()) {
             return Err(malformed(0, "level-zero SubD vertex has unset tag"));
         }
-        if level.edges.iter().any(|edge| edge.tag == 0) {
+        if level.edges.iter().any(|edge| edge.tag.is_none()) {
             return Err(malformed(0, "level-zero SubD edge has unset tag"));
         }
     }
@@ -1119,13 +1126,9 @@ fn materialize(
         .vertices
         .into_iter()
         .map(|vertex| {
-            let tag = match vertex.tag {
-                1 => SubdVertexTag::Smooth,
-                2 => SubdVertexTag::Crease,
-                3 => SubdVertexTag::Corner,
-                4 => SubdVertexTag::Dart,
-                _ => return Err(malformed(0, "invalid materialized SubD vertex tag")),
-            };
+            let tag = vertex
+                .tag
+                .ok_or_else(|| malformed(0, "invalid materialized SubD vertex tag"))?;
             Ok(SubdVertex {
                 point: Point3::new(
                     crate::wire::scaled_coordinate(vertex.point.x, scale)
@@ -1144,12 +1147,9 @@ fn materialize(
         .edges
         .into_iter()
         .map(|edge| {
-            let tag = match edge.tag {
-                1 => SubdEdgeTag::Smooth,
-                2 => SubdEdgeTag::Crease,
-                4 => SubdEdgeTag::SmoothX,
-                _ => return Err(malformed(0, "invalid materialized SubD edge tag")),
-            };
+            let tag = edge
+                .tag
+                .ok_or_else(|| malformed(0, "invalid materialized SubD edge tag"))?;
             Ok(SubdEdge {
                 vertices: [
                     *vertex_indices
