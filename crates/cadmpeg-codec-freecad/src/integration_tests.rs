@@ -137,9 +137,7 @@ fn typed_graph_pipeline_builds_mutates_writes_and_reloads_side_entries() {
             "Edited & encoded",
         )
         .unwrap();
-    FcstdCodec
-        .replace_side_entry(&mut ir, "Payload.bin", b"second payload".to_vec())
-        .unwrap();
+    crate::mutation::replace_entry(&mut ir, "Payload.bin", b"second payload".to_vec()).unwrap();
 
     let mut bytes = Vec::new();
     FcstdCodec

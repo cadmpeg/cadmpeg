@@ -488,5 +488,5 @@ fn keywords_root_id_does_not_create_feature_parentage() {
     assert_eq!(history.properties["id"], "document");
     assert_eq!(history.features[0].parent_source_id(), None);
     assert_eq!(history.features[1].parent_source_id(), Some("1"));
-    assert!(crate::validate_native(decoded.ir()).is_empty());
+    assert!(crate::resolved_features::validate::validate_native(decoded.ir()).is_empty());
 }

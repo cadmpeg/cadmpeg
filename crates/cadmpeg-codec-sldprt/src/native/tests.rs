@@ -97,7 +97,7 @@ fn native_version_one_migrates_the_body_selection_arena() {
         .ir_mut()
         .native
         .namespace_mut("sldprt", std::num::NonZeroU32::MIN) = legacy;
-    assert!(crate::validate_native(decoded.ir()).is_empty());
+    assert!(crate::resolved_features::validate::validate_native(decoded.ir()).is_empty());
     crate::test_support::plan_inherited_write(
         decoded.ir(),
         decoded.source_fidelity(),

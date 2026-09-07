@@ -14,9 +14,7 @@ use cadmpeg_registry::{ForcedInput, Format, InputCatalog};
 
 use crate::application::refusal::ApplicationError;
 use crate::application::validators::validate_ir;
-use crate::application::{
-    ArtifactStore, ConversionRefusal, LoadedDocument, NativeValidatorCatalog, SidecarPersistOutcome,
-};
+use crate::application::{ArtifactStore, ConversionRefusal, LoadedDocument, SidecarPersistOutcome};
 use crate::loader;
 
 /// Input path and decode options for one conversion.
@@ -289,16 +287,14 @@ pub struct PreparedConversion {
 
 /// Application workflow that prepares and writes conversions.
 pub struct Transcoder<'a> {
-    /// Input detection and codec lookup.
+    /// Input detection, codec lookup, and native validation.
     pub inputs: &'a InputCatalog,
-    /// Native namespace validators.
-    pub validators: &'a NativeValidatorCatalog,
 }
 
 impl<'a> Transcoder<'a> {
-    /// Creates a transcoder over the given catalogs.
-    pub const fn new(inputs: &'a InputCatalog, validators: &'a NativeValidatorCatalog) -> Self {
-        Self { inputs, validators }
+    /// Creates a transcoder over the input catalog.
+    pub const fn new(inputs: &'a InputCatalog) -> Self {
+        Self { inputs }
     }
 
     /// Loads and validates a conversion without planning or writing it.
@@ -329,7 +325,7 @@ impl<'a> Transcoder<'a> {
         }
 
         let validation = validate_ir(
-            self.validators,
+            self.inputs,
             &loaded.ir,
             loaded.fidelity(),
             losses(decode_report.as_ref()),

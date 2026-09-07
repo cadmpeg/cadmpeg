@@ -117,9 +117,11 @@ fn semantic_writer_rejects_edited_sketch_marker_local_id() {
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].sketch_entities[0].local_id = Some(7);
     });
-    assert!(crate::validate_native(decoded.ir())
-        .iter()
-        .any(|finding| finding.message.contains("local object id does not match")));
+    assert!(
+        crate::resolved_features::validate::validate_native(decoded.ir())
+            .iter()
+            .any(|finding| finding.message.contains("local object id does not match"))
+    );
 
     let error = crate::test_support::plan_inherited_write(
         decoded.ir(),
@@ -140,9 +142,11 @@ fn semantic_writer_rejects_edited_sketch_marker_object_index() {
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].sketch_entities[0].object_index = Some(77);
     });
-    assert!(crate::validate_native(decoded.ir())
-        .iter()
-        .any(|finding| finding.message.contains("object index does not match")));
+    assert!(
+        crate::resolved_features::validate::validate_native(decoded.ir())
+            .iter()
+            .any(|finding| finding.message.contains("object index does not match"))
+    );
 
     let error = crate::test_support::plan_inherited_write(
         decoded.ir(),
@@ -200,9 +204,11 @@ fn native_validation_rejects_duplicate_sketch_marker_offsets() {
         let offset = native.feature_input_lanes[0].sketch_entities[0].offset;
         native.feature_input_lanes[0].sketch_entities[1].offset = offset;
     });
-    assert!(crate::validate_native(decoded.ir())
-        .iter()
-        .any(|finding| finding.message.contains("repeats entity offset")));
+    assert!(
+        crate::resolved_features::validate::validate_native(decoded.ir())
+            .iter()
+            .any(|finding| finding.message.contains("repeats entity offset"))
+    );
 }
 
 #[test]
@@ -221,7 +227,7 @@ fn native_validation_requires_complete_ordered_sketch_markers() {
         native.feature_input_lanes[0].sketch_entities.remove(1);
         native.feature_input_lanes[0].sketch_entities[1].ordinal = 4;
     });
-    let messages = crate::validate_native(decoded.ir())
+    let messages = crate::resolved_features::validate::validate_native(decoded.ir())
         .into_iter()
         .map(|finding| finding.message)
         .collect::<Vec<_>>();

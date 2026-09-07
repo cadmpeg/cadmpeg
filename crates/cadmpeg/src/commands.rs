@@ -32,7 +32,7 @@ use crate::application::transcoder::{emit_export_plan, TargetSelection};
 use crate::application::validators::validate_ir;
 use crate::application::{
     export_target, ArtifactStore, ConversionPolicy, ConversionRefusal, DestinationPolicy,
-    LoadedDocument, NativeValidatorCatalog, SourceRequest, Transcoder,
+    LoadedDocument, SourceRequest, Transcoder,
 };
 use crate::loader;
 use crate::DecodeArgs;
@@ -52,10 +52,8 @@ type CommandResult<T> = std::result::Result<T, ApplicationError>;
 
 /// Catalogs required by CLI command handlers.
 pub struct AppCatalogs {
-    /// Input detection and codec lookup.
+    /// Input detection, codec lookup, and native validation.
     pub inputs: InputCatalog,
-    /// Native namespace validators.
-    pub validators: NativeValidatorCatalog,
 }
 
 fn print_load_notice(document: &LoadedDocument) {
@@ -374,7 +372,7 @@ pub fn check_cmd(
         print_decode_report(&mut io::stderr(), report)?;
     }
     let report = validate_ir(
-        &catalogs.validators,
+        &catalogs.inputs,
         &loaded.ir,
         loaded.fidelity(),
         losses(loaded.decode_report()),
@@ -446,7 +444,7 @@ pub fn convert(
         }
     }
 
-    let transcoder = Transcoder::new(&catalogs.inputs, &catalogs.validators);
+    let transcoder = Transcoder::new(&catalogs.inputs);
     let source = SourceRequest {
         path,
         forced: conversion.forced_input,
@@ -602,7 +600,6 @@ mod tests {
     fn catalogs() -> AppCatalogs {
         AppCatalogs {
             inputs: InputCatalog::with_builtins(),
-            validators: NativeValidatorCatalog::with_builtins(),
         }
     }
 

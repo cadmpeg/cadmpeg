@@ -19,15 +19,14 @@ fuzz = "required"
 
 [[crate]]
 id = "f3d"
-names = ["F3dCodec", "validate_native"]
+names = ["F3dCodec"]
 fuzz = "absent"
 fuzz_reason = "focused targets call cadmpeg_asm"
 
 [[crate]]
 id = "freecad"
-names = [
-    "FcstdCodec",
-    "validate_native",
+names = ["FcstdCodec"]
+hidden = [
     "FcstdDocumentBuilder",
     "FcstdPropertyValue",
     "FcstdPropertyOwner",
@@ -42,7 +41,7 @@ fuzz = "required"
 
 [[crate]]
 id = "inventor"
-names = ["InventorCodec", "validate_native"]
+names = ["InventorCodec"]
 fuzz = "required"
 
 [[crate]]
@@ -69,7 +68,7 @@ fuzz_reason = "focused targets call SatCodec"
 
 [[crate]]
 id = "sldprt"
-names = ["SldprtCodec", "validate_native"]
+names = ["SldprtCodec"]
 fuzz = "required"
 
 [[crate]]

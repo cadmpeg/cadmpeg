@@ -21,7 +21,7 @@ use cadmpeg_registry::{ForcedInput, InputCatalog};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use registry_view::{print_dialects, print_formats};
 
-use crate::application::{LossPolicy, NativeValidatorCatalog};
+use crate::application::LossPolicy;
 use crate::commands::AppCatalogs;
 
 #[derive(Debug, Parser)]
@@ -332,7 +332,6 @@ fn main() -> ExitCode {
     let command = Cli::parse().command;
     let catalogs = AppCatalogs {
         inputs: InputCatalog::with_builtins(),
-        validators: NativeValidatorCatalog::with_builtins(),
     };
     let result: Result<ExitCode, application::refusal::ApplicationError> = match command {
         Command::Inspect(inspect::InspectArgs::Bytes(byte_command)) => {

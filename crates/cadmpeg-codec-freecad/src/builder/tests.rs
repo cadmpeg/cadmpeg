@@ -65,8 +65,7 @@ fn builds_and_writes_a_source_less_typed_application_graph() {
         .expect("add payload");
     let mut ir = builder.build().expect("build source-less graph");
     assert!(crate::validate_native(&ir).is_empty());
-    FcstdCodec
-        .replace_side_entry(&mut ir, "Payload.bin", b"edited payload".to_vec())
+    crate::mutation::replace_entry(&mut ir, "Payload.bin", b"edited payload".to_vec())
         .expect("replace side entry");
 
     let mut encoded = Vec::new();

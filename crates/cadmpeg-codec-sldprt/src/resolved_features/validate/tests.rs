@@ -21,9 +21,11 @@ fn native_validation_rejects_duplicate_history_ordinals() {
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_histories[0].features[1].ordinal = 0;
     });
-    assert!(crate::validate_native(decoded.ir())
-        .iter()
-        .any(|finding| finding.message.contains("repeats feature ordinal")));
+    assert!(
+        crate::resolved_features::validate::validate_native(decoded.ir())
+            .iter()
+            .any(|finding| finding.message.contains("repeats feature ordinal"))
+    );
 }
 
 #[test]
@@ -42,9 +44,11 @@ fn native_validation_rejects_broken_feature_graph() {
                 source_id: None,
             });
     });
-    assert!(crate::validate_native(decoded.ir())
-        .iter()
-        .any(|finding| finding.message.contains("missing tree parent")));
+    assert!(
+        crate::resolved_features::validate::validate_native(decoded.ir())
+            .iter()
+            .any(|finding| finding.message.contains("missing tree parent"))
+    );
 }
 
 #[test]
@@ -76,7 +80,7 @@ fn native_validation_rejects_broken_history_root_graph() {
         ];
     });
 
-    let messages = crate::validate_native(decoded.ir())
+    let messages = crate::resolved_features::validate::validate_native(decoded.ir())
         .into_iter()
         .map(|finding| finding.message)
         .collect::<Vec<_>>();
@@ -123,9 +127,14 @@ fn native_validation_rejects_orphan_history_records() {
         .arenas
         .get_mut("features")
         .unwrap()[0] = cadmpeg_ir::NativeRecord::new(orphan.id().to_string(), orphan_fields);
-    assert!(crate::validate_native(decoded.ir()).iter().any(|finding| {
-        finding.message.contains("invalid owner") && finding.message.contains("missing-history")
-    }));
+    assert!(
+        crate::resolved_features::validate::validate_native(decoded.ir())
+            .iter()
+            .any(|finding| {
+                finding.message.contains("invalid owner")
+                    && finding.message.contains("missing-history")
+            })
+    );
 }
 
 #[test]
@@ -145,11 +154,15 @@ fn native_validation_rejects_edited_relation_binding() {
             crate::records::FeatureInputRelationFamily::LineLineDistance;
     });
 
-    assert!(crate::validate_native(decoded.ir()).iter().any(|finding| {
-        finding
-            .message
-            .contains("relation bindings do not match the native payload")
-    }));
+    assert!(
+        crate::resolved_features::validate::validate_native(decoded.ir())
+            .iter()
+            .any(|finding| {
+                finding
+                    .message
+                    .contains("relation bindings do not match the native payload")
+            })
+    );
     let error = crate::test_support::plan_inherited_write(
         decoded.ir(),
         decoded.source_fidelity(),
@@ -177,11 +190,15 @@ fn native_validation_rejects_edited_relation_instance() {
             .clear_parameter();
     });
 
-    assert!(crate::validate_native(decoded.ir()).iter().any(|finding| {
-        finding
-            .message
-            .contains("relation instances do not match the native payload")
-    }));
+    assert!(
+        crate::resolved_features::validate::validate_native(decoded.ir())
+            .iter()
+            .any(|finding| {
+                finding
+                    .message
+                    .contains("relation instances do not match the native payload")
+            })
+    );
     let error = crate::test_support::plan_inherited_write(
         decoded.ir(),
         decoded.source_fidelity(),

@@ -55,8 +55,8 @@ metadata, and native records are required; container-only decoding does not
 inflate bulk geometry streams.
 
 `InventorCodec::inspect` returns the complete compound hierarchy and bounded
-container facts without transferring geometry. The public
-[`validate_native`][validate-native] function validates the typed
+container facts without transferring geometry.
+[`Codec::validate_native`][validate-native] validates the typed
 `inventor` native namespace; the CLI also runs shared IR validation on decoded
 geometry.
 
@@ -197,4 +197,4 @@ the [clean-room and legal policy][legal].
 [repo]: https://github.com/cadmpeg/cadmpeg
 [spec]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/inventor.md
 [support]: https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md
-[validate-native]: https://docs.rs/cadmpeg-codec-inventor/latest/cadmpeg_codec_inventor/fn.validate_native.html
+[validate-native]: https://docs.rs/cadmpeg-ir/latest/cadmpeg_ir/codec/trait.Codec.html#tymethod.validate_native

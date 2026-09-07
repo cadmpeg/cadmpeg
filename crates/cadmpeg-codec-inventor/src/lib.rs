@@ -58,6 +58,10 @@ pub struct InventorCodec;
 impl CodecBackend for InventorCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
+    fn validate_native(ir: &CadIr) -> Vec<Finding> {
+        validate::validate_native(ir)
+    }
+
     fn detect_impl(&self, prefix: &[u8]) -> Confidence {
         let CompoundPrefixProbe::DirectoryEvidence(paths) = CompoundPrefixProbe::inspect(prefix)
         else {
@@ -81,11 +85,6 @@ impl CodecBackend for InventorCodec {
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
         decode::decode(ctx, root)
     }
-}
-
-/// Validates the typed Inventor-native namespace.
-pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
-    validate::validate_native(ir)
 }
 
 #[cfg(test)]

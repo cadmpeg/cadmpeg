@@ -8,7 +8,7 @@ use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
 use cadmpeg_codec_freecad::{
-    validate_native, FcstdCodec, FcstdDocumentBuilder, FcstdPropertyOwner, FcstdPropertyValue,
+    FcstdCodec, FcstdDocumentBuilder, FcstdPropertyOwner, FcstdPropertyValue,
 };
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder, TargetRequest};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -151,7 +151,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let canonical = first.ir().to_canonical_json()?;
         let deterministic = canonical == second.ir().to_canonical_json()?;
         let neutral = cadmpeg_ir::validate_neutral(first.ir(), Vec::new());
-        let native = validate_native(first.ir());
+        let native = FcstdCodec.validate_native(first.ir());
         let namespace = first
             .ir()
             .native
@@ -769,7 +769,7 @@ fn source_less_profile() -> Result<SourceLessWriteProfile, Box<dyn std::error::E
     Ok(SourceLessWriteProfile {
         generated: true,
         deterministic: first == second,
-        decodes_cleanly: validate_native(decoded.ir()).is_empty(),
+        decodes_cleanly: FcstdCodec.validate_native(decoded.ir()).is_empty(),
         object_type,
         typed_parameters,
         unsupported_target_rejected,

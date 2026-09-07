@@ -13,4 +13,3 @@ pub use refusal::ConversionRefusal;
 pub use transcoder::{
     export_target, ConversionPolicy, DestinationPolicy, LossPolicy, SourceRequest, Transcoder,
 };
-pub use validators::NativeValidatorCatalog;

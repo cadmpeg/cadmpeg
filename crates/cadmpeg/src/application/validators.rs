@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The native-validator catalog.
+//! Native validation over a decoded document.
 //!
 //! Codec-owned validators run over a decoded document's native namespaces.
 //! Unlike the codec registry, this is an application concern: it belongs to
@@ -9,11 +9,10 @@ use cadmpeg_ir::{
     validate_neutral, validate_neutral_with_source_fidelity, CadIr, Finding, SourceFidelity,
     ValidationReport,
 };
-
-type NativeValidator = fn(&CadIr) -> Vec<Finding>;
+use cadmpeg_registry::InputCatalog;
 
 pub(crate) fn validate_ir(
-    validators: &NativeValidatorCatalog,
+    inputs: &InputCatalog,
     ir: &CadIr,
     source_fidelity: Option<&SourceFidelity>,
     losses: Vec<cadmpeg_ir::LossNote>,
@@ -22,119 +21,55 @@ pub(crate) fn validate_ir(
         Some(source_fidelity) => validate_neutral_with_source_fidelity(ir, source_fidelity, losses),
         None => validate_neutral(ir, losses),
     };
-    report.findings.extend(validators.validate(ir));
+    report.findings.extend(validate_native(inputs, ir));
     report
 }
 
-/// Maps native namespace ids to codec-owned validator functions.
-pub struct NativeValidatorCatalog {
-    entries: Vec<(&'static str, NativeValidator)>,
-}
-
-impl NativeValidatorCatalog {
-    /// Registers the four native validators shipped with the CLI.
-    pub fn with_builtins() -> Self {
-        let entries: Vec<(&'static str, NativeValidator)> = vec![
-            #[cfg(feature = "fcstd")]
-            ("fcstd", cadmpeg_codec_freecad::validate_native),
-            #[cfg(feature = "f3d")]
-            ("f3d", cadmpeg_codec_f3d::validate_native),
-            #[cfg(feature = "inventor")]
-            ("inventor", cadmpeg_codec_inventor::validate_native),
-            #[cfg(feature = "sldprt")]
-            ("sldprt", cadmpeg_codec_sldprt::validate_native),
-        ];
-        Self { entries }
-    }
-
-    /// Stable namespace ids that have a registered validator.
-    #[cfg(test)]
-    fn namespaces(&self) -> impl Iterator<Item = &'static str> + '_ {
-        self.entries.iter().map(|(namespace, _)| *namespace)
-    }
-
-    /// Runs every validator whose namespace is present on the document.
-    pub fn validate(&self, ir: &CadIr) -> Vec<Finding> {
-        self.entries
-            .iter()
-            .filter(|(namespace, _)| ir.native.namespace(namespace).is_some())
-            .flat_map(|(_, validator)| validator(ir))
-            .collect()
-    }
+/// Runs every registered codec's native validator over the namespace it owns.
+pub fn validate_native(inputs: &InputCatalog, ir: &CadIr) -> Vec<Finding> {
+    inputs
+        .descriptors()
+        .filter_map(|descriptor| {
+            let codec = descriptor.codec()?;
+            ir.native
+                .namespace(codec.id().as_str())
+                .is_some()
+                .then(|| codec.validate_native(ir))
+        })
+        .flatten()
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use cadmpeg_ir::CadIr;
-    use cadmpeg_registry::InputCatalog;
 
     #[test]
-    fn native_validator_and_input_catalog_registrations_agree() {
-        const VALIDATED_FORMATS: [&str; 4] = ["fcstd", "f3d", "inventor", "sldprt"];
-
-        let mut validators = NativeValidatorCatalog::with_builtins()
-            .namespaces()
-            .collect::<Vec<_>>();
-        validators.sort_unstable();
-        let mut inputs = InputCatalog::with_builtins()
-            .descriptors()
-            .map(|descriptor| descriptor.format_id().as_str())
-            .filter(|id| VALIDATED_FORMATS.contains(id))
-            .collect::<Vec<_>>();
-        inputs.sort_unstable();
-
-        assert_eq!(validators, inputs);
+    fn a_document_with_no_native_namespace_has_no_native_findings() {
+        let inputs = InputCatalog::with_builtins();
+        assert!(validate_native(&inputs, &CadIr::empty()).is_empty());
     }
 
-    #[cfg(all(
-        feature = "fcstd",
-        feature = "f3d",
-        feature = "inventor",
-        feature = "sldprt"
-    ))]
     #[test]
-    fn native_validator_catalog_registers_the_four_shipped_validators() {
-        let catalog = NativeValidatorCatalog::with_builtins();
-        let mut namespaces = catalog.namespaces().collect::<Vec<_>>();
-        namespaces.sort_unstable();
-        assert_eq!(namespaces, ["f3d", "fcstd", "inventor", "sldprt"]);
+    fn an_unregistered_namespace_reaches_no_codec_validator() {
+        let inputs = InputCatalog::with_builtins();
+        let mut ir = CadIr::empty();
+        let _ = ir.native.namespace_mut("absent", std::num::NonZeroU32::MIN);
+        assert!(validate_native(&inputs, &ir).is_empty());
     }
 
-    #[cfg(all(feature = "fcstd", feature = "f3d"))]
+    #[cfg(feature = "fcstd")]
     #[test]
-    fn native_validator_catalog_invokes_two_validators_for_two_namespaces() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-
-        static CALLS: AtomicUsize = AtomicUsize::new(0);
-
-        fn counting_fcstd(ir: &CadIr) -> Vec<Finding> {
-            let _ = ir;
-            CALLS.fetch_add(1, Ordering::SeqCst);
-            Vec::new()
-        }
-        fn counting_f3d(ir: &CadIr) -> Vec<Finding> {
-            let _ = ir;
-            CALLS.fetch_add(1, Ordering::SeqCst);
-            Vec::new()
-        }
-
-        let catalog = NativeValidatorCatalog {
-            entries: vec![("fcstd", counting_fcstd), ("f3d", counting_f3d)],
-        };
-        CALLS.store(0, Ordering::SeqCst);
+    fn a_registered_namespace_reaches_its_own_codec_validator() {
+        let inputs = InputCatalog::with_builtins();
         let mut ir = CadIr::empty();
         let _ = ir.native.namespace_mut("fcstd", std::num::NonZeroU32::MIN);
-        let _ = ir.native.namespace_mut("f3d", std::num::NonZeroU32::MIN);
-        let _ = catalog.validate(&ir);
-        assert_eq!(CALLS.load(Ordering::SeqCst), 2);
-
-        CALLS.store(0, Ordering::SeqCst);
-        let mut none = CadIr::empty();
-        let _ = none
-            .native
-            .namespace_mut("absent", std::num::NonZeroU32::MIN);
-        let _ = catalog.validate(&none);
-        assert_eq!(CALLS.load(Ordering::SeqCst), 0);
+        let findings = validate_native(&inputs, &ir);
+        assert_eq!(findings.len(), 1);
+        assert!(
+            findings[0].message.contains("FCStd native namespace"),
+            "{findings:?}"
+        );
     }
 }

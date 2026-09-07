@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Checked semantic mutations of retained persistence records.
 
-use crate::native::{native_id, EntryRecord, PropertyRecord};
+#[cfg(test)]
+use crate::native::EntryRecord;
+use crate::native::{native_id, PropertyRecord};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 
@@ -40,30 +42,7 @@ pub(crate) fn set_value_attribute(
     })
 }
 
-pub(crate) fn set_value_text(
-    ir: &mut CadIr,
-    owner: FcstdPropertyOwner<'_>,
-    property_name: &str,
-    value_order: usize,
-    text: Option<String>,
-) -> Result<(), CodecError> {
-    mutate_property(ir, owner, property_name, |property| {
-        let property_id = property.id.clone();
-        let value_record = property
-            .values_mut()
-            .into_iter()
-            .flatten()
-            .find(|record| record.order == value_order)
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "FCStd property {property_id} has no value at order {value_order}"
-                ))
-            })?;
-        value_record.text = text;
-        Ok(())
-    })
-}
-
+#[cfg(test)]
 pub(crate) fn replace_entry(
     ir: &mut CadIr,
     entry_name: &str,

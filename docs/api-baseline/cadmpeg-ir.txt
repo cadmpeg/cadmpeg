@@ -1,4 +1,4 @@
-# generated at 948026409
+# generated at 1f6c385c0
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -338,16 +338,19 @@ pub fn cadmpeg_ir::codec::Codec::decode(&self, &mut dyn cadmpeg_core::io::ReadSe
 pub fn cadmpeg_ir::codec::Codec::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
 pub fn cadmpeg_ir::codec::Codec::id(&self) -> cadmpeg_ir::codec::FormatId
 pub fn cadmpeg_ir::codec::Codec::inspect(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_core::decode::policy::InspectOptions) -> core::result::Result<cadmpeg_ir::container::ContainerSummary, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::codec::Codec::validate_native(&self, &cadmpeg_ir::document::CadIr) -> alloc::vec::Vec<cadmpeg_ir::Finding>
 impl<C: cadmpeg_ir::codec::CodecBackend + ?core::marker::Sized> cadmpeg_ir::codec::Codec for C
 pub fn C::decode(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_ir::codec::DecodeOptions) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_ir::codec::DecodeFailure>
 pub fn C::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
 pub fn C::id(&self) -> cadmpeg_ir::codec::FormatId
 pub fn C::inspect(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_core::decode::policy::InspectOptions) -> core::result::Result<cadmpeg_ir::container::ContainerSummary, cadmpeg_core::error::CodecError>
+pub fn C::validate_native(&self, &cadmpeg_ir::document::CadIr) -> alloc::vec::Vec<cadmpeg_ir::Finding>
 pub trait cadmpeg_ir::codec::CodecBackend
 pub const cadmpeg_ir::codec::CodecBackend::FORMAT: cadmpeg_ir::codec::FormatId
 pub fn cadmpeg_ir::codec::CodecBackend::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::Decoded, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_ir::codec::CodecBackend::detect_impl(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
 pub fn cadmpeg_ir::codec::CodecBackend::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::container::ContainerSummary, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::codec::CodecBackend::validate_native(&cadmpeg_ir::document::CadIr) -> alloc::vec::Vec<cadmpeg_ir::Finding>
 pub mod cadmpeg_ir::compare
 pub const cadmpeg_ir::compare::FLOAT_TOLERANCE: f64
 pub const cadmpeg_ir::compare::LOCAL_DIGEST_SUFFIX: &str
@@ -9432,16 +9435,19 @@ pub fn cadmpeg_ir::Codec::decode(&self, &mut dyn cadmpeg_core::io::ReadSeek, &ca
 pub fn cadmpeg_ir::Codec::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
 pub fn cadmpeg_ir::Codec::id(&self) -> cadmpeg_ir::codec::FormatId
 pub fn cadmpeg_ir::Codec::inspect(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_core::decode::policy::InspectOptions) -> core::result::Result<cadmpeg_ir::container::ContainerSummary, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::Codec::validate_native(&self, &cadmpeg_ir::document::CadIr) -> alloc::vec::Vec<cadmpeg_ir::Finding>
 impl<C: cadmpeg_ir::codec::CodecBackend + ?core::marker::Sized> cadmpeg_ir::codec::Codec for C
 pub fn C::decode(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_ir::codec::DecodeOptions) -> core::result::Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_ir::codec::DecodeFailure>
 pub fn C::detect(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
 pub fn C::id(&self) -> cadmpeg_ir::codec::FormatId
 pub fn C::inspect(&self, &mut dyn cadmpeg_core::io::ReadSeek, &cadmpeg_core::decode::policy::InspectOptions) -> core::result::Result<cadmpeg_ir::container::ContainerSummary, cadmpeg_core::error::CodecError>
+pub fn C::validate_native(&self, &cadmpeg_ir::document::CadIr) -> alloc::vec::Vec<cadmpeg_ir::Finding>
 pub trait cadmpeg_ir::CodecBackend
 pub const cadmpeg_ir::CodecBackend::FORMAT: cadmpeg_ir::codec::FormatId
 pub fn cadmpeg_ir::CodecBackend::decode_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::codec::Decoded, cadmpeg_core::error::CodecError>
 pub fn cadmpeg_ir::CodecBackend::detect_impl(&self, &[u8]) -> cadmpeg_ir::codec::Confidence
 pub fn cadmpeg_ir::CodecBackend::inspect_impl(&self, &cadmpeg_core::decode::context::DecodeContext<'_>, cadmpeg_core::decode::view::View<'_>) -> core::result::Result<cadmpeg_ir::container::ContainerSummary, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_ir::CodecBackend::validate_native(&cadmpeg_ir::document::CadIr) -> alloc::vec::Vec<cadmpeg_ir::Finding>
 pub fn cadmpeg_ir::admit(&cadmpeg_ir::document::CadIr, &[cadmpeg_ir::Check], alloc::vec::Vec<cadmpeg_ir::LossNote>) -> cadmpeg_ir::ValidationReport
 pub fn cadmpeg_ir::admit_with_additional_native_identities<'a>(&'a cadmpeg_ir::document::CadIr, impl core::iter::traits::collect::IntoIterator<Item = &'a str>, &[cadmpeg_ir::Check], alloc::vec::Vec<cadmpeg_ir::LossNote>) -> cadmpeg_ir::ValidationReport
 pub fn cadmpeg_ir::admit_with_annotations(&cadmpeg_ir::document::CadIr, &cadmpeg_ir::annotations::Annotations, &[cadmpeg_ir::Check], alloc::vec::Vec<cadmpeg_ir::LossNote>) -> cadmpeg_ir::ValidationReport

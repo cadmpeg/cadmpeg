@@ -130,11 +130,6 @@ use std::io::Write;
 #[cfg(test)]
 use crate::loss::F3dLossCode;
 
-/// Validate the typed Fusion-native namespace.
-pub fn validate_native(ir: &CadIr) -> Vec<cadmpeg_ir::Finding> {
-    validate::validate_native(ir)
-}
-
 /// The ZIP local-file-header magic.
 const ZIP_MAGIC: &[u8] = b"PK\x03\x04";
 
@@ -172,6 +167,10 @@ impl F3dCodec {
 
 impl CodecBackend for F3dCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
+
+    fn validate_native(ir: &CadIr) -> Vec<cadmpeg_ir::Finding> {
+        validate::validate_native(ir)
+    }
 
     fn detect_impl(&self, prefix: &[u8]) -> Confidence {
         if !prefix.starts_with(ZIP_MAGIC) {

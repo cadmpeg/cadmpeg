@@ -1480,9 +1480,11 @@ fn semantic_writer_rejects_edited_feature_input_class_index() {
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].classes[0].name = "sgOtherHandle".into();
     });
-    assert!(crate::validate_native(decoded.ir())
-        .iter()
-        .any(|finding| finding.message.contains("class index does not match")));
+    assert!(
+        crate::resolved_features::validate::validate_native(decoded.ir())
+            .iter()
+            .any(|finding| finding.message.contains("class index does not match"))
+    );
 
     let error = crate::test_support::plan_inherited_write(
         decoded.ir(),
@@ -1503,7 +1505,7 @@ fn semantic_writer_rewrites_feature_input_name_values() {
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].names[1].value = "Depth".into();
     });
-    assert!(crate::validate_native(decoded.ir()).is_empty());
+    assert!(crate::resolved_features::validate::validate_native(decoded.ir()).is_empty());
 
     let mut encoded = Vec::new();
     crate::test_support::plan_inherited_write(
@@ -1531,9 +1533,11 @@ fn semantic_writer_rejects_edited_feature_input_scalar_index() {
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].scalars[0].value = 0.050;
     });
-    assert!(crate::validate_native(decoded.ir())
-        .iter()
-        .any(|finding| finding.message.contains("scalar index does not match")));
+    assert!(
+        crate::resolved_features::validate::validate_native(decoded.ir())
+            .iter()
+            .any(|finding| finding.message.contains("scalar index does not match"))
+    );
 
     let error = crate::test_support::plan_inherited_write(
         decoded.ir(),

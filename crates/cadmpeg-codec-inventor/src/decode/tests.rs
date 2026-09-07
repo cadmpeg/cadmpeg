@@ -90,7 +90,7 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
         .losses
         .iter()
         .any(|loss| loss.code == InventorLossCode::GeometryKernelCarrierNotTransferred.kind()));
-    let native_findings = crate::validate_native(decoded.ir());
+    let native_findings = crate::validate::validate_native(decoded.ir());
     assert_eq!(native_findings.len(), 1, "{native_findings:#?}");
     // The structural fixture has no readable registry body. The schema-31
     // grammar is applied to it regardless of what the `RSeDb` streams declared,
@@ -179,7 +179,7 @@ fn decodes_the_synthetic_primary_rse_envelope_end_to_end() {
         active[0],
         crate::native::ActiveCarrierRecord::Selected { .. }
     ));
-    assert!(crate::validate_native(decoded.ir()).is_empty());
+    assert!(crate::validate::validate_native(decoded.ir()).is_empty());
 }
 
 /// The `acis:` kernel layer one decode reported, with the losses beside it.

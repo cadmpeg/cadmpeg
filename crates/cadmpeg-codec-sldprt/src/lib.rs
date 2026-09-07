@@ -159,11 +159,6 @@ struct SourceRecord<'a> {
     data: Option<&'a [u8]>,
 }
 
-/// Validate `SolidWorks` native feature-input byte references.
-pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
-    resolved_features::validate::validate_native(ir)
-}
-
 impl SldprtCodec {
     /// Replay the retained source image when the document is untouched since the
     /// decode that recorded its baseline, and write it semantically otherwise.
@@ -355,6 +350,10 @@ impl Written {
 
 impl CodecBackend for SldprtCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
+
+    fn validate_native(ir: &CadIr) -> Vec<Finding> {
+        resolved_features::validate::validate_native(ir)
+    }
 
     fn detect_impl(&self, prefix: &[u8]) -> Confidence {
         if container::looks_like_sldprt(prefix) {

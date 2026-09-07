@@ -16,7 +16,7 @@ use std::fmt;
 
 use crate::document::CadIr;
 use crate::report::{
-    Coverage, DecodeReport, LossNote as DecodeLoss, StrictConsequence, TransferLedger,
+    Coverage, DecodeReport, Finding, LossNote as DecodeLoss, StrictConsequence, TransferLedger,
 };
 use crate::source_fidelity::SourceFidelity;
 use crate::ContainerSummary;
@@ -266,6 +266,18 @@ pub trait CodecBackend {
     /// whose primary format names another namespace.
     const FORMAT: FormatId;
 
+    /// Findings this codec's own validator reports over its native
+    /// namespace on a decoded document.
+    ///
+    /// The default reports nothing, for a codec that writes no native
+    /// namespace or has no validator for it. The sealed wrapper exposes it as
+    /// [`Codec::validate_native`], which the application runs after
+    /// `validate_neutral`.
+    fn validate_native(ir: &CadIr) -> Vec<Finding> {
+        let _ = ir;
+        Vec::new()
+    }
+
     /// Judge, from a leading byte prefix, whether this codec applies.
     fn detect_impl(&self, prefix: &[u8]) -> Confidence;
 
@@ -319,6 +331,9 @@ mod sealed {
 /// impl Codec for Rogue {
 ///     fn id(&self) -> FormatId { FormatId::new("rogue") }
 ///     fn detect(&self, _: &[u8]) -> Confidence { Confidence::No }
+///     fn validate_native(&self, _: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::Finding> {
+///         Vec::new()
+///     }
 ///     fn inspect(&self, _: &mut dyn ReadSeek, _: &InspectOptions)
 ///         -> Result<ContainerSummary, CodecError> { panic!("never runs") }
 ///     fn decode(&self, _: &mut dyn ReadSeek, _: &DecodeOptions)
@@ -333,6 +348,10 @@ pub trait Codec: sealed::Sealed {
 
     /// Judge, from a leading byte prefix, whether this codec applies.
     fn detect(&self, prefix: &[u8]) -> Confidence;
+
+    /// Findings this codec reports over its own native namespace,
+    /// [`CodecBackend::validate_native`].
+    fn validate_native(&self, ir: &CadIr) -> Vec<Finding>;
 
     /// Inspects the source under its input and resource limits.
     fn inspect(
@@ -366,6 +385,10 @@ impl<C: CodecBackend + ?Sized> Codec for C {
 
     fn detect(&self, prefix: &[u8]) -> Confidence {
         self.detect_impl(prefix)
+    }
+
+    fn validate_native(&self, ir: &CadIr) -> Vec<Finding> {
+        C::validate_native(ir)
     }
 
     fn inspect(

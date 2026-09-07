@@ -25,7 +25,7 @@ fn decode(bytes: Vec<u8>) -> cadmpeg_ir::codec::DecodeResult {
 fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
-    let native = crate::validate_native(result.ir());
+    let native = crate::resolved_features::validate::validate_native(result.ir());
     assert!(native.is_empty(), "{native:#?}");
 }
 

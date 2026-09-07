@@ -4,10 +4,8 @@
 //!
 //! [`FcstdCodec`] implements [`cadmpeg_ir::codec::Codec`] and
 //! [`cadmpeg_ir::codec::write::Encoder`]. Retained writes preserve
-//! unedited persistence records and named side entries, while checked mutation
-//! methods update typed values. [`FcstdDocumentBuilder`] creates source-less
-//! schema-4/file-1 application graphs. Other target bands and edits without a
-//! lossless serializer are rejected explicitly.
+//! unedited persistence records and named side entries. Other target bands and
+//! edits without a lossless serializer are rejected explicitly.
 //!
 //! <!-- generated: capability fcstd -->
 //! Support: L5 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#freecad-fcstd)).
@@ -57,11 +55,14 @@ use crate::loss::FreecadLossCode;
 #[derive(Debug, Default, Clone, Copy)]
 pub struct FcstdCodec;
 
+#[doc(hidden)]
 pub use builder::{FcstdDocumentBuilder, FcstdPropertyValue};
+#[doc(hidden)]
 pub use mutation::FcstdPropertyOwner;
 
 impl FcstdCodec {
     /// Change one attribute on an ordered native property value.
+    #[doc(hidden)]
     pub fn set_property_value_attribute(
         &self,
         ir: &mut CadIr,
@@ -73,32 +74,9 @@ impl FcstdCodec {
     ) -> Result<(), CodecError> {
         mutation::set_value_attribute(ir, owner, property, value_order, attribute, value.into())
     }
-
-    /// Change the text content of one ordered native property value.
-    pub fn set_property_value_text(
-        &self,
-        ir: &mut CadIr,
-        owner: FcstdPropertyOwner<'_>,
-        property: &str,
-        value_order: usize,
-        text: Option<String>,
-    ) -> Result<(), CodecError> {
-        mutation::set_value_text(ir, owner, property, value_order, text)
-    }
-
-    /// Replace one named side-entry payload while retaining its graph identity.
-    pub fn replace_side_entry(
-        &self,
-        ir: &mut CadIr,
-        entry: &str,
-        bytes: Vec<u8>,
-    ) -> Result<(), CodecError> {
-        mutation::replace_entry(ir, entry, bytes)
-    }
 }
 
-/// Validate FCStd-native identities, graph links, payloads, and byte ledgers.
-pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
+pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let Some(namespace) = ir.native.namespace("fcstd") else {
         return Vec::new();
     };
@@ -902,6 +880,10 @@ fn validate_logical_chain(
 
 impl CodecBackend for FcstdCodec {
     const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
+
+    fn validate_native(ir: &CadIr) -> Vec<Finding> {
+        crate::validate_native(ir)
+    }
 
     fn detect_impl(&self, prefix: &[u8]) -> Confidence {
         if !prefix.starts_with(b"PK\x03\x04") {
