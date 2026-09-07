@@ -1451,7 +1451,9 @@ pub(crate) fn loop_history_roster(
         } else {
             (index + 1 == count).then_some(())?;
             let token = psb::token_at(body, cursor)?;
-            let trailing = if token.kind != psb::TokenKind::NamedRecord {
+            let trailing = if token.kind == psb::TokenKind::NamedRecord {
+                None
+            } else {
                 (!matches!(
                     token.kind,
                     psb::TokenKind::CompoundClose | psb::TokenKind::Truncated(_)
@@ -1467,8 +1469,6 @@ pub(crate) fn loop_history_roster(
                 )
                 .then_some(())?;
                 Some(bytes)
-            } else {
-                None
             };
             FeatureLoopHistoryBoundary::NamedRecord { trailing }
         };
