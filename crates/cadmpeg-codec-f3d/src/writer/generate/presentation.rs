@@ -54,13 +54,13 @@ pub(crate) struct GeneratedBrowserNode {
 pub(crate) struct GeneratedBodyMap {
     pub entries: BTreeMap<u64, u64>,
     pub record_index: u32,
-    pub class_tag: String,
+    pub class_tag: crate::records::DesignClassTag,
 }
 
 /// Generated browser nodes and their registered class.
 pub(crate) struct GeneratedBrowserNodes {
     pub nodes: Vec<GeneratedBrowserNode>,
-    pub class_tag: String,
+    pub class_tag: crate::records::DesignClassTag,
 }
 
 /// The common registry consumed by both generated Design streams.
@@ -277,7 +277,9 @@ fn register_generated_type(
     Ok(ordinal)
 }
 
-pub(crate) fn dynamic_class_tag(type_ordinal: usize) -> Result<String, CodecError> {
+pub(crate) fn dynamic_class_tag(
+    type_ordinal: usize,
+) -> Result<crate::records::DesignClassTag, CodecError> {
     let tag = u32::try_from(type_ordinal)
         .ok()
         .and_then(|ordinal| ordinal.checked_add(256))
@@ -287,7 +289,8 @@ pub(crate) fn dynamic_class_tag(type_ordinal: usize) -> Result<String, CodecErro
                 "source-less F3D Design type registry exceeds three-digit class tags".into(),
             )
         })?;
-    Ok(tag.to_string())
+    crate::records::DesignClassTag::try_from(tag.to_string())
+        .map_err(|error| CodecError::malformed(format_args!("generated Design type: {error}")))
 }
 
 /// Build an RFC 9562 version-8 UUID from a domain-separated stable identity.

@@ -2147,6 +2147,10 @@ impl DesignClassTag {
     pub(crate) fn as_str(&self) -> &str {
         &self.0
     }
+    /// Dynamic type ordinal: the three digits minus the 256 fixed-class base.
+    pub(crate) fn dynamic_ordinal(&self) -> Option<usize> {
+        self.0.parse::<usize>().ok()?.checked_sub(256)
+    }
     pub(crate) fn as_bytes(&self) -> &[u8] {
         self.0.as_bytes()
     }

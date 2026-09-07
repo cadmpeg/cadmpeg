@@ -190,7 +190,7 @@ pub(crate) fn encode_design_bulkstream(
     let mut out = parameter_bytes;
     let mut primary_records = Vec::new();
     if let Some(body_map) = &registry.body_map {
-        let class_tag = &body_map.class_tag;
+        let class_tag = body_map.class_tag.as_str();
         let record_index = body_map.record_index;
         primary_records.push(primary_record(record_index, out.len())?);
         native_lp_ascii(&mut out, class_tag)?;
@@ -474,14 +474,12 @@ pub(super) fn encode_document_parameters(
 
 fn encode_sketch_record_header(
     out: &mut [u8],
-    class_tag: &str,
+    class_tag: &crate::records::DesignClassTag,
     record_index: u32,
-) -> Result<(), CodecError> {
-    validate_dynamic_class_tag(class_tag, "sketch record")?;
+) {
     out[0..4].copy_from_slice(&3u32.to_le_bytes());
     out[4..7].copy_from_slice(class_tag.as_bytes());
     out[7..11].copy_from_slice(&record_index.to_le_bytes());
-    Ok(())
 }
 
 fn encode_sketch_point(
@@ -519,7 +517,7 @@ fn encode_sketch_point(
     };
     let shift = usize::from(entity_genesis.is_some()) * 52;
     let mut record = std::iter::repeat_n(0u8, 105 + shift).collect::<Vec<_>>();
-    encode_sketch_record_header(&mut record, point.class_tag.as_str(), point.record_index)?;
+    encode_sketch_record_header(&mut record, &point.class_tag, point.record_index);
     record[20] = 1;
     record[21..25].copy_from_slice(&(1 + u32::from(entity_genesis.is_some())).to_le_bytes());
     if let Some(entity_genesis) = entity_genesis {
@@ -555,7 +553,7 @@ fn encode_sketch_point(
 
 fn encode_sketch_point_companion(
     out: &mut Vec<u8>,
-    class_tag: &str,
+    class_tag: &crate::records::DesignClassTag,
     record_index: u32,
     point_record_index: u32,
     companion: Option<crate::records::SketchPointCompanionRef<'_>>,
@@ -572,7 +570,7 @@ fn encode_sketch_point_companion(
     })?;
     let prefix_len = if prefix_present_zero { 25 } else { 21 };
     let mut record = std::iter::repeat_n(0u8, prefix_len).collect::<Vec<_>>();
-    encode_sketch_record_header(&mut record, class_tag, record_index)?;
+    encode_sketch_record_header(&mut record, class_tag, record_index);
     if prefix_present_zero {
         record[20] = 1;
     }
@@ -598,7 +596,7 @@ fn encode_sketch_curve_identity(
     })?;
     let shift = usize::from(curve.entity_genesis.is_some()) * 52;
     let mut record = std::iter::repeat_n(0u8, 133 + shift).collect::<Vec<_>>();
-    encode_sketch_record_header(&mut record, curve.class_tag.as_str(), curve.record_index)?;
+    encode_sketch_record_header(&mut record, &curve.class_tag, curve.record_index);
     record[20] = 1;
     record[21..25].copy_from_slice(&(2 + u32::from(curve.entity_genesis.is_some())).to_le_bytes());
     if let Some(entity_genesis) = curve.entity_genesis {
@@ -821,11 +819,7 @@ fn encode_sketch_relation(
     relation: &crate::records::SketchRelation,
 ) -> Result<(), CodecError> {
     let mut record = vec![0u8; 19];
-    encode_sketch_record_header(
-        &mut record,
-        relation.class_tag.as_str(),
-        relation.record_index,
-    )?;
+    encode_sketch_record_header(&mut record, &relation.class_tag, relation.record_index);
     record.push(1);
     let member_count = u32::try_from(relation.members.len())
         .map_err(|_| CodecError::Malformed("sketch relation has too many members".into()))?;
@@ -889,16 +883,6 @@ fn persistent_reference_name(kind: PersistentReferenceKind) -> &'static [u8] {
         PersistentReferenceKind::Point => b"pt_tag",
         PersistentReferenceKind::CurvePrimary => b"crv_primary_id",
         PersistentReferenceKind::CurveSecondary => b"crv_secondary_id",
-    }
-}
-
-pub(crate) fn validate_dynamic_class_tag(value: &str, field: &str) -> Result<(), CodecError> {
-    if value.len() == 3 && value.bytes().all(|byte| byte.is_ascii_digit()) {
-        Ok(())
-    } else {
-        Err(CodecError::malformed(format_args!(
-            "{field} class tag must be three ASCII digits: {value}"
-        )))
     }
 }
 
@@ -1004,7 +988,7 @@ fn encode_browser_nodes(
     let Some(browser_nodes) = &registry.browser_nodes else {
         return Ok(());
     };
-    let node_class_tag = &browser_nodes.class_tag;
+    let node_class_tag = browser_nodes.class_tag.as_str();
     for node in &browser_nodes.nodes {
         primary_records.push(primary_record(node.record_index, out.len())?);
         native_lp_ascii(out, node_class_tag)?;

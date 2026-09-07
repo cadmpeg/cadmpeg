@@ -14,7 +14,6 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 
 use super::attributes::source_less_body_key;
-use super::records::validate_dynamic_class_tag;
 pub(crate) fn validate_source_less_procedural_carriers(target: &CadIr) -> Result<(), CodecError> {
     let mut surface_owners = BTreeSet::new();
     for procedural in &target.model.procedural_surfaces {
@@ -221,23 +220,20 @@ pub(crate) fn validate_source_less_recipes(native: &F3dNative) -> Result<(), Cod
 
 fn source_less_design_record_type<'a>(
     native: &'a F3dNative,
-    class_tag: &str,
+    class_tag: &crate::records::DesignClassTag,
     record_index: u32,
     record_kind: &str,
 ) -> Result<&'a SegmentType, CodecError> {
-    validate_dynamic_class_tag(class_tag, record_kind)?;
-    let type_ordinal = class_tag
-        .parse::<usize>()
-        .ok()
-        .and_then(|class_tag| class_tag.checked_sub(256))
-        .ok_or_else(|| {
-            CodecError::InvalidInput(format!(
-                "F3D {record_kind} class tag {class_tag} is below the dynamic type range"
-            ))
-        })?;
+    let type_ordinal = class_tag.dynamic_ordinal().ok_or_else(|| {
+        CodecError::InvalidInput(format!(
+            "F3D {record_kind} class tag {} is below the dynamic type range",
+            class_tag.as_str()
+        ))
+    })?;
     let design_type = native.design_types.get(type_ordinal).ok_or_else(|| {
         CodecError::InvalidInput(format!(
-            "F3D {record_kind} class tag {class_tag} is outside the Design type table"
+            "F3D {record_kind} class tag {} is outside the Design type table",
+            class_tag.as_str()
         ))
     })?;
     if !design_type
@@ -246,7 +242,8 @@ fn source_less_design_record_type<'a>(
         .any(|registered| *registered == u64::from(record_index))
     {
         return Err(CodecError::InvalidInput(format!(
-            "F3D {record_kind} {record_index} is not registered by class tag {class_tag}"
+            "F3D {record_kind} {record_index} is not registered by class tag {}",
+            class_tag.as_str()
         )));
     }
     Ok(design_type)
@@ -276,34 +273,25 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
     for (record_index, id, class_tag) in native
         .sketch_points
         .iter()
-        .map(|record| {
-            (
-                record.record_index,
-                record.id.as_str(),
-                record.class_tag.as_str(),
-            )
-        })
-        .chain(native.sketch_curve_identities.iter().map(|record| {
-            (
-                record.record_index,
-                record.id.as_str(),
-                record.class_tag.as_str(),
-            )
-        }))
-        .chain(native.sketch_relations.iter().map(|record| {
-            (
-                record.record_index,
-                record.id.as_str(),
-                record.class_tag.as_str(),
-            )
-        }))
-        .chain(native.sketch_texts.iter().map(|record| {
-            (
-                record.record_index,
-                record.id.as_str(),
-                record.class_tag.as_str(),
-            )
-        }))
+        .map(|record| (record.record_index, record.id.as_str(), &record.class_tag))
+        .chain(
+            native
+                .sketch_curve_identities
+                .iter()
+                .map(|record| (record.record_index, record.id.as_str(), &record.class_tag)),
+        )
+        .chain(
+            native
+                .sketch_relations
+                .iter()
+                .map(|record| (record.record_index, record.id.as_str(), &record.class_tag)),
+        )
+        .chain(
+            native
+                .sketch_texts
+                .iter()
+                .map(|record| (record.record_index, record.id.as_str(), &record.class_tag)),
+        )
     {
         if let Some(before) = typed_indices.insert(record_index, id) {
             return Err(CodecError::InvalidInput(format!(
@@ -325,7 +313,7 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
     for point in &native.sketch_points {
         let point_type = source_less_design_record_type(
             native,
-            point.class_tag.as_str(),
+            &point.class_tag,
             point.record_index,
             "sketch point",
         )?;
@@ -444,7 +432,7 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
     for curve in &native.sketch_curve_identities {
         let curve_type = source_less_design_record_type(
             native,
-            curve.class_tag.as_str(),
+            &curve.class_tag,
             curve.record_index,
             "sketch curve",
         )?;
