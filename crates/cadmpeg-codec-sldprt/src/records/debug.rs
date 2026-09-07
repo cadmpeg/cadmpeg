@@ -63,6 +63,8 @@ impl Debug for super::FeatureInputScalar {
     }
 }
 
+// The scalar carrier is rendered through its legacy projections for persisted hashes.
+#[allow(clippy::missing_fields_in_debug)]
 impl Debug for super::FeatureInputRelationInstance {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> Result {
         formatter
