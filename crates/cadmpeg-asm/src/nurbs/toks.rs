@@ -334,51 +334,27 @@ pub(crate) fn owned_cache_scope(toks: &[Token]) -> Option<&[Token]> {
 }
 
 fn canonical_intcurve_kind(name: &str) -> &str {
-    match name {
-        "bldcur" => "blend_int_cur",
-        "blndsprngcur" => "spring_int_cur",
-        "exactcur" => "exact_int_cur",
-        "lawintcur" => "law_int_cur",
-        "offintcur" => "off_int_cur",
-        "offsetintcur" => "offset_int_cur",
-        "offsurfintcur" => "off_surf_int_cur",
-        "parasil" => "para_silh_int_cur",
-        "parcur" => "par_int_cur",
-        "projcur" => "proj_int_cur",
-        "surfcur" => "surf_int_cur",
-        "surfintcur" => "int_int_cur",
-        "d5c2_cur" => "skin_int_cur",
-        "subsetintcur" => "subset_int_cur",
-        _ => name,
-    }
+    super::subtypes::INTCURVE_ALIASES
+        .iter()
+        .find_map(|(modern, legacy)| (*legacy == name).then_some(*modern))
+        .unwrap_or(name)
 }
 
 /// Token index of the `intcurve` subtype definition `toks` owns, given the
 /// subtype's modern name. The legacy spelling of the same construction is
 /// accepted as a second candidate.
 pub(crate) fn find_owned_intcurve_subtype(toks: &[Token], modern: &str) -> Option<usize> {
-    let legacy = match modern {
-        "blend_int_cur" => "bldcur",
-        "spring_int_cur" => "blndsprngcur",
-        "exact_int_cur" => "exactcur",
-        "law_int_cur" => "lawintcur",
-        "off_int_cur" => "offintcur",
-        "offset_int_cur" => "offsetintcur",
-        "off_surf_int_cur" => "offsurfintcur",
-        "para_silh_int_cur" => "parasil",
-        "par_int_cur" => "parcur",
-        "proj_int_cur" => "projcur",
-        "surf_int_cur" => "surfcur",
-        "int_int_cur" => "surfintcur",
-        "skin_int_cur" => "d5c2_cur",
-        "subset_int_cur" => "subsetintcur",
-        _ => "",
+    if modern.is_empty() {
+        return None;
+    }
+    let legacy = super::subtypes::INTCURVE_ALIASES
+        .iter()
+        .find_map(|(name, alias)| (*name == modern).then_some(*alias));
+    let found = match legacy {
+        Some(legacy) => find_owned_subtype_marker(toks, &[modern, legacy]),
+        None => find_owned_subtype_marker(toks, &[modern]),
     };
-    let candidates: Vec<&str> = [modern, legacy]
-        .into_iter()
-        .filter(|name| !name.is_empty())
-        .collect();
-    find_owned_subtype_marker(toks, &candidates).map(|(marker, _)| marker)
+    found.map(|(marker, _)| marker)
 }
 
 /// The token span of the balanced subtype scope opening at `start`, inclusive

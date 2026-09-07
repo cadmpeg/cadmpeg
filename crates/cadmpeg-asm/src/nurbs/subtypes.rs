@@ -6,6 +6,24 @@ use crate::nurbs::reader::INT_WIDTHS;
 use crate::sab::{int_le_at, Record};
 use cadmpeg_core::decode::View;
 
+/// Modern and legacy spellings of the same intcurve construction.
+pub(crate) const INTCURVE_ALIASES: &[(&str, &str)] = &[
+    ("blend_int_cur", "bldcur"),
+    ("spring_int_cur", "blndsprngcur"),
+    ("exact_int_cur", "exactcur"),
+    ("law_int_cur", "lawintcur"),
+    ("off_int_cur", "offintcur"),
+    ("offset_int_cur", "offsetintcur"),
+    ("off_surf_int_cur", "offsurfintcur"),
+    ("para_silh_int_cur", "parasil"),
+    ("par_int_cur", "parcur"),
+    ("proj_int_cur", "projcur"),
+    ("surf_int_cur", "surfcur"),
+    ("int_int_cur", "surfintcur"),
+    ("skin_int_cur", "d5c2_cur"),
+    ("subset_int_cur", "subsetintcur"),
+];
+
 /// Byte offsets and names of the subtype definitions `bytes` itself owns: the
 /// `0x0f` openings at the outermost nesting level, in stream order, `ref`
 /// included. A definition inside a nested scope belongs to that scope's
@@ -67,29 +85,17 @@ pub(crate) fn find_owned_intcurve_subtype(
     modern: &[u8],
     int_width: RefWidth,
 ) -> Option<(usize, usize)> {
-    let legacy: &[u8] = match modern {
-        b"blend_int_cur" => b"bldcur",
-        b"spring_int_cur" => b"blndsprngcur",
-        b"exact_int_cur" => b"exactcur",
-        b"law_int_cur" => b"lawintcur",
-        b"off_int_cur" => b"offintcur",
-        b"offset_int_cur" => b"offsetintcur",
-        b"off_surf_int_cur" => b"offsurfintcur",
-        b"para_silh_int_cur" => b"parasil",
-        b"par_int_cur" => b"parcur",
-        b"proj_int_cur" => b"projcur",
-        b"surf_int_cur" => b"surfcur",
-        b"int_int_cur" => b"surfintcur",
-        b"skin_int_cur" => b"d5c2_cur",
-        b"subset_int_cur" => b"subsetintcur",
-        _ => b"",
+    if modern.is_empty() {
+        return None;
+    }
+    let legacy = INTCURVE_ALIASES
+        .iter()
+        .find_map(|(name, alias)| (name.as_bytes() == modern).then_some(alias.as_bytes()));
+    let found = match legacy {
+        Some(legacy) => find_owned_subtype_marker(bytes, &[modern, legacy], int_width),
+        None => find_owned_subtype_marker(bytes, &[modern], int_width),
     };
-    let candidates: Vec<&[u8]> = [modern, legacy]
-        .into_iter()
-        .filter(|name| !name.is_empty())
-        .collect();
-    find_owned_subtype_marker(bytes, &candidates, int_width)
-        .map(|(marker, name)| (marker, name.len()))
+    found.map(|(marker, name)| (marker, name.len()))
 }
 
 pub(crate) fn decode_cache_resolving_refs<T>(
