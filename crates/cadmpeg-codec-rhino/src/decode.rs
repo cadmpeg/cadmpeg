@@ -2936,7 +2936,7 @@ impl<'a> DecodeContext<'a> {
         let association = self.source_association(identity);
         let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
             let mut links = Vec::new();
-            let mut directrices = Vec::with_capacity(extrusion.boundaries.len());
+            let mut boundaries = Vec::with_capacity(extrusion.boundaries.len());
             for (index, boundary) in extrusion.boundaries.iter().enumerate() {
                 let id = commit_curve_tree(
                     candidate,
@@ -2947,14 +2947,12 @@ impl<'a> DecodeContext<'a> {
                     Some(unknown.clone()),
                     &format!("profile-{index}.start"),
                 );
-                directrices.push(id);
+                boundaries.push(CommittedExtrusionBoundary {
+                    boundary,
+                    directrix: id,
+                });
             }
-            for (index, geometry) in extrusion
-                .boundaries
-                .iter()
-                .map(|boundary| boundary.lateral.clone())
-                .enumerate()
-            {
+            for (index, boundary) in boundaries.iter().enumerate() {
                 let surface_id: cadmpeg_ir::ids::SurfaceId =
                     format!("rhino:object:surface#{key}.lateral-{index}")
                         .try_into()
@@ -2965,7 +2963,7 @@ impl<'a> DecodeContext<'a> {
                         .expect("valid identity");
                 candidate.model.surfaces.push(Surface {
                     id: surface_id.clone(),
-                    geometry: SurfaceGeometry::Nurbs(geometry),
+                    geometry: SurfaceGeometry::Nurbs(boundary.boundary.lateral.clone()),
                     source_object: Some(association.clone()),
                 });
                 let _attached = candidate.model.add_procedural_surface(
@@ -2973,7 +2971,7 @@ impl<'a> DecodeContext<'a> {
                     ProceduralSurface::new(
                         procedure_id.clone(),
                         ProceduralSurfaceDefinition::Extrusion {
-                            directrix: directrices[index].clone(),
+                            directrix: boundary.directrix.clone(),
                             parameter_interval: None,
                             direction: extrusion.direction,
                             native_position: None,
@@ -2993,7 +2991,7 @@ impl<'a> DecodeContext<'a> {
                     &key,
                     &association,
                     &extrusion,
-                    &directrices,
+                    &boundaries,
                     &mut links,
                 )
             {
@@ -3479,18 +3477,20 @@ fn set_exactness(
     *annotations = builder.build();
 }
 
+struct CommittedExtrusionBoundary<'a> {
+    boundary: &'a crate::extrusion::ExtrusionBoundary,
+    directrix: cadmpeg_ir::ids::CurveId,
+}
+
 fn stage_extrusion_caps(
     ir: &mut CadIr,
     annotations: &mut cadmpeg_ir::Annotations,
     key: &str,
     association: &SourceObjectAssociation,
     extrusion: &crate::extrusion::DecodedExtrusion,
-    directrices: &[cadmpeg_ir::ids::CurveId],
+    boundaries: &[CommittedExtrusionBoundary<'_>],
     links: &mut Vec<String>,
 ) -> bool {
-    if directrices.len() != extrusion.boundaries.len() {
-        return false;
-    }
     let body_id: cadmpeg_ir::ids::BodyId = format!("rhino:object:body#{key}.caps")
         .try_into()
         .expect("valid identity");
@@ -3521,11 +3521,12 @@ fn stage_extrusion_caps(
             },
             source_object: Some(association.clone()),
         });
-        let mut loop_ids = Vec::with_capacity(extrusion.boundaries.len());
-        for (profile, boundary) in extrusion.boundaries.iter().enumerate() {
+        let mut loop_ids = Vec::with_capacity(boundaries.len());
+        for (profile, committed) in boundaries.iter().enumerate() {
+            let boundary = committed.boundary;
             let suffix = format!("cap-{cap}.profile-{profile}");
             let curve_id = if cap == 0 {
-                directrices[profile].clone()
+                committed.directrix.clone()
             } else {
                 let id: cadmpeg_ir::ids::CurveId = format!("rhino:object:curve#{key}.{suffix}")
                     .try_into()

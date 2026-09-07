@@ -916,7 +916,7 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
         let mut ir = CadIr::empty();
         let association = test_association();
         let extrusion = cap_extrusion(caps);
-        let directrices = extrusion
+        let boundaries = extrusion
             .boundaries
             .iter()
             .enumerate()
@@ -929,7 +929,10 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
                     geometry: CurveGeometry::Nurbs(boundary.start_nurbs.clone()),
                     source_object: Some(association.clone()),
                 });
-                id
+                CommittedExtrusionBoundary {
+                    boundary,
+                    directrix: id,
+                }
             })
             .collect::<Vec<_>>();
         let mut links = Vec::new();
@@ -939,7 +942,7 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
             "caps",
             &association,
             &extrusion,
-            &directrices,
+            &boundaries,
             &mut links,
         ));
         assert_eq!(ir.model.faces.len(), expected_faces);
@@ -956,24 +959,6 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
             0
         );
     }
-}
-
-#[test]
-fn cap_staging_failure_leaves_original_transaction_unmodified() {
-    let original = CadIr::empty();
-    let mut candidate = original.clone();
-    let mut links = Vec::new();
-    assert!(!stage_extrusion_caps(
-        &mut candidate,
-        &mut cadmpeg_ir::Annotations::default(),
-        "failure",
-        &test_association(),
-        &cap_extrusion([true, true]),
-        &[],
-        &mut links,
-    ));
-    assert_eq!(candidate, original);
-    assert!(links.is_empty());
 }
 
 /// Phase 5 freeze: draft/instance admit predicates vs shared accept/reject builders.
