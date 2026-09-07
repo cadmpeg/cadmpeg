@@ -9296,11 +9296,11 @@ fn exact_coil_placement(
     Some(DesignCoilPlacement {
         selection_record_index,
         selection_record_byte_offset: u64::try_from(selection_start).ok()?,
-        selection_class_tag,
+        selection_class_tag: selection_class_tag.try_into().ok()?,
         selection,
         transform_record_index,
         transform_record_byte_offset: u64::try_from(transform_start).ok()?,
-        transform_class_tag,
+        transform_class_tag: transform_class_tag.try_into().ok()?,
         explicit_transform,
     })
 }

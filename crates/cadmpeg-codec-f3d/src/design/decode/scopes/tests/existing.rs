@@ -546,9 +546,9 @@ fn modern_coil_placement_accepts_class_450_matrix_frame() {
     let placement = exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[])
         .expect("modern Coil matrix placement");
     assert_eq!(placement.selection_record_index, 100);
-    assert_eq!(placement.selection_class_tag, "286");
+    assert_eq!(placement.selection_class_tag.as_str(), "286");
     assert_eq!(placement.transform_record_index, 200);
-    assert_eq!(placement.transform_class_tag, "450");
+    assert_eq!(placement.transform_class_tag.as_str(), "450");
     assert_eq!(
         *placement.transform(),
         [

@@ -4,9 +4,9 @@
 use super::topology::{DesignEntitySelectionFaceCandidate, DesignSketchProfileOperand};
 use super::{deserialize_absent_u64_offset, serialize_absent_u64_offset};
 use super::{
-    ConstructionRecipeDesign, ConstructionRecipeKind, ConstructionRecipeSelector, DesignEntityId,
-    DesignRecipeReference, DesignSecondaryIdentity, Located, RecordedValue, ReferenceRun,
-    IDENTITY_MATRIX,
+    ConstructionRecipeDesign, ConstructionRecipeKind, ConstructionRecipeSelector, DesignClassTag,
+    DesignEntityId, DesignRecipeReference, DesignSecondaryIdentity, Located, RecordedValue,
+    ReferenceRun, IDENTITY_MATRIX,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 #[cfg(feature = "schema")]
@@ -801,7 +801,7 @@ pub struct DesignCoilPlacement {
     /// Byte offset of the support selection frame header.
     pub selection_record_byte_offset: u64,
     /// Dynamic class tag of the support selection frame.
-    pub selection_class_tag: String,
+    pub selection_class_tag: DesignClassTag,
     /// Exact selection semantics carried by the first placement reference.
     pub selection: DesignCoilSelection,
     /// Second ordered placement-construction reference: the frame carrier.
@@ -809,7 +809,7 @@ pub struct DesignCoilPlacement {
     /// Byte offset of the frame carrier header.
     pub transform_record_byte_offset: u64,
     /// Dynamic class tag of the frame carrier.
-    pub transform_class_tag: String,
+    pub transform_class_tag: DesignClassTag,
     /// Explicit matrix and its byte offset; absent for the encoded identity form.
     pub explicit_transform: Option<Located<[[f64; 4]; 4]>>,
 }
@@ -874,11 +874,11 @@ impl TryFrom<DesignCoilPlacementWire> for DesignCoilPlacement {
         Ok(Self {
             selection_record_index: wire.selection_record_index,
             selection_record_byte_offset: wire.selection_record_byte_offset,
-            selection_class_tag: wire.selection_class_tag,
+            selection_class_tag: wire.selection_class_tag.try_into()?,
             selection: wire.selection,
             transform_record_index: wire.transform_record_index,
             transform_record_byte_offset: wire.transform_record_byte_offset,
-            transform_class_tag: wire.transform_class_tag,
+            transform_class_tag: wire.transform_class_tag.try_into()?,
             explicit_transform,
         })
     }
@@ -890,11 +890,11 @@ impl From<DesignCoilPlacement> for DesignCoilPlacementWire {
         Self {
             selection_record_index: record.selection_record_index,
             selection_record_byte_offset: record.selection_record_byte_offset,
-            selection_class_tag: record.selection_class_tag,
+            selection_class_tag: record.selection_class_tag.into(),
             selection: record.selection,
             transform_record_index: record.transform_record_index,
             transform_record_byte_offset: record.transform_record_byte_offset,
-            transform_class_tag: record.transform_class_tag,
+            transform_class_tag: record.transform_class_tag.into(),
             transform,
             transform_offset: record.explicit_transform.map(|matrix| matrix.offset),
         }
