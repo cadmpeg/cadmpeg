@@ -802,7 +802,7 @@ pub struct DesignParameter {
     /// Byte offset of the indexed record header in its Design `BulkStream`.
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Source indexed-record identity.
     pub record_index: u32,
     /// Source ordering value stored by the parameter record.
@@ -925,7 +925,7 @@ impl TryFrom<DesignParameterSerde> for DesignParameter {
         Ok(Self {
             id: wire.id,
             byte_offset: wire.byte_offset,
-            class_tag: wire.class_tag,
+            class_tag: wire.class_tag.try_into()?,
             record_index: wire.record_index,
             source_ordinal: wire.source_ordinal,
             source,
@@ -953,7 +953,7 @@ impl From<DesignParameter> for DesignParameterSerde {
         Self {
             id: parameter.id,
             byte_offset: parameter.byte_offset,
-            class_tag: parameter.class_tag,
+            class_tag: parameter.class_tag.into(),
             record_index: parameter.record_index,
             family_discriminator: family_discriminator.map(|value| value.value.code()),
             family_discriminator_offset: family_discriminator.map(|value| value.offset),

@@ -726,7 +726,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
     let parameter = DesignParameter {
         id: format!("{stream}:design-parameter#20"),
         byte_offset: 0,
-        class_tag: "305".into(),
+        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
         record_index: 20,
         source_ordinal: 4,
         source: crate::records::DesignParameterSource::new(

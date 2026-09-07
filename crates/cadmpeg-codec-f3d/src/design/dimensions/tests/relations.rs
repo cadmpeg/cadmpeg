@@ -509,7 +509,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
     let parameter = DesignParameter {
         id: format!("{stream}:design-parameter#12"),
         byte_offset: 0,
-        class_tag: "305".into(),
+        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
         record_index: 12,
         source_ordinal: 0,
         source: crate::records::DesignParameterSource::new(
@@ -832,7 +832,7 @@ fn counted_angular_group_projects_unique_point_selected_line() {
     let parameter = DesignParameter {
         id: format!("{stream}:design-parameter#20"),
         byte_offset: 0,
-        class_tag: "305".into(),
+        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
         record_index: 20,
         source_ordinal: 4,
         source: crate::records::DesignParameterSource::new(

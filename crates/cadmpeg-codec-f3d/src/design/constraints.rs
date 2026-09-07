@@ -1039,7 +1039,7 @@ mod tests {
         DesignParameter {
             id: format!("native:design-parameter#{record_index}"),
             byte_offset: 0,
-            class_tag: "373".into(),
+            class_tag: crate::records::DesignClassTag::try_from("373".to_owned()).unwrap(),
             record_index,
             source_ordinal: 0,
             source: crate::records::DesignParameterSource::new(

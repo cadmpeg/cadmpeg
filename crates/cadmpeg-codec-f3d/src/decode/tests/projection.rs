@@ -1337,7 +1337,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     native.design_parameters.push(DesignParameter {
         id: "f3d:test:design-parameter#2".into(),
         byte_offset: 0,
-        class_tag: "000".into(),
+        class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
         record_index: 2,
         source_ordinal: 2,
         source: crate::records::DesignParameterSource::new(
@@ -1683,7 +1683,7 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
     native.design_parameters.push(DesignParameter {
         id: format!("{stream}:design-parameter#10"),
         byte_offset: 0,
-        class_tag: "305".into(),
+        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
         record_index: 10,
         source_ordinal: 0,
         source: crate::records::DesignParameterSource::new(

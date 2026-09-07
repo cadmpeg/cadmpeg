@@ -420,7 +420,6 @@ pub(super) fn encode_document_parameters(
                 parameter.id, parameter.family_discriminator().map(|value| value.value.code()), parameter.source_kind()
             )));
         }
-        validate_dynamic_class_tag(&parameter.class_tag, "Design parameter")?;
         let crate::records::DesignParameterSource::User {
             family_discriminator,
         } = &parameter.source
@@ -450,7 +449,7 @@ pub(super) fn encode_document_parameters(
                 parameter.id
             )));
         }
-        native_lp_ascii(&mut out, &parameter.class_tag)?;
+        native_lp_ascii(&mut out, parameter.class_tag.as_str())?;
         out.extend_from_slice(&parameter.record_index.to_le_bytes());
         out.extend_from_slice(&[0; 11]);
         out.extend_from_slice(&family_discriminator.value.code().to_le_bytes());

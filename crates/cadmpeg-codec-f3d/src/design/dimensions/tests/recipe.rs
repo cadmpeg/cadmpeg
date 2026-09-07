@@ -34,7 +34,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     let parameter = DesignParameter {
         id: format!("{stream}:design-parameter#20"),
         byte_offset: 0,
-        class_tag: "305".into(),
+        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
         record_index: 20,
         source_ordinal: 4,
         source: crate::records::DesignParameterSource::new(
@@ -798,7 +798,7 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
     let parameter = DesignParameter {
         id: "f3d:A:design-parameter#1".into(),
         byte_offset: 0,
-        class_tag: "305".into(),
+        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
         record_index: 1,
         source_ordinal: 1,
         source: crate::records::DesignParameterSource::new(
@@ -996,7 +996,7 @@ fn concentric_circle_dimensions_require_disjoint_matching_pairs() {
     let parameter = DesignParameter {
         id: "f3d:A:design-parameter#1".into(),
         byte_offset: 0,
-        class_tag: "305".into(),
+        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
         record_index: 1,
         source_ordinal: 1,
         source: crate::records::DesignParameterSource::new(

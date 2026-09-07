@@ -8497,12 +8497,7 @@ fn validate_parameters(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 }),
             }
             && parameter.name_offset < parameter.evaluated_value_offset;
-        let valid = parameter.class_tag.len() == 3
-            && parameter
-                .class_tag
-                .bytes()
-                .all(|byte| byte.is_ascii_digit())
-            && !parameter.expression.is_empty()
+        let valid = !parameter.expression.is_empty()
             && !parameter.name.is_empty()
             && parameter
                 .unit

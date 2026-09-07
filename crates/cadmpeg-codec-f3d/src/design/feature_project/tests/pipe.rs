@@ -49,7 +49,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
                      evaluated_value: f64| DesignParameter {
         id: format!("f3d:test:pipe-parameter#{record_index}"),
         byte_offset: 0,
-        class_tag: "277".into(),
+        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
         record_index,
         source_ordinal: record_index,
         source: crate::records::DesignParameterSource::new(source_kind.into(), Some(0), None)

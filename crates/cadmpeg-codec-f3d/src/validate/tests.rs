@@ -852,7 +852,7 @@ fn validation_accepts_user_design_parameter_frame() {
     let parameter = crate::records::DesignParameter {
         id: "generated:design-parameter#0".into(),
         byte_offset: 100,
-        class_tag: "305".into(),
+        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
         record_index: 900,
         source_ordinal: 0,
         source: crate::records::DesignParameterSource::User {
@@ -889,7 +889,7 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
     let owned_parameter = DesignParameter {
         id: crate::ids::native_design_parameter_id(DESIGN_STREAM, 101),
         byte_offset: 1_068,
-        class_tag: "305".into(),
+        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
         record_index: 101,
         source_ordinal: 0,
         source: crate::records::DesignParameterSource::new("Feature Input".into(), Some(100), None)
@@ -937,7 +937,7 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
     let ownerless_parameter = DesignParameter {
         id: crate::ids::native_design_parameter_id(DESIGN_STREAM, 201),
         byte_offset: 1_400,
-        class_tag: "287".into(),
+        class_tag: crate::records::DesignClassTag::try_from("287".to_owned()).unwrap(),
         record_index: 201,
         source_ordinal: 1,
         source: crate::records::DesignParameterSource::new("Feature Input".into(), Some(200), None)

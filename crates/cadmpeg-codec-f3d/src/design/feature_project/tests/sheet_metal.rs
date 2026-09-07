@@ -75,7 +75,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         crate::records::DesignParameter {
             id: format!("{stream}:design-parameter#{record_index}"),
             byte_offset: 0,
-            class_tag: "000".into(),
+            class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
             record_index,
             source_ordinal: 0,
             source: crate::records::DesignParameterSource::new(source_kind.into(), Some(0), None)
@@ -551,7 +551,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         crate::records::DesignParameter {
             id: format!("{stream}:design-parameter#{record_index}"),
             byte_offset: 0,
-            class_tag: "000".into(),
+            class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
             record_index,
             source_ordinal: 0,
             source: crate::records::DesignParameterSource::new(source_kind.into(), Some(0), None)
@@ -996,7 +996,7 @@ fn hem_scope_projects_each_decoded_owner_layout() {
         |record_index: u32, source_kind: &str, unit: &str, value: f64| DesignParameter {
             id: format!("{stream}:design-parameter#{record_index}"),
             byte_offset: 0,
-            class_tag: "000".into(),
+            class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
             record_index,
             source_ordinal: 0,
             source: crate::records::DesignParameterSource::new(source_kind.into(), Some(0), None)

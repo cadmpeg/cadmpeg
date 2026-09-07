@@ -86,7 +86,7 @@ fn class_287_parameter_record_with_expression_trailer(
 fn class_287_parameter_accepts_the_compact_prefix_with_af_tail() {
     let parameter = parse_design_parameter(&class_287_parameter_record("HoleDepth", "d20"))
         .expect("class-287 parameter");
-    assert_eq!(parameter.class_tag, "287");
+    assert_eq!(parameter.class_tag.as_str(), "287");
     assert_eq!(parameter.record_index, 887);
     assert_eq!(parameter.owner_record_index(), Some(886));
     assert_eq!(parameter.source_ordinal, 20);
@@ -859,7 +859,7 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     let parameter = crate::records::DesignParameter {
         id: crate::ids::native_design_parameter_id(stream, 200),
         byte_offset: 200,
-        class_tag: "305".into(),
+        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
         record_index: 45,
         source_ordinal: 0,
         source: crate::records::DesignParameterSource::new(
@@ -937,7 +937,7 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
     let parameter = DesignParameter {
         id: format!("{stream}:design-parameter#20"),
         byte_offset: 1,
-        class_tag: "305".into(),
+        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
         record_index: 20,
         source_ordinal: 0,
         source: crate::records::DesignParameterSource::new(
