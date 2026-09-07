@@ -114,15 +114,19 @@ enum KeepMode<'a> {
 
 /// Result of one targeted deserialize of a CADIR document.
 struct Capture {
-    /// True when the target key was present and its value was a JSON array.
-    found_array: bool,
+    /// Present when the target key held a JSON array.
+    target: Option<TargetCapture>,
+    /// Dotted names of every addressable (JSON-array) arena, with entry counts.
+    addressable: Vec<(String, u64)>,
+}
+
+#[derive(Default)]
+struct TargetCapture {
     entry_count: u64,
     /// Kept raw records (ID hits or first-N).
     kept: Vec<Box<RawValue>>,
     /// Every JSON-string `id` observed in the target arena (ID mode).
     all_ids: Vec<String>,
-    /// Dotted names of every addressable (JSON-array) arena, with entry counts.
-    addressable: Vec<(String, u64)>,
 }
 
 /// Tolerant id probe: a non-string `id` becomes `None` instead of failing the
@@ -178,18 +182,18 @@ pub fn run(args: &ItemArgs, output: Output<'_>) -> Result<()> {
     .deserialize(&mut serde_json::Deserializer::from_str(text))
     .with_context(|| format!("parsing the CADIR document {}", args.file.display()))?;
 
-    if !capture.found_array {
+    let Some(target_capture) = capture.target else {
         bail!("{}", unknown_arena_message(&target, &capture.addressable));
-    }
+    };
 
     match mode {
         KeepMode::Head(_) => {
-            let values = parse_kept(&capture.kept)?;
+            let values = parse_kept(&target_capture.kept)?;
             emit_values("item", output, &values)
         }
         KeepMode::Ids(ids) => {
             let dotted = target.dotted();
-            let (values, errors) = resolve_ids(ids, &capture, &dotted)?;
+            let (values, errors) = resolve_ids(ids, &target_capture, &dotted)?;
             match (emit_values("item", output, &values), errors.is_empty()) {
                 (Ok(()), true) => Ok(()),
                 (Ok(()), false) => bail!("{}", errors.join("\n")),
@@ -211,7 +215,7 @@ fn parse_kept(kept: &[Box<RawValue>]) -> Result<Vec<serde_json::Value>> {
 
 fn resolve_ids(
     ids: &[String],
-    capture: &Capture,
+    capture: &TargetCapture,
     dotted: &str,
 ) -> Result<(Vec<serde_json::Value>, Vec<String>)> {
     let mut indexed: Vec<(Option<String>, &RawValue)> = Vec::with_capacity(capture.kept.len());
@@ -521,10 +525,7 @@ impl<'de> Visitor<'de> for DocumentVisitor<'_> {
 
     fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Capture, A::Error> {
         let mut capture = Capture {
-            found_array: false,
-            entry_count: 0,
-            kept: Vec::new(),
-            all_ids: Vec::new(),
+            target: None,
             addressable: Vec::new(),
         };
         while let Some(key) = map.next_key::<String>()? {
@@ -795,24 +796,27 @@ impl<'de> Visitor<'de> for ArenaValueVisitor<'_> {
             self.capture.addressable.push((self.dotted, n));
             return Ok(());
         }
-        self.capture.found_array = true;
+        let target = self
+            .capture
+            .target
+            .get_or_insert_with(TargetCapture::default);
         match self.mode {
             KeepMode::Head(n) => {
                 while let Some(raw) = seq.next_element::<Box<RawValue>>()? {
-                    self.capture.entry_count += 1;
-                    if self.capture.kept.len() < *n {
-                        self.capture.kept.push(raw);
+                    target.entry_count += 1;
+                    if target.kept.len() < *n {
+                        target.kept.push(raw);
                     }
                 }
             }
             KeepMode::Ids(ids) => {
                 while let Some(raw) = seq.next_element::<Box<RawValue>>()? {
-                    self.capture.entry_count += 1;
+                    target.entry_count += 1;
                     let id = string_id(&raw);
                     if let Some(ref id) = id {
-                        self.capture.all_ids.push(id.clone());
+                        target.all_ids.push(id.clone());
                         if ids.iter().any(|req| id == req || id.ends_with(req)) {
-                            self.capture.kept.push(raw);
+                            target.kept.push(raw);
                         }
                     }
                 }
@@ -820,7 +824,7 @@ impl<'de> Visitor<'de> for ArenaValueVisitor<'_> {
         }
         self.capture
             .addressable
-            .push((self.dotted, self.capture.entry_count));
+            .push((self.dotted, target.entry_count));
         Ok(())
     }
 
