@@ -525,9 +525,9 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
     .expect("required invariant");
     attributes.layer_index = -1;
     attributes.color_source = 2;
-    let mut material = vec![ObjectRecord::Framed(descriptor(attributes.clone(), 10))];
+    let material = vec![ObjectRecord::Framed(descriptor(attributes.clone(), 10))];
     let mut warnings = Vec::new();
-    crate::objects::resolve_identities(&mut material, &metadata, &mut warnings);
+    let material = crate::objects::resolve_identities(material, &metadata, &mut warnings);
     assert_eq!(
         material[0]
             .identity()
@@ -547,8 +547,8 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
 
     attributes.color_source = 3;
     attributes.object_mode = 0xf3;
-    let mut parent = vec![ObjectRecord::Framed(descriptor(attributes, 20))];
-    crate::objects::resolve_identities(&mut parent, &metadata, &mut warnings);
+    let parent = vec![ObjectRecord::Framed(descriptor(attributes, 20))];
+    let parent = crate::objects::resolve_identities(parent, &metadata, &mut warnings);
     assert_eq!(
         parent[0]
             .identity()
@@ -592,8 +592,8 @@ fn identity_resolution_warns_and_keys_nil_and_duplicate_uuids_by_record() {
         .expect("test object is framed")
         .class_uuid = Uuid::from_wire([9; 16]);
     let mut warnings = Vec::new();
-    crate::objects::resolve_identities(
-        &mut objects,
+    let objects = crate::objects::resolve_identities(
+        objects,
         &settings::DocumentMetadata::default(),
         &mut warnings,
     );

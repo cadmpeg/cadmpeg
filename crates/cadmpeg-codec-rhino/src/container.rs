@@ -892,7 +892,7 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
             parse_eof(data, offset, archive).map_err(framing_error)?;
             let mut metadata =
                 crate::settings::parse_metadata(data, archive, &tables, &mut warnings);
-            resolve_identities(&mut all_objects, &metadata, &mut warnings);
+            let all_objects = resolve_identities(all_objects, &metadata, &mut warnings);
             opaque_records.extend(std::mem::take(&mut metadata.opaque_records));
             return Ok(Scan {
                 data,

@@ -230,9 +230,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
         else {
             continue;
         };
-        let Some(identity) = &object.identity else {
-            continue;
-        };
+        let identity = &object.identity;
         let (transform, transform_units) = scale
             .and_then(|scale| crate::instances::scale_translation(reference.transform, scale))
             .map_or(

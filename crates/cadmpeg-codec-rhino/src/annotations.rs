@@ -458,22 +458,14 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
         let Some(object) = object.framed() else {
             continue;
         };
-        let identity = object.identity.as_ref();
+        let identity = &object.identity;
         let link = format!("rhino:object:record#{source_order:06}");
-        let key = identity.map_or_else(
-            || format!("record-{source_order:06}"),
-            |identity| {
-                if identity.object_id.is_nil() {
-                    format!("record-{source_order:06}")
-                } else {
-                    identity.object_id.to_string()
-                }
-            },
-        );
-        let source_uuid = identity.map_or_else(
-            || Uuid::nil().to_string(),
-            |identity| identity.object_id.to_string(),
-        );
+        let key = if identity.object_id.is_nil() {
+            format!("record-{source_order:06}")
+        } else {
+            identity.object_id.to_string()
+        };
+        let source_uuid = identity.object_id.to_string();
         let mut v5_text_extra = None;
         if matches!(object.class_uuid, TEXT | LEGACY_TEXT) {
             if let Some(extra) = object
