@@ -14,7 +14,6 @@ const CARD_WIDTH: usize = 80;
 const CARD_DATA_WIDTH: usize = 72;
 const PARAMETER_DATA_WIDTH: usize = 64;
 const MAX_SEQUENCE: u32 = 9_999_999;
-const OMITTED_FIELDS: [usize; 4] = [2, 10, 11, 20];
 
 #[derive(Debug, Clone, Copy)]
 enum CompressedField {
@@ -277,16 +276,34 @@ fn parse_field_specs(bytes: &[u8]) -> Result<Vec<(CompressedField, Vec<u8>)>, Co
             .map_err(|_| malformed("Directory field number is not ASCII"))?
             .parse::<usize>()
             .map_err(|_| malformed("Directory field number is out of range"))?;
-        if !(1..=20).contains(&field) {
-            return Err(malformed(format!(
-                "Directory field number {field} is outside 1 through 20"
-            )));
-        }
-        if OMITTED_FIELDS.contains(&field) {
-            return Err(malformed(format!(
-                "Directory field {field} is redundant in Compressed ASCII"
-            )));
-        }
+        let compressed_field = match field {
+            1 => CompressedField::EntityType,
+            3 => CompressedField::Structure,
+            4 => CompressedField::LineFont,
+            5 => CompressedField::Level,
+            6 => CompressedField::View,
+            7 => CompressedField::Transform,
+            8 => CompressedField::LabelDisplay,
+            9 => CompressedField::Status,
+            12 => CompressedField::LineWeight,
+            13 => CompressedField::Color,
+            14 => CompressedField::ParameterLineCount,
+            15 => CompressedField::Form,
+            16 => CompressedField::ReservedFirst,
+            17 => CompressedField::ReservedSecond,
+            18 => CompressedField::Label,
+            19 => CompressedField::Subscript,
+            2 | 10 | 11 | 20 => {
+                return Err(malformed(format!(
+                    "Directory field {field} is redundant in Compressed ASCII"
+                )));
+            }
+            _ => {
+                return Err(malformed(format!(
+                    "Directory field number {field} is outside 1 through 20"
+                )));
+            }
+        };
         if specified[field] {
             return Err(malformed(format!(
                 "Directory field {field} is specified more than once"
@@ -307,26 +324,7 @@ fn parse_field_specs(bytes: &[u8]) -> Result<Vec<(CompressedField, Vec<u8>)>, Co
                 "Directory field {field} contains a non-printable byte"
             )));
         }
-        let field = match field {
-            1 => CompressedField::EntityType,
-            3 => CompressedField::Structure,
-            4 => CompressedField::LineFont,
-            5 => CompressedField::Level,
-            6 => CompressedField::View,
-            7 => CompressedField::Transform,
-            8 => CompressedField::LabelDisplay,
-            9 => CompressedField::Status,
-            12 => CompressedField::LineWeight,
-            13 => CompressedField::Color,
-            14 => CompressedField::ParameterLineCount,
-            15 => CompressedField::Form,
-            16 => CompressedField::ReservedFirst,
-            17 => CompressedField::ReservedSecond,
-            18 => CompressedField::Label,
-            19 => CompressedField::Subscript,
-            _ => return Err(malformed("invalid Directory field number")),
-        };
-        specs.push((field, value));
+        specs.push((compressed_field, value));
     }
     Ok(specs)
 }
