@@ -310,7 +310,7 @@ impl<'de> Deserialize<'de> for FeatureDatumPlaneHeader {
                 })?;
                 if frame
                     .descriptor()
-                    .map(|(_, _, offset)| offset)
+                    .map(|(_, (), offset)| offset)
                     .into_iter()
                     .ne(wire.descriptor_source_offsets)
                 {
@@ -320,7 +320,7 @@ impl<'de> Deserialize<'de> for FeatureDatumPlaneHeader {
                 }
                 if frame
                     .objects()
-                    .map(|(_, _, offset)| offset)
+                    .map(|(_, (), offset)| offset)
                     .ne(wire.object_source_offsets)
                 {
                     return Err(serde::de::Error::custom(
