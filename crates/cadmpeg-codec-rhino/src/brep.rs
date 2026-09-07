@@ -14,7 +14,9 @@ use crate::chunks::{
     ChecksumStatus, Chunk,
 };
 use crate::curves::{error, GeometryError};
-use crate::objects::{parse_class_wrapper, parse_class_wrapper_with_userdata, UserdataDescriptor};
+use crate::objects::{
+    parse_class_wrapper, parse_class_wrapper_with_userdata, ClassUserdata, UserdataDescriptor,
+};
 use crate::settings::{bbox, interval, BoundingBox, Interval, Point3};
 use crate::wire::Uuid;
 
@@ -745,12 +747,16 @@ pub(crate) fn parse(
         (Vec::new(), Vec::new(), None, false)
     };
     if !inline_region_loaded {
-        if let Some(extra) = userdata.iter().find(|value| {
-            value.class_uuid() == V5_BREP_REGION_TOPOLOGY_USERDATA
-                && value.item_uuid() == V5_BREP_REGION_TOPOLOGY_USERDATA
-                && (value.application_uuid().is_none()
-                    || value.application_uuid() == Some(OPENNURBS4))
-        }) {
+        if let Some(extra) = userdata
+            .iter()
+            .filter_map(UserdataDescriptor::known)
+            .find(|value| {
+                value.class_uuid == V5_BREP_REGION_TOPOLOGY_USERDATA
+                    && value.item_uuid == V5_BREP_REGION_TOPOLOGY_USERDATA
+                    && (value.application_uuid.is_none()
+                        || value.application_uuid == Some(OPENNURBS4))
+            })
+        {
             match read_region_topology_userdata(bytes, extra, archive, faces.len(), &mut warnings) {
                 Ok((sides, topology_regions, _, _)) => {
                     face_sides = sides;
@@ -2008,16 +2014,12 @@ fn read_regions(
 
 fn read_region_topology_userdata(
     bytes: &[u8],
-    extra: &UserdataDescriptor,
+    extra: &ClassUserdata,
     archive: ArchiveVersion,
     face_count: usize,
     warnings: &mut Vec<String>,
 ) -> Result<RegionRead, GeometryError> {
-    let mut parent = BoundedReader::new(
-        bytes,
-        extra.payload_range().start,
-        extra.payload_range().end,
-    )?;
+    let mut parent = BoundedReader::new(bytes, extra.payload_range.start, extra.payload_range.end)?;
     let topology_chunk = anonymous_chunk(bytes, &mut parent, archive)?;
     let mut topology = body_reader(bytes, &topology_chunk)?;
     let major = topology.i32()?;
@@ -2050,11 +2052,11 @@ fn read_region_topology_userdata(
     }
     if sides.len() != face_count.saturating_mul(2) {
         return Err(error(
-            extra.range().start,
+            extra.range.start,
             "redundant Brep region face-side count mismatch",
         ));
     }
-    Ok((sides, regions, Some(extra.range().clone()), true))
+    Ok((sides, regions, Some(extra.range.clone()), true))
 }
 
 fn read_region_sides<'a>(
@@ -2685,8 +2687,8 @@ mod tests {
         anonymous_mixed(&[(&header, false), (&side_array, true), (&region_array, true)])
     }
 
-    fn region_topology_userdata_descriptor(range: Range<usize>) -> UserdataDescriptor {
-        UserdataDescriptor::Known {
+    fn region_topology_userdata_descriptor(range: Range<usize>) -> ClassUserdata {
+        ClassUserdata {
             range: range.clone(),
             version: (2, 2),
             class_uuid: V5_BREP_REGION_TOPOLOGY_USERDATA,
@@ -3312,7 +3314,7 @@ mod tests {
         assert!(slots[0].mesh.is_some(), "warnings: {warnings:?}");
         assert_eq!(slots[0].userdata.len(), 1);
         assert_eq!(
-            slots[0].userdata[0].item_uuid(),
+            slots[0].userdata[0].known().unwrap().item_uuid,
             crate::mesh::V5_MESH_DOUBLE_VERTICES
         );
         assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");

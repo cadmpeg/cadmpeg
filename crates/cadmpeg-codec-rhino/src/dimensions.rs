@@ -1232,13 +1232,19 @@ pub(crate) fn apply_userdata(
         ..
     } = &mut dimension.definition
     {
-        if let Some(extra) = userdata.iter().find(|userdata| {
-            userdata.class_uuid() == V5_ANGULAR_EXTRA && userdata.item_uuid() == V5_ANGULAR_EXTRA
-        }) {
+        if let Some(extra) =
+            userdata
+                .iter()
+                .filter_map(UserdataDescriptor::known)
+                .find(|userdata| {
+                    userdata.class_uuid == V5_ANGULAR_EXTRA
+                        && userdata.item_uuid == V5_ANGULAR_EXTRA
+                })
+        {
             let (mut reader, _next, _minor) = anonymous(
                 data,
-                extra.payload_range().start,
-                extra.payload_range().end,
+                extra.payload_range.start,
+                extra.payload_range.end,
                 archive,
             )?;
             *first_extension_offset = scaled_coordinate(reader.f64()?, scale).ok_or_else(|| {
@@ -1257,15 +1263,17 @@ pub(crate) fn apply_userdata(
             reader.skip_remaining()?;
         }
     }
-    let Some(extra) = userdata.iter().find(|userdata| {
-        userdata.class_uuid() == V5_DIM_EXTRA && userdata.item_uuid() == V5_DIM_EXTRA
-    }) else {
+    let Some(extra) = userdata
+        .iter()
+        .filter_map(UserdataDescriptor::known)
+        .find(|userdata| userdata.class_uuid == V5_DIM_EXTRA && userdata.item_uuid == V5_DIM_EXTRA)
+    else {
         return Ok(());
     };
     let (mut reader, _next, minor) = anonymous(
         data,
-        extra.payload_range().start,
-        extra.payload_range().end,
+        extra.payload_range.start,
+        extra.payload_range.end,
         archive,
     )?;
     uuid(&mut reader)?;
@@ -1672,6 +1680,7 @@ pub(crate) fn semantic_json(dimension: &Dimension) -> Option<String> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::objects::ClassUserdata;
     use crate::test_support::crc_chunk;
 
     #[test]
@@ -2286,7 +2295,7 @@ pub(crate) mod tests {
         extension.push(42);
         let mut extension = anonymous(2, &extension);
         extension.extend([0x4d, 0xd4]);
-        let descriptor = UserdataDescriptor::Known {
+        let descriptor = UserdataDescriptor::Known(ClassUserdata {
             range: 0..extension.len(),
             version: (1, 0),
             class_uuid: V5_DIM_EXTRA,
@@ -2298,7 +2307,7 @@ pub(crate) mod tests {
             archive_version: None,
             writer_version: None,
             payload_range: 0..extension.len(),
-        };
+        });
         let mut radial = radial;
         apply_userdata(
             &extension,
@@ -2317,8 +2326,7 @@ pub(crate) mod tests {
         );
 
         let mut wrong_item_descriptor = descriptor.clone();
-        let crate::objects::UserdataDescriptor::Known { item_uuid, .. } =
-            &mut wrong_item_descriptor
+        let UserdataDescriptor::Known(ClassUserdata { item_uuid, .. }) = &mut wrong_item_descriptor
         else {
             panic!("expected known userdata");
         };
@@ -2346,7 +2354,7 @@ pub(crate) mod tests {
         let mut angular_extension =
             anonymous(0, &[2.5_f64.to_le_bytes(), 4.0_f64.to_le_bytes()].concat());
         angular_extension.extend([0x6e, 0xe6]);
-        let angular_descriptor = UserdataDescriptor::Known {
+        let angular_descriptor = UserdataDescriptor::Known(ClassUserdata {
             range: 0..angular_extension.len(),
             version: (1, 0),
             class_uuid: V5_ANGULAR_EXTRA,
@@ -2358,7 +2366,7 @@ pub(crate) mod tests {
             archive_version: None,
             writer_version: None,
             payload_range: 0..angular_extension.len(),
-        };
+        });
         let mut angular = angular;
         apply_userdata(
             &angular_extension,
@@ -2378,8 +2386,7 @@ pub(crate) mod tests {
         ));
 
         let mut wrong_item_descriptor = angular_descriptor.clone();
-        let crate::objects::UserdataDescriptor::Known { item_uuid, .. } =
-            &mut wrong_item_descriptor
+        let UserdataDescriptor::Known(ClassUserdata { item_uuid, .. }) = &mut wrong_item_descriptor
         else {
             panic!("expected known userdata");
         };
@@ -2415,11 +2422,11 @@ pub(crate) mod tests {
         let mut combined = angular_extension.clone();
         combined.extend(second_extension);
         let mut second_descriptor = angular_descriptor.clone();
-        let crate::objects::UserdataDescriptor::Known {
+        let UserdataDescriptor::Known(ClassUserdata {
             range,
             payload_range,
             ..
-        } = &mut second_descriptor
+        }) = &mut second_descriptor
         else {
             panic!("expected known userdata");
         };

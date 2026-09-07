@@ -2,6 +2,7 @@
 #![allow(dead_code, clippy::disallowed_methods)]
 
 use super::*;
+use crate::objects::ClassUserdata;
 use crate::test_support::test_dump::*;
 use cadmpeg_ir::report::Severity;
 
@@ -415,7 +416,7 @@ fn proxy_userdata(
     embedded: &[u8],
     fingerprint: MeshProxyFingerprint,
     transform_identity: bool,
-) -> (Vec<u8>, UserdataDescriptor) {
+) -> (Vec<u8>, ClassUserdata) {
     let mut bytes = Vec::new();
     for index in 0..16 {
         bytes.extend_from_slice(
@@ -453,7 +454,7 @@ fn proxy_userdata(
     let payload_start = bytes.len();
     bytes.extend_from_slice(&anonymous(&body));
     let payload_range = payload_start..bytes.len();
-    let descriptor = UserdataDescriptor::Known {
+    let descriptor = ClassUserdata {
         range: payload_range.clone(),
         version: (2, 2),
         class_uuid: SUBD_MESH_PROXY_USERDATA,

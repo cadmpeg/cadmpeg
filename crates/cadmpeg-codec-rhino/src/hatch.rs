@@ -11,8 +11,7 @@ use crate::mesh::MeshExpand;
 
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, FramingError};
 use crate::curves::{DecodedCurve, DecodedGeometry, GeometryError};
-use crate::objects::parse_class_wrapper;
-use crate::objects::UserdataDescriptor;
+use crate::objects::{parse_class_wrapper, ClassUserdata, UserdataDescriptor};
 use crate::settings::{Plane, Point3, Vector3};
 use crate::wire::{scaled_coordinate, ExactVec, Uuid};
 
@@ -277,7 +276,8 @@ pub(crate) fn apply_userdata(
     let mut first_gradient = None;
     for extra in userdata
         .iter()
-        .filter(|value| value.class_uuid() == V5_HATCH_EXTRA && value.item_uuid() == V5_HATCH_EXTRA)
+        .filter_map(UserdataDescriptor::known)
+        .filter(|value| value.class_uuid == V5_HATCH_EXTRA && value.item_uuid == V5_HATCH_EXTRA)
     {
         match parse_userdata(data, extra, archive, scale) {
             Ok(basepoint) => last_basepoint = Some(basepoint),
@@ -288,7 +288,8 @@ pub(crate) fn apply_userdata(
     }
     for extra in userdata
         .iter()
-        .filter(|value| value.class_uuid() == GRADIENT_COLOR_DATA)
+        .filter_map(UserdataDescriptor::known)
+        .filter(|value| value.class_uuid == GRADIENT_COLOR_DATA)
     {
         match parse_gradient_userdata(data, extra, scale, archive) {
             Ok(gradient) => {
@@ -315,14 +316,14 @@ pub(crate) fn apply_userdata(
 
 fn parse_gradient_userdata(
     data: &[u8],
-    extra: &UserdataDescriptor,
+    extra: &ClassUserdata,
     scale: f64,
     archive: ArchiveVersion,
 ) -> Result<Gradient, GeometryError> {
     let outer = chunk_at(
         data,
-        extra.payload_range().start,
-        extra.payload_range().end,
+        extra.payload_range.start,
+        extra.payload_range.end,
         archive,
         false,
     )?;
@@ -460,14 +461,14 @@ pub(crate) fn gradient_json(gradient: &Gradient) -> Option<String> {
 
 fn parse_userdata(
     data: &[u8],
-    extra: &UserdataDescriptor,
+    extra: &ClassUserdata,
     archive: ArchiveVersion,
     scale: f64,
 ) -> Result<[f64; 2], GeometryError> {
     let payload = chunk_at(
         data,
-        extra.payload_range().start,
-        extra.payload_range().end,
+        extra.payload_range.start,
+        extra.payload_range.end,
         archive,
         false,
     )?;
@@ -572,7 +573,7 @@ pub(crate) mod tests {
     }
 
     fn gradient_descriptor(payload: &[u8]) -> UserdataDescriptor {
-        UserdataDescriptor::Known {
+        UserdataDescriptor::Known(ClassUserdata {
             range: 0..payload.len(),
             version: (2, 2),
             class_uuid: GRADIENT_COLOR_DATA,
@@ -584,7 +585,7 @@ pub(crate) mod tests {
             archive_version: None,
             writer_version: None,
             payload_range: 0..payload.len(),
-        }
+        })
     }
 
     #[test]
@@ -601,7 +602,7 @@ pub(crate) mod tests {
             body.extend(3.0_f64.to_le_bytes());
             let extra =
                 crate::test_support::test_dump::anonymous_chunk(ArchiveVersion::V5, 0, &body);
-            let descriptor = UserdataDescriptor::Known {
+            let descriptor = UserdataDescriptor::Known(ClassUserdata {
                 range: 0..extra.len(),
                 version: (2, 2),
                 class_uuid: V5_HATCH_EXTRA,
@@ -613,7 +614,7 @@ pub(crate) mod tests {
                 archive_version: None,
                 writer_version: None,
                 payload_range: 0..extra.len(),
-            };
+            });
             apply_userdata(
                 &extra,
                 std::slice::from_ref(&descriptor),
@@ -625,7 +626,7 @@ pub(crate) mod tests {
             assert_eq!(hatch.basepoint, [20.0, 30.0]);
 
             let mut wrong_item_descriptor = descriptor.clone();
-            let crate::objects::UserdataDescriptor::Known { item_uuid, .. } =
+            let UserdataDescriptor::Known(ClassUserdata { item_uuid, .. }) =
                 &mut wrong_item_descriptor
             else {
                 panic!("expected known userdata");
@@ -656,11 +657,11 @@ pub(crate) mod tests {
             let mut combined = extra.clone();
             combined.extend(second);
             let mut second_descriptor = descriptor.clone();
-            let crate::objects::UserdataDescriptor::Known {
+            let UserdataDescriptor::Known(ClassUserdata {
                 range,
                 payload_range,
                 ..
-            } = &mut second_descriptor
+            }) = &mut second_descriptor
             else {
                 panic!("expected known userdata");
             };

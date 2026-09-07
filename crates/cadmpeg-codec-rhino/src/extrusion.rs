@@ -690,17 +690,21 @@ fn read_v5_mesh_cache(
     mesh_budget: &mut crate::mesh::MeshBudget,
     warnings: &mut Vec<String>,
 ) -> Result<Vec<crate::mesh::DecodedMesh>, GeometryError> {
-    let Some(cache) = userdata.iter().find(|value| {
-        value.class_uuid() == ON_V5_EXTRUSION_DISPLAY_MESH_CACHE
-            && value.item_uuid() == ON_V5_EXTRUSION_DISPLAY_MESH_CACHE
-    }) else {
+    let Some(cache) = userdata
+        .iter()
+        .filter_map(UserdataDescriptor::known)
+        .find(|value| {
+            value.class_uuid == ON_V5_EXTRUSION_DISPLAY_MESH_CACHE
+                && value.item_uuid == ON_V5_EXTRUSION_DISPLAY_MESH_CACHE
+        })
+    else {
         return Ok(Vec::new());
     };
 
-    let mut offset = cache.payload_range().start;
+    let mut offset = cache.payload_range.start;
     let mut meshes = Vec::new();
     for index in 0..3_usize {
-        let wrapper = chunk_at(data, offset, cache.payload_range().end, archive, false)?;
+        let wrapper = chunk_at(data, offset, cache.payload_range.end, archive, false)?;
         let (class, nested_userdata) =
             parse_class_wrapper_with_userdata(data, wrapper.range(), archive, warnings)?;
         if index < 2 {
@@ -897,6 +901,7 @@ pub(crate) mod tests {
     use crate::layout::anonymous_version_prefix as anon_ver;
     use crate::layout::long_chunk_header_wide as long_wide;
     use crate::layout::uuid_wire_form as uuid_wire;
+    use crate::objects::ClassUserdata;
     use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
     use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -1550,7 +1555,7 @@ pub(crate) mod tests {
         let mut bytes = one_mesh_wrapper();
         bytes.extend(null_object_wrapper());
         bytes.extend(null_object_wrapper());
-        let descriptor = crate::objects::UserdataDescriptor::Known {
+        let descriptor = UserdataDescriptor::Known(ClassUserdata {
             range: 0..bytes.len(),
             version: (2, 2),
             class_uuid: ON_V5_EXTRUSION_DISPLAY_MESH_CACHE,
@@ -1562,7 +1567,7 @@ pub(crate) mod tests {
             archive_version: None,
             writer_version: None,
             payload_range: 0..bytes.len(),
-        };
+        });
         let result = crate::decode::with_expand_bytes(&bytes, |expand| {
             read_v5_mesh_cache(
                 expand,
@@ -1585,7 +1590,7 @@ pub(crate) mod tests {
         bytes.extend(null_object_wrapper());
         bytes.extend(null_object_wrapper());
         bytes.extend([0xa5, 0x5a]);
-        let descriptor = crate::objects::UserdataDescriptor::Known {
+        let descriptor = UserdataDescriptor::Known(ClassUserdata {
             range: 0..bytes.len(),
             version: (2, 2),
             class_uuid: ON_V5_EXTRUSION_DISPLAY_MESH_CACHE,
@@ -1597,7 +1602,7 @@ pub(crate) mod tests {
             archive_version: None,
             writer_version: None,
             payload_range: 0..bytes.len(),
-        };
+        });
         let result = crate::decode::with_expand_bytes(&bytes, |expand| {
             read_v5_mesh_cache(
                 expand,

@@ -8,7 +8,7 @@ use serde::Serialize;
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::Scan;
 use crate::loss::RhinoLossCode;
-use crate::objects::UserdataDescriptor;
+use crate::objects::{ClassUserdata, UserdataDescriptor};
 use crate::settings::{utf16, Plane};
 use crate::wire::{scaled_coordinate, Uuid};
 
@@ -150,10 +150,10 @@ fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
 
 fn parse_v5_text_extra(
     data: &[u8],
-    extra: &UserdataDescriptor,
+    extra: &ClassUserdata,
     archive: ArchiveVersion,
 ) -> Result<V5TextExtraRecord, FramingError> {
-    let mut reader = anonymous(data, extra.payload_range().clone(), archive, 0)?;
+    let mut reader = anonymous(data, extra.payload_range.clone(), archive, 0)?;
     let parent_text_uuid = uuid(&mut reader)?;
     let draw_mask = reader.bool()?;
     let mask_color_source = reader.i32()?;
@@ -476,15 +476,20 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
         );
         let mut v5_text_extra = None;
         if matches!(object.class_uuid, TEXT | LEGACY_TEXT) {
-            if let Some(extra) = object.userdata.iter().find(|userdata| {
-                userdata.class_uuid() == V5_TEXT_EXTRA && userdata.item_uuid() == V5_TEXT_EXTRA
-            }) {
+            if let Some(extra) = object
+                .userdata
+                .iter()
+                .filter_map(UserdataDescriptor::known)
+                .find(|userdata| {
+                    userdata.class_uuid == V5_TEXT_EXTRA && userdata.item_uuid == V5_TEXT_EXTRA
+                })
+            {
                 match parse_v5_text_extra(scan.data, extra, scan.archive) {
                     Ok(value) => v5_text_extra = Some(value),
                     Err(error) => {
                         losses.push(RhinoLossCode::AnnotationUserdataDropped.note(format!(
                             "V5 text-extra userdata at offset {} could not be transferred: {error}",
-                            extra.range().start
+                            extra.range.start
                         )));
                     }
                 }
@@ -700,7 +705,7 @@ mod tests {
         V2_ANNOTATION_ARROW, V2_TEXT_DOT, V5_TEXT_EXTRA,
     };
     use crate::chunks::ArchiveVersion;
-    use crate::objects::UserdataDescriptor;
+    use crate::objects::ClassUserdata;
     use crate::test_support::test_dump::{object_record_with_payload, scan_with_objects};
     use crate::wire::Uuid;
     use cadmpeg_ir::document::CadIr;
@@ -1085,7 +1090,7 @@ mod tests {
         payload.extend(0.375_f64.to_le_bytes());
         payload.extend([0xaa, 0xbb]);
         let bytes = anonymous(0, &payload);
-        let descriptor = UserdataDescriptor::Known {
+        let descriptor = ClassUserdata {
             range: 0..bytes.len(),
             version: (2, 2),
             class_uuid: V5_TEXT_EXTRA,

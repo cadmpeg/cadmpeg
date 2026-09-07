@@ -2,7 +2,7 @@
 //! XML-backed mesh modifier userdata attached to object attributes.
 
 use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
-use crate::objects::AttributeUserdataDescriptor;
+use crate::objects::{AttributeUserdata, AttributeUserdataDescriptor};
 use crate::settings;
 use crate::wire::Uuid;
 
@@ -289,95 +289,65 @@ pub(crate) fn parse_attribute_userdata(
     }
 
     let displacement = displacement_descriptor.and_then(|descriptor| {
-        let Some(payload_range) = descriptor.payload_range().clone() else {
-            warnings.push(format!(
-                "displacement userdata at {} has no bounded payload",
-                descriptor.range().start
-            ));
-            return None;
-        };
+        let payload_range = descriptor.payload_range.clone();
         match parse_displacement(bytes, payload_range, archive) {
             Ok(displacement) => Some(displacement),
             Err(error) => {
                 warnings.push(format!(
                     "displacement userdata at {} dropped: {error}",
-                    descriptor.range().start
+                    descriptor.range.start
                 ));
                 None
             }
         }
     });
     let edge_softening = edge_softening_descriptor.and_then(|descriptor| {
-        let Some(payload_range) = descriptor.payload_range().clone() else {
-            warnings.push(format!(
-                "edge-softening userdata at {} has no bounded payload",
-                descriptor.range().start
-            ));
-            return None;
-        };
+        let payload_range = descriptor.payload_range.clone();
         match parse_edge_softening(bytes, payload_range) {
             Ok(edge_softening) => Some(edge_softening),
             Err(error) => {
                 warnings.push(format!(
                     "edge-softening userdata at {} dropped: {error}",
-                    descriptor.range().start
+                    descriptor.range.start
                 ));
                 None
             }
         }
     });
     let thickening = thickening_descriptor.and_then(|descriptor| {
-        let Some(payload_range) = descriptor.payload_range().clone() else {
-            warnings.push(format!(
-                "thickening userdata at {} has no bounded payload",
-                descriptor.range().start
-            ));
-            return None;
-        };
+        let payload_range = descriptor.payload_range.clone();
         match parse_thickening(bytes, payload_range) {
             Ok(thickening) => Some(thickening),
             Err(error) => {
                 warnings.push(format!(
                     "thickening userdata at {} dropped: {error}",
-                    descriptor.range().start
+                    descriptor.range.start
                 ));
                 None
             }
         }
     });
     let curve_piping = curve_piping_descriptor.and_then(|descriptor| {
-        let Some(payload_range) = descriptor.payload_range().clone() else {
-            warnings.push(format!(
-                "curve-piping userdata at {} has no bounded payload",
-                descriptor.range().start
-            ));
-            return None;
-        };
+        let payload_range = descriptor.payload_range.clone();
         match parse_curve_piping(bytes, payload_range) {
             Ok(curve_piping) => Some(curve_piping),
             Err(error) => {
                 warnings.push(format!(
                     "curve-piping userdata at {} dropped: {error}",
-                    descriptor.range().start
+                    descriptor.range.start
                 ));
                 None
             }
         }
     });
     let shut_lining = shut_lining_descriptor.and_then(|descriptor| {
-        let Some(payload_range) = descriptor.payload_range().clone() else {
-            warnings.push(format!(
-                "shut-lining userdata at {} has no bounded payload",
-                descriptor.range().start
-            ));
-            return None;
-        };
+        let payload_range = descriptor.payload_range.clone();
         match parse_shut_lining(bytes, payload_range) {
             Ok(shut_lining) => Some(shut_lining),
             Err(error) => {
                 warnings.push(format!(
                     "shut-lining userdata at {} dropped: {error}",
-                    descriptor.range().start
+                    descriptor.range.start
                 ));
                 None
             }
@@ -401,12 +371,15 @@ fn first_matching_descriptor(
     descriptors: &[AttributeUserdataDescriptor],
     class_uuid: Uuid,
     item_uuid: Uuid,
-) -> Option<&AttributeUserdataDescriptor> {
-    descriptors.iter().find(|descriptor| {
-        descriptor.class_uuid() == Some(class_uuid)
-            && descriptor.item_uuid() == Some(item_uuid)
-            && descriptor.application_uuid() == Some(MESH_MODIFIER_PLUGIN)
-    })
+) -> Option<&AttributeUserdata> {
+    descriptors
+        .iter()
+        .filter_map(AttributeUserdataDescriptor::known)
+        .find(|descriptor| {
+            descriptor.class_uuid == class_uuid
+                && descriptor.item_uuid == item_uuid
+                && descriptor.application_uuid == Some(MESH_MODIFIER_PLUGIN)
+        })
 }
 
 fn parse_displacement(
@@ -952,14 +925,14 @@ mod tests {
         item_uuid: Uuid,
         application_uuid: Option<Uuid>,
     ) -> AttributeUserdataDescriptor {
-        AttributeUserdataDescriptor::Known {
+        AttributeUserdataDescriptor::Known(AttributeUserdata {
             range: range.clone(),
             class_uuid,
             item_uuid,
             application_uuid,
             writer_version: Some(2_348_836_140),
             payload_range: range,
-        }
+        })
     }
 
     fn v2_payload(xml: &str) -> Vec<u8> {

@@ -3,6 +3,7 @@ use super::{
     CLASS_USERDATA,
 };
 use crate::chunks::ArchiveVersion;
+use crate::objects::{ClassUserdata, UserdataDescriptor};
 use crate::test_support::test_dump::{
     anonymous_chunk, crc_chunk, long_chunk, metadata_record, short_chunk, utf16_bytes,
 };
@@ -310,7 +311,7 @@ fn render_userdata_uses_shared_header_grammar_and_outer_suffix_boundaries() {
     assert_eq!(descriptor.unknown_chunks.len(), 1);
     assert_eq!(descriptor.suffix, data.len() - 2..data.len());
     let modern = &descriptor.items[0];
-    let crate::objects::UserdataDescriptor::Known {
+    let UserdataDescriptor::Known(ClassUserdata {
         version,
         class_uuid: modern_class,
         item_uuid: modern_item,
@@ -321,7 +322,7 @@ fn render_userdata_uses_shared_header_grammar_and_outer_suffix_boundaries() {
         writer_version,
         payload_range,
         ..
-    } = modern
+    }) = modern
     else {
         panic!("expected known userdata");
     };
@@ -335,7 +336,7 @@ fn render_userdata_uses_shared_header_grammar_and_outer_suffix_boundaries() {
     assert_eq!(*writer_version, Some(202_400));
     assert!(!payload_range.is_empty());
     let legacy = &descriptor.items[1];
-    let crate::objects::UserdataDescriptor::Known {
+    let UserdataDescriptor::Known(ClassUserdata {
         version,
         copy_count,
         application_uuid,
@@ -343,7 +344,7 @@ fn render_userdata_uses_shared_header_grammar_and_outer_suffix_boundaries() {
         archive_version,
         writer_version,
         ..
-    } = legacy
+    }) = legacy
     else {
         panic!("expected known userdata");
     };

@@ -17,7 +17,7 @@ use crate::loss::RhinoLossCode;
 use crate::objects::{
     apply_attribute_userdata, parse_attribute_userdata, parse_attributes, parse_class_wrapper,
     parse_class_wrapper_with_userdata, parse_user_string_list, AttributeUserdataDescriptor,
-    ObjectAttributes, UserdataDescriptor, USER_STRING_LIST,
+    ClassUserdata, ObjectAttributes, UserdataDescriptor, USER_STRING_LIST,
 };
 use crate::settings::{self, utf16};
 use crate::wire::{scaled_coordinate, Uuid};
@@ -823,10 +823,10 @@ fn first_user_string_records(
     losses: &mut Vec<LossNote>,
 ) -> (Vec<UserStringRecord>, Vec<UserStringRecord>) {
     let geometry = class_userdata
-        .iter()
-        .find(|value| value.class_uuid() == USER_STRING_LIST && value.item_uuid() == USER_STRING_LIST)
+        .iter().filter_map(UserdataDescriptor::known)
+        .find(|value| value.class_uuid == USER_STRING_LIST && value.item_uuid == USER_STRING_LIST)
         .and_then(|value| {
-            match parse_user_string_list(data, value.payload_range().clone(), archive) {
+            match parse_user_string_list(data, value.payload_range.clone(), archive) {
                 Ok(entries) => Some(user_string_records(entries)),
                 Err(error) => {
                     losses.push(RhinoLossCode::ObjectDecodeDiagnostic.note(format!(
@@ -838,17 +838,12 @@ fn first_user_string_records(
         })
         .unwrap_or_default();
     let mut attributes = attribute_userdata
-        .iter()
+        .iter().filter_map(AttributeUserdataDescriptor::known)
         .find(|value| {
-            value.class_uuid() == Some(USER_STRING_LIST) && value.item_uuid() == Some(USER_STRING_LIST)
+            value.class_uuid == USER_STRING_LIST && value.item_uuid == USER_STRING_LIST
         })
         .and_then(|value| {
-            let Some(payload_range) = value.payload_range().clone() else {
-                losses.push(RhinoLossCode::ObjectDecodeDiagnostic.note(format!(
-                    "object-attributes user-string userdata at offset {source_offset} has no payload"
-                )));
-                return None;
-            };
+            let payload_range = value.payload_range.clone();
             match parse_user_string_list(data, payload_range, archive) {
                 Ok(entries) => Some(user_string_records(entries)),
                 Err(error) => {
@@ -1294,14 +1289,15 @@ fn classify_rdk_material_payload(
 fn legacy_rdk_material_instance_id(data: &[u8], userdata: &[UserdataDescriptor]) -> Option<Uuid> {
     userdata
         .iter()
+        .filter_map(UserdataDescriptor::known)
         .filter(|value| {
-            value.class_uuid() == RDK_CLASS
-                && value.item_uuid() == RDK_USERDATA
-                && (value.application_uuid().is_none()
-                    || value.application_uuid() == Some(RDK_APPLICATION))
+            value.class_uuid == RDK_CLASS
+                && value.item_uuid == RDK_USERDATA
+                && (value.application_uuid.is_none()
+                    || value.application_uuid == Some(RDK_APPLICATION))
         })
         .filter_map(|value| {
-            parse_legacy_rdk_material_instance_id(data, value.payload_range().clone())
+            parse_legacy_rdk_material_instance_id(data, value.payload_range.clone())
                 .ok()
                 .flatten()
         })
@@ -1311,15 +1307,16 @@ fn legacy_rdk_material_instance_id(data: &[u8], userdata: &[UserdataDescriptor])
 fn rdk_material_userdata_requires_opaque(data: &[u8], userdata: &[UserdataDescriptor]) -> bool {
     userdata
         .iter()
+        .filter_map(UserdataDescriptor::known)
         .filter(|value| {
-            value.class_uuid() == RDK_CLASS
-                && value.item_uuid() == RDK_USERDATA
-                && (value.application_uuid().is_none()
-                    || value.application_uuid() == Some(RDK_APPLICATION))
+            value.class_uuid == RDK_CLASS
+                && value.item_uuid == RDK_USERDATA
+                && (value.application_uuid.is_none()
+                    || value.application_uuid == Some(RDK_APPLICATION))
         })
         .any(|value| {
             !matches!(
-                classify_rdk_material_payload(data, value.payload_range().clone()),
+                classify_rdk_material_payload(data, value.payload_range.clone()),
                 Ok(RdkMaterialPayload::Compatibility(_))
             )
         })
@@ -1485,20 +1482,15 @@ fn parse_light_record_attributes(
         .map(|range| parse_attribute_userdata(data, range.clone(), archive, &mut warnings))
         .unwrap_or_default();
     let userdata_requires_opaque = attributes_userdata.iter().any(|descriptor| {
-        if !descriptor.is_known() {
+        let Some(descriptor) = descriptor.known() else {
             return true;
-        }
-        let is_user_string = descriptor.class_uuid() == Some(USER_STRING_LIST)
-            && descriptor.item_uuid() == Some(USER_STRING_LIST);
+        };
+        let is_user_string =
+            descriptor.class_uuid == USER_STRING_LIST && descriptor.item_uuid == USER_STRING_LIST;
         if !is_user_string {
             return false;
         }
-        descriptor
-            .payload_range()
-            .as_ref()
-            .is_none_or(|payload_range| {
-                parse_user_string_list(data, payload_range.clone(), archive).is_err()
-            })
+        parse_user_string_list(data, descriptor.payload_range.clone(), archive).is_err()
     });
     if attributes.is_none() && !attributes_userdata.is_empty() {
         return Err(FramingError::structural(
@@ -2753,11 +2745,11 @@ fn dimension_style_controls(
 
 fn parse_v5_dimension_style_extra(
     data: &[u8],
-    extra: &UserdataDescriptor,
+    extra: &ClassUserdata,
     archive: ArchiveVersion,
     scale: f64,
 ) -> Result<V5DimensionStyleExtraRecord, FramingError> {
-    let (mut reader, version) = anonymous(data, extra.payload_range().clone(), archive)?;
+    let (mut reader, version) = anonymous(data, extra.payload_range.clone(), archive)?;
     if version.0 != 1 || version.1 < 0 {
         return Err(FramingError::structural(
             reader.position() - 8,
@@ -3393,11 +3385,15 @@ fn parse_texture_mapping(
         let mut warnings = Vec::new();
         let (value, userdata) =
             parse_class_wrapper_with_userdata(data, object.range(), archive, &mut warnings)?;
-        let cache_requires_opaque = userdata.iter().any(|value| {
-            value.class_uuid() == MAPPING_CRC_CACHE
-                && value.item_uuid() == MAPPING_CRC_CACHE
-                && parse_mapping_crc_cache(data, value.payload_range().clone()).is_err()
-        });
+        let cache_requires_opaque =
+            userdata
+                .iter()
+                .filter_map(UserdataDescriptor::known)
+                .any(|value| {
+                    value.class_uuid == MAPPING_CRC_CACHE
+                        && value.item_uuid == MAPPING_CRC_CACHE
+                        && parse_mapping_crc_cache(data, value.payload_range.clone()).is_err()
+                });
         (Some(value.class_uuid.to_string()), cache_requires_opaque)
     };
     reader.skip(object.next_offset() - reader.position())?;
@@ -3872,17 +3868,17 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> NativeInstall {
                         )));
                     }
                     let physically_based = userdata
-                        .iter()
+                        .iter().filter_map(UserdataDescriptor::known)
                         .find(|value| {
-                            value.class_uuid() == PHYSICALLY_BASED_MATERIAL_USERDATA
-                                && value.item_uuid() == PHYSICALLY_BASED_MATERIAL_USERDATA
-                                && (value.application_uuid().is_none()
-                                    || value.application_uuid() == Some(OPENNURBS6_APPLICATION))
+                            value.class_uuid == PHYSICALLY_BASED_MATERIAL_USERDATA
+                                && value.item_uuid == PHYSICALLY_BASED_MATERIAL_USERDATA
+                                && (value.application_uuid.is_none()
+                                    || value.application_uuid == Some(OPENNURBS6_APPLICATION))
                         })
                         .and_then(|value| {
                             match parse_physically_based_material(
                                 scan.data,
-                                value.payload_range().clone(),
+                                value.payload_range.clone(),
                                 scan.archive,
                             ) {
                                 Ok(material) => Some(material),
@@ -3989,14 +3985,18 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> NativeInstall {
                     if let Ok((range, userdata)) =
                         class_data_with_userdata(scan.data, record, scan.archive, V5_DIMSTYLE)
                     {
-                        let extra = userdata.into_iter().find(|value| {
-                            value.class_uuid() == DIMSTYLE_EXTRA
-                                && value.item_uuid() == DIMSTYLE_EXTRA
-                        });
+                        let extra =
+                            userdata
+                                .iter()
+                                .filter_map(UserdataDescriptor::known)
+                                .find(|value| {
+                                    value.class_uuid == DIMSTYLE_EXTRA
+                                        && value.item_uuid == DIMSTYLE_EXTRA
+                                });
                         let extra = match extra {
                             Some(value) => match parse_v5_dimension_style_extra(
                                 scan.data,
-                                &value,
+                                value,
                                 scan.archive,
                                 scale,
                             ) {
@@ -4316,6 +4316,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> NativeInstall {
 mod tests {
     use super::*;
     use crate::chunks::ArchiveVersion;
+    use crate::objects::AttributeUserdata;
     use std::io::Write;
 
     fn utf16(value: &str) -> Vec<u8> {
@@ -5160,7 +5161,7 @@ mod tests {
     fn v5_dimension_style_and_extra_follow_source_gates_and_scaling() {
         let base = v5_dimension_style_chunk();
         let extra_bytes = v5_dimension_style_extra_chunk();
-        let descriptor = UserdataDescriptor::Known {
+        let descriptor = ClassUserdata {
             range: 0..extra_bytes.len(),
             version: (2, 2),
             class_uuid: DIMSTYLE_EXTRA,
@@ -5217,12 +5218,7 @@ mod tests {
         minor_zero_body.extend([0xee, 0xff]);
         let minor_zero = anonymous(0, &minor_zero_body);
         let mut minor_zero_descriptor = descriptor;
-        let crate::objects::UserdataDescriptor::Known { payload_range, .. } =
-            &mut minor_zero_descriptor
-        else {
-            panic!("expected known userdata");
-        };
-        *payload_range = 0..minor_zero.len();
+        minor_zero_descriptor.payload_range = 0..minor_zero.len();
         let minor_zero = parse_v5_dimension_style_extra(
             &minor_zero,
             &minor_zero_descriptor,
@@ -5265,26 +5261,30 @@ mod tests {
         let geometry_start = 0;
         let attributes_start = geometry.len();
         let data = [geometry, attributes].concat();
-        let descriptor = |range: Range<usize>| UserdataDescriptor::Known {
-            range: range.clone(),
-            version: (2, 2),
-            class_uuid: USER_STRING_LIST,
-            item_uuid: USER_STRING_LIST,
-            copy_count: 1,
-            transform_range: 0..0,
-            application_uuid: None,
-            last_saved_as_goo: None,
-            archive_version: None,
-            writer_version: None,
-            payload_range: range,
+        let descriptor = |range: Range<usize>| {
+            UserdataDescriptor::Known(ClassUserdata {
+                range: range.clone(),
+                version: (2, 2),
+                class_uuid: USER_STRING_LIST,
+                item_uuid: USER_STRING_LIST,
+                copy_count: 1,
+                transform_range: 0..0,
+                application_uuid: None,
+                last_saved_as_goo: None,
+                archive_version: None,
+                writer_version: None,
+                payload_range: range,
+            })
         };
-        let attribute_descriptor = |range: Range<usize>| AttributeUserdataDescriptor::Known {
-            range,
-            class_uuid: USER_STRING_LIST,
-            item_uuid: USER_STRING_LIST,
-            application_uuid: None,
-            writer_version: None,
-            payload_range: attributes_start..data.len(),
+        let attribute_descriptor = |range: Range<usize>| {
+            AttributeUserdataDescriptor::Known(AttributeUserdata {
+                range,
+                class_uuid: USER_STRING_LIST,
+                item_uuid: USER_STRING_LIST,
+                application_uuid: None,
+                writer_version: None,
+                payload_range: attributes_start..data.len(),
+            })
         };
         let mut losses = Vec::new();
         let (geometry_values, attribute_values) = first_user_string_records(
@@ -5747,7 +5747,7 @@ mod tests {
     }
 
     fn legacy_rdk_descriptor(payload_range: Range<usize>) -> UserdataDescriptor {
-        UserdataDescriptor::Known {
+        UserdataDescriptor::Known(ClassUserdata {
             range: payload_range.clone(),
             version: (2, 2),
             class_uuid: RDK_CLASS,
@@ -5759,7 +5759,7 @@ mod tests {
             archive_version: Some(5),
             writer_version: Some(0),
             payload_range,
-        }
+        })
     }
 
     #[test]

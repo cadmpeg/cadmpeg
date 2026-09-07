@@ -20,7 +20,7 @@ use crate::chunks::{
     chunk_at, verify_checksum, ArchiveVersion, BoundedReader, ChecksumStatus, FramingError,
 };
 use crate::curves::{error, GeometryError};
-use crate::objects::UserdataDescriptor;
+use crate::objects::{ClassUserdata, UserdataDescriptor};
 use crate::subd::MeshProxyFingerprint;
 use crate::wire::Uuid;
 
@@ -411,21 +411,25 @@ pub(crate) fn decode(
         }
     }
     if ngon_count == 0 {
-        if let Some(extra) = userdata.iter().find(|value| {
-            value.class_uuid() == V4V5_MESH_NGON_USERDATA
-                && value.item_uuid() == V4V5_MESH_NGON_USERDATA
-                && (value.application_uuid().is_none()
-                    || value.application_uuid() == Some(OPENNURBS4))
-        }) {
+        if let Some(extra) = userdata
+            .iter()
+            .filter_map(UserdataDescriptor::known)
+            .find(|value| {
+                value.class_uuid == V4V5_MESH_NGON_USERDATA
+                    && value.item_uuid == V4V5_MESH_NGON_USERDATA
+                    && (value.application_uuid.is_none()
+                        || value.application_uuid == Some(OPENNURBS4))
+            })
+        {
             match read_v4v5_ngon_userdata(data, extra, archive, vertex_count, face_count) {
                 Ok(Some(count)) => ngon_count = count,
                 Ok(None) => decoded.warnings.push(format!(
                     "V4/V5 mesh n-gon userdata at offset {} was rejected; grouping omitted",
-                    extra.range().start
+                    extra.range.start
                 )),
                 Err(error) => decoded.warnings.push(format!(
                     "V4/V5 mesh n-gon userdata at offset {} was dropped: {error}",
-                    extra.range().start
+                    extra.range.start
                 )),
             }
         }
@@ -445,19 +449,23 @@ pub(crate) fn decode(
             .push(format!("ON_Mesh skipped {skipped} trailing bytes"));
     }
     if double_vertices.is_none() {
-        if let Some(extra) = userdata.iter().find(|value| {
-            value.class_uuid() == V5_MESH_DOUBLE_VERTICES
-                && value.item_uuid() == V5_MESH_DOUBLE_VERTICES
-        }) {
+        if let Some(extra) = userdata
+            .iter()
+            .filter_map(UserdataDescriptor::known)
+            .find(|value| {
+                value.class_uuid == V5_MESH_DOUBLE_VERTICES
+                    && value.item_uuid == V5_MESH_DOUBLE_VERTICES
+            })
+        {
             match read_v5_double_vertices(data, extra, archive, &decoded.vertices) {
                 Ok(Some(values)) => double_vertices = Some(values),
                 Ok(None) => decoded.warnings.push(format!(
                     "redundant V5 mesh double-precision userdata at offset {} was rejected; using float vertices",
-                    extra.range().start
+                    extra.range.start
                 )),
                 Err(error) => decoded.warnings.push(format!(
                     "redundant V5 mesh double-precision userdata at offset {} was dropped: {error}",
-                    extra.range().start
+                    extra.range.start
                 )),
             }
         }
@@ -476,14 +484,15 @@ pub(crate) fn decode(
     ] {
         for extra in userdata
             .iter()
-            .filter(|value| value.class_uuid() == class && value.item_uuid() == class)
+            .filter_map(UserdataDescriptor::known)
+            .filter(|value| value.class_uuid == class && value.item_uuid == class)
         {
             if let Err(error) =
-                parse_mesh_correspondence_userdata(data, extra.payload_range().clone(), mapping)
+                parse_mesh_correspondence_userdata(data, extra.payload_range.clone(), mapping)
             {
                 decoded.warnings.push(format!(
                     "{label} userdata at offset {} could not be transferred: {error}",
-                    extra.range().start
+                    extra.range.start
                 ));
             }
         }
@@ -1153,14 +1162,14 @@ fn read_double_chunk<'a>(
 /// values cast exactly to the owner's f32 vertices.
 fn read_v5_double_vertices(
     data: &[u8],
-    extra: &UserdataDescriptor,
+    extra: &ClassUserdata,
     archive: ArchiveVersion,
     float_vertices: &[[f32; 3]],
 ) -> Result<Option<Vec<[f64; 3]>>, GeometryError> {
     let chunk = chunk_at(
         data,
-        extra.payload_range().start,
-        extra.payload_range().end,
+        extra.payload_range.start,
+        extra.payload_range.end,
         archive,
         false,
     )?;
@@ -1211,15 +1220,15 @@ fn read_v5_double_vertices(
 /// checked for in-range vertices and face indices with a `-1` suffix.
 fn read_v4v5_ngon_userdata(
     data: &[u8],
-    extra: &UserdataDescriptor,
+    extra: &ClassUserdata,
     archive: ArchiveVersion,
     vertex_count: usize,
     face_count: usize,
 ) -> Result<Option<usize>, GeometryError> {
     let chunk = chunk_at(
         data,
-        extra.payload_range().start,
-        extra.payload_range().end,
+        extra.payload_range.start,
+        extra.payload_range.end,
         archive,
         false,
     )?;
@@ -1539,7 +1548,7 @@ mod tests {
     }
 
     fn v5_double_userdata_descriptor(range: Range<usize>) -> UserdataDescriptor {
-        UserdataDescriptor::Known {
+        UserdataDescriptor::Known(ClassUserdata {
             range: range.clone(),
             version: (2, 2),
             class_uuid: V5_MESH_DOUBLE_VERTICES,
@@ -1551,7 +1560,7 @@ mod tests {
             archive_version: None,
             writer_version: None,
             payload_range: range,
-        }
+        })
     }
 
     fn v4v5_ngon_userdata_payload(
@@ -1578,7 +1587,7 @@ mod tests {
     }
 
     fn v4v5_ngon_userdata_descriptor(range: Range<usize>) -> UserdataDescriptor {
-        UserdataDescriptor::Known {
+        UserdataDescriptor::Known(ClassUserdata {
             range: range.clone(),
             version: (2, 2),
             class_uuid: V4V5_MESH_NGON_USERDATA,
@@ -1590,7 +1599,7 @@ mod tests {
             archive_version: None,
             writer_version: None,
             payload_range: range,
-        }
+        })
     }
 
     fn correspondence_userdata_payload(version: i32, mapping: bool) -> Vec<u8> {

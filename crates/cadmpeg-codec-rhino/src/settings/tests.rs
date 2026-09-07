@@ -2,6 +2,7 @@
 #![allow(dead_code, clippy::disallowed_methods)]
 
 use crate::chunks::{ArchiveVersion, BoundedReader};
+use crate::objects::ClassUserdata;
 use crate::settings;
 use crate::test_support::test_dump::*;
 use crate::wire::Uuid;
@@ -868,7 +869,7 @@ fn layer_extensions_read_effective_fields_sort_entries_and_apply_root_rule() {
     outer_body.extend(entries);
     outer_body.extend([0xbe, 0xef]);
     let payload = anonymous_chunk(archive, 0, &outer_body);
-    let descriptor = crate::objects::UserdataDescriptor::Known {
+    let descriptor = ClassUserdata {
         range: 0..payload.len(),
         version: (2, 2),
         class_uuid: settings::LAYER_EXTENSIONS,
@@ -908,7 +909,7 @@ fn layer_extensions_read_effective_fields_sort_entries_and_apply_root_rule() {
 fn layer_extensions_reject_negative_count() {
     let archive = ArchiveVersion::V8;
     let payload = anonymous_chunk(archive, 0, &(-1_i32).to_le_bytes());
-    let descriptor = crate::objects::UserdataDescriptor::Known {
+    let descriptor = ClassUserdata {
         range: 0..payload.len(),
         version: (2, 2),
         class_uuid: settings::LAYER_EXTENSIONS,

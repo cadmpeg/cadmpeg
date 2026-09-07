@@ -9,7 +9,9 @@ use serde::Serialize;
 
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::{OpaqueRecord, Record, Table};
-use crate::objects::{parse_class_wrapper_with_userdata, read_uuid_list, UserdataDescriptor};
+use crate::objects::{
+    parse_class_wrapper_with_userdata, read_uuid_list, ClassUserdata, UserdataDescriptor,
+};
 use crate::wire::Uuid;
 
 const MAX_STRING_BYTES: usize = 1 << 20;
@@ -737,14 +739,14 @@ fn color(reader: &mut BoundedReader<'_>) -> Result<[u8; 4], FramingError> {
 
 fn parse_layer_extensions(
     data: &[u8],
-    descriptor: &UserdataDescriptor,
+    descriptor: &ClassUserdata,
     archive: ArchiveVersion,
     parent_id: Option<Uuid>,
 ) -> Result<Vec<LayerPerViewportSettings>, FramingError> {
     let outer = chunk_at(
         data,
-        descriptor.payload_range().start,
-        descriptor.payload_range().end,
+        descriptor.payload_range.start,
+        descriptor.payload_range.end,
         archive,
         false,
     )?;
@@ -2224,16 +2226,22 @@ fn parse_layer(
         per_viewport_settings: Vec::new(),
     };
     let mut userdata_degraded = false;
-    if let Some(descriptor) = userdata.iter().find(|descriptor| {
-        descriptor.class_uuid() == LAYER_EXTENSIONS && descriptor.item_uuid() == LAYER_EXTENSIONS
-    }) {
+    if let Some(descriptor) =
+        userdata
+            .iter()
+            .filter_map(UserdataDescriptor::known)
+            .find(|descriptor| {
+                descriptor.class_uuid == LAYER_EXTENSIONS
+                    && descriptor.item_uuid == LAYER_EXTENSIONS
+            })
+    {
         match parse_layer_extensions(data, descriptor, archive, layer.parent_id) {
             Ok(settings) => layer.per_viewport_settings = settings,
             Err(error) => {
                 userdata_degraded = true;
                 warnings.push(format!(
                     "layer per-viewport userdata at offset {} could not be transferred: {error}",
-                    descriptor.range().start
+                    descriptor.range.start
                 ));
             }
         }

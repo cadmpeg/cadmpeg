@@ -30,6 +30,7 @@ use crate::chunks::ArchiveVersion;
 use crate::container::{OpaqueRecord, Scan};
 use crate::loss::RhinoLossCode;
 use crate::objects::ObjectDescriptor;
+use crate::objects::UserdataDescriptor;
 
 /// Maximum bytes retained for one Rhino object record.
 pub(crate) const RETAINED_RECORD_CAP: usize = 16 * 1024 * 1024;
@@ -905,9 +906,10 @@ impl<'a> DecodeContext<'a> {
                         let proxy = object
                             .userdata
                             .iter()
+                            .filter_map(UserdataDescriptor::known)
                             .find(|extra| {
-                                extra.class_uuid() == crate::subd::SUBD_MESH_PROXY_USERDATA
-                                    && extra.item_uuid() == crate::subd::SUBD_MESH_PROXY_USERDATA
+                                extra.class_uuid == crate::subd::SUBD_MESH_PROXY_USERDATA
+                                    && extra.item_uuid == crate::subd::SUBD_MESH_PROXY_USERDATA
                             })
                             .cloned();
                         let mut proxy_transferred = false;
@@ -3525,13 +3527,11 @@ fn brep_mesh_cache_diagnostic(message: &str) -> bool {
     message.contains("Brep mesh cache") || message.contains(" mesh cache slot ")
 }
 
-fn duplicate_userdata_count(
-    userdata: &[crate::objects::UserdataDescriptor],
-    class: crate::wire::Uuid,
-) -> usize {
+fn duplicate_userdata_count(userdata: &[UserdataDescriptor], class: crate::wire::Uuid) -> usize {
     userdata
         .iter()
-        .filter(|value| value.class_uuid() == class)
+        .filter_map(UserdataDescriptor::known)
+        .filter(|value| value.class_uuid == class)
         .count()
 }
 
