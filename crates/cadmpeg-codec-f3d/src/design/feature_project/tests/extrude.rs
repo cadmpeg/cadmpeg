@@ -147,7 +147,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     let mut scope = DesignParameterScope {
         id: "f3d:Design/BulkStream.dat:scope#12".into(),
         byte_offset: 100,
-        class_tag: "301".into(),
+        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         record_index: 12,
         frame_length: 200,
         kind_offset: 210,
@@ -199,7 +199,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         )
         .unwrap(),
         unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag: "261".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: 300,
     };
     let placement = DesignSketchPlacement {
@@ -1245,8 +1245,10 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     ));
 
     let mut omitted_zero_offset_scope = scope.clone();
-    omitted_zero_offset_scope.class_tag = "330".into();
-    omitted_zero_offset_scope.paired_class_tag = "258".into();
+    omitted_zero_offset_scope.class_tag =
+        crate::records::DesignClassTag::try_from("330".to_owned()).unwrap();
+    omitted_zero_offset_scope.paired_class_tag =
+        crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
     omitted_zero_offset_scope.frame_length = 476;
     let omitted_zero_offset = project_extrude(
         &omitted_zero_offset_scope,
@@ -1272,7 +1274,8 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             ..
         } if id == &face_group.id
     ));
-    omitted_zero_offset_scope.class_tag = "331".into();
+    omitted_zero_offset_scope.class_tag =
+        crate::records::DesignClassTag::try_from("331".to_owned()).unwrap();
     assert!(project_extrude(
         &omitted_zero_offset_scope,
         &[(0, &taper)],

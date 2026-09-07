@@ -173,7 +173,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     let mut scope = DesignParameterScope {
         id: "f3d:Design/BulkStream.dat:design-parameter-scope#0".into(),
         byte_offset: 0,
-        class_tag: "291".into(),
+        class_tag: crate::records::DesignClassTag::try_from("291".to_owned()).unwrap(),
         record_index: scope_record_index,
         frame_length: 329,
         kind_offset: 0,
@@ -197,7 +197,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         .unwrap(),
         payload: crate::records::feature::DesignFeatureKind::CPattern.into(),
         unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag: "258".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
         paired_byte_offset: 329,
     };
     assert_eq!(
@@ -572,7 +572,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     let assembly_bytes = assembly_operand_frame_fixture(scope_record_index);
     scope.frame_length = 637;
     scope.paired_byte_offset = 637;
-    scope.paired_class_tag = "259".into();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("259".to_owned()).unwrap();
     let frames = exact_assembly_alignment(
         &assembly_bytes,
         &IndexedRecordOffsets::build(&assembly_bytes),
@@ -613,7 +613,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     let legacy_assembly_scope = DesignParameterScope {
         frame_length: 633,
         paired_byte_offset: 633,
-        paired_class_tag: "258".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
         ..scope.clone()
     };
     let legacy_frames = exact_assembly_alignment(
@@ -630,7 +630,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     let mut dynamic_standard_bytes = assembly_bytes.clone();
     dynamic_standard_bytes[641..644].copy_from_slice(b"262");
     let dynamic_standard_scope = DesignParameterScope {
-        paired_class_tag: "262".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("262".to_owned()).unwrap(),
         ..scope.clone()
     };
     assert!(exact_assembly_alignment(
@@ -644,7 +644,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     let mut dynamic_compact_bytes = legacy_assembly_bytes.clone();
     dynamic_compact_bytes[637..640].copy_from_slice(b"262");
     let dynamic_compact_scope = DesignParameterScope {
-        paired_class_tag: "262".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("262".to_owned()).unwrap(),
         ..legacy_assembly_scope.clone()
     };
     assert!(exact_assembly_alignment(
@@ -672,7 +672,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     let axial_assembly_scope = DesignParameterScope {
         frame_length: 772,
         paired_byte_offset: 772,
-        paired_class_tag: "261".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         reference_members: crate::records::ReferenceRun::Unlocated(vec![
             50, 51, 52, 53, 60, 61, 62, 63, 64, 65,
         ]),
@@ -700,7 +700,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     let short_axial_scope = DesignParameterScope {
         frame_length: 705,
         paired_byte_offset: 705,
-        paired_class_tag: "261".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         reference_members: crate::records::ReferenceRun::Unlocated(vec![50, 51, 52, 53, 64, 65]),
         ..scope.clone()
     };
@@ -770,8 +770,10 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     single_frame_bytes[165..169].copy_from_slice(&91_u32.to_le_bytes());
     single_frame_bytes[175..179].copy_from_slice(&1_u32.to_le_bytes());
     let mut single_frame_assembly = scope.clone();
-    single_frame_assembly.class_tag = "276".into();
-    single_frame_assembly.paired_class_tag = "258".into();
+    single_frame_assembly.class_tag =
+        crate::records::DesignClassTag::try_from("276".to_owned()).unwrap();
+    single_frame_assembly.paired_class_tag =
+        crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
     single_frame_assembly.frame_length = 604;
     single_frame_assembly.paired_byte_offset = 604;
     single_frame_assembly.reference_members = crate::records::ReferenceRun::Unlocated(
@@ -849,10 +851,11 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     compact_bytes.extend_from_slice(b"264");
     compact_bytes.extend_from_slice(&scope_record_index.to_le_bytes());
     let mut compact_scope = scope.clone();
-    compact_scope.class_tag = "459".into();
+    compact_scope.class_tag = crate::records::DesignClassTag::try_from("459".to_owned()).unwrap();
     compact_scope.frame_length = 627;
     compact_scope.paired_byte_offset = 627;
-    compact_scope.paired_class_tag = "264".into();
+    compact_scope.paired_class_tag =
+        crate::records::DesignClassTag::try_from("264".to_owned()).unwrap();
     assert!(exact_assembly_alignment(
         &compact_bytes,
         &IndexedRecordOffsets::build(&compact_bytes),

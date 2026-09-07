@@ -203,8 +203,8 @@ pub(crate) fn is_class_296_two_sided_to_faces_layout(
 
 pub(crate) fn is_class_296_two_sided_to_faces_scope(scope: &DesignParameterScope) -> bool {
     is_class_296_two_sided_to_faces_layout(
-        &scope.class_tag,
-        &scope.paired_class_tag,
+        scope.class_tag.as_str(),
+        scope.paired_class_tag.as_str(),
         scope.frame_length,
         scope
             .reference_count_offset

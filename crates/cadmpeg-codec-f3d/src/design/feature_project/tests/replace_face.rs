@@ -63,8 +63,8 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         crate::records::feature::DesignFeatureKind::ReplaceFace,
         1129,
     );
-    scope.class_tag = "301".into();
-    scope.paired_class_tag = "258".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("301".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
     scope.frame_length = 290;
     scope.previous_history_state_id = Some(254);
     scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![1130, 1133, 1137, 1140]);

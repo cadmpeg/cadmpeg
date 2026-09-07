@@ -11,8 +11,8 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
         crate::records::feature::DesignFeatureKind::Assemble,
         scope_record_index,
     );
-    scope.class_tag = "283".into();
-    scope.paired_class_tag = "264".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("283".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("264".to_owned()).unwrap();
     scope.frame_length = 637;
     scope.paired_byte_offset = 637;
     scope.reference_members =
@@ -143,7 +143,8 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
     assert_eq!(paths[1].occurrence_guids.len(), 2);
 
     let mut wrong_generation = scope.clone();
-    wrong_generation.paired_class_tag = "260".into();
+    wrong_generation.paired_class_tag =
+        crate::records::DesignClassTag::try_from("260".to_owned()).unwrap();
     assert!(exact_assembly_alignment(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),

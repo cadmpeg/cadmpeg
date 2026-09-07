@@ -5319,7 +5319,7 @@ pub struct DesignParameterScope {
     /// Byte offset of the primary indexed record header.
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII primary class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Shared logical record identity.
     pub record_index: u32,
     /// Byte length from the primary header to the paired header.
@@ -5349,7 +5349,7 @@ pub struct DesignParameterScope {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unclosed_construction_operand_groups: Vec<u32>,
     /// Per-file dynamic class tag of the paired header.
-    pub paired_class_tag: String,
+    pub paired_class_tag: DesignClassTag,
     /// Byte offset of the paired indexed record header.
     pub paired_byte_offset: u64,
 }
@@ -7082,7 +7082,10 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         Ok(Self {
             id: wire.id,
             byte_offset: wire.byte_offset,
-            class_tag: wire.class_tag,
+            class_tag: wire
+                .class_tag
+                .try_into()
+                .map_err(DesignParameterScopePayloadError)?,
             record_index: wire.record_index,
             frame_length: wire.frame_length,
             kind_offset: wire.kind_offset,
@@ -7102,7 +7105,10 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             .map_err(DesignParameterScopePayloadError)?,
             payload,
             unclosed_construction_operand_groups: wire.unclosed_construction_operand_groups,
-            paired_class_tag: wire.paired_class_tag,
+            paired_class_tag: wire
+                .paired_class_tag
+                .try_into()
+                .map_err(DesignParameterScopePayloadError)?,
             paired_byte_offset: wire.paired_byte_offset,
         })
     }
@@ -7116,7 +7122,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
         let mut wire = DesignParameterScopeSerde {
             id: scope.id,
             byte_offset: scope.byte_offset,
-            class_tag: scope.class_tag,
+            class_tag: scope.class_tag.into(),
             record_index: scope.record_index,
             frame_length: scope.frame_length,
             kind,
@@ -7166,7 +7172,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             unclosed_construction_operand_groups: scope.unclosed_construction_operand_groups,
             hole_construction: None,
             sketch_entity: None,
-            paired_class_tag: scope.paired_class_tag,
+            paired_class_tag: scope.paired_class_tag.into(),
             paired_byte_offset: scope.paired_byte_offset,
         };
         match scope.payload {
@@ -7848,7 +7854,7 @@ impl DesignParameterScope {
         Self {
             id: id.to_string(),
             byte_offset: 0,
-            class_tag: String::new(),
+            class_tag: DesignClassTag::try_from("256".to_owned()).unwrap(),
             record_index,
             frame_length: 0,
             kind_offset: 0,
@@ -7861,7 +7867,7 @@ impl DesignParameterScope {
             reference_members: ReferenceRun::Unlocated(Vec::new()),
             payload: kind.into(),
             unclosed_construction_operand_groups: Vec::new(),
-            paired_class_tag: String::new(),
+            paired_class_tag: DesignClassTag::try_from("257".to_owned()).unwrap(),
             paired_byte_offset: 0,
         }
     }

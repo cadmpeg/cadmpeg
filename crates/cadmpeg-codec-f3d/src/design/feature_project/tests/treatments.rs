@@ -47,7 +47,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     let scope = |record_index, byte_offset, kind: &str| DesignParameterScope {
         id: format!("f3d:native:scope#{record_index}"),
         byte_offset,
-        class_tag: "301".into(),
+        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         record_index,
         frame_length: 200,
         kind_offset: byte_offset + 100,
@@ -68,7 +68,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             .expect("nonempty family name")
             .into(),
         unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag: "261".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: byte_offset + 200,
     };
     let mut scopes = vec![
@@ -914,7 +914,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     let scope = DesignParameterScope {
         id: "f3d:native:scope#12".into(),
         byte_offset: 100,
-        class_tag: "301".into(),
+        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         record_index: 12,
         frame_length: 200,
         kind_offset: 210,
@@ -933,7 +933,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         .unwrap(),
         payload: crate::records::feature::DesignFeatureKind::Conge.into(),
         unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag: "261".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: 300,
     };
     let group = |record_index, ordinal, members: Vec<u32>| DesignConstructionOperandGroup {

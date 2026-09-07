@@ -123,7 +123,7 @@ fn compact_loft_prefix_reads_operation_at_offset_25_for_any_dynamic_class_tag() 
             crate::records::feature::DesignFeatureKind::Loft,
             20,
         );
-        scope.class_tag = class_tag.into();
+        scope.class_tag = crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap();
         scope.frame_length = 64;
         let construction = exact_path_feature_construction(
             &bytes,
@@ -291,8 +291,8 @@ fn modern_coil_matrix_placement_fixture() -> (Vec<u8>, DesignParameterScope, usi
         scope.record_index,
     );
     indexed_header(&mut bytes, *b"259", 200);
-    scope.class_tag = "353".into();
-    scope.paired_class_tag = "259".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("353".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("259".to_owned()).unwrap();
     scope.frame_length = 427;
     (bytes, scope, transform_start)
 }
@@ -388,8 +388,8 @@ fn legacy_coil_placement_identity_fixture() -> (Vec<u8>, DesignParameterScope, u
         scope.record_index,
     );
     indexed_header(&mut bytes, *b"258", 200);
-    scope.class_tag = "393".into();
-    scope.paired_class_tag = "258".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("393".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
     scope.frame_length = 427;
     (bytes, scope, transform_start)
 }
@@ -648,7 +648,7 @@ fn legacy_coil_placement_requires_exact_identity_carrier() {
     );
 
     let (bytes, mut scope, _) = legacy_coil_placement_identity_fixture();
-    scope.class_tag = "432".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("432".to_owned()).unwrap();
     assert_eq!(
         exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
         None

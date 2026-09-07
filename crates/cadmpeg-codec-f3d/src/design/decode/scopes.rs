@@ -749,10 +749,10 @@ pub(crate) fn exact_thread_construction(
     )?;
     let class_pair_is_valid = match construction.form {
         DesignThreadForm::StandardLegacy => {
-            scope.class_tag == "334" && scope.paired_class_tag == "262"
+            scope.class_tag.as_str() == "334" && scope.paired_class_tag.as_str() == "262"
         }
         DesignThreadForm::CompactLegacy => {
-            scope.class_tag == "414" && scope.paired_class_tag == "263"
+            scope.class_tag.as_str() == "414" && scope.paired_class_tag.as_str() == "263"
         }
         DesignThreadForm::Standard | DesignThreadForm::Compact(_) => true,
     };
@@ -1428,8 +1428,8 @@ fn exact_single_joint_origin_frame(
     scope: &DesignParameterScope,
 ) -> Option<(u32, ScopePlacementFrame)> {
     if scope.kind() != crate::records::feature::DesignFeatureKind::Assemble
-        || scope.class_tag != "276"
-        || scope.paired_class_tag != "258"
+        || scope.class_tag.as_str() != "276"
+        || scope.paired_class_tag.as_str() != "258"
         || scope.frame_length != 604
     {
         return None;
@@ -1790,20 +1790,20 @@ pub(crate) fn exact_assembly_alignment(
     }
     let as_built_421 = crate::design::assembly::legacy_as_built_421_generation(
         scope.frame_length,
-        &scope.class_tag,
-        &scope.paired_class_tag,
+        scope.class_tag.as_str(),
+        scope.paired_class_tag.as_str(),
     )
     .is_some();
     let legacy_class_383 = crate::design::assembly::legacy_class_383_258_scope(
         scope.frame_length,
-        &scope.class_tag,
-        &scope.paired_class_tag,
+        scope.class_tag.as_str(),
+        scope.paired_class_tag.as_str(),
     );
     let legacy_class_388 = matches!(
         crate::design::assembly::operand_frame_variant(
             scope.frame_length,
-            &scope.class_tag,
-            &scope.paired_class_tag,
+            scope.class_tag.as_str(),
+            scope.paired_class_tag.as_str(),
         ),
         Some(crate::design::assembly::AssemblyOperandFrameVariant::LegacyClass388)
     );
@@ -1833,8 +1833,8 @@ pub(crate) fn exact_assembly_alignment(
         if matches!(scope.frame_length, 671 | 744 | 748)
             && crate::design::assembly::operand_frame_variant(
                 scope.frame_length,
-                &scope.class_tag,
-                &scope.paired_class_tag,
+                scope.class_tag.as_str(),
+                scope.paired_class_tag.as_str(),
             )
             .is_none()
         {
@@ -1842,8 +1842,8 @@ pub(crate) fn exact_assembly_alignment(
         }
         let (alignment_start, alignment_end) = crate::design::assembly::alignment_lane_bounds(
             scope.frame_length,
-            &scope.class_tag,
-            &scope.paired_class_tag,
+            scope.class_tag.as_str(),
+            scope.paired_class_tag.as_str(),
             lanes.len(),
         )?;
         let alignment_lanes = lanes.get(alignment_start..alignment_end)?;
@@ -1910,8 +1910,8 @@ pub(crate) fn exact_assembly_alignment(
                 return None;
             }
         } else if crate::design::assembly::variable_reference_assembly_generation(
-            &scope.class_tag,
-            &scope.paired_class_tag,
+            scope.class_tag.as_str(),
+            scope.paired_class_tag.as_str(),
         ) {
             if lanes
                 .iter()
@@ -1962,8 +1962,8 @@ pub(crate) fn exact_assembly_alignment(
                     paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path })
                 })
             } else if crate::design::assembly::variable_reference_assembly_generation(
-                &scope.class_tag,
-                &scope.paired_class_tag,
+                scope.class_tag.as_str(),
+                scope.paired_class_tag.as_str(),
             ) {
                 assembly_carrier_paths::exact_variable_reference_operand_qualifiers(
                     bytes, records, scope, &frames,
@@ -1999,8 +1999,8 @@ pub(crate) fn exact_derived_instance_construction(
     occurrences: &[DesignComponentOccurrence],
 ) -> Option<DesignDerivedInstanceConstruction> {
     if scope.kind() != crate::records::feature::DesignFeatureKind::DerivedInstance
-        || scope.class_tag != "279"
-        || scope.paired_class_tag != "261"
+        || scope.class_tag.as_str() != "279"
+        || scope.paired_class_tag.as_str() != "261"
         || scope.frame_length != derived_instance_279_261::LEN as u64
         || scope.reference_members.len() != 1
     {
@@ -2170,43 +2170,43 @@ pub(crate) fn exact_component_insert_construction(
                     View::u64_le_at(bytes, start + 29)?,
                 )
             }
-            (261, "263") if scope.class_tag == "296" => (
+            (261, "263") if scope.class_tag.as_str() == "296" => (
                 identity_matrix(),
                 None,
                 exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
             ),
-            (261, "261") if scope.class_tag == "410" => (
+            (261, "261") if scope.class_tag.as_str() == "410" => (
                 identity_matrix(),
                 None,
                 exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
             ),
-            (261, "258") if scope.class_tag == "426" => (
+            (261, "258") if scope.class_tag.as_str() == "426" => (
                 identity_matrix(),
                 None,
                 exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
             ),
-            (261, "266") if scope.class_tag == "434" => (
+            (261, "266") if scope.class_tag.as_str() == "434" => (
                 identity_matrix(),
                 None,
                 exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
             ),
-            (261, "264") if scope.class_tag == "414" => (
+            (261, "264") if scope.class_tag.as_str() == "414" => (
                 identity_matrix(),
                 None,
                 exact_component_insert_identity_scope(bytes, start, relation_record_index)?,
             ),
-            (257 | 267, "264") if scope.class_tag == "414" => (
+            (257 | 267, "264") if scope.class_tag.as_str() == "414" => (
                 identity_matrix(),
                 None,
                 exact_component_insert_identity_scope_shifted(bytes, start, relation_record_index)?,
             ),
-            (389, "264") if scope.class_tag == "414" => {
+            (389, "264") if scope.class_tag.as_str() == "414" => {
                 exact_component_insert_scope_414_264_389(bytes, start, relation_record_index)?
             }
-            (257, "262") if scope.class_tag == "283" => {
+            (257, "262") if scope.class_tag.as_str() == "283" => {
                 exact_component_insert_scope_283_262_257(bytes, start, relation_record_index)?
             }
-            (385, "262") if scope.class_tag == "283" => {
+            (385, "262") if scope.class_tag.as_str() == "283" => {
                 exact_component_insert_scope_283_262_385(bytes, start, relation_record_index)?
             }
             _ => return None,
@@ -2252,7 +2252,7 @@ pub(crate) fn exact_component_insert_construction(
             }
         }
         (carrier_record_index, placements)
-    } else if scope.class_tag == "426" && scope.paired_class_tag == "258" {
+    } else if scope.class_tag.as_str() == "426" && scope.paired_class_tag.as_str() == "258" {
         exact_component_insert_class_426_relation(
             bytes,
             records,
@@ -2277,7 +2277,7 @@ pub(crate) fn exact_component_insert_construction(
         }
         let carrier_record_index = View::u32_le_at(bytes, relation_at + 22)?;
         let carrier_at = unique_indexed_record_before(records, carrier_record_index, relation_at)?;
-        if scope.class_tag == "283" && scope.paired_class_tag == "262" {
+        if scope.class_tag.as_str() == "283" && scope.paired_class_tag.as_str() == "262" {
             let (role, role_offset) = exact_component_insert_carrier_334(
                 bytes,
                 carrier_at,
@@ -2285,7 +2285,7 @@ pub(crate) fn exact_component_insert_construction(
                 carrier_record_index,
             )?;
             (carrier_record_index, vec![(role, role_offset, None)])
-        } else if scope.class_tag == "296" && scope.paired_class_tag == "263" {
+        } else if scope.class_tag.as_str() == "296" && scope.paired_class_tag.as_str() == "263" {
             let (role, role_offset) = crate::xref::grouped_component_insert_identity(
                 bytes,
                 carrier_at,
@@ -2293,7 +2293,7 @@ pub(crate) fn exact_component_insert_construction(
                 carrier_record_index,
             )?;
             (carrier_record_index, vec![(role, role_offset, None)])
-        } else if scope.class_tag == "410" && scope.paired_class_tag == "261" {
+        } else if scope.class_tag.as_str() == "410" && scope.paired_class_tag.as_str() == "261" {
             let (role, role_offset) = crate::xref::grouped_component_insert_identity_class380(
                 bytes,
                 carrier_at,
@@ -2301,7 +2301,7 @@ pub(crate) fn exact_component_insert_construction(
                 carrier_record_index,
             )?;
             (carrier_record_index, vec![(role, role_offset, None)])
-        } else if scope.class_tag == "434" && scope.paired_class_tag == "266" {
+        } else if scope.class_tag.as_str() == "434" && scope.paired_class_tag.as_str() == "266" {
             let (role, role_offset) = crate::xref::grouped_component_insert_identity_class341(
                 bytes,
                 carrier_at,
@@ -2309,7 +2309,7 @@ pub(crate) fn exact_component_insert_construction(
                 carrier_record_index,
             )?;
             (carrier_record_index, vec![(role, role_offset, None)])
-        } else if scope.class_tag == "414" && scope.paired_class_tag == "264" {
+        } else if scope.class_tag.as_str() == "414" && scope.paired_class_tag.as_str() == "264" {
             let (role, role_offset, carrier_transform_offset) =
                 crate::xref::repeated_target_component_insert(
                     bytes,
@@ -3024,8 +3024,8 @@ fn exact_assembly_operand_frames(
     let start = usize::try_from(scope.byte_offset).ok()?;
     let frame_variant = crate::design::assembly::operand_frame_variant(
         scope.frame_length,
-        &scope.class_tag,
-        &scope.paired_class_tag,
+        scope.class_tag.as_str(),
+        scope.paired_class_tag.as_str(),
     )?;
     let frame_offsets = match frame_variant {
         crate::design::assembly::AssemblyOperandFrameVariant::LegacyClass388 => (
@@ -3035,7 +3035,7 @@ fn exact_assembly_operand_frames(
             class_388_assemble::SECOND_OPERAND_TRANSFORM,
         ),
         crate::design::assembly::AssemblyOperandFrameVariant::Standard
-            if scope.class_tag == "383" && scope.paired_class_tag == "258" =>
+            if scope.class_tag.as_str() == "383" && scope.paired_class_tag.as_str() == "258" =>
         {
             (
                 class_383_scope::FIRST_OPERAND_REFERENCE,
@@ -3045,7 +3045,7 @@ fn exact_assembly_operand_frames(
             )
         }
         crate::design::assembly::AssemblyOperandFrameVariant::Standard
-            if scope.class_tag == "406" && scope.paired_class_tag == "261" =>
+            if scope.class_tag.as_str() == "406" && scope.paired_class_tag.as_str() == "261" =>
         {
             (
                 class_406_assemble::FIRST_OPERAND_REFERENCE,
@@ -3087,8 +3087,8 @@ fn exact_assembly_operand_frames(
         crate::design::assembly::AssemblyOperandFrameVariant::Standard
     ) {
         let standard_tail_marker_offset = if scope.frame_length == class_383_scope::LEN as u64
-            && scope.class_tag == "383"
-            && scope.paired_class_tag == "258"
+            && scope.class_tag.as_str() == "383"
+            && scope.paired_class_tag.as_str() == "258"
         {
             class_383_scope::STANDARD_TAIL_MARKER
         } else {
@@ -3100,8 +3100,8 @@ fn exact_assembly_operand_frames(
             || bytes.get(start + 33..start + 40)? != [0; 7]
             || bytes.get(start + 173..start + 180)? != [0; 7]
             || !crate::design::assembly::variable_reference_assembly_generation(
-                &scope.class_tag,
-                &scope.paired_class_tag,
+                scope.class_tag.as_str(),
+                scope.paired_class_tag.as_str(),
             ) && bytes
                 .get(start + standard_tail_marker_offset..start + standard_tail_marker_offset + 4)?
                 != [0; 4]
@@ -3152,8 +3152,8 @@ fn exact_assembly_operand_frames(
 }
 
 fn exact_legacy_class_388_scope(bytes: &[u8], scope: &DesignParameterScope) -> Option<()> {
-    if scope.class_tag != "388"
-        || scope.paired_class_tag != "266"
+    if scope.class_tag.as_str() != "388"
+        || scope.paired_class_tag.as_str() != "266"
         || scope.frame_length != class_388_assemble::LEN as u64
         || scope.reference_members.len() != class_388_assemble::REFERENCE_COUNT_VALUE as usize
     {
@@ -3320,8 +3320,8 @@ fn exact_legacy_class_383_operand_paths(
 ) -> Option<[DesignAssemblyOperandPath; 2]> {
     if !crate::design::assembly::legacy_class_383_258_scope(
         scope.frame_length,
-        &scope.class_tag,
-        &scope.paired_class_tag,
+        scope.class_tag.as_str(),
+        scope.paired_class_tag.as_str(),
     ) || scope.reference_members.len() != 38
     {
         return None;
@@ -3641,8 +3641,8 @@ fn exact_legacy_class_388_operand_paths(
     if !matches!(
         crate::design::assembly::operand_frame_variant(
             scope.frame_length,
-            &scope.class_tag,
-            &scope.paired_class_tag,
+            scope.class_tag.as_str(),
+            scope.paired_class_tag.as_str(),
         ),
         Some(crate::design::assembly::AssemblyOperandFrameVariant::LegacyClass388)
     ) || scope.reference_members.len() != class_388_assemble::REFERENCE_COUNT_VALUE as usize
@@ -3956,8 +3956,8 @@ fn exact_assembly_operand_paths(
         .checked_add(11)?;
     let locator_offsets = crate::design::assembly::operand_path_locator_offsets(
         scope.frame_length,
-        &scope.class_tag,
-        &scope.paired_class_tag,
+        scope.class_tag.as_str(),
+        scope.paired_class_tag.as_str(),
     )?;
     let count_at = scope_at
         .checked_add(locator_offsets[0].checked_sub(path_locator_run::FIRST_LOCATOR_REFERENCE)?)?;
@@ -4022,8 +4022,8 @@ fn exact_assembly_operand_path_envelope(
 ) -> Option<DesignAssemblyOperandPath> {
     let locator_class_tag = exact_indexed_header_at(bytes, locator_at, locator_record_index)?;
     let variable_reference = crate::design::assembly::variable_reference_assembly_generation(
-        &scope.class_tag,
-        &scope.paired_class_tag,
+        scope.class_tag.as_str(),
+        scope.paired_class_tag.as_str(),
     );
     let (locator_length, scope_backlink, wrapper_reference, constant_two, zero_tail) =
         if variable_reference {
@@ -5615,10 +5615,14 @@ pub(crate) fn exact_base_feature_construction(
             metadata_field: bytes.get(start + 45..start + 51)?.to_vec(),
         });
     }
-    let legacy_290_261 = scope.class_tag == "290" && scope.paired_class_tag == "261";
-    let legacy_360_258 = scope.class_tag == "360" && scope.paired_class_tag == "258";
-    let legacy_409_262 = scope.class_tag == "409" && scope.paired_class_tag == "262";
-    let legacy_444_263 = scope.class_tag == "444" && scope.paired_class_tag == "263";
+    let legacy_290_261 =
+        scope.class_tag.as_str() == "290" && scope.paired_class_tag.as_str() == "261";
+    let legacy_360_258 =
+        scope.class_tag.as_str() == "360" && scope.paired_class_tag.as_str() == "258";
+    let legacy_409_262 =
+        scope.class_tag.as_str() == "409" && scope.paired_class_tag.as_str() == "262";
+    let legacy_444_263 =
+        scope.class_tag.as_str() == "444" && scope.paired_class_tag.as_str() == "263";
     if legacy_409_262 && scope.frame_length == 258 {
         if scope.byte_offset.checked_add(scope.frame_length) != Some(scope.paired_byte_offset) {
             return None;
@@ -5950,8 +5954,8 @@ fn exact_base_feature_body_snapshot(
     // Fixed prefix, linkage and GUID blocks, generic scope prefix, kind
     // prefix, ordinal, and closing tail; the kind payload adds 2L bytes.
     const FIXED_FRAME_LENGTH: u64 = 431;
-    if scope.class_tag != "314"
-        || scope.paired_class_tag != "259"
+    if scope.class_tag.as_str() != "314"
+        || scope.paired_class_tag.as_str() != "259"
         || scope.reference_members.len() != 1
     {
         return None;
@@ -6226,8 +6230,8 @@ fn exact_legacy_thicken_class_347(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignDirectFaceOperation> {
-    if scope.class_tag != "347"
-        || scope.paired_class_tag != "258"
+    if scope.class_tag.as_str() != "347"
+        || scope.paired_class_tag.as_str() != "258"
         || scope.frame_length != u64::try_from(thicken_347::LEN).ok()?
         || scope.reference_members.len() != 3
     {
@@ -6297,8 +6301,8 @@ fn exact_shell_class_369_261(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignDirectFaceOperation> {
-    if scope.class_tag != "369"
-        || scope.paired_class_tag != "261"
+    if scope.class_tag.as_str() != "369"
+        || scope.paired_class_tag.as_str() != "261"
         || scope.frame_length != shell_369_261::LEN as u64
         || scope.reference_members.len() != 3
     {
@@ -6397,8 +6401,8 @@ pub(crate) fn exact_direct_face_operation(
 ) -> Option<DesignDirectFaceOperation> {
     let start = usize::try_from(scope.byte_offset).ok()?;
     if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Shell)
-        && scope.class_tag == "369"
-        && scope.paired_class_tag == "261"
+        && scope.class_tag.as_str() == "369"
+        && scope.paired_class_tag.as_str() == "261"
     {
         return exact_shell_class_369_261(bytes, records, scope);
     }
@@ -7123,8 +7127,8 @@ pub(crate) fn exact_path_feature_construction(
             ))
         }
         DesignFeatureFamily::Revolve
-            if scope.class_tag == "407"
-                && scope.paired_class_tag == "258"
+            if scope.class_tag.as_str() == "407"
+                && scope.paired_class_tag.as_str() == "258"
                 && parameter_scope_payload_length(scope) == Some(363)
                 && scope.reference_members.len() == 8
                 && View::u32_le_at(bytes, start + 25) == Some(2)
@@ -7151,8 +7155,8 @@ pub(crate) fn exact_path_feature_construction(
             ))
         }
         DesignFeatureFamily::Revolve
-            if scope.class_tag == "403"
-                && scope.paired_class_tag == "258"
+            if scope.class_tag.as_str() == "403"
+                && scope.paired_class_tag.as_str() == "258"
                 && scope.frame_length == 387
                 && scope.reference_members.len() == 8
                 && View::u32_le_at(bytes, start + class_403_revolve::EXTENT_KIND) == Some(2)
@@ -7175,10 +7179,8 @@ pub(crate) fn exact_path_feature_construction(
             ))
         }
         DesignFeatureFamily::Loft
-            if scope.class_tag.len() == 3
-                && bytes
-                    .get(start + compact_loft::ZERO_RUN_10..start + compact_loft::ONE_RUN_4)
-                    == Some(&[0; 10])
+            if bytes.get(start + compact_loft::ZERO_RUN_10..start + compact_loft::ONE_RUN_4)
+                == Some(&[0; 10])
                 && bytes.get(start + compact_loft::ONE_RUN_4..start + compact_loft::OPERATION)
                     == Some(&[1; 4])
                 && bytes.get(start + compact_loft::ZERO_FLAG) == Some(&0)
@@ -7194,8 +7196,7 @@ pub(crate) fn exact_path_feature_construction(
             ))
         }
         DesignFeatureFamily::Loft
-            if scope.class_tag.len() == 3
-                && parameter_scope_payload_length(scope).is_some_and(|length| length >= 368) =>
+            if parameter_scope_payload_length(scope).is_some_and(|length| length >= 368) =>
         {
             Some(DesignPathFeatureConstruction::Loft(
                 crate::records::feature::DesignLoftConstruction {
@@ -8221,11 +8222,12 @@ pub(crate) fn exact_combine_operation(
         return None;
     }
     let start = usize::try_from(scope.byte_offset).ok()?;
-    let compact = scope.class_tag == "387"
-        && scope.paired_class_tag == "258"
+    let compact = scope.class_tag.as_str() == "387"
+        && scope.paired_class_tag.as_str() == "258"
         && parameter_scope_payload_length(scope) == Some(314);
-    let extended_reference =
-        scope.class_tag == "329" && scope.paired_class_tag == "261" && scope.frame_length == 363;
+    let extended_reference = scope.class_tag.as_str() == "329"
+        && scope.paired_class_tag.as_str() == "261"
+        && scope.frame_length == 363;
     let (form, operation_offset, keep_tools_offset) = if compact {
         if bytes.get(start + combine_compact::ZERO_RUN_10..start + combine_compact::OPERATION)?
             != [0; 10]
@@ -8927,7 +8929,7 @@ pub(crate) fn parse_parameter_scope(
     let mut scope = DesignParameterScope {
         id: String::new(),
         byte_offset: header.byte_offset,
-        class_tag: header.class_tag.as_str().to_owned(),
+        class_tag: header.class_tag.clone(),
         record_index: header.record_index,
         frame_length: u64::try_from(paired_at.checked_sub(start)?).ok()?,
         kind_offset: u64::try_from(kind_at.checked_add(4)?).ok()?,
@@ -8950,7 +8952,7 @@ pub(crate) fn parse_parameter_scope(
         ),
         payload: kind.into(),
         unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag,
+        paired_class_tag: paired_class_tag.try_into().ok()?,
         paired_byte_offset: paired_at as u64,
     };
     if let Some(prologue) = extrude_prologue {
@@ -9164,8 +9166,8 @@ fn exact_coil_placement(
     let frame_length = transform_paired.checked_sub(transform_start)?;
     let explicit_transform = match frame_length {
         coil_legacy_identity::LEN
-            if scope.class_tag == "393"
-                && scope.paired_class_tag == "258"
+            if scope.class_tag.as_str() == "393"
+                && scope.paired_class_tag.as_str() == "258"
                 && transform_class_tag == "395"
                 && transform_paired_class_tag == "258"
                 && exact_coil_legacy_identity_frame(

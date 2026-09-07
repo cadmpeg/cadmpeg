@@ -4205,7 +4205,7 @@ pub(crate) fn bind_form_cages(
                     })
             })
             .collect::<Vec<_>>();
-        if scope.class_tag == "325" {
+        if scope.class_tag.as_str() == "325" {
             if let Some(cage_objects) = form_class_325_cage_objects(
                 bytes,
                 &records,
@@ -4259,7 +4259,7 @@ pub(crate) fn bind_form_cages(
                 continue;
             }
         }
-        if scope.class_tag == "328"
+        if scope.class_tag.as_str() == "328"
             && scopes
                 .iter()
                 .filter(|candidate| {
@@ -7310,8 +7310,8 @@ fn project_replace_face(
     use cadmpeg_ir::features::FeatureDefinition;
 
     if scope.kind() != crate::records::feature::DesignFeatureKind::ReplaceFace
-        || scope.class_tag != "301"
-        || scope.paired_class_tag != "258"
+        || scope.class_tag.as_str() != "301"
+        || scope.paired_class_tag.as_str() != "258"
         || scope.frame_length != 290
         || scope.reference_members.len() != 4
     {

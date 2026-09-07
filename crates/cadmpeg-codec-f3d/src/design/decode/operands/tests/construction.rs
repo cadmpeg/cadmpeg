@@ -44,7 +44,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let scope = DesignParameterScope {
         id: "f3d:Design/BulkStream.dat:scope#12".into(),
         byte_offset: 1000,
-        class_tag: "301".into(),
+        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         record_index: 12,
         frame_length: 200,
         kind_offset: 1100,
@@ -63,7 +63,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         .unwrap(),
         payload: crate::records::feature::DesignFeatureKind::Extrude.into(),
         unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag: "261".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: 1200,
     };
     let record = DesignRecordHeader {
@@ -427,8 +427,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     ));
 
     let mut compact_split_scope = split_scope.clone();
-    compact_split_scope.class_tag = "418".into();
-    compact_split_scope.paired_class_tag = "266".into();
+    compact_split_scope.class_tag =
+        crate::records::DesignClassTag::try_from("418".to_owned()).unwrap();
+    compact_split_scope.paired_class_tag =
+        crate::records::DesignClassTag::try_from("266".to_owned()).unwrap();
     compact_split_scope.frame_length = 330;
     let (compact_features, _) = project_parameter_design(
         &[],
@@ -554,7 +556,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     ));
     assert_eq!(plane_split.dependencies, expected_planes);
 
-    compact_split_scope.class_tag = "375".into();
+    compact_split_scope.class_tag =
+        crate::records::DesignClassTag::try_from("375".to_owned()).unwrap();
     let (mismatched_features, _) = project_parameter_design(
         &[],
         &[],
@@ -960,8 +963,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         ("545", "257", 250, 139),
         ("545", "257", 257, 146),
     ] {
-        surface_scope.class_tag = class_tag.into();
-        surface_scope.paired_class_tag = paired_class_tag.into();
+        surface_scope.class_tag =
+            crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap();
+        surface_scope.paired_class_tag =
+            crate::records::DesignClassTag::try_from(paired_class_tag.to_owned()).unwrap();
         surface_scope.frame_length = base_frame + reference_bytes;
         surface_scope.kind_offset = surface_scope.byte_offset + base_kind + reference_bytes;
         let (features, _) = project_parameter_design(
@@ -980,8 +985,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         ));
     }
 
-    surface_scope.class_tag = "327".into();
-    surface_scope.paired_class_tag = "258".into();
+    surface_scope.class_tag = crate::records::DesignClassTag::try_from("327".to_owned()).unwrap();
+    surface_scope.paired_class_tag =
+        crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
     surface_scope.frame_length = 250 + reference_bytes;
     surface_scope.kind_offset = surface_scope.byte_offset + 139 + reference_bytes;
     let (features, _) = project_parameter_design(
@@ -1004,8 +1010,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
 
     for (class_tag, paired_class_tag) in [("264", "262"), ("383", "263")] {
         delete_scope.payload = crate::records::feature::DesignFeatureKind::DeleteFace.into();
-        delete_scope.class_tag = class_tag.into();
-        delete_scope.paired_class_tag = paired_class_tag.into();
+        delete_scope.class_tag =
+            crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap();
+        delete_scope.paired_class_tag =
+            crate::records::DesignClassTag::try_from(paired_class_tag.to_owned()).unwrap();
         delete_scope.frame_length = 232 + reference_bytes;
         delete_scope.kind_offset = delete_scope.byte_offset + 135 + reference_bytes;
         let (features, _) = project_parameter_design(
@@ -1024,8 +1032,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         ));
     }
 
-    delete_scope.class_tag = "264".into();
-    delete_scope.paired_class_tag = "263".into();
+    delete_scope.class_tag = crate::records::DesignClassTag::try_from("264".to_owned()).unwrap();
+    delete_scope.paired_class_tag =
+        crate::records::DesignClassTag::try_from("263".to_owned()).unwrap();
     let (features, _) = project_parameter_design(
         &[],
         &[],
@@ -1210,8 +1219,8 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
         296_536,
     );
     scope.byte_offset = 1000;
-    scope.class_tag = "296".into();
-    scope.paired_class_tag = "261".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("296".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
     scope.frame_length = 536;
     scope.reference_count_offset = 1291;
     scope.reference_members =

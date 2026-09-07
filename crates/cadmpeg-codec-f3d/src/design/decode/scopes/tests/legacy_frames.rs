@@ -73,8 +73,8 @@ fn class_369_shell_scope_uses_ordered_scalar_and_body_group() {
         42,
     );
     scope.byte_offset = 0;
-    scope.class_tag = "369".into();
-    scope.paired_class_tag = "261".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("369".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
     scope.frame_length = shell_369_261::LEN as u64;
     scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![9_000, 200, 201]);
     let records = IndexedRecordOffsets::build(&bytes);
@@ -90,7 +90,8 @@ fn class_369_shell_scope_uses_ordered_scalar_and_body_group() {
     ));
 
     let mut wrong_pair = scope.clone();
-    wrong_pair.paired_class_tag = "258".into();
+    wrong_pair.paired_class_tag =
+        crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
     assert!(exact_direct_face_operation(&bytes, &records, &wrong_pair).is_none());
 
     let mut invalid_outward = bytes;
@@ -350,8 +351,9 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
             crate::records::feature::DesignFeatureKind::WorkAxis,
             1,
         );
-        scope.class_tag = scope_class.into();
-        scope.paired_class_tag = scope_paired_class.into();
+        scope.class_tag = crate::records::DesignClassTag::try_from(scope_class.to_owned()).unwrap();
+        scope.paired_class_tag =
+            crate::records::DesignClassTag::try_from(scope_paired_class.to_owned()).unwrap();
         scope.frame_length = scope_length as u64;
         scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![
             carrier_record_index,

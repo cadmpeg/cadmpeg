@@ -19,10 +19,10 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         crate::records::feature::DesignFeatureKind::Assemble,
         scope_record_index,
     );
-    scope.class_tag = "273".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("273".to_owned()).unwrap();
     scope.frame_length = 637;
     scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![50, 51, 52, 53]);
-    scope.paired_class_tag = "259".into();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("259".to_owned()).unwrap();
     scope.paired_byte_offset = 637;
     let owner = |record_index, local_ordinal, evaluated_value, evaluated_value_offset| {
         DesignParameterOwner {
@@ -460,9 +460,9 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
         crate::records::feature::DesignFeatureKind::Assemble,
         scope_record_index,
     );
-    scope.class_tag = "383".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("383".to_owned()).unwrap();
     scope.frame_length = crate::layout::assembly_class_383_258_scope_1011::LEN as u64;
-    scope.paired_class_tag = "258".into();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
     scope.paired_byte_offset = scope.frame_length;
     scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![
         100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 200, 201, 202, 203, 204, 205,
@@ -583,8 +583,8 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
         crate::records::feature::DesignFeatureKind::Assemble,
         scope_record_index,
     );
-    scope.class_tag = "388".into();
-    scope.paired_class_tag = "266".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("388".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("266".to_owned()).unwrap();
     scope.frame_length = crate::layout::assembly_class_388_266_scope_968::LEN as u64;
     scope.paired_byte_offset = scope.frame_length;
     scope.feature_ordinal = std::num::NonZeroU32::new(4).expect("nonzero ordinal");
@@ -871,10 +871,10 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
         crate::records::feature::DesignFeatureKind::AsBuilt,
         scope_record_index,
     );
-    scope.class_tag = "439".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("439".to_owned()).unwrap();
     scope.frame_length = 399;
     scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![50, 51, 52, 53]);
-    scope.paired_class_tag = "262".into();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
     scope.paired_byte_offset = 399;
 
     let owner = |record_index, local_ordinal, evaluated_value, evaluated_value_offset| {
@@ -1072,8 +1072,9 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
             crate::records::feature::DesignFeatureKind::AsBuilt,
             scope_record_index,
         );
-        scope.class_tag = class_tag.into();
-        scope.paired_class_tag = paired_class_tag.into();
+        scope.class_tag = crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap();
+        scope.paired_class_tag =
+            crate::records::DesignClassTag::try_from(paired_class_tag.to_owned()).unwrap();
         scope.frame_length = 421;
         scope.paired_byte_offset = 421;
         scope.reference_count_offset = 185;

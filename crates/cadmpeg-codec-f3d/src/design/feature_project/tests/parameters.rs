@@ -203,7 +203,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
     let scope = DesignParameterScope {
         id: "f3d:native:parameter-scope#12".into(),
         byte_offset: 100,
-        class_tag: "301".into(),
+        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         record_index: 12,
         frame_length: 200,
         kind_offset: 210,
@@ -241,7 +241,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         )
         .unwrap(),
         unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag: "261".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: 300,
     };
 
@@ -356,7 +356,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
     let scope = |record_index| DesignParameterScope {
         id: format!("f3d:Design/BulkStream.dat:scope#{record_index}"),
         byte_offset: u64::from(record_index),
-        class_tag: "301".into(),
+        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         record_index,
         frame_length: 100,
         kind_offset: 0,
@@ -375,7 +375,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         .unwrap(),
         payload: crate::records::feature::DesignFeatureKind::CustomFeature.into(),
         unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag: "302".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("302".to_owned()).unwrap(),
         paired_byte_offset: u64::from(record_index) + 100,
     };
 
@@ -497,7 +497,7 @@ fn parameter_expressions_project_feature_dependencies() {
     let scope = |record_index, byte_offset, kind: &str| DesignParameterScope {
         id: format!("f3d:native:scope#{record_index}"),
         byte_offset,
-        class_tag: "301".into(),
+        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         record_index,
         frame_length: 200,
         kind_offset: byte_offset + 100,
@@ -518,7 +518,7 @@ fn parameter_expressions_project_feature_dependencies() {
             .expect("nonempty family name")
             .into(),
         unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag: "261".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: byte_offset + 200,
     };
     let (features, parameters) = project_parameter_design(

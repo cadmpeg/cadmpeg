@@ -59,8 +59,8 @@ fn class_277_258_compact_split_face_frame_projects() {
         crate::records::feature::DesignFeatureKind::SplitFace,
         scope_record_index,
     );
-    scope.class_tag = "277".into();
-    scope.paired_class_tag = "258".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("277".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
     scope.frame_length = 407;
     scope.reference_members = crate::records::ReferenceRun::Unlocated((100..112).collect());
 
@@ -86,12 +86,12 @@ fn class_277_258_compact_split_face_frame_projects() {
         } if targets.ends_with("group#102") && tool.ends_with("group#100")
     ));
 
-    scope.class_tag = "418".into();
-    scope.paired_class_tag = "266".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("418".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("266".to_owned()).unwrap();
     assert!(project_split_face(&scope, &[scope.clone()], &groups, &[], &[], &[]).is_some());
 
-    scope.class_tag = "277".into();
-    scope.paired_class_tag = "266".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("277".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("266".to_owned()).unwrap();
     assert!(project_split_face(&scope, &[scope.clone()], &groups, &[], &[], &[]).is_none());
 }
 
@@ -103,8 +103,8 @@ fn direct_single_identity_split_face_member_projects_historical_edge_path() {
         crate::records::feature::DesignFeatureKind::SplitFace,
         scope_record_index,
     );
-    scope.class_tag = "277".into();
-    scope.paired_class_tag = "258".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("277".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
     scope.frame_length = 407;
     scope.previous_history_state_id = Some(7);
     scope.reference_members = crate::records::ReferenceRun::Unlocated((100..112).collect());

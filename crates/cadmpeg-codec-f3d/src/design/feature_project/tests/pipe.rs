@@ -22,8 +22,8 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         crate::records::feature::DesignFeatureKind::Pipe,
         1,
     );
-    scope.class_tag = "405".into();
-    scope.paired_class_tag = "259".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("405".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("259".to_owned()).unwrap();
     scope.reference_members =
         crate::records::ReferenceRun::Unlocated(vec![10, 11, 12, 13, 20, 21, 22]);
     {
@@ -233,8 +233,8 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         values.pop();
         crate::records::ReferenceRun::Unlocated(values)
     };
-    scope.class_tag = "475".into();
-    scope.paired_class_tag = "260".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("475".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("260".to_owned()).unwrap();
     assert!(crate::design::feature_project::project_fixed_pipe(
         &scope,
         &parameter_refs,
@@ -244,8 +244,8 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     )
     .is_some());
 
-    scope.class_tag = "421".into();
-    scope.paired_class_tag = "257".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("421".to_owned()).unwrap();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("257".to_owned()).unwrap();
     {
         let value = Some(DesignPathFeatureConstruction::Pipe(
             crate::records::feature::DesignPipeConstruction {

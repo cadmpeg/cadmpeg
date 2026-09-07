@@ -145,8 +145,9 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
             record_index,
         );
         scope.byte_offset = 0;
-        scope.class_tag = class_tag.into();
-        scope.paired_class_tag = paired_class_tag.into();
+        scope.class_tag = crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap();
+        scope.paired_class_tag =
+            crate::records::DesignClassTag::try_from(paired_class_tag.to_owned()).unwrap();
         scope.paired_byte_offset = frame_length as u64;
         scope.frame_length = frame_length as u64;
         scope.reference_members = crate::records::ReferenceRun::Unlocated(reference_members);

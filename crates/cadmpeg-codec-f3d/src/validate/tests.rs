@@ -74,14 +74,14 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
         169,
     );
     scope.byte_offset = 100;
-    scope.class_tag = "410".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("410".to_owned()).unwrap();
     scope.frame_length = 261;
     scope.kind_offset = 252;
     scope.reference_count_offset = 229;
     scope.reference_members =
         crate::records::ReferenceRun::from_columns(vec![167], vec![234], "reference_members")
             .unwrap();
-    scope.paired_class_tag = "261".into();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
     scope.paired_byte_offset = 361;
     scope.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
     scope.feature_ordinal_offset = 284;
@@ -124,7 +124,8 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
             && finding.message == "Fusion Design parameter scope has an invalid paired frame"
     }));
 
-    f3d_native_mut(&mut ir).design_parameter_scopes[0].paired_class_tag = "263".into();
+    f3d_native_mut(&mut ir).design_parameter_scopes[0].paired_class_tag =
+        crate::records::DesignClassTag::try_from("263".to_owned()).unwrap();
     let findings = crate::validate::validate_native(&ir);
     assert!(findings.iter().any(|finding| {
         finding.entity.as_deref() == Some(scope_id.as_str())
@@ -1023,7 +1024,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
     let scope = DesignParameterScope {
         id: "f3d:test:scope#10".into(),
         byte_offset: 100,
-        class_tag: "301".into(),
+        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         record_index: 10,
         frame_length: 200,
         kind_offset: 210,
@@ -1062,7 +1063,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         )
         .unwrap(),
         unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag: "261".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: 300,
     };
     let group = DesignConstructionOperandGroup {

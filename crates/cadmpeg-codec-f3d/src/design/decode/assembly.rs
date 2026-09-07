@@ -36,8 +36,8 @@ pub(crate) fn exact_legacy_as_built_421_alignment(
 ) -> Option<LegacyAsBuilt421Alignment> {
     let generation = crate::design::assembly::legacy_as_built_421_generation(
         scope.frame_length,
-        &scope.class_tag,
-        &scope.paired_class_tag,
+        scope.class_tag.as_str(),
+        scope.paired_class_tag.as_str(),
     )?;
     let crate::records::ReferenceRun::Located(references) = &scope.reference_members else {
         return None;
@@ -158,8 +158,8 @@ pub(crate) fn exact_legacy_as_built_421_solved_frame(
 ) -> Option<DesignAssemblySolvedFrame> {
     let generation = crate::design::assembly::legacy_as_built_421_generation(
         scope.frame_length,
-        &scope.class_tag,
-        &scope.paired_class_tag,
+        scope.class_tag.as_str(),
+        scope.paired_class_tag.as_str(),
     )?;
     let crate::records::ReferenceRun::Located(references) = &scope.reference_members else {
         return None;
@@ -245,8 +245,8 @@ pub(crate) fn exact_legacy_as_built_421_operands(
 ) -> Option<DesignAssemblyLegacyOperands> {
     let generation = crate::design::assembly::legacy_as_built_421_generation(
         scope.frame_length,
-        &scope.class_tag,
-        &scope.paired_class_tag,
+        scope.class_tag.as_str(),
+        scope.paired_class_tag.as_str(),
     )?;
     let crate::records::ReferenceRun::Located(references) = &scope.reference_members else {
         return None;

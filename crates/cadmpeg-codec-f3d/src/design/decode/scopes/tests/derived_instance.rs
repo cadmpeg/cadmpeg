@@ -43,7 +43,7 @@ fn derived_instance_requires_exact_relation_carrier_and_transform_join() {
         425 + scope_279::TRANSFORM as u64
     );
 
-    scope.paired_class_tag = "262".into();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
     assert!(exact_derived_instance_construction(
         &bytes,
         &records,
@@ -52,7 +52,7 @@ fn derived_instance_requires_exact_relation_carrier_and_transform_join() {
     )
     .is_none());
 
-    scope.paired_class_tag = "261".into();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
     bytes[425 + scope_279::TRANSFORM + 6] = 0;
     let records = IndexedRecordOffsets::build(&bytes);
     assert!(exact_derived_instance_construction(
@@ -112,10 +112,10 @@ fn fixture() -> (Vec<u8>, DesignParameterScope, DesignComponentOccurrence) {
         385,
     );
     scope.byte_offset = SCOPE_AT as u64;
-    scope.class_tag = "279".into();
+    scope.class_tag = crate::records::DesignClassTag::try_from("279".to_owned()).unwrap();
     scope.frame_length = scope_279::LEN as u64;
     scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![383]);
-    scope.paired_class_tag = "261".into();
+    scope.paired_class_tag = crate::records::DesignClassTag::try_from("261".to_owned()).unwrap();
 
     let occurrence = DesignComponentOccurrence {
         id: "f3d:Design/BulkStream.dat:design-component-occurrence#0".into(),

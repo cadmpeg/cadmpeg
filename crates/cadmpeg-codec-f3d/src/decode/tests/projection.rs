@@ -1365,7 +1365,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     native.design_parameter_scopes.push(DesignParameterScope {
         id: "native:unprojected-scope".into(),
         byte_offset: 0,
-        class_tag: "000".into(),
+        class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
         record_index: 3,
         frame_length: 1,
         kind_offset: 0,
@@ -1385,7 +1385,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             .expect("native family name")
             .into(),
         unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag: "001".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("001".to_owned()).unwrap(),
         paired_byte_offset: 1,
     });
     assert_eq!(
@@ -1532,7 +1532,7 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
     let scope = |record_index, current, previous| DesignParameterScope {
         id: format!("f3d:native:scope#{record_index}"),
         byte_offset: u64::from(record_index),
-        class_tag: "000".into(),
+        class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
         record_index,
         frame_length: 1,
         kind_offset: 0,
@@ -1552,7 +1552,7 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
             .expect("native family name")
             .into(),
         unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag: "001".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("001".to_owned()).unwrap(),
         paired_byte_offset: u64::from(record_index) + 1,
     };
     let mut native = F3dNative::default();

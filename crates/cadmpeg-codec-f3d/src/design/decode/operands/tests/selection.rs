@@ -505,7 +505,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     let scope = DesignParameterScope {
         id: "f3d:Design/BulkStream.dat:scope#12".into(),
         byte_offset: 1000,
-        class_tag: "301".into(),
+        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         record_index: 12,
         frame_length: 200,
         kind_offset: 1100,
@@ -524,7 +524,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         .unwrap(),
         payload: crate::records::feature::DesignFeatureKind::Extrude.into(),
         unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag: "261".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: 1200,
     };
     let record = DesignRecordHeader {

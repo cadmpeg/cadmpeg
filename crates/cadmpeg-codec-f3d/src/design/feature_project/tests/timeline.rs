@@ -769,7 +769,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
     let scope = |record_index, byte_offset, kind: &str, current, previous| DesignParameterScope {
         id: format!("f3d:native:scope#{record_index}"),
         byte_offset,
-        class_tag: "301".into(),
+        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         record_index,
         frame_length: 200,
         kind_offset: byte_offset + 100,
@@ -790,7 +790,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
             .expect("nonempty family name")
             .into(),
         unclosed_construction_operand_groups: Vec::new(),
-        paired_class_tag: "261".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: byte_offset + 200,
     };
     let predecessor = scope(12, 200, "Fillet", Some(10), Some(9));

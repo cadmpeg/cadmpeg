@@ -77,7 +77,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         [reference_at as u64]
     );
     assert_eq!(scope.frame_length, paired_at as u64);
-    assert_eq!(scope.paired_class_tag, "261");
+    assert_eq!(scope.paired_class_tag.as_str(), "261");
     assert_eq!(scope.paired_byte_offset, paired_at as u64);
     let discovered = crate::design::decode::scopes::parameter_scope_candidate_headers(
         &bytes,

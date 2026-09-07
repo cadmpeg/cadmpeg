@@ -124,7 +124,7 @@ fn exact_base_feature_legacy_body_based_on_faces(
     bytes: &[u8],
     scope: &DesignParameterScope,
 ) -> Option<DesignBaseFeatureConstruction> {
-    if scope.class_tag != "452" || scope.paired_class_tag != "262" {
+    if scope.class_tag.as_str() != "452" || scope.paired_class_tag.as_str() != "262" {
         return None;
     }
     let start = usize::try_from(scope.byte_offset).ok()?;

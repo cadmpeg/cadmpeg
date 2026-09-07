@@ -812,8 +812,8 @@ pub fn decode_face_operands(
             == crate::records::feature::DesignFeatureKind::AsBuilt
             && crate::design::assembly::legacy_as_built_421_generation(
                 scope.frame_length,
-                &scope.class_tag,
-                &scope.paired_class_tag,
+                scope.class_tag.as_str(),
+                scope.paired_class_tag.as_str(),
             )
             .is_some();
         matches!(
@@ -845,8 +845,8 @@ pub fn decode_face_operands(
         let ordinals = if scope.kind() == crate::records::feature::DesignFeatureKind::AsBuilt
             && crate::design::assembly::legacy_as_built_421_generation(
                 scope.frame_length,
-                &scope.class_tag,
-                &scope.paired_class_tag,
+                scope.class_tag.as_str(),
+                scope.paired_class_tag.as_str(),
             )
             .is_some()
         {
@@ -870,8 +870,8 @@ pub fn decode_face_operands(
                 == crate::records::feature::DesignFeatureKind::AsBuilt
                 && crate::design::assembly::legacy_as_built_421_generation(
                     scope.frame_length,
-                    &scope.class_tag,
-                    &scope.paired_class_tag,
+                    scope.class_tag.as_str(),
+                    scope.paired_class_tag.as_str(),
                 )
                 .is_some()
             {

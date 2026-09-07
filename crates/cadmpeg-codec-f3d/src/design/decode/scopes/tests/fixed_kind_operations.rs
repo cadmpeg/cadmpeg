@@ -409,8 +409,10 @@ pub(super) fn continue_fixed_kind_operations(
     bytes.extend_from_slice(&indexed_revolve);
     let mut indexed_revolve_scope = revolve_scope.clone();
     indexed_revolve_scope.byte_offset = indexed_revolve_start as u64;
-    indexed_revolve_scope.class_tag = "407".into();
-    indexed_revolve_scope.paired_class_tag = "258".into();
+    indexed_revolve_scope.class_tag =
+        crate::records::DesignClassTag::try_from("407".to_owned()).unwrap();
+    indexed_revolve_scope.paired_class_tag =
+        crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
     indexed_revolve_scope.frame_length = 377;
     indexed_revolve_scope.reference_members =
         crate::records::ReferenceRun::Unlocated(vec![200, 201, 202, 203, 204, 205, 1_790, 1_791]);
@@ -461,8 +463,9 @@ pub(super) fn continue_fixed_kind_operations(
     class403_revolve[107..183].copy_from_slice(&class403_guid);
     bytes.extend_from_slice(&class403_revolve);
     let mut class403_scope = revolve_scope.clone();
-    class403_scope.class_tag = "403".into();
-    class403_scope.paired_class_tag = "258".into();
+    class403_scope.class_tag = crate::records::DesignClassTag::try_from("403".to_owned()).unwrap();
+    class403_scope.paired_class_tag =
+        crate::records::DesignClassTag::try_from("258".to_owned()).unwrap();
     class403_scope.byte_offset = class403_start as u64;
     class403_scope.frame_length = 387;
     class403_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![
@@ -518,8 +521,10 @@ pub(super) fn continue_fixed_kind_operations(
     bytes.extend_from_slice(&legacy_revolve);
     let mut legacy_revolve_scope = revolve_scope.clone();
     legacy_revolve_scope.byte_offset = legacy_revolve_start as u64;
-    legacy_revolve_scope.class_tag = "409".into();
-    legacy_revolve_scope.paired_class_tag = "257".into();
+    legacy_revolve_scope.class_tag =
+        crate::records::DesignClassTag::try_from("409".to_owned()).unwrap();
+    legacy_revolve_scope.paired_class_tag =
+        crate::records::DesignClassTag::try_from("257".to_owned()).unwrap();
     legacy_revolve_scope.frame_length = 359;
     legacy_revolve_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![
         200,
@@ -562,8 +567,10 @@ pub(super) fn continue_fixed_kind_operations(
             }
         ))
     );
-    legacy_revolve_scope.class_tag = "323".into();
-    legacy_revolve_scope.paired_class_tag = "260".into();
+    legacy_revolve_scope.class_tag =
+        crate::records::DesignClassTag::try_from("323".to_owned()).unwrap();
+    legacy_revolve_scope.paired_class_tag =
+        crate::records::DesignClassTag::try_from("260".to_owned()).unwrap();
     legacy_revolve_scope.frame_length = 381;
     legacy_revolve_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![
         legacy_angle_record_index,
@@ -593,8 +600,10 @@ pub(super) fn continue_fixed_kind_operations(
             }
         ))
     );
-    legacy_revolve_scope.class_tag = "385".into();
-    legacy_revolve_scope.paired_class_tag = "262".into();
+    legacy_revolve_scope.class_tag =
+        crate::records::DesignClassTag::try_from("385".to_owned()).unwrap();
+    legacy_revolve_scope.paired_class_tag =
+        crate::records::DesignClassTag::try_from("262".to_owned()).unwrap();
     legacy_revolve_scope.frame_length = 369;
     legacy_revolve_scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![
         200,
@@ -1632,8 +1641,10 @@ pub(super) fn continue_fixed_kind_operations(
     let mut owner_pipe_scope = scope.clone();
     owner_pipe_scope.id = "f3d:Design/BulkStream.dat:scope#12".into();
     owner_pipe_scope.byte_offset = owner_pipe_start as u64;
-    owner_pipe_scope.class_tag = "421".into();
-    owner_pipe_scope.paired_class_tag = "257".into();
+    owner_pipe_scope.class_tag =
+        crate::records::DesignClassTag::try_from("421".to_owned()).unwrap();
+    owner_pipe_scope.paired_class_tag =
+        crate::records::DesignClassTag::try_from("257".to_owned()).unwrap();
     owner_pipe_scope.payload = crate::records::feature::DesignFeatureKind::Pipe.into();
     owner_pipe_scope.frame_length = 405;
     owner_pipe_scope.reference_members =
@@ -1708,8 +1719,10 @@ pub(super) fn continue_fixed_kind_operations(
         }
         let mut legacy_scope = scope.clone();
         legacy_scope.byte_offset = legacy_pipe_start as u64;
-        legacy_scope.class_tag = class_tag.into();
-        legacy_scope.paired_class_tag = paired_class_tag.into();
+        legacy_scope.class_tag =
+            crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap();
+        legacy_scope.paired_class_tag =
+            crate::records::DesignClassTag::try_from(paired_class_tag.to_owned()).unwrap();
         legacy_scope.payload = crate::records::feature::DesignFeatureKind::Pipe.into();
         legacy_scope.frame_length = 383;
         legacy_scope.reference_members = crate::records::ReferenceRun::Unlocated(

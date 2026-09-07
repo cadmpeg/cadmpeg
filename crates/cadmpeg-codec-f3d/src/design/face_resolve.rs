@@ -26,8 +26,8 @@ pub(crate) fn extrude_omits_zero_side_one_offset(
     side_one_offset_count: usize,
 ) -> bool {
     side_one_offset_count == 0
-        && scope.class_tag == "330"
-        && scope.paired_class_tag == "258"
+        && scope.class_tag.as_str() == "330"
+        && scope.paired_class_tag.as_str() == "258"
         && scope.frame_length == 476
         && matches!(
             prologue,
