@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::directory::{BlankStatus, DirectoryEntry, Hierarchy, Status, Subordinate, UseFlag};
+use crate::directory::{DirectoryEntry, SourceStatus};
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
@@ -608,12 +608,7 @@ fn sectioned_area_curve_coplanarity_uses_model_space_geometry() {
         view: 0,
         transform: 0,
         label_display: 0,
-        status: Status {
-            blank: BlankStatus::Visible,
-            subordinate: Subordinate::Independent,
-            use_flag: UseFlag::Geometry,
-            hierarchy: Hierarchy::GlobalTopDown,
-        },
+        status: SourceStatus::from_codes([0, 0, 0, 0], crate::global::GlobalTable::V5Later),
         line_weight: 0,
         color: 0,
         parameter_line_count: 1,
@@ -716,12 +711,7 @@ fn sectioned_area_form1_allows_a_null_boundary_and_requires_an_island() {
         view: 0,
         transform: 0,
         label_display: 0,
-        status: Status {
-            blank: BlankStatus::Visible,
-            subordinate: Subordinate::Independent,
-            use_flag: UseFlag::Geometry,
-            hierarchy: Hierarchy::GlobalTopDown,
-        },
+        status: SourceStatus::from_codes([0, 0, 0, 0], crate::global::GlobalTable::V5Later),
         line_weight: 0,
         color: 0,
         parameter_line_count: 1,
@@ -839,12 +829,7 @@ fn leader_entry(form: i64) -> DirectoryEntry {
         view: 0,
         transform: 0,
         label_display: 0,
-        status: Status {
-            blank: BlankStatus::Visible,
-            subordinate: Subordinate::Independent,
-            use_flag: UseFlag::Annotation,
-            hierarchy: Hierarchy::GlobalTopDown,
-        },
+        status: SourceStatus::from_codes([0, 0, 1, 0], crate::global::GlobalTable::V5Later),
         line_weight: 0,
         color: 0,
         parameter_line_count: 1,

@@ -2,7 +2,7 @@
 
 #![allow(clippy::unwrap_used)]
 
-use crate::directory::{BlankStatus, DirectoryEntry, Hierarchy, Status, Subordinate, UseFlag};
+use crate::directory::{DirectoryEntry, SourceStatus};
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
@@ -31,12 +31,7 @@ fn directory_entry(entity_type: i64, form: i64) -> DirectoryEntry {
         view: 0,
         transform: 0,
         label_display: 0,
-        status: Status {
-            blank: BlankStatus::Visible,
-            subordinate: Subordinate::Independent,
-            use_flag: UseFlag::Annotation,
-            hierarchy: Hierarchy::GlobalTopDown,
-        },
+        status: SourceStatus::from_codes([0, 0, 1, 0], crate::global::GlobalTable::V5Later),
         line_weight: 0,
         color: 0,
         parameter_line_count: 0,
@@ -52,19 +47,25 @@ fn drawing_presentation_directory_rules_match_the_iges_tables() {
     let mut drawing = directory_entry(404, 0);
     assert!(drawing_directory_valid(&drawing, GlobalTable::V4_0));
     assert!(drawing_directory_valid(&drawing, GlobalTable::V5_0));
-    drawing.status.subordinate = Subordinate::Physically;
+    drawing.status.set_subordinate(1);
     assert!(!drawing_directory_valid(&drawing, GlobalTable::V4_0));
     assert!(!drawing_directory_valid(&drawing, GlobalTable::V5_0));
-    drawing.status.subordinate = Subordinate::Independent;
-    drawing.status.use_flag = UseFlag::Definition;
+    drawing.status.set_subordinate(0);
+    drawing
+        .status
+        .set_use_flag(2, crate::global::GlobalTable::V5Later);
     assert!(drawing_directory_valid(&drawing, GlobalTable::V4_0));
     assert!(!drawing_directory_valid(&drawing, GlobalTable::V5_0));
-    drawing.status.use_flag = UseFlag::Geometry;
+    drawing
+        .status
+        .set_use_flag(0, crate::global::GlobalTable::V5Later);
     assert!(!drawing_directory_valid(&drawing, GlobalTable::V4_0));
     assert!(!drawing_directory_valid(&drawing, GlobalTable::V5_0));
-    drawing.status.use_flag = UseFlag::Annotation;
-    drawing.status.blank = BlankStatus::Blanked;
-    drawing.status.hierarchy = Hierarchy::parse(3);
+    drawing
+        .status
+        .set_use_flag(1, crate::global::GlobalTable::V5Later);
+    drawing.status.set_blank(1);
+    drawing.status.set_hierarchy(3);
     assert!(drawing_directory_valid(&drawing, GlobalTable::V4_0));
     assert!(drawing_directory_valid(&drawing, GlobalTable::V5_0));
 
@@ -82,16 +83,18 @@ fn drawing_presentation_directory_rules_match_the_iges_tables() {
 
     let mut view = directory_entry(410, 0);
     assert!(view_directory_valid(&view, GlobalTable::V4_0));
-    view.status.subordinate = Subordinate::Logically;
+    view.status.set_subordinate(2);
     assert!(view_directory_valid(&view, GlobalTable::V4_0));
-    view.status.subordinate = Subordinate::Independent;
-    view.status.use_flag = UseFlag::Definition;
+    view.status.set_subordinate(0);
+    view.status
+        .set_use_flag(2, crate::global::GlobalTable::V5Later);
     assert!(view_directory_valid(&view, GlobalTable::V4_0));
     assert!(!view_directory_valid(&view, GlobalTable::V5_0));
     assert!(!view_directory_valid(&view, GlobalTable::V5Later));
-    view.status.use_flag = UseFlag::Annotation;
-    view.status.blank = BlankStatus::Blanked;
-    view.status.hierarchy = Hierarchy::parse(3);
+    view.status
+        .set_use_flag(1, crate::global::GlobalTable::V5Later);
+    view.status.set_blank(1);
+    view.status.set_hierarchy(3);
     assert!(view_directory_valid(&view, GlobalTable::V4_0));
     assert!(view_directory_valid(&view, GlobalTable::V5_0));
     assert!(view_directory_valid(&view, GlobalTable::V5Later));
@@ -116,19 +119,25 @@ fn drawing_presentation_directory_rules_match_the_iges_tables() {
         let mut visible = directory_entry(402, form);
         assert!(views_visible_directory_valid(&visible, GlobalTable::V4_0));
         assert!(views_visible_directory_valid(&visible, GlobalTable::V5_0));
-        visible.status.subordinate = Subordinate::Physically;
+        visible.status.set_subordinate(1);
         assert!(!views_visible_directory_valid(&visible, GlobalTable::V4_0));
         assert!(!views_visible_directory_valid(&visible, GlobalTable::V5_0));
-        visible.status.subordinate = Subordinate::Independent;
-        visible.status.use_flag = UseFlag::Geometry;
+        visible.status.set_subordinate(0);
+        visible
+            .status
+            .set_use_flag(0, crate::global::GlobalTable::V5Later);
         assert!(views_visible_directory_valid(&visible, GlobalTable::V4_0));
         assert!(!views_visible_directory_valid(&visible, GlobalTable::V5_0));
-        visible.status.use_flag = UseFlag::Definition;
+        visible
+            .status
+            .set_use_flag(2, crate::global::GlobalTable::V5Later);
         assert!(views_visible_directory_valid(&visible, GlobalTable::V4_0));
         assert!(!views_visible_directory_valid(&visible, GlobalTable::V5_0));
-        visible.status.use_flag = UseFlag::Annotation;
-        visible.status.blank = BlankStatus::Blanked;
-        visible.status.hierarchy = Hierarchy::parse(3);
+        visible
+            .status
+            .set_use_flag(1, crate::global::GlobalTable::V5Later);
+        visible.status.set_blank(1);
+        visible.status.set_hierarchy(3);
         assert!(views_visible_directory_valid(&visible, GlobalTable::V4_0));
         assert!(views_visible_directory_valid(&visible, GlobalTable::V5_0));
         for field in 0..4 {
@@ -507,12 +516,7 @@ fn clipping_plane_use_flag_follows_the_declared_dialect() {
         view: 0,
         transform: 0,
         label_display: 0,
-        status: Status {
-            blank: BlankStatus::Visible,
-            subordinate: Subordinate::Independent,
-            use_flag: UseFlag::Geometry,
-            hierarchy: Hierarchy::GlobalTopDown,
-        },
+        status: SourceStatus::from_codes([0, 0, 0, 0], crate::global::GlobalTable::V5Later),
         line_weight: 0,
         color: 0,
         parameter_line_count: 0,
@@ -522,21 +526,27 @@ fn clipping_plane_use_flag_follows_the_declared_dialect() {
         subscript: 0,
     };
     for use_flag in [0, 1, 2, 5] {
-        target.status.use_flag = UseFlag::parse(use_flag, crate::global::GlobalTable::V4_0);
+        target
+            .status
+            .set_use_flag(use_flag, crate::global::GlobalTable::V4_0);
         assert!(
             clipping_plane_valid(&target, GlobalTable::V4_0),
             "{use_flag}"
         );
     }
     for use_flag in [3, 4] {
-        target.status.use_flag = UseFlag::parse(use_flag, crate::global::GlobalTable::V4_0);
+        target
+            .status
+            .set_use_flag(use_flag, crate::global::GlobalTable::V4_0);
         assert!(
             !clipping_plane_valid(&target, GlobalTable::V4_0),
             "{use_flag}"
         );
     }
     assert!(!clipping_plane_valid(&target, GlobalTable::V5_0));
-    target.status.use_flag = UseFlag::Annotation;
+    target
+        .status
+        .set_use_flag(1, crate::global::GlobalTable::V5Later);
     assert!(clipping_plane_valid(&target, GlobalTable::V5_0));
 }
 

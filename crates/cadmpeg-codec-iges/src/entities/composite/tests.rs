@@ -56,32 +56,24 @@ fn composite_child_count_follows_the_declared_dialect() {
 
 #[test]
 fn composite_entity_use_flag_follows_the_declared_dialect() {
-    assert!(composite_use_flag_valid(
-        UseFlag::parse(0, crate::global::GlobalTable::V5Later),
-        GlobalTable::V4_0
-    ));
+    assert!(UseFlag::parse(0, crate::global::GlobalTable::V5Later)
+        .is_some_and(|use_flag| composite_use_flag_valid(use_flag, GlobalTable::V4_0)));
     for use_flag in [1, 2, 3, 4, 5] {
         assert!(
-            !composite_use_flag_valid(
-                UseFlag::parse(use_flag, crate::global::GlobalTable::V5Later),
-                GlobalTable::V4_0
-            ),
+            !UseFlag::parse(use_flag, crate::global::GlobalTable::V5Later)
+                .is_some_and(|use_flag| composite_use_flag_valid(use_flag, GlobalTable::V4_0)),
             "{use_flag}"
         );
     }
     for use_flag in 0..=6 {
         assert!(
-            composite_use_flag_valid(
-                UseFlag::parse(use_flag, crate::global::GlobalTable::V5Later),
-                GlobalTable::V5_0
-            ),
+            UseFlag::parse(use_flag, crate::global::GlobalTable::V5Later)
+                .is_some_and(|use_flag| composite_use_flag_valid(use_flag, GlobalTable::V5_0)),
             "{use_flag}"
         );
     }
-    assert!(!composite_use_flag_valid(
-        UseFlag::parse(7, crate::global::GlobalTable::V5Later),
-        GlobalTable::V5_0
-    ));
+    assert!(!UseFlag::parse(7, crate::global::GlobalTable::V5Later)
+        .is_some_and(|use_flag| composite_use_flag_valid(use_flag, GlobalTable::V5_0)));
 }
 
 #[test]
@@ -116,27 +108,27 @@ fn composite_line_font_follows_the_declared_dialect_and_hierarchy() {
 #[test]
 fn composite_logical_connector_use_flag_is_a_v5_rule() {
     assert!(composite_logical_connector_use_valid(
-        UseFlag::parse(0, crate::global::GlobalTable::V5Later),
+        UseFlag::parse(0, crate::global::GlobalTable::V5Later).unwrap(),
         true,
         GlobalTable::V4_0
     ));
     assert!(!composite_logical_connector_use_valid(
-        UseFlag::parse(0, crate::global::GlobalTable::V5Later),
+        UseFlag::parse(0, crate::global::GlobalTable::V5Later).unwrap(),
         true,
         GlobalTable::V5_0
     ));
     assert!(composite_logical_connector_use_valid(
-        UseFlag::parse(4, crate::global::GlobalTable::V5Later),
+        UseFlag::parse(4, crate::global::GlobalTable::V5Later).unwrap(),
         true,
         GlobalTable::V5Later
     ));
     assert!(!composite_logical_connector_use_valid(
-        UseFlag::parse(5, crate::global::GlobalTable::V5Later),
+        UseFlag::parse(5, crate::global::GlobalTable::V5Later).unwrap(),
         true,
         GlobalTable::V5_0
     ));
     assert!(composite_logical_connector_use_valid(
-        UseFlag::parse(0, crate::global::GlobalTable::V5Later),
+        UseFlag::parse(0, crate::global::GlobalTable::V5Later).unwrap(),
         false,
         GlobalTable::V5_0
     ));

@@ -1593,7 +1593,7 @@ pub(super) fn project(
         if pcurve.is_some_and(|pcurve| {
             entries
                 .get(&pcurve)
-                .is_none_or(|entry| entry.status.use_flag != UseFlag::Parametric)
+                .is_none_or(|entry| entry.status.use_flag() != Some(UseFlag::Parametric))
         }) {
             losses.push(entity_loss(
                 entry,
@@ -1687,7 +1687,7 @@ pub(super) fn project(
                 };
                 if entries
                     .get(&pcurve)
-                    .is_none_or(|entry| entry.status.use_flag != UseFlag::Parametric)
+                    .is_none_or(|entry| entry.status.use_flag() != Some(UseFlag::Parametric))
                 {
                     losses.push(entity_loss(
                         entry,

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::directory::{BlankStatus, Hierarchy, Subordinate, UseFlag};
+use crate::directory::UseFlag;
 use std::io::Cursor;
 
 use cadmpeg_core::decode::ResourceDimension;
@@ -122,7 +122,7 @@ fn base_geometry_use_flag_follows_the_declared_dialect() {
         assert!(base_geometry_use_flag_valid(
             110,
             0,
-            UseFlag::parse(use_flag, crate::global::GlobalTable::V5Later),
+            UseFlag::parse(use_flag, crate::global::GlobalTable::V5Later).unwrap(),
             GlobalTable::V4_0
         ));
     }
@@ -130,26 +130,26 @@ fn base_geometry_use_flag_follows_the_declared_dialect() {
         assert!(!base_geometry_use_flag_valid(
             110,
             0,
-            UseFlag::parse(use_flag, crate::global::GlobalTable::V5Later),
+            UseFlag::parse(use_flag, crate::global::GlobalTable::V5Later).unwrap(),
             GlobalTable::V4_0
         ));
     }
     assert!(base_geometry_use_flag_valid(
         110,
         0,
-        UseFlag::parse(3, crate::global::GlobalTable::V5Later),
+        UseFlag::parse(3, crate::global::GlobalTable::V5Later).unwrap(),
         GlobalTable::V5_0
     ));
     assert!(!base_geometry_use_flag_valid(
         116,
         0,
-        UseFlag::parse(3, crate::global::GlobalTable::V5Later),
+        UseFlag::parse(3, crate::global::GlobalTable::V5Later).unwrap(),
         GlobalTable::V4_0
     ));
     assert!(base_geometry_use_flag_valid(
         125,
         0,
-        UseFlag::parse(3, crate::global::GlobalTable::V5Later),
+        UseFlag::parse(3, crate::global::GlobalTable::V5Later).unwrap(),
         GlobalTable::V4_0
     ));
 }
@@ -502,12 +502,10 @@ fn transform_depth_overflow_is_a_structured_resource_refusal() {
             view: 0,
             transform,
             label_display: 0,
-            status: crate::directory::Status {
-                blank: BlankStatus::Visible,
-                subordinate: Subordinate::Independent,
-                use_flag: UseFlag::Geometry,
-                hierarchy: Hierarchy::GlobalTopDown,
-            },
+            status: crate::directory::SourceStatus::from_codes(
+                [0, 0, 0, 0],
+                crate::global::GlobalTable::V5Later,
+            ),
             line_weight: 0,
             color: 0,
             parameter_line_count: 0,

@@ -9,128 +9,74 @@ use cadmpeg_ir::SourceProvenance;
 use serde::{Serialize, Serializer};
 use std::collections::BTreeMap;
 
-/// Four two-digit fields in the Directory Entry status number.
+/// Source status fields. Undefined numeric values remain available to native serialization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-pub(crate) struct Status {
+pub(crate) struct SourceStatus {
     #[serde(rename = "blank_status")]
-    pub(crate) blank: BlankStatus,
+    blank: u8,
     #[serde(rename = "subordinate_status")]
-    pub(crate) subordinate: Subordinate,
-    pub(crate) use_flag: UseFlag,
+    subordinate: u8,
+    use_flag: u8,
     #[serde(rename = "hierarchy_status")]
-    pub(crate) hierarchy: Hierarchy,
+    hierarchy: u8,
+    #[serde(skip)]
+    global_table: GlobalTable,
 }
 
-/// A status value retained without an admitted semantic interpretation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ResidualStatus(u8);
-
-/// Display status, including uninterpreted source values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum BlankStatus {
     Visible,
     Blanked,
-    Residual(ResidualStatus),
 }
 
 impl BlankStatus {
-    pub(crate) fn parse(value: u8) -> Self {
+    pub(crate) fn parse(value: u8) -> Option<Self> {
         match value {
-            0 => Self::Visible,
-            1 => Self::Blanked,
-            value => Self::Residual(ResidualStatus(value)),
-        }
-    }
-
-    pub(crate) fn code(self) -> u8 {
-        match self {
-            Self::Visible => 0,
-            Self::Blanked => 1,
-            Self::Residual(value) => value.0,
+            0 => Some(Self::Visible),
+            1 => Some(Self::Blanked),
+            _ => None,
         }
     }
 }
 
-impl Serialize for BlankStatus {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_u8(self.code())
-    }
-}
-
-/// Directory attribute hierarchy, including uninterpreted source values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Hierarchy {
     GlobalTopDown,
     GlobalDefer,
     Property,
-    Residual(ResidualStatus),
 }
 
 impl Hierarchy {
-    pub(crate) fn parse(value: u8) -> Self {
+    pub(crate) fn parse(value: u8) -> Option<Self> {
         match value {
-            0 => Self::GlobalTopDown,
-            1 => Self::GlobalDefer,
-            2 => Self::Property,
-            value => Self::Residual(ResidualStatus(value)),
-        }
-    }
-
-    pub(crate) fn code(self) -> u8 {
-        match self {
-            Self::GlobalTopDown => 0,
-            Self::GlobalDefer => 1,
-            Self::Property => 2,
-            Self::Residual(value) => value.0,
+            0 => Some(Self::GlobalTopDown),
+            1 => Some(Self::GlobalDefer),
+            2 => Some(Self::Property),
+            _ => None,
         }
     }
 }
 
-impl Serialize for Hierarchy {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_u8(self.code())
-    }
-}
-
-/// Dependency switch, including retained undefined source values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Subordinate {
     Independent,
     Physically,
     Logically,
     Both,
-    Residual(ResidualStatus),
 }
 
 impl Subordinate {
-    pub(crate) fn parse(value: u8) -> Self {
+    pub(crate) fn parse(value: u8) -> Option<Self> {
         match value {
-            0 => Self::Independent,
-            1 => Self::Physically,
-            2 => Self::Logically,
-            3 => Self::Both,
-            value => Self::Residual(ResidualStatus(value)),
-        }
-    }
-
-    pub(crate) fn code(self) -> u8 {
-        match self {
-            Self::Independent => 0,
-            Self::Physically => 1,
-            Self::Logically => 2,
-            Self::Both => 3,
-            Self::Residual(value) => value.0,
+            0 => Some(Self::Independent),
+            1 => Some(Self::Physically),
+            2 => Some(Self::Logically),
+            3 => Some(Self::Both),
+            _ => None,
         }
     }
 }
 
-impl Serialize for Subordinate {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_u8(self.code())
-    }
-}
-
-/// Entity use admitted by the declared profile, or its retained residual value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum UseFlag {
     Geometry,
@@ -140,57 +86,91 @@ pub(crate) enum UseFlag {
     LogicalPositional,
     Parametric,
     Construction,
-    Residual(ResidualStatus),
 }
 
 impl UseFlag {
-    pub(crate) fn parse(value: u8, global_table: GlobalTable) -> Self {
+    pub(crate) fn parse(value: u8, global_table: GlobalTable) -> Option<Self> {
         match value {
-            0 => Self::Geometry,
-            1 => Self::Annotation,
-            2 => Self::Definition,
-            3 => Self::Other,
-            4 => Self::LogicalPositional,
-            5 => Self::Parametric,
-            6 if !matches!(global_table, GlobalTable::V4_0) => Self::Construction,
-            value => Self::Residual(ResidualStatus(value)),
+            0 => Some(Self::Geometry),
+            1 => Some(Self::Annotation),
+            2 => Some(Self::Definition),
+            3 => Some(Self::Other),
+            4 => Some(Self::LogicalPositional),
+            5 => Some(Self::Parametric),
+            6 if !matches!(global_table, GlobalTable::V4_0) => Some(Self::Construction),
+            _ => None,
         }
-    }
-
-    pub(crate) fn code(self) -> u8 {
-        match self {
-            Self::Geometry => 0,
-            Self::Annotation => 1,
-            Self::Definition => 2,
-            Self::Other => 3,
-            Self::LogicalPositional => 4,
-            Self::Parametric => 5,
-            Self::Construction => 6,
-            Self::Residual(value) => value.0,
-        }
-    }
-
-    pub(crate) fn is_admitted(self) -> bool {
-        !matches!(self, Self::Residual(_))
     }
 }
 
-impl Serialize for UseFlag {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_u8(self.code())
+impl SourceStatus {
+    pub(crate) fn blank(self) -> Option<BlankStatus> {
+        BlankStatus::parse(self.blank)
     }
-}
 
-impl Status {
+    pub(crate) fn subordinate(self) -> Option<Subordinate> {
+        Subordinate::parse(self.subordinate)
+    }
+
+    pub(crate) fn use_flag(self) -> Option<UseFlag> {
+        UseFlag::parse(self.use_flag, self.global_table)
+    }
+
+    pub(crate) fn hierarchy(self) -> Option<Hierarchy> {
+        Hierarchy::parse(self.hierarchy)
+    }
+
+    pub(crate) fn use_flag_code(self) -> u8 {
+        self.use_flag
+    }
+
     pub(crate) fn is_physically_dependent(self) -> bool {
         matches!(
-            self.subordinate,
-            Subordinate::Physically | Subordinate::Both
+            self.subordinate(),
+            Some(Subordinate::Physically | Subordinate::Both)
         )
     }
 
     pub(crate) fn is_logically_dependent(self) -> bool {
-        matches!(self.subordinate, Subordinate::Logically | Subordinate::Both)
+        matches!(
+            self.subordinate(),
+            Some(Subordinate::Logically | Subordinate::Both)
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_codes(
+        [blank, subordinate, use_flag, hierarchy]: [u8; 4],
+        global_table: GlobalTable,
+    ) -> Self {
+        Self {
+            blank,
+            subordinate,
+            use_flag,
+            hierarchy,
+            global_table,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_blank(&mut self, value: u8) {
+        self.blank = value;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_subordinate(&mut self, value: u8) {
+        self.subordinate = value;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_use_flag(&mut self, value: u8, global_table: GlobalTable) {
+        self.use_flag = value;
+        self.global_table = global_table;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_hierarchy(&mut self, value: u8) {
+        self.hierarchy = value;
     }
 }
 
@@ -207,7 +187,7 @@ pub(crate) struct DirectoryEntry {
     pub(crate) view: i64,
     pub(crate) transform: i64,
     pub(crate) label_display: i64,
-    pub(crate) status: Status,
+    pub(crate) status: SourceStatus,
     pub(crate) line_weight: i64,
     pub(crate) color: i64,
     pub(crate) parameter_line_count: i64,
@@ -340,13 +320,14 @@ fn directory_integer(
     integer(field, name)
 }
 
-fn status(field: [u8; 8], global_table: GlobalTable) -> Result<Status, DirectoryDefect> {
+fn status(field: [u8; 8], global_table: GlobalTable) -> Result<SourceStatus, DirectoryDefect> {
     if field.iter().all(|byte| *byte == b' ') {
-        return Ok(Status {
-            blank: BlankStatus::Visible,
-            subordinate: Subordinate::Independent,
-            use_flag: UseFlag::Geometry,
-            hierarchy: Hierarchy::GlobalTopDown,
+        return Ok(SourceStatus {
+            blank: 0,
+            subordinate: 0,
+            use_flag: 0,
+            hierarchy: 0,
+            global_table,
         });
     }
     let mut digits = [b'0'; 8];
@@ -374,11 +355,12 @@ fn status(field: [u8; 8], global_table: GlobalTable) -> Result<Status, Directory
     }
     let digit = |at: usize| digits[at] - b'0';
     let pair = |at: usize| digit(at) * 10 + digit(at + 1);
-    Ok(Status {
-        blank: BlankStatus::parse(pair(0)),
-        subordinate: Subordinate::parse(pair(2)),
-        use_flag: UseFlag::parse(pair(4), global_table),
-        hierarchy: Hierarchy::parse(pair(6)),
+    Ok(SourceStatus {
+        blank: pair(0),
+        subordinate: pair(2),
+        use_flag: pair(4),
+        hierarchy: pair(6),
+        global_table,
     })
 }
 

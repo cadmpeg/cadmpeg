@@ -336,7 +336,7 @@ impl Subject<'_> {
                     |target| {
                         parameterized_curve_type(target)
                             && target.status.is_physically_dependent()
-                            && target.status.use_flag == UseFlag::Annotation
+                            && target.status.use_flag() == Some(UseFlag::Annotation)
                     },
                 )
             })
@@ -383,7 +383,7 @@ impl Subject<'_> {
                             (target.entity_type, target.form),
                             (100 | 102, 0) | (106, 63)
                         ) && target.status.is_physically_dependent()
-                            && target.status.use_flag == UseFlag::Annotation
+                            && target.status.use_flag() == Some(UseFlag::Annotation)
                     },
                 )
             })
@@ -401,7 +401,7 @@ impl Subject<'_> {
                     ReferenceExpectation::SubordinateAnnotationGeometry,
                     |target| {
                         target.status.is_physically_dependent()
-                            && target.status.use_flag == UseFlag::Annotation
+                            && target.status.use_flag() == Some(UseFlag::Annotation)
                     },
                 )
             })

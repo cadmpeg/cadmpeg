@@ -1182,7 +1182,7 @@ pub(super) fn source_object(entry: &DirectoryEntry) -> SourceObjectAssociation {
             .filter(|value| !value.is_empty())
             .map(str::to_owned),
         color: None,
-        visible: Some(entry.status.blank == BlankStatus::Visible),
+        visible: Some(entry.status.blank() == Some(BlankStatus::Visible)),
         layer: Some(entry.level.to_string()),
         instance_path: Vec::new(),
     }
@@ -1198,42 +1198,33 @@ pub(crate) fn project_geometry(
 ) -> Result<Projection, CodecError> {
     let global_table = global.global_table();
     let admitted = |entry: &DirectoryEntry| {
-        entry.status.use_flag.is_admitted()
-            && base_geometry_use_flag_valid(
-                entry.entity_type,
-                entry.form,
-                entry.status.use_flag,
-                global_table,
-            )
-            && base_geometry_line_font_valid(
-                entry.entity_type,
-                entry.form,
-                entry.line_font,
-                global_table,
-            )
-            && crate::profile::envelope_a_admits(entry.entity_type, entry.form, global_table)
+        entry.status.use_flag().is_some_and(|use_flag| {
+            base_geometry_use_flag_valid(entry.entity_type, entry.form, use_flag, global_table)
+        }) && base_geometry_line_font_valid(
+            entry.entity_type,
+            entry.form,
+            entry.line_font,
+            global_table,
+        ) && crate::profile::envelope_a_admits(entry.entity_type, entry.form, global_table)
     };
     let mut losses = Vec::new();
     for entry in directory {
-        if !entry.status.use_flag.is_admitted() {
+        let Some(use_flag) = entry.status.use_flag() else {
             losses.push(entity_loss(
                 entry,
                 format!(
                     "Entity Use Flag {:02} is outside the effective specification family",
-                    entry.status.use_flag.code()
+                    entry.status.use_flag_code()
                 ),
             ));
-        } else if !base_geometry_use_flag_valid(
-            entry.entity_type,
-            entry.form,
-            entry.status.use_flag,
-            global_table,
-        ) {
+            continue;
+        };
+        if !base_geometry_use_flag_valid(entry.entity_type, entry.form, use_flag, global_table) {
             losses.push(entity_loss(
                 entry,
                 format!(
                     "Entity Use Flag {:02} is outside the IGES 4.0 base geometry values 00, 01, 02, and 05",
-                    entry.status.use_flag.code()
+                    entry.status.use_flag_code()
                 ),
             ));
         } else if !base_geometry_line_font_valid(
@@ -1518,7 +1509,7 @@ pub(crate) fn project_geometry(
             id: point.clone(),
             position,
         });
-        if entry.status.subordinate == Subordinate::Independent
+        if entry.status.subordinate() == Some(Subordinate::Independent)
             || !analytic_surface_locations.contains(&entry.sequence)
         {
             let vertex = VertexId::mint(format!("iges:model:vertex#D{}", entry.sequence))
@@ -1607,7 +1598,7 @@ pub(crate) fn project_geometry(
             id: point.clone(),
             position,
         });
-        if entry.status.subordinate == Subordinate::Independent
+        if entry.status.subordinate() == Some(Subordinate::Independent)
             || !analytic_surface_locations.contains(&entry.sequence)
         {
             let vertex = VertexId::mint(format!("iges:model:vertex#D{}", entry.sequence))

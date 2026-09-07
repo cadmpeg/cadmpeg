@@ -53,8 +53,8 @@ fn presentation_form(form: i64) -> bool {
     matches!(form, 20 | 21 | 31..=38 | 40)
 }
 
-fn presentation_use_flag_valid(form: i64, use_flag: UseFlag) -> bool {
-    !presentation_form(form) || use_flag == UseFlag::Annotation
+fn presentation_use_flag_valid(form: i64, use_flag: Option<UseFlag>) -> bool {
+    !presentation_form(form) || use_flag == Some(UseFlag::Annotation)
 }
 
 fn presentation_loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {
@@ -178,7 +178,7 @@ pub(super) fn project(
         .iter()
         .filter(|entry| entry.entity_type == 106 && expected_interpretation(entry.form).is_some())
     {
-        if !presentation_use_flag_valid(entry.form, entry.status.use_flag) {
+        if !presentation_use_flag_valid(entry.form, entry.status.use_flag()) {
             losses.push(entity_loss(
                 entry,
                 "Type 106 presentation forms require Entity Use Flag 01",

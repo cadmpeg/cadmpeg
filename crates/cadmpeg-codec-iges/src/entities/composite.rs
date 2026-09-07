@@ -49,19 +49,16 @@ fn composite_child_type_allowed(entity_type: i64, form: i64, global_table: Globa
 }
 
 fn composite_use_flag_valid(use_flag: UseFlag, global_table: GlobalTable) -> bool {
-    match global_table {
-        GlobalTable::V4_0 => use_flag == UseFlag::Geometry,
-        _ => use_flag.is_admitted(),
-    }
+    !matches!(global_table, GlobalTable::V4_0) || use_flag == UseFlag::Geometry
 }
 
 fn composite_line_font_valid(
     line_font: i64,
-    hierarchy: Hierarchy,
+    hierarchy: Option<Hierarchy>,
     global_table: GlobalTable,
 ) -> bool {
     !matches!(global_table, GlobalTable::V4_0)
-        || hierarchy == Hierarchy::GlobalDefer
+        || hierarchy == Some(Hierarchy::GlobalDefer)
         || line_font != 0
 }
 
@@ -1445,16 +1442,20 @@ fn project_with_type_130_policy(
         {
             continue;
         }
-        if !composite_use_flag_valid(entry.status.use_flag, global.global_table()) {
+        let Some(use_flag) = entry
+            .status
+            .use_flag()
+            .filter(|use_flag| composite_use_flag_valid(*use_flag, global.global_table()))
+        else {
             losses.push(entity_loss(
                 entry,
                 "Type 102 Entity Use Flag must be 00 in IGES 4.0",
             ));
             continue;
-        }
+        };
         if !composite_line_font_valid(
             entry.line_font,
-            entry.status.hierarchy,
+            entry.status.hierarchy(),
             global.global_table(),
         ) {
             losses.push(entity_loss(
@@ -1508,7 +1509,7 @@ fn project_with_type_130_policy(
                     .is_some_and(|child| child.entity_type == 132 && child.form == 0)
             });
         if !composite_logical_connector_use_valid(
-            entry.status.use_flag,
+            use_flag,
             is_logical_connector,
             global.global_table(),
         ) {

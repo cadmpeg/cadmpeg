@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::directory::{BlankStatus, DirectoryEntry, Hierarchy, Status, Subordinate, UseFlag};
+use crate::directory::{DirectoryEntry, SourceStatus};
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -28,12 +28,7 @@ fn v4_flow_associativity_requires_entity_use_flag_three() {
         view: 0,
         transform: 0,
         label_display: 0,
-        status: Status {
-            blank: BlankStatus::Visible,
-            subordinate: Subordinate::Independent,
-            use_flag: UseFlag::parse(use_flag, crate::global::GlobalTable::V5Later),
-            hierarchy: Hierarchy::GlobalTopDown,
-        },
+        status: SourceStatus::from_codes([0, 0, use_flag, 0], crate::global::GlobalTable::V5Later),
         line_weight: 0,
         color: 0,
         parameter_line_count: 0,
@@ -121,12 +116,7 @@ fn v4_type402_structure_is_ignored_for_each_predefined_associativity_path() {
         view: 0,
         transform: 0,
         label_display: 0,
-        status: Status {
-            blank: BlankStatus::Visible,
-            subordinate: Subordinate::Independent,
-            use_flag: UseFlag::Definition,
-            hierarchy: Hierarchy::GlobalTopDown,
-        },
+        status: SourceStatus::from_codes([0, 0, 2, 0], crate::global::GlobalTable::V5Later),
         line_weight: 0,
         color: 0,
         parameter_line_count: 0,
@@ -162,12 +152,7 @@ fn v4_flow_uses_only_the_v4_target_classes() {
         view: 0,
         transform: 0,
         label_display: 0,
-        status: Status {
-            blank: BlankStatus::Visible,
-            subordinate: Subordinate::Independent,
-            use_flag: UseFlag::Geometry,
-            hierarchy: Hierarchy::GlobalTopDown,
-        },
+        status: SourceStatus::from_codes([0, 0, 0, 0], crate::global::GlobalTable::V5Later),
         line_weight: 0,
         color: 0,
         parameter_line_count: 0,

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::directory::{BlankStatus, Hierarchy, Subordinate, UseFlag};
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -14,7 +13,7 @@ use cadmpeg_ir::CadIr;
 use crate::parameter::{Token, TokenValue};
 use crate::test_support::*;
 use crate::IgesCodec;
-use crate::{directory::DirectoryEntry, directory::Status, parameter::ParameterRecord};
+use crate::{directory::DirectoryEntry, directory::SourceStatus, parameter::ParameterRecord};
 
 const EPS_OFFSET_ENDPOINT_MATCH: f64 = 1.0e-9;
 const EPS_SOURCE_PARAMETER_DOMAIN: f64 = 1.0e-12;
@@ -38,12 +37,7 @@ fn source_entry(entity_type: i64, form: i64) -> DirectoryEntry {
         view: 0,
         transform: 0,
         label_display: 0,
-        status: Status {
-            blank: BlankStatus::Visible,
-            subordinate: Subordinate::Physically,
-            use_flag: UseFlag::Geometry,
-            hierarchy: Hierarchy::GlobalTopDown,
-        },
+        status: SourceStatus::from_codes([0, 1, 0, 0], crate::global::GlobalTable::V5Later),
         line_weight: 0,
         color: 0,
         parameter_line_count: 1,

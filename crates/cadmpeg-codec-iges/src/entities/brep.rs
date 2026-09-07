@@ -429,7 +429,7 @@ pub(super) fn project(
                 };
                 if entries
                     .get(&sequence)
-                    .is_none_or(|entry| entry.status.use_flag != UseFlag::Parametric)
+                    .is_none_or(|entry| entry.status.use_flag() != Some(UseFlag::Parametric))
                 {
                     pcurves.clear();
                     break;
