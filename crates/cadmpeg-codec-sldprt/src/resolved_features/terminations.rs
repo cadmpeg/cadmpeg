@@ -372,15 +372,13 @@ pub(crate) fn enrich_history_extrusion_terminations(
             }
             TerminationVote::Blind {
                 depth_m: Some(depth_m),
-            } => {
-                if !feature.parameters.contains_key("D1")
-                    && !feature.parameters.contains_key("Depth")
-                {
-                    feature.parameters.insert(
-                        "D1".into(),
-                        crate::history::format_length_mm(depth_m * 1000.0),
-                    );
-                }
+            } if !feature.parameters.contains_key("D1")
+                && !feature.parameters.contains_key("Depth") =>
+            {
+                feature.parameters.insert(
+                    "D1".into(),
+                    crate::history::format_length_mm(depth_m * 1000.0),
+                );
             }
             _ => {}
         }
