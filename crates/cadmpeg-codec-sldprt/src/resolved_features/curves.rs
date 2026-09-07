@@ -33,7 +33,7 @@ pub(super) const CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE: &str = "constructed-mid-pl
 struct CircularArcWitness {
     index: usize,
     sketch: SketchId,
-    endpoint_refs: Vec<String>,
+    endpoints: [String; 2],
     center: Point2,
     radius: f64,
 }
@@ -751,15 +751,12 @@ fn closed_cycle_marker_arc_geometry(
     let mut candidates = circular_witnesses.iter().filter_map(|witness| {
         if witness.index == target_index
             || witness.sketch != target.sketch
-            || witness.endpoint_refs.len() != 2
             || !witness.radius.is_finite()
             || witness.radius <= 0.0
         {
             return None;
         }
-        let [witness_start, witness_end] = witness.endpoint_refs.as_slice() else {
-            return None;
-        };
+        let [witness_start, witness_end] = &witness.endpoints;
         let witness_endpoints = [witness_start.as_str(), witness_end.as_str()];
         if target_endpoints
             .iter()
@@ -919,15 +916,16 @@ pub(super) fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], toler
             let SketchGeometry::Arc { center, radius, .. } = entity.geometry else {
                 return None;
             };
-            (!entity.construction && entity.endpoint_refs.len() == 2).then_some(
-                CircularArcWitness {
-                    index,
-                    sketch: entity.sketch.clone(),
-                    endpoint_refs: entity.endpoint_refs.clone(),
-                    center,
-                    radius: radius.0,
-                },
-            )
+            let [start, end] = entity.endpoint_refs.as_slice() else {
+                return None;
+            };
+            (!entity.construction).then_some(CircularArcWitness {
+                index,
+                sketch: entity.sketch.clone(),
+                endpoints: [start.clone(), end.clone()],
+                center,
+                radius: radius.0,
+            })
         })
         .collect::<Vec<_>>();
     let point_by_ref = entities
