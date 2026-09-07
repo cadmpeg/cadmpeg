@@ -284,13 +284,14 @@ fn localizer(
     })
 }
 
-fn control_child<'a>(
-    data: &'a [u8],
+fn control_child<T>(
+    data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     label: &str,
-) -> Result<(BoundedReader<'a>, usize), GeometryError> {
-    let (child, next, major, minor) =
+    read: impl FnOnce(&mut BoundedReader<'_>) -> Result<T, GeometryError>,
+) -> Result<T, GeometryError> {
+    let (mut child, next, major, minor) =
         anonymous(data, reader.position(), reader.end(), archive, label)?;
     if major != 1 || minor < 0 {
         return Err(GeometryError::UnsupportedVersion {
@@ -298,7 +299,23 @@ fn control_child<'a>(
             message: format!("unsupported {label} version {major}.{minor}"),
         });
     }
-    Ok((child, next))
+    let value = read(&mut child)?;
+    child.skip_remaining()?;
+    reader.skip(next - reader.position())?;
+    Ok(value)
+}
+
+fn scaled_transform(
+    reader: &mut BoundedReader<'_>,
+    scale: f64,
+) -> Result<[f64; 16], GeometryError> {
+    let mut transform = xform(reader)?.0;
+    for index in [3, 7, 11] {
+        transform[index] = scaled_coordinate(transform[index], scale).ok_or_else(|| {
+            GeometryError::malformed(reader.position() - 128, "scaled cage transform is invalid")
+        })?;
+    }
+    Ok(transform)
 }
 
 fn cage_at(
@@ -322,7 +339,7 @@ pub(crate) fn decode(
     let data = expand.data();
     let (mut outer, _next, major, minor) =
         anonymous(data, range.start, range.end, archive, "morph control")?;
-    if !matches!(major, 1 | 2) || (major == 1 && minor < 0) || (major == 2 && minor < 0) {
+    if !matches!(major, 1 | 2) || minor < 0 {
         return Err(GeometryError::UnsupportedVersion {
             offset: range.start,
             message: format!("unsupported morph-control version {major}.{minor}"),
@@ -331,16 +348,7 @@ pub(crate) fn decode(
     if major == 1 {
         let end = cage_at(expand, &mut outer, scale, archive)?;
         let captive_ids = captive_ids(data, &mut outer, archive)?;
-        let mut start_transform = xform(&mut outer)?.0;
-        for index in [3, 7, 11] {
-            start_transform[index] =
-                scaled_coordinate(start_transform[index], scale).ok_or_else(|| {
-                    GeometryError::malformed(
-                        outer.position() - 128,
-                        "scaled cage transform is invalid",
-                    )
-                })?;
-        }
+        let start_transform = scaled_transform(&mut outer, scale)?;
         outer.skip_remaining()?;
         return Ok(Morph {
             source_range: range,
@@ -356,53 +364,42 @@ pub(crate) fn decode(
         });
     }
 
-    let variant = outer.i32()?;
-    if !(1..=3).contains(&variant) {
-        return Err(GeometryError::malformed(
-            outer.position() - 4,
-            "invalid morph-control variant",
-        ));
-    }
-    let (mut start, start_next) = control_child(data, &mut outer, archive, "morph start control")?;
-    let start_curve = (variant == 1)
-        .then(|| crate::surfaces::read_nurbs_curve(&mut start, scale))
-        .transpose()?;
-    let start_surface = (variant == 2)
-        .then(|| crate::surfaces::read_nurbs_surface(&mut start, scale))
-        .transpose()?;
-    let mut start_transform = if variant == 3 {
-        Some(xform(&mut start)?.0)
-    } else {
-        None
-    };
-    if let Some(transform) = &mut start_transform {
-        for index in [3, 7, 11] {
-            transform[index] = scaled_coordinate(transform[index], scale).ok_or_else(|| {
-                GeometryError::malformed(start.position() - 128, "scaled cage transform is invalid")
-            })?;
-        }
-    }
-    start.skip_remaining()?;
-    outer.skip(start_next - outer.position())?;
-
-    let (mut end, end_next) = control_child(data, &mut outer, archive, "morph end control")?;
-    let control = match variant {
+    let control = match outer.i32()? {
         1 => Control::Curve {
-            start: start_curve.expect("curve variant has start curve"),
-            end: crate::surfaces::read_nurbs_curve(&mut end, scale)?,
+            start: control_child(data, &mut outer, archive, "morph start control", |reader| {
+                crate::surfaces::read_nurbs_curve(reader, scale)
+            })?,
+            end: control_child(data, &mut outer, archive, "morph end control", |reader| {
+                crate::surfaces::read_nurbs_curve(reader, scale)
+            })?,
         },
         2 => Control::Surface {
-            start: start_surface.expect("surface variant has start surface"),
-            end: crate::surfaces::read_nurbs_surface(&mut end, scale)?,
+            start: control_child(data, &mut outer, archive, "morph start control", |reader| {
+                crate::surfaces::read_nurbs_surface(reader, scale)
+            })?,
+            end: control_child(data, &mut outer, archive, "morph end control", |reader| {
+                crate::surfaces::read_nurbs_surface(reader, scale)
+            })?,
         },
         3 => Control::Cage {
-            start_transform: start_transform.expect("cage variant has transform"),
-            end: cage_at(expand, &mut end, scale, archive)?,
+            start_transform: control_child(
+                data,
+                &mut outer,
+                archive,
+                "morph start control",
+                |reader| scaled_transform(reader, scale),
+            )?,
+            end: control_child(data, &mut outer, archive, "morph end control", |reader| {
+                cage_at(expand, reader, scale, archive)
+            })?,
         },
-        _ => unreachable!("validated morph variant"),
+        _ => {
+            return Err(GeometryError::malformed(
+                outer.position() - 4,
+                "invalid morph-control variant",
+            ))
+        }
     };
-    end.skip_remaining()?;
-    outer.skip(end_next - outer.position())?;
     let captive_ids = captive_ids(data, &mut outer, archive)?;
 
     let (mut list, list_next, list_major, list_minor) = anonymous(
@@ -825,5 +822,50 @@ mod tests {
         assert_eq!(morph.localizers[0].vector, [0.0, 0.0, 1.0]);
         assert_eq!(morph.localizers[0].interval, [40.0, 50.0]);
         assert!(morph.preserve_structure);
+    }
+
+    #[test]
+    fn localizer_geometry_presence_is_independent_of_its_kind() {
+        let mut surface = vec![0x10];
+        for value in [3_i32, 0, 2, 2, 2, 2, 0, 0] {
+            surface.extend(value.to_le_bytes());
+        }
+        surface.extend([0; 48]);
+        for _ in 0..2 {
+            surface.extend(2_i32.to_le_bytes());
+            surface.extend(0.0_f64.to_le_bytes());
+            surface.extend(1.0_f64.to_le_bytes());
+        }
+        surface.extend(4_i32.to_le_bytes());
+        for point in [
+            [0.0_f64, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+        ] {
+            for value in point {
+                surface.extend(value.to_le_bytes());
+            }
+        }
+        let mut curve_payload = vec![1];
+        curve_payload.extend(curve(2.0));
+        let mut surface_payload = vec![1];
+        surface_payload.extend(surface);
+        for kind in [0_i32, 1, 4, 5, 99] {
+            let mut payload = kind.to_le_bytes().to_vec();
+            for value in [0.0_f64, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0] {
+                payload.extend(value.to_le_bytes());
+            }
+            payload.extend(anonymous(1, 0, &curve_payload));
+            payload.extend(anonymous(1, 0, &surface_payload));
+            let bytes = anonymous(1, 0, &payload);
+            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("localizer bounds");
+            let value =
+                localizer(&bytes, &mut reader, 1.0, ArchiveVersion::V8).expect("localizer fields");
+            assert_eq!(value.kind.as_i32(), kind);
+            assert!(value.curve.is_some());
+            assert!(value.surface.is_some());
+            assert_eq!(reader.remaining(), 0);
+        }
     }
 }
