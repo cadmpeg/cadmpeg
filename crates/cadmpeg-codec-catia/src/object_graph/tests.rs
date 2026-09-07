@@ -1572,3 +1572,52 @@ fn object_record_body_wire_rejects_a_repeated_suffix_disagreeing_with_the_payloa
         .to_string();
     assert!(error.contains("repeated_reference_suffix"), "{error}");
 }
+
+#[test]
+fn payload_field_wire_rejects_a_declared_len_disagreeing_with_the_blob() {
+    use crate::object_graph::PayloadField;
+
+    let field = PayloadField::Blob {
+        bytes: vec![1, 2, 3],
+        offset: 4,
+    };
+    let mut wire = serde_json::to_value(&field).unwrap();
+    assert_eq!(wire["Blob"]["declared_len"], serde_json::json!(3));
+    assert_eq!(
+        serde_json::from_value::<PayloadField>(wire.clone()).unwrap(),
+        field
+    );
+
+    wire["Blob"]["declared_len"] = serde_json::json!(2);
+    let error = serde_json::from_value::<PayloadField>(wire)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("declared_len"), "{error}");
+}
+
+#[test]
+fn payload_field_wire_rejects_a_table_count_disagreeing_with_the_rows() {
+    use crate::object_graph::{BulkTableRow, PayloadField};
+
+    let field = PayloadField::BulkTable {
+        count: 1,
+        rows: vec![BulkTableRow {
+            row_id: 7,
+            handle: 9,
+            offset: 11,
+        }],
+        offset: 4,
+    };
+    let mut wire = serde_json::to_value(&field).unwrap();
+    assert_eq!(wire["BulkTable"]["table_count"], serde_json::json!(1));
+    assert_eq!(
+        serde_json::from_value::<PayloadField>(wire.clone()).unwrap(),
+        field
+    );
+
+    wire["BulkTable"]["table_count"] = serde_json::json!(2);
+    let error = serde_json::from_value::<PayloadField>(wire)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("table_count"), "{error}");
+}
