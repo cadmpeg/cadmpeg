@@ -155,7 +155,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     )
     .and_then(|alignment| alignment.operand_paths())
     .expect("identity-qualified assembly occurrence paths");
-    assert_eq!(identity_paths[0].class_tag, "390");
+    assert_eq!(identity_paths[0].class_tag.as_str(), "390");
     assert_eq!(identity_paths[0].occurrence_guids.len(), 2);
     assert_eq!(
         identity_paths[0]
@@ -178,7 +178,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     .expect("compact identity-qualified assembly occurrence paths");
     assert!(compact_identity_paths
         .iter()
-        .all(|path| path.class_tag == "386"));
+        .all(|path| path.class_tag.as_str() == "386"));
     for path_at in [first_identity_path_at, second_identity_path_at] {
         identity_path_bytes[path_at + 4..path_at + 7].copy_from_slice(b"329");
     }
@@ -191,7 +191,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     .and_then(|alignment| alignment.operand_paths())
     .expect("identity-qualified class-329 assembly occurrence paths");
     assert!(extended_class_329_paths.iter().all(|path| {
-        path.class_tag == "329"
+        path.class_tag.as_str() == "329"
             && !path.occurrence_guids.is_empty()
             && path
                 .identity_guids
@@ -389,7 +389,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     .and_then(|alignment| alignment.operand_paths())
     .expect("class-294 identity-qualified assembly occurrence paths");
     assert!(class_294_paths.iter().all(|path| {
-        path.class_tag == "294"
+        path.class_tag.as_str() == "294"
             && path.occurrence_guids.len() == 1
             && path
                 .identity_guids
@@ -409,7 +409,7 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
     .and_then(|alignment| alignment.operand_paths())
     .expect("class-299 identity-qualified assembly occurrence paths");
     assert!(class_299_paths.iter().all(|path| {
-        path.class_tag == "299"
+        path.class_tag.as_str() == "299"
             && path.occurrence_guids.len() == 1
             && path
                 .identity_guids
@@ -539,7 +539,7 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
         [1.25, -2.5]
     );
     let paths = alignment.operand_paths().expect("legacy operand paths");
-    assert!(paths.iter().all(|path| path.class_tag == "386"));
+    assert!(paths.iter().all(|path| path.class_tag.as_str() == "386"));
     assert_eq!(
         paths.each_ref().map(|path| path.link.locator_record_index),
         [300, 400]
@@ -813,7 +813,7 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     assert_eq!(paths[0].link.wrapper_class_tag.as_str(), "369");
     assert_eq!(paths[0].link.wrapper_byte_offset, first_wrapper_at as u64);
     assert_eq!(paths[0].record_index, 5_003);
-    assert_eq!(paths[0].class_tag, "412");
+    assert_eq!(paths[0].class_tag.as_str(), "412");
     assert_eq!(paths[0].byte_offset, (first_path_at + 425) as u64);
     assert_eq!(
         paths[0]

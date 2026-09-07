@@ -139,7 +139,7 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
             path_reference_offset: 211,
         },
         record_index: 30,
-        class_tag: "386".into(),
+        class_tag: crate::records::DesignClassTag::try_from("386".to_owned()).unwrap(),
         byte_offset: 300,
         occurrence_guids: vec![crate::records::Located {
             value: "11111111-1111-4111-8111-111111111111".into(),

@@ -163,7 +163,7 @@ fn valid_class_363_operand_path_link(
     let link = &path.link;
     link.locator_class_tag.as_str() == "363"
         && link.wrapper_class_tag.as_str() == "388"
-        && path.class_tag == "386"
+        && path.class_tag.as_str() == "386"
         && link.locator_record_index == frame.reference_record_index
         && link.locator_reference_offset == frame.reference_offset
         && link.locator_scope_reference_offset

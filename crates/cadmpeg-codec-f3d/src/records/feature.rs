@@ -2760,7 +2760,7 @@ pub struct DesignAssemblyOperandPathLink {
 pub struct DesignAssemblyOperandPath {
     pub link: DesignAssemblyOperandPathLink,
     pub record_index: u32,
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     pub byte_offset: u64,
     /// Ordered occurrence GUIDs and their UTF-16 code-unit locations.
     pub occurrence_guids: Vec<Located<String>>,
@@ -2807,7 +2807,7 @@ impl TryFrom<DesignAssemblyOperandPathWire> for DesignAssemblyOperandPath {
         Ok(Self {
             link: wire.link,
             record_index: wire.record_index,
-            class_tag: wire.class_tag,
+            class_tag: wire.class_tag.try_into()?,
             byte_offset: wire.byte_offset,
             occurrence_guids: wire
                 .occurrence_guids
@@ -2840,7 +2840,7 @@ impl From<DesignAssemblyOperandPath> for DesignAssemblyOperandPathWire {
         Self {
             link: path.link,
             record_index: path.record_index,
-            class_tag: path.class_tag,
+            class_tag: path.class_tag.into(),
             byte_offset: path.byte_offset,
             occurrence_guids,
             occurrence_guid_offsets,

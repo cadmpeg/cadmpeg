@@ -3571,7 +3571,7 @@ fn exact_legacy_class_383_operand_path(
             path_reference_offset: occurrence_guid_offset,
         },
         record_index: leading_identity_record_index,
-        class_tag: "386".into(),
+        class_tag: "386".to_owned().try_into().ok()?,
         byte_offset: u64::try_from(leading_identity_at).ok()?,
         occurrence_guids: vec![crate::records::Located {
             value: leading_occurrence_guid,
@@ -3842,7 +3842,7 @@ fn exact_legacy_class_388_operand_path_envelope(
             path_reference_offset: final_path_reference_offset?,
         },
         record_index: final_path.record_index,
-        class_tag: "412".into(),
+        class_tag: "412".to_owned().try_into().ok()?,
         byte_offset: final_path.byte_offset,
         occurrence_guids,
         identity_guids: final_path.identity_guids,
@@ -4174,12 +4174,12 @@ fn exact_assembly_operand_path_envelope(
         exact_assembly_operand_path(bytes, start, record_index, limit, link.clone())
     });
     let mut path = paths.next()??;
-    if variable_reference && path.class_tag != "330" {
+    if variable_reference && path.class_tag.as_str() != "330" {
         return None;
     }
     for continuation in paths {
         let continuation = continuation?;
-        if !variable_reference || continuation.class_tag != "330" {
+        if !variable_reference || continuation.class_tag.as_str() != "330" {
             return None;
         }
         path.occurrence_guids.extend(continuation.occurrence_guids);
@@ -4322,7 +4322,7 @@ fn exact_assembly_operand_path(
     Some(DesignAssemblyOperandPath {
         link,
         record_index,
-        class_tag,
+        class_tag: class_tag.try_into().ok()?,
         byte_offset: u64::try_from(start).ok()?,
         occurrence_guids,
         identity_guids,

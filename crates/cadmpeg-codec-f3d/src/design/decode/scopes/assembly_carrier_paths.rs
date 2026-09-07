@@ -151,7 +151,7 @@ fn exact_class_363_operand_path(
             path_reference_offset: occurrence_guid_offset,
         },
         record_index: terminal_record_index,
-        class_tag: "386".into(),
+        class_tag: "386".to_owned().try_into().ok()?,
         byte_offset: u64::try_from(terminal_at).ok()?,
         occurrence_guids: vec![crate::records::Located {
             value: occurrence_guid,
