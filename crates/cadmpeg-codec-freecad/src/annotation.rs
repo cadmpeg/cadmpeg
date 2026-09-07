@@ -10,7 +10,9 @@ use cadmpeg_ir::semantic_annotations::{
 };
 use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
 
-use crate::native::{DrawingRecord, ObjectRecord, PropertyRecord, SemanticAnnotationRecord};
+use crate::native::{
+    AnnotationRuntimeType, DrawingRecord, ObjectRecord, PropertyRecord, SemanticAnnotationRecord,
+};
 
 pub(crate) fn transfer(
     objects: &[ObjectRecord],
@@ -25,8 +27,11 @@ pub(crate) fn transfer(
     );
     objects
         .iter()
-        .filter_map(|object| annotation_schema(&object.type_name).map(|schema| (object, schema)))
-        .map(|(object, schema)| {
+        .filter_map(|object| {
+            AnnotationRuntimeType::from_label(&object.type_name).map(|kind| (object, kind))
+        })
+        .map(|(object, kind)| {
+            let schema = annotation_schema(kind);
             let mut owned = by_owner
                 .get(object.id.as_str())
                 .cloned()
@@ -45,7 +50,7 @@ pub(crate) fn transfer(
             SemanticAnnotationRecord {
                 id: crate::native::native_id("annotation", &object.name),
                 object: object.id.clone(),
-                kind: object.type_name.clone(),
+                kind,
                 text: owned
                     .iter()
                     .filter(|property| schema.text.contains(&property.name.as_str()))
@@ -84,12 +89,7 @@ pub(crate) fn transfer_neutral(
         })
         .collect::<HashMap<_, _>>();
     for (order, record) in records.iter().enumerate() {
-        let schema = annotation_schema(&record.kind).ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "semantic annotation {} has unsupported runtime type {}",
-                record.id, record.kind
-            ))
-        })?;
+        let schema = annotation_schema(record.kind);
         let owned = properties
             .iter()
             .filter(|property| property.owner == record.object)
@@ -136,7 +136,7 @@ pub(crate) fn transfer_neutral(
             .expect("identity grammar"),
             object: record.object.clone(),
             kind: schema.kind.clone(),
-            runtime_type: record.kind.clone(),
+            runtime_type: record.kind.as_str().to_owned(),
             order: order as u32,
             text: record.text.clone(),
             references,
@@ -159,7 +159,7 @@ pub(crate) fn transfer_neutral(
 }
 
 pub(crate) fn is_annotation_type(type_name: &str) -> bool {
-    annotation_schema(type_name).is_some()
+    AnnotationRuntimeType::from_label(type_name).is_some()
 }
 
 #[derive(Clone)]
@@ -190,10 +190,10 @@ const TECHDRAW_POSITION_TYPES: &[&str] = &[
     "App::PropertyFloat",
 ];
 
-fn annotation_schema(runtime_type: &str) -> Option<AnnotationSchema> {
+fn annotation_schema(runtime_type: AnnotationRuntimeType) -> AnnotationSchema {
     use SemanticAnnotationKind as Kind;
-    let schema = match runtime_type {
-        "App::Annotation" => AnnotationSchema {
+    match runtime_type {
+        AnnotationRuntimeType::Annotation => AnnotationSchema {
             kind: Kind::Text,
             text: &["LabelText"],
             text_type: Some("App::PropertyStringList"),
@@ -203,7 +203,7 @@ fn annotation_schema(runtime_type: &str) -> Option<AnnotationSchema> {
                 type_name: "App::PropertyVector",
             },
         },
-        "App::AnnotationLabel" => AnnotationSchema {
+        AnnotationRuntimeType::AnnotationLabel => AnnotationSchema {
             kind: Kind::Text,
             text: &["LabelText"],
             text_type: Some("App::PropertyStringList"),
@@ -213,7 +213,8 @@ fn annotation_schema(runtime_type: &str) -> Option<AnnotationSchema> {
                 type_name: "App::PropertyVector",
             },
         },
-        "TechDraw::DrawViewAnnotation" | "TechDraw::DrawViewAnnotationPython" => AnnotationSchema {
+        AnnotationRuntimeType::DrawViewAnnotation
+        | AnnotationRuntimeType::DrawViewAnnotationPython => AnnotationSchema {
             kind: Kind::Text,
             text: &["Text"],
             text_type: Some("App::PropertyStringList"),
@@ -224,20 +225,22 @@ fn annotation_schema(runtime_type: &str) -> Option<AnnotationSchema> {
                 type_names: TECHDRAW_POSITION_TYPES,
             },
         },
-        "TechDraw::DrawRichAnno" | "TechDraw::DrawRichAnnoPython" => AnnotationSchema {
-            kind: Kind::Text,
-            text: &["AnnoText"],
-            text_type: Some("App::PropertyString"),
-            format: None,
-            position: PositionCarrier::Coordinates {
-                x_name: "X",
-                y_name: "Y",
-                type_names: TECHDRAW_POSITION_TYPES,
-            },
-        },
-        "TechDraw::DrawViewDimension"
-        | "TechDraw::DrawViewDimExtent"
-        | "TechDraw::LandmarkDimension" => AnnotationSchema {
+        AnnotationRuntimeType::DrawRichAnno | AnnotationRuntimeType::DrawRichAnnoPython => {
+            AnnotationSchema {
+                kind: Kind::Text,
+                text: &["AnnoText"],
+                text_type: Some("App::PropertyString"),
+                format: None,
+                position: PositionCarrier::Coordinates {
+                    x_name: "X",
+                    y_name: "Y",
+                    type_names: TECHDRAW_POSITION_TYPES,
+                },
+            }
+        }
+        AnnotationRuntimeType::DrawViewDimension
+        | AnnotationRuntimeType::DrawViewDimExtent
+        | AnnotationRuntimeType::LandmarkDimension => AnnotationSchema {
             kind: Kind::Dimension,
             text: &["FormatSpec"],
             text_type: Some("App::PropertyString"),
@@ -248,7 +251,7 @@ fn annotation_schema(runtime_type: &str) -> Option<AnnotationSchema> {
                 type_names: TECHDRAW_POSITION_TYPES,
             },
         },
-        "TechDraw::DrawViewBalloon" => AnnotationSchema {
+        AnnotationRuntimeType::DrawViewBalloon => AnnotationSchema {
             kind: Kind::Balloon,
             text: &["Text"],
             text_type: Some("App::PropertyString"),
@@ -259,21 +262,23 @@ fn annotation_schema(runtime_type: &str) -> Option<AnnotationSchema> {
                 type_names: TECHDRAW_POSITION_TYPES,
             },
         },
-        "TechDraw::DrawLeaderLine" | "TechDraw::DrawLeaderLinePython" => AnnotationSchema {
-            kind: Kind::Leader,
-            text: &[],
-            text_type: None,
-            format: None,
-            position: PositionCarrier::Coordinates {
-                x_name: "X",
-                y_name: "Y",
-                type_names: TECHDRAW_POSITION_TYPES,
-            },
-        },
-        "TechDraw::DrawViewSymbol"
-        | "TechDraw::DrawViewSymbolPython"
-        | "TechDraw::DrawWeldSymbol"
-        | "TechDraw::DrawWeldSymbolPython" => AnnotationSchema {
+        AnnotationRuntimeType::DrawLeaderLine | AnnotationRuntimeType::DrawLeaderLinePython => {
+            AnnotationSchema {
+                kind: Kind::Leader,
+                text: &[],
+                text_type: None,
+                format: None,
+                position: PositionCarrier::Coordinates {
+                    x_name: "X",
+                    y_name: "Y",
+                    type_names: TECHDRAW_POSITION_TYPES,
+                },
+            }
+        }
+        AnnotationRuntimeType::DrawViewSymbol
+        | AnnotationRuntimeType::DrawViewSymbolPython
+        | AnnotationRuntimeType::DrawWeldSymbol
+        | AnnotationRuntimeType::DrawWeldSymbolPython => AnnotationSchema {
             kind: Kind::Symbol,
             text: &["TailText"],
             text_type: Some("App::PropertyString"),
@@ -284,9 +289,7 @@ fn annotation_schema(runtime_type: &str) -> Option<AnnotationSchema> {
                 type_names: TECHDRAW_POSITION_TYPES,
             },
         },
-        _ => return None,
-    };
-    Some(schema)
+    }
 }
 
 fn annotation_position(

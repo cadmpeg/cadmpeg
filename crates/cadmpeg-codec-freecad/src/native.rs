@@ -227,6 +227,106 @@ pub struct GuiStateRecord {
     pub byte_end: u64,
 }
 
+/// A supported semantic annotation runtime type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnnotationRuntimeType {
+    /// The App::Annotation runtime type.
+    Annotation,
+    /// The App::AnnotationLabel runtime type.
+    AnnotationLabel,
+    /// The TechDraw::DrawViewAnnotation runtime type.
+    DrawViewAnnotation,
+    /// The TechDraw::DrawViewAnnotationPython runtime type.
+    DrawViewAnnotationPython,
+    /// The TechDraw::DrawRichAnno runtime type.
+    DrawRichAnno,
+    /// The TechDraw::DrawRichAnnoPython runtime type.
+    DrawRichAnnoPython,
+    /// The TechDraw::DrawViewDimension runtime type.
+    DrawViewDimension,
+    /// The TechDraw::DrawViewDimExtent runtime type.
+    DrawViewDimExtent,
+    /// The TechDraw::LandmarkDimension runtime type.
+    LandmarkDimension,
+    /// The TechDraw::DrawViewBalloon runtime type.
+    DrawViewBalloon,
+    /// The TechDraw::DrawLeaderLine runtime type.
+    DrawLeaderLine,
+    /// The TechDraw::DrawLeaderLinePython runtime type.
+    DrawLeaderLinePython,
+    /// The TechDraw::DrawViewSymbol runtime type.
+    DrawViewSymbol,
+    /// The TechDraw::DrawViewSymbolPython runtime type.
+    DrawViewSymbolPython,
+    /// The TechDraw::DrawWeldSymbol runtime type.
+    DrawWeldSymbol,
+    /// The TechDraw::DrawWeldSymbolPython runtime type.
+    DrawWeldSymbolPython,
+}
+
+impl AnnotationRuntimeType {
+    /// Returns the persisted runtime type name.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Annotation => "App::Annotation",
+            Self::AnnotationLabel => "App::AnnotationLabel",
+            Self::DrawViewAnnotation => "TechDraw::DrawViewAnnotation",
+            Self::DrawViewAnnotationPython => "TechDraw::DrawViewAnnotationPython",
+            Self::DrawRichAnno => "TechDraw::DrawRichAnno",
+            Self::DrawRichAnnoPython => "TechDraw::DrawRichAnnoPython",
+            Self::DrawViewDimension => "TechDraw::DrawViewDimension",
+            Self::DrawViewDimExtent => "TechDraw::DrawViewDimExtent",
+            Self::LandmarkDimension => "TechDraw::LandmarkDimension",
+            Self::DrawViewBalloon => "TechDraw::DrawViewBalloon",
+            Self::DrawLeaderLine => "TechDraw::DrawLeaderLine",
+            Self::DrawLeaderLinePython => "TechDraw::DrawLeaderLinePython",
+            Self::DrawViewSymbol => "TechDraw::DrawViewSymbol",
+            Self::DrawViewSymbolPython => "TechDraw::DrawViewSymbolPython",
+            Self::DrawWeldSymbol => "TechDraw::DrawWeldSymbol",
+            Self::DrawWeldSymbolPython => "TechDraw::DrawWeldSymbolPython",
+        }
+    }
+
+    pub(crate) fn from_label(label: &str) -> Option<Self> {
+        match label {
+            "App::Annotation" => Some(Self::Annotation),
+            "App::AnnotationLabel" => Some(Self::AnnotationLabel),
+            "TechDraw::DrawViewAnnotation" => Some(Self::DrawViewAnnotation),
+            "TechDraw::DrawViewAnnotationPython" => Some(Self::DrawViewAnnotationPython),
+            "TechDraw::DrawRichAnno" => Some(Self::DrawRichAnno),
+            "TechDraw::DrawRichAnnoPython" => Some(Self::DrawRichAnnoPython),
+            "TechDraw::DrawViewDimension" => Some(Self::DrawViewDimension),
+            "TechDraw::DrawViewDimExtent" => Some(Self::DrawViewDimExtent),
+            "TechDraw::LandmarkDimension" => Some(Self::LandmarkDimension),
+            "TechDraw::DrawViewBalloon" => Some(Self::DrawViewBalloon),
+            "TechDraw::DrawLeaderLine" => Some(Self::DrawLeaderLine),
+            "TechDraw::DrawLeaderLinePython" => Some(Self::DrawLeaderLinePython),
+            "TechDraw::DrawViewSymbol" => Some(Self::DrawViewSymbol),
+            "TechDraw::DrawViewSymbolPython" => Some(Self::DrawViewSymbolPython),
+            "TechDraw::DrawWeldSymbol" => Some(Self::DrawWeldSymbol),
+            "TechDraw::DrawWeldSymbolPython" => Some(Self::DrawWeldSymbolPython),
+            _ => None,
+        }
+    }
+}
+
+impl Serialize for AnnotationRuntimeType {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for AnnotationRuntimeType {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let label = String::deserialize(deserializer)?;
+        Self::from_label(&label).ok_or_else(|| {
+            serde::de::Error::custom(format!(
+                "semantic annotation kind: unsupported runtime type {label}"
+            ))
+        })
+    }
+}
+
 /// One semantic annotation object kept distinct from drawing presentation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SemanticAnnotationRecord {
@@ -235,7 +335,7 @@ pub struct SemanticAnnotationRecord {
     /// Owning application object.
     pub object: String,
     /// Persisted annotation runtime type.
-    pub kind: String,
+    pub kind: AnnotationRuntimeType,
     /// Ordered user-visible text fragments.
     pub text: Vec<String>,
     /// Object and subelement references grouped by source property.

@@ -496,7 +496,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
             .side_entries
             .iter()
             .any(|entry| !entry_names.contains(entry.as_str()));
-        if object.is_none_or(|object| object.type_name != annotation.kind)
+        if object.is_none_or(|object| object.type_name != annotation.kind.as_str())
             || missing_reference
             || missing_entry
         {
