@@ -165,7 +165,7 @@ pub(super) fn sketch_brep(
                 curve: Some(curve_id),
                 start: start_vertex,
                 end: end_vertex,
-                param_range: Some(generated.param_range.unwrap_or([0.0, length])),
+                param_range: Some(generated.param_range),
                 tolerance: None,
             });
             coedge_ids.push(coedge_id.clone());
@@ -288,7 +288,7 @@ struct GeneratedSketchCurve {
     curve: CurveGeometry,
     start: Point2,
     end: Point2,
-    param_range: Option<[f64; 2]>,
+    param_range: [f64; 2],
 }
 
 fn generated_sketch_curve(
@@ -336,7 +336,7 @@ fn generated_sketch_curve(
                 },
                 start: *start,
                 end: *end,
-                param_range: Some([0.0, length]),
+                param_range: [0.0, length],
             })
         }
         SketchGeometry::Circle { center, radius } => {
@@ -350,7 +350,7 @@ fn generated_sketch_curve(
                 },
                 start: point,
                 end: point,
-                param_range: Some([0.0, std::f64::consts::TAU]),
+                param_range: [0.0, std::f64::consts::TAU],
             })
         }
         SketchGeometry::Arc {
@@ -367,7 +367,7 @@ fn generated_sketch_curve(
             },
             start: offset_point(*center, polar(radius.0, start_angle.0)),
             end: offset_point(*center, polar(radius.0, end_angle.0)),
-            param_range: Some([start_angle.0, end_angle.0]),
+            param_range: [start_angle.0, end_angle.0],
         }),
         SketchGeometry::Ellipse {
             center,
@@ -401,7 +401,7 @@ fn generated_sketch_curve(
                 },
                 start: point(start),
                 end: if full { point(start) } else { point(end) },
-                param_range: Some([start, end]),
+                param_range: [start, end],
             })
         }
         SketchGeometry::Nurbs { curve } => {
@@ -418,7 +418,7 @@ fn generated_sketch_curve(
                 curve: CurveGeometry::Nurbs(curve.lift(lift)),
                 start,
                 end,
-                param_range: Some([knots[curve.degree() as usize], knots[control_points.len()]]),
+                param_range: [knots[curve.degree() as usize], knots[control_points.len()]],
             })
         }
         SketchGeometry::Point { .. }
