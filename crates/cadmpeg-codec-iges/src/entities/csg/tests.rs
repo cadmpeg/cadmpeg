@@ -93,7 +93,7 @@ fn decode_types_all_csg_primitive_solids_and_defaults() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let solids = &result.ir().native.namespace("iges").unwrap().arenas["primitive_solids"];
+    let solids = &result.ir().native.namespace("iges").unwrap().arenas()["primitive_solids"];
     assert_eq!(solids.len(), 8);
     let block = solids
         .iter()
@@ -145,7 +145,7 @@ fn decode_rejects_invalid_csg_primitive_dimensions_semantically() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
-        result.ir().native.namespace("iges").unwrap().arenas["primitive_solids"].len(),
+        result.ir().native.namespace("iges").unwrap().arenas()["primitive_solids"].len(),
         1
     );
     assert!(result.report().losses.iter().any(|loss| loss
@@ -190,7 +190,7 @@ fn decode_types_swept_solids_and_balanced_boolean_postfix() {
         )
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
-    let procedural = &native.arenas["procedural_solids"];
+    let procedural = &native.arenas()["procedural_solids"];
     assert_eq!(procedural.len(), 3);
     let open_revolution = procedural
         .iter()
@@ -209,11 +209,11 @@ fn decode_types_swept_solids_and_balanced_boolean_postfix() {
         .find(|solid| solid.id() == "iges:solid:procedural#D9")
         .unwrap();
     assert_eq!(extrusion.fields()["kind"], "linear_extrusion");
-    let trees = &native.arenas["boolean_trees"];
+    let trees = &native.arenas()["boolean_trees"];
     assert_eq!(trees.len(), 1);
     assert_eq!(trees[0].fields()["declared_length"], 3);
     assert_eq!(trees[0].fields()["terms"].as_array().unwrap().len(), 3);
-    let selected = &native.arenas["selected_components"];
+    let selected = &native.arenas()["selected_components"];
     assert_eq!(selected.len(), 1);
     assert_eq!(
         selected[0].fields()["boolean_tree"],
@@ -305,7 +305,7 @@ fn decode_types_form_one_boolean_tree_with_brep_operand() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let trees = &result.ir().native.namespace("iges").unwrap().arenas["boolean_trees"];
+    let trees = &result.ir().native.namespace("iges").unwrap().arenas()["boolean_trees"];
     let tree = trees
         .iter()
         .find(|tree| tree.id() == "iges:solid:boolean-tree#D59")
@@ -315,7 +315,7 @@ fn decode_types_form_one_boolean_tree_with_brep_operand() {
         tree.fields()["terms"][0]["entity"],
         "iges:entity:directory#55"
     );
-    let assembly = result.ir().native.namespace("iges").unwrap().arenas["solid_assemblies"]
+    let assembly = result.ir().native.namespace("iges").unwrap().arenas()["solid_assemblies"]
         .iter()
         .find(|assembly| assembly.id() == "iges:product:solid-assembly#D61")
         .unwrap();
@@ -324,7 +324,7 @@ fn decode_types_form_one_boolean_tree_with_brep_operand() {
         assembly.fields()["items"][0]["item"],
         "iges:entity:directory#55"
     );
-    let instance = result.ir().native.namespace("iges").unwrap().arenas["solid_instances"]
+    let instance = result.ir().native.namespace("iges").unwrap().arenas()["solid_instances"]
         .iter()
         .find(|instance| instance.id() == "iges:product:solid-instance#D63")
         .unwrap();
@@ -345,7 +345,7 @@ fn decode_requires_direct_brep_operand_for_boolean_form_one() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let trees = &result.ir().native.namespace("iges").unwrap().arenas["boolean_trees"];
+    let trees = &result.ir().native.namespace("iges").unwrap().arenas()["boolean_trees"];
     assert_eq!(trees.len(), 6);
     let invalid_entities = result
         .report()
@@ -433,7 +433,7 @@ fn decode_validates_selected_component_parameter_pointer() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
-    let selected = &native.arenas["selected_components"];
+    let selected = &native.arenas()["selected_components"];
     let component = |sequence| {
         selected
             .iter()
@@ -457,7 +457,7 @@ fn decode_validates_selected_component_parameter_pointer() {
         (11, "dangling"),
         (13, "out_of_range"),
     ] {
-        let entity = native.arenas["entities"]
+        let entity = native.arenas()["entities"]
             .iter()
             .find(|entity| entity.id() == format!("iges:entity:directory#{sequence}"))
             .unwrap();
@@ -520,7 +520,7 @@ fn decode_rejects_cyclic_boolean_tree_references() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     assert_eq!(
-        result.ir().native.namespace("iges").unwrap().arenas["boolean_trees"].len(),
+        result.ir().native.namespace("iges").unwrap().arenas()["boolean_trees"].len(),
         2
     );
     assert_eq!(

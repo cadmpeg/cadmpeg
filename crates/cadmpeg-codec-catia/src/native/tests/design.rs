@@ -191,7 +191,7 @@ fn native_design_objects_preserve_storage_relations_before_payload_relations() {
 
     let mut malformed = native.clone();
     malformed.design_objects[0].relations.swap(0, 1);
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
         .expect("store reordered design relations");
@@ -561,7 +561,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         .expect("parallel reference table")
         .rows[0]
         .cells[0] = malformed_cell.with_entity_id(malformed_entity_id);
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
         .expect("store malformed parallel reference table");
@@ -585,7 +585,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         .expect("parallel reference table")
         .rows[0]
         .cells[0] = offset_cell.with_payload_offset(next_offset);
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed_offset
         .store(&mut namespace)
         .expect("store malformed parallel-reference cell offset");
@@ -601,7 +601,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         .expect("parallel reference table")
         .columns[0]
         .list_payload_offset += 1;
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed_list_offset
         .store(&mut namespace)
         .expect("store malformed parallel-reference list offset");
@@ -709,7 +709,7 @@ fn native_design_objects_follow_first_field_order() {
         ]
     );
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store source-ordered design objects");

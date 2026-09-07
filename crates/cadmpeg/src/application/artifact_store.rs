@@ -221,7 +221,7 @@ impl ArtifactStore {
                 report, fidelity, ..
             }
             | LoadOrigin::Restored { report, fidelity } => {
-                let sidecar =
+                let mut sidecar =
                     DecodeSidecar::bind_sha256(cadir_sha256, report.clone(), fidelity.clone());
                 let mut bytes = sidecar.to_canonical_json()?.into_bytes();
                 bytes.push(b'\n');
@@ -322,7 +322,7 @@ mod tests {
             "dialects": null,
         }))
         .unwrap();
-        let sidecar = DecodeSidecar::bind(text.as_bytes(), report, SourceFidelity::default());
+        let mut sidecar = DecodeSidecar::bind(text.as_bytes(), report, SourceFidelity::default());
         std::fs::write(
             ArtifactStore::sidecar_path(&path),
             sidecar.to_canonical_json().unwrap(),

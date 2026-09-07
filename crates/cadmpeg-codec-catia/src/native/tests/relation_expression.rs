@@ -49,7 +49,7 @@ fn native_namespace_types_and_validates_complete_relation_expressions() {
         .expect("complete relation expression")
         .expression
         .value = "changed".to_string();
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
         .expect("store malformed relation expression");
@@ -436,7 +436,7 @@ fn native_validates_relation_signature_outer_whitespace() {
         .signature()
         .is_none());
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store whitespace signature");
@@ -495,7 +495,7 @@ fn native_validates_relation_signature_parameter_symbols() {
         .relation_expression()
         .cloned()
         .expect("relation expression");
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store relation signature");

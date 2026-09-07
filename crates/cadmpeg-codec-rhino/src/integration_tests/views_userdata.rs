@@ -122,7 +122,7 @@ fn viewport_userdata_future_payload_retains_typed_view_list_record() {
     );
     let result = decode(bytes);
 
-    let views = &result.ir().native.namespace("rhino").unwrap().arenas["views"];
+    let views = &result.ir().native.namespace("rhino").unwrap().arenas()["views"];
     assert_eq!(views.len(), 1);
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == crate::loss::RhinoLossCode::ViewportUserdataDropped.kind()
@@ -157,7 +157,7 @@ fn malformed_viewport_userdata_retains_typed_view_list_record() {
     );
     let result = decode(bytes);
 
-    let views = &result.ir().native.namespace("rhino").unwrap().arenas["views"];
+    let views = &result.ir().native.namespace("rhino").unwrap().arenas()["views"];
     assert_eq!(views.len(), 1);
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == crate::loss::RhinoLossCode::ViewportUserdataDropped.kind()

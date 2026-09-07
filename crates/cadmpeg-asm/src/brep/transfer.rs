@@ -48,7 +48,7 @@ pub fn transfer_into_ir(
     if ir.native.namespace(native_format).is_some_and(|namespace| {
         ASM_NATIVE_ARENAS.iter().any(|name| {
             namespace
-                .arenas
+                .arenas()
                 .get(*name)
                 .is_some_and(|records| !records.is_empty())
         })
@@ -159,7 +159,7 @@ mod tests {
         assert!(remainder.unknowns.is_empty());
         assert!(remainder.annotation_records.is_empty());
         let namespace = ir.native.namespace("test").expect("namespace exists");
-        assert_eq!(namespace.arenas.len(), 12);
+        assert_eq!(namespace.arenas().len(), 12);
     }
 
     #[test]

@@ -154,8 +154,8 @@ fn container_and_native_arenas_retain_loop_roster() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let namespace = result.ir().native.namespace("creo").unwrap();
-    assert_eq!(namespace.arenas["loop_array_frames"].len(), 1);
-    let records = &namespace.arenas["loop_array_records"];
+    assert_eq!(namespace.arenas()["loop_array_frames"].len(), 1);
+    let records = &namespace.arenas()["loop_array_records"];
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].fields()["lo_id"], 1);
     assert_eq!(records[0].fields()["next_lo_ptr"], 7);

@@ -125,7 +125,7 @@ fn assert_point_and_retention(result: &cadmpeg_ir::codec::DecodeResult, record: 
         cadmpeg_ir::math::Point3::new(1.25, -2.5, 3.75)
     );
     let presentation =
-        &result.ir().native.namespace("rhino").unwrap().arenas["object_presentation"];
+        &result.ir().native.namespace("rhino").unwrap().arenas()["object_presentation"];
     assert_eq!(presentation.len(), 1);
     assert!(presentation[0].field("layer_index").is_some());
     let retained = result
@@ -150,7 +150,7 @@ fn current_mesh_modifier_xml_reaches_each_native_field() {
         ));
 
         assert_point_and_retention(&result, &record);
-        let modifiers = result.ir().native.namespace("rhino").unwrap().arenas
+        let modifiers = result.ir().native.namespace("rhino").unwrap().arenas()
             ["object_presentation"][0]
             .field("mesh_modifiers")
             .expect("current mesh modifier");
@@ -173,7 +173,7 @@ fn future_mesh_modifier_xml_keeps_object_and_drops_only_modifier() {
 
         assert_point_and_retention(&result, &record);
         assert!(
-            result.ir().native.namespace("rhino").unwrap().arenas["object_presentation"][0]
+            result.ir().native.namespace("rhino").unwrap().arenas()["object_presentation"][0]
                 .field("mesh_modifiers")
                 .is_none()
         );
@@ -200,7 +200,7 @@ fn malformed_mesh_modifier_xml_keeps_object_and_drops_only_modifier() {
 
         assert_point_and_retention(&result, &record);
         assert!(
-            result.ir().native.namespace("rhino").unwrap().arenas["object_presentation"][0]
+            result.ir().native.namespace("rhino").unwrap().arenas()["object_presentation"][0]
                 .field("mesh_modifiers")
                 .is_none()
         );

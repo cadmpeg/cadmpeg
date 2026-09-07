@@ -51,7 +51,7 @@ fn encode_regenerates_a_degraded_type_102_as_an_exact_composite_carrier() {
                 .ir()
                 .native
                 .namespace("iges")
-                .and_then(|namespace| namespace.arenas.get("entities"))
+                .and_then(|namespace| namespace.arenas().get("entities"))
                 .is_some_and(|entities| {
                     entities.iter().any(|record| {
                         record.field("entity_type").and_then(|value| value.as_i64()) == Some(102)
@@ -312,7 +312,7 @@ fn encode_emits_the_legacy_plane_target_for_4_0_and_5_0() {
             "{version:?}"
         );
 
-        let entities = &decoded.ir().native.namespace("iges").unwrap().arenas["entities"];
+        let entities = &decoded.ir().native.namespace("iges").unwrap().arenas()["entities"];
         assert!(entities.iter().any(|record| {
             record.field("entity_type").and_then(|value| value.as_i64()) == Some(108)
         }));
@@ -663,7 +663,7 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
     );
     let validation = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
-    let entities = &decoded.ir().native.namespace("iges").unwrap().arenas["entities"];
+    let entities = &decoded.ir().native.namespace("iges").unwrap().arenas()["entities"];
     assert!(entities.iter().any(|record| {
         record.field("entity_type").and_then(|value| value.as_i64()) == Some(190)
     }));
@@ -1191,7 +1191,7 @@ fn encode_declares_topology_preferences_and_hierarchy_consistently() {
             .expect("generated IGES decodes")
     };
     let parameter = |ir: &CadIr, entity_type: i64, index: usize| {
-        ir.native.namespace("iges").unwrap().arenas["entities"]
+        ir.native.namespace("iges").unwrap().arenas()["entities"]
             .iter()
             .find(|entity| entity.field("entity_type") == Some(entity_type.into()))
             .and_then(|entity| entity.field("parameters"))
@@ -1209,7 +1209,7 @@ fn encode_declares_topology_preferences_and_hierarchy_consistently() {
     assert_eq!(parameter(trimmed.ir(), 142, 5), 2);
 
     let brep = regenerate(explicit_tetrahedron_solid_file());
-    let edge_list = brep.ir().native.namespace("iges").unwrap().arenas["entities"]
+    let edge_list = brep.ir().native.namespace("iges").unwrap().arenas()["entities"]
         .iter()
         .find(|entity| entity.field("entity_type") == Some(504.into()))
         .expect("generated B-rep has an edge list");
@@ -1834,7 +1834,7 @@ fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
     let round_trip = IgesCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
-    let entities = &round_trip.ir().native.namespace("iges").unwrap().arenas["entities"];
+    let entities = &round_trip.ir().native.namespace("iges").unwrap().arenas()["entities"];
     let loop_sequences = entities
         .iter()
         .filter(|entity| entity.field("entity_type") == Some(510.into()))

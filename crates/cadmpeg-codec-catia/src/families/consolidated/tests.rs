@@ -968,7 +968,7 @@ fn consolidated_analytic_circle_run_binds_adjacent_carrier() {
     assert_eq!(native.consolidated_circles[0].center_pair, [12.0, 34.0]);
     assert_eq!(native.consolidated_circles[0].range, [0.0, 10.0]);
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store analytic circle binding");
@@ -983,7 +983,7 @@ fn consolidated_analytic_circle_run_binds_adjacent_carrier() {
         .as_mut()
         .expect("analytic circle binding")
         .circle = "missing".to_string();
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid analytic circle binding");

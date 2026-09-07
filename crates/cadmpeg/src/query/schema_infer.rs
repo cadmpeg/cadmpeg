@@ -15,9 +15,9 @@ use serde_json::Value;
 
 use cadmpeg_ir::ids::is_valid_identity;
 
-use super::document::CadirDocument;
+use super::document::{reject_non_cadir, CadirDocument};
 use super::item::{field_cell, ArenaTarget};
-use super::{cell, print_json, Artifact};
+use super::{cell, print_json};
 
 /// Cap on the example cell so a byte array does not flood the table.
 const EXAMPLE_MAX: usize = 80;
@@ -26,22 +26,7 @@ const EXAMPLE_MAX: usize = 80;
 pub(crate) fn run(file: &str, arena: Option<&str>, json: bool) -> Result<()> {
     let path = Path::new(file);
     let bytes = super::read_input(path)?;
-    let artifact = super::detect(&bytes, path)?;
-    match artifact {
-        Artifact::Cadir(_) => {}
-        Artifact::Report(_) => bail!(
-            "{} is a command report; reports have no arenas. Infer native fields \
-             from a decoded CADIR document: cadmpeg dump SOURCE -o doc.json && \
-             cadmpeg query schema doc.json native.<codec>.<arena>",
-            path.display()
-        ),
-        Artifact::Sidecar(_) => bail!(
-            "{} is a decode sidecar (`<stem>.fidelity.json`); sidecars have no \
-             arenas. Run `cadmpeg dump SOURCE -o doc.json && cadmpeg query schema \
-             doc.json native.<codec>.<arena>`",
-            path.display()
-        ),
-    }
+    reject_non_cadir(&bytes, path, "schema")?;
 
     let doc = CadirDocument::from_bytes(&bytes, path)?;
 
@@ -57,10 +42,7 @@ pub(crate) fn run(file: &str, arena: Option<&str>, json: bool) -> Result<()> {
     let entry_count = arena_rec.records.len() as u64;
     let rows = infer_fields(&arena_rec.records, &doc.all_ids());
     if json {
-        print_json(
-            "schema",
-            &json_payload(&target.dotted(), entry_count, &rows),
-        );
+        print_json("schema", json_payload(&target.dotted(), entry_count, &rows));
         return Ok(());
     }
     println!("path\tpresence\ttype\texample\trelation");

@@ -1544,8 +1544,8 @@ fn strict_decode_refuses_a_degraded_composite_carrier_loss() {
     match error {
         cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => {
             assert_eq!(
-                rejection.loss().code.as_str(),
-                IgesLossCode::CompositeCarrierDegraded.kind().as_str()
+                rejection.loss().code.to_string(),
+                IgesLossCode::CompositeCarrierDegraded.kind().to_string()
             );
         }
         other => panic!("expected a shared-gate strict refusal, got {other:?}"),

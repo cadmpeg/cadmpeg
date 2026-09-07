@@ -54,7 +54,7 @@ fn arena_count(result: &cadmpeg_ir::codec::DecodeResult, arena: ExpectedArena) -
             .ir()
             .native
             .namespace("iges")
-            .and_then(|namespace| namespace.arenas.get(name))
+            .and_then(|namespace| namespace.arenas().get(name))
             .map_or(0, Vec::len),
     }
 }
@@ -142,7 +142,7 @@ fn arena_ids(result: &cadmpeg_ir::codec::DecodeResult, arena: ExpectedArena) -> 
             .ir()
             .native
             .namespace("iges")
-            .and_then(|namespace| namespace.arenas.get(name))
+            .and_then(|namespace| namespace.arenas().get(name))
             .into_iter()
             .flatten()
             .map(cadmpeg_ir::NativeRecord::id)
@@ -403,7 +403,7 @@ fn v4_outside_envelope_records_remain_native_without_neutral_projection() {
     assert!(result.ir().model.curves.is_empty());
     assert_eq!(result.ir().model.points.len(), 1);
     let native = result.ir().native.namespace("iges").unwrap();
-    assert_eq!(native.arenas["entities"].len(), 2);
+    assert_eq!(native.arenas()["entities"].len(), 2);
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::EntityOutsideEnvelope.kind()
             && loss.message
@@ -540,7 +540,7 @@ fn boundary_vertex_sewing_native_arena_preserves_source_coordinates() {
         .native
         .namespace("iges")
         .expect("IGES native namespace")
-        .arenas["boundary_vertex_sewing"];
+        .arenas()["boundary_vertex_sewing"];
 
     assert!(records.iter().any(|record| {
         record.fields()["sewn"] == true

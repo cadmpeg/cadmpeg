@@ -15,7 +15,8 @@ use serde::de::{DeserializeSeed, IgnoredAny, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use serde_json::value::RawValue;
 
-use super::{detect, print_json, read_input, Artifact};
+use super::document::reject_non_cadir;
+use super::{print_json, read_input};
 
 /// Input selection for `query item`.
 #[derive(Debug, Args)]
@@ -148,22 +149,7 @@ fn string_id(raw: &RawValue) -> Option<String> {
 /// Runs `query item` against one artifact.
 pub fn run(args: &ItemArgs, output: Output<'_>) -> Result<()> {
     let bytes = read_input(&args.file)?;
-    let artifact = detect(&bytes, &args.file)?;
-    match artifact {
-        Artifact::Cadir(_) => {}
-        Artifact::Report(_) => bail!(
-            "{} is a command report; reports have no arenas. Use \
-             `cadmpeg query findings` / `cadmpeg query losses` on the report, or \
-             `cadmpeg dump SOURCE -o doc.json && cadmpeg query item doc.json ARENA ID`",
-            args.file.display()
-        ),
-        Artifact::Sidecar(_) => bail!(
-            "{} is a decode sidecar (`<stem>.fidelity.json`); sidecars have no \
-             arenas. Run `cadmpeg dump SOURCE -o doc.json && cadmpeg query item \
-             doc.json ARENA ID`",
-            args.file.display()
-        ),
-    }
+    reject_non_cadir(&bytes, &args.file, "item")?;
 
     let target = ArenaTarget::parse(&args.arena)?;
     let text = std::str::from_utf8(&bytes)
@@ -293,7 +279,7 @@ pub(crate) fn emit_values(
     values: &[serde_json::Value],
 ) -> Result<()> {
     if output == Output::Json {
-        print_json(view, &serde_json::Value::Array(values.to_vec()));
+        print_json(view, serde_json::Value::Array(values.to_vec()));
         return Ok(());
     }
     // Empty arena / no matches: empty stdout (no TSV header), exit 0 unless a

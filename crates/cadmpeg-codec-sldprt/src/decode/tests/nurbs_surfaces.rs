@@ -438,7 +438,7 @@ fn strict_rejects_topology_decode_resting_on_untyped_surface() {
         panic!("a strict refusal is a policy class, not a container defect: {error:?}");
     };
     assert!(
-        rejection.loss().code.as_str().starts_with("sldprt/"),
+        rejection.loss().code.to_string().starts_with("sldprt/"),
         "unexpected: {}",
         rejection.loss().code
     );

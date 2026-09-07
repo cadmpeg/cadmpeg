@@ -65,7 +65,7 @@ fn target_of(plan: &ExportPlan) -> Option<String> {
 #[test]
 fn planning_reports_unrepresentable_content_under_strict_write_options() {
     let mut ir = CadIr::empty();
-    ir.native.namespace_mut("f3d").arenas.insert(
+    ir.native.namespace_mut("f3d").arenas_mut().insert(
         "asm_histories".into(),
         vec![cadmpeg_ir::NativeRecord::new(
             "asm-history-0",

@@ -160,7 +160,7 @@ fn document_local_sha256_with_source_and_charge<E>(
 /// at once.
 fn reduced_unknowns(ir: &CadIr, format: &str, source_image_id: &str) -> Vec<NativeRecord> {
     let mut unreadable = false;
-    let mut projected = NativeNamespace::new();
+    let mut projected = NativeNamespace::default();
     projected
         .set_arena_from(
             "unknowns",
@@ -174,7 +174,7 @@ fn reduced_unknowns(ir: &CadIr, format: &str, source_image_id: &str) -> Vec<Nati
         return Vec::new();
     }
     projected
-        .arenas
+        .arenas_mut()
         .remove("unknowns")
         .expect("the unknown arena was just set")
 }
@@ -190,21 +190,7 @@ struct NormalizedDocument<'a> {
     units: CanonicalUnitsWire,
     tolerances: &'a Tolerances,
     model: SortedModel<'a>,
-    native: NormalizedNative<'a>,
-}
-
-/// Native namespaces in canonical order, with one arena substituted.
-#[derive(Serialize)]
-#[serde(transparent)]
-struct NormalizedNative<'a> {
-    namespaces: BTreeMap<&'a str, NormalizedNamespace<'a>>,
-}
-
-/// One native namespace whose arenas are borrowed in canonical record order.
-#[derive(Serialize)]
-#[serde(transparent)]
-struct NormalizedNamespace<'a> {
-    arenas: BTreeMap<&'a str, Vec<&'a NativeRecord>>,
+    native: BTreeMap<&'a str, BTreeMap<&'a str, Vec<&'a NativeRecord>>>,
 }
 
 /// Borrow every native namespace in canonical order, replacing the `format`
@@ -214,28 +200,24 @@ fn normalized_native<'a>(
     native: &'a Native,
     format: &'a str,
     unknowns: &'a [NativeRecord],
-) -> NormalizedNative<'a> {
+) -> BTreeMap<&'a str, BTreeMap<&'a str, Vec<&'a NativeRecord>>> {
     let mut namespaces = native
         .0
         .iter()
         .map(|(name, namespace)| {
             let arenas = namespace
-                .arenas
+                .arenas()
                 .iter()
                 .map(|(arena, records)| (arena.as_str(), sorted_records(records)))
                 .collect();
-            (name.as_str(), NormalizedNamespace { arenas })
+            (name.as_str(), arenas)
         })
-        .collect::<BTreeMap<_, _>>();
-    let namespace = namespaces
+        .collect::<BTreeMap<_, BTreeMap<_, _>>>();
+    namespaces
         .entry(format)
-        .or_insert_with(|| NormalizedNamespace {
-            arenas: BTreeMap::new(),
-        });
-    namespace
-        .arenas
+        .or_default()
         .insert("unknowns", unknowns.iter().collect());
-    NormalizedNative { namespaces }
+    namespaces
 }
 
 /// Borrow `records` in canonical identity order.
@@ -337,7 +319,7 @@ mod tests {
         let mut native = Native::default();
         let namespace = native.namespace_mut("pin");
         namespace
-            .arenas
+            .arenas_mut()
             .insert("records".into(), vec![pinned_record()]);
         native
     }
@@ -445,7 +427,7 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.native = pinned_native();
         let namespace = ir.native.namespace_mut("pin");
-        namespace.arenas.insert(
+        namespace.arenas_mut().insert(
             "unknowns".into(),
             vec![
                 pinned_unknown("pin:test:source-image#0", &[]),
@@ -660,7 +642,7 @@ mod tests {
             )
             .unwrap();
         let namespace = ir.native.namespace_mut("other");
-        namespace.arenas.insert(
+        namespace.arenas_mut().insert(
             "records".into(),
             vec![NativeRecord::new("other:record#0", serde_json::Map::new())],
         );

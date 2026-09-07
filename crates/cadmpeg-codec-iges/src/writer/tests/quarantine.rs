@@ -50,7 +50,7 @@ fn a_quarantine_arena_is_written_as_an_omitted_passthrough_arena() {
         )
         .unwrap();
     assert_eq!(
-        decoded.ir().native.namespace("iges").unwrap().arenas["quarantined_directory_records"]
+        decoded.ir().native.namespace("iges").unwrap().arenas()["quarantined_directory_records"]
             .len(),
         1
     );
@@ -79,7 +79,7 @@ fn a_quarantine_arena_is_written_as_an_omitted_passthrough_arena() {
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     assert_eq!(round_trip.ir().model.points.len(), 1);
-    assert!(round_trip.ir().native.namespace("iges").unwrap().arenas
+    assert!(round_trip.ir().native.namespace("iges").unwrap().arenas()
         ["quarantined_directory_records"]
         .is_empty());
 }

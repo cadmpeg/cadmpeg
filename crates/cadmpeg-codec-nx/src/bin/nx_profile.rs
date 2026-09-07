@@ -412,7 +412,7 @@ fn decode_fixture(path: &Path) -> Result<DecodedFixtureEvidence, Box<dyn std::er
     for loss in &decoded.report().losses {
         if loss.severity >= Severity::Warning {
             *losses.entry(loss.code.category()).or_insert(0) += 1;
-            *loss_codes.entry(loss.code.as_str()).or_insert(0) += 1;
+            *loss_codes.entry(loss.code.to_string()).or_insert(0) += 1;
             *loss_details.entry(loss.message.clone()).or_insert(0) += 1;
         }
     }

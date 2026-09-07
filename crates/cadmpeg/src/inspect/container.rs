@@ -222,12 +222,12 @@ pub fn render_json(listing: &Listing) -> String {
         ),
     };
     let payload = serde_json::json!({
+        "subcommand": "container",
         "container_kind": container_kind,
         "entries": entries,
     });
-    let mut rendered =
-        crate::commands::reporting::command_report_json("inspect container", &payload)
-            .expect("the command report serializes");
+    let mut rendered = crate::commands::reporting::command_report_json("inspect", &payload)
+        .expect("the command report serializes");
     rendered.push('\n');
     rendered
 }

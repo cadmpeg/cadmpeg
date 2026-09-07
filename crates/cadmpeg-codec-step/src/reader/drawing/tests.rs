@@ -203,7 +203,7 @@ fn drawing_associations_preserve_shape_aspects_and_placeholders() {
         .native
         .namespace("step")
         .expect("STEP native namespace")
-        .arenas["drawing_targets"];
+        .arenas()["drawing_targets"];
     assert!(drawing_targets
         .iter()
         .any(|record| record.id() == "step:data:shape_aspect#3"));
@@ -373,7 +373,7 @@ fn drawing_relationships_resolve_unique_wrapper_carriers() {
         .native
         .namespace("step")
         .expect("STEP native namespace")
-        .arenas["drawing_targets"];
+        .arenas()["drawing_targets"];
     assert!(drawing_targets
         .iter()
         .any(|record| record.id() == "step:data:mapped_item#21"));
@@ -416,7 +416,7 @@ fn drawing_relationships_retain_unresolved_wrapper_identity() {
         .native
         .namespace("step")
         .expect("STEP native namespace")
-        .arenas["drawing_targets"];
+        .arenas()["drawing_targets"];
     assert!(drawing_targets
         .iter()
         .any(|record| record.id() == "step:data:mapped_item#8"));

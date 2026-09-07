@@ -359,6 +359,10 @@ pub enum LayerInstance {
 /// primary format has an instance that identifies it inside the containing
 /// document. The wire names the primary explicitly, so the collection carries
 /// its complete identity without an enclosing report's format.
+///
+/// A read rejects a wire whose `extra` repeats a `(format, instance)` key, and
+/// one whose `extra` carries the primary key. The key set on the wire is the
+/// key set of the value, so no layer is silently discarded or overwritten.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DialectLayers {
@@ -377,17 +381,11 @@ impl<'de> Deserialize<'de> for DialectLayers {
         let wire = DialectLayersWire::deserialize(deserializer)?;
         let mut layers = Self::of(wire.primary);
         for layer in wire.extra {
-            if Self::same_key(&layers.primary, &layer) {
-                layers.primary = layer;
-            } else if let Some(existing) = layers
-                .extra
-                .iter_mut()
-                .find(|existing| Self::same_key(existing, &layer))
-            {
-                *existing = layer;
-            } else {
-                layers.extra.push(layer);
-            }
+            layers.insert(layer).map_err(|rejected| {
+                <D::Error as serde::de::Error>::custom(format!(
+                    "duplicate dialect layer key: {rejected:?}"
+                ))
+            })?;
         }
         Ok(layers)
     }
@@ -932,16 +930,32 @@ mod tests {
     }
 
     #[test]
-    fn dialect_layers_deserialization_keeps_the_last_layer_per_key() {
+    fn dialect_layers_deserialization_rejects_a_repeated_key() {
         let serialized = serde_json::json!({
             "primary": layer("rhino"),
             "extra": [layer("acis"), DialectMatch::residual(DialectId::pinned("acis:other"))],
         });
 
-        let layers = serde_json::from_value::<DialectLayers>(serialized).unwrap();
-        assert_eq!(
-            layers.into_parts().1,
-            [DialectMatch::residual(DialectId::pinned("acis:other"))]
+        let error = serde_json::from_value::<DialectLayers>(serialized)
+            .expect_err("a repeated extra layer key is a read error");
+        assert!(
+            error.to_string().contains("duplicate dialect layer key"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn dialect_layers_deserialization_rejects_an_extra_on_the_primary_key() {
+        let serialized = serde_json::json!({
+            "primary": layer("rhino"),
+            "extra": [DialectMatch::residual(DialectId::pinned("rhino:other"))],
+        });
+
+        let error = serde_json::from_value::<DialectLayers>(serialized)
+            .expect_err("an extra layer on the primary key is a read error");
+        assert!(
+            error.to_string().contains("duplicate dialect layer key"),
+            "{error}"
         );
     }
 

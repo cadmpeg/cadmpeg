@@ -98,7 +98,7 @@ fn native_shape(native: &cadmpeg_ir::Native) -> serde_json::Value {
     for (format, namespace) in &native.0 {
         let mut namespace_counts = serde_json::Map::new();
         let mut namespace_shape = serde_json::Map::new();
-        for (arena, records) in &namespace.arenas {
+        for (arena, records) in namespace.arenas() {
             let mut ids = records
                 .iter()
                 .map(|record| record.id().to_owned())

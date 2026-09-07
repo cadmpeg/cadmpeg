@@ -261,7 +261,7 @@ fn decode_drawing_directory_contract_follows_the_declared_dialect() {
     const GLOBAL_V5_0: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
 
     let v4 = decode_drawing_directory_case(GLOBAL_V4, "00000200", true);
-    let v4_drawings = &v4.ir().native.namespace("iges").unwrap().arenas["drawings"];
+    let v4_drawings = &v4.ir().native.namespace("iges").unwrap().arenas()["drawings"];
     assert_eq!(v4_drawings.len(), 1);
     assert!(!v4.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::EntityNotProjected.kind()
@@ -294,7 +294,7 @@ fn decode_drawing_directory_contract_follows_the_declared_dialect() {
 
     let v5_valid = decode_drawing_directory_case(GLOBAL_V5_0, "00000100", false);
     assert_eq!(
-        v5_valid.ir().native.namespace("iges").unwrap().arenas["drawings"].len(),
+        v5_valid.ir().native.namespace("iges").unwrap().arenas()["drawings"].len(),
         1
     );
     assert!(!v5_valid.report().losses.iter().any(|loss| {
@@ -348,7 +348,7 @@ fn decode_view_visibility_use_flag_follows_v4_and_v5_rules() {
                 != Some("directory_entry:D3")
     }));
     assert_eq!(
-        v4.ir().native.namespace("iges").unwrap().arenas["view_visibility"].len(),
+        v4.ir().native.namespace("iges").unwrap().arenas()["view_visibility"].len(),
         1
     );
 
@@ -624,7 +624,7 @@ fn decode_types_orthographic_and_perspective_views() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let views = &result.ir().native.namespace("iges").unwrap().arenas["views"];
+    let views = &result.ir().native.namespace("iges").unwrap().arenas()["views"];
     assert_eq!(views.len(), 3);
     assert_eq!(views[0].fields()["projection"], "orthographic_parallel");
     assert!(views[0].fields()["scale"].is_null());
@@ -721,7 +721,7 @@ fn decode_types_view_visibility_and_display_overrides() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let visibility = &result.ir().native.namespace("iges").unwrap().arenas["view_visibility"];
+    let visibility = &result.ir().native.namespace("iges").unwrap().arenas()["view_visibility"];
     assert_eq!(visibility.len(), 2);
     assert_eq!(visibility[0].fields()["form"], 3);
     assert_eq!(
@@ -762,7 +762,7 @@ fn decode_view_visibility_defaults_omitted_entity_count_and_color() {
         let result = IgesCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
-        let visibility = &result.ir().native.namespace("iges").unwrap().arenas["view_visibility"];
+        let visibility = &result.ir().native.namespace("iges").unwrap().arenas()["view_visibility"];
         let fields = visibility[0].fields();
         assert_eq!(fields["declared_view_count"], 1, "form={form}");
         assert!(fields["declared_entity_count"].is_null(), "form={form}");
@@ -839,7 +839,7 @@ fn decode_view_visibility_entity_count_requirement_follows_dialect() {
         "{:#?}",
         v5.report().losses
     );
-    let visibility = &v5.ir().native.namespace("iges").unwrap().arenas["view_visibility"];
+    let visibility = &v5.ir().native.namespace("iges").unwrap().arenas()["view_visibility"];
     assert_eq!(visibility.len(), 1);
     assert_eq!(
         visibility[0].fields()["displays"].as_array().unwrap().len(),
@@ -860,7 +860,7 @@ fn decode_preserves_ordered_segmented_view_display() {
         )
         .unwrap();
     let segmented =
-        &result.ir().native.namespace("iges").unwrap().arenas["segmented_visibility"][0];
+        &result.ir().native.namespace("iges").unwrap().arenas()["segmented_visibility"][0];
     assert_eq!(segmented.fields()["blocks"].as_array().unwrap().len(), 2);
     assert_eq!(segmented.fields()["blocks"][0]["breakpoint"], 0.5);
     assert_eq!(segmented.fields()["blocks"][0]["color"]["kind"], "omitted");
@@ -882,7 +882,7 @@ fn decode_types_drawing_view_placement_annotations_and_sheet_properties() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let drawing = &result.ir().native.namespace("iges").unwrap().arenas["drawings"][0];
+    let drawing = &result.ir().native.namespace("iges").unwrap().arenas()["drawings"][0];
     assert_eq!(drawing.fields()["form"], 1);
     assert_eq!(
         drawing.fields()["views"][0]["view"],
@@ -914,7 +914,7 @@ fn decode_reports_conflicting_drawing_property_values() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let drawing = &result.ir().native.namespace("iges").unwrap().arenas["drawings"][0];
+    let drawing = &result.ir().native.namespace("iges").unwrap().arenas()["drawings"][0];
 
     assert!(drawing.fields()["size"].is_null());
     assert_eq!(drawing.fields()["ambiguous_property_forms"][0], 16);
@@ -940,7 +940,7 @@ fn decode_types_view_list_with_required_back_pointers() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let view_list = result.ir().native.namespace("iges").unwrap().arenas["associativities"]
+    let view_list = result.ir().native.namespace("iges").unwrap().arenas()["associativities"]
         .iter()
         .find(|value| value.fields()["kind"] == "view_list")
         .unwrap();
@@ -977,7 +977,7 @@ fn decode_types_v4_view_list_with_required_back_pointers() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let view_list = result.ir().native.namespace("iges").unwrap().arenas["associativities"]
+    let view_list = result.ir().native.namespace("iges").unwrap().arenas()["associativities"]
         .iter()
         .find(|value| value.fields()["kind"] == "view_list")
         .unwrap();

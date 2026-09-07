@@ -354,13 +354,13 @@ pub(super) fn extend_native(root: &mut Native, mut component: Native, occurrence
         .copied()
         .chain(std::iter::once("unknowns"))
     {
-        let Some(records) = source.arenas.remove(name) else {
+        let Some(records) = source.arenas_mut().remove(name) else {
             continue;
         };
         if records.is_empty() {
             continue;
         }
-        let arena = target.arenas.entry(name.to_string()).or_default();
+        let arena = target.arenas_mut().entry(name.to_string()).or_default();
         arena.reserve(records.len());
         for record in records {
             arena.push(rescope_record(&record, occurrence));

@@ -129,7 +129,7 @@ pub fn run(file: &Path, mode: FidelityMode<'_>) -> Result<()> {
                 },
                 "retained_records": records,
             });
-            print_json("fidelity", &value);
+            print_json("fidelity", value);
             Ok(())
         }
         FidelityMode::Table => {

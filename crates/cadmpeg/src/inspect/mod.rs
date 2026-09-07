@@ -562,6 +562,7 @@ fn find(args: &FindArgs, needle: Needle<'_>) -> Result<()> {
     let truncated = limit.is_some_and(|max| hits.len() >= max);
     if args.json {
         let payload = serde_json::json!({
+            "subcommand": "find",
             "pattern": described,
             "pattern_bytes": pattern.len(),
             "truncated": truncated,
@@ -569,7 +570,7 @@ fn find(args: &FindArgs, needle: Needle<'_>) -> Result<()> {
         });
         println!(
             "{}",
-            crate::commands::reporting::command_report_json("inspect find", &payload)?
+            crate::commands::reporting::command_report_json("inspect", &payload)?
         );
         return Ok(());
     }

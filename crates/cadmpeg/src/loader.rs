@@ -112,7 +112,7 @@ fn validate_cadir_witnesses(ir: &CadIr) -> anyhow::Result<()> {
     let Some(documents) = ir
         .native
         .namespace("fcstd")
-        .and_then(|namespace| namespace.arenas.get("document"))
+        .and_then(|namespace| namespace.arenas().get("document"))
     else {
         return Ok(());
     };
@@ -158,7 +158,7 @@ mod tests {
             "dialects": null,
         }))
         .unwrap();
-        let sidecar = DecodeSidecar::bind(text.as_bytes(), report, SourceFidelity::default());
+        let mut sidecar = DecodeSidecar::bind(text.as_bytes(), report, SourceFidelity::default());
         std::fs::write(
             ArtifactStore::sidecar_path(&path),
             sidecar.to_canonical_json().unwrap(),
@@ -200,7 +200,7 @@ mod tests {
         ));
         let mut fields = Map::new();
         fields.insert("schema_version".to_owned(), Value::String("3".to_owned()));
-        ir.native.namespace_mut("fcstd").arenas.insert(
+        ir.native.namespace_mut("fcstd").arenas_mut().insert(
             "document".to_owned(),
             vec![NativeRecord::new("document", fields)],
         );

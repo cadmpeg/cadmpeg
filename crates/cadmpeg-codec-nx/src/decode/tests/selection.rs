@@ -1005,8 +1005,8 @@ fn decode_typed_saved_toggle_stream_is_not_retained_as_opaque() {
         .native
         .namespace("nx")
         .expect("NX native namespace");
-    assert_eq!(namespace.arenas["saved_toggle_streams"].len(), 1);
-    assert_eq!(namespace.arenas["saved_toggle_entries"].len(), 1);
+    assert_eq!(namespace.arenas()["saved_toggle_streams"].len(), 1);
+    assert_eq!(namespace.arenas()["saved_toggle_entries"].len(), 1);
     assert!(result.ir().native_unknowns("nx").unwrap().is_empty());
     assert!(result
         .report()

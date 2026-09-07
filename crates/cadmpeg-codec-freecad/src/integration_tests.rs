@@ -224,7 +224,7 @@ fn compatibility_and_refusal_pipeline_keeps_states_atomic() {
         .native
         .namespace("fcstd")
         .unwrap()
-        .arenas
+        .arenas()
         .contains_key("physical_ledger"));
     assert_valid(&result);
 }

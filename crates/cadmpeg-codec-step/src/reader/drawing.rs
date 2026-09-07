@@ -344,7 +344,7 @@ fn add_source_typed_targets(
     }
     let namespace = ir.native.namespace_mut("step");
     namespace
-        .arenas
+        .arenas_mut()
         .entry("drawing_targets".into())
         .or_default()
         .extend(native_targets);

@@ -1495,7 +1495,7 @@ impl F3dNative {
         F3D_CATALOGUE.emit_all(self, namespace)?;
         debug_assert!(F3D_ARENA_NAMES
             .iter()
-            .all(|name| namespace.arenas.contains_key(*name)));
+            .all(|name| namespace.arenas().contains_key(*name)));
         Ok(())
     }
 }

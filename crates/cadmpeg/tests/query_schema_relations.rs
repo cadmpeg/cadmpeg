@@ -20,7 +20,7 @@ fn write(dir: &std::path::Path, name: &str, content: &str) -> std::path::PathBuf
 }
 
 const REL_DOC: &str = r#"{
-  "ir_version": "4",
+  "ir_version": "6",
   "model": {
     "features": [
       {
@@ -70,7 +70,7 @@ fn schema_relation_column_marks_ref_and_refs() {
     assert!(json.status.success());
     let value: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
     assert_eq!(value["command"], "query");
-    let fields = value["schema"]["fields"].as_array().unwrap();
+    let fields = value["payload"]["fields"].as_array().unwrap();
     let by_path: std::collections::BTreeMap<&str, &serde_json::Value> = fields
         .iter()
         .filter_map(|field| field["path"].as_str().map(|path| (path, field)))

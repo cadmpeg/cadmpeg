@@ -286,7 +286,7 @@ fn decode_rejects_closed_shell_with_inconsistent_radial_sense() {
             == "IGES entity type 186 form 0 was not projected: closed shell does not use every edge exactly twice with opposite senses"
     }));
     assert_eq!(
-        result.ir().native.namespace("iges").unwrap().arenas["entities"].len(),
+        result.ir().native.namespace("iges").unwrap().arenas()["entities"].len(),
         28
     );
 }

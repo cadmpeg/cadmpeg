@@ -81,7 +81,8 @@ fn render_settings_userdata_future_payload_retains_complete_record() {
     );
     let result = decode(bytes);
 
-    let render_settings = &result.ir().native.namespace("rhino").unwrap().arenas["render_settings"];
+    let render_settings =
+        &result.ir().native.namespace("rhino").unwrap().arenas()["render_settings"];
     assert_eq!(render_settings.len(), 1);
     let retained = result
         .source_fidelity()

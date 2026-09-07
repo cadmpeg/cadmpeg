@@ -721,7 +721,7 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
         .native
         .namespace("creo")
         .expect("Creo namespace")
-        .arenas["legacy_real_values"];
+        .arenas()["legacy_real_values"];
     assert_eq!(reals.len(), 1);
     assert_eq!(
         reals[0].field("name"),
@@ -736,7 +736,7 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
         .native
         .namespace("creo")
         .expect("Creo namespace")
-        .arenas["legacy_integer_values"];
+        .arenas()["legacy_integer_values"];
     assert_eq!(integers.len(), 1);
     assert_eq!(
         integers[0].field("name"),
@@ -751,7 +751,7 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
         .native
         .namespace("creo")
         .expect("Creo namespace")
-        .arenas["legacy_objects"];
+        .arenas()["legacy_objects"];
     assert_eq!(objects.len(), 1);
     assert_eq!(
         integers[0].field("parent"),
@@ -762,7 +762,7 @@ fn legacy_principal_unit_sets_the_source_length_scale() {
         .native
         .namespace("creo")
         .expect("Creo namespace")
-        .arenas["legacy_string_values"];
+        .arenas()["legacy_string_values"];
     assert_eq!(strings.len(), 2);
     let principal = strings
         .iter()
@@ -858,20 +858,20 @@ fn legacy_numbered_numeric_families_emit_exact_native_values() {
         .native
         .namespace("creo")
         .expect("Creo namespace");
-    assert_eq!(native.arenas["legacy_type_5_values"].len(), 2);
-    assert_eq!(native.arenas["legacy_type_6_values"].len(), 2);
-    assert_eq!(native.arenas["legacy_type_7_values"].len(), 1);
-    assert_eq!(native.arenas["legacy_type_9_values"].len(), 1);
-    assert_eq!(native.arenas["legacy_type_11_values"].len(), 1);
+    assert_eq!(native.arenas()["legacy_type_5_values"].len(), 2);
+    assert_eq!(native.arenas()["legacy_type_6_values"].len(), 2);
+    assert_eq!(native.arenas()["legacy_type_7_values"].len(), 1);
+    assert_eq!(native.arenas()["legacy_type_9_values"].len(), 1);
+    assert_eq!(native.arenas()["legacy_type_11_values"].len(), 1);
     assert_eq!(
-        native.arenas["legacy_type_6_values"]
+        native.arenas()["legacy_type_6_values"]
             .iter()
             .find(|record| record.field("name") == Some(serde_json::json!("six")))
             .and_then(|record| record.field("payload")),
         Some(serde_json::json!({"form": "scalar", "value": 2.0}))
     );
     assert_eq!(
-        native.arenas["legacy_type_11_values"][0].field("payload"),
+        native.arenas()["legacy_type_11_values"][0].field("payload"),
         Some(serde_json::json!({
             "form": "array",
             "dimensions": [1],
@@ -879,8 +879,8 @@ fn legacy_numbered_numeric_families_emit_exact_native_values() {
         }))
     );
     assert_eq!(
-        native.arenas["legacy_type_11_values"][0].field("parent"),
-        Some(serde_json::json!(native.arenas["legacy_objects"][0].id()))
+        native.arenas()["legacy_type_11_values"][0].field("parent"),
+        Some(serde_json::json!(native.arenas()["legacy_objects"][0].id()))
     );
 }
 
@@ -916,23 +916,23 @@ fn legacy_type_3_and_type_4_emit_exact_scalar_bytes() {
         .native
         .namespace("creo")
         .expect("Creo namespace");
-    assert_eq!(native.arenas["legacy_type_3_values"].len(), 2);
-    assert_eq!(native.arenas["legacy_type_4_values"].len(), 1);
+    assert_eq!(native.arenas()["legacy_type_3_values"].len(), 2);
+    assert_eq!(native.arenas()["legacy_type_4_values"].len(), 1);
     assert_eq!(
-        native.arenas["legacy_type_3_values"][0].field("payload"),
+        native.arenas()["legacy_type_3_values"][0].field("payload"),
         Some(serde_json::json!({"form": "null"}))
     );
     assert_eq!(
-        native.arenas["legacy_type_3_values"][1].field("payload"),
+        native.arenas()["legacy_type_3_values"][1].field("payload"),
         Some(serde_json::json!({"form": "utf8", "text": "texture-name"}))
     );
     assert_eq!(
-        native.arenas["legacy_type_4_values"][0].field("payload"),
+        native.arenas()["legacy_type_4_values"][0].field("payload"),
         Some(serde_json::json!({"form": "utf8", "text": "NULL"}))
     );
     assert_eq!(
-        native.arenas["legacy_type_4_values"][0].field("parent"),
-        Some(serde_json::json!(native.arenas["legacy_objects"][0].id()))
+        native.arenas()["legacy_type_4_values"][0].field("parent"),
+        Some(serde_json::json!(native.arenas()["legacy_objects"][0].id()))
     );
 }
 

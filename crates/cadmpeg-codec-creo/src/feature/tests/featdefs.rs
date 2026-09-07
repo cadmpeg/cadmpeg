@@ -45,7 +45,8 @@ fn scan_decodes_featdefs_records_and_parameter_frames() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let definitions = &result.ir().native.namespace("creo").unwrap().arenas["feature_definitions"];
+    let definitions =
+        &result.ir().native.namespace("creo").unwrap().arenas()["feature_definitions"];
     let definition_fields = definitions[0].fields();
     let frames = definition_fields["parameter_frames"]
         .as_array()
@@ -138,7 +139,8 @@ fn scan_decodes_featdefs_feature_local_outlines() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let definitions = &result.ir().native.namespace("creo").unwrap().arenas["feature_definitions"];
+    let definitions =
+        &result.ir().native.namespace("creo").unwrap().arenas()["feature_definitions"];
     let definition_fields = definitions[0].fields();
     let outlines = definition_fields["outlines"].as_array().expect("outlines");
     assert_eq!(outlines.len(), 2);
@@ -406,7 +408,7 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let native_sketch = &result.ir().native.namespace("creo").unwrap().arenas["sketches"][0];
+    let native_sketch = &result.ir().native.namespace("creo").unwrap().arenas()["sketches"][0];
     assert_eq!(
         native_sketch.fields()["segments"][0]["body"]
             .as_array()
@@ -531,7 +533,7 @@ fn scan_retains_typed_special_segment_rows_in_native_sketch_records() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let sketch = &result.ir().native.namespace("creo").unwrap().arenas["sketches"][0];
+    let sketch = &result.ir().native.namespace("creo").unwrap().arenas()["sketches"][0];
     assert_eq!(sketch.fields()["circle_segments"][0]["external_id"], 20);
     assert_eq!(sketch.fields()["circle_segments"][0]["center_id"], 2);
     assert_eq!(
@@ -666,7 +668,7 @@ fn scan_decodes_featdefs_ent_tab_trimmed_entities() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let trim_entities = &result.ir().native.namespace("creo").unwrap().arenas["sketches"][0]
+    let trim_entities = &result.ir().native.namespace("creo").unwrap().arenas()["sketches"][0]
         .fields()["trim_entities"];
     assert_eq!(
         trim_entities.as_array().expect("trim entity array").len(),
@@ -699,7 +701,7 @@ fn scan_decodes_featdefs_vert_tab_entity_pairs() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let trim_vertices = &result.ir().native.namespace("creo").unwrap().arenas["sketches"][0]
+    let trim_vertices = &result.ir().native.namespace("creo").unwrap().arenas()["sketches"][0]
         .fields()["trim_vertices"];
     assert_eq!(
         trim_vertices.as_array().expect("trim vertex array").len(),
@@ -775,8 +777,8 @@ fn scan_decodes_featdefs_generated_entity_order_table() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let order_rows =
-        &result.ir().native.namespace("creo").unwrap().arenas["sketches"][0].fields()["order_rows"];
+    let order_rows = &result.ir().native.namespace("creo").unwrap().arenas()["sketches"][0]
+        .fields()["order_rows"];
     assert_eq!(order_rows.as_array().expect("order row array").len(), 2);
     assert_eq!(order_rows[0]["external_id"], 283);
     assert_eq!(order_rows[1]["internal_id"], 12);
@@ -937,7 +939,7 @@ fn scan_decodes_counted_featdefs_constraint_relations() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let sketch_fields =
-        result.ir().native.namespace("creo").unwrap().arenas["sketches"][0].fields();
+        result.ir().native.namespace("creo").unwrap().arenas()["sketches"][0].fields();
     let headers = sketch_fields["table_headers"]
         .as_array()
         .expect("table headers");
@@ -1063,7 +1065,7 @@ fn scan_decodes_featdefs_saved_line_prototype_and_replay() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let native_saved = &result.ir().native.namespace("creo").unwrap().arenas["sketches"][0]
+    let native_saved = &result.ir().native.namespace("creo").unwrap().arenas()["sketches"][0]
         .fields()["saved_entities"];
     for (native, expected) in native_saved
         .as_array()
@@ -1129,7 +1131,7 @@ fn scan_decodes_featdefs_saved_circular_and_dummy_entities() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let saved = &result.ir().native.namespace("creo").unwrap().arenas["sketches"][0].fields()
+    let saved = &result.ir().native.namespace("creo").unwrap().arenas()["sketches"][0].fields()
         ["saved_entities"];
     assert_eq!(saved.as_array().expect("saved entity array").len(), 3);
     assert_eq!(saved[0]["kind"], "arc");

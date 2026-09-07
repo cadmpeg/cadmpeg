@@ -119,7 +119,7 @@ fn body(
 fn counts_for_ir(ir: &CadIr) -> BTreeMap<String, usize> {
     let mut counts = BTreeMap::new();
     if let Some(namespace) = ir.native.namespace("iges") {
-        if let Some(records) = namespace.arenas.get("entities") {
+        if let Some(records) = namespace.arenas().get("entities") {
             for record in records {
                 if let Some(entity_type) =
                     record.field("entity_type").and_then(|value| value.as_i64())
@@ -3996,7 +3996,7 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
     let Some(namespace) = ir.native.namespace("iges") else {
         return Ok(Vec::new());
     };
-    if let Some((arena, _)) = namespace.arenas.iter().find(|(arena, records)| {
+    if let Some((arena, _)) = namespace.arenas().iter().find(|(arena, records)| {
         !records.is_empty() && !ALLOWED_NATIVE_ARENAS.contains(&arena.as_str())
     }) {
         return Err(CodecError::NotImplemented(format!(
@@ -4004,7 +4004,7 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
         )));
     }
     if let Some(record) = namespace
-        .arenas
+        .arenas()
         .get("entities")
         .into_iter()
         .flatten()
@@ -4056,7 +4056,7 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
             "IGES semantic writer does not encode native entity type {entity_type}"
         )));
     }
-    let mut native_entities = namespace.arenas.get("entities").into_iter().flatten();
+    let mut native_entities = namespace.arenas().get("entities").into_iter().flatten();
     for record in native_entities.clone().filter(|record| {
         let entity_type = record.field("entity_type").and_then(|value| value.as_i64());
         let form = record.field("form").and_then(|value| value.as_i64());
@@ -4160,7 +4160,7 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
         ));
     }
     let mut losses = Vec::new();
-    for (arena, records) in &namespace.arenas {
+    for (arena, records) in namespace.arenas() {
         if records.is_empty() {
             continue;
         }

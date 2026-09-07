@@ -967,7 +967,7 @@ fn native_load_validates_relation_program_instances() {
             .expect("decoded relation-program instance")
             .parameter_dependencies[0]
             .symbol = "#999_".to_string();
-        let mut namespace = cadmpeg_ir::NativeNamespace::new();
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
         malformed_dependencies
             .store(&mut namespace)
             .expect("store malformed relation-program dependencies");
@@ -981,7 +981,7 @@ fn native_load_validates_relation_program_instances() {
             .relation_program_instance_mut()
             .expect("decoded relation-program instance")
             .inputs = Some(Vec::new());
-        let mut namespace = cadmpeg_ir::NativeNamespace::new();
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
         malformed_inputs
             .store(&mut namespace)
             .expect("store malformed relation-program inputs");
@@ -996,7 +996,7 @@ fn native_load_validates_relation_program_instances() {
             .expect("decoded relation-program instance")
             .reference_incidences[0]
             .payload_offset = u64::MAX;
-        let mut namespace = cadmpeg_ir::NativeNamespace::new();
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
         malformed_offset
             .store(&mut namespace)
             .expect("store malformed relation-program incidence offset");
@@ -1018,7 +1018,7 @@ fn native_load_validates_relation_program_instances() {
             .expect("decoded relation-program instance")
             .reference_incidences[0]
             .reference = malformed_reference;
-        let mut namespace = cadmpeg_ir::NativeNamespace::new();
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
         malformed
             .store(&mut namespace)
             .expect("store malformed relation-program incidences");

@@ -90,7 +90,7 @@ pub(super) fn collect_native_ids(ir: &CadIr) -> Vec<(String, &str)> {
         .0
         .iter()
         .flat_map(|(format, namespace)| {
-            namespace.arenas.iter().flat_map(move |(arena, records)| {
+            namespace.arenas().iter().flat_map(move |(arena, records)| {
                 records
                     .iter()
                     .map(move |record| (format!("native.{format}.{arena}"), record.id()))

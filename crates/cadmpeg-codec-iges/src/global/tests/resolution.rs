@@ -319,10 +319,10 @@ fn a_malformed_single_precision_significance_decodes_and_strict_refuses() {
             .unwrap_err();
         match error {
             cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => assert_eq!(
-                rejection.loss().code.as_str(),
+                rejection.loss().code.to_string(),
                 IgesLossCode::GlobalSemanticContextSubstituted
                     .kind()
-                    .as_str()
+                    .to_string()
             ),
             other => panic!("expected a shared-gate strict refusal, got {other:?}"),
         }

@@ -112,7 +112,7 @@ fn text_record(archive: ArchiveVersion, userdata: &[u8]) -> Vec<u8> {
 }
 
 fn annotation(result: &cadmpeg_ir::codec::DecodeResult) -> &cadmpeg_ir::native::NativeRecord {
-    let arena = &result.ir().native.namespace("rhino").unwrap().arenas["annotations"];
+    let arena = &result.ir().native.namespace("rhino").unwrap().arenas()["annotations"];
     assert_eq!(arena.len(), 1);
     &arena[0]
 }

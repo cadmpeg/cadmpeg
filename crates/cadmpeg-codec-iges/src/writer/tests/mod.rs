@@ -522,7 +522,7 @@ fn generated_boundary_records_use_the_declared_dependent_status() {
         ir.native
             .namespace("iges")
             .expect("generated document has the IGES namespace")
-            .arenas["entities"]
+            .arenas()["entities"]
             .iter()
             .find(|entity| entity.field("entity_type") == Some(entity_type.into()))
             .map(|entity| {

@@ -526,7 +526,7 @@ fn decode_transfers_active_datum_cylinder_with_source_namespace() {
             .object_id,
         "ActDatums:8"
     );
-    let cylinders = &result.ir().native.namespace("creo").unwrap().arenas["datum_cylinders"];
+    let cylinders = &result.ir().native.namespace("creo").unwrap().arenas()["datum_cylinders"];
     assert_eq!(cylinders.len(), 1);
     assert_eq!(cylinders[0].fields()["datum_id"], 8);
     assert_eq!(cylinders[0].fields()["radius"], 0.75);
@@ -555,7 +555,7 @@ fn decode_transfers_exact_datum_plane_carrier() {
         .decode(&mut reader, &DecodeOptions::default())
         .unwrap();
     assert!(result.report().geometry_transferred());
-    let records = &result.ir().native.namespace("creo").unwrap().arenas["datum_planes"];
+    let records = &result.ir().native.namespace("creo").unwrap().arenas()["datum_planes"];
     assert_eq!(records[0].fields()["datum_id"], 4);
     assert_eq!(records[0].fields()["owner_feature_id"], 1);
     assert_eq!(records[0].fields()["normal"][1], 1.0);
@@ -653,7 +653,7 @@ fn decode_withholds_competing_standalone_datum_planes() {
             .native
             .namespace("creo")
             .unwrap()
-            .arenas
+            .arenas()
             .get("datum_planes")
             .map_or(0, Vec::len),
         0

@@ -411,36 +411,25 @@ impl CatiaNative {
                 .sort_by_key(|selection| selection.offset);
         }
         let design_objects = design_objects(&graphs, &entity_records);
-        if namespace.arenas.contains_key("design_objects") {
-            let stored: Vec<CatiaDesignObject> = namespace.arena_as("design_objects")?;
-            let stored_by_id = stored
+        let stored: Vec<CatiaDesignObject> = namespace.arena_as("design_objects")?;
+        let stored_by_id = stored
+            .iter()
+            .map(|object| (object.id.as_str(), object))
+            .collect::<HashMap<_, _>>();
+        if stored_by_id.len() != stored.len()
+            || stored.len() != design_objects.len()
+            || design_objects
                 .iter()
-                .map(|object| (object.id.as_str(), object))
-                .collect::<HashMap<_, _>>();
-            if stored_by_id.len() != stored.len()
-                || stored.len() != design_objects.len()
-                || design_objects
-                    .iter()
-                    .any(|object| stored_by_id.get(object.id.as_str()).copied() != Some(object))
-            {
-                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
-                    "stored CATIA design objects disagree with their object graph".to_string(),
-                ));
-            }
+                .any(|object| stored_by_id.get(object.id.as_str()).copied() != Some(object))
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+                "stored CATIA design objects disagree with their object graph".to_string(),
+            ));
         }
-        let mut finjpl_segments: Vec<CatiaFinjplSegment> =
-            if namespace.arenas.contains_key("finjpl_segments") {
-                namespace.arena_as("finjpl_segments")?
-            } else {
-                Vec::new()
-            };
+        let mut finjpl_segments: Vec<CatiaFinjplSegment> = namespace.arena_as("finjpl_segments")?;
         finjpl_segments.sort_by_key(|segment| segment.byte_offset);
         let mut external_references: Vec<CatiaExternalReference> =
-            if namespace.arenas.contains_key("external_references") {
-                namespace.arena_as("external_references")?
-            } else {
-                Vec::new()
-            };
+            namespace.arena_as("external_references")?;
         external_references.sort_by_key(|reference| reference.byte_offset);
         let expected_external_references = external_reference_views(&finjpl_segments);
         if external_references != expected_external_references {
@@ -451,19 +440,10 @@ impl CatiaNative {
         }
         let external_references = expected_external_references;
         let mut legacy_entity_runs: Vec<CatiaLegacyEntityRun> =
-            if namespace.arenas.contains_key("legacy_entity_runs") {
-                namespace.arena_as("legacy_entity_runs")?
-            } else {
-                Vec::new()
-            };
+            namespace.arena_as("legacy_entity_runs")?;
         legacy_entity_runs.sort_by_key(|run| run.byte_offset);
         validate_legacy_entity_runs(&legacy_entity_runs)?;
-        let mut preview_images: Vec<CatiaPreviewImage> =
-            if namespace.arenas.contains_key("preview_images") {
-                namespace.arena_as("preview_images")?
-            } else {
-                Vec::new()
-            };
+        let mut preview_images: Vec<CatiaPreviewImage> = namespace.arena_as("preview_images")?;
         preview_images.sort_by_key(|preview| preview.byte_offset);
         let expected_preview_images = preview_views(&finjpl_segments);
         if preview_images != expected_preview_images {
@@ -481,14 +461,8 @@ impl CatiaNative {
             namespace.arena_as("consolidated_class61_records")?;
         consolidated_class61_records.sort_by_key(|record| record.byte_offset);
         validate_consolidated_class61_records(&consolidated_class61_records)?;
-        let mut consolidated_class5b5c_records: Vec<CatiaConsolidatedClass5b5cRecord> = if namespace
-            .arenas
-            .contains_key("consolidated_class5b5c_records")
-        {
-            namespace.arena_as("consolidated_class5b5c_records")?
-        } else {
-            Vec::new()
-        };
+        let mut consolidated_class5b5c_records: Vec<CatiaConsolidatedClass5b5cRecord> =
+            namespace.arena_as("consolidated_class5b5c_records")?;
         consolidated_class5b5c_records
             .sort_by_key(|record| (record.source_index, record.source_offset));
         validate_consolidated_class5b5c_records(&consolidated_class5b5c_records)?;

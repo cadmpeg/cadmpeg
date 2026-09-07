@@ -396,7 +396,7 @@ fn decode_retains_both_ruled_surface_developability_values_in_native_parameters(
                 &DecodeOptions::default(),
             )
             .unwrap();
-        let entity = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+        let entity = result.ir().native.namespace("iges").unwrap().arenas()["entities"]
             .iter()
             .find(|entity| entity.id() == "iges:entity:directory#5")
             .unwrap();

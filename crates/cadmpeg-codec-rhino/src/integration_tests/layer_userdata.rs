@@ -141,7 +141,7 @@ fn assert_layer_record_retained(
     layer: &[u8],
     message: &str,
 ) {
-    let layers = &result.ir().native.namespace("rhino").unwrap().arenas["layers"];
+    let layers = &result.ir().native.namespace("rhino").unwrap().arenas()["layers"];
     assert_eq!(layers.len(), 1);
     let fields = layers[0].fields();
     assert_eq!(
@@ -216,7 +216,7 @@ fn unstamped_layer_carries_the_parent_link_typed_loss_code() {
     // The same record under a stamp: the parent link is read, so nothing is
     // charged and the layer still reaches the native arena.
     let stamped = decode(document(archive, layer));
-    let layers = &stamped.ir().native.namespace("rhino").unwrap().arenas["layers"];
+    let layers = &stamped.ir().native.namespace("rhino").unwrap().arenas()["layers"];
     assert_eq!(layers.len(), 1);
     assert!(
         !stamped
@@ -244,7 +244,7 @@ fn obsolete_layer_settings_are_consumed_without_typed_layer_fields() {
         let userdata = obsolete_layer_userdata(archive, OBSOLETE_LAYER_SETTINGS, major);
         let layer = layer_record_with_userdata(archive, &userdata);
         let result = decode(document(archive, layer));
-        let layers = &result.ir().native.namespace("rhino").unwrap().arenas["layers"];
+        let layers = &result.ir().native.namespace("rhino").unwrap().arenas()["layers"];
         assert_eq!(layers.len(), 1);
         let fields = layers[0].fields();
         assert_eq!(
@@ -269,7 +269,7 @@ fn malformed_obsolete_layer_settings_are_discarded_without_altering_the_layer() 
     let userdata = malformed_obsolete_layer_userdata(archive, OBSOLETE_LAYER_SETTINGS);
     let layer = layer_record_with_userdata(archive, &userdata);
     let result = decode(document(archive, layer));
-    let layers = &result.ir().native.namespace("rhino").unwrap().arenas["layers"];
+    let layers = &result.ir().native.namespace("rhino").unwrap().arenas()["layers"];
     assert_eq!(layers.len(), 1);
     let fields = layers[0].fields();
     assert_eq!(

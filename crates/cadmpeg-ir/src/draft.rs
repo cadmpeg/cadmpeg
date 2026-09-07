@@ -322,7 +322,7 @@ impl ModelDraft {
             .native
             .0
             .values()
-            .flat_map(|namespace| namespace.arenas.values().flatten())
+            .flat_map(|namespace| namespace.arenas().values().flatten())
         {
             identities.insert(record.id());
         }
@@ -492,7 +492,7 @@ impl CommitSession {
             .native
             .0
             .values()
-            .flat_map(|namespace| namespace.arenas.values().flatten())
+            .flat_map(|namespace| namespace.arenas().values().flatten())
         {
             identities
                 .entry(identity_hash(record.id()))
@@ -744,7 +744,7 @@ mod tests {
     fn commit_session_rejects_native_identity() {
         let identity = "test:native:record#1";
         let mut ir = CadIr::empty();
-        ir.native.namespace_mut("test").arenas.insert(
+        ir.native.namespace_mut("test").arenas_mut().insert(
             "records".into(),
             vec![NativeRecord::new(identity, serde_json::Map::new())],
         );

@@ -272,7 +272,7 @@ fn decode_binds_ordered_visible_surfaces_to_matching_replay_runs() {
         .expect("decode ordered surface replay");
 
     let associations =
-        &result.ir().native.namespace("creo").unwrap().arenas["feature_surface_replays"];
+        &result.ir().native.namespace("creo").unwrap().arenas()["feature_surface_replays"];
     assert_eq!(associations.len(), 4);
     for (association, visible_id, replay_id, ordinal) in [
         (&associations[0], 7, 9, 0),
@@ -420,7 +420,8 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let states = &result.ir().native.namespace("creo").unwrap().arenas["feature_operation_states"];
+    let states =
+        &result.ir().native.namespace("creo").unwrap().arenas()["feature_operation_states"];
     assert_eq!(states.len(), 7);
     let feature_40 = states
         .iter()

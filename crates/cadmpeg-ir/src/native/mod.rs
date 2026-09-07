@@ -226,14 +226,19 @@ impl JsonSchema for NativeRecord {
 #[serde(transparent)]
 pub struct NativeNamespace {
     /// Record arenas keyed by stable arena name.
-    pub arenas: BTreeMap<String, Vec<NativeRecord>>,
+    arenas: BTreeMap<String, Vec<NativeRecord>>,
 }
 
 impl NativeNamespace {
-    /// Construct an empty namespace.
+    /// Return the record arenas keyed by stable arena name.
     #[must_use]
-    pub fn new() -> Self {
-        Self::default()
+    pub fn arenas(&self) -> &BTreeMap<String, Vec<NativeRecord>> {
+        &self.arenas
+    }
+
+    /// Return the record arenas for modification.
+    pub fn arenas_mut(&mut self) -> &mut BTreeMap<String, Vec<NativeRecord>> {
+        &mut self.arenas
     }
 
     /// Replace an arena by serializing codec-owned typed records.

@@ -201,12 +201,11 @@ struct KindProbe {
 #[derive(Deserialize)]
 struct ReportProbe {
     command: String,
-    /// Binary that wrote the report; absent in reports from older builds.
+    /// Binary that wrote the report. Optional: not every report carries one.
     #[serde(default)]
     generator: Option<String>,
     /// `ok` | `refused`.
-    #[serde(default)]
-    status: Option<String>,
+    status: String,
     /// Null on success.
     #[serde(default)]
     refusal: Option<RefusalProbe>,
@@ -367,7 +366,8 @@ mod tests {
 
 /// Lenient CADIR document probe: arena contents are counted, never
 /// materialized, so a large document costs one parse pass and no entity
-/// allocation.
+/// allocation. [`sniff_kind`] has already gated `ir_version` on this build's
+/// [`cadmpeg_ir::IR_VERSION`].
 #[derive(Deserialize)]
 struct CadirProbe {
     ir_version: String,
@@ -376,13 +376,7 @@ struct CadirProbe {
     #[serde(default)]
     model: BTreeMap<String, ArenaLen>,
     #[serde(default)]
-    native: BTreeMap<String, NativeNamespaceProbe>,
-}
-
-#[derive(Deserialize)]
-#[serde(transparent)]
-struct NativeNamespaceProbe {
-    arenas: BTreeMap<String, ArenaLen>,
+    native: BTreeMap<String, BTreeMap<String, ArenaLen>>,
 }
 
 /// Bounded decode-sidecar projection. Retained payload bytes are not
@@ -494,7 +488,20 @@ fn read_input(path: &Path) -> Result<Vec<u8>> {
     }
 }
 
-fn detect(bytes: &[u8], path: &Path) -> Result<Artifact> {
+/// Artifact kind decided from top-level keys alone.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ArtifactKind {
+    Report,
+    Cadir,
+    Sidecar,
+}
+
+/// Decides the artifact kind from top-level keys and gates a CADIR document
+/// on this build's `IR_VERSION`.
+///
+/// The sniff skips every value it does not name, so a view that goes on to
+/// materialize the document pays for one body parse, not two.
+pub(crate) fn sniff_kind(bytes: &[u8], path: &Path) -> Result<ArtifactKind> {
     let sniff: KindProbe = serde_json::from_slice(bytes).with_context(|| {
         format!(
             "{} is not a JSON object; query reads a command report (--report/-o), \
@@ -503,19 +510,20 @@ fn detect(bytes: &[u8], path: &Path) -> Result<Artifact> {
         )
     })?;
     if sniff.command.is_some() && sniff.status.is_some() {
-        let report: ReportProbe = serde_json::from_slice(bytes)
-            .with_context(|| format!("parsing the command report {}", path.display()))?;
-        return Ok(Artifact::Report(Box::new(report)));
+        return Ok(ArtifactKind::Report);
     }
-    if sniff.ir_version.is_some() {
-        let cadir: CadirProbe = serde_json::from_slice(bytes)
-            .with_context(|| format!("parsing the CADIR document {}", path.display()))?;
-        return Ok(Artifact::Cadir(cadir));
+    if let Some(found) = &sniff.ir_version {
+        if found != cadmpeg_ir::IR_VERSION {
+            bail!(
+                "{} has ir_version {found}; this build reads ir_version {}",
+                path.display(),
+                cadmpeg_ir::IR_VERSION
+            );
+        }
+        return Ok(ArtifactKind::Cadir);
     }
     if sniff.ir_sha256.is_some() {
-        let sidecar: SidecarProbe = serde_json::from_slice(bytes)
-            .with_context(|| format!("parsing the decode sidecar {}", path.display()))?;
-        return Ok(Artifact::Sidecar(sidecar));
+        return Ok(ArtifactKind::Sidecar);
     }
     bail!(
         "{} is JSON but not a recognized artifact; query reads a command report \
@@ -523,6 +531,26 @@ fn detect(bytes: &[u8], path: &Path) -> Result<Artifact> {
          (`ir_version` and `model`), or a .fidelity.json decode sidecar (`ir_sha256`)",
         path.display()
     )
+}
+
+fn detect(bytes: &[u8], path: &Path) -> Result<Artifact> {
+    match sniff_kind(bytes, path)? {
+        ArtifactKind::Report => {
+            let report: ReportProbe = serde_json::from_slice(bytes)
+                .with_context(|| format!("parsing the command report {}", path.display()))?;
+            Ok(Artifact::Report(Box::new(report)))
+        }
+        ArtifactKind::Cadir => {
+            let cadir: CadirProbe = serde_json::from_slice(bytes)
+                .with_context(|| format!("parsing the CADIR document {}", path.display()))?;
+            Ok(Artifact::Cadir(cadir))
+        }
+        ArtifactKind::Sidecar => {
+            let sidecar: SidecarProbe = serde_json::from_slice(bytes)
+                .with_context(|| format!("parsing the decode sidecar {}", path.display()))?;
+            Ok(Artifact::Sidecar(sidecar))
+        }
+    }
 }
 
 /// Replaces TSV structure characters in free-form text with spaces.
@@ -534,9 +562,16 @@ fn opt(text: Option<&String>) -> String {
     text.map(|value| cell(value)).unwrap_or_default()
 }
 
-fn print_json(view: &str, payload: &serde_json::Value) {
+/// Prints one view as the shared command-report envelope:
+/// `{"command": "query", "status": "ok", "view": <name>, "payload": <...>}`.
+/// The view name is a value, never a top-level key.
+fn print_json(view: &str, payload: serde_json::Value) {
     let mut body = serde_json::Map::new();
-    body.insert(view.to_owned(), payload.clone());
+    body.insert(
+        "view".to_owned(),
+        serde_json::Value::String(view.to_owned()),
+    );
+    body.insert("payload".to_owned(), payload);
     println!(
         "{}",
         crate::commands::reporting::command_report_json("query", serde_json::Value::Object(body))
@@ -554,9 +589,7 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
     match artifact {
         Artifact::Report(report) => {
             rows.push(("command".to_owned(), cell(&report.command)));
-            if let Some(status) = &report.status {
-                rows.push(("status".to_owned(), cell(status)));
-            }
+            rows.push(("status".to_owned(), cell(&report.status)));
             if let Some(refusal) = &report.refusal {
                 if let Some(stage) = &refusal.stage {
                     rows.push(("refusal_stage".to_owned(), cell(stage)));
@@ -655,19 +688,14 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
                     .sum::<u64>()
                     .to_string(),
             ));
-            for (namespace, probe) in &cadir.native {
+            for (namespace, arenas) in &cadir.native {
                 rows.push((
                     format!("native.{namespace}.arenas"),
-                    probe.arenas.len().to_string(),
+                    arenas.len().to_string(),
                 ));
                 rows.push((
                     format!("native.{namespace}.entities"),
-                    probe
-                        .arenas
-                        .values()
-                        .map(|len| len.0)
-                        .sum::<u64>()
-                        .to_string(),
+                    arenas.values().map(|len| len.0).sum::<u64>().to_string(),
                 ));
             }
         }
@@ -708,7 +736,7 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
                 (field, value)
             })
             .collect();
-        print_json("summary", &serde_json::Value::Object(map));
+        print_json("summary", serde_json::Value::Object(map));
     } else {
         println!("field\tvalue");
         for (field, value) in rows {
@@ -862,7 +890,7 @@ fn coverage(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
         }
     };
     if args.json {
-        print_json("coverage", &counts_json(coverage));
+        print_json("coverage", counts_json(coverage));
     } else {
         println!("measure\tcount");
         for (measure, count) in coverage {
@@ -904,7 +932,7 @@ fn findings(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
                 })
             })
             .collect();
-        print_json("findings", &serde_json::Value::Array(payload));
+        print_json("findings", serde_json::Value::Array(payload));
     } else {
         println!("severity\tcheck\tentity\tmessage");
         for finding in rows {
@@ -957,7 +985,7 @@ fn losses(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
                 })
             })
             .collect();
-        print_json("losses", &serde_json::Value::Array(payload));
+        print_json("losses", serde_json::Value::Array(payload));
     } else {
         println!("severity\tcode\tmessage");
         for loss in rows {
@@ -994,8 +1022,8 @@ fn counts(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
                 .iter()
                 .map(|(arena, len)| ("model".to_owned(), arena.clone(), len.0))
                 .collect();
-            for (namespace, probe) in &cadir.native {
-                for (arena, len) in &probe.arenas {
+            for (namespace, arenas) in &cadir.native {
+                for (arena, len) in arenas {
                     rows.push((format!("native.{namespace}"), arena.clone(), len.0));
                 }
             }
@@ -1004,7 +1032,7 @@ fn counts(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
                 for (namespace, arena, entries) in &rows {
                     map.insert(format!("{namespace}.{arena}"), serde_json::json!(entries));
                 }
-                print_json("counts", &serde_json::Value::Object(map));
+                print_json("counts", serde_json::Value::Object(map));
             } else {
                 println!("namespace\tarena\tentries");
                 for (namespace, arena, entries) in rows {
@@ -1026,7 +1054,7 @@ fn counts(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
                     }
                 };
             if args.json {
-                print_json("counts", &counts_json(entity_counts));
+                print_json("counts", counts_json(entity_counts));
             } else {
                 println!("namespace\tarena\tentries");
                 for (arena, entries) in entity_counts {

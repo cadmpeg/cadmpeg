@@ -122,7 +122,7 @@ fn absent_object_data_keeps_the_legacy_empty_wire_without_a_domain_sentinel() {
         order: 0,
         data: None,
     }];
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     super::install(&mut namespace, &objects, &[], &[]).unwrap();
     assert!(objects[0].data.is_none());
     let records = namespace

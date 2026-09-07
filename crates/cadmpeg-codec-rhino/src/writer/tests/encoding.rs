@@ -78,7 +78,7 @@ fn nonempty_user_string_presentation_is_refused_before_output() {
         let records = ir
             .native
             .namespace_mut("rhino")
-            .arenas
+            .arenas_mut()
             .get_mut("object_presentation")
             .expect("decoded object presentation");
         let original = records.first().expect("decoded object presentation record");
@@ -128,7 +128,7 @@ fn nonempty_mesh_modifier_presentation_is_refused_before_output() {
         let records = ir
             .native
             .namespace_mut("rhino")
-            .arenas
+            .arenas_mut()
             .get_mut("object_presentation")
             .expect("decoded object presentation");
         let original = records.first().expect("decoded object presentation record");
@@ -178,7 +178,7 @@ fn nonempty_layer_per_viewport_settings_are_refused_before_output() {
         let records = ir
             .native
             .namespace_mut("rhino")
-            .arenas
+            .arenas_mut()
             .get_mut("layers")
             .expect("decoded layer presentation");
         let original = records.first().expect("decoded layer presentation record");

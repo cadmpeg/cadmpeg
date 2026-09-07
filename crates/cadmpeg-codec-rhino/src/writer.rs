@@ -779,13 +779,13 @@ fn rewritable_generated_namespace(namespace: &cadmpeg_ir::NativeNamespace) -> bo
         "unknowns",
     ];
     if namespace
-        .arenas
+        .arenas()
         .iter()
         .any(|(name, records)| !records.is_empty() && !REGENERATED.contains(&name.as_str()))
     {
         return false;
     }
-    let opaque = namespace.arenas.get("opaque_records");
+    let opaque = namespace.arenas().get("opaque_records");
     let generated_comment = opaque.is_some_and(|records| {
         records.iter().any(|record| {
             let fields = record.fields();
@@ -811,14 +811,14 @@ fn rewritable_generated_namespace(namespace: &cadmpeg_ir::NativeNamespace) -> bo
         return false;
     }
     if namespace
-        .arenas
+        .arenas()
         .get("layers")
         .is_some_and(|records| records.len() != 1 || !default_native_layer(&records[0]))
     {
         return false;
     }
     if namespace
-        .arenas
+        .arenas()
         .get("object_presentation")
         .is_some_and(|records| {
             records
@@ -828,7 +828,7 @@ fn rewritable_generated_namespace(namespace: &cadmpeg_ir::NativeNamespace) -> bo
     {
         return false;
     }
-    namespace.arenas.get("unknowns").is_none_or(|records| {
+    namespace.arenas().get("unknowns").is_none_or(|records| {
         records.iter().all(|record| {
             record
                 .field("links")

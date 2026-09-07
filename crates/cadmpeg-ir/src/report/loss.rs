@@ -542,11 +542,6 @@ impl LossKind {
         }
     }
 
-    /// Stable display form `namespace/code`.
-    pub fn as_str(&self) -> String {
-        self.to_string()
-    }
-
     /// Returns the subsystem affected by this kind of loss.
     pub const fn category(&self) -> LossCategory {
         self.taxonomy().category()

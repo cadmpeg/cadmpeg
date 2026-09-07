@@ -76,7 +76,7 @@ fn a_token_that_is_not_a_number_quarantines_only_that_parameter_data() {
     let result = decode(bytes);
 
     let native = result.ir().native.namespace("iges").unwrap();
-    let entity = &native.arenas["entities"][0];
+    let entity = &native.arenas()["entities"][0];
     assert_eq!(entity.id(), "iges:entity:directory#1");
     assert_eq!(entity.fields()["entity_type"], 116);
     assert!(entity.fields()["parameter_bytes"]
@@ -86,7 +86,7 @@ fn a_token_that_is_not_a_number_quarantines_only_that_parameter_data() {
     assert!(entity.fields()["parameters"].as_array().unwrap().is_empty());
     assert!(result.ir().model.points.is_empty());
 
-    let quarantined = &native.arenas["quarantined_parameter_records"];
+    let quarantined = &native.arenas()["quarantined_parameter_records"];
     assert_eq!(quarantined.len(), 1);
     assert_eq!(quarantined[0].id(), "iges:quarantine:parameter#1");
     let fields = quarantined[0].fields();
@@ -135,7 +135,7 @@ fn a_first_token_disagreeing_with_the_entity_type_quarantines_the_parameter_data
     let result = decode(point_file("110,1,2,3,0;"));
 
     let native = result.ir().native.namespace("iges").unwrap();
-    let quarantined = &native.arenas["quarantined_parameter_records"];
+    let quarantined = &native.arenas()["quarantined_parameter_records"];
     assert_eq!(quarantined.len(), 1);
     assert_eq!(
         quarantined[0].fields()["defect"],
@@ -170,8 +170,8 @@ fn a_non_null_entity_declaring_zero_cards_gets_a_zero_card_quarantine_record() {
     let result = decode(bytes);
 
     let native = result.ir().native.namespace("iges").unwrap();
-    let quarantined = &native.arenas["quarantined_parameter_records"];
-    assert_eq!(native.arenas["entities"].len(), 2);
+    let quarantined = &native.arenas()["quarantined_parameter_records"];
+    assert_eq!(native.arenas()["entities"].len(), 2);
     assert_eq!(result.ir().model.points.len(), 1);
     assert_eq!(quarantined.len(), 1);
     assert_eq!(quarantined[0].id(), "iges:quarantine:parameter#3");
@@ -204,7 +204,7 @@ fn a_declared_count_of_zero_defers_to_the_back_pointer_census() {
     let result = decode(bytes);
 
     let native = result.ir().native.namespace("iges").unwrap();
-    assert!(native.arenas["quarantined_parameter_records"].is_empty());
+    assert!(native.arenas()["quarantined_parameter_records"].is_empty());
     assert_eq!(result.ir().model.points.len(), 1);
     assert_eq!(result.report().losses.len(), 1);
     assert_eq!(
@@ -228,7 +228,7 @@ fn a_declared_card_that_does_not_exist_quarantines_the_parameter_data() {
     let result = decode(bytes);
 
     let native = result.ir().native.namespace("iges").unwrap();
-    let quarantined = &native.arenas["quarantined_parameter_records"];
+    let quarantined = &native.arenas()["quarantined_parameter_records"];
     assert_eq!(quarantined.len(), 1);
     assert_eq!(quarantined[0].fields()["defect"], "declared-card-missing");
     assert_eq!(quarantined[0].fields()["cards"], 0);
@@ -258,7 +258,7 @@ fn every_token_defect_key_names_its_own_failure() {
         let result = decode(point_file(parameters));
 
         let native = result.ir().native.namespace("iges").unwrap();
-        let quarantined = &native.arenas["quarantined_parameter_records"];
+        let quarantined = &native.arenas()["quarantined_parameter_records"];
         assert_eq!(quarantined.len(), 1, "{defect}");
         assert_eq!(quarantined[0].fields()["defect"], defect);
     }
@@ -294,7 +294,7 @@ fn an_entity_owning_no_card_under_either_rule_is_quarantined() {
     let result = decode(bytes);
 
     let native = result.ir().native.namespace("iges").unwrap();
-    let quarantined = &native.arenas["quarantined_parameter_records"];
+    let quarantined = &native.arenas()["quarantined_parameter_records"];
     assert_eq!(result.ir().model.points.len(), 1);
     assert_eq!(quarantined.len(), 1);
     assert_eq!(quarantined[0].id(), "iges:quarantine:parameter#3");
@@ -319,7 +319,7 @@ fn a_non_ascii_token_byte_quarantines_the_parameter_data() {
     let result = decode(bytes);
 
     let native = result.ir().native.namespace("iges").unwrap();
-    let quarantined = &native.arenas["quarantined_parameter_records"];
+    let quarantined = &native.arenas()["quarantined_parameter_records"];
     assert_eq!(quarantined.len(), 1);
     assert_eq!(quarantined[0].fields()["defect"], "token-not-ascii");
     assert_eq!(
@@ -334,7 +334,7 @@ fn a_record_with_no_delimiter_quarantines_the_parameter_data() {
     let result = decode(point_file("116,1,2,3,0"));
 
     let native = result.ir().native.namespace("iges").unwrap();
-    let quarantined = &native.arenas["quarantined_parameter_records"];
+    let quarantined = &native.arenas()["quarantined_parameter_records"];
     assert_eq!(quarantined.len(), 1);
     assert_eq!(quarantined[0].fields()["defect"], "delimiter-missing");
     assert_eq!(
@@ -372,8 +372,8 @@ fn two_declared_ranges_claiming_one_card_quarantine_both_records() {
     let result = decode(bytes);
 
     let native = result.ir().native.namespace("iges").unwrap();
-    let quarantined = &native.arenas["quarantined_parameter_records"];
-    assert_eq!(native.arenas["entities"].len(), 2);
+    let quarantined = &native.arenas()["quarantined_parameter_records"];
+    assert_eq!(native.arenas()["entities"].len(), 2);
     assert!(result.ir().model.points.is_empty());
     assert_eq!(quarantined.len(), 2);
     for record in quarantined {
@@ -404,8 +404,12 @@ fn a_quarantined_parameter_record_refuses_strict_and_survives_container_only() {
         )
         .unwrap();
     assert_eq!(
-        container_only.ir().native.namespace("iges").unwrap().arenas
-            ["quarantined_parameter_records"]
+        container_only
+            .ir()
+            .native
+            .namespace("iges")
+            .unwrap()
+            .arenas()["quarantined_parameter_records"]
             .len(),
         1
     );
@@ -422,8 +426,8 @@ fn a_quarantined_parameter_record_refuses_strict_and_survives_container_only() {
         .unwrap_err();
     match error {
         cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => assert_eq!(
-            rejection.loss().code.as_str(),
-            IgesLossCode::ParameterDataQuarantined.kind().as_str()
+            rejection.loss().code.to_string(),
+            IgesLossCode::ParameterDataQuarantined.kind().to_string()
         ),
         other => panic!("expected a strict refusal, got {other:?}"),
     }

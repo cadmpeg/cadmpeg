@@ -106,7 +106,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
         return Vec::new();
     };
     let actual_arenas = namespace
-        .arenas
+        .arenas()
         .keys()
         .map(String::as_str)
         .collect::<HashSet<_>>();

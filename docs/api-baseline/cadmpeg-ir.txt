@@ -1,4 +1,4 @@
-# generated at a8fa064a0
+# generated at 52daa3cec
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -4964,11 +4964,11 @@ pub fn cadmpeg_ir::native::Native::loss_counts(&self) -> alloc::vec::Vec<cadmpeg
 pub fn cadmpeg_ir::native::Native::namespace(&self, &str) -> core::option::Option<&cadmpeg_ir::native::NativeNamespace>
 pub fn cadmpeg_ir::native::Native::namespace_mut(&mut self, impl core::convert::Into<alloc::string::String>) -> &mut cadmpeg_ir::native::NativeNamespace
 pub struct cadmpeg_ir::native::NativeNamespace
-pub cadmpeg_ir::native::NativeNamespace::arenas: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::vec::Vec<cadmpeg_ir::native::NativeRecord>>
 impl cadmpeg_ir::native::NativeNamespace
 pub fn cadmpeg_ir::native::NativeNamespace::arena_as<T: serde_core::de::DeserializeOwned>(&self, &str) -> core::result::Result<alloc::vec::Vec<T>, cadmpeg_ir::native::NativeConvertError>
 pub fn cadmpeg_ir::native::NativeNamespace::arena_iter_as<'a, T: serde_core::de::DeserializeOwned + 'a>(&'a self, &str) -> impl core::iter::traits::iterator::Iterator<Item = core::result::Result<T, cadmpeg_ir::native::NativeConvertError>> + 'a
-pub fn cadmpeg_ir::native::NativeNamespace::new() -> Self
+pub fn cadmpeg_ir::native::NativeNamespace::arenas(&self) -> &alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::vec::Vec<cadmpeg_ir::native::NativeRecord>>
+pub fn cadmpeg_ir::native::NativeNamespace::arenas_mut(&mut self) -> &mut alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::vec::Vec<cadmpeg_ir::native::NativeRecord>>
 pub fn cadmpeg_ir::native::NativeNamespace::set_arena<T: serde_core::ser::Serialize>(&mut self, impl core::convert::Into<alloc::string::String>, &[T]) -> core::result::Result<(), cadmpeg_ir::native::NativeConvertError>
 pub fn cadmpeg_ir::native::NativeNamespace::set_arena_from<T: serde_core::ser::Serialize, I: core::iter::traits::collect::IntoIterator<Item = T>>(&mut self, impl core::convert::Into<alloc::string::String>, I) -> core::result::Result<(), cadmpeg_ir::native::NativeConvertError>
 pub struct cadmpeg_ir::native::NativeRecord
@@ -5525,7 +5525,6 @@ pub enum cadmpeg_ir::report::LossKind
 pub cadmpeg_ir::report::LossKind::Namespaced(cadmpeg_ir::report::loss::NamespacedLossKind)
 pub cadmpeg_ir::report::LossKind::Shared(cadmpeg_ir::LossTaxonomy)
 impl cadmpeg_ir::LossKind
-pub fn cadmpeg_ir::LossKind::as_str(&self) -> alloc::string::String
 pub const fn cadmpeg_ir::LossKind::category(&self) -> cadmpeg_ir::LossCategory
 pub const fn cadmpeg_ir::LossKind::default_severity(&self) -> cadmpeg_ir::Severity
 pub fn cadmpeg_ir::LossKind::local_code(&self) -> &str
@@ -6570,9 +6569,6 @@ pub cadmpeg_ir::source_fidelity::FidelityError::Length
 pub cadmpeg_ir::source_fidelity::FidelityError::Length::actual: u64
 pub cadmpeg_ir::source_fidelity::FidelityError::Length::declared: u64
 pub cadmpeg_ir::source_fidelity::FidelityError::Length::id: alloc::string::String
-pub enum cadmpeg_ir::source_fidelity::SourceFidelityParseError
-pub cadmpeg_ir::source_fidelity::SourceFidelityParseError::Fidelity(cadmpeg_ir::source_fidelity::FidelityError)
-pub cadmpeg_ir::source_fidelity::SourceFidelityParseError::Json(serde_json::error::Error)
 pub struct cadmpeg_ir::source_fidelity::DecodeSidecar
 pub cadmpeg_ir::source_fidelity::DecodeSidecar::fidelity: cadmpeg_ir::source_fidelity::SourceFidelity
 pub cadmpeg_ir::source_fidelity::DecodeSidecar::ir_sha256: alloc::string::String
@@ -6582,7 +6578,7 @@ pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::bind(&[u8], cadmpeg_ir::Decod
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::bind_sha256(impl core::convert::Into<alloc::string::String>, cadmpeg_ir::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity) -> Self
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::from_json(&str) -> core::result::Result<Self, cadmpeg_ir::source_fidelity::DecodeSidecarParseError>
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::matches(&self, &[u8]) -> bool
-pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::to_canonical_json(&self) -> core::result::Result<alloc::string::String, serde_json::error::Error>
+pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::to_canonical_json(&mut self) -> core::result::Result<alloc::string::String, serde_json::error::Error>
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::source_fidelity::DecodeSidecar
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub struct cadmpeg_ir::source_fidelity::RetainedSourceRecord
@@ -6595,15 +6591,12 @@ pub fn cadmpeg_ir::source_fidelity::RetainedSourceRecord::retained(impl core::co
 pub fn cadmpeg_ir::source_fidelity::RetainedSourceRecord::sha256(&self) -> &str
 pub fn cadmpeg_ir::source_fidelity::RetainedSourceRecord::stream(&self) -> &str
 pub fn cadmpeg_ir::source_fidelity::RetainedSourceRecord::unavailable(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, u64, u64, impl core::convert::Into<alloc::string::String>) -> Self
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::source_fidelity::RetainedSourceRecord
-pub fn cadmpeg_ir::source_fidelity::RetainedSourceRecord::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub struct cadmpeg_ir::source_fidelity::SourceFidelity
 pub cadmpeg_ir::source_fidelity::SourceFidelity::annotations: cadmpeg_ir::annotations::Annotations
 pub cadmpeg_ir::source_fidelity::SourceFidelity::retained_records: alloc::vec::Vec<cadmpeg_ir::source_fidelity::RetainedSourceRecord>
 impl cadmpeg_ir::source_fidelity::SourceFidelity
 pub fn cadmpeg_ir::source_fidelity::SourceFidelity::attach_native_unknown_records(&mut self, &mut cadmpeg_ir::document::CadIr, &str, impl core::iter::traits::collect::IntoIterator<Item = cadmpeg_ir::unknown::UnknownRecord>) -> core::result::Result<(), cadmpeg_ir::native::NativeConvertError>
 pub fn cadmpeg_ir::source_fidelity::SourceFidelity::finalize(&mut self)
-pub fn cadmpeg_ir::source_fidelity::SourceFidelity::from_json(&str) -> core::result::Result<Self, cadmpeg_ir::source_fidelity::SourceFidelityParseError>
 pub fn cadmpeg_ir::source_fidelity::SourceFidelity::retain_unknown_records(&mut self, &str, impl core::iter::traits::collect::IntoIterator<Item = cadmpeg_ir::unknown::UnknownRecord>)
 pub fn cadmpeg_ir::source_fidelity::SourceFidelity::retained_record(&self, &str) -> core::option::Option<&cadmpeg_ir::source_fidelity::RetainedSourceRecord>
 pub fn cadmpeg_ir::source_fidelity::SourceFidelity::validate(&self) -> core::result::Result<(), cadmpeg_ir::source_fidelity::FidelityError>
@@ -7959,7 +7952,6 @@ pub enum cadmpeg_ir::LossKind
 pub cadmpeg_ir::LossKind::Namespaced(cadmpeg_ir::report::loss::NamespacedLossKind)
 pub cadmpeg_ir::LossKind::Shared(cadmpeg_ir::LossTaxonomy)
 impl cadmpeg_ir::LossKind
-pub fn cadmpeg_ir::LossKind::as_str(&self) -> alloc::string::String
 pub const fn cadmpeg_ir::LossKind::category(&self) -> cadmpeg_ir::LossCategory
 pub const fn cadmpeg_ir::LossKind::default_severity(&self) -> cadmpeg_ir::Severity
 pub fn cadmpeg_ir::LossKind::local_code(&self) -> &str
@@ -8793,7 +8785,7 @@ pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::bind(&[u8], cadmpeg_ir::Decod
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::bind_sha256(impl core::convert::Into<alloc::string::String>, cadmpeg_ir::DecodeReport, cadmpeg_ir::source_fidelity::SourceFidelity) -> Self
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::from_json(&str) -> core::result::Result<Self, cadmpeg_ir::source_fidelity::DecodeSidecarParseError>
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::matches(&self, &[u8]) -> bool
-pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::to_canonical_json(&self) -> core::result::Result<alloc::string::String, serde_json::error::Error>
+pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::to_canonical_json(&mut self) -> core::result::Result<alloc::string::String, serde_json::error::Error>
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::source_fidelity::DecodeSidecar
 pub fn cadmpeg_ir::source_fidelity::DecodeSidecar::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub struct cadmpeg_ir::DesignConfiguration
@@ -9011,11 +9003,11 @@ pub fn cadmpeg_ir::native::Native::loss_counts(&self) -> alloc::vec::Vec<cadmpeg
 pub fn cadmpeg_ir::native::Native::namespace(&self, &str) -> core::option::Option<&cadmpeg_ir::native::NativeNamespace>
 pub fn cadmpeg_ir::native::Native::namespace_mut(&mut self, impl core::convert::Into<alloc::string::String>) -> &mut cadmpeg_ir::native::NativeNamespace
 pub struct cadmpeg_ir::NativeNamespace
-pub cadmpeg_ir::NativeNamespace::arenas: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::vec::Vec<cadmpeg_ir::native::NativeRecord>>
 impl cadmpeg_ir::native::NativeNamespace
 pub fn cadmpeg_ir::native::NativeNamespace::arena_as<T: serde_core::de::DeserializeOwned>(&self, &str) -> core::result::Result<alloc::vec::Vec<T>, cadmpeg_ir::native::NativeConvertError>
 pub fn cadmpeg_ir::native::NativeNamespace::arena_iter_as<'a, T: serde_core::de::DeserializeOwned + 'a>(&'a self, &str) -> impl core::iter::traits::iterator::Iterator<Item = core::result::Result<T, cadmpeg_ir::native::NativeConvertError>> + 'a
-pub fn cadmpeg_ir::native::NativeNamespace::new() -> Self
+pub fn cadmpeg_ir::native::NativeNamespace::arenas(&self) -> &alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::vec::Vec<cadmpeg_ir::native::NativeRecord>>
+pub fn cadmpeg_ir::native::NativeNamespace::arenas_mut(&mut self) -> &mut alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::vec::Vec<cadmpeg_ir::native::NativeRecord>>
 pub fn cadmpeg_ir::native::NativeNamespace::set_arena<T: serde_core::ser::Serialize>(&mut self, impl core::convert::Into<alloc::string::String>, &[T]) -> core::result::Result<(), cadmpeg_ir::native::NativeConvertError>
 pub fn cadmpeg_ir::native::NativeNamespace::set_arena_from<T: serde_core::ser::Serialize, I: core::iter::traits::collect::IntoIterator<Item = T>>(&mut self, impl core::convert::Into<alloc::string::String>, I) -> core::result::Result<(), cadmpeg_ir::native::NativeConvertError>
 pub struct cadmpeg_ir::NativeRecord
@@ -9211,8 +9203,6 @@ pub fn cadmpeg_ir::source_fidelity::RetainedSourceRecord::retained(impl core::co
 pub fn cadmpeg_ir::source_fidelity::RetainedSourceRecord::sha256(&self) -> &str
 pub fn cadmpeg_ir::source_fidelity::RetainedSourceRecord::stream(&self) -> &str
 pub fn cadmpeg_ir::source_fidelity::RetainedSourceRecord::unavailable(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, u64, u64, impl core::convert::Into<alloc::string::String>) -> Self
-impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::source_fidelity::RetainedSourceRecord
-pub fn cadmpeg_ir::source_fidelity::RetainedSourceRecord::deserialize<D: serde_core::de::Deserializer<'de>>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error>
 pub struct cadmpeg_ir::Sketch
 pub cadmpeg_ir::Sketch::configuration: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::Sketch::id: cadmpeg_ir::sketches::SketchId
@@ -9312,7 +9302,6 @@ pub cadmpeg_ir::SourceFidelity::retained_records: alloc::vec::Vec<cadmpeg_ir::so
 impl cadmpeg_ir::source_fidelity::SourceFidelity
 pub fn cadmpeg_ir::source_fidelity::SourceFidelity::attach_native_unknown_records(&mut self, &mut cadmpeg_ir::document::CadIr, &str, impl core::iter::traits::collect::IntoIterator<Item = cadmpeg_ir::unknown::UnknownRecord>) -> core::result::Result<(), cadmpeg_ir::native::NativeConvertError>
 pub fn cadmpeg_ir::source_fidelity::SourceFidelity::finalize(&mut self)
-pub fn cadmpeg_ir::source_fidelity::SourceFidelity::from_json(&str) -> core::result::Result<Self, cadmpeg_ir::source_fidelity::SourceFidelityParseError>
 pub fn cadmpeg_ir::source_fidelity::SourceFidelity::retain_unknown_records(&mut self, &str, impl core::iter::traits::collect::IntoIterator<Item = cadmpeg_ir::unknown::UnknownRecord>)
 pub fn cadmpeg_ir::source_fidelity::SourceFidelity::retained_record(&self, &str) -> core::option::Option<&cadmpeg_ir::source_fidelity::RetainedSourceRecord>
 pub fn cadmpeg_ir::source_fidelity::SourceFidelity::validate(&self) -> core::result::Result<(), cadmpeg_ir::source_fidelity::FidelityError>

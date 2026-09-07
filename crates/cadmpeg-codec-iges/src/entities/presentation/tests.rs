@@ -57,7 +57,7 @@ fn text_template_directory_rules_follow_legacy_and_later_dialects() {
             )
             .unwrap();
         assert_eq!(
-            result.ir().native.namespace("iges").unwrap().arenas["text_templates"].len(),
+            result.ir().native.namespace("iges").unwrap().arenas()["text_templates"].len(),
             1
         );
         assert!(
@@ -322,7 +322,7 @@ fn v4_property_display_fields_are_ignored_by_presentation_projection() {
         )
         .unwrap();
 
-    let properties = &result.ir().native.namespace("iges").unwrap().arenas["product_properties"];
+    let properties = &result.ir().native.namespace("iges").unwrap().arenas()["product_properties"];
     assert_eq!(properties.len(), 1);
     assert!(!result.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::DisplayDataNotProjected.kind()
@@ -513,13 +513,13 @@ fn decode_applies_standard_body_color_and_face_color_override() {
         ));
     assert_eq!(result.ir().model.appearance_bindings.len(), 2);
     let native = result.ir().native.namespace("iges").unwrap();
-    assert_eq!(native.arenas["colors"].len(), 1);
+    assert_eq!(native.arenas()["colors"].len(), 1);
     assert_eq!(
-        native.arenas["colors"][0].id(),
+        native.arenas()["colors"][0].id(),
         "iges:presentation:color#D13"
     );
-    assert_eq!(native.arenas["colors"][0].fields()["red_percent"], 20.0);
-    assert_eq!(native.arenas["display_attributes"].len(), 7);
+    assert_eq!(native.arenas()["colors"][0].fields()["red_percent"], 20.0);
+    assert_eq!(native.arenas()["display_attributes"].len(), 7);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -571,7 +571,7 @@ fn decode_keeps_raw_display_pointers_when_definition_targets_do_not_resolve() {
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    let display = result.ir().native.namespace("iges").unwrap().arenas["display_attributes"]
+    let display = result.ir().native.namespace("iges").unwrap().arenas()["display_attributes"]
         .iter()
         .find(|record| record.id() == "iges:presentation:display-attributes#D1")
         .unwrap();
@@ -606,7 +606,7 @@ fn decode_types_template_and_visible_blank_line_fonts() {
         )
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
-    let line_fonts = &native.arenas["line_fonts"];
+    let line_fonts = &native.arenas()["line_fonts"];
     assert_eq!(line_fonts.len(), 2);
     assert_eq!(line_fonts[0].id(), "iges:presentation:line-font#D3");
     assert_eq!(line_fonts[0].fields()["kind"], "template");
@@ -626,7 +626,7 @@ fn decode_types_template_and_visible_blank_line_fonts() {
             .collect::<Vec<_>>(),
         vec![49, 54]
     );
-    let line_display = native.arenas["display_attributes"]
+    let line_display = native.arenas()["display_attributes"]
         .iter()
         .find(|record| record.id() == "iges:presentation:display-attributes#D7")
         .unwrap();
@@ -730,7 +730,7 @@ fn decode_types_definition_levels_and_directory_level_links() {
         )
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
-    let levels = &native.arenas["definition_levels"];
+    let levels = &native.arenas()["definition_levels"];
     assert_eq!(levels.len(), 1);
     assert_eq!(levels[0].id(), "iges:presentation:definition-levels#D1");
     assert_eq!(levels[0].fields()["declared_count"], 3);
@@ -743,7 +743,7 @@ fn decode_types_definition_levels_and_directory_level_links() {
             .collect::<Vec<_>>(),
         vec![2, 7, 11]
     );
-    let line = native.arenas["display_attributes"]
+    let line = native.arenas()["display_attributes"]
         .iter()
         .find(|record| record.id() == "iges:presentation:display-attributes#D3")
         .unwrap();
@@ -767,7 +767,7 @@ fn decode_resolves_directory_line_weight_to_millimetres() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let display = &result.ir().native.namespace("iges").unwrap().arenas["display_attributes"][0];
+    let display = &result.ir().native.namespace("iges").unwrap().arenas()["display_attributes"][0];
     assert_eq!(display.fields()["line_weight_number"], 1);
     assert_eq!(display.fields()["line_weight_mm"], 1.0);
     assert!(
@@ -798,7 +798,7 @@ fn decode_accepts_v5_relative_directory_line_weights() {
         )
         .unwrap();
 
-    let display = &result.ir().native.namespace("iges").unwrap().arenas["display_attributes"][0];
+    let display = &result.ir().native.namespace("iges").unwrap().arenas()["display_attributes"][0];
     assert_eq!(display.fields()["line_weight_number"], 3);
     assert_eq!(display.fields()["line_weight_mm"], serde_json::Value::Null);
     assert!(!result.report().losses.iter().any(|loss| {
@@ -815,7 +815,7 @@ fn decode_distinguishes_absolute_and_incremental_text_templates() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let templates = &result.ir().native.namespace("iges").unwrap().arenas["text_templates"];
+    let templates = &result.ir().native.namespace("iges").unwrap().arenas()["text_templates"];
     assert_eq!(templates.len(), 2);
     let absolute = templates
         .iter()
@@ -847,7 +847,7 @@ fn decode_preserves_text_font_glyphs_and_supersession() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let fonts = &result.ir().native.namespace("iges").unwrap().arenas["text_fonts"];
+    let fonts = &result.ir().native.namespace("iges").unwrap().arenas()["text_fonts"];
     assert_eq!(fonts.len(), 2);
     let base = fonts
         .iter()
@@ -880,7 +880,7 @@ fn decode_preserves_text_font_glyphs_and_supersession() {
         modification.fields()["characters"][0]["motions"][0]["pen_up"],
         true
     );
-    let template = &result.ir().native.namespace("iges").unwrap().arenas["text_templates"][0];
+    let template = &result.ir().native.namespace("iges").unwrap().arenas()["text_templates"][0];
     assert_eq!(
         template.fields()["font_definition"],
         "iges:presentation:text-font#D3"

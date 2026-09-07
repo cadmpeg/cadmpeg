@@ -63,7 +63,7 @@ impl<'a, M, A, N, E> Catalogue<'a, M, A, N, E> {
         self.rows
     }
 
-    /// Emits every non-empty family through its row function.
+    /// Emits every family through its row function, empty families included.
     pub fn emit_all(&self, model: &M, namespace: &mut N) -> Result<(), NativeConvertError> {
         for row in self.rows {
             (row.emit)(model, row, namespace)?;

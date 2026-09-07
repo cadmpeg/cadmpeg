@@ -188,7 +188,7 @@ fn decode_retains_post_terminate_physical_record() {
         .unwrap();
 
     assert_eq!(
-        result.ir().native.namespace("iges").unwrap().arenas["cards"].len(),
+        result.ir().native.namespace("iges").unwrap().arenas()["cards"].len(),
         8
     );
 }
@@ -221,7 +221,7 @@ fn terminate_card_remainder_is_retained_after_terminate() {
         .unwrap();
 
     assert_eq!(
-        result.ir().native.namespace("iges").unwrap().arenas["cards"].len(),
+        result.ir().native.namespace("iges").unwrap().arenas()["cards"].len(),
         8
     );
 }

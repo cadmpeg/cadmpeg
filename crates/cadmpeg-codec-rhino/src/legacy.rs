@@ -3069,7 +3069,7 @@ mod tests {
             .namespace("rhino")
             .expect("Rhino native namespace");
         let records = namespace
-            .arenas
+            .arenas()
             .get("legacy_v1_records")
             .expect("typed V1 direct arena");
         assert_eq!(records.len(), 8);

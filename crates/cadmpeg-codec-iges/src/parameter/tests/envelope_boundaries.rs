@@ -226,7 +226,7 @@ fn a_back_pointer_naming_another_entry_quarantines_both_records() {
     let native = result.ir().native.namespace("iges").unwrap();
     let losses = &result.report().losses;
     let code = IgesLossCode::ParameterDataQuarantined.kind();
-    assert_eq!(native.arenas["quarantined_parameter_records"].len(), 2);
+    assert_eq!(native.arenas()["quarantined_parameter_records"].len(), 2);
     assert!(result.ir().model.points.is_empty());
     assert_eq!(losses.len(), 2, "{losses:#?}");
     assert!(losses.iter().all(|loss| loss.code == code));
@@ -249,7 +249,7 @@ fn parameter_card_count_includes_comment_card_payload() {
         )
         .unwrap();
 
-    let entity = &result.ir().native.namespace("iges").unwrap().arenas["entities"][0];
+    let entity = &result.ir().native.namespace("iges").unwrap().arenas()["entities"][0];
     let fields = entity.fields();
     assert_eq!(fields["parameter_line_count"], 2);
     let retained_comment = fields["comment"].as_array().unwrap();

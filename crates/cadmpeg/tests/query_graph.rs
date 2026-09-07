@@ -30,7 +30,7 @@ const SIDECAR: &str = r#"{
 }"#;
 
 const BREP_DOC: &str = r#"{
-  "ir_version": "4",
+  "ir_version": "6",
   "model": {
     "bodies": [{"id": "body#1", "regions": ["region#1"]}],
     "regions": [{"id": "region#1", "shells": ["shell#1"]}],
@@ -40,7 +40,7 @@ const BREP_DOC: &str = r#"{
 }"#;
 
 const GRAPH_DOC: &str = r#"{
-  "ir_version": "4",
+  "ir_version": "6",
   "model": {
     "features": [
       {
@@ -152,7 +152,7 @@ fn graph_json_envelope() {
     );
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["command"], "query");
-    let graph = value["graph"].as_array().unwrap();
+    let graph = value["payload"].as_array().unwrap();
     assert_eq!(graph.len(), 2);
     assert_eq!(graph[0]["start"], "model.features#f1");
     assert!(graph[0]["path"].as_array().unwrap().is_empty());
@@ -183,7 +183,7 @@ fn graph_brep_hops_3_reaches_faces() {
         String::from_utf8_lossy(&output.stderr)
     );
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    let ids: Vec<&str> = value["graph"]
+    let ids: Vec<&str> = value["payload"]
         .as_array()
         .unwrap()
         .iter()

@@ -70,8 +70,8 @@ fn ids_use_the_sat_format_scheme() {
 fn native_arenas_live_under_the_sat_namespace() {
     let result = decode_bytes(&text_sphere_stream(1.0));
     let namespace = result.ir().native.namespace(FORMAT).expect("sat namespace");
-    assert!(namespace.arenas.contains_key("face_sidedness"));
-    assert_eq!(namespace.arenas["face_sidedness"].len(), 1);
+    assert!(namespace.arenas().contains_key("face_sidedness"));
+    assert_eq!(namespace.arenas()["face_sidedness"].len(), 1);
 }
 
 #[test]

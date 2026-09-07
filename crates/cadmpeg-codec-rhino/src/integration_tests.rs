@@ -463,7 +463,7 @@ fn registered_userdata_future_payload_is_retained_by_table_owner() {
     let result = decode(bytes);
 
     assert_eq!(result.ir().model.points.len(), 1);
-    let lights = &result.ir().native.namespace("rhino").unwrap().arenas["lights"];
+    let lights = &result.ir().native.namespace("rhino").unwrap().arenas()["lights"];
     assert_eq!(lights.len(), 1);
     assert_eq!(
         lights[0]
@@ -604,7 +604,7 @@ fn registered_material_userdata_future_payload_is_retained_by_table_owner() {
     let result = decode(bytes);
 
     assert_eq!(result.ir().model.points.len(), 1);
-    let materials = &result.ir().native.namespace("rhino").unwrap().arenas["materials"];
+    let materials = &result.ir().native.namespace("rhino").unwrap().arenas()["materials"];
     assert_eq!(materials.len(), 1);
     assert_eq!(
         materials[0]
@@ -745,7 +745,7 @@ fn registered_dimension_style_userdata_future_payload_is_retained_by_table_owner
 
     assert_eq!(result.ir().model.points.len(), 1);
     let dimension_styles =
-        &result.ir().native.namespace("rhino").unwrap().arenas["dimension_styles"];
+        &result.ir().native.namespace("rhino").unwrap().arenas()["dimension_styles"];
     assert_eq!(dimension_styles.len(), 1);
     assert_eq!(
         dimension_styles[0]
@@ -880,7 +880,7 @@ fn material_rdk_userdata_is_retained_as_callback_owned_source() {
     let result = decode(bytes);
 
     assert_eq!(result.ir().model.points.len(), 1);
-    let materials = &result.ir().native.namespace("rhino").unwrap().arenas["materials"];
+    let materials = &result.ir().native.namespace("rhino").unwrap().arenas()["materials"];
     assert_eq!(materials.len(), 1);
     assert_eq!(
         materials[0]
@@ -988,7 +988,7 @@ fn object_user_string_userdata_future_payload_is_retained_with_typed_geometry() 
 
     assert_eq!(result.ir().model.points.len(), 2);
     let presentation =
-        &result.ir().native.namespace("rhino").unwrap().arenas["object_presentation"];
+        &result.ir().native.namespace("rhino").unwrap().arenas()["object_presentation"];
     assert_eq!(presentation.len(), 1);
     assert_ne!(
         presentation[0]
@@ -1432,7 +1432,7 @@ fn mapping_crc_cache_future_payload_retains_texture_mapping_owner() {
     let result = decode(bytes);
 
     let texture_mappings =
-        &result.ir().native.namespace("rhino").unwrap().arenas["texture_mappings"];
+        &result.ir().native.namespace("rhino").unwrap().arenas()["texture_mappings"];
     assert_eq!(texture_mappings.len(), 1);
     assert_eq!(
         texture_mappings[0]

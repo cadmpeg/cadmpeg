@@ -46,25 +46,25 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         .unwrap();
     let original = decoded.ir().native.namespace("f3d").unwrap();
     let typed = crate::native::F3dNative::load(original).unwrap();
-    let mut round_trip = cadmpeg_ir::NativeNamespace::new();
+    let mut round_trip = cadmpeg_ir::NativeNamespace::default();
     typed.store(&mut round_trip).unwrap();
     assert_eq!(typed, crate::native::F3dNative::load(&round_trip).unwrap());
     for name in crate::native::F3D_ARENA_NAMES {
         assert_eq!(
-            round_trip.arenas.get(*name),
-            original.arenas.get(*name),
+            round_trip.arenas().get(*name),
+            original.arenas().get(*name),
             "native arena {name} did not survive a typed round trip"
         );
     }
     assert_eq!(
         round_trip
-            .arenas
+            .arenas()
             .keys()
             .map(String::as_str)
             .collect::<Vec<_>>(),
         crate::native::F3D_ARENA_NAMES
     );
-    for records in round_trip.arenas.values() {
+    for records in round_trip.arenas().values() {
         for record in records {
             let json = serde_json::to_value(record).unwrap();
             assert_eq!(json["id"], record.id());
@@ -85,7 +85,7 @@ fn diff_reports_design_material_assignment_changes() {
     let assignment = &mut edited
         .native
         .namespace_mut("f3d")
-        .arenas
+        .arenas_mut()
         .get_mut("design_material_assignments")
         .unwrap()[0];
     let mut assignment_fields = assignment.fields();

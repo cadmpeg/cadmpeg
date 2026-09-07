@@ -191,7 +191,7 @@ fn decode_preserves_solid_definition_and_instance_identities() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let instances = &result.ir().native.namespace("iges").unwrap().arenas["solid_instances"];
+    let instances = &result.ir().native.namespace("iges").unwrap().arenas()["solid_instances"];
     assert_eq!(instances.len(), 1);
     assert_eq!(instances[0].id(), "iges:product:solid-instance#D3");
     assert_eq!(instances[0].fields()["solid"], "iges:entity:directory#1");
@@ -211,12 +211,12 @@ fn decode_preserves_rectangular_and_circular_pattern_order() {
         )
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
-    let rectangular = &native.arenas["rectangular_arrays"][0];
+    let rectangular = &native.arenas()["rectangular_arrays"][0];
     assert_eq!(rectangular.fields()["base"], "iges:entity:directory#1");
     assert_eq!(rectangular.fields()["columns"], 2);
     assert_eq!(rectangular.fields()["rows"], 3);
     assert_eq!(rectangular.fields()["positions"][0], 2);
-    let circular = &native.arenas["circular_arrays"][0];
+    let circular = &native.arenas()["circular_arrays"][0];
     assert_eq!(circular.fields()["base"], "iges:entity:directory#3");
     assert_eq!(circular.fields()["location_count"], 4);
     assert_eq!(circular.fields()["positions"][0], 1);
@@ -244,7 +244,7 @@ fn decode_distinguishes_all_external_reference_forms_without_resolution() {
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    let references = &result.ir().native.namespace("iges").unwrap().arenas["external_references"];
+    let references = &result.ir().native.namespace("iges").unwrap().arenas()["external_references"];
     assert_eq!(references.len(), 5);
     assert_eq!(
         references[0].fields()["reference_kind"],
@@ -283,14 +283,14 @@ fn decode_preserves_group_order_and_back_pointer_policy() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let groups = &result.ir().native.namespace("iges").unwrap().arenas["groups"];
+    let groups = &result.ir().native.namespace("iges").unwrap().arenas()["groups"];
     assert_eq!(groups.len(), 2);
     assert_eq!(groups[0].fields()["ordered"], true);
     assert_eq!(groups[0].fields()["back_pointers_required"], true);
     assert_eq!(groups[0].fields()["members"][0], "iges:entity:directory#1");
     assert_eq!(groups[1].fields()["ordered"], false);
     assert_eq!(groups[1].fields()["back_pointers_required"], false);
-    let entities = &result.ir().native.namespace("iges").unwrap().arenas["entities"];
+    let entities = &result.ir().native.namespace("iges").unwrap().arenas()["entities"];
     assert_eq!(
         entities[0].fields()["association_links"][0],
         "iges:entity:directory#3"
@@ -333,7 +333,7 @@ fn decode_reports_an_unresolvable_required_trailing_back_pointer() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
-    let member = native.arenas["entities"]
+    let member = native.arenas()["entities"]
         .iter()
         .find(|entity| entity.id() == "iges:entity:directory#3")
         .unwrap();
@@ -388,8 +388,8 @@ fn strict_decode_refuses_an_unresolved_pointer_loss() {
     match error {
         cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => {
             assert_eq!(
-                rejection.loss().code.as_str(),
-                IgesLossCode::PointerUnresolved.kind().as_str()
+                rejection.loss().code.to_string(),
+                IgesLossCode::PointerUnresolved.kind().to_string()
             );
         }
         other => panic!("expected a shared-gate strict refusal, got {other:?}"),
@@ -431,7 +431,7 @@ fn decode_reports_an_ambiguous_required_trailing_back_pointer_boundary() {
             .and_then(|provenance| provenance.tag.as_deref()),
         Some("directory_entry:D3")
     );
-    let member = result.ir().native.namespace("iges").unwrap().arenas["entities"]
+    let member = result.ir().native.namespace("iges").unwrap().arenas()["entities"]
         .iter()
         .find(|entity| entity.id() == "iges:entity:directory#3")
         .unwrap();
@@ -447,7 +447,7 @@ fn decode_types_all_attribute_table_definition_forms() {
         )
         .unwrap();
     let definitions =
-        &result.ir().native.namespace("iges").unwrap().arenas["attribute_table_definitions"];
+        &result.ir().native.namespace("iges").unwrap().arenas()["attribute_table_definitions"];
     assert_eq!(definitions.len(), 3);
     assert_eq!(definitions[0].fields()["form"], 0);
     assert_eq!(
@@ -499,8 +499,8 @@ fn type322_attribute_list_value_follows_the_declared_dialect() {
             result.report().dialects().unwrap().primary().declared()["effective_version"],
             expected_version
         );
-        let definition =
-            &result.ir().native.namespace("iges").unwrap().arenas["attribute_table_definitions"][0];
+        let definition = &result.ir().native.namespace("iges").unwrap().arenas()
+            ["attribute_table_definitions"][0];
         assert_eq!(definition.fields()["attribute_list_type"], 5);
         assert!(!result
             .report()
@@ -540,8 +540,8 @@ fn type322_accepts_no_value_and_not_used_data_types() {
                 &DecodeOptions::default(),
             )
             .unwrap();
-        let definition =
-            &result.ir().native.namespace("iges").unwrap().arenas["attribute_table_definitions"][0];
+        let definition = &result.ir().native.namespace("iges").unwrap().arenas()
+            ["attribute_table_definitions"][0];
         assert_eq!(definition.fields()["attributes"][0]["value_data_type"], 0);
         assert_eq!(definition.fields()["attributes"][1]["value_data_type"], 5);
         assert_eq!(
@@ -616,7 +616,7 @@ fn decode_types_attribute_table_tuple_and_row_major_instances() {
         )
         .unwrap();
     let instances =
-        &result.ir().native.namespace("iges").unwrap().arenas["attribute_table_instances"];
+        &result.ir().native.namespace("iges").unwrap().arenas()["attribute_table_instances"];
     assert_eq!(instances.len(), 2);
     assert_eq!(
         instances[0].fields()["definition"],
@@ -643,7 +643,7 @@ fn decode_ignores_nonnegative_attribute_instance_structure_values() {
         )
         .unwrap();
     let native = result.ir().native.namespace("iges").unwrap();
-    let instances = &native.arenas["attribute_table_instances"];
+    let instances = &native.arenas()["attribute_table_instances"];
 
     assert_eq!(instances.len(), 2);
     for instance in instances {
@@ -651,7 +651,7 @@ fn decode_ignores_nonnegative_attribute_instance_structure_values() {
         assert!(instance.fields()["rows"].as_array().unwrap().is_empty());
     }
     for sequence in [3, 5] {
-        let entity = native.arenas["entities"]
+        let entity = native.arenas()["entities"]
             .iter()
             .find(|entity| entity.id() == format!("iges:entity:directory#{sequence}"))
             .unwrap();
@@ -667,7 +667,7 @@ fn decode_validates_structure_targets_by_source_entity() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let entities = &result.ir().native.namespace("iges").unwrap().arenas["entities"];
+    let entities = &result.ir().native.namespace("iges").unwrap().arenas()["entities"];
     let reference = |sequence: u32| {
         let entity = entities
             .iter()
@@ -707,7 +707,7 @@ fn decode_validates_structure_targets_by_source_entity() {
         })
     }));
 
-    let attribute_instance = result.ir().native.namespace("iges").unwrap().arenas
+    let attribute_instance = result.ir().native.namespace("iges").unwrap().arenas()
         ["attribute_table_instances"]
         .first()
         .unwrap();
@@ -722,7 +722,7 @@ fn decode_links_product_names_and_reference_designators_to_owners() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let properties = &result.ir().native.namespace("iges").unwrap().arenas["product_properties"];
+    let properties = &result.ir().native.namespace("iges").unwrap().arenas()["product_properties"];
     assert_eq!(properties.len(), 2);
     assert_eq!(
         properties[0].fields()["property_kind"],
@@ -738,7 +738,7 @@ fn decode_links_product_names_and_reference_designators_to_owners() {
         properties[1].fields()["owners"][0],
         "iges:entity:directory#1"
     );
-    let owner = &result.ir().native.namespace("iges").unwrap().arenas["entities"][0];
+    let owner = &result.ir().native.namespace("iges").unwrap().arenas()["entities"][0];
     assert!(owner.fields()["association_links"]
         .as_array()
         .unwrap()
@@ -766,7 +766,7 @@ fn decode_types_scalar_and_string_property_forms() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let properties = &result.ir().native.namespace("iges").unwrap().arenas["properties"];
+    let properties = &result.ir().native.namespace("iges").unwrap().arenas()["properties"];
     assert_eq!(properties.len(), 15);
     assert!(properties
         .iter()
@@ -821,7 +821,7 @@ fn decode_admits_v4_region_fill_property() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let property = &result.ir().native.namespace("iges").unwrap().arenas["properties"][0];
+    let property = &result.ir().native.namespace("iges").unwrap().arenas()["properties"][0];
     assert_eq!(property.fields()["form"], 4);
     assert_eq!(property.fields()["property_kind"], "region_fill");
     assert_eq!(property.fields()["fill_code"], 1);
@@ -918,7 +918,7 @@ fn decode_types_grid_group_and_lep_property_forms() {
             .unwrap()
     };
     let grid = decode(grid_property_file());
-    let property = &grid.ir().native.namespace("iges").unwrap().arenas["properties"][0];
+    let property = &grid.ir().native.namespace("iges").unwrap().arenas()["properties"][0];
     assert_eq!(
         property.fields()["property_kind"],
         "uniform_rectangular_grid"
@@ -931,7 +931,7 @@ fn decode_types_grid_group_and_lep_property_forms() {
     );
 
     let group = decode(group_type_property_file());
-    let property = &group.ir().native.namespace("iges").unwrap().arenas["properties"][0];
+    let property = &group.ir().native.namespace("iges").unwrap().arenas()["properties"][0];
     assert_eq!(property.fields()["associativity_type"], 5);
     assert_eq!(property.fields()["owners"][0], "iges:entity:directory#3");
     assert!(
@@ -941,7 +941,7 @@ fn decode_types_grid_group_and_lep_property_forms() {
     );
 
     let lep = decode(lep_property_forms_file());
-    let properties = &lep.ir().native.namespace("iges").unwrap().arenas["properties"];
+    let properties = &lep.ir().native.namespace("iges").unwrap().arenas()["properties"];
     let property = |form| {
         properties
             .iter()
@@ -972,7 +972,7 @@ fn decode_types_tabular_and_generic_data_properties() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let properties = &result.ir().native.namespace("iges").unwrap().arenas["properties"];
+    let properties = &result.ir().native.namespace("iges").unwrap().arenas()["properties"];
     let property = |form| {
         properties
             .iter()
@@ -1009,7 +1009,7 @@ fn decode_types_dimension_drawing_text_and_closure_properties() {
             .unwrap()
     };
     let dimensions = decode(dimension_property_forms_file());
-    let properties = &dimensions.ir().native.namespace("iges").unwrap().arenas["properties"];
+    let properties = &dimensions.ir().native.namespace("iges").unwrap().arenas()["properties"];
     let property = |form| {
         properties
             .iter()
@@ -1069,7 +1069,7 @@ fn decode_types_dimension_drawing_text_and_closure_properties() {
     );
 
     let drawing = decode(drawing_metadata_property_forms_file());
-    let properties = &drawing.ir().native.namespace("iges").unwrap().arenas["properties"];
+    let properties = &drawing.ir().native.namespace("iges").unwrap().arenas()["properties"];
     let approval = properties
         .iter()
         .find(|property| property.fields()["form"] == 32)
@@ -1094,7 +1094,7 @@ fn decode_types_dimension_drawing_text_and_closure_properties() {
     );
 
     let scores = decode(text_score_property_forms_file());
-    let properties = &scores.ir().native.namespace("iges").unwrap().arenas["properties"];
+    let properties = &scores.ir().native.namespace("iges").unwrap().arenas()["properties"];
     for (form, kind, first, last) in [(34, "underscore", 2, 4), (35, "overscore", 3, 5)] {
         let property = properties
             .iter()
@@ -1113,7 +1113,8 @@ fn decode_types_dimension_drawing_text_and_closure_properties() {
     );
 
     let closure = decode(closure_property_file());
-    let property = closure.ir().native.namespace("iges").unwrap().arenas["properties"][0].fields();
+    let property =
+        closure.ir().native.namespace("iges").unwrap().arenas()["properties"][0].fields();
     assert_eq!(property["property_kind"], "closure");
     assert_eq!(property["u"], 0);
     assert_eq!(property["v"], 1);
@@ -1166,7 +1167,7 @@ fn decode_preserves_property_defaults_without_coercing_non_boolean_flags() {
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    let properties = &result.ir().native.namespace("iges").unwrap().arenas["properties"];
+    let properties = &result.ir().native.namespace("iges").unwrap().arenas()["properties"];
     let property = |form| {
         properties
             .iter()
@@ -1195,7 +1196,7 @@ fn decode_preserves_implementor_associativity_class_grammar() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let definition = &result.ir().native.namespace("iges").unwrap().arenas["associativities"][0];
+    let definition = &result.ir().native.namespace("iges").unwrap().arenas()["associativities"][0];
     assert_eq!(definition.fields()["kind"], "definition");
     assert_eq!(definition.fields()["associativity_form"], 5001);
     assert_eq!(definition.fields()["classes"].as_array().unwrap().len(), 2);
@@ -1227,7 +1228,8 @@ fn decode_types_bounded_predefined_associativity_roles() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let associativities = &result.ir().native.namespace("iges").unwrap().arenas["associativities"];
+    let associativities =
+        &result.ir().native.namespace("iges").unwrap().arenas()["associativities"];
     assert_eq!(associativities.len(), 6);
     let parent = associativities
         .iter()
@@ -1294,7 +1296,7 @@ fn decode_preserves_external_logical_reference_index_in_v4_and_v5_profiles() {
                 &DecodeOptions::default(),
             )
             .unwrap();
-        let external_index = result.ir().native.namespace("iges").unwrap().arenas
+        let external_index = result.ir().native.namespace("iges").unwrap().arenas()
             ["associativities"]
             .iter()
             .find(|value| value.fields()["kind"] == "external_reference_index")
@@ -1389,7 +1391,7 @@ fn decode_keeps_nonplane_single_parent_relations_native_and_transfers_the_bounde
             loss.code != IgesLossCode::EntityNotProjected.kind()
                 || !loss.message.contains("IGES entity type 402 form 9")
         }));
-        let association = result.ir().native.namespace("iges").unwrap().arenas["associativities"]
+        let association = result.ir().native.namespace("iges").unwrap().arenas()["associativities"]
             .iter()
             .find(|value| value.fields()["kind"] == "single_parent")
             .expect("generic single-parent association");
@@ -1412,7 +1414,7 @@ fn decode_preserves_legacy_dimensioned_geometry_roles_in_v4_and_v5_profiles() {
                 &DecodeOptions::default(),
             )
             .unwrap();
-        let association = result.ir().native.namespace("iges").unwrap().arenas["associativities"]
+        let association = result.ir().native.namespace("iges").unwrap().arenas()["associativities"]
             .iter()
             .find(|value| value.fields()["kind"] == "dimensioned_geometry")
             .expect("legacy dimensioned-geometry association");
@@ -1460,7 +1462,7 @@ fn decode_rejects_label_display_without_leader() {
             .and_then(|provenance| provenance.tag.as_deref()),
         Some("directory_entry:D5")
     );
-    let label_display = result.ir().native.namespace("iges").unwrap().arenas["associativities"]
+    let label_display = result.ir().native.namespace("iges").unwrap().arenas()["associativities"]
         .iter()
         .find(|associativity| associativity.fields()["kind"] == "label_display")
         .unwrap();
@@ -1475,7 +1477,8 @@ fn decode_preserves_signal_and_piping_flow_class_order() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let associativities = &result.ir().native.namespace("iges").unwrap().arenas["associativities"];
+    let associativities =
+        &result.ir().native.namespace("iges").unwrap().arenas()["associativities"];
     let signal = associativities
         .iter()
         .find(|value| {
@@ -1567,7 +1570,7 @@ fn decode_rejects_a_non_geometry_flow_join_target() {
         .losses
         .iter()
         .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
-    let flow = result.ir().native.namespace("iges").unwrap().arenas["associativities"]
+    let flow = result.ir().native.namespace("iges").unwrap().arenas()["associativities"]
         .iter()
         .find(|value| value.fields()["kind"] == "flow")
         .unwrap();
@@ -1582,7 +1585,8 @@ fn decode_preserves_legacy_signal_text_and_connect_associativities() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let associativities = &result.ir().native.namespace("iges").unwrap().arenas["associativities"];
+    let associativities =
+        &result.ir().native.namespace("iges").unwrap().arenas()["associativities"];
 
     let signal = associativities
         .iter()
@@ -1654,7 +1658,8 @@ fn decode_preserves_v4_legacy_signal_text_and_connect_associativities() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let associativities = &result.ir().native.namespace("iges").unwrap().arenas["associativities"];
+    let associativities =
+        &result.ir().native.namespace("iges").unwrap().arenas()["associativities"];
     for kind in [
         "legacy_signal_string",
         "legacy_text_node",

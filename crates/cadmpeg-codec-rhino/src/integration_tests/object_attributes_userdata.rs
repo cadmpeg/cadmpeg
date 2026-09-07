@@ -129,7 +129,7 @@ fn malformed_payload(archive: ArchiveVersion) -> Vec<u8> {
 fn object_presentation(
     result: &cadmpeg_ir::codec::DecodeResult,
 ) -> &cadmpeg_ir::native::NativeRecord {
-    let arena = &result.ir().native.namespace("rhino").unwrap().arenas["object_presentation"];
+    let arena = &result.ir().native.namespace("rhino").unwrap().arenas()["object_presentation"];
     assert_eq!(arena.len(), 1);
     &arena[0]
 }

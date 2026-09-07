@@ -304,7 +304,7 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
         .native
         .namespace("creo")
         .expect("creo namespace");
-    let definitions = &namespace.arenas["feature_definitions"];
+    let definitions = &namespace.arenas()["feature_definitions"];
     assert_eq!(definitions.len(), 1);
     assert_eq!(definitions[0].id(), "creo:featdefs:feature_definition#40");
     assert_eq!(definitions[0].fields()["definition_id"], 40);
@@ -312,7 +312,7 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
         definitions[0].fields()["body"].as_array().unwrap().len(),
         definition_length
     );
-    let sketches = &namespace.arenas["sketches"];
+    let sketches = &namespace.arenas()["sketches"];
     assert_eq!(sketches.len(), 1);
     assert_eq!(sketches[0].id(), "creo:featdefs:sketch#40");
     assert_eq!(sketches[0].fields()["definition_id"], 40);
@@ -714,7 +714,7 @@ fn decode_retains_bounded_unresolved_dimension_value_tokens() {
     );
     assert_eq!(parameters[2].properties["value_token"], "0104fef2");
 
-    let sketches = &result.ir().native.namespace("creo").unwrap().arenas["sketches"];
+    let sketches = &result.ir().native.namespace("creo").unwrap().arenas()["sketches"];
     let sketch_fields = sketches[0].fields();
     let dimensions = sketch_fields["dimensions"]
         .as_array()
@@ -792,11 +792,11 @@ fn decode_retains_dimensions_from_repeated_feature_definition_ids() {
         .native
         .namespace("creo")
         .expect("creo namespace");
-    let definition_ids = namespace.arenas["feature_definitions"]
+    let definition_ids = namespace.arenas()["feature_definitions"]
         .iter()
         .map(cadmpeg_ir::NativeRecord::id)
         .collect::<BTreeSet<_>>();
-    let sketch_ids = namespace.arenas["sketches"]
+    let sketch_ids = namespace.arenas()["sketches"]
         .iter()
         .map(cadmpeg_ir::NativeRecord::id)
         .collect::<BTreeSet<_>>();
@@ -987,7 +987,7 @@ fn decode_promotes_unnamed_depdb_recipe_into_feature_history() {
         .iter()
         .find(|feature| feature.id.as_str() == "creo:model:feature#8053")
         .expect("recipe feature");
-    let rows = &result.ir().native.namespace("creo").unwrap().arenas["depdb_recipe_rows"];
+    let rows = &result.ir().native.namespace("creo").unwrap().arenas()["depdb_recipe_rows"];
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].fields()["owner_feature_id"], 8053);
     assert_eq!(rows[0].fields()["header"][0], 0);
@@ -1066,7 +1066,7 @@ fn decode_retains_conflicting_recipe_candidates_without_projecting_one() {
         .find(|feature| feature.id.as_str() == "creo:model:feature#8053")
         .expect("native feature");
     let operation_states =
-        &result.ir().native.namespace("creo").unwrap().arenas["feature_operation_states"];
+        &result.ir().native.namespace("creo").unwrap().arenas()["feature_operation_states"];
     assert_eq!(operation_states.len(), 2);
     assert!(operation_states
         .iter()
@@ -1116,7 +1116,7 @@ fn decode_preserves_unowned_depdb_section_instances_with_unique_native_ids() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let records = &result.ir().native.namespace("creo").unwrap().arenas["feature_definitions"];
+    let records = &result.ir().native.namespace("creo").unwrap().arenas()["feature_definitions"];
     let positional_ids = records
         .iter()
         .filter(|record| expected_positional_ids.contains(record.id()))

@@ -565,7 +565,7 @@ fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
                 .ir()
                 .native
                 .namespace("iges")
-                .and_then(|namespace| namespace.arenas.get("entities"))
+                .and_then(|namespace| namespace.arenas().get("entities"))
                 .is_some_and(|entities| {
                     entities.iter().any(|entity| {
                         entity.field("entity_type").and_then(|value| value.as_i64()) == Some(122)

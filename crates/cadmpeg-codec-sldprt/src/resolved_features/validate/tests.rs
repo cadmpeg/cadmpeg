@@ -111,7 +111,7 @@ fn native_validation_rejects_orphan_history_records() {
         .ir_mut()
         .native
         .namespace_mut("sldprt")
-        .arenas
+        .arenas_mut()
         .get_mut("features")
         .unwrap()[0]
         .clone();
@@ -124,7 +124,7 @@ fn native_validation_rejects_orphan_history_records() {
         .ir_mut()
         .native
         .namespace_mut("sldprt")
-        .arenas
+        .arenas_mut()
         .get_mut("features")
         .unwrap()[0] = cadmpeg_ir::NativeRecord::new(orphan.id().to_string(), orphan_fields);
     assert!(

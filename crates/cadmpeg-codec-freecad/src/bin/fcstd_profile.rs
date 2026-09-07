@@ -189,13 +189,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 == Some("cadmpeg L9 edit".to_owned());
         observed.native_arenas.extend(
             namespace
-                .arenas
+                .arenas()
                 .iter()
                 .filter(|(_, records)| !records.is_empty())
                 .map(|(name, _)| name.clone()),
         );
         let has_gui = namespace
-            .arenas
+            .arenas()
             .get("gui_documents")
             .is_some_and(|records| !records.is_empty());
         observed
@@ -352,7 +352,12 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
     let Some(namespace) = ir.native.namespace("fcstd") else {
         return;
     };
-    for record in namespace.arenas.get("carrier_census").into_iter().flatten() {
+    for record in namespace
+        .arenas()
+        .get("carrier_census")
+        .into_iter()
+        .flatten()
+    {
         let fields = record.fields();
         insert_string(&fields, "form", &mut observed.shape_forms);
         insert_map_keys(&fields, "curves_2d", &mut observed.curves_2d);
@@ -360,7 +365,7 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
         insert_map_keys(&fields, "surfaces", &mut observed.surfaces);
         insert_map_keys(&fields, "topology", &mut observed.topology);
     }
-    for record in namespace.arenas.get("applications").into_iter().flatten() {
+    for record in namespace.arenas().get("applications").into_iter().flatten() {
         let fields = record.fields();
         insert_string(&fields, "type_name", &mut observed.application_types);
         if fields.get("inert_payload").and_then(Value::as_bool) == Some(true) {
@@ -385,7 +390,7 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
                 .insert("embedded_payload".into());
         }
     }
-    for record in namespace.arenas.get("drawings").into_iter().flatten() {
+    for record in namespace.arenas().get("drawings").into_iter().flatten() {
         let fields = record.fields();
         insert_string(&fields, "kind", &mut observed.drawing_types);
         if fields
@@ -398,7 +403,12 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
                 .insert("drawing_asset".into());
         }
     }
-    for record in namespace.arenas.get("gui_documents").into_iter().flatten() {
+    for record in namespace
+        .arenas()
+        .get("gui_documents")
+        .into_iter()
+        .flatten()
+    {
         if let Some(states) = record.field("states").as_ref().and_then(Value::as_array) {
             for state in states {
                 if let Some(kind) = state.get("kind").and_then(Value::as_str) {
@@ -410,7 +420,7 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
         }
     }
     for record in namespace
-        .arenas
+        .arenas()
         .get("gui_view_providers")
         .into_iter()
         .flatten()
@@ -422,20 +432,25 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
             observed.presentation_constructs.insert("tree_state".into());
         }
     }
-    for record in namespace.arenas.get("gui_properties").into_iter().flatten() {
+    for record in namespace
+        .arenas()
+        .get("gui_properties")
+        .into_iter()
+        .flatten()
+    {
         if let Some(Value::String(name)) = record.field("name") {
             observed
                 .presentation_constructs
                 .insert(format!("view_property:{name}"));
         }
     }
-    for record in namespace.arenas.get("entries").into_iter().flatten() {
+    for record in namespace.arenas().get("entries").into_iter().flatten() {
         if record.field("role").as_ref().and_then(Value::as_str) == Some("thumbnail") {
             observed.presentation_constructs.insert("thumbnail".into());
         }
     }
     let product_nodes = namespace
-        .arenas
+        .arenas()
         .get("product_nodes")
         .into_iter()
         .flatten()
@@ -484,7 +499,7 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
                 .insert("nested_occurrence".into());
         }
     }
-    for record in namespace.arenas.get("joints").into_iter().flatten() {
+    for record in namespace.arenas().get("joints").into_iter().flatten() {
         let fields = record.fields();
         insert_string(&fields, "kind", &mut observed.joint_kinds);
         if fields
@@ -633,7 +648,7 @@ fn insert_map_keys(
 fn exact_byte_coverage(ir: &CadIr) -> bool {
     ir.native
         .namespace("fcstd")
-        .and_then(|namespace| namespace.arenas.get("byte_coverage"))
+        .and_then(|namespace| namespace.arenas().get("byte_coverage"))
         .is_some_and(|records| {
             records.len() == 1
                 && records[0].field("exact").as_ref().and_then(Value::as_bool) == Some(true)
@@ -646,9 +661,9 @@ fn semantic_fingerprint(mut ir: CadIr) -> Result<String, Box<dyn std::error::Err
         source.attributes.remove("physical_ledger_spans");
     }
     if let Some(namespace) = ir.native.0.get_mut("fcstd") {
-        namespace.arenas.remove("physical_ledger");
-        namespace.arenas.remove("byte_coverage");
-        namespace.arenas.remove("logical_ledger");
+        namespace.arenas_mut().remove("physical_ledger");
+        namespace.arenas_mut().remove("byte_coverage");
+        namespace.arenas_mut().remove("logical_ledger");
     }
     Ok(ir.to_canonical_json()?)
 }
@@ -661,7 +676,7 @@ fn logical_side_entries(
         .namespace("fcstd")
         .ok_or("CADIR has no fcstd namespace")?;
     Ok(namespace
-        .arenas
+        .arenas()
         .get("entries")
         .into_iter()
         .flatten()
@@ -683,7 +698,7 @@ fn property_value_attribute(
 ) -> Option<String> {
     ir.native
         .namespace("fcstd")?
-        .arenas
+        .arenas()
         .get("properties")?
         .iter()
         .find(|record| {
@@ -739,7 +754,7 @@ fn source_less_profile() -> Result<SourceLessWriteProfile, Box<dyn std::error::E
         .namespace("fcstd")
         .ok_or("generated CADIR has no fcstd namespace")?;
     let object_type = namespace
-        .arenas
+        .arenas()
         .get("objects")
         .into_iter()
         .flatten()

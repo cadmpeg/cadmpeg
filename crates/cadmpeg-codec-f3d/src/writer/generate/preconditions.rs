@@ -687,7 +687,7 @@ pub(crate) fn validate_source_less_history_graph(
     let Some(namespace) = target.native.namespace("f3d") else {
         return Ok(());
     };
-    let stored_count = |arena: &str| namespace.arenas.get(arena).map_or(0, Vec::len);
+    let stored_count = |arena: &str| namespace.arenas().get(arena).map_or(0, Vec::len);
     for arena in [
         "asm_histories",
         "asm_delta_states",
@@ -695,7 +695,7 @@ pub(crate) fn validate_source_less_history_graph(
         "asm_entity_changes",
         "asm_history_records",
     ] {
-        if let Some(records) = namespace.arenas.get(arena) {
+        if let Some(records) = namespace.arenas().get(arena) {
             let unique = records
                 .iter()
                 .map(cadmpeg_ir::NativeRecord::id)

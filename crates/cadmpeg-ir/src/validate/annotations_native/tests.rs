@@ -12,8 +12,8 @@ use std::collections::HashSet;
 fn model_entity_wins_when_native_id_collides() {
     let mut ir = unit_cube();
     let id = ir.model.points[0].id.as_str().to_owned();
-    let mut namespace = NativeNamespace::new();
-    namespace.arenas.insert(
+    let mut namespace = NativeNamespace::default();
+    namespace.arenas_mut().insert(
         "records".into(),
         vec![NativeRecord::new(
             id.clone(),
@@ -48,7 +48,7 @@ fn annotation_keys_and_field_paths_are_checked() {
 #[test]
 fn native_topology_link_must_resolve() {
     let mut ir = unit_cube();
-    ir.native.namespace_mut("f3d").arenas.insert(
+    ir.native.namespace_mut("f3d").arenas_mut().insert(
         "sketch_curve_links".into(),
         vec![NativeRecord::new(
             "native:link#0",

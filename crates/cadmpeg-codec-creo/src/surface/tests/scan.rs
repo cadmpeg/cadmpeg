@@ -46,7 +46,7 @@ fn scan_preserves_linear_extrusion_type_variants() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let rows = &result.ir().native.namespace("creo").unwrap().arenas["surface_rows"];
+    let rows = &result.ir().native.namespace("creo").unwrap().arenas()["surface_rows"];
     assert_eq!(rows[0].fields()["surface_variant"], "ruled_surface");
     assert_eq!(rows[1].fields()["surface_variant"], "tabulated_cylinder");
 }
@@ -89,7 +89,7 @@ fn scan_bounds_tabulated_cylinder_cubic_curve_replay() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let native = &result.ir().native.namespace("creo").unwrap().arenas
+    let native = &result.ir().native.namespace("creo").unwrap().arenas()
         ["tabulated_cylinder_curve_replays"][0];
     assert_eq!(native.fields()["surface_id"], 7);
     assert_eq!(native.fields()["control_point_ids"][2], 34);
@@ -204,7 +204,7 @@ fn torus_parameter_trailer_retains_typed_outline_frame() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let native = &result.ir().native.namespace("creo").unwrap().arenas["surface_parameters"][0];
+    let native = &result.ir().native.namespace("creo").unwrap().arenas()["surface_parameters"][0];
     assert_eq!(native.fields()["torus_outline_frame"]["selector"], 80);
     assert_eq!(native.fields()["torus_outline_frame"]["values"][5], 52.5);
 }
@@ -260,7 +260,8 @@ fn torus_parameter_trailer_retains_tagged_radius_overrides() {
         let result = CreoCodec
             .decode(&mut Cursor::new(data), &DecodeOptions::default())
             .expect("decode");
-        let native = &result.ir().native.namespace("creo").unwrap().arenas["surface_parameters"][0];
+        let native =
+            &result.ir().native.namespace("creo").unwrap().arenas()["surface_parameters"][0];
         assert_eq!(
             native.fields()["torus_radius_overrides"]["radius1"],
             0.499_999_999_999_999_94
@@ -342,7 +343,7 @@ fn cone_terminal_half_angle_bounds_the_parameter_body() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let native = &result.ir().native.namespace("creo").unwrap().arenas["surface_parameters"][0];
+    let native = &result.ir().native.namespace("creo").unwrap().arenas()["surface_parameters"][0];
     assert_eq!(
         native.fields()["cone_half_angle_override"]["radians"],
         expected
@@ -690,7 +691,7 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let native = &result.ir().native.namespace("creo").unwrap().arenas["surface_prototypes"][0];
+    let native = &result.ir().native.namespace("creo").unwrap().arenas()["surface_prototypes"][0];
     assert_eq!(native.fields()["declared_family"], "cylinder");
     assert_eq!(native.fields()["family"], "cylinder");
     assert_eq!(native.fields()["parameters"][0]["name"], "local_sys");

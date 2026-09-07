@@ -75,11 +75,10 @@ impl DecodeSidecar {
         self.ir_sha256 == crate::hash::sha256_hex(ir_bytes)
     }
 
-    /// Serializes this sidecar as canonical compact JSON.
-    pub fn to_canonical_json(&self) -> Result<String, serde_json::Error> {
-        let mut canonical = self.clone();
-        canonical.fidelity.finalize();
-        serde_json::to_string(&canonical)
+    /// Finalizes this sidecar and serializes it as canonical compact JSON.
+    pub fn to_canonical_json(&mut self) -> Result<String, serde_json::Error> {
+        self.fidelity.finalize();
+        serde_json::to_string(&*self)
     }
 
     /// Parses a decode sidecar and validates its retained records.
@@ -112,7 +111,7 @@ pub enum DecodeSidecarParseError {
 }
 
 /// Source bytes retained for native recovery or replay.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct RetainedSourceRecord {
     /// Stable record identifier.
@@ -132,17 +131,6 @@ pub struct RetainedSourceRecord {
         with = "crate::bytes::option"
     )]
     #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
-    data: Option<Vec<u8>>,
-}
-
-#[derive(Deserialize)]
-struct RetainedSourceRecordWire {
-    id: String,
-    stream: String,
-    offset: u64,
-    byte_len: u64,
-    sha256: String,
-    #[serde(default, with = "crate::bytes::option")]
     data: Option<Vec<u8>>,
 }
 
@@ -181,17 +169,6 @@ impl RetainedSourceRecord {
             byte_len,
             sha256: sha256.into(),
             data: None,
-        }
-    }
-
-    fn from_wire(wire: RetainedSourceRecordWire) -> Self {
-        Self {
-            id: wire.id,
-            stream: wire.stream,
-            offset: wire.offset,
-            byte_len: wire.byte_len,
-            sha256: wire.sha256,
-            data: wire.data,
         }
     }
 
@@ -237,12 +214,6 @@ impl RetainedSourceRecord {
     #[must_use]
     pub fn data(&self) -> Option<&[u8]> {
         self.data.as_deref()
-    }
-}
-
-impl<'de> Deserialize<'de> for RetainedSourceRecord {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        RetainedSourceRecordWire::deserialize(deserializer).map(Self::from_wire)
     }
 }
 
@@ -407,26 +378,6 @@ impl SourceFidelity {
         }
         Ok(())
     }
-
-    /// Parses and validates a sidecar.
-    pub fn from_json(text: &str) -> Result<Self, SourceFidelityParseError> {
-        let fidelity: Self = serde_json::from_str(text).map_err(SourceFidelityParseError::Json)?;
-        fidelity
-            .validate()
-            .map_err(SourceFidelityParseError::Fidelity)?;
-        Ok(fidelity)
-    }
-}
-
-/// Failure parsing source metadata.
-#[derive(Debug, thiserror::Error)]
-pub enum SourceFidelityParseError {
-    /// Invalid JSON.
-    #[error("invalid source-fidelity JSON: {0}")]
-    Json(serde_json::Error),
-    /// Invalid source metadata.
-    #[error(transparent)]
-    Fidelity(FidelityError),
 }
 
 #[cfg(test)]
@@ -473,7 +424,7 @@ mod tests {
 
     #[test]
     fn decode_sidecar_binds_exact_ir_bytes() {
-        let sidecar = DecodeSidecar::bind(b"cad-ir", report(), SourceFidelity::default());
+        let mut sidecar = DecodeSidecar::bind(b"cad-ir", report(), SourceFidelity::default());
         assert!(sidecar.matches(b"cad-ir"));
         assert!(!sidecar.matches(b"changed"));
 
@@ -490,7 +441,7 @@ mod tests {
 
     #[test]
     fn decode_sidecar_uses_decode_report_dialect_omission_policy() {
-        let sidecar = DecodeSidecar::bind(b"cad-ir", report(), SourceFidelity::default());
+        let mut sidecar = DecodeSidecar::bind(b"cad-ir", report(), SourceFidelity::default());
         let json = sidecar.to_canonical_json().expect("serialize sidecar");
         assert!(json.contains("\"dialects\":null"), "{json}");
         let truncated = json.replace(",\"dialects\":null", "");

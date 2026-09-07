@@ -15,14 +15,14 @@ use crate::validate::validate_neutral;
 fn native_records_use_own_ids_for_counts_diff_and_validation() {
     let left = unit_cube();
     let mut right = left.clone();
-    right.native.namespace_mut("f3d").arenas.insert(
+    right.native.namespace_mut("f3d").arenas_mut().insert(
         "act_guids".into(),
         vec![NativeRecord::new(
             "f3d:test:act-guid#0",
             serde_json::Map::new(),
         )],
     );
-    right.native.namespace_mut("sldprt").arenas.insert(
+    right.native.namespace_mut("sldprt").arenas_mut().insert(
         "configurations".into(),
         vec![NativeRecord::new(
             "sldprt:test:configuration#0",
@@ -58,7 +58,7 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
     right
         .native
         .namespace_mut("sldprt")
-        .arenas
+        .arenas_mut()
         .get_mut("configurations")
         .unwrap()[0] = NativeRecord::new("f3d:test:act-guid#0", serde_json::Map::new());
     right.native.finalize();

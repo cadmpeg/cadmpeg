@@ -43,12 +43,12 @@ fn reference_designator_and_template_default_to_null_in_v4_and_v5() {
             .unwrap();
         let native = result.ir().native.namespace("iges").unwrap();
 
-        assert_eq!(native.arenas["network_definitions"].len(), 1);
-        assert_eq!(native.arenas["network_instances"].len(), 1);
-        let definition = &native.arenas["network_definitions"][0];
+        assert_eq!(native.arenas()["network_definitions"].len(), 1);
+        assert_eq!(native.arenas()["network_instances"].len(), 1);
+        let definition = &native.arenas()["network_definitions"][0];
         assert!(definition.fields()["primary_reference_designator"].is_null());
         assert!(definition.fields()["display_template"].is_null());
-        let instance = &native.arenas["network_instances"][0];
+        let instance = &native.arenas()["network_instances"][0];
         assert_eq!(instance.fields()["type_flag"], 1);
         assert!(instance.fields()["primary_reference_designator"].is_null());
         assert!(instance.fields()["display_template"].is_null());

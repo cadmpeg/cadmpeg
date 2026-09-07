@@ -460,7 +460,7 @@ mod tests {
             tail_len: 0,
             tail_sha256: "0".repeat(64),
         };
-        let mut namespace = NativeNamespace::new();
+        let mut namespace = NativeNamespace::default();
         record.install(&mut namespace).expect("valid test fixture");
         assert_eq!(
             UfrxRecord::read(&namespace).expect("valid test fixture"),
@@ -508,7 +508,7 @@ mod tests {
                 detail: "schema".into(),
             },
         ] {
-            let mut namespace = NativeNamespace::new();
+            let mut namespace = NativeNamespace::default();
             record.install(&mut namespace).expect("valid test fixture");
             assert_eq!(
                 UfrxRecord::read(&namespace).expect("valid test fixture"),

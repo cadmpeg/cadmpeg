@@ -68,7 +68,7 @@ fn decode_preserves_general_note_text_runs_and_new_note_control_codes() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let annotations = &result.ir().native.namespace("iges").unwrap().arenas["annotations"];
+    let annotations = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"];
     assert_eq!(annotations.len(), 2);
     assert_eq!(annotations[0].fields()["kind"], "general_note");
     assert_eq!(
@@ -146,7 +146,7 @@ fn decode_accepts_and_retains_v5_0_kanji_general_note() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let annotations = &result.ir().native.namespace("iges").unwrap().arenas["annotations"];
+    let annotations = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"];
     assert_eq!(
         annotations[0].fields()["strings"][0]["text"],
         serde_json::json!([51, 52, 52, 49, 51, 66, 55, 65])
@@ -180,7 +180,7 @@ fn decode_rejects_malformed_v5_0_kanji_general_note_text() {
             "text {text:?}: {:#?}",
             result.report().losses
         );
-        let annotations = &result.ir().native.namespace("iges").unwrap().arenas["annotations"];
+        let annotations = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"];
         assert_eq!(
             annotations[0].fields()["strings"][0]["text"],
             serde_json::json!(text.as_bytes())
@@ -213,7 +213,7 @@ fn decode_applies_new_general_note_defaults_with_positive_metrics() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let annotation = &result.ir().native.namespace("iges").unwrap().arenas["annotations"][0];
+    let annotation = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"][0];
     assert_eq!(annotation.fields()["kind"], "new_general_note");
     assert_eq!(annotation.fields()["strings"][0]["fixed_or_variable"], 0);
     assert!(annotation.fields()["strings"][0]["control_codes"].is_null());
@@ -232,7 +232,7 @@ fn decode_applies_variable_spacing_default() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let annotation = &result.ir().native.namespace("iges").unwrap().arenas["annotations"][0];
+    let annotation = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"][0];
     assert_eq!(annotation.fields()["strings"][0]["fixed_or_variable"], 1);
     assert!(annotation.fields()["strings"][0]["character_spacing"].is_null());
     assert!(
@@ -368,7 +368,7 @@ fn decode_rejects_new_general_note_character_set_outside_table() {
             result.report().losses
         );
         assert_eq!(
-            result.ir().native.namespace("iges").unwrap().arenas["annotations"].len(),
+            result.ir().native.namespace("iges").unwrap().arenas()["annotations"].len(),
             1
         );
     }
@@ -457,7 +457,7 @@ fn decode_rejects_negative_text_box_dimensions_at_cadir_boundary() {
         )
         .unwrap();
 
-    let annotations = &result.ir().native.namespace("iges").unwrap().arenas["annotations"];
+    let annotations = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"];
     assert_eq!(annotations.len(), 2);
     assert!(result.ir().model.semantic_annotations.is_empty());
     assert!(
@@ -920,7 +920,7 @@ fn decode_types_every_leader_arrow_form_and_segment_chain() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let annotations = &result.ir().native.namespace("iges").unwrap().arenas["annotations"];
+    let annotations = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"];
     assert_eq!(annotations.len(), 12);
     let mut forms = Vec::new();
     for annotation in annotations {
@@ -964,7 +964,7 @@ fn decode_types_dimension_component_roles_for_every_admitted_form() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let annotations = &result.ir().native.namespace("iges").unwrap().arenas["annotations"];
+    let annotations = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"];
     let kinds = annotations
         .iter()
         .filter_map(|annotation| annotation.fields()["kind"].as_str().map(str::to_owned))
@@ -1030,7 +1030,7 @@ fn decode_types_angular_curve_diameter_flag_and_label_annotations() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let annotations = &result.ir().native.namespace("iges").unwrap().arenas["annotations"];
+    let annotations = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"];
     for kind in [
         "angular_dimension",
         "curve_dimension",
@@ -1057,7 +1057,7 @@ fn decode_types_general_symbol_components_and_section_fill_definition() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let annotations = &result.ir().native.namespace("iges").unwrap().arenas["annotations"];
+    let annotations = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"];
     let symbol = annotations
         .iter()
         .find(|annotation| annotation.fields()["kind"] == "general_symbol")
@@ -1099,7 +1099,7 @@ fn decode_general_symbol_standard_forms_preserves_form_in_iges_4_0_and_5_0() {
                     &DecodeOptions::default(),
                 )
                 .unwrap();
-            let symbol = result.ir().native.namespace("iges").unwrap().arenas["annotations"]
+            let symbol = result.ir().native.namespace("iges").unwrap().arenas()["annotations"]
                 .iter()
                 .find(|annotation| annotation.fields()["kind"] == "general_symbol")
                 .unwrap();
@@ -1132,7 +1132,7 @@ fn decode_general_symbol_implementor_form_is_admitted_in_iges_5_0() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let symbol = result.ir().native.namespace("iges").unwrap().arenas["annotations"]
+    let symbol = result.ir().native.namespace("iges").unwrap().arenas()["annotations"]
         .iter()
         .find(|annotation| annotation.fields()["kind"] == "general_symbol")
         .unwrap();
@@ -1152,7 +1152,7 @@ fn decode_type230_form1_preserves_inverted_crosshatching() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let annotations = &result.ir().native.namespace("iges").unwrap().arenas["annotations"];
+    let annotations = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"];
     assert_eq!(annotations.len(), 1);
     let section = &annotations[0];
     assert_eq!(section.fields()["kind"], "sectioned_area");
@@ -1179,7 +1179,7 @@ fn decode_type230_form1_is_admitted_in_iges_5_0() {
         result.report().dialects().unwrap().primary().declared()["effective_version"],
         "5.0"
     );
-    let section = &result.ir().native.namespace("iges").unwrap().arenas["annotations"][0];
+    let section = &result.ir().native.namespace("iges").unwrap().arenas()["annotations"][0];
     assert_eq!(section.fields()["form"], 1);
     assert!(section.fields()["boundary"].is_null());
     assert_eq!(section.fields()["islands"][0], "iges:entity:directory#1");

@@ -12,7 +12,7 @@ use anyhow::{bail, Context, Result};
 use serde_json::Value;
 
 use super::item::{ambiguous_message, miss_id_message, unknown_arena_message, ArenaTarget};
-use super::{detect, read_input, Artifact};
+use super::{read_input, sniff_kind, ArtifactKind};
 
 /// One addressable JSON-array arena and its records.
 #[derive(Debug, Clone)]
@@ -210,17 +210,21 @@ fn resolve_one(request: &str, indexed: &[(Option<&str>, usize)]) -> Result<usize
     }
 }
 
+/// Admits a CADIR document of this build's `IR_VERSION` and refuses the other
+/// two artifact kinds with the dump-then-query recipe for `view`.
+///
+/// Decides on the top-level keys alone, so a caller that goes on to index the
+/// document parses the body once.
 pub(crate) fn reject_non_cadir(bytes: &[u8], path: &Path, view: &str) -> Result<()> {
-    let artifact = detect(bytes, path)?;
-    match artifact {
-        Artifact::Cadir(_) => Ok(()),
-        Artifact::Report(_) => bail!(
+    match sniff_kind(bytes, path)? {
+        ArtifactKind::Cadir => Ok(()),
+        ArtifactKind::Report => bail!(
             "{} is a command report; reports have no arenas. Use \
              `cadmpeg query findings` / `cadmpeg query losses` on the report, or \
              `cadmpeg dump SOURCE -o doc.json && cadmpeg query {view} doc.json …`",
             path.display()
         ),
-        Artifact::Sidecar(_) => bail!(
+        ArtifactKind::Sidecar => bail!(
             "{} is a decode sidecar (`<stem>.fidelity.json`); sidecars have no \
              arenas. Run `cadmpeg dump SOURCE -o doc.json && cadmpeg query {view} \
              doc.json …`",

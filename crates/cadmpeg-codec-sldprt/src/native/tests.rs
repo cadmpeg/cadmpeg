@@ -19,7 +19,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         .unwrap();
     let original = decoded.ir().native.namespace("sldprt").unwrap();
     let typed = crate::native::SldprtNative::load(original).unwrap();
-    let mut round_trip = cadmpeg_ir::NativeNamespace::new();
+    let mut round_trip = cadmpeg_ir::NativeNamespace::default();
     typed.store(&mut round_trip).unwrap();
     assert_eq!(
         typed,
@@ -27,13 +27,13 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
     );
     assert_eq!(
         round_trip
-            .arenas
+            .arenas()
             .keys()
             .map(String::as_str)
             .collect::<Vec<_>>(),
         crate::native::SLDPRT_ARENA_NAMES
     );
-    for records in round_trip.arenas.values() {
+    for records in round_trip.arenas().values() {
         for record in records {
             let json = serde_json::to_value(record).unwrap();
             assert_eq!(json["id"], record.id());
@@ -79,7 +79,7 @@ fn native_store_rejects_missing_sketch_marker_feature_owner() {
         .expect("sketch marker")
         .feature_ref = Some("sldprt:history:feature#missing".into());
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     let error = native.store(&mut namespace).unwrap_err();
     assert!(error
         .to_string()
@@ -105,7 +105,7 @@ fn native_store_rejects_edited_history_feature_class() {
     let mut native = sldprt_native(decoded.ir());
     native.feature_histories[0].features[0].input_class = Some("moRefPlane_c".into());
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     let error = native.store(&mut namespace).unwrap_err();
     assert!(error
         .to_string()
@@ -133,7 +133,7 @@ fn native_store_rejects_missing_sketch_marker_local_link() {
         }],
     );
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     let error = native.store(&mut namespace).unwrap_err();
     assert!(error.to_string().contains("missing local-link target"));
 }
@@ -186,7 +186,7 @@ fn native_store_preserves_midpoint_with_two_point_markers() {
         }
     }
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).unwrap();
     let stored = crate::native::SldprtNative::load(&namespace).unwrap();
     assert_eq!(
@@ -214,7 +214,7 @@ fn native_store_rejects_relation_scalar_owner_disagreement() {
         .is_some());
     native.feature_input_lanes[0].relation_bindings[0].feature_ref = None;
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     let error = native.store(&mut namespace).unwrap_err();
     assert!(error
         .to_string()
@@ -238,7 +238,7 @@ fn native_store_rejects_nonlocal_relation_scalar_groups() {
         .scalars
         .push(duplicate);
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     let error = native.store(&mut namespace).unwrap_err();
     assert!(
         error.to_string().contains("relation instance")
@@ -291,7 +291,7 @@ fn native_store_rejects_relation_instance_operand_disagreement() {
     let mut native = sldprt_native(decoded.ir());
     native.feature_input_lanes[0].relation_instances[0].operands[0].entity_index += 1;
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     let error = native.store(&mut namespace).unwrap_err();
     assert!(
         error.to_string().contains("relation instance")
@@ -320,7 +320,7 @@ fn native_store_rejects_inconsistent_scalar_marker_target() {
     native.feature_input_lanes[0].scalars[0].operands[1].entity_ref = Some(wrong_target.clone());
     native.feature_input_lanes[0].relation_instances[0].operands[1].entity_ref = Some(wrong_target);
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     let error = native.store(&mut namespace).unwrap_err();
     assert!(error.to_string().contains("inconsistent sketch marker"));
 }
@@ -347,6 +347,6 @@ fn native_store_accepts_duplicate_local_ids_for_scalar_ordinals() {
     assert!(lane.scalars[0].operands[0].entity_ref.is_some());
     lane.sketch_entities[1].local_id = lane.sketch_entities[0].local_id;
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).unwrap();
 }

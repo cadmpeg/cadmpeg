@@ -46,7 +46,7 @@ pub(crate) fn write_seekable(
     let namespace = resolution.namespace();
     let document = resolution.document();
     let entry_records = namespace
-        .arenas
+        .arenas()
         .get("entries")
         .map_or(&[][..], Vec::as_slice);
     let mut entries = entry_records

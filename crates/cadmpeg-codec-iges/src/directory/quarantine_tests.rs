@@ -107,9 +107,12 @@ fn a_non_integer_directory_field_quarantines_the_two_card_pair() {
     let result = decode(bytes.clone());
 
     let native = result.ir().native.namespace("iges").unwrap();
-    assert_eq!(native.arenas["entities"].len(), 1);
-    assert_eq!(native.arenas["entities"][0].id(), "iges:entity:directory#1");
-    let quarantined = &native.arenas["quarantined_directory_records"];
+    assert_eq!(native.arenas()["entities"].len(), 1);
+    assert_eq!(
+        native.arenas()["entities"][0].id(),
+        "iges:entity:directory#1"
+    );
+    let quarantined = &native.arenas()["quarantined_directory_records"];
     assert_eq!(quarantined.len(), 1);
     assert_eq!(quarantined[0].id(), "iges:quarantine:directory#3");
     let fields = quarantined[0].fields();
@@ -162,7 +165,7 @@ fn every_directory_defect_key_names_its_own_failure() {
         let result = decode(bytes);
 
         let native = result.ir().native.namespace("iges").unwrap();
-        let quarantined = &native.arenas["quarantined_directory_records"];
+        let quarantined = &native.arenas()["quarantined_directory_records"];
         assert_eq!(quarantined.len(), 1, "{defect}");
         assert_eq!(quarantined[0].fields()["defect"], defect);
         assert_eq!(
@@ -180,11 +183,11 @@ fn v4_blank_no_default_directory_fields_quarantine_the_record() {
         let result = decode(bytes);
         let native = result.ir().native.namespace("iges").unwrap();
         assert_eq!(
-            native.arenas["entities"].len(),
+            native.arenas()["entities"].len(),
             1,
             "card {card_index}, field {field}"
         );
-        let quarantined = &native.arenas["quarantined_directory_records"];
+        let quarantined = &native.arenas()["quarantined_directory_records"];
         assert_eq!(quarantined.len(), 1, "card {card_index}, field {field}");
         assert_eq!(
             quarantined[0].fields()["defect"],
@@ -213,8 +216,8 @@ fn an_unpaired_trailing_directory_card_is_quarantined_on_its_own() {
     let result = decode(bytes);
 
     let native = result.ir().native.namespace("iges").unwrap();
-    let quarantined = &native.arenas["quarantined_directory_records"];
-    assert_eq!(native.arenas["entities"].len(), 2);
+    let quarantined = &native.arenas()["quarantined_directory_records"];
+    assert_eq!(native.arenas()["entities"].len(), 2);
     assert_eq!(quarantined.len(), 1);
     assert_eq!(quarantined[0].id(), "iges:quarantine:directory#5");
     let fields = quarantined[0].fields();
@@ -251,8 +254,8 @@ fn a_pointer_into_a_quarantined_record_does_not_resolve() {
     match error {
         cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => {
             assert_eq!(
-                rejection.loss().code.as_str(),
-                IgesLossCode::PointerUnresolved.kind().as_str()
+                rejection.loss().code.to_string(),
+                IgesLossCode::PointerUnresolved.kind().to_string()
             );
         }
         other => panic!("expected a strict refusal, got {other:?}"),
@@ -293,8 +296,12 @@ fn a_quarantined_directory_record_refuses_a_strict_decode_and_survives_container
         )
         .unwrap();
     assert_eq!(
-        container_only.ir().native.namespace("iges").unwrap().arenas
-            ["quarantined_directory_records"]
+        container_only
+            .ir()
+            .native
+            .namespace("iges")
+            .unwrap()
+            .arenas()["quarantined_directory_records"]
             .len(),
         1
     );
@@ -311,8 +318,8 @@ fn a_quarantined_directory_record_refuses_a_strict_decode_and_survives_container
         .unwrap_err();
     match error {
         cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => assert_eq!(
-            rejection.loss().code.as_str(),
-            IgesLossCode::DirectoryRecordQuarantined.kind().as_str()
+            rejection.loss().code.to_string(),
+            IgesLossCode::DirectoryRecordQuarantined.kind().to_string()
         ),
         other => panic!("expected a strict refusal, got {other:?}"),
     }

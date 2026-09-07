@@ -411,7 +411,7 @@ fn type125_flash_forms_project_reference_points_and_retain_shape_parameters() {
             .unwrap();
         assert_eq!(point.position, cadmpeg_ir::math::Point3::new(x, y, 0.0));
     }
-    let flashes = &result.ir().native.namespace("iges").unwrap().arenas["flashes"];
+    let flashes = &result.ir().native.namespace("iges").unwrap().arenas()["flashes"];
     assert_eq!(flashes.len(), 5);
     assert_eq!(flashes[0].fields()["form"], 0);
     assert_eq!(
@@ -452,7 +452,7 @@ fn type125_flash_is_admitted_in_v4_and_v5() {
             .unwrap();
         assert_eq!(result.ir().model.points.len(), 1);
         assert_eq!(
-            result.ir().native.namespace("iges").unwrap().arenas["flashes"].len(),
+            result.ir().native.namespace("iges").unwrap().arenas()["flashes"].len(),
             1
         );
         assert!(!result.report().losses.iter().any(|loss| {
@@ -722,7 +722,7 @@ fn type_123_accepts_a_finite_non_unit_direction() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let direction = &result.ir().native.namespace("iges").unwrap().arenas["directions"][0];
+    let direction = &result.ir().native.namespace("iges").unwrap().arenas()["directions"][0];
     assert_eq!(
         direction.fields()["components"],
         serde_json::json!([2.0, -3.0, 4.0])
@@ -1167,7 +1167,7 @@ fn decode_preserves_semi_bounded_and_unbounded_line_domains_natively() {
         );
         assert!(result.report().losses.is_empty());
         let native = result.ir().native.namespace("iges").unwrap();
-        assert_eq!(native.arenas["entities"][0].fields()["form"], form);
+        assert_eq!(native.arenas()["entities"][0].fields()["form"], form);
         let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
@@ -1187,7 +1187,7 @@ fn decode_applies_nested_transforms_reflection_units_and_model_scale_once() {
     assert_eq!(result.ir().model.points[0].position.y, 80.0);
     assert_eq!(result.ir().model.points[0].position.z, 60.0);
     assert_eq!(
-        result.ir().native.namespace("iges").unwrap().arenas["transformations"].len(),
+        result.ir().native.namespace("iges").unwrap().arenas()["transformations"].len(),
         2
     );
     assert!(result.report().losses.is_empty());

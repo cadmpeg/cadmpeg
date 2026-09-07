@@ -332,7 +332,7 @@ fn configuration_name_preserves_resolution_state() {
 }
 
 #[test]
-fn configuration_suppression_is_derived_and_legacy_lists_migrate_at_the_model_boundary() {
+fn configuration_suppression_is_derived_and_requires_agreeing_feature_states() {
     use crate::features::{
         ConfigurationBodies, ConfigurationFeatureState, ConfigurationId, DesignConfiguration,
         Feature, FeatureDefinition, FeatureId,
@@ -383,11 +383,14 @@ fn configuration_suppression_is_derived_and_legacy_lists_migrate_at_the_model_bo
         .as_object_mut()
         .unwrap()
         .remove("feature_states");
-    let migrated = serde_json::from_value::<CadIr>(wire).unwrap();
-    let state = &migrated.model.configurations[0].feature_states[&feature.id];
-    assert!(state.suppressed);
-    assert_eq!(state.definition, feature.definition);
-    assert!(state.outputs.is_empty());
+    let error = serde_json::from_value::<CadIr>(wire).unwrap_err();
+    assert!(
+        error.to_string().contains(&format!(
+            "configuration suppressed feature `{}` has no configuration feature state",
+            feature.id.0
+        )),
+        "{error}"
+    );
 
     let mut invalid = serde_json::to_value(&ir).unwrap();
     invalid["model"]["configurations"][0]["feature_states"][feature.id.0.as_str()]["suppressed"] =

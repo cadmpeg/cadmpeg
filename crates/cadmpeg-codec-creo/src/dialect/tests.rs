@@ -262,7 +262,7 @@ fn the_dialect_unverified_loss_carries_the_shared_taxonomy() {
     let note = classify(&scan)
         .loss()
         .expect("an unclassified layout charges the loss");
-    assert_eq!(note.code.as_str(), "creo/source.dialect-unverified");
+    assert_eq!(note.code.to_string(), "creo/source.dialect-unverified");
     assert_eq!(
         note.code.taxonomy(),
         cadmpeg_ir::report::LossTaxonomy::SourceDialectUnverified

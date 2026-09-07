@@ -19,7 +19,7 @@ fn overdeclared_site(
 
     let result = salvage(&bytes);
     let native = result.ir().native.namespace("iges").unwrap();
-    let record = native.arenas[arena]
+    let record = native.arenas()[arena]
         .iter()
         .find(|record| {
             record.fields()["source_entity"] == format!("iges:entity:directory#{sequence}")
@@ -198,7 +198,7 @@ fn decode_overdeclared_line_font_pattern_reserves_the_hexadecimal_suffix() {
 
     let result = salvage(&bytes);
     let native = result.ir().native.namespace("iges").unwrap();
-    let font = &native.arenas["line_fonts"][0];
+    let font = &native.arenas()["line_fonts"][0];
 
     assert_eq!(font.fields()["segment_count"], 3);
     assert!(font.fields()["lengths"].as_array().unwrap().is_empty());
@@ -212,7 +212,7 @@ fn decode_overdeclared_line_font_pattern_claims_no_length_as_its_suffix() {
 
     let result = salvage(&bytes);
     let native = result.ir().native.namespace("iges").unwrap();
-    let font = &native.arenas["line_fonts"][0];
+    let font = &native.arenas()["line_fonts"][0];
 
     assert_eq!(font.fields()["segment_count"], 5);
     assert!(font.fields()["lengths"].as_array().unwrap().is_empty());
@@ -368,7 +368,7 @@ fn decode_overdeclared_property_lists_charge_the_loss_and_read_no_value() {
 
         let result = salvage(&bytes);
         let native = result.ir().native.namespace("iges").unwrap();
-        let property = &native.arenas["properties"][0];
+        let property = &native.arenas()["properties"][0];
         assert!(
             property.fields()[list].as_array().unwrap().is_empty(),
             "form {form} {list} must not be read"
@@ -413,7 +413,7 @@ fn decode_overdeclared_flag_note_and_general_label_charge_the_loss_and_read_no_l
 
         let result = salvage(&bytes);
         let native = result.ir().native.namespace("iges").unwrap();
-        let annotation = native.arenas["annotations"]
+        let annotation = native.arenas()["annotations"]
             .iter()
             .find(|record| {
                 record.fields()["source_entity"] == format!("iges:entity:directory#{sequence}")
@@ -452,7 +452,7 @@ fn decode_sectioned_area_retains_a_negative_declared_island_count() {
     ]);
     let result = salvage(&bytes);
     let native = result.ir().native.namespace("iges").unwrap();
-    let section = &native.arenas["annotations"][0];
+    let section = &native.arenas()["annotations"][0];
     let fields = section.fields();
 
     assert_eq!(fields["declared_island_count"], -1);
@@ -474,7 +474,7 @@ fn decode_units_data_reads_a_final_unit_present_in_part() {
     let bytes = owned_test_file(&only(316, 0, "UNITS", "316,2,2HIN,4HINCH,25.4,2HFT;"));
     let result = salvage(&bytes);
     let native = result.ir().native.namespace("iges").unwrap();
-    let units = &native.arenas["units_data"][0];
+    let units = &native.arenas()["units_data"][0];
     let fields = units.fields();
     let list = fields["units"].as_array().unwrap();
 
@@ -494,7 +494,7 @@ fn decode_external_reference_index_reads_a_final_pair_present_in_part() {
         ]);
         let result = salvage(&bytes);
         let native = result.ir().native.namespace("iges").unwrap();
-        let associativity = &native.arenas["associativities"][0];
+        let associativity = &native.arenas()["associativities"][0];
         let fields = associativity.fields();
         let entries = fields["entries"].as_array().unwrap();
 
@@ -513,7 +513,7 @@ fn decode_segmented_visibility_reads_a_final_block_present_in_part() {
     ]);
     let result = salvage(&bytes);
     let native = result.ir().native.namespace("iges").unwrap();
-    let visibility = &native.arenas["segmented_visibility"][0];
+    let visibility = &native.arenas()["segmented_visibility"][0];
     let fields = visibility.fields();
     let blocks = fields["blocks"].as_array().unwrap();
 
@@ -536,7 +536,7 @@ fn decode_segmented_visibility_retains_a_negative_declared_block_count() {
     ]);
     let result = salvage(&bytes);
     let native = result.ir().native.namespace("iges").unwrap();
-    let visibility = &native.arenas["segmented_visibility"][0];
+    let visibility = &native.arenas()["segmented_visibility"][0];
     let fields = visibility.fields();
 
     assert_eq!(fields["declared_block_count"], -1);
@@ -553,7 +553,7 @@ fn decode_view_visibility_reads_both_lists_and_retains_both_declared_counts() {
     ]);
     let result = salvage(&bytes);
     let native = result.ir().native.namespace("iges").unwrap();
-    let fields = native.arenas["view_visibility"][0].fields();
+    let fields = native.arenas()["view_visibility"][0].fields();
     let displays = fields["displays"].as_array().unwrap();
     let entities = fields["entities"].as_array().unwrap();
 
@@ -580,7 +580,7 @@ fn decode_view_visibility_retains_both_declared_counts_when_the_entity_list_over
     ]);
     let result = salvage(&bytes);
     let native = result.ir().native.namespace("iges").unwrap();
-    let fields = native.arenas["view_visibility"][0].fields();
+    let fields = native.arenas()["view_visibility"][0].fields();
 
     assert_eq!(fields["declared_view_count"], 1);
     assert_eq!(fields["declared_entity_count"], 2);
@@ -594,7 +594,7 @@ fn decode_view_visibility_retains_a_negative_declared_view_count() {
     let bytes = owned_test_file(&[entity(402, 4, "DISPLAY", "402,-1,0,0,0;")]);
     let result = salvage(&bytes);
     let native = result.ir().native.namespace("iges").unwrap();
-    let fields = native.arenas["view_visibility"][0].fields();
+    let fields = native.arenas()["view_visibility"][0].fields();
 
     assert_eq!(fields["declared_view_count"], -1);
     assert_eq!(fields["declared_entity_count"], 0);
@@ -612,7 +612,7 @@ fn decode_drawing_reads_both_lists_and_retains_both_declared_counts() {
     ]);
     let result = salvage(&bytes);
     let native = result.ir().native.namespace("iges").unwrap();
-    let fields = native.arenas["drawings"][0].fields();
+    let fields = native.arenas()["drawings"][0].fields();
     let views = fields["views"].as_array().unwrap();
     let annotations = fields["annotations"].as_array().unwrap();
 
@@ -635,7 +635,7 @@ fn decode_drawing_retains_both_declared_counts_when_the_annotation_list_overruns
     ]);
     let result = salvage(&bytes);
     let native = result.ir().native.namespace("iges").unwrap();
-    let fields = native.arenas["drawings"][0].fields();
+    let fields = native.arenas()["drawings"][0].fields();
 
     assert_eq!(fields["declared_view_count"], 1);
     assert_eq!(fields["declared_annotation_count"], 3);
@@ -653,7 +653,7 @@ fn decode_drawing_with_a_negative_declared_view_count_locates_no_annotation_coun
     ]);
     let result = salvage(&bytes);
     let native = result.ir().native.namespace("iges").unwrap();
-    let fields = native.arenas["drawings"][0].fields();
+    let fields = native.arenas()["drawings"][0].fields();
 
     assert_eq!(fields["declared_view_count"], -1);
     assert!(fields["declared_annotation_count"].is_null());
@@ -676,7 +676,7 @@ fn decode_general_symbol_retains_both_declared_counts_when_the_leader_list_overr
     ]);
     let result = salvage(&bytes);
     let native = result.ir().native.namespace("iges").unwrap();
-    let symbol = native.arenas["annotations"]
+    let symbol = native.arenas()["annotations"]
         .iter()
         .find(|record| record.fields()["kind"] == "general_symbol")
         .expect("general symbol");
@@ -694,7 +694,7 @@ fn decode_manifold_solid_reads_its_shell_uses_and_resolves_both_closed_shells() 
     let (bytes, solid, outer, void) = explicit_void_solid_file();
     let result = salvage(&bytes);
     let native = result.ir().native.namespace("iges").unwrap();
-    let solids = &native.arenas["manifold_solids"];
+    let solids = &native.arenas()["manifold_solids"];
     assert_eq!(solids.len(), 1);
     let fields = solids[0].fields();
     let voids = fields["voids"].as_array().unwrap();
@@ -725,7 +725,7 @@ fn decode_manifold_solid_reads_a_final_void_shell_use_present_in_part() {
         manifold_solid_entities(|outer, void| format!("186,{outer},1,1,{void};"));
     let result = salvage(&owned_test_file(&entities));
     let native = result.ir().native.namespace("iges").unwrap();
-    let fields = native.arenas["manifold_solids"][0].fields();
+    let fields = native.arenas()["manifold_solids"][0].fields();
     let voids = fields["voids"].as_array().unwrap();
 
     assert_eq!(
@@ -744,7 +744,7 @@ fn decode_manifold_solid_retains_a_negative_declared_void_count() {
     let (entities, _, outer, _) = manifold_solid_entities(|outer, _| format!("186,{outer},1,-1;"));
     let result = salvage(&owned_test_file(&entities));
     let native = result.ir().native.namespace("iges").unwrap();
-    let fields = native.arenas["manifold_solids"][0].fields();
+    let fields = native.arenas()["manifold_solids"][0].fields();
 
     assert_eq!(fields["declared_void_count"], -1);
     assert!(fields["voids"].as_array().unwrap().is_empty());
@@ -763,7 +763,7 @@ fn decode_manifold_solid_leaves_an_open_shell_pointer_unresolved() {
     entities.push(entity(186, 0, "OPENSLD", &format!("186,{open_shell},1,0;")));
     let result = salvage(&owned_test_file(&entities));
     let native = result.ir().native.namespace("iges").unwrap();
-    let solids = &native.arenas["manifold_solids"];
+    let solids = &native.arenas()["manifold_solids"];
     assert_eq!(solids.len(), 2);
     let closed = solids[0].fields();
     let rejected = solids[1].fields();
@@ -792,7 +792,7 @@ fn decode_text_score_reads_a_final_range_present_in_part() {
     let bytes = owned_test_file(&only(406, 34, "UNDER", "406,7,2,1,1,2,1,1;"));
     let result = salvage(&bytes);
     let native = result.ir().native.namespace("iges").unwrap();
-    let property = &native.arenas["properties"][0];
+    let property = &native.arenas()["properties"][0];
     let fields = property.fields();
     let ranges = fields["ranges"].as_array().unwrap();
 
@@ -811,7 +811,7 @@ fn decode_leader_reads_a_final_segment_present_in_part() {
     ));
     let result = salvage(&bytes);
     let native = result.ir().native.namespace("iges").unwrap();
-    let leader = &native.arenas["annotations"][0];
+    let leader = &native.arenas()["annotations"][0];
     let fields = leader.fields();
     let tails = fields["segment_tails"].as_array().unwrap();
 
@@ -833,7 +833,7 @@ fn decode_copious_data_reads_a_final_tuple_present_in_part() {
     }]);
     let result = salvage(&bytes);
     let native = result.ir().native.namespace("iges").unwrap();
-    let copious = &native.arenas["copious_data"][0];
+    let copious = &native.arenas()["copious_data"][0];
     let fields = copious.fields();
     let tuples = fields["tuples"].as_array().unwrap();
 
@@ -849,7 +849,7 @@ fn decode_line_font_pattern_holds_only_complete_lengths_before_its_suffix() {
     let bytes = owned_test_file(&only(304, 2, "PATTERN", "304,2,1.0,2.0,2H0F;"));
     let result = salvage(&bytes);
     let native = result.ir().native.namespace("iges").unwrap();
-    let font = &native.arenas["line_fonts"][0];
+    let font = &native.arenas()["line_fonts"][0];
     let fields = font.fields();
 
     assert_eq!(fields["segment_count"], 2);
@@ -910,7 +910,7 @@ fn decode_attribute_definition_holds_its_count_while_the_nested_triple_stays_emp
     let bytes = owned_test_file(&only(322, 0, "ATTRDEF", "322,4HATTR,0,1,1,1;"));
     let result = salvage(&bytes);
     let native = result.ir().native.namespace("iges").unwrap();
-    let definition = &native.arenas["attribute_table_definitions"][0];
+    let definition = &native.arenas()["attribute_table_definitions"][0];
 
     assert_eq!(definition.fields()["declared_attribute_count"], 1);
     assert!(definition.fields()["attributes"]
@@ -951,7 +951,7 @@ fn decode_attribute_instance_rows_clamp_to_the_values_the_record_holds() {
         let bytes = owned_test_file_with_structures(&entities, &[(3, -1)]);
         let result = salvage(&bytes);
         let native = result.ir().native.namespace("iges").unwrap();
-        let instance = &native.arenas["attribute_table_instances"][0];
+        let instance = &native.arenas()["attribute_table_instances"][0];
         let fields = instance.fields();
 
         assert_eq!(

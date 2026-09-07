@@ -92,7 +92,7 @@ fn assert_overdeclared_contract(bytes: &[u8], sequence: u32) {
         .unwrap_err()
     {
         cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => {
-            assert_eq!(rejection.loss().code.as_str(), overdeclared.as_str());
+            assert_eq!(rejection.loss().code.to_string(), overdeclared.to_string());
         }
         other => panic!("expected a strict refusal, got {other:?}"),
     }
@@ -207,12 +207,15 @@ fn decode_preserves_native_entities_and_graph() {
         Some(bytes.as_slice())
     );
     let native = result.ir().native.namespace("iges").unwrap();
-    assert_eq!(native.arenas["cards"].len(), 7);
-    assert_eq!(native.arenas["entities"].len(), 1);
-    assert!(native.arenas["colors"].is_empty());
-    assert_eq!(native.arenas["display_attributes"].len(), 1);
-    assert!(!native.arenas.contains_key("opaque_bytes"));
-    assert_eq!(native.arenas["entities"][0].id(), "iges:entity:directory#1");
+    assert_eq!(native.arenas()["cards"].len(), 7);
+    assert_eq!(native.arenas()["entities"].len(), 1);
+    assert!(native.arenas()["colors"].is_empty());
+    assert_eq!(native.arenas()["display_attributes"].len(), 1);
+    assert!(!native.arenas().contains_key("opaque_bytes"));
+    assert_eq!(
+        native.arenas()["entities"][0].id(),
+        "iges:entity:directory#1"
+    );
     assert_eq!(result.ir().model.points.len(), 1);
     assert_eq!(result.ir().model.points[0].position.x, 1.0);
     assert_eq!(result.ir().model.points[0].position.y, 2.0);

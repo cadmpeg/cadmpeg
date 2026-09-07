@@ -26,7 +26,7 @@ const CHECK_REPORT: &str = r#"{
 }"#;
 
 const JOIN_DOC: &str = r#"{
-  "ir_version": "4",
+  "ir_version": "6",
   "model": {
     "features": [
       {"id": "f1", "native_ref": "n1"},
@@ -44,7 +44,7 @@ const JOIN_DOC: &str = r#"{
 }"#;
 
 const RIGHT_DOC: &str = r#"{
-  "ir_version": "4",
+  "ir_version": "6",
   "native": {
     "rhino": {
       "unknowns": [
@@ -141,7 +141,7 @@ fn join_json_envelope_matched_native_ref() {
     );
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["command"], "query");
-    let rows = value["join"].as_array().unwrap();
+    let rows = value["payload"].as_array().unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["key"], "n1");
     assert_eq!(rows[0]["left"]["id"], "f1");
@@ -175,7 +175,7 @@ fn join_unmatched_and_right_file() {
         .unwrap();
     assert!(unmatched.status.success());
     let value: serde_json::Value = serde_json::from_slice(&unmatched.stdout).unwrap();
-    let rows = value["join"].as_array().unwrap();
+    let rows = value["payload"].as_array().unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["left"]["id"], "f2");
     assert_eq!(rows[0]["right"], serde_json::Value::Null);
@@ -203,7 +203,7 @@ fn join_unmatched_and_right_file() {
         String::from_utf8_lossy(&cross.stderr)
     );
     let value: serde_json::Value = serde_json::from_slice(&cross.stdout).unwrap();
-    let rows = value["join"].as_array().unwrap();
+    let rows = value["payload"].as_array().unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["key"], "n1");
     assert_eq!(rows[0]["left"]["id"], "f1");

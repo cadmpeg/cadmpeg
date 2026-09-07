@@ -402,10 +402,10 @@ fn semantic_copious_projection_uses_entity_boundary_before_generic_candidate() {
         .any(|loss| loss.message.contains("tuple array is truncated")));
 
     let native = result.ir().native.namespace("iges").unwrap();
-    let copious = &native.arenas["copious_data"][0];
+    let copious = &native.arenas()["copious_data"][0];
     assert_eq!(copious.fields()["declared_tuple_count"], 2);
     assert_eq!(copious.fields()["tuples"].as_array().unwrap().len(), 2);
-    let entity = native.arenas["entities"]
+    let entity = native.arenas()["entities"]
         .iter()
         .find(|record| record.fields()["directory_sequence"] == 1)
         .expect("copious entity");
@@ -445,9 +445,9 @@ fn decode_separates_copious_points_vectors_and_presentation_forms() {
     assert_eq!(points.ir().model.points.len(), 2);
     assert_eq!(points.ir().model.vertices.len(), 2);
     let native = points.ir().native.namespace("iges").unwrap();
-    assert_eq!(native.arenas["copious_data"].len(), 1);
+    assert_eq!(native.arenas()["copious_data"].len(), 1);
     assert_eq!(
-        native.arenas["copious_data"][0].fields()["tuples"][0][5],
+        native.arenas()["copious_data"][0].fields()["tuples"][0][5],
         1.0
     );
     assert!(points.report().losses.is_empty());

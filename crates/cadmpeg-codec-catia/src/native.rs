@@ -7012,7 +7012,7 @@ fn store_projection(
     CATIA_CATALOGUE.emit_all(projection, namespace)?;
     debug_assert!(CATIA_ARENA_NAMES
         .iter()
-        .all(|name| namespace.arenas.contains_key(*name)));
+        .all(|name| namespace.arenas().contains_key(*name)));
     Ok(())
 }
 

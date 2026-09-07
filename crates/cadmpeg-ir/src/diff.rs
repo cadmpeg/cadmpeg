@@ -478,18 +478,18 @@ fn diff_native_namespaces(left: &CadIr, right: &CadIr) -> Vec<ArenaDiff> {
             let right_ns = right.native.namespace(namespace);
             let arenas = left_ns
                 .into_iter()
-                .flat_map(|value| value.arenas.keys())
-                .chain(right_ns.into_iter().flat_map(|value| value.arenas.keys()))
+                .flat_map(|value| value.arenas().keys())
+                .chain(right_ns.into_iter().flat_map(|value| value.arenas().keys()))
                 .collect::<std::collections::BTreeSet<_>>();
             arenas.into_iter().map(move |name| {
                 arena(
                     ArenaKind::native(namespace.as_str(), name.as_str()),
                     left_ns
-                        .and_then(|value| value.arenas.get(name))
+                        .and_then(|value| value.arenas().get(name))
                         .map(Vec::as_slice)
                         .unwrap_or_default(),
                     right_ns
-                        .and_then(|value| value.arenas.get(name))
+                        .and_then(|value| value.arenas().get(name))
                         .map(Vec::as_slice)
                         .unwrap_or_default(),
                     |record| record.id(),

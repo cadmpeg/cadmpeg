@@ -23,7 +23,7 @@ fn scan_discovers_labeled_curve_prototypes() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let records = &result.ir().native.namespace("creo").unwrap().arenas["curve_prototypes"];
+    let records = &result.ir().native.namespace("creo").unwrap().arenas()["curve_prototypes"];
     assert_eq!(records[0].fields()["curve_id"], 7);
     assert_eq!(records[0].fields()["type_byte"], 8);
     assert_eq!(records[0].fields()["generating_feature_id"], 4);
@@ -44,7 +44,7 @@ fn scan_discovers_curve_halfedge_topology() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let row = &result.ir().native.namespace("creo").unwrap().arenas["curve_topology_rows"][0];
+    let row = &result.ir().native.namespace("creo").unwrap().arenas()["curve_topology_rows"][0];
     assert_eq!(row.fields()["curve_id"], 7);
     assert_eq!(row.fields()["type_byte"], 8);
     assert_eq!(row.fields()["feature_id"], 4);
@@ -107,7 +107,7 @@ fn repeated_curve_rows_receive_source_offset_native_keys() {
         .native
         .namespace("creo")
         .expect("native namespace")
-        .arenas["curve_topology_rows"];
+        .arenas()["curve_topology_rows"];
     assert_eq!(rows.len(), 2);
     for (native, source) in rows.iter().zip(&scan.curves.topology_rows) {
         assert_eq!(
@@ -166,7 +166,7 @@ fn scan_bounds_curve_parameter_body_before_topology_suffix() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let record = &result.ir().native.namespace("creo").unwrap().arenas["curve_parameters"][0];
+    let record = &result.ir().native.namespace("creo").unwrap().arenas()["curve_parameters"][0];
     assert_eq!(record.fields()["curve_id"], 7);
     assert_eq!(record.fields()["type_byte"], 8);
     assert_eq!(
@@ -227,7 +227,7 @@ fn scan_decodes_pcurve_endpoints_in_both_face_frames() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let records = &result.ir().native.namespace("creo").unwrap().arenas["pcurve_endpoints"];
+    let records = &result.ir().native.namespace("creo").unwrap().arenas()["pcurve_endpoints"];
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].id(), "creo:visibgeom:pcurve_endpoints#7");
     assert_eq!(records[0].fields()["faces"][0], 10);
@@ -385,7 +385,7 @@ fn scan_decodes_fc_curve_world_coordinate_lane() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let records = &result.ir().native.namespace("creo").unwrap().arenas["fc_curve_coordinates"];
+    let records = &result.ir().native.namespace("creo").unwrap().arenas()["fc_curve_coordinates"];
     assert_eq!(records[0].fields()["curve_id"], 7);
     assert_eq!(records[0].fields()["values_mm"][1], -3.0);
     assert_eq!(records[0].fields()["tokens"][1]["offset"], 10);
@@ -456,7 +456,7 @@ fn scan_validates_fc05_circle_from_record_points() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let records = &result.ir().native.namespace("creo").unwrap().arenas["fc05_circles"];
+    let records = &result.ir().native.namespace("creo").unwrap().arenas()["fc05_circles"];
     assert_eq!(records[0].fields()["curve_id"], 7);
     assert_eq!(records[0].fields()["radius_mm"], 1.0);
     assert_eq!(records[0].fields()["sample_direction_row_frame"][0], 1.0);
@@ -562,11 +562,11 @@ fn scan_decodes_and_binds_labeled_prototype_topology() {
         .expect("decode");
     let namespace = result.ir().native.namespace("creo").unwrap();
     assert_eq!(
-        namespace.arenas["prototype_pcurves"][0].fields()["curve_id"],
+        namespace.arenas()["prototype_pcurves"][0].fields()["curve_id"],
         44
     );
     assert_eq!(
-        namespace.arenas["curve_prototype_topology"][0].fields()["faces"][1],
+        namespace.arenas()["curve_prototype_topology"][0].fields()["faces"][1],
         11
     );
 }

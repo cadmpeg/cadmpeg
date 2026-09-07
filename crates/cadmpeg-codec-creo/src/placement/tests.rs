@@ -1342,7 +1342,7 @@ fn scan_decodes_featdefs_gsec3d_placement_references() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let sketches = &result.ir().native.namespace("creo").unwrap().arenas["sketches"];
+    let sketches = &result.ir().native.namespace("creo").unwrap().arenas()["sketches"];
     assert_eq!(sketches.len(), 1);
     assert_eq!(sketches[0].fields()["source_section"], "FeatDefs");
     let placement = &sketches[0].fields()["section_3d"];

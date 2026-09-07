@@ -220,7 +220,7 @@ macro_rules! define_model_index {
                         .values()
                         .flat_map(|namespace| {
                             namespace
-                                .arenas
+                                .arenas()
                                 .values()
                                 .flatten()
                                 .map(|record| record.id().to_owned())
@@ -255,7 +255,7 @@ macro_rules! define_model_index {
                             .0
                             .values()
                             .flat_map(|namespace| {
-                                namespace.arenas.values().flatten().map(|record| record.id())
+                                namespace.arenas().values().flatten().map(|record| record.id())
                             }),
                     );
                     identities.extend(self.additional_native_identities.iter().copied());
@@ -346,8 +346,8 @@ mod tests {
     fn model_only_index_excludes_native_identity_universe() {
         let mut ir = CadIr::empty();
         let native_id = "test:native#0";
-        let mut namespace = NativeNamespace::new();
-        namespace.arenas.insert(
+        let mut namespace = NativeNamespace::default();
+        namespace.arenas_mut().insert(
             "records".into(),
             vec![NativeRecord::new(native_id, Map::new())],
         );

@@ -338,45 +338,27 @@ pub(crate) struct DesignConfigurationReadWire {
 }
 
 impl DesignConfigurationReadWire {
-    pub(crate) fn into_configuration(
-        mut self,
-        features: &[Feature],
-    ) -> Result<DesignConfiguration, String> {
+    pub(crate) fn into_configuration(self) -> Result<DesignConfiguration, String> {
         let mut listed = HashSet::new();
-        for feature_id in self.suppressed_features {
+        for feature_id in &self.suppressed_features {
             if !listed.insert(feature_id.clone()) {
                 return Err(format!(
                     "configuration repeats suppressed feature `{}`",
                     feature_id.0
                 ));
             }
-            if let Some(state) = self.feature_states.get(&feature_id) {
-                if !state.suppressed {
-                    return Err(format!(
-                        "configuration suppression disagrees with feature state `{}`",
-                        feature_id.0
-                    ));
-                }
-                continue;
+            let Some(state) = self.feature_states.get(feature_id) else {
+                return Err(format!(
+                    "configuration suppressed feature `{}` has no configuration feature state",
+                    feature_id.0
+                ));
+            };
+            if !state.suppressed {
+                return Err(format!(
+                    "configuration suppression disagrees with feature state `{}`",
+                    feature_id.0
+                ));
             }
-            let feature = features
-                .iter()
-                .find(|feature| feature.id == feature_id)
-                .ok_or_else(|| {
-                    format!(
-                        "configuration suppressed feature `{}` has no model feature state",
-                        feature_id.0
-                    )
-                })?;
-            self.feature_states.insert(
-                feature_id,
-                ConfigurationFeatureState {
-                    suppressed: true,
-                    dependencies: feature.dependencies.clone(),
-                    outputs: Vec::new(),
-                    definition: feature.definition.clone(),
-                },
-            );
         }
         if let Some(feature) = self.feature_states.iter().find_map(|(feature, state)| {
             (state.suppressed && !listed.contains(feature)).then_some(feature)
@@ -455,7 +437,7 @@ impl<'de> Deserialize<'de> for DesignConfiguration {
         D: serde::Deserializer<'de>,
     {
         DesignConfigurationReadWire::deserialize(deserializer)?
-            .into_configuration(&[])
+            .into_configuration()
             .map_err(serde::de::Error::custom)
     }
 }

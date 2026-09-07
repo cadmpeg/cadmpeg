@@ -676,7 +676,7 @@ fn unsupported_retained_native_records_are_refused_before_output() {
         .ir_mut()
         .native
         .namespace_mut("rhino")
-        .arenas
+        .arenas_mut()
         .entry("materials".into())
         .or_default()
         .push(cadmpeg_ir::NativeRecord::new(

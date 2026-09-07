@@ -94,7 +94,7 @@ fn eight_digit_directory_status_supplies_four_two_digit_fields() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let entity = &result.ir().native.namespace("iges").unwrap().arenas["entities"][0];
+    let entity = &result.ir().native.namespace("iges").unwrap().arenas()["entities"][0];
 
     assert_eq!(entity.fields()["blank_status"], 1);
     assert_eq!(entity.fields()["subordinate_status"], 2);
@@ -119,9 +119,9 @@ fn a_nonblank_space_in_the_status_number_quarantines_the_record() {
             .unwrap();
 
         let native = result.ir().native.namespace("iges").unwrap();
-        let quarantined = &native.arenas["quarantined_directory_records"];
+        let quarantined = &native.arenas()["quarantined_directory_records"];
         let losses = &result.report().losses;
-        assert!(native.arenas["entities"].is_empty(), "{status}");
+        assert!(native.arenas()["entities"].is_empty(), "{status}");
         assert_eq!(quarantined.len(), 1, "{status}");
         assert_eq!(quarantined[0].fields()["defect"], "status-number-invalid");
         assert_eq!(losses.len(), 1, "{status}: {losses:#?}");
@@ -169,14 +169,14 @@ fn decode_treats_subordinate_switch_three_as_physically_dependent() {
         Some("directory_entry:D1")
     );
     let native = result.ir().native.namespace("iges").unwrap();
-    assert_eq!(native.arenas["directions"].len(), 1);
-    let direction_fields = native.arenas["directions"][0].fields();
+    assert_eq!(native.arenas()["directions"].len(), 1);
+    let direction_fields = native.arenas()["directions"][0].fields();
     let components = direction_fields["components"].as_array().unwrap();
     assert_eq!(components[0], 2.0);
     assert_eq!(components[1], -3.0);
     assert_eq!(components[2], 4.0);
     assert_eq!(
-        native.arenas["directions"][0].fields()["physically_dependent"],
+        native.arenas()["directions"][0].fields()["physically_dependent"],
         true
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());

@@ -305,11 +305,13 @@ fn json_round_trip_preserves_ulp_edge_scalars_exactly() {
 #[test]
 fn parser_rejects_unsupported_missing_and_non_string_versions() {
     let canonical = serde_json::to_value(unit_cube()).unwrap();
-    for version in [
-        Some(serde_json::Value::String("0".into())),
-        None,
-        Some(serde_json::Value::Number(1.into())),
+    let expected_version = crate::IR_VERSION;
+    for (version, found) in [
+        (Some(serde_json::Value::String("0".into())), "Some(\"0\")"),
+        (None, "None"),
+        (Some(serde_json::Value::Number(1.into())), "None"),
     ] {
+        let expected = format!("unsupported ir_version {found}; expected {expected_version}");
         let mut value = canonical.clone();
         let object = value.as_object_mut().unwrap();
         match version {
@@ -323,8 +325,9 @@ fn parser_rejects_unsupported_missing_and_non_string_versions() {
         let json = serde_json::to_string(&value).unwrap();
         let error = CadIr::from_json(&json).unwrap_err();
         assert!(!error.is_syntax());
-        assert!(error.to_string().contains("unsupported ir_version"));
-        assert!(serde_json::from_str::<CadIr>(&json).is_err());
+        assert!(error.to_string().contains(&expected), "{error}");
+        let direct = serde_json::from_str::<CadIr>(&json).unwrap_err();
+        assert!(direct.to_string().contains(&expected), "{direct}");
     }
 }
 

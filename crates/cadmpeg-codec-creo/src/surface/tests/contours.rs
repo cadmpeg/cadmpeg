@@ -121,7 +121,7 @@ fn container_and_native_arena_retain_contour_entries() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let contours = &result.ir().native.namespace("creo").unwrap().arenas["surface_contours"];
+    let contours = &result.ir().native.namespace("creo").unwrap().arenas()["surface_contours"];
     assert_eq!(contours.len(), 2);
     assert_eq!(contours[0].fields()["surface_id"], 7);
     assert_eq!(contours[0].fields()["curve_header_id"], 0x210);

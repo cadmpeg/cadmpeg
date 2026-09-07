@@ -72,7 +72,7 @@ fn native_namespace_types_and_validates_formula_relations() {
         .expect("complete formula relation")
         .output_entity
         .reference = malformed_output;
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
         .store(&mut namespace)
         .expect("store malformed formula relation");
@@ -88,7 +88,7 @@ fn native_namespace_types_and_validates_formula_relations() {
         .expect("complete formula relation")
         .expression_entity
         .payload_offset = u64::MAX;
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed_offset
         .store(&mut namespace)
         .expect("store malformed formula incidence offset");

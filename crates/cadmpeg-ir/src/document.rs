@@ -404,10 +404,9 @@ macro_rules! declare_model {
                         .map_err(serde::de::Error::custom)?;
                 }
                 for wire in configurations {
-                    model.configurations.push(
-                        wire.into_configuration(&model.features)
-                            .map_err(serde::de::Error::custom)?,
-                    );
+                    model
+                        .configurations
+                        .push(wire.into_configuration().map_err(serde::de::Error::custom)?);
                 }
                 crate::topology::rebind_face_loop_roles(&mut model.faces)
                     .map_err(serde::de::Error::custom)?;
@@ -1079,13 +1078,16 @@ impl Model {
     }
 }
 
-fn deserialize_ir_version<'de, D>(deserializer: D) -> Result<(), D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let version = String::deserialize(deserializer)?;
-    if version != IR_VERSION {
-        return Err(serde::de::Error::custom(format!(
+/// Accept only the supported `ir_version`.
+///
+/// The version stays a [`serde_json::Value`] so a missing member and a
+/// non-string one are both reported as an unsupported version rather than as a
+/// missing-field or type error. This is the single version gate: both
+/// [`Deserialize`] for [`CadIr`] and [`CadIr::from_json`] call it.
+fn check_ir_version<E: serde::de::Error>(version: Option<&serde_json::Value>) -> Result<(), E> {
+    let version = version.and_then(serde_json::Value::as_str);
+    if version != Some(IR_VERSION) {
+        return Err(E::custom(format!(
             "unsupported ir_version {version:?}; expected {IR_VERSION}"
         )));
     }
@@ -1119,7 +1121,7 @@ pub struct CadIr {
     pub tolerances: Tolerances,
     /// Format-neutral model.
     pub model: Model,
-    /// Per-format native namespaces, each an arena map with no version.
+    /// Per-format native namespaces, each an arena map.
     pub native: Native,
 }
 
@@ -1138,8 +1140,8 @@ struct CadIrWriteWire<'a> {
 
 #[derive(Deserialize)]
 struct CadIrReadWire {
-    #[serde(rename = "ir_version", deserialize_with = "deserialize_ir_version")]
-    _ir_version: (),
+    #[serde(default, rename = "ir_version")]
+    ir_version: Option<serde_json::Value>,
     #[serde(flatten)]
     payload: CadIrPayload,
 }
@@ -1173,6 +1175,7 @@ impl Serialize for CadIr {
 impl<'de> Deserialize<'de> for CadIr {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let wire = CadIrReadWire::deserialize(deserializer)?;
+        check_ir_version(wire.ir_version.as_ref())?;
         Ok(wire.payload.into())
     }
 }
@@ -1266,13 +1269,9 @@ impl CadIr {
         format: &str,
         records: I,
     ) -> Result<(), crate::native::NativeConvertError> {
-        self.unknowns_namespace_mut(format)
+        self.native
+            .namespace_mut(format)
             .set_arena_from("unknowns", records)
-    }
-
-    /// Return the `format` namespace holding retained unknown records.
-    fn unknowns_namespace_mut(&mut self, format: &str) -> &mut crate::native::NativeNamespace {
-        self.native.namespace_mut(format)
     }
 
     /// Construct an empty document with default tolerances.
@@ -1317,24 +1316,14 @@ impl CadIr {
     /// Version is probed first (`ir_version` only) so the full document is
     /// materialized once after the version gate.
     pub fn from_json(s: &str) -> Result<Self, serde_json::Error> {
-        /// Every member but `ir_version` is skipped, and the version stays a
-        /// [`serde_json::Value`] so a non-string one is reported as an
-        /// unsupported version rather than as a type error.
+        /// Every member but `ir_version` is skipped.
         #[derive(Deserialize)]
         struct VersionProbe {
             ir_version: Option<serde_json::Value>,
         }
 
         let probe = serde_json::from_str::<VersionProbe>(s)?;
-        let version = probe
-            .ir_version
-            .as_ref()
-            .and_then(serde_json::Value::as_str);
-        if version != Some(IR_VERSION) {
-            return Err(<serde_json::Error as serde::de::Error>::custom(format!(
-                "unsupported ir_version {version:?}; expected {IR_VERSION}"
-            )));
-        }
+        check_ir_version(probe.ir_version.as_ref())?;
         serde_json::from_str::<CadIrPayload>(s).map(Into::into)
     }
 

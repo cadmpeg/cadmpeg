@@ -19,8 +19,7 @@ use std::process::ExitCode;
 
 use anyhow::{anyhow, Context, Result};
 use cadmpeg_core::decode::InspectOptions;
-use serde::ser::SerializeStruct;
-use serde::{Serialize, Serializer};
+use serde::Serialize;
 
 use cadmpeg_registry::{
     build_encoder, resolve_and_inspect_with, ForcedInput, Format, InputCatalog, InspectError,
@@ -130,23 +129,12 @@ pub(crate) struct DiffInput<'a> {
     pub(crate) forced: Option<ForcedInput>,
 }
 
+/// `inspect` payload. `summary` is `null` on a refusal, where no container
+/// summary was produced.
 #[derive(Serialize)]
-struct InspectSuccessPayload<'a> {
+struct InspectPayload<'a> {
     confidence: Option<cadmpeg_ir::codec::Confidence>,
-    summary: &'a cadmpeg_ir::ContainerSummary,
-}
-
-struct InspectRefusalPayload {
-    confidence: Option<cadmpeg_ir::codec::Confidence>,
-}
-
-impl Serialize for InspectRefusalPayload {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut state = serializer.serialize_struct("InspectRefusalPayload", 2)?;
-        state.serialize_field("confidence", &self.confidence)?;
-        state.serialize_field("summary", &Option::<&cadmpeg_ir::ContainerSummary>::None)?;
-        state.end()
-    }
+    summary: Option<&'a cadmpeg_ir::ContainerSummary>,
 }
 
 #[derive(Serialize)]
@@ -194,8 +182,9 @@ pub fn inspect(
             ..
         }) => {
             let refusal = ConversionRefusal::unsupported_dialect(dialects, message);
-            let payload = InspectRefusalPayload {
+            let payload = InspectPayload {
                 confidence: selection.confidence(),
+                summary: None,
             };
             write_refusal_report(path, report_path, force, "inspect", &payload, &refusal);
             if json {
@@ -213,9 +202,9 @@ pub fn inspect(
         }
     };
     let confidence = selection.confidence();
-    let payload = InspectSuccessPayload {
+    let payload = InspectPayload {
         confidence,
-        summary: &summary,
+        summary: Some(&summary),
     };
     write_json_report(path, report_path, force, "inspect", &payload)?;
     if json {

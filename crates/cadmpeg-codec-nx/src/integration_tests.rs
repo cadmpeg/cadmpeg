@@ -248,7 +248,7 @@ fn display_jt_pipeline_decodes_mesh_scene_lod_and_property_streams() {
             ("/Root/UG_PART/DisplayJT", jt),
         ]));
         let namespace = result.ir().native.namespace("nx").unwrap();
-        assert!(!namespace.arenas[expected_arena].is_empty());
+        assert!(!namespace.arenas()[expected_arena].is_empty());
         assert_valid(&result);
     }
 }
@@ -267,10 +267,10 @@ fn object_model_pipeline_projects_composed_feature_history_and_inputs() {
     ordinals.sort_unstable();
     assert_eq!(ordinals, (0..ordinals.len() as u64).collect::<Vec<_>>());
     let namespace = result.ir().native.namespace("nx").unwrap();
-    assert!(!namespace.arenas["feature_operation_records"].is_empty());
-    assert!(!namespace.arenas["feature_input_blocks"].is_empty());
+    assert!(!namespace.arenas()["feature_operation_records"].is_empty());
+    assert!(!namespace.arenas()["feature_input_blocks"].is_empty());
 
-    let labels = &namespace.arenas["feature_operation_labels"];
+    let labels = &namespace.arenas()["feature_operation_labels"];
     let find_feature = |value: &str| {
         let label = labels
             .iter()
@@ -293,7 +293,7 @@ fn object_model_pipeline_projects_composed_feature_history_and_inputs() {
     let assert_native_links =
         |feature: &cadmpeg_ir::features::Feature, arena: &str, property_prefix: &str| {
             let operation_label = feature.native_ref.as_deref().expect("native feature label");
-            let records = namespace.arenas[arena]
+            let records = namespace.arenas()[arena]
                 .iter()
                 .filter(|record| {
                     record

@@ -22,7 +22,7 @@ fn loss_code_serializes_as_namespaced_object() {
     assert_eq!(value["code"]["kind"], "topology_not_transferred");
     assert!(value["code"].get("strict_floor").is_none());
     assert_eq!(
-        note.code.as_str(),
+        note.code.to_string(),
         format!("{SHARED_LOSS_NAMESPACE}/topology_not_transferred")
     );
 }
@@ -133,7 +133,7 @@ fn assembly_losses_belong_to_the_product_domain() {
         LossCategory::Product
     );
     assert_eq!(
-        LossKind::shared(LossTaxonomy::AssemblyPlacementsNotTransferred).as_str(),
+        LossKind::shared(LossTaxonomy::AssemblyPlacementsNotTransferred).to_string(),
         format!("{SHARED_LOSS_NAMESPACE}/assembly_placements_not_transferred")
     );
 }
@@ -142,7 +142,7 @@ fn assembly_losses_belong_to_the_product_domain() {
 fn noncanonical_source_syntax_is_a_strict_rejectable_warning() {
     let kind = LossKind::shared(LossTaxonomy::NoncanonicalSourceSyntax);
     assert_eq!(
-        kind.as_str(),
+        kind.to_string(),
         format!("{SHARED_LOSS_NAMESPACE}/noncanonical_source_syntax")
     );
     assert_eq!(kind.category(), LossCategory::Other);
@@ -158,7 +158,7 @@ fn noncanonical_source_syntax_is_a_strict_rejectable_warning() {
 fn integrity_failure_is_a_strict_rejectable_error() {
     let kind = LossKind::shared(LossTaxonomy::IntegrityFailure);
     assert_eq!(
-        kind.as_str(),
+        kind.to_string(),
         format!("{SHARED_LOSS_NAMESPACE}/integrity_failure")
     );
     assert_eq!(kind.category(), LossCategory::Other);

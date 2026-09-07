@@ -836,7 +836,7 @@ fn covered_arenas() -> BTreeSet<String> {
             continue;
         };
         if let Some(namespace) = result.ir().native.namespace("nx") {
-            for (arena, records) in &namespace.arenas {
+            for (arena, records) in namespace.arenas() {
                 if !records.is_empty() {
                     covered.insert(arena.clone());
                 }

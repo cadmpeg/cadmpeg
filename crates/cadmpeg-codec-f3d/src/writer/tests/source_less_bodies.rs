@@ -592,7 +592,7 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
     let orphan = &mut orphaned
         .native
         .namespace_mut("f3d")
-        .arenas
+        .arenas_mut()
         .get_mut("asm_history_records")
         .expect("history-record arena")[0];
     let mut orphan_fields = orphan.fields();
@@ -612,7 +612,7 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
     let states = duplicate
         .native
         .namespace_mut("f3d")
-        .arenas
+        .arenas_mut()
         .get_mut("asm_delta_states")
         .expect("delta-state arena");
     states.push(states[0].clone());

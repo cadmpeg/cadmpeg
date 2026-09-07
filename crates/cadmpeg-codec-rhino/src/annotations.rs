@@ -868,8 +868,8 @@ mod tests {
         install(&scan, &mut ir);
 
         let namespace = ir.native.namespace("rhino").expect("Rhino namespace");
-        assert_eq!(namespace.arenas["annotations"].len(), 4);
-        let text = serde_json::to_value(&namespace.arenas["annotations"][0]).expect("text JSON");
+        assert_eq!(namespace.arenas()["annotations"].len(), 4);
+        let text = serde_json::to_value(&namespace.arenas()["annotations"][0]).expect("text JSON");
         assert_eq!(text["kind"], "text");
         assert_eq!(text["rich_text"], "text");
         assert_eq!(text["v2_default_text"], "default");
@@ -877,15 +877,15 @@ mod tests {
         assert_eq!(text["v2_font_weight"], 700);
         assert_eq!(text["v2_text_height"], 12.5);
         let leader =
-            serde_json::to_value(&namespace.arenas["annotations"][1]).expect("leader JSON");
+            serde_json::to_value(&namespace.arenas()["annotations"][1]).expect("leader JSON");
         assert_eq!(leader["kind"], "leader");
         assert_eq!(leader["rich_text"], "leader");
         assert_eq!(leader["leader_points"][1][1], 4.0);
-        let base = serde_json::to_value(&namespace.arenas["annotations"][2]).expect("base JSON");
+        let base = serde_json::to_value(&namespace.arenas()["annotations"][2]).expect("base JSON");
         assert_eq!(base["kind"], "text");
         assert_eq!(base["rich_text"], "base");
         let unknown =
-            serde_json::to_value(&namespace.arenas["annotations"][3]).expect("unknown JSON");
+            serde_json::to_value(&namespace.arenas()["annotations"][3]).expect("unknown JSON");
         assert_eq!(unknown["kind"], "annotation");
         assert_eq!(unknown["annotation_type"], 123);
     }
@@ -989,13 +989,13 @@ mod tests {
         install(&scan, &mut ir);
 
         let namespace = ir.native.namespace("rhino").expect("Rhino namespace");
-        assert_eq!(namespace.arenas["text_dots"].len(), 1);
-        assert_eq!(namespace.arenas["annotation_arrows"].len(), 1);
-        let dot = serde_json::to_value(&namespace.arenas["text_dots"][0]).expect("dot JSON");
+        assert_eq!(namespace.arenas()["text_dots"].len(), 1);
+        assert_eq!(namespace.arenas()["annotation_arrows"].len(), 1);
+        let dot = serde_json::to_value(&namespace.arenas()["text_dots"][0]).expect("dot JSON");
         assert_eq!(dot["primary_text"], "V2 dot");
         assert_eq!(dot["center"][0], 1.25);
         let arrow =
-            serde_json::to_value(&namespace.arenas["annotation_arrows"][0]).expect("arrow JSON");
+            serde_json::to_value(&namespace.arenas()["annotation_arrows"][0]).expect("arrow JSON");
         assert_eq!(arrow["tail"][2], 3.0);
         assert_eq!(arrow["head"][0], -4.0);
     }

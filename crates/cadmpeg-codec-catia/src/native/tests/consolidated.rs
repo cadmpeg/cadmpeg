@@ -37,7 +37,7 @@ fn native_namespace_retains_unbound_consolidated_pcurve_jets() {
         vec![[0.0, 0.0], [1.0, 1.0]]
     );
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).expect("store CATIA pcurves");
     assert_eq!(
         crate::native::CatiaNative::load(&namespace).expect("load CATIA pcurves"),
@@ -46,7 +46,7 @@ fn native_namespace_retains_unbound_consolidated_pcurve_jets() {
 
     let mut invalid = native;
     invalid.consolidated_pcurves[0].degree = 4;
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA pcurve for load validation");
@@ -62,7 +62,7 @@ fn native_namespace_retains_typed_consolidated_groups() {
     assert_eq!(group.byte_offset, 9);
     assert_eq!(group.group_type, 3);
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store CATIA consolidated groups");
@@ -73,7 +73,7 @@ fn native_namespace_retains_typed_consolidated_groups() {
 
     let mut invalid = native;
     invalid.consolidated_groups[0].id.push_str("-changed");
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA consolidated group for load validation");
@@ -109,7 +109,7 @@ fn native_namespace_retains_consolidated_class61_records() {
     assert_eq!(references, &[0x0100, 0x0103, 0x0106, 0x0109, 0x010c]);
     assert_eq!(*scalar, 42.5);
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store CATIA class-0x61 records");
@@ -125,7 +125,7 @@ fn native_namespace_retains_consolidated_class61_records() {
         panic!("long class-0x61 record")
     };
     members.swap(0, 1);
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA class-0x61 record for load validation");
@@ -154,7 +154,7 @@ fn native_namespace_retains_class5b5c_control_records_without_assigning_roles() 
         .iter()
         .all(|record| !record.frame.payload.is_empty()));
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store CATIA class-0x5b/0x5c records");
@@ -203,7 +203,7 @@ fn native_namespace_retains_all_consolidated_parameter_point_layouts() {
         }
     ));
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store CATIA parameter points");
@@ -252,7 +252,7 @@ fn native_namespace_retains_all_consolidated_plane_carrier_layouts() {
         }
     ));
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store CATIA plane carriers");
@@ -304,7 +304,7 @@ fn native_namespace_retains_unclassified_consolidated_plane_carrier_lanes() {
             if lane == &values
     ));
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store unclassified plane carrier");
@@ -322,7 +322,7 @@ fn native_namespace_retains_consolidated_reference_lists() {
     };
     assert_eq!(list.references, (0u32..26).collect::<Vec<_>>());
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store CATIA reference list");
@@ -333,7 +333,7 @@ fn native_namespace_retains_consolidated_reference_lists() {
 
     let mut invalid = native;
     invalid.consolidated_reference_lists[0].references.clear();
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA reference list");
@@ -358,7 +358,7 @@ fn native_namespace_retains_standalone_consolidated_circle_supports() {
     assert!(circle.full_circle);
     assert_eq!(circle.chart_shift, 0.0);
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).expect("store CATIA circle");
     assert_eq!(
         crate::native::CatiaNative::load(&namespace).expect("load CATIA circle"),
@@ -367,7 +367,7 @@ fn native_namespace_retains_standalone_consolidated_circle_supports() {
 
     let mut invalid = native;
     invalid.consolidated_circles[0].full_circle = false;
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA circle for load validation");
@@ -412,7 +412,7 @@ fn native_namespace_retains_all_consolidated_cylinder_layouts() {
             == ((0.0 + 8.0) * 0.5 - std::f64::consts::PI * 4.0).to_bits()
     ));
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).expect("store CATIA cylinders");
     assert_eq!(
         crate::native::CatiaNative::load(&namespace).expect("load CATIA cylinders"),
@@ -426,7 +426,7 @@ fn native_namespace_retains_all_consolidated_cylinder_layouts() {
         panic!("range-origin cylinder")
     };
     *range_origin += 1.0;
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA cylinder for load validation");
@@ -456,7 +456,7 @@ fn native_namespace_retains_exact_consolidated_cone_charts() {
         ]
     );
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).expect("store CATIA cone");
     assert_eq!(
         crate::native::CatiaNative::load(&namespace).expect("load CATIA cone"),
@@ -465,7 +465,7 @@ fn native_namespace_retains_exact_consolidated_cone_charts() {
 
     let mut invalid = native;
     invalid.consolidated_cones[0].angular_domain[0] += 0.25;
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA cone for load validation");
@@ -491,7 +491,7 @@ fn native_namespace_retains_consolidated_cone_face_charts() {
         ]
     );
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store CATIA cone-face chart");
@@ -502,7 +502,7 @@ fn native_namespace_retains_consolidated_cone_face_charts() {
 
     let mut invalid = native.clone();
     invalid.consolidated_cone_faces[0].program.clear();
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA cone-face chart");
@@ -512,7 +512,7 @@ fn native_namespace_retains_consolidated_cone_face_charts() {
     invalid.consolidated_cone_faces[0]
         .parameter_points
         .swap(0, 1);
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA cone-face parameter run");
@@ -565,7 +565,7 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
         Some("catia:consolidated:circle#0")
     );
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store CATIA revolution");
@@ -576,7 +576,7 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
 
     let mut invalid = native.clone();
     invalid.consolidated_revolutions[0].profile_circle = None;
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA revolution profile binding");
@@ -584,7 +584,7 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
 
     let mut invalid = native;
     invalid.consolidated_revolutions[0].axis = [0.0, 0.0, -1.0];
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA revolution for load validation");
@@ -677,7 +677,7 @@ fn native_namespace_retains_exact_consolidated_line_profiles() {
     assert_eq!(line.direction, [0.0, 0.6, 0.8]);
     assert_eq!(line.range, [-4.0, 9.0]);
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store CATIA line profile");
@@ -688,7 +688,7 @@ fn native_namespace_retains_exact_consolidated_line_profiles() {
 
     let mut invalid = native;
     invalid.consolidated_line_profiles[0].direction = [0.0, 0.0, 2.0];
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA line profile for load validation");
@@ -726,7 +726,7 @@ fn native_namespace_retains_exact_consolidated_torus_charts() {
     assert_eq!(torus.major_scale, 14.0);
     assert_eq!(torus.minor_scale, 4.0);
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).expect("store CATIA torus");
     assert_eq!(
         crate::native::CatiaNative::load(&namespace).expect("load CATIA torus"),
@@ -735,7 +735,7 @@ fn native_namespace_retains_exact_consolidated_torus_charts() {
 
     let mut invalid = native;
     invalid.consolidated_tori[0].major_angular_domain[0] += 0.25;
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA torus for load validation");
@@ -756,7 +756,7 @@ fn native_namespace_retains_exact_consolidated_sphere_charts() {
     assert_eq!(sphere.azimuth_range, [-2.0, 4.0]);
     assert_eq!(sphere.latitude_range, [-1.0, std::f64::consts::FRAC_PI_2]);
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).expect("store CATIA sphere");
     assert_eq!(
         crate::native::CatiaNative::load(&namespace).expect("load CATIA sphere"),
@@ -765,7 +765,7 @@ fn native_namespace_retains_exact_consolidated_sphere_charts() {
 
     let mut invalid = native;
     invalid.consolidated_spheres[0].latitude_range.reverse();
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA sphere for load validation");
@@ -814,7 +814,7 @@ fn native_namespace_retains_consolidated_owner_packet_and_face_node_relation() {
     assert_eq!(face_node.terminal, [0x03, 0x05]);
     assert_eq!(face_node.target + 1, references[8]);
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store CATIA owner packet");
@@ -829,7 +829,7 @@ fn native_namespace_retains_consolidated_owner_packet_and_face_node_relation() {
         .as_mut()
         .expect("face-node relation")
         .target -= 1;
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut namespace)
         .expect("store invalid CATIA owner packet");
@@ -989,7 +989,7 @@ fn native_namespace_retains_source_closed_owner_chart() {
     assert_eq!(*construction_radius, 1.0);
     assert!(chart.parameter_point_byte_offsets[3] < packet.byte_offset);
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store CATIA owner chart");
@@ -1080,7 +1080,7 @@ fn owner_chart_width_coded_supports_select_unique_alias_rows() {
     {
         alias.canonical_tag = Some(100);
     }
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut namespace)
         .expect("store invalid support alias");
@@ -1132,7 +1132,7 @@ fn native_namespace_retains_count_framed_owner_packet_and_face_node_relation() {
         *references.last().expect("final owner reference")
     );
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store count-framed CATIA owner packet");
@@ -1148,7 +1148,7 @@ fn native_namespace_retains_count_framed_owner_packet_and_face_node_relation() {
         panic!("count-framed owner payload")
     };
     tail.clear();
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut namespace)
         .expect("store invalid count-framed CATIA owner packet");
@@ -1241,7 +1241,7 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
         0
     );
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).expect("store CATIA edge run");
     assert_eq!(
         crate::native::CatiaNative::load(&namespace).expect("load CATIA edge run"),
@@ -1250,7 +1250,7 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
 
     let mut invalid = native;
     invalid.consolidated_edge_runs[0].pcurves[1] = "missing".to_string();
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA edge run for load validation");
@@ -1263,7 +1263,7 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
 
     let mut invalid = crate::native::CatiaNative::decode(&bytes);
     invalid.consolidated_edge_nodes[0].uses = None;
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store orphaned CATIA edge definition");
@@ -1273,7 +1273,7 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
     invalid.consolidated_vertex_identities[0]
         .incident_edge_nodes
         .clear();
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA vertex incidence for load validation");
@@ -1569,7 +1569,7 @@ fn native_namespace_retains_standalone_consolidated_edge_nodes() {
     assert_eq!(native.vertex_identity_ids(node), ["", ""]);
     assert!(native.consolidated_vertex_identities.is_empty());
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store standalone consolidated edge node");
@@ -1625,7 +1625,7 @@ fn native_namespace_retains_resolved_consolidated_edge_supports_and_loci() {
             .map(|loci| [loci[0], loci[loci.len() - 1]])
     );
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store resolved CATIA edge run");
@@ -1670,7 +1670,7 @@ fn native_namespace_retains_resolved_consolidated_plane_supports() {
         .all(|binding| matches!(binding, Some(CatiaConsolidatedSupportBinding::Plane { .. }))));
     assert_eq!(run.shared_loci.as_ref().map(Vec::len), Some(2));
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store plane-bound CATIA edge run");
@@ -1690,7 +1690,7 @@ fn native_namespace_retains_resolved_consolidated_plane_supports() {
         Some(CatiaConsolidatedSupportBinding::Plane {
             byte_offset: directionless_offset,
         });
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid directionless plane binding");
@@ -1719,7 +1719,7 @@ fn native_namespace_retains_resolved_consolidated_torus_supports() {
         .all(|binding| matches!(binding, Some(CatiaConsolidatedSupportBinding::Torus { .. }))));
     assert_eq!(run.shared_loci.as_ref().map(Vec::len), Some(2));
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store torus-bound CATIA edge run");
@@ -1751,7 +1751,7 @@ fn native_namespace_retains_resolved_consolidated_sphere_supports() {
     )));
     assert_eq!(run.shared_loci.as_ref().map(Vec::len), Some(2));
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store sphere-bound CATIA edge run");
@@ -1784,7 +1784,7 @@ fn native_namespace_retains_embedded_cylinders_with_their_owning_group() {
     assert_eq!(cylinder.object_id, 0x5678);
     assert_eq!(cylinder.u_range, [0.0, 4.0 * std::f64::consts::PI]);
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store embedded CATIA cylinder");
@@ -1809,7 +1809,7 @@ fn native_namespace_retains_embedded_cylinders_with_their_owning_group() {
     invalid.consolidated_embedded_cylinders[1]
         .group
         .clone_from(&invalid.consolidated_groups[0].id);
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut invalid_namespace)
         .expect("store cross-group embedded cylinder");
@@ -1841,7 +1841,7 @@ fn native_namespace_binds_edges_to_retained_embedded_cylinders() {
         Some(CatiaConsolidatedSupportBinding::EmbeddedCylinder { .. })
     )));
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store embedded-cylinder edge binding");

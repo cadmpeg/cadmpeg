@@ -241,7 +241,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
     );
     assert_eq!(native.legacy_entity_runs[0].integer_values[0].value, 11);
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store legacy entity run");
@@ -255,7 +255,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
         .expect("schema program")
         .data
         .pop();
-    let mut invalid_schema_namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut invalid_schema_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_schema_program
         .store(&mut invalid_schema_namespace)
         .expect("store invalid schema program");
@@ -268,7 +268,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
         .expect("schema program")
         .identifiers[0]
         .value = "Bar".to_string();
-    let mut invalid_identifier_namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut invalid_identifier_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_schema_identifier
         .store(&mut invalid_identifier_namespace)
         .expect("store invalid schema identifier");
@@ -279,7 +279,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
         crate::native::CatiaLegacyTypeValue::Name {
             value: "1Boolean".to_string(),
         };
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_type_name
         .store(&mut namespace)
         .expect("store invalid legacy type name");
@@ -287,7 +287,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
 
     let mut invalid_lead = native.clone();
     invalid_lead.legacy_entity_runs[0].identities[0].lead = 0xe6;
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_lead
         .store(&mut namespace)
         .expect("store invalid legacy identity lead");
@@ -295,7 +295,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
 
     let mut invalid_name = native.clone();
     invalid_name.legacy_entity_runs[0].scalar_values[0].name = Some("Other".to_string());
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_name
         .store(&mut namespace)
         .expect("store invalid legacy scalar name");
@@ -304,7 +304,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
     let mut invalid_scalar_id = native.clone();
     invalid_scalar_id.legacy_entity_runs[0].scalar_values[0].id =
         "catia:legacy:scalar#00000000-0".to_string();
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_scalar_id
         .store(&mut namespace)
         .expect("store invalid legacy scalar identity");
@@ -312,7 +312,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
 
     let mut invalid_integer = native.clone();
     invalid_integer.legacy_entity_runs[0].integer_values[0].value = -1;
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_integer
         .store(&mut namespace)
         .expect("store invalid inline legacy integer");
@@ -320,7 +320,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
 
     let mut invalid_parameter = native.clone();
     invalid_parameter.legacy_entity_runs[0].relations[0].parameter_entity_id = Some(4);
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid_parameter
         .store(&mut namespace)
         .expect("store invalid legacy relation parameter");
@@ -328,7 +328,7 @@ fn native_round_trips_legacy_entity_identity_runs() {
 
     let mut invalid = native;
     invalid.legacy_entity_runs[0].identities[1].entity_id = 1;
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
         .store(&mut namespace)
         .expect("store invalid legacy entity run");
@@ -365,7 +365,7 @@ fn legacy_parameters_retain_and_require_the_part_container_binding() {
         native.object_graphs[0].outer_container.as_ref()
     );
     let expected_binding = run.outer_container.clone();
-    let mut namespace = cadmpeg_ir::NativeNamespace::new();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(&mut namespace)
         .expect("store container-bound legacy run");

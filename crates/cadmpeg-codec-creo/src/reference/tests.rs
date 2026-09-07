@@ -451,7 +451,7 @@ fn decode_transfers_equation_verified_model_reference_circles() {
         circle.source_object.as_ref().unwrap().object_id,
         "MdlRefInfo:arc_z:45"
     );
-    let record = &result.ir().native.namespace("creo").unwrap().arenas["reference_circles"][0];
+    let record = &result.ir().native.namespace("creo").unwrap().arenas()["reference_circles"][0];
     assert_eq!(record.fields()["entity_id"], 45);
     assert_eq!(record.fields()["center_source"], "endpoint_midpoint");
     assert_annotation(
@@ -485,7 +485,7 @@ fn decode_retains_line3d_original_length() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    let record = &result.ir().native.namespace("creo").unwrap().arenas["reference_lines"][0];
+    let record = &result.ir().native.namespace("creo").unwrap().arenas()["reference_lines"][0];
     assert_eq!(record.fields()["family"], "line3d");
     assert_eq!(record.fields()["entity_id"], 35);
     assert_eq!(record.fields()["original_length"], 1.0);
@@ -554,7 +554,7 @@ fn decode_reports_and_retains_invariant_complete_reference_ellipses() {
             ..
         }
     )));
-    let record = &result.ir().native.namespace("creo").unwrap().arenas["reference_ellipses"][0];
+    let record = &result.ir().native.namespace("creo").unwrap().arenas()["reference_ellipses"][0];
     assert_eq!(record.fields()["source_entity_id"], 43);
     assert_eq!(record.fields()["major_radius"], 1.0);
     assert_eq!(record.fields()["minor_radius"], 1.0);

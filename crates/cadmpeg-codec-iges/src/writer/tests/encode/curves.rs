@@ -33,7 +33,7 @@ fn encode_emits_the_typed_ellipse_form_for_v5_0() {
         .native
         .namespace("iges")
         .expect("the output has an IGES namespace")
-        .arenas["entities"]
+        .arenas()["entities"]
         .iter()
         .find(|record| record.field("entity_type") == Some(104.into()))
         .expect("the output has a Type 104 entity");

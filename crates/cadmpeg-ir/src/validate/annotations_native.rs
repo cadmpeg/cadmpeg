@@ -36,7 +36,7 @@ fn annotated_entity_json(ir: &CadIr, wanted: &HashSet<&str>) -> HashMap<String, 
         .native
         .0
         .values()
-        .flat_map(|namespace| namespace.arenas.values())
+        .flat_map(|namespace| namespace.arenas().values())
         .flatten()
     {
         if wanted.contains(record.id()) {
@@ -291,7 +291,7 @@ pub(super) fn check_native_links(
     // The `unknowns` arena is one of the namespace arenas below, so the generic
     // record loop already covers every unknown-record link.
     for namespace in ir.native.0.values() {
-        for records in namespace.arenas.values() {
+        for records in namespace.arenas().values() {
             for record in records {
                 let Some(serde_json::Value::Array(links)) = record.field("links") else {
                     continue;

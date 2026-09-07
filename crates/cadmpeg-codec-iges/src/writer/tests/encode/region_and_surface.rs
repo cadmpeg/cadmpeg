@@ -219,7 +219,7 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
         let decoded = IgesCodec
             .decode(&mut Cursor::new(written), &DecodeOptions::default())
             .unwrap_or_else(|error| panic!("{name}: {error}"));
-        let entity = decoded.ir().native.namespace("iges").unwrap().arenas["entities"]
+        let entity = decoded.ir().native.namespace("iges").unwrap().arenas()["entities"]
             .iter()
             .find(|record| {
                 record.field("entity_type").and_then(|value| value.as_i64()) == Some(126)

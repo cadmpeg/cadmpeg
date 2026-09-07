@@ -201,8 +201,10 @@ fn recovered_global_real_is_strictly_reported_as_noncanonical() {
         .unwrap_err();
     match error {
         cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => assert_eq!(
-            rejection.loss().code.as_str(),
-            IgesLossCode::GlobalNumericSyntaxRecovered.kind().as_str()
+            rejection.loss().code.to_string(),
+            IgesLossCode::GlobalNumericSyntaxRecovered
+                .kind()
+                .to_string()
         ),
         other => panic!("expected a shared-gate strict refusal, got {other:?}"),
     }
@@ -228,7 +230,7 @@ fn an_unknown_flag_three_unit_name_suppresses_geometry_and_charges_one_length_lo
         .native
         .namespace("iges")
         .expect("native iges namespace")
-        .arenas
+        .arenas()
         .is_empty());
     assert_eq!(
         report_code_count(result.report(), IgesLossCode::GlobalLengthUnitUnresolved),
@@ -252,8 +254,8 @@ fn an_unknown_flag_three_unit_name_suppresses_geometry_and_charges_one_length_lo
         .unwrap_err();
     match error {
         cadmpeg_ir::codec::DecodeFailure::StrictRejected { rejection } => assert_eq!(
-            rejection.loss().code.as_str(),
-            IgesLossCode::GlobalLengthUnitUnresolved.kind().as_str()
+            rejection.loss().code.to_string(),
+            IgesLossCode::GlobalLengthUnitUnresolved.kind().to_string()
         ),
         other => panic!("expected a shared-gate strict refusal, got {other:?}"),
     }
