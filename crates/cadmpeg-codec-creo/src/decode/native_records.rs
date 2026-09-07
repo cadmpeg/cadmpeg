@@ -64,7 +64,7 @@ pub(crate) struct CreoSketchSectionOrientation {
 pub(crate) struct CreoFeatureParameterFrame {
     pub(crate) kind: &'static str,
     pub(crate) body: Vec<u8>,
-    pub(crate) decoded_values: Option<Vec<f64>>,
+    pub(crate) decoded_values: Option<[f64; 12]>,
     pub(crate) offset: usize,
 }
 

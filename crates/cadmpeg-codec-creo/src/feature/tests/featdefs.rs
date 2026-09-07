@@ -31,9 +31,7 @@ fn scan_decodes_featdefs_records_and_parameter_frames() {
     );
     assert_eq!(
         scan.features.definitions[0].parameter_frames[0].decoded_values,
-        Some(vec![
-            0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0
-        ])
+        Some([0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0])
     );
     assert_eq!(
         scan.features.definitions[0].parameter_frames[1].kind,
@@ -41,7 +39,7 @@ fn scan_decodes_featdefs_records_and_parameter_frames() {
     );
     assert_eq!(
         scan.features.definitions[0].parameter_frames[1].decoded_values,
-        Some(vec![1.0; 12])
+        Some([1.0; 12])
     );
 
     let result = CreoCodec
@@ -73,9 +71,7 @@ fn scan_decodes_rank_two_featdefs_local_system() {
 
     assert_eq!(
         scan.features.definitions[0].parameter_frames[0].decoded_values,
-        Some(vec![
-            0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -3.0, -4.0, 0.0
-        ])
+        Some([0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -3.0, -4.0, 0.0])
     );
 }
 

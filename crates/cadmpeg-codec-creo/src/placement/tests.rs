@@ -65,9 +65,7 @@ fn unique_complete_local_system_supplies_section_plane_equation() {
     definition.parameter_frames = vec![FeatureParameterFrame {
         kind: FeatureParameterFrameKind::LocalSystem,
         body: Vec::new(),
-        decoded_values: Some(vec![
-            0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 3.0, 4.0, 5.0,
-        ]),
+        decoded_values: Some([0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 3.0, 4.0, 5.0]),
         offset: 1,
     }];
 
@@ -96,7 +94,7 @@ fn unique_complete_local_system_supplies_section_plane_equation() {
     definition.parameter_frames.push(FeatureParameterFrame {
         kind: FeatureParameterFrameKind::LocalSystem,
         body: Vec::new(),
-        decoded_values: Some(vec![0.0; 12]),
+        decoded_values: Some([0.0; 12]),
         offset: 3,
     });
     assert_eq!(definition_local_plane_equation(&definition), None);
@@ -108,7 +106,7 @@ fn unique_complete_local_system_rejects_nonfinite_values() {
     definition.parameter_frames = vec![FeatureParameterFrame {
         kind: FeatureParameterFrameKind::LocalSystem,
         body: Vec::new(),
-        decoded_values: Some(vec![
+        decoded_values: Some([
             1.0,
             0.0,
             0.0,
@@ -358,9 +356,7 @@ fn resolves_section_from_complete_local_frame_when_references_are_unresolved() {
     definition.parameter_frames = vec![FeatureParameterFrame {
         kind: FeatureParameterFrameKind::LocalSystem,
         body: Vec::new(),
-        decoded_values: Some(vec![
-            0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -3.0, -4.0, 0.0,
-        ]),
+        decoded_values: Some([0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -3.0, -4.0, 0.0]),
         offset: 1,
     }];
     definition.section_3d = Some(FeatureSection3d {

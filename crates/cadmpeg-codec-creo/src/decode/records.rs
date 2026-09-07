@@ -2580,7 +2580,7 @@ pub(super) fn feature_definition_records(scan: &ContainerScan) -> Vec<CreoFeatur
                         crate::feature::FeatureParameterFrameKind::Transform => "transform",
                     },
                     body: frame.body.clone(),
-                    decoded_values: frame.decoded_values.clone(),
+                    decoded_values: frame.decoded_values,
                     offset: frame.offset,
                 })
                 .collect(),

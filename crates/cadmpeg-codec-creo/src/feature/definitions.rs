@@ -33,7 +33,7 @@ pub struct FeatureParameterFrame {
     /// Exact scalar-body bytes after `f9 04 03`.
     pub body: Vec<u8>,
     /// Twelve values when the body consists entirely of defined scalar tokens.
-    pub decoded_values: Option<Vec<f64>>,
+    pub decoded_values: Option<[f64; 12]>,
     /// Byte offset of the field label in the original stream.
     pub offset: usize,
 }
@@ -6323,8 +6323,7 @@ pub(crate) fn definitions_in_ranges(
                 let body = payload[body_start..body_end].to_vec();
                 parameter_frames.push(FeatureParameterFrame {
                     kind,
-                    decoded_values: scalar::decode_feature_local_system_slots(&body, &cache)
-                        .map(|slots| slots.to_vec()),
+                    decoded_values: scalar::decode_feature_local_system_slots(&body, &cache),
                     body,
                     offset: field_offset,
                 });

@@ -1356,7 +1356,7 @@ fn datum_feature_uses_its_unique_complete_local_system() {
                 crate::feature::FeatureParameterFrame {
                     kind: crate::feature::FeatureParameterFrameKind::LocalSystem,
                     body: Vec::new(),
-                    decoded_values: Some(vec![
+                    decoded_values: Some([
                         1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 2.0, 3.0, 4.0, 5.0,
                     ]),
                     offset: 1,
@@ -1412,7 +1412,7 @@ fn coordinate_system_feature_uses_its_unique_complete_local_system() {
                 crate::feature::FeatureParameterFrame {
                     kind: crate::feature::FeatureParameterFrameKind::LocalSystem,
                     body: Vec::new(),
-                    decoded_values: Some(vec![
+                    decoded_values: Some([
                         0.0, 2.0, 0.0, -3.0, 0.0, 0.0, 0.0, 0.0, 4.0, 5.0, 6.0, 7.0,
                     ]),
                     offset: 1,
@@ -1468,9 +1468,7 @@ fn coordinate_system_feature_rejects_a_reflected_local_system() {
             parameter_frames: vec![crate::feature::FeatureParameterFrame {
                 kind: crate::feature::FeatureParameterFrameKind::LocalSystem,
                 body: Vec::new(),
-                decoded_values: Some(vec![
-                    1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0, 5.0, 6.0, 7.0,
-                ]),
+                decoded_values: Some([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0, 5.0, 6.0, 7.0]),
                 offset: 1,
             }],
             outlines: Vec::new(),
