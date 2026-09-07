@@ -552,10 +552,7 @@ fn intersection_chart_layout_is_selected_by_stream_kind() {
         chart.data.point_layout(),
         crate::intersection::ChartPointLayout::Ext11
     );
-    assert_eq!(
-        chart.data.native_parameters().map(<[f64]>::to_vec),
-        Some(vec![2.0, 5.0])
-    );
+    assert_eq!(chart.data.native_parameters(), Some(vec![2.0, 5.0]));
 }
 
 #[test]

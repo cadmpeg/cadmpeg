@@ -45,7 +45,7 @@ impl From<ParasolidChartRecord> for ChartWire {
                 .iter()
                 .map(|point| [point.x, point.y, point.z])
                 .collect(),
-            native_parameters: value.data.native_parameters().map(<[f64]>::to_vec),
+            native_parameters: value.data.native_parameters(),
             ext_support_uv: value
                 .data
                 .support_uv()
