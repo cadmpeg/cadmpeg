@@ -107,7 +107,6 @@ fn pending_trimmed_definition(external_ids: &[u32]) -> FeatureDefinition {
                 kind: TrimEntityKind::Line,
                 mode: Some(0),
                 vertices: [index as u32, index as u32 + 1],
-                center_vertex: None,
                 offset: index,
             })
             .collect(),
@@ -350,9 +349,8 @@ fn operation(feature_id: u32, recipe: Option<FeatureRecipe>, offset: usize) -> F
     FeatureOperation {
         feature_id,
         kind: OperationKind::Stored(String::new()),
-        name: OperationName::Recipe,
-        recipe,
-        recipe_conflict: false,
+        name: OperationName::Derived,
+        recipe: crate::feature::RecipeResolution::from(recipe),
         display_state_conflict: false,
         depdb: None,
         offset,

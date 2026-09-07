@@ -703,12 +703,12 @@ fn component_is_closed(
             .iter()
             .filter(|half_edge| half_edge.curve_id == *curve_id)
             .filter_map(|half_edge| half_edges.get(half_edge))
-            .map(|half_edge| half_edge.face_id)
+            .filter_map(|half_edge| half_edge.face_id)
             .collect::<Vec<_>>();
         face_uses.len() == 2
             && face_uses
                 .iter()
-                .all(|face_id| *face_id != 0 && faces.contains(face_id))
+                .all(|face_id| faces.contains(&face_id.get()))
     })
 }
 
@@ -1134,8 +1134,8 @@ pub(in super::super) fn transfer_native_brep(
         .collect::<BTreeSet<_>>();
     let mut loops_by_face = BTreeMap::<u32, Vec<&crate::topology::Loop>>::new();
     for lp in &scan.topology.loops {
-        if lp.face_id != 0 {
-            loops_by_face.entry(lp.face_id).or_default().push(lp);
+        if let Some(face_id) = lp.face_id {
+            loops_by_face.entry(face_id.get()).or_default().push(lp);
         }
     }
     let topology_face_reference_ids = scan
@@ -1344,7 +1344,7 @@ pub(in super::super) fn transfer_native_brep(
         .collect::<BTreeMap<_, _>>();
     let curve_faces = crate::topology::uniquely_identified_rows(&scan.curves.topology_rows)
         .into_iter()
-        .map(|row| (row.id, row.faces))
+        .map(|row| (row.id, row.stored_face_ids()))
         .collect::<BTreeMap<_, _>>();
 
     let eligible_face_ids = eligible_faces.keys().copied().collect::<BTreeSet<_>>();
@@ -2065,11 +2065,11 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 instance_path: Vec::new(),
             }),
         });
-        for ((curve_id, ordinate), cap_plane_id) in pair
-            .curve_ids
-            .iter()
-            .zip(&pair.curve_cap_ordinates_row_frame)
-            .zip(&pair.cap_plane_ids)
+        for crate::curve::Fc05CapEdge {
+            curve_id,
+            cap_plane_id,
+            cap_ordinate_row_frame: ordinate,
+        } in &pair.cap_edges
         {
             let cap_offset =
                 crate::surface::unique_outline_plane(&scan.planes.outlines, *cap_plane_id)
@@ -2085,7 +2085,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 cap_offset,
                 pair.center_row_frame,
                 pair.reference_direction_row_frame,
-                frame.axis_sign.scale(),
+                frame.axis_sign,
             );
             let id = CurveId::mint(format!("creo:visibgeom:curve#{curve_id}"))
                 .expect("identity grammar");

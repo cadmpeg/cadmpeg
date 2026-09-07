@@ -286,7 +286,7 @@ fn placed_carriers_rejects_duplicate_rowless_model_surface_ids() {
 #[test]
 fn loop_classifier_rejects_inner_edge_crossing_concave_outer() {
     let outer = crate::topology::Loop {
-        face_id: 5,
+        face_id: std::num::NonZeroU32::new(5),
         half_edges: (0..8)
             .map(|index| crate::topology::HalfEdgeId {
                 curve_id: 10 + index,
@@ -295,7 +295,7 @@ fn loop_classifier_rejects_inner_edge_crossing_concave_outer() {
             .collect(),
     };
     let inner = crate::topology::Loop {
-        face_id: 5,
+        face_id: std::num::NonZeroU32::new(5),
         half_edges: (0..3)
             .map(|index| crate::topology::HalfEdgeId {
                 curve_id: 20 + index,
@@ -351,7 +351,7 @@ fn loop_classifier_rejects_inner_edge_crossing_concave_outer() {
 #[test]
 fn parameter_loop_classifier_orders_unique_outer() {
     let outer = crate::topology::Loop {
-        face_id: 5,
+        face_id: std::num::NonZeroU32::new(5),
         half_edges: (0..4)
             .map(|index| crate::topology::HalfEdgeId {
                 curve_id: 10 + index,
@@ -360,7 +360,7 @@ fn parameter_loop_classifier_orders_unique_outer() {
             .collect(),
     };
     let inner = crate::topology::Loop {
-        face_id: 5,
+        face_id: std::num::NonZeroU32::new(5),
         half_edges: (0..4)
             .map(|index| crate::topology::HalfEdgeId {
                 curve_id: 20 + index,
@@ -402,12 +402,12 @@ fn topology_bound_plane_rejects_duplicate_model_curve_ids() {
             type_byte: 0,
             feature_id: 1,
             directions: [0; 2],
-            faces: [5, 0],
+            faces: [std::num::NonZeroU32::new(5), None],
             next_edges: [11, 0],
             offset: 20,
         });
     scan.topology.loops.push(crate::topology::Loop {
-        face_id: 5,
+        face_id: std::num::NonZeroU32::new(5),
         half_edges: vec![crate::topology::HalfEdgeId {
             curve_id: 11,
             side: crate::topology::Side::Zero,

@@ -14,6 +14,23 @@
 //!
 use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 
+macro_rules! loss_codes {
+    ($(#[$enum_attribute:meta])* pub enum $name:ident {
+        $($(#[$variant_attribute:meta])* $variant:ident),* $(,)?
+    }) => {
+        $(#[$enum_attribute])*
+        pub enum $name {
+            $($(#[$variant_attribute])* $variant),*
+        }
+
+        impl $name {
+            /// Every code, in declaration order.
+            pub const ALL: &'static [Self] = &[$(Self::$variant),*];
+        }
+    };
+}
+
+loss_codes! {
 /// A stable, machine-readable identifier for one Creo transfer loss.
 ///
 /// Variants are grouped by the record family whose transfer degraded. The
@@ -153,77 +170,9 @@ pub enum CreoLossCode {
     /// Prohibited datum-curve constructs across active curve-equation records.
     CurveExpressionKindProhibited,
 }
+}
 
 impl CreoLossCode {
-    /// Every code, in declaration order.
-    pub const ALL: &'static [CreoLossCode] = &[
-        Self::ContainerCensus,
-        Self::SourceDialectUnverified,
-        Self::LegacyRealValueUnresolved,
-        Self::LegacyIntegerValueUnresolved,
-        Self::LegacyContinuationFormUndefined,
-        Self::LegacyByteStringEncodingRetained,
-        Self::LegacyUnsignedValueUnresolved,
-        Self::LegacyCompactRealUnresolved,
-        Self::LegacyObjectArrayIncomplete,
-        Self::LegacyObjectPayloadUndefined,
-        Self::LegacyStringArrayIncomplete,
-        Self::LegacyStringContinuationUndefined,
-        Self::LegacyStringEncodingRetained,
-        Self::TriangleStripRepresentationConflict,
-        Self::BrepTransferIncomplete,
-        Self::GeometryInstanceCarriersGated,
-        Self::VisibGeomSurfaceUntransferred,
-        Self::VisibGeomCurveUntransferred,
-        Self::VisibGeomSurfaceAmbiguous,
-        Self::VisibGeomCurveAmbiguous,
-        Self::SectionSegmentGeometryUnresolved,
-        Self::CarrierVisibGeomPlanes,
-        Self::CarrierTopologyBoundPlanes,
-        Self::CarrierFirstInstancePrototypes,
-        Self::CarrierPairedEnvelopeSpheres,
-        Self::CarrierPositionalTori,
-        Self::CarrierPositionalCylinders,
-        Self::CarrierPositionalCones,
-        Self::CarrierLineExtrusionPlanes,
-        Self::CarrierTabulatedCylinderExtrusions,
-        Self::CarrierDatumPlanes,
-        Self::CarrierReferenceLines,
-        Self::CarrierReferenceCircles,
-        Self::CarrierReferenceEllipses,
-        Self::CarrierTopologicalPoints,
-        Self::CarrierTopologicalEdges,
-        Self::CarrierAnalyticPcurves,
-        Self::CarrierExtrusionBoundaryCurves,
-        Self::CarrierExtrusionSectionGenerators,
-        Self::CarrierSharedExtrusionGenerators,
-        Self::CarrierTorusParameterRetention,
-        Self::TopologyIncompleteComponents,
-        Self::FeatureNeutralSemanticsIncomplete,
-        Self::FeatureSweepIncomplete,
-        Self::FeatureSurfaceOperationIncomplete,
-        Self::FeatureConstructionIncomplete,
-        Self::FeatureRecognizedIncomplete,
-        Self::FeatureNativeSemantics,
-        Self::FeatureConstructionUnresolved,
-        Self::SectionSegmentMissing,
-        Self::SectionRelationMissing,
-        Self::SectionRelationTableMalformed,
-        Self::SectionIncidenceMissing,
-        Self::SectionRelationJoinMissing,
-        Self::SectionIncidenceNative,
-        Self::SectionRelationNative,
-        Self::SectionDimensionVariableUnresolved,
-        Self::SectionDimensionGuessUnresolved,
-        Self::SectionSolverVariableMissing,
-        Self::SectionDimensionValueUnresolved,
-        Self::ConfigurationDriverUnresolved,
-        Self::CurveExpressionProhibited,
-        Self::CurveExpressionSolveUnresolved,
-        Self::CurveExpressionSolveControlUnresolved,
-        Self::CurveExpressionKindProhibited,
-    ];
-
     /// The stable string identifier. This is the gating contract.
     #[must_use]
     pub const fn code(self) -> &'static str {
@@ -328,7 +277,45 @@ impl CreoLossCode {
             Self::BrepTransferIncomplete
             | Self::GeometryInstanceCarriersGated
             | Self::TopologyIncompleteComponents => Severity::Blocking,
-            _ => Severity::Warning,
+            Self::SourceDialectUnverified
+            | Self::LegacyRealValueUnresolved
+            | Self::LegacyIntegerValueUnresolved
+            | Self::LegacyContinuationFormUndefined
+            | Self::LegacyByteStringEncodingRetained
+            | Self::LegacyUnsignedValueUnresolved
+            | Self::LegacyCompactRealUnresolved
+            | Self::LegacyObjectArrayIncomplete
+            | Self::LegacyObjectPayloadUndefined
+            | Self::LegacyStringArrayIncomplete
+            | Self::LegacyStringContinuationUndefined
+            | Self::LegacyStringEncodingRetained
+            | Self::TriangleStripRepresentationConflict
+            | Self::VisibGeomSurfaceUntransferred
+            | Self::VisibGeomCurveUntransferred
+            | Self::SectionSegmentGeometryUnresolved
+            | Self::FeatureNeutralSemanticsIncomplete
+            | Self::FeatureSweepIncomplete
+            | Self::FeatureSurfaceOperationIncomplete
+            | Self::FeatureConstructionIncomplete
+            | Self::FeatureRecognizedIncomplete
+            | Self::FeatureNativeSemantics
+            | Self::FeatureConstructionUnresolved
+            | Self::SectionSegmentMissing
+            | Self::SectionRelationMissing
+            | Self::SectionRelationTableMalformed
+            | Self::SectionIncidenceMissing
+            | Self::SectionRelationJoinMissing
+            | Self::SectionIncidenceNative
+            | Self::SectionRelationNative
+            | Self::SectionDimensionVariableUnresolved
+            | Self::SectionDimensionGuessUnresolved
+            | Self::SectionSolverVariableMissing
+            | Self::SectionDimensionValueUnresolved
+            | Self::ConfigurationDriverUnresolved
+            | Self::CurveExpressionProhibited
+            | Self::CurveExpressionSolveUnresolved
+            | Self::CurveExpressionSolveControlUnresolved
+            | Self::CurveExpressionKindProhibited => Severity::Warning,
         }
     }
 

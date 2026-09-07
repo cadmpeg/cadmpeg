@@ -1045,7 +1045,7 @@ pub(super) fn half_edge_records(scan: &ContainerScan) -> Vec<CreoHalfEdgeRecord>
                 ),
                 curve_id: edge.id.curve_id,
                 side: edge.id.side,
-                face_id: edge.face_id,
+                face_id: edge.face_id.map_or(0, std::num::NonZeroU32::get),
                 next: edge.next.map(half_edge_ref),
                 offset: row.offset,
                 source_section: source_section(scan, row.offset),
@@ -1061,7 +1061,7 @@ pub(super) fn loop_records(scan: &ContainerScan) -> Vec<CreoLoopRecord> {
         .enumerate()
         .map(|(index, record)| CreoLoopRecord {
             id: format!("creo:topology:loop#{}", index + 1),
-            face_id: record.face_id,
+            face_id: record.face_id.map_or(0, std::num::NonZeroU32::get),
             half_edges: record
                 .half_edges
                 .iter()
@@ -1076,17 +1076,23 @@ pub(super) fn loop_array_frame_records(scan: &ContainerScan) -> Vec<CreoLoopArra
     scan.loop_arrays
         .frames
         .iter()
-        .map(|frame| CreoLoopArrayFrameRecord {
-            id: format!("creo:loop_array:frame#{}", frame.offset),
-            variant: frame.variant,
-            declared_count: frame.declared_count,
-            class_id: frame.class_id,
-            materialized_count: frame.materialized_count,
-            overfull: frame.overfull,
-            offset: frame.offset,
-            prototype_end: frame.prototype_end,
-            end: frame.end,
-            source_section: source_section(scan, frame.offset),
+        .map(|frame| {
+            let (materialized_count, overfull) = match frame.rows {
+                crate::loop_array::LoopArrayFrameRows::Materialized(count) => (count, false),
+                crate::loop_array::LoopArrayFrameRows::Overfull => (0, true),
+            };
+            CreoLoopArrayFrameRecord {
+                id: format!("creo:loop_array:frame#{}", frame.offset),
+                variant: frame.variant,
+                declared_count: frame.declared_count,
+                class_id: frame.class_id,
+                materialized_count,
+                overfull,
+                offset: frame.offset,
+                prototype_end: frame.prototype_end,
+                end: frame.end,
+                source_section: source_section(scan, frame.offset),
+            }
         })
         .collect()
 }
@@ -1206,7 +1212,7 @@ pub(super) fn curve_prototype_topology_records(
         .map(|record| CreoCurvePrototypeTopologyRecord {
             id: format!("creo:curve:prototype_topology#{}", record.curve_id),
             curve_id: record.curve_id,
-            faces: record.faces,
+            faces: record.stored_face_ids(),
             next_edges: record.next_edges,
             offset: record.offset,
             source_section: source_section(scan, record.offset),
@@ -1328,7 +1334,7 @@ pub(super) fn datum_plane_records(scan: &ContainerScan) -> Vec<CreoDatumPlaneRec
             owner_feature_id: record.feature_id,
             normal: record.plane.normal(),
             plane_offset: record.plane.offset,
-            corners: record.corners,
+            corners: record.corners(),
             offset: record.offset_in_payload,
             source_section: source_section(scan, record.offset_in_payload),
         })
@@ -1802,7 +1808,7 @@ pub(super) fn curve_topology_row_records(
             type_byte: row.type_byte,
             feature_id: row.feature_id,
             directions: row.directions,
-            faces: row.faces,
+            faces: row.stored_face_ids(),
             next_edges: row.next_edges,
             offset: row.offset,
             source_section: source_section(scan, row.offset),
@@ -1984,8 +1990,11 @@ pub(super) fn feature_operation_state_records(
                 stored_name_prefix: state
                     .stored_name_prefix()
                     .map(|prefix| char::from(prefix).to_string()),
-                recipe: state.recipe.map(crate::feature::FeatureRecipe::name),
-                recipe_conflict: state.recipe_conflict.then_some(true),
+                recipe: state
+                    .recipe
+                    .candidate()
+                    .map(crate::feature::FeatureRecipe::name),
+                recipe_conflict: state.recipe.is_conflicting().then_some(true),
                 display_state_conflict: state.display_state_conflict.then_some(true),
                 root_schema_class: state.root_schema_class().map(SchemaClass::code),
                 parent_feature_id: state.parent_feature_id(),
@@ -2128,8 +2137,16 @@ pub(super) fn curve_expression_records(scan: &ContainerScan) -> Vec<CreoCurveExp
                             offset: assignment.offset,
                         })
                         .collect(),
-                    variables: block.variables.clone(),
-                    solutions: block.solutions.clone(),
+                    variables: block
+                        .unknowns
+                        .iter()
+                        .map(|unknown| unknown.name.clone())
+                        .collect(),
+                    solutions: block
+                        .unknowns
+                        .iter()
+                        .map(|unknown| unknown.solution.clone())
+                        .collect(),
                     offset: block.offset,
                     for_offset: block.for_offset,
                 })
@@ -2355,10 +2372,10 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     external_id: entity.external_id,
                     mode: entity.mode,
                     vertices: entity.vertices,
-                    center_vertex: entity.center_vertex,
+                    center_vertex: entity.center_vertex(),
                     kind: match entity.kind {
                         crate::feature::TrimEntityKind::Line => "line",
-                        crate::feature::TrimEntityKind::Arc => "arc",
+                        crate::feature::TrimEntityKind::Arc { .. } => "arc",
                     },
                     offset: entity.offset,
                 })
@@ -2433,8 +2450,12 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                             declared_point_count: spline.declared_point_count,
                             interpolation_points: spline.interpolation_points.clone(),
                             interpolation_points_body: spline.interpolation_points_body.clone(),
-                            endpoint_tangents: spline.endpoint_tangents.clone(),
-                            parameters: spline.parameters.clone(),
+                            endpoint_tangents: crate::decode::native_records::SplineTangents(
+                                spline.endpoint_tangents.clone(),
+                            ),
+                            parameters: crate::decode::native_records::SplineParameters(
+                                spline.parameters.clone(),
+                            ),
                             offset: spline.offset,
                         }
                     }

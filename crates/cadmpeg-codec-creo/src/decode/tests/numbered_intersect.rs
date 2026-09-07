@@ -1035,7 +1035,10 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
         type_byte: 8,
         feature_id: 97,
         directions: [1, 0xf6],
-        faces: [98, 145],
+        faces: [
+            std::num::NonZeroU32::new(98),
+            std::num::NonZeroU32::new(145),
+        ],
         next_edges: [77, 77],
         offset: 0,
     }];
@@ -1219,7 +1222,7 @@ fn generated_curve_edges_require_unique_rows_and_materialized_producers() {
         type_byte: 8,
         feature_id,
         directions: [1, 0xf6],
-        faces: [10, 11],
+        faces: [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)],
         next_edges: [id, id],
         offset,
     };
@@ -1281,7 +1284,7 @@ fn mixed_current_and_generated_edges_remain_native() {
             type_byte: 8,
             feature_id: 97,
             directions: [1, 0xf6],
-            faces: [1, 2],
+            faces: [std::num::NonZeroU32::new(1), std::num::NonZeroU32::new(2)],
             next_edges: [45, 45],
             offset: 0,
         },
@@ -1290,7 +1293,7 @@ fn mixed_current_and_generated_edges_remain_native() {
             type_byte: 8,
             feature_id: 97,
             directions: [1, 0xf6],
-            faces: [1, 2],
+            faces: [std::num::NonZeroU32::new(1), std::num::NonZeroU32::new(2)],
             next_edges: [46, 46],
             offset: 1,
         },
@@ -1419,7 +1422,7 @@ fn geometry_generator_features_join_surface_and_curve_evidence() {
             type_byte: 8,
             feature_id: 50,
             directions: [1, 0xf6],
-            faces: [61, 62],
+            faces: [std::num::NonZeroU32::new(61), std::num::NonZeroU32::new(62)],
             next_edges: [59, 59],
             offset: 100,
         });
@@ -1462,7 +1465,7 @@ fn model_feature_ids_include_row_backed_generated_producers() {
             type_byte: 8,
             feature_id: 50,
             directions: [1, 0xf6],
-            faces: [61, 62],
+            faces: [std::num::NonZeroU32::new(61), std::num::NonZeroU32::new(62)],
             next_edges: [59, 59],
             offset: 100,
         });
@@ -1918,15 +1921,33 @@ fn fc05_row_frame_maps_cyclically_onto_each_model_axis() {
     let center = [11.0, 13.0];
     let reference = [0.6, 0.8];
     assert_eq!(
-        fc05_model_frame(crate::decode::axis::Axis::X, 17.0, center, reference, -1.0),
+        fc05_model_frame(
+            crate::decode::axis::Axis::X,
+            17.0,
+            center,
+            reference,
+            crate::decode::axis::Sign::Negative,
+        ),
         ([17.0, 13.0, 11.0], [-1.0, 0.0, 0.0], [0.0, 0.8, 0.6])
     );
     assert_eq!(
-        fc05_model_frame(crate::decode::axis::Axis::Y, 17.0, center, reference, -1.0),
+        fc05_model_frame(
+            crate::decode::axis::Axis::Y,
+            17.0,
+            center,
+            reference,
+            crate::decode::axis::Sign::Negative,
+        ),
         ([11.0, 17.0, 13.0], [0.0, -1.0, 0.0], [0.6, 0.0, 0.8])
     );
     assert_eq!(
-        fc05_model_frame(crate::decode::axis::Axis::Z, 17.0, center, reference, -1.0),
+        fc05_model_frame(
+            crate::decode::axis::Axis::Z,
+            17.0,
+            center,
+            reference,
+            crate::decode::axis::Sign::Negative,
+        ),
         ([13.0, 11.0, 17.0], [0.0, 0.0, -1.0], [0.8, 0.6, 0.0])
     );
 }

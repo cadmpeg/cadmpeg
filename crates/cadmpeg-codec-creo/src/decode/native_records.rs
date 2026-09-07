@@ -145,10 +145,10 @@ pub(crate) enum CreoSketchSavedEntity {
         declared_point_count: Option<u32>,
         interpolation_points: Vec<[f64; 3]>,
         interpolation_points_body: Vec<u8>,
-        #[serde(flatten, serialize_with = "serialize_spline_tangents")]
-        endpoint_tangents: Option<DecodedField<[[f64; 3]; 2]>>,
-        #[serde(flatten, serialize_with = "serialize_spline_parameters")]
-        parameters: Option<DecodedField<Vec<f64>>>,
+        #[serde(flatten)]
+        endpoint_tangents: SplineTangents,
+        #[serde(flatten)]
+        parameters: SplineParameters,
         offset: usize,
     },
     Dummy {
@@ -171,28 +171,27 @@ fn serialize_spline_field<T: Serialize, S: serde::Serializer>(
     map.end()
 }
 
-fn serialize_spline_tangents<'a, S: serde::Serializer>(
-    field: impl IntoIterator<IntoIter = std::option::Iter<'a, DecodedField<[[f64; 3]; 2]>>>,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    serialize_spline_field(
-        field.into_iter().next(),
-        serializer,
-        "endpoint_tangents",
-        "endpoint_tangents_body",
-    )
+/// Optional spline endpoint tangents flattened as their value and body keys.
+pub(crate) struct SplineTangents(pub(crate) Option<DecodedField<[[f64; 3]; 2]>>);
+
+impl Serialize for SplineTangents {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serialize_spline_field(
+            self.0.as_ref(),
+            serializer,
+            "endpoint_tangents",
+            "endpoint_tangents_body",
+        )
+    }
 }
 
-fn serialize_spline_parameters<'a, S: serde::Serializer>(
-    field: impl IntoIterator<IntoIter = std::option::Iter<'a, DecodedField<Vec<f64>>>>,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    serialize_spline_field(
-        field.into_iter().next(),
-        serializer,
-        "parameters",
-        "parameters_body",
-    )
+/// Optional spline parameters flattened as their value and body keys.
+pub(crate) struct SplineParameters(pub(crate) Option<DecodedField<Vec<f64>>>);
+
+impl Serialize for SplineParameters {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serialize_spline_field(self.0.as_ref(), serializer, "parameters", "parameters_body")
+    }
 }
 
 fn serialize_dimension_value<S: serde::Serializer>(

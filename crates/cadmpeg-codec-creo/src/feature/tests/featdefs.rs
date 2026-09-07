@@ -659,9 +659,12 @@ fn scan_decodes_featdefs_ent_tab_trimmed_entities() {
     assert_eq!(entities.rows.len(), 3);
     assert_eq!(entities.rows[0].external_id, 42);
     assert_eq!(entities.rows[0].vertices, [100, 101]);
-    assert_eq!(entities.rows[0].center_vertex, None);
+    assert_eq!(entities.rows[0].center_vertex(), None);
     assert_eq!(entities.rows[0].kind, crate::feature::TrimEntityKind::Line);
-    assert_eq!(entities.rows[1].kind, crate::feature::TrimEntityKind::Arc);
+    assert_eq!(
+        entities.rows[1].kind,
+        crate::feature::TrimEntityKind::Arc { center_vertex: 103 }
+    );
     assert_eq!(entities.rows[2].external_id, 227);
     assert_eq!(entities.solved_external_ids, vec![42, 43, 227]);
 

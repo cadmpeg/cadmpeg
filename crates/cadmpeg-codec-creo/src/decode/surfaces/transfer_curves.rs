@@ -93,9 +93,12 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
     let edge_vertices =
         crate::topology::edge_vertex_pairs(&scan.topology.half_edge_vertex_incidence);
     for row in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
+        let [Some(first_face), Some(second_face)] = row.faces else {
+            continue;
+        };
         let (Some(first), Some(second)) = (
-            carriers.get(&row.faces[0]).copied(),
-            carriers.get(&row.faces[1]).copied(),
+            carriers.get(&first_face.get()).copied(),
+            carriers.get(&second_face.get()).copied(),
         ) else {
             continue;
         };
@@ -190,11 +193,15 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
         shared_extrusion_generator_count: 0,
     };
     for row in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
-        let Some(first) = crate::surface::unique_surface_row(&scan.surfaces.rows, row.faces[0])
+        let [Some(first_face), Some(second_face)] = row.faces else {
+            continue;
+        };
+        let Some(first) = crate::surface::unique_surface_row(&scan.surfaces.rows, first_face.get())
         else {
             continue;
         };
-        let Some(second) = crate::surface::unique_surface_row(&scan.surfaces.rows, row.faces[1])
+        let Some(second) =
+            crate::surface::unique_surface_row(&scan.surfaces.rows, second_face.get())
         else {
             continue;
         };
@@ -352,7 +359,7 @@ mod tests {
             type_byte: 0,
             feature_id: 0,
             directions: [0x01, 0xf6],
-            faces: [1, 2],
+            faces: [std::num::NonZeroU32::new(1), std::num::NonZeroU32::new(2)],
             next_edges: [10, 10],
             offset: 0,
         }];
@@ -369,7 +376,7 @@ mod tests {
                     curve_id: 10,
                     side: crate::topology::Side::Zero,
                 },
-                face_id: 1,
+                face_id: std::num::NonZeroU32::new(1),
                 next: None,
             },
             HalfEdge {
@@ -377,7 +384,7 @@ mod tests {
                     curve_id: 10,
                     side: crate::topology::Side::One,
                 },
-                face_id: 2,
+                face_id: std::num::NonZeroU32::new(2),
                 next: None,
             },
         ];
@@ -502,7 +509,7 @@ mod tests {
             type_byte: 0,
             feature_id: 0,
             directions: [0; 2],
-            faces: [1, 2],
+            faces: [std::num::NonZeroU32::new(1), std::num::NonZeroU32::new(2)],
             next_edges: [10, 10],
             offset: 0,
         }];

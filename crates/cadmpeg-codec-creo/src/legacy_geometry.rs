@@ -306,7 +306,7 @@ fn curve_topology_row(
         type_byte,
         feature_id,
         directions: [*first_direction, *second_direction],
-        faces,
+        faces: faces.map(std::num::NonZeroU32::new),
         next_edges,
         offset: integer_record(integers, &curve_object.id, "crv_id")?.offset,
     })
@@ -348,7 +348,7 @@ fn curve_pcurve(
         .ok()?;
     Some(PcurveEndpoints {
         curve_id: topology.id,
-        faces: topology.faces,
+        faces: topology.stored_face_ids(),
         face_0_endpoints: [[first[0], first[1]], [last[0], last[1]]],
         face_1_endpoints: [[first[2], first[3]], [last[2], last[3]]],
         offset: record.offset,
@@ -1519,7 +1519,13 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         assert_eq!(result.topology_rows.len(), 2);
         assert_eq!(result.topology_rows[0].id, 10);
         assert_eq!(result.topology_rows[0].directions, [0x01, 0xf6]);
-        assert_eq!(result.topology_rows[0].faces, [100, 200]);
+        assert_eq!(
+            result.topology_rows[0].faces,
+            [
+                std::num::NonZeroU32::new(100),
+                std::num::NonZeroU32::new(200)
+            ]
+        );
         assert_eq!(result.topology_rows[0].next_edges, [11, 11]);
         assert_eq!(result.pcurves.len(), 1);
         assert_eq!(result.pcurves[0].curve_id, 10);

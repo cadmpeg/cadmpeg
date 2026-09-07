@@ -658,7 +658,10 @@ pub(super) fn push_structural_layer_notes(losses: &mut Vec<LossNote>, scan: &Con
             !record.backup
                 && (!record.prohibited_constructs.is_empty()
                     || record.solve_blocks.iter().any(|block| {
-                        block.solutions.is_empty() || block.solutions.iter().any(Option::is_none)
+                        block
+                            .unknowns
+                            .iter()
+                            .any(|unknown| unknown.solution.is_none())
                     })
                     || record.unresolved_solve_control)
         })

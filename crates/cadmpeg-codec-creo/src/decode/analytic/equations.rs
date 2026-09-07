@@ -979,3 +979,54 @@ pub fn plane_cone_conic(
         "plane_cone_hyperbola",
     ))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ConeEquation;
+    use std::f64::consts::FRAC_PI_2;
+
+    const ORIGIN: [f64; 3] = [1.0, 2.0, 3.0];
+    const AXIS: [f64; 3] = [0.0, 0.0, 1.0];
+    const REF_DIRECTION: [f64; 3] = [1.0, 0.0, 0.0];
+
+    fn cone(radius: f64, ratio: f64, half_angle: f64) -> Option<ConeEquation> {
+        ConeEquation::new(ORIGIN, AXIS, REF_DIRECTION, radius, ratio, half_angle)
+    }
+
+    #[test]
+    fn admitted_cone_keeps_its_stored_parameters() {
+        let admitted =
+            cone(4.0, 1.5, 0.25).expect("finite radius, positive ratio, acute half-angle");
+
+        assert_eq!(admitted.origin(), ORIGIN);
+        assert_eq!(admitted.axis(), AXIS);
+        assert_eq!(admitted.ref_direction(), REF_DIRECTION);
+        assert_eq!(admitted.radius(), 4.0);
+        assert_eq!(admitted.ratio(), 1.5);
+        assert_eq!(admitted.half_angle(), 0.25);
+        assert!(cone(4.0, 1.5, 0.0).is_some());
+    }
+
+    #[test]
+    fn non_finite_radius_is_rejected() {
+        assert!(cone(f64::INFINITY, 1.5, 0.25).is_none());
+        assert!(cone(f64::NEG_INFINITY, 1.5, 0.25).is_none());
+        assert!(cone(f64::NAN, 1.5, 0.25).is_none());
+    }
+
+    #[test]
+    fn non_finite_or_non_positive_ratio_is_rejected() {
+        assert!(cone(4.0, f64::INFINITY, 0.25).is_none());
+        assert!(cone(4.0, f64::NAN, 0.25).is_none());
+        assert!(cone(4.0, 0.0, 0.25).is_none());
+        assert!(cone(4.0, -1.5, 0.25).is_none());
+    }
+
+    #[test]
+    fn half_angle_outside_the_acute_range_is_rejected() {
+        assert!(cone(4.0, 1.5, FRAC_PI_2).is_none());
+        assert!(cone(4.0, 1.5, FRAC_PI_2 + 0.25).is_none());
+        assert!(cone(4.0, 1.5, -0.25).is_none());
+        assert!(cone(4.0, 1.5, f64::NAN).is_none());
+    }
+}

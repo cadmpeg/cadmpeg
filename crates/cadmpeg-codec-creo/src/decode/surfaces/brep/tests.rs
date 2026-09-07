@@ -113,7 +113,7 @@ fn face_admission_diagnostics_record_unresolved_boundary_operands() {
         side: crate::topology::Side::One,
     };
     let loop_record = crate::topology::Loop {
-        face_id: 5,
+        face_id: std::num::NonZeroU32::new(5),
         half_edges: vec![resolved, unresolved],
     };
     let resolved_binding = crate::topology::HalfEdgeVertexIncidence {
@@ -334,7 +334,7 @@ fn closed_component_counts_two_uses_of_one_face() {
                     curve_id: 7,
                     side: crate::topology::Side::Zero,
                 },
-                face_id: 5,
+                face_id: std::num::NonZeroU32::new(5),
                 next: None,
             },
         ),
@@ -348,7 +348,7 @@ fn closed_component_counts_two_uses_of_one_face() {
                     curve_id: 7,
                     side: crate::topology::Side::One,
                 },
-                face_id: 5,
+                face_id: std::num::NonZeroU32::new(5),
                 next: None,
             },
         ),
@@ -393,7 +393,7 @@ fn native_parameter_loops_order_non_planar_cylindrical_face() {
         radius: 2.0,
     };
     let make_loop = |first_curve| crate::topology::Loop {
-        face_id: 5,
+        face_id: std::num::NonZeroU32::new(5),
         half_edges: (0_u32..4)
             .map(|index| crate::topology::HalfEdgeId {
                 curve_id: first_curve + index,
@@ -476,7 +476,7 @@ fn native_parameter_loops_admit_proven_two_edge_circles() {
         u_axis: Vector3::new(1.0, 0.0, 0.0),
     };
     let outer = crate::topology::Loop {
-        face_id: 5,
+        face_id: std::num::NonZeroU32::new(5),
         half_edges: [10_u32, 11]
             .into_iter()
             .map(|curve_id| crate::topology::HalfEdgeId {
@@ -486,7 +486,7 @@ fn native_parameter_loops_admit_proven_two_edge_circles() {
             .collect(),
     };
     let inner = crate::topology::Loop {
-        face_id: 5,
+        face_id: std::num::NonZeroU32::new(5),
         half_edges: [20_u32, 21]
             .into_iter()
             .map(|curve_id| crate::topology::HalfEdgeId {
@@ -616,7 +616,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
             type_byte: 0,
             feature_id: 0,
             directions: [0x01, 0xf6],
-            faces: [5, 0],
+            faces: [std::num::NonZeroU32::new(5), None],
             next_edges: [id, 0],
             offset: 0,
         })
@@ -639,7 +639,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
                 curve_id,
                 side: crate::topology::Side::Zero,
             },
-            face_id: 5,
+            face_id: std::num::NonZeroU32::new(5),
             next: None,
         })
         .chain(
@@ -650,13 +650,13 @@ fn native_brep_rejects_ambiguous_model_carriers() {
                         curve_id,
                         side: crate::topology::Side::One,
                     },
-                    face_id: 0,
+                    face_id: None,
                     next: None,
                 }),
         )
         .collect();
     scan.topology.loops.push(crate::topology::Loop {
-        face_id: 5,
+        face_id: std::num::NonZeroU32::new(5),
         half_edges: [10_u32, 11, 12]
             .into_iter()
             .map(|curve_id| crate::topology::HalfEdgeId {

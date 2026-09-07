@@ -27,6 +27,14 @@ impl Axis {
             Self::Z => 2,
         }
     }
+
+    fn in_plane_indices(self) -> [usize; 2] {
+        match self {
+            Self::X => [1, 2],
+            Self::Y => [0, 2],
+            Self::Z => [0, 1],
+        }
+    }
 }
 
 /// An axis-aligned model-space datum plane with equation `x_axis = offset`.
@@ -58,10 +66,27 @@ pub struct DatumPlaneRecord {
     pub feature_id: u32,
     /// Plane defined by the shared outline coordinate.
     pub plane: DatumPlane,
-    /// The row's two `outline` corner points, in model-space XYZ.
-    pub corners: [[Option<f64>; 3]; 2],
+    /// Second outline corner's coordinate along the plane normal.
+    pub opposite_offset: f64,
+    /// Corner coordinates on the remaining axes, in XYZ order.
+    pub in_plane_corners: [[Option<f64>; 2]; 2],
     /// Byte offset of the row's `geom_id` field in the original stream.
     pub offset_in_payload: usize,
+}
+
+impl DatumPlaneRecord {
+    /// The two outline corners in model-space XYZ.
+    pub fn corners(&self) -> [[Option<f64>; 3]; 2] {
+        let [u, v] = self.plane.axis.in_plane_indices();
+        let offsets = [self.plane.offset, self.opposite_offset];
+        std::array::from_fn(|index| {
+            let mut corner = [None; 3];
+            corner[self.plane.axis.index()] = Some(offsets[index]);
+            corner[u] = self.in_plane_corners[index][0];
+            corner[v] = self.in_plane_corners[index][1];
+            corner
+        })
+    }
 }
 
 /// A complete model-space cylinder stored in an `ActDatums` `srf_array` row.
@@ -325,6 +350,7 @@ fn positional_plane(
         return None;
     };
     let plane_offset = outline[axis.index()].value?;
+    let [u, v] = axis.in_plane_indices();
     Some(DatumPlaneRecord {
         id: row.id,
         feature_id: row.feature_id,
@@ -332,9 +358,10 @@ fn positional_plane(
             axis: *axis,
             offset: plane_offset,
         },
-        corners: [
-            [outline[0].value, outline[1].value, outline[2].value],
-            [outline[3].value, outline[4].value, outline[5].value],
+        opposite_offset: outline[axis.index() + 3].value?,
+        in_plane_corners: [
+            [outline[u].value, outline[v].value],
+            [outline[u + 3].value, outline[v + 3].value],
         ],
         offset_in_payload: id_start,
     })
@@ -383,13 +410,15 @@ pub fn named_plane(payload: &[u8]) -> Option<DatumPlaneRecord> {
         _ => return None,
     };
     let offset = slots[axis.index()].value?;
+    let [u, v] = axis.in_plane_indices();
     Some(DatumPlaneRecord {
         id,
         feature_id,
         plane: DatumPlane { axis, offset },
-        corners: [
-            [slots[0].value, slots[1].value, slots[2].value],
-            [slots[3].value, slots[4].value, slots[5].value],
+        opposite_offset: slots[axis.index() + 3].value?,
+        in_plane_corners: [
+            [slots[u].value, slots[v].value],
+            [slots[u + 3].value, slots[v + 3].value],
         ],
         offset_in_payload: outline,
     })

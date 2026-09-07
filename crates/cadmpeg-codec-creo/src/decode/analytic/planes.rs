@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Carrier point tests, plane reconciliation, and placed planes.
 
-use crate::decode::axis::Axis;
+use crate::decode::axis::{Axis, Sign};
 use crate::feature::schema::SchemaClass;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -10,6 +10,7 @@ use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 
 use crate::container::ContainerScan;
+use crate::curve::CurveTopologyRow;
 
 use super::super::holes::plane_envelope_corners;
 use super::super::sketch::normalized;
@@ -760,8 +761,7 @@ fn fc05_cylinder_branch_witnesses(
             continue;
         };
         let planes = topology
-            .faces
-            .into_iter()
+            .bounded_face_ids()
             .filter(|face| {
                 crate::surface::unique_surface_row(&scan.surfaces.rows, *face)
                     .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Plane)
@@ -772,8 +772,7 @@ fn fc05_cylinder_branch_witnesses(
             })
             .collect::<Vec<_>>();
         let cylinders = topology
-            .faces
-            .into_iter()
+            .bounded_face_ids()
             .filter(|face| {
                 crate::surface::unique_surface_row(&scan.surfaces.rows, *face)
                     .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
@@ -788,16 +787,16 @@ fn fc05_cylinder_branch_witnesses(
         else {
             continue;
         };
-        let (reference, axis_sign) = circle
-            .reference_direction_row_frame
-            .zip(circle.parameter_sign)
-            .map_or(
-                (
-                    circle.sample_direction_row_frame,
-                    cap.normal[axis_index.index()].signum(),
-                ),
-                |(reference, parameter_sign)| (reference, -f64::from(parameter_sign)),
-            );
+        let (reference, axis_sign) = match circle.angle_parameter {
+            crate::curve::Fc05AngleParameterRelation::Inconsistent => (
+                circle.sample_direction_row_frame,
+                Sign::of_component(cap.normal[axis_index.index()]),
+            ),
+            crate::curve::Fc05AngleParameterRelation::Consistent {
+                sense,
+                reference_direction_row_frame,
+            } => (reference_direction_row_frame, Sign::from(sense).reversed()),
+        };
         let (origin, axis, ref_direction) = fc05_model_frame(
             axis_index,
             cap.origin[axis_index.index()],
@@ -820,10 +819,9 @@ fn fc05_cylinder_branch_witnesses(
 
     let mut witnesses = BTreeMap::<u32, Vec<super::equations::CylinderEquation>>::new();
     for topology in &scan.curves.topology_rows {
-        let Some((cylinder_id, plane_id)) = topology.faces.into_iter().find_map(|first| {
+        let Some((cylinder_id, plane_id)) = topology.bounded_face_ids().find_map(|first| {
             let second = topology
-                .faces
-                .into_iter()
+                .bounded_face_ids()
                 .find(|candidate| *candidate != first)?;
             if cylinder_frames.contains_key(&first)
                 && crate::surface::unique_surface_row(&scan.surfaces.rows, second)
@@ -864,17 +862,17 @@ pub(crate) fn fc05_cylinder_model_witness(
     cylinder_id: u32,
     legacy: super::equations::CylinderEquation,
 ) -> super::equations::CylinderEquation {
-    let curve_ids = scan
-        .curves
-        .fc05_circles
-        .iter()
-        .filter(|circle| {
-            scan.curves.topology_rows.iter().any(|topology| {
-                topology.id == circle.curve_id && topology.faces.contains(&cylinder_id)
+    let curve_ids =
+        scan.curves
+            .fc05_circles
+            .iter()
+            .filter(|circle| {
+                scan.curves.topology_rows.iter().any(|topology| {
+                    topology.id == circle.curve_id && topology.bounds_face(cylinder_id)
+                })
             })
-        })
-        .map(|circle| circle.curve_id)
-        .collect::<BTreeSet<_>>();
+            .map(|circle| circle.curve_id)
+            .collect::<BTreeSet<_>>();
     let circles = curve_ids
         .iter()
         .flat_map(|curve_id| {
@@ -962,8 +960,8 @@ fn fc05_tangent_plane_score(
     scan.curves
         .topology_rows
         .iter()
-        .filter(|topology| topology.faces.contains(&cylinder_id))
-        .flat_map(|topology| topology.faces.into_iter())
+        .filter(|topology| topology.bounds_face(cylinder_id))
+        .flat_map(CurveTopologyRow::bounded_face_ids)
         .filter(|face_id| *face_id != cylinder_id)
         .filter(|face_id| {
             crate::surface::unique_surface_row(&scan.surfaces.rows, *face_id)
@@ -1324,7 +1322,7 @@ fn round_edge_envelopes_for_plane(
     crate::topology::uniquely_identified_rows(&scan.curves.topology_rows)
         .into_iter()
         .filter_map(|topology| {
-            let cylinder_id = topology.faces.into_iter().find(|face_id| {
+            let cylinder_id = topology.bounded_face_ids().find(|face_id| {
                 *face_id != plane_id
                     && rows.get(face_id).is_some_and(|row| {
                         row.kind == crate::surface::SurfaceKind::Cylinder
@@ -1334,7 +1332,7 @@ fn round_edge_envelopes_for_plane(
                             ) == Some(SchemaClass::Round)
                     })
             })?;
-            if !topology.faces.contains(&plane_id) {
+            if !topology.bounds_face(plane_id) {
                 return None;
             }
             let record =

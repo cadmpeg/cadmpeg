@@ -18,7 +18,7 @@ fn row(id: u32, next: u32) -> CurveTopologyRow {
         type_byte: 0,
         feature_id: 0,
         directions: [1, 1],
-        faces: [10, 20],
+        faces: [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(20)],
         next_edges: [next, next],
         offset: 0,
     }
@@ -28,7 +28,7 @@ fn builds_closed_face_side_rings_without_guessing() {
     let (half_edges, loops) = build(&[row(1, 2), row(2, 3), row(3, 1)]);
     assert_eq!(half_edges.len(), 6);
     assert_eq!(loops.len(), 2);
-    assert_eq!(loops[0].face_id, 10);
+    assert_eq!(loops[0].face_id, std::num::NonZeroU32::new(10));
     assert_eq!(
         loops[0].half_edges,
         vec![
@@ -68,7 +68,7 @@ fn withholds_ambiguous_successors() {
     let (half_edges, loops) = build(&[
         row(1, 2),
         CurveTopologyRow {
-            faces: [10, 10],
+            faces: [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(10)],
             ..row(2, 1)
         },
     ]);
@@ -89,7 +89,7 @@ fn vertex_orbits_close_predecessor_relations_in_both_directions() {
                 curve_id: 1,
                 side: crate::topology::Side::Zero,
             },
-            face_id: 10,
+            face_id: std::num::NonZeroU32::new(10),
             next: None,
         },
         HalfEdge {
@@ -97,7 +97,7 @@ fn vertex_orbits_close_predecessor_relations_in_both_directions() {
                 curve_id: 1,
                 side: crate::topology::Side::One,
             },
-            face_id: 20,
+            face_id: std::num::NonZeroU32::new(20),
             next: Some(HalfEdgeId {
                 curve_id: 2,
                 side: crate::topology::Side::Zero,
@@ -108,7 +108,7 @@ fn vertex_orbits_close_predecessor_relations_in_both_directions() {
                 curve_id: 2,
                 side: crate::topology::Side::Zero,
             },
-            face_id: 20,
+            face_id: std::num::NonZeroU32::new(20),
             next: None,
         },
         HalfEdge {
@@ -116,7 +116,7 @@ fn vertex_orbits_close_predecessor_relations_in_both_directions() {
                 curve_id: 2,
                 side: crate::topology::Side::One,
             },
-            face_id: 10,
+            face_id: std::num::NonZeroU32::new(10),
             next: None,
         },
     ];
@@ -143,7 +143,7 @@ fn vertex_incident_faces_include_both_sides_of_each_orbit_edge() {
                 curve_id: 7,
                 side: crate::topology::Side::Zero,
             },
-            face_id: 10,
+            face_id: std::num::NonZeroU32::new(10),
             next: None,
         },
         HalfEdge {
@@ -151,7 +151,7 @@ fn vertex_incident_faces_include_both_sides_of_each_orbit_edge() {
                 curve_id: 7,
                 side: crate::topology::Side::One,
             },
-            face_id: 20,
+            face_id: std::num::NonZeroU32::new(20),
             next: None,
         },
         HalfEdge {
@@ -159,7 +159,7 @@ fn vertex_incident_faces_include_both_sides_of_each_orbit_edge() {
                 curve_id: 8,
                 side: crate::topology::Side::Zero,
             },
-            face_id: 10,
+            face_id: std::num::NonZeroU32::new(10),
             next: None,
         },
         HalfEdge {
@@ -167,7 +167,7 @@ fn vertex_incident_faces_include_both_sides_of_each_orbit_edge() {
                 curve_id: 8,
                 side: crate::topology::Side::One,
             },
-            face_id: 30,
+            face_id: std::num::NonZeroU32::new(30),
             next: None,
         },
     ];

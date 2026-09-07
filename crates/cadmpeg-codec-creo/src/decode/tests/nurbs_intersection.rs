@@ -18,7 +18,7 @@ fn topology_row(id: u32, faces: [u32; 2]) -> CurveTopologyRow {
         type_byte: 0x05,
         feature_id: 0,
         directions: [0x01, 0xf6],
-        faces,
+        faces: faces.map(std::num::NonZeroU32::new),
         next_edges: [id, id],
         offset: 0,
     }
@@ -27,7 +27,7 @@ fn topology_row(id: u32, faces: [u32; 2]) -> CurveTopologyRow {
 fn half_edge(curve_id: u32, side: crate::topology::Side, face_id: u32) -> HalfEdge {
     HalfEdge {
         id: HalfEdgeId { curve_id, side },
-        face_id,
+        face_id: std::num::NonZeroU32::new(face_id),
         next: None,
     }
 }

@@ -273,9 +273,9 @@ pub struct PcurveEndpointDiagnostics {
 
 #[derive(Debug, Default)]
 struct PcurvePathActivity {
-    active_paths: BTreeSet<(u32, u32)>,
-    topology_faces: BTreeMap<u32, [u32; 2]>,
-    prototype_faces: BTreeMap<u32, [u32; 2]>,
+    active_paths: BTreeSet<(Option<std::num::NonZeroU32>, u32)>,
+    topology_faces: BTreeMap<u32, [Option<std::num::NonZeroU32>; 2]>,
+    prototype_faces: BTreeMap<u32, [Option<std::num::NonZeroU32>; 2]>,
 }
 
 impl PcurvePathActivity {
@@ -319,6 +319,7 @@ impl PcurvePathActivity {
         } else {
             &self.topology_faces
         };
+        let faces = faces.map(std::num::NonZeroU32::new);
         (topology_faces.get(&curve_id) == Some(&faces)).then_some([
             self.active_paths.contains(&(faces[0], curve_id)),
             self.active_paths.contains(&(faces[1], curve_id)),
@@ -2054,7 +2055,7 @@ mod tests {
                 type_byte: 0,
                 feature_id: 0,
                 directions: [0x01, 0xf6],
-                faces: [10, 11],
+                faces: [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)],
                 next_edges: [7, 7],
                 offset: 0,
             });
@@ -2066,7 +2067,7 @@ mod tests {
             offset: 0,
         });
         scan.topology.loops.push(crate::topology::Loop {
-            face_id: 10,
+            face_id: std::num::NonZeroU32::new(10),
             half_edges: vec![crate::topology::HalfEdgeId {
                 curve_id: 7,
                 side: crate::topology::Side::Zero,
@@ -2170,7 +2171,10 @@ mod tests {
                 type_byte: 0,
                 feature_id: 57,
                 directions: [0x01, 0xf6],
-                faces: [43, 163],
+                faces: [
+                    std::num::NonZeroU32::new(43),
+                    std::num::NonZeroU32::new(163),
+                ],
                 next_edges: [841, 164],
                 offset: 100,
             });
@@ -2271,7 +2275,7 @@ mod tests {
                 type_byte: 0,
                 feature_id: 0,
                 directions: [0x01, 0xf6],
-                faces: [10, 11],
+                faces: [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)],
                 next_edges: [7, 7],
                 offset: 0,
             });

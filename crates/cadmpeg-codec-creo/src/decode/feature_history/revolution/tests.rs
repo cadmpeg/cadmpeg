@@ -143,9 +143,10 @@ fn transfer_with_curve_count(curve_count: usize) -> (usize, CadIr) {
         .push(crate::feature::FeatureOperation {
             feature_id: 40,
             kind: crate::feature::OperationKind::Revolve,
-            name: crate::feature::OperationName::Recipe,
-            recipe: Some(crate::feature::FeatureRecipe::ProtrudeRevolve),
-            recipe_conflict: false,
+            name: crate::feature::OperationName::Derived,
+            recipe: crate::feature::RecipeResolution::Resolved(
+                crate::feature::FeatureRecipe::ProtrudeRevolve,
+            ),
             display_state_conflict: false,
             depdb: None,
             offset: 0,

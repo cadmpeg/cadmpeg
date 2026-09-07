@@ -510,8 +510,14 @@ fn visible_geometry_namespace_excludes_invisible_and_depdb_rows() {
     assert_eq!(scan.curves.nonvisible_prototypes[0].feature_id, Some(5));
     assert_eq!(scan.curves.parameters.len(), 1);
     assert_eq!(scan.curves.nonvisible_parameters.len(), 1);
-    assert_eq!(scan.curves.topology_rows[0].faces, [10, 11]);
-    assert_eq!(scan.curves.nonvisible_topology_rows[0].faces, [12, 13]);
+    assert_eq!(
+        scan.curves.topology_rows[0].faces,
+        [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)]
+    );
+    assert_eq!(
+        scan.curves.nonvisible_topology_rows[0].faces,
+        [std::num::NonZeroU32::new(12), std::num::NonZeroU32::new(13)]
+    );
     assert_eq!(scan.topology.half_edges.len(), 2);
 
     let result = CreoCodec
@@ -568,7 +574,7 @@ fn depdb_data_with_sparse_sections_selects_depdb() {
     assert_eq!(scan.features.operations.len(), 1);
     assert_eq!(scan.features.operations[0].feature_id, 17);
     assert_eq!(
-        scan.features.operations[0].recipe,
+        scan.features.operations[0].recipe.resolved(),
         Some(crate::feature::FeatureRecipe::ProtrudeRevolve)
     );
 }

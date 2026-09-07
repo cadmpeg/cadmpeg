@@ -33,8 +33,8 @@ use crate::datum::{self, DatumCylinder, DatumPlaneRecord};
 use crate::feature::{
     self, FeatureAffectedIds, FeatureChoice, FeatureChoiceField, FeatureDefinition, FeatureEntity,
     FeatureEntityReference, FeatureEntityTable, FeatureGeometryTable, FeatureLoopHistoryEntry,
-    FeatureLoopRestoreDirection, FeatureOperation, FeatureRecipe, FeatureReferenceName,
-    FeatureReplayAffectedIds, FeatureRevolutionExtent, FeatureRow,
+    FeatureLoopRestoreDirection, FeatureOperation, FeatureOperationState, FeatureRecipe,
+    FeatureReferenceName, FeatureReplayAffectedIds, FeatureRevolutionExtent, FeatureRow,
 };
 use crate::layout::cmnm_model_name_record as cmnm;
 use crate::legacy;
@@ -482,7 +482,7 @@ pub struct FeatureScan {
     /// Section-to-model frames resolved from perpendicular active datums.
     pub section_transforms: Vec<FeatureSectionTransform>,
     /// Every stored feature-operation state from `MdlStatus`, in byte order.
-    pub operation_states: Vec<FeatureOperation>,
+    pub operation_states: Vec<FeatureOperationState>,
     /// Unambiguous or consensus feature-operation projection for each identifier.
     pub operations: Vec<FeatureOperation>,
     /// Feature names joined to model feature identifiers by reference data.
@@ -1769,10 +1769,13 @@ fn stored_operation_schema_class(
             "Section" => Some(SchemaClass::Section),
             "Draft" | "Schräge" => Some(SchemaClass::Draft),
             "Surface Merge" => Some(SchemaClass::SurfaceMerge),
-            _ => operation.recipe.map(|recipe| match recipe.effect() {
-                feature::FeatureRecipeEffect::Cut => SchemaClass::Cut,
-                feature::FeatureRecipeEffect::Protrude => SchemaClass::Protrusion,
-            }),
+            _ => operation
+                .recipe
+                .resolved()
+                .map(|recipe| match recipe.effect() {
+                    feature::FeatureRecipeEffect::Cut => SchemaClass::Cut,
+                    feature::FeatureRecipeEffect::Protrude => SchemaClass::Protrusion,
+                }),
         })
 }
 
@@ -2014,7 +2017,7 @@ fn feature_definitions(data: &[u8], sections: &[Section]) -> Vec<FeatureDefiniti
         if section.name == "DEPDB_DATA" {
             let recipe_operations = feature::operations(payload)
                 .into_iter()
-                .filter(|operation| operation.recipe.is_some())
+                .filter(|operation| operation.recipe.resolved().is_some())
                 .collect::<Vec<_>>();
             if let [operation] = recipe_operations.as_slice() {
                 if let Some(mut definition) =
@@ -2134,7 +2137,7 @@ fn feature_reference_names(data: &[u8], sections: &[Section]) -> Vec<FeatureRefe
         .collect()
 }
 
-fn feature_operation_states(data: &[u8], sections: &[Section]) -> Vec<FeatureOperation> {
+fn feature_operation_states(data: &[u8], sections: &[Section]) -> Vec<FeatureOperationState> {
     let mut records = Vec::new();
     for section in sections
         .iter()
@@ -2175,16 +2178,17 @@ fn depdb_recipe_rows(data: &[u8], sections: &[Section]) -> Vec<FeatureRow> {
         let payload = &data[section.offset..end];
         let mut recipe_operations = feature::operation_states(payload)
             .into_iter()
-            .filter(|operation| operation.recipe.is_some())
+            .filter_map(|operation| {
+                operation
+                    .recipe
+                    .candidate()
+                    .map(|recipe| (operation, recipe))
+            })
             .collect::<Vec<_>>();
-        recipe_operations.sort_by_key(|operation| operation.offset);
+        recipe_operations.sort_by_key(|(operation, _)| operation.offset);
         let mut body_start = 0;
-        for operation in &recipe_operations {
-            let Some(body_end) = recipe_end(
-                payload,
-                operation.offset,
-                operation.recipe.expect("filtered recipe operation"),
-            ) else {
+        for (operation, recipe) in &recipe_operations {
+            let Some(body_end) = recipe_end(payload, operation.offset, *recipe) else {
                 continue;
             };
             if body_start >= body_end {
@@ -2926,7 +2930,7 @@ mod feature_row_definition_tests {
             type_byte: 8,
             feature_id: 41,
             directions: [1, 0xf6],
-            faces: [12, 13],
+            faces: [std::num::NonZeroU32::new(12), std::num::NonZeroU32::new(13)],
             next_edges: [45, 45],
             offset: 0,
         };
@@ -2954,8 +2958,7 @@ mod feature_row_definition_tests {
                 keyword: crate::feature::IdKeyword::Id,
                 prefix: None,
             },
-            recipe: None,
-            recipe_conflict: false,
+            recipe: crate::feature::RecipeResolution::None,
             display_state_conflict: false,
             depdb: None,
             offset: 0,
@@ -3055,9 +3058,8 @@ mod feature_row_definition_tests {
         let operation = |feature_id, recipe, offset| FeatureOperation {
             feature_id,
             kind: crate::feature::OperationKind::Stored(String::new()),
-            name: crate::feature::OperationName::Recipe,
-            recipe,
-            recipe_conflict: false,
+            name: crate::feature::OperationName::Derived,
+            recipe: crate::feature::RecipeResolution::from(recipe),
             display_state_conflict: false,
             depdb: None,
             offset,

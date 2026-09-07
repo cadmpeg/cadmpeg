@@ -183,10 +183,11 @@ pub(super) fn fc05_model_frame(
     axis_ordinate: f64,
     center_row_frame: [f64; 2],
     reference_row_frame: [f64; 2],
-    axis_sign: f64,
+    axis_sign: Sign,
 ) -> ([f64; 3], [f64; 3], [f64; 3]) {
     let [first, second] = center_row_frame;
     let [reference_x, reference_z] = reference_row_frame;
+    let axis_sign = axis_sign.scale();
     match axis_index {
         Axis::X => (
             [axis_ordinate, second, first],
@@ -236,15 +237,14 @@ pub(super) fn fc05_cap_pair_model_frame(
     pair: &crate::curve::Fc05CylinderCapPair,
 ) -> Option<Fc05CapPairFrame> {
     let placed_caps = pair
-        .cap_plane_ids
+        .cap_edges
         .iter()
-        .zip(&pair.curve_cap_ordinates_row_frame)
-        .filter_map(|(id, ordinate)| {
-            crate::surface::unique_outline_plane(&scan.planes.outlines, *id)
-                .map(|plane| (plane, *ordinate))
+        .map(|edge| {
+            crate::surface::unique_outline_plane(&scan.planes.outlines, edge.cap_plane_id)
+                .map(|plane| (plane, edge.cap_ordinate_row_frame))
         })
-        .collect::<Vec<_>>();
-    (placed_caps.len() == pair.cap_plane_ids.len() && placed_caps.len() >= 2).then_some(())?;
+        .collect::<Option<Vec<_>>>()?;
+    (placed_caps.len() >= 2).then_some(())?;
     let (first_cap, first_ordinate) = placed_caps.first().copied()?;
     let axis_index = Axis::ALL
         .into_iter()
@@ -290,7 +290,7 @@ pub(super) fn fc05_cap_pair_model_frame(
         axis_origin,
         pair.center_row_frame,
         pair.reference_direction_row_frame,
-        axis_sign.scale(),
+        axis_sign,
     );
     Some(Fc05CapPairFrame {
         origin,
@@ -316,22 +316,19 @@ pub(super) fn transfer_fc05_cap_circles(
             continue;
         };
         let cap_planes = topology
-            .faces
-            .iter()
+            .bounded_face_ids()
             .filter_map(|face| {
-                crate::surface::unique_surface_row(&scan.surfaces.rows, *face)
+                crate::surface::unique_surface_row(&scan.surfaces.rows, face)
                     .filter(|row| row.kind == crate::surface::SurfaceKind::Plane)?;
-                crate::surface::unique_outline_plane(&scan.planes.outlines, *face)
+                crate::surface::unique_outline_plane(&scan.planes.outlines, face)
             })
             .collect::<Vec<_>>();
         let cylinders = topology
-            .faces
-            .iter()
+            .bounded_face_ids()
             .filter(|face| {
-                crate::surface::unique_surface_row(&scan.surfaces.rows, **face)
+                crate::surface::unique_surface_row(&scan.surfaces.rows, *face)
                     .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
             })
-            .copied()
             .collect::<Vec<_>>();
         let ([cap], [cylinder_id], Some(_)) = (
             cap_planes.as_slice(),
@@ -353,18 +350,17 @@ pub(super) fn transfer_fc05_cap_circles(
             .iter()
             .find(|pair| pair.surface_id == *cylinder_id)
             .and_then(|pair| fc05_cap_pair_model_frame(scan, pair));
-        let reference = circle
-            .reference_direction_row_frame
-            .unwrap_or(circle.sample_direction_row_frame);
-        let axis_sign = pair_frame.map_or_else(
-            || {
-                circle.parameter_sign.map_or_else(
-                    || cap.normal[axis_index.index()].signum(),
-                    |sign| -f64::from(sign),
-                )
-            },
-            |frame| frame.axis_sign.scale(),
-        );
+        let (reference, circle_axis_sign) = match circle.angle_parameter {
+            crate::curve::Fc05AngleParameterRelation::Inconsistent => (
+                circle.sample_direction_row_frame,
+                Sign::of_component(cap.normal[axis_index.index()]),
+            ),
+            crate::curve::Fc05AngleParameterRelation::Consistent {
+                sense,
+                reference_direction_row_frame,
+            } => (reference_direction_row_frame, Sign::from(sense).reversed()),
+        };
+        let axis_sign = pair_frame.map_or(circle_axis_sign, |frame| frame.axis_sign);
         let legacy_frame = fc05_model_frame(
             axis_index,
             cap.origin[axis_index.index()],

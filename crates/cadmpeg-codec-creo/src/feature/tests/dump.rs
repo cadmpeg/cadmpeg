@@ -1037,8 +1037,11 @@ fn decode_retains_conflicting_recipe_candidates_without_projecting_one() {
 
     assert_eq!(scan.features.operation_states.len(), 2);
     assert_eq!(scan.features.operations.len(), 1);
-    assert_eq!(scan.features.operations[0].recipe, None);
-    assert!(scan.features.operations[0].recipe_conflict);
+    assert_eq!(
+        scan.features.operations[0].recipe,
+        crate::feature::RecipeResolution::Conflicting
+    );
+    assert!(scan.features.operations[0].recipe.is_conflicting());
     assert_eq!(scan.features.depdb_recipe_rows.len(), 2);
     assert!(scan
         .features

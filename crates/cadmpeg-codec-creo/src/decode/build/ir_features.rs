@@ -521,20 +521,23 @@ pub(super) fn finish_feature_transfers(
         let decoded_curve_expression_solve_variable_count = active_expressions
             .clone()
             .flat_map(|record| &record.solve_blocks)
-            .map(|block| block.variables.len())
+            .map(|block| block.unknowns.len())
             .sum::<usize>();
         let evaluated_curve_expression_solve_block_count = active_expressions
             .clone()
             .flat_map(|record| &record.solve_blocks)
             .filter(|block| {
-                !block.solutions.is_empty() && block.solutions.iter().all(Option::is_some)
+                block
+                    .unknowns
+                    .iter()
+                    .all(|unknown| unknown.solution.is_some())
             })
             .count();
         let evaluated_curve_expression_solve_variable_count = active_expressions
             .clone()
             .flat_map(|record| &record.solve_blocks)
-            .flat_map(|block| &block.solutions)
-            .filter(|solution| solution.is_some())
+            .flat_map(|block| &block.unknowns)
+            .filter(|unknown| unknown.solution.is_some())
             .count();
         let unresolved_curve_expression_solve_control_count = active_expressions
             .clone()

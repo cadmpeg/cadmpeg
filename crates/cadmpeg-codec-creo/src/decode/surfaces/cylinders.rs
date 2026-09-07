@@ -397,7 +397,10 @@ pub(in super::super) fn transfer_split_outline_cylinders(
         if edge.type_byte != 0 {
             continue;
         }
-        let [left, right] = edge.faces;
+        let [Some(left), Some(right)] = edge.faces else {
+            continue;
+        };
+        let (left, right) = (left.get(), right.get());
         let pair = match (rows.get(&left), rows.get(&right)) {
             (Some(plane), Some(cylinder))
                 if plane.kind == crate::surface::SurfaceKind::Plane
@@ -857,7 +860,10 @@ pub(in super::super) fn transfer_positional_cylinders(
         .collect::<BTreeMap<_, _>>();
     let mut adjacent_plane_ids = BTreeMap::<u32, BTreeSet<u32>>::new();
     for edge in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
-        let [left, right] = edge.faces;
+        let [Some(left), Some(right)] = edge.faces else {
+            continue;
+        };
+        let (left, right) = (left.get(), right.get());
         for (surface_id, other_id) in [(left, right), (right, left)] {
             if unique_rows
                 .get(&surface_id)
