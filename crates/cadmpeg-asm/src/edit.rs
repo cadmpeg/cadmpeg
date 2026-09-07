@@ -558,7 +558,7 @@ impl AsmEditSet {
                 patch_compound_definition(bytes, self.ref_width, record, definition)
             }
             ProceduralCurveDefinition::TwoSidedOffset { .. } => {
-                patch_two_sided_offset_definition(bytes, record, definition)
+                patch_two_sided_offset_definition(bytes, self.ref_width, record, definition)
             }
             ProceduralCurveDefinition::SurfaceOffset { .. } => {
                 patch_surface_offset_definition(bytes, self.ref_width, record, definition)
@@ -1035,6 +1035,7 @@ fn patch_compound_definition(
 
 fn patch_two_sided_offset_definition(
     bytes: &mut [u8],
+    stream_width: RefWidth,
     record: &sab::Record,
     definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
 ) -> Result<(), CodecError> {
@@ -1049,19 +1050,16 @@ fn patch_two_sided_offset_definition(
         ));
     };
     let record_bytes = record_slice(bytes, record, "two-sided offset")?;
-    let layout = [RefWidth::Eight, RefWidth::Four]
-        .into_iter()
-        .filter_map(|width| {
-            crate::nurbs::proc_curve::two_sided_offset_patch_layout(record_bytes, width)
-        })
-        .find(|layout| {
-            layout
-                .discontinuities
-                .iter()
-                .map(Vec::len)
-                .eq(context.discontinuities.iter().map(Vec::len))
-        })
-        .ok_or_else(|| CodecError::Malformed("two-sided offset layout is malformed".into()))?;
+    let layout =
+        crate::nurbs::proc_curve::two_sided_offset_patch_layout(record_bytes, stream_width)
+            .filter(|layout| {
+                layout
+                    .discontinuities
+                    .iter()
+                    .map(Vec::len)
+                    .eq(context.discontinuities.iter().map(Vec::len))
+            })
+            .ok_or_else(|| CodecError::Malformed("two-sided offset layout is malformed".into()))?;
     for (at, value) in layout
         .parameter_range
         .into_iter()
