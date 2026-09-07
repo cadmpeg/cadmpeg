@@ -111,10 +111,8 @@ pub enum OperationName {
         /// Optional stored-name byte immediately preceding the family name.
         prefix: Option<u8>,
     },
-    /// Recipe-only state with no stored display name.
-    Recipe,
-    /// Consensus projection that dropped disagreeing stored names.
-    Consensus,
+    /// Derived operation name with no stored display name.
+    Derived,
 }
 
 impl OperationName {
@@ -130,21 +128,21 @@ impl OperationName {
     pub fn stored_name_bytes(&self) -> Option<&[u8]> {
         match self {
             Self::Stored { bytes, .. } => Some(bytes),
-            Self::Recipe | Self::Consensus => None,
+            Self::Derived => None,
         }
     }
 
     pub fn identifier_keyword(&self) -> Option<&str> {
         match self {
             Self::Stored { keyword, .. } => Some(keyword.as_str()),
-            Self::Recipe | Self::Consensus => None,
+            Self::Derived => None,
         }
     }
 
     pub fn stored_name_prefix(&self) -> Option<u8> {
         match self {
             Self::Stored { prefix, .. } => *prefix,
-            Self::Recipe | Self::Consensus => None,
+            Self::Derived => None,
         }
     }
 }
@@ -523,7 +521,7 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
         result.push(FeatureOperation {
             feature_id,
             kind: OperationKind::from_recipe(binding.recipe),
-            name: OperationName::Recipe,
+            name: OperationName::Derived,
             recipe: Some(binding.recipe),
             recipe_conflict: conflicting_features.contains(&feature_id),
             display_state_conflict: false,
@@ -593,7 +591,7 @@ pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
                                     .map(OperationKind::from_recipe)
                             })
                             .unwrap_or(OperationKind::Native);
-                    projection.name = OperationName::Consensus;
+                    projection.name = OperationName::Derived;
                     projection.recipe =
                         agreeing_value(displays.iter().map(|state| state.recipe)).flatten();
                     projection.depdb = match (

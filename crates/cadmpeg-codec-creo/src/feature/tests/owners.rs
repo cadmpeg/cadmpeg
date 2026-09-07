@@ -349,7 +349,7 @@ fn operation(feature_id: u32, recipe: Option<FeatureRecipe>, offset: usize) -> F
     FeatureOperation {
         feature_id,
         kind: OperationKind::Stored(String::new()),
-        name: OperationName::Recipe,
+        name: OperationName::Derived,
         recipe,
         recipe_conflict: false,
         display_state_conflict: false,

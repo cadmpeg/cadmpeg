@@ -1506,7 +1506,7 @@ fn unresolved_material_join_does_not_hide_exact_base_body_candidate() {
         |feature_id, root_schema_class: Option<u32>, recipe| crate::feature::FeatureOperation {
             feature_id,
             kind: crate::feature::OperationKind::Stored("Sweep".to_string()),
-            name: crate::feature::OperationName::Recipe,
+            name: crate::feature::OperationName::Derived,
             recipe,
             recipe_conflict: false,
             display_state_conflict: false,

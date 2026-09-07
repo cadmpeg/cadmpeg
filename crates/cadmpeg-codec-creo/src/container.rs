@@ -3055,7 +3055,7 @@ mod feature_row_definition_tests {
         let operation = |feature_id, recipe, offset| FeatureOperation {
             feature_id,
             kind: crate::feature::OperationKind::Stored(String::new()),
-            name: crate::feature::OperationName::Recipe,
+            name: crate::feature::OperationName::Derived,
             recipe,
             recipe_conflict: false,
             display_state_conflict: false,

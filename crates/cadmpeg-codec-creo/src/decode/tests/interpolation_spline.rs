@@ -388,7 +388,7 @@ fn unresolved_display_state_family_blocks_schema_sweep_fallback() {
         .push(crate::feature::FeatureOperation {
             feature_id: 917,
             kind: crate::feature::OperationKind::Native,
-            name: crate::feature::OperationName::Recipe,
+            name: crate::feature::OperationName::Derived,
             recipe: None,
             recipe_conflict: false,
             display_state_conflict: true,
@@ -1575,7 +1575,7 @@ fn current_feature_state_controls_recipe_and_parent_projection() {
     let operation = |recipe, parent_feature_id, offset| crate::feature::FeatureOperation {
         feature_id: 6,
         kind: crate::feature::OperationKind::Stored("Sweep".to_string()),
-        name: crate::feature::OperationName::Recipe,
+        name: crate::feature::OperationName::Derived,
         recipe: Some(recipe),
         recipe_conflict: false,
         display_state_conflict: false,

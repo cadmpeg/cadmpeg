@@ -734,7 +734,7 @@ fn conflicting_display_states_do_not_select_reference_family() {
         .push(crate::feature::FeatureOperation {
             feature_id: 822,
             kind: crate::feature::OperationKind::Native,
-            name: crate::feature::OperationName::Recipe,
+            name: crate::feature::OperationName::Derived,
             recipe: None,
             recipe_conflict: false,
             display_state_conflict: true,
