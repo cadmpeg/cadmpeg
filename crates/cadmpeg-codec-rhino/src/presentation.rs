@@ -851,13 +851,44 @@ impl Serialize for settings::LayerPerViewportSettings {
     }
 }
 
+fn serialize_layer_hierarchy<S: serde::Serializer>(
+    hierarchy: &Option<settings::LayerHierarchy>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeStruct;
+
+    let mut record = serializer.serialize_struct("LayerHierarchy", 2)?;
+    record.serialize_field(
+        "parent_uuid",
+        &hierarchy
+            .map(|value| value.parent_id)
+            .filter(|id| !id.is_nil())
+            .map(|id| id.to_string()),
+    )?;
+    record.serialize_field("expanded", &hierarchy.map(|value| value.expanded))?;
+    record.end()
+}
+
+fn serialize_layer_plot<S: serde::Serializer>(
+    plot: &Option<settings::LayerPlot>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeStruct;
+
+    let mut record = serializer.serialize_struct("LayerPlot", 2)?;
+    record.serialize_field("plot_color", &plot.map(|value| value.color))?;
+    record.serialize_field("plot_weight_mm", &plot.map(|value| value.weight_mm))?;
+    record.end()
+}
+
 #[derive(Debug, Serialize)]
 struct LayerPresentationRecord {
     id: String,
     source_offset: u64,
     archive_index: i32,
     source_uuid: Option<String>,
-    parent_uuid: Option<String>,
+    #[serde(flatten, serialize_with = "serialize_layer_hierarchy")]
+    hierarchy: Option<settings::LayerHierarchy>,
     name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     description: Option<String>,
@@ -865,12 +896,11 @@ struct LayerPresentationRecord {
     iges_level: Option<i32>,
     visible: bool,
     locked: bool,
-    expanded: Option<bool>,
     color: [u8; 4],
     material_index: i32,
     linetype_index: Option<i32>,
-    plot_color: Option<[u8; 4]>,
-    plot_weight_mm: Option<f64>,
+    #[serde(flatten, serialize_with = "serialize_layer_plot")]
+    plot: Option<settings::LayerPlot>,
     display_material_uuid: Option<String>,
     clipping_planes_enabled: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -4320,22 +4350,16 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> NativeInstall {
             source_offset: layer.source.range.start as u64,
             archive_index: layer.index,
             source_uuid: layer.id.map(|id| id.to_string()),
-            parent_uuid: layer
-                .hierarchy
-                .map(|hierarchy| hierarchy.parent_id)
-                .filter(|id| !id.is_nil())
-                .map(|id| id.to_string()),
+            hierarchy: layer.hierarchy,
             name: layer.name.clone(),
             description: layer.description.clone(),
             iges_level: (layer.iges_level != -1).then_some(layer.iges_level),
             visible: layer.visible,
             locked: layer.locked,
-            expanded: layer.hierarchy.map(|hierarchy| hierarchy.expanded),
             color: layer.color,
             material_index: layer.render_material_index,
             linetype_index: layer.linetype_index,
-            plot_color: layer.plot.map(|plot| plot.color),
-            plot_weight_mm: layer.plot.map(|plot| plot.weight_mm),
+            plot: layer.plot,
             display_material_uuid: layer
                 .display_material_id
                 .filter(|id| !id.is_nil())
