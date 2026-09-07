@@ -26,8 +26,7 @@ fn binds_missing_definition_owner_from_unique_generated_datum_table() {
         section_3d: Some(FeatureSection3d {
             sketch_plane_entity_id: Some(12),
             sketch_plane_flip: None,
-            reference_plane_entity_ids: Vec::new(),
-            reference_plane_rows: Vec::new(),
+            reference_planes: crate::feature::definitions::ReferencePlanes::Named(Vec::new()),
             reference_plane_datum_geometry_id: None,
             orientation: FeatureSectionOrientation::default(),
             dimension_ids: Vec::new(),
@@ -367,8 +366,7 @@ fn binds_unique_depdb_section_from_recipe_datum_plane_chain() {
     definition.section_3d = Some(FeatureSection3d {
         sketch_plane_entity_id: Some(249),
         sketch_plane_flip: None,
-        reference_plane_entity_ids: Vec::new(),
-        reference_plane_rows: Vec::new(),
+        reference_planes: crate::feature::definitions::ReferencePlanes::Named(Vec::new()),
         reference_plane_datum_geometry_id: None,
         orientation: FeatureSectionOrientation::default(),
         dimension_ids: Vec::new(),
@@ -397,8 +395,7 @@ fn depdb_owner_binding_preserves_stored_definition_identifier() {
     definition.section_3d = Some(FeatureSection3d {
         sketch_plane_entity_id: Some(249),
         sketch_plane_flip: None,
-        reference_plane_entity_ids: Vec::new(),
-        reference_plane_rows: Vec::new(),
+        reference_planes: crate::feature::definitions::ReferencePlanes::Named(Vec::new()),
         reference_plane_datum_geometry_id: None,
         orientation: FeatureSectionOrientation::default(),
         dimension_ids: Vec::new(),
@@ -470,8 +467,7 @@ fn withholds_depdb_owner_for_repeated_plane_or_nonconsecutive_datum() {
     let section = FeatureSection3d {
         sketch_plane_entity_id: Some(249),
         sketch_plane_flip: None,
-        reference_plane_entity_ids: Vec::new(),
-        reference_plane_rows: Vec::new(),
+        reference_planes: crate::feature::definitions::ReferencePlanes::Named(Vec::new()),
         reference_plane_datum_geometry_id: None,
         orientation: FeatureSectionOrientation::default(),
         dimension_ids: Vec::new(),
@@ -511,8 +507,7 @@ fn withholds_depdb_owner_for_repeated_plane_or_nonconsecutive_datum() {
     candidate.section_3d = Some(FeatureSection3d {
         sketch_plane_entity_id: Some(249),
         sketch_plane_flip: None,
-        reference_plane_entity_ids: Vec::new(),
-        reference_plane_rows: Vec::new(),
+        reference_planes: crate::feature::definitions::ReferencePlanes::Named(Vec::new()),
         reference_plane_datum_geometry_id: None,
         orientation: FeatureSectionOrientation::default(),
         dimension_ids: Vec::new(),
@@ -530,8 +525,7 @@ fn section_owner_binding_does_not_cross_source_range_boundaries() {
     in_range.section_3d = Some(FeatureSection3d {
         sketch_plane_entity_id: Some(249),
         sketch_plane_flip: None,
-        reference_plane_entity_ids: Vec::new(),
-        reference_plane_rows: Vec::new(),
+        reference_planes: crate::feature::definitions::ReferencePlanes::Named(Vec::new()),
         reference_plane_datum_geometry_id: None,
         orientation: FeatureSectionOrientation::default(),
         dimension_ids: Vec::new(),

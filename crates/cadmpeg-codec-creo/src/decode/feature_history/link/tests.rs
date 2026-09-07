@@ -27,8 +27,7 @@ fn section_scan() -> crate::container::ContainerScan<'static> {
             section_3d: Some(crate::feature::FeatureSection3d {
                 sketch_plane_entity_id: None,
                 sketch_plane_flip: None,
-                reference_plane_entity_ids: Vec::new(),
-                reference_plane_rows: Vec::new(),
+                reference_planes: crate::feature::definitions::ReferencePlanes::Named(Vec::new()),
                 reference_plane_datum_geometry_id: None,
                 orientation: crate::feature::FeatureSectionOrientation::default(),
                 dimension_ids: Vec::new(),

@@ -861,10 +861,8 @@ pub struct FeatureSection3d {
     pub sketch_plane_entity_id: Option<u32>,
     /// Sketch-plane side flag.
     pub sketch_plane_flip: Option<BinaryFlag>,
-    /// Entity references that orient the sketch plane.
-    pub reference_plane_entity_ids: Vec<u32>,
-    /// Complete positional reference-plane rows in stored order.
-    pub reference_plane_rows: Vec<FeatureSectionReferencePlane>,
+    /// Named entity references or complete positional rows in stored order.
+    pub reference_planes: ReferencePlanes,
     /// Geometry identifier joining the reference plane to its datum surface.
     pub reference_plane_datum_geometry_id: Option<u32>,
     /// Singleton named-record orientation fields.
@@ -873,6 +871,26 @@ pub struct FeatureSection3d {
     pub dimension_ids: Vec<u32>,
     /// Byte offset of the gsec3d record header in the original stream.
     pub offset: usize,
+}
+
+/// Reference-plane representation selected by the section layout.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReferencePlanes {
+    Named(Vec<u32>),
+    Positional(Vec<FeatureSectionReferencePlane>),
+}
+
+impl ReferencePlanes {
+    pub fn entity_ids(&self) -> impl Iterator<Item = u32> + '_ {
+        let (named, positional): (&[u32], &[FeatureSectionReferencePlane]) = match self {
+            Self::Named(ids) => (ids, &[]),
+            Self::Positional(rows) => (&[], rows),
+        };
+        named
+            .iter()
+            .copied()
+            .chain(positional.iter().map(|row| row.plane_entity_id))
+    }
 }
 
 /// Interpretation of a stored feature-dimension value.
@@ -3798,7 +3816,6 @@ fn section_3d(payload: &[u8], start: usize, end: usize) -> Option<FeatureSection
         .and_then(BinaryFlag::decode);
 
     let mut reference_plane_entity_ids = Vec::new();
-    let reference_plane_rows = Vec::new();
     let mut reference_plane_datum_geometry_id = None;
     if let Some(references) = find_bytes(payload, b"\xe0\x00ref_planes\0", section, placement_end) {
         let mut cursor = references + b"\xe0\x00ref_planes\0".len();
@@ -3857,8 +3874,7 @@ fn section_3d(payload: &[u8], start: usize, end: usize) -> Option<FeatureSection
     Some(FeatureSection3d {
         sketch_plane_entity_id,
         sketch_plane_flip,
-        reference_plane_entity_ids,
-        reference_plane_rows,
+        reference_planes: ReferencePlanes::Named(reference_plane_entity_ids),
         reference_plane_datum_geometry_id,
         orientation,
         dimension_ids,
@@ -3887,8 +3903,7 @@ pub(crate) fn positional_section_3d(
     let mut result = FeatureSection3d {
         sketch_plane_entity_id: None,
         sketch_plane_flip: None,
-        reference_plane_entity_ids: Vec::new(),
-        reference_plane_rows: Vec::new(),
+        reference_planes: ReferencePlanes::Positional(Vec::new()),
         reference_plane_datum_geometry_id: None,
         orientation: FeatureSectionOrientation::default(),
         dimension_ids: Vec::new(),
@@ -3991,7 +4006,6 @@ pub(crate) fn positional_section_3d(
             sub_index,
             reference_flip,
         });
-        result.reference_plane_entity_ids.push(plane_id);
         if row + 1 < row_count {
             let Some(separator_at) = find_bytes(payload, &separator, cursor, end) else {
                 break;
@@ -3999,7 +4013,7 @@ pub(crate) fn positional_section_3d(
             cursor = separator_at + separator.len();
         }
     }
-    result.reference_plane_rows = reference_plane_rows;
+    result.reference_planes = ReferencePlanes::Positional(reference_plane_rows);
     Some(result)
 }
 

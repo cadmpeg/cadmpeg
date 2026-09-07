@@ -203,8 +203,7 @@ fn resolves_perpendicular_datum_frame() {
         section_3d: Some(FeatureSection3d {
             sketch_plane_entity_id: Some(2),
             sketch_plane_flip: Some(BinaryFlag::Clear),
-            reference_plane_entity_ids: vec![3, 4],
-            reference_plane_rows: Vec::new(),
+            reference_planes: crate::feature::definitions::ReferencePlanes::Named(vec![3, 4]),
             reference_plane_datum_geometry_id: Some(4),
             orientation: FeatureSectionOrientation::default(),
             dimension_ids: Vec::new(),
@@ -252,8 +251,7 @@ fn resolves_reference_flip_from_selected_positional_row() {
     definition.section_3d = Some(FeatureSection3d {
         sketch_plane_entity_id: Some(2),
         sketch_plane_flip: Some(BinaryFlag::Clear),
-        reference_plane_entity_ids: vec![3, 4],
-        reference_plane_rows: vec![
+        reference_planes: ReferencePlanes::Positional(vec![
             FeatureSectionReferencePlane {
                 plane_entity_id: 3,
                 reference_type: Some(5),
@@ -270,7 +268,7 @@ fn resolves_reference_flip_from_selected_positional_row() {
                 sub_index: None,
                 reference_flip: Some(BinaryFlag::Set),
             },
-        ],
+        ]),
         reference_plane_datum_geometry_id: None,
         orientation: FeatureSectionOrientation::default(),
         dimension_ids: Vec::new(),
@@ -309,8 +307,7 @@ fn rejects_duplicate_selected_positional_reference_rows() {
     definition.section_3d = Some(FeatureSection3d {
         sketch_plane_entity_id: Some(2),
         sketch_plane_flip: Some(BinaryFlag::Clear),
-        reference_plane_entity_ids: vec![3, 4],
-        reference_plane_rows: vec![
+        reference_planes: ReferencePlanes::Positional(vec![
             FeatureSectionReferencePlane {
                 plane_entity_id: 4,
                 reference_type: Some(5),
@@ -327,7 +324,7 @@ fn rejects_duplicate_selected_positional_reference_rows() {
                 sub_index: None,
                 reference_flip: Some(BinaryFlag::Set),
             },
-        ],
+        ]),
         reference_plane_datum_geometry_id: None,
         orientation: FeatureSectionOrientation::default(),
         dimension_ids: Vec::new(),
@@ -369,8 +366,7 @@ fn resolves_section_from_complete_local_frame_when_references_are_unresolved() {
     definition.section_3d = Some(FeatureSection3d {
         sketch_plane_entity_id: Some(348),
         sketch_plane_flip: Some(BinaryFlag::Clear),
-        reference_plane_entity_ids: vec![2, 274],
-        reference_plane_rows: Vec::new(),
+        reference_planes: crate::feature::definitions::ReferencePlanes::Named(vec![2, 274]),
         reference_plane_datum_geometry_id: None,
         orientation: FeatureSectionOrientation::default(),
         dimension_ids: Vec::new(),
@@ -422,8 +418,7 @@ fn resolves_generated_section_from_declared_cap_pair() {
         section_3d: Some(FeatureSection3d {
             sketch_plane_entity_id: Some(42),
             sketch_plane_flip: None,
-            reference_plane_entity_ids: vec![191],
-            reference_plane_rows: Vec::new(),
+            reference_planes: crate::feature::definitions::ReferencePlanes::Named(vec![191]),
             reference_plane_datum_geometry_id: Some(2),
             orientation: FeatureSectionOrientation::default(),
             dimension_ids: Vec::new(),
@@ -594,8 +589,7 @@ fn resolves_oblique_reference_from_an_earlier_extruded_line() {
         section_3d: Some(FeatureSection3d {
             sketch_plane_entity_id: Some(2),
             sketch_plane_flip: None,
-            reference_plane_entity_ids: vec![4],
-            reference_plane_rows: Vec::new(),
+            reference_planes: crate::feature::definitions::ReferencePlanes::Named(vec![4]),
             reference_plane_datum_geometry_id: Some(4),
             orientation: FeatureSectionOrientation::default(),
             dimension_ids: Vec::new(),
@@ -622,8 +616,7 @@ fn resolves_oblique_reference_from_an_earlier_extruded_line() {
         section_3d: Some(FeatureSection3d {
             sketch_plane_entity_id: Some(799),
             sketch_plane_flip: None,
-            reference_plane_entity_ids: vec![43],
-            reference_plane_rows: Vec::new(),
+            reference_planes: crate::feature::definitions::ReferencePlanes::Named(vec![43]),
             reference_plane_datum_geometry_id: None,
             orientation: FeatureSectionOrientation::default(),
             dimension_ids: Vec::new(),
@@ -715,8 +708,7 @@ fn resolves_orientation_from_an_outline_plane_carrier() {
         section_3d: Some(FeatureSection3d {
             sketch_plane_entity_id: Some(2),
             sketch_plane_flip: Some(BinaryFlag::Clear),
-            reference_plane_entity_ids: vec![4],
-            reference_plane_rows: Vec::new(),
+            reference_planes: crate::feature::definitions::ReferencePlanes::Named(vec![4]),
             reference_plane_datum_geometry_id: Some(4),
             orientation: FeatureSectionOrientation::default(),
             dimension_ids: Vec::new(),
@@ -773,8 +765,7 @@ fn resolves_generated_sketch_datum_from_unique_parent_relation() {
         section_3d: Some(FeatureSection3d {
             sketch_plane_entity_id: Some(42),
             sketch_plane_flip: None,
-            reference_plane_entity_ids: vec![90],
-            reference_plane_rows: Vec::new(),
+            reference_planes: crate::feature::definitions::ReferencePlanes::Named(vec![90]),
             reference_plane_datum_geometry_id: Some(2),
             orientation: FeatureSectionOrientation {
                 section_flip: Some(BinaryFlag::Set),
@@ -844,8 +835,7 @@ fn resolves_generated_plane_from_contextually_unambiguous_envelope_axis() {
         section_3d: Some(FeatureSection3d {
             sketch_plane_entity_id: Some(42),
             sketch_plane_flip: None,
-            reference_plane_entity_ids: vec![90],
-            reference_plane_rows: Vec::new(),
+            reference_planes: crate::feature::definitions::ReferencePlanes::Named(vec![90]),
             reference_plane_datum_geometry_id: Some(2),
             orientation: FeatureSectionOrientation::default(),
             dimension_ids: Vec::new(),
@@ -1255,8 +1245,7 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
     oriented_definition.section_3d = Some(FeatureSection3d {
         sketch_plane_entity_id: Some(999),
         sketch_plane_flip: None,
-        reference_plane_entity_ids: Vec::new(),
-        reference_plane_rows: Vec::new(),
+        reference_planes: crate::feature::definitions::ReferencePlanes::Named(Vec::new()),
         reference_plane_datum_geometry_id: None,
         orientation: FeatureSectionOrientation {
             section_flip: Some(BinaryFlag::Set),
@@ -1285,15 +1274,15 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
         .as_mut()
         .expect("test section");
     row_flipped_section.orientation.section_flip = Some(BinaryFlag::Clear);
-    row_flipped_section.reference_plane_entity_ids = vec![1];
-    row_flipped_section.reference_plane_rows = vec![FeatureSectionReferencePlane {
-        plane_entity_id: 1,
-        reference_type: None,
-        external_reference_id: None,
-        segment_id: None,
-        sub_index: None,
-        reference_flip: Some(BinaryFlag::Set),
-    }];
+    row_flipped_section.reference_planes =
+        ReferencePlanes::Positional(vec![FeatureSectionReferencePlane {
+            plane_entity_id: 1,
+            reference_type: None,
+            external_reference_id: None,
+            segment_id: None,
+            sub_index: None,
+            reference_flip: Some(BinaryFlag::Set),
+        }]);
     assert_eq!(
         resolve(&[row_flipped_definition], &sources, &tables),
         vec![FeatureSectionTransform {
@@ -1349,7 +1338,10 @@ fn scan_decodes_featdefs_gsec3d_placement_references() {
         section.sketch_plane_flip,
         Some(crate::feature::BinaryFlag::Set)
     );
-    assert_eq!(section.reference_plane_entity_ids, vec![5, 256]);
+    assert_eq!(
+        section.reference_planes.entity_ids().collect::<Vec<_>>(),
+        vec![5, 256]
+    );
     assert_eq!(section.reference_plane_datum_geometry_id, Some(9));
     assert_eq!(
         section.orientation.section_flip,
@@ -1411,6 +1403,9 @@ fn named_gsec3d_fields_extend_to_the_placement_close() {
         .as_ref()
         .expect("gsec3d");
     assert_eq!(section.sketch_plane_entity_id, Some(769));
-    assert_eq!(section.reference_plane_entity_ids, vec![5]);
+    assert_eq!(
+        section.reference_planes.entity_ids().collect::<Vec<_>>(),
+        vec![5]
+    );
     assert_eq!(section.reference_plane_datum_geometry_id, Some(9));
 }

@@ -3,6 +3,7 @@
 
 use crate::datum::DatumPlaneRecord;
 use crate::decode::uniqueness::exactly_one;
+use crate::feature::definitions::ReferencePlanes;
 use crate::feature::{
     placement_instructions, AffectedIdKind, BinaryFlag, FeatureAffectedIds, FeatureDefinition,
     FeatureEntityTable, FeatureGeometryTable, FeatureParameterFrameKind, FeatureSegmentKind,
@@ -553,24 +554,24 @@ fn reference_flip_for_reference(
     section: &crate::feature::FeatureSection3d,
     reference_id: Option<u32>,
 ) -> Option<BinaryFlag> {
-    if section.reference_plane_rows.is_empty() {
-        return section.orientation.reference_flip;
+    match &section.reference_planes {
+        ReferencePlanes::Named(_) => section.orientation.reference_flip,
+        ReferencePlanes::Positional(rows) => {
+            let reference_id = reference_id?;
+            exactly_one(
+                rows.iter()
+                    .filter(|row| row.plane_entity_id == reference_id),
+            )
+            .and_then(|row| row.reference_flip)
+        }
     }
-    let reference_id = reference_id?;
-    exactly_one(
-        section
-            .reference_plane_rows
-            .iter()
-            .filter(|row| row.plane_entity_id == reference_id),
-    )
-    .and_then(|row| row.reference_flip)
 }
 
 fn unique_carrier_reference_id(section: &crate::feature::FeatureSection3d) -> Option<u32> {
     if let Some(id) = section.reference_plane_datum_geometry_id {
         return Some(id);
     }
-    let mut ids = section.reference_plane_entity_ids.iter().copied();
+    let mut ids = section.reference_planes.entity_ids();
     let id = ids.next()?;
     ids.all(|candidate| candidate == id).then_some(id)
 }
@@ -1073,9 +1074,10 @@ pub(crate) fn resolve(
                     apply_section_orientation(&mut transform, section);
                     transform
                 });
-        let mut reference_ids = section
-            .reference_plane_datum_geometry_id
-            .map_or_else(|| section.reference_plane_entity_ids.clone(), |id| vec![id]);
+        let mut reference_ids = section.reference_plane_datum_geometry_id.map_or_else(
+            || section.reference_planes.entity_ids().collect(),
+            |id| vec![id],
+        );
         reference_ids.sort_unstable();
         reference_ids.dedup();
         let direct_sketch = plane_equation(
@@ -1190,9 +1192,8 @@ pub(crate) fn resolve(
             sketch_normal = scale(sketch_normal, -1.0);
             sketch_offset = -sketch_offset;
         }
-        if !section.reference_plane_rows.is_empty() {
-            let reference_rows = section
-                .reference_plane_rows
+        if let ReferencePlanes::Positional(rows) = &section.reference_planes {
+            let reference_rows = rows
                 .iter()
                 .filter(|row| row.plane_entity_id == candidate.reference_id);
             if exactly_one(reference_rows).is_none() {

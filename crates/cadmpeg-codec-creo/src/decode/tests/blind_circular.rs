@@ -1872,8 +1872,7 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
     let mut section = crate::feature::FeatureSection3d {
         sketch_plane_entity_id: Some(30),
         sketch_plane_flip: Some(crate::feature::BinaryFlag::Clear),
-        reference_plane_entity_ids: vec![29],
-        reference_plane_rows: Vec::new(),
+        reference_planes: crate::feature::definitions::ReferencePlanes::Named(vec![29]),
         reference_plane_datum_geometry_id: None,
         orientation: crate::feature::FeatureSectionOrientation {
             section_flip: Some(crate::feature::BinaryFlag::Set),
