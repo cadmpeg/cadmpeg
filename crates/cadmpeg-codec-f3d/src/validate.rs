@@ -481,7 +481,7 @@ fn valid_axial_assembly_targets(
                 construction_byte_offset,
                 construction_transform_offset,
                 axis_record_index_offsets,
-                construction_paired_class_tag,
+                construction_paired_class_tag: _,
                 construction_paired_byte_offset,
                 selectors,
             } => {
@@ -525,13 +525,11 @@ fn valid_axial_assembly_targets(
                         == Some(axis_record_index_offsets[1])
                     && construction_byte_offset.checked_add(380)
                         == Some(*construction_paired_byte_offset)
-                    && valid_dynamic_class_tag(construction_class_tag)
-                    && valid_dynamic_class_tag(construction_paired_class_tag)
                     && design_header_matches(
                         records_by_index,
                         stream,
                         *construction_record_index,
-                        construction_class_tag,
+                        construction_class_tag.as_str(),
                         *construction_byte_offset,
                     )
                     && selectors_ordered

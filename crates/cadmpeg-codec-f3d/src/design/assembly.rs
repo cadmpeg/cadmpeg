@@ -898,11 +898,15 @@ mod tests {
             DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
                 component_insert_scope_record_index: 200,
                 construction_record_index: 70,
-                construction_class_tag: "305".into(),
+                construction_class_tag: crate::records::DesignClassTag::try_from("305".to_owned())
+                    .unwrap(),
                 construction_byte_offset: 1_300,
                 construction_transform_offset: 1_348,
                 axis_record_index_offsets: [1_493, 1_509],
-                construction_paired_class_tag: "261".into(),
+                construction_paired_class_tag: crate::records::DesignClassTag::try_from(
+                    "261".to_owned(),
+                )
+                .unwrap(),
                 construction_paired_byte_offset: 1_680,
                 selectors: Box::new([selector(), second_selector()]),
             },

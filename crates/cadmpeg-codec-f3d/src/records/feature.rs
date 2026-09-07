@@ -2423,7 +2423,7 @@ pub enum DesignAssemblyAxialOperandTarget {
         /// Construction carrier referenced by the operand frame.
         construction_record_index: u32,
         /// Dynamic class of the construction carrier's primary record.
-        construction_class_tag: String,
+        construction_class_tag: DesignClassTag,
         /// Byte offset of the construction carrier's primary indexed header.
         construction_byte_offset: u64,
         /// Byte offset of the construction carrier's transform.
@@ -2431,7 +2431,7 @@ pub enum DesignAssemblyAxialOperandTarget {
         /// Byte offsets of the two axis-record indices in the construction carrier.
         axis_record_index_offsets: [u64; 2],
         /// Dynamic class of the construction carrier's paired record.
-        construction_paired_class_tag: String,
+        construction_paired_class_tag: DesignClassTag,
         /// Byte offset of the construction carrier's paired indexed header.
         construction_paired_byte_offset: u64,
         /// Two axis selectors that identify the same connector object.

@@ -1087,11 +1087,14 @@ fn exact_assembly_axial_operand_target(
                 DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
                     component_insert_scope_record_index: component_insert.record_index,
                     construction_record_index: component.construction_record_index,
-                    construction_class_tag: component.construction_class_tag,
+                    construction_class_tag: component.construction_class_tag.try_into().ok()?,
                     construction_byte_offset: component.construction_byte_offset,
                     construction_transform_offset: component.construction_transform_offset,
                     axis_record_index_offsets: component.axis_record_index_offsets,
-                    construction_paired_class_tag: component.construction_paired_class_tag,
+                    construction_paired_class_tag: component
+                        .construction_paired_class_tag
+                        .try_into()
+                        .ok()?,
                     construction_paired_byte_offset: component.construction_paired_byte_offset,
                     selectors: component.selectors,
                 },
