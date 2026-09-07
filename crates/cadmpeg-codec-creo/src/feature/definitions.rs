@@ -9,7 +9,7 @@ use crate::psb;
 use crate::scalar;
 
 use super::entity::{generated_class_200_source_entity_ids, FeatureEntityTable};
-use super::helpers::{decode_optional_scalars, find_bytes};
+use super::helpers::find_bytes;
 use super::operations::{FeatureOperation, FeatureRecipeKind};
 use super::rows::{FeatureGeometryTable, FeatureGeometryTableKind, FeatureRevolutionExtent};
 
@@ -77,12 +77,34 @@ pub enum OutlinePhase {
 pub struct FeatureOutline {
     /// Feature-history phase.
     pub phase: OutlinePhase,
-    /// Six feature-local scalar slots; undefined prefixes remain `None`.
-    pub local_values: Vec<Option<f64>>,
-    /// Exact encoded scalar body of each feature-local slot.
-    pub local_value_bodies: Vec<Vec<u8>>,
+    /// Six scalar slots and their encoded bodies; undefined values remain `None`.
+    pub local_scalars: [DecodedField<Option<f64>>; 6],
     /// Byte offset of the outline label in the original stream.
     pub offset: usize,
+}
+
+fn outline_scalars(payload: &[u8], cache: &scalar::ScalarCache) -> [DecodedField<Option<f64>>; 6] {
+    let mut cursor = 0;
+    std::array::from_fn(|_| {
+        if cursor >= payload.len() || payload.get(cursor) == Some(&psb::token::NAMED_RECORD) {
+            return DecodedField {
+                value: None,
+                body: Vec::new(),
+            };
+        }
+        let start = cursor;
+        let value = if let Some((value, next)) = scalar::decode_in_lane(payload, cursor, cache) {
+            cursor = next;
+            Some(value)
+        } else {
+            cursor += 1;
+            None
+        };
+        DecodedField {
+            value,
+            body: payload[start..cursor].to_vec(),
+        }
+    })
 }
 
 /// One positional solver-variable row from `var_arr`.
@@ -6129,12 +6151,9 @@ pub(crate) fn definitions_in_ranges(
         if let Some(info) = find_bytes(payload, b"\xe0\x00feat_outl_info\0", start, end) {
             if let Some(label) = find_bytes(payload, b"outline\0\xf9\x02\x03", info, end) {
                 let scalar_start = label + b"outline\0\xf9\x02\x03".len();
-                let (local_values, local_value_bodies) =
-                    decode_optional_scalars(&payload[scalar_start..end], 6, &cache);
                 outlines.push(FeatureOutline {
                     phase: OutlinePhase::PreRollback,
-                    local_values,
-                    local_value_bodies,
+                    local_scalars: outline_scalars(&payload[scalar_start..end], &cache),
                     offset: label,
                 });
             }
@@ -6160,12 +6179,9 @@ pub(crate) fn definitions_in_ranges(
                 {
                     continue;
                 }
-                let (local_values, local_value_bodies) =
-                    decode_optional_scalars(&payload[after_ref + 4..end], 6, &cache);
                 outlines.push(FeatureOutline {
                     phase,
-                    local_values,
-                    local_value_bodies,
+                    local_scalars: outline_scalars(&payload[after_ref + 4..end], &cache),
                     offset: label_offset,
                 });
             }

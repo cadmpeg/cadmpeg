@@ -93,7 +93,11 @@ fn scan_decodes_featdefs_feature_local_outlines() {
     assert_eq!(outlines.len(), 2);
     assert_eq!(outlines[0].phase, crate::feature::OutlinePhase::PreRollback);
     assert_eq!(
-        outlines[0].local_values,
+        outlines[0]
+            .local_scalars
+            .each_ref()
+            .map(|field| field.value)
+            .as_slice(),
         vec![
             Some(3.0),
             Some(0.0),
@@ -104,16 +108,36 @@ fn scan_decodes_featdefs_feature_local_outlines() {
         ]
     );
     assert_eq!(
-        outlines[0].local_value_bodies[0],
+        outlines[0].local_scalars[0].body,
         [0x46, 0x08, 0, 0, 0, 0, 0, 0]
     );
-    assert_eq!(outlines[0].local_value_bodies[1..], vec![vec![0x0f]; 5]);
+    assert_eq!(
+        outlines[0].local_scalars[1..]
+            .iter()
+            .map(|field| field.body.clone())
+            .collect::<Vec<_>>(),
+        vec![vec![0x0f]; 5]
+    );
     assert_eq!(
         outlines[1].phase,
         crate::feature::OutlinePhase::PostRollback
     );
-    assert_eq!(outlines[1].local_values, vec![Some(1.0); 6]);
-    assert_eq!(outlines[1].local_value_bodies, vec![vec![0xe4]; 6]);
+    assert_eq!(
+        outlines[1]
+            .local_scalars
+            .each_ref()
+            .map(|field| field.value)
+            .as_slice(),
+        vec![Some(1.0); 6]
+    );
+    assert_eq!(
+        outlines[1]
+            .local_scalars
+            .each_ref()
+            .map(|field| field.body.clone())
+            .as_slice(),
+        vec![vec![0xe4]; 6]
+    );
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
@@ -153,11 +177,19 @@ fn scan_stops_feature_local_outlines_at_named_records() {
     assert_eq!(outlines.len(), 3);
     assert_eq!(outlines[0].phase, crate::feature::OutlinePhase::PreRollback);
     assert_eq!(
-        outlines[0].local_values,
+        outlines[0]
+            .local_scalars
+            .each_ref()
+            .map(|field| field.value)
+            .as_slice(),
         vec![Some(0.0), Some(1.0), None, None, None, None]
     );
     assert_eq!(
-        outlines[0].local_value_bodies,
+        outlines[0]
+            .local_scalars
+            .each_ref()
+            .map(|field| field.body.clone())
+            .as_slice(),
         vec![vec![0x0f], vec![0xe4], vec![], vec![], vec![], vec![]]
     );
     assert_eq!(
@@ -165,16 +197,38 @@ fn scan_stops_feature_local_outlines_at_named_records() {
         crate::feature::OutlinePhase::PostRollback
     );
     assert_eq!(
-        outlines[1].local_values,
+        outlines[1]
+            .local_scalars
+            .each_ref()
+            .map(|field| field.value)
+            .as_slice(),
         vec![Some(1.0), Some(0.0), None, None, None, None]
     );
     assert_eq!(
-        outlines[1].local_value_bodies,
+        outlines[1]
+            .local_scalars
+            .each_ref()
+            .map(|field| field.body.clone())
+            .as_slice(),
         vec![vec![0xe4], vec![0x0f], vec![], vec![], vec![], vec![]]
     );
     assert_eq!(outlines[2].phase, crate::feature::OutlinePhase::PostRegen);
-    assert_eq!(outlines[2].local_values, vec![Some(0.0); 6]);
-    assert_eq!(outlines[2].local_value_bodies, vec![vec![0x0f]; 6]);
+    assert_eq!(
+        outlines[2]
+            .local_scalars
+            .each_ref()
+            .map(|field| field.value)
+            .as_slice(),
+        vec![Some(0.0); 6]
+    );
+    assert_eq!(
+        outlines[2]
+            .local_scalars
+            .each_ref()
+            .map(|field| field.body.clone())
+            .as_slice(),
+        vec![vec![0x0f]; 6]
+    );
 }
 
 #[test]

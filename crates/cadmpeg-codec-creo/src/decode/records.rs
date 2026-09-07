@@ -2588,8 +2588,16 @@ pub(super) fn feature_definition_records(scan: &ContainerScan) -> Vec<CreoFeatur
                         crate::feature::OutlinePhase::PostRollback => "post_rollback",
                         crate::feature::OutlinePhase::PostRegen => "post_regen",
                     },
-                    local_values: outline.local_values.clone(),
-                    local_value_bodies: outline.local_value_bodies.clone(),
+                    local_values: outline
+                        .local_scalars
+                        .iter()
+                        .map(|field| field.value)
+                        .collect(),
+                    local_value_bodies: outline
+                        .local_scalars
+                        .iter()
+                        .map(|field| field.body.clone())
+                        .collect(),
                     offset: outline.offset,
                 })
                 .collect(),
