@@ -458,13 +458,12 @@ impl LegacyAssociativityContext<'_, '_> {
     fn pointer_list_valid(
         &self,
         record: &ParameterRecord,
-        start: usize,
-        count: usize,
+        mut indices: std::ops::Range<usize>,
         accepts: fn(&DirectoryEntry) -> bool,
         back_pointers_required: bool,
     ) -> bool {
-        (0..count).all(|offset| {
-            let Some(sequence) = existing_pointer(record, start + offset, self.entries) else {
+        indices.all(|index| {
+            let Some(sequence) = existing_pointer(record, index, self.entries) else {
                 return false;
             };
             let Some(target) = self.entries.get(&sequence) else {
@@ -529,41 +528,38 @@ fn legacy_associativity_valid(
             let Some(layout) = signal_string_layout(record) else {
                 return false;
             };
-            let names_valid = (0..layout.signal_name_count).all(|offset| {
+            let names_valid = layout.signal_names().all(|index| {
                 matches!(
-                    record.value(layout.signal_names_start + offset),
+                    record.value(index),
                     Some(TokenValue::String(_) | TokenValue::Omitted)
                 )
             });
             names_valid
                 && context.pointer_list_valid(
                     record,
-                    layout.connections_start,
-                    layout.connection_count,
+                    layout.connections(),
                     connect_node_target,
                     true,
                 )
                 && context.pointer_list_valid(
                     record,
-                    layout.schematic_start,
-                    layout.schematic_count,
+                    layout.schematic(),
                     |target| signal_string_geometry_target(target.entity_type, target.form),
                     true,
                 )
                 && context.pointer_list_valid(
                     record,
-                    layout.physical_start,
-                    layout.physical_count,
+                    layout.physical(),
                     |target| signal_string_geometry_target(target.entity_type, target.form),
                     true,
                 )
-                && legacy_primary_end_valid(record, layout.primary_end, trailing_pointer_analysis)
+                && legacy_primary_end_valid(record, layout.primary_end(), trailing_pointer_analysis)
         }
         10 => {
             let Some(layout) = text_node_layout(record) else {
                 return false;
             };
-            let description = layout.description_start;
+            let description = layout.description_start();
             let numeric_fields_valid = record
                 .number_or(description, 0.0)
                 .is_some_and(f64::is_finite)
@@ -582,39 +578,27 @@ fn legacy_associativity_valid(
             let rotate_internal_valid = record
                 .integer_or(description + 6, 0)
                 .is_some_and(|value| matches!(value, 0..=1));
-            let points_valid = context.pointer_list_valid(
-                record,
-                layout.geometry_start,
-                layout.geometry_count,
-                point_target,
-                true,
-            );
+            let points_valid =
+                context.pointer_list_valid(record, layout.geometry(), point_target, true);
             entry.status.use_flag() == Some(UseFlag::LogicalPositional)
-                && layout.geometry_count > 0
+                && !layout.geometry().is_empty()
                 && points_valid
                 && numeric_fields_valid
                 && negative_font_pointer_valid(record, description + 2, entries)
                 && mirror_valid
                 && rotate_internal_valid
-                && legacy_primary_end_valid(record, layout.primary_end, trailing_pointer_analysis)
+                && legacy_primary_end_valid(record, layout.primary_end(), trailing_pointer_analysis)
         }
         11 => {
             let Some(layout) = connect_node_layout(record) else {
                 return false;
             };
-            let data_valid = (0..layout.data_count)
-                .all(|offset| record.value(layout.data_start + offset).is_some());
+            let data_valid = layout.data().all(|index| record.value(index).is_some());
             entry.status.use_flag() == Some(UseFlag::LogicalPositional)
-                && layout.point_count > 0
-                && context.pointer_list_valid(
-                    record,
-                    layout.points_start,
-                    layout.point_count,
-                    point_target,
-                    true,
-                )
+                && !layout.points().is_empty()
+                && context.pointer_list_valid(record, layout.points(), point_target, true)
                 && data_valid
-                && legacy_primary_end_valid(record, layout.primary_end, trailing_pointer_analysis)
+                && legacy_primary_end_valid(record, layout.primary_end(), trailing_pointer_analysis)
         }
         _ => false,
     }

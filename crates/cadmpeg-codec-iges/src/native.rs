@@ -3530,59 +3530,47 @@ pub(crate) fn store(
                         }
                     }
                     8 => {
-                        let layout = record.and_then(signal_string_layout);
-                        let signal_name_count = layout.map_or(0, |layout| layout.signal_name_count);
-                        let connection_count = layout.map_or(0, |layout| layout.connection_count);
-                        let schematic_count = layout.map_or(0, |layout| layout.schematic_count);
-                        let physical_count = layout.map_or(0, |layout| layout.physical_count);
-                        let signal_names_start =
-                            layout.map_or(0, |layout| layout.signal_names_start);
-                        let connections_start = layout.map_or(0, |layout| layout.connections_start);
-                        let schematic_start = layout.map_or(0, |layout| layout.schematic_start);
-                        let physical_start = layout.map_or(0, |layout| layout.physical_start);
-                        let connections = (0..connection_count)
-                            .map(|offset| {
-                                let index = connections_start + offset;
-                                record
-                                    .and_then(|record| record.integer(index))
-                                    .and_then(|sequence| {
-                                        parameter_resolver.resolve_type(
-                                            entry.sequence,
-                                            index,
-                                            sequence,
-                                            402,
-                                            &[11],
-                                        )
-                                    })
-                                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
-                            })
-                            .collect();
-                        let geometry_links = |start, count| {
-                            (0..count)
-                                .map(|offset| {
-                                    let index = start + offset;
-                                    record
-                                        .and_then(|record| record.integer(index))
-                                        .and_then(|sequence| {
-                                            parameter_resolver.resolve(
-                                                entry.sequence,
-                                                index,
-                                                sequence,
-                                                ReferenceExpectation::Named(
-                                                    ExpectationLabel::SignalStringGeometry,
-                                                ),
-                                                |target| {
-                                                    signal_string_geometry_target(
-                                                        target.entity_type,
-                                                        target.form,
+                        let fields = record.and_then(|record| {
+                            signal_string_layout(record).map(|layout| (record, layout))
+                        });
+                        let (signal_names, connections, schematic_entities, physical_entities) =
+                            match fields {
+                                Some((record, layout)) => {
+                                    let connections = layout.connections()
+                                        .map(|index| {
+                                            record.integer(index)
+                                                .and_then(|sequence| {
+                                                    parameter_resolver.resolve_type(
+                                                        entry.sequence, index, sequence, 402, &[11],
                                                     )
-                                                },
-                                            )
+                                                })
+                                                .map(|sequence| format!("iges:entity:directory#{sequence}"))
                                         })
-                                        .map(|sequence| format!("iges:entity:directory#{sequence}"))
-                                })
-                                .collect::<Vec<_>>()
-                        };
+                                        .collect();
+                                    let geometry_links = |indices: std::ops::Range<usize>| {
+                                        indices.map(|index| {
+                                            record.integer(index)
+                                                .and_then(|sequence| {
+                                                    parameter_resolver.resolve(
+                                                        entry.sequence,
+                                                        index,
+                                                        sequence,
+                                                        ReferenceExpectation::Named(ExpectationLabel::SignalStringGeometry),
+                                                        |target| signal_string_geometry_target(target.entity_type, target.form),
+                                                    )
+                                                })
+                                                .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                                        }).collect::<Vec<_>>()
+                                    };
+                                    (
+                                        layout.signal_names().map(|index| record.string(index).map(<[u8]>::to_vec)).collect(),
+                                        connections,
+                                        geometry_links(layout.schematic()),
+                                        geometry_links(layout.physical()),
+                                    )
+                                }
+                                None => (Vec::new(), Vec::new(), Vec::new(), Vec::new()),
+                            };
                         NativeAssociativity::LegacySignalString {
                             id,
                             source_entity,
@@ -3590,25 +3578,15 @@ pub(crate) fn store(
                             declared_connection_count: record.and_then(|record| record.integer(2)),
                             declared_schematic_count: record.and_then(|record| record.integer(3)),
                             declared_physical_count: record.and_then(|record| record.integer(4)),
-                            signal_names: (0..signal_name_count)
-                                .map(|offset| {
-                                    record
-                                        .and_then(|record| {
-                                            record.string(signal_names_start + offset)
-                                        })
-                                        .map(<[u8]>::to_vec)
-                                })
-                                .collect(),
+                            signal_names,
                             connections,
-                            schematic_entities: geometry_links(schematic_start, schematic_count),
-                            physical_entities: geometry_links(physical_start, physical_count),
+                            schematic_entities,
+                            physical_entities,
                         }
                     }
                     10 => {
                         let layout = record.and_then(text_node_layout);
-                        let geometry_count = layout.map_or(0, |layout| layout.geometry_count);
-                        let geometry_start = layout.map_or(0, |layout| layout.geometry_start);
-                        let description_start = layout.map(|layout| layout.description_start);
+                        let description_start = layout.as_ref().map(|layout| layout.description_start());
                         let font_characteristic = description_start.and_then(|index| {
                             record.and_then(|record| record.integer_or(index + 2, 1))
                         });
@@ -3633,9 +3611,8 @@ pub(crate) fn store(
                             declared_geometry_count: record.and_then(|record| record.integer(1)),
                             declared_text_description_count: record
                                 .and_then(|record| record.integer(2)),
-                            geometry: (0..geometry_count)
-                                .map(|offset| {
-                                    let index = geometry_start + offset;
+                            geometry: layout.iter().flat_map(|layout| layout.geometry())
+                                .map(|index| {
                                     record
                                         .and_then(|record| record.integer(index))
                                         .and_then(|sequence| {
@@ -3675,40 +3652,35 @@ pub(crate) fn store(
                         }
                     }
                     11 => {
-                        let layout = record.and_then(connect_node_layout);
-                        let point_count = layout.map_or(0, |layout| layout.point_count);
-                        let points_start = layout.map_or(0, |layout| layout.points_start);
-                        let data_count = layout.map_or(0, |layout| layout.data_count);
-                        let data_start = layout.map_or(0, |layout| layout.data_start);
+                        let fields = record.and_then(|record| {
+                            connect_node_layout(record).map(|layout| (record, layout))
+                        });
+                        let (points, data) = match fields {
+                            Some((record, layout)) => {
+                                let points = layout.points().map(|index| {
+                                    record.integer(index)
+                                        .and_then(|sequence| {
+                                            parameter_resolver.resolve_type(
+                                                entry.sequence, index, sequence, 116, &[0],
+                                            )
+                                        })
+                                        .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                                }).collect();
+                                let data = layout.data().map(|index| {
+                                    record.token(index)
+                                        .map_or(TokenValue::Omitted, |item| item.value.clone())
+                                }).collect();
+                                (points, data)
+                            }
+                            None => (Vec::new(), Vec::new()),
+                        };
                         NativeAssociativity::LegacyConnectNode {
                             id,
                             source_entity,
                             declared_point_count: record.and_then(|record| record.integer(1)),
                             declared_data_count: record.and_then(|record| record.integer(2)),
-                            points: (0..point_count)
-                                .map(|offset| {
-                                    let index = points_start + offset;
-                                    record
-                                        .and_then(|record| record.integer(index))
-                                        .and_then(|sequence| {
-                                            parameter_resolver.resolve_type(
-                                                entry.sequence,
-                                                index,
-                                                sequence,
-                                                116,
-                                                &[0],
-                                            )
-                                        })
-                                        .map(|sequence| format!("iges:entity:directory#{sequence}"))
-                                })
-                                .collect(),
-                            data: (0..data_count)
-                                .map(|offset| {
-                                    record
-                                        .and_then(|record| record.token(data_start + offset))
-                                        .map_or(TokenValue::Omitted, |item| item.value.clone())
-                                })
-                                .collect(),
+                            points,
+                            data,
                         }
                     }
                     13 => {

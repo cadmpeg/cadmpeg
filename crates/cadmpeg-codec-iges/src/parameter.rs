@@ -830,34 +830,84 @@ fn analyze_trailing_pointer_groups_from_end(
 /// Layouts not represented here use generic CADIR recovery. A malformed known
 /// layout returns the record end as a sentinel and never enables generic
 /// recovery.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) struct SignalStringLayout {
-    pub(crate) signal_name_count: usize,
-    pub(crate) connection_count: usize,
-    pub(crate) schematic_count: usize,
-    pub(crate) physical_count: usize,
-    pub(crate) signal_names_start: usize,
-    pub(crate) connections_start: usize,
-    pub(crate) schematic_start: usize,
-    pub(crate) physical_start: usize,
-    pub(crate) primary_end: usize,
+    signal_names: Range<usize>,
+    connections: Range<usize>,
+    schematic: Range<usize>,
+    physical: Range<usize>,
 }
 
-#[derive(Debug, Clone, Copy)]
+impl SignalStringLayout {
+    /// Signal name token indices.
+    pub(crate) fn signal_names(&self) -> Range<usize> {
+        self.signal_names.clone()
+    }
+
+    /// Connection token indices.
+    pub(crate) fn connections(&self) -> Range<usize> {
+        self.connections.clone()
+    }
+
+    /// Schematic geometry token indices.
+    pub(crate) fn schematic(&self) -> Range<usize> {
+        self.schematic.clone()
+    }
+
+    /// Physical geometry token indices.
+    pub(crate) fn physical(&self) -> Range<usize> {
+        self.physical.clone()
+    }
+
+    /// First token after the primary fields.
+    pub(crate) fn primary_end(&self) -> usize {
+        self.physical.end
+    }
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct TextNodeLayout {
-    pub(crate) geometry_count: usize,
-    pub(crate) geometry_start: usize,
-    pub(crate) description_start: usize,
-    pub(crate) primary_end: usize,
+    geometry: Range<usize>,
 }
 
-#[derive(Debug, Clone, Copy)]
+impl TextNodeLayout {
+    /// Geometry token indices.
+    pub(crate) fn geometry(&self) -> Range<usize> {
+        self.geometry.clone()
+    }
+
+    /// First text description token.
+    pub(crate) fn description_start(&self) -> usize {
+        self.geometry.end
+    }
+
+    /// First token after the primary fields.
+    pub(crate) fn primary_end(&self) -> usize {
+        self.geometry.end + 7
+    }
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct ConnectNodeLayout {
-    pub(crate) point_count: usize,
-    pub(crate) data_count: usize,
-    pub(crate) points_start: usize,
-    pub(crate) data_start: usize,
-    pub(crate) primary_end: usize,
+    points: Range<usize>,
+    data: Range<usize>,
+}
+
+impl ConnectNodeLayout {
+    /// Point pointer token indices.
+    pub(crate) fn points(&self) -> Range<usize> {
+        self.points.clone()
+    }
+
+    /// Connection data token indices.
+    pub(crate) fn data(&self) -> Range<usize> {
+        self.data.clone()
+    }
+
+    /// First token after the primary fields.
+    pub(crate) fn primary_end(&self) -> usize {
+        self.data.end
+    }
 }
 
 fn legacy_count(record: &ParameterRecord, index: usize) -> Option<usize> {
@@ -877,15 +927,10 @@ pub(crate) fn signal_string_layout(record: &ParameterRecord) -> Option<SignalStr
     let physical_start = schematic_start.checked_add(schematic_count)?;
     let primary_end = physical_start.checked_add(physical_count)?;
     (primary_end <= record.parameter_end()).then_some(SignalStringLayout {
-        signal_name_count,
-        connection_count,
-        schematic_count,
-        physical_count,
-        signal_names_start,
-        connections_start,
-        schematic_start,
-        physical_start,
-        primary_end,
+        signal_names: signal_names_start..connections_start,
+        connections: connections_start..schematic_start,
+        schematic: schematic_start..physical_start,
+        physical: physical_start..primary_end,
     })
 }
 
@@ -897,10 +942,7 @@ pub(crate) fn text_node_layout(record: &ParameterRecord) -> Option<TextNodeLayou
     let primary_end = description_start.checked_add(7)?;
     (text_description_count == 1 && primary_end <= record.parameter_end()).then_some(
         TextNodeLayout {
-            geometry_count,
-            geometry_start,
-            description_start,
-            primary_end,
+            geometry: geometry_start..description_start,
         },
     )
 }
@@ -912,24 +954,21 @@ pub(crate) fn connect_node_layout(record: &ParameterRecord) -> Option<ConnectNod
     let data_start = points_start.checked_add(point_count)?;
     let primary_end = data_start.checked_add(data_count)?;
     (primary_end <= record.parameter_end()).then_some(ConnectNodeLayout {
-        point_count,
-        data_count,
-        points_start,
-        data_start,
-        primary_end,
+        points: points_start..data_start,
+        data: data_start..primary_end,
     })
 }
 
 fn signal_string_primary_end(record: &ParameterRecord) -> usize {
-    signal_string_layout(record).map_or(record.tokens.len(), |layout| layout.primary_end)
+    signal_string_layout(record).map_or(record.tokens.len(), |layout| layout.primary_end())
 }
 
 fn text_node_primary_end(record: &ParameterRecord) -> usize {
-    text_node_layout(record).map_or(record.tokens.len(), |layout| layout.primary_end)
+    text_node_layout(record).map_or(record.tokens.len(), |layout| layout.primary_end())
 }
 
 fn connect_node_primary_end(record: &ParameterRecord) -> usize {
-    connect_node_layout(record).map_or(record.tokens.len(), |layout| layout.primary_end)
+    connect_node_layout(record).map_or(record.tokens.len(), |layout| layout.primary_end())
 }
 
 pub(crate) fn entity_primary_end_for_global_table(
