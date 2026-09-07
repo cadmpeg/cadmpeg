@@ -121,19 +121,21 @@ fn compact_parting_line_draft_operands(
         .collect::<Vec<_>>();
     let parting_records = records
         .iter()
-        .filter(|(_, role, _, _)| *role == 2)
+        .filter(|(_, role, _, _)| *role == CompactDraftSelectionRole::PartingTool)
         .collect::<Vec<_>>();
     let [parting_record] = parting_records.as_slice() else {
         return None;
     };
-    let first_face = records
-        .iter()
-        .find(|(marker, role, _, _)| *role == 3 && *marker > parting_record.0)?;
+    let first_face = records.iter().find(|(marker, role, _, _)| {
+        *role == CompactDraftSelectionRole::DraftedFace && *marker > parting_record.0
+    })?;
     let pull_direction =
         unique_draft_direction(&lane.native_payload, parting_record.3, first_face.0)?;
     let faces = records
         .iter()
-        .filter(|(marker, role, _, _)| *role == 3 && *marker > parting_record.0)
+        .filter(|(marker, role, _, _)| {
+            *role == CompactDraftSelectionRole::DraftedFace && *marker > parting_record.0
+        })
         .flat_map(|(_, _, paths, _)| paths.iter().cloned())
         .fold(
             Vec::<Vec<FeatureInputComponentPathEntry>>::new(),
@@ -154,21 +156,31 @@ fn compact_parting_line_draft_operands(
     })
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CompactDraftSelectionRole {
+    PartingTool,
+    DraftedFace,
+}
+
 fn compact_draft_selection_at(
     payload: &[u8],
     marker: usize,
-) -> Option<(u8, Vec<Vec<FeatureInputComponentPathEntry>>, usize)> {
+) -> Option<(
+    CompactDraftSelectionRole,
+    Vec<Vec<FeatureInputComponentPathEntry>>,
+    usize,
+)> {
     let header = marker.checked_sub(compact_sel::COMPONENT_MARKER)?;
     usize::try_from(View::u32_le_at(payload, header + compact_sel::CELL_FIELD)?)
         .ok()
         .filter(|count| (1..=MAX_PATH_CELLS).contains(count))?;
     let role_bytes =
         payload.get(header + compact_sel::SELECTION_ROLE..header + compact_sel::SELECTOR)?;
-    let role = is_component_vector_selector(role_bytes).then(|| match role_bytes[1] {
-        2 => 2,
-        3 => 3,
-        _ => unreachable!("component-vector selector helper validated role"),
-    })?;
+    let role = match role_bytes {
+        [_, 2, 0, 0] => CompactDraftSelectionRole::PartingTool,
+        [_, 3, 0, 0] => CompactDraftSelectionRole::DraftedFace,
+        _ => return None,
+    };
     if payload.get(marker..marker + COMPACT_EDGE_VECTOR_MARKER.len())? != COMPACT_EDGE_VECTOR_MARKER
         || payload.get(marker + COMPACT_EDGE_VECTOR_MARKER.len()..header + compact_sel::LEN)?
             != [0, 0]
