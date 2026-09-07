@@ -3233,7 +3233,6 @@ fn attach_feature_operations(
         let block_projection = (label.value == "BLOCK")
             .then(|| block_placement(ir, block_dimension_values?, &outputs))
             .flatten();
-        let block_outputs_are_proven = !outputs.is_empty() || block_projection.is_some();
         if outputs.is_empty() {
             if let Some((body, _)) = &block_projection {
                 outputs.push(body.clone());
@@ -3272,7 +3271,6 @@ fn attach_feature_operations(
                         })
                 }),
             outputs: &outputs,
-            outputs_are_proven: block_outputs_are_proven,
             body_reference_count,
             provisional_feature: initial_body_id.as_ref(),
             native_primary_body,
@@ -3286,7 +3284,6 @@ fn attach_feature_operations(
                     has_complete_projection: true,
                     has_complete_primitive_construction: true,
                     outputs: sphere_outputs,
-                    outputs_are_proven: true,
                     body_reference_count,
                     provisional_feature: initial_body_id.as_ref(),
                     native_primary_body,
@@ -5862,7 +5859,6 @@ struct NewBodyEvidence<'a> {
     has_complete_projection: bool,
     has_complete_primitive_construction: bool,
     outputs: &'a [BodyId],
-    outputs_are_proven: bool,
     body_reference_count: usize,
     provisional_feature: Option<&'a FeatureId>,
     native_primary_body: Option<u32>,
@@ -5883,18 +5879,13 @@ fn new_body_boolean_op(evidence: &NewBodyEvidence<'_>) -> BooleanOp {
     {
         return BooleanOp::Unresolved;
     }
-    let writer_outputs = if evidence.outputs_are_proven {
-        evidence.outputs
-    } else {
-        &[]
-    };
     if evidence.has_complete_projection
         && matches!(evidence.outputs, [_])
         && !evidence.history.has_preceding_writer(
             evidence.provisional_feature,
             evidence.native_primary_body,
             evidence.offset_store_primary_body,
-            writer_outputs,
+            evidence.outputs,
         )
     {
         BooleanOp::NewBody
