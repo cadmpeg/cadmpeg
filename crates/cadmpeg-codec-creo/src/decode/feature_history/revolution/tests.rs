@@ -90,10 +90,14 @@ fn saved_spline_definition() -> crate::feature::FeatureDefinition {
                     declared_point_count: Some(2),
                     interpolation_points: vec![[2.0, 0.0, 0.0], [2.0, 0.0, 1.0]],
                     interpolation_points_body: Vec::new(),
-                    endpoint_tangents: Some([[0.0, 0.0, 1.0], [0.0, 0.0, 1.0]]),
-                    endpoint_tangents_body: None,
-                    parameters: Some(vec![0.0, 1.0]),
-                    parameters_body: None,
+                    endpoint_tangents: Some(crate::feature::definitions::DecodedField {
+                        value: [[0.0, 0.0, 1.0], [0.0, 0.0, 1.0]],
+                        body: Vec::new(),
+                    }),
+                    parameters: Some(crate::feature::definitions::DecodedField {
+                        value: vec![0.0, 1.0],
+                        body: Vec::new(),
+                    }),
                     offset: 0,
                 },
             )],

@@ -1012,6 +1012,13 @@ pub struct FeatureSavedConic {
     pub offset: usize,
 }
 
+/// A decoded field and its complete encoded value bytes.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DecodedField<T> {
+    pub value: T,
+    pub body: Vec<u8>,
+}
+
 /// One saved interpolation spline retained in section coordinates.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FeatureSavedSpline {
@@ -1023,14 +1030,10 @@ pub struct FeatureSavedSpline {
     pub interpolation_points: Vec<[f64; 3]>,
     /// Exact `i_pnts` value bytes through the last complete interpolation point.
     pub interpolation_points_body: Vec<u8>,
-    /// Two stored endpoint tangent triples, when every scalar is defined.
-    pub endpoint_tangents: Option<[[f64; 3]; 2]>,
-    /// Exact complete `end_tangts` value bytes, including its array wrapper.
-    pub endpoint_tangents_body: Option<Vec<u8>>,
-    /// One stored interpolation parameter per point, when complete.
-    pub parameters: Option<Vec<f64>>,
-    /// Exact complete `params` value bytes, including its array wrapper.
-    pub parameters_body: Option<Vec<u8>>,
+    /// Complete endpoint tangent triples and `end_tangts` bytes with the array wrapper.
+    pub endpoint_tangents: Option<DecodedField<[[f64; 3]; 2]>>,
+    /// Complete interpolation parameters and `params` bytes with the array wrapper.
+    pub parameters: Option<DecodedField<Vec<f64>>>,
     /// Byte offset of the entity label in the original stream.
     pub offset: usize,
 }
@@ -5887,7 +5890,7 @@ pub(crate) fn saved_spline_entities(
                 }
             }
         }
-        let decoded_tangents =
+        let endpoint_tangents =
             find_bytes(payload, TANGENTS, fields_start, body_end).and_then(|label| {
                 let value_start = label + TANGENTS_LABEL.len();
                 let mut at = label + TANGENTS.len();
@@ -5900,13 +5903,12 @@ pub(crate) fn saved_spline_entities(
                         at = next;
                     }
                 }
-                Some((tangents, payload[value_start..at].to_vec()))
+                Some(DecodedField {
+                    value: tangents,
+                    body: payload[value_start..at].to_vec(),
+                })
             });
-        let (endpoint_tangents, endpoint_tangents_body) = decoded_tangents
-            .map_or((None, None), |(tangents, body)| {
-                (Some(tangents), Some(body))
-            });
-        let decoded_parameters = point_count.and_then(|point_count| {
+        let parameters = point_count.and_then(|point_count| {
             find_bytes(payload, PARAMETERS, fields_start, body_end).and_then(|label| {
                 let value_start = label + PARAMETERS_LABEL.len();
                 let count_at = label + PARAMETERS.len();
@@ -5919,22 +5921,19 @@ pub(crate) fn saved_spline_entities(
                     values.push(value);
                     at = next;
                 }
-                Some((values, payload[value_start..at].to_vec()))
+                Some(DecodedField {
+                    value: values,
+                    body: payload[value_start..at].to_vec(),
+                })
             })
         });
-        let (parameters, parameters_body) = decoded_parameters
-            .map_or((None, None), |(parameters, body)| {
-                (Some(parameters), Some(body))
-            });
         entities.push(FeatureSavedEntity::Spline(FeatureSavedSpline {
             entity_id: saved_entity_id(payload, body_start, entity_id_end),
             declared_point_count,
             interpolation_points: points,
             interpolation_points_body,
             endpoint_tangents,
-            endpoint_tangents_body,
             parameters,
-            parameters_body,
             offset: entity_offset,
         }));
         search = body_start;

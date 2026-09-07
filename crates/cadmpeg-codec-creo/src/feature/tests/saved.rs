@@ -990,16 +990,25 @@ fn decodes_count_bounded_saved_spline_interpolation_points() {
         b"\xf9\x02\x03\xe4\x0f\x0d\x0f\xe4\x0f"
     );
     assert_eq!(
-        spline.endpoint_tangents,
+        spline.endpoint_tangents.as_ref().map(|field| field.value),
         Some([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
     );
     assert_eq!(
-        spline.endpoint_tangents_body.as_deref(),
+        spline
+            .endpoint_tangents
+            .as_ref()
+            .map(|field| field.body.as_slice()),
         Some(b"\xf9\x02\x03\xe4\x0f\x0f\xe4\x0f\x0f".as_slice())
     );
-    assert_eq!(spline.parameters, Some(vec![0.0, 1.0]));
     assert_eq!(
-        spline.parameters_body.as_deref(),
+        spline.parameters.as_ref().map(|field| field.value.clone()),
+        Some(vec![0.0, 1.0])
+    );
+    assert_eq!(
+        spline
+            .parameters
+            .as_ref()
+            .map(|field| field.body.as_slice()),
         Some(b"\xf8\x02\x0f\xe4".as_slice())
     );
 }
@@ -1050,9 +1059,7 @@ fn saved_spline_retains_its_declared_count_and_complete_point_prefix() {
         b"\xf9\x02\x03\x0f\x0f\x0f"
     );
     assert_eq!(spline.endpoint_tangents, None);
-    assert_eq!(spline.endpoint_tangents_body, None);
     assert_eq!(spline.parameters, None);
-    assert_eq!(spline.parameters_body, None);
 }
 
 #[test]

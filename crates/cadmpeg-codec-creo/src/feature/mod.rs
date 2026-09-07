@@ -6,7 +6,7 @@
 //! `f7 <entry-class>` may prefix the first entry. The table belongs to an `AllFeatur` row only
 //! when its byte offset is bounded by that row's known feature-id header.
 
-mod definitions;
+pub(crate) mod definitions;
 mod entity;
 mod helpers;
 mod operations;

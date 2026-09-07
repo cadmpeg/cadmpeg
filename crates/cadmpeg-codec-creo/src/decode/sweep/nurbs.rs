@@ -193,8 +193,8 @@ pub(in super::super) fn saved_spline_nurbs(
 ) -> Option<NurbsCurve> {
     (usize::try_from(spline.declared_point_count?).ok()? == spline.interpolation_points.len())
         .then_some(())?;
-    let parameters = spline.parameters.as_ref()?;
-    let tangents = spline.endpoint_tangents?;
+    let parameters = &spline.parameters.as_ref()?.value;
+    let tangents = spline.endpoint_tangents.as_ref()?.value;
     let (knots, control_points) =
         interpolation_curve_data(&spline.interpolation_points, parameters, tangents)?;
     let control_points = control_points
