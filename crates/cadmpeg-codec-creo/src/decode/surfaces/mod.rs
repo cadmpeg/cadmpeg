@@ -183,10 +183,11 @@ pub(super) fn fc05_model_frame(
     axis_ordinate: f64,
     center_row_frame: [f64; 2],
     reference_row_frame: [f64; 2],
-    axis_sign: f64,
+    axis_sign: Sign,
 ) -> ([f64; 3], [f64; 3], [f64; 3]) {
     let [first, second] = center_row_frame;
     let [reference_x, reference_z] = reference_row_frame;
+    let axis_sign = axis_sign.scale();
     match axis_index {
         Axis::X => (
             [axis_ordinate, second, first],
@@ -289,7 +290,7 @@ pub(super) fn fc05_cap_pair_model_frame(
         axis_origin,
         pair.center_row_frame,
         pair.reference_direction_row_frame,
-        axis_sign.scale(),
+        axis_sign,
     );
     Some(Fc05CapPairFrame {
         origin,
@@ -355,14 +356,14 @@ pub(super) fn transfer_fc05_cap_circles(
         let (reference, circle_axis_sign) = match circle.angle_parameter {
             crate::curve::Fc05AngleParameterRelation::Inconsistent => (
                 circle.sample_direction_row_frame,
-                cap.normal[axis_index.index()].signum(),
+                Sign::of_component(cap.normal[axis_index.index()]),
             ),
             crate::curve::Fc05AngleParameterRelation::Consistent {
                 sense,
                 reference_direction_row_frame,
-            } => (reference_direction_row_frame, -f64::from(sense.as_i8())),
+            } => (reference_direction_row_frame, Sign::from(sense).reversed()),
         };
-        let axis_sign = pair_frame.map_or(circle_axis_sign, |frame| frame.axis_sign.scale());
+        let axis_sign = pair_frame.map_or(circle_axis_sign, |frame| frame.axis_sign);
         let legacy_frame = fc05_model_frame(
             axis_index,
             cap.origin[axis_index.index()],

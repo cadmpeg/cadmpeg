@@ -40,4 +40,28 @@ impl Sign {
             Self::Negative => -1.0,
         }
     }
+    /// The opposite direction.
+    pub(super) const fn reversed(self) -> Self {
+        match self {
+            Self::Positive => Self::Negative,
+            Self::Negative => Self::Positive,
+        }
+    }
+    /// The direction of a coordinate component, taking the IEEE sign bit.
+    pub(super) fn of_component(component: f64) -> Self {
+        if component.is_sign_negative() {
+            Self::Negative
+        } else {
+            Self::Positive
+        }
+    }
+}
+
+impl From<crate::curve::ParameterSense> for Sign {
+    fn from(sense: crate::curve::ParameterSense) -> Self {
+        match sense {
+            crate::curve::ParameterSense::Increasing => Self::Positive,
+            crate::curve::ParameterSense::Decreasing => Self::Negative,
+        }
+    }
 }

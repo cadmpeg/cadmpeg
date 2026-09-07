@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Carrier point tests, plane reconciliation, and placed planes.
 
-use crate::decode::axis::Axis;
+use crate::decode::axis::{Axis, Sign};
 use crate::feature::schema::SchemaClass;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -791,12 +791,12 @@ fn fc05_cylinder_branch_witnesses(
         let (reference, axis_sign) = match circle.angle_parameter {
             crate::curve::Fc05AngleParameterRelation::Inconsistent => (
                 circle.sample_direction_row_frame,
-                cap.normal[axis_index.index()].signum(),
+                Sign::of_component(cap.normal[axis_index.index()]),
             ),
             crate::curve::Fc05AngleParameterRelation::Consistent {
                 sense,
                 reference_direction_row_frame,
-            } => (reference_direction_row_frame, -f64::from(sense.as_i8())),
+            } => (reference_direction_row_frame, Sign::from(sense).reversed()),
         };
         let (origin, axis, ref_direction) = fc05_model_frame(
             axis_index,

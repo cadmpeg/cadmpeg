@@ -2085,7 +2085,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 cap_offset,
                 pair.center_row_frame,
                 pair.reference_direction_row_frame,
-                frame.axis_sign.scale(),
+                frame.axis_sign,
             );
             let id = CurveId::mint(format!("creo:visibgeom:curve#{curve_id}"))
                 .expect("identity grammar");
