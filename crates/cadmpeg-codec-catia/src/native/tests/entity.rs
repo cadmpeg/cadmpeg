@@ -1324,3 +1324,28 @@ fn entity_value_schema_selection_excludes_a_packet_crossing_its_boundary() {
         .expect("store crossing packet fixture");
     crate::native::CatiaNative::load(&namespace).expect("validate canonical packet ownership");
 }
+
+/// The minimal `7C05` frame the parser accepts carries four empty byte
+/// vectors, so `empty_nested` names a producible record rather than an
+/// unreachable one.
+#[test]
+fn the_minimal_parsed_entity_frame_is_the_empty_nested_body() {
+    let frame = entity_table_record_with_definition_and_value(1, &[], &[]);
+    let mut bytes = frame.clone();
+    bytes.push(0xde);
+    bytes.extend(object_graph_from_records(&[object_graph_record(
+        &[0x04, 0x01, 0x81, 0x81],
+        &[0xfe],
+    )]));
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let [record] = native.entity_records.as_slice() else {
+        panic!("one minimal entity record");
+    };
+    assert_eq!(
+        record.body,
+        crate::native::CatiaEntityRecordBody::empty_nested()
+    );
+    assert_eq!(record.byte_len(), 24);
+    assert_eq!(record.byte_len() as usize, frame.len());
+}
