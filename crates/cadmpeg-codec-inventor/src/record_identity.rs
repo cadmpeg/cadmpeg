@@ -29,7 +29,7 @@ pub(crate) struct Located<T> {
     pub(crate) payload: T,
 }
 
-impl<T: RecordPayload> Located<T> {
+impl<T> Located<T> {
     pub(crate) fn new(value: T, type_id: String, segment_token: &str, record_ordinal: u32) -> Self {
         Self {
             identity: RecordIdentity {
@@ -40,7 +40,9 @@ impl<T: RecordPayload> Located<T> {
             payload: value,
         }
     }
+}
 
+impl<T: RecordPayload> Located<T> {
     pub(crate) fn id(&self) -> String {
         self.identity.id(T::KIND)
     }

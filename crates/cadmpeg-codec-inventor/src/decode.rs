@@ -861,10 +861,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             PmAppDefaultStyleRecord {
                 id: format!(
                     "inventor:presentation:default-style#{}-{}",
-                    style.segment_token, style.record_ordinal
+                    style.identity.segment_token, style.identity.record_ordinal
                 ),
-                segment_token: style.segment_token.clone(),
-                record_ordinal: style.record_ordinal,
+                segment_token: style.identity.segment_token.clone(),
+                record_ordinal: style.identity.record_ordinal,
                 segment_version_major: style.segment_version_major,
                 header_value: style.header_value,
                 header_id: style.header_id,
@@ -886,10 +886,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             PmAppRenderingStyleRecord {
                 id: format!(
                     "inventor:presentation:rendering-style#{}-{}",
-                    style.segment_token, style.record_ordinal
+                    style.identity.segment_token, style.identity.record_ordinal
                 ),
-                segment_token: style.segment_token.clone(),
-                record_ordinal: style.record_ordinal,
+                segment_token: style.identity.segment_token.clone(),
+                record_ordinal: style.identity.record_ordinal,
                 segment_version_major: style.segment_version_major,
                 header_value: style.header_value,
                 header_id: style.header_id,
@@ -897,7 +897,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 flags: style.flags,
                 values: style.values,
                 default_state: style.default_state,
-                value: style.value.value,
+                value: style.value,
                 name_reference: style.name_reference,
                 name: style.name.clone(),
                 comment: style.comment.clone(),
@@ -914,10 +914,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         .map(|face| PmGraphicsFaceRecord {
             id: format!(
                 "inventor:presentation:graphics-face#{}-{}",
-                face.segment_token, face.record_ordinal
+                face.identity.segment_token, face.identity.record_ordinal
             ),
-            segment_token: face.segment_token.clone(),
-            record_ordinal: face.record_ordinal,
+            segment_token: face.identity.segment_token.clone(),
+            record_ordinal: face.identity.record_ordinal,
             segment_version_major: face.segment_version_major,
             header_value: face.header_value,
             header_id: face.header_id,
@@ -939,10 +939,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         .map(|collection| PmGraphicsStyleCollectionRecord {
             id: format!(
                 "inventor:presentation:graphics-style-collection#{}-{}",
-                collection.segment_token, collection.record_ordinal
+                collection.identity.segment_token, collection.identity.record_ordinal
             ),
-            segment_token: collection.segment_token.clone(),
-            record_ordinal: collection.record_ordinal,
+            segment_token: collection.identity.segment_token.clone(),
+            record_ordinal: collection.identity.record_ordinal,
             segment_version_major: collection.segment_version_major,
             style_references: collection.style_references.clone(),
         })
@@ -953,10 +953,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         .map(|style| PmGraphicsPrimaryColorStyleRecord {
             id: format!(
                 "inventor:presentation:graphics-primary-color#{}-{}",
-                style.segment_token, style.record_ordinal
+                style.identity.segment_token, style.identity.record_ordinal
             ),
-            segment_token: style.segment_token.clone(),
-            record_ordinal: style.record_ordinal,
+            segment_token: style.identity.segment_token.clone(),
+            record_ordinal: style.identity.record_ordinal,
             segment_version_major: style.segment_version_major,
             header_value: style.header_value,
             controls: style.controls,
