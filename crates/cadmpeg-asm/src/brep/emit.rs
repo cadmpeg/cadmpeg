@@ -1440,11 +1440,10 @@ fn emit_net_surface(
         }
     }
     let embedded = *embedded;
-    let sections = embedded
-                                .sections
-                                .into_iter()
-                                .enumerate()
-                                .map(|(section_index, entries)| {
+    let mut next_section = 0;
+    let sections = (*embedded.sections).map(|entries| {
+                                    let section_index = next_section;
+                                    next_section += 1;
                                     let entries = entries
                                         .into_iter()
                                         .enumerate()
@@ -1520,28 +1519,21 @@ fn emit_net_surface(
                                         })
                                         .collect();
                                     cadmpeg_ir::geometry::LoftSection { entries }
-                                })
-                                .collect::<Vec<_>>()
-                                .try_into()
-                                .expect("two net sections");
-    let formulas = embedded
-        .formulas
-        .into_iter()
-        .enumerate()
-        .map(|(formula_index, formula)| {
-            map_law_formula(formula, |index, variable| {
-                map_net_law(
-                    &mut *out,
-                    i,
-                    &format!("{formula_index}:{index}"),
-                    variable,
-                    format,
-                )
-            })
+                                });
+    let mut next_formula = 0;
+    let formulas = (*embedded.formulas).map(|formula| {
+        let formula_index = next_formula;
+        next_formula += 1;
+        map_law_formula(formula, |index, variable| {
+            map_net_law(
+                &mut *out,
+                i,
+                &format!("{formula_index}:{index}"),
+                variable,
+                format,
+            )
         })
-        .collect::<Vec<_>>()
-        .try_into()
-        .expect("four net formulas");
+    });
     ProceduralSurfaceDefinition::Net {
         construction: Box::new(cadmpeg_ir::geometry::NetSurfaceConstruction {
             sections: Box::new(sections),
