@@ -1296,7 +1296,7 @@ fn transformed_dimensioned_arc_swaps_endpoint_identity_with_minor_geometry() {
         center: [0.0, 0.0],
         start: [0.001, 0.0],
         end: [0.0, -0.001],
-        endpoint_refs: vec!["start".into(), "end".into()],
+        endpoints: Some(["start".into(), "end".into()]),
     };
 
     let (geometry, endpoint_refs) =
@@ -1837,7 +1837,7 @@ fn arc_dimension_uses_two_endpoint_markers_for_a_bounded_arc() {
     assert_eq!(arc.center, [0.0, 0.0]);
     assert_eq!(arc.start, [0.003, 0.0]);
     assert_eq!(arc.end, [0.0, 0.003]);
-    assert_eq!(arc.endpoint_refs, vec!["start", "end"]);
+    assert_eq!(arc.endpoints, Some(["start".into(), "end".into()]));
 
     let mut invalid_end = lane.sketch_entities[2].clone();
     invalid_end.coordinates_m = Some([0.0, 0.004]);
