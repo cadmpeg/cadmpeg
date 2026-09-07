@@ -284,7 +284,7 @@ pub(crate) fn decode_rolling_ball_curve(
 ) -> Option<DecodedRollingBallCurve> {
     if marker_at(bytes, *position).is_some() {
         let curve = decode_curve_block(bytes, *position, int_width)?;
-        *position = curve.end;
+        *position = curve.end();
         let parameter_range = [
             take_optional_range_value(bytes, position)?.value(),
             take_optional_range_value(bytes, position)?.value(),

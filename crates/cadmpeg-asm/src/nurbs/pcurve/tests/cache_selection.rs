@@ -164,13 +164,13 @@ fn patch_layout_roles_exclude_nested_construction_caches() {
         assert_eq!(
             first_curve_patch_layout(&curves, int_width)
                 .expect("first owned curve layout")
-                .end,
+                .end(),
             curve_end
         );
         assert_eq!(
             final_curve_patch_layout(&curves, int_width)
                 .expect("final owned curve layout")
-                .end,
+                .end(),
             curve_end
         );
 

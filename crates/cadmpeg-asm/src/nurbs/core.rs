@@ -394,10 +394,7 @@ pub fn surface_patch_layout_at(
 pub struct CurvePatchLayout {
     /// Decoded curve cache.
     pub curve: NurbsCurve,
-    /// Offset immediately after the final control component.
-    pub end: usize,
-    /// Tagged-double payload offsets in pole/component order.
-    pub control_value_offsets: Vec<usize>,
+    control_start: usize,
     /// Native unique-knot payloads.
     pub knots: KnotLayout,
     /// Payload offset for the closure enum.
@@ -406,6 +403,20 @@ pub struct CurvePatchLayout {
     pub degree_value_offset: usize,
     /// Payload width of integer and enum fields.
     pub int_width: RefWidth,
+}
+
+impl CurvePatchLayout {
+    /// Offset immediately after the final control component.
+    pub fn end(&self) -> usize {
+        self.control_start + self.control_value_offsets().len() * 9
+    }
+
+    /// Tagged-double payload offsets in pole/component order.
+    pub fn control_value_offsets(&self) -> impl ExactSizeIterator<Item = usize> + '_ {
+        let components = if self.curve.weights().is_some() { 4 } else { 3 };
+        (0..self.curve.control_points().len() * components)
+            .map(|ordinal| self.control_start + ordinal * 9 + 1)
+    }
 }
 
 pub(crate) fn decode_curve_block(
@@ -431,9 +442,6 @@ pub(crate) fn decode_curve_block(
         read_knots(b, &mut pos, n_uniq as usize, degree, int_width)?;
     let control_start = pos;
     let (control_points, weights) = read_control_points(b, &mut pos, n_poles, cp_dims)?;
-    let control_value_offsets = (0..n_poles * cp_dims)
-        .map(|ordinal| control_start + ordinal * 9 + 1)
-        .collect();
 
     let curve = NurbsCurve::new(
         degree as u32,
@@ -445,8 +453,7 @@ pub(crate) fn decode_curve_block(
     .ok()?;
     Some(CurvePatchLayout {
         curve,
-        end: pos,
-        control_value_offsets,
+        control_start,
         knots: knot_layout,
         periodic_value_offset,
         degree_value_offset,

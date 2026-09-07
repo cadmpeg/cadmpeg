@@ -720,13 +720,17 @@ impl AsmEditSet {
                     record.index
                 ))
             })?;
-        if record_bytes.get(layout.end) != Some(&0x06) {
+        if record_bytes.get(layout.end()) != Some(&0x06) {
             return Err(CodecError::NotImplemented(format!(
                 "intcurve record {} has no writable fit-tolerance carrier",
                 record.index
             )));
         }
-        Self::patch_f64_payload(bytes, record.offset + layout.end + 1, tolerance / LEN_TO_MM)
+        Self::patch_f64_payload(
+            bytes,
+            record.offset + layout.end() + 1,
+            tolerance / LEN_TO_MM,
+        )
     }
 
     /// Apply a homogeneous transform to one ASM transform record.
@@ -1717,26 +1721,23 @@ fn patch_nurbs_curve_record(
     } else {
         3
     };
-    if layout.control_value_offsets.len() != curve.control_points().len() * components {
-        return Err(CodecError::malformed(format_args!(
-            "spline record {} has an inconsistent NURBS curve layout",
-            record.index
-        )));
-    }
     let weights = curve.weights();
-    let mut ordinal = 0usize;
-    for (index, point) in curve.control_points().iter().enumerate() {
-        let values = [
-            point.x / LEN_TO_MM,
-            point.y / LEN_TO_MM,
-            point.z / LEN_TO_MM,
-            weights.map_or(0.0, |weights| weights[index]),
-        ];
-        for value in values.into_iter().take(components) {
-            let at = record.offset + layout.control_value_offsets[ordinal];
-            AsmEditSet::patch_f64_payload(bytes, at, value)?;
-            ordinal += 1;
-        }
+    let values = curve
+        .control_points()
+        .iter()
+        .enumerate()
+        .flat_map(|(index, point)| {
+            [
+                point.x / LEN_TO_MM,
+                point.y / LEN_TO_MM,
+                point.z / LEN_TO_MM,
+                weights.map_or(0.0, |weights| weights[index]),
+            ]
+            .into_iter()
+            .take(components)
+        });
+    for (offset, value) in layout.control_value_offsets().zip(values) {
+        AsmEditSet::patch_f64_payload(bytes, record.offset + offset, value)?;
     }
     Ok(())
 }

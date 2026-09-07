@@ -1359,7 +1359,7 @@ pub fn subset_patch_layout(bytes: &[u8], int_width: RefWidth) -> Option<SubsetPa
     let marker = find_owned_subtype_marker(bytes, &[name], int_width).map(|(marker, _)| marker)?;
     subtype_span(bytes, marker, int_width)?;
     let mut position = marker + name.len() + 3;
-    position = decode_curve_block(bytes, position, int_width)?.end;
+    position = decode_curve_block(bytes, position, int_width)?.end();
     let parameter_range = [
         take_double_payload(bytes, &mut position)?,
         take_double_payload(bytes, &mut position)?,
@@ -1377,7 +1377,7 @@ pub fn vector_offset_patch_layout(
     subtype_span(bytes, marker, int_width)?;
     let mut position = marker + name.len() + 3;
     take_bool(bytes, &mut position)?;
-    position = decode_curve_block(bytes, position, int_width)?.end;
+    position = decode_curve_block(bytes, position, int_width)?.end();
     let parameter_range = [
         take_double_payload(bytes, &mut position)?,
         take_double_payload(bytes, &mut position)?,
@@ -1472,7 +1472,7 @@ pub fn rolling_ball_patch_layout(
         take_tagged_int(span, &mut position, 0x04, int_width)?;
         decode_rolling_ball_side(span, &mut position, int_width, None)?;
         decode_rolling_ball_side(span, &mut position, int_width, None)?;
-        position = decode_curve_block(span, position, int_width)?.end;
+        position = decode_curve_block(span, position, int_width)?.end();
         Some([
             start + take_double_payload(span, &mut position)?,
             start + take_double_payload(span, &mut position)?,
@@ -1488,7 +1488,7 @@ pub fn rolling_ball_patch_layout(
             }
             position = decode_surface_block(span, position, int_width)?.end;
         }
-        position = decode_curve_block(span, position, int_width)?.end;
+        position = decode_curve_block(span, position, int_width)?.end();
         Some([
             start + take_double_payload(span, &mut position)?,
             start + take_double_payload(span, &mut position)?,
@@ -1719,7 +1719,7 @@ pub fn surface_offset_patch_layout(
         take_double_payload(bytes, &mut position)?,
         take_double_payload(bytes, &mut position)?,
     ];
-    position = decode_curve_block(bytes, position, int_width)?.end;
+    position = decode_curve_block(bytes, position, int_width)?.end();
     let base_range = [
         take_double_payload(bytes, &mut position)?,
         take_double_payload(bytes, &mut position)?,
@@ -2385,7 +2385,7 @@ pub fn projection_patch_layout(bytes: &[u8], int_width: RefWidth) -> Option<Proj
     ];
     let discontinuity_flag = position;
     take_bool(bytes, &mut position)?;
-    position = decode_curve_block(bytes, position, int_width)?.end;
+    position = decode_curve_block(bytes, position, int_width)?.end();
     let tail_flag = position;
     take_bool(bytes, &mut position)?;
     let tail = if bytes.get(position) == Some(&0x10) {
