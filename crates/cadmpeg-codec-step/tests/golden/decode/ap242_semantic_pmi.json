@@ -23,6 +23,12 @@
           "definition": {
             "dimension": "size",
             "kind": "dimension",
+            "limits_and_fits": {
+              "form_variance": "H",
+              "grade": "7",
+              "source": "ISO 286",
+              "zone_variance": ""
+            },
             "lower_deviation": {
               "quantity": "length",
               "value": -0.1
@@ -56,6 +62,28 @@
           },
           "id": "step:presentation:pmi#12",
           "name": "surface flatness",
+          "targets": [
+            {
+              "kind": "shape_aspect",
+              "source_id": "#6"
+            }
+          ]
+        },
+        {
+          "definition": {
+            "dimension": "diameter",
+            "kind": "dimension",
+            "lower_deviation": {
+              "quantity": "length",
+              "value": -0.1
+            },
+            "upper_deviation": {
+              "quantity": "length",
+              "value": 0.2
+            }
+          },
+          "id": "step:presentation:pmi#25",
+          "name": "datum feature size",
           "targets": [
             {
               "kind": "shape_aspect",
@@ -118,36 +146,16 @@
     "native": {
       "step": {
         "arenas": {
-          "unknowns": [
-            {
-              "id": "step:data:dimensional_size_with_datum_feature#25"
-            },
-            {
-              "id": "step:data:limits_and_fits#23"
-            },
-            {
-              "id": "step:data:plus_minus_tolerance#24",
-              "links": [
-                "step:presentation:pmi#10",
-                "step:data:limits_and_fits#23"
-              ]
-            },
-            {
-              "id": "step:data:plus_minus_tolerance#26",
-              "links": [
-                "step:data:dimensional_size_with_datum_feature#25"
-              ]
-            }
-          ]
+          "unknowns": []
         },
         "version": 1
       }
     },
     "source": {
       "attributes": {
-        "bytes_named_opaque": "210",
+        "bytes_named_opaque": "0",
         "bytes_structural": "295",
-        "bytes_typed": "1211",
+        "bytes_typed": "1421",
         "bytes_unclassified": "0",
         "data_sections": "1",
         "entity_instances": "25",
@@ -200,93 +208,14 @@
         },
         "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
         "severity": "error"
-      },
-      {
-        "code": {
-          "code": "decode.warning",
-          "kind": "decode_diagnostic",
-          "namespace": "step"
-        },
-        "message": "PLUS_MINUS_TOLERANCE #24 is an additional tolerance for one dimension",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "decode.warning",
-          "kind": "decode_diagnostic",
-          "namespace": "step"
-        },
-        "message": "PLUS_MINUS_TOLERANCE #26 has no resolvable dimension and limits",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "decode.opaque-record-preserved",
-          "kind": "record_not_typed",
-          "namespace": "step"
-        },
-        "message": "preserved 1 DIMENSIONAL_SIZE_WITH_DATUM_FEATURE instance(s) as named opaque STEP records",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "decode.opaque-record-preserved",
-          "kind": "record_not_typed",
-          "namespace": "step"
-        },
-        "message": "preserved 1 LIMITS_AND_FITS instance(s) as named opaque STEP records",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "decode.opaque-record-preserved",
-          "kind": "record_not_typed",
-          "namespace": "step"
-        },
-        "message": "preserved 2 PLUS_MINUS_TOLERANCE instance(s) as named opaque STEP records",
-        "severity": "warning"
       }
     ],
     "notes": [
-      "byte accounting: 295 structural, 1211 typed, 210 named opaque, 0 unclassified"
+      "byte accounting: 295 structural, 1421 typed, 0 named opaque, 0 unclassified"
     ]
   },
   "source_fidelity": {
     "annotations": {},
-    "retained_records": [
-      {
-        "byte_len": 42,
-        "data": "IzIzPUxJTUlUU19BTkRfRklUUygnSCcsJycsJzcnLCdJU08gMjg2Jyk7",
-        "id": "step:data:limits_and_fits#23",
-        "offset": 1476,
-        "sha256": "93bc5e613aad3bcd496a9d4d1ab83a1e198a29e07b8f8377ee4327ba5ebb5c13",
-        "stream": "source"
-      },
-      {
-        "byte_len": 34,
-        "data": "IzI0PVBMVVNfTUlOVVNfVE9MRVJBTkNFKCMyMywjMTApOw==",
-        "id": "step:data:plus_minus_tolerance#24",
-        "offset": 1519,
-        "sha256": "e955a2ccb97d03bfe28492279e9a9821ff664e3994d2f345d2e95a0fb568576a",
-        "stream": "source"
-      },
-      {
-        "byte_len": 100,
-        "data": "IzI1PURJTUVOU0lPTkFMX1NJWkVfV0lUSF9EQVRVTV9GRUFUVVJFKCdkYXR1bSBmZWF0dXJlIHNpemUnLCdzaW5nbGUgZmVhdHVyZScsIzUsLlQuLCM2LCdkaWFtZXRlcicpOw==",
-        "id": "step:data:dimensional_size_with_datum_feature#25",
-        "offset": 1554,
-        "sha256": "dd6d64d768304ab6adc460c13a40cfd7af5443c9f1806b07b2a1638bab0ff1b3",
-        "stream": "source"
-      },
-      {
-        "byte_len": 34,
-        "data": "IzI2PVBMVVNfTUlOVVNfVE9MRVJBTkNFKCMxOCwjMjUpOw==",
-        "id": "step:data:plus_minus_tolerance#26",
-        "offset": 1655,
-        "sha256": "54f8e770c4d065dbc325080371d733169ba0ab7701f6d34f4eb3ccb2eeb81911",
-        "stream": "source"
-      }
-    ],
     "version": "3"
   }
 }

@@ -155,12 +155,19 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
             PmiDefinition::Dimension {
                 nominal, tolerance, ..
             } => {
-                let non_finite = !nominal.value.is_finite()
-                    || matches!(
-                        tolerance,
-                        Some(DimensionTolerance::PlusMinus { lower, upper })
-                            if !lower.value.is_finite() || !upper.value.is_finite()
-                    );
+                let deviations = match tolerance {
+                    Some(DimensionTolerance::PlusMinus { lower, upper })
+                    | Some(DimensionTolerance::PlusMinusFit { lower, upper, .. }) => {
+                        Some((lower, upper))
+                    }
+                    Some(DimensionTolerance::Fit(_)) | None => None,
+                };
+                let non_finite = nominal
+                    .as_ref()
+                    .is_some_and(|value| !value.value.is_finite())
+                    || deviations.is_some_and(|(lower, upper)| {
+                        !lower.value.is_finite() || !upper.value.is_finite()
+                    });
                 if non_finite {
                     invalid(
                         findings,

@@ -253,9 +253,7 @@ pub(super) fn decode(
                 _ => kind,
             };
         }
-        let Some(nominal) = characteristic_values.get(&id).copied() else {
-            continue;
-        };
+        let nominal = characteristic_values.get(&id).copied();
         let aspect_ids = record
             .partials
             .iter()
@@ -707,10 +705,18 @@ fn set_dimension_tolerance(definition: &mut PmiDefinition, value: DimensionToler
     let PmiDefinition::Dimension { tolerance, .. } = definition else {
         return false;
     };
-    if tolerance.is_some() {
-        return false;
-    }
-    *tolerance = Some(value);
+    let merged = match (tolerance.take(), value) {
+        (None, value) => value,
+        (Some(DimensionTolerance::PlusMinus { lower, upper }), DimensionTolerance::Fit(fit))
+        | (Some(DimensionTolerance::Fit(fit)), DimensionTolerance::PlusMinus { lower, upper }) => {
+            DimensionTolerance::PlusMinusFit { lower, upper, fit }
+        }
+        (Some(existing), _) => {
+            *tolerance = Some(existing);
+            return false;
+        }
+    };
+    *tolerance = Some(merged);
     true
 }
 

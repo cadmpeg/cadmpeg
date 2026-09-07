@@ -219,6 +219,15 @@ pub enum DimensionTolerance {
     },
     /// ISO limits-and-fits tolerance class.
     Fit(LimitsAndFits),
+    /// Signed deviations qualified by an ISO limits-and-fits tolerance class.
+    PlusMinusFit {
+        /// Signed lower deviation from nominal.
+        lower: PmiValue,
+        /// Signed upper deviation from nominal.
+        upper: PmiValue,
+        /// ISO limits-and-fits tolerance class.
+        fit: LimitsAndFits,
+    },
 }
 
 /// Semantic or presentation PMI payload.
@@ -264,8 +273,8 @@ pub enum PmiDefinition {
     Dimension {
         /// Dimensional characteristic.
         dimension: DimensionKind,
-        /// Nominal value.
-        nominal: PmiValue,
+        /// Nominal value, absent when the source carries none.
+        nominal: Option<PmiValue>,
         /// Optional plus/minus or limits-and-fits tolerance.
         tolerance: Option<DimensionTolerance>,
     },
@@ -373,10 +382,13 @@ impl From<PmiDefinition> for PmiDefinitionWire {
                         (Some(lower), Some(upper), None)
                     }
                     Some(DimensionTolerance::Fit(fit)) => (None, None, Some(fit)),
+                    Some(DimensionTolerance::PlusMinusFit { lower, upper, fit }) => {
+                        (Some(lower), Some(upper), Some(fit))
+                    }
                 };
                 Self::Dimension {
                     dimension,
-                    nominal: Some(nominal),
+                    nominal,
                     lower_deviation,
                     upper_deviation,
                     limits_and_fits,
@@ -435,17 +447,18 @@ impl TryFrom<PmiDefinitionWire> for PmiDefinition {
                 upper_deviation,
                 limits_and_fits,
             } => {
-                let nominal = nominal
-                    .ok_or_else(|| "PmiDefinition.dimension.nominal is required".to_string())?;
                 let tolerance = match (lower_deviation, upper_deviation, limits_and_fits) {
                     (None, None, None) => None,
                     (Some(lower), Some(upper), None) => {
                         Some(DimensionTolerance::PlusMinus { lower, upper })
                     }
                     (None, None, Some(fit)) => Some(DimensionTolerance::Fit(fit)),
+                    (Some(lower), Some(upper), Some(fit)) => {
+                        Some(DimensionTolerance::PlusMinusFit { lower, upper, fit })
+                    }
                     _ => {
                         return Err(
-                            "PmiDefinition.dimension tolerance must contain both deviations or one limits_and_fits value"
+                            "PmiDefinition.dimension tolerance must contain both deviations or no deviation"
                                 .to_string(),
                         )
                     }
@@ -577,10 +590,10 @@ mod tests {
     fn dimension_wire_keeps_the_flat_tolerance_fields() {
         let definition = PmiDefinition::Dimension {
             dimension: DimensionKind::Size,
-            nominal: PmiValue {
+            nominal: Some(PmiValue {
                 value: 12.0,
                 quantity: PmiQuantity::Length,
-            },
+            }),
             tolerance: Some(DimensionTolerance::PlusMinus {
                 lower: PmiValue {
                     value: -0.1,
@@ -647,10 +660,10 @@ mod tests {
             targets: vec![PmiTarget::Curve { curve }],
             definition: PmiDefinition::Dimension {
                 dimension: DimensionKind::Size,
-                nominal: PmiValue {
+                nominal: Some(PmiValue {
                     value: 1.0,
                     quantity: PmiQuantity::Length,
-                },
+                }),
                 tolerance: None,
             },
         });
@@ -692,10 +705,10 @@ mod tests {
             targets: Vec::new(),
             definition: PmiDefinition::Dimension {
                 dimension: DimensionKind::Size,
-                nominal: PmiValue {
+                nominal: Some(PmiValue {
                     value: 1.0,
                     quantity: PmiQuantity::Length,
-                },
+                }),
                 tolerance: None,
             },
         });

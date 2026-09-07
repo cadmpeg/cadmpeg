@@ -3116,16 +3116,22 @@ impl<'a> Builder<'a> {
                         _ => format!("{aspect},{}", string(characteristic_name)),
                     };
                     let characteristic = self.emitter.emit(entity, &parameters);
-                    let measure = self.emit_pmi_measure_representation_item(*nominal, name);
-                    let representation = self.emitter.emit(
-                        "SHAPE_DIMENSION_REPRESENTATION",
-                        &format!("'',({measure}),{context}"),
-                    );
-                    self.emitter.emit(
-                        "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION",
-                        &format!("{characteristic},{representation}"),
-                    );
-                    if let Some(DimensionTolerance::PlusMinus { lower, upper }) = tolerance {
+                    if let Some(value) = nominal {
+                        let measure = self.emit_pmi_measure_representation_item(*value, name);
+                        let representation = self.emitter.emit(
+                            "SHAPE_DIMENSION_REPRESENTATION",
+                            &format!("'',({measure}),{context}"),
+                        );
+                        self.emitter.emit(
+                            "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION",
+                            &format!("{characteristic},{representation}"),
+                        );
+                    }
+                    if let Some(
+                        DimensionTolerance::PlusMinus { lower, upper }
+                        | DimensionTolerance::PlusMinusFit { lower, upper, .. },
+                    ) = tolerance
+                    {
                         let lower = self.emit_pmi_measure(*lower);
                         let upper = self.emit_pmi_measure(*upper);
                         let tolerance = self
@@ -3136,7 +3142,10 @@ impl<'a> Builder<'a> {
                             &format!("{tolerance},{characteristic}"),
                         );
                     }
-                    if let Some(DimensionTolerance::Fit(fit)) = tolerance {
+                    if let Some(
+                        DimensionTolerance::Fit(fit) | DimensionTolerance::PlusMinusFit { fit, .. },
+                    ) = tolerance
+                    {
                         let fit = self.emitter.emit(
                             "LIMITS_AND_FITS",
                             &format!(

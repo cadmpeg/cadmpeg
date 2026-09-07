@@ -116,7 +116,7 @@ fn range_only_dimension_definition(
     };
     Some(PmiDefinition::Dimension {
         dimension,
-        nominal,
+        nominal: Some(nominal),
         tolerance: Some(DimensionTolerance::PlusMinus {
             lower: lower_deviation,
             upper: upper_deviation,
@@ -324,7 +324,7 @@ mod tests {
             .map(|annotation| match &annotation.definition {
                 PmiDefinition::Dimension {
                     dimension,
-                    nominal,
+                    nominal: Some(nominal),
                     tolerance:
                         Some(DimensionTolerance::PlusMinus {
                             lower: lower_deviation,

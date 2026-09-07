@@ -864,7 +864,7 @@ fn project_dimension(
         targets: targets(entity, feature_index, topology),
         definition: PmiDefinition::Dimension {
             dimension,
-            nominal: pmi_value(nominal, quantity),
+            nominal: Some(pmi_value(nominal, quantity)),
             tolerance,
         },
     })
@@ -2522,8 +2522,10 @@ mod tests {
         };
         let mut projected = project(&root);
         enrich_implicit_nominals_with_context(&root, &[], &mut projected, Some(&context));
-        let PmiDefinition::Dimension { nominal, .. } =
-            &projected.first().expect("diameter annotation").definition
+        let PmiDefinition::Dimension {
+            nominal: Some(nominal),
+            ..
+        } = &projected.first().expect("diameter annotation").definition
         else {
             panic!("dimension definition");
         };
@@ -2954,7 +2956,11 @@ mod tests {
             .iter()
             .find(|annotation| annotation.id.as_str().ends_with("#A40"))
             .expect("angular annotation");
-        let PmiDefinition::Dimension { nominal, .. } = &angle.definition else {
+        let PmiDefinition::Dimension {
+            nominal: Some(nominal),
+            ..
+        } = &angle.definition
+        else {
             panic!("angular definition");
         };
         assert_eq!(
@@ -3240,7 +3246,7 @@ mod tests {
             .find(|annotation| annotation.name.as_deref() == Some("Diameter 1"))
             .expect("diameter annotation");
         let PmiDefinition::Dimension {
-            nominal,
+            nominal: Some(nominal),
             tolerance:
                 Some(DimensionTolerance::PlusMinus {
                     lower: lower_deviation,
@@ -3267,7 +3273,11 @@ mod tests {
             .iter()
             .find(|annotation| annotation.name.as_deref() == Some("Diameter 1"))
             .expect("diameter annotation");
-        let PmiDefinition::Dimension { nominal, .. } = &diameter.definition else {
+        let PmiDefinition::Dimension {
+            nominal: Some(nominal),
+            ..
+        } = &diameter.definition
+        else {
             panic!("dimension definition");
         };
         assert!(approximately_equal(nominal.value, 3.962_4));
@@ -3312,7 +3322,10 @@ mod tests {
             .references = vec![reference("FP", "GdtPattern")];
         let mut annotations = project(&root);
         enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
+        let PmiDefinition::Dimension {
+            nominal: Some(nominal),
+            ..
+        } = &annotations
             .iter()
             .find(|annotation| annotation.id == pmi_id("A30"))
             .expect("pattern diameter")
@@ -3391,7 +3404,10 @@ mod tests {
 
         let mut annotations = project(&root);
         enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
+        let PmiDefinition::Dimension {
+            nominal: Some(nominal),
+            ..
+        } = &annotations
             .iter()
             .find(|annotation| annotation.id == pmi_id("A30"))
             .expect("pattern diameter")
@@ -3442,7 +3458,10 @@ mod tests {
         *root.features.entities.get_mut(1).expect("direct cylinder") = cylinder_with_radius(17.5);
         let mut annotations = project(&root);
         enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
+        let PmiDefinition::Dimension {
+            nominal: Some(nominal),
+            ..
+        } = &annotations
             .iter()
             .find(|annotation| annotation.id == pmi_id("A30"))
             .expect("direct diameter")
@@ -3467,7 +3486,10 @@ mod tests {
             .class = "PrizMetrik.GdtAnalysis.GdtSphere,gdtanalysis.net".into();
         let mut annotations = project(&root);
         enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
+        let PmiDefinition::Dimension {
+            nominal: Some(nominal),
+            ..
+        } = &annotations
             .iter()
             .find(|annotation| annotation.id == pmi_id("A30"))
             .expect("direct diameter")
@@ -3525,7 +3547,7 @@ mod tests {
         let mut annotations = project(&root);
         enrich_implicit_nominals(&root, &[], &mut annotations);
         let PmiDefinition::Dimension {
-            nominal,
+            nominal: Some(nominal),
             tolerance:
                 Some(DimensionTolerance::PlusMinus {
                     lower: lower_deviation,
@@ -3583,7 +3605,10 @@ mod tests {
 
         let mut annotations = project(&root);
         enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
+        let PmiDefinition::Dimension {
+            nominal: Some(nominal),
+            ..
+        } = &annotations
             .iter()
             .find(|annotation| annotation.id == pmi_id("A50"))
             .expect("hole-axis location")
@@ -3657,7 +3682,10 @@ mod tests {
 
         let mut annotations = project(&root);
         enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
+        let PmiDefinition::Dimension {
+            nominal: Some(nominal),
+            ..
+        } = &annotations
             .iter()
             .find(|annotation| annotation.id == pmi_id("A50"))
             .expect("slot length location")
@@ -3720,7 +3748,11 @@ mod tests {
             .iter()
             .find(|annotation| annotation.name.as_deref() == Some("Depth 1"))
             .expect("depth annotation");
-        let PmiDefinition::Dimension { nominal, .. } = &depth.definition else {
+        let PmiDefinition::Dimension {
+            nominal: Some(nominal),
+            ..
+        } = &depth.definition
+        else {
             panic!("dimension definition");
         };
         assert!(approximately_equal(nominal.value, 7.62));
@@ -3744,7 +3776,10 @@ mod tests {
 
         let mut annotations = project(&root);
         enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
+        let PmiDefinition::Dimension {
+            nominal: Some(nominal),
+            ..
+        } = &annotations
             .iter()
             .find(|annotation| annotation.id == pmi_id("A50"))
             .expect("direct depth annotation")
@@ -3769,7 +3804,10 @@ mod tests {
         cylinder.doubles.insert("ThreadDepth".into(), 12.0);
         let mut annotations = project(&root);
         enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
+        let PmiDefinition::Dimension {
+            nominal: Some(nominal),
+            ..
+        } = &annotations
             .iter()
             .find(|annotation| annotation.id == pmi_id("A50"))
             .expect("thread depth annotation")
@@ -3813,7 +3851,10 @@ mod tests {
 
         let mut annotations = project(&root);
         enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
+        let PmiDefinition::Dimension {
+            nominal: Some(nominal),
+            ..
+        } = &annotations
             .iter()
             .find(|annotation| annotation.id == pmi_id("AD"))
             .expect("counterbore depth")
@@ -3901,7 +3942,7 @@ mod tests {
             .find(|annotation| annotation.name.as_deref() == Some("Width 1"))
             .expect("width annotation");
         let PmiDefinition::Dimension {
-            nominal,
+            nominal: Some(nominal),
             tolerance:
                 Some(DimensionTolerance::PlusMinus {
                     lower: lower_deviation,
@@ -3919,7 +3960,11 @@ mod tests {
             .iter()
             .find(|annotation| annotation.name.as_deref() == Some("Length 1"))
             .expect("length annotation");
-        let PmiDefinition::Dimension { nominal, .. } = &length.definition else {
+        let PmiDefinition::Dimension {
+            nominal: Some(nominal),
+            ..
+        } = &length.definition
+        else {
             panic!("dimension definition");
         };
         assert!(approximately_equal(nominal.value, 38.1));
@@ -3977,7 +4022,10 @@ mod tests {
             ("ACSD", 20.0, PmiQuantity::Length),
             ("ACSA", std::f64::consts::FRAC_PI_2, PmiQuantity::Angle),
         ] {
-            let PmiDefinition::Dimension { nominal, .. } = &annotations
+            let PmiDefinition::Dimension {
+                nominal: Some(nominal),
+                ..
+            } = &annotations
                 .iter()
                 .find(|annotation| annotation.id == pmi_id(id))
                 .expect("compound-hole annotation")
@@ -4034,7 +4082,10 @@ mod tests {
 
         let mut annotations = project(&root);
         enrich_implicit_nominals(&root, &[], &mut annotations);
-        let PmiDefinition::Dimension { nominal, .. } = &annotations
+        let PmiDefinition::Dimension {
+            nominal: Some(nominal),
+            ..
+        } = &annotations
             .iter()
             .find(|annotation| annotation.id == pmi_id("A50"))
             .expect("width annotation")
@@ -4108,7 +4159,7 @@ mod tests {
         let mut annotations = project(&root);
         enrich_implicit_nominals(&root, &[], &mut annotations);
         let PmiDefinition::Dimension {
-            nominal,
+            nominal: Some(nominal),
             tolerance:
                 Some(DimensionTolerance::PlusMinus {
                     upper: upper_deviation,
