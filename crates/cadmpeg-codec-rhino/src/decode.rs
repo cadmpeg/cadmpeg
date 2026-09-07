@@ -3751,9 +3751,13 @@ struct BrepCarrierInput<'a> {
 struct BrepCarrierDraft {
     staged: BrepDraft,
     c3: BTreeMap<i32, cadmpeg_ir::ids::CurveId>,
-    surfaces: BTreeMap<i32, cadmpeg_ir::ids::SurfaceId>,
-    plane_parameterizations: BTreeMap<i32, crate::surfaces::PlaneParameterization>,
+    surfaces: BTreeMap<i32, StagedBrepSurface>,
     child_cause: Option<String>,
+}
+
+struct StagedBrepSurface {
+    id: cadmpeg_ir::ids::SurfaceId,
+    plane_parameterization: Option<crate::surfaces::PlaneParameterization>,
 }
 
 struct BrepStageContext<'a> {
@@ -3846,7 +3850,6 @@ fn stage_brep_carriers(input: BrepCarrierInput<'_>) -> BrepCarrierDraft {
     };
     let mut c3 = BTreeMap::new();
     let mut surfaces = BTreeMap::new();
-    let mut plane_parameterizations = BTreeMap::new();
     let mut child_cause = None;
     for (kind, slots) in [
         ("render", &raw.render_meshes),
@@ -3975,10 +3978,13 @@ fn stage_brep_carriers(input: BrepCarrierInput<'_>) -> BrepCarrierDraft {
                         Exactness::ByteExact
                     },
                 );
-                if let Some(parameterization) = plane_parameterization {
-                    plane_parameterizations.insert(index as i32, parameterization);
-                }
-                surfaces.insert(index as i32, id);
+                surfaces.insert(
+                    index as i32,
+                    StagedBrepSurface {
+                        id,
+                        plane_parameterization,
+                    },
+                );
             }
             Ok(crate::curves::DecodedGeometry::Surface {
                 surface:
@@ -3998,7 +4004,13 @@ fn stage_brep_carriers(input: BrepCarrierInput<'_>) -> BrepCarrierDraft {
                 },
             ) {
                 Ok(id) => {
-                    surfaces.insert(index as i32, id);
+                    surfaces.insert(
+                        index as i32,
+                        StagedBrepSurface {
+                            id,
+                            plane_parameterization: None,
+                        },
+                    );
                 }
                 Err(error) => {
                     child_cause = Some(format!("surface slot {index}: {error}"));
@@ -4016,7 +4028,6 @@ fn stage_brep_carriers(input: BrepCarrierInput<'_>) -> BrepCarrierDraft {
         staged,
         c3,
         surfaces,
-        plane_parameterizations,
         child_cause,
     }
 }
@@ -4047,7 +4058,6 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         mut staged,
         c3,
         surfaces,
-        plane_parameterizations,
         child_cause,
     } = stage_brep_carriers(BrepCarrierInput {
         expand,
@@ -4064,8 +4074,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     if let Some(cause) = child_cause {
         return Ok(finish_brep_fallback(staged, cause));
     }
-    let (c2, pcurves, pcurve_warnings) =
-        decode_pcurves(data, archive, raw, key, &plane_parameterizations);
+    let (c2, pcurves, pcurve_warnings) = decode_pcurves(data, archive, raw, key, &surfaces);
     staged.warnings.extend(pcurve_warnings);
     staged.draft.model_mut().pcurves = pcurves;
     let body_id: cadmpeg_ir::ids::BodyId = format!("rhino:object:body#{key}")
@@ -4144,9 +4153,12 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     }
     let mut face_ids = Vec::with_capacity(raw.faces.len());
     for (index, face) in raw.faces.iter().enumerate() {
-        let surface = surfaces.get(&face.surface).cloned().ok_or_else(|| {
-            crate::curves::error(face.source_range.start, "surface child missing")
-        })?;
+        let surface = surfaces
+            .get(&face.surface)
+            .map(|surface| surface.id.clone())
+            .ok_or_else(|| {
+                crate::curves::error(face.source_range.start, "surface child missing")
+            })?;
         let component = grouping.face_groups[index];
         let id: cadmpeg_ir::ids::FaceId = format!("rhino:object:face#{key}.slot-{index}")
             .try_into()
@@ -4681,7 +4693,7 @@ fn decode_pcurves(
     archive: ArchiveVersion,
     raw: &crate::brep::RawBrep,
     key: &str,
-    plane_parameterizations: &BTreeMap<i32, crate::surfaces::PlaneParameterization>,
+    surfaces: &BTreeMap<i32, StagedBrepSurface>,
 ) -> (
     BTreeMap<i32, cadmpeg_ir::ids::PcurveId>,
     Vec<Pcurve>,
@@ -4744,7 +4756,8 @@ fn decode_pcurves(
             .loops
             .get(trim.loop_index as usize)
             .and_then(|loop_record| raw.faces.get(loop_record.face as usize))
-            .and_then(|face| plane_parameterizations.get(&face.surface).copied());
+            .and_then(|face| surfaces.get(&face.surface))
+            .and_then(|surface| surface.plane_parameterization);
         let control_points = nurbs
             .control_points()
             .iter()
