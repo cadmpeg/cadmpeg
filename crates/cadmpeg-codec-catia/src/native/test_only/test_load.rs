@@ -318,14 +318,7 @@ impl CatiaNative {
             }
             for (ordinal, record) in graph.records.iter().enumerate() {
                 let expected_head_roles = object_graph::head_roles(record.lead, &record.head);
-                let expected_owner = expected_head_roles
-                    .owner_ref
-                    .map(CatiaObjectOwner::Entity)
-                    .or_else(|| {
-                        expected_head_roles
-                            .owner_literal
-                            .map(CatiaObjectOwner::UnassignedLiteral)
-                    });
+                let expected_owner = expected_head_roles.owner.map(CatiaObjectOwner::from);
                 let expected_design_object = record
                     .owner_entity_id()
                     .map(|owner| design_object_id(graph.byte_offset, owner));

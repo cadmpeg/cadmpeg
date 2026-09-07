@@ -56,13 +56,18 @@ struct ObjectRecordWire {
 impl From<ObjectRecord> for ObjectRecordWire {
     fn from(record: ObjectRecord) -> Self {
         let roles = record.roles();
+        let (owner_ref, owner_literal) = match roles.owner {
+            Some(HeadOwner::Entity(value)) => (Some(value), None),
+            Some(HeadOwner::UnassignedLiteral(value)) => (None, Some(value)),
+            None => (None, None),
+        };
         Self {
             pos: record.pos,
             total_len: record.total_len,
             lead: record.lead,
             body: record.body,
-            owner_ref: roles.owner_ref,
-            owner_literal: roles.owner_literal,
+            owner_ref,
+            owner_literal,
             class_ref: roles.class_ref,
             storage_ref: roles.storage_ref,
         }
@@ -73,9 +78,14 @@ impl TryFrom<ObjectRecordWire> for ObjectRecord {
     type Error = &'static str;
 
     fn try_from(wire: ObjectRecordWire) -> Result<Self, Self::Error> {
+        let owner = match (wire.owner_ref, wire.owner_literal) {
+            (Some(value), None) => Some(HeadOwner::Entity(value)),
+            (None, Some(value)) => Some(HeadOwner::UnassignedLiteral(value)),
+            (None, None) => None,
+            (Some(_), Some(_)) => return Err("owner_ref and owner_literal are mutually exclusive"),
+        };
         let supplied = HeadRoles {
-            owner_ref: wire.owner_ref,
-            owner_literal: wire.owner_literal,
+            owner,
             class_ref: wire.class_ref,
             storage_ref: wire.storage_ref,
         };
@@ -825,10 +835,16 @@ fn parse_candidate(
     })
 }
 
+/// Occupant of the object head owner slot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HeadOwner {
+    Entity(u32),
+    UnassignedLiteral(u8),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct HeadRoles {
-    pub(crate) owner_ref: Option<u32>,
-    pub(crate) owner_literal: Option<u8>,
+    pub(crate) owner: Option<HeadOwner>,
     pub(crate) class_ref: Option<u32>,
     pub(crate) storage_ref: Option<u32>,
 }
@@ -925,18 +941,17 @@ pub(crate) fn head_roles(lead: u8, head: &[HeadToken]) -> HeadRoles {
         Some(HeadToken::Reference(value)) => Some(*value),
         _ => None,
     };
-    let role_literal = |index: Option<usize>| match index.and_then(|index| head.get(index)) {
-        Some(HeadToken::Literal(value)) => Some(*value),
+    let role_owner = |index: Option<usize>| match index.and_then(|index| head.get(index)) {
+        Some(HeadToken::Reference(value)) => Some(HeadOwner::Entity(*value)),
+        Some(HeadToken::Literal(value)) => Some(HeadOwner::UnassignedLiteral(*value)),
         _ => None,
     };
     if class_first {
         let class_ref = role_reference(class_index);
         let storage_ref = class_ref.and_then(|_| role_reference(storage_index));
-        let owner_ref = storage_ref.and_then(|_| role_reference(owner_index));
-        let owner_literal = storage_ref.and_then(|_| role_literal(owner_index));
+        let owner = storage_ref.and_then(|_| role_owner(owner_index));
         HeadRoles {
-            owner_ref,
-            owner_literal,
+            owner,
             class_ref,
             storage_ref,
         }
@@ -945,8 +960,7 @@ pub(crate) fn head_roles(lead: u8, head: &[HeadToken]) -> HeadRoles {
         let class_ref = owner_ref.and_then(|_| role_reference(class_index));
         let storage_ref = class_ref.and_then(|_| role_reference(storage_index));
         HeadRoles {
-            owner_ref,
-            owner_literal: None,
+            owner: owner_ref.map(HeadOwner::Entity),
             class_ref,
             storage_ref,
         }

@@ -3096,6 +3096,15 @@ pub enum CatiaObjectOwner {
     UnassignedLiteral(u8),
 }
 
+impl From<object_graph::HeadOwner> for CatiaObjectOwner {
+    fn from(owner: object_graph::HeadOwner) -> Self {
+        match owner {
+            object_graph::HeadOwner::Entity(value) => Self::Entity(value),
+            object_graph::HeadOwner::UnassignedLiteral(value) => Self::UnassignedLiteral(value),
+        }
+    }
+}
+
 impl CatiaObjectRecord {
     /// Structural payload classification.
     pub fn subtype(&self) -> PayloadSubtype {
@@ -9327,10 +9336,7 @@ fn native_object_graph(
                 lead: record.lead,
                 head: record.head().to_vec(),
                 inline_body: record.inline_body().map(<[u8]>::to_vec),
-                owner: roles
-                    .owner_ref
-                    .map(CatiaObjectOwner::Entity)
-                    .or_else(|| roles.owner_literal.map(CatiaObjectOwner::UnassignedLiteral)),
+                owner: roles.owner.map(CatiaObjectOwner::from),
                 class: roles.class_ref.map(|class_ref| CatiaObjectClass {
                     class_ref,
                     class_name: None,
