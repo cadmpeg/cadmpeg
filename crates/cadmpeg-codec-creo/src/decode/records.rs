@@ -119,12 +119,31 @@ pub(super) struct CreoFeatureReferenceNameRecord {
     pub(super) offset: usize,
 }
 
-#[derive(Serialize)]
 pub(super) struct CreoFamilyTableRecord {
-    pub(super) id: &'static str,
-    pub(super) pointer_kind: &'static str,
-    pub(super) table_entity_id: Option<u32>,
+    pointer: crate::container::FamilyTablePointer,
     pub(super) offset: usize,
+}
+
+impl CreoFamilyTableRecord {
+    pub(super) const fn id(&self) -> &'static str {
+        "creo:family_info:driver_table#root"
+    }
+}
+
+impl Serialize for CreoFamilyTableRecord {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut record = serializer.serialize_struct("CreoFamilyTableRecord", 4)?;
+        record.serialize_field("id", self.id())?;
+        let (kind, entity_id) = match self.pointer {
+            crate::container::FamilyTablePointer::Null => ("null", None),
+            crate::container::FamilyTablePointer::Entity(id) => ("entity_reference", Some(id)),
+        };
+        record.serialize_field("pointer_kind", kind)?;
+        record.serialize_field("table_entity_id", &entity_id)?;
+        record.serialize_field("offset", &self.offset)?;
+        record.end()
+    }
 }
 
 #[derive(Serialize)]
@@ -2615,14 +2634,8 @@ pub(super) fn feature_definition_records(scan: &ContainerScan) -> Vec<CreoFeatur
 
 pub(super) fn family_table_record(scan: &ContainerScan) -> Option<CreoFamilyTableRecord> {
     let record = scan.framing.family_table?;
-    let (pointer_kind, table_entity_id) = match record.pointer {
-        crate::container::FamilyTablePointer::Null => ("null", None),
-        crate::container::FamilyTablePointer::Entity(id) => ("entity_reference", Some(id)),
-    };
     Some(CreoFamilyTableRecord {
-        id: "creo:family_info:driver_table#root",
-        pointer_kind,
-        table_entity_id,
+        pointer: record.pointer,
         offset: record.offset,
     })
 }

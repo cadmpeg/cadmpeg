@@ -791,7 +791,7 @@ pub(in super::super) fn emit_geometry_arenas(
     if let Some(family_table) = family_table_record(scan) {
         annotate(
             annotations,
-            family_table.id,
+            family_table.id(),
             "FamilyInf",
             family_table.offset as u64,
             "configuration_driver_table_pointer",
