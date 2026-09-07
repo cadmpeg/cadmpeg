@@ -1803,15 +1803,15 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn object_key(&self, identity: &crate::objects::SourceIdentity, source_order: usize) -> String {
-        self.instance_selection
-            .as_ref()
-            .map(|selected| selected.key.clone())
-            .unwrap_or_else(|| {
+        self.instance_selection.as_ref().map_or_else(
+            || {
                 identity
                     .source_id
                     .rsplit_once('#')
                     .map_or_else(|| source_order.to_string(), |(_, key)| key.to_string())
-            })
+            },
+            |selected| selected.key.clone(),
+        )
     }
 
     fn reference_segment(
