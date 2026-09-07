@@ -8,6 +8,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::records::topology::DesignOperandRole;
 
 #[test]
 fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
@@ -46,7 +47,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             opaque_scalar_offset: 975,
             variant: false,
         },
-        role: 0x0000_0005_0000_0000,
+        role: DesignOperandRole::ROLE_0X5,
         extrude_role: None,
         role_offset: 953,
 
@@ -321,7 +322,7 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role: 0x0000_0004_0000_0000,
+        role: DesignOperandRole::ROLE_0X4,
         extrude_role: None,
         role_offset: 0,
         paired_class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
@@ -739,7 +740,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             opaque_scalar_offset: 972,
             variant: false,
         },
-        role: 0x0000_0008_0000_0000,
+        role: DesignOperandRole::ROLE_0X8,
         extrude_role: None,
         role_offset: 960,
 
@@ -1653,7 +1654,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             opaque_scalar_offset: 958,
             variant: false,
         },
-        role: 0x0000_0011_0000_0000,
+        role: DesignOperandRole::ROLE_0X11,
         extrude_role: Some(DesignExtrudeOperandRole::Faces(Some(
             DesignExtrudeFaceRole::Termination,
         ))),
@@ -1788,7 +1789,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     split_scope.previous_history_state_id = Some(49);
     let mut split_group = group.clone();
     split_group.scope_reference_ordinal = 2;
-    split_group.role = 0x0000_0010_0000_0000;
+    split_group.role = DesignOperandRole::ROLE_0X10;
     split_group.members = vec![operand.record_index, operand.record_index + 1]
         .into_iter()
         .map(|value| crate::records::Located { value, offset: 0 })

@@ -8,6 +8,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::records::topology::DesignOperandRole;
 
 #[test]
 fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
@@ -210,7 +211,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
             opaque_scalar_offset: 1075,
             variant: false,
         },
-        role: 0x0000_0008_0000_0000,
+        role: DesignOperandRole::ROLE_0X8,
         extrude_role: Some(DesignExtrudeOperandRole::Bodies),
         role_offset: 1053,
 
@@ -344,7 +345,7 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
             opaque_scalar_offset: 975,
             variant: false,
         },
-        role: 0x0000_0005_0000_0000,
+        role: DesignOperandRole::ROLE_0X5,
         extrude_role: None,
         role_offset: 953,
 

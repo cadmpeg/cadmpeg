@@ -16,6 +16,7 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::records::feature::DesignScopePayload;
+use crate::records::topology::DesignOperandRole;
 use crate::test_support::*;
 use crate::F3dCodec;
 
@@ -449,7 +450,7 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
                  scope_reference_ordinal: u32,
                  member: u32,
                  byte_offset: u64,
-                 role: u64| {
+                 role: DesignOperandRole| {
         let role_offset = byte_offset + 40;
         DesignConstructionOperandGroup {
             id: format!("{stream}:design-construction-operand-group#{record_index}"),
@@ -488,8 +489,8 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
         let mut native = f3d_native_mut(&mut ir);
         native.design_parameter_scopes.push(scope);
         native.design_construction_operand_groups.extend([
-            group(100, 0, 101, 1_000, 0x0000_0004_0000_0000),
-            group(200, 2, 201, 2_000, 0x0000_0005_0000_0000),
+            group(100, 0, 101, 1_000, DesignOperandRole::ROLE_0X4),
+            group(200, 2, 201, 2_000, DesignOperandRole::ROLE_0X5),
         ]);
         native.design_record_headers.extend([
             DesignRecordHeader {
@@ -526,7 +527,8 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
         .iter()
         .any(invalid_frame));
 
-    f3d_native_mut(&mut ir).design_construction_operand_groups[1].role = 0x0000_0008_0000_0000;
+    f3d_native_mut(&mut ir).design_construction_operand_groups[1].role =
+        DesignOperandRole::ROLE_0X8;
     assert!(crate::validate::validate_native(&ir)
         .iter()
         .any(invalid_frame));
@@ -535,13 +537,14 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
         let mut native = f3d_native_mut(&mut ir);
         native.design_parameter_scopes[0].payload =
             crate::records::feature::DesignFeatureKind::SurfaceTrim.into();
-        native.design_construction_operand_groups[1].role = 0x0000_0021_0000_0000;
+        native.design_construction_operand_groups[1].role = DesignOperandRole::ROLE_0X21;
     }
     assert!(!crate::validate::validate_native(&ir)
         .iter()
         .any(invalid_frame));
 
-    f3d_native_mut(&mut ir).design_construction_operand_groups[1].role = 0x0000_0008_0000_0000;
+    f3d_native_mut(&mut ir).design_construction_operand_groups[1].role =
+        DesignOperandRole::ROLE_0X8;
     assert!(crate::validate::validate_native(&ir)
         .iter()
         .any(invalid_frame));
@@ -605,7 +608,7 @@ fn validation_checks_pipe_path_group_roles() {
             opaque_scalar_offset: 1_062,
             variant: false,
         },
-        role: 0x0000_0005_0000_0000,
+        role: DesignOperandRole::ROLE_0X5,
         extrude_role: None,
         role_offset: 1_040,
         paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
@@ -667,7 +670,8 @@ fn validation_checks_pipe_path_group_roles() {
     // exists yet, so the independent carrier finding remains.
     assert_eq!(group_native_finding_count(&ir), 1);
 
-    f3d_native_mut(&mut ir).design_construction_operand_groups[0].role = 0x0000_0008_0000_0000;
+    f3d_native_mut(&mut ir).design_construction_operand_groups[0].role =
+        DesignOperandRole::ROLE_0X8;
     assert_eq!(group_native_finding_count(&ir), 2);
 }
 
@@ -1104,7 +1108,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
             opaque_scalar_offset: 464,
             variant: false,
         },
-        role: 0x0000_0041_0000_0000,
+        role: DesignOperandRole::ROLE_0X41,
         extrude_role: Some(DesignExtrudeOperandRole::Profile),
         role_offset: 450,
 
@@ -1199,7 +1203,7 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
             opaque_scalar_offset: 1_033,
             variant: false,
         },
-        role: 0,
+        role: DesignOperandRole::from_raw(0),
         extrude_role: None,
         role_offset: 1_041,
         paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
@@ -1313,7 +1317,7 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
             opaque_scalar_offset: 975,
             variant: false,
         },
-        role: 0x41_0000_0000,
+        role: DesignOperandRole::ROLE_0X41,
         extrude_role: Some(crate::records::topology::DesignExtrudeOperandRole::Profile),
         role_offset: 953,
         paired_class_tag: crate::records::DesignClassTag::try_from("265".to_owned()).unwrap(),

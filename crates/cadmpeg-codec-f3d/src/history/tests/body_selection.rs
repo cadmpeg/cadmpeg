@@ -4,6 +4,7 @@
 #![allow(clippy::default_trait_access)]
 
 use super::super::*;
+use crate::records::topology::DesignOperandRole;
 
 #[test]
 fn move_body_selection_uses_unique_owning_history() {
@@ -47,7 +48,7 @@ fn move_body_selection_uses_unique_owning_history() {
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role: 0x0000_0004_0000_0000,
+        role: DesignOperandRole::ROLE_0X4,
         extrude_role: None,
         role_offset: 0,
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),

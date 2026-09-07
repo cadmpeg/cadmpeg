@@ -12,6 +12,7 @@
 )]
 
 use super::super::*;
+use crate::records::topology::DesignOperandRole;
 
 #[test]
 fn three_point_recipe_vertices_must_define_the_solved_plane() {
@@ -837,7 +838,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role: 0x0000_0008_0000_0000,
+        role: DesignOperandRole::ROLE_0X8,
         extrude_role: None,
         role_offset: 0,
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
@@ -996,7 +997,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
     scale_scope.payload = crate::records::feature::DesignFeatureKind::Scale.into();
     scale_scope.previous_history_state_id = Some(7);
     let mut scale_group = group.clone();
-    scale_group.role = 0x0000_0004_0000_0000;
+    scale_group.role = DesignOperandRole::ROLE_0X4;
     let scale_inputs = super::super::FeatureBodySelectionInputs {
         scopes: std::slice::from_ref(&scale_scope),
         groups: std::slice::from_ref(&scale_group),
@@ -1176,7 +1177,7 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
             opaque_scalar_offset: 1024,
             variant: false,
         },
-        role: 0x0000_0010_0000_0000,
+        role: DesignOperandRole::ROLE_0X10,
         extrude_role: None,
         role_offset: 1030,
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
@@ -1347,7 +1348,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
             opaque_scalar_offset: 1_024,
             variant: false,
         },
-        role: 0x0000_0010_0000_0000,
+        role: DesignOperandRole::ROLE_0X10,
         extrude_role: None,
         role_offset: 1_030,
         paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
@@ -1582,7 +1583,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         .is_empty());
 
     let mut unrelated_group = group;
-    unrelated_group.role = 0x0000_0011_0000_0000;
+    unrelated_group.role = DesignOperandRole::ROLE_0X11;
     let mut rejected = vec![operand];
     bind_face_operand_history_candidates(
         &mut rejected,

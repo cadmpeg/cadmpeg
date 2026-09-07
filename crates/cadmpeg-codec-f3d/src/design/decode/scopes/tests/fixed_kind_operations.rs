@@ -11,6 +11,7 @@ use super::prelude::*;
 use crate::layout::fixed_pipe_operation_prefix as fixed_pipe_layout;
 use crate::layout::legacy_pipe_operation_prefix as legacy_pipe_layout;
 use crate::records::topology::DesignLoftLegacyBodyCarrier;
+use crate::records::topology::DesignOperandRole;
 
 pub(super) fn continue_fixed_kind_operations(
     mut bytes: Vec<u8>,
@@ -639,10 +640,10 @@ pub(super) fn continue_fixed_kind_operations(
     let mut revolve_profile = thicken_group.clone();
     revolve_profile.id = "stream:profile".into();
     revolve_profile.scope_record_index = revolve_scope.record_index;
-    revolve_profile.role = 0x0000_0041_0000_0000;
+    revolve_profile.role = DesignOperandRole::ROLE_0X41;
     let mut revolve_axis = revolve_profile.clone();
     revolve_axis.id = "stream:axis".into();
-    revolve_axis.role = 0x0000_0021_0000_0000;
+    revolve_axis.role = DesignOperandRole::ROLE_0X21;
     assert_eq!(
         crate::design::feature_project::project_fixed_revolve_with_entities(
             &revolve_scope,
@@ -665,7 +666,7 @@ pub(super) fn continue_fixed_kind_operations(
     let mut indexed_profile = thicken_group.clone();
     indexed_profile.id = "stream:indexed-profile".into();
     indexed_profile.scope_record_index = indexed_revolve_scope.record_index;
-    indexed_profile.role = 0x0000_0041_0000_0000;
+    indexed_profile.role = DesignOperandRole::ROLE_0X41;
     let mut indexed_axis = indexed_profile.clone();
     indexed_axis.id = "stream:indexed-axis".into();
     indexed_axis.record_index = 899;
@@ -673,11 +674,11 @@ pub(super) fn continue_fixed_kind_operations(
         value: 900,
         offset: indexed_axis.members[0].offset,
     }];
-    indexed_axis.role = 0x0000_0021_0000_0000;
+    indexed_axis.role = DesignOperandRole::ROLE_0X21;
     let mut indexed_bodies = indexed_profile.clone();
     indexed_bodies.id = "stream:indexed-bodies".into();
     indexed_bodies.record_index = 901;
-    indexed_bodies.role = 0x0000_0004_0000_0000;
+    indexed_bodies.role = DesignOperandRole::ROLE_0X4;
     let mut axis_selection = crate::records::topology::DesignEntitySelectionOperand {
         id: "stream:indexed-axis-selection".into(),
         scope_record_index: indexed_revolve_scope.record_index,
@@ -1041,7 +1042,7 @@ pub(super) fn continue_fixed_kind_operations(
         loft_scope.payload = value.map_or_else(|| loft_scope.kind().into(), Into::into);
     }
     let loft_record_index = loft_scope.record_index;
-    let loft_group = |ordinal: u32, role: u64| {
+    let loft_group = |ordinal: u32, role: DesignOperandRole| {
         let mut group = thicken_group.clone();
         group.id = format!("stream:loft-group-{ordinal}");
         group.scope_record_index = loft_record_index;
@@ -1049,7 +1050,10 @@ pub(super) fn continue_fixed_kind_operations(
         group.role = role;
         group
     };
-    let role_41 = [loft_group(0, 0x41_0000_0000), loft_group(1, 0x41_0000_0000)];
+    let role_41 = [
+        loft_group(0, DesignOperandRole::ROLE_0X41),
+        loft_group(1, DesignOperandRole::ROLE_0X41),
+    ];
     assert!(matches!(
         crate::design::feature_project::project_fixed_loft(
             &loft_scope,
@@ -1063,10 +1067,10 @@ pub(super) fn continue_fixed_kind_operations(
             if sections.len() == 2 && guides.is_empty()
     ));
     let guided_role_41 = [
-        loft_group(0, 0x41_0000_0000),
-        loft_group(1, 0x41_0000_0000),
-        loft_group(2, 0x41_0000_0000),
-        loft_group(3, 0x5_0000_0000),
+        loft_group(0, DesignOperandRole::ROLE_0X41),
+        loft_group(1, DesignOperandRole::ROLE_0X41),
+        loft_group(2, DesignOperandRole::ROLE_0X41),
+        loft_group(3, DesignOperandRole::ROLE_0X5),
     ];
     assert!(matches!(
         crate::design::feature_project::project_fixed_loft(
@@ -1100,9 +1104,9 @@ pub(super) fn continue_fixed_kind_operations(
         loft_scope.payload = value.map_or_else(|| loft_scope.kind().into(), Into::into);
     }
     let cut = [
-        loft_group(0, 0x4_0000_0000),
-        loft_group(1, 0x41_0000_0000),
-        loft_group(2, 0x43_0000_0000),
+        loft_group(0, DesignOperandRole::ROLE_0X4),
+        loft_group(1, DesignOperandRole::ROLE_0X41),
+        loft_group(2, DesignOperandRole::ROLE_0X43),
     ];
     assert!(matches!(
         crate::design::feature_project::project_fixed_loft(
@@ -1148,9 +1152,9 @@ pub(super) fn continue_fixed_kind_operations(
         paired_byte_offset: 87,
     };
     let legacy_cut = [
-        loft_group(1, 0x8_0000_0000),
-        loft_group(2, 0x41_0000_0000),
-        loft_group(3, 0x43_0000_0000),
+        loft_group(1, DesignOperandRole::ROLE_0X8),
+        loft_group(2, DesignOperandRole::ROLE_0X41),
+        loft_group(3, DesignOperandRole::ROLE_0X43),
     ];
     assert!(matches!(
         crate::design::feature_project::project_fixed_loft(
@@ -1188,9 +1192,9 @@ pub(super) fn continue_fixed_kind_operations(
         loft_scope.payload = value.map_or_else(|| loft_scope.kind().into(), Into::into);
     }
     let role_5 = [
-        loft_group(0, 0x5_0000_0000),
-        loft_group(1, 0x5_0000_0000),
-        loft_group(2, 0x5_0000_0000),
+        loft_group(0, DesignOperandRole::ROLE_0X5),
+        loft_group(1, DesignOperandRole::ROLE_0X5),
+        loft_group(2, DesignOperandRole::ROLE_0X5),
     ];
     assert!(matches!(
         crate::design::feature_project::project_fixed_loft(
@@ -1205,9 +1209,9 @@ pub(super) fn continue_fixed_kind_operations(
             if sections.len() == 3 && guides.is_empty()
     ));
     let centered = [
-        loft_group(0, 0x43_0000_0000),
-        loft_group(1, 0x43_0000_0000),
-        loft_group(2, 0x7_0000_0000),
+        loft_group(0, DesignOperandRole::ROLE_0X43),
+        loft_group(1, DesignOperandRole::ROLE_0X43),
+        loft_group(2, DesignOperandRole::ROLE_0X7),
     ];
     assert!(matches!(
         crate::design::feature_project::project_fixed_loft(
@@ -1226,10 +1230,10 @@ pub(super) fn continue_fixed_kind_operations(
         }) if sections.len() == 2 && guides.is_empty() && centerline == "stream:loft-group-2"
     ));
     let mixed = [
-        loft_group(0, 0x43_0000_0000),
-        loft_group(1, 0x43_0000_0000),
-        loft_group(2, 0x5_0000_0000),
-        loft_group(3, 0x7_0000_0000),
+        loft_group(0, DesignOperandRole::ROLE_0X43),
+        loft_group(1, DesignOperandRole::ROLE_0X43),
+        loft_group(2, DesignOperandRole::ROLE_0X5),
+        loft_group(3, DesignOperandRole::ROLE_0X7),
     ];
     assert_eq!(
         crate::design::feature_project::project_fixed_loft(&loft_scope, &mixed, &[], &[], &[], &[],),
@@ -1239,13 +1243,13 @@ pub(super) fn continue_fixed_kind_operations(
         DesignExtrudeOperation::NewBody,
         &role_shape(&mixed),
     ));
-    let mut point = loft_group(0, 0x5_0000_0000);
+    let mut point = loft_group(0, DesignOperandRole::ROLE_0X5);
     point.members = vec![10]
         .into_iter()
         .map(|value| crate::records::Located { value, offset: 0 })
         .collect();
-    let profile = loft_group(1, 0x43_0000_0000);
-    let mut boundary = loft_group(2, 0x5_0000_0000);
+    let profile = loft_group(1, DesignOperandRole::ROLE_0X43);
+    let mut boundary = loft_group(2, DesignOperandRole::ROLE_0X5);
     boundary.members = vec![20, 21, 22]
         .into_iter()
         .map(|value| crate::records::Located { value, offset: 0 })
@@ -1334,7 +1338,7 @@ pub(super) fn continue_fixed_kind_operations(
         sweep_scope.payload = value.map_or_else(|| sweep_scope.kind().into(), Into::into);
     }
     let sweep_record_index = sweep_scope.record_index;
-    let sweep_group = |ordinal: u32, role: u64| {
+    let sweep_group = |ordinal: u32, role: DesignOperandRole| {
         let mut group = thicken_group.clone();
         group.id = format!("stream:sweep-group-{ordinal}");
         group.scope_record_index = sweep_record_index;
@@ -1342,9 +1346,9 @@ pub(super) fn continue_fixed_kind_operations(
         group.role = role;
         group
     };
-    let profile = sweep_group(0, 0x41_0000_0000);
-    let path = sweep_group(1, 0x5_0000_0000);
-    let body = sweep_group(2, 0x4_0000_0000);
+    let profile = sweep_group(0, DesignOperandRole::ROLE_0X41);
+    let path = sweep_group(1, DesignOperandRole::ROLE_0X5);
+    let body = sweep_group(2, DesignOperandRole::ROLE_0X4);
     assert!(matches!(
         crate::design::feature_project::project_fixed_sweep(
             &sweep_scope,
@@ -1364,7 +1368,7 @@ pub(super) fn continue_fixed_kind_operations(
             ..
         })
     ));
-    let rail = sweep_group(2, 0x5_0000_0000);
+    let rail = sweep_group(2, DesignOperandRole::ROLE_0X5);
     {
         let value = Some(DesignPathFeatureConstruction::Sweep(
             crate::records::feature::DesignSweepConstruction {
@@ -1478,7 +1482,7 @@ pub(super) fn continue_fixed_kind_operations(
         value: 2795,
         offset: profile_carrier.members[0].offset,
     }];
-    let mut guide_surface = sweep_group(4, 0x11_0000_0000);
+    let mut guide_surface = sweep_group(4, DesignOperandRole::ROLE_0X11);
     guide_surface.id = "stream:sweep-guide-surface".into();
     let entity_selection = crate::records::topology::DesignEntitySelectionOperand {
         id: "stream:sweep-profile-selection".into(),

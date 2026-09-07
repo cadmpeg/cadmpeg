@@ -189,6 +189,7 @@ pub(crate) mod extrude_sheet_metal;
 pub(crate) mod legacy_class_397;
 pub(crate) mod legacy_class_415;
 
+use crate::records::topology::DesignOperandRole;
 use extrude_sheet_metal::{
     bind_hem_operation_from_parameters, exact_base_flange_operation, exact_edge_flange_operation,
     exact_extrude_prologue, exact_ruled_surface_operation, exact_surface_stitch_operation,
@@ -1564,7 +1565,7 @@ fn exact_surface_offset_face_groups(
         let Some(group) = group else {
             continue;
         };
-        if group.role != 0x0000_0041_0000_0000
+        if group.role != DesignOperandRole::ROLE_0X41
             || group.frame.opaque_index != 252
             || group.members.is_empty()
             || !covered_references.insert(group.record_index)
@@ -5140,12 +5141,17 @@ pub fn bind_mirror_constructions(
         let seed_groups = scope_groups
             .iter()
             .copied()
-            .filter(|group| matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0008_0000_0000))
+            .filter(|group| {
+                matches!(
+                    group.role,
+                    DesignOperandRole::ROLE_0X4 | DesignOperandRole::ROLE_0X8
+                )
+            })
             .collect::<Vec<_>>();
         let plane_groups = scope_groups
             .iter()
             .copied()
-            .filter(|group| group.role == 0x0000_0005_0000_0000)
+            .filter(|group| group.role == DesignOperandRole::ROLE_0X5)
             .collect::<Vec<_>>();
         let ([seed_group], [plane_group]) = (seed_groups.as_slice(), plane_groups.as_slice())
         else {
@@ -5216,7 +5222,7 @@ pub fn bind_mirror_constructions(
                 continue;
             };
         let seed_feature = match seed_group.members.as_slice() {
-            _ if seed_group.role != 0x0000_0008_0000_0000 => None,
+            _ if seed_group.role != DesignOperandRole::ROLE_0X8 => None,
             [crate::records::Located { value: member, .. }] => headers
                 .get(&(stream.as_str(), *member))
                 .and_then(|header| compact_feature_reference(bytes, header))

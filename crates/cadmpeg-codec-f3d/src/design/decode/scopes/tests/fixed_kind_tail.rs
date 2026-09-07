@@ -17,6 +17,7 @@ use crate::layout::work_plane_legacy_class_256_matrix_frame as work_plane_class_
 use crate::layout::work_plane_legacy_class_290_matrix_frame as work_plane_class_290;
 use crate::layout::work_plane_legacy_class_322_332_matrix_frame as work_plane_class_322_332;
 use crate::layout::work_plane_legacy_class_337_325_matrix_frame as work_plane_class_337_325;
+use crate::records::topology::DesignOperandRole;
 
 #[test]
 fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
@@ -1243,7 +1244,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role: 0x0000_0005_0000_0000,
+        role: DesignOperandRole::ROLE_0X5,
         extrude_role: None,
         role_offset: 0,
 
@@ -1259,7 +1260,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         }) if native == "thicken-group"
     ));
     let mut bounded_face_thicken_group = thicken_group.clone();
-    bounded_face_thicken_group.role = 0x0000_0012_0000_0000;
+    bounded_face_thicken_group.role = DesignOperandRole::ROLE_0X12;
     assert!(matches!(
         crate::design::feature_project::project_thicken(
             &thicken_scope,
@@ -1331,7 +1332,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     let mut shell_group = thicken_group.clone();
     shell_group.id = "shell-group".into();
     shell_group.scope_record_index = shell_scope.record_index;
-    shell_group.role = 0x0000_0010_0000_0000;
+    shell_group.role = DesignOperandRole::ROLE_0X10;
     assert!(matches!(
         crate::design::feature_project::project_shell(&shell_scope, &[], std::slice::from_ref(&shell_group)),
         Some(cadmpeg_ir::features::FeatureDefinition::Shell {
@@ -1441,7 +1442,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             _ => {}
         }
     }
-    shell_group.role = 0x0000_0004_0000_0000;
+    shell_group.role = DesignOperandRole::ROLE_0X4;
     assert!(matches!(
         crate::design::feature_project::project_shell(
             &compact_shell_scope,
@@ -1483,7 +1484,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     let mut offset_group = thicken_group.clone();
     offset_group.id = "offset-group".into();
     offset_group.scope_record_index = offset_scope.record_index;
-    offset_group.role = 0x0000_0010_0000_0000;
+    offset_group.role = DesignOperandRole::ROLE_0X10;
     assert!(matches!(
         crate::design::feature_project::project_offset_faces(
             &offset_scope,

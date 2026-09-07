@@ -8,6 +8,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::records::topology::DesignOperandRole;
 
 #[test]
 fn dispatcher_projects_datum_feature_scopes() {
@@ -455,7 +456,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                  scope_reference_ordinal: u32,
                  record_index: u32,
                  members: &[u32],
-                 role: u64| {
+                 role: DesignOperandRole| {
         DesignConstructionOperandGroup {
             id: format!("{stream}:construction-group#{record_index}"),
             scope_record_index,
@@ -684,10 +685,10 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         thread,
     ];
     let groups = vec![
-        group(10, 0, 100, &[101], 0x0000_0041_0000_0000),
-        group(20, 0, 200, &[201], 0x0000_0004_0000_0000),
-        group(30, 0, 300, &[301], 0x0000_0005_0000_0000),
-        group(70, 0, 701, &[702], 0x0000_0010_0000_0000),
+        group(10, 0, 100, &[101], DesignOperandRole::ROLE_0X41),
+        group(20, 0, 200, &[201], DesignOperandRole::ROLE_0X4),
+        group(30, 0, 300, &[301], DesignOperandRole::ROLE_0X5),
+        group(70, 0, 701, &[702], DesignOperandRole::ROLE_0X10),
     ];
     let placement = DesignSketchPlacement {
         frame: crate::records::DesignSketchFrame::new(

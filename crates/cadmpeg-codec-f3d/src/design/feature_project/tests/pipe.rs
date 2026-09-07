@@ -8,6 +8,7 @@
 
 use super::prelude::*;
 use crate::records::feature::DesignPathFeatureConstruction;
+use crate::records::topology::DesignOperandRole;
 
 #[test]
 fn legacy_pipe_projects_only_the_exact_path_reference_form() {
@@ -103,7 +104,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role: 0x0000_0005_0000_0000,
+        role: DesignOperandRole::ROLE_0X5,
         extrude_role: None,
         role_offset: 0,
         paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),

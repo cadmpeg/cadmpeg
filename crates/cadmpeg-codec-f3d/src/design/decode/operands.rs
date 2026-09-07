@@ -35,6 +35,7 @@ use crate::records::feature::{
     DesignWorkPlaneConstruction, DesignWorkPointInputCarrier, DesignWorkPointPlaneSelection,
     DesignWorkPointRule, DesignWorkPointSketchPointSelection,
 };
+use crate::records::topology::DesignOperandRole;
 use crate::records::topology::{
     DesignBodyRecipeOperand, DesignBodyRecipeReference, DesignConstructionOperandGroup,
     DesignConstructionOperandGroupFrame, DesignConstructionOperandIdentity,
@@ -703,32 +704,35 @@ pub fn decode_face_operands(
         );
         let is_offset_faces_operand = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::OffsetFaces)
-            && group.role == 0x0000_0010_0000_0000;
+            && group.role == DesignOperandRole::ROLE_0X10;
         let is_shell_operand = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Shell)
-            && group.role == 0x0000_0010_0000_0000;
+            && group.role == DesignOperandRole::ROLE_0X10;
         let is_loft_profile = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Loft)
-            && matches!(group.role, 0x0000_0041_0000_0000 | 0x0000_0043_0000_0000);
+            && matches!(
+                group.role,
+                DesignOperandRole::ROLE_0X41 | DesignOperandRole::ROLE_0X43
+            );
         let is_sweep_guide_surface = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Sweep)
-            && group.role == 0x0000_0011_0000_0000;
+            && group.role == DesignOperandRole::ROLE_0X11;
         let is_revolve_axis = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Revolve)
-            && group.role == 0x0000_0021_0000_0000;
+            && group.role == DesignOperandRole::ROLE_0X21;
         let is_edge_treatment_support = matches!(
             design_feature_family(&scope.kind()),
             Some(DesignFeatureFamily::Fillet | DesignFeatureFamily::Chamfer)
         );
         let is_circular_pattern_seed = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::CircularPattern)
-            && group.role == 0x0000_0008_0000_0000;
+            && group.role == DesignOperandRole::ROLE_0X8;
         let is_mirror_seed = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Mirror)
-            && group.role == 0x0000_0008_0000_0000;
+            && group.role == DesignOperandRole::ROLE_0X8;
         let is_mirror_plane = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Mirror)
-            && group.role == 0x0000_0005_0000_0000;
+            && group.role == DesignOperandRole::ROLE_0X5;
         let is_split_face_operand =
             scope.kind() == crate::records::feature::DesignFeatureKind::SplitFace;
         let is_delete_face_operand = matches!(
@@ -737,17 +741,17 @@ pub fn decode_face_operands(
                 | crate::records::feature::DesignFeatureKind::SurfaceDeleteFace
         );
         let is_thread_face = scope.kind() == crate::records::feature::DesignFeatureKind::Thread
-            && group.role == 0x0000_0010_0000_0000;
+            && group.role == DesignOperandRole::ROLE_0X10;
         let is_hole_face = scope.kind() == crate::records::feature::DesignFeatureKind::Hole
-            && group.role == 0x0000_0004_0000_0000;
+            && group.role == DesignOperandRole::ROLE_0X4;
         let is_draft_operand =
             design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Draft);
         let is_replace_face_operand = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::ReplaceFace)
-            && group.role == 0x0000_0010_0000_0000;
+            && group.role == DesignOperandRole::ROLE_0X10;
         let is_surface_offset_operand = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::SurfaceOffset)
-            && group.role == 0x0000_0041_0000_0000;
+            && group.role == DesignOperandRole::ROLE_0X41;
         if !is_extrude_operand
             && !is_offset_faces_operand
             && !is_shell_operand
@@ -1962,22 +1966,24 @@ impl ConstructionOperandGroupParse {
 /// a global role alias.
 fn extrude_operand_role(
     scope: &DesignParameterScope,
-    role: u64,
+    role: DesignOperandRole,
 ) -> Option<DesignExtrudeOperandRole> {
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Extrude) {
         return None;
     }
     match role {
-        0x0000_0004_0000_0000 | 0x0000_0008_0000_0000 => Some(DesignExtrudeOperandRole::Bodies),
-        0x0000_0041_0000_0000 => Some(DesignExtrudeOperandRole::Profile),
-        0x0000_0011_0000_0000 => Some(DesignExtrudeOperandRole::Faces(None)),
-        0x0000_0005_0000_0000
+        DesignOperandRole::ROLE_0X4 | DesignOperandRole::ROLE_0X8 => {
+            Some(DesignExtrudeOperandRole::Bodies)
+        }
+        DesignOperandRole::ROLE_0X41 => Some(DesignExtrudeOperandRole::Profile),
+        DesignOperandRole::ROLE_0X11 => Some(DesignExtrudeOperandRole::Faces(None)),
+        DesignOperandRole::ROLE_0X5
             if scope.extrude_prologue().map(DesignExtrudePrologue::start)
                 == Some(DesignExtrudeStart::FromFace) =>
         {
             Some(DesignExtrudeOperandRole::Faces(None))
         }
-        0x0000_0012_0000_0000
+        DesignOperandRole::ROLE_0X12
             if scope
                 .extrude_prologue()
                 .and_then(DesignExtrudePrologue::extent)
@@ -1985,7 +1991,7 @@ fn extrude_operand_role(
         {
             Some(DesignExtrudeOperandRole::Faces(None))
         }
-        0x0000_0012_0000_0000 if is_class_296_two_sided_to_faces_scope(scope) => {
+        DesignOperandRole::ROLE_0X12 if is_class_296_two_sided_to_faces_scope(scope) => {
             Some(DesignExtrudeOperandRole::Faces(None))
         }
         _ => None,
@@ -2102,6 +2108,7 @@ pub(crate) fn parse_construction_operand_group(
     ) else {
         return NotAGroup;
     };
+    let role = DesignOperandRole::from_raw(role);
     cursor += 8;
     if bytes.get(cursor..cursor + 10) != Some(&[0; 10]) {
         return NotAGroup;

@@ -12,6 +12,7 @@
 )]
 
 use super::super::*;
+use crate::records::topology::DesignOperandRole;
 
 #[test]
 fn surface_stitch_binds_all_unique_entity_face_candidates() {
@@ -63,7 +64,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role: 0x0000_0005_0000_0000,
+        role: DesignOperandRole::ROLE_0X5,
         extrude_role: None,
         role_offset: 0,
         paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),

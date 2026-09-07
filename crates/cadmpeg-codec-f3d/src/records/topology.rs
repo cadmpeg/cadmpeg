@@ -441,6 +441,38 @@ pub enum DesignExtrudeFaceRole {
     Termination,
 }
 
+/// Source u64 role code carried by a construction-operand group.
+///
+/// The admitted set is open: files carry codes outside the named list, and
+/// `extrude_operand_role` returns `None` for them, so this is a newtype with
+/// named codes rather than a closed enum. One spelling per value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct DesignOperandRole(u64);
+
+impl DesignOperandRole {
+    /// Primary tool-body operand run.
+    pub const ROLE_0X4: Self = Self(0x0000_0004_0000_0000);
+    pub const ROLE_0X5: Self = Self(0x0000_0005_0000_0000);
+    pub const ROLE_0X7: Self = Self(0x0000_0007_0000_0000);
+    pub const ROLE_0X8: Self = Self(0x0000_0008_0000_0000);
+    pub const ROLE_0X9: Self = Self(0x0000_0009_0000_0000);
+    pub const ROLE_0X10: Self = Self(0x0000_0010_0000_0000);
+    pub const ROLE_0X11: Self = Self(0x0000_0011_0000_0000);
+    pub const ROLE_0X12: Self = Self(0x0000_0012_0000_0000);
+    pub const ROLE_0X21: Self = Self(0x0000_0021_0000_0000);
+    pub const ROLE_0X41: Self = Self(0x0000_0041_0000_0000);
+    pub const ROLE_0X43: Self = Self(0x0000_0043_0000_0000);
+
+    /// Wrap the stored u64 role code.
+    pub const fn from_raw(raw: u64) -> Self {
+        Self(raw)
+    }
+    /// The stored u64 role code.
+    pub const fn raw(self) -> u64 {
+        self.0
+    }
+}
+
 /// Construction-operand group owned by a feature scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -472,7 +504,7 @@ pub struct DesignConstructionOperandGroup {
     /// Exact framing of the operand-member run and its auxiliary fields.
     pub frame: DesignConstructionOperandGroupFrame,
     /// Source u64 role code.
-    pub role: u64,
+    pub role: DesignOperandRole,
     /// Extrude-specific semantic role of `role`. Face start/termination lives
     /// on `Faces`.
     pub extrude_role: Option<DesignExtrudeOperandRole>,
@@ -554,7 +586,7 @@ impl TryFrom<DesignConstructionOperandGroupSerde> for DesignConstructionOperandG
                 .collect(),
             lost_edge_references: wire.lost_edge_references,
             frame: wire.frame,
-            role: wire.role,
+            role: DesignOperandRole::from_raw(wire.role),
             extrude_role,
             role_offset: wire.role_offset,
             paired_class_tag: wire.paired_class_tag.try_into()?,
@@ -593,7 +625,7 @@ impl From<DesignConstructionOperandGroup> for DesignConstructionOperandGroupSerd
             lost_edge_references: group.lost_edge_references,
             member_offsets,
             frame: group.frame,
-            role: group.role,
+            role: group.role.raw(),
             extrude_role,
             extrude_face_role,
             role_offset: group.role_offset,

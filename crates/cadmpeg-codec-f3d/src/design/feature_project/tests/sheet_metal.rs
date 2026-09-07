@@ -8,6 +8,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::records::topology::DesignOperandRole;
 
 #[test]
 fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
@@ -133,7 +134,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role: 0x0000_0008_0000_0000,
+        role: DesignOperandRole::ROLE_0X8,
         extrude_role: None,
         role_offset: 0,
         paired_class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
@@ -603,7 +604,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role: 0x0000_0008_0000_0000,
+        role: DesignOperandRole::ROLE_0X8,
         extrude_role: None,
         role_offset: 0,
         paired_class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
@@ -617,7 +618,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         value: 424,
         offset: target_group.members[0].offset,
     }];
-    target_group.role = 0x0000_0021_0000_0000;
+    target_group.role = DesignOperandRole::ROLE_0X21;
 
     let target_selection = crate::records::topology::DesignEntitySelectionOperand {
         id: format!("{stream}:design-entity-selection-operand#424"),
@@ -911,7 +912,7 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role: 0x0000_0004_0000_0000,
+        role: DesignOperandRole::ROLE_0X4,
         extrude_role: None,
         role_offset: 0,
         paired_class_tag: crate::records::DesignClassTag::try_from("260".to_owned()).unwrap(),
@@ -1020,40 +1021,42 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             evaluated_value: value,
             evaluated_value_offset: 0,
         };
-    let group = |scope_record_index: u32, record_index: u32, member: u32, role: u64| {
-        DesignConstructionOperandGroup {
-            id: format!("{stream}:design-construction-operand-group#{record_index}"),
-            scope_record_index,
-            scope_reference_ordinal: 0,
-            record_index,
-            byte_offset: 0,
-            class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
-            members: vec![crate::records::Located {
-                value: member,
-                offset: 0,
-            }],
-            lost_edge_references: Vec::new(),
-            frame: DesignConstructionOperandGroupFrame {
-                member_count_offset: 0,
-                auxiliary_records: Vec::new(),
-                auxiliary_paths: Vec::new(),
-                trailing_records: Vec::new(),
-                trailing_transforms: Vec::new(),
-                trailing_dual_transforms: Vec::new(),
-                trailing_flags: Vec::new(),
-                opaque_index: 0,
-                opaque_index_offset: 0,
-                opaque_scalar: 0.0,
-                opaque_scalar_offset: 0,
-                variant: false,
-            },
-            role,
-            extrude_role: None,
-            role_offset: 0,
-            paired_class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
-            paired_byte_offset: 0,
-        }
-    };
+    let group =
+        |scope_record_index: u32, record_index: u32, member: u32, role: DesignOperandRole| {
+            DesignConstructionOperandGroup {
+                id: format!("{stream}:design-construction-operand-group#{record_index}"),
+                scope_record_index,
+                scope_reference_ordinal: 0,
+                record_index,
+                byte_offset: 0,
+                class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
+                members: vec![crate::records::Located {
+                    value: member,
+                    offset: 0,
+                }],
+                lost_edge_references: Vec::new(),
+                frame: DesignConstructionOperandGroupFrame {
+                    member_count_offset: 0,
+                    auxiliary_records: Vec::new(),
+                    auxiliary_paths: Vec::new(),
+                    trailing_records: Vec::new(),
+                    trailing_transforms: Vec::new(),
+                    trailing_dual_transforms: Vec::new(),
+                    trailing_flags: Vec::new(),
+                    opaque_index: 0,
+                    opaque_index_offset: 0,
+                    opaque_scalar: 0.0,
+                    opaque_scalar_offset: 0,
+                    variant: false,
+                },
+                role,
+                extrude_role: None,
+                role_offset: 0,
+                paired_class_tag: crate::records::DesignClassTag::try_from("000".to_owned())
+                    .unwrap(),
+                paired_byte_offset: 0,
+            }
+        };
     let operation = |parameter_owners| DesignHemOperation {
         edge_wrapper_record_index: 708,
         edge_group_record_index: 710,
@@ -1079,8 +1082,8 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             *slot = Some(operation);
         }
         let groups = vec![
-            group(record_index, 710, 713, 0x0000_0008_0000_0000),
-            group(record_index, 717, 720, 0x0000_0043_0000_0000),
+            group(record_index, 710, 713, DesignOperandRole::ROLE_0X8),
+            group(record_index, 717, 720, DesignOperandRole::ROLE_0X43),
         ];
         let inputs = crate::design::feature_project::ProjectInputs {
             native: &parameters,

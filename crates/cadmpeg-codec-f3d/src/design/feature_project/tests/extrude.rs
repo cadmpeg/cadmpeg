@@ -8,6 +8,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::records::topology::DesignOperandRole;
 
 fn set_extrude_operation(scope: &mut DesignParameterScope, operation: DesignExtrudeOperation) {
     let Some(
@@ -678,7 +679,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             opaque_scalar_offset: 1076,
             variant: false,
         },
-        role: 0x0000_0008_0000_0000,
+        role: DesignOperandRole::ROLE_0X8,
         extrude_role: Some(DesignExtrudeOperandRole::Bodies),
         role_offset: 1054,
 
@@ -719,7 +720,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         value: 201,
         offset: 1026,
     }];
-    target_shape_group.role = 0x0000_0005_0000_0000;
+    target_shape_group.role = DesignOperandRole::ROLE_0X5;
     target_shape_group.extrude_role = None;
     let Some(DesignExtrudePrologue::ReferenceAware {
         first_side_target_ordinal,
@@ -950,7 +951,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     profile_group.id = "f3d:Design/BulkStream.dat:operand-group#104".into();
     profile_group.record_index = 104;
     profile_group.extrude_role = Some(DesignExtrudeOperandRole::Profile);
-    profile_group.role = 0x0000_0041_0000_0000;
+    profile_group.role = DesignOperandRole::ROLE_0X41;
     let direct_profile_with_selection_group = project_extrude(
         &scope,
         &[(0, &along), (1, &taper)],
@@ -1087,7 +1088,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     let mut face_group = body_group.clone();
     face_group.id = "f3d:Design/BulkStream.dat:operand-group#102".into();
     face_group.extrude_role = Some(DesignExtrudeOperandRole::Faces(None));
-    face_group.role = 0x0000_0011_0000_0000;
+    face_group.role = DesignOperandRole::ROLE_0X11;
     let mut ordered_faces = [face_group.clone(), face_group.clone()];
     set_extrude_start(&mut scope, DesignExtrudeStart::FromFace);
     assign_extrude_face_roles(&scope, &mut ordered_faces);

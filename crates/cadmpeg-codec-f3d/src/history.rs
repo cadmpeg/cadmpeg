@@ -17,6 +17,7 @@ use crate::history_records::{
     AsmHistoricalRelation, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
     AsmHistoricalTransition, AsmHistory, AsmHistoryRecord, AsmPreamble,
 };
+use crate::records::topology::DesignOperandRole;
 use crate::records::topology::{
     AsmHistoricalEntityKind, DesignEdgeIdentityOperand, DesignExtrudeSelectionMember,
 };
@@ -1257,7 +1258,7 @@ pub(crate) fn bind_feature_body_selections(
         let mut matching_groups = groups.iter().filter(|group| {
             group.id == *group_id
                 && group.scope_record_index == scope.record_index
-                && group.role == 0x0000_0004_0000_0000
+                && group.role == DesignOperandRole::ROLE_0X4
                 && crate::ids::native_stream(&group.id) == crate::ids::native_stream(&scope.id)
         });
         let Some(group) = matching_groups.next() else {
@@ -1499,7 +1500,7 @@ fn bind_pattern_body_selections(
             .iter()
             .filter(|group| {
                 group.scope_record_index == scope.record_index
-                    && group.role == 0x0000_0008_0000_0000
+                    && group.role == DesignOperandRole::ROLE_0X8
                     && !group.members.is_empty()
                     && crate::ids::native_stream(&group.id) == stream
             })
@@ -1615,7 +1616,9 @@ fn bind_body_recipe_body_selection(
             && group.scope_record_index == scope.record_index
             && matches!(
                 group.role,
-                0x0000_0004_0000_0000 | 0x0000_0005_0000_0000 | 0x0000_0008_0000_0000
+                DesignOperandRole::ROLE_0X4
+                    | DesignOperandRole::ROLE_0X5
+                    | DesignOperandRole::ROLE_0X8
             )
             && crate::ids::native_stream(&group.id) == stream
     });
@@ -1685,7 +1688,9 @@ fn bind_direct_body_recipe_body_selection(
                     && group.scope_record_index == scope.record_index
                     && matches!(
                         group.role,
-                        0x0000_0004_0000_0000 | 0x0000_0005_0000_0000 | 0x0000_0008_0000_0000
+                        DesignOperandRole::ROLE_0X4
+                            | DesignOperandRole::ROLE_0X5
+                            | DesignOperandRole::ROLE_0X8
                     )
                     && crate::ids::native_stream(&group.id) == stream
             });
@@ -2238,7 +2243,7 @@ fn bind_surface_stitch_face_selection(
         .filter(|group| {
             crate::ids::native_stream(&group.id) == stream
                 && group.scope_record_index == scope.record_index
-                && group.role == 0x0000_0005_0000_0000
+                && group.role == DesignOperandRole::ROLE_0X5
                 && group.extrude_role.is_none()
                 && group.extrude_face_role().is_none()
         })
@@ -3573,7 +3578,7 @@ fn exact_face_selection_group<'a>(
         crate::ids::native_stream(&group.id) == Some(stream)
             && group.scope_record_index == scope.record_index
             && group.record_index == group_record_index
-            && group.role == 0x0000_0010_0000_0000
+            && group.role == DesignOperandRole::ROLE_0X10
             && group
                 .members
                 .get(group_member_ordinal)
@@ -6510,7 +6515,7 @@ fn bind_body_recipe_face_selection(
     let mut matching_groups = groups.iter().filter(|group| {
         group.id == *native
             && group.scope_record_index == scope.record_index
-            && group.role == 0x0000_0005_0000_0000
+            && group.role == DesignOperandRole::ROLE_0X5
             && crate::ids::native_stream(&group.id) == crate::ids::native_stream(&scope.id)
     });
     let Some(group) = matching_groups.next() else {
@@ -7427,7 +7432,7 @@ pub(crate) fn bind_mirror_selection_planes(
             crate::ids::native_stream(&group.id) == stream.as_deref()
                 && group.scope_record_index == record_index
                 && group.record_index == construction.plane_group_record_index
-                && group.role == 0x0000_0005_0000_0000
+                && group.role == DesignOperandRole::ROLE_0X5
                 && group
                     .members
                     .iter()

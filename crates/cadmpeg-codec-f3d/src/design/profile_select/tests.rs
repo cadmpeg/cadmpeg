@@ -11,6 +11,7 @@ use crate::ids::{
     neutral_sketch_curve_id, neutral_sketch_id, neutral_spatial_sketch_curve_id,
     neutral_spatial_sketch_id,
 };
+use crate::records::topology::DesignOperandRole;
 use crate::records::topology::{
     DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
     DesignEntitySelectionOperand, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
@@ -60,7 +61,7 @@ fn group() -> DesignConstructionOperandGroup {
             opaque_scalar_offset: 0,
             variant: false,
         },
-        role: 0x5_0000_0000,
+        role: DesignOperandRole::ROLE_0X5,
         extrude_role: None,
         role_offset: 0,
         paired_class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
@@ -920,7 +921,7 @@ fn entity_selection_profile_requires_unique_profile_membership() {
         native_ref: None,
     }];
     let mut group = group();
-    group.role = 0x41_0000_0000;
+    group.role = DesignOperandRole::ROLE_0X41;
     let operands = [operand(10, 0, 100), operand(11, 1, 200)];
     let resolution = EntitySelectionPathResolution {
         operands: &operands,
@@ -979,7 +980,7 @@ fn entity_selection_profile_retains_an_open_curve_as_ordered_entities() {
         native_ref: None,
     }];
     let mut group = group();
-    group.role = 0x41_0000_0000;
+    group.role = DesignOperandRole::ROLE_0X41;
     group.members = vec![10]
         .into_iter()
         .map(|value| crate::records::Located { value, offset: 0 })

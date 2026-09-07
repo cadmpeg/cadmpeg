@@ -8,6 +8,7 @@
     clippy::wildcard_imports
 )]
 use super::prelude::*;
+use crate::records::topology::DesignOperandRole;
 
 use super::project_mirror;
 use crate::records::feature::{DesignMirrorConstruction, DesignParameterScope};
@@ -19,7 +20,11 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 
-fn group(scope_record_index: u32, record_index: u32, role: u64) -> DesignConstructionOperandGroup {
+fn group(
+    scope_record_index: u32,
+    record_index: u32,
+    role: DesignOperandRole,
+) -> DesignConstructionOperandGroup {
     DesignConstructionOperandGroup {
         id: format!("f3d:Design/BulkStream.dat:group#{record_index}"),
         scope_record_index,
@@ -89,8 +94,8 @@ fn mirror_scope(seed_group_record_index: u32) -> DesignParameterScope {
 fn mirror_seed_role_selects_body_or_face_semantics() {
     let body_scope = mirror_scope(20);
     let body_groups = [
-        group(10, 20, 0x0000_0008_0000_0000),
-        group(10, 30, 0x0000_0005_0000_0000),
+        group(10, 20, DesignOperandRole::ROLE_0X8),
+        group(10, 30, DesignOperandRole::ROLE_0X5),
     ];
     let FeatureDefinition::Pattern { seeds, pattern } =
         project_mirror(&body_scope, &body_groups, &[], &[]).expect("body mirror")
@@ -106,8 +111,8 @@ fn mirror_seed_role_selects_body_or_face_semantics() {
 
     let face_scope = mirror_scope(40);
     let face_groups = [
-        group(10, 40, 0x0000_0004_0000_0000),
-        group(10, 30, 0x0000_0005_0000_0000),
+        group(10, 40, DesignOperandRole::ROLE_0X4),
+        group(10, 30, DesignOperandRole::ROLE_0X5),
     ];
     let FeatureDefinition::Pattern { seeds, .. } =
         project_mirror(&face_scope, &face_groups, &[], &[]).expect("face mirror")

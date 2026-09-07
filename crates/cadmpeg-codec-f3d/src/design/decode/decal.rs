@@ -19,7 +19,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::Asset;
 use cadmpeg_ir::features::{DecalMapping, FaceSelection, Feature, FeatureDefinition};
 
-const DECAL_TARGET_ROLE: u64 = 0x0000_0004_0000_0000;
+const DECAL_TARGET_ROLE: crate::records::topology::DesignOperandRole =
+    crate::records::topology::DesignOperandRole::ROLE_0X4;
 
 /// Decode every structurally complete Decal image record.
 pub fn decode_decal_images(

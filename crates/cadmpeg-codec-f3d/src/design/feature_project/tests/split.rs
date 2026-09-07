@@ -8,13 +8,14 @@
 
 use super::prelude::*;
 use super::project_split_face;
+use crate::records::topology::DesignOperandRole;
 
 fn group(
     scope_record_index: u32,
     scope_reference_ordinal: u32,
     record_index: u32,
     members: Vec<u32>,
-    role: u64,
+    role: DesignOperandRole,
 ) -> DesignConstructionOperandGroup {
     DesignConstructionOperandGroup {
         id: format!("f3d:Design/BulkStream.dat:group#{record_index}"),
@@ -65,13 +66,19 @@ fn class_277_258_compact_split_face_frame_projects() {
     scope.reference_members = crate::records::ReferenceRun::Unlocated((100..112).collect());
 
     let groups = [
-        group(scope_record_index, 0, 100, vec![101], 0x0000_0021_0000_0000),
+        group(
+            scope_record_index,
+            0,
+            100,
+            vec![101],
+            DesignOperandRole::ROLE_0X21,
+        ),
         group(
             scope_record_index,
             2,
             102,
             (103..112).collect(),
-            0x0000_0010_0000_0000,
+            DesignOperandRole::ROLE_0X10,
         ),
     ];
     let definition = project_split_face(&scope, &[scope.clone()], &groups, &[], &[], &[])
@@ -110,13 +117,19 @@ fn direct_single_identity_split_face_member_projects_historical_edge_path() {
     scope.reference_members = crate::records::ReferenceRun::Unlocated((100..112).collect());
 
     let groups = [
-        group(scope_record_index, 0, 100, vec![101], 0x0000_0021_0000_0000),
+        group(
+            scope_record_index,
+            0,
+            100,
+            vec![101],
+            DesignOperandRole::ROLE_0X21,
+        ),
         group(
             scope_record_index,
             2,
             102,
             (103..112).collect(),
-            0x0000_0010_0000_0000,
+            DesignOperandRole::ROLE_0X10,
         ),
     ];
     let selections = [crate::records::topology::DesignEntitySelectionOperand {
