@@ -12,9 +12,12 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
 use cadmpeg_ir::{topology::Color, SourceObjectAssociation};
 
+use std::num::NonZeroU64;
+
 use crate::layout::jt_document_header as jt_hdr;
 use crate::layout::jt_toc_entry as jt_toc;
 use crate::layout::jt_tristrip_shape_node_family_data as jt_family;
+use crate::om::nonempty::NonEmpty;
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
@@ -62,17 +65,77 @@ fn inflate_display_jt(
 
 /// Outer index of the embedded JT display-model stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "DisplayJtIndexWire", into = "DisplayJtIndexWire")]
 pub struct DisplayJtIndex {
     /// Globally unique index identity.
     pub id: String,
     /// Serialized index version.
     pub version: u32,
-    /// Declared number of indexed JT documents.
-    pub declared_count: u32,
     /// Indexed document rows in serialized order.
-    pub rows: Vec<DisplayJtIndexRow>,
+    rows: NonEmpty<DisplayJtIndexRow>,
     /// Absolute source offset of the `DisplayJT` payload.
     pub source_offset: u64,
+}
+
+impl DisplayJtIndex {
+    fn new(
+        id: String,
+        version: u32,
+        rows: Vec<DisplayJtIndexRow>,
+        source_offset: u64,
+    ) -> Result<Self, &'static str> {
+        u32::try_from(rows.len()).map_err(|_| "rows: count exceeds u32")?;
+        let rows = NonEmpty::new(rows).ok_or("rows: at least one row is required")?;
+        Ok(Self {
+            id,
+            version,
+            rows,
+            source_offset,
+        })
+    }
+
+    /// Number of indexed JT documents.
+    pub fn declared_count(&self) -> usize {
+        self.rows.len()
+    }
+
+    /// Indexed document rows in serialized order.
+    pub(crate) fn rows(&self) -> impl Iterator<Item = &DisplayJtIndexRow> {
+        self.rows.iter()
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct DisplayJtIndexWire {
+    id: String,
+    version: u32,
+    declared_count: usize,
+    rows: Vec<DisplayJtIndexRow>,
+    source_offset: u64,
+}
+
+impl From<DisplayJtIndex> for DisplayJtIndexWire {
+    fn from(value: DisplayJtIndex) -> Self {
+        let declared_count = value.declared_count();
+        Self {
+            id: value.id,
+            version: value.version,
+            declared_count,
+            rows: value.rows.into_iter().collect(),
+            source_offset: value.source_offset,
+        }
+    }
+}
+
+impl TryFrom<DisplayJtIndexWire> for DisplayJtIndex {
+    type Error = &'static str;
+
+    fn try_from(wire: DisplayJtIndexWire) -> Result<Self, Self::Error> {
+        if wire.declared_count != wire.rows.len() {
+            return Err("declared_count: count must match rows");
+        }
+        Self::new(wire.id, wire.version, wire.rows, wire.source_offset)
+    }
 }
 
 /// One physical-header offset and associated value in a `DisplayJT` index.
@@ -85,7 +148,7 @@ pub struct DisplayJtIndexRow {
     /// Payload-relative physical JT-header offset.
     pub header_offset: u32,
     /// Nonzero serialized row value whose semantic role is unassigned.
-    pub value: u64,
+    pub value: NonZeroU64,
     /// Absolute source offset of the row.
     pub source_offset: u64,
 }
@@ -1513,7 +1576,6 @@ pub fn display_jt_indices(container: &Container) -> Vec<DisplayJtIndex> {
             let version = View::u32_le_at(payload, 0)?;
             let declared_count = View::u32_le_at(payload, 4)?;
             let row_count = usize::try_from(declared_count).ok()?;
-            (row_count > 0).then_some(())?;
             let table_end = 8usize.checked_add(row_count.checked_mul(16)?)?;
             (table_end <= payload.len()).then_some(())?;
             let mut rows = Vec::new();
@@ -1521,10 +1583,11 @@ pub fn display_jt_indices(container: &Container) -> Vec<DisplayJtIndex> {
             let mut previous_header_offset = None;
             for ordinal in 0..row_count {
                 let row_offset = 8 + ordinal * 16;
-                let value = word_swapped_u64(payload.get(row_offset..row_offset + 8)?)?;
+                let value =
+                    NonZeroU64::new(word_swapped_u64(payload.get(row_offset..row_offset + 8)?)?)?;
                 let header_offset =
                     word_swapped_u64(payload.get(row_offset + 8..row_offset + 16)?)?;
-                if value == 0 || header_offset > u64::from(u32::MAX) {
+                if header_offset > u64::from(u32::MAX) {
                     return None;
                 }
                 let header_offset_usize = usize::try_from(header_offset).ok()?;
@@ -1545,13 +1608,13 @@ pub fn display_jt_indices(container: &Container) -> Vec<DisplayJtIndex> {
                     source_offset: source_offset + row_offset as u64,
                 });
             }
-            Some(DisplayJtIndex {
-                id: format!("nx:display-jt:index#{index_ordinal}"),
+            DisplayJtIndex::new(
+                format!("nx:display-jt:index#{index_ordinal}"),
                 version,
-                declared_count,
                 rows,
                 source_offset,
-            })
+            )
+            .ok()
         })
         .collect()
 }
@@ -1579,13 +1642,13 @@ pub fn display_jt_documents(
         return Vec::new();
     };
     let mut documents = Vec::new();
-    for (row_ordinal, row) in index.rows.iter().enumerate() {
+    let mut rows = index.rows.iter().peekable();
+    while let Some(row) = rows.next() {
         let Ok(document_start) = usize::try_from(row.header_offset) else {
             return Vec::new();
         };
-        let document_end = index
-            .rows
-            .get(row_ordinal + 1)
+        let document_end = rows
+            .peek()
             .map_or(stream.len(), |next| next.header_offset as usize);
         let Some(document) = stream.get(document_start..document_end) else {
             return Vec::new();
@@ -4035,6 +4098,29 @@ pub(crate) fn display_jt_tessellations(
 #[cfg(test)]
 mod tests {
     #[test]
+    fn index_wire_preserves_count_and_rejects_invalid_rows() {
+        let wire = r#"{"id":"index","version":9,"declared_count":1,"rows":[{"id":"row","ordinal":0,"header_offset":28,"value":100,"source_offset":8}],"source_offset":0}"#;
+        let index: super::DisplayJtIndex = serde_json::from_str(wire).unwrap();
+        assert_eq!(index.declared_count(), 1);
+        assert_eq!(serde_json::to_string(&index).unwrap(), wire);
+        for (invalid, field) in [
+            (
+                wire.replace("\"declared_count\":1", "\"declared_count\":7"),
+                "declared_count",
+            ),
+            (wire.replace("\"value\":100", "\"value\":0"), "value"),
+            (
+                r#"{"id":"index","version":9,"declared_count":0,"rows":[],"source_offset":0}"#
+                    .to_string(),
+                "rows",
+            ),
+        ] {
+            let error = serde_json::from_str::<super::DisplayJtIndex>(&invalid).unwrap_err();
+            assert!(error.to_string().contains(field), "{error}");
+        }
+    }
+
+    #[test]
     fn document_wire_derives_version_numbers_and_rejects_disagreement() {
         let mut wire = serde_json::json!({
             "id": "document", "index_row": "row",
@@ -4127,9 +4213,9 @@ mod tests {
         };
         let indices = super::display_jt_indices(&container);
         assert_eq!(indices[0].version, 9);
-        assert_eq!(indices[0].declared_count, 1);
-        assert_eq!(indices[0].rows[0].header_offset, 28);
-        assert_eq!(indices[0].rows[0].value, 100);
+        assert_eq!(indices[0].declared_count(), 1);
+        assert_eq!(indices[0].rows.first().header_offset, 28);
+        assert_eq!(indices[0].rows.first().value.get(), 100);
         let documents = super::display_jt_documents(&container, &indices);
         assert_eq!(
             (documents[0].version.major(), documents[0].version.minor()),

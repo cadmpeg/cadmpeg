@@ -699,7 +699,7 @@ fn note_display_jt_display_jt_indices(
         a.note(&index.id, annotation_stream, index.source_offset)
             .tag("DISPLAY_JT_INDEX");
         a.exactness(&index.id, Exactness::ByteExact);
-        for row in &index.rows {
+        for row in index.rows() {
             a.note(&row.id, annotation_stream, row.source_offset)
                 .tag("DISPLAY_JT_INDEX_ROW");
             a.exactness(&row.id, Exactness::ByteExact);
