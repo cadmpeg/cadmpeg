@@ -385,16 +385,6 @@ fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
     Ok(Uuid::from_wire(reader.array()?))
 }
 
-fn child(
-    bytes: &[u8],
-    offset: usize,
-    end: usize,
-    archive: ArchiveVersion,
-    class_uuid: bool,
-) -> Result<crate::chunks::Chunk, FramingError> {
-    chunk_at(bytes, offset, end, archive, class_uuid)
-}
-
 fn require_long(chunk: &crate::chunks::Chunk, typecode: u32) -> Result<(), FramingError> {
     if chunk.typecode != typecode || chunk.short() {
         return Err(FramingError::structural(
@@ -419,10 +409,6 @@ fn require_short_zero(chunk: &crate::chunks::Chunk, typecode: u32) -> Result<(),
         ));
     }
     Ok(())
-}
-
-fn chunk_range(chunk: &crate::chunks::Chunk) -> Range<usize> {
-    chunk.range()
 }
 
 fn checksum_warning(
@@ -471,9 +457,9 @@ pub(crate) fn parse_class_wrapper_with_userdata(
     archive: ArchiveVersion,
     warnings: &mut Vec<String>,
 ) -> Result<(ClassDescriptor, Vec<UserdataDescriptor>), FramingError> {
-    let wrapper = child(bytes, body.start, body.end, archive, false)?;
+    let wrapper = chunk_at(bytes, body.start, body.end, archive, false)?;
     require_long(&wrapper, OPENNURBS_CLASS)?;
-    let uuid_chunk = child(
+    let uuid_chunk = chunk_at(
         bytes,
         wrapper.body().start,
         wrapper.body().end,
@@ -510,7 +496,7 @@ pub(crate) fn parse_class_wrapper_with_userdata(
             Vec::new(),
         ));
     }
-    let data_chunk = child(
+    let data_chunk = chunk_at(
         bytes,
         uuid_chunk.next_offset(),
         wrapper.body().end,
@@ -525,7 +511,7 @@ pub(crate) fn parse_class_wrapper_with_userdata(
     let mut end_seen = false;
     let mut userdata = Vec::new();
     while offset < wrapper.body().end {
-        let item = child(bytes, offset, wrapper.body().end, archive, false)?;
+        let item = chunk_at(bytes, offset, wrapper.body().end, archive, false)?;
         if item.typecode == CLASS_USERDATA {
             require_long(&item, CLASS_USERDATA)?;
             userdata.push(parse_userdata(bytes, &item, archive, warnings)?);
@@ -569,13 +555,13 @@ pub(crate) fn parse_userdata(
         let transform_start = reader.position();
         reader.take(16 * 8)?;
         let transform_range = transform_start..reader.position();
-        let payload = child(bytes, reader.position(), wrapper.body().end, archive, false)?;
+        let payload = chunk_at(bytes, reader.position(), wrapper.body().end, archive, false)?;
         require_long(&payload, ANONYMOUS)?;
         if let Some(note) = checksum_warning_excluding(bytes, wrapper, &[payload.range()])? {
             warnings.push(note);
         }
         return Ok(UserdataDescriptor::Known(ClassUserdata {
-            range: chunk_range(wrapper),
+            range: wrapper.range(),
             version,
             class_uuid,
             item_uuid,
@@ -588,12 +574,12 @@ pub(crate) fn parse_userdata(
     }
     if version.0 != 2 {
         return Ok(UserdataDescriptor::UnknownVersion {
-            range: chunk_range(wrapper),
+            range: wrapper.range(),
             version,
             payload_range: wrapper.body().clone(),
         });
     }
-    let header = child(bytes, reader.position(), wrapper.body().end, archive, false)?;
+    let header = chunk_at(bytes, reader.position(), wrapper.body().end, archive, false)?;
     require_long(&header, CLASS_USERDATA_HEADER)?;
     if let Some(note) = checksum_warning(bytes, &header)? {
         warnings.push(note);
@@ -625,7 +611,7 @@ pub(crate) fn parse_userdata(
         None
     };
     header_reader.skip_remaining()?;
-    let payload = child(
+    let payload = chunk_at(
         bytes,
         header.next_offset(),
         wrapper.body().end,
@@ -641,7 +627,7 @@ pub(crate) fn parse_userdata(
         warnings.push(note);
     }
     Ok(UserdataDescriptor::Known(ClassUserdata {
-        range: chunk_range(wrapper),
+        range: wrapper.range(),
         version,
         class_uuid,
         item_uuid,
@@ -659,7 +645,7 @@ pub(crate) fn parse_user_string_list(
     payload_range: Range<usize>,
     archive: ArchiveVersion,
 ) -> Result<Vec<(String, String)>, FramingError> {
-    let list = child(
+    let list = chunk_at(
         bytes,
         payload_range.start,
         payload_range.end,
@@ -680,7 +666,7 @@ pub(crate) fn parse_user_string_list(
     let count_bytes = bounded_count(&reader, count, 1)?;
     let mut values = Vec::with_capacity(count_bytes);
     for _ in 0..count_bytes {
-        let entry = child(bytes, reader.position(), list.body().end, archive, false)?;
+        let entry = chunk_at(bytes, reader.position(), list.body().end, archive, false)?;
         require_long(&entry, ANONYMOUS)?;
         let mut entry_reader = BoundedReader::new(bytes, entry.body().start, entry.body().end)?;
         let entry_major = entry_reader.i32()?;
@@ -705,7 +691,6 @@ fn parse_history(
     bytes: &[u8],
     wrapper: &crate::chunks::Chunk,
     archive: ArchiveVersion,
-    _warnings: &mut Vec<String>,
 ) -> Result<HistoryDescriptor, FramingError> {
     let mut reader = BoundedReader::new(bytes, wrapper.body().start, wrapper.body().end)?;
     let packed = reader.u8()?;
@@ -713,15 +698,15 @@ fn parse_history(
     let mut header_range = None;
     let mut data_range = None;
     while offset < wrapper.body().end {
-        let item = child(bytes, offset, wrapper.body().end, archive, false)?;
+        let item = chunk_at(bytes, offset, wrapper.body().end, archive, false)?;
         match item.typecode {
             HISTORY_HEADER if header_range.is_none() && data_range.is_none() => {
                 require_long(&item, HISTORY_HEADER)?;
-                header_range = Some(chunk_range(&item));
+                header_range = Some(item.range());
             }
             HISTORY_DATA if data_range.is_none() => {
                 require_long(&item, HISTORY_DATA)?;
-                data_range = Some(chunk_range(&item));
+                data_range = Some(item.range());
             }
             _ => {
                 return Err(FramingError::structural(
@@ -733,7 +718,7 @@ fn parse_history(
         offset = item.next_offset();
     }
     Ok(HistoryDescriptor {
-        range: chunk_range(wrapper),
+        range: wrapper.range(),
         version: (packed >> 4, packed & 0x0f),
         header_range,
         data_range,
@@ -756,6 +741,146 @@ fn finite_attribute(value: f64, offset: usize, label: &str) -> Result<f64, Frami
             offset,
             format!("{label} is not finite"),
         ))
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum AttributeItem {
+    Name,
+    Url,
+    LinetypeIndex,
+    MaterialIndex,
+    RenderingAttributes,
+    Color,
+    PlotColor,
+    PlotWeight,
+    Decoration,
+    WireDensity,
+    Visible,
+    ObjectMode,
+    ColorSource,
+    PlotColorSource,
+    PlotWeightSource,
+    MaterialSource,
+    LinetypeSource,
+    Groups,
+    ActiveSpace,
+    ViewportId,
+    DisplayMaterials,
+    DisplayOrder,
+    LineCapSource,
+    LineCapStyle,
+    LineJoinSource,
+    LineJoinStyle,
+    ClipParticipationSource,
+    Clipping,
+    SectionAttributesSource,
+    HatchPatternIndex,
+    SectionHatchScale,
+    SectionHatchRotation,
+    LinetypePatternScale,
+    HatchBackground,
+    HatchBoundaryVisible,
+    ObjectFrame,
+    SectionFillRule,
+    EmbeddedLinetype,
+    EmbeddedSectionStyle,
+    ClippingPlaneLabelStyle,
+    SelectiveClippingList,
+    DetailBackgroundVisible,
+}
+
+impl AttributeItem {
+    fn from_raw(value: u8) -> Option<Self> {
+        Some(match value {
+            1 => Self::Name,
+            2 => Self::Url,
+            3 => Self::LinetypeIndex,
+            4 => Self::MaterialIndex,
+            5 => Self::RenderingAttributes,
+            6 => Self::Color,
+            7 => Self::PlotColor,
+            8 => Self::PlotWeight,
+            9 => Self::Decoration,
+            10 => Self::WireDensity,
+            11 => Self::Visible,
+            12 => Self::ObjectMode,
+            13 => Self::ColorSource,
+            14 => Self::PlotColorSource,
+            15 => Self::PlotWeightSource,
+            16 => Self::MaterialSource,
+            17 => Self::LinetypeSource,
+            18 => Self::Groups,
+            19 => Self::ActiveSpace,
+            20 => Self::ViewportId,
+            21 => Self::DisplayMaterials,
+            22 => Self::DisplayOrder,
+            23 => Self::LineCapSource,
+            24 => Self::LineCapStyle,
+            25 => Self::LineJoinSource,
+            26 => Self::LineJoinStyle,
+            27 => Self::ClipParticipationSource,
+            28 => Self::Clipping,
+            29 => Self::SectionAttributesSource,
+            30 => Self::HatchPatternIndex,
+            31 => Self::SectionHatchScale,
+            32 => Self::SectionHatchRotation,
+            33 => Self::LinetypePatternScale,
+            34 => Self::HatchBackground,
+            35 => Self::HatchBoundaryVisible,
+            36 => Self::ObjectFrame,
+            37 => Self::SectionFillRule,
+            38 => Self::EmbeddedLinetype,
+            39 => Self::EmbeddedSectionStyle,
+            40 => Self::ClippingPlaneLabelStyle,
+            41 => Self::SelectiveClippingList,
+            42 => Self::DetailBackgroundVisible,
+            _ => return None,
+        })
+    }
+
+    fn minimum_minor(self) -> u8 {
+        match self {
+            Self::Name
+            | Self::Url
+            | Self::LinetypeIndex
+            | Self::MaterialIndex
+            | Self::RenderingAttributes
+            | Self::Color
+            | Self::PlotColor
+            | Self::PlotWeight
+            | Self::Decoration
+            | Self::WireDensity
+            | Self::Visible
+            | Self::ObjectMode
+            | Self::ColorSource
+            | Self::PlotColorSource
+            | Self::PlotWeightSource
+            | Self::MaterialSource
+            | Self::LinetypeSource
+            | Self::Groups
+            | Self::ActiveSpace
+            | Self::ViewportId
+            | Self::DisplayMaterials => 0,
+            Self::DisplayOrder => 1,
+            Self::LineCapSource
+            | Self::LineCapStyle
+            | Self::LineJoinSource
+            | Self::LineJoinStyle => 2,
+            Self::ClipParticipationSource | Self::Clipping => 3,
+            Self::SectionAttributesSource
+            | Self::HatchPatternIndex
+            | Self::SectionHatchScale
+            | Self::SectionHatchRotation => 4,
+            Self::LinetypePatternScale => 5,
+            Self::HatchBackground | Self::HatchBoundaryVisible => 6,
+            Self::ObjectFrame => 8,
+            Self::SectionFillRule => 9,
+            Self::EmbeddedLinetype => 10,
+            Self::EmbeddedSectionStyle => 11,
+            Self::ClippingPlaneLabelStyle => 12,
+            Self::SelectiveClippingList | Self::DetailBackgroundVisible => 13,
+        }
     }
 }
 
@@ -863,7 +988,7 @@ pub(crate) fn parse_attributes(
         let obsolete_thickness =
             finite_attribute(obsolete_thickness, body_range.start, "obsolete thickness")?;
         let obsolete_scale = finite_attribute(obsolete_scale, body_range.start, "obsolete scale")?;
-        finish_attributes(&mut reader, "fixed object attributes")?;
+        reader.skip_remaining()?;
         return Ok(ObjectAttributes {
             source: SourceRange {
                 range: source_range.clone(),
@@ -991,49 +1116,36 @@ pub(crate) fn parse_attributes(
         custom_render_mesh: None,
         mesh_modifiers: None,
     };
-    let mut last_item = 0_u8;
+    let mut last_item = None;
     while reader.remaining() > 0 {
         let item = reader.u8()?;
         if item == 0 {
-            finish_attributes(&mut reader, "tagged object attributes")?;
+            reader.skip_remaining()?;
             return Ok(attributes);
         }
-        let gate = match item {
-            1..=21 => 0,
-            22 => 1,
-            23..=26 => 2,
-            27..=28 => 3,
-            29..=32 => 4,
-            33 => 5,
-            34..=35 => 6,
-            36 => 8,
-            37 => 9,
-            38 => 10,
-            39 => 11,
-            40 => 12,
-            41 | 42 => 13,
-            _ => {
-                // Item values have no length prefix. The source reader consumes
-                // only an unknown ID and lets the enclosing chunk boundary
-                // discard the value bytes it cannot type.
-                finish_attributes(&mut reader, "future tagged object attributes")?;
-                return Ok(attributes);
-            }
+        let Some(attribute_item) = AttributeItem::from_raw(item) else {
+            // Item values have no length prefix. The source reader consumes
+            // only an unknown ID and lets the enclosing chunk boundary
+            // discard the value bytes it cannot type.
+            reader.skip_remaining()?;
+            return Ok(attributes);
         };
-        if item <= last_item || version.1 < gate {
+        if last_item.is_some_and(|last| attribute_item <= last)
+            || version.1 < attribute_item.minimum_minor()
+        {
             // This is the source reader's ordered cascade. The ID has been
             // consumed, but its value has no generic width, so the rest stays
             // at the containing attributes boundary.
-            finish_attributes(&mut reader, "bounded tagged object attributes")?;
+            reader.skip_remaining()?;
             return Ok(attributes);
         }
-        last_item = item;
-        match item {
-            1 => attributes.name = settings::utf16(&mut reader)?,
-            2 => attributes.url = settings::utf16(&mut reader)?,
-            3 => attributes.linetype_index = reader.i32()?,
-            4 => attributes.material_index = reader.i32()?,
-            5 => {
+        last_item = Some(attribute_item);
+        match attribute_item {
+            AttributeItem::Name => attributes.name = settings::utf16(&mut reader)?,
+            AttributeItem::Url => attributes.url = settings::utf16(&mut reader)?,
+            AttributeItem::LinetypeIndex => attributes.linetype_index = reader.i32()?,
+            AttributeItem::MaterialIndex => attributes.material_index = reader.i32()?,
+            AttributeItem::RenderingAttributes => {
                 attributes.rendering_range = Some(settings::parse_rendering_attributes(
                     bytes,
                     &mut reader,
@@ -1042,22 +1154,28 @@ pub(crate) fn parse_attributes(
                     warnings,
                 )?);
             }
-            6 => attributes.color = reader.take(4)?.try_into().expect("color width checked"),
-            7 => attributes.plot_color = reader.take(4)?.try_into().expect("color width checked"),
-            8 => {
+            AttributeItem::Color => {
+                attributes.color = reader.take(4)?.try_into().expect("color width checked")
+            }
+            AttributeItem::PlotColor => {
+                attributes.plot_color = reader.take(4)?.try_into().expect("color width checked")
+            }
+            AttributeItem::PlotWeight => {
                 attributes.plot_weight =
                     finite_attribute(reader.f64()?, reader.position(), "plot weight")?;
             }
-            9 => attributes.decoration = i32::from(reader.u8()?),
-            10 => attributes.wire_density = reader.i32()?,
-            11 => attributes.visible = reader.bool_with_writer_version(writer_version)?,
-            12 => attributes.object_mode = reader.u8()?,
-            13 => attributes.color_source = reader.u8()?,
-            14 => attributes.plot_color_source = reader.u8()?,
-            15 => attributes.plot_weight_source = reader.u8()?,
-            16 => attributes.material_source = reader.u8()?,
-            17 => attributes.linetype_source = reader.u8()?,
-            18 => {
+            AttributeItem::Decoration => attributes.decoration = i32::from(reader.u8()?),
+            AttributeItem::WireDensity => attributes.wire_density = reader.i32()?,
+            AttributeItem::Visible => {
+                attributes.visible = reader.bool_with_writer_version(writer_version)?
+            }
+            AttributeItem::ObjectMode => attributes.object_mode = reader.u8()?,
+            AttributeItem::ColorSource => attributes.color_source = reader.u8()?,
+            AttributeItem::PlotColorSource => attributes.plot_color_source = reader.u8()?,
+            AttributeItem::PlotWeightSource => attributes.plot_weight_source = reader.u8()?,
+            AttributeItem::MaterialSource => attributes.material_source = reader.u8()?,
+            AttributeItem::LinetypeSource => attributes.linetype_source = reader.u8()?,
+            AttributeItem::Groups => {
                 let count = reader.i32()?;
                 let bytes = bounded_count(&reader, count, 4)?;
                 attributes.groups.clear();
@@ -1065,9 +1183,9 @@ pub(crate) fn parse_attributes(
                     attributes.groups.push(reader.i32()?);
                 }
             }
-            19 => attributes.active_space = reader.u8()?,
-            20 => attributes.viewport_id = uuid_reader(&mut reader)?,
-            21 => {
+            AttributeItem::ActiveSpace => attributes.active_space = reader.u8()?,
+            AttributeItem::ViewportId => attributes.viewport_id = uuid_reader(&mut reader)?,
+            AttributeItem::DisplayMaterials => {
                 let count = reader.i32()?;
                 let bytes = bounded_count(&reader, count, 32)?;
                 attributes.display_materials.clear();
@@ -1077,45 +1195,51 @@ pub(crate) fn parse_attributes(
                         .push((uuid_reader(&mut reader)?, uuid_reader(&mut reader)?));
                 }
             }
-            22 => attributes.display_order = reader.i32()?,
-            23 => attributes.line_cap_source = reader.u8()?,
-            24 => attributes.line_cap_style = reader.u8()?,
-            25 => attributes.line_join_source = reader.u8()?,
-            26 => attributes.line_join_style = reader.u8()?,
-            27 => attributes.clip_participation_source = reader.u8()?,
-            28 => {
+            AttributeItem::DisplayOrder => attributes.display_order = reader.i32()?,
+            AttributeItem::LineCapSource => attributes.line_cap_source = reader.u8()?,
+            AttributeItem::LineCapStyle => attributes.line_cap_style = reader.u8()?,
+            AttributeItem::LineJoinSource => attributes.line_join_source = reader.u8()?,
+            AttributeItem::LineJoinStyle => attributes.line_join_style = reader.u8()?,
+            AttributeItem::ClipParticipationSource => {
+                attributes.clip_participation_source = reader.u8()?
+            }
+            AttributeItem::Clipping => {
                 attributes.clipping_proof = reader.bool_with_writer_version(writer_version)?;
                 attributes.clipping_plane_ids = read_uuid_list(&mut reader, archive)?;
             }
-            29 => attributes.section_attributes_source = reader.u8()?,
-            30 => attributes.hatch_pattern_index = reader.i32()?,
-            31 => {
+            AttributeItem::SectionAttributesSource => {
+                attributes.section_attributes_source = reader.u8()?
+            }
+            AttributeItem::HatchPatternIndex => attributes.hatch_pattern_index = reader.i32()?,
+            AttributeItem::SectionHatchScale => {
                 attributes.section_hatch_scale =
                     finite_attribute(reader.f64()?, reader.position(), "section hatch scale")?;
             }
-            32 => {
+            AttributeItem::SectionHatchRotation => {
                 attributes.section_hatch_rotation =
                     finite_attribute(reader.f64()?, reader.position(), "section hatch rotation")?;
             }
-            33 => {
+            AttributeItem::LinetypePatternScale => {
                 attributes.linetype_pattern_scale =
                     finite_attribute(reader.f64()?, reader.position(), "linetype scale")?;
             }
-            34 => {
+            AttributeItem::HatchBackground => {
                 attributes.hatch_background =
                     reader.take(4)?.try_into().expect("color width checked");
             }
-            35 => {
+            AttributeItem::HatchBoundaryVisible => {
                 attributes.hatch_boundary_visible =
                     reader.bool_with_writer_version(writer_version)?;
             }
-            42 => {
+            AttributeItem::DetailBackgroundVisible => {
                 attributes.detail_background_visible =
                     reader.bool_with_writer_version(writer_version)?;
             }
-            36 => attributes.object_frame = Some(settings::xform(&mut reader)?),
-            37 => attributes.section_fill_rule = reader.u8()?,
-            38 => {
+            AttributeItem::ObjectFrame => {
+                attributes.object_frame = Some(settings::xform(&mut reader)?)
+            }
+            AttributeItem::SectionFillRule => attributes.section_fill_rule = reader.u8()?,
+            AttributeItem::EmbeddedLinetype => {
                 attributes.embedded_linetype = Some(settings::parse_direct_linetype(
                     bytes,
                     &mut reader,
@@ -1123,7 +1247,7 @@ pub(crate) fn parse_attributes(
                     warnings,
                 )?);
             }
-            39 => {
+            AttributeItem::EmbeddedSectionStyle => {
                 attributes.embedded_section_style = Some(settings::parse_direct_section_style(
                     bytes,
                     &mut reader,
@@ -1131,12 +1255,13 @@ pub(crate) fn parse_attributes(
                     warnings,
                 )?);
             }
-            40 => attributes.clipping_plane_label_style = reader.u8()?,
-            41 => {
+            AttributeItem::ClippingPlaneLabelStyle => {
+                attributes.clipping_plane_label_style = reader.u8()?
+            }
+            AttributeItem::SelectiveClippingList => {
                 attributes.selective_clipping_list =
                     reader.bool_with_writer_version(writer_version)?;
             }
-            _ => unreachable!(),
         }
     }
     Err(FramingError::structural(
@@ -1188,14 +1313,6 @@ fn uuid_reader(reader: &mut crate::chunks::BoundedReader<'_>) -> Result<Uuid, Fr
     ))
 }
 
-fn finish_attributes(
-    reader: &mut crate::chunks::BoundedReader<'_>,
-    _label: &str,
-) -> Result<(), FramingError> {
-    reader.skip_remaining()?;
-    Ok(())
-}
-
 pub(crate) fn parse_attribute_userdata(
     bytes: &[u8],
     range: Range<usize>,
@@ -1205,7 +1322,7 @@ pub(crate) fn parse_attribute_userdata(
     let mut result = Vec::new();
     let mut offset = range.start;
     while offset < range.end {
-        let item = match child(bytes, offset, range.end, archive, false) {
+        let item = match chunk_at(bytes, offset, range.end, archive, false) {
             Ok(item) => item,
             Err(error) => {
                 warnings.push(format!("attribute userdata degraded at {offset}: {error}"));
@@ -1330,7 +1447,7 @@ fn parse_per_object_mesh_userdata(
         })?;
     let payload_range = descriptor.payload_range.clone();
     let parsed = (|| {
-        let outer = child(
+        let outer = chunk_at(
             bytes,
             payload_range.start,
             payload_range.end,
@@ -1347,7 +1464,7 @@ fn parse_per_object_mesh_userdata(
                 "per-object mesh userdata version is unsupported",
             ));
         }
-        let inner = child(
+        let inner = chunk_at(
             bytes,
             outer_reader.position(),
             outer.body().end,
@@ -1479,7 +1596,7 @@ pub(crate) fn parse_object_record(
         ));
     }
     let mut offset = record.body().start;
-    let type_chunk = child(bytes, offset, record.body().end, archive, false)?;
+    let type_chunk = chunk_at(bytes, offset, record.body().end, archive, false)?;
     if type_chunk.typecode != OBJECT_RECORD_TYPE || !type_chunk.short() {
         return Err(FramingError::structural(
             type_chunk.header_start,
@@ -1489,10 +1606,10 @@ pub(crate) fn parse_object_record(
     let object_type = u32::try_from(type_chunk.value())
         .map_err(|_| FramingError::structural(type_chunk.header_start, "negative object type"))?;
     offset = type_chunk.next_offset();
-    let class = child(bytes, offset, record.body().end, archive, false)?;
+    let class = chunk_at(bytes, offset, record.body().end, archive, false)?;
     require_long(&class, OPENNURBS_CLASS)?;
     offset = class.body().start;
-    let uuid_chunk = child(bytes, offset, class.body().end, archive, true)?;
+    let uuid_chunk = chunk_at(bytes, offset, class.body().end, archive, true)?;
     require_long(&uuid_chunk, CLASS_UUID)?;
     if uuid_chunk.declared_end() - uuid_chunk.body().start != class_uuid_body::LEN {
         return Err(FramingError::structural(
@@ -1509,7 +1626,7 @@ pub(crate) fn parse_object_record(
             .expect("UUID length checked"),
     );
     offset = uuid_chunk.next_offset();
-    let data_chunk = child(bytes, offset, class.body().end, archive, false)?;
+    let data_chunk = chunk_at(bytes, offset, class.body().end, archive, false)?;
     require_long(&data_chunk, CLASS_DATA)?;
     // CLASS_DATA is mixed by definition. Its concrete family reader owns
     // checksum validation because only that grammar identifies direct bytes.
@@ -1518,7 +1635,7 @@ pub(crate) fn parse_object_record(
     let mut userdata = Vec::new();
     let mut class_end_seen = false;
     while offset < class.body().end {
-        let item = child(bytes, offset, class.body().end, archive, false)?;
+        let item = chunk_at(bytes, offset, class.body().end, archive, false)?;
         if item.typecode == CLASS_USERDATA {
             require_long(&item, CLASS_USERDATA)?;
             userdata.push(parse_userdata(bytes, &item, archive, &mut warnings)?);
@@ -1543,7 +1660,7 @@ pub(crate) fn parse_object_record(
     let mut phase = 0_u8;
     let mut object_end_seen = false;
     while offset < record.body().end {
-        let item = child(bytes, offset, record.body().end, archive, false)?;
+        let item = chunk_at(bytes, offset, record.body().end, archive, false)?;
         if item.typecode == OBJECT_RECORD_END {
             require_short_zero(&item, OBJECT_RECORD_END)?;
             if item.next_offset() != record.body().end {
@@ -1569,7 +1686,7 @@ pub(crate) fn parse_object_record(
             }
             OBJECT_RECORD_HISTORY if phase <= 2 => {
                 require_long(&item, OBJECT_RECORD_HISTORY)?;
-                let descriptor = parse_history(bytes, &item, archive, &mut warnings)?;
+                let descriptor = parse_history(bytes, &item, archive)?;
                 let children = descriptor
                     .header_range
                     .iter()
@@ -1583,7 +1700,7 @@ pub(crate) fn parse_object_record(
                 phase = 3;
             }
             _ if !item.short() => {
-                unknown_trailer.push(chunk_range(&item));
+                unknown_trailer.push(item.range());
                 phase = 3;
             }
             _ => {
