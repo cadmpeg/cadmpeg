@@ -548,17 +548,15 @@ fn mesh_proxy_requires_identity_and_parent_fingerprint() {
 
 #[test]
 fn decodes_empty_outer_subd_without_carrier() {
-    assert!(matches!(
-        decode(
-            &[0],
-            0..1,
-            ArchiveVersion::V5,
-            1.0,
-            "rhino:test:subd#0".try_into().expect("valid identity")
-        )
-        .expect("required invariant"),
-        None
-    ));
+    assert!(decode(
+        &[0],
+        0..1,
+        ArchiveVersion::V5,
+        1.0,
+        "rhino:test:subd#0".try_into().expect("valid identity")
+    )
+    .expect("required invariant")
+    .is_none());
     assert!(decode(
         &[2],
         0..1,
