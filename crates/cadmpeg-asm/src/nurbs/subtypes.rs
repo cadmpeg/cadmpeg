@@ -2,7 +2,6 @@
 //! Subtype reference tables, intcurve subtype classification, and token walkers.
 
 use crate::kernel_header::RefWidth;
-use crate::nurbs::reader::INT_WIDTHS;
 use crate::sab::{int_le_at, Record};
 use cadmpeg_core::decode::View;
 
@@ -139,45 +138,50 @@ pub(crate) fn decode_cache_resolving_refs<T>(
 /// inside an `f64` payload is data, not a definition — so the table is built by
 /// token-walking the framed records, not by scanning raw bytes.
 pub struct SubtypeTables {
-    tables: [Vec<usize>; INT_WIDTHS.len()],
+    eight: Vec<usize>,
+    four: Vec<usize>,
 }
 
 impl SubtypeTables {
     /// Build the tables by token-walking each framed record of `bytes`.
     pub fn from_records(records: &[Record], bytes: &[u8]) -> Self {
+        let build = |walk_width| {
+            let mut table = Vec::new();
+            for record in records {
+                collect_defs_in_span(
+                    bytes,
+                    record.offset,
+                    record.offset + record.len,
+                    walk_width,
+                    &mut table,
+                );
+            }
+            table
+        };
         Self {
-            tables: INT_WIDTHS.map(|walk_width| {
-                let mut table = Vec::new();
-                for record in records {
-                    collect_defs_in_span(
-                        bytes,
-                        record.offset,
-                        record.offset + record.len,
-                        walk_width,
-                        &mut table,
-                    );
-                }
-                table
-            }),
+            eight: build(RefWidth::Eight),
+            four: build(RefWidth::Four),
         }
     }
 
     /// Build the tables by token-walking `bytes` as one contiguous token run.
     pub fn from_stream(bytes: &[u8]) -> Self {
+        let build = |walk_width| {
+            let mut table = Vec::new();
+            collect_defs_in_span(bytes, 0, bytes.len(), walk_width, &mut table);
+            table
+        };
         Self {
-            tables: INT_WIDTHS.map(|walk_width| {
-                let mut table = Vec::new();
-                collect_defs_in_span(bytes, 0, bytes.len(), walk_width, &mut table);
-                table
-            }),
+            eight: build(RefWidth::Eight),
+            four: build(RefWidth::Four),
         }
     }
 
     /// The table built for the specified stream width.
     pub fn for_width(&self, int_width: RefWidth) -> &[usize] {
         match int_width {
-            RefWidth::Eight => &self.tables[0],
-            RefWidth::Four => &self.tables[1],
+            RefWidth::Eight => &self.eight,
+            RefWidth::Four => &self.four,
         }
     }
 
