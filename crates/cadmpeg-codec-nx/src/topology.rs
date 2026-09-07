@@ -10,6 +10,7 @@
 
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::topology::Sense;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::framing::{
@@ -63,8 +64,8 @@ pub struct FaceFields {
     pub shell: u32,
     /// Surface-carrier reference.
     pub surface: u32,
-    /// Stored orientation byte.
-    pub sense: u8,
+    /// Decoded orientation.
+    pub sense: Sense,
 }
 
 /// Decoded fields needed from a sequentially framed EDGE record.
@@ -142,8 +143,8 @@ pub struct FinFields {
     pub other: u32,
     /// Curve carried by this fin.
     pub curve_xmt: u32,
-    /// Stored orientation byte.
-    pub sense: u8,
+    /// Decoded orientation.
+    pub sense: Sense,
 }
 
 /// Sequentially decoded VERTEX fields.
@@ -215,8 +216,11 @@ impl Node {
         let tolerance = View::f64_be_at(&self.bytes, at)?;
         at += 8;
         let refs = read_sequence_at(&self.bytes, &mut at, 5)?;
-        let sense = *self.bytes.get(at)?;
-        matches!(sense, b'+' | b'-').then_some(())?;
+        let sense = match self.bytes.get(at) {
+            Some(b'+') => Sense::Forward,
+            Some(b'-') => Sense::Reversed,
+            _ => return None,
+        };
         Some(FaceFields {
             attributes,
             tolerance,
@@ -279,8 +283,11 @@ impl Node {
         (self.kind == 17).then_some(())?;
         let mut at = 4 + self.shift;
         let refs = read_sequence_at(&self.bytes, &mut at, 9)?;
-        let sense = *self.bytes.get(at)?;
-        matches!(sense, b'+' | b'-').then_some(())?;
+        let sense = match self.bytes.get(at) {
+            Some(b'+') => Sense::Forward,
+            Some(b'-') => Sense::Reversed,
+            _ => return None,
+        };
         Some(FinFields {
             attributes: refs[0],
             loop_xmt: refs[1],

@@ -31,7 +31,7 @@ use cadmpeg_ir::ids::{
     RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex};
+use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use std::collections::{BTreeMap, BTreeSet};
@@ -460,7 +460,7 @@ pub(super) fn emit_topology(
             id: id.clone(),
             shell: shell.clone(),
             surface,
-            sense: sense(Some(fields.sense)),
+            sense: fields.sense,
             loops: Vec::new().into(),
             name: None,
             color: None,
@@ -730,7 +730,7 @@ pub(super) fn emit_topology(
             owner_loop: loop_id.clone(),
             edge,
             radial_next,
-            sense: sense(Some(fields.sense)),
+            sense: fields.sense,
             pcurves: pcurve
                 .into_iter()
                 .map(|pcurve| cadmpeg_ir::topology::PcurveUse {
@@ -1152,14 +1152,6 @@ fn orient_edge_range_for_geometry_with_budget(
         Some((range, true))
     } else {
         None
-    }
-}
-
-pub(crate) fn sense(byte: Option<u8>) -> Sense {
-    if byte == Some(b'-') {
-        Sense::Reversed
-    } else {
-        Sense::Forward
     }
 }
 
