@@ -462,7 +462,7 @@ pub(crate) fn parse_class_wrapper_with_userdata(
         true,
     )?;
     require_long(&uuid_chunk, CLASS_UUID)?;
-    if uuid_chunk.declared_end() - uuid_chunk.body_start != class_uuid_body::LEN {
+    if uuid_chunk.declared_end() - uuid_chunk.body().start != class_uuid_body::LEN {
         return Err(FramingError::structural(
             uuid_chunk.header_start,
             "class UUID chunk must have a 20-byte body",
@@ -1477,7 +1477,7 @@ pub(crate) fn parse_object_record(
     offset = class.body().start;
     let uuid_chunk = child(bytes, offset, class.body().end, archive, true)?;
     require_long(&uuid_chunk, CLASS_UUID)?;
-    if uuid_chunk.declared_end() - uuid_chunk.body_start != class_uuid_body::LEN {
+    if uuid_chunk.declared_end() - uuid_chunk.body().start != class_uuid_body::LEN {
         return Err(FramingError::structural(
             uuid_chunk.header_start,
             "class UUID chunk must have a 20-byte body",
