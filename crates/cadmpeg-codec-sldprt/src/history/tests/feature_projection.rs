@@ -526,9 +526,7 @@ fn scene_class_binds_only_its_explicit_source_identifier() {
         configurations: Vec::new(),
         features: vec![first, second, singleton],
     }];
-    let scene = crate::tessellation::SceneFeatureClasses {
-        by_source: HashMap::from([("153".into(), "moDirectionLight_c".into())]),
-    };
+    let scene = HashMap::from([("153".into(), "moDirectionLight_c".into())]);
 
     enrich_scene_classes(&mut histories, &scene);
 
