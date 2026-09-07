@@ -78,6 +78,8 @@ mod pmi_display_text_wire {
         display_text_offset: Option<u64>,
     }
 
+    // Serde passes the field by reference to this adapter.
+    #[allow(clippy::ref_option)]
     pub(super) fn serialize<S: Serializer>(
         display: &Option<(String, u64)>,
         serializer: S,
