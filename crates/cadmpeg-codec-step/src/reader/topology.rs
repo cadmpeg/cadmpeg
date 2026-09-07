@@ -2510,90 +2510,59 @@ fn build_one(
                                 )));
                             Vec::new()
                         }
-                    } else {
-                        let associated = match (surface_step, edge.curve()) {
-                            (Some(surface_step), Some(curve)) => {
-                                associated_pcurves(curve, surface_step, exchange, decoded_pcurves)
-                            }
-                            _ => {
-                                losses.push(StepLossCode::EdgeNoSurfaceOrCurveForPcurve.note(format!(
-                                        "edge #{} has no decoded surface or curve carrier, so its coedge has no pcurve",
-                                        o.edge
-                                    )));
-                                Vec::new()
-                            }
-                        };
-                        match associated.as_slice() {
-                            [] => associated
-                                .into_iter()
-                                .map(|pcurve| (pcurve, None))
-                                .collect(),
-                            candidates => {
-                                let selection = surface_step.map(|surface| {
-                                    select_associated_pcurve(
-                                        ir,
-                                        exchange,
+                    } else if let (Some(surface), Some(curve)) = (surface_step, edge.curve()) {
+                        let associated =
+                            associated_pcurves(curve, surface, exchange, decoded_pcurves);
+                        if associated.is_empty() {
+                            Vec::new()
+                        } else {
+                            match select_associated_pcurve(
+                                ir,
+                                exchange,
+                                surface,
+                                edge,
+                                vdefs,
+                                point_positions,
+                                &associated,
+                            ) {
+                                Ok(selected) => {
+                                    admissions.push(PcurveAdmission {
+                                        curve,
                                         surface,
-                                        edge,
-                                        vdefs,
-                                        point_positions,
-                                        candidates,
-                                    )
-                                });
-                                match selection {
-                                    Some(Ok(selected)) => {
-                                        let (Some(curve), Some(surface)) =
-                                            (edge.curve(), surface_step)
-                                        else {
-                                            unreachable!(
-                                                "successful pcurve selection has one curve and surface"
-                                            )
-                                        };
-                                        admissions.push(PcurveAdmission {
-                                            curve,
-                                            surface,
-                                            coedge_use: use_step,
-                                        });
-                                        vec![(selected.id, selected.parameter_range)]
-                                    }
-                                    Some(Err(PcurveSelectionFailure::Locus)) => {
-                                        let (Some(curve), Some(surface)) =
-                                            (edge.curve(), surface_step)
-                                        else {
-                                            unreachable!(
-                                                "a locus failure has one curve and surface"
-                                            )
-                                        };
-                                        losses.push(StepLossCode::PcurveLocusDiscontinuous.note(
-                                            format!(
+                                        coedge_use: use_step,
+                                    });
+                                    vec![(selected.id, selected.parameter_range)]
+                                }
+                                Err(failure) => {
+                                    let note = match failure {
+                                        PcurveSelectionFailure::NotUnique { count } =>
+                                            StepLossCode::PcurveAssociationAmbiguous.note(format!(
+                                                "curve #{curve} associates {count} pcurves with surface #{surface}; Part 42 provides no non-seam selector, so the coedge has no pcurve"
+                                            )),
+                                        PcurveSelectionFailure::Carrier =>
+                                            StepLossCode::PcurveCandidatesCarrierUnresolved.note(format!(
+                                                "coedge use #{use_step} has one pcurve candidate but its decoded surface, pcurve, or vertex point carrier is unresolved; the coedge has no pcurve"
+                                            )),
+                                        PcurveSelectionFailure::Endpoint =>
+                                            StepLossCode::PcurveEndpointsDiscontinuous.note(format!(
+                                                "curve #{curve} has one optional pcurve on surface #{surface} whose mapped endpoints are not continuous with the edge vertices; the pcurve is omitted"
+                                            )),
+                                        PcurveSelectionFailure::Locus =>
+                                            StepLossCode::PcurveLocusDiscontinuous.note(format!(
                                                 "curve #{curve} has one endpoint-continuous pcurve on surface #{surface} whose bounded model-space locus or direction witness fails; the pcurve is omitted"
-                                            ),
-                                        ));
-                                        Vec::new()
-                                    }
-                                    Some(Err(_)) | None => {
-                                        let n = candidates.len();
-                                        let note = match (edge.curve(), surface_step, n) {
-                                                (Some(curve), Some(surface), 1) => {
-                                                    StepLossCode::PcurveEndpointsDiscontinuous.note(format!(
-                                                        "curve #{curve} has one optional pcurve on surface #{surface} whose mapped endpoints are not continuous with the edge vertices; the pcurve is omitted"
-                                                    ))
-                                                }
-                                                (Some(curve), Some(surface), _) => {
-                                                    StepLossCode::PcurveAssociationAmbiguous.note(format!(
-                                                        "curve #{curve} associates {n} pcurves with surface #{surface}; Part 42 provides no non-seam selector, so the coedge has no pcurve"
-                                                    ))
-                                                }
-                                                _ => StepLossCode::PcurveCandidatesCarrierUnresolved.note(format!(
-                                                        "coedge use #{use_step} has {n} pcurve candidates but its source surface or curve carrier is unresolved; no unique endpoint-continuous pcurve selects one, so the coedge has no pcurve"
-                                                    )),
-                                            };
-                                        losses.push(note);
-                                        Vec::new()
-                                    }
+                                            )),
+                                    };
+                                    losses.push(note);
+                                    Vec::new()
                                 }
                             }
                         }
+                    } else {
+                        losses.push(StepLossCode::EdgeNoSurfaceOrCurveForPcurve.note(format!(
+                            "edge #{} has no decoded surface or curve carrier, so its coedge has no pcurve",
+                            o.edge
+                        )));
+                        Vec::new()
                     };
                     coedge_ids.push(cid.clone());
                     coedges.push(Coedge {
@@ -3337,7 +3306,7 @@ struct SelectedPcurve {
 }
 
 enum PcurveSelectionFailure {
-    NotUnique,
+    NotUnique { count: usize },
     Carrier,
     Endpoint,
     Locus,
@@ -3365,9 +3334,12 @@ fn select_associated_pcurve(
     point_positions: &CarrierIndex,
     candidates: &[PcurveId],
 ) -> Result<SelectedPcurve, PcurveSelectionFailure> {
-    if candidates.len() != 1 {
-        return Err(PcurveSelectionFailure::NotUnique);
-    }
+    let [candidate] = candidates else {
+        return Err(PcurveSelectionFailure::NotUnique {
+            count: candidates.len(),
+        });
+    };
+    let candidate = candidate.clone();
     let surface_identity = StepIdentity::data("surface", surface_step);
     let surface = ir
         .model
@@ -3378,10 +3350,6 @@ fn select_associated_pcurve(
         .ok_or(PcurveSelectionFailure::Carrier)?;
     let surface_id = SurfaceId::mint(surface_identity).expect("identity grammar");
     let index = ModelIndex::new(ir);
-    let candidate = candidates
-        .first()
-        .cloned()
-        .ok_or(PcurveSelectionFailure::Carrier)?;
     let pcurve = ir
         .model
         .pcurves
