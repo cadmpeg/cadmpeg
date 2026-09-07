@@ -592,14 +592,14 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
     assert_eq!(
         double
             .objects()
-            .map(|(token, _, _)| token.value())
+            .map(|(token, (), _)| token.value())
             .collect::<Vec<_>>(),
         [631, 632]
     );
     assert_eq!(
         double
             .objects()
-            .map(|(_, _, offset)| offset)
+            .map(|(_, (), offset)| offset)
             .collect::<Vec<_>>(),
         [110, 124]
     );
@@ -622,14 +622,14 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
     assert_eq!(
         count_three
             .objects()
-            .map(|(token, _, _)| token.value())
+            .map(|(token, (), _)| token.value())
             .collect::<Vec<_>>(),
         [719, 720]
     );
     assert_eq!(
         count_three
             .objects()
-            .map(|(_, _, offset)| offset)
+            .map(|(_, (), offset)| offset)
             .collect::<Vec<_>>(),
         [110, 118]
     );
