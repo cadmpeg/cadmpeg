@@ -7820,7 +7820,7 @@ impl ActClassTail {
 pub struct ActChannelGroup {
     pub record_index_offset: u64,
     pub entity_id_offset: Option<u64>,
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     pub channels: BTreeMap<String, Located<DesignGuidText>>,
     pub class_tail: Option<ActClassTail>,
 }
@@ -7988,7 +7988,9 @@ impl TryFrom<ActEntitySerde> for ActEntity {
             (Some(class_tag), Some(record_index_offset)) => Some(ActChannelGroup {
                 record_index_offset,
                 entity_id_offset: wire.channel_entity_id_offset,
-                class_tag,
+                class_tag: class_tag
+                    .try_into()
+                    .map_err(|error| format!("channel_class_tag: {error}"))?,
                 channels: wire
                     .channels
                     .into_iter()

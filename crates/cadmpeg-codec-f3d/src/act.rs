@@ -452,7 +452,7 @@ fn merge_entities(
             let attached = ActChannelGroup {
                 record_index_offset: group.record_index_offset as u64,
                 entity_id_offset: group.entity_id.as_ref().map(|id| id.offset as u64),
-                class_tag: group.class_tag,
+                class_tag: group.class_tag.try_into().map_err(CodecError::Malformed)?,
                 channels: group.channels,
                 class_tail: group.class_tail,
             };
@@ -472,7 +472,7 @@ fn merge_entities(
                     membership: ActEntityMembership::GroupOnly(ActChannelGroup {
                         record_index_offset: group.record_index_offset as u64,
                         entity_id_offset: Some(entity_id.offset as u64),
-                        class_tag: group.class_tag,
+                        class_tag: group.class_tag.try_into().map_err(CodecError::Malformed)?,
                         channels: group.channels,
                         class_tail: group.class_tail,
                     }),

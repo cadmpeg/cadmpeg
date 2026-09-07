@@ -935,8 +935,7 @@ fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
         });
         let valid_group = match entity.channel_group() {
             Some(group) => {
-                valid_dynamic_class_tag(&group.class_tag)
-                    && valid_class_tail
+                valid_class_tail
                     && !group.channels.is_empty()
                     && group.channels.len() <= 8
                     && group
