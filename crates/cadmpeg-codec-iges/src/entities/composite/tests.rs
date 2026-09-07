@@ -1023,8 +1023,11 @@ fn concatenation_accepts_exact_active_nurbs_subranges() {
         trim_nurbs_to_interval(&curve, [0.0, 1.0]).expect("first active NURBS interval is exact");
     let second =
         trim_nurbs_to_interval(&curve, [1.0, 2.0]).expect("second active NURBS interval is exact");
-    let concatenated = concatenate_nurbs(vec![(first, [0.0, 1.0]), (second, [1.0, 2.0])], None)
-        .expect("evaluated active endpoints join exactly");
+    let concatenated = concatenate_nurbs(
+        vec![(first, [0.0, 1.0], ()), (second, [1.0, 2.0], ())],
+        None,
+    )
+    .expect("evaluated active endpoints join exactly");
 
     for parameter in [0.25, 0.75, 1.25, 1.75] {
         let before = cadmpeg_ir::eval::nurbs_curve_point(
@@ -1104,8 +1107,9 @@ fn concatenation_preserves_degree_zero_spans() {
         [0.0, 2.0],
     );
     let second = (test_nurbs(0, vec![0.0, 1.0], vec![point], None), [0.0, 1.0]);
-    let concatenated = concatenate_nurbs(vec![first, second], None)
-        .expect("degree-zero spans with an exact join concatenate");
+    let concatenated =
+        concatenate_nurbs(vec![(first.0, first.1, ()), (second.0, second.1, ())], None)
+            .expect("degree-zero spans with an exact join concatenate");
 
     assert_eq!(concatenated.nurbs.degree(), 0);
     assert_eq!(concatenated.nurbs.knots(), vec![0.0, 1.0, 2.0, 3.0]);
@@ -1259,11 +1263,19 @@ fn mixed_degree_composition_accepts_a_multi_span_linear_child() {
             );
         }
     }
-    let concatenated = concatenate_nurbs(children, None)
-        .expect("mixed-degree composite should have an exact NURBS carrier");
+    let concatenated = concatenate_nurbs(
+        children
+            .into_iter()
+            .map(|(curve, range)| (curve, range, ()))
+            .collect(),
+        None,
+    )
+    .expect("mixed-degree composite should have an exact NURBS carrier");
     assert_eq!(concatenated.nurbs.degree(), 3);
     assert_eq!(
-        concatenated.boundaries,
+        std::iter::once(0.0)
+            .chain(concatenated.segments.into_iter().map(|segment| segment.end))
+            .collect::<Vec<_>>(),
         vec![0.0, 1.0, 3.0, 4.0, 5.0, 7.0, 8.0]
     );
 }
@@ -1285,10 +1297,11 @@ fn concatenated_range_is_exactly_the_canonical_knot_domain() {
     let second = line(1.0e9, 1.0e9 + 0.1, 1.0);
 
     let concatenated =
-        concatenate_nurbs(vec![first, second], None).expect("joined lines should concatenate");
+        concatenate_nurbs(vec![(first.0, first.1, ()), (second.0, second.1, ())], None)
+            .expect("joined lines should concatenate");
 
     assert_eq!(
-        concatenated.boundaries.last(),
+        Some(&concatenated.segments.end()),
         concatenated.nurbs.knots().last()
     );
 }

@@ -48,8 +48,8 @@ fn concatenation_accepts_analytic_arcs_with_ulp_endpoint_rounding() {
     );
     concatenate_nurbs(
         vec![
-            (first, [0.0, 3.141_592_560_240_814_3]),
-            (second, [0.0, 3.141_592_746_938_772]),
+            (first, [0.0, 3.141_592_560_240_814_3], ()),
+            (second, [0.0, 3.141_592_746_938_772], ()),
         ],
         Some(0.001),
     )

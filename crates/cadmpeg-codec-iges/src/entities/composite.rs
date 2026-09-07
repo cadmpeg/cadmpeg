@@ -447,10 +447,32 @@ fn elevate_bezier_homogeneous(
 }
 
 #[derive(Debug)]
-struct ConcatenatedNurbs {
+struct ConcatenatedNurbs<T> {
     nurbs: NurbsCurve,
-    boundaries: Vec<f64>,
-    child_starts: Vec<f64>,
+    segments: ConcatenatedSegments<T>,
+}
+
+#[derive(Debug)]
+struct ConcatenatedSegment<T> {
+    child_start: f64,
+    end: f64,
+    child: T,
+}
+
+#[derive(Debug)]
+struct ConcatenatedSegments<T> {
+    preceding: Vec<ConcatenatedSegment<T>>,
+    last: ConcatenatedSegment<T>,
+}
+
+impl<T> ConcatenatedSegments<T> {
+    fn end(&self) -> f64 {
+        self.last.end
+    }
+
+    fn into_iter(self) -> impl Iterator<Item = ConcatenatedSegment<T>> {
+        self.preceding.into_iter().chain(std::iter::once(self.last))
+    }
 }
 
 // This conversion consumes the input carrier at the typed construction boundary.
@@ -767,7 +789,7 @@ fn elevate_nurbs_to_degree(
         ) else {
             return false;
         };
-        pieces.push((piece, [start, end]));
+        pieces.push((piece, [start, end], ()));
     }
     let Some(concatenated) = concatenate_nurbs(pieces, join_tolerance) else {
         return false;
@@ -798,26 +820,26 @@ fn elevate_nurbs_to_degree(
     true
 }
 
-fn concatenate_nurbs(
-    mut children: Vec<(NurbsCurve, [f64; 2])>,
+fn concatenate_nurbs<T>(
+    mut children: Vec<(NurbsCurve, [f64; 2], T)>,
     join_tolerance: Option<f64>,
-) -> Option<ConcatenatedNurbs> {
+) -> Option<ConcatenatedNurbs<T>> {
     if children.is_empty() {
         return None;
     }
     let degree = children
         .iter()
-        .map(|(curve, _)| curve.degree())
+        .map(|(curve, _, _)| curve.degree())
         .max()
         .unwrap_or_default();
-    for (curve, interval) in &mut children {
+    for (curve, interval, _) in &mut children {
         if curve.degree() < degree
             && !elevate_nurbs_to_degree(curve, *interval, degree, join_tolerance)
         {
             return None;
         }
     }
-    if children.iter().any(|(curve, interval)| {
+    if children.iter().any(|(curve, interval, _)| {
         let Some(first) = curve.knots().first() else {
             return true;
         };
@@ -832,10 +854,9 @@ fn concatenate_nurbs(
     let mut knots = Vec::new();
     let mut control_points = Vec::new();
     let mut weights = Vec::new();
-    let mut boundaries = vec![0.0];
-    let mut child_starts = Vec::with_capacity(children.len());
+    let mut segments = Vec::with_capacity(children.len());
     let mut cursor = 0.0;
-    for (child_index, (curve, interval)) in children.into_iter().enumerate() {
+    for (child_index, (curve, interval, child)) in children.into_iter().enumerate() {
         let child_start = interval[0];
         let child_end = interval[1];
         let shifted_knots = curve
@@ -889,12 +910,15 @@ fn concatenate_nurbs(
                 weights.extend_from_slice(&child_weights[1..]);
             }
         }
-        child_starts.push(child_start);
         cursor += child_end - child_start;
         if !cursor.is_finite() {
             return None;
         }
-        boundaries.push(cursor);
+        segments.push(ConcatenatedSegment {
+            child_start,
+            end: cursor,
+            child,
+        });
     }
     let rational = weights
         .first()
@@ -921,10 +945,13 @@ fn concatenate_nurbs(
         nurbs.weights(),
         cursor,
     )?;
+    let last = segments.pop()?;
     Some(ConcatenatedNurbs {
         nurbs,
-        boundaries,
-        child_starts,
+        segments: ConcatenatedSegments {
+            preceding: segments,
+            last,
+        },
     })
 }
 
@@ -1020,8 +1047,12 @@ fn bounded_nurbs_for_id(
                 }
             })
             .collect::<Option<Vec<_>>>()?;
+        let children = children
+            .into_iter()
+            .map(|(curve, range)| (curve, range, ()))
+            .collect();
         let concatenated = concatenate_nurbs(children, join_tolerance)?;
-        let range = [0.0, *concatenated.boundaries.last()?];
+        let range = [0.0, concatenated.segments.end()];
         return Some((concatenated.nurbs, range));
     }
     let edge = bounded_edge_for_curve(ir, curve_id, join_tolerance.unwrap_or(0.0), index)?;
@@ -1599,7 +1630,10 @@ fn project_with_type_130_policy(
         };
         let Some(children) = curve_ids
             .iter()
-            .map(|curve_id| bounded_nurbs(ir, &index, curve_id, join_tolerance, ctx))
+            .map(|curve_id| {
+                let (curve, range) = bounded_nurbs(ir, &index, curve_id, join_tolerance, ctx)?;
+                Some((curve, range, curve_id.clone()))
+            })
             .collect::<Option<Vec<_>>>()
         else {
             if let Some(edge) = project_degraded_composite(
@@ -1617,11 +1651,8 @@ fn project_with_type_130_policy(
             }
             continue;
         };
-        let Some(ConcatenatedNurbs {
-            nurbs,
-            boundaries,
-            child_starts,
-        }) = concatenate_nurbs(children, Some(join_tolerance))
+        let Some(ConcatenatedNurbs { nurbs, segments }) =
+            concatenate_nurbs(children, Some(join_tolerance))
         else {
             if let Some(edge) = project_degraded_composite(
                 ir,
@@ -1639,22 +1670,7 @@ fn project_with_type_130_policy(
             continue;
         };
         let degree = nurbs.degree();
-        let Some(cursor) = boundaries.last().copied() else {
-            if let Some(edge) = project_degraded_composite(
-                ir,
-                &mut index,
-                entry,
-                &curve_ids,
-                join_tolerance,
-                "its parameter range is empty",
-                &mut losses,
-            ) {
-                wire_edges.push(edge);
-                decoded.insert(entry.sequence);
-                continue;
-            }
-            continue;
-        };
+        let cursor = segments.end();
         let Some(start) = cadmpeg_ir::eval::nurbs_curve_point(
             degree,
             nurbs.knots(),
@@ -1757,6 +1773,15 @@ fn project_with_type_130_policy(
             },
             [(start_vertex, start), (end_vertex, end)],
         );
+        let mut boundaries = vec![0.0];
+        let mut components = Vec::new();
+        for segment in segments.into_iter() {
+            boundaries.push(segment.end);
+            components.push(cadmpeg_ir::geometry::CompoundComponent {
+                parameter: segment.child_start,
+                component: segment.child,
+            });
+        }
         let _attached = ir.model.add_procedural_curve(
             curve_id,
             ProceduralCurve::new(
@@ -1764,16 +1789,7 @@ fn project_with_type_130_policy(
                     .expect("identity grammar"),
                 ProceduralCurveDefinition::Compound {
                     parameters: boundaries,
-                    components: child_starts
-                        .into_iter()
-                        .zip(curve_ids)
-                        .map(
-                            |(parameter, component)| cadmpeg_ir::geometry::CompoundComponent {
-                                parameter,
-                                component,
-                            },
-                        )
-                        .collect(),
+                    components,
                 },
             ),
         );
