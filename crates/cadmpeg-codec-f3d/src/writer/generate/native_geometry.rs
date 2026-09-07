@@ -2426,18 +2426,13 @@ fn encode_native_skin_surface(
     native_enum(bytes, construction.surface_direction);
     native_i64(bytes, construction.count);
     native_f64(bytes, construction.parameter);
-    native_i64(bytes, construction.inner_count);
+    native_i64(bytes, construction.layout.inner_count());
     match &construction.layout {
         SkinSurfaceLayout::Profiles {
             profiles,
             path,
             tail,
         } => {
-            if usize::try_from(construction.inner_count).ok() != Some(profiles.len()) {
-                return Err(CodecError::Malformed(
-                    "skin profile count conflicts with its inner count".into(),
-                ));
-            }
             for profile in profiles {
                 native_i64(bytes, profile.type_code);
                 let curve = target
@@ -2469,6 +2464,7 @@ fn encode_native_skin_surface(
             first_tail,
             secondary_curve,
             second_tail,
+            ..
         } => {
             native_nurbs_curve(bytes, &native_loft_curve(target, curve)?)?;
             native_loft_subdata(bytes, subdata);

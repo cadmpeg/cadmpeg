@@ -5856,6 +5856,8 @@ pub enum SkinSurfaceLayout {
     },
     /// Compact curve/subdata form.
     Compact {
+        /// Native compact-layout inner integer.
+        inner_count: i64,
         /// Primary curve.
         curve: CurveId,
         /// Native loft subdata.
@@ -5867,6 +5869,125 @@ pub enum SkinSurfaceLayout {
         /// Final compact-layout integer.
         second_tail: i64,
     },
+}
+
+impl SkinSurfaceLayout {
+    /// Native inner count, derived from the profile list in the expanded form.
+    pub fn inner_count(&self) -> i64 {
+        match self {
+            Self::Profiles { profiles, .. } => profiles.len() as i64,
+            Self::Compact { inner_count, .. } => *inner_count,
+        }
+    }
+}
+
+mod skin_surface_layout_wire {
+    use super::{CurveId, LoftSubdata, SkinSurfaceLayout, SkinSurfaceProfile};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Serialize, Deserialize)]
+    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+    #[serde(tag = "kind", rename_all = "snake_case")]
+    enum Layout<P, C, S> {
+        Profiles {
+            profiles: P,
+            path: C,
+            tail: [i64; 2],
+        },
+        Compact {
+            curve: C,
+            subdata: S,
+            first_tail: i64,
+            secondary_curve: C,
+            second_tail: i64,
+        },
+    }
+
+    #[derive(Deserialize)]
+    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+    pub(super) struct ReadWire {
+        inner_count: i64,
+        layout: Layout<Vec<SkinSurfaceProfile>, CurveId, LoftSubdata>,
+    }
+
+    pub fn serialize<S: Serializer>(
+        value: &SkinSurfaceLayout,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WriteWire<'a> {
+            inner_count: i64,
+            layout: Layout<&'a [SkinSurfaceProfile], &'a CurveId, &'a LoftSubdata>,
+        }
+        let layout = match value {
+            SkinSurfaceLayout::Profiles {
+                profiles,
+                path,
+                tail,
+            } => Layout::Profiles {
+                profiles: profiles.as_slice(),
+                path,
+                tail: *tail,
+            },
+            SkinSurfaceLayout::Compact {
+                curve,
+                subdata,
+                first_tail,
+                secondary_curve,
+                second_tail,
+                ..
+            } => Layout::Compact {
+                curve,
+                subdata,
+                first_tail: *first_tail,
+                secondary_curve,
+                second_tail: *second_tail,
+            },
+        };
+        WriteWire {
+            inner_count: value.inner_count(),
+            layout,
+        }
+        .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<SkinSurfaceLayout, D::Error> {
+        let wire = ReadWire::deserialize(deserializer)?;
+        Ok(match wire.layout {
+            Layout::Profiles {
+                profiles,
+                path,
+                tail,
+            } => {
+                if usize::try_from(wire.inner_count).ok() != Some(profiles.len()) {
+                    return Err(serde::de::Error::custom(
+                        "skin inner_count must match profiles",
+                    ));
+                }
+                SkinSurfaceLayout::Profiles {
+                    profiles,
+                    path,
+                    tail,
+                }
+            }
+            Layout::Compact {
+                curve,
+                subdata,
+                first_tail,
+                secondary_curve,
+                second_tail,
+            } => SkinSurfaceLayout::Compact {
+                inner_count: wire.inner_count,
+                curve,
+                subdata,
+                first_tail,
+                secondary_curve,
+                second_tail,
+            },
+        })
+    }
 }
 
 /// Complete native `skin_spl_sur` construction graph.
@@ -5883,9 +6004,12 @@ pub struct SkinSurfaceConstruction {
     pub count: i64,
     /// Native leading scalar.
     pub parameter: f64,
-    /// Native inner count.
-    pub inner_count: i64,
     /// Structurally selected skin payload.
+    #[serde(flatten, with = "skin_surface_layout_wire")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "skin_surface_layout_wire::ReadWire")
+    )]
     pub layout: SkinSurfaceLayout,
     /// Stored direction vector.
     pub direction: Vector3,

@@ -876,12 +876,11 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             };
             let layout_valid = match &construction.layout {
                 crate::geometry::SkinSurfaceLayout::Profiles { profiles, .. } => {
-                    usize::try_from(construction.inner_count).ok() == Some(profiles.len())
-                        && profiles.iter().all(|profile| {
-                            let table = &profile.data.subdata;
-                            table.row_values_are_finite()
-                                && profile.data.direction.as_ref().is_none_or(&vector_finite)
-                        })
+                    profiles.iter().all(|profile| {
+                        let table = &profile.data.subdata;
+                        table.row_values_are_finite()
+                            && profile.data.direction.as_ref().is_none_or(&vector_finite)
+                    })
                 }
                 crate::geometry::SkinSurfaceLayout::Compact { subdata, .. } => {
                     subdata.row_values_are_finite()

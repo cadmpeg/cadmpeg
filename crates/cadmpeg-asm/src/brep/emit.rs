@@ -1242,6 +1242,7 @@ fn emit_skin_surface(
     let embedded = *embedded;
     let layout = match embedded.layout {
         EmbeddedSkinSurfaceLayout::Compact {
+            inner_count,
             curve,
             subdata,
             first_tail,
@@ -1266,6 +1267,7 @@ fn emit_skin_surface(
                 source_object: None,
             });
             cadmpeg_ir::geometry::SkinSurfaceLayout::Compact {
+                inner_count,
                 curve: curve_id,
                 subdata,
                 first_tail,
@@ -1338,7 +1340,6 @@ fn emit_skin_surface(
             surface_direction: embedded.surface_direction,
             count: embedded.count,
             parameter: embedded.parameter,
-            inner_count: embedded.inner_count,
             layout,
             direction: embedded.direction,
             trailing_parameter: embedded.trailing_parameter,

@@ -1117,6 +1117,8 @@ pub enum EmbeddedSkinSurfaceLayout {
     },
     /// The compact two-curve form.
     Compact {
+        /// Native compact-layout inner integer.
+        inner_count: i64,
         /// The first embedded curve.
         curve: NurbsCurve,
         /// Neutral subdata fields of the first curve.
@@ -1142,8 +1144,6 @@ pub struct EmbeddedSkinSurface {
     pub count: i64,
     /// The parameter serialized after the count.
     pub parameter: f64,
-    /// The inner profile count.
-    pub inner_count: i64,
     /// The layout-discriminated body.
     pub layout: EmbeddedSkinSurfaceLayout,
     /// The skin direction vector.
@@ -2416,6 +2416,7 @@ fn skin_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
         cur.set_pos(secondary_end);
         let second_tail = cur.take_long()?;
         EmbeddedSkinSurfaceLayout::Compact {
+            inner_count,
             curve,
             subdata,
             first_tail,
@@ -2472,7 +2473,6 @@ fn skin_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
             surface_direction,
             count,
             parameter,
-            inner_count,
             layout,
             direction: Vector3::new(direction[0], direction[1], direction[2]),
             trailing_parameter,
