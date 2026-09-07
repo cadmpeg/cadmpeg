@@ -106,8 +106,7 @@ pub(crate) enum DimensionFamily {
     V2 {
         default_text: String,
         points: Vec<[f64; 2]>,
-        angle: Option<f64>,
-        radius: Option<f64>,
+        angular_radius: Option<f64>,
     },
     /// Modern dimension referencing a dimstyle UUID.
     Modern { dimstyle_id: Uuid },
@@ -851,8 +850,7 @@ fn decode_v2(
     let annotation = v2_annotation_direct(&mut reader, scale)?;
     let kind = annotation.kind;
     let points = &annotation.points;
-    let mut v2_angle = None;
-    let mut v2_radius = None;
+    let mut angular_radius = None;
     let (plane, definition, user_text_point, use_default_text_point, measurement) = if class
         == V2_LINEAR
     {
@@ -938,8 +936,7 @@ fn decode_v2(
                 "invalid V2 angular value",
             ));
         }
-        v2_angle = Some(angle);
-        v2_radius = Some(radius);
+        angular_radius = Some(radius);
         let user_text_point = points.get(2).copied().unwrap_or([0.0, 0.0]);
         (
             annotation.plane,
@@ -975,8 +972,7 @@ fn decode_v2(
         family: DimensionFamily::V2 {
             default_text: annotation.default_text,
             points: annotation.points,
-            angle: v2_angle,
-            radius: v2_radius,
+            angular_radius,
         },
         plane,
         horizontal_direction: world_horizontal_in_plane(&plane),
@@ -1490,8 +1486,7 @@ pub(crate) fn project(
         DimensionFamily::V2 {
             default_text,
             points,
-            angle,
-            radius,
+            angular_radius,
         } => {
             properties.insert("v2_default_text".to_string(), default_text.clone());
             properties.insert(
@@ -1502,14 +1497,13 @@ pub(crate) fn project(
                     .collect::<Vec<_>>()
                     .join(";"),
             );
-            if let Some(angle) = *angle {
+            if let Some(radius) = *angular_radius {
+                let angle = dimension.measurement;
                 properties.insert("v2_angle_radians".to_string(), angle.to_string());
                 properties.insert(
                     "v2_numeric_value_degrees".to_string(),
                     (angle * 180.0 / std::f64::consts::PI).to_string(),
                 );
-            }
-            if let Some(radius) = *radius {
                 properties.insert("v2_radius".to_string(), radius.to_string());
             }
         }
@@ -1881,11 +1875,11 @@ pub(crate) mod tests {
         )
         .expect("V2 angular dimension");
         assert_eq!(angular.measurement, 1.25);
-        let DimensionFamily::V2 { angle, radius, .. } = angular.family else {
+        let DimensionFamily::V2 { angular_radius, .. } = angular.family else {
             panic!("V2 angular dimension");
         };
-        assert_eq!(angle, Some(1.25));
-        assert_eq!(radius, Some(19.0));
+        assert_eq!(angular_radius.map(|_| angular.measurement), Some(1.25));
+        assert_eq!(angular_radius, Some(19.0));
         assert!(!angular.use_default_text_point);
         assert_eq!(angular.user_text_point, [4.0, 6.0]);
     }
