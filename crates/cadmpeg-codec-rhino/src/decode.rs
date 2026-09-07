@@ -5733,23 +5733,26 @@ fn full_source_attributes(scan: &Scan<'_>) -> BTreeMap<String, String> {
         attributes.insert("current_layer".to_string(), current.to_string());
     }
     if let Some(current) = settings.current_material {
-        attributes.insert("current_material".to_string(), current.to_string());
-    }
-    if let Some(current) = settings.current_material_source {
-        attributes.insert("current_material_source".to_string(), current.to_string());
+        attributes.insert("current_material".to_string(), current.value.to_string());
+        attributes.insert(
+            "current_material_source".to_string(),
+            current.source.to_string(),
+        );
     }
     if let Some(current) = settings.current_color {
         attributes.insert(
             "current_color".to_string(),
             current
+                .value
                 .iter()
                 .map(u8::to_string)
                 .collect::<Vec<_>>()
                 .join(","),
         );
-    }
-    if let Some(current) = settings.current_color_source {
-        attributes.insert("current_color_source".to_string(), current.to_string());
+        attributes.insert(
+            "current_color_source".to_string(),
+            current.source.to_string(),
+        );
     }
     if let Some(current) = settings.current_wire_density {
         attributes.insert("current_wire_density".to_string(), current.to_string());

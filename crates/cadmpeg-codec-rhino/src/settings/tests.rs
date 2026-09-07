@@ -1103,8 +1103,18 @@ fn parses_selector_widths_and_skips_direct_suffix() {
         ArchiveVersion::V8,
     )
     .expect("required invariant");
-    assert_eq!(settings_value.current_material, Some(42));
-    assert_eq!(settings_value.current_material_source, Some(3));
+    assert_eq!(
+        settings_value
+            .current_material
+            .map(|selection| selection.value),
+        Some(42)
+    );
+    assert_eq!(
+        settings_value
+            .current_material
+            .map(|selection| selection.source),
+        Some(3)
+    );
 
     let mut color_data = vec![1, 2, 3, 4];
     color_data.extend(2_i32.to_le_bytes());
@@ -1118,8 +1128,18 @@ fn parses_selector_widths_and_skips_direct_suffix() {
         ArchiveVersion::V8,
     )
     .expect("required invariant");
-    assert_eq!(settings_value.current_color, Some([1, 2, 3, 4]));
-    assert_eq!(settings_value.current_color_source, Some(2));
+    assert_eq!(
+        settings_value
+            .current_color
+            .map(|selection| selection.value),
+        Some([1, 2, 3, 4])
+    );
+    assert_eq!(
+        settings_value
+            .current_color
+            .map(|selection| selection.source),
+        Some(2)
+    );
 
     for (typecode, value) in [
         (0xa000_0038, 3),
@@ -1147,8 +1167,18 @@ fn current_material_accepts_the_source_reader_i32_range() {
     settings::parse_setting(&data, &record, &mut settings_value, ArchiveVersion::V8)
         .expect("source reader accepts every signed i32 material index");
 
-    assert_eq!(settings_value.current_material, Some(-2));
-    assert_eq!(settings_value.current_material_source, Some(3));
+    assert_eq!(
+        settings_value
+            .current_material
+            .map(|selection| selection.value),
+        Some(-2)
+    );
+    assert_eq!(
+        settings_value
+            .current_material
+            .map(|selection| selection.source),
+        Some(3)
+    );
 }
 
 #[test]
