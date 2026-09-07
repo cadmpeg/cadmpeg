@@ -695,15 +695,28 @@ fn shut_lining_record(shut_lining: &crate::mesh_modifiers::ShutLiningModifier) -
     }
 }
 
-#[derive(Debug, Serialize)]
-struct LayerPerViewportPresentationRecord {
-    viewport_uuid: String,
-    settings_mask: u32,
-    color: Option<[u8; 4]>,
-    plot_color: Option<[u8; 4]>,
-    plot_weight_mm: Option<f64>,
-    visible: Option<u8>,
-    persistent_visibility: Option<u8>,
+impl Serialize for settings::LayerPerViewportSettings {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+
+        let mut record = serializer.serialize_struct("LayerPerViewportPresentationRecord", 7)?;
+        record.serialize_field("viewport_uuid", &self.viewport_id.to_string())?;
+        record.serialize_field("settings_mask", &self.settings_mask())?;
+        record.serialize_field("color", &self.color)?;
+        record.serialize_field("plot_color", &self.plot_color)?;
+        record.serialize_field("plot_weight_mm", &self.plot_weight_mm)?;
+        record.serialize_field(
+            "visible",
+            &self.visible.map(settings::LayerVisibility::as_u8),
+        )?;
+        record.serialize_field(
+            "persistent_visibility",
+            &self
+                .persistent_visibility
+                .map(settings::LayerVisibility::as_u8),
+        )?;
+        record.end()
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -732,7 +745,7 @@ struct LayerPresentationRecord {
     visible_in_new_details: Option<bool>,
     rendering_materials: Vec<RenderingMaterialReference>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    per_viewport_settings: Vec<LayerPerViewportPresentationRecord>,
+    per_viewport_settings: Vec<settings::LayerPerViewportSettings>,
 }
 
 #[derive(Debug, Serialize)]
@@ -4237,21 +4250,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> NativeInstall {
             clipping_planes_enabled: layer.no_clipping_planes.map(|value| !value),
             visible_in_new_details: layer.visible_in_new_details,
             rendering_materials: rendering.materials,
-            per_viewport_settings: layer
-                .per_viewport_settings
-                .iter()
-                .map(|settings| LayerPerViewportPresentationRecord {
-                    viewport_uuid: settings.viewport_id.to_string(),
-                    settings_mask: settings.settings_mask(),
-                    color: settings.color,
-                    plot_color: settings.plot_color,
-                    plot_weight_mm: settings.plot_weight_mm,
-                    visible: settings.visible.map(settings::LayerVisibility::as_u8),
-                    persistent_visibility: settings
-                        .persistent_visibility
-                        .map(settings::LayerVisibility::as_u8),
-                })
-                .collect(),
+            per_viewport_settings: layer.per_viewport_settings.clone(),
         });
     }
     let mut group_index_counts = BTreeMap::<i32, usize>::new();
