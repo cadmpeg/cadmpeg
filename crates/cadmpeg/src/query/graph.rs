@@ -155,11 +155,11 @@ fn walk(
             continue;
         }
 
-        let mut queue: VecDeque<(NodeRef, Vec<Value>, Vec<NodeRef>, usize)> = VecDeque::new();
-        queue.push_back((*start, Vec::new(), vec![*start], 0));
+        let mut queue: VecDeque<(NodeRef, Vec<Value>, Vec<NodeRef>)> = VecDeque::new();
+        queue.push_back((*start, Vec::new(), vec![*start]));
 
-        while let Some((node, path, visited, depth)) = queue.pop_front() {
-            if depth >= hops {
+        while let Some((node, path, visited)) = queue.pop_front() {
+            if path.len() >= hops {
                 continue;
             }
             let neighbors = match adj.get(node.arena).and_then(|row| row.get(node.rec)) {
@@ -182,10 +182,10 @@ fn walk(
                 let mut next_path = path.clone();
                 next_path.push(step);
                 results.push(result_value(doc, start, &next_path, edge.to));
-                if depth + 1 < hops {
+                if next_path.len() < hops {
                     let mut next_visited = visited.clone();
                     next_visited.push(edge.to);
-                    queue.push_back((edge.to, next_path, next_visited, depth + 1));
+                    queue.push_back((edge.to, next_path, next_visited));
                 }
             }
             if truncated {
