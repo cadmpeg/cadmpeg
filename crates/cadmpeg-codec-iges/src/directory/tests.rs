@@ -187,7 +187,7 @@ fn decode_treats_subordinate_switch_three_as_physically_dependent() {
 fn residual_status_fields_preserve_numeric_wire_values() {
     for global_table in [GlobalTable::V4_0, GlobalTable::V5Later] {
         let parsed = status(*b"99999999", global_table).unwrap();
-        assert!(!parsed.use_flag().is_some());
+        assert!(parsed.use_flag().is_none());
         assert!(!parsed.is_physically_dependent());
         assert!(!parsed.is_logically_dependent());
         assert_eq!(
@@ -202,7 +202,7 @@ fn residual_status_fields_preserve_numeric_wire_values() {
     }
     let early = status(*b"00000600", GlobalTable::V4_0).unwrap();
     let later = status(*b"00000600", GlobalTable::V5Later).unwrap();
-    assert!(!early.use_flag().is_some());
+    assert!(early.use_flag().is_none());
     assert_eq!(later.use_flag(), Some(UseFlag::Construction));
     assert_eq!(
         serde_json::to_value(early).unwrap(),
