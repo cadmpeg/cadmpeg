@@ -7403,8 +7403,8 @@ fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
             .get(&(native_stream, group.paired_record_index));
         let carrier_ordinal = usize::try_from(group.carrier_reference_ordinal).ok();
         let source_spec = design::decode::operands::face_source_carrier_spec(
-            &group.carrier_class_tag,
-            &group.paired_class_tag,
+            group.carrier_class_tag.as_str(),
+            group.paired_class_tag.as_str(),
         );
         let scope_links_valid = scope.is_some_and(|scope| {
             scope.kind() == crate::records::feature::DesignFeatureKind::Face
@@ -7417,10 +7417,10 @@ fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
         });
         let headers_valid = carrier_header.is_some_and(|header| {
             header.byte_offset == group.carrier_span.start()
-                && header.class_tag.as_str() == group.carrier_class_tag
+                && header.class_tag == group.carrier_class_tag
         }) && paired_header.is_some_and(|header| {
             header.byte_offset == group.carrier_span.end()
-                && header.class_tag.as_str() == group.paired_class_tag
+                && header.class_tag == group.paired_class_tag
         });
         let source_offsets_valid = source_spec.is_some_and(|(_, source_reference_offset, _, _)| {
             let Ok(source_reference_offset) = u64::try_from(source_reference_offset) else {
@@ -7466,9 +7466,7 @@ fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             && valid_design_guid(&persistent.context_id)
                     })
         });
-        let valid = valid_dynamic_class_tag(&group.carrier_class_tag)
-            && valid_dynamic_class_tag(&group.paired_class_tag)
-            && carrier_records.insert((native_stream, group.carrier_record_index))
+        let valid = carrier_records.insert((native_stream, group.carrier_record_index))
             && scope_links_valid
             && headers_valid
             && source_offsets_valid

@@ -1022,15 +1022,21 @@ pub fn decode_face_source_groups(
             else {
                 continue;
             };
+            let (Ok(carrier_class_tag), Ok(paired_class_tag)) = (
+                crate::records::DesignClassTag::try_from(carrier_class_tag.clone()),
+                crate::records::DesignClassTag::try_from(paired_class_tag.clone()),
+            ) else {
+                continue;
+            };
             out.push(DesignFaceSourceGroup {
                 id: ids::native_design_face_source_group_id(&entry.name, *carrier_byte_offset),
                 scope_record_index: scope.record_index,
                 carrier_reference_ordinal,
                 carrier_record_index: *carrier_record_index,
                 carrier_span,
-                carrier_class_tag: carrier_class_tag.clone(),
+                carrier_class_tag,
                 paired_record_index: *paired_record_index,
-                paired_class_tag: paired_class_tag.clone(),
+                paired_class_tag,
                 source_members,
             });
         }

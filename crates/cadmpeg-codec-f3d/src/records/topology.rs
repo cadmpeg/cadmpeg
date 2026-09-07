@@ -3410,11 +3410,11 @@ pub struct DesignFaceSourceGroup {
     /// Source interval from the carrier header to its paired header.
     pub carrier_span: NonEmptyByteSpan,
     /// Source per-file dynamic three-digit ASCII primary class tag.
-    pub carrier_class_tag: String,
+    pub carrier_class_tag: DesignClassTag,
     /// Indexed record paired with the source carrier.
     pub paired_record_index: u32,
     /// Source per-file dynamic three-digit ASCII paired class tag.
-    pub paired_class_tag: String,
+    pub paired_class_tag: DesignClassTag,
     /// Ordered persistent source-shape identities.
     pub source_members: Vec<Located<DesignFaceSourceMember>>,
 }
@@ -3474,9 +3474,9 @@ impl TryFrom<DesignFaceSourceGroupWire> for DesignFaceSourceGroup {
             scope_record_index: wire.scope_record_index,
             carrier_reference_ordinal: wire.carrier_reference_ordinal,
             carrier_record_index: wire.carrier_record_index,
-            carrier_class_tag: wire.carrier_class_tag,
+            carrier_class_tag: wire.carrier_class_tag.try_into()?,
             paired_record_index: wire.paired_record_index,
-            paired_class_tag: wire.paired_class_tag,
+            paired_class_tag: wire.paired_class_tag.try_into()?,
         })
     }
 }
@@ -3496,11 +3496,11 @@ impl From<DesignFaceSourceGroup> for DesignFaceSourceGroupWire {
             carrier_reference_ordinal: group.carrier_reference_ordinal,
             carrier_record_index: group.carrier_record_index,
             carrier_byte_offset: group.carrier_span.start(),
-            carrier_class_tag: group.carrier_class_tag,
+            carrier_class_tag: group.carrier_class_tag.into(),
             carrier_frame_length: group.carrier_span.byte_len(),
             paired_record_index: group.paired_record_index,
             paired_byte_offset: group.carrier_span.end(),
-            paired_class_tag: group.paired_class_tag,
+            paired_class_tag: group.paired_class_tag.into(),
         }
     }
 }
