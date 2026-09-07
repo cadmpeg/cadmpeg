@@ -32,7 +32,8 @@ fn datum(id: u32, axis: crate::datum::Axis, offset: f64) -> DatumPlaneRecord {
         id,
         feature_id: id.saturating_sub(1),
         plane: crate::datum::DatumPlane { axis, offset },
-        corners: [[Some(0.0); 3]; 2],
+        opposite_offset: offset,
+        in_plane_corners: [[Some(0.0); 2]; 2],
         offset_in_payload: usize::try_from(id).expect("fixture id fits usize"),
     }
 }

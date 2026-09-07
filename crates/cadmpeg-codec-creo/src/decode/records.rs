@@ -1334,7 +1334,7 @@ pub(super) fn datum_plane_records(scan: &ContainerScan) -> Vec<CreoDatumPlaneRec
             owner_feature_id: record.feature_id,
             normal: record.plane.normal(),
             plane_offset: record.plane.offset,
-            corners: record.corners,
+            corners: record.corners(),
             offset: record.offset_in_payload,
             source_section: source_section(scan, record.offset_in_payload),
         })
