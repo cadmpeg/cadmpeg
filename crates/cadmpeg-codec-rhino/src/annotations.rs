@@ -446,7 +446,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<LossNote> {
         .settings
         .units
         .as_ref()
-        .and_then(|units| units.millimeters_per_unit())
+        .and_then(crate::settings::UnitsAndTolerances::millimeters_per_unit)
     else {
         return Vec::new();
     };
