@@ -821,42 +821,39 @@ fn elevate_nurbs_to_degree(
 }
 
 fn concatenate_nurbs<T>(
-    mut children: Vec<(NurbsCurve, [f64; 2], T)>,
+    children: Vec<(NurbsCurve, [f64; 2], T)>,
     join_tolerance: Option<f64>,
 ) -> Option<ConcatenatedNurbs<T>> {
-    if children.is_empty() {
-        return None;
-    }
+    let mut children = children.into_iter();
+    let mut first = children.next()?;
     let degree = children
+        .as_slice()
         .iter()
         .map(|(curve, _, _)| curve.degree())
-        .max()
-        .unwrap_or_default();
-    for (curve, interval, _) in &mut children {
+        .fold(first.0.degree(), u32::max);
+    for (curve, interval, _) in std::iter::once(&mut first).chain(children.as_mut_slice()) {
         if curve.degree() < degree
             && !elevate_nurbs_to_degree(curve, *interval, degree, join_tolerance)
         {
             return None;
         }
     }
-    if children.iter().any(|(curve, interval, _)| {
-        let Some(first) = curve.knots().first() else {
-            return true;
-        };
-        let Some(last) = curve.knots().last() else {
-            return true;
-        };
-        curve.degree() != degree || interval != &[*first, *last] || interval[0] >= interval[1]
-    }) {
+    if std::iter::once(&first)
+        .chain(children.as_slice())
+        .any(|(curve, interval, _)| {
+            let Some(first) = curve.knots().first() else {
+                return true;
+            };
+            let Some(last) = curve.knots().last() else {
+                return true;
+            };
+            curve.degree() != degree || interval != &[*first, *last] || interval[0] >= interval[1]
+        })
+    {
         return None;
     }
     let degree_usize = degree as usize;
-    let mut knots = Vec::new();
-    let mut control_points = Vec::new();
-    let mut weights = Vec::new();
-    let mut segments = Vec::with_capacity(children.len());
-    let mut cursor = 0.0;
-    for (child_index, (curve, interval, child)) in children.into_iter().enumerate() {
+    let prepare_child = |(curve, interval, child): (NurbsCurve, [f64; 2], T), cursor: f64| {
         let child_start = interval[0];
         let child_end = interval[1];
         let shifted_knots = curve
@@ -865,7 +862,7 @@ fn concatenate_nurbs<T>(
             .map(|knot| (knot - child_start) + cursor)
             .collect::<Vec<_>>();
         let child_control_points = curve.control_points().to_vec();
-        let mut child_weights = match curve.weights() {
+        let child_weights = match curve.weights() {
             Some(weights) => weights.to_vec(),
             None => alloc_filled(
                 child_control_points.len(),
@@ -880,46 +877,57 @@ fn concatenate_nurbs<T>(
         {
             return None;
         }
-        if child_index == 0 {
-            knots = shifted_knots;
-            control_points = child_control_points;
-            weights = child_weights;
-        } else {
-            if !close_with_tolerance(
-                control_points[control_points.len() - 1],
-                child_control_points[0],
-                join_tolerance,
-            ) {
-                return None;
-            }
-            let scale = weights[weights.len() - 1] / child_weights[0];
-            if !scale.is_finite() || scale <= 0.0 {
-                return None;
-            }
-            for weight in &mut child_weights {
-                *weight *= scale;
-            }
-            if degree_usize == 0 {
-                knots.extend_from_slice(&shifted_knots[1..]);
-                control_points.extend_from_slice(&child_control_points);
-                weights.extend_from_slice(&child_weights);
-            } else {
-                knots.pop();
-                knots.extend_from_slice(&shifted_knots[degree_usize + 1..]);
-                control_points.extend_from_slice(&child_control_points[1..]);
-                weights.extend_from_slice(&child_weights[1..]);
-            }
-        }
-        cursor += child_end - child_start;
-        if !cursor.is_finite() {
+        let end = cursor + (child_end - child_start);
+        if !end.is_finite() {
             return None;
         }
-        segments.push(ConcatenatedSegment {
-            child_start,
-            end: cursor,
-            child,
-        });
+        Some((
+            shifted_knots,
+            child_control_points,
+            child_weights,
+            ConcatenatedSegment {
+                child_start,
+                end,
+                child,
+            },
+        ))
+    };
+    let (mut knots, mut control_points, mut weights, last) = prepare_child(first, 0.0)?;
+    let mut segments = ConcatenatedSegments {
+        preceding: Vec::with_capacity(children.len()),
+        last,
+    };
+    for child in children {
+        let (shifted_knots, child_control_points, mut child_weights, next) =
+            prepare_child(child, segments.end())?;
+        if !close_with_tolerance(
+            control_points[control_points.len() - 1],
+            child_control_points[0],
+            join_tolerance,
+        ) {
+            return None;
+        }
+        let scale = weights[weights.len() - 1] / child_weights[0];
+        if !scale.is_finite() || scale <= 0.0 {
+            return None;
+        }
+        for weight in &mut child_weights {
+            *weight *= scale;
+        }
+        if degree_usize == 0 {
+            knots.extend_from_slice(&shifted_knots[1..]);
+            control_points.extend_from_slice(&child_control_points);
+            weights.extend_from_slice(&child_weights);
+        } else {
+            knots.pop();
+            knots.extend_from_slice(&shifted_knots[degree_usize + 1..]);
+            control_points.extend_from_slice(&child_control_points[1..]);
+            weights.extend_from_slice(&child_weights[1..]);
+        }
+        let preceding = std::mem::replace(&mut segments.last, next);
+        segments.preceding.push(preceding);
     }
+    let cursor = segments.end();
     let rational = weights
         .first()
         .is_some_and(|first| weights.iter().any(|weight| weight != first));
@@ -945,14 +953,7 @@ fn concatenate_nurbs<T>(
         nurbs.weights(),
         cursor,
     )?;
-    let last = segments.pop()?;
-    Some(ConcatenatedNurbs {
-        nurbs,
-        segments: ConcatenatedSegments {
-            preceding: segments,
-            last,
-        },
-    })
+    Some(ConcatenatedNurbs { nurbs, segments })
 }
 
 fn bounded_edge_for_curve(
