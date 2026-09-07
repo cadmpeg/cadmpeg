@@ -1237,7 +1237,7 @@ impl<'a> Section<'a> {
         let group = self.operation_state_group_table();
         let terminal = group
             .as_ref()
-            .map_or(map.offset(), |table| table.offset())
+            .map_or(map.offset(), OperationStateGroupTable::offset)
             .checked_sub(base_offset)?;
         let mut ends = Vec::with_capacity(2);
         if let Some(table) = &group {
