@@ -34,7 +34,7 @@ use crate::parasolid::StreamKind;
 use cadmpeg_ir::codec::DecodeBody;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    BodySelection, BooleanOp, DatumPlaneReference, Feature, FeatureDefinition,
+    BodySelection, BooleanOp, DatumPlaneReference, Feature, FeatureDefinition, UnresolvedFamily,
 };
 use cadmpeg_ir::report::LossNote;
 use std::collections::{BTreeMap, BTreeSet};
@@ -408,31 +408,37 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             continue;
         }
         let family = match feature.definition {
-            FeatureDefinition::BrepUnresolved => "brep",
-            FeatureDefinition::DatumPlaneUnresolved => "datum plane",
-            FeatureDefinition::DatumAxisUnresolved => "datum axis",
-            FeatureDefinition::DatumPointUnresolved => "datum point",
-            FeatureDefinition::DatumCoordinateSystemUnresolved => "datum coordinate system",
-            FeatureDefinition::BridgeCurveUnresolved => "bridge curve",
-            FeatureDefinition::LoftUnresolved => "loft",
-            FeatureDefinition::ThroughCurveMeshUnresolved => "through curve mesh",
-            FeatureDefinition::FreeformSurfaceUnresolved => "freeform surface",
-            FeatureDefinition::ExtractFaceUnresolved => "extract face",
-            FeatureDefinition::CopyFaceUnresolved => "copy face",
-            FeatureDefinition::LinkedFaceUnresolved => "linked face",
-            FeatureDefinition::FillHoleUnresolved => "fill hole",
-            FeatureDefinition::MoveFaceUnresolved => "move face",
-            FeatureDefinition::MoveObjectUnresolved => "move object",
-            FeatureDefinition::CylinderUnresolved => "cylinder",
-            FeatureDefinition::ConeUnresolved => "cone",
-            FeatureDefinition::SphereUnresolved => "sphere",
-            FeatureDefinition::ThreadUnresolved => "thread",
-            FeatureDefinition::DetailedThreadUnresolved => "detailed thread",
-            FeatureDefinition::DraftUnresolved => "draft",
-            FeatureDefinition::DeleteFaceUnresolved => "delete face",
-            FeatureDefinition::MirrorFaceUnresolved => "mirror face",
-            FeatureDefinition::SubdivisionBodyUnresolved => "subdivision body",
-            FeatureDefinition::TopologyOptimizationUnresolved => "topology optimization",
+            FeatureDefinition::Unresolved { family } => match family {
+                UnresolvedFamily::Brep => "brep",
+                UnresolvedFamily::DatumPlane => "datum plane",
+                UnresolvedFamily::DatumAxis => "datum axis",
+                UnresolvedFamily::DatumPoint => "datum point",
+                UnresolvedFamily::DatumCoordinateSystem => "datum coordinate system",
+                UnresolvedFamily::BridgeCurve => "bridge curve",
+                UnresolvedFamily::Loft => "loft",
+                UnresolvedFamily::ThroughCurveMesh => "through curve mesh",
+                UnresolvedFamily::FreeformSurface => "freeform surface",
+                UnresolvedFamily::ExtractFace => "extract face",
+                UnresolvedFamily::CopyFace => "copy face",
+                UnresolvedFamily::LinkedFace => "linked face",
+                UnresolvedFamily::FillHole => "fill hole",
+                UnresolvedFamily::MoveFace => "move face",
+                UnresolvedFamily::MoveObject => "move object",
+                UnresolvedFamily::Cylinder => "cylinder",
+                UnresolvedFamily::Cone => "cone",
+                UnresolvedFamily::Sphere => "sphere",
+                UnresolvedFamily::Thread => "thread",
+                UnresolvedFamily::DetailedThread => "detailed thread",
+                UnresolvedFamily::Draft => "draft",
+                UnresolvedFamily::DeleteFace => "delete face",
+                UnresolvedFamily::MirrorFace => "mirror face",
+                UnresolvedFamily::SubdivisionBody => "subdivision body",
+                UnresolvedFamily::TopologyOptimization => "topology optimization",
+                UnresolvedFamily::Extrude
+                | UnresolvedFamily::Revolve
+                | UnresolvedFamily::Fillet
+                | UnresolvedFamily::BoundarySurface => continue,
+            },
             _ => continue,
         };
         *unresolved_feature_families.entry(family).or_default() += 1;

@@ -676,6 +676,8 @@ fn decode_retains_named_datum_plane_with_unresolved_placement() {
 
     assert!(matches!(
         feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::DatumPlaneUnresolved
+        cadmpeg_ir::features::FeatureDefinition::Unresolved {
+            family: cadmpeg_ir::features::UnresolvedFamily::DatumPlane
+        }
     ));
 }

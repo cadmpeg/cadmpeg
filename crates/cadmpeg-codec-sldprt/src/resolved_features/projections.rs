@@ -28,7 +28,7 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::{
     Angle, BodySelection, DesignParameter, DimensionDisplay, EdgeSelection, FaceSelection,
     FeatureDefinition, FilletGroup, Length, ParameterId, ParameterValue, PatternSeed, RadiusSpec,
-    VariableRadius,
+    UnresolvedFamily, VariableRadius,
 };
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::FaceId;
@@ -1243,8 +1243,12 @@ pub(crate) fn project_compact_surface_selections(
             };
             continue;
         }
-        if matches!(feature.definition, FeatureDefinition::DatumPlaneUnresolved)
-            && feature_selections.len() == 2
+        if matches!(
+            feature.definition,
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::DatumPlane
+            }
+        ) && feature_selections.len() == 2
         {
             for selection in feature_selections {
                 for producer in selection

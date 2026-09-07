@@ -34,7 +34,7 @@ use cadmpeg_ir::features::{
     Angle, AngularTermination, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeDirection,
     ExtrudeExtent, ExtrudeSide, FaceSelection, Feature, FeatureDefinition as IrFeatureDefinition,
     FeatureId as IrFeatureId, Length, LinearTermination, PathRef, ProfileRef, SurfaceBoundary,
-    ThickenSide,
+    ThickenSide, UnresolvedFamily,
 };
 use cadmpeg_ir::geometry::{PcurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{BodyId, SurfaceId};
@@ -475,7 +475,9 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
             Some(SchemaClass::Surface),
             "Surface"
         ),
-        IrFeatureDefinition::BoundarySurfaceUnresolved
+        IrFeatureDefinition::Unresolved {
+            family: UnresolvedFamily::BoundarySurface
+        }
     ));
 }
 
@@ -628,7 +630,9 @@ fn numbered_reference_name_selects_only_its_exact_feature_family() {
     assert!(!numbered_feature_name_has_family("GThicken 1", "Thicken"));
     assert!(matches!(
         reference_named_feature_definition("Boundary Blend 1"),
-        Some(IrFeatureDefinition::BoundarySurfaceUnresolved)
+        Some(IrFeatureDefinition::Unresolved {
+            family: UnresolvedFamily::BoundarySurface
+        })
     ));
     assert!(matches!(
         reference_named_feature_definition("Thicken 1"),
@@ -1297,7 +1301,9 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
     });
     assert_eq!(
         schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::DatumPlane), "Datum Plane"),
-        IrFeatureDefinition::DatumPlaneUnresolved
+        IrFeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumPlane
+        }
     );
     assert!(matches!(
         schema_feature_definition(&scan, &ir, 5, None, "Native Feature"),
@@ -1492,7 +1498,9 @@ fn coordinate_system_feature_rejects_a_reflected_local_system() {
             Some(SchemaClass::CoordinateSystem),
             "PRT_CSYS_DEF"
         ),
-        IrFeatureDefinition::DatumCoordinateSystemUnresolved
+        IrFeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumCoordinateSystem
+        }
     );
 }
 

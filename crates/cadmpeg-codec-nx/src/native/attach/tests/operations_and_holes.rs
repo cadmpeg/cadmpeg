@@ -630,15 +630,21 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
     }
     assert!(matches!(
         super::non_boolean_feature_definition("DATUM_PLANE", &[], None, None, None),
-        cadmpeg_ir::features::FeatureDefinition::DatumPlaneUnresolved
+        cadmpeg_ir::features::FeatureDefinition::Unresolved {
+            family: cadmpeg_ir::features::UnresolvedFamily::DatumPlane
+        }
     ));
     assert!(matches!(
         super::non_boolean_feature_definition("EXTRACT_DATUM_PLANE", &[], None, None, None,),
-        cadmpeg_ir::features::FeatureDefinition::DatumPlaneUnresolved
+        cadmpeg_ir::features::FeatureDefinition::Unresolved {
+            family: cadmpeg_ir::features::UnresolvedFamily::DatumPlane
+        }
     ));
     assert!(matches!(
         super::non_boolean_feature_definition("DATUM_CSYS", &[], None, None, None),
-        cadmpeg_ir::features::FeatureDefinition::DatumCoordinateSystemUnresolved
+        cadmpeg_ir::features::FeatureDefinition::Unresolved {
+            family: cadmpeg_ir::features::UnresolvedFamily::DatumCoordinateSystem
+        }
     ));
     assert!(matches!(
         super::non_boolean_feature_definition("MASTER SNAPSHOT BODY", &[], None, None, None,),
@@ -881,19 +887,27 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
     );
     assert_eq!(
         super::non_boolean_feature_definition("SKIN", &[], None, None, None),
-        FeatureDefinition::LoftUnresolved
+        FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::Loft
+        }
     );
     assert_eq!(
         super::non_boolean_feature_definition("Studio Surface", &[], None, None, None),
-        FeatureDefinition::FreeformSurfaceUnresolved
+        FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::FreeformSurface
+        }
     );
     assert_eq!(
         super::non_boolean_feature_definition("POINT", &[], None, None, None),
-        FeatureDefinition::DatumPointUnresolved
+        FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumPoint
+        }
     );
     assert_eq!(
         super::non_boolean_feature_definition("DRAFT", &[], None, None, None),
-        FeatureDefinition::DraftUnresolved
+        FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::Draft
+        }
     );
 
     assert!(matches!(

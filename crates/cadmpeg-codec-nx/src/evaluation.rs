@@ -6,6 +6,7 @@ use std::collections::BTreeSet;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     BodyRetentionMode, BodySelection, BooleanOp, FeatureDefinition, FeatureId, Length, PatternSeed,
+    UnresolvedFamily,
 };
 use cadmpeg_ir::ids::BodyId;
 
@@ -228,15 +229,22 @@ fn rederived_body_census(
             FeatureDefinition::TreeNode { .. }
             | FeatureDefinition::DatumPrincipalPlane { .. }
             | FeatureDefinition::DatumPlane { .. }
-            | FeatureDefinition::DatumPlaneUnresolved
+            | FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::DatumPlane,
+            }
             | FeatureDefinition::DatumOffsetPlane { .. }
             | FeatureDefinition::DatumAxis { .. }
-            | FeatureDefinition::DatumAxisUnresolved
+            | FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::DatumAxis,
+            }
             | FeatureDefinition::DatumPoint { .. }
-            | FeatureDefinition::DatumPointUnresolved
+            | FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::DatumPoint,
+            }
             | FeatureDefinition::DatumCoordinateSystem { .. }
-            | FeatureDefinition::DatumCoordinateSystemUnresolved
-            | FeatureDefinition::BridgeCurveUnresolved
+            | FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::DatumCoordinateSystem | UnresolvedFamily::BridgeCurve,
+            }
             | FeatureDefinition::Sketch { .. }
             | FeatureDefinition::ProjectedCurve { .. }
             | FeatureDefinition::SectionShape { .. } => {
@@ -303,32 +311,53 @@ fn rederived_body_census(
                     crate::decode::sphere_definition_is_incomplete(feature),
                 )?;
             }
-            FeatureDefinition::LoftUnresolved | FeatureDefinition::FreeformSurfaceUnresolved
-                if feature.outputs.is_empty() => {}
-            FeatureDefinition::BrepUnresolved if feature.outputs.is_empty() => {}
-            FeatureDefinition::BrepUnresolved => {
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::Loft | UnresolvedFamily::FreeformSurface,
+            } if feature.outputs.is_empty() => {}
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::Brep,
+            } if feature.outputs.is_empty() => {}
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::Brep,
+            } => {
                 return Err((
                     feature.id.clone(),
                     UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
                 ));
             }
-            FeatureDefinition::DeleteFaceUnresolved if feature.outputs.is_empty() => {}
-            FeatureDefinition::DeleteFaceUnresolved => {
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::DeleteFace,
+            } if feature.outputs.is_empty() => {}
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::DeleteFace,
+            } => {
                 preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
-            FeatureDefinition::MirrorFaceUnresolved if feature.outputs.is_empty() => {}
-            FeatureDefinition::MirrorFaceUnresolved => {
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::MirrorFace,
+            } if feature.outputs.is_empty() => {}
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::MirrorFace,
+            } => {
                 preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
-            FeatureDefinition::SubdivisionBodyUnresolved if feature.outputs.is_empty() => {}
-            FeatureDefinition::SubdivisionBodyUnresolved => {
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::SubdivisionBody,
+            } if feature.outputs.is_empty() => {}
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::SubdivisionBody,
+            } => {
                 return Err((
                     feature.id.clone(),
                     UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
                 ));
             }
-            FeatureDefinition::TopologyOptimizationUnresolved if feature.outputs.is_empty() => {}
-            FeatureDefinition::TopologyOptimizationUnresolved => {
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::TopologyOptimization,
+            } if feature.outputs.is_empty() => {}
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::TopologyOptimization,
+            } => {
                 return Err((
                     feature.id.clone(),
                     UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
@@ -462,7 +491,9 @@ fn rederived_body_census(
             FeatureDefinition::Draft { .. } => {
                 preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
-            FeatureDefinition::DraftUnresolved if output_free_local_body_construction(feature) => {}
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::Draft,
+            } if output_free_local_body_construction(feature) => {}
             FeatureDefinition::ReplaceFace { .. } => {
                 preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
@@ -558,15 +589,25 @@ fn is_body_neutral_feature(feature: &cadmpeg_ir::features::Feature) -> bool {
             FeatureDefinition::TreeNode { .. }
                 | FeatureDefinition::DatumPrincipalPlane { .. }
                 | FeatureDefinition::DatumPlane { .. }
-                | FeatureDefinition::DatumPlaneUnresolved
+                | FeatureDefinition::Unresolved {
+                    family: UnresolvedFamily::DatumPlane
+                }
                 | FeatureDefinition::DatumOffsetPlane { .. }
                 | FeatureDefinition::DatumAxis { .. }
-                | FeatureDefinition::DatumAxisUnresolved
+                | FeatureDefinition::Unresolved {
+                    family: UnresolvedFamily::DatumAxis
+                }
                 | FeatureDefinition::DatumPoint { .. }
-                | FeatureDefinition::DatumPointUnresolved
+                | FeatureDefinition::Unresolved {
+                    family: UnresolvedFamily::DatumPoint
+                }
                 | FeatureDefinition::DatumCoordinateSystem { .. }
-                | FeatureDefinition::DatumCoordinateSystemUnresolved
-                | FeatureDefinition::BridgeCurveUnresolved
+                | FeatureDefinition::Unresolved {
+                    family: UnresolvedFamily::DatumCoordinateSystem
+                }
+                | FeatureDefinition::Unresolved {
+                    family: UnresolvedFamily::BridgeCurve
+                }
                 | FeatureDefinition::Sketch { .. }
                 | FeatureDefinition::ProjectedCurve { .. }
                 | FeatureDefinition::SectionShape { .. }
@@ -639,10 +680,20 @@ fn suppression_is_body_census_invariant(
             }
         );
     let output_free_local_in_place = output_free_local_body_construction(feature)
-        && matches!(&feature.definition, FeatureDefinition::DraftUnresolved);
+        && matches!(
+            &feature.definition,
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::Draft
+            }
+        );
     let output_free_snapshot = output_free_native_snapshot(feature);
     let output_free_brep = feature.outputs.is_empty()
-        && matches!(feature.definition, FeatureDefinition::BrepUnresolved);
+        && matches!(
+            feature.definition,
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::Brep
+            }
+        );
     deletes_only_local_bodies
         || extracts_only_local_bodies
         || sews_only_local_bodies
@@ -660,8 +711,12 @@ fn suppression_is_body_census_invariant(
             && matches!(
                 feature.definition,
                 FeatureDefinition::TrimSurface { .. }
-                    | FeatureDefinition::LoftUnresolved
-                    | FeatureDefinition::FreeformSurfaceUnresolved
+                    | FeatureDefinition::Unresolved {
+                        family: UnresolvedFamily::Loft
+                    }
+                    | FeatureDefinition::Unresolved {
+                        family: UnresolvedFamily::FreeformSurface
+                    }
                     | FeatureDefinition::ExtendSurface { .. }
                     | FeatureDefinition::Hole { .. }
                     | FeatureDefinition::Chamfer { .. }
@@ -670,10 +725,18 @@ fn suppression_is_body_census_invariant(
                     | FeatureDefinition::OffsetSurface { .. }
                     | FeatureDefinition::Thicken { .. }
                     | FeatureDefinition::Draft { .. }
-                    | FeatureDefinition::DeleteFaceUnresolved
-                    | FeatureDefinition::MirrorFaceUnresolved
-                    | FeatureDefinition::SubdivisionBodyUnresolved
-                    | FeatureDefinition::TopologyOptimizationUnresolved
+                    | FeatureDefinition::Unresolved {
+                        family: UnresolvedFamily::DeleteFace
+                    }
+                    | FeatureDefinition::Unresolved {
+                        family: UnresolvedFamily::MirrorFace
+                    }
+                    | FeatureDefinition::Unresolved {
+                        family: UnresolvedFamily::SubdivisionBody
+                    }
+                    | FeatureDefinition::Unresolved {
+                        family: UnresolvedFamily::TopologyOptimization
+                    }
                     | FeatureDefinition::ReplaceFace { .. }
             ))
 }
@@ -1685,7 +1748,9 @@ mod tests {
         let mut datum = body_neutral_feature(
             "datum",
             0,
-            FeatureDefinition::DatumCoordinateSystemUnresolved,
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::DatumCoordinateSystem,
+            },
         );
         datum.suppressed = None;
         ir.model.features.push(datum);
@@ -1704,7 +1769,9 @@ mod tests {
         ir.model.features.push(body_neutral_feature(
             "datum",
             0,
-            FeatureDefinition::DatumCoordinateSystemUnresolved,
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::DatumCoordinateSystem,
+            },
         ));
         attach_complete_active_configuration(&mut ir);
         ir.model.configurations[0].active = false;
@@ -2685,7 +2752,9 @@ mod tests {
             source_text: None,
             source_content: Vec::new(),
             outputs: Vec::new(),
-            definition: FeatureDefinition::LoftUnresolved,
+            definition: FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::Loft,
+            },
             native_ref: None,
         });
 
@@ -2710,7 +2779,9 @@ mod tests {
             source_text: None,
             source_content: Vec::new(),
             outputs: Vec::new(),
-            definition: FeatureDefinition::FreeformSurfaceUnresolved,
+            definition: FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::FreeformSurface,
+            },
             native_ref: None,
         });
 
@@ -2772,7 +2843,9 @@ mod tests {
             source_text: None,
             source_content: Vec::new(),
             outputs: Vec::new(),
-            definition: FeatureDefinition::DatumCoordinateSystemUnresolved,
+            definition: FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::DatumCoordinateSystem,
+            },
             native_ref: None,
         });
 

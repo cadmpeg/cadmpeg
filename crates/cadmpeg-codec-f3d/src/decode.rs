@@ -555,13 +555,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             diameter,
             extent,
         } => !face_selection_is_resolved(face) || diameter.is_none() || extent.is_none(),
-        FeatureDefinition::DatumPlaneUnresolved
-        | FeatureDefinition::DatumPointUnresolved
-        | FeatureDefinition::DatumCoordinateSystemUnresolved
-        | FeatureDefinition::LoftUnresolved
-        | FeatureDefinition::FreeformSurfaceUnresolved
-        | FeatureDefinition::BoundarySurfaceUnresolved
-        | FeatureDefinition::DraftUnresolved => true,
+        FeatureDefinition::Unresolved { .. } => true,
         FeatureDefinition::DatumPlane {
             origin,
             normal,

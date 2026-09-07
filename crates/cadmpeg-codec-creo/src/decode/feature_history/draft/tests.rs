@@ -4,6 +4,7 @@ use super::{schema_feature_definition, unbounded_feature_plane_definition};
 use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FeatureDefinition as IrFeatureDefinition;
+use cadmpeg_ir::features::UnresolvedFamily;
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -50,7 +51,9 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
     }
     assert_eq!(
         schema_feature_definition(&scan, &ir, 5, Some(SchemaClass::DatumPlane), "Datum Plane"),
-        IrFeatureDefinition::DatumPlaneUnresolved
+        IrFeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumPlane
+        }
     );
 }
 

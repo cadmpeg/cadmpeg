@@ -19,7 +19,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     BodySelection, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, FaceSelection,
     FeatureDefinition as IrFeatureDefinition, FeatureTreeNodeRole, LinearTermination, PatternKind,
-    ProfileRef, RevolveConstruction,
+    ProfileRef, RevolveConstruction, UnresolvedFamily,
 };
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::topology::BodyKind;
@@ -264,7 +264,9 @@ pub(in super::super) fn reference_named_feature_definition(
     kind: &str,
 ) -> Option<IrFeatureDefinition> {
     if numbered_feature_name_has_family(kind, "Boundary Blend") {
-        return Some(IrFeatureDefinition::BoundarySurfaceUnresolved);
+        return Some(IrFeatureDefinition::Unresolved {
+            family: UnresolvedFamily::BoundarySurface,
+        });
     }
     if numbered_feature_name_has_family(kind, "Thicken") {
         return Some(IrFeatureDefinition::Thicken {

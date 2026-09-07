@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::features::FeatureDefinition;
+use cadmpeg_ir::features::{FeatureDefinition, UnresolvedFamily};
 use cadmpeg_ir::ids::BodyId;
 
 #[test]
@@ -23,7 +23,9 @@ fn nx_body_writing_brep_retains_unresolved_family() {
 
     assert_eq!(
         super::body_writing_unresolved_feature_definition("BREP", &source_properties),
-        Some(FeatureDefinition::BrepUnresolved)
+        Some(FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::Brep
+        })
     );
 }
 

@@ -294,7 +294,9 @@ fn decode_types_default_part_coordinate_system() {
     assert_eq!(feature.name.as_deref(), Some("PRT_CSYS_DEF"));
     assert!(matches!(
         feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::DatumCoordinateSystemUnresolved
+        cadmpeg_ir::features::FeatureDefinition::Unresolved {
+            family: cadmpeg_ir::features::UnresolvedFamily::DatumCoordinateSystem
+        }
     ));
     assert_eq!(
         result

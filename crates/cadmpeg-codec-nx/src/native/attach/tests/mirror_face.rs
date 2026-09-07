@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::features::FeatureDefinition;
+use cadmpeg_ir::features::{FeatureDefinition, UnresolvedFamily};
 
 #[test]
 fn nx_body_writing_mirror_face_retains_unresolved_family() {
@@ -12,7 +12,12 @@ fn nx_body_writing_mirror_face_retains_unresolved_family() {
     let definition =
         super::body_writing_unresolved_feature_definition("MIRROR_FACE", &source_properties);
 
-    assert_eq!(definition, Some(FeatureDefinition::MirrorFaceUnresolved));
+    assert_eq!(
+        definition,
+        Some(FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::MirrorFace
+        })
+    );
     assert_eq!(
         definition.unwrap().body_output_family(),
         Some("mirror face")

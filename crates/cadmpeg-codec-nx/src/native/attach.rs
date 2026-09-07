@@ -17,7 +17,7 @@ use cadmpeg_ir::features::{
     FeatureResultTopology, FeatureSourceContent, FeatureTreeNodeRole, HoleForm, HoleKind,
     HolePlacement, Length, LinearTermination, ParameterId, ParameterValue, PathRef, PatternKind,
     ProfileRef, RadiusSpec, RibConstruction, RibDraft, SurfaceExtension, SweepMode, ThickenSide,
-    TrimRegion,
+    TrimRegion, UnresolvedFamily,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry,
@@ -5917,9 +5917,15 @@ fn body_writing_unresolved_feature_definition(
         return None;
     }
     match kind {
-        "BREP" => Some(FeatureDefinition::BrepUnresolved),
-        "CONE" => Some(FeatureDefinition::ConeUnresolved),
-        "SPHERE" => Some(FeatureDefinition::SphereUnresolved),
+        "BREP" => Some(FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::Brep,
+        }),
+        "CONE" => Some(FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::Cone,
+        }),
+        "SPHERE" => Some(FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::Sphere,
+        }),
         "BLEND" => Some(FeatureDefinition::Fillet {
             groups: vec![cadmpeg_ir::features::FilletGroup {
                 edges: EdgeSelection::Unresolved,
@@ -5932,12 +5938,24 @@ fn body_writing_unresolved_feature_definition(
             second_faces: FaceSelection::Unresolved,
             radius: RadiusSpec::Unresolved,
         }),
-        "DELETE FACE" => Some(FeatureDefinition::DeleteFaceUnresolved),
-        "MIRROR_FACE" => Some(FeatureDefinition::MirrorFaceUnresolved),
-        "SUBDIVISION_BODY" => Some(FeatureDefinition::SubdivisionBodyUnresolved),
-        "TOPOLOGY_OPTIMIZATION" => Some(FeatureDefinition::TopologyOptimizationUnresolved),
-        "THREADS" => Some(FeatureDefinition::ThreadUnresolved),
-        "DETAILED_THREAD" => Some(FeatureDefinition::DetailedThreadUnresolved),
+        "DELETE FACE" => Some(FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DeleteFace,
+        }),
+        "MIRROR_FACE" => Some(FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::MirrorFace,
+        }),
+        "SUBDIVISION_BODY" => Some(FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::SubdivisionBody,
+        }),
+        "TOPOLOGY_OPTIMIZATION" => Some(FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::TopologyOptimization,
+        }),
+        "THREADS" => Some(FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::Thread,
+        }),
+        "DETAILED_THREAD" => Some(FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DetailedThread,
+        }),
         _ => None,
     }
 }
@@ -6051,11 +6069,21 @@ fn non_boolean_feature_definition_with_parameters(
         };
     }
     match kind {
-        "DATUM_PLANE" | "EXTRACT_DATUM_PLANE" => FeatureDefinition::DatumPlaneUnresolved,
-        "DATUM_AXIS" | "EXTRACT_DATUM_AXIS" => FeatureDefinition::DatumAxisUnresolved,
-        "BRIDGE_CURVE" => FeatureDefinition::BridgeCurveUnresolved,
-        "POINT" => FeatureDefinition::DatumPointUnresolved,
-        "DATUM_CSYS" => FeatureDefinition::DatumCoordinateSystemUnresolved,
+        "DATUM_PLANE" | "EXTRACT_DATUM_PLANE" => FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumPlane,
+        },
+        "DATUM_AXIS" | "EXTRACT_DATUM_AXIS" => FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumAxis,
+        },
+        "BRIDGE_CURVE" => FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::BridgeCurve,
+        },
+        "POINT" => FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumPoint,
+        },
+        "DATUM_CSYS" => FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumCoordinateSystem,
+        },
         "BLOCK" => FeatureDefinition::Block {
             dimensions: None,
             placement: None,
@@ -6070,9 +6098,15 @@ fn non_boolean_feature_definition_with_parameters(
         "MASTER SNAPSHOT BODY" => FeatureDefinition::BaseFeature {
             bodies: BodySelection::Unresolved,
         },
-        "SKIN" | "THRU_CURVE" => FeatureDefinition::LoftUnresolved,
-        "THRU_CURVE_MESH" => FeatureDefinition::ThroughCurveMeshUnresolved,
-        "Studio Surface" => FeatureDefinition::FreeformSurfaceUnresolved,
+        "SKIN" | "THRU_CURVE" => FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::Loft,
+        },
+        "THRU_CURVE_MESH" => FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::ThroughCurveMesh,
+        },
+        "Studio Surface" => FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::FreeformSurface,
+        },
         "SWP104" => FeatureDefinition::Sweep {
             section: cadmpeg_ir::features::SweepSection::Unresolved(None),
             sections: Vec::new(),
@@ -6090,7 +6124,9 @@ fn non_boolean_feature_definition_with_parameters(
             scale: None,
             allow_multi_profile_faces: None,
         },
-        "DRAFT" => FeatureDefinition::DraftUnresolved,
+        "DRAFT" => FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::Draft,
+        },
         "CPROJ" | "CPROJ_CMB" => FeatureDefinition::ProjectedCurve {
             source: PathRef::Unresolved("nx:unresolved".into()),
             target_faces: FaceSelection::Unresolved,
@@ -6102,13 +6138,27 @@ fn non_boolean_feature_definition_with_parameters(
             tool: PathRef::Unresolved("nx:unresolved".into()),
             keep: TrimRegion::Unresolved,
         },
-        "EXTRACT_FACE" => FeatureDefinition::ExtractFaceUnresolved,
-        "COPY_FACE" => FeatureDefinition::CopyFaceUnresolved,
-        "LINKED_FACE" => FeatureDefinition::LinkedFaceUnresolved,
-        "FILL_HOLE" => FeatureDefinition::FillHoleUnresolved,
-        "MOVE_FACE" => FeatureDefinition::MoveFaceUnresolved,
-        "MOVE_OBJECT" => FeatureDefinition::MoveObjectUnresolved,
-        "CYLINDER" => FeatureDefinition::CylinderUnresolved,
+        "EXTRACT_FACE" => FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::ExtractFace,
+        },
+        "COPY_FACE" => FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::CopyFace,
+        },
+        "LINKED_FACE" => FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::LinkedFace,
+        },
+        "FILL_HOLE" => FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::FillHole,
+        },
+        "MOVE_FACE" => FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::MoveFace,
+        },
+        "MOVE_OBJECT" => FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::MoveObject,
+        },
+        "CYLINDER" => FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::Cylinder,
+        },
         "SYMBOLIC_THREAD" => symbolic_thread_feature_definition(),
         "EXTEND_SHEET" => FeatureDefinition::ExtendSurface {
             faces: FaceSelection::Unresolved,

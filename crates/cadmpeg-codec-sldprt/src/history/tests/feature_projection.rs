@@ -4,6 +4,7 @@
 
 use super::super::*;
 use super::*;
+use cadmpeg_ir::features::UnresolvedFamily;
 
 const EPS_PROJECTED_REVOLUTION_ANGLE: f64 = 1.0e-12;
 const EPS_BOUND_REVOLUTION_ANGLE: f64 = 1.0e-12;
@@ -948,7 +949,9 @@ fn frameless_reference_plane_remains_typed_unresolved() {
             &HashMap::new(),
             std::slice::from_ref(&plane),
         ),
-        FeatureDefinition::DatumPlaneUnresolved
+        FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumPlane
+        }
     );
 }
 

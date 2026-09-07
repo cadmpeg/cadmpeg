@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native XML tag and operation-kind helpers for write.
 
-use cadmpeg_ir::features::{BodyRetentionMode, FeatureDefinition, PatternKind, SweepMode};
+use cadmpeg_ir::features::{
+    BodyRetentionMode, FeatureDefinition, PatternKind, SweepMode, UnresolvedFamily,
+};
 
 use crate::history::classify::extrude_op;
 
@@ -18,7 +20,9 @@ pub(crate) fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String
         FeatureDefinition::CosmeticThread { .. } => "Feature",
         FeatureDefinition::DatumPrincipalPlane { .. } => "Feature",
         FeatureDefinition::DatumPlane { .. } => "ReferencePlane",
-        FeatureDefinition::DatumPlaneUnresolved => "ReferencePlane",
+        FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumPlane,
+        } => "ReferencePlane",
         FeatureDefinition::DatumOffsetPlane { .. } => "Feature",
         FeatureDefinition::DatumAxis { .. } => "ReferenceAxis",
         FeatureDefinition::DatumPoint { .. } => "ReferencePoint",
@@ -60,7 +64,9 @@ pub(crate) fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String
         FeatureDefinition::OffsetSurface { .. } => "OffsetSurface",
         FeatureDefinition::KnitSurface { .. } => "KnitSurface",
         FeatureDefinition::FilledSurface { .. } => "FilledSurface",
-        FeatureDefinition::BoundarySurfaceUnresolved => "BoundarySurface",
+        FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::BoundarySurface,
+        } => "BoundarySurface",
         FeatureDefinition::TrimSurface { .. } => "TrimSurface",
         FeatureDefinition::ExtendSurface { .. } => "ExtendSurface",
         FeatureDefinition::RuledSurface { .. } => "RuledSurface",
@@ -114,13 +120,15 @@ pub(crate) fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String
         }
         FeatureDefinition::Native { kind, .. } if valid_xml_name(kind.as_str()) => kind.as_str(),
         FeatureDefinition::Native { .. } => "Feature",
-        FeatureDefinition::DatumPointUnresolved
-        | FeatureDefinition::DatumCoordinateSystemUnresolved
+        FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumPoint | UnresolvedFamily::DatumCoordinateSystem,
+        }
         | FeatureDefinition::Block { .. }
         | FeatureDefinition::ExtractBody { .. }
-        | FeatureDefinition::LoftUnresolved
-        | FeatureDefinition::FreeformSurfaceUnresolved
-        | FeatureDefinition::DraftUnresolved
+        | FeatureDefinition::Unresolved {
+            family:
+                UnresolvedFamily::Loft | UnresolvedFamily::FreeformSurface | UnresolvedFamily::Draft,
+        }
         | FeatureDefinition::FaceBlend { .. }
         | FeatureDefinition::SewBodies { .. }
         | FeatureDefinition::TrimBodies { .. } => "Feature",

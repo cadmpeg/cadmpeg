@@ -8,7 +8,7 @@ use super::*;
 use crate::features::{
     BodySelection, ChamferSpec, DatumPlaneReference, ExtrudeStart, FaceMotion, FaceSelection,
     FeatureSourceContent, FlexMode, HoleKind, Length, PatternKind, PatternSeed,
-    PatternStageCombination, PrimitiveSolid, RadiusSpec, SplitFaceTool,
+    PatternStageCombination, PrimitiveSolid, RadiusSpec, SplitFaceTool, UnresolvedFamily,
 };
 use crate::math::Point3;
 
@@ -2735,26 +2735,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             definition => definition,
         };
         match definition {
-            FeatureDefinition::DatumAxisUnresolved
-            | FeatureDefinition::DatumPointUnresolved
-            | FeatureDefinition::DatumCoordinateSystemUnresolved
-            | FeatureDefinition::BridgeCurveUnresolved
-            | FeatureDefinition::LoftUnresolved
-            | FeatureDefinition::ThroughCurveMeshUnresolved
-            | FeatureDefinition::FreeformSurfaceUnresolved
-            | FeatureDefinition::ExtractFaceUnresolved
-            | FeatureDefinition::CopyFaceUnresolved
-            | FeatureDefinition::LinkedFaceUnresolved
-            | FeatureDefinition::FillHoleUnresolved
-            | FeatureDefinition::MoveObjectUnresolved
-            | FeatureDefinition::BoundarySurfaceUnresolved
-            | FeatureDefinition::DeleteFaceUnresolved
-            | FeatureDefinition::MirrorFaceUnresolved
-            | FeatureDefinition::SubdivisionBodyUnresolved
-            | FeatureDefinition::TopologyOptimizationUnresolved
-            | FeatureDefinition::ExtrudeUnresolved
-            | FeatureDefinition::RevolveUnresolved
-            | FeatureDefinition::FilletUnresolved => {}
+            FeatureDefinition::Unresolved { .. } => {}
             FeatureDefinition::ReferenceImage {
                 asset,
                 origin,
@@ -3640,7 +3621,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     feature_geometry_error(findings, feature, "draft geometry is invalid");
                 }
             }
-            FeatureDefinition::DraftUnresolved => {}
             FeatureDefinition::BoundaryFill { tools, cells } => {
                 body_selections.push(tools);
                 body_selections.extend(cells);
@@ -4676,7 +4656,9 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                                         record.definition,
                                         FeatureDefinition::DatumPrincipalPlane { .. }
                                             | FeatureDefinition::DatumPlane { .. }
-                                            | FeatureDefinition::DatumPlaneUnresolved
+                                            | FeatureDefinition::Unresolved {
+                                                family: UnresolvedFamily::DatumPlane
+                                            }
                                             | FeatureDefinition::DatumOffsetPlane { .. }
                                     ) =>
                                 {
@@ -4732,14 +4714,6 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 }
             }
             FeatureDefinition::DatumPrincipalPlane { .. }
-            | FeatureDefinition::DatumPlaneUnresolved
-            | FeatureDefinition::BrepUnresolved
-            | FeatureDefinition::MoveFaceUnresolved
-            | FeatureDefinition::CylinderUnresolved
-            | FeatureDefinition::ConeUnresolved
-            | FeatureDefinition::SphereUnresolved
-            | FeatureDefinition::ThreadUnresolved
-            | FeatureDefinition::DetailedThreadUnresolved
             | FeatureDefinition::SketchBlockDefinition { .. }
             | FeatureDefinition::StoredGeometry
             | FeatureDefinition::Native { .. } => {}
@@ -4848,7 +4822,9 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                                         record.definition,
                                         FeatureDefinition::DatumPrincipalPlane { .. }
                                             | FeatureDefinition::DatumPlane { .. }
-                                            | FeatureDefinition::DatumPlaneUnresolved
+                                            | FeatureDefinition::Unresolved {
+                                                family: UnresolvedFamily::DatumPlane
+                                            }
                                             | FeatureDefinition::DatumOffsetPlane { .. }
                                     ) =>
                                 {
@@ -6042,7 +6018,9 @@ fn check_plane_feature_reference(
                 &record.definition,
                 crate::features::FeatureDefinition::DatumPrincipalPlane { .. }
                     | crate::features::FeatureDefinition::DatumPlane { .. }
-                    | crate::features::FeatureDefinition::DatumPlaneUnresolved
+                    | crate::features::FeatureDefinition::Unresolved {
+                        family: crate::features::UnresolvedFamily::DatumPlane
+                    }
                     | crate::features::FeatureDefinition::DatumOffsetPlane { .. }
             ) =>
         {

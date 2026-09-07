@@ -5,6 +5,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     BooleanOp, EdgeSelection, ExtrudeExtent, ExtrudeStart, FaceSelection,
     FeatureDefinition as IrFeatureDefinition, HoleKind, ProfileRef, RadiusSpec, RevolveExtent,
+    UnresolvedFamily,
 };
 
 use crate::container::ContainerScan;
@@ -113,13 +114,19 @@ pub(in super::super) fn collect_feature_coverage(
     let mut native_axis_helix_feature_count = 0;
     for feature in &ir.model.features {
         match &feature.definition {
-            IrFeatureDefinition::DatumPlaneUnresolved => {
+            IrFeatureDefinition::Unresolved {
+                family: UnresolvedFamily::DatumPlane,
+            } => {
                 unresolved_datum_plane_feature_count += 1;
             }
-            IrFeatureDefinition::DatumCoordinateSystemUnresolved => {
+            IrFeatureDefinition::Unresolved {
+                family: UnresolvedFamily::DatumCoordinateSystem,
+            } => {
                 unresolved_datum_coordinate_system_feature_count += 1;
             }
-            IrFeatureDefinition::BoundarySurfaceUnresolved => {
+            IrFeatureDefinition::Unresolved {
+                family: UnresolvedFamily::BoundarySurface,
+            } => {
                 unresolved_boundary_surface_feature_count += 1;
             }
             IrFeatureDefinition::Extrude {
@@ -355,7 +362,9 @@ pub(in super::super) fn collect_feature_coverage(
                         || unresolved_outward,
                 );
             }
-            IrFeatureDefinition::DraftUnresolved => {
+            IrFeatureDefinition::Unresolved {
+                family: UnresolvedFamily::Draft,
+            } => {
                 draft_feature_count += 1;
                 incomplete_draft_feature_count += 1;
                 explicitly_unresolved_draft_feature_count += 1;

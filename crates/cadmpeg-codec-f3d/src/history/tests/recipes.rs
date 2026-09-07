@@ -306,7 +306,7 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
 #[test]
 fn feature_input_topology_projects_historical_vertices() {
     use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
-    use cadmpeg_ir::features::{Feature, FeatureDefinition};
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, UnresolvedFamily};
 
     let mut scope = crate::records::feature::DesignParameterScope::empty(
         "f3d:design:scope#work-point",
@@ -326,7 +326,9 @@ fn feature_input_topology_projects_historical_vertices() {
         source_text: None,
         source_content: Vec::new(),
         outputs: Vec::new(),
-        definition: FeatureDefinition::DatumPointUnresolved,
+        definition: FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumPoint,
+        },
         native_ref: Some(scope.id.clone()),
     };
     let history = AsmHistory {

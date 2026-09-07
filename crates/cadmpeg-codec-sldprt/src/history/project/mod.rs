@@ -7,7 +7,7 @@ use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::features::{
     ConfigurationBodies, ConfigurationId, DatumPlaneReference, DesignConfiguration,
     FeatureDefinition, FeatureId, FeatureSourceContent, Length, ParameterId, PathRef, ProfileRef,
-    SplitFaceTool,
+    SplitFaceTool, UnresolvedFamily,
 };
 use cadmpeg_ir::ids::AttributeId;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -915,7 +915,9 @@ pub(crate) fn project_definition(
         return FeatureDefinition::StoredGeometry;
     }
     if feature.input_class.as_deref() == Some("moPlanarSurface_c") {
-        return FeatureDefinition::DatumPlaneUnresolved;
+        return FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumPlane,
+        };
     }
     if let Some(role) = feature_tree_node_role(feature, history_features) {
         return FeatureDefinition::TreeNode {
@@ -963,7 +965,9 @@ pub(crate) fn project_definition(
             if feature.properties.contains_key("NativeRole") {
                 native_definition(feature)
             } else {
-                FeatureDefinition::DatumPlaneUnresolved
+                FeatureDefinition::Unresolved {
+                    family: UnresolvedFamily::DatumPlane,
+                }
             }
         });
     }
@@ -974,8 +978,9 @@ pub(crate) fn project_definition(
         return project_datum_point(feature).unwrap_or_else(|| native_definition(feature));
     }
     if class == Some(FeatureClass::CoordinateSystem) {
-        return project_datum_coordinate_system(feature)
-            .unwrap_or(FeatureDefinition::DatumCoordinateSystemUnresolved);
+        return project_datum_coordinate_system(feature).unwrap_or(FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumCoordinateSystem,
+        });
     }
     if class == Some(FeatureClass::EquationCurve) {
         return project_equation_curve(feature).unwrap_or_else(|| native_definition(feature));

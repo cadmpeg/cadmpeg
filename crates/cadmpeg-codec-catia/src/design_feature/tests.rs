@@ -457,11 +457,15 @@ fn transfers_admitted_native_operations_with_exact_parentage() {
     );
     assert!(matches!(
         ir.model.features[0].definition,
-        FeatureDefinition::ExtrudeUnresolved
+        FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::Extrude
+        }
     ));
     assert!(matches!(
         ir.model.features[1].definition,
-        FeatureDefinition::FilletUnresolved
+        FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::Fillet
+        }
     ));
     assert!(ir
         .model
@@ -552,13 +556,17 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
             Some("Prism_EndLimit_Length" | "Prism_ThickThin1" | "Prism_ThickThin2") => {
                 assert!(matches!(
                     feature.definition,
-                    FeatureDefinition::ExtrudeUnresolved
+                    FeatureDefinition::Unresolved {
+                        family: UnresolvedFamily::Extrude
+                    }
                 ));
             }
             Some("Revol_ThickThin1") => {
                 assert!(matches!(
                     feature.definition,
-                    FeatureDefinition::RevolveUnresolved
+                    FeatureDefinition::Unresolved {
+                        family: UnresolvedFamily::Revolve
+                    }
                 ));
             }
             Some("Sweep_ThickThin1") => {
@@ -584,7 +592,9 @@ fn maps_each_admitted_operation_class_to_its_neutral_family() {
             Some("EdgeFillet") => {
                 assert!(matches!(
                     feature.definition,
-                    FeatureDefinition::FilletUnresolved
+                    FeatureDefinition::Unresolved {
+                        family: UnresolvedFamily::Fillet
+                    }
                 ));
             }
             Some("CircPattern_RadialNumber") => {
@@ -675,7 +685,9 @@ fn transfers_exact_definition_values_as_typed_feature_properties() {
 
     assert!(matches!(
         ir.model.features[0].definition,
-        FeatureDefinition::ExtrudeUnresolved
+        FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::Extrude
+        }
     ));
     assert_eq!(
         &ir.model.features[0].source_properties,
@@ -814,7 +826,9 @@ fn transfers_exact_definition_chains_as_typed_feature_properties() {
 
     assert!(matches!(
         ir.model.features[0].definition,
-        FeatureDefinition::ExtrudeUnresolved
+        FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::Extrude
+        }
     ));
     assert_eq!(
         &ir.model.features[0].source_properties,
@@ -952,7 +966,9 @@ fn transfers_definition_chains_from_exact_operation_owner_descendants() {
 
     assert!(matches!(
         ir.model.features[0].definition,
-        FeatureDefinition::ExtrudeUnresolved
+        FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::Extrude
+        }
     ));
     assert_eq!(
         &ir.model.features[0].source_properties,

@@ -26,7 +26,7 @@ fn untyped_material_distances_charge_one_loss_without_fabricating_geometry() {
 
 #[test]
 fn direct_datum_planes_are_complete_but_unresolved_frames_are_not() {
-    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::features::{FeatureDefinition, UnresolvedFamily};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let direct = FeatureDefinition::DatumPlane {
@@ -43,7 +43,9 @@ fn direct_datum_planes_are_complete_but_unresolved_frames_are_not() {
         }
     ));
     assert!(feature_definition_is_incomplete(
-        &FeatureDefinition::DatumPlaneUnresolved
+        &FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumPlane
+        }
     ));
 }
 

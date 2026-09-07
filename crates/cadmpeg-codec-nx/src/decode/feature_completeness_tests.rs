@@ -1498,7 +1498,9 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
 
 #[test]
 fn nx_body_producing_feature_families_require_history_outputs() {
-    use cadmpeg_ir::features::{BooleanOp, Feature, FeatureDefinition, FeatureId, Length};
+    use cadmpeg_ir::features::{
+        BooleanOp, Feature, FeatureDefinition, FeatureId, Length, UnresolvedFamily,
+    };
     use std::collections::BTreeMap;
 
     let mut ir = cadmpeg_ir::CadIr::empty();
@@ -1736,7 +1738,10 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     assert!(losses[0].message.contains("base feature (1)"));
 
     assert_eq!(
-        FeatureDefinition::DatumPointUnresolved.body_output_family(),
+        FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumPoint
+        }
+        .body_output_family(),
         None
     );
     assert_eq!(

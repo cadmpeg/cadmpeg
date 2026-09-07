@@ -14,7 +14,7 @@ mod surface;
 
 use crate::records::Feature;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureTreeNodeRole};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureTreeNodeRole, UnresolvedFamily};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// Native XML kind plus parameter and property maps for a written feature.
@@ -66,10 +66,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             FeatureDefinition::DatumPrincipalPlane { plane } => {
                 self.encode_datum_principal_plane(plane)
             }
-            FeatureDefinition::DatumPlaneUnresolved => self.encode_datum_plane_unresolved(),
-            FeatureDefinition::BoundarySurfaceUnresolved => {
-                self.encode_boundary_surface_unresolved()
-            }
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::DatumPlane,
+            } => self.encode_datum_plane_unresolved(),
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::BoundarySurface,
+            } => self.encode_boundary_surface_unresolved(),
             FeatureDefinition::DatumPlane {
                 origin,
                 normal,
@@ -389,13 +391,15 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             FeatureDefinition::Pattern { seeds, pattern } => self.encode_pattern(seeds, pattern),
             FeatureDefinition::HelicalSweep { .. } => self.encode_helical_sweep(),
             FeatureDefinition::Binder { .. } => self.encode_binder(),
-            FeatureDefinition::DatumPointUnresolved
-            | FeatureDefinition::DatumCoordinateSystemUnresolved
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::DatumPoint | UnresolvedFamily::DatumCoordinateSystem,
+            }
             | FeatureDefinition::Block { .. }
             | FeatureDefinition::ExtractBody { .. }
-            | FeatureDefinition::LoftUnresolved
-            | FeatureDefinition::FreeformSurfaceUnresolved
-            | FeatureDefinition::DraftUnresolved
+            | FeatureDefinition::Unresolved {
+                family:
+                    UnresolvedFamily::Loft | UnresolvedFamily::FreeformSurface | UnresolvedFamily::Draft,
+            }
             | FeatureDefinition::FaceBlend { .. }
             | FeatureDefinition::SewBodies { .. }
             | FeatureDefinition::TrimBodies { .. } => self.encode_explicitly_unsupported(),

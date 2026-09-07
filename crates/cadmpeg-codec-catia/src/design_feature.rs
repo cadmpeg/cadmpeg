@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     Feature, FeatureDefinition, FeatureId, ParameterId, PatternKind, PrincipalPlane,
+    UnresolvedFamily,
 };
 use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
 
@@ -359,9 +360,10 @@ fn assign_native_operation_parameter_values(
                     *parameters = values;
                 }
             }
-            FeatureDefinition::ExtrudeUnresolved
-            | FeatureDefinition::RevolveUnresolved
-            | FeatureDefinition::FilletUnresolved
+            FeatureDefinition::Unresolved {
+                family:
+                    UnresolvedFamily::Extrude | UnresolvedFamily::Revolve | UnresolvedFamily::Fillet,
+            }
             | FeatureDefinition::Pattern { .. }
             | FeatureDefinition::Sweep { .. } => {
                 for (name, expression) in values {
@@ -632,7 +634,9 @@ fn transfer_reference_plane(
         source_text: None,
         source_content: Vec::new(),
         outputs: Vec::new(),
-        definition: FeatureDefinition::DatumPlaneUnresolved,
+        definition: FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumPlane,
+        },
         native_ref: Some(object.id.clone()),
     });
     transfer.feature_ids.insert(object.id.clone(), feature_id);
@@ -826,9 +830,13 @@ fn native_operation_definition(
 ) -> (FeatureDefinition, BTreeMap<String, String>) {
     let definition = match kind {
         "Prism_EndLimit_Length" | "Prism_ThickThin1" | "Prism_ThickThin2" => {
-            FeatureDefinition::ExtrudeUnresolved
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::Extrude,
+            }
         }
-        "Revol_ThickThin1" => FeatureDefinition::RevolveUnresolved,
+        "Revol_ThickThin1" => FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::Revolve,
+        },
         "CircPattern_RadialNumber" => FeatureDefinition::Pattern {
             seeds: Vec::new(),
             pattern: PatternKind::UnresolvedCircular,
@@ -852,7 +860,9 @@ fn native_operation_definition(
             scale: None,
             allow_multi_profile_faces: None,
         },
-        "EdgeFillet" => FeatureDefinition::FilletUnresolved,
+        "EdgeFillet" => FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::Fillet,
+        },
         _ => FeatureDefinition::Native {
             kind: kind.into(),
             parameters: BTreeMap::new(),

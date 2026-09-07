@@ -1629,35 +1629,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeBody) {
             }
             FeatureDefinition::Native { .. } | FeatureDefinition::PostProcess { .. } => false,
             // Unresolved construction retained as native.
-            FeatureDefinition::DatumAxisUnresolved
-            | FeatureDefinition::DatumPlaneUnresolved
-            | FeatureDefinition::DatumPointUnresolved
-            | FeatureDefinition::DatumCoordinateSystemUnresolved
-            | FeatureDefinition::BridgeCurveUnresolved
-            | FeatureDefinition::LoftUnresolved
-            | FeatureDefinition::ThroughCurveMeshUnresolved
-            | FeatureDefinition::FreeformSurfaceUnresolved
-            | FeatureDefinition::ExtractFaceUnresolved
-            | FeatureDefinition::CopyFaceUnresolved
-            | FeatureDefinition::LinkedFaceUnresolved
-            | FeatureDefinition::FillHoleUnresolved
-            | FeatureDefinition::MoveFaceUnresolved
-            | FeatureDefinition::MoveObjectUnresolved
-            | FeatureDefinition::CylinderUnresolved
-            | FeatureDefinition::ConeUnresolved
-            | FeatureDefinition::SphereUnresolved
-            | FeatureDefinition::ThreadUnresolved
-            | FeatureDefinition::DetailedThreadUnresolved
-            | FeatureDefinition::BoundarySurfaceUnresolved
-            | FeatureDefinition::DraftUnresolved
-                | FeatureDefinition::BrepUnresolved
-                | FeatureDefinition::MirrorFaceUnresolved
-                | FeatureDefinition::SubdivisionBodyUnresolved
-                | FeatureDefinition::TopologyOptimizationUnresolved
-                | FeatureDefinition::DeleteFaceUnresolved
-                | FeatureDefinition::ExtrudeUnresolved
-                | FeatureDefinition::RevolveUnresolved
-                | FeatureDefinition::FilletUnresolved => true,
+            FeatureDefinition::Unresolved { .. } => true,
             }
         })
         .count();

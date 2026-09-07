@@ -7,7 +7,7 @@ use cadmpeg_ir::features::{
     Angle, BodyRetentionMode, BodySelection, BooleanOp, DesignParameter, EdgeSelection,
     FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureSourceContent,
     FeatureTreeNodeRole, Length, ParameterId, PathRef, PatternKind, RadiusSpec, RuledSurfaceMode,
-    SurfaceContinuity,
+    SurfaceContinuity, UnresolvedFamily,
 };
 use cadmpeg_ir::ids::{BodyId, EdgeId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -61,7 +61,9 @@ fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
     ir.model.features.push(feature(
         "unresolved-plane",
         2,
-        FeatureDefinition::DatumPlaneUnresolved,
+        FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumPlane,
+        },
     ));
     ir.model.features.push(feature(
         "unaudited-stored-geometry",
@@ -398,7 +400,9 @@ fn post_process_completeness_delegates_to_the_wrapped_operation() {
             segment_turns: None,
             construction_style: None,
         }),
-        post_process(post_process(FeatureDefinition::DatumPlaneUnresolved)),
+        post_process(post_process(FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumPlane,
+        })),
     ]
     .into_iter()
     .enumerate()

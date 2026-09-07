@@ -897,7 +897,9 @@ fn planar_surface_keeps_unresolved_definition_and_adds_defining_dependencies() {
         feature(
             "plane",
             "plane-native",
-            FeatureDefinition::DatumPlaneUnresolved,
+            FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::DatumPlane,
+            },
         ),
     ];
     let component = |source: u32, local_id: u32| {
@@ -947,7 +949,9 @@ fn planar_surface_keeps_unresolved_definition_and_adds_defining_dependencies() {
 
     assert!(matches!(
         features[2].definition,
-        FeatureDefinition::DatumPlaneUnresolved
+        FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumPlane
+        }
     ));
     assert_eq!(
         features[2].dependencies,

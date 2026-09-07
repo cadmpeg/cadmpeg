@@ -1969,7 +1969,7 @@ fn project_work_plane(
     transform: [[f64; 4]; 4],
 ) -> cadmpeg_ir::features::FeatureDefinition {
     use crate::records::feature::DesignWorkPlaneConstruction;
-    use cadmpeg_ir::features::{FeatureDefinition, VertexSelection};
+    use cadmpeg_ir::features::{FeatureDefinition, UnresolvedFamily, VertexSelection};
 
     let origin = Point3::new(
         transform[0][3] * 10.0,
@@ -1986,7 +1986,9 @@ fn project_work_plane(
         };
     };
     let Some(state_id) = work_plane_recipe_state_id(scope) else {
-        return FeatureDefinition::DatumPlaneUnresolved;
+        return FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumPlane,
+        };
     };
     let feature_id = neutral_feature_id(scope);
     let feature_key = feature_id
@@ -2005,7 +2007,9 @@ fn project_work_plane(
         })
         .collect::<Option<Vec<_>>>();
     let Some(points) = points.and_then(|points| points.try_into().ok()) else {
-        return FeatureDefinition::DatumPlaneUnresolved;
+        return FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumPlane,
+        };
     };
     FeatureDefinition::DatumThreePointPlane {
         origin,

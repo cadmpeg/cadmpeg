@@ -904,7 +904,9 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             super::HoleProjection::default(),
             std::collections::BTreeMap::new(),
         ),
-        cadmpeg_ir::features::FeatureDefinition::LoftUnresolved
+        cadmpeg_ir::features::FeatureDefinition::Unresolved {
+            family: cadmpeg_ir::features::UnresolvedFamily::Loft
+        }
     ));
     assert!(matches!(
         super::non_boolean_feature_definition_with_parameters(

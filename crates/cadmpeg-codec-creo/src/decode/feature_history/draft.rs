@@ -45,7 +45,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ChamferSpec, EdgeSelection, ExtrudeExtent, FaceSelection,
     FeatureDefinition as IrFeatureDefinition, HoleBottom, HoleForm, HoleKind, HolePlacement,
-    Length, LinearTermination, ProfileRef, RadiusSpec, RevolveConstruction,
+    Length, LinearTermination, ProfileRef, RadiusSpec, RevolveConstruction, UnresolvedFamily,
 };
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::ids::{FaceId, SurfaceId};
@@ -589,7 +589,9 @@ pub(in super::super) fn schema_feature_definition(
             .iter()
             .any(|datum| datum.feature_id == feature_id)
         {
-            return IrFeatureDefinition::DatumPlaneUnresolved;
+            return IrFeatureDefinition::Unresolved {
+                family: UnresolvedFamily::DatumPlane,
+            };
         }
         let plane_ids = scan
             .surfaces
@@ -602,16 +604,22 @@ pub(in super::super) fn schema_feature_definition(
             .collect::<BTreeSet<_>>();
         let plane_ids = plane_ids.into_iter().collect::<Vec<_>>();
         if plane_ids.len() > 1 {
-            return IrFeatureDefinition::DatumPlaneUnresolved;
+            return IrFeatureDefinition::Unresolved {
+                family: UnresolvedFamily::DatumPlane,
+            };
         }
         if let [surface_id] = plane_ids.as_slice() {
             if crate::surface::unique_surface_row(&scan.surfaces.rows, *surface_id).is_none() {
-                return IrFeatureDefinition::DatumPlaneUnresolved;
+                return IrFeatureDefinition::Unresolved {
+                    family: UnresolvedFamily::DatumPlane,
+                };
             }
             if let Some(definition) = reconciled_datum_plane_definition(scan, ir, *surface_id) {
                 return definition;
             }
-            return IrFeatureDefinition::DatumPlaneUnresolved;
+            return IrFeatureDefinition::Unresolved {
+                family: UnresolvedFamily::DatumPlane,
+            };
         }
         let definitions = scan
             .features
@@ -637,7 +645,9 @@ pub(in super::super) fn schema_feature_definition(
                 }
             }
         }
-        return IrFeatureDefinition::DatumPlaneUnresolved;
+        return IrFeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumPlane,
+        };
     }
     if schema_class == Some(SchemaClass::SurfaceMerge) {
         return knit_surface_feature_definition(scan, feature_id);
@@ -672,7 +682,9 @@ pub(in super::super) fn schema_feature_definition(
                 }
             }
         }
-        return IrFeatureDefinition::DatumCoordinateSystemUnresolved;
+        return IrFeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumCoordinateSystem,
+        };
     }
     if numbered_feature_name_has_family(kind, "Extrude")
         && !feature_is_sheet_extrusion(scan, feature_id)
@@ -693,7 +705,9 @@ pub(in super::super) fn schema_feature_definition(
             &scan.surfaces.rows,
         )
     {
-        return IrFeatureDefinition::BoundarySurfaceUnresolved;
+        return IrFeatureDefinition::Unresolved {
+            family: UnresolvedFamily::BoundarySurface,
+        };
     }
     if schema_class.and_then(schema_operation_kind).is_none() {
         if let Some(definition) = named_or_referenced_feature_definition(scan, ir, feature_id, kind)

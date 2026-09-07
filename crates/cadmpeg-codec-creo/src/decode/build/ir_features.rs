@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
+    Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId, UnresolvedFamily,
 };
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
@@ -109,7 +109,9 @@ pub(super) fn emit_model_features(
             {
                 datum_plane_feature_definition(&datum.plane)
             } else {
-                IrFeatureDefinition::DatumPlaneUnresolved
+                IrFeatureDefinition::Unresolved {
+                    family: UnresolvedFamily::DatumPlane,
+                }
             },
             native_ref: None,
         });

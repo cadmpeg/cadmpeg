@@ -1050,7 +1050,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::features::{
         BooleanOp, ConfigurationBodies, ConfigurationId, DesignConfiguration, Feature,
-        FeatureDefinition, FeatureId,
+        FeatureDefinition, FeatureId, UnresolvedFamily,
     };
 
     let mut ir = CadIr::empty();
@@ -1107,11 +1107,21 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         native_ref: None,
     });
     for (ordinal, definition) in [
-        FeatureDefinition::DatumPlaneUnresolved,
-        FeatureDefinition::DatumCoordinateSystemUnresolved,
-        FeatureDefinition::LoftUnresolved,
-        FeatureDefinition::FreeformSurfaceUnresolved,
-        FeatureDefinition::LoftUnresolved,
+        FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumPlane,
+        },
+        FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumCoordinateSystem,
+        },
+        FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::Loft,
+        },
+        FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::FreeformSurface,
+        },
+        FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::Loft,
+        },
     ]
     .into_iter()
     .enumerate()
@@ -1265,7 +1275,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
 
 #[test]
 fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, UnresolvedFamily};
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let body = ir.model.bodies[0].id.clone();
@@ -1332,7 +1342,9 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
             source_text: None,
             source_content: Vec::new(),
             outputs: Vec::new(),
-            definition: FeatureDefinition::DatumCoordinateSystemUnresolved,
+            definition: FeatureDefinition::Unresolved {
+                family: UnresolvedFamily::DatumCoordinateSystem,
+            },
             native_ref: None,
         },
         Feature {

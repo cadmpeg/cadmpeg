@@ -1346,7 +1346,7 @@ fn semantic_writer_retains_partial_native_dome_construction() {
 
 #[test]
 fn semantic_writer_round_trips_principal_reference_planes() {
-    use cadmpeg_ir::features::{FeatureDefinition, PrincipalPlane};
+    use cadmpeg_ir::features::{FeatureDefinition, PrincipalPlane, UnresolvedFamily};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -1379,7 +1379,9 @@ fn semantic_writer_round_trips_principal_reference_planes() {
     }
     assert!(matches!(
         &decoded.ir().model.features[3].definition,
-        FeatureDefinition::DatumPlaneUnresolved
+        FeatureDefinition::Unresolved {
+            family: UnresolvedFamily::DatumPlane
+        }
     ));
     assert!(matches!(
         &decoded.ir().model.features[4].definition,
