@@ -123,11 +123,6 @@ pub(crate) struct ClassInterval {
     source_ids: Vec<u32>,
 }
 
-#[derive(Debug, Clone, Default)]
-pub(crate) struct SceneFeatureClasses {
-    pub(crate) by_source: HashMap<String, String>,
-}
-
 pub(crate) fn class_intervals(payload: &[u8]) -> Vec<ClassInterval> {
     let declarations = payload
         .windows(CLASS_MARKER.len())
@@ -200,7 +195,7 @@ fn scene_classes(payload: &[u8]) -> Vec<(u32, String)> {
         .collect()
 }
 
-pub(crate) fn scene_feature_classes(scan: &ContainerScan) -> SceneFeatureClasses {
+pub(crate) fn scene_feature_classes(scan: &ContainerScan) -> HashMap<String, String> {
     let mut candidates = HashMap::<u32, Option<String>>::new();
     for section in scan.sections() {
         for (source, class) in scene_classes(section.payload()) {
@@ -214,12 +209,10 @@ pub(crate) fn scene_feature_classes(scan: &ContainerScan) -> SceneFeatureClasses
                 .or_insert_with(|| Some(class));
         }
     }
-    SceneFeatureClasses {
-        by_source: candidates
-            .into_iter()
-            .filter_map(|(source, class)| class.map(|class| (source.to_string(), class)))
-            .collect(),
-    }
+    candidates
+        .into_iter()
+        .filter_map(|(source, class)| class.map(|class| (source.to_string(), class)))
+        .collect()
 }
 
 pub(crate) fn auxiliary_channels_are_consistent(

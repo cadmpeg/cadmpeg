@@ -216,15 +216,15 @@ pub(crate) fn patch_payload(
         if record.item_count != 1 {
             continue;
         }
-        let mut parameters = ir.model.parameters.iter().filter(|parameter| {
-            parameter.pmi.as_ref().is_some_and(|pmi| {
-                pmi.native_ref == record.id
-                    || records_by_id
-                        .get(pmi.native_ref.as_str())
-                        .is_some_and(|bound| equivalent_dimensions(record, bound))
-            })
+        let mut parameters = ir.model.parameters.iter().filter_map(|parameter| {
+            let semantic = parameter.pmi.as_ref()?;
+            (semantic.native_ref == record.id
+                || records_by_id
+                    .get(semantic.native_ref.as_str())
+                    .is_some_and(|bound| equivalent_dimensions(record, bound)))
+            .then_some((parameter, semantic))
         });
-        let Some(parameter) = parameters.next() else {
+        let Some((parameter, semantic)) = parameters.next() else {
             continue;
         };
         if parameters.next().is_some() {
@@ -233,7 +233,6 @@ pub(crate) fn patch_payload(
                 record.id
             )));
         }
-        let semantic = parameter.pmi.as_ref().expect("filtered above");
         let empty_subtype_is_count = semantic.subtype == PmiDimensionSubtype::Count;
         let subtype = dimension_subtype(record, empty_subtype_is_count);
         if semantic.subtype != subtype {
@@ -466,9 +465,6 @@ enum ValueKind {
     String(String),
     Array(Vec<SpannedValue>),
     Map(BTreeMap<String, SpannedValue>),
-    Nil,
-    /// Invalid-UTF-8 strings, `bin` / `ext`, and out-of-range integers: cursor
-    /// advanced, content opaque.
     Opaque,
 }
 
@@ -730,11 +726,7 @@ fn parse_value(bytes: &[u8], cursor: &mut usize, depth: usize) -> Option<Spanned
         Marker::FixMap(len) => parse_map(bytes, cursor, usize::from(len), depth, start),
         Marker::FixArray(len) => parse_array(bytes, cursor, usize::from(len), depth, start),
         Marker::FixStr(len) => parse_string(bytes, cursor, usize::from(len), start),
-        Marker::Null => Some(SpannedValue {
-            kind: ValueKind::Nil,
-            start,
-            data_offset: start,
-        }),
+        Marker::Null => Some(opaque(start)),
         Marker::False => Some(SpannedValue {
             kind: ValueKind::Bool(false),
             start,

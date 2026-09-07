@@ -25,10 +25,6 @@ pub(crate) struct AppearanceDefinition {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum DisplayAppearanceTarget {
     Body(Vec<usize>),
-    Feature {
-        source_id: u32,
-        face_indexes: Vec<usize>,
-    },
     Face(usize),
 }
 
@@ -308,17 +304,8 @@ pub(crate) fn resolve_display_appearances(
             source_name: assignment.source_name.clone(),
             record_offset: assignment.record_offset,
         };
-        let assignment = DisplayAppearanceAssignment {
-            target: DisplayAppearanceTarget::Feature {
-                source_id,
-                face_indexes,
-            },
-            definition,
-        };
-        if let DisplayAppearanceTarget::Feature { face_indexes, .. } = &assignment.target {
-            for face_index in face_indexes {
-                by_face.insert(*face_index, assignment.definition.clone());
-            }
+        for face_index in face_indexes {
+            by_face.insert(face_index, definition.clone());
         }
     }
     for assignment in native_assignments {

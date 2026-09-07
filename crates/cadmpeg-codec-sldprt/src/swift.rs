@@ -686,29 +686,48 @@ fn project_with_topology(
         if suppressed(entity) || short_class(&entity.class) == "GdtDatum" {
             continue;
         }
-        if let Some((system, mut annotation)) =
-            project_tolerance(reference, entity, &datum_ids, &feature_index, topology)
-        {
-            if let Some(system) = system {
-                let PmiDefinition::DatumSystem { references } = &system.definition else {
-                    unreachable!("projected datum system definition");
-                };
-                if let Some((_, id)) = datum_systems
-                    .iter()
-                    .find(|(candidate, _)| candidate == references)
-                {
-                    let PmiDefinition::GeometricTolerance { datum_system, .. } =
-                        &mut annotation.definition
-                    else {
-                        unreachable!("projected geometric tolerance definition");
-                    };
-                    *datum_system = Some(id.clone());
-                } else {
-                    datum_systems.push((references.clone(), system.id.clone()));
-                    projected.push(system);
-                }
-            }
-            projected.push(annotation);
+        if let Some(tolerance) = project_tolerance(entity, &datum_ids) {
+            let datum_system = if tolerance.references.is_empty() {
+                None
+            } else if let Some((_, id)) = datum_systems
+                .iter()
+                .find(|(candidate, _)| *candidate == tolerance.references)
+            {
+                Some(id.clone())
+            } else {
+                let id = PmiId::mint(format!(
+                    "{}:datum-system",
+                    pmi_id(&reference.id).into_string()
+                ))
+                .expect("identity grammar");
+                datum_systems.push((tolerance.references.clone(), id.clone()));
+                projected.push(PmiAnnotation {
+                    id: id.clone(),
+                    name: None,
+                    visible: None,
+                    targets: Vec::new(),
+                    definition: PmiDefinition::DatumSystem {
+                        references: tolerance.references,
+                    },
+                });
+                Some(id)
+            };
+            let (defined_unit, defined_area_unit, defined_area_second_unit) = defined_area(entity);
+            projected.push(PmiAnnotation {
+                id: pmi_id(&reference.id),
+                name: object_name(entity),
+                visible: None,
+                targets: targets(entity, &feature_index, topology),
+                definition: PmiDefinition::GeometricTolerance {
+                    tolerance: tolerance.kind,
+                    magnitude: tolerance.magnitude,
+                    defined_unit,
+                    defined_area_unit,
+                    defined_area_second_unit,
+                    datum_system,
+                    modifiers: tolerance_modifiers(entity),
+                },
+            });
             if short_class(&entity.class) == "GdtCompositeSurfaceProfile" {
                 if let Some(lower_tier) =
                     project_lower_profile_tier(reference, entity, &feature_index, topology)
@@ -751,50 +770,23 @@ fn project_datum(
     })
 }
 
+struct ProjectedTolerance {
+    kind: GeometricToleranceKind,
+    magnitude: PmiValue,
+    references: Vec<DatumReference>,
+}
+
 fn project_tolerance(
-    reference: &Reference,
     entity: &Entity,
     datum_ids: &BTreeMap<&str, PmiId>,
-    feature_index: &BTreeMap<&str, &Entity>,
-    topology: Option<&TopologyIdentityIndex>,
-) -> Option<(Option<PmiAnnotation>, PmiAnnotation)> {
+) -> Option<ProjectedTolerance> {
     let kind = tolerance_kind(short_class(&entity.class))?;
     let magnitude = finite_nonnegative(entity.doubles.get("Tolerance").copied()?)?;
-    let references = datum_references(entity, datum_ids);
-    let system = (!references.is_empty()).then(|| {
-        let id = PmiId::mint(format!(
-            "{}:datum-system",
-            pmi_id(&reference.id).into_string()
-        ))
-        .expect("identity grammar");
-        PmiAnnotation {
-            id,
-            name: None,
-            visible: None,
-            targets: Vec::new(),
-            definition: PmiDefinition::DatumSystem { references },
-        }
-    });
-    let datum_system = system.as_ref().map(|system| system.id.clone());
-    let (defined_unit, defined_area_unit, defined_area_second_unit) = defined_area(entity);
-    Some((
-        system,
-        PmiAnnotation {
-            id: pmi_id(&reference.id),
-            name: object_name(entity),
-            visible: None,
-            targets: targets(entity, feature_index, topology),
-            definition: PmiDefinition::GeometricTolerance {
-                tolerance: kind,
-                magnitude: length(magnitude),
-                defined_unit,
-                defined_area_unit,
-                defined_area_second_unit,
-                datum_system,
-                modifiers: tolerance_modifiers(entity),
-            },
-        },
-    ))
+    Some(ProjectedTolerance {
+        kind,
+        magnitude: length(magnitude),
+        references: datum_references(entity, datum_ids),
+    })
 }
 
 fn project_lower_profile_tier(

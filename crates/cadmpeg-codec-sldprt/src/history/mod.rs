@@ -287,7 +287,7 @@ pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Fea
 
 pub(crate) fn enrich_scene_classes(
     histories: &mut [FeatureHistory],
-    scene_classes: &crate::tessellation::SceneFeatureClasses,
+    scene_classes: &HashMap<String, String>,
 ) {
     for feature in histories
         .iter_mut()
@@ -297,7 +297,7 @@ pub(crate) fn enrich_scene_classes(
             continue;
         };
         if feature.input_class.is_none() && classless_builtin_node(feature) {
-            feature.input_class = scene_classes.by_source.get(source).cloned();
+            feature.input_class = scene_classes.get(source).cloned();
         }
     }
 }

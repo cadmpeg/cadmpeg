@@ -5966,7 +5966,6 @@ mod tests {
                     attr: 11,
                     node_id: 244,
                     refs: [1, 3, 39, 1, 44],
-                    kind: crate::brep::typed::RegionKind::Void,
                     offset: 5,
                     end: 6,
                 },
@@ -5974,7 +5973,6 @@ mod tests {
                     attr: 39,
                     node_id: 815,
                     refs: [1, 3, 1, 11, 7],
-                    kind: crate::brep::typed::RegionKind::Solid,
                     offset: 7,
                     end: 8,
                 },
@@ -5982,7 +5980,6 @@ mod tests {
             faces: vec![FaceNode {
                 attr: 100,
                 node_id: 900,
-                attribute_chain: 1,
                 refs: [1, 1, 49, 7, 8],
                 sense: Sense::Forward,
                 offset: 9,

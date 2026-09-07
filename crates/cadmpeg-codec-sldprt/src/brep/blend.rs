@@ -51,9 +51,25 @@ pub(crate) struct SupportPairCarrier {
     pub intersection: u16,
 }
 
+#[derive(PartialEq, Eq)]
+enum SupportSelector {
+    PairThenSurface,
+    TwoSurfaces,
+}
+
+impl SupportSelector {
+    fn read(byte: u8) -> Option<Self> {
+        match byte {
+            0x45 => Some(Self::PairThenSurface),
+            0x52 => Some(Self::TwoSurfaces),
+            _ => None,
+        }
+    }
+}
+
 struct RawCarrier {
     attr: u16,
-    selector: u8,
+    selector: SupportSelector,
     references: [u16; 3],
     values: [f64; 4],
 }
@@ -70,10 +86,7 @@ fn parse_raw(bytes: &[u8], offset: usize) -> Option<RawCarrier> {
     if attr == 0 || !matches!(bytes.get(body + blend_rec::MARKER), Some(0x2b | 0x2d)) {
         return None;
     }
-    let selector = *bytes.get(body + blend_rec::SELECTOR)?;
-    if !matches!(selector, 0x45 | 0x52) {
-        return None;
-    }
+    let selector = SupportSelector::read(*bytes.get(body + blend_rec::SELECTOR)?)?;
     let references = [
         View::u16_be_at(bytes, body + blend_rec::SUPPORT0)?,
         View::u16_be_at(bytes, body + blend_rec::SUPPORT1)?,
@@ -111,15 +124,14 @@ fn parse_blend(bytes: &[u8], offset: usize) -> Option<BlendCarrier> {
         return None;
     }
     let supports = match raw.selector {
-        0x45 => [
+        SupportSelector::PairThenSurface => [
             BlendSupportRef::Pair(raw.references[0]),
             BlendSupportRef::Surface(raw.references[1]),
         ],
-        0x52 => [
+        SupportSelector::TwoSurfaces => [
             BlendSupportRef::Surface(raw.references[0]),
             BlendSupportRef::Surface(raw.references[1]),
         ],
-        _ => unreachable!(),
     };
     Some(BlendCarrier {
         attr: raw.attr,
@@ -144,7 +156,7 @@ pub(crate) fn scan(bytes: &[u8]) -> (HashMap<u16, BlendCarrier>, HashMap<u16, Su
             blends.entry(carrier.attr).or_insert(carrier);
         }
         if let Some(raw) = parse_raw(bytes, offset) {
-            if raw.selector == 0x52
+            if raw.selector == SupportSelector::TwoSurfaces
                 && raw.values[0].abs() <= f64::EPSILON
                 && raw.values[1].abs() <= f64::EPSILON
             {
