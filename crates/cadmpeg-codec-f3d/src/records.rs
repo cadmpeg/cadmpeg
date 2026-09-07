@@ -1293,7 +1293,7 @@ pub struct DesignDimensionAnnotationFrame {
     /// Byte offset of the primary indexed record header.
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Source indexed-record identity.
     pub record_index: u32,
     /// Byte length from the primary through the paired header boundary.
@@ -1313,7 +1313,7 @@ pub struct DesignDimensionAnnotationFrame {
     /// Ordered non-null return geometry records.
     pub return_members: Vec<Located<NonZeroU32>>,
     /// Dynamic class tag of the paired indexed record.
-    pub paired_class_tag: String,
+    pub paired_class_tag: DesignClassTag,
     /// Byte offset of the paired indexed record header.
     pub paired_byte_offset: u64,
     /// Numeric design-entity suffix of the owning sketch.
@@ -1388,7 +1388,7 @@ impl TryFrom<DesignDimensionAnnotationFrameWire> for DesignDimensionAnnotationFr
             companion_record_index: wire.companion_record_index,
             governing_companion_record_index: wire.governing_companion_record_index,
             byte_offset: wire.byte_offset,
-            class_tag: wire.class_tag,
+            class_tag: wire.class_tag.try_into()?,
             record_index: wire.record_index,
             frame_length: wire.frame_length,
             operands: wire.operands,
@@ -1397,7 +1397,7 @@ impl TryFrom<DesignDimensionAnnotationFrameWire> for DesignDimensionAnnotationFr
             annotation_byte_offset: wire.annotation_byte_offset,
             governing_owner_record_index: wire.governing_owner_record_index,
             governing_owner_reference_offset: wire.governing_owner_reference_offset,
-            paired_class_tag: wire.paired_class_tag,
+            paired_class_tag: wire.paired_class_tag.try_into()?,
             paired_byte_offset: wire.paired_byte_offset,
             owner_reference: wire.owner_reference,
             owner_reference_offset: wire.owner_reference_offset,
@@ -1418,7 +1418,7 @@ impl From<DesignDimensionAnnotationFrame> for DesignDimensionAnnotationFrameWire
             companion_record_index: value.companion_record_index,
             governing_companion_record_index: value.governing_companion_record_index,
             byte_offset: value.byte_offset,
-            class_tag: value.class_tag,
+            class_tag: value.class_tag.into(),
             record_index: value.record_index,
             frame_length: value.frame_length,
             operands: value.operands,
@@ -1427,7 +1427,7 @@ impl From<DesignDimensionAnnotationFrame> for DesignDimensionAnnotationFrameWire
             annotation_byte_offset: value.annotation_byte_offset,
             governing_owner_record_index: value.governing_owner_record_index,
             governing_owner_reference_offset: value.governing_owner_reference_offset,
-            paired_class_tag: value.paired_class_tag,
+            paired_class_tag: value.paired_class_tag.into(),
             paired_byte_offset: value.paired_byte_offset,
             owner_reference: value.owner_reference,
             owner_reference_offset: value.owner_reference_offset,

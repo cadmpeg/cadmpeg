@@ -8136,14 +8136,7 @@ fn validate_dimension_annotation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) 
         let owner_is_sketch = entities_by_suffix
             .get(&(native_stream, u64::from(frame.owner_reference)))
             .is_some_and(|entity| entity.in_sketch_module());
-        let valid = frame.class_tag.len() == 3
-            && frame.class_tag.bytes().all(|byte| byte.is_ascii_digit())
-            && frame.paired_class_tag.len() == 3
-            && frame
-                .paired_class_tag
-                .bytes()
-                .all(|byte| byte.is_ascii_digit())
-            && unique_index
+        let valid = unique_index
             && physical_interval_valid
             && governing_link_valid
             && operands_valid

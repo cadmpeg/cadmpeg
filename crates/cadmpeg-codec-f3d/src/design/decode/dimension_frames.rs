@@ -1192,8 +1192,6 @@ pub(crate) fn parse_dimension_annotation_frame(
 ) -> Option<DesignDimensionAnnotationFrame> {
     let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
     if after_tag != start.checked_add(7)?
-        || class_tag.len() != 3
-        || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
         || bytes.get(start + 11..start + 19) != Some(&[0; 8])
         || bytes.get(start + 19) != Some(&1)
     {
@@ -1339,7 +1337,7 @@ pub(crate) fn parse_dimension_annotation_frame(
         companion_record_index,
         governing_companion_record_index: *governing_companion_record_index,
         byte_offset: start as u64,
-        class_tag,
+        class_tag: class_tag.try_into().ok()?,
         record_index,
         frame_length: u64::try_from(paired_byte_offset.checked_sub(start)?).ok()?,
         operands,
@@ -1349,7 +1347,7 @@ pub(crate) fn parse_dimension_annotation_frame(
         governing_owner_record_index: *governing_owner_record_index,
         governing_owner_reference_offset: (*tail + 1) as u64,
         return_members: return_members.clone(),
-        paired_class_tag,
+        paired_class_tag: paired_class_tag.try_into().ok()?,
         paired_byte_offset: paired_byte_offset as u64,
         owner_reference,
         owner_reference_offset: (paired_byte_offset + 20) as u64,

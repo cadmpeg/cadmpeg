@@ -539,7 +539,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
         companion_record_index: Some(15),
         governing_companion_record_index: 15,
         byte_offset: 0,
-        class_tag: "256".into(),
+        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
         record_index: 14,
         frame_length: 100,
         operands: vec![
@@ -565,7 +565,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
             value: std::num::NonZeroU32::new(10).unwrap(),
             offset: 0,
         }],
-        paired_class_tag: "256".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
         paired_byte_offset: 0,
         owner_reference: 100,
         owner_reference_offset: 0,
