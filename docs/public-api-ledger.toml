@@ -6196,3 +6196,10 @@ crate = "cadmpeg-asm"
 kind = "deletion"
 item = "cadmpeg_asm::nurbs::core::SurfacePatchLayout::control_value_offsets"
 reason = "ASM-02: surface control component offsets and block end derive from the parsed control origin and decoded surface instead of independent stored fields"
+
+[[change]]
+commit = "b90985808785f868ad5e87abfceced1fd8276538"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::reader::KnotLayout::multiplicity_offsets"
+reason = "ASM-01: each multiplicity payload follows its knot value payload by nine bytes; derive it instead of storing a parallel offset vector"

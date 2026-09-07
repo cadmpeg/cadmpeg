@@ -504,22 +504,13 @@ impl AsmEditSet {
             }
             runs.push((*knot, 1));
         }
-        if runs.len() != layout.value_offsets.len()
-            || runs.len() != layout.multiplicity_offsets.len()
-        {
+        if runs.len() != layout.value_offsets.len() {
             return Err(CodecError::NotImplemented(
                 "F3D NURBS curve edit changes the unique-knot count".into(),
             ));
         }
-        for (ordinal, ((value, expanded_count), (value_offset, multiplicity_offset))) in runs
-            .into_iter()
-            .zip(
-                layout
-                    .value_offsets
-                    .iter()
-                    .zip(&layout.multiplicity_offsets),
-            )
-            .enumerate()
+        for (ordinal, ((value, expanded_count), value_offset)) in
+            runs.into_iter().zip(&layout.value_offsets).enumerate()
         {
             let endpoint_extra =
                 usize::from(ordinal == 0 || ordinal + 1 == layout.value_offsets.len());
@@ -538,14 +529,9 @@ impl AsmEditSet {
                 CodecError::Malformed("ASM knot value offset exceeds address space".into())
             })?;
             Self::patch_f64_payload(bytes, value_at, value)?;
-            let multiplicity_at =
-                record_offset
-                    .checked_add(*multiplicity_offset)
-                    .ok_or_else(|| {
-                        CodecError::Malformed(
-                            "ASM knot multiplicity offset exceeds address space".into(),
-                        )
-                    })?;
+            let multiplicity_at = value_at.checked_add(9).ok_or_else(|| {
+                CodecError::Malformed("ASM knot multiplicity offset exceeds address space".into())
+            })?;
             Self::patch_layout_integer(bytes, multiplicity_at, int_width, stored)?;
         }
         Ok(())

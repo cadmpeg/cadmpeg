@@ -175,8 +175,6 @@ pub(crate) fn checked_knot_layout(
 pub struct KnotLayout {
     /// Payload offsets for unique knot values.
     pub value_offsets: Vec<usize>,
-    /// Payload offsets for stored multiplicities.
-    pub multiplicity_offsets: Vec<usize>,
 }
 
 /// Read a knot table of `n` `(knot, multiplicity)` pairs, returning the expanded
@@ -191,7 +189,6 @@ pub(crate) fn read_knots(
     let mut knots = Vec::new();
     let mut mults = Vec::new();
     let mut value_offsets = Vec::new();
-    let mut multiplicity_offsets = Vec::new();
     for _ in 0..n {
         if *b.get(*pos)? != 0x06 {
             return None;
@@ -199,7 +196,6 @@ pub(crate) fn read_knots(
         value_offsets.push(*pos + 1);
         knots.push(View::f64_le_at(b, *pos + 1)?);
         *pos += 9;
-        multiplicity_offsets.push(*pos + 1);
         mults.push(take_tagged_int(b, pos, 0x04, int_width)?);
     }
     let expansion = checked_knot_layout(&mults, degree)?;
@@ -209,14 +205,7 @@ pub(crate) fn read_knots(
             expanded.push(*kv);
         }
     }
-    Some((
-        expanded,
-        expansion.n_poles,
-        KnotLayout {
-            value_offsets,
-            multiplicity_offsets,
-        },
-    ))
+    Some((expanded, expansion.n_poles, KnotLayout { value_offsets }))
 }
 
 /// Read `count` control points of `cp_dims` doubles each at `*pos`. Returns the
