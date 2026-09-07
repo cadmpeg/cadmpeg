@@ -56,8 +56,8 @@ impl From<FeatureOperationBodyScalarTriple> for FeatureOperationBodyScalarTriple
             body_reference_ordinal: value.body_reference_ordinal,
             body_object_index: value.body_object_index,
             branch: value.branch,
-            values: value.scalars.atoms().map(|atom| atom.value()),
-            encodings: value.scalars.atoms().map(|atom| atom.encoding()),
+            values: value.scalars.atoms().map(PayloadScalarAtom::value),
+            encodings: value.scalars.atoms().map(PayloadScalarAtom::encoding),
             raw_values: value.scalars.atoms().map(|atom| atom.raw().to_vec()),
             source_offsets: value.scalars.source_offsets(),
         }
