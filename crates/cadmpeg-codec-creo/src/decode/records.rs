@@ -1076,17 +1076,23 @@ pub(super) fn loop_array_frame_records(scan: &ContainerScan) -> Vec<CreoLoopArra
     scan.loop_arrays
         .frames
         .iter()
-        .map(|frame| CreoLoopArrayFrameRecord {
-            id: format!("creo:loop_array:frame#{}", frame.offset),
-            variant: frame.variant,
-            declared_count: frame.declared_count,
-            class_id: frame.class_id,
-            materialized_count: frame.materialized_count,
-            overfull: frame.overfull,
-            offset: frame.offset,
-            prototype_end: frame.prototype_end,
-            end: frame.end,
-            source_section: source_section(scan, frame.offset),
+        .map(|frame| {
+            let (materialized_count, overfull) = match frame.rows {
+                crate::loop_array::LoopArrayFrameRows::Materialized(count) => (count, false),
+                crate::loop_array::LoopArrayFrameRows::Overfull => (0, true),
+            };
+            CreoLoopArrayFrameRecord {
+                id: format!("creo:loop_array:frame#{}", frame.offset),
+                variant: frame.variant,
+                declared_count: frame.declared_count,
+                class_id: frame.class_id,
+                materialized_count,
+                overfull,
+                offset: frame.offset,
+                prototype_end: frame.prototype_end,
+                end: frame.end,
+                source_section: source_section(scan, frame.offset),
+            }
         })
         .collect()
 }
