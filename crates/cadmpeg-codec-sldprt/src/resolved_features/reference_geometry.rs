@@ -838,21 +838,13 @@ fn coordinate_system_tail(
     Some(*flips)
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum CoordinateSystemOriginKind {
-    Standard,
-    Extended,
-    ComponentPath,
-    EndpointPath,
-}
-
 #[derive(Clone, Copy)]
 struct CoordinateSystemOrigin {
     point: Point3,
     generation: u32,
     start: usize,
     end: usize,
-    kind: CoordinateSystemOriginKind,
+    extended: bool,
 }
 
 fn coordinate_system_origin(record: &[u8]) -> Option<(Point3, u32, usize)> {
@@ -943,7 +935,7 @@ fn coordinate_system_endpoint_origins(record: &[u8]) -> Vec<CoordinateSystemOrig
                 generation,
                 start: prefix,
                 end: trailer.checked_add(ep_path_suf::LEN)?,
-                kind: CoordinateSystemOriginKind::EndpointPath,
+                extended: false,
             })
         })
         .collect()
@@ -975,14 +967,14 @@ fn coordinate_system_origins(record: &[u8]) -> Vec<CoordinateSystemOrigin> {
                     generation: candidate.1,
                     start: prefix,
                     end: candidate.2,
-                    kind: CoordinateSystemOriginKind::ComponentPath,
+                    extended: false,
                 });
             }
             let stamp = View::u32_le_at(record, prefix + cs_pt::SOURCE_STAMP)?;
             if stamp == 0 || stamp == u32::MAX {
                 return None;
             }
-            let (object, generation, origin_offset, record_len, kind) = if record
+            let (object, generation, origin_offset, record_len, extended) = if record
                 .get(prefix + cs_pt::ZERO_SELECTOR..prefix + cs_pt::ONE_SELECTOR)
                 == Some(&[0; 2])
                 && record.get(prefix + cs_pt::ONE_SELECTOR..prefix + cs_pt::ZERO_BEFORE_OBJECT)
@@ -1003,7 +995,7 @@ fn coordinate_system_origins(record: &[u8]) -> Vec<CoordinateSystemOrigin> {
                     View::u32_le_at(record, prefix + cs_pt::GENERATION)?,
                     cs_pt::ORIGIN,
                     cs_pt::LEN,
-                    CoordinateSystemOriginKind::Standard,
+                    false,
                 )
             } else if record.get(prefix + cs_ext::SENTINEL..prefix + cs_ext::ZERO_BEFORE_COUNT)
                 == Some(&[0xff; 4])
@@ -1032,7 +1024,7 @@ fn coordinate_system_origins(record: &[u8]) -> Vec<CoordinateSystemOrigin> {
                     View::u32_le_at(record, prefix + cs_ext::GENERATION)?,
                     cs_ext::ORIGIN,
                     cs_ext::LEN,
-                    CoordinateSystemOriginKind::Extended,
+                    true,
                 )
             } else {
                 return None;
@@ -1049,7 +1041,7 @@ fn coordinate_system_origins(record: &[u8]) -> Vec<CoordinateSystemOrigin> {
                 generation,
                 start: prefix,
                 end: prefix.checked_add(record_len)?,
-                kind,
+                extended,
             })
         })
         .collect()
@@ -1060,10 +1052,7 @@ fn coordinate_system_two_point_frame(record: &[u8]) -> Option<(Point3, Vector3, 
     let [origin, axis_point] = origins.as_slice() else {
         return None;
     };
-    if origin.kind != CoordinateSystemOriginKind::Extended
-        || axis_point.kind != CoordinateSystemOriginKind::Extended
-        || origin.generation != axis_point.generation
-    {
+    if !origin.extended || !axis_point.extended || origin.generation != axis_point.generation {
         return None;
     }
     let separator = record.get(origin.end..axis_point.start)?;
