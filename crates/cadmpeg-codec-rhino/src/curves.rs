@@ -142,32 +142,10 @@ impl DecodedCurve {
         matches!(self, Self::Compound { .. })
     }
 
-    pub(crate) fn into_leaf_geometry(self) -> Option<CurveGeometry> {
-        match self {
-            Self::Leaf { geometry, .. } => Some(geometry),
-            Self::Compound { .. } => None,
-        }
-    }
-
     pub(crate) fn reported_geometry(&self) -> CurveGeometry {
         match self {
             Self::Leaf { geometry, .. } => geometry.clone(),
             Self::Compound { .. } => CurveGeometry::Unknown { record: None },
-        }
-    }
-
-    pub(crate) fn compound_parameters(&self) -> Option<Vec<f64>> {
-        match self {
-            Self::Compound {
-                children,
-                end_parameter,
-                ..
-            } => {
-                let mut parameters = children.iter().map(|(start, _)| *start).collect::<Vec<_>>();
-                parameters.push(*end_parameter);
-                Some(parameters)
-            }
-            Self::Leaf { .. } => None,
         }
     }
 }

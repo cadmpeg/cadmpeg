@@ -4614,33 +4614,44 @@ fn stage_curve_tree(
     association: &SourceObjectAssociation,
     unknown: &UnknownId,
 ) -> cadmpeg_ir::ids::CurveId {
-    let parameters = curve.compound_parameters();
-    let mut component_ids = Vec::new();
-    if let crate::curves::DecodedCurve::Compound { children, .. } = &curve {
-        for (index, (parameter, child)) in children.iter().cloned().enumerate() {
-            component_ids.push(cadmpeg_ir::geometry::CompoundComponent {
-                parameter,
-                component: stage_curve_tree(
-                    staged,
-                    child,
-                    key,
-                    &format!("{path}.component-{index}"),
-                    association,
-                    unknown,
-                ),
-            });
+    let (geometry, definition) = match curve {
+        crate::curves::DecodedCurve::Leaf { geometry, .. } => (geometry, None),
+        crate::curves::DecodedCurve::Compound {
+            children,
+            end_parameter,
+            ..
+        } => {
+            let mut parameters = Vec::with_capacity(children.len() + 1);
+            let mut components = Vec::with_capacity(children.len());
+            for (index, (parameter, child)) in children.into_iter().enumerate() {
+                parameters.push(parameter);
+                components.push(cadmpeg_ir::geometry::CompoundComponent {
+                    parameter,
+                    component: stage_curve_tree(
+                        staged,
+                        child,
+                        key,
+                        &format!("{path}.component-{index}"),
+                        association,
+                        unknown,
+                    ),
+                });
+            }
+            parameters.push(end_parameter);
+            (
+                CurveGeometry::Unknown {
+                    record: Some(unknown.clone()),
+                },
+                Some(ProceduralCurveDefinition::Compound {
+                    parameters,
+                    components,
+                }),
+            )
         }
-    }
+    };
     let id: cadmpeg_ir::ids::CurveId = format!("rhino:object:curve#{key}.{path}")
         .try_into()
         .expect("valid identity");
-    let geometry = if curve.is_compound() {
-        CurveGeometry::Unknown {
-            record: Some(unknown.clone()),
-        }
-    } else {
-        curve.into_leaf_geometry().expect("leaf curve")
-    };
     staged.draft.model_mut().curves.push(Curve {
         id: id.clone(),
         geometry,
@@ -4648,7 +4659,7 @@ fn stage_curve_tree(
     });
     staged.draft.exactness(id.to_string(), Exactness::Derived);
     staged.links.push(id.to_string());
-    if let Some(parameters) = parameters {
+    if let Some(definition) = definition {
         let procedure_id: cadmpeg_ir::ids::ProceduralCurveId =
             format!("rhino:object:procedural-curve#{key}.{path}")
                 .try_into()
@@ -4656,31 +4667,13 @@ fn stage_curve_tree(
         staged
             .draft
             .exactness(procedure_id.to_string(), Exactness::Derived);
-        staged_links_procedure(
-            staged,
-            id.clone(),
-            ProceduralCurve::new(
-                procedure_id,
-                ProceduralCurveDefinition::Compound {
-                    parameters,
-                    components: component_ids,
-                },
-            ),
-        );
+        staged.links.push(procedure_id.to_string());
+        let _attached = staged
+            .draft
+            .model_mut()
+            .add_procedural_curve(id.clone(), ProceduralCurve::new(procedure_id, definition));
     }
     id
-}
-
-fn staged_links_procedure(
-    staged: &mut BrepDraft,
-    owner: cadmpeg_ir::ids::CurveId,
-    procedure: ProceduralCurve,
-) {
-    staged.links.push(procedure.id.to_string());
-    let _attached = staged
-        .draft
-        .model_mut()
-        .add_procedural_curve(owner, procedure);
 }
 
 fn decode_pcurves(
@@ -5058,25 +5051,41 @@ fn commit_curve_tree(
     record: Option<UnknownId>,
     path: &str,
 ) -> cadmpeg_ir::ids::CurveId {
-    let parameters = curve.compound_parameters();
-    let mut component_ids = Vec::new();
-    if let crate::curves::DecodedCurve::Compound { children, .. } = &curve {
-        for (index, (parameter, child)) in children.iter().cloned().enumerate() {
-            let child_path = format!("{path}.component-{index}");
-            component_ids.push(cadmpeg_ir::geometry::CompoundComponent {
-                parameter,
-                component: commit_curve_tree(
-                    ir,
-                    annotations,
-                    child,
-                    key,
-                    association,
-                    None,
-                    &child_path,
-                ),
-            });
+    let (geometry, definition) = match curve {
+        crate::curves::DecodedCurve::Leaf { geometry, .. } => (geometry, None),
+        crate::curves::DecodedCurve::Compound {
+            children,
+            end_parameter,
+            ..
+        } => {
+            let mut parameters = Vec::with_capacity(children.len() + 1);
+            let mut components = Vec::with_capacity(children.len());
+            for (index, (parameter, child)) in children.into_iter().enumerate() {
+                parameters.push(parameter);
+                let child_path = format!("{path}.component-{index}");
+                components.push(cadmpeg_ir::geometry::CompoundComponent {
+                    parameter,
+                    component: commit_curve_tree(
+                        ir,
+                        annotations,
+                        child,
+                        key,
+                        association,
+                        None,
+                        &child_path,
+                    ),
+                });
+            }
+            parameters.push(end_parameter);
+            (
+                CurveGeometry::Unknown { record },
+                Some(ProceduralCurveDefinition::Compound {
+                    parameters,
+                    components,
+                }),
+            )
         }
-    }
+    };
     let id: cadmpeg_ir::ids::CurveId = if path == "root" {
         format!("rhino:object:curve#{key}")
             .try_into()
@@ -5086,18 +5095,13 @@ fn commit_curve_tree(
             .try_into()
             .expect("valid identity")
     };
-    let geometry = if curve.is_compound() {
-        CurveGeometry::Unknown { record }
-    } else {
-        curve.into_leaf_geometry().expect("leaf curve")
-    };
     ir.model.curves.push(Curve {
         id: id.clone(),
         geometry,
         source_object: Some(association.clone()),
     });
     set_exactness(annotations, &id, Exactness::Derived);
-    if let Some(parameters) = parameters {
+    if let Some(definition) = definition {
         let procedure_id: cadmpeg_ir::ids::ProceduralCurveId = if path == "root" {
             format!("rhino:object:procedural-curve#{key}")
                 .try_into()
@@ -5107,16 +5111,9 @@ fn commit_curve_tree(
                 .try_into()
                 .expect("valid identity")
         };
-        let _attached = ir.model.add_procedural_curve(
-            id.clone(),
-            ProceduralCurve::new(
-                procedure_id,
-                ProceduralCurveDefinition::Compound {
-                    parameters,
-                    components: component_ids,
-                },
-            ),
-        );
+        let _attached = ir
+            .model
+            .add_procedural_curve(id.clone(), ProceduralCurve::new(procedure_id, definition));
     }
     id
 }
