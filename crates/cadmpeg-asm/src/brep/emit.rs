@@ -1975,8 +1975,10 @@ fn emit_variable_blend_surface(
     construction: Box<EmbeddedVariableBlend>,
     format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
-    let mut sides = Vec::with_capacity(2);
-    for (side_index, side) in construction.sides.into_iter().enumerate() {
+    let mut next_side_index = 0;
+    let sides = (*construction.sides).map(|side| {
+        let side_index = next_side_index;
+        next_side_index += 1;
         let prefix = format!("{format}:brep:procedural_surface#{i}:variable_side{side_index}");
         let surface = side.surface.map(|geometry| {
             let id = SurfaceId::mint(format!("{prefix}:surface")).expect("identity grammar");
@@ -1996,7 +1998,7 @@ fn emit_variable_blend_surface(
             });
             id
         });
-        sides.push(RollingBallSide {
+        RollingBallSide {
             support_kind: side.support_kind,
             surface,
             surface_ranges: side.surface_ranges,
@@ -2011,11 +2013,8 @@ fn emit_variable_blend_surface(
             tertiary_pcurve: side
                 .tertiary_pcurve
                 .map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
-        });
-    }
-    let [first, second]: [RollingBallSide; 2] = sides
-        .try_into()
-        .expect("invariant: variable blend has two sides");
+        }
+    });
     let mut add_curve = |suffix: &str, geometry: CurveGeometry| {
         let id = CurveId::mint(format!(
             "{format}:brep:procedural_surface#{i}:variable_{suffix}"
@@ -2039,7 +2038,7 @@ fn emit_variable_blend_surface(
         construction: Box::new(VariableBlendConstruction {
             subtype: construction.subtype,
             revision: construction.revision,
-            sides: Box::new([first, second]),
+            sides: Box::new(sides),
             slice,
             slice_range: construction.slice_range,
             offsets: construction.offsets,
