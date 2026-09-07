@@ -78,7 +78,7 @@ pub(crate) struct FamilyTableInstance {
 }
 
 /// One typed family-table cell.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FamilyTableValue {
     /// Zero-based position in the source `values` array.
     pub(crate) ordinal: usize,
@@ -86,9 +86,7 @@ pub(crate) struct FamilyTableValue {
     pub(crate) source_object_id: String,
     /// Source offset of the typed value field.
     pub(crate) offset: usize,
-    /// Stored value type code.
-    pub(crate) type_code: i32,
-    /// Typed value payload selected by `type_code`.
+    /// Typed value payload.
     pub(crate) value: FamilyTableValuePayload,
 }
 
@@ -111,6 +109,30 @@ pub(crate) enum FamilyTableValuePayload {
         /// Exact source integer value.
         value: i32,
     },
+}
+
+impl FamilyTableValuePayload {
+    pub(crate) fn type_code(&self) -> i32 {
+        match self {
+            Self::Real { .. } => 50,
+            Self::String { .. } => 51,
+            Self::Integer { .. } => 52,
+        }
+    }
+}
+
+impl Serialize for FamilyTableValue {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+
+        let mut record = serializer.serialize_struct("FamilyTableValue", 5)?;
+        record.serialize_field("ordinal", &self.ordinal)?;
+        record.serialize_field("source_object_id", &self.source_object_id)?;
+        record.serialize_field("offset", &self.offset)?;
+        record.serialize_field("type_code", &self.value.type_code())?;
+        record.serialize_field("value", &self.value)?;
+        record.end()
+    }
 }
 
 struct Index<'a> {
@@ -424,7 +446,6 @@ pub(crate) fn parse(persistence: &Persistence) -> Option<FamilyTable> {
                         ordinal: value_ordinal,
                         source_object_id: value_row.id.clone(),
                         offset,
-                        type_code,
                         value,
                     })
                 })
@@ -613,7 +634,7 @@ mod tests {
         assert_eq!(table.items[0].item_id, 17);
         assert_eq!(table.instances[0].name, "SMALL");
         assert_eq!(table.instances[0].values[0].ordinal, 0);
-        assert_eq!(table.instances[0].values[0].type_code, 50);
+        assert_eq!(table.instances[0].values[0].value.type_code(), 50);
         assert!(matches!(
             table.instances[0].values[0].value,
             FamilyTableValuePayload::Real { .. }
