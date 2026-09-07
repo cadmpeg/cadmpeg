@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Standard nested-stream decode route: B-rep topology attach and geometry.
 
+use crate::families::standard::records::AnalyticSurfaceKind;
 use cadmpeg_core::decode::{alloc_filled, DecodeContext, WorkBudget};
 use cadmpeg_ir::document::{CadIr, EntityRewrite, Model};
 use cadmpeg_ir::geometry::{
@@ -1551,7 +1552,7 @@ fn try_decode_standard_population(
         .iter()
         .map(|record| match record {
             crate::families::standard::records::StandardSurfaceRecord::Analytic(prefix)
-                if prefix.kind != 0x32 =>
+                if prefix.kind != AnalyticSurfaceKind::Plane =>
             {
                 crate::families::standard::records::decode_curved(brep, prefix)
             }
@@ -1657,10 +1658,11 @@ fn try_decode_standard_population(
         };
         // A bridged plane parameter record contains the same `00 33 32`
         // marker as its SurfacicReps carrier.  One carrier exists per tag.
-        if prefix.kind == 0x32 && !decoded_plane_targets.insert(prefix.target) {
+        if prefix.kind == AnalyticSurfaceKind::Plane && !decoded_plane_targets.insert(prefix.target)
+        {
             continue;
         }
-        let decoded = if prefix.kind == 0x32 {
+        let decoded = if prefix.kind == AnalyticSurfaceKind::Plane {
             planes
                 .get(&prefix.target)
                 .and_then(crate::families::standard::records::decode_plane)
@@ -1681,7 +1683,7 @@ fn try_decode_standard_population(
                         (
                             "MainDataStream+SurfacicReps",
                             prefix.pos,
-                            format!("surfacic_reps_{:02x}", prefix.kind),
+                            format!("surfacic_reps_{:02x}", prefix.kind.marker()),
                         ),
                         |source_pos| {
                             (
@@ -1705,7 +1707,7 @@ fn try_decode_standard_population(
                 });
             }
             None => {
-                if prefix.kind == 0x32 {
+                if prefix.kind == AnalyticSurfaceKind::Plane {
                     plane_faces += 1;
                 }
                 let id =
@@ -1718,7 +1720,7 @@ fn try_decode_standard_population(
                     id.clone(),
                     "MainDataStream+SurfacicReps",
                     prefix.pos,
-                    format!("surfacic_reps_{:02x}", prefix.kind),
+                    format!("surfacic_reps_{:02x}", prefix.kind.marker()),
                     Exactness::Unknown,
                 ));
                 surfaces.push(Surface {
@@ -5964,7 +5966,7 @@ pub(crate) fn standard_plane_normals_from_face_frames(
         else {
             continue;
         };
-        if prefix.kind != 0x32 {
+        if prefix.kind != AnalyticSurfaceKind::Plane {
             continue;
         }
         let Some(normal) = face_frame_vectors.get(face).copied().flatten() else {

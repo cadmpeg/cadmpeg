@@ -1,4 +1,5 @@
 use super::*;
+use crate::families::standard::records::AnalyticSurfaceKind;
 
 #[test]
 fn repeated_face_domain_geometry_and_bounds_keep_only_a_unique_winner() {
@@ -699,7 +700,7 @@ fn standard_plane_normals_require_signed_face_frame_vectors() {
         StandardSurfaceRecord::Analytic(SurfacePrefix {
             pos: 0,
             target,
-            kind: 0x32,
+            kind: AnalyticSurfaceKind::Plane,
         })
     };
     let records = vec![plane(10), plane(20), plane(30)];
