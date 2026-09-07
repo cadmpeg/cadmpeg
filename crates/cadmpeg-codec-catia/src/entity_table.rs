@@ -1711,6 +1711,46 @@ mod tests {
         );
     }
 
+    /// The complete reference-signature production the fixture payload carries.
+    fn complete_reference_signature_wire() -> ReferenceSignatureWire {
+        ReferenceSignatureWire {
+            first_reference: 207,
+            prefix: ReferenceSignaturePrefix::Atom2,
+            signature: "2(E,0(E,4))".to_owned(),
+            signature_program: vec![
+                ReferenceSignatureInstruction::Decimal {
+                    digits: "2".to_owned(),
+                    offset: 12,
+                },
+                ReferenceSignatureInstruction::OpenCall { offset: 13 },
+                ReferenceSignatureInstruction::Symbol {
+                    symbol: ReferenceSignatureSymbol::E,
+                    offset: 14,
+                },
+                ReferenceSignatureInstruction::Comma { offset: 15 },
+                ReferenceSignatureInstruction::Decimal {
+                    digits: "0".to_owned(),
+                    offset: 16,
+                },
+                ReferenceSignatureInstruction::OpenCall { offset: 17 },
+                ReferenceSignatureInstruction::Symbol {
+                    symbol: ReferenceSignatureSymbol::E,
+                    offset: 18,
+                },
+                ReferenceSignatureInstruction::Comma { offset: 19 },
+                ReferenceSignatureInstruction::Decimal {
+                    digits: "4".to_owned(),
+                    offset: 20,
+                },
+                ReferenceSignatureInstruction::CloseCall { offset: 21 },
+                ReferenceSignatureInstruction::CloseCall { offset: 22 },
+            ],
+            signature_offset: 12,
+            second_reference: 208,
+            second_reference_offset: 24,
+        }
+    }
+
     #[test]
     fn reference_signature_requires_one_complete_nested_production() {
         let payload = [
@@ -1722,44 +1762,9 @@ mod tests {
         assert_eq!(
             parse_reference_signature(&payload),
             Some(
-                ReferenceSignatureWire {
-                    first_reference: 207,
-                    prefix: ReferenceSignaturePrefix::Atom2,
-                    signature: "2(E,0(E,4))".to_owned(),
-                    signature_program: vec![
-                        ReferenceSignatureInstruction::Decimal {
-                            digits: "2".to_owned(),
-                            offset: 12,
-                        },
-                        ReferenceSignatureInstruction::OpenCall { offset: 13 },
-                        ReferenceSignatureInstruction::Symbol {
-                            symbol: ReferenceSignatureSymbol::E,
-                            offset: 14,
-                        },
-                        ReferenceSignatureInstruction::Comma { offset: 15 },
-                        ReferenceSignatureInstruction::Decimal {
-                            digits: "0".to_owned(),
-                            offset: 16,
-                        },
-                        ReferenceSignatureInstruction::OpenCall { offset: 17 },
-                        ReferenceSignatureInstruction::Symbol {
-                            symbol: ReferenceSignatureSymbol::E,
-                            offset: 18,
-                        },
-                        ReferenceSignatureInstruction::Comma { offset: 19 },
-                        ReferenceSignatureInstruction::Decimal {
-                            digits: "4".to_owned(),
-                            offset: 20,
-                        },
-                        ReferenceSignatureInstruction::CloseCall { offset: 21 },
-                        ReferenceSignatureInstruction::CloseCall { offset: 22 },
-                    ],
-                    signature_offset: 12,
-                    second_reference: 208,
-                    second_reference_offset: 24,
-                }
-                .try_into()
-                .expect("reference signature fixture has matching references and instructions")
+                complete_reference_signature_wire()
+                    .try_into()
+                    .expect("reference signature fixture has matching references and instructions")
             )
         );
 
@@ -1787,6 +1792,33 @@ mod tests {
                 .expect("alternate reference-signature prefix")
                 .prefix,
             ReferenceSignaturePrefix::Atom35
+        );
+    }
+
+    #[test]
+    fn reference_signature_wire_rejects_a_second_reference_that_does_not_follow_the_first() {
+        let mut wire = complete_reference_signature_wire();
+        wire.second_reference += 1;
+        assert_eq!(
+            ReferenceSignature::try_from(wire),
+            Err("second_reference must follow first_reference")
+        );
+    }
+
+    #[test]
+    fn reference_signature_wire_rejects_a_program_disagreeing_with_the_signature() {
+        let mut wire = complete_reference_signature_wire();
+        wire.signature_program.pop();
+        assert_eq!(
+            ReferenceSignature::try_from(wire),
+            Err("signature_program disagrees with signature and signature_offset")
+        );
+
+        let mut shifted = complete_reference_signature_wire();
+        shifted.signature_offset += 1;
+        assert_eq!(
+            ReferenceSignature::try_from(shifted),
+            Err("signature_program disagrees with signature and signature_offset")
         );
     }
 
