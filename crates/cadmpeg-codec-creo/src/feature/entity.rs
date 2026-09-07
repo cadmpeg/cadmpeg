@@ -89,6 +89,7 @@ pub enum RelatedState {
 }
 
 impl RelatedState {
+    #[cfg(test)]
     pub(crate) fn from_byte(byte: u8) -> Option<Self> {
         match byte {
             0 => Some(Self::Zero),
@@ -294,27 +295,17 @@ pub(crate) fn read_entries(
                 Err(_) => (EntryPayload::Source { entity: None }, after_class),
             }
         } else if matches!(class_id, 210 | 214 | 219 | 2017) {
-            match psb::reference_id(payload, after_class) {
-                Ok((related, after_related))
-                    if matches!(
-                        (class_id, payload.get(after_related)),
-                        (210 | 214 | 219 | 2017, Some(&0)) | (2017, Some(&1))
-                    ) =>
-                {
-                    let state =
-                        RelatedState::from_byte(payload.get(after_related).copied().unwrap_or(0))
-                            .unwrap_or(RelatedState::Zero);
-                    (
-                        EntryPayload::Related {
-                            entity: related,
-                            state,
-                        },
-                        after_related,
-                    )
-                }
-                Err(_) => (EntryPayload::Plain, after_class),
-                Ok(_) => (EntryPayload::Plain, after_class),
-            }
+            psb::reference_id(payload, after_class)
+                .ok()
+                .and_then(|(entity, after_related)| {
+                    let state = match (class_id, payload.get(after_related)) {
+                        (210 | 214 | 219 | 2017, Some(&0)) => RelatedState::Zero,
+                        (2017, Some(&1)) => RelatedState::One,
+                        _ => return None,
+                    };
+                    Some((EntryPayload::Related { entity, state }, after_related))
+                })
+                .unwrap_or((EntryPayload::Plain, after_class))
         } else {
             (EntryPayload::Plain, after_class)
         };
