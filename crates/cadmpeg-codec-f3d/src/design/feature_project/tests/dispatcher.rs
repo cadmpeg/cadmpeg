@@ -225,9 +225,15 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
         carrier: Some(Box::new(DesignWorkPointInputCarrier::WorkPlane {
             selection: DesignWorkPointPlaneSelection {
                 class_tag: crate::records::DesignClassTag::try_from("267".to_owned()).unwrap(),
-                asset_id: "00000000-0000-0000-0000-000000000001".into(),
+                asset_id: crate::records::DesignGuidText::try_from(
+                    "00000000-0000-0000-0000-000000000001".to_owned(),
+                )
+                .unwrap(),
                 asset_id_offset: 1,
-                context_id: "00000000-0000-0000-0000-000000000002".into(),
+                context_id: crate::records::DesignGuidText::try_from(
+                    "00000000-0000-0000-0000-000000000002".to_owned(),
+                )
+                .unwrap(),
                 context_id_offset: 2,
                 identity_record_index: record_index + 3,
                 identity_record_offset: 3,

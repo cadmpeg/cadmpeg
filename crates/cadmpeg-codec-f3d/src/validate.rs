@@ -53,15 +53,6 @@ fn design_stream_contains_entry(stream: &str, entry: &str) -> bool {
             .is_some_and(|qualified| qualified.ends_with(&format!("/{entry}")))
 }
 
-/// Report whether `value` is a canonical 36-character hyphenated GUID.
-fn valid_design_guid(value: &str) -> bool {
-    value.len() == 36
-        && value.bytes().enumerate().all(|(index, byte)| {
-            matches!(index, 8 | 13 | 18 | 23) && byte == b'-'
-                || !matches!(index, 8 | 13 | 18 | 23) && byte.is_ascii_hexdigit()
-        })
-}
-
 /// Admit the empty reference table used by a legacy Combine tool operand.
 fn body_recipe_reference_table_is_admitted(
     scope: Option<&records::feature::DesignParameterScope>,
@@ -3929,13 +3920,10 @@ fn valid_work_point_construction(
                     recipe: vertex,
                 }) => valid_vertex_recipe(ctx, scope, native_stream, input.record_index, vertex),
                 Some(records::feature::DesignWorkPointInputCarrier::WorkPlane { selection }) => {
-                    valid_design_guid(&selection.asset_id)
-                        && valid_design_guid(&selection.context_id)
-                        && header.is_some_and(|header| {
-                            header.class_tag == selection.class_tag
-                                && selection.asset_id_offset > header.byte_offset
-                        })
-                        && selection.context_id_offset > selection.asset_id_offset
+                    header.is_some_and(|header| {
+                        header.class_tag == selection.class_tag
+                            && selection.asset_id_offset > header.byte_offset
+                    }) && selection.context_id_offset > selection.asset_id_offset
                         && selection.identity_record_offset > selection.context_id_offset
                         && selection.identity_record_index == input.record_index.saturating_add(3)
                         && selection.primary_identity_offset
@@ -3954,13 +3942,10 @@ fn valid_work_point_construction(
                         })
                 }
                 Some(records::feature::DesignWorkPointInputCarrier::SketchPoint { selection }) => {
-                    valid_design_guid(&selection.asset_id)
-                        && valid_design_guid(&selection.context_id)
-                        && header.is_some_and(|header| {
-                            header.class_tag == selection.class_tag
-                                && selection.asset_id_offset > header.byte_offset
-                        })
-                        && selection.context_id_offset > selection.asset_id_offset
+                    header.is_some_and(|header| {
+                        header.class_tag == selection.class_tag
+                            && selection.asset_id_offset > header.byte_offset
+                    }) && selection.context_id_offset > selection.asset_id_offset
                         && selection.identity_record_offset > selection.context_id_offset
                         && selection.identity_record_index == input.record_index.saturating_add(3)
                         && selection.sketch_record_index_offset

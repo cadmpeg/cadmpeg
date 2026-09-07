@@ -349,13 +349,19 @@ pub fn bind_work_point_input_carriers(
                             && point.persistent_id() == Some(selection.point_persistent_id)
                     })
                     .collect::<Vec<_>>();
+                let (Ok(asset_id), Ok(context_id)) = (
+                    crate::records::DesignGuidText::try_from(selection.asset_id.clone()),
+                    crate::records::DesignGuidText::try_from(selection.context_id.clone()),
+                ) else {
+                    continue;
+                };
                 if let [point] = point_matches.as_slice() {
                     input.carrier = Some(Box::new(DesignWorkPointInputCarrier::SketchPoint {
                         selection: DesignWorkPointSketchPointSelection {
                             class_tag: header.class_tag.clone(),
-                            asset_id: selection.asset_id,
+                            asset_id,
                             asset_id_offset: selection.asset_id_offset,
-                            context_id: selection.context_id,
+                            context_id,
                             context_id_offset: selection.context_id_offset,
                             identity_record_index: selection.identity_record_index,
                             identity_record_offset: selection.identity_record_offset,
@@ -391,12 +397,18 @@ pub fn bind_work_point_input_carriers(
             if selection.secondary.is_some() {
                 continue;
             }
+            let (Ok(asset_id), Ok(context_id)) = (
+                crate::records::DesignGuidText::try_from(selection.asset_id.clone()),
+                crate::records::DesignGuidText::try_from(selection.context_id.clone()),
+            ) else {
+                continue;
+            };
             input.carrier = Some(Box::new(DesignWorkPointInputCarrier::WorkPlane {
                 selection: DesignWorkPointPlaneSelection {
                     class_tag: header.class_tag.clone(),
-                    asset_id: selection.asset_id,
+                    asset_id,
                     asset_id_offset: selection.asset_id_offset,
-                    context_id: selection.context_id,
+                    context_id,
                     context_id_offset: selection.context_id_offset,
                     identity_record_index: selection.identity_record_index,
                     identity_record_offset: selection.identity_record_offset,
