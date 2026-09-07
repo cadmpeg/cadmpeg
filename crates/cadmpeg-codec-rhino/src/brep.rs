@@ -42,8 +42,6 @@ const TL_BREP: Uuid = Uuid::from_canonical([
 ]);
 /// Maximum number of records in one Brep array.
 pub(crate) const MAX_BREP_ITEMS: usize = 1 << 20;
-/// Maximum nesting depth used while reading polymorphic children.
-pub(crate) const MAX_BREP_DEPTH: usize = 32;
 const ANONYMOUS: u32 = 0x4000_8000;
 const ON_UNSET_VALUE: f64 = -1.234_321_012_343_21e308;
 const ON_UNSET_POSITIVE_VALUE: f64 = -ON_UNSET_VALUE;
@@ -692,7 +690,6 @@ pub(crate) fn parse(
         &mut reader,
         archive,
         RawBrepBaseType::Curve,
-        0,
         &mut warnings,
     )?;
     let c3 = read_children(
@@ -700,7 +697,6 @@ pub(crate) fn parse(
         &mut reader,
         archive,
         RawBrepBaseType::Curve,
-        0,
         &mut warnings,
     )?;
     let surfaces = read_children(
@@ -708,7 +704,6 @@ pub(crate) fn parse(
         &mut reader,
         archive,
         RawBrepBaseType::Surface,
-        0,
         &mut warnings,
     )?;
     let (vertices, _) = read_vertices(bytes, &mut reader, archive, &mut warnings)?;
@@ -1331,7 +1326,10 @@ fn legacy_curve_shape(
             Interval([first.0, *end_parameter])
         }
         crate::curves::DecodedCurve::Leaf { .. } => {
-            return Err(error(offset, "legacy Brep polycurve has no parameter range"));
+            return Err(error(
+                offset,
+                "legacy Brep polycurve has no parameter range",
+            ));
         }
     };
     let endpoints = legacy_decoded_curve_endpoints(curve, offset)?;
@@ -1474,12 +1472,7 @@ fn read_legacy_mesh_sides(
                 warnings.push(format!("legacy Brep mesh cache degraded: {error}"));
                 return Ok((empty_mesh_slots(face_count), start..reader.position()));
             }
-            match parse_class_wrapper_with_userdata(
-                bytes,
-                chunk_start_range(&object),
-                archive,
-                warnings,
-            ) {
+            match parse_class_wrapper_with_userdata(bytes, object.range(), archive, warnings) {
                 Ok((class, userdata)) if supported_mesh(class.class_uuid) => Some(RawBrepMesh {
                     mesh: RawBrepChild {
                         class_uuid: class.class_uuid,
@@ -1526,15 +1519,8 @@ fn read_children(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     expected_type: RawBrepBaseType,
-    depth: usize,
     warnings: &mut Vec<String>,
 ) -> Result<RawBrepChildren, GeometryError> {
-    if depth > MAX_BREP_DEPTH {
-        return Err(error(
-            reader.position(),
-            "Brep child recursion limit exceeded",
-        ));
-    }
     let start = reader.position();
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child_reader = body_reader(bytes, &chunk)?;
@@ -1560,8 +1546,7 @@ fn read_children(
                 let child_start = child_reader.position();
                 let child_chunk = chunk_at(bytes, child_start, child_reader.end(), archive, false)?;
                 let child_end = child_chunk.next_offset();
-                let class =
-                    parse_class_wrapper(bytes, chunk_start_range(&child_chunk), archive, warnings)?;
+                let class = parse_class_wrapper(bytes, child_chunk.range(), archive, warnings)?;
                 child_reader.skip(child_end - child_start)?;
                 slots.push(Some(RawBrepChild {
                     class_uuid: class.class_uuid,
@@ -1606,7 +1591,7 @@ fn read_vertices(
         let start = child.position();
         let index = child.i32()?;
         let point = point(&mut child)?;
-        let edges = indexes(&mut child, "vertex edge")?;
+        let edges = indexes(&mut child)?;
         let tolerance = child.f64()?;
         result.push(RawBrepVertex {
             index,
@@ -1669,7 +1654,7 @@ fn read_edges(
         let proxy_reversed = child.i32()?;
         let proxy_domain = interval(&mut child)?;
         let vertices = [child.i32()?, child.i32()?];
-        let trims = indexes(&mut child, "edge trim")?;
+        let trims = indexes(&mut child)?;
         let tolerance = child.f64()?;
         let domain = if current {
             interval(&mut child)?
@@ -1772,7 +1757,7 @@ fn read_loops(
     for _ in 0..count {
         let start = child.position();
         let index = child.i32()?;
-        let trims = indexes(&mut child, "loop trim")?;
+        let trims = indexes(&mut child)?;
         let loop_type = child.i32()?;
         let face = child.i32()?;
         result.push(RawBrepLoop {
@@ -1817,7 +1802,7 @@ fn read_faces(
     for _ in 0..count {
         let record_start = child.position();
         let index = child.i32()?;
-        let loops = indexes(&mut child, "face loop")?;
+        let loops = indexes(&mut child)?;
         let surface = child.i32()?;
         let reversed_surface = child.i32()?;
         let material_channel = child.i32()?;
@@ -1871,12 +1856,8 @@ fn read_mesh_sides(
                 let start = child.position();
                 let object = chunk_at(bytes, start, child.end(), archive, false)?;
                 children.push(object.range());
-                let class = parse_class_wrapper_with_userdata(
-                    bytes,
-                    chunk_start_range(&object),
-                    archive,
-                    warnings,
-                );
+                let class =
+                    parse_class_wrapper_with_userdata(bytes, object.range(), archive, warnings);
                 child.skip(object.next_offset() - start)?;
                 match class {
                     Ok((class, userdata)) if supported_mesh(class.class_uuid) => {
@@ -2088,7 +2069,7 @@ fn read_region_records<'a>(
         let mut child = BoundedReader::new(bytes, body.start, body.end)?;
         let index = child.i32()?;
         let region_type = child.i32()?;
-        let sides = indexes(&mut child, "region side")?;
+        let sides = indexes(&mut child)?;
         let bounds = bbox(&mut child)?;
         child.skip_remaining()?;
         result.push(RawBrepRegion {
@@ -2139,8 +2120,7 @@ fn region_element(
         ))
     } else {
         let chunk = crate::chunks::chunk_at(bytes, start, reader.end(), archive, false)?;
-        let class =
-            parse_class_wrapper(bytes, chunk_start_range(&chunk), archive, &mut Vec::new())?;
+        let class = parse_class_wrapper(bytes, chunk.range(), archive, &mut Vec::new())?;
         if class.class_uuid != expected_class {
             return Err(error(start, "unexpected Brep region element class"));
         }
@@ -2323,13 +2303,12 @@ fn anonymous_array_start(reader: &mut BoundedReader<'_>) -> Result<usize, Geomet
     count(reader, MAX_BREP_ITEMS)
 }
 
-fn indexes(reader: &mut BoundedReader<'_>, label: &str) -> Result<Vec<i32>, GeometryError> {
+fn indexes(reader: &mut BoundedReader<'_>) -> Result<Vec<i32>, GeometryError> {
     let count = count(reader, MAX_BREP_ITEMS)?;
     let mut result = Vec::with_capacity(count);
     for _ in 0..count {
         result.push(reader.i32()?);
     }
-    let _ = label;
     Ok(result)
 }
 
@@ -2371,19 +2350,6 @@ fn typed_slot(array: &RawBrepChildren, index: i32, expected: RawBrepBaseType) ->
 }
 
 fn validate_edge_incidences(raw: &RawBrep) -> Result<(), GeometryError> {
-    let mut actual = alloc_filled(
-        raw.vertices.len(),
-        Vec::<i32>::new(),
-        "Rhino Brep vertex edge incidences",
-    )
-    .map_err(|error| {
-        GeometryError::malformed(0, format!("Brep incidence allocation refused: {error}"))
-    })?;
-    for (vertex, record) in raw.vertices.iter().enumerate() {
-        for edge in &record.edges {
-            actual[vertex].push(*edge);
-        }
-    }
     for (edge_index, edge) in raw.edges.iter().enumerate() {
         for trim_index in &edge.trims {
             let trim = &raw.trims[*trim_index as usize];
@@ -2404,7 +2370,8 @@ fn validate_edge_incidences(raw: &RawBrep) -> Result<(), GeometryError> {
             } else {
                 1
             };
-            let count = actual[*vertex as usize]
+            let count = raw.vertices[*vertex as usize]
+                .edges
                 .iter()
                 .filter(|value| **value == edge_index as i32)
                 .count();
@@ -2471,10 +2438,6 @@ fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, GeometryError> {
 
 fn supported_mesh(uuid: Uuid) -> bool {
     uuid == crate::mesh::ON_MESH
-}
-
-fn chunk_start_range(chunk: &crate::chunks::Chunk) -> Range<usize> {
-    chunk.range()
 }
 
 fn anonymous_chunk(
@@ -3319,7 +3282,6 @@ mod tests {
             &mut reader,
             ArchiveVersion::V5,
             RawBrepBaseType::Curve,
-            0,
             &mut Vec::new(),
         )
         .expect("children");
