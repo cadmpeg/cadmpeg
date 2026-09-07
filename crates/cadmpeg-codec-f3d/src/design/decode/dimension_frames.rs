@@ -1808,8 +1808,6 @@ pub(crate) fn parse_dimension_locus_group(
 ) -> Option<DesignDimensionLocusGroup> {
     let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
     if after_tag != start.checked_add(7)?
-        || class_tag.len() != 3
-        || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
         || bytes.get(start + 11..start + 19) != Some(&[0; 8])
         || bytes.get(start + 19) != Some(&1)
     {
@@ -1890,17 +1888,14 @@ pub(crate) fn parse_dimension_locus_group(
     let next_byte_offset = position.checked_add(1)?;
     let (next_class_tag, next_after_tag) =
         lp_ascii_filtered(bytes, next_byte_offset, 0..=2000, u8::is_ascii_graphic)?;
-    if next_after_tag != next_byte_offset.checked_add(7)?
-        || next_class_tag.len() != 3
-        || !next_class_tag.bytes().all(|byte| byte.is_ascii_digit())
-    {
+    if next_after_tag != next_byte_offset.checked_add(7)? {
         return None;
     }
     Some(DesignDimensionLocusGroup {
         id: String::new(),
         companion_record_index,
         byte_offset: start as u64,
-        class_tag,
+        class_tag: class_tag.try_into().ok()?,
         record_index,
         frame_length: u64::try_from(next_byte_offset.checked_sub(start)?).ok()?,
         loci,
@@ -1910,7 +1905,7 @@ pub(crate) fn parse_dimension_locus_group(
         owner_role_offset,
         state,
         state_offset,
-        next_class_tag,
+        next_class_tag: next_class_tag.try_into().ok()?,
         next_record_index: View::u32_le_at(bytes, next_after_tag)?,
         next_byte_offset: next_byte_offset as u64,
     })

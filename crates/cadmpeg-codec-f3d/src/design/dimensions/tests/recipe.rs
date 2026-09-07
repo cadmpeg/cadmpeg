@@ -259,7 +259,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         id: format!("{stream}:design-dimension-locus-group#60"),
         companion_record_index: 22,
         byte_offset: 0,
-        class_tag: "292".into(),
+        class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
         record_index: 60,
         frame_length: 100,
         loci: vec![
@@ -290,7 +290,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         owner_role_offset: 0,
         state: 0,
         state_offset: 0,
-        next_class_tag: "300".into(),
+        next_class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         next_record_index: 61,
         next_byte_offset: 100,
     };
@@ -347,7 +347,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         id: format!("{stream}:design-dimension-locus-group#40"),
         companion_record_index: 22,
         byte_offset: 0,
-        class_tag: "292".into(),
+        class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
         record_index: 40,
         frame_length: 100,
         loci: vec![
@@ -378,7 +378,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         owner_role_offset: 0,
         state: 0,
         state_offset: 0,
-        next_class_tag: "300".into(),
+        next_class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         next_record_index: 42,
         next_byte_offset: 100,
     };

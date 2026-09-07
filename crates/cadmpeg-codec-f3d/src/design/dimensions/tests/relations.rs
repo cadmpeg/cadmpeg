@@ -888,7 +888,7 @@ fn counted_angular_group_projects_unique_point_selected_line() {
         id: format!("{stream}:design-dimension-locus-group#30"),
         companion_record_index: 22,
         byte_offset: 0,
-        class_tag: "277".into(),
+        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
         record_index: 30,
         frame_length: 100,
         loci: vec![
@@ -919,7 +919,7 @@ fn counted_angular_group_projects_unique_point_selected_line() {
         owner_role_offset: 0,
         state: 0,
         state_offset: 0,
-        next_class_tag: "273".into(),
+        next_class_tag: crate::records::DesignClassTag::try_from("273".to_owned()).unwrap(),
         next_record_index: 31,
         next_byte_offset: 100,
     };

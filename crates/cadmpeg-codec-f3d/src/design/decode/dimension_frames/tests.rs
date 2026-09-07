@@ -852,7 +852,7 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
             .collect::<Vec<_>>(),
         [217, 175]
     );
-    assert_eq!(group.next_class_tag, "314");
+    assert_eq!(group.next_class_tag.as_str(), "314");
     assert_eq!(group.next_record_index, 250);
 
     let relation_at = |stream: &str, byte_offset| SketchRelation {

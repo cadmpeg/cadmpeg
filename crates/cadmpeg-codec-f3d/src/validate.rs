@@ -8335,14 +8335,7 @@ fn validate_dimension_locus_groups<'a>(
                 || group.next_byte_offset <= other.byte_offset
                 || other.next_byte_offset <= group.byte_offset
         });
-        let valid = group.class_tag.len() == 3
-            && group.class_tag.bytes().all(|byte| byte.is_ascii_digit())
-            && group.next_class_tag.len() == 3
-            && group
-                .next_class_tag
-                .bytes()
-                .all(|byte| byte.is_ascii_digit())
-            && companion_contains_frame
+        let valid = companion_contains_frame
             && dimension_companion
             && (1..=64).contains(&count)
             && loci_offsets_valid

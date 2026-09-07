@@ -803,7 +803,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         id: format!("{stream}:design-dimension-locus-group#140"),
         companion_record_index: 99,
         byte_offset: 140,
-        class_tag: "277".into(),
+        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
         record_index: 31,
         frame_length: 100,
         loci: vec![DesignDimensionLocus {
@@ -822,7 +822,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         owner_role_offset: 195,
         state: 0,
         state_offset: 199,
-        next_class_tag: "273".into(),
+        next_class_tag: crate::records::DesignClassTag::try_from("273".to_owned()).unwrap(),
         next_record_index: 32,
         next_byte_offset: 240,
     };
@@ -986,7 +986,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         id: format!("{stream}:design-dimension-locus-group#31"),
         companion_record_index: 22,
         byte_offset: 0,
-        class_tag: "277".into(),
+        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
         record_index: 31,
         frame_length: 100,
         loci: vec![
@@ -1027,7 +1027,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         owner_role_offset: 0,
         state: 0,
         state_offset: 0,
-        next_class_tag: "273".into(),
+        next_class_tag: crate::records::DesignClassTag::try_from("273".to_owned()).unwrap(),
         next_record_index: 32,
         next_byte_offset: 0,
     };

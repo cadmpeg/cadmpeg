@@ -1505,7 +1505,7 @@ pub struct DesignDimensionLocusGroup {
     /// Byte offset of the indexed record header.
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Source indexed-record identity.
     pub record_index: u32,
     /// Byte length through the zero byte preceding the next indexed header.
@@ -1525,7 +1525,7 @@ pub struct DesignDimensionLocusGroup {
     /// Byte offset of `state`.
     pub state_offset: u64,
     /// Dynamic class tag of the immediately following indexed record.
-    pub next_class_tag: String,
+    pub next_class_tag: DesignClassTag,
     /// Identity of the immediately following indexed record.
     pub next_record_index: u32,
     /// Byte offset of the immediately following indexed record.
@@ -1641,7 +1641,7 @@ impl TryFrom<DesignDimensionLocusGroupWire> for DesignDimensionLocusGroup {
             id: wire.id,
             companion_record_index: wire.companion_record_index,
             byte_offset: wire.byte_offset,
-            class_tag: wire.class_tag,
+            class_tag: wire.class_tag.try_into()?,
             record_index: wire.record_index,
             frame_length: wire.frame_length,
             owner_reference: wire.owner_reference,
@@ -1650,7 +1650,7 @@ impl TryFrom<DesignDimensionLocusGroupWire> for DesignDimensionLocusGroup {
             owner_role_offset: wire.owner_role_offset,
             state: wire.state,
             state_offset: wire.state_offset,
-            next_class_tag: wire.next_class_tag,
+            next_class_tag: wire.next_class_tag.try_into()?,
             next_record_index: wire.next_record_index,
             next_byte_offset: wire.next_byte_offset,
         })
@@ -1684,7 +1684,7 @@ impl From<DesignDimensionLocusGroup> for DesignDimensionLocusGroupWire {
             id: value.id,
             companion_record_index: value.companion_record_index,
             byte_offset: value.byte_offset,
-            class_tag: value.class_tag,
+            class_tag: value.class_tag.into(),
             record_index: value.record_index,
             frame_length: value.frame_length,
             owner_reference: value.owner_reference,
@@ -1693,7 +1693,7 @@ impl From<DesignDimensionLocusGroup> for DesignDimensionLocusGroupWire {
             owner_role_offset: value.owner_role_offset,
             state: value.state,
             state_offset: value.state_offset,
-            next_class_tag: value.next_class_tag,
+            next_class_tag: value.next_class_tag.into(),
             next_record_index: value.next_record_index,
             next_byte_offset: value.next_byte_offset,
         }
