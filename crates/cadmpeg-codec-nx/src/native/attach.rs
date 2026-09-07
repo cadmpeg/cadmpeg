@@ -7889,9 +7889,34 @@ fn offset_store_identity(data_block: &str) -> Option<&str> {
         .map(|(store, _)| store)
 }
 
-struct FeatureBodySelection {
-    selection: BodySelection,
-    identity_keys: Option<Vec<FeatureBodyIdentity>>,
+enum FeatureBodySelection {
+    Native(String),
+    Local {
+        bodies: Vec<String>,
+        native: String,
+        identity_keys: Vec<FeatureBodyIdentity>,
+    },
+    Resolved {
+        bodies: Vec<BodyId>,
+        native: String,
+        identity_keys: Vec<FeatureBodyIdentity>,
+    },
+}
+
+impl FeatureBodySelection {
+    fn into_selection(self) -> BodySelection {
+        match self {
+            Self::Native(native) => BodySelection::Native(native),
+            Self::Local { bodies, native, .. } => BodySelection::Local { bodies, native },
+            Self::Resolved { bodies, native, .. } => BodySelection::Resolved { bodies, native },
+        }
+    }
+
+    fn into_native(self) -> BodySelection {
+        let (Self::Native(native) | Self::Local { native, .. } | Self::Resolved { native, .. }) =
+            self;
+        BodySelection::Native(native)
+    }
 }
 
 /// Resolve a complete object-index selection only when every alias root owns one
@@ -7946,18 +7971,12 @@ fn feature_body_selection_with_offset_blocks(
                 }
             }
             (None, None) => {
-                return FeatureBodySelection {
-                    selection: BodySelection::Native(native),
-                    identity_keys: None,
-                };
+                return FeatureBodySelection::Native(native);
             }
         }
     }
     if !roots.is_empty() && !offset_blocks.is_empty() {
-        return FeatureBodySelection {
-            selection: BodySelection::Native(native),
-            identity_keys: None,
-        };
+        return FeatureBodySelection::Native(native);
     }
     let offset_store = offset_blocks
         .first()
@@ -7968,23 +7987,16 @@ fn feature_body_selection_with_offset_blocks(
                 .iter()
                 .any(|block| offset_store_identity(block) != offset_store))
     {
-        return FeatureBodySelection {
-            selection: BodySelection::Native(native),
-            identity_keys: None,
-        };
+        return FeatureBodySelection::Native(native);
     }
     if !offset_blocks.is_empty() {
-        return FeatureBodySelection {
-            selection: BodySelection::Local {
-                bodies: offset_blocks.clone(),
-                native,
-            },
-            identity_keys: Some(
-                offset_blocks
-                    .into_iter()
-                    .map(FeatureBodyIdentity::OffsetStore)
-                    .collect(),
-            ),
+        return FeatureBodySelection::Local {
+            bodies: offset_blocks.clone(),
+            native,
+            identity_keys: offset_blocks
+                .into_iter()
+                .map(FeatureBodyIdentity::OffsetStore)
+                .collect(),
         };
     }
     let resolved = roots
@@ -7999,30 +8011,25 @@ fn feature_body_selection_with_offset_blocks(
     if let Some(bodies) =
         resolved.filter(|bodies| bodies.iter().collect::<BTreeSet<_>>().len() == bodies.len())
     {
-        return FeatureBodySelection {
-            selection: BodySelection::Resolved { bodies, native },
-            identity_keys: Some(
-                roots
-                    .into_iter()
-                    .map(FeatureBodyIdentity::Segment)
-                    .collect(),
-            ),
-        };
-    }
-    FeatureBodySelection {
-        selection: BodySelection::Local {
-            bodies: roots
-                .iter()
-                .map(|root| format!("nx:om-body-object#{root}"))
-                .collect(),
+        return FeatureBodySelection::Resolved {
+            bodies,
             native,
-        },
-        identity_keys: Some(
-            roots
+            identity_keys: roots
                 .into_iter()
                 .map(FeatureBodyIdentity::Segment)
                 .collect(),
-        ),
+        };
+    }
+    FeatureBodySelection::Local {
+        bodies: roots
+            .iter()
+            .map(|root| format!("nx:om-body-object#{root}"))
+            .collect(),
+        native,
+        identity_keys: roots
+            .into_iter()
+            .map(FeatureBodyIdentity::Segment)
+            .collect(),
     }
 }
 
@@ -8069,8 +8076,25 @@ fn atomic_disjoint_body_selections(
     left: FeatureBodySelection,
     right: FeatureBodySelection,
 ) -> (BodySelection, BodySelection) {
-    let complete = left.identity_keys.as_ref().is_some_and(|left| {
-        right.identity_keys.as_ref().is_some_and(|right| {
+    let complete = match (&left, &right) {
+        (
+            FeatureBodySelection::Local {
+                identity_keys: left,
+                ..
+            }
+            | FeatureBodySelection::Resolved {
+                identity_keys: left,
+                ..
+            },
+            FeatureBodySelection::Local {
+                identity_keys: right,
+                ..
+            }
+            | FeatureBodySelection::Resolved {
+                identity_keys: right,
+                ..
+            },
+        ) => {
             let same_namespace =
                 left.first()
                     .zip(right.first())
@@ -8083,27 +8107,14 @@ fn atomic_disjoint_body_selections(
                         _ => false,
                     });
             same_namespace && !left.iter().any(|key| right.contains(key))
-        })
-    });
-    let left = left.selection;
-    let right = right.selection;
-    if complete {
-        return (left, right);
-    }
-    let native = |selection: BodySelection| match selection {
-        BodySelection::Resolved { native, .. }
-        | BodySelection::Local { native, .. }
-        | BodySelection::Native(native) => BodySelection::Native(native),
-        BodySelection::ResolvedSet { native, .. } => BodySelection::NativeSet(native),
-        BodySelection::NativeSet(members) => BodySelection::NativeSet(members),
-        BodySelection::Bodies(bodies) => BodySelection::Bodies(bodies),
-        BodySelection::Generated { .. }
-        | BodySelection::Historical { .. }
-        | BodySelection::HistoricalSet { .. }
-        | BodySelection::HistoricalUnorderedSet { .. }
-        | BodySelection::Unresolved => BodySelection::Unresolved,
+        }
+        _ => false,
     };
-    (native(left), native(right))
+    if complete {
+        (left.into_selection(), right.into_selection())
+    } else {
+        (left.into_native(), right.into_native())
+    }
 }
 
 /// Resolve one Boolean participant through the namespace selected by the
@@ -8256,7 +8267,7 @@ fn delete_body_feature_definition(
             bodies_by_object_index,
             format!("nx:om-object-index#{body}"),
         )
-        .selection
+        .into_selection()
     } else if let Some((object_index, data_block)) = offset_store_body {
         BodySelection::Local {
             bodies: vec![data_block.to_string()],
@@ -8305,7 +8316,7 @@ fn extract_body_feature_definition(
                 bodies_by_object_index,
                 format!("nx:om-object-index#{body}"),
             )
-            .selection
+            .into_selection()
         },
     );
     FeatureDefinition::ExtractBody { source }
@@ -8471,7 +8482,7 @@ fn trim_body_feature_definition(
                 bodies_by_object_index,
                 native_target,
             )
-            .selection,
+            .into_selection(),
             tools: BodySelection::Unresolved,
             keep: BodyTrimSide::Unresolved,
         };
