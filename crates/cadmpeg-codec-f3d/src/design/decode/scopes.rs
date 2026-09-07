@@ -8068,25 +8068,24 @@ fn exact_hole_face_selection(
             else {
                 continue;
             };
-            if class_tag.len() != 3
-                || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
-                || after_tag != start + 7
-                || View::u32_le_at(bytes, after_tag) != Some(*record_index)
-            {
+            let Ok(class_tag) = crate::records::DesignClassTag::try_from(class_tag) else {
+                continue;
+            };
+            if after_tag != start + 7 || View::u32_le_at(bytes, after_tag) != Some(*record_index) {
                 continue;
             }
             let Some(frame) = parse_entity_selection_frame(
                 bytes,
                 *record_index,
                 u64::try_from(start).ok()?,
-                &class_tag,
+                class_tag.as_str(),
             ) else {
                 continue;
             };
             candidates.push(DesignHoleFaceSelection {
                 record_index: frame.record_index,
                 byte_offset: frame.byte_offset,
-                class_tag: frame.class_tag,
+                class_tag,
                 asset_id: frame.asset_id,
                 asset_id_offset: frame.asset_id_offset,
                 context_id: frame.context_id,

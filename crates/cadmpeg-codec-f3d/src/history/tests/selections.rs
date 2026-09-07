@@ -143,7 +143,7 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
     let face_selection = crate::records::feature::DesignHoleFaceSelection {
         record_index: 100,
         byte_offset: 0,
-        class_tag: "333".into(),
+        class_tag: crate::records::DesignClassTag::try_from("333".to_owned()).unwrap(),
         asset_id: "asset".into(),
         asset_id_offset: 0,
         context_id: "context".into(),

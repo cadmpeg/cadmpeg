@@ -106,7 +106,7 @@ fn hole_scope() -> crate::records::feature::DesignParameterScope {
     let face_selection = crate::records::feature::DesignHoleFaceSelection {
         record_index: 1,
         byte_offset: 0,
-        class_tag: "375".into(),
+        class_tag: crate::records::DesignClassTag::try_from("375".to_owned()).unwrap(),
         asset_id: "asset".into(),
         asset_id_offset: 0,
         context_id: "context".into(),
