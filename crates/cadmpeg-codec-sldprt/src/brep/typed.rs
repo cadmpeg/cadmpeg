@@ -120,8 +120,6 @@ pub struct FaceNode {
     pub attr: u16,
     /// Persistent XT node id.
     pub node_id: u32,
-    /// Attribute-chain head.
-    pub attribute_chain: u32,
     /// `[next_face, previous_face, loop, shell, surface]`.
     pub refs: [u32; 5],
     /// Stored face sense marker.
@@ -747,7 +745,7 @@ fn parse_face_fields(bytes: &[u8], offset: usize, payload: usize) -> Option<Face
     let node_id = View::u32_be_at(bytes, payload + 2)?;
     (attr > 1 && node_id != 0).then_some(())?;
     let mut at = payload + 6;
-    let attribute_chain = read_ref(bytes, &mut at)?;
+    read_ref(bytes, &mut at)?;
     let tolerance = bytes.get(at..at + 8)?;
     let tolerance_is_sentinel = tolerance == MAGIC;
     let tolerance_is_finite =
@@ -768,7 +766,6 @@ fn parse_face_fields(bytes: &[u8], offset: usize, payload: usize) -> Option<Face
     Some(FaceNode {
         attr,
         node_id,
-        attribute_chain,
         refs,
         sense,
         offset,
@@ -1249,7 +1246,6 @@ mod tests {
             faces: vec![FaceNode {
                 attr: 100,
                 node_id: 55,
-                attribute_chain: 1,
                 refs: [1, 1, 1, 8, 12],
                 sense: Sense::Forward,
                 offset: 9,
@@ -1346,7 +1342,6 @@ mod tests {
                 FaceNode {
                     attr: 100,
                     node_id: 55,
-                    attribute_chain: 1,
                     refs: [1, 1, 1, 65_536, 12],
                     sense: Sense::Forward,
                     offset: 7,
@@ -1355,7 +1350,6 @@ mod tests {
                 FaceNode {
                     attr: 101,
                     node_id: 56,
-                    attribute_chain: 1,
                     refs: [1, 1, 1, 8, 12],
                     sense: Sense::Forward,
                     offset: 9,

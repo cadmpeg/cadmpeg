@@ -5982,7 +5982,6 @@ mod tests {
             faces: vec![FaceNode {
                 attr: 100,
                 node_id: 900,
-                attribute_chain: 1,
                 refs: [1, 1, 49, 7, 8],
                 sense: Sense::Forward,
                 offset: 9,
