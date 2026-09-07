@@ -466,9 +466,6 @@ enum ValueKind {
     String(String),
     Array(Vec<SpannedValue>),
     Map(BTreeMap<String, SpannedValue>),
-    Nil,
-    /// Invalid-UTF-8 strings, `bin` / `ext`, and out-of-range integers: cursor
-    /// advanced, content opaque.
     Opaque,
 }
 
@@ -730,11 +727,7 @@ fn parse_value(bytes: &[u8], cursor: &mut usize, depth: usize) -> Option<Spanned
         Marker::FixMap(len) => parse_map(bytes, cursor, usize::from(len), depth, start),
         Marker::FixArray(len) => parse_array(bytes, cursor, usize::from(len), depth, start),
         Marker::FixStr(len) => parse_string(bytes, cursor, usize::from(len), start),
-        Marker::Null => Some(SpannedValue {
-            kind: ValueKind::Nil,
-            start,
-            data_offset: start,
-        }),
+        Marker::Null => Some(opaque(start)),
         Marker::False => Some(SpannedValue {
             kind: ValueKind::Bool(false),
             start,
