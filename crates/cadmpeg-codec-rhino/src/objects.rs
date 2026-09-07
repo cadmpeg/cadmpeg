@@ -61,10 +61,16 @@ pub(crate) struct ClassUserdata {
     pub(crate) copy_count: i32,
     pub(crate) transform_range: Range<usize>,
     pub(crate) application_uuid: Option<Uuid>,
-    pub(crate) last_saved_as_goo: Option<bool>,
-    pub(crate) archive_version: Option<i32>,
-    pub(crate) writer_version: Option<i32>,
+    pub(crate) save_context: Option<UserdataSaveContext>,
     pub(crate) payload_range: Range<usize>,
+}
+
+/// Save metadata stored together by class-userdata version 2.2 and later.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct UserdataSaveContext {
+    pub(crate) last_saved_as_goo: bool,
+    pub(crate) archive_version: i32,
+    pub(crate) writer_version: i32,
 }
 
 impl UserdataDescriptor {
@@ -576,9 +582,7 @@ pub(crate) fn parse_userdata(
             copy_count,
             transform_range,
             application_uuid: None,
-            last_saved_as_goo: None,
-            archive_version: None,
-            writer_version: None,
+            save_context: None,
             payload_range: payload.body(),
         }));
     }
@@ -604,7 +608,7 @@ pub(crate) fn parse_userdata(
     let application_uuid = (version.1 >= 1)
         .then(|| uuid(&mut header_reader))
         .transpose()?;
-    let last_saved_as_goo = if version.1 >= 2 {
+    let save_context = if version.1 >= 2 {
         let value = header_reader.u8()?;
         if value > 1 {
             return Err(FramingError::structural(
@@ -612,12 +616,14 @@ pub(crate) fn parse_userdata(
                 "last-saved-as-goo must be encoded as 0 or 1",
             ));
         }
-        Some(value != 0)
+        Some(UserdataSaveContext {
+            last_saved_as_goo: value != 0,
+            archive_version: header_reader.i32()?,
+            writer_version: header_reader.i32()?,
+        })
     } else {
         None
     };
-    let archive_version = (version.1 >= 2).then(|| header_reader.i32()).transpose()?;
-    let writer_version = (version.1 >= 2).then(|| header_reader.i32()).transpose()?;
     header_reader.skip_remaining()?;
     let payload = child(
         bytes,
@@ -642,9 +648,7 @@ pub(crate) fn parse_userdata(
         copy_count,
         transform_range,
         application_uuid,
-        last_saved_as_goo,
-        archive_version,
-        writer_version,
+        save_context,
         payload_range: payload.body(),
     }))
 }
@@ -1229,7 +1233,7 @@ pub(crate) fn parse_attribute_userdata(
                     class_uuid,
                     item_uuid,
                     application_uuid,
-                    writer_version,
+                    save_context,
                     payload_range,
                     ..
                 })) => result.push(AttributeUserdataDescriptor::Known(AttributeUserdata {
@@ -1237,7 +1241,8 @@ pub(crate) fn parse_attribute_userdata(
                     class_uuid,
                     item_uuid,
                     application_uuid,
-                    writer_version: writer_version.map(|version| i64::from(version as u32)),
+                    writer_version: save_context
+                        .map(|value| i64::from(value.writer_version as u32)),
                     payload_range,
                 })),
                 Ok(UserdataDescriptor::UnknownVersion { range, .. }) => {

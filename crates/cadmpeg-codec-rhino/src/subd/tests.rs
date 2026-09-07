@@ -462,9 +462,11 @@ fn proxy_userdata(
         copy_count: 1,
         transform_range,
         application_uuid: None,
-        last_saved_as_goo: Some(false),
-        archive_version: Some(50),
-        writer_version: Some(202_401_010),
+        save_context: Some(crate::objects::UserdataSaveContext {
+            last_saved_as_goo: false,
+            archive_version: 50,
+            writer_version: 202_401_010,
+        }),
         payload_range,
     };
     (bytes, descriptor)

@@ -1556,9 +1556,7 @@ mod tests {
             copy_count: 1,
             transform_range: 0..0,
             application_uuid: None,
-            last_saved_as_goo: None,
-            archive_version: None,
-            writer_version: None,
+            save_context: None,
             payload_range: range,
         })
     }
@@ -1595,9 +1593,7 @@ mod tests {
             copy_count: 1,
             transform_range: 0..0,
             application_uuid: Some(OPENNURBS4),
-            last_saved_as_goo: None,
-            archive_version: None,
-            writer_version: None,
+            save_context: None,
             payload_range: range,
         })
     }

@@ -1098,9 +1098,7 @@ mod tests {
             copy_count: 1,
             transform_range: 0..0,
             application_uuid: None,
-            last_saved_as_goo: None,
-            archive_version: None,
-            writer_version: None,
+            save_context: None,
             payload_range: 0..bytes.len(),
         };
         let value = parse_v5_text_extra(&bytes, &descriptor, ArchiveVersion::V8)

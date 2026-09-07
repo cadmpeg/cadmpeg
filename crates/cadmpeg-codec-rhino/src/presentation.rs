@@ -5157,9 +5157,7 @@ mod tests {
             copy_count: 1,
             transform_range: 0..0,
             application_uuid: None,
-            last_saved_as_goo: None,
-            archive_version: None,
-            writer_version: None,
+            save_context: None,
             payload_range: 0..extra_bytes.len(),
         };
         let extra =
@@ -5258,9 +5256,7 @@ mod tests {
                 copy_count: 1,
                 transform_range: 0..0,
                 application_uuid: None,
-                last_saved_as_goo: None,
-                archive_version: None,
-                writer_version: None,
+                save_context: None,
                 payload_range: range,
             })
         };
@@ -5743,9 +5739,11 @@ mod tests {
             copy_count: 1,
             transform_range: 0..0,
             application_uuid: Some(RDK_APPLICATION),
-            last_saved_as_goo: Some(false),
-            archive_version: Some(5),
-            writer_version: Some(0),
+            save_context: Some(crate::objects::UserdataSaveContext {
+                last_saved_as_goo: false,
+                archive_version: 5,
+                writer_version: 0,
+            }),
             payload_range,
         })
     }

@@ -822,9 +822,7 @@ fn layer_extensions_read_effective_fields_sort_entries_and_apply_root_rule() {
         copy_count: 1,
         transform_range: 0..0,
         application_uuid: None,
-        last_saved_as_goo: None,
-        archive_version: None,
-        writer_version: None,
+        save_context: None,
         payload_range: 0..payload.len(),
     };
     let values = settings::parse_layer_extensions(
@@ -870,9 +868,7 @@ fn layer_extensions_reject_negative_count() {
         copy_count: 1,
         transform_range: 0..0,
         application_uuid: None,
-        last_saved_as_goo: None,
-        archive_version: None,
-        writer_version: None,
+        save_context: None,
         payload_range: 0..payload.len(),
     };
     assert!(settings::parse_layer_extensions(&payload, &descriptor, archive, None).is_err());

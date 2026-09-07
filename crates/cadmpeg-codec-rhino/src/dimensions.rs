@@ -2318,9 +2318,7 @@ pub(crate) mod tests {
             copy_count: 1,
             transform_range: 0..0,
             application_uuid: None,
-            last_saved_as_goo: None,
-            archive_version: None,
-            writer_version: None,
+            save_context: None,
             payload_range: 0..extension.len(),
         });
         let mut radial = radial;
@@ -2377,9 +2375,7 @@ pub(crate) mod tests {
             copy_count: 1,
             transform_range: 0..0,
             application_uuid: None,
-            last_saved_as_goo: None,
-            archive_version: None,
-            writer_version: None,
+            save_context: None,
             payload_range: 0..angular_extension.len(),
         });
         let mut angular = angular;

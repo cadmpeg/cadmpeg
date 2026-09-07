@@ -581,9 +581,7 @@ pub(crate) mod tests {
             copy_count: 1,
             transform_range: 0..0,
             application_uuid: None,
-            last_saved_as_goo: None,
-            archive_version: None,
-            writer_version: None,
+            save_context: None,
             payload_range: 0..payload.len(),
         })
     }
@@ -610,9 +608,7 @@ pub(crate) mod tests {
                 copy_count: 0,
                 transform_range: 0..0,
                 application_uuid: None,
-                last_saved_as_goo: None,
-                archive_version: None,
-                writer_version: None,
+                save_context: None,
                 payload_range: 0..extra.len(),
             });
             apply_userdata(

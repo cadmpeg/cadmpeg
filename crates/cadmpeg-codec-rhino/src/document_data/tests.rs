@@ -317,9 +317,7 @@ fn render_userdata_uses_shared_header_grammar_and_outer_suffix_boundaries() {
         item_uuid: modern_item,
         copy_count,
         application_uuid: modern_application,
-        last_saved_as_goo,
-        archive_version,
-        writer_version,
+        save_context,
         payload_range,
         ..
     }) = modern
@@ -331,18 +329,22 @@ fn render_userdata_uses_shared_header_grammar_and_outer_suffix_boundaries() {
     assert_eq!(*modern_item, item_uuid);
     assert_eq!(*copy_count, 1);
     assert_eq!(*modern_application, Some(application_uuid));
-    assert_eq!(*last_saved_as_goo, Some(false));
-    assert_eq!(*archive_version, Some(60));
-    assert_eq!(*writer_version, Some(202_400));
+    assert_eq!(
+        save_context.map(|value| value.last_saved_as_goo),
+        Some(false)
+    );
+    assert_eq!(save_context.map(|value| value.archive_version), Some(60));
+    assert_eq!(
+        save_context.map(|value| value.writer_version),
+        Some(202_400)
+    );
     assert!(!payload_range.is_empty());
     let legacy = &descriptor.items[1];
     let UserdataDescriptor::Known(ClassUserdata {
         version,
         copy_count,
         application_uuid,
-        last_saved_as_goo,
-        archive_version,
-        writer_version,
+        save_context,
         ..
     }) = legacy
     else {
@@ -351,7 +353,7 @@ fn render_userdata_uses_shared_header_grammar_and_outer_suffix_boundaries() {
     assert_eq!(*version, (1, 0));
     assert_eq!(*copy_count, 2);
     assert_eq!(*application_uuid, None);
-    assert_eq!(*last_saved_as_goo, None);
-    assert_eq!(*archive_version, None);
-    assert_eq!(*writer_version, None);
+    assert_eq!(save_context.map(|value| value.last_saved_as_goo), None);
+    assert_eq!(save_context.map(|value| value.archive_version), None);
+    assert_eq!(save_context.map(|value| value.writer_version), None);
 }
