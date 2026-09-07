@@ -1122,7 +1122,7 @@ pub(super) fn continue_fixed_kind_operations(
         scope_record_index: loft_scope.record_index,
         record_index: 500,
         byte_offset: 0,
-        class_tag: "322".into(),
+        class_tag: crate::records::DesignClassTag::try_from("322".to_owned()).unwrap(),
         owner_scope_record_index_offset: 22,
         member: 900,
         member_offset: 36,
@@ -1138,7 +1138,7 @@ pub(super) fn continue_fixed_kind_operations(
         next_record_index: 501,
         next_reference_offset: 76,
         trailing_scope_reference_offset: None,
-        paired_class_tag: "262".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("262".to_owned()).unwrap(),
         paired_byte_offset: 87,
     };
     let legacy_cut = [

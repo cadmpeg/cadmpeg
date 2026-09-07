@@ -1611,7 +1611,7 @@ pub(crate) fn parse_loft_legacy_body_carrier(
         scope_record_index: scope.record_index,
         record_index: header.record_index,
         byte_offset: header.byte_offset,
-        class_tag: header.class_tag.as_str().to_owned(),
+        class_tag: header.class_tag.clone(),
         owner_scope_record_index_offset: u64::try_from(
             start + legacy_loft_322::OWNER_SCOPE_RECORD_INDEX,
         )
@@ -1632,7 +1632,7 @@ pub(crate) fn parse_loft_legacy_body_carrier(
         next_record_index,
         next_reference_offset: u64::try_from(start + legacy_loft_322::NEXT_REFERENCE).ok()?,
         trailing_scope_reference_offset,
-        paired_class_tag: paired_class_tag.to_owned(),
+        paired_class_tag: paired_class_tag.to_owned().try_into().ok()?,
         paired_byte_offset: u64::try_from(paired_byte_offset).ok()?,
     })
 }

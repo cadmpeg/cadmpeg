@@ -1648,7 +1648,7 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
         },
     )
     .expect("class-322 legacy Loft carrier");
-    assert_eq!(parsed_322.paired_class_tag, "262");
+    assert_eq!(parsed_322.paired_class_tag.as_str(), "262");
     assert_eq!(parsed_322.paired_byte_offset, 87);
     assert_eq!(parsed_322.member, 900);
     assert_eq!(parsed_322.member_offset, 36);
@@ -1675,7 +1675,7 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
         },
     )
     .expect("class-322 legacy Loft carrier with scope tail");
-    assert_eq!(parsed_322_tail.paired_class_tag, "262");
+    assert_eq!(parsed_322_tail.paired_class_tag.as_str(), "262");
     assert_eq!(parsed_322_tail.paired_byte_offset, 99);
     assert_eq!(
         parsed_322_tail
@@ -1697,7 +1697,7 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
         },
     )
     .expect("class-411 legacy Loft carrier");
-    assert_eq!(parsed_411.paired_class_tag, "266");
+    assert_eq!(parsed_411.paired_class_tag.as_str(), "266");
     assert_eq!(parsed_411.paired_byte_offset, 99);
     assert_eq!(
         parsed_411

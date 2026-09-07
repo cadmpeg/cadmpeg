@@ -1754,7 +1754,7 @@ pub struct DesignLoftLegacyBodyCarrier {
     /// Primary indexed-header byte offset.
     pub byte_offset: u64,
     /// Per-file dynamic primary class tag (`322` or `411`).
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Byte offset of `owner_scope_record_index`.
     pub owner_scope_record_index_offset: u64,
     /// The one member reference carried by this fixed legacy frame.
@@ -1786,7 +1786,7 @@ pub struct DesignLoftLegacyBodyCarrier {
     /// Source location of the additional owning-scope reference, when present.
     pub trailing_scope_reference_offset: Option<u64>,
     /// Per-file dynamic paired class tag (`262` or `266`).
-    pub paired_class_tag: String,
+    pub paired_class_tag: DesignClassTag,
     /// Same-index paired-header byte offset.
     pub paired_byte_offset: u64,
 }
@@ -1867,7 +1867,7 @@ impl TryFrom<DesignLoftLegacyBodyCarrierSerde> for DesignLoftLegacyBodyCarrier {
             scope_record_index: wire.scope_record_index,
             record_index: wire.record_index,
             byte_offset: wire.byte_offset,
-            class_tag: wire.class_tag,
+            class_tag: wire.class_tag.try_into()?,
             owner_scope_record_index_offset: wire.owner_scope_record_index_offset,
             member: wire.members[0],
             member_offset: wire.member_offsets[0],
@@ -1883,7 +1883,7 @@ impl TryFrom<DesignLoftLegacyBodyCarrierSerde> for DesignLoftLegacyBodyCarrier {
             next_record_index: wire.next_record_index,
             next_reference_offset: wire.next_reference_offset,
             trailing_scope_reference_offset,
-            paired_class_tag: wire.paired_class_tag,
+            paired_class_tag: wire.paired_class_tag.try_into()?,
             paired_byte_offset: wire.paired_byte_offset,
         })
     }
@@ -1897,7 +1897,7 @@ impl From<DesignLoftLegacyBodyCarrier> for DesignLoftLegacyBodyCarrierSerde {
             scope_reference_ordinal: 0,
             record_index: carrier.record_index,
             byte_offset: carrier.byte_offset,
-            class_tag: carrier.class_tag,
+            class_tag: carrier.class_tag.into(),
             owner_scope_record_index: carrier.scope_record_index,
             owner_scope_record_index_offset: carrier.owner_scope_record_index_offset,
             members: vec![carrier.member],
@@ -1920,7 +1920,7 @@ impl From<DesignLoftLegacyBodyCarrier> for DesignLoftLegacyBodyCarrierSerde {
                 .trailing_scope_reference_offset
                 .map(|_| carrier.scope_record_index),
             trailing_scope_reference_offset: carrier.trailing_scope_reference_offset,
-            paired_class_tag: carrier.paired_class_tag,
+            paired_class_tag: carrier.paired_class_tag.into(),
             paired_byte_offset: carrier.paired_byte_offset,
         }
     }
