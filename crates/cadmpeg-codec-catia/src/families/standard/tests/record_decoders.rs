@@ -640,7 +640,7 @@ fn standard_two_strip_packet_uses_raw_lengths_at_three_byte_width() {
     let layout = crate::families::standard::fbb::parse_trim_record_layout(&bytes, 0, 3)
         .expect("three-byte packet layout");
     assert_eq!(layout.handle_offset, 8);
-    assert_eq!(layout.stored_count, handles.len());
+    assert_eq!(layout.handle_count, handles.len());
     assert_eq!(layout.end, bytes.len());
 
     let record =

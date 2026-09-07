@@ -1125,8 +1125,7 @@ pub(crate) struct TrimRecordLayout {
     lengths: Vec<usize>,
     frame_vector: Option<[f64; 3]>,
     pub(crate) handle_offset: usize,
-    handle_count: usize,
-    pub(crate) stored_count: usize,
+    pub(crate) handle_count: usize,
     packed_two_strip_lengths: bool,
     pub(crate) end: usize,
 }
@@ -1234,12 +1233,11 @@ fn parse_trim_record_layout_with_length_encoding(
             return None;
         }
     }
-    let stored_count = handle_count;
     let handle_offset = position;
     let byte_count = if packed_two_strip_lengths {
         2usize.checked_add(handle_count.checked_mul(width)?)?
     } else {
-        stored_count.checked_mul(width)?
+        handle_count.checked_mul(width)?
     };
     let end = handle_offset.checked_add(byte_count)?;
     bytes.get(handle_offset..end)?;
@@ -1251,7 +1249,6 @@ fn parse_trim_record_layout_with_length_encoding(
         frame_vector,
         handle_offset,
         handle_count,
-        stored_count,
         packed_two_strip_lengths,
         end,
     })
@@ -1286,8 +1283,8 @@ fn parse_trim_record_with_length_encoding(
             return None;
         }
     }
-    let mut handles = Vec::with_capacity(layout.stored_count);
-    for _ in 0..layout.stored_count {
+    let mut handles = Vec::with_capacity(layout.handle_count);
+    for _ in 0..layout.handle_count {
         let handle = match width {
             1 => u32::from(*bytes.get(position)?),
             2 => u32::from(View::u16_be_at(bytes, position)?),
