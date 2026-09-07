@@ -1,4 +1,4 @@
-# generated at aba9bc4ad
+# generated at c7701c8c2
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -1480,6 +1480,7 @@ pub cadmpeg_ir::features::FeatureDefinition::Hole::allow_multi_profile_faces: co
 pub cadmpeg_ir::features::FeatureDefinition::Hole::bottom: core::option::Option<cadmpeg_ir::features::HoleBottom>
 pub cadmpeg_ir::features::FeatureDefinition::Hole::construction: cadmpeg_ir::features::HoleConstruction
 pub cadmpeg_ir::features::FeatureDefinition::Hole::diameter: core::option::Option<cadmpeg_ir::features::Length>
+pub cadmpeg_ir::features::FeatureDefinition::Hole::direction: core::option::Option<cadmpeg_ir::math::Vector3>
 pub cadmpeg_ir::features::FeatureDefinition::Hole::exit_kind: core::option::Option<cadmpeg_ir::features::HoleKind>
 pub cadmpeg_ir::features::FeatureDefinition::Hole::extent: core::option::Option<cadmpeg_ir::features::LinearTermination>
 pub cadmpeg_ir::features::FeatureDefinition::Hole::face: core::option::Option<cadmpeg_ir::features::FaceSelection>
@@ -5015,6 +5016,10 @@ pub cadmpeg_ir::pmi::DimensionTolerance::Fit(cadmpeg_ir::pmi::LimitsAndFits)
 pub cadmpeg_ir::pmi::DimensionTolerance::PlusMinus
 pub cadmpeg_ir::pmi::DimensionTolerance::PlusMinus::lower: cadmpeg_ir::pmi::PmiValue
 pub cadmpeg_ir::pmi::DimensionTolerance::PlusMinus::upper: cadmpeg_ir::pmi::PmiValue
+pub cadmpeg_ir::pmi::DimensionTolerance::PlusMinusFit
+pub cadmpeg_ir::pmi::DimensionTolerance::PlusMinusFit::fit: cadmpeg_ir::pmi::LimitsAndFits
+pub cadmpeg_ir::pmi::DimensionTolerance::PlusMinusFit::lower: cadmpeg_ir::pmi::PmiValue
+pub cadmpeg_ir::pmi::DimensionTolerance::PlusMinusFit::upper: cadmpeg_ir::pmi::PmiValue
 pub enum cadmpeg_ir::pmi::GeometricToleranceKind
 pub cadmpeg_ir::pmi::GeometricToleranceKind::Angularity
 pub cadmpeg_ir::pmi::GeometricToleranceKind::CircularRunout
@@ -5043,7 +5048,7 @@ pub cadmpeg_ir::pmi::PmiDefinition::DatumTarget::form: cadmpeg_ir::pmi::DatumTar
 pub cadmpeg_ir::pmi::PmiDefinition::DatumTarget::identification: alloc::string::String
 pub cadmpeg_ir::pmi::PmiDefinition::Dimension
 pub cadmpeg_ir::pmi::PmiDefinition::Dimension::dimension: cadmpeg_ir::pmi::DimensionKind
-pub cadmpeg_ir::pmi::PmiDefinition::Dimension::nominal: cadmpeg_ir::pmi::PmiValue
+pub cadmpeg_ir::pmi::PmiDefinition::Dimension::nominal: core::option::Option<cadmpeg_ir::pmi::PmiValue>
 pub cadmpeg_ir::pmi::PmiDefinition::Dimension::tolerance: core::option::Option<cadmpeg_ir::pmi::DimensionTolerance>
 pub cadmpeg_ir::pmi::PmiDefinition::GeometricTolerance
 pub cadmpeg_ir::pmi::PmiDefinition::GeometricTolerance::datum_system: core::option::Option<cadmpeg_ir::ids::PmiId>
@@ -7478,6 +7483,10 @@ pub cadmpeg_ir::DimensionTolerance::Fit(cadmpeg_ir::pmi::LimitsAndFits)
 pub cadmpeg_ir::DimensionTolerance::PlusMinus
 pub cadmpeg_ir::DimensionTolerance::PlusMinus::lower: cadmpeg_ir::pmi::PmiValue
 pub cadmpeg_ir::DimensionTolerance::PlusMinus::upper: cadmpeg_ir::pmi::PmiValue
+pub cadmpeg_ir::DimensionTolerance::PlusMinusFit
+pub cadmpeg_ir::DimensionTolerance::PlusMinusFit::fit: cadmpeg_ir::pmi::LimitsAndFits
+pub cadmpeg_ir::DimensionTolerance::PlusMinusFit::lower: cadmpeg_ir::pmi::PmiValue
+pub cadmpeg_ir::DimensionTolerance::PlusMinusFit::upper: cadmpeg_ir::pmi::PmiValue
 pub enum cadmpeg_ir::Exactness
 pub cadmpeg_ir::Exactness::ByteExact
 pub cadmpeg_ir::Exactness::Derived
@@ -7697,6 +7706,7 @@ pub cadmpeg_ir::FeatureDefinition::Hole::allow_multi_profile_faces: core::option
 pub cadmpeg_ir::FeatureDefinition::Hole::bottom: core::option::Option<cadmpeg_ir::features::HoleBottom>
 pub cadmpeg_ir::FeatureDefinition::Hole::construction: cadmpeg_ir::features::HoleConstruction
 pub cadmpeg_ir::FeatureDefinition::Hole::diameter: core::option::Option<cadmpeg_ir::features::Length>
+pub cadmpeg_ir::FeatureDefinition::Hole::direction: core::option::Option<cadmpeg_ir::math::Vector3>
 pub cadmpeg_ir::FeatureDefinition::Hole::exit_kind: core::option::Option<cadmpeg_ir::features::HoleKind>
 pub cadmpeg_ir::FeatureDefinition::Hole::extent: core::option::Option<cadmpeg_ir::features::LinearTermination>
 pub cadmpeg_ir::FeatureDefinition::Hole::face: core::option::Option<cadmpeg_ir::features::FaceSelection>
@@ -8159,7 +8169,7 @@ pub cadmpeg_ir::PmiDefinition::DatumTarget::form: cadmpeg_ir::pmi::DatumTargetFo
 pub cadmpeg_ir::PmiDefinition::DatumTarget::identification: alloc::string::String
 pub cadmpeg_ir::PmiDefinition::Dimension
 pub cadmpeg_ir::PmiDefinition::Dimension::dimension: cadmpeg_ir::pmi::DimensionKind
-pub cadmpeg_ir::PmiDefinition::Dimension::nominal: cadmpeg_ir::pmi::PmiValue
+pub cadmpeg_ir::PmiDefinition::Dimension::nominal: core::option::Option<cadmpeg_ir::pmi::PmiValue>
 pub cadmpeg_ir::PmiDefinition::Dimension::tolerance: core::option::Option<cadmpeg_ir::pmi::DimensionTolerance>
 pub cadmpeg_ir::PmiDefinition::GeometricTolerance
 pub cadmpeg_ir::PmiDefinition::GeometricTolerance::datum_system: core::option::Option<cadmpeg_ir::ids::PmiId>
