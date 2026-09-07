@@ -1,4 +1,4 @@
-# generated at 5526cd5f7
+# generated at edbad21f3
 pub mod cadmpeg_ir
 pub mod cadmpeg_ir::annotations
 pub struct cadmpeg_ir::annotations::AnnotationBuilder
@@ -130,9 +130,19 @@ impl cadmpeg_ir::schema::EntitySchema for cadmpeg_ir::assets::Asset
 pub const cadmpeg_ir::assets::Asset::KIND: cadmpeg_ir::schema::EntityKind
 pub fn cadmpeg_ir::assets::Asset::identity(&self) -> &str
 pub fn cadmpeg_ir::assets::Asset::visit_references(&self, &mut dyn core::ops::function::FnMut(cadmpeg_ir::schema::Reference))
-pub struct cadmpeg_ir::assets::AssetId(pub alloc::string::String)
+pub struct cadmpeg_ir::assets::AssetId(_)
 impl cadmpeg_ir::assets::AssetId
 pub fn cadmpeg_ir::assets::AssetId::as_str(&self) -> &str
+pub fn cadmpeg_ir::assets::AssetId::into_string(self) -> alloc::string::String
+pub fn cadmpeg_ir::assets::AssetId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::assets::AssetId
+pub type cadmpeg_ir::assets::AssetId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::assets::AssetId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::assets::AssetId
+pub type cadmpeg_ir::assets::AssetId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::assets::AssetId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
+impl core::fmt::Display for cadmpeg_ir::assets::AssetId
+pub fn cadmpeg_ir::assets::AssetId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 pub mod cadmpeg_ir::attributes
 pub enum cadmpeg_ir::attributes::AttributeTarget
 pub cadmpeg_ir::attributes::AttributeTarget::Body(cadmpeg_ir::ids::BodyId)
@@ -843,9 +853,21 @@ impl cadmpeg_ir::schema::EntitySchema for cadmpeg_ir::drawings::Drawing
 pub const cadmpeg_ir::drawings::Drawing::KIND: cadmpeg_ir::schema::EntityKind
 pub fn cadmpeg_ir::drawings::Drawing::identity(&self) -> &str
 pub fn cadmpeg_ir::drawings::Drawing::visit_references(&self, &mut dyn core::ops::function::FnMut(cadmpeg_ir::schema::Reference))
-pub struct cadmpeg_ir::drawings::DrawingId(pub alloc::string::String)
+pub struct cadmpeg_ir::drawings::DrawingId(_)
 impl cadmpeg_ir::drawings::DrawingId
 pub fn cadmpeg_ir::drawings::DrawingId::as_str(&self) -> &str
+pub fn cadmpeg_ir::drawings::DrawingId::into_string(self) -> alloc::string::String
+pub fn cadmpeg_ir::drawings::DrawingId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::drawings::DrawingId
+pub type cadmpeg_ir::drawings::DrawingId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::drawings::DrawingId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::drawings::DrawingId
+pub type cadmpeg_ir::drawings::DrawingId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::drawings::DrawingId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
+impl core::fmt::Display for cadmpeg_ir::drawings::DrawingId
+pub fn cadmpeg_ir::drawings::DrawingId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for cadmpeg_ir::drawings::DrawingId
+pub fn cadmpeg_ir::drawings::DrawingId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
 pub mod cadmpeg_ir::eval
 pub enum cadmpeg_ir::eval::IsolineDirection
 pub cadmpeg_ir::eval::IsolineDirection::ConstantU
@@ -2383,9 +2405,21 @@ pub cadmpeg_ir::features::ConfigurationFeatureState::definition: cadmpeg_ir::fea
 pub cadmpeg_ir::features::ConfigurationFeatureState::dependencies: alloc::vec::Vec<cadmpeg_ir::features::FeatureId>
 pub cadmpeg_ir::features::ConfigurationFeatureState::outputs: alloc::vec::Vec<cadmpeg_ir::ids::BodyId>
 pub cadmpeg_ir::features::ConfigurationFeatureState::suppressed: bool
-pub struct cadmpeg_ir::features::ConfigurationId(pub alloc::string::String)
+pub struct cadmpeg_ir::features::ConfigurationId(_)
 impl cadmpeg_ir::features::ConfigurationId
 pub fn cadmpeg_ir::features::ConfigurationId::as_str(&self) -> &str
+pub fn cadmpeg_ir::features::ConfigurationId::into_string(self) -> alloc::string::String
+pub fn cadmpeg_ir::features::ConfigurationId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::features::ConfigurationId
+pub type cadmpeg_ir::features::ConfigurationId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::features::ConfigurationId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::features::ConfigurationId
+pub type cadmpeg_ir::features::ConfigurationId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::features::ConfigurationId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
+impl core::fmt::Display for cadmpeg_ir::features::ConfigurationId
+pub fn cadmpeg_ir::features::ConfigurationId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for cadmpeg_ir::features::ConfigurationId
+pub fn cadmpeg_ir::features::ConfigurationId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
 pub struct cadmpeg_ir::features::DesignConfiguration
 pub cadmpeg_ir::features::DesignConfiguration::active: bool
 pub cadmpeg_ir::features::DesignConfiguration::bodies: cadmpeg_ir::features::ConfigurationBodies
@@ -2463,13 +2497,21 @@ impl serde_core::ser::Serialize for cadmpeg_ir::features::Feature
 pub fn cadmpeg_ir::features::Feature::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::features::Feature
 pub fn cadmpeg_ir::features::Feature::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
-pub struct cadmpeg_ir::features::FeatureId(pub alloc::string::String)
+pub struct cadmpeg_ir::features::FeatureId(_)
 impl cadmpeg_ir::features::FeatureId
 pub fn cadmpeg_ir::features::FeatureId::as_str(&self) -> &str
+pub fn cadmpeg_ir::features::FeatureId::into_string(self) -> alloc::string::String
+pub fn cadmpeg_ir::features::FeatureId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::features::FeatureId
+pub type cadmpeg_ir::features::FeatureId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::features::FeatureId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::features::FeatureId
+pub type cadmpeg_ir::features::FeatureId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::features::FeatureId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
 impl core::fmt::Display for cadmpeg_ir::features::FeatureId
 pub fn cadmpeg_ir::features::FeatureId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::features::FeatureId
-pub fn cadmpeg_ir::features::FeatureId::from(S) -> Self
+impl serde_core::ser::Serialize for cadmpeg_ir::features::FeatureId
+pub fn cadmpeg_ir::features::FeatureId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
 pub struct cadmpeg_ir::features::FeatureInputTopology
 pub cadmpeg_ir::features::FeatureInputTopology::bodies: alloc::vec::Vec<cadmpeg_ir::ids::HistoricalBodyId>
 pub cadmpeg_ir::features::FeatureInputTopology::edges: alloc::vec::Vec<cadmpeg_ir::ids::HistoricalEdgeId>
@@ -2560,9 +2602,21 @@ pub struct cadmpeg_ir::features::LinearPatternDirection
 pub cadmpeg_ir::features::LinearPatternDirection::count: u32
 pub cadmpeg_ir::features::LinearPatternDirection::direction: cadmpeg_ir::math::Vector3
 pub cadmpeg_ir::features::LinearPatternDirection::spacing: cadmpeg_ir::features::Length
-pub struct cadmpeg_ir::features::ParameterId(pub alloc::string::String)
+pub struct cadmpeg_ir::features::ParameterId(_)
 impl cadmpeg_ir::features::ParameterId
 pub fn cadmpeg_ir::features::ParameterId::as_str(&self) -> &str
+pub fn cadmpeg_ir::features::ParameterId::into_string(self) -> alloc::string::String
+pub fn cadmpeg_ir::features::ParameterId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::features::ParameterId
+pub type cadmpeg_ir::features::ParameterId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::features::ParameterId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::features::ParameterId
+pub type cadmpeg_ir::features::ParameterId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::features::ParameterId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
+impl core::fmt::Display for cadmpeg_ir::features::ParameterId
+pub fn cadmpeg_ir::features::ParameterId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for cadmpeg_ir::features::ParameterId
+pub fn cadmpeg_ir::features::ParameterId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
 pub struct cadmpeg_ir::features::ParameterPmi
 pub cadmpeg_ir::features::ParameterPmi::basic: bool
 pub cadmpeg_ir::features::ParameterPmi::display_text: core::option::Option<alloc::string::String>
@@ -5102,7 +5156,21 @@ impl cadmpeg_ir::schema::EntitySchema for cadmpeg_ir::presentation::Presentation
 pub const cadmpeg_ir::presentation::PresentationDocument::KIND: cadmpeg_ir::schema::EntityKind
 pub fn cadmpeg_ir::presentation::PresentationDocument::identity(&self) -> &str
 pub fn cadmpeg_ir::presentation::PresentationDocument::visit_references(&self, &mut dyn core::ops::function::FnMut(cadmpeg_ir::schema::Reference))
-pub struct cadmpeg_ir::presentation::PresentationId(pub alloc::string::String)
+pub struct cadmpeg_ir::presentation::PresentationId(_)
+impl cadmpeg_ir::presentation::PresentationId
+pub fn cadmpeg_ir::presentation::PresentationId::as_str(&self) -> &str
+pub fn cadmpeg_ir::presentation::PresentationId::into_string(self) -> alloc::string::String
+pub fn cadmpeg_ir::presentation::PresentationId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::presentation::PresentationId
+pub type cadmpeg_ir::presentation::PresentationId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::presentation::PresentationId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::presentation::PresentationId
+pub type cadmpeg_ir::presentation::PresentationId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::presentation::PresentationId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
+impl core::fmt::Display for cadmpeg_ir::presentation::PresentationId
+pub fn cadmpeg_ir::presentation::PresentationId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for cadmpeg_ir::presentation::PresentationId
+pub fn cadmpeg_ir::presentation::PresentationId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
 pub struct cadmpeg_ir::presentation::PresentationLayer
 pub cadmpeg_ir::presentation::PresentationLayer::description: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::presentation::PresentationLayer::id: cadmpeg_ir::ids::LayerId
@@ -5302,7 +5370,21 @@ pub struct cadmpeg_ir::products::JointConnector
 pub cadmpeg_ir::products::JointConnector::detached: bool
 pub cadmpeg_ir::products::JointConnector::frame: cadmpeg_ir::transform::Transform
 pub cadmpeg_ir::products::JointConnector::operand: cadmpeg_ir::products::JointOperand
-pub struct cadmpeg_ir::products::JointId(pub alloc::string::String)
+pub struct cadmpeg_ir::products::JointId(_)
+impl cadmpeg_ir::products::JointId
+pub fn cadmpeg_ir::products::JointId::as_str(&self) -> &str
+pub fn cadmpeg_ir::products::JointId::into_string(self) -> alloc::string::String
+pub fn cadmpeg_ir::products::JointId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::products::JointId
+pub type cadmpeg_ir::products::JointId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::products::JointId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::products::JointId
+pub type cadmpeg_ir::products::JointId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::products::JointId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
+impl core::fmt::Display for cadmpeg_ir::products::JointId
+pub fn cadmpeg_ir::products::JointId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for cadmpeg_ir::products::JointId
+pub fn cadmpeg_ir::products::JointId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
 pub struct cadmpeg_ir::products::JointOperand
 pub cadmpeg_ir::products::JointOperand::container: cadmpeg_ir::products::OperandContainer
 pub cadmpeg_ir::products::JointOperand::object: alloc::string::String
@@ -5884,9 +5966,21 @@ impl cadmpeg_ir::schema::EntitySchema for cadmpeg_ir::semantic_annotations::Sema
 pub const cadmpeg_ir::semantic_annotations::SemanticAnnotation::KIND: cadmpeg_ir::schema::EntityKind
 pub fn cadmpeg_ir::semantic_annotations::SemanticAnnotation::identity(&self) -> &str
 pub fn cadmpeg_ir::semantic_annotations::SemanticAnnotation::visit_references(&self, &mut dyn core::ops::function::FnMut(cadmpeg_ir::schema::Reference))
-pub struct cadmpeg_ir::semantic_annotations::SemanticAnnotationId(pub alloc::string::String)
+pub struct cadmpeg_ir::semantic_annotations::SemanticAnnotationId(_)
 impl cadmpeg_ir::semantic_annotations::SemanticAnnotationId
 pub fn cadmpeg_ir::semantic_annotations::SemanticAnnotationId::as_str(&self) -> &str
+pub fn cadmpeg_ir::semantic_annotations::SemanticAnnotationId::into_string(self) -> alloc::string::String
+pub fn cadmpeg_ir::semantic_annotations::SemanticAnnotationId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::semantic_annotations::SemanticAnnotationId
+pub type cadmpeg_ir::semantic_annotations::SemanticAnnotationId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::semantic_annotations::SemanticAnnotationId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::semantic_annotations::SemanticAnnotationId
+pub type cadmpeg_ir::semantic_annotations::SemanticAnnotationId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::semantic_annotations::SemanticAnnotationId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
+impl core::fmt::Display for cadmpeg_ir::semantic_annotations::SemanticAnnotationId
+pub fn cadmpeg_ir::semantic_annotations::SemanticAnnotationId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for cadmpeg_ir::semantic_annotations::SemanticAnnotationId
+pub fn cadmpeg_ir::semantic_annotations::SemanticAnnotationId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
 pub mod cadmpeg_ir::sketches
 pub enum cadmpeg_ir::sketches::SketchAxis
 pub cadmpeg_ir::sketches::SketchAxis::Horizontal
@@ -6566,7 +6660,21 @@ pub cadmpeg_ir::spreadsheets::SpreadsheetCell::parameter: cadmpeg_ir::features::
 pub struct cadmpeg_ir::spreadsheets::SpreadsheetDimension
 pub cadmpeg_ir::spreadsheets::SpreadsheetDimension::index: u32
 pub cadmpeg_ir::spreadsheets::SpreadsheetDimension::pixels: u32
-pub struct cadmpeg_ir::spreadsheets::SpreadsheetId(pub alloc::string::String)
+pub struct cadmpeg_ir::spreadsheets::SpreadsheetId(_)
+impl cadmpeg_ir::spreadsheets::SpreadsheetId
+pub fn cadmpeg_ir::spreadsheets::SpreadsheetId::as_str(&self) -> &str
+pub fn cadmpeg_ir::spreadsheets::SpreadsheetId::into_string(self) -> alloc::string::String
+pub fn cadmpeg_ir::spreadsheets::SpreadsheetId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::spreadsheets::SpreadsheetId
+pub type cadmpeg_ir::spreadsheets::SpreadsheetId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::spreadsheets::SpreadsheetId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::spreadsheets::SpreadsheetId
+pub type cadmpeg_ir::spreadsheets::SpreadsheetId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::spreadsheets::SpreadsheetId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
+impl core::fmt::Display for cadmpeg_ir::spreadsheets::SpreadsheetId
+pub fn cadmpeg_ir::spreadsheets::SpreadsheetId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for cadmpeg_ir::spreadsheets::SpreadsheetId
+pub fn cadmpeg_ir::spreadsheets::SpreadsheetId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
 pub struct cadmpeg_ir::spreadsheets::SpreadsheetRange
 impl cadmpeg_ir::spreadsheets::SpreadsheetRange
 pub fn cadmpeg_ir::spreadsheets::SpreadsheetRange::contains(&self, cadmpeg_ir::spreadsheets::CellAddress) -> bool
@@ -8645,9 +8753,21 @@ pub cadmpeg_ir::CoilConstruction::placement: cadmpeg_ir::features::CoilPlacement
 pub cadmpeg_ir::CoilConstruction::section: cadmpeg_ir::features::CoilSection
 pub cadmpeg_ir::CoilConstruction::section_placement: cadmpeg_ir::features::CoilSectionPlacement
 pub cadmpeg_ir::CoilConstruction::taper: cadmpeg_ir::features::Angle
-pub struct cadmpeg_ir::ConfigurationId(pub alloc::string::String)
+pub struct cadmpeg_ir::ConfigurationId(_)
 impl cadmpeg_ir::features::ConfigurationId
 pub fn cadmpeg_ir::features::ConfigurationId::as_str(&self) -> &str
+pub fn cadmpeg_ir::features::ConfigurationId::into_string(self) -> alloc::string::String
+pub fn cadmpeg_ir::features::ConfigurationId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::features::ConfigurationId
+pub type cadmpeg_ir::features::ConfigurationId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::features::ConfigurationId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::features::ConfigurationId
+pub type cadmpeg_ir::features::ConfigurationId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::features::ConfigurationId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
+impl core::fmt::Display for cadmpeg_ir::features::ConfigurationId
+pub fn cadmpeg_ir::features::ConfigurationId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for cadmpeg_ir::features::ConfigurationId
+pub fn cadmpeg_ir::features::ConfigurationId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
 pub struct cadmpeg_ir::ContainerSummary
 pub cadmpeg_ir::ContainerSummary::container_kind: cadmpeg_ir::container::ContainerKind
 pub cadmpeg_ir::ContainerSummary::entries: alloc::vec::Vec<cadmpeg_core::container::ContainerEntry>
@@ -8831,13 +8951,21 @@ impl serde_core::ser::Serialize for cadmpeg_ir::features::Feature
 pub fn cadmpeg_ir::features::Feature::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
 impl<'de> serde_core::de::Deserialize<'de> for cadmpeg_ir::features::Feature
 pub fn cadmpeg_ir::features::Feature::deserialize<D>(D) -> core::result::Result<Self, <D as serde_core::de::Deserializer>::Error> where D: serde_core::de::Deserializer<'de>
-pub struct cadmpeg_ir::FeatureId(pub alloc::string::String)
+pub struct cadmpeg_ir::FeatureId(_)
 impl cadmpeg_ir::features::FeatureId
 pub fn cadmpeg_ir::features::FeatureId::as_str(&self) -> &str
+pub fn cadmpeg_ir::features::FeatureId::into_string(self) -> alloc::string::String
+pub fn cadmpeg_ir::features::FeatureId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::features::FeatureId
+pub type cadmpeg_ir::features::FeatureId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::features::FeatureId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::features::FeatureId
+pub type cadmpeg_ir::features::FeatureId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::features::FeatureId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
 impl core::fmt::Display for cadmpeg_ir::features::FeatureId
 pub fn cadmpeg_ir::features::FeatureId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl<S: core::convert::Into<alloc::string::String>> core::convert::From<S> for cadmpeg_ir::features::FeatureId
-pub fn cadmpeg_ir::features::FeatureId::from(S) -> Self
+impl serde_core::ser::Serialize for cadmpeg_ir::features::FeatureId
+pub fn cadmpeg_ir::features::FeatureId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
 pub struct cadmpeg_ir::Finding
 pub cadmpeg_ir::Finding::check: cadmpeg_ir::Check
 pub cadmpeg_ir::Finding::entity: core::option::Option<alloc::string::String>
@@ -8861,7 +8989,21 @@ pub struct cadmpeg_ir::JointConnector
 pub cadmpeg_ir::JointConnector::detached: bool
 pub cadmpeg_ir::JointConnector::frame: cadmpeg_ir::transform::Transform
 pub cadmpeg_ir::JointConnector::operand: cadmpeg_ir::products::JointOperand
-pub struct cadmpeg_ir::JointId(pub alloc::string::String)
+pub struct cadmpeg_ir::JointId(_)
+impl cadmpeg_ir::products::JointId
+pub fn cadmpeg_ir::products::JointId::as_str(&self) -> &str
+pub fn cadmpeg_ir::products::JointId::into_string(self) -> alloc::string::String
+pub fn cadmpeg_ir::products::JointId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::products::JointId
+pub type cadmpeg_ir::products::JointId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::products::JointId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::products::JointId
+pub type cadmpeg_ir::products::JointId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::products::JointId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
+impl core::fmt::Display for cadmpeg_ir::products::JointId
+pub fn cadmpeg_ir::products::JointId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for cadmpeg_ir::products::JointId
+pub fn cadmpeg_ir::products::JointId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
 pub struct cadmpeg_ir::JointOperand
 pub cadmpeg_ir::JointOperand::container: cadmpeg_ir::products::OperandContainer
 pub cadmpeg_ir::JointOperand::object: alloc::string::String
@@ -8985,9 +9127,21 @@ impl cadmpeg_ir::schema::EntitySchema for cadmpeg_ir::products::Occurrence
 pub const cadmpeg_ir::products::Occurrence::KIND: cadmpeg_ir::schema::EntityKind
 pub fn cadmpeg_ir::products::Occurrence::identity(&self) -> &str
 pub fn cadmpeg_ir::products::Occurrence::visit_references(&self, &mut dyn core::ops::function::FnMut(cadmpeg_ir::schema::Reference))
-pub struct cadmpeg_ir::ParameterId(pub alloc::string::String)
+pub struct cadmpeg_ir::ParameterId(_)
 impl cadmpeg_ir::features::ParameterId
 pub fn cadmpeg_ir::features::ParameterId::as_str(&self) -> &str
+pub fn cadmpeg_ir::features::ParameterId::into_string(self) -> alloc::string::String
+pub fn cadmpeg_ir::features::ParameterId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::features::ParameterId
+pub type cadmpeg_ir::features::ParameterId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::features::ParameterId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::features::ParameterId
+pub type cadmpeg_ir::features::ParameterId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::features::ParameterId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
+impl core::fmt::Display for cadmpeg_ir::features::ParameterId
+pub fn cadmpeg_ir::features::ParameterId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for cadmpeg_ir::features::ParameterId
+pub fn cadmpeg_ir::features::ParameterId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
 pub struct cadmpeg_ir::ParameterPmi
 pub cadmpeg_ir::ParameterPmi::basic: bool
 pub cadmpeg_ir::ParameterPmi::display_text: core::option::Option<alloc::string::String>
@@ -9028,7 +9182,21 @@ impl cadmpeg_ir::schema::EntitySchema for cadmpeg_ir::presentation::Presentation
 pub const cadmpeg_ir::presentation::PresentationDocument::KIND: cadmpeg_ir::schema::EntityKind
 pub fn cadmpeg_ir::presentation::PresentationDocument::identity(&self) -> &str
 pub fn cadmpeg_ir::presentation::PresentationDocument::visit_references(&self, &mut dyn core::ops::function::FnMut(cadmpeg_ir::schema::Reference))
-pub struct cadmpeg_ir::PresentationId(pub alloc::string::String)
+pub struct cadmpeg_ir::PresentationId(_)
+impl cadmpeg_ir::presentation::PresentationId
+pub fn cadmpeg_ir::presentation::PresentationId::as_str(&self) -> &str
+pub fn cadmpeg_ir::presentation::PresentationId::into_string(self) -> alloc::string::String
+pub fn cadmpeg_ir::presentation::PresentationId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::presentation::PresentationId
+pub type cadmpeg_ir::presentation::PresentationId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::presentation::PresentationId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::presentation::PresentationId
+pub type cadmpeg_ir::presentation::PresentationId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::presentation::PresentationId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
+impl core::fmt::Display for cadmpeg_ir::presentation::PresentationId
+pub fn cadmpeg_ir::presentation::PresentationId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for cadmpeg_ir::presentation::PresentationId
+pub fn cadmpeg_ir::presentation::PresentationId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
 pub struct cadmpeg_ir::PresentationLayer
 pub cadmpeg_ir::PresentationLayer::description: core::option::Option<alloc::string::String>
 pub cadmpeg_ir::PresentationLayer::id: cadmpeg_ir::ids::LayerId
@@ -9304,7 +9472,21 @@ pub cadmpeg_ir::SpreadsheetCell::parameter: cadmpeg_ir::features::ParameterId
 pub struct cadmpeg_ir::SpreadsheetDimension
 pub cadmpeg_ir::SpreadsheetDimension::index: u32
 pub cadmpeg_ir::SpreadsheetDimension::pixels: u32
-pub struct cadmpeg_ir::SpreadsheetId(pub alloc::string::String)
+pub struct cadmpeg_ir::SpreadsheetId(_)
+impl cadmpeg_ir::spreadsheets::SpreadsheetId
+pub fn cadmpeg_ir::spreadsheets::SpreadsheetId::as_str(&self) -> &str
+pub fn cadmpeg_ir::spreadsheets::SpreadsheetId::into_string(self) -> alloc::string::String
+pub fn cadmpeg_ir::spreadsheets::SpreadsheetId::mint(impl core::convert::Into<alloc::string::String>) -> core::result::Result<Self, cadmpeg_ir::ids::IdentityError>
+impl core::convert::TryFrom<&str> for cadmpeg_ir::spreadsheets::SpreadsheetId
+pub type cadmpeg_ir::spreadsheets::SpreadsheetId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::spreadsheets::SpreadsheetId::try_from(&str) -> core::result::Result<Self, Self::Error>
+impl core::convert::TryFrom<alloc::string::String> for cadmpeg_ir::spreadsheets::SpreadsheetId
+pub type cadmpeg_ir::spreadsheets::SpreadsheetId::Error = cadmpeg_ir::ids::IdentityError
+pub fn cadmpeg_ir::spreadsheets::SpreadsheetId::try_from(alloc::string::String) -> core::result::Result<Self, Self::Error>
+impl core::fmt::Display for cadmpeg_ir::spreadsheets::SpreadsheetId
+pub fn cadmpeg_ir::spreadsheets::SpreadsheetId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl serde_core::ser::Serialize for cadmpeg_ir::spreadsheets::SpreadsheetId
+pub fn cadmpeg_ir::spreadsheets::SpreadsheetId::serialize<S>(&self, S) -> core::result::Result<<S as serde_core::ser::Serializer>::Ok, <S as serde_core::ser::Serializer>::Error> where S: serde_core::ser::Serializer
 pub struct cadmpeg_ir::SpreadsheetRange
 impl cadmpeg_ir::spreadsheets::SpreadsheetRange
 pub fn cadmpeg_ir::spreadsheets::SpreadsheetRange::contains(&self, cadmpeg_ir::spreadsheets::CellAddress) -> bool
