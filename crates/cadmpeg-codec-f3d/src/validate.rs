@@ -8234,9 +8234,7 @@ fn validate_dimension_presentation_frames(ctx: &Ctx, findings: &mut Vec<Finding>
         let owner_is_sketch = entities_by_suffix
             .get(&(native_stream, u64::from(frame.owner_reference)))
             .is_some_and(|entity| entity.in_sketch_module());
-        let valid = valid_dynamic_class_tag(&frame.class_tag)
-            && valid_dynamic_class_tag(&frame.paired_class_tag)
-            && unique_index
+        let valid = unique_index
             && frame.paired_byte_offset > frame.byte_offset
             && frame.frame_length == frame.paired_byte_offset.saturating_sub(frame.byte_offset)
             && frame.presentation_byte_offset

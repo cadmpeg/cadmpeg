@@ -1445,7 +1445,7 @@ pub struct DesignDimensionPresentationFrame {
     /// Byte offset of the primary indexed record header.
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Source indexed-record identity.
     pub record_index: u32,
     /// Byte length from the primary through the paired-header boundary.
@@ -1458,7 +1458,7 @@ pub struct DesignDimensionPresentationFrame {
     /// Byte offset of `presentation_bytes`.
     pub presentation_byte_offset: u64,
     /// Dynamic class tag of the paired `EntityTracking` header.
-    pub paired_class_tag: String,
+    pub paired_class_tag: DesignClassTag,
     /// Byte offset of the paired indexed record header.
     pub paired_byte_offset: u64,
     /// Numeric suffix of the owning Sketch entity.

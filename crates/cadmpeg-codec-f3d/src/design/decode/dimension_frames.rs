@@ -1577,7 +1577,7 @@ pub(crate) fn parse_dimension_presentation_frame(
     Some(DesignDimensionPresentationFrame {
         id: String::new(),
         byte_offset: u64::try_from(start).ok()?,
-        class_tag,
+        class_tag: class_tag.try_into().ok()?,
         record_index,
         frame_length: u64::try_from(paired_byte_offset.checked_sub(start)?).ok()?,
         operands,
@@ -1585,7 +1585,7 @@ pub(crate) fn parse_dimension_presentation_frame(
             .get(presentation_byte_offset..paired_byte_offset)?
             .to_vec(),
         presentation_byte_offset: u64::try_from(presentation_byte_offset).ok()?,
-        paired_class_tag,
+        paired_class_tag: paired_class_tag.try_into().ok()?,
         paired_byte_offset: u64::try_from(paired_byte_offset).ok()?,
         owner_reference,
         owner_reference_offset: u64::try_from(paired_byte_offset + 20).ok()?,

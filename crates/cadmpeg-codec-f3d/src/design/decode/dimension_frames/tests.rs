@@ -1032,7 +1032,7 @@ fn dimension_presentation_frame_requires_registered_geometry_and_paired_sketch_h
         &HashSet::from([String::from("281")]),
     )
     .expect("direct dimension presentation frame");
-    assert_eq!(frame.class_tag, "314");
+    assert_eq!(frame.class_tag.as_str(), "314");
     assert_eq!(frame.record_index, 332);
     assert_eq!(frame.frame_length, paired_offset as u64);
     assert_eq!(frame.presentation_byte_offset, presentation_offset as u64);
