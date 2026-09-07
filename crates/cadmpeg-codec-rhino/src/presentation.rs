@@ -146,14 +146,46 @@ struct MaterialRecord {
     textures: Vec<TextureRecord>,
     shareable: bool,
     disable_lighting: bool,
-    fresnel_reflections: bool,
-    reflection_glossiness: Option<f64>,
-    refraction_glossiness: Option<f64>,
-    fresnel_index_of_refraction: Option<f64>,
+    #[serde(flatten, serialize_with = "serialize_material_fresnel")]
+    fresnel: Option<MaterialFresnelSettings>,
     rdk_instance_uuid: Option<String>,
     diffuse_texture_alpha_transparency: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     physically_based: Option<PhysicallyBasedMaterialRecord>,
+}
+
+#[derive(Debug)]
+struct MaterialFresnelSettings {
+    reflections: bool,
+    reflection_glossiness: f64,
+    refraction_glossiness: f64,
+    index_of_refraction: f64,
+}
+
+fn serialize_material_fresnel<S: serde::Serializer>(
+    settings: &Option<MaterialFresnelSettings>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+
+    let mut fields = serializer.serialize_map(Some(4))?;
+    fields.serialize_entry(
+        "fresnel_reflections",
+        &settings.as_ref().is_some_and(|value| value.reflections),
+    )?;
+    fields.serialize_entry(
+        "reflection_glossiness",
+        &settings.as_ref().map(|value| value.reflection_glossiness),
+    )?;
+    fields.serialize_entry(
+        "refraction_glossiness",
+        &settings.as_ref().map(|value| value.refraction_glossiness),
+    )?;
+    fields.serialize_entry(
+        "fresnel_index_of_refraction",
+        &settings.as_ref().map(|value| value.index_of_refraction),
+    )?;
+    fields.end()
 }
 
 fn serialize_material_textures<S: serde::Serializer>(
@@ -1862,10 +1894,7 @@ fn parse_v2_v3_material(
         textures,
         shareable: false,
         disable_lighting: false,
-        fresnel_reflections: false,
-        reflection_glossiness: None,
-        refraction_glossiness: None,
-        fresnel_index_of_refraction: None,
+        fresnel: None,
         rdk_instance_uuid: None,
         diffuse_texture_alpha_transparency: None,
         physically_based,
@@ -1977,23 +2006,13 @@ fn parse_material(
     } else {
         false
     };
-    let fresnel_reflections = if minor >= 4 || modern {
-        reader.bool_with_writer_version(writer_version)?
-    } else {
-        false
-    };
-    let reflection_glossiness = if minor >= 4 || modern {
-        Some(read_finite(&mut reader, "reflection glossiness")?)
-    } else {
-        None
-    };
-    let refraction_glossiness = if minor >= 4 || modern {
-        Some(read_finite(&mut reader, "refraction glossiness")?)
-    } else {
-        None
-    };
-    let fresnel_index_of_refraction = if minor >= 4 || modern {
-        Some(read_finite(&mut reader, "Fresnel index")?)
+    let fresnel = if minor >= 4 || modern {
+        Some(MaterialFresnelSettings {
+            reflections: reader.bool_with_writer_version(writer_version)?,
+            reflection_glossiness: read_finite(&mut reader, "reflection glossiness")?,
+            refraction_glossiness: read_finite(&mut reader, "refraction glossiness")?,
+            index_of_refraction: read_finite(&mut reader, "Fresnel index")?,
+        })
     } else {
         None
     };
@@ -2033,10 +2052,7 @@ fn parse_material(
         textures,
         shareable,
         disable_lighting,
-        fresnel_reflections,
-        reflection_glossiness,
-        refraction_glossiness,
-        fresnel_index_of_refraction,
+        fresnel,
         rdk_instance_uuid: rdk.filter(|id| !id.is_nil()).map(|id| id.to_string()),
         diffuse_texture_alpha_transparency: alpha,
         physically_based,
