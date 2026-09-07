@@ -637,9 +637,18 @@ fn binds_agreeing_fc05_caps_to_one_typed_cylinder() {
         pairs,
         vec![Fc05CylinderCapPair {
             surface_id: 10,
-            curve_ids: vec![20, 21],
-            cap_plane_ids: vec![11, 12],
-            curve_cap_ordinates_row_frame: vec![-5.0, 7.0],
+            cap_edges: vec![
+                crate::curve::Fc05CapEdge {
+                    curve_id: 20,
+                    cap_plane_id: 11,
+                    cap_ordinate_row_frame: -5.0
+                },
+                crate::curve::Fc05CapEdge {
+                    curve_id: 21,
+                    cap_plane_id: 12,
+                    cap_ordinate_row_frame: 7.0
+                }
+            ],
             center_row_frame: [3.0, 4.0],
             radius_mm: 2.0,
             reference_direction_row_frame: [1.0, 0.0],

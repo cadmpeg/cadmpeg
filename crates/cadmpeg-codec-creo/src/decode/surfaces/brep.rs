@@ -2065,11 +2065,11 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 instance_path: Vec::new(),
             }),
         });
-        for ((curve_id, ordinate), cap_plane_id) in pair
-            .curve_ids
-            .iter()
-            .zip(&pair.curve_cap_ordinates_row_frame)
-            .zip(&pair.cap_plane_ids)
+        for crate::curve::Fc05CapEdge {
+            curve_id,
+            cap_plane_id,
+            cap_ordinate_row_frame: ordinate,
+        } in &pair.cap_edges
         {
             let cap_offset =
                 crate::surface::unique_outline_plane(&scan.planes.outlines, *cap_plane_id)

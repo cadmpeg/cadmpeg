@@ -633,18 +633,25 @@ pub struct Fc05Circle {
     pub offset: usize,
 }
 
+/// One circle edge joining a cylinder to a cap plane.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Fc05CapEdge {
+    /// Circle curve identifier.
+    pub curve_id: u32,
+    /// Opposite cap plane identifier.
+    pub cap_plane_id: u32,
+    /// Cap ordinate in the owning feature's row frame.
+    pub cap_ordinate_row_frame: f64,
+}
+
 /// Two or more topology-bound `fc 05` cap circles that establish one native
 /// cylinder's radius and row-frame axis line, but not its model-space frame.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Fc05CylinderCapPair {
     /// Cylinder surface identifier shared by every cap edge.
     pub surface_id: u32,
-    /// Curve identifiers of the agreeing cap circles in source order.
-    pub curve_ids: Vec<u32>,
-    /// Plane surface identifier opposite the cylinder on each cap edge.
-    pub cap_plane_ids: Vec<u32>,
-    /// Cap ordinate aligned with each `curve_ids`/`cap_plane_ids` entry.
-    pub curve_cap_ordinates_row_frame: Vec<f64>,
+    /// Agreeing cap edges in source order.
+    pub cap_edges: Vec<Fc05CapEdge>,
     /// Shared center in the owning feature's row frame.
     pub center_row_frame: [f64; 2],
     /// Shared exact radius in mm.
@@ -6594,7 +6601,7 @@ pub fn fc05_cylinder_cap_pairs(
     for circle in circles {
         *circle_counts.entry(circle.curve_id).or_default() += 1;
     }
-    let mut groups = BTreeMap::<u32, Vec<(&Fc05Circle, u32)>>::new();
+    let mut groups = BTreeMap::<u32, Vec<(&Fc05Circle, u32, f64)>>::new();
     for circle in circles {
         if circle_counts.get(&circle.curve_id) != Some(&1) {
             continue;
@@ -6618,17 +6625,21 @@ pub fn fc05_cylinder_cap_pairs(
             })
             .copied()
             .collect::<Vec<_>>();
-        if cylinders.len() == 1 && planes.len() == 1 && circle.cap_ordinate_row_frame.is_some() {
+        if let ([cylinder], [plane], Some(ordinate)) = (
+            cylinders.as_slice(),
+            planes.as_slice(),
+            circle.cap_ordinate_row_frame,
+        ) {
             groups
-                .entry(cylinders[0])
+                .entry(*cylinder)
                 .or_default()
-                .push((circle, planes[0]));
+                .push((circle, *plane, ordinate));
         }
     }
 
     let mut result = Vec::new();
     for (surface_id, mut group) in groups {
-        group.sort_by_key(|(circle, _)| circle.offset);
+        group.sort_by_key(|(circle, _, _)| circle.offset);
         let first = group[0].0;
         let Fc05AngleParameterRelation::Consistent {
             sense: parameter_sense,
@@ -6638,7 +6649,7 @@ pub fn fc05_cylinder_cap_pairs(
             continue;
         };
         let tolerance = EPS_RADIUS_AGREEMENT * first.radius_mm.max(1.0);
-        if !group.iter().all(|(circle, _)| {
+        if !group.iter().all(|(circle, _, _)| {
             let Fc05AngleParameterRelation::Consistent {
                 sense,
                 reference_direction_row_frame: direction,
@@ -6656,10 +6667,7 @@ pub fn fc05_cylinder_cap_pairs(
             continue;
         }
         let mut ordinates = Vec::new();
-        for ordinate in group
-            .iter()
-            .filter_map(|(circle, _)| circle.cap_ordinate_row_frame)
-        {
+        for ordinate in group.iter().map(|(_, _, ordinate)| *ordinate) {
             if ordinates
                 .iter()
                 .all(|existing: &f64| (*existing - ordinate).abs() > tolerance)
@@ -6672,11 +6680,13 @@ pub fn fc05_cylinder_cap_pairs(
         }
         result.push(Fc05CylinderCapPair {
             surface_id,
-            curve_ids: group.iter().map(|(circle, _)| circle.curve_id).collect(),
-            cap_plane_ids: group.iter().map(|(_, plane)| *plane).collect(),
-            curve_cap_ordinates_row_frame: group
+            cap_edges: group
                 .iter()
-                .filter_map(|(circle, _)| circle.cap_ordinate_row_frame)
+                .map(|(circle, plane, ordinate)| Fc05CapEdge {
+                    curve_id: circle.curve_id,
+                    cap_plane_id: *plane,
+                    cap_ordinate_row_frame: *ordinate,
+                })
                 .collect(),
             center_row_frame: first.center_row_frame,
             radius_mm: first.radius_mm,

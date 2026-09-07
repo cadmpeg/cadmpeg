@@ -236,15 +236,14 @@ pub(super) fn fc05_cap_pair_model_frame(
     pair: &crate::curve::Fc05CylinderCapPair,
 ) -> Option<Fc05CapPairFrame> {
     let placed_caps = pair
-        .cap_plane_ids
+        .cap_edges
         .iter()
-        .zip(&pair.curve_cap_ordinates_row_frame)
-        .filter_map(|(id, ordinate)| {
-            crate::surface::unique_outline_plane(&scan.planes.outlines, *id)
-                .map(|plane| (plane, *ordinate))
+        .map(|edge| {
+            crate::surface::unique_outline_plane(&scan.planes.outlines, edge.cap_plane_id)
+                .map(|plane| (plane, edge.cap_ordinate_row_frame))
         })
-        .collect::<Vec<_>>();
-    (placed_caps.len() == pair.cap_plane_ids.len() && placed_caps.len() >= 2).then_some(())?;
+        .collect::<Option<Vec<_>>>()?;
+    (placed_caps.len() >= 2).then_some(())?;
     let (first_cap, first_ordinate) = placed_caps.first().copied()?;
     let axis_index = Axis::ALL
         .into_iter()

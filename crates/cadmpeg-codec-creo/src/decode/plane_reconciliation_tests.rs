@@ -623,9 +623,18 @@ fn fc05_cap_pair_tangency_selects_one_stored_plane_branch() {
         .fc05_cylinder_cap_pairs
         .push(crate::curve::Fc05CylinderCapPair {
             surface_id: 7,
-            curve_ids: vec![11, 12],
-            cap_plane_ids: vec![1, 2],
-            curve_cap_ordinates_row_frame: vec![0.0, 38.0],
+            cap_edges: vec![
+                crate::curve::Fc05CapEdge {
+                    curve_id: 11,
+                    cap_plane_id: 1,
+                    cap_ordinate_row_frame: 0.0,
+                },
+                crate::curve::Fc05CapEdge {
+                    curve_id: 12,
+                    cap_plane_id: 2,
+                    cap_ordinate_row_frame: 38.0,
+                },
+            ],
             center_row_frame: [2.0, 3.0],
             radius_mm: 0.5,
             reference_direction_row_frame: [1.0, 0.0],
@@ -690,9 +699,18 @@ fn fc05_cap_pair_frame_reconstructs_parameter_origin_from_cap_spans() {
     ]);
     let pair = crate::curve::Fc05CylinderCapPair {
         surface_id: 7,
-        curve_ids: vec![11, 12],
-        cap_plane_ids: vec![1, 2],
-        curve_cap_ordinates_row_frame: vec![-87.5368, -49.5368],
+        cap_edges: vec![
+            crate::curve::Fc05CapEdge {
+                curve_id: 11,
+                cap_plane_id: 1,
+                cap_ordinate_row_frame: -87.5368,
+            },
+            crate::curve::Fc05CapEdge {
+                curve_id: 12,
+                cap_plane_id: 2,
+                cap_ordinate_row_frame: -49.5368,
+            },
+        ],
         center_row_frame: [2.0, 3.0],
         radius_mm: 0.5,
         reference_direction_row_frame: [1.0, 0.0],
@@ -708,8 +726,18 @@ fn fc05_cap_pair_frame_reconstructs_parameter_origin_from_cap_spans() {
     assert!((frame.origin[2] - 3.0).abs() <= EPS_FC05_FRAME_TEST);
 
     let reversed = crate::curve::Fc05CylinderCapPair {
-        cap_plane_ids: vec![2, 1],
-        curve_cap_ordinates_row_frame: vec![-87.5368, -49.5368],
+        cap_edges: vec![
+            crate::curve::Fc05CapEdge {
+                curve_id: 11,
+                cap_plane_id: 2,
+                cap_ordinate_row_frame: -87.5368,
+            },
+            crate::curve::Fc05CapEdge {
+                curve_id: 12,
+                cap_plane_id: 1,
+                cap_ordinate_row_frame: -49.5368,
+            },
+        ],
         cap_ordinates_row_frame: vec![-87.5368, -49.5368],
         ..pair
     };
@@ -819,9 +847,18 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
         .fc05_cylinder_cap_pairs
         .push(crate::curve::Fc05CylinderCapPair {
             surface_id: 7,
-            curve_ids: vec![11, 12],
-            cap_plane_ids: vec![1, 2],
-            curve_cap_ordinates_row_frame: vec![0.0, 38.0],
+            cap_edges: vec![
+                crate::curve::Fc05CapEdge {
+                    curve_id: 11,
+                    cap_plane_id: 1,
+                    cap_ordinate_row_frame: 0.0,
+                },
+                crate::curve::Fc05CapEdge {
+                    curve_id: 12,
+                    cap_plane_id: 2,
+                    cap_ordinate_row_frame: 38.0,
+                },
+            ],
             center_row_frame: [2.0, 3.0],
             radius_mm: 0.5,
             reference_direction_row_frame: [1.0, 0.0],
