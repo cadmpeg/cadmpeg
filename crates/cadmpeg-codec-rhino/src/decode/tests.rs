@@ -207,13 +207,11 @@ fn class_uuid(wire: [u8; 16]) -> crate::wire::Uuid {
 fn child(
     class_uuid: crate::wire::Uuid,
     class_data_range: std::ops::Range<usize>,
-    base_type: crate::brep::RawBrepBaseType,
 ) -> crate::brep::RawBrepChild {
     crate::brep::RawBrepChild {
         class_uuid,
         source_range: class_data_range.clone(),
         class_data_range,
-        base_type,
     }
 }
 
@@ -299,7 +297,7 @@ fn source_shaped_plane_brep() -> (Vec<u8>, crate::brep::RawBrep) {
             c2: crate::brep::RawBrepChildren {
                 slots: c2_ranges
                     .into_iter()
-                    .map(|range| Some(child(line_uuid, range, crate::brep::RawBrepBaseType::Curve)))
+                    .map(|range| Some(child(line_uuid, range)))
                     .collect(),
                 source_range: 0..0,
                 expected_type: crate::brep::RawBrepBaseType::Curve,
@@ -307,17 +305,13 @@ fn source_shaped_plane_brep() -> (Vec<u8>, crate::brep::RawBrep) {
             c3: crate::brep::RawBrepChildren {
                 slots: c3_ranges
                     .into_iter()
-                    .map(|range| Some(child(line_uuid, range, crate::brep::RawBrepBaseType::Curve)))
+                    .map(|range| Some(child(line_uuid, range)))
                     .collect(),
                 source_range: 0..0,
                 expected_type: crate::brep::RawBrepBaseType::Curve,
             },
             surfaces: crate::brep::RawBrepChildren {
-                slots: vec![Some(child(
-                    plane_uuid,
-                    surface_range,
-                    crate::brep::RawBrepBaseType::Surface,
-                ))],
+                slots: vec![Some(child(plane_uuid, surface_range))],
                 source_range: 0..0,
                 expected_type: crate::brep::RawBrepBaseType::Surface,
             },

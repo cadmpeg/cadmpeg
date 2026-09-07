@@ -80,8 +80,19 @@ pub(crate) struct RawBrepChild {
     pub(crate) class_data_range: Range<usize>,
     /// Complete class-wrapper byte range.
     pub(crate) source_range: Range<usize>,
-    /// Base-class family inferred from the class UUID.
-    pub(crate) base_type: RawBrepBaseType,
+}
+
+impl RawBrepChild {
+    /// Returns the base-class family defined by the class UUID.
+    fn base_type(&self) -> RawBrepBaseType {
+        if crate::curves::curve_class(self.class_uuid) {
+            RawBrepBaseType::Curve
+        } else if crate::curves::surface_class(self.class_uuid) {
+            RawBrepBaseType::Surface
+        } else {
+            RawBrepBaseType::Other
+        }
+    }
 }
 
 /// A positional polymorphic Brep array.
@@ -855,7 +866,6 @@ fn parse_legacy_major2(
             class_uuid: crate::curves::POLYCURVE,
             class_data_range: curve_range.clone(),
             source_range: curve_range,
-            base_type: RawBrepBaseType::Curve,
         }));
     }
     let c2_range = c2_start..reader.position();
@@ -883,7 +893,6 @@ fn parse_legacy_major2(
             class_uuid: crate::curves::POLYCURVE,
             class_data_range: curve_range.clone(),
             source_range: curve_range,
-            base_type: RawBrepBaseType::Curve,
         }));
     }
     let c3_range = c3_start..reader.position();
@@ -898,7 +907,6 @@ fn parse_legacy_major2(
             class_uuid: crate::surfaces::NURBS_SURFACE,
             class_data_range: surface_range.clone(),
             source_range: surface_range,
-            base_type: RawBrepBaseType::Surface,
         }));
     }
     let surfaces_range = surfaces_start..reader.position();
@@ -1480,7 +1488,6 @@ fn read_legacy_mesh_sides(
                         class_uuid: class.class_uuid,
                         class_data_range: class.class_data_range,
                         source_range: object_start..object.next_offset(),
-                        base_type: RawBrepBaseType::Other,
                     },
                     userdata,
                 }),
@@ -1559,12 +1566,10 @@ fn read_children(
                 let class =
                     parse_class_wrapper(bytes, chunk_start_range(&child_chunk), archive, warnings)?;
                 child_reader.skip(child_end - child_start)?;
-                let base_type = classify_base_type(class.class_uuid);
                 slots.push(Some(RawBrepChild {
                     class_uuid: class.class_uuid,
                     class_data_range: class.class_data_range,
                     source_range: child_start..child_end,
-                    base_type,
                 }));
             }
             _ => {
@@ -1883,7 +1888,6 @@ fn read_mesh_sides(
                                 class_uuid: class.class_uuid,
                                 class_data_range: class.class_data_range,
                                 source_range: start..object.next_offset(),
-                                base_type: RawBrepBaseType::Other,
                             },
                             userdata,
                         })
@@ -2366,7 +2370,7 @@ fn typed_slot(array: &RawBrepChildren, index: i32, expected: RawBrepBaseType) ->
             .slots
             .get(index as usize)
             .and_then(Option::as_ref)
-            .is_some_and(|child| child.base_type == expected)
+            .is_some_and(|child| child.base_type() == expected)
 }
 
 fn validate_edge_incidences(raw: &RawBrep) -> Result<(), GeometryError> {
@@ -2562,16 +2566,6 @@ fn finish_anonymous_ranges(
     }
     parent.skip(chunk.next_offset() - parent.position())?;
     Ok(())
-}
-
-fn classify_base_type(uuid: Uuid) -> RawBrepBaseType {
-    if crate::curves::curve_class(uuid) {
-        RawBrepBaseType::Curve
-    } else if crate::curves::surface_class(uuid) {
-        RawBrepBaseType::Surface
-    } else {
-        RawBrepBaseType::Other
-    }
 }
 
 #[cfg(test)]
@@ -2849,10 +2843,13 @@ mod tests {
 
     fn raw_child(base_type: RawBrepBaseType) -> RawBrepChild {
         RawBrepChild {
-            class_uuid: Uuid::nil(),
+            class_uuid: match base_type {
+                RawBrepBaseType::Curve => crate::curves::POLYCURVE,
+                RawBrepBaseType::Surface => crate::surfaces::NURBS_SURFACE,
+                RawBrepBaseType::Other => Uuid::nil(),
+            },
             class_data_range: 0..0,
             source_range: 0..0,
-            base_type,
         }
     }
 
@@ -3331,7 +3328,7 @@ mod tests {
         .expect("children");
         assert!(array.slots[0].is_none());
         assert_eq!(
-            array.slots[1].as_ref().expect("wrong class").base_type,
+            array.slots[1].as_ref().expect("wrong class").base_type(),
             RawBrepBaseType::Other
         );
         assert_eq!(reader.remaining(), 0);
