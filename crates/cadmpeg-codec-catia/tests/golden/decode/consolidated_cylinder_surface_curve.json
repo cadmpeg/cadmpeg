@@ -332,399 +332,397 @@
     },
     "native": {
       "catia": {
-        "arenas": {
-          "alias_rows": [],
-          "catalog_entries": [],
-          "catalogs": [],
-          "consolidated_circles": [],
-          "consolidated_class5b5c_records": [],
-          "consolidated_class61_records": [],
-          "consolidated_cone_faces": [],
-          "consolidated_cones": [],
-          "consolidated_cylinders": [
-            {
-              "byte_offset": 16,
-              "id": "catia:consolidated:cylinder#0",
-              "layout": 90,
-              "origin": [
+        "alias_rows": [],
+        "catalog_entries": [],
+        "catalogs": [],
+        "consolidated_circles": [],
+        "consolidated_class5b5c_records": [],
+        "consolidated_class61_records": [],
+        "consolidated_cone_faces": [],
+        "consolidated_cones": [],
+        "consolidated_cylinders": [
+          {
+            "byte_offset": 16,
+            "id": "catia:consolidated:cylinder#0",
+            "layout": 90,
+            "origin": [
+              1.0,
+              2.0,
+              3.0
+            ],
+            "payload": {
+              "axis": [
                 1.0,
-                2.0,
-                3.0
-              ],
-              "payload": {
-                "axis": [
-                  1.0,
-                  0.0,
-                  0.0
-                ],
-                "frame_token": 25,
-                "kind": "resolved",
-                "reference_direction": [
-                  -0.0,
-                  1.0,
-                  0.0
-                ]
-              },
-              "radius": 2.0,
-              "u_range": [
                 0.0,
-                12.566370614359172
+                0.0
               ],
-              "v_range": [
-                -4.0,
-                5.0
+              "frame_token": 25,
+              "kind": "resolved",
+              "reference_direction": [
+                -0.0,
+                1.0,
+                0.0
               ]
-            }
-          ],
-          "consolidated_edge_nodes": [
-            {
-              "byte_offset": 536,
-              "curve_ref": 6,
-              "definition": {
-                "byte_offset": 435,
-                "class": 35,
-                "flag": 3,
-                "header_token": 0,
-                "payload": [
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  240,
-                  63,
-                  141,
-                  237,
-                  181,
-                  160,
-                  247,
-                  198,
-                  176,
-                  62,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  240,
-                  63,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  240,
-                  63,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  0,
-                  240,
-                  63,
-                  141,
-                  237,
-                  181,
-                  160,
-                  247,
-                  198,
-                  176,
-                  62
-                ],
-                "width": 1
-              },
+            },
+            "radius": 2.0,
+            "u_range": [
+              0.0,
+              12.566370614359172
+            ],
+            "v_range": [
+              -4.0,
+              5.0
+            ]
+          }
+        ],
+        "consolidated_edge_nodes": [
+          {
+            "byte_offset": 536,
+            "curve_ref": 6,
+            "definition": {
+              "byte_offset": 435,
+              "class": 35,
               "flag": 3,
-              "header_token": 5,
-              "id": "catia:consolidated:edge-node#0",
-              "parameter_selectors": [
-                2,
-                1
-              ],
-              "reference_encodings": [
-                "backward_distance",
-                "tagged_u8",
-                "tagged_u8",
-                "backward_distance",
-                "backward_distance"
-              ],
-              "source_index": 0,
-              "tail": 33,
-              "terminal_encoding": "backward_distance",
-              "terminal_value": 8,
-              "uses": {
-                "references": [
-                  [
-                    4,
-                    5
-                  ],
-                  [
-                    5,
-                    6
-                  ]
-                ],
-                "senses": [
-                  136,
-                  132
-                ]
-              },
-              "vertex_refs": [
-                139,
-                142
-              ],
-              "vertices": [
-                "catia:consolidated:vertex-identity#0",
-                "catia:consolidated:vertex-identity#1"
+              "header_token": 0,
+              "payload": [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                240,
+                63,
+                141,
+                237,
+                181,
+                160,
+                247,
+                198,
+                176,
+                62,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                240,
+                63,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                240,
+                63,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                240,
+                63,
+                141,
+                237,
+                181,
+                160,
+                247,
+                198,
+                176,
+                62
               ],
               "width": 1
-            }
-          ],
-          "consolidated_edge_runs": [
-            {
-              "byte_offset": 141,
-              "endpoint_loci": [
-                [
-                  1.0,
-                  4.0,
-                  3.0
-                ],
-                [
-                  2.0,
-                  3.7551651237807455,
-                  3.958851077208406
-                ]
-              ],
-              "id": "catia:consolidated:edge-run#0",
-              "node": "catia:consolidated:edge-node#0",
-              "parameter_range": [
-                0.0,
-                1.0
-              ],
-              "pcurves": [
-                "catia:consolidated:pcurve#0",
-                "catia:consolidated:pcurve#1"
-              ],
-              "shared_loci": [
-                [
-                  1.0,
-                  4.0,
-                  3.0
-                ],
-                [
-                  2.0,
-                  3.7551651237807455,
-                  3.958851077208406
-                ]
-              ],
-              "support_bindings": [
-                {
-                  "byte_offset": 16,
-                  "kind": "cylinder"
-                },
-                {
-                  "byte_offset": 16,
-                  "kind": "cylinder"
-                }
-              ],
-              "tolerance": 1e-6
-            }
-          ],
-          "consolidated_embedded_cylinders": [],
-          "consolidated_groups": [],
-          "consolidated_line_profiles": [],
-          "consolidated_owner_packets": [],
-          "consolidated_parameter_points": [],
-          "consolidated_pcurves": [
-            {
-              "byte_offset": 141,
-              "degree": 5,
-              "extrapolation_sites": 2,
-              "family": "a",
-              "first_derivatives": [
-                [
-                  1.0,
-                  0.0
-                ],
-                [
-                  1.0,
-                  0.0
-                ]
-              ],
-              "id": "catia:consolidated:pcurve#0",
-              "knots": [
-                0.0,
-                1.0
-              ],
-              "points": [
-                [
-                  0.0,
-                  0.0
-                ],
-                [
-                  1.0,
-                  1.0
-                ]
-              ],
-              "range": [
-                0.0,
-                1.0
-              ],
-              "second_derivatives": [
-                [
-                  0.0,
-                  0.0
-                ],
-                [
-                  0.0,
-                  0.0
-                ]
-              ],
-              "support_id": 4660,
-              "tail": "Bw=="
             },
-            {
-              "byte_offset": 288,
-              "degree": 5,
-              "extrapolation_sites": 2,
-              "family": "a",
-              "first_derivatives": [
+            "flag": 3,
+            "header_token": 5,
+            "id": "catia:consolidated:edge-node#0",
+            "parameter_selectors": [
+              2,
+              1
+            ],
+            "reference_encodings": [
+              "backward_distance",
+              "tagged_u8",
+              "tagged_u8",
+              "backward_distance",
+              "backward_distance"
+            ],
+            "source_index": 0,
+            "tail": 33,
+            "terminal_encoding": "backward_distance",
+            "terminal_value": 8,
+            "uses": {
+              "references": [
                 [
-                  1.0,
-                  0.0
+                  4,
+                  5
                 ],
                 [
-                  1.0,
-                  0.0
+                  5,
+                  6
                 ]
               ],
-              "id": "catia:consolidated:pcurve#1",
-              "knots": [
-                0.0,
-                1.0
-              ],
-              "points": [
-                [
-                  0.0,
-                  0.0
-                ],
-                [
-                  1.0,
-                  1.0
-                ]
-              ],
-              "range": [
-                0.0,
-                1.0
-              ],
-              "second_derivatives": [
-                [
-                  0.0,
-                  0.0
-                ],
-                [
-                  0.0,
-                  0.0
-                ]
-              ],
-              "support_id": 4660,
-              "tail": "Bw=="
-            }
-          ],
-          "consolidated_plane_carriers": [],
-          "consolidated_reference_lists": [],
-          "consolidated_revolutions": [],
-          "consolidated_spheres": [],
-          "consolidated_tori": [],
-          "consolidated_vertex_identities": [
-            {
-              "id": "catia:consolidated:vertex-identity#0",
-              "identity": 139,
-              "incident_edge_nodes": [
-                "catia:consolidated:edge-node#0"
-              ],
-              "reference_values": [
-                139
-              ],
-              "source_index": 0
-            },
-            {
-              "id": "catia:consolidated:vertex-identity#1",
-              "identity": 142,
-              "incident_edge_nodes": [
-                "catia:consolidated:edge-node#0"
-              ],
-              "reference_values": [
-                142
-              ],
-              "source_index": 0
-            }
-          ],
-          "design_objects": [],
-          "entity_records": [],
-          "external_references": [],
-          "finjpl_segments": [],
-          "legacy_entity_runs": [],
-          "object_graph_records": [],
-          "object_graphs": [],
-          "preview_images": [],
-          "reference_signature_cohorts": [],
-          "schema_configuration_row_chains": [],
-          "unknowns": [
-            {
-              "id": "catia:payload:unknown#brep-stream",
-              "links": [
-                "catia:standard:surf#0",
-                "catia:standard:surf#1",
-                "catia:consolidated:cylinder#2",
-                "catia:standard:circle#0",
-                "catia:consolidated:curve#1"
+              "senses": [
+                136,
+                132
               ]
-            }
-          ],
-          "value_blocks": [],
-          "value_schema_selections": [],
-          "zero_entity_edge_strides": [],
-          "zero_entity_endpoint_locus_candidates": [],
-          "zero_entity_endpoint_pair_candidates": [],
-          "zero_entity_oriented_use_pairs": [],
-          "zero_entity_ownership_roots": [],
-          "zero_entity_records": [],
-          "zero_entity_support_runs": [],
-          "zero_entity_vertex_incidences": []
-        }
+            },
+            "vertex_refs": [
+              139,
+              142
+            ],
+            "vertices": [
+              "catia:consolidated:vertex-identity#0",
+              "catia:consolidated:vertex-identity#1"
+            ],
+            "width": 1
+          }
+        ],
+        "consolidated_edge_runs": [
+          {
+            "byte_offset": 141,
+            "endpoint_loci": [
+              [
+                1.0,
+                4.0,
+                3.0
+              ],
+              [
+                2.0,
+                3.7551651237807455,
+                3.958851077208406
+              ]
+            ],
+            "id": "catia:consolidated:edge-run#0",
+            "node": "catia:consolidated:edge-node#0",
+            "parameter_range": [
+              0.0,
+              1.0
+            ],
+            "pcurves": [
+              "catia:consolidated:pcurve#0",
+              "catia:consolidated:pcurve#1"
+            ],
+            "shared_loci": [
+              [
+                1.0,
+                4.0,
+                3.0
+              ],
+              [
+                2.0,
+                3.7551651237807455,
+                3.958851077208406
+              ]
+            ],
+            "support_bindings": [
+              {
+                "byte_offset": 16,
+                "kind": "cylinder"
+              },
+              {
+                "byte_offset": 16,
+                "kind": "cylinder"
+              }
+            ],
+            "tolerance": 1e-6
+          }
+        ],
+        "consolidated_embedded_cylinders": [],
+        "consolidated_groups": [],
+        "consolidated_line_profiles": [],
+        "consolidated_owner_packets": [],
+        "consolidated_parameter_points": [],
+        "consolidated_pcurves": [
+          {
+            "byte_offset": 141,
+            "degree": 5,
+            "extrapolation_sites": 2,
+            "family": "a",
+            "first_derivatives": [
+              [
+                1.0,
+                0.0
+              ],
+              [
+                1.0,
+                0.0
+              ]
+            ],
+            "id": "catia:consolidated:pcurve#0",
+            "knots": [
+              0.0,
+              1.0
+            ],
+            "points": [
+              [
+                0.0,
+                0.0
+              ],
+              [
+                1.0,
+                1.0
+              ]
+            ],
+            "range": [
+              0.0,
+              1.0
+            ],
+            "second_derivatives": [
+              [
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0
+              ]
+            ],
+            "support_id": 4660,
+            "tail": "Bw=="
+          },
+          {
+            "byte_offset": 288,
+            "degree": 5,
+            "extrapolation_sites": 2,
+            "family": "a",
+            "first_derivatives": [
+              [
+                1.0,
+                0.0
+              ],
+              [
+                1.0,
+                0.0
+              ]
+            ],
+            "id": "catia:consolidated:pcurve#1",
+            "knots": [
+              0.0,
+              1.0
+            ],
+            "points": [
+              [
+                0.0,
+                0.0
+              ],
+              [
+                1.0,
+                1.0
+              ]
+            ],
+            "range": [
+              0.0,
+              1.0
+            ],
+            "second_derivatives": [
+              [
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0
+              ]
+            ],
+            "support_id": 4660,
+            "tail": "Bw=="
+          }
+        ],
+        "consolidated_plane_carriers": [],
+        "consolidated_reference_lists": [],
+        "consolidated_revolutions": [],
+        "consolidated_spheres": [],
+        "consolidated_tori": [],
+        "consolidated_vertex_identities": [
+          {
+            "id": "catia:consolidated:vertex-identity#0",
+            "identity": 139,
+            "incident_edge_nodes": [
+              "catia:consolidated:edge-node#0"
+            ],
+            "reference_values": [
+              139
+            ],
+            "source_index": 0
+          },
+          {
+            "id": "catia:consolidated:vertex-identity#1",
+            "identity": 142,
+            "incident_edge_nodes": [
+              "catia:consolidated:edge-node#0"
+            ],
+            "reference_values": [
+              142
+            ],
+            "source_index": 0
+          }
+        ],
+        "design_objects": [],
+        "entity_records": [],
+        "external_references": [],
+        "finjpl_segments": [],
+        "legacy_entity_runs": [],
+        "object_graph_records": [],
+        "object_graphs": [],
+        "preview_images": [],
+        "reference_signature_cohorts": [],
+        "schema_configuration_row_chains": [],
+        "unknowns": [
+          {
+            "id": "catia:payload:unknown#brep-stream",
+            "links": [
+              "catia:standard:surf#0",
+              "catia:standard:surf#1",
+              "catia:consolidated:cylinder#2",
+              "catia:standard:circle#0",
+              "catia:consolidated:curve#1"
+            ]
+          }
+        ],
+        "value_blocks": [],
+        "value_schema_selections": [],
+        "zero_entity_edge_strides": [],
+        "zero_entity_endpoint_locus_candidates": [],
+        "zero_entity_endpoint_pair_candidates": [],
+        "zero_entity_oriented_use_pairs": [],
+        "zero_entity_ownership_roots": [],
+        "zero_entity_records": [],
+        "zero_entity_support_runs": [],
+        "zero_entity_vertex_incidences": []
       }
     },
     "source": {

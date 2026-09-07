@@ -630,7 +630,8 @@ impl CatiaNative {
             &finjpl_segments,
             &value_blocks,
         )?;
-        validate_alias_links(&alias_rows, &consolidated_owner_packets)?;
+        validate_alias_surface_tags(&alias_rows)?;
+        validate_owner_chart_support_aliases(&consolidated_owner_packets, &alias_rows)?;
         Ok(Self {
             alias_rows,
             catalogs,

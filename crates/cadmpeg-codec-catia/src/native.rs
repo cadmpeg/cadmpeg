@@ -8752,15 +8752,6 @@ fn validate_owner_chart_support_aliases(
     }
 }
 
-#[cfg(test)]
-fn validate_alias_links(
-    rows: &[CatiaAliasRow],
-    packets: &[CatiaConsolidatedOwnerPacket],
-) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    validate_alias_surface_tags(rows)?;
-    validate_owner_chart_support_aliases(packets, rows)
-}
-
 impl CatiaNative {
     /// Decode CATIA-native records using container-bounded consolidated
     /// record sources.
