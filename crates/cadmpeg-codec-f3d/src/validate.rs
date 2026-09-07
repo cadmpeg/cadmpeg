@@ -6782,25 +6782,15 @@ fn validate_edge_operands<'a>(
                     && group.members.last().map(|member| &member.value)
                         == Some(&operand.record_index)
             });
-        let valid = operand.class_tag.len() == 3
-            && operand.class_tag.bytes().all(|byte| byte.is_ascii_digit())
-            && operand.paired_class_tag.len() == 3
-            && operand
-                .paired_class_tag
-                .bytes()
-                .all(|byte| byte.is_ascii_digit())
-            && scope.is_some_and(|scope| {
-                design::decode::operands::has_edge_recipe_operands(&scope.kind())
-                    && usize::try_from(operand.scope_reference_ordinal)
-                        .ok()
-                        .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
-                        == Some(&operand.record_index)
-            })
-            && header.is_some_and(|header| {
-                header.byte_offset == operand.byte_offset
-                    && header.class_tag.as_str() == operand.class_tag
-            })
-            && operand.paired_byte_offset > operand.byte_offset
+        let valid = scope.is_some_and(|scope| {
+            design::decode::operands::has_edge_recipe_operands(&scope.kind())
+                && usize::try_from(operand.scope_reference_ordinal)
+                    .ok()
+                    .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
+                    == Some(&operand.record_index)
+        }) && header.is_some_and(|header| {
+            header.byte_offset == operand.byte_offset && header.class_tag == operand.class_tag
+        }) && operand.paired_byte_offset > operand.byte_offset
             && operand.recipe_record_index == operand.record_index.saturating_add(3)
             && (operand.next_record_index
                 == operand

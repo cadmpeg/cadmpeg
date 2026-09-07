@@ -2293,11 +2293,11 @@ pub struct DesignEdgeOperand {
     /// Byte offset of the primary indexed-record header.
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII primary class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Byte offset of the same-index paired header.
     pub paired_byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII paired class tag.
-    pub paired_class_tag: String,
+    pub paired_class_tag: DesignClassTag,
     /// Indexed record containing the edge regeneration recipe.
     pub recipe_record_index: u32,
     /// Byte offset of the recipe record's indexed header.
