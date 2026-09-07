@@ -125,6 +125,7 @@ pub(super) struct CreoFamilyTableRecord {
 }
 
 impl CreoFamilyTableRecord {
+    /// The fixed driver-table record identity.
     pub(super) const fn id(&self) -> &'static str {
         "creo:family_info:driver_table#root"
     }
