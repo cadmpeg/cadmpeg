@@ -816,7 +816,7 @@ pub struct DesignConstructionOperandPath {
     /// Path-record header byte offset.
     pub byte_offset: u64,
     /// Per-file dynamic path-record class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Persistent entity identity carried by this path step.
     pub entity_ref: u64,
     /// Byte offset of `entity_ref`.
@@ -836,7 +836,7 @@ pub struct DesignConstructionOperandPath {
     /// Following-record header byte offset.
     pub following_byte_offset: u64,
     /// Per-file dynamic following-record class tag.
-    pub following_class_tag: String,
+    pub following_class_tag: DesignClassTag,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -883,7 +883,7 @@ impl TryFrom<DesignConstructionOperandPathWire> for DesignConstructionOperandPat
         Ok(Self {
             record_index: wire.record_index,
             byte_offset: wire.byte_offset,
-            class_tag: wire.class_tag,
+            class_tag: wire.class_tag.try_into()?,
             entity_ref: wire.entity_ref,
             entity_ref_offset: wire.entity_ref_offset,
             placement: match (wire.transform, wire.transform_offset, wire.compact_variant) {
@@ -897,7 +897,7 @@ impl TryFrom<DesignConstructionOperandPathWire> for DesignConstructionOperandPat
             nested_record_index_offset: wire.nested_record_index_offset,
             following_record_index: wire.following_record_index,
             following_byte_offset: wire.following_byte_offset,
-            following_class_tag: wire.following_class_tag,
+            following_class_tag: wire.following_class_tag.try_into()?,
         })
     }
 }
@@ -913,7 +913,7 @@ impl From<DesignConstructionOperandPath> for DesignConstructionOperandPathWire {
         Self {
             record_index: record.record_index,
             byte_offset: record.byte_offset,
-            class_tag: record.class_tag,
+            class_tag: record.class_tag.into(),
             entity_ref: record.entity_ref,
             entity_ref_offset: record.entity_ref_offset,
             transform,
@@ -925,7 +925,7 @@ impl From<DesignConstructionOperandPath> for DesignConstructionOperandPathWire {
             nested_record_index_offset: record.nested_record_index_offset,
             following_record_index: record.following_record_index,
             following_byte_offset: record.following_byte_offset,
-            following_class_tag: record.following_class_tag,
+            following_class_tag: record.following_class_tag.into(),
         }
     }
 }

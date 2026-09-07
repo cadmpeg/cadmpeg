@@ -4450,7 +4450,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         .get(&(native_stream, path.record_index))
                         .is_some_and(|header| {
                             header.byte_offset == path.byte_offset
-                                && header.class_tag.as_str() == path.class_tag
+                                && header.class_tag == path.class_tag
                         })
                     && path.entity_ref_offset == path.byte_offset.saturating_add(22)
                     && path.scope_record_index == group.scope_record_index
@@ -4461,7 +4461,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         .get(&(native_stream, path.following_record_index))
                         .is_some_and(|header| {
                             header.byte_offset == path.following_byte_offset
-                                && header.class_tag.as_str() == path.following_class_tag
+                                && header.class_tag == path.following_class_tag
                         })
                     && match &path.placement {
                         crate::records::topology::DesignConstructionPathPlacement::Transform(
