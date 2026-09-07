@@ -1023,13 +1023,17 @@ fn inner_boundaries_are_disjoint_and_inside(outer: &SimpleRing, inners: &[Simple
 }
 
 fn linear_boundary_relationship_is_valid(
-    rings: &[SimpleRing],
+    rings: Result<&[SimpleRing], &NonSimpleRing>,
     trimmed_surface: bool,
     has_explicit_outer: bool,
     support: &SurfaceGeometry,
     support_bounds: Option<[Option<f64>; 4]>,
     periodic_parameters: [bool; 2],
 ) -> Option<bool> {
+    let rings = match rings {
+        Ok(rings) => rings,
+        Err(NonSimpleRing) => return Some(false),
+    };
     if !trimmed_surface {
         return Some(true);
     }
@@ -2241,16 +2245,15 @@ pub(super) fn project(
         }
         let linear_rings = linear_boundary_rings(&linear_boundary_candidates, true)
             .or_else(|| linear_boundary_rings(&linear_boundary_candidates, false));
-        let linear_relationship = linear_rings.and_then(|rings| match rings {
-            Ok(rings) => linear_boundary_relationship_is_valid(
-                &rings,
+        let linear_relationship = linear_rings.and_then(|rings| {
+            linear_boundary_relationship_is_valid(
+                rings.as_deref(),
                 trimmed_surface,
                 has_explicit_outer,
                 &support_geometry,
                 support_parameter_bounds,
                 periodic_parameters,
-            ),
-            Err(NonSimpleRing) => Some(false),
+            )
         });
         if linear_relationship == Some(false) {
             losses.push(entity_loss(
