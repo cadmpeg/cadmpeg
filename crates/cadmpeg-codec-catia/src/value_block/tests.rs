@@ -24,8 +24,7 @@ fn typed_payloads_hide_embedded_schema_marker_bytes() {
                 offset: 5,
             },
             ValueField::Inline {
-                code: 0xea,
-                bytes: vec![0x32, 1, 2],
+                bytes: vec![0x32, 1, 2].try_into().unwrap(),
                 offset: 15,
             },
             ValueField::Marker {
