@@ -1644,23 +1644,20 @@ fn emit_sweep_surface(
             parameters,
             formulas,
         } => {
-            let formulas = formulas
-                .into_iter()
-                .enumerate()
-                .map(|(formula_index, formula)| {
-                    map_law_formula(formula, |index, variable| {
-                        map_sweep_law(
-                            &mut *out,
-                            i,
-                            &format!("{formula_index}:{index}"),
-                            variable,
-                            format,
-                        )
-                    })
+            let mut next_formula = 0;
+            let formulas = (*formulas).map(|formula| {
+                let formula_index = next_formula;
+                next_formula += 1;
+                map_law_formula(formula, |index, variable| {
+                    map_sweep_law(
+                        &mut *out,
+                        i,
+                        &format!("{formula_index}:{index}"),
+                        variable,
+                        format,
+                    )
                 })
-                .collect::<Vec<_>>()
-                .try_into()
-                .expect("three sweep formulas");
+            });
             (
                 profile,
                 spine,
