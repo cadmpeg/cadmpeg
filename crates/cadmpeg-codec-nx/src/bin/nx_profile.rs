@@ -11,7 +11,9 @@ use std::process::{Child, Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use cadmpeg_codec_nx::{saved_body_census_evidence, BodyCensusEvaluation, NxCodec};
+use cadmpeg_codec_nx::{
+    saved_body_census_evidence, BodyCensusEvaluation, FeatureBoundary, NxCodec,
+};
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::LossCategory;
@@ -61,12 +63,64 @@ enum VerificationStatus {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "RederivationBoundaryWire",
+    into = "RederivationBoundaryWire"
+)]
 struct RederivationBoundary {
+    feature: Option<FeatureBoundary>,
+    reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RederivationBoundaryWire {
     feature: Option<String>,
     feature_name: Option<String>,
     feature_family: Option<String>,
     feature_ordinal: Option<u64>,
     reason: String,
+}
+
+impl TryFrom<RederivationBoundaryWire> for RederivationBoundary {
+    type Error = String;
+
+    fn try_from(wire: RederivationBoundaryWire) -> Result<Self, Self::Error> {
+        let feature = match (wire.feature, wire.feature_ordinal) {
+            (Some(id), Some(ordinal)) => Some(FeatureBoundary {
+                id: cadmpeg_ir::features::FeatureId::mint(id).map_err(|error| format!("feature: {error}"))?,
+                name: wire.feature_name,
+                family: wire.feature_family,
+                ordinal,
+            }),
+            (None, None) if wire.feature_name.is_none() && wire.feature_family.is_none() => None,
+            _ => return Err("feature: identity and ordinal must be present together; name and family require identity".into()),
+        };
+        Ok(Self {
+            feature,
+            reason: wire.reason,
+        })
+    }
+}
+
+impl From<RederivationBoundary> for RederivationBoundaryWire {
+    fn from(value: RederivationBoundary) -> Self {
+        let (feature, feature_name, feature_family, feature_ordinal) = match value.feature {
+            Some(feature) => (
+                Some(feature.id.as_str().to_owned()),
+                feature.name,
+                feature.family,
+                Some(feature.ordinal),
+            ),
+            None => (None, None, None, None),
+        };
+        Self {
+            feature,
+            feature_name,
+            feature_family,
+            feature_ordinal,
+            reason: value.reason,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -372,9 +426,6 @@ fn failed_fixture_evidence(filename: String, status: DecodeStatus) -> FixtureEvi
         rederivation: VerificationStatus::Missing,
         rederivation_boundary: Some(RederivationBoundary {
             feature: None,
-            feature_name: None,
-            feature_family: None,
-            feature_ordinal: None,
             reason: reason.to_string(),
         }),
     }
@@ -388,7 +439,13 @@ fn rederivation_boundary_counts(fixtures: &[FixtureEvidence]) -> Vec<Rederivatio
         .filter_map(|fixture| fixture.rederivation_boundary.as_ref())
     {
         *counts
-            .entry((boundary.reason.clone(), boundary.feature_family.clone()))
+            .entry((
+                boundary.reason.clone(),
+                boundary
+                    .feature
+                    .as_ref()
+                    .and_then(|feature| feature.family.clone()),
+            ))
             .or_default() += 1;
     }
     counts
@@ -576,34 +633,21 @@ fn neutral_rederivation_evidence(ir: &CadIr) -> (VerificationStatus, Option<Rede
             VerificationStatus::Missing,
             Some(RederivationBoundary {
                 feature: None,
-                feature_name: None,
-                feature_family: None,
-                feature_ordinal: None,
                 reason: "saved_body_census_mismatch".to_string(),
             }),
         ),
         BodyCensusEvaluation::Unsupported { feature, reason } => (
             VerificationStatus::Missing,
             Some(RederivationBoundary {
-                feature: feature
-                    .as_ref()
-                    .map(|boundary| boundary.id.as_str().to_owned()),
-                feature_name: feature.as_ref().and_then(|boundary| boundary.name.clone()),
-                feature_family: feature
-                    .as_ref()
-                    .and_then(|boundary| boundary.family.clone()),
-                feature_ordinal: feature.as_ref().map(|boundary| boundary.ordinal),
+                feature: Some(feature),
                 reason: reason.as_str().to_string(),
             }),
         ),
-        _ => (
+        BodyCensusEvaluation::ConfigurationEvaluation => (
             VerificationStatus::Missing,
             Some(RederivationBoundary {
                 feature: None,
-                feature_name: None,
-                feature_family: None,
-                feature_ordinal: None,
-                reason: "unknown_evaluation_boundary".to_string(),
+                reason: "configuration_evaluation".to_string(),
             }),
         ),
     }
@@ -979,10 +1023,7 @@ mod tests {
         assert_eq!(
             boundary,
             Some(RederivationBoundary {
-                feature: Some("block".to_string()),
-                feature_name: Some("BLOCK".to_string()),
-                feature_family: Some("block".to_string()),
-                feature_ordinal: Some(17),
+                feature: Some(FeatureBoundary { id: cadmpeg_ir::features::FeatureId::mint("block").unwrap(), name: Some("BLOCK".to_string()), family: Some("block".to_string()), ordinal: 17 }),
                 reason: "incomplete_feature_definition".to_string(),
             })
         );
@@ -991,10 +1032,7 @@ mod tests {
     #[test]
     fn rederivation_boundary_census_groups_reason_and_feature_family() {
         let boundary = |reason: &str, family: Option<&str>| RederivationBoundary {
-            feature: None,
-            feature_name: None,
-            feature_family: family.map(str::to_string),
-            feature_ordinal: None,
+            feature: family.map(|family| FeatureBoundary { id: cadmpeg_ir::features::FeatureId::mint("feature").unwrap(), name: None, family: Some(family.to_owned()), ordinal: 0 }),
             reason: reason.to_string(),
         };
         let mut fixtures = [fixture(), fixture(), fixture()];

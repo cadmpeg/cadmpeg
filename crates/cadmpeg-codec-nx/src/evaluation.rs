@@ -28,8 +28,6 @@ pub enum UnsupportedBodyCensusReason {
     InvalidOutputLineage,
     /// Feature ordinals or dependency directions do not form a replay order.
     InvalidHistoryOrder,
-    /// The active configuration requires configuration-local evaluation.
-    ConfigurationEvaluation,
 }
 
 impl UnsupportedBodyCensusReason {
@@ -41,7 +39,6 @@ impl UnsupportedBodyCensusReason {
             Self::IncompleteFeatureDefinition => "incomplete_feature_definition",
             Self::InvalidOutputLineage => "invalid_output_lineage",
             Self::InvalidHistoryOrder => "invalid_history_order",
-            Self::ConfigurationEvaluation => "configuration_evaluation",
         }
     }
 }
@@ -61,8 +58,10 @@ pub struct FeatureBoundary {
 
 /// Result of evaluating neutral history against the saved current-body census.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-#[non_exhaustive]
+#[serde(
+    try_from = "BodyCensusEvaluationWire",
+    into = "BodyCensusEvaluationWire"
+)]
 pub enum BodyCensusEvaluation {
     /// Neutral evaluation produced exactly the saved body identities.
     Verified {
@@ -71,11 +70,13 @@ pub enum BodyCensusEvaluation {
     },
     /// Exact evaluation stopped at an unsupported semantic boundary.
     Unsupported {
-        /// Feature at the boundary, or `None` for configuration-level state.
-        feature: Option<FeatureBoundary>,
+        /// Feature at the boundary.
+        feature: FeatureBoundary,
         /// Semantic boundary that prevented exact evaluation.
         reason: UnsupportedBodyCensusReason,
     },
+    /// Active configuration requires configuration-local evaluation.
+    ConfigurationEvaluation,
     /// Evaluation completed, but its body identities differ from the saved model.
     Mismatch {
         /// Re-derived body identities in canonical order.
@@ -83,6 +84,75 @@ pub enum BodyCensusEvaluation {
         /// Saved body identities in canonical order.
         saved: Vec<BodyId>,
     },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum BodyCensusEvaluationWire {
+    Verified {
+        bodies: Vec<BodyId>,
+    },
+    Unsupported {
+        feature: Option<FeatureBoundary>,
+        reason: String,
+    },
+    Mismatch {
+        rederived: Vec<BodyId>,
+        saved: Vec<BodyId>,
+    },
+}
+
+impl TryFrom<BodyCensusEvaluationWire> for BodyCensusEvaluation {
+    type Error = String;
+
+    fn try_from(wire: BodyCensusEvaluationWire) -> Result<Self, Self::Error> {
+        Ok(match wire {
+            BodyCensusEvaluationWire::Verified { bodies } => Self::Verified { bodies },
+            BodyCensusEvaluationWire::Mismatch { rederived, saved } => {
+                Self::Mismatch { rederived, saved }
+            }
+            BodyCensusEvaluationWire::Unsupported { feature, reason } => {
+                if reason == "configuration_evaluation" {
+                    if feature.is_some() {
+                        return Err(
+                            "feature: configuration evaluation cannot name a feature".into()
+                        );
+                    }
+                    Self::ConfigurationEvaluation
+                } else {
+                    let reason = UnsupportedBodyCensusReason::deserialize(
+                        serde::de::value::StringDeserializer::<serde::de::value::Error>::new(
+                            reason,
+                        ),
+                    )
+                    .map_err(|error| format!("reason: {error}"))?;
+                    Self::Unsupported {
+                        feature: feature.ok_or("feature: required for feature evaluation")?,
+                        reason,
+                    }
+                }
+            }
+        })
+    }
+}
+
+impl From<BodyCensusEvaluation> for BodyCensusEvaluationWire {
+    fn from(value: BodyCensusEvaluation) -> Self {
+        match value {
+            BodyCensusEvaluation::Verified { bodies } => Self::Verified { bodies },
+            BodyCensusEvaluation::Mismatch { rederived, saved } => {
+                Self::Mismatch { rederived, saved }
+            }
+            BodyCensusEvaluation::Unsupported { feature, reason } => Self::Unsupported {
+                feature: Some(feature),
+                reason: reason.as_str().into(),
+            },
+            BodyCensusEvaluation::ConfigurationEvaluation => Self::Unsupported {
+                feature: None,
+                reason: "configuration_evaluation".into(),
+            },
+        }
+    }
 }
 
 impl BodyCensusEvaluation {
@@ -103,7 +173,7 @@ pub fn evaluate_saved_body_census(ir: &CadIr) -> BodyCensusEvaluation {
         Ok(bodies) => bodies,
         Err((feature, reason)) => {
             return BodyCensusEvaluation::Unsupported {
-                feature: Some(feature_boundary(ir, &feature)),
+                feature: feature_boundary(ir, &feature),
                 reason,
             };
         }
@@ -122,10 +192,7 @@ pub fn evaluate_saved_body_census(ir: &CadIr) -> BodyCensusEvaluation {
     }
 
     if !active_configuration_is_admitted(ir, &saved) {
-        return BodyCensusEvaluation::Unsupported {
-            feature: None,
-            reason: UnsupportedBodyCensusReason::ConfigurationEvaluation,
-        };
+        return BodyCensusEvaluation::ConfigurationEvaluation;
     }
     BodyCensusEvaluation::Verified {
         bodies: rederived.into_iter().collect(),
@@ -1444,12 +1511,12 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureBoundary {
+                feature: FeatureBoundary {
                     id: FeatureId::mint("section".to_string()).expect("identity grammar"),
                     name: None,
                     family: Some("section_shape".to_string()),
                     ordinal: 1
-                }),
+                },
                 reason: UnsupportedBodyCensusReason::InvalidOutputLineage,
             }
         );
@@ -1466,12 +1533,12 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureBoundary {
+                feature: FeatureBoundary {
                     id: FeatureId::mint("block".to_string()).expect("identity grammar"),
                     name: None,
                     family: Some("block".to_string()),
                     ordinal: 0
-                }),
+                },
                 reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
             }
         );
@@ -1582,12 +1649,12 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureBoundary {
+                feature: FeatureBoundary {
                     id: FeatureId::mint("extrude".to_string()).expect("identity grammar"),
                     name: None,
                     family: Some("extrude".to_string()),
                     ordinal: 2
-                }),
+                },
                 reason: UnsupportedBodyCensusReason::InvalidOutputLineage,
             }
         );
@@ -1679,14 +1746,14 @@ mod tests {
             assert_eq!(
                 evaluate_saved_body_census(&ir),
                 BodyCensusEvaluation::Unsupported {
-                    feature: Some(FeatureBoundary {
+                    feature: FeatureBoundary {
                         id: FeatureId::mint(id).expect("identity grammar"),
                         name: None,
                         family: Some(
                             ["loft", "extrude", "revolve", "rib", "sweep"][index].to_string()
                         ),
                         ordinal: 1
-                    }),
+                    },
                     reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
                 }
             );
@@ -1713,10 +1780,7 @@ mod tests {
 
         assert_eq!(
             evaluate_saved_body_census(&ir),
-            BodyCensusEvaluation::Unsupported {
-                feature: None,
-                reason: UnsupportedBodyCensusReason::ConfigurationEvaluation,
-            }
+            BodyCensusEvaluation::ConfigurationEvaluation
         );
     }
 
@@ -1791,12 +1855,12 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureBoundary {
+                feature: FeatureBoundary {
                     id: FeatureId::mint("hole".to_string()).expect("identity grammar"),
                     name: None,
                     family: Some("hole".to_string()),
                     ordinal: 1
-                }),
+                },
                 reason: UnsupportedBodyCensusReason::InvalidOutputLineage,
             }
         );
@@ -1812,12 +1876,12 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureBoundary {
+                feature: FeatureBoundary {
                     id: FeatureId::mint("block".to_string()).expect("identity grammar"),
                     name: None,
                     family: Some("block".to_string()),
                     ordinal: 0
-                }),
+                },
                 reason: UnsupportedBodyCensusReason::InvalidHistoryOrder,
             }
         );
@@ -1847,12 +1911,12 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureBoundary {
+                feature: FeatureBoundary {
                     id: FeatureId::mint("hole".to_string()).expect("identity grammar"),
                     name: None,
                     family: Some("hole".to_string()),
                     ordinal: 0
-                }),
+                },
                 reason: UnsupportedBodyCensusReason::InvalidHistoryOrder,
             }
         );
@@ -2022,12 +2086,12 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureBoundary {
+                feature: FeatureBoundary {
                     id: FeatureId::mint("delete".to_string()).expect("identity grammar"),
                     name: None,
                     family: Some("delete_body".to_string()),
                     ordinal: 1
-                }),
+                },
                 reason: UnsupportedBodyCensusReason::UnresolvedSuppression,
             }
         );
@@ -2170,12 +2234,12 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureBoundary {
+                feature: FeatureBoundary {
                     id: FeatureId::mint("combine".to_string()).expect("identity grammar"),
                     name: None,
                     family: Some("combine".to_string()),
                     ordinal: 1
-                }),
+                },
                 reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
             }
         );
@@ -2261,12 +2325,12 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureBoundary {
+                feature: FeatureBoundary {
                     id: FeatureId::mint("trim".to_string()).expect("identity grammar"),
                     name: None,
                     family: Some("trim_bodies".to_string()),
                     ordinal: 1
-                }),
+                },
                 reason: UnsupportedBodyCensusReason::InvalidOutputLineage,
             }
         );
@@ -2293,12 +2357,12 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureBoundary {
+                feature: FeatureBoundary {
                     id: FeatureId::mint("trim".to_string()).expect("identity grammar"),
                     name: None,
                     family: Some("trim_bodies".to_string()),
                     ordinal: 1
-                }),
+                },
                 reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
             }
         );
@@ -2418,12 +2482,12 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureBoundary {
+                feature: FeatureBoundary {
                     id: FeatureId::mint("combine".to_string()).expect("identity grammar"),
                     name: None,
                     family: Some("combine".to_string()),
                     ordinal: 1
-                }),
+                },
                 reason: UnsupportedBodyCensusReason::InvalidOutputLineage,
             }
         );
@@ -2455,12 +2519,12 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureBoundary {
+                feature: FeatureBoundary {
                     id: FeatureId::mint("sew".to_string()).expect("identity grammar"),
                     name: None,
                     family: Some("sew_bodies".to_string()),
                     ordinal: 1
-                }),
+                },
                 reason: UnsupportedBodyCensusReason::InvalidOutputLineage,
             }
         );
@@ -2476,12 +2540,12 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureBoundary {
+                feature: FeatureBoundary {
                     id: FeatureId::mint("block".to_string()).expect("identity grammar"),
                     name: None,
                     family: Some("base_feature".to_string()),
                     ordinal: 0
-                }),
+                },
                 reason: UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
             }
         );
@@ -2796,12 +2860,12 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureBoundary {
+                feature: FeatureBoundary {
                     id: FeatureId::mint("trim-surface".to_string()).expect("identity grammar"),
                     name: None,
                     family: Some("trim_surface".to_string()),
                     ordinal: 1
-                }),
+                },
                 reason: UnsupportedBodyCensusReason::InvalidOutputLineage,
             }
         );
@@ -2911,12 +2975,12 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureBoundary {
+                feature: FeatureBoundary {
                     id: FeatureId::mint("block".to_string()).expect("identity grammar"),
                     name: None,
                     family: Some("block".to_string()),
                     ordinal: 0
-                }),
+                },
                 reason: UnsupportedBodyCensusReason::UnresolvedSuppression,
             }
         );
@@ -2988,12 +3052,12 @@ mod tests {
         assert_eq!(
             evaluate_saved_body_census(&ir),
             BodyCensusEvaluation::Unsupported {
-                feature: Some(FeatureBoundary {
+                feature: FeatureBoundary {
                     id: FeatureId::mint("delete".to_string()).expect("identity grammar"),
                     name: None,
                     family: Some("native".to_string()),
                     ordinal: 0
-                }),
+                },
                 reason: UnsupportedBodyCensusReason::UnresolvedSuppression,
             }
         );

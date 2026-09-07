@@ -86,12 +86,12 @@ fn body_pattern_requires_exact_copy_cardinality_and_new_identities() {
     assert_eq!(
         evaluate_saved_body_census(&ir),
         BodyCensusEvaluation::Unsupported {
-            feature: Some(FeatureBoundary {
+            feature: FeatureBoundary {
                 id: FeatureId::mint("pattern".to_string()).expect("identity grammar"),
                 name: None,
                 family: Some("pattern".to_string()),
                 ordinal: 1
-            }),
+            },
             reason: UnsupportedBodyCensusReason::InvalidOutputLineage,
         }
     );
@@ -120,12 +120,12 @@ fn feature_seed_pattern_remains_an_explicit_body_effect_boundary() {
     assert_eq!(
         evaluate_saved_body_census(&ir),
         BodyCensusEvaluation::Unsupported {
-            feature: Some(FeatureBoundary {
+            feature: FeatureBoundary {
                 id: FeatureId::mint("pattern".to_string()).expect("identity grammar"),
                 name: None,
                 family: Some("pattern".to_string()),
                 ordinal: 1
-            }),
+            },
             reason: UnsupportedBodyCensusReason::UnsupportedFeatureDefinition,
         }
     );
