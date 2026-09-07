@@ -1010,7 +1010,7 @@ impl CodecBackend for FcstdCodec {
                     Ok(native::EntryRecord {
                         id: native::native_id("entry", &entry.name),
                         name: entry.name.clone(),
-                        role: entry.role.to_string(),
+                        role: entry.role,
                         referenced_by,
                         data: bytes.to_vec(),
                     })

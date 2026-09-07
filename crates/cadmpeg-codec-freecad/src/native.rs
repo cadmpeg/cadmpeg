@@ -1481,7 +1481,7 @@ pub struct EntryRecord {
     /// Exact archive entry name.
     pub name: String,
     /// Classified entry role.
-    pub role: String,
+    pub role: cadmpeg_core::container::ContainerRole,
     /// Application property, GUI property, and GUI state identities that reference this entry.
     pub referenced_by: Vec<String>,
     /// Complete logical bytes.
@@ -1518,7 +1518,7 @@ impl From<EntryRecord> for EntryRecordWire {
         Self {
             id: value.id,
             name: value.name,
-            role: value.role,
+            role: value.role.as_str().to_owned(),
             byte_len,
             sha256,
             referenced_by: value.referenced_by,
@@ -1534,7 +1534,8 @@ impl TryFrom<EntryRecordWire> for EntryRecord {
         let record = Self {
             id: wire.id,
             name: wire.name,
-            role: wire.role,
+            role: serde_json::from_value(serde_json::Value::String(wire.role))
+                .map_err(|error| format!("entry role: {error}"))?,
             referenced_by: wire.referenced_by,
             data: wire.data,
         };

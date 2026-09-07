@@ -5198,14 +5198,14 @@ pub(crate) mod tests {
         let entry = EntryRecord {
             id: crate::native::native_id("entry", "empty.brp"),
             name: "empty.brp".into(),
-            role: "brep".into(),
+            role: cadmpeg_core::container::ContainerRole::Brep,
             referenced_by: vec![property.id.clone()],
             data: Vec::new(),
         };
         let second_entry = EntryRecord {
             id: crate::native::native_id("entry", "empty-2.brp"),
             name: "empty-2.brp".into(),
-            role: "brep".into(),
+            role: cadmpeg_core::container::ContainerRole::Brep,
             referenced_by: vec![property.id.clone()],
             data: Vec::new(),
         };
