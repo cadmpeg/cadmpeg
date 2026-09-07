@@ -240,8 +240,8 @@ struct V1BrepFace {
 
 #[derive(Debug, Serialize)]
 struct V1NurbsBrep {
+    #[serde(flatten, serialize_with = "serialize_brep_version")]
     wire_version: i32,
-    version: i32,
     curves_2d: Vec<V1NurbsCurveGroup>,
     curves_3d: Vec<V1NurbsCurveGroup>,
     surfaces: Vec<V1NurbsSurface>,
@@ -251,6 +251,18 @@ struct V1NurbsBrep {
     loops: Vec<V1BrepLoop>,
     faces: Vec<V1BrepFace>,
     bbox: [[f64; 3]; 2],
+}
+
+fn serialize_brep_version<S: serde::Serializer>(
+    version: &i32,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+
+    let mut map = serializer.serialize_map(Some(2))?;
+    map.serialize_entry("wire_version", version)?;
+    map.serialize_entry("version", version)?;
+    map.end()
 }
 
 #[derive(Debug, Serialize)]
@@ -1151,7 +1163,6 @@ fn v1_nurbs_brep(data: &[u8], chunk: &crate::chunks::Chunk) -> Result<V1NurbsBre
     outer.skip_remaining().map_err(malformed)?;
     Ok(V1NurbsBrep {
         wire_version,
-        version: wire_version,
         curves_2d,
         curves_3d,
         surfaces,
