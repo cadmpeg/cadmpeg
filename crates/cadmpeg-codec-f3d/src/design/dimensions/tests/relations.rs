@@ -1052,7 +1052,8 @@ fn parallel_group_binds_one_common_axis_angle() {
         std::f64::consts::FRAC_PI_4,
     ))
     .expect("generated angular dimension is canonical");
-    let parameter_id = ParameterId::mint("generated:parameter#axis-angle").expect("identity grammar");
+    let parameter_id =
+        ParameterId::mint("generated:parameter#axis-angle").expect("identity grammar");
 
     assert!(matches!(
         crate::design::dimensions::parallel_group_axis_angle_definition(

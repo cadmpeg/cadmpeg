@@ -122,7 +122,8 @@ fn edgeless_doc() -> CadIr {
 fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
     let mut ir = unit_cube();
     ir.model.assets.push(cadmpeg_ir::assets::Asset {
-        id: cadmpeg_ir::assets::AssetId::mint("test:model:asset#texture").expect("identity grammar"),
+        id: cadmpeg_ir::assets::AssetId::mint("test:model:asset#texture")
+            .expect("identity grammar"),
         name: Some("texture".into()),
         media_type: Some("image/png".into()),
         content: cadmpeg_ir::assets::AssetContent::External {
@@ -133,7 +134,10 @@ fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
     ir.model
         .semantic_annotations
         .push(cadmpeg_ir::semantic_annotations::SemanticAnnotation {
-            id: cadmpeg_ir::semantic_annotations::SemanticAnnotationId::mint("test:model:semantic#note").expect("identity grammar"),
+            id: cadmpeg_ir::semantic_annotations::SemanticAnnotationId::mint(
+                "test:model:semantic#note",
+            )
+            .expect("identity grammar"),
             object: "note".into(),
             kind: cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text,
             runtime_type: "TextNote".into(),

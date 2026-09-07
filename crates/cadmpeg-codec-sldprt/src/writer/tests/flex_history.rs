@@ -228,14 +228,22 @@ fn encoder_writes_source_less_curved_sketches() {
         },
         native_ref: None,
     });
-    let distance_parameter = ParameterId::mint("synthetic:test:parameter#00-distance").expect("identity grammar");
-    let point_line_parameter = ParameterId::mint("synthetic:test:parameter#01-point-line").expect("identity grammar");
-    let line_line_parameter = ParameterId::mint("synthetic:test:parameter#02-line-line").expect("identity grammar");
-    let horizontal_parameter = ParameterId::mint("synthetic:test:parameter#03-horizontal").expect("identity grammar");
-    let vertical_parameter = ParameterId::mint("synthetic:test:parameter#04-vertical").expect("identity grammar");
-    let angle_parameter = ParameterId::mint("synthetic:test:parameter#05-angle").expect("identity grammar");
-    let radius_parameter = ParameterId::mint("synthetic:test:parameter#06-radius").expect("identity grammar");
-    let diameter_parameter = ParameterId::mint("synthetic:test:parameter#07-diameter").expect("identity grammar");
+    let distance_parameter =
+        ParameterId::mint("synthetic:test:parameter#00-distance").expect("identity grammar");
+    let point_line_parameter =
+        ParameterId::mint("synthetic:test:parameter#01-point-line").expect("identity grammar");
+    let line_line_parameter =
+        ParameterId::mint("synthetic:test:parameter#02-line-line").expect("identity grammar");
+    let horizontal_parameter =
+        ParameterId::mint("synthetic:test:parameter#03-horizontal").expect("identity grammar");
+    let vertical_parameter =
+        ParameterId::mint("synthetic:test:parameter#04-vertical").expect("identity grammar");
+    let angle_parameter =
+        ParameterId::mint("synthetic:test:parameter#05-angle").expect("identity grammar");
+    let radius_parameter =
+        ParameterId::mint("synthetic:test:parameter#06-radius").expect("identity grammar");
+    let diameter_parameter =
+        ParameterId::mint("synthetic:test:parameter#07-diameter").expect("identity grammar");
     for (id, ordinal, name, expression, display, value) in [
         (
             distance_parameter.clone(),
@@ -845,7 +853,8 @@ fn encoder_binds_multiple_source_less_sketches_by_object_id() {
             },
         ));
         ir.model.features.push(Feature {
-            id: FeatureId::mint(format!("synthetic:test:feature#named-{ordinal}")).expect("identity grammar"),
+            id: FeatureId::mint(format!("synthetic:test:feature#named-{ordinal}"))
+                .expect("identity grammar"),
             ordinal: ordinal as u64,
             name: Some(name.into()),
             suppressed: Some(false),
@@ -1030,7 +1039,8 @@ fn encoder_writes_source_less_native_features() {
     ];
     for (index, definition) in definitions.into_iter().enumerate() {
         ir.model.features.push(Feature {
-            id: FeatureId::mint(format!("synthetic:test:feature#direct-{index}")).expect("identity grammar"),
+            id: FeatureId::mint(format!("synthetic:test:feature#direct-{index}"))
+                .expect("identity grammar"),
             ordinal: index as u64 + 1,
             name: Some(format!("Direct {index}")),
             suppressed: Some(false),
@@ -1068,7 +1078,8 @@ fn encoder_writes_source_less_native_features() {
     ];
     for (index, pattern) in patterns.into_iter().enumerate() {
         ir.model.features.push(Feature {
-            id: FeatureId::mint(format!("synthetic:test:feature#pattern-{index}")).expect("identity grammar"),
+            id: FeatureId::mint(format!("synthetic:test:feature#pattern-{index}"))
+                .expect("identity grammar"),
             ordinal: index as u64 + 10,
             name: Some(format!("Pattern {index}")),
             suppressed: Some(false),

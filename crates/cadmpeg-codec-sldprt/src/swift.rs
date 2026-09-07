@@ -2427,7 +2427,8 @@ mod tests {
         definition: cadmpeg_ir::features::FeatureDefinition,
     ) -> cadmpeg_ir::features::Feature {
         cadmpeg_ir::features::Feature {
-            id: cadmpeg_ir::features::FeatureId::mint(format!("sldprt:model:feature#{id}")).expect("identity grammar"),
+            id: cadmpeg_ir::features::FeatureId::mint(format!("sldprt:model:feature#{id}"))
+                .expect("identity grammar"),
             ordinal,
             name: Some(name.into()),
             suppressed: None,

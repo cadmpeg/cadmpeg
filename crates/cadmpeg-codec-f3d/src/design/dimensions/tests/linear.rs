@@ -68,7 +68,8 @@ fn dimension_proofs_require_the_evaluated_measurement() {
             position: Point2::new(40.0, 0.0),
         },
     );
-    let parameter = cadmpeg_ir::features::ParameterId::mint("generated:parameter#0").expect("identity grammar");
+    let parameter =
+        cadmpeg_ir::features::ParameterId::mint("generated:parameter#0").expect("identity grammar");
     assert!(crate::design::dimensions::directional_point_dimension(
         &[&first, &second],
         10.0,
@@ -423,7 +424,8 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
             &frame(vec![operand(782), operand(796)]),
             &projected,
             &ambiguous_tangent,
-            &cadmpeg_ir::features::ParameterId::mint("parameter:d16_ambiguous").expect("identity grammar"),
+            &cadmpeg_ir::features::ParameterId::mint("parameter:d16_ambiguous")
+                .expect("identity grammar"),
             1.0e-6,
         )
         .is_none()
@@ -484,7 +486,8 @@ fn symmetric_parallel_line_dimension_uses_twice_the_carrier_gap() {
         1.0,
     ))
     .expect("symmetric line-width parameter");
-    let parameter_id = cadmpeg_ir::features::ParameterId::mint("generated:parameter#symmetric").expect("identity grammar");
+    let parameter_id = cadmpeg_ir::features::ParameterId::mint("generated:parameter#symmetric")
+        .expect("identity grammar");
 
     assert!(matches!(
         crate::design::dimensions::symmetric_parallel_line_dimension_definition(
@@ -539,7 +542,8 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
     };
     let first = entity("generated:point#first", Point2::new(4.0, 16.0));
     let second = entity("generated:point#second", Point2::new(4.0, 14.0));
-    let parameter = cadmpeg_ir::features::ParameterId::mint("generated:parameter#distance").expect("identity grammar");
+    let parameter = cadmpeg_ir::features::ParameterId::mint("generated:parameter#distance")
+        .expect("identity grammar");
 
     let definition =
         directional_point_dimension(&[&first, &second], 2.0, parameter.clone(), 0.0).unwrap();
@@ -558,7 +562,8 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
         directional_point_dimension(
             &[&first, &diagonal],
             3.0,
-            cadmpeg_ir::features::ParameterId::mint("generated:parameter#horizontal").expect("identity grammar"),
+            cadmpeg_ir::features::ParameterId::mint("generated:parameter#horizontal")
+                .expect("identity grammar"),
             0.0,
         ),
         Some(SketchConstraintDefinition::HorizontalDistance { .. })
@@ -567,7 +572,8 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
     assert!(directional_point_dimension(
         &[&first, &square],
         2.0,
-        cadmpeg_ir::features::ParameterId::mint("generated:parameter#ambiguous").expect("identity grammar"),
+        cadmpeg_ir::features::ParameterId::mint("generated:parameter#ambiguous")
+            .expect("identity grammar"),
         0.0,
     )
     .is_none());
@@ -595,7 +601,8 @@ fn unclassified_two_locus_linear_group_is_parameter_backed_distance() {
             end: Point2::new(-50.0, 0.0),
         },
     );
-    let parameter = cadmpeg_ir::features::ParameterId::mint("generated:parameter#distance").expect("identity grammar");
+    let parameter = cadmpeg_ir::features::ParameterId::mint("generated:parameter#distance")
+        .expect("identity grammar");
 
     assert!(exact_counted_dimension_relation(&[&point, &line]).is_none());
     assert!(matches!(

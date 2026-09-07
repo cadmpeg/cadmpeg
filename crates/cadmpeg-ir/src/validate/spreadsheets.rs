@@ -22,7 +22,7 @@ pub(super) fn check_spreadsheets(ir: &CadIr, findings: &mut Vec<Finding>) {
         if !features.contains(&sheet.feature) {
             spreadsheet_finding(
                 findings,
-                &sheet.id.as_str(),
+                sheet.id.as_str(),
                 "spreadsheet feature does not resolve",
             );
         }
@@ -30,38 +30,46 @@ pub(super) fn check_spreadsheets(ir: &CadIr, findings: &mut Vec<Finding>) {
         let mut addresses = HashSet::new();
         for cell in &sheet.cells {
             let Some(parameter) = parameters.get(&cell.parameter) else {
-                spreadsheet_finding(findings, &sheet.id.as_str(), "spreadsheet cell does not resolve");
+                spreadsheet_finding(
+                    findings,
+                    sheet.id.as_str(),
+                    "spreadsheet cell does not resolve",
+                );
                 continue;
             };
             if !cells.insert(&cell.parameter) {
-                spreadsheet_finding(findings, &sheet.id.as_str(), "spreadsheet repeats a cell identity");
+                spreadsheet_finding(
+                    findings,
+                    sheet.id.as_str(),
+                    "spreadsheet repeats a cell identity",
+                );
             }
             if parameter.owner.as_ref() != Some(&sheet.feature) {
                 spreadsheet_finding(
                     findings,
-                    &sheet.id.as_str(),
+                    sheet.id.as_str(),
                     "spreadsheet cell has a different owner",
                 );
             }
             if !addresses.insert(cell.address) {
                 spreadsheet_finding(
                     findings,
-                    &sheet.id.as_str(),
+                    sheet.id.as_str(),
                     "spreadsheet cell address is invalid or repeated",
                 );
             }
         }
-        check_dimensions(findings, &sheet.id.as_str(), &sheet.column_widths);
-        check_dimensions(findings, &sheet.id.as_str(), &sheet.row_heights);
+        check_dimensions(findings, sheet.id.as_str(), &sheet.column_widths);
+        check_dimensions(findings, sheet.id.as_str(), &sheet.row_heights);
         let mut ranges = Vec::new();
         for range in &sheet.merged_ranges {
             if !addresses.contains(&range.start()) {
-                spreadsheet_finding(findings, &sheet.id.as_str(), "merged range is invalid");
+                spreadsheet_finding(findings, sheet.id.as_str(), "merged range is invalid");
                 continue;
             }
             let span = (range.start(), range.end());
             if ranges.iter().any(|other| overlaps(*other, span)) {
-                spreadsheet_finding(findings, &sheet.id.as_str(), "merged ranges overlap");
+                spreadsheet_finding(findings, sheet.id.as_str(), "merged ranges overlap");
             }
             ranges.push(span);
         }

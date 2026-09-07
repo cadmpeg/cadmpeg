@@ -401,7 +401,10 @@ mod tests {
 
         dependencies.clear();
         history.extend_primary_dependencies(None, Some(7), None, &[], &mut dependencies);
-        assert_eq!(dependencies, [FeatureId::mint("first").expect("identity grammar")]);
+        assert_eq!(
+            dependencies,
+            [FeatureId::mint("first").expect("identity grammar")]
+        );
     }
 
     #[test]
@@ -450,7 +453,10 @@ mod tests {
             std::slice::from_ref(&created),
             &mut dependencies,
         );
-        assert_eq!(dependencies, [FeatureId::mint("retained").expect("identity grammar")]);
+        assert_eq!(
+            dependencies,
+            [FeatureId::mint("retained").expect("identity grammar")]
+        );
 
         history.retract_outputs(&provisional, &[created.clone(), existing.clone()]);
 

@@ -431,7 +431,9 @@ fn post_process_completeness_delegates_to_the_wrapped_operation() {
 #[test]
 fn design_completeness_recurses_through_pattern_operands() {
     let mut ir = CadIr::empty();
-    let seed = cadmpeg_ir::features::PatternSeed::Feature(FeatureId::mint("seed").expect("identity grammar"));
+    let seed = cadmpeg_ir::features::PatternSeed::Feature(
+        FeatureId::mint("seed").expect("identity grammar"),
+    );
     for (ordinal, pattern) in [
         (
             0,
@@ -1068,16 +1070,21 @@ fn incoherent_feature_graph_is_reported_as_design_loss() {
         .features
         .push(feature(first.clone(), 0, vec![second.clone()]));
     ir.model.features.push(feature(second, 1, vec![first]));
-    ir.model
-        .features
-        .push(feature(FeatureId::mint("third").expect("identity grammar"), 1, vec![missing]));
+    ir.model.features.push(feature(
+        FeatureId::mint("third").expect("identity grammar"),
+        1,
+        vec![missing],
+    ));
     ir.model.features[0].source_content = vec![
         FeatureSourceContent::Feature(FeatureId::mint("second").expect("identity grammar")),
         FeatureSourceContent::Feature(FeatureId::mint("second").expect("identity grammar")),
     ];
-    ir.model.features[1].source_content =
-        vec![FeatureSourceContent::Feature(FeatureId::mint("third").expect("identity grammar"))];
-    ir.model.features[2].source_content = vec![FeatureSourceContent::Parameter(ParameterId::mint("missing-parameter").expect("identity grammar"))];
+    ir.model.features[1].source_content = vec![FeatureSourceContent::Feature(
+        FeatureId::mint("third").expect("identity grammar"),
+    )];
+    ir.model.features[2].source_content = vec![FeatureSourceContent::Parameter(
+        ParameterId::mint("missing-parameter").expect("identity grammar"),
+    )];
     let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);

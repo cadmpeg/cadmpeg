@@ -432,7 +432,8 @@ pub(crate) fn apply_to_parameters(
             .max()
             .map_or(0, |ordinal| ordinal.saturating_add(1));
         parameters.push(DesignParameter {
-            id: ParameterId::mint(format!("sldprt:model:parameter#pmi:{}", record.guid)).expect("identity grammar"),
+            id: ParameterId::mint(format!("sldprt:model:parameter#pmi:{}", record.guid))
+                .expect("identity grammar"),
             owner: Some(owner.id.clone()),
             ordinal,
             name: name.to_string(),

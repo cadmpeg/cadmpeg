@@ -404,7 +404,8 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
                 .id
                 .rsplit_once('#')
                 .map_or(relation.id.as_str(), |(_, key)| key);
-            let id = ParameterId::mint(format!("sldprt:model:parameter#reference:{relation_key}")).expect("identity grammar");
+            let id = ParameterId::mint(format!("sldprt:model:parameter#reference:{relation_key}"))
+                .expect("identity grammar");
             if !parameter_ids.insert(id.clone()) {
                 continue;
             }

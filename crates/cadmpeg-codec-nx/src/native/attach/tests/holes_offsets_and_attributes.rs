@@ -1189,8 +1189,14 @@ fn nx_construction_dependency_requires_a_preceding_projected_operation() {
 
     let positions = BTreeMap::from([("csys", 1), ("consumer", 2), ("later", 3)]);
     let features = BTreeMap::from([
-        ("csys", FeatureId::mint("nx:test:feature#csys").expect("identity grammar")),
-        ("consumer", FeatureId::mint("nx:test:feature#consumer").expect("identity grammar")),
+        (
+            "csys",
+            FeatureId::mint("nx:test:feature#csys").expect("identity grammar"),
+        ),
+        (
+            "consumer",
+            FeatureId::mint("nx:test:feature#consumer").expect("identity grammar"),
+        ),
     ]);
 
     assert_eq!(

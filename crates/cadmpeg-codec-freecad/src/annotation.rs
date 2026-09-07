@@ -132,7 +132,8 @@ pub(crate) fn transfer_neutral(
                 "semantic-annotation",
                 &record.object,
                 "content",
-            )).expect("identity grammar"),
+            ))
+            .expect("identity grammar"),
             object: record.object.clone(),
             kind: schema.kind.clone(),
             runtime_type: record.kind.clone(),

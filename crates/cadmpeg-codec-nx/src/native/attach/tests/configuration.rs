@@ -481,7 +481,10 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
     let states = &ir.model.configurations[0].feature_states;
     assert_eq!(
         states.keys().cloned().collect::<Vec<_>>(),
-        [FeatureId::mint("dependency").expect("identity grammar"), FeatureId::mint("writer").expect("identity grammar")]
+        [
+            FeatureId::mint("dependency").expect("identity grammar"),
+            FeatureId::mint("writer").expect("identity grammar")
+        ]
     );
     assert_eq!(
         states[&FeatureId::mint("writer").expect("identity grammar")].dependencies,

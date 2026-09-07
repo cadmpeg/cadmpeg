@@ -793,7 +793,8 @@ fn nx_loft_completeness_checks_native_point_sections_and_centerlines() {
 fn nx_pattern_completeness_requires_distinct_seeds() {
     use cadmpeg_ir::features::{BodySelection, FaceSelection, PatternSeed};
 
-    let seed_id = cadmpeg_ir::features::FeatureId::mint("test:feature#seed").expect("identity grammar");
+    let seed_id =
+        cadmpeg_ir::features::FeatureId::mint("test:feature#seed").expect("identity grammar");
     let seed = cadmpeg_ir::features::PatternSeed::Feature(seed_id.clone());
     let pattern = cadmpeg_ir::features::PatternKind::Mirror {
         plane_origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),

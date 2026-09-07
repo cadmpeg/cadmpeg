@@ -267,7 +267,8 @@ pub(crate) fn transfer_curve_expression_features(
         let feature_id = IrFeatureId::mint(format!(
             "creo:depdb:curve_expression_feature#{}-{}",
             record.entity_id, record.offset
-        )).expect("identity grammar");
+        ))
+        .expect("identity grammar");
         let mut assignment_indices_by_name = BTreeMap::<String, Option<usize>>::new();
         for (assignment_ordinal, assignment) in record.assignments.iter().enumerate() {
             if assignment.activation == crate::curve::CurveExpressionActivation::Inactive {
@@ -314,7 +315,8 @@ pub(crate) fn transfer_curve_expression_features(
             let parameter_id = ParameterId::mint(format!(
                 "creo:depdb:curve_expression_parameter#{}-{}-{}",
                 record.entity_id, record.offset, assignment_ordinal
-            )).expect("identity grammar");
+            ))
+            .expect("identity grammar");
             let mut dependencies = assignment
                 .dependencies
                 .iter()
@@ -331,7 +333,8 @@ pub(crate) fn transfer_curve_expression_features(
                     ParameterId::mint(format!(
                         "creo:depdb:curve_expression_parameter#{}-{}-{}",
                         record.entity_id, record.offset, dependency
-                    )).expect("identity grammar")
+                    ))
+                    .expect("identity grammar")
                 })
                 .collect::<Vec<_>>();
             dependencies.extend(assignment.dependencies.iter().filter_map(|name| {
@@ -449,7 +452,7 @@ pub(crate) fn transfer_curve_expression_features(
             }
             annotate(
                 annotations,
-                &parameter_id.as_str(),
+                parameter_id.as_str(),
                 &source_section,
                 assignment.offset as u64,
                 "curve_expression_assignment",
@@ -487,7 +490,7 @@ pub(crate) fn transfer_curve_expression_features(
         }
         annotate(
             annotations,
-            &feature_id.as_str(),
+            feature_id.as_str(),
             &source_section,
             record.expression_offset as u64,
             "curve_expression_feature",

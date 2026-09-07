@@ -802,7 +802,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 || *mode == cadmpeg_ir::features::BodyRetentionMode::Unresolved
         }
         FeatureDefinition::InsertComponent { .. } => false,
-        FeatureDefinition::AssemblyJoint { joint } => joint.as_str().is_empty(),
+        FeatureDefinition::AssemblyJoint { .. } => false,
         FeatureDefinition::Shell {
             bodies,
             removed_faces,

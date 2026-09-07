@@ -1239,7 +1239,9 @@ pub(crate) fn project(
         } else {
             format!("offset-{}", record.source_range.start)
         };
-        ids.push(FeatureId::mint(format!("rhino:history:feature#{key}")).expect("identity grammar"));
+        ids.push(
+            FeatureId::mint(format!("rhino:history:feature#{key}")).expect("identity grammar"),
+        );
         native_ids.push(format!("rhino:history:record#{key}"));
     }
     let mut producers = HashMap::<Uuid, Option<(usize, FeatureId)>>::new();

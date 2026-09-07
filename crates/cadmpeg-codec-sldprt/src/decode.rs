@@ -4132,7 +4132,8 @@ fn assign_configuration_bodies(
             .push(cadmpeg_ir::features::DesignConfiguration {
                 id: cadmpeg_ir::features::ConfigurationId::mint(format!(
                     "sldprt:model:configuration#partition:{source_index}"
-                )).expect("identity grammar"),
+                ))
+                .expect("identity grammar"),
                 ordinal,
                 active: false,
                 source_index: Some(source_index),

@@ -318,7 +318,8 @@ fn encoder_writes_source_less_line_sketches() {
             .collect()],
         native_ref: None,
     });
-    let sketch_feature_id = FeatureId::mint("synthetic:test:feature#profile").expect("identity grammar");
+    let sketch_feature_id =
+        FeatureId::mint("synthetic:test:feature#profile").expect("identity grammar");
     ir.model.features.push(Feature {
         id: sketch_feature_id.clone(),
         ordinal: 0,
@@ -403,7 +404,8 @@ fn encoder_writes_source_less_line_sketches() {
     ];
     for (index, definition) in generated.into_iter().enumerate() {
         ir.model.features.push(Feature {
-            id: FeatureId::mint(format!("synthetic:test:feature#profile-op-{index}")).expect("identity grammar"),
+            id: FeatureId::mint(format!("synthetic:test:feature#profile-op-{index}"))
+                .expect("identity grammar"),
             ordinal: index as u64 + 2,
             name: Some(format!("Profile op {index}")),
             suppressed: Some(false),
@@ -417,7 +419,8 @@ fn encoder_writes_source_less_line_sketches() {
             native_ref: None,
         });
     }
-    let extrude_feature_id = FeatureId::mint("synthetic:test:feature#extrude").expect("identity grammar");
+    let extrude_feature_id =
+        FeatureId::mint("synthetic:test:feature#extrude").expect("identity grammar");
     ir.model.features.push(Feature {
         id: extrude_feature_id.clone(),
         ordinal: 1,

@@ -424,7 +424,11 @@ impl ParameterAliases {
             feature_local: HashMap::new(),
         };
         for parameter in parameters {
-            insert_parameter_alias(&mut aliases.exact, parameter.id.as_str().to_owned(), &parameter.id);
+            insert_parameter_alias(
+                &mut aliases.exact,
+                parameter.id.as_str().to_owned(),
+                &parameter.id,
+            );
             let mut unqualified = vec![parameter.name.clone()];
             if let Some(equation_id) = parameter
                 .properties

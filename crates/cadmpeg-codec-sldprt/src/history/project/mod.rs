@@ -210,7 +210,8 @@ pub fn project_semantic_notes(
             cadmpeg_ir::semantic_annotations::SemanticAnnotation {
                 id: cadmpeg_ir::semantic_annotations::SemanticAnnotationId::mint(format!(
                     "sldprt:semantic-annotation:note#{key}"
-                )).expect("identity grammar"),
+                ))
+                .expect("identity grammar"),
                 object: feature.id.clone(),
                 kind: cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text,
                 runtime_type: feature.kind.clone(),
@@ -885,7 +886,8 @@ pub fn project_configurations(histories: &[FeatureHistory]) -> Vec<DesignConfigu
                     .id
                     .strip_prefix("sldprt:history:configuration#")
                     .unwrap_or(&configuration.id)
-            )).expect("identity grammar"),
+            ))
+            .expect("identity grammar"),
             ordinal: configuration.ordinal,
             active: false,
             source_index: configuration.source_index,

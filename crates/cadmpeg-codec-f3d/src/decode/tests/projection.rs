@@ -161,7 +161,10 @@ fn mesh_texture_ids_resolve_through_design_table_order() {
     assert!(matches!(
         mesh_texture_assignments(
             Some(&[2]),
-            &[("resource:only".into(), AssetId::mint("asset:only").expect("identity grammar"))],
+            &[(
+                "resource:only".into(),
+                AssetId::mint("asset:only").expect("identity grammar")
+            )],
             1,
         ),
         Err(cadmpeg_core::CodecError::Malformed(_))
@@ -823,7 +826,8 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(cadmpeg_ir::features::Feature {
-        id: cadmpeg_ir::features::FeatureId::mint("test:model:feature#coil").expect("identity grammar"),
+        id: cadmpeg_ir::features::FeatureId::mint("test:model:feature#coil")
+            .expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,

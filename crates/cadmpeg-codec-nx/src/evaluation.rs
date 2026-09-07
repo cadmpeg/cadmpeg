@@ -1486,7 +1486,7 @@ mod tests {
         ir.model.bodies.push(model_body(created.as_str()));
         let profile = FeatureId::mint("profile".to_string()).expect("identity grammar");
         ir.model.features.push(body_neutral_feature(
-            &profile.as_str(),
+            profile.as_str(),
             1,
             FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
@@ -1523,7 +1523,7 @@ mod tests {
         let body = ir.model.bodies[0].id.clone();
         let profile = FeatureId::mint("profile".to_string()).expect("identity grammar");
         ir.model.features.push(body_neutral_feature(
-            &profile.as_str(),
+            profile.as_str(),
             1,
             FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,

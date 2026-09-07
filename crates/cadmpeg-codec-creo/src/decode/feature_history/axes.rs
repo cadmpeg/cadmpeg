@@ -319,12 +319,17 @@ pub(in super::super) fn model_feature_ids(scan: &ContainerScan) -> BTreeSet<IrFe
         .map(|operation| operation.feature_id)
         .chain(scan.features.rows.iter().map(|row| row.feature_id))
         .chain(scan.planes.datums.iter().map(|datum| datum.feature_id))
-        .map(|feature_id| IrFeatureId::mint(format!("creo:model:feature#{feature_id}")).expect("identity grammar"))
+        .map(|feature_id| {
+            IrFeatureId::mint(format!("creo:model:feature#{feature_id}")).expect("identity grammar")
+        })
         .collect::<BTreeSet<_>>();
     ids.extend(
         geometry_generator_features(scan)
             .into_iter()
-            .map(|generator| IrFeatureId::mint(format!("creo:model:feature#{}", generator.feature_id)).expect("identity grammar")),
+            .map(|generator| {
+                IrFeatureId::mint(format!("creo:model:feature#{}", generator.feature_id))
+                    .expect("identity grammar")
+            }),
     );
     ids
 }

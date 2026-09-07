@@ -105,7 +105,11 @@ fn layered_parameter_aliases_match_materialized_precedence() {
     let aliases =
         ParameterAliases::new(&parameters, &HashMap::new(), &HashSet::from([global_owner]));
 
-    for owner in [Some(local_owner), Some(FeatureId::mint("unrelated").expect("identity grammar")), None] {
+    for owner in [
+        Some(local_owner),
+        Some(FeatureId::mint("unrelated").expect("identity grammar")),
+        None,
+    ] {
         let materialized = aliases.materialize(owner.as_ref());
         let layered = aliases.for_owner(owner.as_ref());
         for alias in ["Width", "global-id", "local-id", "missing"] {

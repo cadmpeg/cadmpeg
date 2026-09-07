@@ -66,7 +66,8 @@ fn duplicate_configuration_source_identity_does_not_select_a_partition() {
     let mut ir = CadIr::empty();
     for ordinal in 0..2 {
         ir.model.configurations.push(DesignConfiguration {
-            id: ConfigurationId::mint(format!("configuration:{ordinal}")).expect("identity grammar"),
+            id: ConfigurationId::mint(format!("configuration:{ordinal}"))
+                .expect("identity grammar"),
             ordinal,
             active: false,
             source_index: Some(5),
@@ -207,7 +208,8 @@ fn incomplete_configuration_names_are_reported() {
         .enumerate()
     {
         ir.model.configurations.push(DesignConfiguration {
-            id: ConfigurationId::mint(format!("configuration:{position}")).expect("identity grammar"),
+            id: ConfigurationId::mint(format!("configuration:{position}"))
+                .expect("identity grammar"),
             ordinal,
             active: position == 1,
             source_index: Some(position as u32),
@@ -385,7 +387,10 @@ fn configuration_suppression_and_override_references_are_coherent() {
         properties: BTreeMap::new(),
         bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
         parameter_values: BTreeMap::new(),
-        parameter_overrides: BTreeMap::from([(ParameterId::mint("missing").expect("identity grammar"), "1mm".into())]),
+        parameter_overrides: BTreeMap::from([(
+            ParameterId::mint("missing").expect("identity grammar"),
+            "1mm".into(),
+        )]),
         feature_states: BTreeMap::from([(
             feature,
             ConfigurationFeatureState {

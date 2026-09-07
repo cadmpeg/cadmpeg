@@ -455,7 +455,8 @@ fn current_indexed_profile_spatial_points_project_from_indexed_markers() {
         }],
     };
     let mut features = vec![cadmpeg_ir::features::Feature {
-        id: FeatureId::mint("sldprt:model:feature#spatial-indexed-profile").expect("identity grammar"),
+        id: FeatureId::mint("sldprt:model:feature#spatial-indexed-profile")
+            .expect("identity grammar"),
         ordinal: 0,
         name: Some("3D Sketch".into()),
         suppressed: Some(false),

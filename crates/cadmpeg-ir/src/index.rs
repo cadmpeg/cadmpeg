@@ -382,7 +382,8 @@ mod tests {
     #[test]
     fn typed_lookup_indexes_are_lazy_and_preserve_last_duplicate() {
         let mut ir = CadIr::empty();
-        let parameter_id = crate::features::ParameterId::mint("test:parameter#0").expect("identity grammar");
+        let parameter_id =
+            crate::features::ParameterId::mint("test:parameter#0").expect("identity grammar");
         for (ordinal, expression) in [(0, "first"), (1, "last")] {
             ir.model.parameters.push(crate::features::DesignParameter {
                 id: parameter_id.clone(),

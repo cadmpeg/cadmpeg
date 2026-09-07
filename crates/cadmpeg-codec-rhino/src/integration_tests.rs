@@ -1639,7 +1639,10 @@ fn dimension_becomes_a_measured_semantic_annotation_with_resolvable_identities()
         .expect("required invariant")[0];
     assert_eq!(annotation.object, record.id.to_string());
     assert_eq!(annotation.native_ref, record.id.to_string());
-    assert!(record.links.iter().any(|link| link == annotation.id.as_str()));
+    assert!(record
+        .links
+        .iter()
+        .any(|link| link == annotation.id.as_str()));
 
     // Constraint 2: `order` is a dense u32 arena index, not the byte offset.
     assert_eq!(annotation.order, 0);

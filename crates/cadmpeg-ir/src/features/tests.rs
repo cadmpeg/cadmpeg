@@ -34,8 +34,10 @@ fn configuration_body_membership_round_trips_and_validates() {
     use std::collections::BTreeMap;
 
     let mut ir = unit_cube();
-    let configuration_id = ConfigurationId::mint("synthetic:test:configuration#0").expect("identity grammar");
-    let parameter_id = ParameterId::mint("synthetic:test:parameter#width").expect("identity grammar");
+    let configuration_id =
+        ConfigurationId::mint("synthetic:test:configuration#0").expect("identity grammar");
+    let parameter_id =
+        ParameterId::mint("synthetic:test:parameter#width").expect("identity grammar");
     let body = ir.model.bodies[0].id.clone();
     ir.model.parameters.push(DesignParameter {
         id: parameter_id.clone(),
@@ -95,7 +97,8 @@ fn configuration_body_membership_round_trips_and_validates() {
         FeatureId::mint("synthetic:test:feature#missing-state").expect("identity grammar"),
         ConfigurationFeatureState {
             suppressed: false,
-            dependencies: vec![FeatureId::mint("synthetic:test:feature#missing-dependency").expect("identity grammar")],
+            dependencies: vec![FeatureId::mint("synthetic:test:feature#missing-dependency")
+                .expect("identity grammar")],
             outputs: vec![
                 BodyId::mint("synthetic:test:body#missing-output").expect("valid identity")
             ],
@@ -138,8 +141,10 @@ fn configuration_body_membership_round_trips_and_validates() {
     }));
     ir.model.parameters[0].value = None;
 
-    let first_feature = FeatureId::mint("synthetic:test:feature#configuration-first").expect("identity grammar");
-    let later_feature = FeatureId::mint("synthetic:test:feature#configuration-later").expect("identity grammar");
+    let first_feature =
+        FeatureId::mint("synthetic:test:feature#configuration-first").expect("identity grammar");
+    let later_feature =
+        FeatureId::mint("synthetic:test:feature#configuration-later").expect("identity grammar");
     for (ordinal, feature) in [first_feature.clone(), later_feature.clone()]
         .into_iter()
         .enumerate()
@@ -345,7 +350,8 @@ fn configuration_suppression_is_derived_and_legacy_lists_migrate_at_the_model_bo
     );
     ir.model.features.push(feature.clone());
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId::mint("synthetic:test:configuration#suppressed").expect("identity grammar"),
+        id: ConfigurationId::mint("synthetic:test:configuration#suppressed")
+            .expect("identity grammar"),
         ordinal: 0,
         active: false,
         source_index: None,
@@ -394,7 +400,9 @@ fn configuration_suppression_is_derived_and_legacy_lists_migrate_at_the_model_bo
 
 #[test]
 fn datum_plane_reference_preserves_legacy_feature_ids_and_face_selections() {
-    let feature = crate::features::DatumPlaneReference::Feature(crate::features::FeatureId::mint("test:model:feature#feature").expect("identity grammar"));
+    let feature = crate::features::DatumPlaneReference::Feature(
+        crate::features::FeatureId::mint("test:model:feature#feature").expect("identity grammar"),
+    );
     assert_eq!(
         serde_json::to_value(&feature).unwrap(),
         serde_json::json!("test:model:feature#feature")
@@ -633,7 +641,8 @@ fn generated_sweep_sections_round_trip_and_validate() {
     let validate_definition = |definition| {
         let mut ir = unit_cube();
         ir.model.features.push(Feature {
-            id: FeatureId::mint("synthetic:test:feature#generated-sweep").expect("identity grammar"),
+            id: FeatureId::mint("synthetic:test:feature#generated-sweep")
+                .expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: Some(false),

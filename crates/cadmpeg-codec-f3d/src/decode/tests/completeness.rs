@@ -225,11 +225,7 @@ fn product_feature_definitions_require_neutral_reference_ids() {
         }
     ));
     assert!(OccurrenceId::mint(String::new()).is_err());
-    assert!(feature_definition_is_incomplete(
-        &FeatureDefinition::AssemblyJoint {
-            joint: JointId::mint(String::new()).expect("identity grammar"),
-        }
-    ));
+    assert!(JointId::mint(String::new()).is_err());
 }
 
 #[test]

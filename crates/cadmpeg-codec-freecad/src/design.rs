@@ -895,7 +895,8 @@ fn append_spreadsheet(
         let id = ParameterId::mint(format!(
             "fcstd:design:parameter#{}:cell:{address}",
             object.name
-        )).expect("identity grammar");
+        ))
+        .expect("identity grammar");
         let cell_address = CellAddress::parse(address).ok_or_else(|| {
             CodecError::malformed(format_args!("{} cell has invalid address", property.id))
         })?;
@@ -928,7 +929,8 @@ fn append_spreadsheet(
         });
     }
     Ok(Spreadsheet {
-        id: SpreadsheetId::mint(format!("fcstd:design:spreadsheet#{}", object.name)).expect("identity grammar"),
+        id: SpreadsheetId::mint(format!("fcstd:design:spreadsheet#{}", object.name))
+            .expect("identity grammar"),
         feature: feature_id(object),
         cells: cell_ids,
         column_widths: spreadsheet_dimensions(
@@ -1144,7 +1146,8 @@ fn append_operation_parameters(
             id: ParameterId::mint(format!(
                 "fcstd:design:parameter#{}:{}",
                 object.name, property.name
-            )).expect("identity grammar"),
+            ))
+            .expect("identity grammar"),
             owner: Some(feature_id(object)),
             ordinal: property.order as u32,
             name: property.name.clone(),
@@ -2082,7 +2085,8 @@ fn parse_constraints(
                         "fcstd:design:parameter#{}:constraint:{}",
                         object.name,
                         index + 1
-                    )).expect("identity grammar");
+                    ))
+                    .expect("identity grammar");
                     let value = match type_code {
                         Some(9) => ParameterValue::Angle(cadmpeg_ir::features::Angle(value)),
                         Some(16 | 19) => ParameterValue::Real(value),

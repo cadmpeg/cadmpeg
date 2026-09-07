@@ -711,7 +711,8 @@ fn collect_legacy_parameters(
             let Some(key) = scalar.id.strip_prefix("catia:legacy:scalar#") else {
                 continue;
             };
-            let id = ParameterId::mint(format!("catia:legacy:parameter#{key}")).expect("identity grammar");
+            let id = ParameterId::mint(format!("catia:legacy:parameter#{key}"))
+                .expect("identity grammar");
             if candidates.contains_key(&id) {
                 continue;
             }
@@ -764,7 +765,8 @@ fn collect_legacy_parameters(
             let Some(key) = string.id.strip_prefix("catia:legacy:string#") else {
                 continue;
             };
-            let id = ParameterId::mint(format!("catia:legacy:parameter#{key}")).expect("identity grammar");
+            let id = ParameterId::mint(format!("catia:legacy:parameter#{key}"))
+                .expect("identity grammar");
             if candidates.contains_key(&id) {
                 continue;
             }
@@ -818,7 +820,8 @@ fn collect_legacy_parameters(
             let Some(key) = integer.id.strip_prefix("catia:legacy:integer#") else {
                 continue;
             };
-            let id = ParameterId::mint(format!("catia:legacy:parameter#{key}")).expect("identity grammar");
+            let id = ParameterId::mint(format!("catia:legacy:parameter#{key}"))
+                .expect("identity grammar");
             if candidates.contains_key(&id) {
                 continue;
             }
@@ -3283,7 +3286,8 @@ fn neutral_parameter_id(native_id: &str) -> ParameterId {
     ParameterId::mint(crate::design_feature::neutral_history_id(
         native_id,
         "parameter",
-    )).expect("identity grammar")
+    ))
+    .expect("identity grammar")
 }
 
 #[cfg(test)]

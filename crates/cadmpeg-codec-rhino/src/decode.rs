@@ -1178,7 +1178,8 @@ impl<'a> DecodeContext<'a> {
         }
         let key = self.object_key(identity, source_order);
         let association = self.source_association(identity);
-        let feature_id = FeatureId::mint(format!("rhino:hatch:feature#{key}")).expect("identity grammar");
+        let feature_id =
+            FeatureId::mint(format!("rhino:hatch:feature#{key}")).expect("identity grammar");
         let transform = hatch_plane_transform(&hatch.plane, scale);
         for hatch_loop in &mut hatch.loops {
             if let Err(error) = transform_decoded_curve(&mut hatch_loop.curve, transform) {
@@ -1309,7 +1310,8 @@ impl<'a> DecodeContext<'a> {
             return;
         };
         let key = self.object_key(identity, source_order);
-        let id = FeatureId::mint(format!("rhino:polyedge:feature#{key}")).expect("identity grammar");
+        let id =
+            FeatureId::mint(format!("rhino:polyedge:feature#{key}")).expect("identity grammar");
         let parameters = polyedge
             .segments
             .iter()
@@ -1395,7 +1397,8 @@ impl<'a> DecodeContext<'a> {
         let key = self.object_key(identity, source_order);
         let association = self.source_association(identity);
         let curve_id = format!("rhino:object:curve#{key}.detail-boundary");
-        let feature_id = FeatureId::mint(format!("rhino:detail:feature#{key}")).expect("identity grammar");
+        let feature_id =
+            FeatureId::mint(format!("rhino:detail:feature#{key}")).expect("identity grammar");
         let view = &self.scan.data[detail.view_range.clone()];
         let feature = Feature {
             id: feature_id.clone(),
@@ -1491,7 +1494,8 @@ impl<'a> DecodeContext<'a> {
             }
         };
         let key = self.object_key(identity, source_order);
-        let feature_id = FeatureId::mint(format!("rhino:cage:feature#{key}")).expect("identity grammar");
+        let feature_id =
+            FeatureId::mint(format!("rhino:cage:feature#{key}")).expect("identity grammar");
         let knots = cage
             .knots
             .iter()
@@ -1694,7 +1698,8 @@ impl<'a> DecodeContext<'a> {
             format!("rhino:object:surface#{key}.curve-on-surface-support")
                 .try_into()
                 .expect("valid identity");
-        let feature_id = FeatureId::mint(format!("rhino:curve-on-surface:feature#{key}")).expect("identity grammar");
+        let feature_id = FeatureId::mint(format!("rhino:curve-on-surface:feature#{key}"))
+            .expect("identity grammar");
         let feature = Feature {
             id: feature_id.clone(),
             ordinal: u64::try_from(construction.source_range.start)

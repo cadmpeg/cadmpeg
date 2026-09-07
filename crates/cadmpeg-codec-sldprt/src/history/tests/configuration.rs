@@ -262,7 +262,8 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
         definition: unresolved.clone(),
         native_ref: Some("sketch-native".into()),
     });
-    let spatial_feature_id = cadmpeg_ir::features::FeatureId::mint("sldprt:model:feature#spatial").expect("identity grammar");
+    let spatial_feature_id = cadmpeg_ir::features::FeatureId::mint("sldprt:model:feature#spatial")
+        .expect("identity grammar");
     let spatial_sketch_id = SpatialSketchId("sldprt:model:spatial-sketch#spatial".into());
     ir.model.features.push(NeutralFeature {
         id: spatial_feature_id.clone(),
@@ -493,7 +494,8 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
 
     let feature_id = FeatureId::mint("sldprt:model:feature#spatial").expect("identity grammar");
     let sketch_id = SpatialSketchId("sldprt:model:spatial-sketch#spatial".into());
-    let planar_state_id = FeatureId::mint("sldprt:model:feature#planar-state").expect("identity grammar");
+    let planar_state_id =
+        FeatureId::mint("sldprt:model:feature#planar-state").expect("identity grammar");
     let planar_sketch_id = SpatialSketchId("sldprt:model:spatial-sketch#planar-state".into());
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(NeutralFeature {
@@ -546,7 +548,8 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
     });
     for ordinal in 0..2 {
         ir.model.configurations.push(DesignConfiguration {
-            id: cadmpeg_ir::features::ConfigurationId::mint(format!("configuration-{ordinal}")).expect("identity grammar"),
+            id: cadmpeg_ir::features::ConfigurationId::mint(format!("configuration-{ordinal}"))
+                .expect("identity grammar"),
             ordinal,
             active: ordinal == 0,
             source_index: Some(ordinal),
@@ -610,7 +613,8 @@ fn configuration_sketch_state_reuses_scoped_spatial_sketch() {
     };
     use cadmpeg_ir::sketches::{SpatialSketch, SpatialSketchId};
 
-    let feature_id = FeatureId::mint("sldprt:model:feature#scoped-spatial").expect("identity grammar");
+    let feature_id =
+        FeatureId::mint("sldprt:model:feature#scoped-spatial").expect("identity grammar");
     let sketch_id = SpatialSketchId("sldprt:model:spatial-sketch#scoped-spatial".into());
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(NeutralFeature {

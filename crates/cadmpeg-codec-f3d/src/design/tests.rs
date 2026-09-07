@@ -204,7 +204,8 @@ fn sketch_geometry_identity_uses_owner_and_native_persistent_ids() {
 
 #[test]
 fn governing_dimension_identity_uses_parameter_identity() {
-    let parameter = cadmpeg_ir::features::ParameterId::mint("f3d:model:parameter#Design/A:12").expect("identity grammar");
+    let parameter = cadmpeg_ir::features::ParameterId::mint("f3d:model:parameter#Design/A:12")
+        .expect("identity grammar");
     let relocated = neutral_dimension_constraint_id(&parameter, "pair");
     let same = neutral_dimension_constraint_id(&parameter, "pair");
     let other_form = neutral_dimension_constraint_id(&parameter, "null-pair");

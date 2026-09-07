@@ -1859,8 +1859,10 @@ pub(crate) fn project_sketch_block_profiles(
                         break;
                     }
                     block_sketches.insert(source.to_string(), sketch_id.clone());
-                    block_feature_ids
-                        .insert(source.to_string(), features[definition_index].id.as_str().to_owned());
+                    block_feature_ids.insert(
+                        source.to_string(),
+                        features[definition_index].id.as_str().to_owned(),
+                    );
                 }
                 if !definitions_complete || block_sketches.len() != children.len() {
                     continue;
@@ -1898,7 +1900,8 @@ pub(crate) fn project_sketch_block_profiles(
                         break;
                     };
                     if !block_sketches.contains_key(&block_source)
-                        || block_feature_ids.get(&block_source).map(String::as_str) != Some(block.as_str())
+                        || block_feature_ids.get(&block_source).map(String::as_str)
+                            != Some(block.as_str())
                     {
                         instances_complete = false;
                         break;

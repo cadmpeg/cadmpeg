@@ -132,7 +132,8 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
         ),
     ] {
         ir.model.configurations.push(DesignConfiguration {
-            id: ConfigurationId::mint(format!("configuration-{ordinal}")).expect("identity grammar"),
+            id: ConfigurationId::mint(format!("configuration-{ordinal}"))
+                .expect("identity grammar"),
             ordinal,
             active: ordinal == 0,
             source_index: Some(ordinal),
@@ -493,7 +494,8 @@ fn active_configuration_snapshots_final_neutral_design_state() {
     });
     for (ordinal, active) in [(0, true), (1, false)] {
         ir.model.configurations.push(DesignConfiguration {
-            id: ConfigurationId::mint(format!("configuration-{ordinal}")).expect("identity grammar"),
+            id: ConfigurationId::mint(format!("configuration-{ordinal}"))
+                .expect("identity grammar"),
             ordinal,
             active,
             source_index: Some(ordinal),

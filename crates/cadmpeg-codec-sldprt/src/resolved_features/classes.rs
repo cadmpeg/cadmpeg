@@ -749,7 +749,8 @@ mod idless_history_binding_tests {
             references: Vec::new(),
             sketch_entities: Vec::new(),
         };
-        let profile_id = cadmpeg_ir::features::FeatureId::mint("profile").expect("identity grammar");
+        let profile_id =
+            cadmpeg_ir::features::FeatureId::mint("profile").expect("identity grammar");
         let mut features = vec![
             cadmpeg_ir::features::Feature {
                 id: profile_id.clone(),

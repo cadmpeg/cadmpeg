@@ -68,10 +68,14 @@ fn native_topology_link_must_resolve() {
 #[test]
 fn parameter_native_ref_must_resolve() {
     let mut ir = unit_cube();
-    let id = crate::features::ParameterId::mint("synthetic:test:parameter#native-ref").expect("identity grammar");
+    let id = crate::features::ParameterId::mint("synthetic:test:parameter#native-ref")
+        .expect("identity grammar");
     ir.model.parameters.push(crate::features::DesignParameter {
         id: id.clone(),
-        owner: Some(crate::features::FeatureId::mint("synthetic:test:feature#missing").expect("identity grammar")),
+        owner: Some(
+            crate::features::FeatureId::mint("synthetic:test:feature#missing")
+                .expect("identity grammar"),
+        ),
         ordinal: 0,
         name: "D1".into(),
         expression: "1mm".into(),

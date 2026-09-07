@@ -180,7 +180,8 @@ fn only_edge_treatments_use_single_member_transition_chains() {
     generic_identity.compact_layout = false;
     generic_identity.treatment_radius_candidates.clear();
     let generic_feature_id =
-        cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#ruled-surface").expect("identity grammar");
+        cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#ruled-surface")
+            .expect("identity grammar");
 
     assert!(matches!(
         resolved_edge_group(
@@ -193,7 +194,8 @@ fn only_edge_treatments_use_single_member_transition_chains() {
         ),
         cadmpeg_ir::features::EdgeSelection::Native(_)
     ));
-    let treatment_feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet").expect("identity grammar");
+    let treatment_feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
+        .expect("identity grammar");
     let mut identity = identity(10, &[(17, 3.0), (19, 3.0)]);
     identity.compact_layout = false;
     identity.treatment_radius_candidates.clear();
@@ -233,7 +235,8 @@ fn multiple_full_layout_members_do_not_use_the_operation_transition_chain() {
     let mut second = identity(11, &[(17, 0.0), (18, 0.0), (19, 0.0)]);
     second.compact_layout = false;
     second.group_member_ordinal = 1;
-    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet").expect("identity grammar");
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
+        .expect("identity grammar");
 
     assert!(matches!(
         resolved_edge_treatment_group(
@@ -297,7 +300,8 @@ fn unresolved_standard_recipe_is_not_replaced_by_identity_or_transition_context(
     });
     let mut persistent_identity = identity(10, &[]);
     persistent_identity.resolved_edge_slot = Some(19);
-    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet").expect("identity grammar");
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
+        .expect("identity grammar");
 
     assert!(matches!(
         resolved_edge_treatment_group(
@@ -336,7 +340,8 @@ fn unstructured_recipe_is_not_replaced_by_identity_or_transition_context() {
     operand.recipe_state_id = Some(7);
     let mut persistent_identity = identity(10, &[(17, 0.0)]);
     persistent_identity.resolved_edge_slot = Some(17);
-    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet").expect("identity grammar");
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
+        .expect("identity grammar");
 
     assert!(matches!(
         resolved_edge_treatment_group(
@@ -447,7 +452,8 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
         projection_finalized: false,
         states: vec![state],
     };
-    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet").expect("identity grammar");
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet")
+        .expect("identity grammar");
     let corners = [corner(10, 0, 3), corner(12, 2, 4)];
     let edges = [first_edge.clone(), repeated_edge.clone()];
 
@@ -587,7 +593,8 @@ fn grouped_surface_patch_recipe_projects_historical_edges() {
     );
     let mut second = recipe_edge_operand(11, &[], &[]);
     second.recipe_references = vec![recipe_reference(&[18])];
-    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#surface-patch").expect("identity grammar");
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#surface-patch")
+        .expect("identity grammar");
 
     let selection = resolved_surface_patch_edge_group(
         &group,
@@ -618,7 +625,8 @@ fn contradictory_surface_patch_references_suppress_generic_resolution() {
         root: 1,
         sides: Vec::new(),
     });
-    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#surface-patch").expect("identity grammar");
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#surface-patch")
+        .expect("identity grammar");
 
     assert!(matches!(
         resolved_surface_patch_edge_group(
@@ -722,7 +730,8 @@ fn edge_flange_uses_one_updated_edge_without_recipe_context() {
     operand.changed_boundary_edge_slots = vec![17, 18];
     operand.updated_boundary_edge_slots = vec![17];
     operand.result_boundary_edge_slots = vec![17, 20];
-    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#edge-flange").expect("identity grammar");
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#edge-flange")
+        .expect("identity grammar");
 
     let selection = resolved_edge_flange_group(
         &group,
@@ -747,7 +756,8 @@ fn edge_flange_does_not_choose_an_ambiguous_updated_boundary() {
     operand.changed_boundary_edge_slots = vec![17, 18];
     operand.updated_boundary_edge_slots = vec![17, 18];
     operand.result_boundary_edge_slots = vec![17, 18, 20];
-    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#edge-flange").expect("identity grammar");
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#edge-flange")
+        .expect("identity grammar");
 
     assert!(matches!(
         resolved_edge_flange_group(
@@ -846,7 +856,8 @@ fn compact_identity_group_uses_selected_recipe_context_boundaries() {
         std::num::NonZeroU32::new(1).expect("nonzero reference ordinal")
     ]);
     second.recipe_reference_contexts = vec![context(vec![17, 18])];
-    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#chamfer").expect("identity grammar");
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#chamfer")
+        .expect("identity grammar");
 
     let selection = resolved_edge_treatment_group(
         &selection_group,
@@ -887,7 +898,8 @@ fn lost_references_preserve_a_complete_compact_transition_chain() {
         recipe_edge_operand(10, &[19], &[19]),
         recipe_edge_operand(11, &[19], &[19]),
     ];
-    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#chamfer").expect("identity grammar");
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#chamfer")
+        .expect("identity grammar");
 
     assert!(matches!(
         resolved_edge_treatment_group(
@@ -970,7 +982,8 @@ fn compact_edge_treatment_group_selects_exact_deleted_edge_cardinality() {
     let first = identity(10, &[(17, 5.0), (19, 5.0)]);
     let mut second = identity(11, &[(17, 5.0), (19, 5.0)]);
     second.group_member_ordinal = 1;
-    let feature_id = cadmpeg_ir::features::FeatureId::mint("test:model:feature#feature").expect("identity grammar");
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("test:model:feature#feature")
+        .expect("identity grammar");
 
     assert!(matches!(
         resolved_edge_group(

@@ -344,7 +344,10 @@ fn assigns_only_prior_payload_feature_dependencies_in_relation_order() {
     }
     let transfer = DesignFeatureTransfer {
         feature_ids: HashMap::from([
-            ("first-object".to_string(), FeatureId::mint("first-feature").expect("identity grammar")),
+            (
+                "first-object".to_string(),
+                FeatureId::mint("first-feature").expect("identity grammar"),
+            ),
             (
                 "second-object".to_string(),
                 FeatureId::mint("second-feature").expect("identity grammar"),
@@ -380,12 +383,14 @@ fn assigns_only_prior_payload_feature_dependencies_in_relation_order() {
             FeatureId::mint("second-feature").expect("identity grammar")
         ]
     );
-    assert!(ir
-        .model
-        .features
-        .iter()
-        .filter(|feature| feature.id != FeatureId::mint("source-feature").expect("identity grammar"))
-        .all(|feature| feature.dependencies.is_empty()));
+    assert!(
+        ir.model
+            .features
+            .iter()
+            .filter(|feature| feature.id
+                != FeatureId::mint("source-feature").expect("identity grammar"))
+            .all(|feature| feature.dependencies.is_empty())
+    );
 }
 
 #[test]
@@ -1100,7 +1105,11 @@ fn orders_exact_feature_parameters_by_serialized_field_position() {
                 Some(FeatureId::mint("operation-object:feature").expect("identity grammar")),
                 0,
             ),
-            (ParameterId::mint("document-parameter".to_string()).expect("identity grammar"), None, 0,),
+            (
+                ParameterId::mint("document-parameter".to_string()).expect("identity grammar"),
+                None,
+                0,
+            ),
         ]
     );
     assert_eq!(
@@ -1233,7 +1242,10 @@ fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
     assign_native_operation_parameter_values(
         &mut ir,
         &HashMap::from([
-            (ParameterId::mint("first".to_string()).expect("identity grammar"), FeatureId::mint("feature").expect("identity grammar")),
+            (
+                ParameterId::mint("first".to_string()).expect("identity grammar"),
+                FeatureId::mint("feature").expect("identity grammar"),
+            ),
             (
                 ParameterId::mint("second".to_string()).expect("identity grammar"),
                 FeatureId::mint("feature").expect("identity grammar"),
@@ -1492,7 +1504,8 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
     ir.model
         .parameters
         .push(cadmpeg_ir::features::DesignParameter {
-            id: cadmpeg_ir::features::ParameterId::mint("synthetic:parameter".to_string()).expect("identity grammar"),
+            id: cadmpeg_ir::features::ParameterId::mint("synthetic:parameter".to_string())
+                .expect("identity grammar"),
             owner: None,
             ordinal: 0,
             name: "Value".to_string(),
@@ -1520,7 +1533,13 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
     );
     assert_eq!(
         ir.model.parameters[0].owner,
-        Some(cadmpeg_ir::features::FeatureId::mint(crate::design_feature::neutral_history_id(&native.design_objects[0].id, "feature"),).expect("identity grammar"))
+        Some(
+            cadmpeg_ir::features::FeatureId::mint(crate::design_feature::neutral_history_id(
+                &native.design_objects[0].id,
+                "feature"
+            ),)
+            .expect("identity grammar")
+        )
     );
     assert_eq!(
         transfer.sketch_owner_records,
@@ -1661,7 +1680,8 @@ fn parameter_owner_follows_one_exact_child_design_object() {
     ir.model
         .parameters
         .push(cadmpeg_ir::features::DesignParameter {
-            id: cadmpeg_ir::features::ParameterId::mint("synthetic:child-parameter".to_string()).expect("identity grammar"),
+            id: cadmpeg_ir::features::ParameterId::mint("synthetic:child-parameter".to_string())
+                .expect("identity grammar"),
             owner: None,
             ordinal: 0,
             name: "Value".to_string(),
@@ -1679,7 +1699,13 @@ fn parameter_owner_follows_one_exact_child_design_object() {
     assert_eq!(ir.model.features.len(), 1);
     assert_eq!(
         ir.model.parameters[0].owner,
-        Some(cadmpeg_ir::features::FeatureId::mint(crate::design_feature::neutral_history_id(&feature_id, "feature"),).expect("identity grammar"))
+        Some(
+            cadmpeg_ir::features::FeatureId::mint(crate::design_feature::neutral_history_id(
+                &feature_id,
+                "feature"
+            ),)
+            .expect("identity grammar")
+        )
     );
 }
 

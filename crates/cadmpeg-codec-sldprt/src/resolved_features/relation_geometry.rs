@@ -3449,7 +3449,10 @@ mod relation_geometry_tests {
         else {
             panic!("tagged marker roster has a unique point-line witness");
         };
-        assert_eq!(parameter, &ParameterId::mint("parameter").expect("identity grammar"));
+        assert_eq!(
+            parameter,
+            &ParameterId::mint("parameter").expect("identity grammar")
+        );
         let point_entity = entities
             .iter()
             .find(|entity| entity.id().clone() == *point)

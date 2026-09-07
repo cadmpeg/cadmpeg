@@ -594,7 +594,9 @@ fn neutral_rederivation_evidence(ir: &CadIr) -> (VerificationStatus, Option<Rede
         BodyCensusEvaluation::Unsupported { feature, reason } => (
             VerificationStatus::Missing,
             Some(RederivationBoundary {
-                feature: feature.as_ref().map(|boundary| boundary.id.as_str().to_owned()),
+                feature: feature
+                    .as_ref()
+                    .map(|boundary| boundary.id.as_str().to_owned()),
                 feature_name: feature.as_ref().and_then(|boundary| boundary.name.clone()),
                 feature_family: feature
                     .as_ref()

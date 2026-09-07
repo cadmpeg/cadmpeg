@@ -739,7 +739,8 @@ fn generated_source_less_f3d_rejects_unbacked_design_parameters() {
         .model
         .parameters
         .push(cadmpeg_ir::features::DesignParameter {
-            id: cadmpeg_ir::features::ParameterId::mint("test:f3d:parameter#0").expect("identity grammar"),
+            id: cadmpeg_ir::features::ParameterId::mint("test:f3d:parameter#0")
+                .expect("identity grammar"),
             owner: None,
             ordinal: 0,
             name: "Width".into(),
@@ -859,7 +860,8 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
         [cadmpeg_ir::features::ParameterId::mint(format!(
             "f3d:model:parameter#{}:f3d%3A{stream}701",
             "f3d%3A".len() + stream.len(),
-        )).expect("identity grammar")]
+        ))
+        .expect("identity grammar")]
     );
     assert_eq!(
         f3d_native(decoded.ir()).design_parameters[0].evaluated_value,

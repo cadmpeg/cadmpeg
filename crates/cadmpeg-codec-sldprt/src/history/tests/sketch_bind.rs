@@ -446,7 +446,10 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
             ..
         }
     ));
-    assert_eq!(features[1].dependencies, vec![FeatureId::mint("base").expect("identity grammar")]);
+    assert_eq!(
+        features[1].dependencies,
+        vec![FeatureId::mint("base").expect("identity grammar")]
+    );
     assert!(matches!(
         &features[2].definition,
         FeatureDefinition::Sketch {
@@ -459,7 +462,10 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
         &features[3].definition,
         FeatureDefinition::Extrude { profile: ProfileRef::Sketch(id), .. } if id == &sketch_id
     ));
-    assert_eq!(features[3].dependencies, vec![FeatureId::mint("base").expect("identity grammar")]);
+    assert_eq!(
+        features[3].dependencies,
+        vec![FeatureId::mint("base").expect("identity grammar")]
+    );
 }
 
 #[test]

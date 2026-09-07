@@ -209,7 +209,10 @@ fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
         native,
         "sldprt:feature-input:edge-selection-vectors:1,2;3,4;1,2"
     );
-    assert_eq!(features[1].dependencies, vec![FeatureId::mint("producer").expect("identity grammar")]);
+    assert_eq!(
+        features[1].dependencies,
+        vec![FeatureId::mint("producer").expect("identity grammar")]
+    );
 }
 
 #[test]
@@ -1146,7 +1149,10 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
             ..
         } if sketch == &single
     ));
-    assert_eq!(features[4].dependencies, [FeatureId::mint("owner").expect("identity grammar")]);
+    assert_eq!(
+        features[4].dependencies,
+        [FeatureId::mint("owner").expect("identity grammar")]
+    );
     assert!(matches!(
         &features[5].definition,
         FeatureDefinition::Extrude {
@@ -1154,5 +1160,8 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
             ..
         } if feature == &FeatureId::mint("multi-child").expect("identity grammar")
     ));
-    assert_eq!(features[5].dependencies, [FeatureId::mint("multi-child").expect("identity grammar")]);
+    assert_eq!(
+        features[5].dependencies,
+        [FeatureId::mint("multi-child").expect("identity grammar")]
+    );
 }

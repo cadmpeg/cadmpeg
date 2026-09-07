@@ -378,7 +378,10 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
             }]
                 && native == "sldprt:feature-input:cylinder-reference:lane-a:40,lane-b:60"
     ));
-    assert_eq!(features[1].dependencies, [FeatureId::mint("producer").expect("identity grammar")]);
+    assert_eq!(
+        features[1].dependencies,
+        [FeatureId::mint("producer").expect("identity grammar")]
+    );
 
     let surface = Surface {
         id: SurfaceId::mint("test:model:entity#cylinder").expect("identity grammar"),
@@ -723,7 +726,10 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
             ..
         }) if faces[0].local_id == "6"
     ));
-    assert_eq!(features[1].dependencies, [FeatureId::mint("producer").expect("identity grammar")]);
+    assert_eq!(
+        features[1].dependencies,
+        [FeatureId::mint("producer").expect("identity grammar")]
+    );
 }
 
 #[test]
@@ -850,7 +856,10 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
     assert!(reverse.is_none());
     assert_eq!(
         features[2].dependencies,
-        vec![FeatureId::mint("target").expect("identity grammar"), FeatureId::mint("tool").expect("identity grammar")]
+        vec![
+            FeatureId::mint("target").expect("identity grammar"),
+            FeatureId::mint("tool").expect("identity grammar")
+        ]
     );
 }
 
@@ -942,7 +951,10 @@ fn planar_surface_keeps_unresolved_definition_and_adds_defining_dependencies() {
     ));
     assert_eq!(
         features[2].dependencies,
-        vec![FeatureId::mint("first").expect("identity grammar"), FeatureId::mint("second").expect("identity grammar")]
+        vec![
+            FeatureId::mint("first").expect("identity grammar"),
+            FeatureId::mint("second").expect("identity grammar")
+        ]
     );
 }
 

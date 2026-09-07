@@ -290,7 +290,8 @@ pub(crate) fn sketch_feature_id(sketch: &SketchId) -> IrFeatureId {
     IrFeatureId::mint(format!(
         "creo:model:sketch_feature#{}",
         sketch_identity_scope(sketch)
-    )).expect("identity grammar")
+    ))
+    .expect("identity grammar")
 }
 
 pub(crate) fn section_owner_feature_id(
@@ -300,7 +301,9 @@ pub(crate) fn section_owner_feature_id(
 ) -> IrFeatureId {
     owned_section_feature_id(scan, definition_id).map_or_else(
         || sketch_feature_id(sketch),
-        |feature_id| IrFeatureId::mint(format!("creo:model:feature#{feature_id}")).expect("identity grammar"),
+        |feature_id| {
+            IrFeatureId::mint(format!("creo:model:feature#{feature_id}")).expect("identity grammar")
+        },
     )
 }
 

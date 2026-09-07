@@ -200,7 +200,8 @@ pub(crate) fn transfer_neutral(
             None
         };
         model.drawings.push(Drawing {
-            id: DrawingId::mint(neutral_ids[record.object.as_str()].clone()).expect("identity grammar"),
+            id: DrawingId::mint(neutral_ids[record.object.as_str()].clone())
+                .expect("identity grammar"),
             object: record.object.clone(),
             kind: classify(&record.kind),
             runtime_type: record.kind.clone(),

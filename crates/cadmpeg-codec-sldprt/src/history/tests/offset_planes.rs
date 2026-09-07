@@ -229,7 +229,9 @@ fn explicit_later_constructed_plane_survives_without_result_offset_frame() {
         FeatureId::mint("offset").expect("identity grammar"),
         0,
         FeatureDefinition::DatumOffsetPlane {
-            reference: Some(DatumPlaneReference::Feature(FeatureId::mint("reference").expect("identity grammar"))),
+            reference: Some(DatumPlaneReference::Feature(
+                FeatureId::mint("reference").expect("identity grammar"),
+            )),
             distance: Length(6.0),
         },
     );

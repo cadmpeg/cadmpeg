@@ -225,7 +225,8 @@ fn tessellation_triangle_groups_and_texture_assignments_validate() {
         source_id: Some("group-b".into()),
         triangles: vec![0],
     });
-    invalid.texture_assignments[0].texture = AssetId::mint("synthetic:test:asset#missing").expect("identity grammar");
+    invalid.texture_assignments[0].texture =
+        AssetId::mint("synthetic:test:asset#missing").expect("identity grammar");
     let mut duplicate_group_id = valid.clone();
     duplicate_group_id.id = "synthetic:test:tessellation#duplicate-group-id".into();
     duplicate_group_id.triangle_groups[1].source_id = Some("group-a".into());

@@ -499,7 +499,10 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
         std::slice::from_mut(&mut lane),
     );
 
-    assert_eq!(features[0].dependencies, vec![FeatureId::mint("seed").expect("identity grammar")]);
+    assert_eq!(
+        features[0].dependencies,
+        vec![FeatureId::mint("seed").expect("identity grammar")]
+    );
     assert!(matches!(
         &features[0].definition,
         FeatureDefinition::Pattern { seeds, pattern: PatternKind::UnresolvedCircular }
@@ -602,7 +605,9 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Pattern {
-            seeds: vec![PatternSeed::Feature(FeatureId::mint("seed").expect("identity grammar"))],
+            seeds: vec![PatternSeed::Feature(
+                FeatureId::mint("seed").expect("identity grammar"),
+            )],
             pattern: PatternKind::UnresolvedCircular,
         },
         native_ref: Some("pattern-native".into()),

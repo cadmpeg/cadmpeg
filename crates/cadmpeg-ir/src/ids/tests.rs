@@ -82,3 +82,43 @@ fn local_identity_conversions_reject_empty_or_whitespace_keys() {
     assert_eq!(serde_json::to_string(&id).unwrap(), "\"member-1\"");
     assert_eq!(id.into_string(), "member-1");
 }
+
+#[test]
+fn string_backed_reference_ids_enforce_the_local_identity_rule() {
+    macro_rules! check {
+        ($type:ty, $valid:literal) => {{
+            for invalid in ["", " ", "a b", "a\tb", "a\nb"] {
+                assert!(<$type>::mint(invalid).is_err(), "{invalid:?}");
+            }
+            let id = <$type>::mint($valid).expect("identity grammar");
+            assert_eq!(id.as_str(), $valid);
+            assert_eq!(
+                serde_json::to_string(&id).unwrap(),
+                serde_json::to_string($valid).unwrap()
+            );
+            assert_eq!(id.into_string(), $valid);
+        }};
+    }
+
+    check!(crate::features::FeatureId, "f3d:model:feature#fillet");
+    check!(
+        crate::features::ConfigurationId,
+        "sldprt:model:configuration#0"
+    );
+    check!(crate::features::ParameterId, "f3d:model:parameter#width");
+    check!(crate::assets::AssetId, "f3d:model:asset#preview");
+    check!(crate::products::JointId, "f3d:model:joint#root");
+    check!(
+        crate::spreadsheets::SpreadsheetId,
+        "fcstd:design:spreadsheet#Sheet"
+    );
+    check!(
+        crate::presentation::PresentationId,
+        "fcstd:presentation:document#0"
+    );
+    check!(
+        crate::semantic_annotations::SemanticAnnotationId,
+        "rhino:dimension:annotation#4"
+    );
+    check!(crate::drawings::DrawingId, "fcstd:drawing:page#Page");
+}

@@ -118,7 +118,8 @@ pub(in super::super) fn generated_curve_edge_refs(
         .iter()
         .map(|curve_id| {
             let row = unique_rows.get(curve_id)?;
-            let feature = IrFeatureId::mint(format!("creo:model:feature#{}", row.feature_id)).expect("identity grammar");
+            let feature = IrFeatureId::mint(format!("creo:model:feature#{}", row.feature_id))
+                .expect("identity grammar");
             (available_features.contains(&feature)
                 && result_edge_ids
                     .get(&row.feature_id)

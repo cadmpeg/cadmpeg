@@ -87,7 +87,8 @@ fn distinguishes_stored_base_and_application_owned_features() {
         .find(|feature| feature.name.as_deref() == Some("BaseFeature"))
         .expect("derived feature");
     derived.definition = cadmpeg_ir::features::FeatureDefinition::DerivedGeometry {
-        source: cadmpeg_ir::features::FeatureId::mint("fcstd:design:feature#Missing").expect("identity grammar"),
+        source: cadmpeg_ir::features::FeatureId::mint("fcstd:design:feature#Missing")
+            .expect("identity grammar"),
     };
     assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
         .findings
@@ -219,7 +220,7 @@ fn transfers_ordered_body_membership_and_active_tip() {
     assert_eq!(
         children
             .iter()
-            .map(|child| child.as_str())
+            .map(cadmpeg_ir::FeatureId::as_str)
             .collect::<Vec<_>>(),
         ["fcstd:design:feature#First", "fcstd:design:feature#Second"]
     );
@@ -251,7 +252,10 @@ fn transfers_ordered_body_membership_and_active_tip() {
     else {
         panic!("body tree node");
     };
-    *active_child = Some(cadmpeg_ir::features::FeatureId::mint("fcstd:design:feature#Outside").expect("identity grammar"));
+    *active_child = Some(
+        cadmpeg_ir::features::FeatureId::mint("fcstd:design:feature#Outside")
+            .expect("identity grammar"),
+    );
     assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
         .findings
         .iter()

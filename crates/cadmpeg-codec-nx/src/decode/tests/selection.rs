@@ -1117,7 +1117,8 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     .enumerate()
     {
         ir.model.features.push(Feature {
-            id: FeatureId::mint(format!("test:feature#unresolved-{ordinal}")).expect("identity grammar"),
+            id: FeatureId::mint(format!("test:feature#unresolved-{ordinal}"))
+                .expect("identity grammar"),
             ordinal: ordinal as u64 + 4,
             name: None,
             suppressed: None,

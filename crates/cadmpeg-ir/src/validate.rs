@@ -238,7 +238,8 @@ mod tests {
             native_ref: None,
         });
         ir.model.configurations.push(DesignConfiguration {
-            id: ConfigurationId::mint("test:model:configuration#default").expect("identity grammar"),
+            id: ConfigurationId::mint("test:model:configuration#default")
+                .expect("identity grammar"),
             ordinal: 0,
             active: true,
             source_index: None,

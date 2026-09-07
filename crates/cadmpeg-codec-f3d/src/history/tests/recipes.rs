@@ -315,7 +315,8 @@ fn feature_input_topology_projects_historical_vertices() {
     );
     scope.previous_history_state_id = Some(4);
     let feature = Feature {
-        id: cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#work-point").expect("identity grammar"),
+        id: cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#work-point")
+            .expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,

@@ -503,7 +503,8 @@ fn parameter_id(parameter: &PmDcParameter) -> ParameterId {
     ParameterId::mint(format!(
         "inventor:design:parameter#{}-{}",
         parameter.segment_token, parameter.record_ordinal
-    )).expect("identity grammar")
+    ))
+    .expect("identity grammar")
 }
 
 struct ResolvedUnit {

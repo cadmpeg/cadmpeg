@@ -612,7 +612,8 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         )
         .with_construction(true),
     );
-    let distance = ParameterId::mint("synthetic:test:parameter#spatial-distance").expect("identity grammar");
+    let distance =
+        ParameterId::mint("synthetic:test:parameter#spatial-distance").expect("identity grammar");
     ir.model.parameters.push(DesignParameter {
         id: distance.clone(),
         owner: None,
@@ -626,7 +627,8 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         pmi: None,
         native_ref: None,
     });
-    let line_length = ParameterId::mint("synthetic:test:parameter#spatial-line-length").expect("identity grammar");
+    let line_length = ParameterId::mint("synthetic:test:parameter#spatial-line-length")
+        .expect("identity grammar");
     ir.model.parameters.push(DesignParameter {
         id: line_length.clone(),
         owner: None,

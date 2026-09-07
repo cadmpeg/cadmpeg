@@ -630,7 +630,8 @@ fn transfer_neutral_presentation(
                 "presentation-view",
                 &provider.id,
                 "state",
-            )).expect("identity grammar"),
+            ))
+            .expect("identity grammar"),
             object: provider.object.clone(),
             order: provider.order as u32,
             expanded: provider.expanded,

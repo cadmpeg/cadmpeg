@@ -1474,7 +1474,8 @@ fn feature_result(
     let feature_id = FeatureId::mint(format!(
         "inventor:design:feature#{}-{}",
         source.segment_token, source.record_ordinal
-    )).expect("identity grammar");
+    ))
+    .expect("identity grammar");
     let result = FeatureResultTopology {
         id: FeatureResultTopologyId::mint(format!(
             "inventor:design:feature-result#{}-{}",
@@ -1826,7 +1827,8 @@ mod tests {
         value: ParameterValue,
     ) -> DesignParameter {
         DesignParameter {
-            id: ParameterId::mint(format!("inventor:design:parameter#{}", raw.record_ordinal)).expect("identity grammar"),
+            id: ParameterId::mint(format!("inventor:design:parameter#{}", raw.record_ordinal))
+                .expect("identity grammar"),
             owner: None,
             ordinal: raw.record_ordinal,
             name: raw.name.clone(),
