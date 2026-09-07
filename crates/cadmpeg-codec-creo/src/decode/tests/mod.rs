@@ -4,7 +4,7 @@
 use crate::decode::sketch::{
     saved_section_missing_line_geometry, section_axis_line_carrier_with_points,
     section_segment_geometry, section_segment_intersection_carrier_with_missing_line,
-    trimmed_section_segment_geometry_with_missing_line, SectionIntersectionCarrier,
+    SectionIntersectionCarrier,
 };
 use crate::decode::sketch_transfer::section_skamp_constraints_for_geometry;
 use crate::decode::sweep::{extruded_geometry_surface, placed_section_geometry_curve};
@@ -171,23 +171,6 @@ pub(super) fn section_segment_intersection_carrier(
         segment,
         missing_line.as_ref(),
         &variable_points,
-    )
-}
-
-#[cfg(test)]
-pub(super) fn trimmed_section_segment_geometry(
-    definition: &crate::feature::FeatureDefinition,
-    points: &BTreeMap<u32, [f64; 2]>,
-    trim_vertices: &BTreeMap<u32, [f64; 2]>,
-    segment: &crate::feature::FeatureSegment,
-) -> Option<SketchGeometry> {
-    let missing_line = saved_section_missing_line_geometry(definition);
-    trimmed_section_segment_geometry_with_missing_line(
-        definition,
-        points,
-        trim_vertices,
-        segment,
-        missing_line.as_ref(),
     )
 }
 

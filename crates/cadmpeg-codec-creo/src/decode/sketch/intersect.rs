@@ -653,6 +653,8 @@ pub(crate) fn section_xyz_in_model(
 
 #[cfg(test)]
 mod tests {
+    mod trimmed_carriers;
+
     use super::{
         resolved_trim_vertex_coordinates, trimmed_section_segment_geometry_with_missing_line,
     };

@@ -312,3 +312,6 @@ pub(in super::super) fn revolution_face_sense(
         Sense::Reversed
     })
 }
+
+#[cfg(test)]
+mod tests;

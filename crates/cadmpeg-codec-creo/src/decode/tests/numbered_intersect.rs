@@ -24,8 +24,8 @@ use crate::decode::sketch::{
 use crate::decode::surfaces::fc05_model_frame;
 use crate::decode::sweep::{
     extruded_section_line, feature_outline_planes, feature_plane_equations,
-    placed_tabulated_cylinder_directrix, revolution_boundary_pcurve, revolved_section_circle,
-    revolved_section_surface, signed_unit_chart,
+    placed_tabulated_cylinder_directrix, revolved_section_circle, revolved_section_surface,
+    signed_unit_chart,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
@@ -1981,28 +1981,4 @@ fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
         Some(SurfaceGeometry::Torus { major_radius, minor_radius, .. })
             if major_radius == 5.0 && minor_radius == 2.0
     ));
-}
-
-#[test]
-fn spindle_torus_boundary_pcurve_retains_the_signed_ring_branch() {
-    let surface = SurfaceGeometry::Torus {
-        center: Point3::new(0.0, 0.0, 0.0),
-        axis: Vector3::new(0.0, 0.0, 1.0),
-        ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        major_radius: 2.0,
-        minor_radius: 5.0,
-    };
-    let axis = RevolutionAxis {
-        origin: Point3::new(0.0, 0.0, 0.0),
-        direction: Vector3::new(0.0, 0.0, 1.0),
-        reference: None,
-    };
-    let pcurve =
-        revolution_boundary_pcurve(&surface, [-3.0, 0.0, 0.0], &axis).expect("spindle boundary");
-    for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
-        let uv = cadmpeg_ir::eval::pcurve_uv(&pcurve, parameter).expect("pcurve point");
-        let point = cadmpeg_ir::eval::surface_point(&surface, uv.u, uv.v).expect("surface point");
-        assert!((point.x.hypot(point.y) - 3.0).abs() < 1.0e-12);
-        assert!(point.z.abs() < 1.0e-12);
-    }
 }
