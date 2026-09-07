@@ -1901,16 +1901,32 @@ fn texture_array(
     Ok(textures)
 }
 
+#[derive(Clone, Copy)]
+enum LegacyTextureKind {
+    Bitmap,
+    Bump,
+    Environment,
+}
+
+impl LegacyTextureKind {
+    fn texture_type(self) -> u32 {
+        match self {
+            Self::Bitmap => 1,
+            Self::Bump => 2,
+            Self::Environment => 86,
+        }
+    }
+}
+
 fn parse_v2_v3_texture(
     reader: &mut BoundedReader<'_>,
     source_offset: usize,
-    texture_type: u32,
-    is_bump: bool,
+    kind: LegacyTextureKind,
 ) -> Result<Option<TextureRecord>, FramingError> {
     let legacy_file_path = utf16(reader)?;
     let mode = reader.i32()?;
     let _obsolete_index = reader.i32()?;
-    let bump_scale = if is_bump {
+    let bump_scale = if matches!(kind, LegacyTextureKind::Bump) {
         [0.0, read_finite(reader, "legacy bump scale")?]
     } else {
         [0.0, 1.0]
@@ -1924,7 +1940,7 @@ fn parse_v2_v3_texture(
         mapping_channel_id: 1,
         legacy_file_path,
         enabled: true,
-        texture_type,
+        texture_type: kind.texture_type(),
         mode: if mode == 2 { 2 } else { 1 },
         minification_filter: 1,
         magnification_filter: 1,
@@ -1974,13 +1990,18 @@ fn parse_v2_v3_material(
     reader.skip(20)?;
 
     let mut textures = Vec::with_capacity(3);
-    if let Some(texture) = parse_v2_v3_texture(&mut reader, source_offset, 1, false)? {
+    if let Some(texture) =
+        parse_v2_v3_texture(&mut reader, source_offset, LegacyTextureKind::Bitmap)?
+    {
         textures.push(texture);
     }
-    if let Some(texture) = parse_v2_v3_texture(&mut reader, source_offset, 2, true)? {
+    if let Some(texture) = parse_v2_v3_texture(&mut reader, source_offset, LegacyTextureKind::Bump)?
+    {
         textures.push(texture);
     }
-    if let Some(texture) = parse_v2_v3_texture(&mut reader, source_offset, 86, false)? {
+    if let Some(texture) =
+        parse_v2_v3_texture(&mut reader, source_offset, LegacyTextureKind::Environment)?
+    {
         textures.push(texture);
     }
 
