@@ -185,8 +185,6 @@ pub struct ModelDoubleXarTable {
     pub section_source_offset: usize,
     /// Offset of the table label in the expanded section.
     pub expanded_offset: usize,
-    /// Stored array extent.
-    pub count: u32,
     /// Entries in stored order.
     pub entries: Vec<crate::scalar::DoubleXarEntry>,
 }
@@ -2302,7 +2300,6 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
                     section_name: section.name.clone(),
                     section_source_offset: section.source_offset,
                     expanded_offset: table.offset,
-                    count: table.count,
                     entries: table.entries,
                 })
         })

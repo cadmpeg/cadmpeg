@@ -13,10 +13,8 @@ use super::native_records::{
     CreoFc05CircleRecord, CreoFc05CylinderCapPairRecord, CreoFeatureSurfaceReplayAssociation,
     CreoHalfEdgeRef,
 };
-use super::records::{
-    expanded_section_records, CreoDoubleXarEntryRecord, CreoDoubleXarTableRecord,
-    CreoPrimitiveScalarArrayRecord,
-};
+use super::records::double_xar::CreoDoubleXarTableRecord;
+use super::records::{expanded_section_records, CreoPrimitiveScalarArrayRecord};
 
 pub(crate) fn attach_expanded_sections(
     scan: &ContainerScan,
@@ -50,20 +48,7 @@ pub(crate) fn attach_expanded_sections(
                 "creo:{}:double_xar#{}:{}",
                 table.section_name, table.section_source_offset, table.expanded_offset
             ),
-            section_name: table.section_name.clone(),
-            section_source_offset: table.section_source_offset,
-            expanded_offset: table.expanded_offset,
-            count: table.count,
-            entries: table
-                .entries
-                .iter()
-                .map(|entry| CreoDoubleXarEntryRecord {
-                    index: entry.index,
-                    raw: entry.raw.clone(),
-                    value: entry.value,
-                    kind: entry.kind,
-                })
-                .collect(),
+            table,
         })
         .collect::<Vec<_>>();
     emit_uniform(
@@ -72,8 +57,8 @@ pub(crate) fn attach_expanded_sections(
         "double_xar_tables",
         &tables,
         |table| &table.id,
-        |table| &table.section_name,
-        |table| table.section_source_offset as u64,
+        |table| &table.table.section_name,
+        |table| table.table.section_source_offset as u64,
         "model_scalar_dictionary",
         Exactness::ByteExact,
     )?;

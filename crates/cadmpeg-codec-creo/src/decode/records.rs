@@ -7,6 +7,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_ir::hash::sha256_hex;
 use serde::Serialize;
 
+pub(super) mod double_xar;
+
 use crate::container::ContainerScan;
 
 use super::coverage::{
@@ -368,24 +370,6 @@ pub(super) struct CreoExpandedSectionRecord {
     pub(super) compressed_length: usize,
     pub(super) expanded_length: usize,
     pub(super) sha256: String,
-}
-
-#[derive(Serialize)]
-pub(super) struct CreoDoubleXarTableRecord {
-    pub(super) id: String,
-    pub(super) section_name: String,
-    pub(super) section_source_offset: usize,
-    pub(super) expanded_offset: usize,
-    pub(super) count: u32,
-    pub(super) entries: Vec<CreoDoubleXarEntryRecord>,
-}
-
-#[derive(Serialize)]
-pub(super) struct CreoDoubleXarEntryRecord {
-    pub(super) index: u32,
-    pub(super) raw: Vec<u8>,
-    pub(super) value: Option<f64>,
-    pub(super) kind: &'static str,
 }
 
 #[derive(Serialize)]
