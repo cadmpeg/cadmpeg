@@ -91,6 +91,51 @@ fn native_namespace_retains_and_validates_repeated_reference_suffixes() {
     assert_eq!(suffix.schema_preamble, None);
     assert_eq!(suffix.repeated_references, [60, 62]);
     assert_eq!(suffix.terminal_reference, 49);
+
+    let error = load_tampered_object_record(&native, |record| {
+        record["repeated_reference_suffix"]["terminal_reference"] = serde_json::json!(50);
+    });
+    assert!(error.contains("repeated_reference_suffix"), "{error}");
+}
+
+/// Store `native`, rewrite its first object record with `tamper`, and return
+/// the message of the load failure the rewritten namespace produces.
+fn load_tampered_object_record(
+    native: &crate::native::CatiaNative,
+    tamper: impl FnOnce(&mut serde_json::Value),
+) -> String {
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native.store(&mut namespace).expect("store object records");
+    let arena = namespace
+        .arenas_mut()
+        .get_mut("object_graph_records")
+        .expect("object-record arena");
+    let mut record = serde_json::to_value(&arena[0]).unwrap();
+    tamper(&mut record);
+    arena[0] = serde_json::from_value(record).unwrap();
+    match crate::native::CatiaNative::load(&namespace) {
+        Ok(_) => panic!("tampered object record loaded"),
+        Err(error) => error.to_string(),
+    }
+}
+
+#[test]
+fn native_namespace_rejects_an_object_record_subtype_disagreeing_with_its_payload() {
+    let payload = [
+        0xb0, 0x83, 0x81, 0xbc, 0x81, 0xbe, 0x81, 0xb1, 0x83, 0x81, 0xbc, 0x81, 0xbe, 0xd1, 0x80,
+        0xfe,
+    ];
+    let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x81], &payload)];
+    let native = crate::native::CatiaNative::decode(&entity_backed_object_graph(&records, &[1]));
+    assert_eq!(
+        native.object_graphs[0].records[0].subtype(),
+        crate::object_graph::PayloadSubtype::AtomVector
+    );
+
+    let error = load_tampered_object_record(&native, |record| {
+        record["subtype"] = serde_json::json!("Empty");
+    });
+    assert!(error.contains("subtype"), "{error}");
 }
 
 #[test]
