@@ -38,7 +38,7 @@ struct DimensionedArcNative {
     center: [f64; 2],
     start: [f64; 2],
     end: [f64; 2],
-    endpoint_refs: Vec<String>,
+    endpoints: Option<[String; 2]>,
 }
 
 #[derive(Debug, Clone)]
@@ -201,12 +201,12 @@ fn dimensioned_arc_native_geometry(
     let inline = usize::try_from(marker.offset)
         .ok()
         .and_then(|offset| inline_arc_coordinates(&lane.native_payload, offset));
-    let ([center, start, end], endpoint_refs) = if let Some(coordinates) = inline {
-        let endpoint_refs = match endpoints.as_slice() {
-            [first, second] => vec![first.id.clone(), second.id.clone()],
-            _ => Vec::new(),
+    let ([center, start, end], endpoint_pair) = if let Some(coordinates) = inline {
+        let endpoint_pair = match endpoints.as_slice() {
+            [first, second] => Some([first.id.clone(), second.id.clone()]),
+            _ => None,
         };
-        (coordinates, endpoint_refs)
+        (coordinates, endpoint_pair)
     } else if let [first, second] = endpoints.as_slice() {
         (
             [
@@ -214,7 +214,7 @@ fn dimensioned_arc_native_geometry(
                 first.coordinates_m?,
                 second.coordinates_m?,
             ],
-            vec![first.id.clone(), second.id.clone()],
+            Some([first.id.clone(), second.id.clone()]),
         )
     } else {
         return unique_native_radial_witness(lane, marker, expected_radius).then_some(
@@ -239,7 +239,7 @@ fn dimensioned_arc_native_geometry(
         center,
         start,
         end,
-        endpoint_refs,
+        endpoints: endpoint_pair,
     }))
 }
 
@@ -539,14 +539,14 @@ fn transformed_dimensioned_arc(
     let mut end = transform_point(arc.end)?;
     let radius = (start.u - center.u).hypot(start.v - center.v);
     let end_radius = (end.u - center.u).hypot(end.v - center.v);
-    let mut endpoint_refs = arc.endpoint_refs.clone();
+    let mut endpoints = arc.endpoints.clone();
     let start_angle = (start.v - center.v).atan2(start.u - center.u);
     let end_angle = (end.v - center.v).atan2(end.u - center.u);
     let (start_angle, end_angle, reversed) = minor_arc_angles(start_angle, end_angle);
     if reversed {
         std::mem::swap(&mut start, &mut end);
-        if endpoint_refs.len() == 2 {
-            endpoint_refs.swap(0, 1);
+        if let Some(pair) = &mut endpoints {
+            pair.swap(0, 1);
         }
     }
     let sweep = (end_angle - start_angle).rem_euclid(std::f64::consts::TAU);
@@ -562,7 +562,7 @@ fn transformed_dimensioned_arc(
                 start_angle: Angle(start_angle),
                 end_angle: Angle(end_angle),
             },
-            endpoint_refs,
+            endpoints.map_or_else(Vec::new, Vec::from),
         ))
 }
 

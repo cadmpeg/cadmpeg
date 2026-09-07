@@ -590,12 +590,11 @@ pub(crate) fn project_compact_body_selections(
                 native: compact_body_selection_value(&selection.local_body_ids),
             };
         }
-        if mode
-            .as_deref()
-            .is_some_and(|mode| matches!(mode, cadmpeg_ir::features::BodyRetentionMode::Unresolved))
-        {
-            if let Some(native_mode) = selection.mode {
-                *mode.expect("delete-body mode") = native_mode;
+        if let Some(mode) = mode {
+            if matches!(*mode, cadmpeg_ir::features::BodyRetentionMode::Unresolved) {
+                if let Some(native_mode) = selection.mode {
+                    *mode = native_mode;
+                }
             }
         }
     }

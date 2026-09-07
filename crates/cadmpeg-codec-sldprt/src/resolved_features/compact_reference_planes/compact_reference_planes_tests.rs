@@ -89,21 +89,11 @@ fn compact_profile_uses_a_unique_lane_scoped_reference_plane() {
     let plane_index = CompactReferencePlaneIndex::new(&payload);
 
     assert_eq!(
-        compact_profile_reference_plane_source(
-            &plane_index,
-            profile_start,
-            profile_start,
-            payload.len(),
-        ),
+        plane_index.profile_source(profile_start, profile_start, payload.len(),),
         Some(2)
     );
     assert_eq!(
-        compact_profile_reference_plane_source(
-            &plane_index,
-            component_start,
-            component_start,
-            payload.len(),
-        ),
+        plane_index.profile_source(component_start, component_start, payload.len(),),
         Some(549)
     );
 }

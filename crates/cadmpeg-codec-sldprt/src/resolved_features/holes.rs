@@ -1,8 +1,7 @@
 //! Hole construction, bore topology and hole axis projection.
 
 use super::compact_reference_planes::{
-    compact_profile_component_plane_frame, compact_profile_reference_plane_source,
-    CompactReferencePlaneIndex,
+    compact_profile_component_plane_frame, CompactReferencePlaneIndex,
 };
 use super::curves::{lane_sketch_plane_frames, SketchPlaneFrame, SketchPlaneUAxisSource};
 use super::helix::fit_helix_polyline;
@@ -2038,31 +2037,23 @@ pub(crate) fn project_hole_topology_axes(
                 placements,
                 diameter: Some(Length(diameter)),
                 ..
-            } if placements.is_none() && diameter.is_finite() && *diameter > 0.0 => Some(index),
+            } if placements.is_none() && diameter.is_finite() && *diameter > 0.0 => {
+                Some((index, Length(*diameter)))
+            }
             _ => None,
         })
         .collect::<Vec<_>>();
 
-    for unresolved_index in unresolved {
-        let FeatureDefinition::Hole {
-            diameter: Some(Length(diameter)),
-            ..
-        } = features[unresolved_index].definition
-        else {
-            unreachable!("unresolved hole selection requires a finite diameter");
-        };
+    for (unresolved_index, Length(diameter)) in unresolved {
         let Some(candidates) =
             counterbore_topology_candidates(&features[unresolved_index].definition, topology)
         else {
             continue;
         };
         if diameter_counts.get(&diameter.to_bits()) == Some(&1) {
-            let FeatureDefinition::Hole { placements, .. } =
-                &mut features[unresolved_index].definition
-            else {
-                unreachable!("unresolved hole selection requires a hole feature");
-            };
-            *placements = Some(candidates);
+            if let Some(placements) = hole_placements_mut(&mut features[unresolved_index]) {
+                *placements = Some(candidates);
+            }
             continue;
         }
 
@@ -2073,18 +2064,15 @@ pub(crate) fn project_hole_topology_axes(
             .filter(|(_, feature)| {
                 same_hole_construction(&features[unresolved_index].definition, &feature.definition)
             })
-            .map(|(index, _)| index)
+            .filter_map(|(index, feature)| match &feature.definition {
+                FeatureDefinition::Hole { placements, .. } => Some((index, placements)),
+                _ => None,
+            })
             .collect::<Vec<_>>();
         if siblings.len() < 2
             || siblings
                 .iter()
-                .filter(|&&index| {
-                    let FeatureDefinition::Hole { placements, .. } = &features[index].definition
-                    else {
-                        unreachable!("hole construction matching returned a non-hole feature");
-                    };
-                    placements.is_none()
-                })
+                .filter(|(_, placements)| placements.is_none())
                 .count()
                 != 1
         {
@@ -2101,15 +2089,10 @@ pub(crate) fn project_hole_topology_axes(
 
         let mut claimed = HashSet::new();
         let mut complete = true;
-        for sibling_index in siblings
+        for (_, placements) in siblings
             .iter()
-            .copied()
-            .filter(|&index| index != unresolved_index)
+            .filter(|(index, _)| *index != unresolved_index)
         {
-            let FeatureDefinition::Hole { placements, .. } = &features[sibling_index].definition
-            else {
-                unreachable!("hole construction matching returned a non-hole feature");
-            };
             let Some(placements) = placements.as_deref() else {
                 complete = false;
                 break;
@@ -2139,11 +2122,9 @@ pub(crate) fn project_hole_topology_axes(
         if residual.is_empty() {
             continue;
         }
-        let FeatureDefinition::Hole { placements, .. } = &mut features[unresolved_index].definition
-        else {
-            unreachable!("unresolved hole selection requires a hole feature");
-        };
-        *placements = Some(residual);
+        if let Some(placements) = hole_placements_mut(&mut features[unresolved_index]) {
+            *placements = Some(residual);
+        }
     }
 
     let cylinders = cylindrical_bore_face_spans(topology);
@@ -2202,14 +2183,9 @@ fn project_flat_blind_topology_axes(
         )) else {
             continue;
         };
-        let FeatureDefinition::Hole {
-            placements: hole_placements,
-            ..
-        } = &mut features[index].definition
-        else {
-            unreachable!("flat blind topology selection requires a hole feature");
-        };
-        *hole_placements = Some(placements);
+        if let Some(hole_placements) = hole_placements_mut(&mut features[index]) {
+            *hole_placements = Some(placements);
+        }
     }
 }
 
@@ -2273,14 +2249,9 @@ fn project_drilled_hole_topology_axes(
         ) else {
             continue;
         };
-        let FeatureDefinition::Hole {
-            placements: hole_placements,
-            ..
-        } = &mut features[index].definition
-        else {
-            unreachable!("drilled topology selection requires a hole feature");
-        };
-        *hole_placements = Some(placements);
+        if let Some(hole_placements) = hole_placements_mut(&mut features[index]) {
+            *hole_placements = Some(placements);
+        }
     }
 }
 
@@ -2534,10 +2505,18 @@ fn partition_seeded_hole_axes(
         return;
     }
     for (&sibling, partition) in siblings.iter().zip(partitions) {
-        let FeatureDefinition::Hole { placements, .. } = &mut features[sibling].definition else {
-            unreachable!("seed partition requires hole features");
-        };
-        *placements = Some(partition);
+        if let Some(placements) = hole_placements_mut(&mut features[sibling]) {
+            *placements = Some(partition);
+        }
+    }
+}
+
+fn hole_placements_mut(
+    feature: &mut cadmpeg_ir::features::Feature,
+) -> Option<&mut Option<Vec<HolePlacement>>> {
+    match &mut feature.definition {
+        FeatureDefinition::Hole { placements, .. } => Some(placements),
+        _ => None,
     }
 }
 
@@ -3941,7 +3920,8 @@ pub(super) fn feature_input_sketch_frame(
     start: usize,
     end: usize,
 ) -> Option<(Point3, Vector3, Vector3)> {
-    let reference = compact_profile_reference_plane_source(plane_index, context_start, start, end)
+    let reference = plane_index
+        .profile_source(context_start, start, end)
         .and_then(|source| plane_frames.get(&source).copied());
     let component = compact_profile_component_plane_frame(payload, context_start, start, end);
     let explicit = || {
