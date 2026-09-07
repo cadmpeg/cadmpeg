@@ -781,7 +781,7 @@ fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
         id: format!("f3d:{stream}:sketch-point#{record_index}"),
         record_index,
         owner_reference: None,
-        class_tag: "300".into(),
+        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         byte_offset: 0,
         coordinate_offset: 89,
         record_form: crate::records::SketchPointRecordForm::version11(

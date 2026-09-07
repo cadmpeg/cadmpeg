@@ -1280,7 +1280,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         id: "native:sketch-point".into(),
         record_index: 11,
         owner_reference: Some(1),
-        class_tag: "000".into(),
+        class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
         byte_offset: 0,
         coordinate_offset: 0,
         record_form: crate::records::SketchPointRecordForm::version11(

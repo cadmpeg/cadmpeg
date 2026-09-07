@@ -830,7 +830,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         id: format!("{stream}:sketch-point#{record_index}"),
         record_index,
         owner_reference: Some(100),
-        class_tag: "300".into(),
+        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         byte_offset: 0,
         coordinate_offset: 0,
         record_form: crate::records::SketchPointRecordForm::version11(

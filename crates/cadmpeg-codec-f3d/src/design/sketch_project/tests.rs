@@ -134,7 +134,7 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
         id: "f3d:BulkStream.dat:point#14".into(),
         record_index: 14,
         owner_reference: Some(42),
-        class_tag: "413".into(),
+        class_tag: crate::records::DesignClassTag::try_from("413".to_owned()).unwrap(),
         byte_offset: 14,
         coordinate_offset: 0,
         record_form: crate::records::SketchPointRecordForm::version11(
@@ -269,7 +269,7 @@ fn point_closure_does_not_mark_construction_geometry() {
         id: "f3d:BulkStream.dat:point#10".into(),
         record_index: 10,
         owner_reference: Some(42),
-        class_tag: "413".into(),
+        class_tag: crate::records::DesignClassTag::try_from("413".to_owned()).unwrap(),
         byte_offset: 10,
         coordinate_offset: 0,
         record_form: crate::records::SketchPointRecordForm::version11(
@@ -286,7 +286,7 @@ fn point_closure_does_not_mark_construction_geometry() {
         id: "f3d:BulkStream.dat:point#11".into(),
         record_index: 11,
         owner_reference: Some(42),
-        class_tag: "413".into(),
+        class_tag: crate::records::DesignClassTag::try_from("413".to_owned()).unwrap(),
         byte_offset: 11,
         coordinate_offset: 0,
         record_form: crate::records::SketchPointRecordForm::version11(
@@ -364,7 +364,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         id: "f3d:native:point#175".into(),
         record_index: 175,
         owner_reference: Some(172),
-        class_tag: "300".into(),
+        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         byte_offset: 400,
         coordinate_offset: 89,
         record_form: crate::records::SketchPointRecordForm::version11(
@@ -873,7 +873,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         id: "f3d:Design/BulkStream.dat:point#106".into(),
         record_index: 106,
         owner_reference: Some(42),
-        class_tag: "305".into(),
+        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
         byte_offset: 106,
         coordinate_offset: 0,
         record_form: crate::records::SketchPointRecordForm::version11(

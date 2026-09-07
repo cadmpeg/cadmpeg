@@ -1513,7 +1513,7 @@ pub(crate) fn decode_sketch_points_from_stream(
             id: ids::native_sketch_point_id(stream, frame.start),
             record_index,
             owner_reference: decoded.owner_reference,
-            class_tag: frame.class_tag.as_str().to_owned(),
+            class_tag: frame.class_tag.clone(),
             byte_offset: frame.start as u64,
             coordinate_offset: decoded.coordinate_offset,
             record_form: decoded.record_form,

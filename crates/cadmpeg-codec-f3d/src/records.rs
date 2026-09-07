@@ -6991,7 +6991,7 @@ pub struct SketchPoint {
     /// or sketch-container member run.
     pub owner_reference: Option<u32>,
     /// Source per-file dynamic three-digit ASCII class tag naming this point's record type.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Byte offset of this record within its Design `BulkStream`.
     pub byte_offset: u64,
     /// Byte offset of the first coordinate relative to the record start.
@@ -7230,7 +7230,7 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
             id: wire.id,
             record_index: wire.record_index,
             owner_reference: wire.owner_reference,
-            class_tag: wire.class_tag,
+            class_tag: wire.class_tag.try_into()?,
             byte_offset: wire.byte_offset,
             coordinate_offset: wire.coordinate_offset,
             record_form,
@@ -7293,7 +7293,7 @@ impl From<SketchPoint> for SketchPointSerde {
             id: point.id,
             record_index: point.record_index,
             owner_reference: point.owner_reference,
-            class_tag: point.class_tag,
+            class_tag: point.class_tag.into(),
             byte_offset: point.byte_offset,
             coordinate_offset: point.coordinate_offset,
             entity_genesis,

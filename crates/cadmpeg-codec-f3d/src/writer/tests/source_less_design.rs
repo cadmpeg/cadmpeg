@@ -573,7 +573,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         id: "generated:sketch-point#0".into(),
         record_index: 100,
         owner_reference: Some(277),
-        class_tag: "258".into(),
+        class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
         byte_offset: 0,
         coordinate_offset: 89,
         record_form: crate::records::SketchPointRecordForm::version11(

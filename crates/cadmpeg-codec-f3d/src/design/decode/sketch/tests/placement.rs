@@ -206,7 +206,7 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
         id: "f3d:native:sketch-point#0".into(),
         record_index: 20,
         owner_reference: Some(100),
-        class_tag: "256".into(),
+        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
         byte_offset: 0,
         coordinate_offset: 141,
         record_form: crate::records::SketchPointRecordForm::version11(
@@ -817,7 +817,7 @@ fn sketch_member_run_backfills_relation_free_owners() {
         id: format!("f3d:native:sketch-point#{record_index}"),
         record_index,
         owner_reference: None,
-        class_tag: "256".into(),
+        class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
         byte_offset: u64::from(record_index),
         coordinate_offset: 141,
         record_form: crate::records::SketchPointRecordForm::version11(

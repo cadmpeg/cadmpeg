@@ -268,7 +268,7 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         id: format!("f3d:{stream}:sketch-point#0"),
         record_index: 20,
         owner_reference: None,
-        class_tag: "301".into(),
+        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         byte_offset: 0,
         coordinate_offset: 89,
         record_form: crate::records::SketchPointRecordForm::version11(

@@ -343,7 +343,7 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
         id: format!("{stream}:sketch-point#{record_index}"),
         record_index,
         owner_reference: Some(100),
-        class_tag: "300".into(),
+        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         byte_offset,
         coordinate_offset: 0,
         record_form: crate::records::SketchPointRecordForm::version11(

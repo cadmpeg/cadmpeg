@@ -519,7 +519,7 @@ fn encode_sketch_point(
     };
     let shift = usize::from(entity_genesis.is_some()) * 52;
     let mut record = std::iter::repeat_n(0u8, 105 + shift).collect::<Vec<_>>();
-    encode_sketch_record_header(&mut record, &point.class_tag, point.record_index)?;
+    encode_sketch_record_header(&mut record, point.class_tag.as_str(), point.record_index)?;
     record[20] = 1;
     record[21..25].copy_from_slice(&(1 + u32::from(entity_genesis.is_some())).to_le_bytes());
     if let Some(entity_genesis) = entity_genesis {

@@ -325,7 +325,7 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
     for point in &native.sketch_points {
         let point_type = source_less_design_record_type(
             native,
-            &point.class_tag,
+            point.class_tag.as_str(),
             point.record_index,
             "sketch point",
         )?;
