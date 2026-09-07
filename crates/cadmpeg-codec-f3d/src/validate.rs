@@ -4406,7 +4406,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         .get(&(native_stream, transform.record_index))
                         .is_some_and(|header| {
                             header.byte_offset == transform.byte_offset
-                                && header.class_tag.as_str() == transform.class_tag
+                                && header.class_tag == transform.class_tag
                         })
                     && transform.first_transform_offset == transform.byte_offset.saturating_add(21)
                     && transform.second_transform_offset

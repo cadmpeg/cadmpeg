@@ -792,7 +792,7 @@ pub struct DesignConstructionOperandDualTransform {
     /// Transform-record header byte offset.
     pub byte_offset: u64,
     /// Per-file dynamic transform-record class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// First row-major affine transform.
     pub first_transform: [[f64; 4]; 4],
     /// Byte offset of the first matrix scalar.

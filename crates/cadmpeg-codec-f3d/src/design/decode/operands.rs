@@ -2493,7 +2493,7 @@ pub(crate) fn parse_construction_operand_dual_transform(
         crate::records::topology::DesignConstructionOperandDualTransform {
             record_index: header.record_index,
             byte_offset: header.byte_offset,
-            class_tag: header.class_tag.as_str().to_owned(),
+            class_tag: header.class_tag.clone(),
             first_transform: rigid_transform_at(bytes, first_at)?,
             first_transform_offset: u64::try_from(first_at).ok()?,
             second_transform: rigid_transform_at(bytes, second_at)?,
