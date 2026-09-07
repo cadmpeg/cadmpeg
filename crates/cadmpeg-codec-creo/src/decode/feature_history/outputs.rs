@@ -14,6 +14,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{EdgeSelection, GeneratedEdgeRef};
 use cadmpeg_ir::ids::{BodyId, EdgeId, SurfaceId};
 use cadmpeg_ir::topology::BodyKind;
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(in super::super) fn feature_output_bodies(
@@ -601,7 +602,7 @@ pub(in super::super) fn schema_operation_kind(schema_class: u32) -> Option<&'sta
 pub(in super::super) fn feature_reference_name<'a>(
     scan: &'a ContainerScan<'_>,
     feature_id: u32,
-) -> Option<&'a str> {
+) -> Option<Cow<'a, str>> {
     let mut records = scan
         .features
         .reference_names
@@ -610,7 +611,7 @@ pub(in super::super) fn feature_reference_name<'a>(
     let record = records.next()?;
     records
         .all(|candidate| candidate.name_bytes.as_slice() == record.name_bytes.as_slice())
-        .then_some(record.name.as_str())
+        .then(|| record.name())
 }
 
 pub(in super::super) fn owned_section_feature_id(

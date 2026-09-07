@@ -1984,7 +1984,7 @@ pub(super) fn feature_reference_name_records(
         .map(|record| CreoFeatureReferenceNameRecord {
             id: format!("creo:mdlrefinfo:feature_name#{}", record.offset),
             owner_feature_id: record.feature_id,
-            name: record.name.clone(),
+            name: record.name().into_owned(),
             name_bytes: record.name_bytes.clone(),
             own_reference_id: record.own_reference_id,
             reference_type: record.reference_type,

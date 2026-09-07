@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Feature-state recipes, operation names, and model reference names.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::psb;
@@ -245,8 +246,6 @@ impl FeatureOperation {
 pub struct FeatureReferenceName {
     /// Numeric model feature identifier.
     pub feature_id: u32,
-    /// Stored feature name.
-    pub name: String,
     /// Exact stored feature-name bytes excluding the NUL terminator.
     pub name_bytes: Vec<u8>,
     /// Reference-database object identifier.
@@ -255,6 +254,13 @@ pub struct FeatureReferenceName {
     pub reference_type: u32,
     /// Byte offset of the `f7 0x71` entry header.
     pub offset: usize,
+}
+
+impl FeatureReferenceName {
+    /// Stored name decoded with replacement for invalid UTF-8 sequences.
+    pub fn name(&self) -> Cow<'_, str> {
+        String::from_utf8_lossy(&self.name_bytes)
+    }
 }
 
 /// Decode structurally closed feature-name entries from model reference data.
@@ -296,7 +302,6 @@ pub fn reference_names(payload: &[u8]) -> Vec<FeatureReferenceName> {
         }
         names.push(FeatureReferenceName {
             feature_id,
-            name: String::from_utf8_lossy(name_bytes).into_owned(),
             name_bytes: name_bytes.to_vec(),
             own_reference_id,
             reference_type,
@@ -617,4 +622,23 @@ pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
     }
     current.sort_by_key(|operation| operation.offset);
     current
+}
+
+#[cfg(test)]
+mod tests {
+    use super::reference_names;
+    use std::borrow::Cow;
+
+    #[test]
+    fn reference_name_text_follows_stored_bytes() {
+        let mut names = reference_names(b"\xf7\x71\x01\x05\x02N\xff\0\x01\x01");
+        let [record] = names.as_mut_slice() else {
+            panic!("one closed reference name");
+        };
+        assert_eq!(record.name_bytes, b"N\xff");
+        assert_eq!(record.name(), "N\u{fffd}");
+        assert!(matches!(record.name(), Cow::Owned(_)));
+        record.name_bytes = b"Renamed".to_vec();
+        assert_eq!(record.name(), Cow::Borrowed("Renamed"));
+    }
 }

@@ -1156,15 +1156,16 @@ fn model_reference_entry_joins_feature_name_to_feature_id() {
     let payload = b"\0\xf7\x71\x2a\x05\x29Datum Plane id 41\0\x2a\x2a\x10\0\
             \xf7\x71\x30\x05\x2fBroken\0\x30\x31";
 
+    let names = reference_names(payload);
     assert_eq!(
-        reference_names(payload),
+        names,
         [FeatureReferenceName {
             feature_id: 41,
-            name: "Datum Plane id 41".to_string(),
             name_bytes: b"Datum Plane id 41".to_vec(),
             own_reference_id: 42,
             reference_type: 5,
             offset: 1,
         }]
     );
+    assert_eq!(names[0].name(), "Datum Plane id 41");
 }

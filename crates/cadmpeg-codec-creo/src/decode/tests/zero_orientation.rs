@@ -727,7 +727,6 @@ fn conflicting_section_sweep_names_remain_unresolved() {
         .reference_names
         .push(crate::feature::FeatureReferenceName {
             feature_id: 822,
-            name: "Revolve 822".to_string(),
             name_bytes: b"Revolve 822".to_vec(),
             own_reference_id: 1,
             reference_type: 0,
@@ -771,7 +770,6 @@ fn conflicting_display_states_do_not_select_reference_family() {
         .reference_names
         .push(crate::feature::FeatureReferenceName {
             feature_id: 822,
-            name: "Thicken 1".to_string(),
             name_bytes: b"Thicken 1".to_vec(),
             own_reference_id: 1,
             reference_type: 0,

@@ -340,6 +340,7 @@ pub(super) fn emit_model_features(
             continue;
         };
         let reference_name = feature_reference_name(scan, feature_id);
+        let reference_name = reference_name.as_deref();
         let kind = reference_name.unwrap_or_else(|| {
             schema_class
                 .and_then(schema_operation_kind)

@@ -152,7 +152,7 @@ pub(in super::super) fn named_or_referenced_feature_definition(
         feature_reference_name(scan, feature_id)
             .filter(|reference_name| *reference_name != kind)
             .and_then(|reference_name| {
-                named_feature_definition(scan, ir, feature_id, reference_name)
+                named_feature_definition(scan, ir, feature_id, &reference_name)
             })
     })
 }

@@ -416,7 +416,6 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
         .reference_names
         .push(crate::feature::FeatureReferenceName {
             feature_id: 942,
-            name: "Extrude 1".to_string(),
             name_bytes: b"Extrude 1".to_vec(),
             own_reference_id: 1,
             reference_type: 0,
@@ -439,7 +438,6 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
         }
     ));
 
-    scan.features.reference_names[0].name = "Boundary Blend 1".to_string();
     scan.features.reference_names[0].name_bytes = b"Boundary Blend 1".to_vec();
     assert!(!feature_is_sheet_extrusion(&scan, 942));
     assert!(!feature_allows_linear_extrusion(&scan, 942));
@@ -510,7 +508,6 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
         .reference_names
         .push(crate::feature::FeatureReferenceName {
             feature_id: 942,
-            name: "Extrude 1".to_string(),
             name_bytes: b"Extrude 1".to_vec(),
             own_reference_id: 1,
             reference_type: 0,

@@ -1796,26 +1796,25 @@ fn feature_row_has_model_identity(
                         })))
         })
         || reference_names.iter().any(|reference| {
+            let name = reference.name();
             let numbered_family = |family: &str| {
                 [" id ", " ID "].into_iter().any(|separator| {
-                    reference
-                        .name
-                        .strip_prefix(family)
+                    name.strip_prefix(family)
                         .and_then(|suffix| suffix.strip_prefix(separator))
                         .and_then(|ordinal| ordinal.parse::<u32>().ok())
                         == Some(reference.feature_id)
                 })
             };
-            let named_datum = matches!(reference.name.as_str(), "Datum Plane" | "Bezugsebene")
+            let named_datum = matches!(name.as_ref(), "Datum Plane" | "Bezugsebene")
                 || numbered_family("Datum Plane")
                 || numbered_family("Bezugsebene")
-                || reference.name.strip_prefix("DTM").is_some_and(|ordinal| {
+                || name.strip_prefix("DTM").is_some_and(|ordinal| {
                     !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
                 });
             reference.feature_id == row.feature_id
                 && (row.root_schema_class == Some(926)
                     || (row.root_schema_class == Some(923) && named_datum)
-                    || (row.root_schema_class == Some(979) && reference.name == "PRT_CSYS_DEF"))
+                    || (row.root_schema_class == Some(979) && name == "PRT_CSYS_DEF"))
         })
 }
 
@@ -2978,7 +2977,6 @@ mod feature_row_definition_tests {
         };
         let reference = FeatureReferenceName {
             feature_id: 73,
-            name: "SKETCH_1".to_string(),
             name_bytes: b"SKETCH_1".to_vec(),
             own_reference_id: 9,
             reference_type: 1,
@@ -2986,7 +2984,6 @@ mod feature_row_definition_tests {
         };
         let datum_reference = FeatureReferenceName {
             feature_id: 87,
-            name: "Datum Plane id 87".to_string(),
             name_bytes: b"Datum Plane id 87".to_vec(),
             own_reference_id: 10,
             reference_type: 1,

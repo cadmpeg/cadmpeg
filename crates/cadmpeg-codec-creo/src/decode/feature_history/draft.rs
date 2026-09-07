@@ -803,7 +803,7 @@ pub(in super::super) fn section_sweep_allows_linear_extrusion(
 pub(in super::super) fn feature_is_sheet_extrusion(scan: &ContainerScan, feature_id: u32) -> bool {
     feature_schema_class(scan, feature_id) == Some(942)
         && feature_reference_name(scan, feature_id)
-            .is_some_and(|name| numbered_feature_name_has_family(name, "Extrude"))
+            .is_some_and(|name| numbered_feature_name_has_family(&name, "Extrude"))
 }
 
 pub(in super::super) fn feature_allows_linear_extrusion(
