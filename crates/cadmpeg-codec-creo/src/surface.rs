@@ -321,8 +321,8 @@ pub enum SurfaceNamedValue {
         count: u32,
         /// Decoded slots with unresolved values retained.
         values: Vec<Option<f64>>,
-        /// Exact token bytes for each declared slot.
-        tokens: Vec<Vec<u8>>,
+        /// Exact token bytes for each declared slot when the spline lane applies.
+        tokens: Option<Vec<Vec<u8>>>,
     },
     /// Counted `f8` scalar body.
     CountedScalarArray {
@@ -3251,11 +3251,7 @@ fn named_surface_value(
             dimensions,
             count,
             values,
-            tokens: if let Some(slots) = spline_slots {
-                slots.into_iter().map(|slot| slot.1).collect()
-            } else {
-                Vec::new()
-            },
+            tokens: spline_slots.map(|slots| slots.into_iter().map(|slot| slot.1).collect()),
         };
     }
     if compact_integer_field {

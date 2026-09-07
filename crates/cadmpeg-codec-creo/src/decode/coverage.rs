@@ -428,7 +428,7 @@ pub(super) fn surface_named_parameter_record(
             Some(*dimensions),
             Some(*count),
             values.clone(),
-            tokens.clone(),
+            tokens.clone().unwrap_or_default(),
             Vec::new(),
         ),
         crate::surface::SurfaceNamedValue::CountedScalarArray {

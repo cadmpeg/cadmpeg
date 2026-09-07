@@ -457,7 +457,7 @@ fn retains_named_spline_point_and_tangent_arrays() {
             dimensions: 2,
             count: 2,
             values: vec![Some(1.0), Some(0.0), Some(1.0), Some(0.0)],
-            tokens: vec![vec![0xe4], vec![0x0f], vec![0xe4], vec![0x0f]],
+            tokens: Some(vec![vec![0xe4], vec![0x0f], vec![0xe4], vec![0x0f]]),
         })
     );
     assert_eq!(
@@ -466,7 +466,7 @@ fn retains_named_spline_point_and_tangent_arrays() {
             dimensions: 1,
             count: 2,
             values: vec![Some(0.0), Some(1.0)],
-            tokens: vec![vec![0x0f], vec![0xe4]],
+            tokens: Some(vec![vec![0x0f], vec![0xe4]]),
         })
     );
     assert_eq!(

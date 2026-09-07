@@ -200,7 +200,7 @@ fn prototype_local_frame_rejects_nonfinite_origin() {
                 .into_iter()
                 .map(Some)
                 .collect(),
-                tokens: Vec::new(),
+                tokens: None,
             },
             body: Vec::new(),
             offset: 0,
@@ -238,7 +238,7 @@ fn prototype_local_frame_rejects_nonfinite_unused_support_values() {
                 .into_iter()
                 .map(Some)
                 .collect(),
-                tokens: Vec::new(),
+                tokens: None,
             },
             body: Vec::new(),
             offset: 0,

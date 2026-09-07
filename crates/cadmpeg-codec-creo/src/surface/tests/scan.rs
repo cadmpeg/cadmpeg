@@ -610,7 +610,7 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
             dimensions: 4,
             count: 3,
             values: vec![Some(1.0); 12],
-            tokens: Vec::new(),
+            tokens: None,
         })
     );
     assert_eq!(

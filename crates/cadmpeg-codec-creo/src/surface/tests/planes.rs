@@ -1064,7 +1064,7 @@ fn named_local_system_expands_row_lane_zero_forms() {
                 Some(0.0),
                 Some(1.0),
             ],
-            tokens: Vec::new(),
+            tokens: None,
         }
     );
 }
@@ -1110,7 +1110,7 @@ fn named_local_system_decodes_terminal_zero_slot() {
                 Some(15.0),
                 Some(0.0),
             ],
-            tokens: Vec::new(),
+            tokens: None,
         })
     );
 }
@@ -1255,7 +1255,7 @@ fn fillet_vectors_use_the_signed_coordinate_dict_lane() {
                 Some(1.0),
                 Some(0.0),
             ],
-            tokens: vec![negative.to_vec(), vec![0xe4], vec![0x0f]],
+            tokens: Some(vec![negative.to_vec(), vec![0xe4], vec![0x0f]]),
         })
     );
 }
