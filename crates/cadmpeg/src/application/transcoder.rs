@@ -12,9 +12,10 @@ use clap::ValueEnum;
 
 use cadmpeg_registry::{ForcedInput, Format, InputCatalog};
 
-use crate::application::refusal::ApplicationError;
+use crate::application::artifact_store::{self, SidecarPersistOutcome};
+use crate::application::document::{LoadOrigin, LoadedDocument};
+use crate::application::refusal::{ApplicationError, ConversionRefusal};
 use crate::application::validators::validate_ir;
-use crate::application::{ArtifactStore, ConversionRefusal, LoadedDocument, SidecarPersistOutcome};
 use crate::loader;
 
 /// Input path and decode options for one conversion.
@@ -238,7 +239,7 @@ impl DestinationPolicy {
         match self {
             Self::Stdout { .. } => Ok(ResolvedDestination::Stdout),
             Self::File { path, overwrite } => {
-                ArtifactStore::check_output_path(source, path, *overwrite)?;
+                artifact_store::check_output_path(source, path, *overwrite)?;
                 Ok(ResolvedDestination::File(path.clone()))
             }
         }
@@ -273,7 +274,7 @@ impl ResolvedDestination {
     }
 }
 
-/// A conversion that has passed every refusal check and is ready to write.
+/// A loaded and validated conversion ready for export planning.
 pub struct PreparedConversion {
     /// Loaded source document.
     pub document: LoadedDocument,
@@ -285,83 +286,71 @@ pub struct PreparedConversion {
     loss_policy: LossPolicy,
 }
 
-/// Application workflow that prepares and writes conversions.
-pub struct Transcoder<'a> {
-    /// Input detection, codec lookup, and native validation.
-    pub inputs: &'a InputCatalog,
-}
+/// Loads and validates a conversion without planning or writing it.
+///
+/// Typed refusals and operational failures remain distinct. Pure with
+/// respect to presentation and destination artifact writes; an explicitly
+/// requested command `--report` may still be written by the CLI after a
+/// loss/validation/empty-geometry refusal.
+pub fn prepare(
+    inputs: &InputCatalog,
+    source: &SourceRequest<'_>,
+    target: ExportTarget,
+    policy: &ConversionPolicy,
+) -> Result<PreparedConversion, ApplicationError> {
+    let format = target.selection.format;
+    policy.destination.admit_format(format)?;
+    let destination = policy
+        .destination
+        .resolve(source.path)
+        .map_err(ApplicationError::from)?;
 
-impl<'a> Transcoder<'a> {
-    /// Creates a transcoder over the input catalog.
-    pub const fn new(inputs: &'a InputCatalog) -> Self {
-        Self { inputs }
+    let loaded = loader::load_artifact(inputs, source.path, source.options, source.forced)?;
+    let decode_report = loaded.decode_report().cloned();
+
+    if let Some(refusal) = decode_lossy_refusal(policy.losses, decode_report.as_ref(), format) {
+        return Err(refusal.into());
     }
 
-    /// Loads and validates a conversion without planning or writing it.
-    ///
-    /// Typed refusals and operational failures remain distinct. Pure with
-    /// respect to presentation and destination artifact writes; an explicitly
-    /// requested command `--report` may still be written by the CLI after a
-    /// loss/validation/empty-geometry refusal.
-    pub fn prepare(
-        &self,
-        source: &SourceRequest<'_>,
-        target: ExportTarget,
-        policy: &ConversionPolicy,
-    ) -> Result<PreparedConversion, ApplicationError> {
-        let format = target.selection.format;
-        policy.destination.admit_format(format)?;
-        let destination = policy
-            .destination
-            .resolve(source.path)
-            .map_err(ApplicationError::from)?;
-
-        let loaded =
-            loader::load_artifact(self.inputs, source.path, source.options, source.forced)?;
-        let decode_report = loaded.decode_report().cloned();
-
-        if let Some(refusal) = decode_lossy_refusal(policy.losses, decode_report.as_ref(), format) {
-            return Err(refusal.into());
-        }
-
-        let validation = validate_ir(
-            self.inputs,
-            &loaded.ir,
-            loaded.fidelity(),
-            losses(decode_report.as_ref()),
-        );
-        if !validation.is_ok() && !policy.allow_errors {
-            return Err(ConversionRefusal::CheckFailed {
-                operation: super::refusal::CheckOperation::Export,
-                decode_report,
-                validation,
-            }
-            .into());
-        }
-
-        if format.transfers_geometry()
-            && decode_report
-                .as_ref()
-                .is_some_and(|report| !report.geometry_transferred())
-            && !policy.allow_empty
-        {
-            return Err(ConversionRefusal::EmptyGeometry {
-                format,
-                decode_report,
-                validation,
-            }
-            .into());
-        }
-
-        Ok(PreparedConversion {
-            document: loaded,
+    let validation = validate_ir(
+        inputs,
+        &loaded.ir,
+        loaded.fidelity(),
+        decode_report
+            .as_ref()
+            .map_or_else(Vec::new, |report| report.losses.clone()),
+    );
+    if !validation.is_ok() && !policy.allow_errors {
+        return Err(ConversionRefusal::CheckFailed {
+            operation: super::refusal::CheckOperation::Export,
+            decode_report,
             validation,
-            encoder: target.encoder,
-            selection: target.selection,
-            destination,
-            loss_policy: policy.losses,
-        })
+        }
+        .into());
     }
+
+    if format.transfers_geometry()
+        && decode_report
+            .as_ref()
+            .is_some_and(|report| !report.geometry_transferred())
+        && !policy.allow_empty
+    {
+        return Err(ConversionRefusal::EmptyGeometry {
+            format,
+            decode_report,
+            validation,
+        }
+        .into());
+    }
+
+    Ok(PreparedConversion {
+        document: loaded,
+        validation,
+        encoder: target.encoder,
+        selection: target.selection,
+        destination,
+        loss_policy: policy.losses,
+    })
 }
 
 impl PreparedConversion {
@@ -380,14 +369,14 @@ impl PreparedConversion {
                 return Err(plan_refusal(
                     error,
                     self.document.decode_report().cloned(),
-                    self.validation.clone(),
+                    self.validation,
                 ))
             }
         };
         if self.loss_policy.rejects_export() && !plan.report().losses.is_empty() {
             return Err(ConversionRefusal::ExportLossRejected {
                 decode_report: self.document.decode_report().cloned(),
-                validation: self.validation.clone(),
+                validation: self.validation,
                 export_report: plan.report().clone(),
             }
             .into());
@@ -464,12 +453,6 @@ fn plan_refusal(
     }
 }
 
-fn losses(report: Option<&DecodeReport>) -> Vec<cadmpeg_ir::LossNote> {
-    report
-        .map(|report| report.losses.clone())
-        .unwrap_or_default()
-}
-
 fn decode_lossy_refusal(
     policy: LossPolicy,
     report: Option<&DecodeReport>,
@@ -494,18 +477,17 @@ pub(crate) fn emit_export_plan(
     plan: ExportPlan,
     format: Format,
     destination: &ResolvedDestination,
-    origin: &crate::application::LoadOrigin,
+    origin: &LoadOrigin,
 ) -> AnyResult<ExportEmission> {
     let needs_sidecar = format == Format::Cadir
         && matches!(
             origin,
-            crate::application::LoadOrigin::Decoded { .. }
-                | crate::application::LoadOrigin::Restored { .. }
+            LoadOrigin::Decoded { .. } | LoadOrigin::Restored { .. }
         );
     if let ResolvedDestination::File(path) = destination {
-        let (report, cadir_sha256) = ArtifactStore::write_plan_atomic(path, plan)?;
+        let (report, cadir_sha256) = artifact_store::write_plan_atomic(path, plan)?;
         let sidecar = if format == Format::Cadir {
-            ArtifactStore::persist_decode_sidecar(path, &cadir_sha256, origin)?
+            artifact_store::persist_decode_sidecar(path, &cadir_sha256, origin)?
         } else {
             SidecarPersistOutcome::Absent
         };

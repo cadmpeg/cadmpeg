@@ -13,8 +13,9 @@ use cadmpeg_registry::{
     ForcedInput, InputCatalog, ResolveSourceError, ResolvedSource, DETECTION_PREFIX_LEN,
 };
 
+use crate::application::artifact_store;
+use crate::application::document::LoadedDocument;
 use crate::application::refusal::ApplicationError;
-use crate::application::{ArtifactStore, LoadedDocument};
 
 /// Restates a detection failure with the flag that overrides it.
 ///
@@ -38,7 +39,7 @@ pub fn load_artifact(
     options: DecodeOptions,
     forced: Option<ForcedInput>,
 ) -> Result<LoadedDocument, ApplicationError> {
-    let prefix = ArtifactStore::read_detection_input(
+    let prefix = artifact_store::read_detection_input(
         path,
         DETECTION_PREFIX_LEN,
         options.policy.limits.max_input_bytes,
@@ -66,7 +67,7 @@ pub fn load_artifact(
     }
 
     let max_bytes = options.policy.limits.max_input_bytes;
-    let text = ArtifactStore::read_bounded_text(path, max_bytes)
+    let text = artifact_store::read_bounded_text(path, max_bytes)
         .with_context(|| format!("reading {} as a .cadir.json document", path.display()))?;
     let ir = CadIr::from_json(&text).map_err(|e| {
         anyhow!(
@@ -80,7 +81,7 @@ pub fn load_artifact(
             path.display()
         )
     })?;
-    let Some(sidecar) = ArtifactStore::load_matching_sidecar(path, text.as_bytes(), max_bytes)?
+    let Some(sidecar) = artifact_store::load_matching_sidecar(path, text.as_bytes(), max_bytes)?
     else {
         return Ok(LoadedDocument::neutral(ir));
     };
@@ -135,7 +136,7 @@ fn validate_cadir_witnesses(ir: &CadIr) -> anyhow::Result<()> {
 #[allow(clippy::default_trait_access, clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::application::LoadOrigin;
+    use crate::application::document::LoadOrigin;
     use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
     use cadmpeg_ir::document::SourceMeta;
     use cadmpeg_ir::native::NativeRecord;
@@ -160,7 +161,7 @@ mod tests {
         .unwrap();
         let mut sidecar = DecodeSidecar::bind(text.as_bytes(), report, SourceFidelity::default());
         std::fs::write(
-            ArtifactStore::sidecar_path(&path),
+            cadmpeg_ir::decode_sidecar_path(&path),
             sidecar.to_canonical_json().unwrap(),
         )
         .unwrap();

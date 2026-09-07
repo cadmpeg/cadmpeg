@@ -21,8 +21,7 @@ use cadmpeg_registry::{ForcedInput, InputCatalog};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use registry_view::{print_dialects, print_formats};
 
-use crate::application::LossPolicy;
-use crate::commands::AppCatalogs;
+use crate::application::transcoder::{DestinationPolicy, LossPolicy};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -330,15 +329,13 @@ fn main() -> ExitCode {
     #[cfg(unix)]
     reset_sigpipe();
     let command = Cli::parse().command;
-    let catalogs = AppCatalogs {
-        inputs: InputCatalog::with_builtins(),
-    };
+    let inputs = InputCatalog::with_builtins();
     let result: Result<ExitCode, application::refusal::ApplicationError> = match command {
         Command::Inspect(inspect::InspectArgs::Bytes(byte_command)) => {
             inspect::run(byte_command).map_err(application::refusal::ApplicationError::from)
         }
         Command::Inspect(inspect::InspectArgs::Summary(args)) => commands::inspect(
-            &catalogs,
+            &inputs,
             args.file.path(),
             args.input_args.forced(),
             args.json,
@@ -356,7 +353,7 @@ fn main() -> ExitCode {
             input_args,
             decode,
         } => commands::dump(
-            &catalogs,
+            &inputs,
             file.path(),
             output.as_deref(),
             force,
@@ -376,7 +373,7 @@ fn main() -> ExitCode {
             input_args,
             decode,
         } => commands::check_cmd(
-            &catalogs,
+            &inputs,
             file.path(),
             input_args.forced(),
             &decode,
@@ -395,7 +392,7 @@ fn main() -> ExitCode {
             force,
             decode,
         } => commands::diff(
-            &catalogs,
+            &inputs,
             commands::DiffInput {
                 path: &a,
                 forced: forced_input(input_format_a.as_deref()),
@@ -427,13 +424,13 @@ fn main() -> ExitCode {
                 losses: reject_lossy.unwrap_or_default(),
                 allow_errors,
                 allow_empty,
-                destination: application::DestinationPolicy::new(output, force, binary_stdout),
+                destination: DestinationPolicy::new(output, force, binary_stdout),
                 overwrite_report: force,
                 report,
                 forced_input: input_args.forced(),
             };
             commands::convert(
-                &catalogs,
+                &inputs,
                 file.path(),
                 format.as_deref(),
                 &conversion_args,
@@ -442,7 +439,7 @@ fn main() -> ExitCode {
         }
         .map(|()| ExitCode::SUCCESS),
         Command::Formats => {
-            print_formats(&catalogs.inputs);
+            print_formats(&inputs);
             Ok(ExitCode::SUCCESS)
         }
         Command::Dialects { format } => print_dialects(format.as_deref())

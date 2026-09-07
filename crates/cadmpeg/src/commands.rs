@@ -4,10 +4,10 @@
 pub(crate) mod reporting;
 
 use reporting::{
-    command_body_json, command_report_json, fidelity_diff, fidelity_differs, losses,
-    print_check_report, print_decode_report, print_export_emission, print_fidelity_summary,
-    print_id_delta, print_source_diff, refused_command_report_json, write_command_report,
-    write_json_report, write_refused_json_report, CommandReportBody,
+    command_body_json, command_report_json, fidelity_diff, fidelity_differs, print_check_report,
+    print_decode_report, print_export_emission, print_fidelity_summary, print_id_delta,
+    print_source_diff, refused_command_report_json, write_command_report, write_json_report,
+    write_refused_json_report, CommandReportBody,
 };
 
 use cadmpeg_ir::codec::write::TargetRequest;
@@ -26,26 +26,21 @@ use cadmpeg_registry::{
     Inspected, Selection,
 };
 
-use crate::application::refusal::ApplicationError;
-use crate::application::transcoder::{emit_export_plan, TargetSelection};
-use crate::application::validators::validate_ir;
-use crate::application::{
-    export_target, ArtifactStore, ConversionPolicy, ConversionRefusal, DestinationPolicy,
-    LoadedDocument, SourceRequest, Transcoder,
+use crate::application::artifact_store;
+use crate::application::document::{LoadOrigin, LoadedDocument};
+use crate::application::refusal::{ApplicationError, ConversionRefusal};
+use crate::application::transcoder::{
+    self, emit_export_plan, export_target, ConversionPolicy, DestinationPolicy, LossPolicy,
+    SourceRequest, TargetSelection,
 };
+use crate::application::validators::validate_ir;
 use crate::loader;
 use crate::DecodeArgs;
 
 type CommandResult<T> = std::result::Result<T, ApplicationError>;
 
-/// Catalogs required by CLI command handlers.
-pub struct AppCatalogs {
-    /// Input detection, codec lookup, and native validation.
-    pub inputs: InputCatalog,
-}
-
 fn print_load_notice(document: &LoadedDocument) {
-    let crate::application::LoadOrigin::Decoded {
+    let LoadOrigin::Decoded {
         selection: Selection::Detected { confidence },
         report,
         ..
@@ -64,7 +59,7 @@ fn print_load_notice(document: &LoadedDocument) {
 /// CLI-facing conversion arguments assembled from argv.
 pub struct ConversionArgs {
     /// Decode and export loss refusal.
-    pub losses: crate::application::LossPolicy,
+    pub losses: LossPolicy,
     /// Permit export when validation reports errors.
     pub allow_errors: bool,
     /// Permit a geometry export when decode transferred no geometry.
@@ -146,7 +141,7 @@ struct DiffReportPayload<'a> {
 
 /// Inspect a native container and print its entries.
 pub fn inspect(
-    catalogs: &AppCatalogs,
+    inputs: &InputCatalog,
     path: &Path,
     forced: Option<ForcedInput>,
     json: bool,
@@ -160,12 +155,7 @@ pub fn inspect(
     let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
     let Inspected {
         selection, summary, ..
-    } = match resolve_and_inspect_with(
-        &catalogs.inputs,
-        &mut file,
-        forced,
-        &InspectOptions { limits },
-    ) {
+    } = match resolve_and_inspect_with(inputs, &mut file, forced, &InspectOptions { limits }) {
         Ok(inspected) => inspected,
         Err(InspectError::Io(error)) => {
             return Err(inspect_io_error(path, limits.max_input_bytes, error).into())
@@ -264,7 +254,7 @@ fn inspect_io_error(path: &Path, max_input_bytes: u64, error: io::Error) -> anyh
 
 /// Dump a native CAD file and write CADIR JSON.
 pub fn dump(
-    catalogs: &AppCatalogs,
+    inputs: &InputCatalog,
     path: &Path,
     out: Option<&Path>,
     force: bool,
@@ -275,9 +265,9 @@ pub fn dump(
     let destination = DestinationPolicy::new(out.map(Path::to_path_buf), force, false);
     let destination = destination.resolve(path)?;
     if let Some(report_path) = report_path {
-        ArtifactStore::check_output_path(path, report_path, force)?;
+        artifact_store::check_output_path(path, report_path, force)?;
         if let Some(out) = destination.path() {
-            ArtifactStore::check_distinct_output_paths(
+            artifact_store::check_distinct_output_paths(
                 out,
                 "CADIR output",
                 report_path,
@@ -285,7 +275,7 @@ pub fn dump(
             )?;
         }
     }
-    let loaded = match loader::load_artifact(&catalogs.inputs, path, args.options(), forced) {
+    let loaded = match loader::load_artifact(inputs, path, args.options(), forced) {
         Ok(loaded) => loaded,
         Err(error) => {
             let Some(report_path) = report_path else {
@@ -327,7 +317,7 @@ pub fn dump(
 
 /// Load and check CADIR, printing a human-readable or JSON report.
 pub fn check_cmd(
-    catalogs: &AppCatalogs,
+    inputs: &InputCatalog,
     path: &Path,
     forced: Option<ForcedInput>,
     args: &DecodeArgs,
@@ -335,7 +325,7 @@ pub fn check_cmd(
     report_path: Option<&Path>,
     force: bool,
 ) -> CommandResult<()> {
-    let loaded = match loader::load_artifact(&catalogs.inputs, path, args.options(), forced) {
+    let loaded = match loader::load_artifact(inputs, path, args.options(), forced) {
         Ok(loaded) => loaded,
         Err(error) => {
             if let Some(refusal) = error.refusal() {
@@ -350,10 +340,12 @@ pub fn check_cmd(
         print_decode_report(&mut io::stderr(), report)?;
     }
     let report = validate_ir(
-        &catalogs.inputs,
+        inputs,
         &loaded.ir,
         loaded.fidelity(),
-        losses(loaded.decode_report()),
+        loaded
+            .decode_report()
+            .map_or_else(Vec::new, |report| report.losses.clone()),
     );
     let check_refusal = (!report.is_ok()).then(|| ConversionRefusal::CheckFailed {
         operation: crate::application::refusal::CheckOperation::Check,
@@ -382,7 +374,7 @@ pub fn check_cmd(
 
 /// Convert a CAD file to another format.
 pub fn convert(
-    catalogs: &AppCatalogs,
+    inputs: &InputCatalog,
     path: &Path,
     to: Option<&str>,
     conversion: &ConversionArgs,
@@ -411,9 +403,9 @@ pub fn convert(
     };
     let target = export_target(selection);
     if let Some(report_path) = conversion.report.as_deref() {
-        ArtifactStore::check_output_path(path, report_path, conversion.overwrite_report)?;
+        artifact_store::check_output_path(path, report_path, conversion.overwrite_report)?;
         if let Some(destination) = policy.destination.path() {
-            ArtifactStore::check_distinct_output_paths(
+            artifact_store::check_distinct_output_paths(
                 destination,
                 "CAD output",
                 report_path,
@@ -422,7 +414,6 @@ pub fn convert(
         }
     }
 
-    let transcoder = Transcoder::new(&catalogs.inputs);
     let source = SourceRequest {
         path,
         forced: conversion.forced_input,
@@ -451,7 +442,7 @@ pub fn convert(
         Ok(())
     };
 
-    let prepared = match transcoder.prepare(&source, target, &policy) {
+    let prepared = match transcoder::prepare(inputs, &source, target, &policy) {
         Ok(prepared) => prepared,
         Err(error) => {
             if let Some(refusal) = error.refusal() {
@@ -507,7 +498,7 @@ pub fn convert(
 
 /// Compare two CAD files.
 pub fn diff(
-    catalogs: &AppCatalogs,
+    inputs: &InputCatalog,
     a: DiffInput<'_>,
     b: DiffInput<'_>,
     args: &DecodeArgs,
@@ -515,9 +506,9 @@ pub fn diff(
     report_path: Option<&Path>,
     force: bool,
 ) -> CommandResult<ExitCode> {
-    let left = loader::load_artifact(&catalogs.inputs, a.path, args.options(), a.forced)?;
+    let left = loader::load_artifact(inputs, a.path, args.options(), a.forced)?;
     print_load_notice(&left);
-    let right = loader::load_artifact(&catalogs.inputs, b.path, args.options(), b.forced)?;
+    let right = loader::load_artifact(inputs, b.path, args.options(), b.forced)?;
     print_load_notice(&right);
     let result = cadmpeg_ir::diff(&left.ir, &right.ir);
     let fidelity = fidelity_diff(left.fidelity(), right.fidelity());
@@ -575,17 +566,11 @@ mod tests {
     use super::*;
     use cadmpeg_core::decode::ResourceLimits;
 
-    fn catalogs() -> AppCatalogs {
-        AppCatalogs {
-            inputs: InputCatalog::with_builtins(),
-        }
-    }
-
     #[test]
     fn inspect_open_errors_name_the_path() {
         let path = Path::new("missing-inspect-input.3dm");
         let error = inspect(
-            &catalogs(),
+            &InputCatalog::with_builtins(),
             path,
             None,
             false,
