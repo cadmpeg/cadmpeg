@@ -1214,9 +1214,15 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
         persistent_identity: Some(DesignConstructionPersistentIdentity {
             local_id: 167,
             local_id_offset: 1_145,
-            asset_id: "2d0697b6-f6c5-4f86-bb58-4a2f413c99d3".into(),
+            asset_id: crate::records::DesignGuidText::try_from(
+                "2d0697b6-f6c5-4f86-bb58-4a2f413c99d3".to_owned(),
+            )
+            .unwrap(),
             asset_id_offset: 1_157,
-            context_id: "9dea94a1-729a-4032-930b-d4ba4eaadb0c".into(),
+            context_id: crate::records::DesignGuidText::try_from(
+                "9dea94a1-729a-4032-930b-d4ba4eaadb0c".to_owned(),
+            )
+            .unwrap(),
             context_id_offset: 1_233,
             tail_slot_present: false,
             tail_slot_offset: 1_309,

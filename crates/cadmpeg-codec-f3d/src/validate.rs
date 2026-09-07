@@ -5896,10 +5896,8 @@ fn validate_construction_operand_identities<'a>(
                     && persistent.asset_id_offset
                         == identity.following_byte_offset.saturating_add(33)
                     && persistent.context_id_offset > persistent.asset_id_offset
-                    && valid_design_guid(&persistent.asset_id)
-                    && valid_design_guid(&persistent.context_id)
                     && selected_profile
-                        .is_none_or(|profile| profile.asset_id.as_str() == persistent.asset_id)
+                        .is_none_or(|profile| profile.asset_id == persistent.asset_id)
                     && (persistent.next_byte_offset
                         == identity.following_byte_offset.saturating_add(190)
                         || (persistent.tail_slot_offset
@@ -6449,8 +6447,8 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         .as_ref()
                         .is_some_and(|persistent| {
                             persistent.local_id == member.local_id
-                                && persistent.asset_id == member.asset_id
-                                && persistent.context_id == member.context_id
+                                && persistent.asset_id.as_str() == member.asset_id
+                                && persistent.context_id.as_str() == member.context_id
                         })
             })
             .collect::<Vec<_>>();
@@ -7458,8 +7456,6 @@ fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             && persistent.context_id_offset > persistent.asset_id_offset
                             && persistent.tail_slot_offset > persistent.context_id_offset
                             && persistent.next_byte_offset > member.byte_offset
-                            && valid_design_guid(&persistent.asset_id)
-                            && valid_design_guid(&persistent.context_id)
                     })
         });
         let valid = carrier_records.insert((native_stream, group.carrier_record_index))

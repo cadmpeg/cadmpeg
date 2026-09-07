@@ -672,9 +672,15 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         persistent_identity: Some(DesignConstructionPersistentIdentity {
             local_id: 586,
             local_id_offset: 21,
-            asset_id: "df9087bd-02a6-4a3f-a132-7e69990f323c".into(),
+            asset_id: crate::records::DesignGuidText::try_from(
+                "df9087bd-02a6-4a3f-a132-7e69990f323c".to_owned(),
+            )
+            .unwrap(),
             asset_id_offset: 33,
-            context_id: "0b2382d1-caaf-4eb9-b40d-a6322a7ed829".into(),
+            context_id: crate::records::DesignGuidText::try_from(
+                "0b2382d1-caaf-4eb9-b40d-a6322a7ed829".to_owned(),
+            )
+            .unwrap(),
             context_id_offset: 113,
             tail_slot_present: false,
             tail_slot_offset: 185,
