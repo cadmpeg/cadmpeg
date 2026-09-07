@@ -186,12 +186,6 @@ impl FaceAdmissionDetail {
     }
 }
 
-#[derive(Debug, Default, PartialEq, Eq)]
-pub(in super::super) struct FaceAdmissionEvidence {
-    pub(in super::super) count: usize,
-    pub(in super::super) samples: Vec<FaceAdmissionDetail>,
-}
-
 #[derive(Debug, Default, PartialEq)]
 pub(in super::super) struct BrepTransferDiagnostics {
     pub(in super::super) candidate_face_count: usize,
@@ -201,7 +195,6 @@ pub(in super::super) struct BrepTransferDiagnostics {
     pub(in super::super) boundary_curve_missing_incidence_count: usize,
     pub(in super::super) boundary_curve_unsolved_vertex_count: usize,
     pub(in super::super) vertex_solve: TopologicalVertexSolveDiagnostics,
-    pub(in super::super) rejected_faces: BTreeMap<FaceAdmissionRejection, FaceAdmissionEvidence>,
     pub(in super::super) face_rejection_diagnostics: Vec<FaceAdmissionDiagnostic>,
     pub(in super::super) legacy_nonvisible_face_reference_count: usize,
     pub(in super::super) body_count_mismatch: bool,
@@ -222,15 +215,23 @@ impl BrepTransferDiagnostics {
         detail: FaceAdmissionDetail,
     ) {
         self.face_rejection_diagnostics
-            .push(FaceAdmissionDiagnostic {
-                reason,
-                detail: detail.clone(),
-            });
-        let evidence = self.rejected_faces.entry(reason).or_default();
-        evidence.count += 1;
-        if evidence.samples.len() < FACE_REJECTION_SAMPLE_LIMIT {
-            evidence.samples.push(detail);
-        }
+            .push(FaceAdmissionDiagnostic { reason, detail });
+    }
+
+    pub(in super::super) fn evidence(
+        &self,
+        reason: FaceAdmissionRejection,
+    ) -> (usize, impl Iterator<Item = &FaceAdmissionDetail>) {
+        let matching = self
+            .face_rejection_diagnostics
+            .iter()
+            .filter(move |diagnostic| diagnostic.reason == reason);
+        (
+            matching.clone().count(),
+            matching
+                .take(FACE_REJECTION_SAMPLE_LIMIT)
+                .map(|diagnostic| &diagnostic.detail),
+        )
     }
 
     pub(in super::super) fn face_admission_rejection_records(
@@ -520,18 +521,10 @@ impl BrepTransferDiagnostics {
         );
         coverage.record(
             crate::coverage::BREP_REJECTED_FACE_COUNT,
-            self.rejected_faces
-                .values()
-                .map(|evidence| evidence.count)
-                .sum(),
+            self.face_rejection_diagnostics.len(),
         );
         for reason in FaceAdmissionRejection::ALL {
-            coverage.record(
-                reason.coverage_key(),
-                self.rejected_faces
-                    .get(&reason)
-                    .map_or(0, |evidence| evidence.count),
-            );
+            coverage.record(reason.coverage_key(), self.evidence(reason).0);
         }
         coverage.record(
             crate::coverage::BREP_BODY_COUNT_MISMATCH_COUNT,

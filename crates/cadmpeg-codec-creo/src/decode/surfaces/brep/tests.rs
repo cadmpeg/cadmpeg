@@ -28,11 +28,11 @@ fn face_admission_diagnostics_bound_samples_and_record_counts() {
         diagnostics.reject_face(FaceAdmissionRejection::MissingLoops, face_id);
     }
 
-    let evidence = &diagnostics.rejected_faces[&FaceAdmissionRejection::MissingLoops];
-    assert_eq!(evidence.count, 6);
+    let (count, samples) = diagnostics.evidence(FaceAdmissionRejection::MissingLoops);
+    let samples = samples.collect::<Vec<_>>();
+    assert_eq!(count, 6);
     assert_eq!(
-        evidence
-            .samples
+        samples
             .iter()
             .map(|detail| detail.face_id)
             .collect::<Vec<_>>(),
@@ -58,11 +58,11 @@ fn face_admission_diagnostics_report_missing_surface_carrier() {
     let mut diagnostics = BrepTransferDiagnostics::default();
     diagnostics.reject_face(FaceAdmissionRejection::MissingSurfaceCarrier, 42);
 
-    let evidence = &diagnostics.rejected_faces[&FaceAdmissionRejection::MissingSurfaceCarrier];
-    assert_eq!(evidence.count, 1);
+    let (count, samples) = diagnostics.evidence(FaceAdmissionRejection::MissingSurfaceCarrier);
+    let samples = samples.collect::<Vec<_>>();
+    assert_eq!(count, 1);
     assert_eq!(
-        evidence
-            .samples
+        samples
             .iter()
             .map(|detail| detail.face_id)
             .collect::<Vec<_>>(),
@@ -143,19 +143,19 @@ fn face_admission_diagnostics_record_unresolved_boundary_operands() {
 
     let mut diagnostics = BrepTransferDiagnostics::default();
     diagnostics.reject_face_with_detail(FaceAdmissionRejection::UnresolvedBoundaryVertices, detail);
-    let evidence = &diagnostics.rejected_faces[&FaceAdmissionRejection::UnresolvedBoundaryVertices];
-    assert_eq!(evidence.count, 1);
+    let (count, samples) = diagnostics.evidence(FaceAdmissionRejection::UnresolvedBoundaryVertices);
+    let samples = samples.collect::<Vec<_>>();
+    assert_eq!(count, 1);
     assert_eq!(
-        evidence
-            .samples
+        samples
             .iter()
             .map(|detail| detail.face_id)
             .collect::<Vec<_>>(),
         vec![5]
     );
-    assert_eq!(evidence.samples.len(), 1);
-    assert_eq!(evidence.samples[0].boundary_half_edges, vec![unresolved]);
-    assert_eq!(evidence.samples[0].vertex_ids, vec![3, 4]);
+    assert_eq!(samples.len(), 1);
+    assert_eq!(samples[0].boundary_half_edges, vec![unresolved]);
+    assert_eq!(samples[0].vertex_ids, vec![3, 4]);
 }
 
 #[test]
