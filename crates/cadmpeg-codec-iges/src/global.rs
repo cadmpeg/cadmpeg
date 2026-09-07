@@ -90,17 +90,14 @@ struct NumericDeclarations {
     integer_bits: Option<u32>,
     single_magnitude: Option<i64>,
     double_magnitude: Supplied<i64>,
-    single_significance: Supplied<u32>,
+    single_significance: Option<u32>,
     double_significance: Supplied<u32>,
 }
 
 impl NumericDeclarations {
     fn precision(&self) -> RealPrecision {
         RealPrecision {
-            single_significance: self
-                .single_significance
-                .value()
-                .unwrap_or(FALLBACK_SIGNIFICANCE),
+            single_significance: self.single_significance.unwrap_or(FALLBACK_SIGNIFICANCE),
             double_significance: self
                 .double_significance
                 .value()
@@ -1326,7 +1323,7 @@ fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
         .and_then(|value| u32::try_from(value).ok().filter(|value| *value > 0));
     let single_magnitude =
         resolution.metadata_integer_value(FIELD_SINGLE_MAGNITUDE, global_table, |_| true);
-    let single_significance = resolution.significance(FIELD_SINGLE_SIGNIFICANCE);
+    let single_significance = resolution.significance(FIELD_SINGLE_SIGNIFICANCE).value();
     let double_magnitude =
         resolution.metadata_integer_declaration(FIELD_DOUBLE_MAGNITUDE, global_table, |_| true);
     let double_significance = if global_table == GlobalTable::V5_0
