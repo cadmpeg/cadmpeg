@@ -803,7 +803,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         group_member_ordinal: ordinal,
         record_index,
         byte_offset: u64::from(record_index),
-        class_tag: "297".into(),
+        class_tag: crate::records::DesignClassTag::try_from("297".to_owned()).unwrap(),
         compact_layout: false,
         local_id: u64::from(record_index),
         local_id_offset: 0,

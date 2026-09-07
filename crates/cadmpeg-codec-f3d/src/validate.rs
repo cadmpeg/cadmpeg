@@ -6014,28 +6014,20 @@ fn validate_edge_identity_operands<'a>(
         } else {
             operand.local_id_offset == operand.byte_offset.saturating_add(24)
         };
-        let valid = operand.class_tag.len() == 3
-            && operand.class_tag.bytes().all(|byte| byte.is_ascii_digit())
-            && scope.is_some_and(|scope| {
-                matches!(
-                    design::design_feature_family(&scope.kind()),
-                    Some(
-                        design::DesignFeatureFamily::Fillet | design::DesignFeatureFamily::Chamfer
-                    )
-                )
-            })
-            && group.is_some_and(|group| {
-                group.scope_record_index == operand.scope_record_index
-                    && usize::try_from(operand.group_member_ordinal)
-                        .ok()
-                        .and_then(|ordinal| group.members.get(ordinal).map(|member| &member.value))
-                        == Some(&operand.record_index)
-            })
-            && header.is_some_and(|header| {
-                header.byte_offset == operand.byte_offset
-                    && header.class_tag.as_str() == operand.class_tag
-            })
-            && local_id_offset_is_valid
+        let valid = scope.is_some_and(|scope| {
+            matches!(
+                design::design_feature_family(&scope.kind()),
+                Some(design::DesignFeatureFamily::Fillet | design::DesignFeatureFamily::Chamfer)
+            )
+        }) && group.is_some_and(|group| {
+            group.scope_record_index == operand.scope_record_index
+                && usize::try_from(operand.group_member_ordinal)
+                    .ok()
+                    .and_then(|ordinal| group.members.get(ordinal).map(|member| &member.value))
+                    == Some(&operand.record_index)
+        }) && header.is_some_and(|header| {
+            header.byte_offset == operand.byte_offset && header.class_tag == operand.class_tag
+        }) && local_id_offset_is_valid
             && operand.asset_id_offset == operand.local_id_offset.saturating_add(18)
             && operand.context_id_offset == operand.asset_id_offset.saturating_add(76)
             && valid_design_guid(&operand.asset_id)
@@ -7258,7 +7250,8 @@ fn validate_face_operands<'a>(
                                                     && identity.group_member_ordinal
                                                         == group_member_ordinal
                                                     && identity.record_index == operand.record_index
-                                                    && identity.class_tag == operand.class_tag
+                                                    && identity.class_tag.as_str()
+                                                        == operand.class_tag.as_str()
                                             },
                                         )
                                 }

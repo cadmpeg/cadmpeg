@@ -632,7 +632,7 @@ pub fn decode_edge_identity_operands(
                 group_member_ordinal,
                 record_index,
                 byte_offset: header.byte_offset,
-                class_tag: header.class_tag.as_str().to_owned(),
+                class_tag: header.class_tag.clone(),
                 compact_layout: parsed.compact_layout,
                 local_id: parsed.local_id,
                 local_id_offset: parsed.local_id_offset,

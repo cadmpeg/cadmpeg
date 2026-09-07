@@ -2237,7 +2237,7 @@ pub struct DesignEdgeIdentityOperand {
     /// Byte offset of the indexed-record header.
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Whether the identity uses the compact eleven-zero prologue.
     #[serde(default)]
     pub compact_layout: bool,

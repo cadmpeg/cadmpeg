@@ -1390,7 +1390,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             group_member_ordinal: 0,
             record_index,
             byte_offset: 0,
-            class_tag: "297".into(),
+            class_tag: crate::records::DesignClassTag::try_from("297".to_owned()).unwrap(),
             compact_layout: false,
             local_id: u64::from(record_index),
             local_id_offset: 0,
