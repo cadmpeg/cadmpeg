@@ -126,16 +126,14 @@ pub(super) struct CreoFamilyTableRecord {
 
 impl CreoFamilyTableRecord {
     /// The fixed driver-table record identity.
-    pub(super) const fn id(&self) -> &'static str {
-        "creo:family_info:driver_table#root"
-    }
+    pub(super) const ID: &'static str = "creo:family_info:driver_table#root";
 }
 
 impl Serialize for CreoFamilyTableRecord {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
         let mut record = serializer.serialize_struct("CreoFamilyTableRecord", 4)?;
-        record.serialize_field("id", self.id())?;
+        record.serialize_field("id", Self::ID)?;
         let (kind, entity_id) = match self.pointer {
             crate::container::FamilyTablePointer::Null => ("null", None),
             crate::container::FamilyTablePointer::Entity(id) => ("entity_reference", Some(id)),

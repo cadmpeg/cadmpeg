@@ -847,9 +847,7 @@ pub(crate) fn solve_unsigned_dimension_coordinates(
             if valid {
                 let mut candidate_values = BTreeMap::new();
                 for (point, coordinates) in candidate {
-                    for (coordinate, value) in
-                        SectionAxis::ALL.into_iter().zip(coordinates.into_iter())
-                    {
+                    for (coordinate, value) in SectionAxis::ALL.into_iter().zip(coordinates) {
                         let variable = (point, coordinate);
                         if let (Some(global), Some(value)) = (indices.get(&variable), value) {
                             if component.contains(global)

@@ -469,7 +469,7 @@ pub(crate) fn resolved_section_coordinates(
         }
     }
     for &(point_id, coordinates) in &saved_segment_points {
-        for (coordinate, value) in SectionAxis::ALL.into_iter().zip(coordinates.into_iter()) {
+        for (coordinate, value) in SectionAxis::ALL.into_iter().zip(coordinates) {
             equations.push(SectionCoordinateEquation::point_value(
                 point_id, coordinate, value,
             ));
@@ -660,7 +660,7 @@ pub(crate) fn resolved_section_coordinates(
         })
         .collect::<Vec<_>>();
     for &(point_id, midpoint) in &arc_midpoint_constraints {
-        for (coordinate, value) in SectionAxis::ALL.into_iter().zip(midpoint.into_iter()) {
+        for (coordinate, value) in SectionAxis::ALL.into_iter().zip(midpoint) {
             equations.push(SectionCoordinateEquation::point_value(
                 point_id, coordinate, value,
             ));

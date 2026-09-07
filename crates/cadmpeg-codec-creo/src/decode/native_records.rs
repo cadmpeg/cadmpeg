@@ -159,35 +159,40 @@ pub(crate) enum CreoSketchSavedEntity {
 }
 
 fn serialize_spline_field<T: Serialize, S: serde::Serializer>(
-    field: &Option<DecodedField<T>>,
+    field: Option<&DecodedField<T>>,
     serializer: S,
     value_key: &'static str,
     body_key: &'static str,
 ) -> Result<S::Ok, S::Error> {
     use serde::ser::SerializeMap;
     let mut map = serializer.serialize_map(Some(2))?;
-    map.serialize_entry(value_key, &field.as_ref().map(|field| &field.value))?;
-    map.serialize_entry(body_key, &field.as_ref().map(|field| &field.body))?;
+    map.serialize_entry(value_key, &field.map(|field| &field.value))?;
+    map.serialize_entry(body_key, &field.map(|field| &field.body))?;
     map.end()
 }
 
-fn serialize_spline_tangents<S: serde::Serializer>(
-    field: &Option<DecodedField<[[f64; 3]; 2]>>,
+fn serialize_spline_tangents<'a, S: serde::Serializer>(
+    field: impl IntoIterator<IntoIter = std::option::Iter<'a, DecodedField<[[f64; 3]; 2]>>>,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
     serialize_spline_field(
-        field,
+        field.into_iter().next(),
         serializer,
         "endpoint_tangents",
         "endpoint_tangents_body",
     )
 }
 
-fn serialize_spline_parameters<S: serde::Serializer>(
-    field: &Option<DecodedField<Vec<f64>>>,
+fn serialize_spline_parameters<'a, S: serde::Serializer>(
+    field: impl IntoIterator<IntoIter = std::option::Iter<'a, DecodedField<Vec<f64>>>>,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
-    serialize_spline_field(field, serializer, "parameters", "parameters_body")
+    serialize_spline_field(
+        field.into_iter().next(),
+        serializer,
+        "parameters",
+        "parameters_body",
+    )
 }
 
 fn serialize_dimension_value<S: serde::Serializer>(
