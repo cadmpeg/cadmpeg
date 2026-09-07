@@ -526,7 +526,7 @@ fn cage_properties(
     properties: &mut std::collections::BTreeMap<String, String>,
 ) {
     properties.insert(format!("{prefix}_dimension"), cage.dimension.to_string());
-    properties.insert(format!("{prefix}_rational"), cage.rational.to_string());
+    properties.insert(format!("{prefix}_rational"), cage.rational().to_string());
     properties.insert(
         format!("{prefix}_orders"),
         format!("{},{},{}", cage.orders[0], cage.orders[1], cage.orders[2]),

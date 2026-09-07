@@ -792,7 +792,7 @@ fn cage_json(cage: &crate::cage::Cage) -> serde_json::Value {
     serde_json::json!({
         "kind": "nurbs_cage",
         "dimension": cage.dimension,
-        "rational": cage.rational,
+        "rational": cage.rational(),
         "orders": cage.orders,
         "counts": cage.counts,
         "knots": cage.knots,

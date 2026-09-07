@@ -1513,7 +1513,7 @@ impl<'a> DecodeContext<'a> {
                 kind: "nurbs_cage".into(),
                 parameters: BTreeMap::from([
                     ("dimension".to_string(), cage.dimension.to_string()),
-                    ("rational".to_string(), cage.rational.to_string()),
+                    ("rational".to_string(), cage.rational().to_string()),
                     (
                         "orders".to_string(),
                         format!("{},{},{}", cage.orders[0], cage.orders[1], cage.orders[2]),
