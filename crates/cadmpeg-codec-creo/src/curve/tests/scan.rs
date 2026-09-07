@@ -151,11 +151,11 @@ fn scan_bounds_curve_parameter_body_before_topology_suffix() {
     let parameters = &scan.curves.parameters[0];
     assert_eq!(parameters.curve_id, 7);
     assert_eq!(parameters.type_byte, 8);
-    assert_eq!(parameters.scalar_values, vec![0.0, 1.0, 3.0]);
+    assert_eq!(parameters.scalar_values(), vec![0.0, 1.0, 3.0]);
     assert_eq!(parameters.scalar_tokens[2].offset, 5);
     assert_eq!(parameters.scalar_tokens[2].length, 8);
     assert_eq!(parameters.scalar_tokens[2].raw[0], 0x46);
-    assert_eq!(parameters.skipped_references, vec![256]);
+    assert_eq!(parameters.skipped_references(), vec![256]);
     assert_eq!(parameters.references[0].entity_id, 256);
     assert_eq!(parameters.references[0].offset, 2);
     assert_eq!(parameters.references[0].length, 3);
@@ -201,7 +201,7 @@ fn scan_resolves_section_scalar_cache_in_curve_rows() {
     let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
 
     assert_eq!(scan.curves.parameters.len(), 1);
-    assert_eq!(scan.curves.parameters[0].scalar_values, vec![3.0]);
+    assert_eq!(scan.curves.parameters[0].scalar_values(), vec![3.0]);
 }
 
 #[test]
@@ -257,7 +257,7 @@ fn scan_decodes_positive_dict_pcurve_slots() {
 
     assert_eq!(scan.curves.parameters.len(), 1);
     assert_eq!(
-        scan.curves.parameters[0].scalar_values,
+        scan.curves.parameters[0].scalar_values(),
         vec![0.0, 1.0, expected, 0.0, 1.0, 38.0, expected, 38.0]
     );
     assert_eq!(scan.curves.parameters[0].opaque_spans, Vec::new());

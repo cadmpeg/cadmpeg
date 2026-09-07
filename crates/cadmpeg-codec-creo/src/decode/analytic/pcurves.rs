@@ -2127,7 +2127,6 @@ mod tests {
         let record = crate::curve::CurveParameterRecord {
             curve_id: 846,
             type_byte: 0,
-            scalar_values: scalar_tokens.iter().map(|token| token.value).collect(),
             scalar_tokens,
             reference_geometry: [0, 0],
             opaque_spans: vec![
@@ -2143,7 +2142,6 @@ mod tests {
                 },
             ],
             body,
-            skipped_references: Vec::new(),
             references: Vec::new(),
             offset: 100,
             body_offset: 100,

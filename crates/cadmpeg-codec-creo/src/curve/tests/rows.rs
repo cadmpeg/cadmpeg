@@ -9,9 +9,7 @@ fn parameter_record(curve_id: u32) -> CurveParameterRecord {
         curve_id,
         type_byte: 0,
         body: Vec::new(),
-        scalar_values: Vec::new(),
         scalar_tokens: Vec::new(),
-        skipped_references: Vec::new(),
         references: Vec::new(),
         opaque_spans: Vec::new(),
         reference_geometry: [0, 0],
@@ -37,7 +35,6 @@ fn pcurve_endpoint_slots_must_be_finite() {
     let mut record = parameter_record(7);
     record.body.extend_from_slice(&nan);
     record.body.extend([0x0f; 7]);
-    record.scalar_values.push(f64::NAN);
     record.scalar_tokens.push(CurveParameterScalar {
         value: f64::NAN,
         raw: nan.to_vec(),
@@ -45,7 +42,6 @@ fn pcurve_endpoint_slots_must_be_finite() {
         length: nan.len(),
     });
     for offset in nan.len()..record.body.len() {
-        record.scalar_values.push(0.0);
         record.scalar_tokens.push(CurveParameterScalar {
             value: 0.0,
             raw: vec![0x0f],
@@ -173,7 +169,6 @@ fn decodes_only_complete_fc02_short_pcurve_endpoints() {
     let record = CurveParameterRecord {
         curve_id: 846,
         type_byte: 0,
-        scalar_values: scalar_tokens.iter().map(|token| token.value).collect(),
         opaque_spans: vec![
             CurveParameterOpaqueSpan {
                 raw: vec![0xfc, 0x02],
@@ -214,7 +209,6 @@ fn decodes_only_complete_fc02_short_pcurve_endpoints() {
     );
 
     let mut malformed = record.clone();
-    malformed.scalar_values[3] = 2.0;
     malformed.scalar_tokens[3].value = 2.0;
     assert!(fc02_short_pcurve_endpoints(&[malformed], std::slice::from_ref(&topology)).is_empty());
 

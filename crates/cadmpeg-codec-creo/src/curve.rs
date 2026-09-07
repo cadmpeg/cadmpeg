@@ -390,12 +390,8 @@ pub struct CurveParameterRecord {
     pub type_byte: u8,
     /// Exact bytes between direction flags and the selected suffix boundary.
     pub body: Vec<u8>,
-    /// Decoded scalar values in byte order.
-    pub scalar_values: Vec<f64>,
     /// Scalar tokens with exact body-relative spans.
     pub scalar_tokens: Vec<CurveParameterScalar>,
-    /// Canonical entity references skipped while walking the scalar lane.
-    pub skipped_references: Vec<u32>,
     /// Canonical entity references with exact body-relative spans.
     pub references: Vec<CurveParameterReference>,
     /// Maximal byte spans not claimed by scalar or reference tokens.
@@ -409,6 +405,21 @@ pub struct CurveParameterRecord {
     pub body_offset: usize,
     /// Byte offset of the selected body/suffix boundary in the original stream.
     pub suffix_offset: usize,
+}
+
+impl CurveParameterRecord {
+    /// Decoded scalar values in byte order.
+    pub fn scalar_values(&self) -> Vec<f64> {
+        self.scalar_tokens.iter().map(|token| token.value).collect()
+    }
+
+    /// Canonical entity references skipped while walking the scalar lane.
+    pub fn skipped_references(&self) -> Vec<u32> {
+        self.references
+            .iter()
+            .map(|reference| reference.entity_id)
+            .collect()
+    }
 }
 
 /// One decoded scalar token in a positional curve body.
@@ -6001,18 +6012,11 @@ pub fn parameter_records_with_face_ids(
         else {
             continue;
         };
-        let scalar_values = scalar_tokens.iter().map(|token| token.value).collect();
-        let skipped_references = references
-            .iter()
-            .map(|reference| reference.entity_id)
-            .collect();
         records.push(CurveParameterRecord {
             curve_id,
             type_byte,
             body,
-            scalar_values,
             scalar_tokens,
-            skipped_references,
             references,
             opaque_spans,
             reference_geometry: framed.reference_geometry,
@@ -6233,7 +6237,7 @@ fn complete_fc02_short_pcurve_values(record: &CurveParameterRecord) -> Option<[[
 
     (record.body.get(..2) == Some(&[0xfc, 0x02])).then_some(())?;
     record.references.is_empty().then_some(())?;
-    (record.scalar_values.len() == 7 && record.scalar_tokens.len() == 7).then_some(())?;
+    let tokens: &[CurveParameterScalar; 7] = record.scalar_tokens.as_slice().try_into().ok()?;
     let [prefix, terminal] = record.opaque_spans.as_slice() else {
         return None;
     };
@@ -6243,7 +6247,7 @@ fn complete_fc02_short_pcurve_values(record: &CurveParameterRecord) -> Option<[[
         && terminal.length == 3)
         .then_some(())?;
     let mut cursor = prefix.length;
-    for token in &record.scalar_tokens {
+    for token in tokens {
         (token.offset == cursor
             && token.length != 0
             && record.body.get(cursor..cursor + token.length) == Some(token.raw.as_slice()))
@@ -6252,20 +6256,13 @@ fn complete_fc02_short_pcurve_values(record: &CurveParameterRecord) -> Option<[[
     }
     (terminal.offset == cursor && terminal.offset + terminal.length == record.body.len())
         .then_some(())?;
-    let values: [f64; 7] = record
-        .scalar_tokens
-        .iter()
-        .map(|token| token.value)
-        .collect::<Vec<_>>()
-        .try_into()
-        .ok()?;
-    (record.scalar_values.as_slice() == values.as_slice()).then_some(())?;
+    let values = tokens.each_ref().map(|token| token.value);
     (values.iter().all(|value| value.is_finite())
         && values[2] == 0.0
         && values[3] == 1.0
-        && record.scalar_tokens[2].raw.as_slice() == ZERO_MARKER
-        && record.scalar_tokens[3].raw.as_slice() == ONE_MARKER
-        && record.scalar_tokens[6].raw.as_slice() == TWO_MARKER)
+        && tokens[2].raw.as_slice() == ZERO_MARKER
+        && tokens[3].raw.as_slice() == ONE_MARKER
+        && tokens[6].raw.as_slice() == TWO_MARKER)
         .then_some(())?;
     Some([[values[0], values[1]], [values[4], values[5]]])
 }

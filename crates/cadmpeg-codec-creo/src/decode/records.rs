@@ -1669,7 +1669,7 @@ pub(super) fn curve_parameter_records(
             curve_id: record.curve_id,
             type_byte: record.type_byte,
             body: record.body.clone(),
-            scalar_values: record.scalar_values.clone(),
+            scalar_values: record.scalar_values(),
             scalar_tokens: record
                 .scalar_tokens
                 .iter()
@@ -1680,7 +1680,7 @@ pub(super) fn curve_parameter_records(
                     length: token.length,
                 })
                 .collect(),
-            skipped_references: record.skipped_references.clone(),
+            skipped_references: record.skipped_references(),
             references: record
                 .references
                 .iter()
