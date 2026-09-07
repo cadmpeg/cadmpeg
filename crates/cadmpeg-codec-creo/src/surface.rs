@@ -69,12 +69,16 @@ pub enum SurfaceKind {
     Spline,
     /// `geom_type = 0x29`: fillet surface family.
     Fillet,
-    /// `geom_type = 0x2a` or `0x2c`: linear-extrusion family. The raw variant
-    /// remains available as [`SurfaceRow::type_byte`].
-    Extrusion,
+    /// Linear-extrusion family, with its encoding variant.
+    Extrusion(ExtrusionVariant),
 }
 
 impl SurfaceKind {
+    /// Compare surface families without the extrusion encoding variant.
+    pub(crate) fn same_family(self, other: Self) -> bool {
+        std::mem::discriminant(&self) == std::mem::discriminant(&other)
+    }
+
     pub(crate) fn from_byte(value: u8) -> Option<Self> {
         match value {
             0x22 => Some(Self::Plane),
@@ -83,12 +87,12 @@ impl SurfaceKind {
             0x26 => Some(Self::TorusOrSphere),
             0x28 => Some(Self::Spline),
             0x29 => Some(Self::Fillet),
-            0x2a | 0x2c => Some(Self::Extrusion),
+            0x2a => Some(Self::Extrusion(ExtrusionVariant::Linear)),
+            0x2c => Some(Self::Extrusion(ExtrusionVariant::TabulatedCylinder)),
             _ => None,
         }
     }
 
-    #[cfg(test)]
     pub(crate) const fn canonical_type_byte(self) -> u8 {
         match self {
             Self::Plane => 0x22,
@@ -97,13 +101,52 @@ impl SurfaceKind {
             Self::TorusOrSphere => 0x26,
             Self::Spline => 0x28,
             Self::Fillet => 0x29,
-            Self::Extrusion => 0x2a,
+            Self::Extrusion(ExtrusionVariant::Linear) => 0x2a,
+            Self::Extrusion(ExtrusionVariant::TabulatedCylinder) => 0x2c,
         }
     }
 }
 
-pub(crate) fn is_surface_boundary_type(value: u8) -> bool {
-    BOUNDARY_TYPES.contains(&value)
+/// Encoding variant of an extrusion surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExtrusionVariant {
+    /// `geom_type = 0x2a`.
+    Linear,
+    /// `geom_type = 0x2c`.
+    TabulatedCylinder,
+}
+
+/// Admitted surface-row boundary codes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BoundaryType {
+    Code00,
+    Code01,
+    Code06,
+    Code08,
+    CodeF6,
+}
+
+impl BoundaryType {
+    pub(crate) fn from_byte(value: u8) -> Option<Self> {
+        match value {
+            0x00 => Some(Self::Code00),
+            0x01 => Some(Self::Code01),
+            0x06 => Some(Self::Code06),
+            0x08 => Some(Self::Code08),
+            0xf6 => Some(Self::CodeF6),
+            _ => None,
+        }
+    }
+
+    pub(crate) const fn code(self) -> u8 {
+        match self {
+            Self::Code00 => 0x00,
+            Self::Code01 => 0x01,
+            Self::Code06 => 0x06,
+            Self::Code08 => 0x08,
+            Self::CodeF6 => 0xf6,
+        }
+    }
 }
 
 pub(crate) fn valid_right_handed_frame(first: [f64; 3], second: [f64; 3], third: [f64; 3]) -> bool {
@@ -131,8 +174,6 @@ pub struct SurfaceRow {
     /// namespace, referenced by curve `F0`/`F1` face fields and by
     /// `next_surface` links.
     pub id: u32,
-    /// Raw `geom_type` byte selecting the surface-family encoding variant.
-    pub type_byte: u8,
     /// The row's surface family, from `geom_type`.
     pub kind: SurfaceKind,
     /// The `feat_id` compact integer: the feature that generated this
@@ -143,7 +184,7 @@ pub struct SurfaceRow {
     pub reversed: bool,
     /// The row's `boundary_type` byte: one of `0x00`, `0x01`, `0x06`, `0x08`,
     /// or `0xf6`.
-    pub boundary_type: u8,
+    pub boundary_type: BoundaryType,
     /// The `next_geom_ptr` compact integer: the identifier of the next
     /// `srf_array` row in this namespace's link chain.
     pub next_surface: u32,
@@ -1086,10 +1127,7 @@ impl SurfaceParameterRecord {
 
     /// Whether the bounded body ends with a complete inline non-plane local
     /// system and its family suffix.
-    pub(crate) fn has_inline_non_plane_local_system_suffix(&self, type_byte: u8) -> bool {
-        let Some(kind) = SurfaceKind::from_byte(type_byte) else {
-            return false;
-        };
+    pub(crate) fn has_inline_non_plane_local_system_suffix(&self, kind: SurfaceKind) -> bool {
         if !matches!(
             kind,
             SurfaceKind::Cylinder | SurfaceKind::Cone | SurfaceKind::TorusOrSphere
@@ -1128,8 +1166,8 @@ impl SurfaceParameterRecord {
 
     /// Decode the terminal positive-DICT half-angle of a positional cone body.
     #[must_use]
-    pub fn cone_half_angle_override(&self, type_byte: u8) -> Option<ConeHalfAngleOverride> {
-        if type_byte != 0x25 {
+    pub fn cone_half_angle_override(&self, kind: SurfaceKind) -> Option<ConeHalfAngleOverride> {
+        if kind != SurfaceKind::Cone {
             return None;
         }
         let layout = terminal_cone_half_angle_layout(&self.body)?;
@@ -1141,8 +1179,8 @@ impl SurfaceParameterRecord {
 
     /// Decode the tagged radius trailer of a positional torus-or-sphere body.
     #[must_use]
-    pub fn torus_radius_overrides(&self, type_byte: u8) -> Option<TorusRadiusOverrides> {
-        if type_byte != 0x26 {
+    pub fn torus_radius_overrides(&self, kind: SurfaceKind) -> Option<TorusRadiusOverrides> {
+        if kind != SurfaceKind::TorusOrSphere {
             return None;
         }
         torus_radius_override_layout(&self.body).map(|layout| layout.overrides)
@@ -1153,11 +1191,11 @@ impl SurfaceParameterRecord {
     #[must_use]
     pub fn type26_replayed_minor_radius(
         &self,
-        type_byte: u8,
+        kind: SurfaceKind,
         prototype_minor_radius: f64,
     ) -> Option<f64> {
-        (type_byte == 0x26
-            && self.torus_radius_overrides(type_byte).is_none()
+        (kind == SurfaceKind::TorusOrSphere
+            && self.torus_radius_overrides(kind).is_none()
             && prototype_minor_radius.is_finite()
             && prototype_minor_radius > 0.0)
             .then_some(())?;
@@ -1171,8 +1209,8 @@ impl SurfaceParameterRecord {
 
     /// Decode the terminal outline frame of a positional torus-or-sphere body.
     #[must_use]
-    pub fn torus_outline_frame(&self, type_byte: u8) -> Option<TorusOutlineFrame> {
-        if type_byte != 0x26 {
+    pub fn torus_outline_frame(&self, kind: SurfaceKind) -> Option<TorusOutlineFrame> {
+        if kind != SurfaceKind::TorusOrSphere {
             return None;
         }
         let markers = torus_outline_markers(&self.body);
@@ -1210,9 +1248,9 @@ impl SurfaceParameterRecord {
     #[must_use]
     pub fn type26_five_coordinate_envelope(
         &self,
-        type_byte: u8,
+        kind: SurfaceKind,
     ) -> Option<Type26FiveCoordinateEnvelope> {
-        (type_byte == 0x26).then_some(())?;
+        (kind == SurfaceKind::TorusOrSphere).then_some(())?;
         if self.body.ends_with(&[0xf7, 0x1c]) {
             let frame_end = self.body.len().checked_sub(2)?;
             if let Some(frame) = self.scalar_frames.last() {
@@ -1322,9 +1360,9 @@ impl SurfaceParameterRecord {
     #[must_use]
     pub fn type26_split_coordinate_envelope(
         &self,
-        type_byte: u8,
+        kind: SurfaceKind,
     ) -> Option<Type26SplitCoordinateEnvelope> {
-        (type_byte == 0x26
+        (kind == SurfaceKind::TorusOrSphere
             && self.body.get(8..19)
                 == Some(&[
                     0x18, 0x94, 0x3f, 0x02, 0x70, 0x16, 0xbe, 0xfc, 0x00, 0x12, 0x20,
@@ -1350,8 +1388,8 @@ impl SurfaceParameterRecord {
 
     /// Decode the rolling radius repeated by a bounded type-24 round envelope.
     #[must_use]
-    pub fn type24_round_radius(&self, type_byte: u8) -> Option<f64> {
-        (type_byte == 0x24).then_some(())?;
+    pub fn type24_round_radius(&self, kind: SurfaceKind) -> Option<f64> {
+        (kind == SurfaceKind::Cylinder).then_some(())?;
         self.type24_scalar_frame_round_layout()
             .or_else(|| self.type24_split_coordinate_round_layout())
             .map(|layout| 0.5 * layout.diameter)
@@ -1370,9 +1408,9 @@ impl SurfaceParameterRecord {
 
     /// Decode a type-24 radius in a class-913 generated-round context.
     #[must_use]
-    pub fn type24_generated_round_radius(&self, type_byte: u8) -> Option<f64> {
-        (type_byte == 0x24).then_some(())?;
-        let axial_candidates = self.type24_axial_interval_corner_candidates(type_byte);
+    pub fn type24_generated_round_radius(&self, kind: SurfaceKind) -> Option<f64> {
+        (kind == SurfaceKind::Cylinder).then_some(())?;
+        let axial_candidates = self.type24_axial_interval_corner_candidates(kind);
         if let Some(first) = axial_candidates.first() {
             return axial_candidates
                 .iter()
@@ -1382,10 +1420,10 @@ impl SurfaceParameterRecord {
                 })
                 .then_some(first.radius);
         }
-        if let Some(envelope) = self.type24_round_edge_envelope(type_byte) {
+        if let Some(envelope) = self.type24_round_edge_envelope(kind) {
             return perpendicular_round_edge_radius(envelope);
         }
-        self.type24_round_radius(type_byte)
+        self.type24_round_radius(kind)
     }
 
     fn type24_terminal_round_radius(&self) -> Option<f64> {
@@ -1407,15 +1445,19 @@ impl SurfaceParameterRecord {
 
     /// Decode the diameter and extent envelope of a scalar-frame type-24 row.
     #[must_use]
-    pub fn type24_scalar_frame_round_envelope(&self, type_byte: u8) -> Option<Type24RoundEnvelope> {
-        (type_byte == 0x24).then_some(())?;
+    pub fn type24_scalar_frame_round_envelope(
+        &self,
+        kind: SurfaceKind,
+    ) -> Option<Type24RoundEnvelope> {
+        (kind == SurfaceKind::Cylinder).then_some(())?;
         self.type24_scalar_frame_round_layout()
     }
 
     /// Decode the final two three-coordinate corners of a type-24 patch.
     #[must_use]
-    pub fn type24_terminal_corner_envelope(&self, type_byte: u8) -> Option<[[f64; 3]; 2]> {
-        (type_byte == 0x24 && self.boundary == SurfaceBodyBoundary::CompoundClose).then_some(())?;
+    pub fn type24_terminal_corner_envelope(&self, kind: SurfaceKind) -> Option<[[f64; 3]; 2]> {
+        (kind == SurfaceKind::Cylinder && self.boundary == SurfaceBodyBoundary::CompoundClose)
+            .then_some(())?;
         let terminal = self.scalar_frames.last()?;
         if self.terminal_scalar_frame_has_owned_end(terminal).is_none() {
             let terminal_end = terminal
@@ -1441,9 +1483,9 @@ impl SurfaceParameterRecord {
     #[must_use]
     pub fn selector_corner_interval_cylinder_frame(
         &self,
-        type_byte: u8,
+        kind: SurfaceKind,
     ) -> Option<PositionalCylinderFrame> {
-        (type_byte == 0x24).then_some(())?;
+        (kind == SurfaceKind::Cylinder).then_some(())?;
         let frame = decode_selector_corner_interval_cylinder_frame(
             &self.body,
             &scalar::ScalarCache::default(),
@@ -1458,9 +1500,9 @@ impl SurfaceParameterRecord {
     #[must_use]
     pub fn type24_axial_interval_corner_candidates(
         &self,
-        type_byte: u8,
+        kind: SurfaceKind,
     ) -> Vec<PositionalCylinderFrame> {
-        if type_byte != 0x24 {
+        if kind != SurfaceKind::Cylinder {
             return Vec::new();
         }
         decode_type24_axial_interval_corner_candidates(&self.body, &scalar::ScalarCache::default())
@@ -1475,8 +1517,8 @@ impl SurfaceParameterRecord {
     /// coordinates. A compound close may follow the optional generated-entity
     /// reference when the row continues with another bounded body.
     #[must_use]
-    pub fn type24_round_edge_envelope(&self, type_byte: u8) -> Option<Type24RoundEdgeEnvelope> {
-        (type_byte == 0x24).then_some(())?;
+    pub fn type24_round_edge_envelope(&self, kind: SurfaceKind) -> Option<Type24RoundEdgeEnvelope> {
+        (kind == SurfaceKind::Cylinder).then_some(())?;
         let cache = scalar::ScalarCache::default();
         let start = type24_round_edge_shell_end(&self.body, &cache)?;
         let (first_parameter, mut cursor) =
@@ -1522,10 +1564,10 @@ impl SurfaceParameterRecord {
 
     fn type24_round_frame(
         &self,
-        type_byte: u8,
+        kind: SurfaceKind,
         cache: &scalar::ScalarCache,
     ) -> Option<PositionalCylinderFrame> {
-        (type_byte == 0x24).then_some(())?;
+        (kind == SurfaceKind::Cylinder).then_some(())?;
         self.repeated_diameter_type24_round_frame(cache)
             .or_else(|| self.type24_held_coordinate_round_frame())
             .or_else(|| {
@@ -2056,8 +2098,8 @@ impl SurfaceParameterRecord {
     /// Decode the common model-space sweep-direction prefix of a positional
     /// `surface_of_extrusion` body.
     #[must_use]
-    pub fn extrusion_direction(&self, type_byte: u8) -> Option<[f64; 3]> {
-        if type_byte != 0x2c {
+    pub fn extrusion_direction(&self, kind: SurfaceKind) -> Option<[f64; 3]> {
+        if kind != SurfaceKind::Extrusion(ExtrusionVariant::TabulatedCylinder) {
             return None;
         }
         let direction = self.scalar_frames.first()?;
@@ -2089,11 +2131,11 @@ impl SurfaceParameterRecord {
     /// coordinate form; callers must exclude rows owned by a cubic replay
     /// before using this result.
     #[must_use]
-    pub fn line_extrusion_frame(&self, type_byte: u8) -> Option<LineExtrusionFrame> {
+    pub fn line_extrusion_frame(&self, kind: SurfaceKind) -> Option<LineExtrusionFrame> {
         if self.boundary != SurfaceBodyBoundary::CompoundClose {
             return None;
         }
-        let direction_values = self.extrusion_direction(type_byte)?;
+        let direction_values = self.extrusion_direction(kind)?;
         if let [direction, directrix] = self.scalar_frames.as_slice() {
             let [start_x, start_y, start_z, end_x, end_y, end_z] = directrix.slots.as_slice()
             else {
@@ -2632,7 +2674,13 @@ pub fn placed_outline_planes(
     result
 }
 
-const BOUNDARY_TYPES: &[u8] = &[0x00, 0x01, 0x06, 0x08, 0xf6];
+const BOUNDARY_TYPES: &[BoundaryType] = &[
+    BoundaryType::Code00,
+    BoundaryType::Code01,
+    BoundaryType::Code06,
+    BoundaryType::Code08,
+    BoundaryType::CodeF6,
+];
 
 #[derive(Debug, Clone, Copy)]
 struct SurfaceArrayFrame {
@@ -2737,10 +2785,10 @@ pub(crate) fn complete_surface_array_bounds(payload: &[u8]) -> Vec<(usize, usize
 /// Named prototype rows use boundary type `00`; positional replays use `06`.
 #[must_use]
 pub fn cross_section_rows(payload: &[u8]) -> Vec<SurfaceRow> {
-    rows_with_boundaries(payload, &[0x00, 0x06])
+    rows_with_boundaries(payload, &[BoundaryType::Code00, BoundaryType::Code06])
 }
 
-fn rows_with_boundaries(payload: &[u8], boundary_types: &[u8]) -> Vec<SurfaceRow> {
+fn rows_with_boundaries(payload: &[u8], boundary_types: &[BoundaryType]) -> Vec<SurfaceRow> {
     let mut result = Vec::new();
     let mut namespace_start = 0;
     while let Some(array) = find(payload, b"srf_array\0", namespace_start) {
@@ -2756,13 +2804,8 @@ fn rows_with_boundaries(payload: &[u8], boundary_types: &[u8]) -> Vec<SurfaceRow
         };
         let typed_kind = find_in(payload, b"geom_type\0", start, end)
             .and_then(|at| payload.get(at + b"geom_type\0".len()))
-            .and_then(|byte| SurfaceKind::from_byte(*byte).map(|kind| (*byte, kind)));
-        if let (
-            Some((id, id_offset)),
-            Some((type_byte, kind)),
-            Some((feature_id, _)),
-            Some((next_surface, _)),
-        ) = (
+            .and_then(|byte| SurfaceKind::from_byte(*byte));
+        if let (Some((id, id_offset)), Some(kind), Some((feature_id, _)), Some((next_surface, _))) = (
             value(b"geom_id\0"),
             typed_kind,
             value(b"feat_id\0"),
@@ -2778,13 +2821,12 @@ fn rows_with_boundaries(payload: &[u8], boundary_types: &[u8]) -> Vec<SurfaceRow
             let Some(boundary_type) = find_in(payload, b"boundary_type\0", start, end)
                 .and_then(|at| payload.get(at + b"boundary_type\0".len()))
                 .copied()
-                .filter(|byte| BOUNDARY_TYPES.contains(byte))
+                .and_then(BoundaryType::from_byte)
             else {
                 continue;
             };
             result.push(SurfaceRow {
                 id,
-                type_byte,
                 kind,
                 feature_id,
                 reversed: orientation == 0xf6,
@@ -2816,9 +2858,9 @@ fn rows_with_boundaries(payload: &[u8], boundary_types: &[u8]) -> Vec<SurfaceRow
         let Some(&boundary_type) = payload.get(pos + 1) else {
             continue;
         };
-        if !BOUNDARY_TYPES.contains(&boundary_type) {
+        let Some(boundary_type) = BoundaryType::from_byte(boundary_type) else {
             continue;
-        }
+        };
         pos += 2;
         let (next_surface, end) = compact_int(payload, pos);
         if end == pos {
@@ -2826,7 +2868,6 @@ fn rows_with_boundaries(payload: &[u8], boundary_types: &[u8]) -> Vec<SurfaceRow
         }
         result.push(SurfaceRow {
             id,
-            type_byte: payload[type_offset],
             kind,
             feature_id,
             reversed: orientation == 0xf6,
@@ -3318,7 +3359,8 @@ fn positional_body_start(payload: &[u8], row: &SurfaceRow) -> Option<usize> {
     cursor = next;
     let orientation = *payload.get(cursor)?;
     let boundary = *payload.get(cursor + 1)?;
-    (matches!(orientation, 0x01 | 0xf6) && BOUNDARY_TYPES.contains(&boundary)).then_some(())?;
+    (matches!(orientation, 0x01 | 0xf6) && BoundaryType::from_byte(boundary).is_some())
+        .then_some(())?;
     cursor += 2;
     let (_, next) = compact_int(payload, cursor);
     (next > cursor).then_some(next)
@@ -4763,7 +4805,7 @@ fn parameter_records_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<Surfac
         let opaque_spans = opaque_spans(&body, &scalar_tokens);
         let scalar_frames = scalar_frames(&scalar_tokens);
         let terminal_scalar_frame = terminal_scalar_frame(&body, &scalar_frames);
-        let tabulated_cylinder_frame = (row.kind == SurfaceKind::Extrusion)
+        let tabulated_cylinder_frame = matches!(row.kind, SurfaceKind::Extrusion(_))
             .then(|| decode_tabulated_cylinder_frame(&body, &cache))
             .flatten()
             .map(|(frame, _)| frame);
@@ -4811,7 +4853,7 @@ fn parameter_records_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<Surfac
             body_offset: *body_start,
         };
         if row.kind == SurfaceKind::Cylinder && record.positional_cylinder_frame.is_none() {
-            record.positional_cylinder_frame = record.type24_round_frame(row.type_byte, &cache);
+            record.positional_cylinder_frame = record.type24_round_frame(row.kind, &cache);
         }
         records.push(record);
     }
@@ -7136,7 +7178,7 @@ pub fn tabulated_cylinder_curve_replays(payload: &[u8]) -> Vec<TabulatedCylinder
         else {
             continue;
         };
-        if owner.type_byte != 0x2c {
+        if owner.kind != SurfaceKind::Extrusion(ExtrusionVariant::TabulatedCylinder) {
             continue;
         }
         let Some(last_control_point) = control_point_start.checked_add(3) else {
@@ -7184,7 +7226,7 @@ fn surface_body_compound_close(
             return Some(layout.end);
         }
     }
-    if kind == SurfaceKind::Extrusion {
+    if matches!(kind, SurfaceKind::Extrusion(_)) {
         if let Some((_, mut cursor)) = decode_tabulated_cylinder_frame(body, cache) {
             if body.get(cursor) == Some(&psb::token::ENTITY_REF) {
                 if let Ok((_, next)) = psb::reference_id(body, cursor + 1) {

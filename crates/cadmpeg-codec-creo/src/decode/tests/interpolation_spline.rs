@@ -552,11 +552,10 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
     );
     let row = |id| crate::surface::SurfaceRow {
         id,
-        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 942,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: id as usize,
     };
@@ -658,11 +657,10 @@ fn feature_surface_transitions_require_complete_unique_predecessor_chains() {
     .with_surface_ids([201, 202]);
     let row = |id, feature_id| crate::surface::SurfaceRow {
         id,
-        type_byte: 0x1c,
         kind: crate::surface::SurfaceKind::Plane,
         feature_id,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: id as usize,
     };
@@ -721,11 +719,10 @@ fn draft_neutral_plane_requires_one_owned_class_209_plane() {
     };
     let row = |id, kind: crate::surface::SurfaceKind, feature_id| crate::surface::SurfaceRow {
         id,
-        type_byte: kind.canonical_type_byte(),
         kind,
         feature_id,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: id as usize,
     };
@@ -784,11 +781,10 @@ fn draft_neutral_plane_rejects_foreign_or_non_plane_surface_rows() {
         scan.features.entity_tables.push(table.clone());
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id: 226,
-            type_byte: kind.canonical_type_byte(),
             kind,
             feature_id: owner,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 0,
         });
@@ -811,11 +807,10 @@ fn thicken_plane_offsets_require_parallel_agreeing_oriented_distances() {
     let transitions = [(11, 201), (12, 202), (13, 203)];
     let row = |id, reversed| crate::surface::SurfaceRow {
         id,
-        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: if id >= 200 { 17 } else { 3 },
         reversed,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: id as usize,
     };
@@ -1029,11 +1024,10 @@ fn named_linear_sweep_reuses_materialized_cap_extent() {
     );
     let row = |id| crate::surface::SurfaceRow {
         id,
-        type_byte: 0x22,
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 7,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     };
@@ -1108,11 +1102,10 @@ fn boundary_surface_entity_graph_requires_the_complete_generated_chain() {
     ];
     let surface = crate::surface::SurfaceRow {
         id: 145,
-        type_byte: 0x2a,
-        kind: crate::surface::SurfaceKind::Extrusion,
+        kind: crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
         feature_id: 144,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     };
@@ -1160,11 +1153,10 @@ fn new_sheet_output_requires_an_owned_output_surface() {
     ];
     let surface = crate::surface::SurfaceRow {
         id: 145,
-        type_byte: 0x2a,
-        kind: crate::surface::SurfaceKind::Extrusion,
+        kind: crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
         feature_id: 144,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     };
@@ -1233,11 +1225,10 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 6,
-        type_byte: 0x22,
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 5,
         reversed: false,
-        boundary_type: 1,
+        boundary_type: crate::surface::BoundaryType::Code01,
         next_surface: 0,
         offset: 0,
     });
@@ -1271,11 +1262,10 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
 
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 7,
-        type_byte: 0x22,
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 5,
         reversed: false,
-        boundary_type: 1,
+        boundary_type: crate::surface::BoundaryType::Code01,
         next_surface: 0,
         offset: 1,
     });
@@ -1294,11 +1284,10 @@ fn datum_feature_preserves_its_unique_transferred_plane_chart() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 6,
-        type_byte: 0x22,
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 5,
         reversed: false,
-        boundary_type: 1,
+        boundary_type: crate::surface::BoundaryType::Code01,
         next_surface: 0,
         offset: 0,
     });

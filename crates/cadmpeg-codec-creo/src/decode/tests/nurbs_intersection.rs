@@ -57,11 +57,10 @@ fn carrier_scan() -> crate::container::ContainerScan<'static> {
             };
             crate::surface::SurfaceRow {
                 id,
-                type_byte: kind.canonical_type_byte(),
                 kind,
                 feature_id: 0,
                 reversed: false,
-                boundary_type: 0,
+                boundary_type: crate::surface::BoundaryType::Code00,
                 next_surface: 0,
                 offset: 0,
             }

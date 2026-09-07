@@ -12,11 +12,10 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 6,
-        type_byte: 0x22,
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 5,
         reversed: false,
-        boundary_type: 1,
+        boundary_type: crate::surface::BoundaryType::Code01,
         next_surface: 0,
         offset: 0,
     });
@@ -58,11 +57,10 @@ fn unbounded_plane_scan() -> crate::container::ContainerScan<'static> {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 6,
-        type_byte: 0x22,
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 5,
         reversed: false,
-        boundary_type: 1,
+        boundary_type: crate::surface::BoundaryType::Code01,
         next_surface: 0,
         offset: 0,
     });

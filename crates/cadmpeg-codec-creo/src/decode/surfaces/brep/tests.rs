@@ -146,11 +146,10 @@ fn legacy_brep_admission_retains_components_with_eligible_visible_faces() {
     scan.framing.layout = crate::test_support::legacy_layout();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 5,
-        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 0,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     });
@@ -203,11 +202,10 @@ fn legacy_brep_admission_excludes_nonvisible_face_references() {
     scan.framing.layout = crate::test_support::legacy_layout();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 5,
-        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 0,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     });
@@ -215,11 +213,10 @@ fn legacy_brep_admission_excludes_nonvisible_face_references() {
         .nonvisible_rows
         .push(crate::surface::SurfaceRow {
             id: 7,
-            type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
             kind: crate::surface::SurfaceKind::Plane,
             feature_id: 0,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 0,
         });
@@ -564,11 +561,10 @@ fn native_brep_rejects_ambiguous_model_carriers() {
     scan.framing.declared_body_count = Some(1);
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 5,
-        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 0,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     });
@@ -743,11 +739,10 @@ fn native_brep_rejects_ambiguous_model_carriers() {
     ir.model.curves.clear();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 6,
-        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 0,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     });

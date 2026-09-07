@@ -105,11 +105,10 @@ fn slot_fillet_scan() -> crate::container::ContainerScan<'static> {
         });
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 7,
-        type_byte: crate::surface::SurfaceKind::Cylinder.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Cylinder,
         feature_id: 913,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 7,
     });
@@ -192,31 +191,28 @@ fn split_outline_scan() -> crate::container::ContainerScan<'static> {
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {
             id: 1,
-            type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
             kind: crate::surface::SurfaceKind::Plane,
             feature_id: 10,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 1,
         },
         crate::surface::SurfaceRow {
             id: 2,
-            type_byte: crate::surface::SurfaceKind::Cylinder.canonical_type_byte(),
             kind: crate::surface::SurfaceKind::Cylinder,
             feature_id: 10,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 2,
         },
         crate::surface::SurfaceRow {
             id: 3,
-            type_byte: crate::surface::SurfaceKind::Cylinder.canonical_type_byte(),
             kind: crate::surface::SurfaceKind::Cylinder,
             feature_id: 10,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 3,
         },
@@ -362,11 +358,10 @@ fn section_feature_type24_frame_is_not_admitted_as_round_cylinder() {
     });
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 7,
-        type_byte: 0x24,
         kind: crate::surface::SurfaceKind::Cylinder,
         feature_id: 916,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 7,
     });
@@ -424,21 +419,19 @@ fn unresolved_round_type24_frame_is_not_admitted_as_constant_cylinder() {
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {
             id: 7,
-            type_byte: 0x24,
             kind: crate::surface::SurfaceKind::Cylinder,
             feature_id: 913,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 7,
         },
         crate::surface::SurfaceRow {
             id: 8,
-            type_byte: 0x24,
             kind: crate::surface::SurfaceKind::Cylinder,
             feature_id: 913,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 8,
         },
@@ -497,11 +490,10 @@ fn inline_type24_frame_is_admitted_in_a_round_feature() {
     });
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 7,
-        type_byte: 0x24,
         kind: crate::surface::SurfaceKind::Cylinder,
         feature_id: 913,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 7,
     });
@@ -562,11 +554,10 @@ fn positional_frame_reconciles_an_existing_model_cylinder() {
     });
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 7,
-        type_byte: 0x24,
         kind: crate::surface::SurfaceKind::Cylinder,
         feature_id: 917,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 7,
     });
@@ -764,11 +755,10 @@ fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerSc
         .rows
         .extend((1..=4).map(|id| crate::surface::SurfaceRow {
             id,
-            type_byte: 0x24,
             kind: crate::surface::SurfaceKind::Cylinder,
             feature_id: 42,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: id as usize,
         }));
@@ -913,11 +903,10 @@ fn constrained_slot_fillet_rejects_conflicting_model_plane_carriers() {
 fn rowless_round_cylinder_rejects_duplicate_sibling_model_surfaces() {
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
-        type_byte: kind.canonical_type_byte(),
         kind,
         feature_id: 23,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     };
@@ -970,11 +959,10 @@ fn rowless_round_cylinder_rejects_duplicate_sibling_model_surfaces() {
 fn rowless_round_cylinder_rejects_duplicate_materialized_source_rows() {
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
-        type_byte: kind.canonical_type_byte(),
         kind,
         feature_id: 23,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     };

@@ -41,7 +41,7 @@ use std::collections::BTreeSet;
 const GENERATED_EXTRUSION_SIDE_KINDS: &[crate::surface::SurfaceKind] = &[
     crate::surface::SurfaceKind::Plane,
     crate::surface::SurfaceKind::Cylinder,
-    crate::surface::SurfaceKind::Extrusion,
+    crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
 ];
 
 pub(in super::super) fn sketch_profiles_cover_generated_extrusion_sides(

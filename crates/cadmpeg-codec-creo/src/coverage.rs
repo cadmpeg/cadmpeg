@@ -72,7 +72,7 @@ pub(crate) const fn surface_family_keys(
             untransferred: UNTRANSFERRED_VISIBLE_FILLET_SURFACE_ROW_COUNT,
             retained_unknown: RETAINED_UNKNOWN_VISIBLE_FILLET_SURFACE_ROW_COUNT,
         },
-        crate::surface::SurfaceKind::Extrusion => SurfaceFamilyCoverageKeys {
+        crate::surface::SurfaceKind::Extrusion(_) => SurfaceFamilyCoverageKeys {
             visible: VISIBLE_EXTRUSION_SURFACE_ROW_COUNT,
             transferred: TRANSFERRED_VISIBLE_EXTRUSION_SURFACE_ROW_COUNT,
             untransferred: UNTRANSFERRED_VISIBLE_EXTRUSION_SURFACE_ROW_COUNT,

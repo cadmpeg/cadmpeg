@@ -21,21 +21,19 @@ fn unresolved_round_type26_frames_are_not_admitted_as_constant_tori() {
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {
             id: 7,
-            type_byte: 0x26,
             kind: crate::surface::SurfaceKind::TorusOrSphere,
             feature_id: 913,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 7,
         },
         crate::surface::SurfaceRow {
             id: 8,
-            type_byte: 0x26,
             kind: crate::surface::SurfaceKind::TorusOrSphere,
             feature_id: 913,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 8,
         },

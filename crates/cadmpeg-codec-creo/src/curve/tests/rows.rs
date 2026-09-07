@@ -621,11 +621,10 @@ fn binds_agreeing_fc05_caps_to_one_typed_cylinder() {
     };
     let surface = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
-        type_byte: kind.canonical_type_byte(),
         kind,
         feature_id: 4,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: usize::try_from(id).expect("fixture id fits usize"),
     };
@@ -682,11 +681,10 @@ fn fc05_cap_pairs_require_unique_topology_and_surface_identities() {
     };
     let surface = |id, kind: crate::surface::SurfaceKind, offset| crate::surface::SurfaceRow {
         id,
-        type_byte: kind.canonical_type_byte(),
         kind,
         feature_id: 4,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset,
     };

@@ -161,11 +161,10 @@ fn unique_native_conic_loop_places_its_plane_surface() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 5,
-        type_byte: 0x22,
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 1,
         reversed: false,
-        boundary_type: 1,
+        boundary_type: crate::surface::BoundaryType::Code01,
         next_surface: 0,
         offset: 10,
     });
@@ -243,11 +242,10 @@ fn unique_nurbs_line_loop_places_its_plane_surface() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 5,
-        type_byte: 0x22,
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 1,
         reversed: false,
-        boundary_type: 1,
+        boundary_type: crate::surface::BoundaryType::Code01,
         next_surface: 0,
         offset: 10,
     });
@@ -468,11 +466,10 @@ fn support_frame_selects_one_axis_from_a_line_shaped_plane_outline() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 42,
-        type_byte: 0x22,
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 4,
         reversed: false,
-        boundary_type: 1,
+        boundary_type: crate::surface::BoundaryType::Code01,
         next_surface: 0,
         offset: 10,
     });
@@ -519,11 +516,10 @@ fn matrix_frame_owns_conflicting_held_coordinate_plane() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 42,
-        type_byte: 0x22,
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 4,
         reversed: false,
-        boundary_type: 1,
+        boundary_type: crate::surface::BoundaryType::Code01,
         next_surface: 0,
         offset: 10,
     });
@@ -590,11 +586,10 @@ fn fc05_cap_pair_tangency_selects_one_stored_plane_branch() {
     ] {
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id,
-            type_byte: 0x22,
             kind,
             feature_id: 4,
             reversed: false,
-            boundary_type: 1,
+            boundary_type: crate::surface::BoundaryType::Code01,
             next_surface: 0,
             offset: id as usize,
         });
@@ -741,11 +736,10 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
     ] {
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id,
-            type_byte: 0x22,
             kind,
             feature_id: 4,
             reversed: false,
-            boundary_type: 1,
+            boundary_type: crate::surface::BoundaryType::Code01,
             next_surface: 0,
             offset: id as usize,
         });
@@ -900,21 +894,19 @@ fn fc05_model_witness_uses_a_unique_reference_when_tangency_improves() {
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {
             id: 1,
-            type_byte: 0x22,
             kind: crate::surface::SurfaceKind::Plane,
             feature_id: 4,
             reversed: false,
-            boundary_type: 1,
+            boundary_type: crate::surface::BoundaryType::Code01,
             next_surface: 0,
             offset: 1,
         },
         crate::surface::SurfaceRow {
             id: 2,
-            type_byte: 0x23,
             kind: crate::surface::SurfaceKind::Cylinder,
             feature_id: 4,
             reversed: false,
-            boundary_type: 1,
+            boundary_type: crate::surface::BoundaryType::Code01,
             next_surface: 0,
             offset: 2,
         },
@@ -1001,11 +993,10 @@ fn stored_frame_branch_scan(with_pcurve: bool) -> crate::container::ContainerSca
     for id in [1, 2] {
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id,
-            type_byte: 0x22,
             kind: crate::surface::SurfaceKind::Plane,
             feature_id: 4,
             reversed: false,
-            boundary_type: 1,
+            boundary_type: crate::surface::BoundaryType::Code01,
             next_surface: 0,
             offset: id as usize,
         });

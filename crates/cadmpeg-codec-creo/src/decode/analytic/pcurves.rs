@@ -1801,21 +1801,19 @@ mod tests {
         let rows = vec![
             crate::surface::SurfaceRow {
                 id: 7,
-                type_byte: crate::surface::SurfaceKind::Spline.canonical_type_byte(),
                 kind: crate::surface::SurfaceKind::Spline,
                 feature_id: 0,
                 reversed: false,
-                boundary_type: 0,
+                boundary_type: crate::surface::BoundaryType::Code00,
                 next_surface: 0,
                 offset: 0,
             },
             crate::surface::SurfaceRow {
                 id: 8,
-                type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
                 kind: crate::surface::SurfaceKind::Plane,
                 feature_id: 0,
                 reversed: false,
-                boundary_type: 0,
+                boundary_type: crate::surface::BoundaryType::Code00,
                 next_surface: 0,
                 offset: 0,
             },

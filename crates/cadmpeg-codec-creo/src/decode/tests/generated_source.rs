@@ -112,11 +112,10 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
     };
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
-        type_byte: kind.canonical_type_byte(),
         kind,
         feature_id: 17,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     };
@@ -246,14 +245,17 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         &rows,
     ));
     let mut extrusion_rows = rows.clone();
-    extrusion_rows[2] = row(43, crate::surface::SurfaceKind::Extrusion);
+    extrusion_rows[2] = row(
+        43,
+        crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
+    );
     assert!(section_entity_is_generated_profile(
         true,
         Some(17),
         9,
         &[
             crate::surface::SurfaceKind::Spline,
-            crate::surface::SurfaceKind::Extrusion,
+            crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
         ],
         std::slice::from_ref(&table),
         &extrusion_rows,
@@ -272,7 +274,7 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         9,
         &[
             crate::surface::SurfaceKind::Spline,
-            crate::surface::SurfaceKind::Extrusion,
+            crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
         ],
         std::slice::from_ref(&table),
         &extrusion_rows,
@@ -325,11 +327,10 @@ fn paired_cylinder_sources_and_planar_support_identify_counterbore_form() {
     .with_surface_ids([11, 12, 13, 15, 16]);
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
-        type_byte: kind.canonical_type_byte(),
         kind,
         feature_id: 9,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     };
@@ -394,11 +395,10 @@ fn split_patch_cylinder_sources_and_planar_support_identify_counterbore_form() {
     .with_surface_ids([15, 16, 30, 31, 33]);
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
-        type_byte: kind.canonical_type_byte(),
         kind,
         feature_id: 9,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     };
@@ -881,11 +881,10 @@ fn counterbore_sources_require_materialized_table_membership() {
     .with_surface_ids([11, 15, 16]);
     let row = |id| crate::surface::SurfaceRow {
         id,
-        type_byte: crate::surface::SurfaceKind::Cylinder.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Cylinder,
         feature_id: 9,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     };
@@ -1379,18 +1378,20 @@ fn counterbore_corner_envelopes_define_the_directed_stepped_span() {
 fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
-        type_byte: kind.canonical_type_byte(),
         kind,
         feature_id: 17,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     };
     let rows = vec![
         row(41, crate::surface::SurfaceKind::Plane),
         row(42, crate::surface::SurfaceKind::Cylinder),
-        row(44, crate::surface::SurfaceKind::Extrusion),
+        row(
+            44,
+            crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
+        ),
         row(43, crate::surface::SurfaceKind::Cone),
         row(43, crate::surface::SurfaceKind::Cone),
     ];
@@ -1450,7 +1451,9 @@ fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
     );
     assert_eq!(coverage.family(crate::surface::SurfaceKind::Cone), (0, 0));
     assert_eq!(
-        coverage.family(crate::surface::SurfaceKind::Extrusion),
+        coverage.family(crate::surface::SurfaceKind::Extrusion(
+            crate::surface::ExtrusionVariant::Linear
+        )),
         (1, 1)
     );
 }
@@ -1678,11 +1681,10 @@ fn incidence_family_lattice_narrows_endpoint_evidence() {
 fn rowless_round_cylinder_requires_the_four_entry_sibling_layout() {
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
-        type_byte: kind.canonical_type_byte(),
         kind,
         feature_id: 23,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     };

@@ -426,11 +426,10 @@ fn resolves_generated_section_from_declared_cap_pair() {
     };
     let rows = [43, 92].map(|id| SurfaceRow {
         id,
-        type_byte: 0x22,
         kind: SurfaceKind::Plane,
         feature_id: 40,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: usize::try_from(id).expect("fixture id fits usize"),
     });
@@ -623,11 +622,10 @@ fn resolves_oblique_reference_from_an_earlier_extruded_line() {
     };
     let generated_plane = SurfaceRow {
         id: 43,
-        type_byte: 0x22,
         kind: SurfaceKind::Plane,
         feature_id: 40,
         reversed: false,
-        boundary_type: 1,
+        boundary_type: crate::surface::BoundaryType::Code01,
         next_surface: 0,
         offset: 50,
     };
@@ -855,11 +853,10 @@ fn resolves_generated_plane_from_contextually_unambiguous_envelope_axis() {
     };
     let row = SurfaceRow {
         id: 7,
-        type_byte: 0x22,
         kind: SurfaceKind::Plane,
         feature_id: 3,
         reversed: false,
-        boundary_type: 1,
+        boundary_type: crate::surface::BoundaryType::Code01,
         next_surface: 0,
         offset: 50,
     };
@@ -963,21 +960,19 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
     let rows = [
         SurfaceRow {
             id: 819,
-            type_byte: 0x24,
             kind: SurfaceKind::Cylinder,
             feature_id: 40,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 200,
         },
         SurfaceRow {
             id: 822,
-            type_byte: 0x24,
             kind: SurfaceKind::Cylinder,
             feature_id: 40,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 220,
         },

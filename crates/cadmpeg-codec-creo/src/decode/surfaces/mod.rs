@@ -103,11 +103,10 @@ mod tests {
         let mut scan = scan_bytes(Vec::new());
         scan.surfaces.nonvisible_rows.push(SurfaceRow {
             id: 17,
-            type_byte: SurfaceKind::Plane.canonical_type_byte(),
             kind: SurfaceKind::Plane,
             feature_id: 1,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 0,
         });

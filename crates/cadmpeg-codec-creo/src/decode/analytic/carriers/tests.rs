@@ -32,11 +32,10 @@ fn cylinder_surface(id: u32, radius: f64) -> Surface {
 fn carrier_row(id: u32, kind: crate::surface::SurfaceKind) -> crate::surface::SurfaceRow {
     crate::surface::SurfaceRow {
         id,
-        type_byte: kind.canonical_type_byte(),
         kind,
         feature_id: 1,
         reversed: false,
-        boundary_type: 1,
+        boundary_type: crate::surface::BoundaryType::Code01,
         next_surface: 0,
         offset: 0,
     }

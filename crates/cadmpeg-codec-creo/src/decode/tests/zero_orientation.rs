@@ -417,11 +417,10 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
     ] {
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id,
-            type_byte: 0,
             kind,
             feature_id: 7,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: id as usize,
         });

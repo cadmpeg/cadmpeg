@@ -65,7 +65,7 @@ pub fn planes(payload: &[u8]) -> Vec<DatumPlane> {
         .filter(|(_, (row, _))| {
             row.id != 0
                 && row.kind == SurfaceKind::Plane
-                && row.boundary_type == 0x01
+                && row.boundary_type == crate::surface::BoundaryType::Code01
                 && row.next_surface == 0
         })
         .filter_map(|(index, (row, frame_end))| {
@@ -116,7 +116,12 @@ fn active_cylinder_frame(
     row: &SurfaceRow,
     parameter: &SurfaceParameterRecord,
 ) -> Option<PositionalCylinderFrame> {
-    (row.type_byte == 0x24 && matches!(row.boundary_type, 0x00 | 0x01)).then_some(())?;
+    (row.kind == crate::surface::SurfaceKind::Cylinder
+        && matches!(
+            row.boundary_type,
+            crate::surface::BoundaryType::Code00 | crate::surface::BoundaryType::Code01
+        ))
+    .then_some(())?;
     let terminal = parameter.terminal_scalar_frame.as_ref()?;
     let [length_slot, corner0, corner1, corner2, corner3, corner4, corner5] =
         terminal.slots.as_slice()

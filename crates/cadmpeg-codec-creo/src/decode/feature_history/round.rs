@@ -320,7 +320,7 @@ pub(in super::super) fn replayed_torus_minor_radius(
     record: &crate::surface::SurfaceParameterRecord,
 ) -> Option<f64> {
     let prototype_minor_radius = unique_section_torus_minor_radius(scan, row)?;
-    record.type26_replayed_minor_radius(row.type_byte, prototype_minor_radius)
+    record.type26_replayed_minor_radius(row.kind, prototype_minor_radius)
 }
 
 pub(in super::super) fn prototype_round_radius(
@@ -351,19 +351,19 @@ pub(in super::super) fn prototype_round_radius(
             let Some(record) = unique_surface_parameter_record(scan, row) else {
                 return false;
             };
-            record.torus_radius_overrides(row.type_byte).is_none()
+            record.torus_radius_overrides(row.kind).is_none()
                 && (replayed_torus_minor_radius(scan, row, record)
                     .is_some_and(|radius| radius.to_bits() == radius2.to_bits())
                     || record
-                        .torus_outline_frame(row.type_byte)
+                        .torus_outline_frame(row.kind)
                         .is_some_and(|frame| outline_has_unique_radius_delta(frame, radius2))
                     || record
-                        .type26_five_coordinate_envelope(row.type_byte)
+                        .type26_five_coordinate_envelope(row.kind)
                         .is_some_and(|envelope| {
                             five_coordinate_envelope_proves_torus_radii(envelope, radius1, radius2)
                         })
                     || record
-                        .type26_split_coordinate_envelope(row.type_byte)
+                        .type26_split_coordinate_envelope(row.kind)
                         .is_some_and(|envelope| {
                             let [a1, a2, b1, b2] = envelope.values;
                             coordinate_pair_proves_torus_radii([a1, a2], [b1, b2], radius1, radius2)
@@ -533,7 +533,7 @@ fn complete_direct_placed_cylinder_radius_agreement(
         .iter()
         .map(|row| {
             unique_surface_parameter_record(scan, row)
-                .and_then(|record| record.type24_generated_round_radius(row.type_byte))
+                .and_then(|record| record.type24_generated_round_radius(row.kind))
         })
         .collect::<Option<Vec<_>>>()?;
     let placed_radii = cylinder_rows
@@ -586,23 +586,23 @@ pub(in super::super) fn mixed_torus_radius_samples(
 ) -> Option<Vec<f64>> {
     let parameters = rows
         .iter()
-        .map(|row| Some((row.type_byte, unique_surface_parameter_record(scan, row)?)))
+        .map(|row| Some((row.kind, unique_surface_parameter_record(scan, row)?)))
         .collect::<Option<Vec<_>>>()?;
     if parameters
         .iter()
-        .all(|(type_byte, record)| record.torus_radius_overrides(*type_byte).is_some())
+        .all(|(kind, record)| record.torus_radius_overrides(*kind).is_some())
     {
         return Some(
             parameters
                 .iter()
-                .filter_map(|(type_byte, record)| record.torus_radius_overrides(*type_byte))
+                .filter_map(|(kind, record)| record.torus_radius_overrides(*kind))
                 .map(|overrides| overrides.radius2)
                 .collect(),
         );
     }
     if parameters
         .iter()
-        .any(|(type_byte, record)| record.torus_radius_overrides(*type_byte).is_some())
+        .any(|(kind, record)| record.torus_radius_overrides(*kind).is_some())
     {
         return None;
     }
@@ -616,7 +616,7 @@ pub(in super::super) fn round_cylinder_radius(
     row: &crate::surface::SurfaceRow,
 ) -> Option<f64> {
     unique_surface_parameter_record(scan, row)
-        .and_then(|record| record.type24_generated_round_radius(row.type_byte))
+        .and_then(|record| record.type24_generated_round_radius(row.kind))
         .or_else(|| round_placed_cylinder_radius(ir, row))
 }
 
@@ -881,10 +881,10 @@ pub(in super::super) fn round_observed_radii(scan: &ContainerScan, feature_id: u
             let parameters = unique_surface_parameter_record(scan, row)?;
             match row.kind {
                 crate::surface::SurfaceKind::Cylinder => {
-                    parameters.type24_generated_round_radius(row.type_byte)
+                    parameters.type24_generated_round_radius(row.kind)
                 }
                 crate::surface::SurfaceKind::TorusOrSphere => parameters
-                    .torus_radius_overrides(row.type_byte)
+                    .torus_radius_overrides(row.kind)
                     .map(|overrides| overrides.radius2)
                     .or_else(|| replayed_torus_minor_radius(scan, row, parameters)),
                 _ => None,

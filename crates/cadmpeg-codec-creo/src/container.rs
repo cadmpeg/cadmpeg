@@ -2917,11 +2917,10 @@ mod feature_row_definition_tests {
     fn surface_and_curve_generators_are_structural_feature_identities() {
         let surface = SurfaceRow {
             id: 12,
-            type_byte: 0x22,
             kind: crate::surface::SurfaceKind::Plane,
             feature_id: 40,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 0,
         };

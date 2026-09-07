@@ -99,7 +99,7 @@ pub fn counterbore_dimensions(
                 let envelope = |id: &u32| {
                     let row = crate::surface::unique_surface_row(&scan.surfaces.rows, *id)?;
                     unique_surface_parameter_record(scan, row)?
-                        .type24_terminal_corner_envelope(row.type_byte)
+                        .type24_terminal_corner_envelope(row.kind)
                 };
                 paired_corner_envelope_axis_spans(envelope(first_id)?, envelope(second_id)?)
             })
@@ -413,7 +413,7 @@ fn counterbore_source_corner_envelopes(
             let envelope = |id| {
                 let row = crate::surface::unique_surface_row(&scan.surfaces.rows, id)?;
                 unique_surface_parameter_record(scan, row)?
-                    .type24_terminal_corner_envelope(row.type_byte)
+                    .type24_terminal_corner_envelope(row.kind)
             };
             Some([envelope(*first_id)?, envelope(*second_id)?])
         })

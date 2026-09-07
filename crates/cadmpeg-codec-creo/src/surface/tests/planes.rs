@@ -66,11 +66,10 @@ fn derives_plane_from_unique_six_scalar_positional_frame() {
     };
     let row = SurfaceRow {
         id: 41,
-        type_byte: SurfaceKind::Plane.canonical_type_byte(),
         kind: SurfaceKind::Plane,
         feature_id: 17,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 3,
     };
@@ -150,11 +149,10 @@ fn derives_plane_from_auxiliary_corner_frame() {
     };
     let row = SurfaceRow {
         id: 41,
-        type_byte: SurfaceKind::Plane.canonical_type_byte(),
         kind: SurfaceKind::Plane,
         feature_id: 17,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 3,
     };
@@ -296,11 +294,10 @@ fn derives_plane_from_terminal_corner_frame() {
     let record = parameter_records(&payload).remove(0);
     let row = SurfaceRow {
         id: record.surface_id,
-        type_byte: SurfaceKind::Plane.canonical_type_byte(),
         kind: SurfaceKind::Plane,
         feature_id: 17,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 3,
     };
@@ -377,11 +374,10 @@ fn derives_plane_from_split_terminal_corner_frame() {
     let record = parameter_records(&payload).remove(0);
     let row = SurfaceRow {
         id: record.surface_id,
-        type_byte: SurfaceKind::Plane.canonical_type_byte(),
         kind: SurfaceKind::Plane,
         feature_id: 17,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 3,
     };
@@ -435,11 +431,10 @@ fn derives_plane_from_marker_bounded_corner_frames() {
     };
     let row = SurfaceRow {
         id: 41,
-        type_byte: SurfaceKind::Plane.canonical_type_byte(),
         kind: SurfaceKind::Plane,
         feature_id: 17,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 3,
     };

@@ -1337,7 +1337,7 @@ fn round_edge_envelopes_for_plane(
                 *face_id != plane_id
                     && rows.get(face_id).is_some_and(|row| {
                         row.kind == crate::surface::SurfaceKind::Cylinder
-                            && row.type_byte == 0x24
+                            && row.kind == crate::surface::SurfaceKind::Cylinder
                             && crate::decode::sketch_transfer::feature_schema_class(
                                 scan,
                                 row.feature_id,
@@ -1349,7 +1349,7 @@ fn round_edge_envelopes_for_plane(
             }
             let record =
                 crate::surface::unique_surface_parameter(&scan.surfaces.parameters, cylinder_id)?;
-            record.type24_round_edge_envelope(0x24)
+            record.type24_round_edge_envelope(crate::surface::SurfaceKind::Cylinder)
         })
         .collect()
 }

@@ -26,11 +26,10 @@ fn compact_simple_hole_rejects_duplicate_materialized_roster_id() {
     .with_surface_ids([117]);
     let row = crate::surface::SurfaceRow {
         id: 117,
-        type_byte: crate::surface::SurfaceKind::Cylinder.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Cylinder,
         feature_id: 107,
         reversed: true,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     };

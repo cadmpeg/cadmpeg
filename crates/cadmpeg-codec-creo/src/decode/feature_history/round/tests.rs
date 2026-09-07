@@ -41,11 +41,10 @@ fn chamfer_does_not_use_a_cone_prototype_as_model_space_placement() {
 
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 31,
-        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 3,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 31,
     });
@@ -79,21 +78,19 @@ fn chamfer_uses_transferred_model_plane_carrier() {
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {
             id: 10,
-            type_byte: crate::surface::SurfaceKind::Cone.canonical_type_byte(),
             kind: crate::surface::SurfaceKind::Cone,
             feature_id: 914,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 10,
         },
         crate::surface::SurfaceRow {
             id: 31,
-            type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
             kind: crate::surface::SurfaceKind::Plane,
             feature_id: 3,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 31,
         },
@@ -221,21 +218,19 @@ fn chamfer_uses_transferred_model_cone_when_row_parameters_are_opaque() {
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {
             id: 10,
-            type_byte: crate::surface::SurfaceKind::Cone.canonical_type_byte(),
             kind: crate::surface::SurfaceKind::Cone,
             feature_id: 914,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 10,
         },
         crate::surface::SurfaceRow {
             id: 31,
-            type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
             kind: crate::surface::SurfaceKind::Plane,
             feature_id: 3,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 31,
         },
@@ -459,11 +454,10 @@ fn round_support_radius_requires_distinct_parallel_cap_planes() {
 fn round_placed_cylinder_radius_rejects_duplicate_model_surfaces() {
     let row = crate::surface::SurfaceRow {
         id: 7,
-        type_byte: crate::surface::SurfaceKind::Cylinder.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Cylinder,
         feature_id: 913,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     };
@@ -502,41 +496,37 @@ fn round_uses_complete_placed_cylinders_with_cap_and_support_rows() {
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {
             id: 1,
-            type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
             kind: crate::surface::SurfaceKind::Plane,
             feature_id: 913,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 1,
         },
         crate::surface::SurfaceRow {
             id: 2,
-            type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
             kind: crate::surface::SurfaceKind::Plane,
             feature_id: 913,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 2,
         },
         crate::surface::SurfaceRow {
             id: 3,
-            type_byte: crate::surface::SurfaceKind::Cylinder.canonical_type_byte(),
             kind: crate::surface::SurfaceKind::Cylinder,
             feature_id: 913,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 3,
         },
         crate::surface::SurfaceRow {
             id: 4,
-            type_byte: crate::surface::SurfaceKind::Cylinder.canonical_type_byte(),
             kind: crate::surface::SurfaceKind::Cylinder,
             feature_id: 913,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 4,
         },
@@ -565,11 +555,10 @@ fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
     for id in [3, 4] {
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id,
-            type_byte: crate::surface::SurfaceKind::Cylinder.canonical_type_byte(),
             kind: crate::surface::SurfaceKind::Cylinder,
             feature_id: 913,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: id as usize,
         });
@@ -653,11 +642,10 @@ fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
     };
     let row = |id, offset| crate::surface::SurfaceRow {
         id,
-        type_byte: crate::surface::SurfaceKind::TorusOrSphere.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::TorusOrSphere,
         feature_id: 913,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset,
     };

@@ -3,6 +3,8 @@
 
 use super::super::*;
 
+const EPS_ROUND_RADIUS: f64 = 1.0e-12;
+
 fn line_extrusion_parameter_record(
     direction: [f64; 3],
     directrix: [[f64; 3]; 2],
@@ -66,18 +68,34 @@ fn line_extrusion_parameter_record(
 #[test]
 fn positional_line_extrusion_requires_a_non_degenerate_plane_carrier() {
     let valid = line_extrusion_parameter_record([0.0, 0.0, 1.0], [[0.0; 3], [1.0, 0.0, 0.0]]);
-    assert!(valid.line_extrusion_frame(0x2c).is_some());
+    assert!(valid
+        .line_extrusion_frame(crate::surface::SurfaceKind::Extrusion(
+            crate::surface::ExtrusionVariant::TabulatedCylinder
+        ))
+        .is_some());
 
     let zero_direction = line_extrusion_parameter_record([0.0; 3], [[0.0; 3], [1.0, 0.0, 0.0]]);
-    assert!(zero_direction.line_extrusion_frame(0x2c).is_none());
+    assert!(zero_direction
+        .line_extrusion_frame(crate::surface::SurfaceKind::Extrusion(
+            crate::surface::ExtrusionVariant::TabulatedCylinder
+        ))
+        .is_none());
 
     let collapsed_directrix =
         line_extrusion_parameter_record([0.0, 0.0, 1.0], [[0.0; 3], [0.0; 3]]);
-    assert!(collapsed_directrix.line_extrusion_frame(0x2c).is_none());
+    assert!(collapsed_directrix
+        .line_extrusion_frame(crate::surface::SurfaceKind::Extrusion(
+            crate::surface::ExtrusionVariant::TabulatedCylinder
+        ))
+        .is_none());
 
     let parallel_directions =
         line_extrusion_parameter_record([1.0, 0.0, 0.0], [[0.0; 3], [1.0, 0.0, 0.0]]);
-    assert!(parallel_directions.line_extrusion_frame(0x2c).is_none());
+    assert!(parallel_directions
+        .line_extrusion_frame(crate::surface::SurfaceKind::Extrusion(
+            crate::surface::ExtrusionVariant::TabulatedCylinder
+        ))
+        .is_none());
 }
 
 #[test]
@@ -757,7 +775,7 @@ fn positional_cylinder_frame_decodes_local_system_suffix() {
     payload.extend_from_slice(&body);
     payload.push(0xe3);
     assert_eq!(
-        parameter_records(&payload)[0].type24_round_radius(0x24),
+        parameter_records(&payload)[0].type24_round_radius(crate::surface::SurfaceKind::Cylinder),
         None
     );
 
@@ -896,7 +914,7 @@ fn decodes_bounded_untagged_type26_five_coordinate_envelope() {
         panic!("one type-26 parameter record");
     };
     let envelope = record
-        .type26_five_coordinate_envelope(0x26)
+        .type26_five_coordinate_envelope(crate::surface::SurfaceKind::TorusOrSphere)
         .expect("complete five-coordinate envelope");
     assert_eq!(envelope.offset, 7);
     assert_eq!(envelope.values[0], -2.65);
@@ -907,7 +925,7 @@ fn decodes_bounded_untagged_type26_five_coordinate_envelope() {
 
     payload[6] = 0x17;
     assert!(parameter_records(&payload)[0]
-        .type26_five_coordinate_envelope(0x26)
+        .type26_five_coordinate_envelope(crate::surface::SurfaceKind::TorusOrSphere)
         .is_none());
 }
 
@@ -921,28 +939,42 @@ fn decodes_only_an_exact_terminal_type26_minor_radius_replay() {
     };
     let replay = record(&[0x18, 0x0c, 0x29, 0xc9, 0x99]);
     assert_eq!(
-        replay.type26_replayed_minor_radius(0x26, 0.199_999_999_999_999_98),
+        replay.type26_replayed_minor_radius(
+            crate::surface::SurfaceKind::TorusOrSphere,
+            0.199_999_999_999_999_98
+        ),
         Some(0.199_999_999_999_999_98)
     );
-    assert!(replay.type26_replayed_minor_radius(0x26, 0.2).is_none());
     assert!(replay
-        .type26_replayed_minor_radius(0x25, 0.199_999_999_999_999_98)
+        .type26_replayed_minor_radius(crate::surface::SurfaceKind::TorusOrSphere, 0.2)
+        .is_none());
+    assert!(replay
+        .type26_replayed_minor_radius(crate::surface::SurfaceKind::Cone, 0.199_999_999_999_999_98)
         .is_none());
 
     let two_slot_terminal = record(&[0xe4, 0x29, 0xc9, 0x99]);
     assert_eq!(
-        two_slot_terminal.type26_replayed_minor_radius(0x26, 0.199_999_999_999_999_98),
+        two_slot_terminal.type26_replayed_minor_radius(
+            crate::surface::SurfaceKind::TorusOrSphere,
+            0.199_999_999_999_999_98
+        ),
         Some(0.199_999_999_999_999_98)
     );
     let nonterminal_match = record(&[0x29, 0xc9, 0x99, 0xe4]);
     assert!(nonterminal_match
-        .type26_replayed_minor_radius(0x26, 0.199_999_999_999_999_98)
+        .type26_replayed_minor_radius(
+            crate::surface::SurfaceKind::TorusOrSphere,
+            0.199_999_999_999_999_98
+        )
         .is_none());
     let tagged_override = record(&[
         0x18, 0x0d, 0x29, 0xc9, 0x99, 0x00, 0x0e, 0x01, 0x29, 0xdf, 0xff,
     ]);
     assert!(tagged_override
-        .type26_replayed_minor_radius(0x26, 0.199_999_999_999_999_98)
+        .type26_replayed_minor_radius(
+            crate::surface::SurfaceKind::TorusOrSphere,
+            0.199_999_999_999_999_98
+        )
         .is_none());
 }
 
@@ -969,7 +1001,7 @@ fn decodes_terminal_and_control_split_type26_five_coordinate_envelopes() {
         payload.push(0xe3);
         let records = parameter_records(&payload);
         let envelope = records[0]
-            .type26_five_coordinate_envelope(0x26)
+            .type26_five_coordinate_envelope(crate::surface::SurfaceKind::TorusOrSphere)
             .expect("terminal five-coordinate envelope");
         for (actual, expected) in envelope.values.into_iter().zip(expected) {
             assert!((actual - expected).abs() < 1.0e-11);
@@ -1000,7 +1032,7 @@ fn decodes_direct_and_split_type26_torus_envelopes() {
     };
 
     let direct = record(&direct_tail)
-        .type26_five_coordinate_envelope(0x26)
+        .type26_five_coordinate_envelope(crate::surface::SurfaceKind::TorusOrSphere)
         .expect("direct torus envelope");
     assert!(direct
         .values
@@ -1008,7 +1040,7 @@ fn decodes_direct_and_split_type26_torus_envelopes() {
         .zip([-4.95, 17.24, -4.95, 4.95, 16.74])
         .all(|(actual, expected)| (actual - expected).abs() < 1.0e-12));
     let split = record(&split_tail)
-        .type26_split_coordinate_envelope(0x26)
+        .type26_split_coordinate_envelope(crate::surface::SurfaceKind::TorusOrSphere)
         .expect("split torus envelope");
     assert!(split
         .values
@@ -1088,7 +1120,14 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
     ];
 
     let panel = record(&panel);
-    assert!((panel.type24_round_radius(0x24).expect("required invariant") - 0.2).abs() < 1.0e-12);
+    assert!(
+        (panel
+            .type24_round_radius(crate::surface::SurfaceKind::Cylinder)
+            .expect("required invariant")
+            - 0.2)
+            .abs()
+            < EPS_ROUND_RADIUS
+    );
     let frame = panel
         .positional_cylinder_frame
         .expect("complete repeated-diameter carrier");
@@ -1100,7 +1139,7 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
     assert!((frame.axis[2] - 2.9 / frame.length.expect("required invariant")).abs() < 1.0e-12);
     assert!(
         (record(&prefixed_panel)
-            .type24_round_radius(0x24)
+            .type24_round_radius(crate::surface::SurfaceKind::Cylinder)
             .expect("required invariant")
             - 0.2)
             .abs()
@@ -1108,7 +1147,7 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
     );
     assert!(
         (record(&separated)
-            .type24_round_radius(0x24)
+            .type24_round_radius(crate::surface::SurfaceKind::Cylinder)
             .expect("required invariant")
             - 2.0)
             .abs()
@@ -1120,16 +1159,17 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
     ];
     let replay_record = record(&replay_separated);
     assert!(replay_record
-        .type24_terminal_corner_envelope(0x24)
+        .type24_terminal_corner_envelope(crate::surface::SurfaceKind::Cylinder)
         .is_some());
     assert!(replay_record
-        .type24_terminal_corner_envelope(0x22)
+        .type24_terminal_corner_envelope(crate::surface::SurfaceKind::Plane)
         .is_none());
     let mut compound_close = replay_separated;
     *compound_close.last_mut().expect("trailer") = 0x17;
     assert_eq!(
-        record(&compound_close).type24_terminal_corner_envelope(0x24),
-        replay_record.type24_terminal_corner_envelope(0x24)
+        record(&compound_close)
+            .type24_terminal_corner_envelope(crate::surface::SurfaceKind::Cylinder),
+        replay_record.type24_terminal_corner_envelope(crate::surface::SurfaceKind::Cylinder)
     );
     let replay_frame = replay_record
         .positional_cylinder_frame
@@ -1152,10 +1192,10 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
     ];
     let selector_corner_record = record(&selector_corner_interval);
     assert!(selector_corner_record
-        .selector_corner_interval_cylinder_frame(0x24)
+        .selector_corner_interval_cylinder_frame(crate::surface::SurfaceKind::Cylinder)
         .is_some());
     assert!(selector_corner_record
-        .selector_corner_interval_cylinder_frame(0x22)
+        .selector_corner_interval_cylinder_frame(crate::surface::SurfaceKind::Plane)
         .is_none());
     let selector_corner_frame = selector_corner_record
         .positional_cylinder_frame
@@ -1269,7 +1309,7 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
         47, 32, 0, 72, 24, 0, 47, 22, 0, 47, 36, 0, 72, 16, 0,
     ]);
     assert_eq!(
-        equal_span.type24_scalar_frame_round_envelope(0x24),
+        equal_span.type24_scalar_frame_round_envelope(crate::surface::SurfaceKind::Cylinder),
         Some(Type24RoundEnvelope {
             diameter: 2.0,
             extent_endpoints: [[3.5, 8.0, -6.0], [5.5, 10.0, -4.0]],
@@ -1279,7 +1319,9 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
 
     let mut inconsistent = separated;
     inconsistent[31..34].copy_from_slice(&[0x2f, 0x12, 0x00]);
-    assert!(record(&inconsistent).type24_round_radius(0x24).is_none());
+    assert!(record(&inconsistent)
+        .type24_round_radius(crate::surface::SurfaceKind::Cylinder)
+        .is_none());
 
     let first_coordinate = [
         0x4c, 0xb7, 0x67, 0xe1, 0x01, 0x3f, 0x80, 0x2d, 0x31, 0xa4, 0xa8, 0xc1, 0x54, 0xc9, 0x87,
@@ -1299,7 +1341,10 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
     assert!((length - expected_length).abs() < 1.0e-12);
     assert!((frame.axis[0] - 9.308_504_271_834_785 / length).abs() < 1.0e-12);
     assert!((frame.axis[1] - 9.976_063_033_979_35 / length).abs() < 1.0e-12);
-    assert_eq!(first_coordinate.type24_round_radius(0x24), Some(2.0));
+    assert_eq!(
+        first_coordinate.type24_round_radius(crate::surface::SurfaceKind::Cylinder),
+        Some(2.0)
+    );
 
     let mut wrong_close = first_coordinate.body.clone();
     wrong_close[49] = 0x19;
@@ -1334,7 +1379,10 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
     assert_eq!(frame.radius, 0.5 * diameter);
     let expected_length = 1.111_111_111_111_110_7_f64.hypot(3.142_696_805_273_545);
     assert!((frame.length.expect("required invariant") - expected_length).abs() < 1.0e-12);
-    assert_eq!(segmented.type24_round_radius(0x24), Some(0.5 * diameter));
+    assert_eq!(
+        segmented.type24_round_radius(crate::surface::SurfaceKind::Cylinder),
+        Some(0.5 * diameter)
+    );
 
     let mut wrong_separator = segmented.body.clone();
     wrong_separator[9] = 0x71;
@@ -1357,7 +1405,7 @@ fn decodes_repeated_diameter_type24_round_envelopes() {
     assert_eq!(split_frame.length, Some(50.0_f64.sqrt()));
     assert!(
         (record(&split_coordinate)
-            .type24_round_radius(0x24)
+            .type24_round_radius(crate::surface::SurfaceKind::Cylinder)
             .expect("split-coordinate rolling radius")
             - 2.0)
             .abs()
@@ -1411,7 +1459,7 @@ fn decodes_structurally_delimited_type24_round_edge_envelope() {
     };
 
     assert_eq!(
-        record.type24_round_edge_envelope(0x24),
+        record.type24_round_edge_envelope(crate::surface::SurfaceKind::Cylinder),
         Some(Type24RoundEdgeEnvelope {
             parameter_interval: [
                 f64::from_be_bytes([0x3f, 0xcb, 0, 0, 0, 0, 0, 0]),
@@ -1421,7 +1469,9 @@ fn decodes_structurally_delimited_type24_round_edge_envelope() {
             generated_entity_reference: Some(0x17),
         })
     );
-    assert!(record.type24_round_edge_envelope(0x25).is_none());
+    assert!(record
+        .type24_round_edge_envelope(crate::surface::SurfaceKind::Cone)
+        .is_none());
 }
 
 #[test]
@@ -1453,7 +1503,7 @@ fn round_edge_envelope_accepts_model_reference_shell() {
         body_offset: 0,
     };
     let envelope = parameter
-        .type24_round_edge_envelope(0x24)
+        .type24_round_edge_envelope(crate::surface::SurfaceKind::Cylinder)
         .expect("complete model-reference-shell round envelope");
 
     assert_eq!(envelope.parameter_interval, [0.0, 1.0]);
@@ -1461,7 +1511,9 @@ fn round_edge_envelope_accepts_model_reference_shell() {
 
     let mut truncated = parameter;
     truncated.body.remove(7);
-    assert!(truncated.type24_round_edge_envelope(0x24).is_none());
+    assert!(truncated
+        .type24_round_edge_envelope(crate::surface::SurfaceKind::Cylinder)
+        .is_none());
 }
 
 #[test]
@@ -1492,7 +1544,7 @@ fn round_edge_vertices_use_the_first_directrix_coordinate_lane() {
         body_offset: 0,
     };
     let envelope = parameter
-        .type24_round_edge_envelope(0x24)
+        .type24_round_edge_envelope(crate::surface::SurfaceKind::Cylinder)
         .expect("complete directrix-lane endpoint envelope");
 
     assert_eq!(envelope.parameter_interval, [0.0, 1.0]);
@@ -1781,7 +1833,10 @@ fn decodes_held_coordinate_type24_round_envelope() {
     assert_eq!(frame.ref_direction, [0.0, 1.0, 0.0]);
     assert_eq!(frame.radius, 1.0);
     assert_eq!(frame.length, Some(4.0));
-    assert_eq!(base_record.type24_round_radius(0x24), Some(1.0));
+    assert_eq!(
+        base_record.type24_round_radius(crate::surface::SurfaceKind::Cylinder),
+        Some(1.0)
+    );
 
     let replay_body = [
         24, 45, 79, 146, 110, 151, 141, 79, 224, 120, 172, 103, 5, 97, 187, 80, 45, 84, 73, 55, 75,
@@ -1798,7 +1853,10 @@ fn decodes_held_coordinate_type24_round_envelope() {
             length: Some(4.0),
         })
     );
-    assert_eq!(replay.type24_round_radius(0x24), Some(1.0));
+    assert_eq!(
+        replay.type24_round_radius(crate::surface::SurfaceKind::Cylinder),
+        Some(1.0)
+    );
     assert_eq!(
         record(&replay_body[..replay_body.len() - 2]).positional_cylinder_frame,
         replay.positional_cylinder_frame,
@@ -1829,7 +1887,7 @@ fn decodes_terminal_type24_round_radius() {
     ];
     assert!(
         (record(&terminal)
-            .type24_round_radius(0x24)
+            .type24_round_radius(crate::surface::SurfaceKind::Cylinder)
             .expect("required invariant")
             - 0.3)
             .abs()
@@ -1840,7 +1898,7 @@ fn decodes_terminal_type24_round_radius() {
     replay_terminated.extend_from_slice(&[0xf7, 0x17]);
     assert!(
         (record(&replay_terminated)
-            .type24_round_radius(0x24)
+            .type24_round_radius(crate::surface::SurfaceKind::Cylinder)
             .expect("required invariant")
             - 0.3)
             .abs()
@@ -1850,16 +1908,18 @@ fn decodes_terminal_type24_round_radius() {
     let mut trailing_payload = terminal.to_vec();
     trailing_payload.push(0x18);
     assert!(record(&trailing_payload)
-        .type24_round_radius(0x24)
+        .type24_round_radius(crate::surface::SurfaceKind::Cylinder)
         .is_none());
     let coordinate_terminal = [
         0x18, 0x2d, 0x45, 0x30, 0x89, 0xa0, 0x27, 0x52, 0x54, 0x12, 0x46, 0x16, 0xd9, 0xc0, 0xeb,
         0x43, 0x76, 0xac,
     ];
     assert!(record(&coordinate_terminal)
-        .type24_round_radius(0x24)
+        .type24_round_radius(crate::surface::SurfaceKind::Cylinder)
         .is_none());
-    assert!(record(&terminal).type24_round_radius(0x22).is_none());
+    assert!(record(&terminal)
+        .type24_round_radius(crate::surface::SurfaceKind::Plane)
+        .is_none());
 }
 
 #[test]

@@ -70,20 +70,25 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
 
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
-        type_byte: kind.canonical_type_byte(),
         kind,
         feature_id: 7,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: id as usize,
     };
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.surfaces.rows.extend([
-        row(31, crate::surface::SurfaceKind::Extrusion),
+        row(
+            31,
+            crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
+        ),
         row(32, crate::surface::SurfaceKind::Plane),
         row(33, crate::surface::SurfaceKind::Plane),
-        row(34, crate::surface::SurfaceKind::Extrusion),
+        row(
+            34,
+            crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
+        ),
         row(35, crate::surface::SurfaceKind::Plane),
     ]);
     let mut ir = CadIr::empty();

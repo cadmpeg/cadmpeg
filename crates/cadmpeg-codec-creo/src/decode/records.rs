@@ -1570,12 +1570,12 @@ pub(super) fn surface_row_records(
         .map(|row| CreoSurfaceRowRecord {
             id: format!("creo:{namespace}:surface_row#{}", row.id),
             surface_id: row.id,
-            type_byte: row.type_byte,
+            type_byte: row.kind.canonical_type_byte(),
             surface_family: surface_family(row.kind),
-            surface_variant: surface_variant(row.type_byte),
+            surface_variant: surface_variant(row.kind),
             feature_id: row.feature_id,
             reversed: row.reversed,
-            boundary_type: row.boundary_type,
+            boundary_type: row.boundary_type.code(),
             next_surface: row.next_surface,
             offset: row.offset,
             source_section: source_section(scan, row.offset),
@@ -1850,7 +1850,7 @@ pub(super) fn surface_parameter_records(
             Some(CreoSurfaceParameterRecord {
                 id: format!("creo:{namespace}:surface_parameter#{}", record.surface_id),
                 surface_id: record.surface_id,
-                surface_type_byte: row.type_byte,
+                surface_type_byte: row.kind.canonical_type_byte(),
                 surface_family,
                 boundary,
                 body: record.body.clone(),
@@ -1938,7 +1938,7 @@ pub(super) fn surface_parameter_records(
                         minor_radius: frame.minor_radius,
                     }
                 }),
-                torus_outline_frame: record.torus_outline_frame(row.type_byte).map(|frame| {
+                torus_outline_frame: record.torus_outline_frame(row.kind).map(|frame| {
                     CreoTorusOutlineFrame {
                         values: frame.values,
                         selector: frame.selector,
@@ -1946,19 +1946,19 @@ pub(super) fn surface_parameter_records(
                     }
                 }),
                 type26_five_coordinate_envelope: record
-                    .type26_five_coordinate_envelope(row.type_byte)
+                    .type26_five_coordinate_envelope(row.kind)
                     .map(|envelope| CreoType26FiveCoordinateEnvelope {
                         values: envelope.values,
                         offset: envelope.offset,
                     }),
                 type26_split_coordinate_envelope: record
-                    .type26_split_coordinate_envelope(row.type_byte)
+                    .type26_split_coordinate_envelope(row.kind)
                     .map(|envelope| CreoType26SplitCoordinateEnvelope {
                         values: envelope.values,
                         offset: envelope.offset,
                     }),
-                torus_radius_overrides: record.torus_radius_overrides(row.type_byte).map(
-                    |overrides| CreoTorusRadiusOverrides {
+                torus_radius_overrides: record.torus_radius_overrides(row.kind).map(|overrides| {
+                    CreoTorusRadiusOverrides {
                         radius1: overrides.radius1,
                         radius2: overrides.radius2,
                         radius2_encoding: match overrides.radius2_encoding {
@@ -1968,18 +1968,16 @@ pub(super) fn surface_parameter_records(
                             }
                         },
                         offset: overrides.offset,
-                    },
-                ),
+                    }
+                }),
                 replayed_torus_minor_radius: replayed_torus_minor_radius(scan, row, record),
-                cone_half_angle_override: record.cone_half_angle_override(row.type_byte).map(
+                cone_half_angle_override: record.cone_half_angle_override(row.kind).map(
                     |half_angle| CreoConeHalfAngleOverride {
                         radians: half_angle.radians,
                         offset: half_angle.offset,
                     },
                 ),
-                extrusion_direction: (row.kind == crate::surface::SurfaceKind::Extrusion)
-                    .then(|| record.extrusion_direction(row.type_byte))
-                    .flatten(),
+                extrusion_direction: record.extrusion_direction(row.kind),
                 row_offset: record.offset,
                 body_offset: record.body_offset,
                 source_section,

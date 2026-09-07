@@ -320,10 +320,7 @@ pub(in super::super) fn source_meta(
             .iter()
             .filter(|record| {
                 crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id)
-                    .is_some_and(|row| {
-                        row.kind == crate::surface::SurfaceKind::Extrusion
-                            && record.extrusion_direction(row.type_byte).is_some()
-                    })
+                    .is_some_and(|row| record.extrusion_direction(row.kind).is_some())
             })
             .count(),
     );

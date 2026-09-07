@@ -898,24 +898,24 @@ pub(in super::super) fn transfer_positional_cylinders(
         };
         let feature_class = feature_schema_class(scan, row.feature_id);
         let inline_non_plane = record.has_inline_non_plane_envelope()
-            || record.has_inline_non_plane_local_system_suffix(row.type_byte);
+            || record.has_inline_non_plane_local_system_suffix(row.kind);
         let selector_corner_interval = record
-            .selector_corner_interval_cylinder_frame(row.type_byte)
+            .selector_corner_interval_cylinder_frame(row.kind)
             .is_some();
         let axial_interval_corner_candidates =
             if feature_class == Some(913) && !inline_non_plane && !selector_corner_interval {
-                record.type24_axial_interval_corner_candidates(row.type_byte)
+                record.type24_axial_interval_corner_candidates(row.kind)
             } else {
                 Vec::new()
             };
         let round_edge_envelope = (feature_class == Some(913) && !selector_corner_interval)
-            .then(|| record.type24_round_edge_envelope(row.type_byte))
+            .then(|| record.type24_round_edge_envelope(row.kind))
             .flatten();
         if round_edge_envelope.is_some() {
             summary.round_edge_complete_envelopes += 1;
         }
         let round_support_frame = (feature_class == Some(913))
-            .then(|| record.type24_scalar_frame_round_envelope(row.type_byte))
+            .then(|| record.type24_scalar_frame_round_envelope(row.kind))
             .flatten()
             .and_then(|envelope| {
                 round_support_envelope_cylinder(scan, ir, row.feature_id, envelope)
@@ -1001,7 +1001,7 @@ pub(in super::super) fn transfer_positional_cylinders(
         // The same type-24 shape is only a neutral cylinder for class 913
         // when its complete generated set proves one constant radius or this
         // row has an independent cap/support-envelope cylinder proof.
-        if row.type_byte == 0x24
+        if row.kind == crate::surface::SurfaceKind::Cylinder
             && !inline_non_plane
             && !selector_corner_interval
             && (matches!(feature_class, Some(916))
@@ -1042,7 +1042,7 @@ pub(in super::super) fn transfer_positional_cylinders(
                     return Some((frame, "reference_circle_pair_cylinder_frame"));
                 }
             }
-            let envelope = record.type24_scalar_frame_round_envelope(row.type_byte)?;
+            let envelope = record.type24_scalar_frame_round_envelope(row.kind)?;
             reference_cap_bound_round_frame(envelope, &circles)
                 .map(|frame| (frame, "round_reference_cap_cylinder_frame"))
         };

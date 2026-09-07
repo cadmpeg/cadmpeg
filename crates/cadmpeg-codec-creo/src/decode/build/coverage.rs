@@ -838,7 +838,7 @@ pub(in super::super) fn torus_parameter_coverage(scan: &ContainerScan) -> TorusP
     TorusParameterCoverage {
         radius_overrides: rows
             .clone()
-            .filter(|(record, row)| record.torus_radius_overrides(row.type_byte).is_some())
+            .filter(|(record, row)| record.torus_radius_overrides(row.kind).is_some())
             .count(),
         replayed_minor_radii: rows
             .clone()
@@ -846,22 +846,14 @@ pub(in super::super) fn torus_parameter_coverage(scan: &ContainerScan) -> TorusP
             .count(),
         outline_extents: rows
             .clone()
-            .filter(|(record, row)| record.torus_outline_frame(row.type_byte).is_some())
+            .filter(|(record, row)| record.torus_outline_frame(row.kind).is_some())
             .count(),
         five_coordinate_envelopes: rows
             .clone()
-            .filter(|(record, row)| {
-                record
-                    .type26_five_coordinate_envelope(row.type_byte)
-                    .is_some()
-            })
+            .filter(|(record, row)| record.type26_five_coordinate_envelope(row.kind).is_some())
             .count(),
         split_coordinate_envelopes: rows
-            .filter(|(record, row)| {
-                record
-                    .type26_split_coordinate_envelope(row.type_byte)
-                    .is_some()
-            })
+            .filter(|(record, row)| record.type26_split_coordinate_envelope(row.kind).is_some())
             .count(),
     }
 }

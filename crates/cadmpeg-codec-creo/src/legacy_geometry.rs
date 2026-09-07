@@ -440,9 +440,7 @@ fn surface_row(row_object: &ObjectRecord, integers: &IntegerFieldIndex<'_>) -> O
     let id = u32::try_from(integer_field(integers, &row_object.id, "geom_id")?).ok()?;
     let boundary_type =
         u8::try_from(integer_field(integers, &row_object.id, "boundary_type")?).ok()?;
-    if !surface::is_surface_boundary_type(boundary_type) {
-        return None;
-    }
+    let boundary_type = surface::BoundaryType::from_byte(boundary_type)?;
     let orientation = integer_field(integers, &row_object.id, "orient")?;
     let reversed = match orientation {
         1 => false,
@@ -453,7 +451,6 @@ fn surface_row(row_object: &ObjectRecord, integers: &IntegerFieldIndex<'_>) -> O
         u32::try_from(integer_field(integers, &row_object.id, "next_geom_ptr")?).ok()?;
     Some(SurfaceRow {
         id,
-        type_byte,
         kind,
         feature_id,
         reversed,

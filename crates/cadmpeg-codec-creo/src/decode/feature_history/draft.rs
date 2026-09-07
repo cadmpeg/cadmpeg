@@ -777,7 +777,7 @@ pub(in super::super) fn unbounded_feature_plane_definition(
     let [row] = rows.as_slice() else {
         return None;
     };
-    (row.boundary_type == 1
+    (row.boundary_type == crate::surface::BoundaryType::Code01
         && row.next_surface == 0
         && crate::surface::unique_surface_row(&scan.surfaces.rows, row.id) == Some(*row))
     .then_some(())?;
@@ -875,7 +875,8 @@ pub(in super::super) fn class_942_boundary_surface_entity_graph(
     let Some(surface) = generated_surfaces.next() else {
         return false;
     };
-    if generated_surfaces.next().is_some() || surface.kind != crate::surface::SurfaceKind::Extrusion
+    if generated_surfaces.next().is_some()
+        || !matches!(surface.kind, crate::surface::SurfaceKind::Extrusion(_))
     {
         return false;
     }

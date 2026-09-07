@@ -64,11 +64,10 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
     .with_surface_ids([46, 51]);
     let row = |feature_id, id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
-        type_byte: kind.canonical_type_byte(),
         kind,
         feature_id,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: id as usize,
     };
@@ -202,11 +201,10 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
-        type_byte: kind.canonical_type_byte(),
         kind,
         feature_id: 825,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: id as usize,
     };
@@ -330,11 +328,10 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
     .with_surface_ids([117]);
     let row = crate::surface::SurfaceRow {
         id: 117,
-        type_byte: 0x24,
         kind: crate::surface::SurfaceKind::Cylinder,
         feature_id: 107,
         reversed: true,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     };
@@ -351,11 +348,10 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
     exact_class_203_plane.mark_surface_ids([112, 117]);
     let topology_plane = crate::surface::SurfaceRow {
         id: 112,
-        type_byte: 0x22,
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 107,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     };
@@ -419,11 +415,10 @@ fn compact_hole_materialized_core_establishes_the_simple_form() {
     }
     let plane = crate::surface::SurfaceRow {
         id: 109,
-        type_byte: 0x22,
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 107,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     };
@@ -651,21 +646,19 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {
             id: 11,
-            type_byte: 0x24,
             kind: crate::surface::SurfaceKind::Cylinder,
             feature_id: 913,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 100,
         },
         crate::surface::SurfaceRow {
             id: 12,
-            type_byte: 0x26,
             kind: crate::surface::SurfaceKind::TorusOrSphere,
             feature_id: 913,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 200,
         },
@@ -763,11 +756,10 @@ fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
     ] {
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id,
-            type_byte: 0,
             kind,
             feature_id: 5,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: id as usize,
         });
@@ -806,11 +798,10 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
     for (id, parameter) in [(11, Some(15.0)), (12, Some(1.0)), (13, None)] {
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id,
-            type_byte: 0x24,
             kind: crate::surface::SurfaceKind::Cylinder,
             feature_id: 5,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: id as usize,
         });
@@ -945,11 +936,10 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
     for id in [11, 12] {
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id,
-            type_byte: 0x24,
             kind: crate::surface::SurfaceKind::Cylinder,
             feature_id: 5,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: id as usize,
         });
@@ -1020,15 +1010,10 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
     ] {
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id,
-            type_byte: if kind == crate::surface::SurfaceKind::TorusOrSphere {
-                0x26
-            } else {
-                0x24
-            },
             kind,
             feature_id: 5,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: id as usize,
         });
@@ -1388,11 +1373,10 @@ fn generated_cylinder_extent_uses_unique_available_parameter_frames() {
 fn bounded_generated_cylinders_define_a_blind_extrusion() {
     let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
         id,
-        type_byte: kind.canonical_type_byte(),
         kind,
         feature_id: 7,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: id as usize,
     };
@@ -1786,11 +1770,10 @@ fn generated_table_cap_classes_bind_the_ordered_cap_planes() {
     .with_surface_ids([31, 32, 33]);
     let row = |id| crate::surface::SurfaceRow {
         id,
-        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 7,
         reversed: id == 31,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: id as usize,
     };
@@ -1836,11 +1819,10 @@ fn generated_table_cap_classes_bind_the_ordered_cap_planes() {
 fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
     let row = |id, reversed| crate::surface::SurfaceRow {
         id,
-        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 7,
         reversed,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: id as usize,
     };

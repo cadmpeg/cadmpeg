@@ -157,11 +157,10 @@ fn transfer_with_curve_count(curve_count: usize) -> (usize, CadIr) {
         });
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 20,
-        type_byte: crate::surface::SurfaceKind::Spline.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Spline,
         feature_id: 40,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     });

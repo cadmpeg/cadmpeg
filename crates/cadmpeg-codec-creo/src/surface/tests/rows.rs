@@ -15,21 +15,19 @@ fn finds_one_byte_and_two_byte_surface_rows() {
         vec![
             SurfaceRow {
                 id: 7,
-                type_byte: 0x22,
                 kind: SurfaceKind::Plane,
                 feature_id: 4,
                 reversed: false,
-                boundary_type: 0,
+                boundary_type: crate::surface::BoundaryType::Code00,
                 next_surface: 128,
                 offset: 0,
             },
             SurfaceRow {
                 id: 128,
-                type_byte: 0x24,
                 kind: SurfaceKind::Cylinder,
                 feature_id: 257,
                 reversed: true,
-                boundary_type: 6,
+                boundary_type: crate::surface::BoundaryType::Code06,
                 next_surface: 7,
                 offset: 7,
             },
@@ -53,7 +51,7 @@ fn accepts_type24_row_with_boundary_type_eight() {
     assert_eq!(decoded[0].id, 11_889);
     assert_eq!(decoded[0].kind, SurfaceKind::Cylinder);
     assert_eq!(decoded[0].feature_id, 11_866);
-    assert_eq!(decoded[0].boundary_type, 0x08);
+    assert_eq!(decoded[0].boundary_type.code(), 0x08);
 }
 
 #[test]
@@ -121,7 +119,7 @@ fn cross_section_filters_boundary_one_body_candidate() {
     let rows = cross_section_rows(payload);
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].id, 7);
-    assert_eq!(rows[0].boundary_type, 0x06);
+    assert_eq!(rows[0].boundary_type.code(), 0x06);
     let parameters = cross_section_parameter_records(payload);
     assert_eq!(parameters.len(), 1);
     assert_eq!(parameters[0].surface_id, 7);
@@ -248,11 +246,10 @@ fn rejects_duplicate_surface_ids() {
 fn unique_surface_projection_excludes_every_collided_identity() {
     let row = |id, offset| SurfaceRow {
         id,
-        type_byte: 0x22,
         kind: SurfaceKind::Plane,
         feature_id: 4,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset,
     };
@@ -678,7 +675,7 @@ fn tabulated_cylinder_frame_owns_compound_close_bytes_inside_scalars() {
 
     assert_eq!(
         surface_body_compound_close(
-            SurfaceKind::Extrusion,
+            SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::TabulatedCylinder),
             &body,
             &scalar::ScalarCache::default(),
         ),

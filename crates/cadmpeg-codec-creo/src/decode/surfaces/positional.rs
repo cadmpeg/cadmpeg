@@ -84,8 +84,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
             continue;
         };
         let envelopes = [first_row, second_row].map(|row| {
-            unique_surface_parameter_record(scan, row)?
-                .type26_five_coordinate_envelope(row.type_byte)
+            unique_surface_parameter_record(scan, row)?.type26_five_coordinate_envelope(row.kind)
         });
         let [Some(first_envelope), Some(second_envelope)] = envelopes else {
             continue;
@@ -171,8 +170,8 @@ pub(in super::super) fn transfer_positional_tori(
         // generated round family. A positional torus frame is a neutral
         // carrier only after the complete family proves one constant radius.
         let inline_non_plane = record.has_inline_non_plane_envelope()
-            || record.has_inline_non_plane_local_system_suffix(row.type_byte);
-        if row.type_byte == 0x26
+            || record.has_inline_non_plane_local_system_suffix(row.kind);
+        if row.kind == crate::surface::SurfaceKind::TorusOrSphere
             && feature_schema_class(scan, row.feature_id) == Some(913)
             && !constant_round_feature_ids.contains(&row.feature_id)
             && !inline_non_plane
@@ -268,11 +267,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
         else {
             continue;
         };
-        if row.kind != crate::surface::SurfaceKind::Extrusion {
-            continue;
-        }
-        let type_byte = row.type_byte;
-        let Some(frame) = record.line_extrusion_frame(type_byte) else {
+        let Some(frame) = record.line_extrusion_frame(row.kind) else {
             continue;
         };
         let directrix =
@@ -433,7 +428,12 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
         else {
             continue;
         };
-        if row.type_byte != 0x2c || row.offset != replay.surface_row_offset {
+        if row.kind
+            != crate::surface::SurfaceKind::Extrusion(
+                crate::surface::ExtrusionVariant::TabulatedCylinder,
+            )
+            || row.offset != replay.surface_row_offset
+        {
             continue;
         }
         let Some(parameters) =

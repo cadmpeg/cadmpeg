@@ -120,11 +120,10 @@ fn rowless_generated_profile_requires_a_framed_side_table() {
     .with_surface_ids([29, 30, 32]);
     let row = |id| crate::surface::SurfaceRow {
         id,
-        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 7,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     };

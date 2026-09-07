@@ -390,9 +390,9 @@ fn positional_cylinder_carrier(
     (row.kind == crate::surface::SurfaceKind::Cylinder).then_some(())?;
     let record = crate::surface::unique_surface_parameter(parameters, row.id)?;
     let inline = record.has_inline_non_plane_envelope()
-        || record.has_inline_non_plane_local_system_suffix(row.type_byte)
+        || record.has_inline_non_plane_local_system_suffix(row.kind)
         || record
-            .selector_corner_interval_cylinder_frame(row.type_byte)
+            .selector_corner_interval_cylinder_frame(row.kind)
             .is_some();
     if crate::decode::sketch_transfer::feature_schema_class(scan, row.feature_id) == Some(913)
         && !inline
@@ -821,11 +821,10 @@ mod namespace_tests {
             .nonvisible_rows
             .push(crate::surface::SurfaceRow {
                 id: 17,
-                type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
                 kind: crate::surface::SurfaceKind::Plane,
                 feature_id: 1,
                 reversed: true,
-                boundary_type: 0,
+                boundary_type: crate::surface::BoundaryType::Code00,
                 next_surface: 0,
                 offset: 0,
             });

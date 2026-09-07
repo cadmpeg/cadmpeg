@@ -613,7 +613,9 @@ fn decodes_local_system_suffix_frames_without_an_axial_envelope() {
     assert_eq!(torus_frame.ref_direction, [0.8, 0.6, 0.0]);
     assert_eq!(torus_frame.major_radius, 3.0);
     assert_eq!(torus_frame.minor_radius, 1.0);
-    assert!(torus.has_inline_non_plane_local_system_suffix(0x26));
+    assert!(
+        torus.has_inline_non_plane_local_system_suffix(crate::surface::SurfaceKind::TorusOrSphere)
+    );
     assert_eq!(torus.boundary, SurfaceBodyBoundary::CompoundClose);
 
     let compact = [
@@ -629,7 +631,9 @@ fn decodes_local_system_suffix_frames_without_an_axial_envelope() {
     assert_eq!(cylinder_frame.ref_direction, [0.0, 0.0, 1.0]);
     assert_eq!(cylinder_frame.radius, 1.0);
     assert_eq!(cylinder_frame.length, None);
-    assert!(cylinder.has_inline_non_plane_local_system_suffix(0x24));
+    assert!(
+        cylinder.has_inline_non_plane_local_system_suffix(crate::surface::SurfaceKind::Cylinder)
+    );
 }
 
 #[test]

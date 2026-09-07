@@ -229,7 +229,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
                 record.surface_id,
             ) == Some(record))
             .then_some(())?;
-            record.type24_round_edge_envelope(row.type_byte)
+            record.type24_round_edge_envelope(row.kind)
         })
         .count();
     let curve_coverage = curve_transfer_coverage(&scan.curves.topology_rows, &ir.model.curves);
@@ -684,21 +684,19 @@ mod tests {
         scan.surfaces.rows = vec![
             crate::surface::SurfaceRow {
                 id: 5,
-                type_byte: 0x22,
                 kind: crate::surface::SurfaceKind::Plane,
                 feature_id: 1,
                 reversed: false,
-                boundary_type: 1,
+                boundary_type: crate::surface::BoundaryType::Code01,
                 next_surface: 0,
                 offset: 10,
             },
             crate::surface::SurfaceRow {
                 id: 6,
-                type_byte: crate::surface::SurfaceKind::Cylinder.canonical_type_byte(),
                 kind: crate::surface::SurfaceKind::Cylinder,
                 feature_id: 1,
                 reversed: false,
-                boundary_type: 0,
+                boundary_type: crate::surface::BoundaryType::Code00,
                 next_surface: 0,
                 offset: 11,
             },

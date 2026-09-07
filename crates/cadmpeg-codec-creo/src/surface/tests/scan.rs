@@ -19,9 +19,9 @@ fn scan_discovers_typed_surface_rows() {
 
     assert_eq!(scan.surfaces.rows.len(), 2);
     assert_eq!(scan.surfaces.rows[0].id, 7);
-    assert_eq!(scan.surfaces.rows[0].type_byte, 0x22);
+    assert_eq!(scan.surfaces.rows[0].kind.canonical_type_byte(), 0x22);
     assert_eq!(scan.surfaces.rows[1].id, 8);
-    assert_eq!(scan.surfaces.rows[1].type_byte, 0x24);
+    assert_eq!(scan.surfaces.rows[1].kind.canonical_type_byte(), 0x24);
 }
 
 #[test]
@@ -35,14 +35,14 @@ fn scan_preserves_linear_extrusion_type_variants() {
     assert_eq!(scan.surfaces.rows.len(), 2);
     assert_eq!(
         scan.surfaces.rows[0].kind,
-        crate::surface::SurfaceKind::Extrusion
+        crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear)
     );
-    assert_eq!(scan.surfaces.rows[0].type_byte, 0x2a);
+    assert_eq!(scan.surfaces.rows[0].kind.canonical_type_byte(), 0x2a);
     assert_eq!(
         scan.surfaces.rows[1].kind,
-        crate::surface::SurfaceKind::Extrusion
+        crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::TabulatedCylinder)
     );
-    assert_eq!(scan.surfaces.rows[1].type_byte, 0x2c);
+    assert_eq!(scan.surfaces.rows[1].kind.canonical_type_byte(), 0x2c);
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
@@ -184,7 +184,7 @@ fn torus_parameter_trailer_retains_typed_outline_frame() {
     let scan = container::scan_bytes(data.clone());
 
     let frame = scan.surfaces.parameters[0]
-        .torus_outline_frame(0x26)
+        .torus_outline_frame(crate::surface::SurfaceKind::TorusOrSphere)
         .expect("typed torus outline frame");
     assert_eq!(
         frame.values,
@@ -193,7 +193,7 @@ fn torus_parameter_trailer_retains_typed_outline_frame() {
     assert_eq!(frame.selector, 80);
     assert_eq!(frame.offset, 0);
     assert!(scan.surfaces.parameters[0]
-        .torus_outline_frame(0x24)
+        .torus_outline_frame(crate::surface::SurfaceKind::Cylinder)
         .is_none());
 
     let result = CreoCodec
@@ -233,7 +233,7 @@ fn torus_parameter_trailer_retains_tagged_radius_overrides() {
         let scan = container::scan_bytes(data.clone());
 
         let overrides = scan.surfaces.parameters[0]
-            .torus_radius_overrides(0x26)
+            .torus_radius_overrides(crate::surface::SurfaceKind::TorusOrSphere)
             .expect("tagged torus radius overrides");
         assert_eq!(overrides.radius1, 0.499_999_999_999_999_94);
         assert_eq!(overrides.radius2, expected_radius2);
@@ -244,7 +244,7 @@ fn torus_parameter_trailer_retains_tagged_radius_overrides() {
             [stored_radial_scalar, 0.499_999_999_999_999_94]
         );
         assert!(scan.surfaces.parameters[0]
-            .torus_radius_overrides(0x24)
+            .torus_radius_overrides(crate::surface::SurfaceKind::Cylinder)
             .is_none());
 
         let result = CreoCodec
@@ -316,12 +316,12 @@ fn cone_terminal_half_angle_bounds_the_parameter_body() {
         crate::surface::SurfaceBodyBoundary::CompoundClose
     );
     let override_value = scan.surfaces.parameters[0]
-        .cone_half_angle_override(0x25)
+        .cone_half_angle_override(crate::surface::SurfaceKind::Cone)
         .expect("terminal cone half-angle");
     assert_eq!(override_value.radians, expected);
     assert_eq!(override_value.offset, 3);
     assert!(scan.surfaces.parameters[0]
-        .cone_half_angle_override(0x26)
+        .cone_half_angle_override(crate::surface::SurfaceKind::TorusOrSphere)
         .is_none());
 
     let result = CreoCodec
@@ -551,7 +551,10 @@ fn scan_keeps_depdb_cross_section_surfaces_out_of_model_namespace() {
     assert_eq!(scan.surfaces.rows[0].id, 7);
     assert_eq!(scan.surfaces.cross_section_rows.len(), 1);
     assert_eq!(scan.surfaces.cross_section_rows[0].id, 9);
-    assert_eq!(scan.surfaces.cross_section_rows[0].boundary_type, 0x06);
+    assert_eq!(
+        scan.surfaces.cross_section_rows[0].boundary_type.code(),
+        0x06
+    );
 }
 
 #[test]

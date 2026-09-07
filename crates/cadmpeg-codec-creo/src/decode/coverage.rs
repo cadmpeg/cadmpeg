@@ -42,7 +42,7 @@ pub(crate) fn surface_family(kind: crate::surface::SurfaceKind) -> &'static str 
         crate::surface::SurfaceKind::TorusOrSphere => "torus_or_sphere",
         crate::surface::SurfaceKind::Spline => "spline",
         crate::surface::SurfaceKind::Fillet => "fillet",
-        crate::surface::SurfaceKind::Extrusion => "extrusion",
+        crate::surface::SurfaceKind::Extrusion(_) => "extrusion",
     }
 }
 
@@ -53,7 +53,7 @@ pub(crate) const SURFACE_KINDS: [crate::surface::SurfaceKind; 7] = [
     crate::surface::SurfaceKind::TorusOrSphere,
     crate::surface::SurfaceKind::Spline,
     crate::surface::SurfaceKind::Fillet,
-    crate::surface::SurfaceKind::Extrusion,
+    crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
 ];
 
 const fn surface_family_index(kind: crate::surface::SurfaceKind) -> usize {
@@ -64,7 +64,7 @@ const fn surface_family_index(kind: crate::surface::SurfaceKind) -> usize {
         crate::surface::SurfaceKind::TorusOrSphere => 3,
         crate::surface::SurfaceKind::Spline => 4,
         crate::surface::SurfaceKind::Fillet => 5,
-        crate::surface::SurfaceKind::Extrusion => 6,
+        crate::surface::SurfaceKind::Extrusion(_) => 6,
     }
 }
 
@@ -301,7 +301,9 @@ pub(crate) fn surface_transfer_coverage(
                 .ok()?;
             let mut kinds = vec![surface_kind_for_geometry(&surface.geometry)?];
             if extrusion_surfaces.contains(&surface.id) {
-                kinds.push(crate::surface::SurfaceKind::Extrusion);
+                kinds.push(crate::surface::SurfaceKind::Extrusion(
+                    crate::surface::ExtrusionVariant::Linear,
+                ));
             }
             Some((id, kinds))
         })
@@ -326,9 +328,9 @@ pub(crate) fn surface_transfer_coverage(
         ..SurfaceTransferCoverage::default()
     };
     for row in unique_rows {
-        let is_transferred = transferred
-            .iter()
-            .any(|(id, kinds)| *id == row.id && kinds.contains(&row.kind));
+        let is_transferred = transferred.iter().any(|(id, kinds)| {
+            *id == row.id && kinds.iter().any(|kind| kind.same_family(row.kind))
+        });
         let retained_unknown = unknown_ids.contains(&row.id);
         coverage.transferred_rows += usize::from(is_transferred);
         coverage.retained_unknown_rows += usize::from(retained_unknown);
@@ -340,10 +342,14 @@ pub(crate) fn surface_transfer_coverage(
     coverage
 }
 
-pub(crate) fn surface_variant(type_byte: u8) -> Option<&'static str> {
-    match type_byte {
-        0x2a => Some("ruled_surface"),
-        0x2c => Some("tabulated_cylinder"),
+pub(crate) fn surface_variant(kind: crate::surface::SurfaceKind) -> Option<&'static str> {
+    match kind {
+        crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear) => {
+            Some("ruled_surface")
+        }
+        crate::surface::SurfaceKind::Extrusion(
+            crate::surface::ExtrusionVariant::TabulatedCylinder,
+        ) => Some("tabulated_cylinder"),
         _ => None,
     }
 }

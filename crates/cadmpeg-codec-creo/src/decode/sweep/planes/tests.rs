@@ -25,11 +25,10 @@ fn expected_linear_plane_extent() -> (ExtrudeExtent, [f64; 3]) {
 fn plane_row(id: u32) -> crate::surface::SurfaceRow {
     crate::surface::SurfaceRow {
         id,
-        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 917,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: id as usize,
     }
@@ -99,11 +98,10 @@ fn generated_table_cap_classes_use_placed_cap_planes() {
     for id in [31, 32, 33] {
         scan.surfaces.rows.push(crate::surface::SurfaceRow {
             id,
-            type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
             kind: crate::surface::SurfaceKind::Plane,
             feature_id: 7,
             reversed: id == 31,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: id as usize,
         });
@@ -248,11 +246,10 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
     );
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 33,
-        type_byte: crate::surface::SurfaceKind::Cylinder.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Cylinder,
         feature_id: 7,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 33,
     });

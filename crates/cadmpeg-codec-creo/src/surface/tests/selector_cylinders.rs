@@ -16,8 +16,12 @@ fn round_edge_endpoint_coordinate_is_not_a_terminal_radius() {
     payload.push(0xe3);
     let record = parameter_records(&payload).remove(0);
 
-    assert!(record.type24_round_edge_envelope(0x24).is_some());
-    assert!(record.type24_generated_round_radius(0x24).is_none());
+    assert!(record
+        .type24_round_edge_envelope(crate::surface::SurfaceKind::Cylinder)
+        .is_some());
+    assert!(record
+        .type24_generated_round_radius(crate::surface::SurfaceKind::Cylinder)
+        .is_none());
 }
 
 #[test]
@@ -55,7 +59,7 @@ fn decodes_extended_type24_round_edge_separator_and_shells() {
     for delimiter in [0x90, 0x91] {
         for shell in [[0x18].as_slice(), &[0x39, 0x19, 0x00], &[0x39, 0x29, 0x00]] {
             let envelope = record(shell, delimiter)
-                .type24_round_edge_envelope(0x24)
+                .type24_round_edge_envelope(crate::surface::SurfaceKind::Cylinder)
                 .expect("extended round-edge envelope");
             assert_eq!(envelope.parameter_interval, [2.0, 3.0]);
             assert_eq!(envelope.vertices, [[0.0; 3], [0.0; 3]]);
@@ -90,9 +94,16 @@ fn perpendicular_round_edge_uses_equal_endpoint_deltas_as_radius() {
         body_offset: 0,
     };
 
-    assert!(record.type24_round_edge_envelope(0x24).is_some());
-    assert_eq!(record.type24_generated_round_radius(0x24), Some(1.0));
-    assert!(record.type24_round_edge_envelope(0x25).is_none());
+    assert!(record
+        .type24_round_edge_envelope(crate::surface::SurfaceKind::Cylinder)
+        .is_some());
+    assert_eq!(
+        record.type24_generated_round_radius(crate::surface::SurfaceKind::Cylinder),
+        Some(1.0)
+    );
+    assert!(record
+        .type24_round_edge_envelope(crate::surface::SurfaceKind::Cone)
+        .is_none());
 }
 
 #[test]

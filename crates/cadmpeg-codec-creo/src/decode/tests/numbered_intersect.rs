@@ -57,11 +57,10 @@ fn numbered_intersect_name_identifies_section_shape_feature() {
     };
     let surface = |id, feature_id| crate::surface::SurfaceRow {
         id,
-        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Plane,
         feature_id,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     };
@@ -311,11 +310,10 @@ fn chamfer_requires_every_affected_support_plane_to_be_placed() {
     let empty_ir = CadIr::empty();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 10,
-        type_byte: crate::surface::SurfaceKind::Cone.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Cone,
         feature_id: 914,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 10,
     });
@@ -345,21 +343,19 @@ fn chamfer_requires_every_affected_support_plane_to_be_placed() {
         });
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 31,
-        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 3,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 31,
     });
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 98,
-        type_byte: crate::surface::SurfaceKind::Cylinder.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Cylinder,
         feature_id: 3,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 98,
     });
@@ -388,11 +384,10 @@ fn chamfer_requires_every_affected_support_plane_to_be_placed() {
     scan.features.affected_ids[0].ids.push(32);
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 32,
-        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 3,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 32,
     });
@@ -403,11 +398,10 @@ fn chamfer_requires_every_affected_support_plane_to_be_placed() {
 fn linear_plane_extent_requires_complete_generated_plane_evidence() {
     let row = |id| crate::surface::SurfaceRow {
         id,
-        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 917,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: id as usize,
     };
@@ -447,11 +441,10 @@ fn linear_plane_extent_requires_complete_generated_plane_evidence() {
 fn hole_outline_placement_requires_complete_feature_plane_evidence() {
     let row = |id| crate::surface::SurfaceRow {
         id,
-        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 911,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: id as usize,
     };
@@ -485,11 +478,10 @@ fn hole_outline_placement_requires_complete_feature_plane_evidence() {
 fn hole_outline_placement_preserves_stored_plane_order() {
     let row = |id| crate::surface::SurfaceRow {
         id,
-        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 911,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: id as usize,
     };
@@ -824,11 +816,10 @@ fn owned_output_entity_depends_on_its_prior_surface_target() {
     ];
     let surface = crate::surface::SurfaceRow {
         id: 98,
-        type_byte: 0x2a,
-        kind: crate::surface::SurfaceKind::Extrusion,
+        kind: crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
         feature_id: 97,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     };
@@ -936,11 +927,10 @@ fn surface_merge_quilt_roster_links_every_unique_generator() {
 fn generated_surface_faces_require_unique_rows_and_materialized_producers() {
     let row = |id, feature_id| crate::surface::SurfaceRow {
         id,
-        type_byte: 0x22,
         kind: crate::surface::SurfaceKind::Plane,
         feature_id,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     };
@@ -983,11 +973,10 @@ fn generated_surface_faces_require_unique_rows_and_materialized_producers() {
 fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
     let row = |id, feature_id| crate::surface::SurfaceRow {
         id,
-        type_byte: 0x22,
         kind: crate::surface::SurfaceKind::Plane,
         feature_id,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     };
@@ -1141,11 +1130,10 @@ fn surface_merge_quilts_resolve_through_unique_generated_surface_outputs() {
     };
     let row = |id, feature_id| crate::surface::SurfaceRow {
         id,
-        type_byte: 0x22,
         kind: crate::surface::SurfaceKind::Plane,
         feature_id,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     };
@@ -1381,11 +1369,10 @@ fn geometry_generator_features_join_surface_and_curve_evidence() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 61,
-        type_byte: 0x22,
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 50,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 200,
     });
@@ -1426,11 +1413,10 @@ fn model_feature_ids_include_row_backed_generated_producers() {
     });
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 61,
-        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 50,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 200,
     });

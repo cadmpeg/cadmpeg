@@ -108,8 +108,10 @@ pub(in super::super) fn generated_profile_entry_is_admissible(
         return false;
     }
     if table.surface_ids().contains(&entry.entity_id) {
-        return crate::surface::unique_surface_row(rows, entry.entity_id)
-            .is_some_and(|row| row.feature_id == feature_id && expected_kinds.contains(&row.kind));
+        return crate::surface::unique_surface_row(rows, entry.entity_id).is_some_and(|row| {
+            row.feature_id == feature_id
+                && expected_kinds.iter().any(|kind| kind.same_family(row.kind))
+        });
     }
     table.non_surface_entity_ids().contains(&entry.entity_id)
         && generated_profile_table_shape(table)
@@ -117,7 +119,10 @@ pub(in super::super) fn generated_profile_entry_is_admissible(
             candidate.class_id == 200
                 && table.surface_ids().contains(&candidate.entity_id)
                 && crate::surface::unique_surface_row(rows, candidate.entity_id).is_some_and(
-                    |row| row.feature_id == feature_id && expected_kinds.contains(&row.kind),
+                    |row| {
+                        row.feature_id == feature_id
+                            && expected_kinds.iter().any(|kind| kind.same_family(row.kind))
+                    },
                 )
         })
 }
@@ -139,7 +144,8 @@ pub(in super::super) fn section_entity_is_generated_profile(
     let direct = generated_surface_id_for_feature(tables, feature_id, source_entity_id)
         .is_some_and(|surface_id| {
             crate::surface::unique_surface_row(rows, surface_id).is_some_and(|row| {
-                row.feature_id == feature_id && expected_kinds.contains(&row.kind)
+                row.feature_id == feature_id
+                    && expected_kinds.iter().any(|kind| kind.same_family(row.kind))
             })
         });
     if direct {
@@ -259,7 +265,7 @@ pub(in super::super) fn section_generated_profile_surface_kinds(
         }
         SketchGeometry::Nurbs { .. } => Some(&[
             crate::surface::SurfaceKind::Spline,
-            crate::surface::SurfaceKind::Extrusion,
+            crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
         ]),
         _ => None,
     }
@@ -287,7 +293,7 @@ pub(in super::super) fn analytic_surface_id_for_feature(
     let surface_id = generated_surface_id_for_feature(tables, feature_id, external_id)?;
     let expected_kind = surface_kind_for_geometry(geometry)?;
     crate::surface::unique_surface_row(surface_rows, surface_id)
-        .is_some_and(|row| row.feature_id == feature_id && row.kind == expected_kind)
+        .is_some_and(|row| row.feature_id == feature_id && row.kind.same_family(expected_kind))
         .then_some(surface_id)
 }
 
@@ -310,7 +316,7 @@ pub(in super::super) fn ordered_family_surface_bindings_for_feature(
             return BTreeMap::new();
         };
         if !crate::surface::unique_surface_row(surface_rows, surface_id)
-            .is_some_and(|row| row.feature_id == feature_id && row.kind == expected_kind)
+            .is_some_and(|row| row.feature_id == feature_id && row.kind.same_family(expected_kind))
             || !bound_surfaces.insert(surface_id)
         {
             return BTreeMap::new();

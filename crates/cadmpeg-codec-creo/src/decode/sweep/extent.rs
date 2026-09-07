@@ -440,7 +440,7 @@ pub(in super::super) fn generated_nurbs_translation_extent(
         && rows.iter().all(|row| {
             matches!(
                 row.kind,
-                crate::surface::SurfaceKind::Plane | crate::surface::SurfaceKind::Extrusion
+                crate::surface::SurfaceKind::Plane | crate::surface::SurfaceKind::Extrusion(_)
             )
         }))
     .then_some(())?;
@@ -476,7 +476,7 @@ pub(in super::super) fn generated_nurbs_translation_extent(
                     planes.push((plane.origin, plane.normal));
                 }
             }
-            crate::surface::SurfaceKind::Extrusion => match surfaces.as_slice() {
+            crate::surface::SurfaceKind::Extrusion(_) => match surfaces.as_slice() {
                 [] => {}
                 [Surface {
                     geometry: SurfaceGeometry::Nurbs(nurbs),

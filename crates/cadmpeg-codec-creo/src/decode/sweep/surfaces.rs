@@ -216,7 +216,7 @@ fn unique_feature_surface_row(
     expected_kind: crate::surface::SurfaceKind,
 ) -> bool {
     crate::surface::unique_surface_row(rows, surface_id)
-        .is_some_and(|row| row.feature_id == feature_id && row.kind == expected_kind)
+        .is_some_and(|row| row.feature_id == feature_id && row.kind.same_family(expected_kind))
 }
 
 pub(in super::super) fn transfer_saved_spline_curves(
@@ -581,7 +581,9 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     &scan.surfaces.rows,
                     surface_id,
                     feature_id,
-                    crate::surface::SurfaceKind::Extrusion,
+                    crate::surface::SurfaceKind::Extrusion(
+                        crate::surface::ExtrusionVariant::Linear,
+                    ),
                 )
                 .then_some((surface_id, spline))
             })

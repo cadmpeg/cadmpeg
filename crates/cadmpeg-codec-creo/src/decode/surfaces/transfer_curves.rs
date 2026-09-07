@@ -212,14 +212,14 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
         };
         let resolved = match (first.kind, second.kind, first_geometry, second_geometry) {
             (
-                crate::surface::SurfaceKind::Extrusion,
+                crate::surface::SurfaceKind::Extrusion(_),
                 crate::surface::SurfaceKind::Plane,
                 SurfaceGeometry::Nurbs(nurbs),
                 SurfaceGeometry::Plane { origin, normal, .. },
             )
             | (
                 crate::surface::SurfaceKind::Plane,
-                crate::surface::SurfaceKind::Extrusion,
+                crate::surface::SurfaceKind::Extrusion(_),
                 SurfaceGeometry::Plane { origin, normal, .. },
                 SurfaceGeometry::Nurbs(nurbs),
             ) => {
@@ -236,8 +236,8 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
                 }
             }
             (
-                crate::surface::SurfaceKind::Extrusion,
-                crate::surface::SurfaceKind::Extrusion,
+                crate::surface::SurfaceKind::Extrusion(_),
+                crate::surface::SurfaceKind::Extrusion(_),
                 SurfaceGeometry::Nurbs(first),
                 SurfaceGeometry::Nurbs(second),
             ) => shared_extrusion_generator_curve(first, second)
@@ -339,11 +339,10 @@ mod tests {
             .into_iter()
             .map(|id| surface::SurfaceRow {
                 id,
-                type_byte: surface::SurfaceKind::Plane.canonical_type_byte(),
                 kind: surface::SurfaceKind::Plane,
                 feature_id: 0,
                 reversed: false,
-                boundary_type: 0,
+                boundary_type: crate::surface::BoundaryType::Code00,
                 next_surface: 0,
                 offset: 0,
             })
@@ -481,21 +480,19 @@ mod tests {
         scan.surfaces.rows = vec![
             surface::SurfaceRow {
                 id: 1,
-                type_byte: surface::SurfaceKind::Extrusion.canonical_type_byte(),
-                kind: surface::SurfaceKind::Extrusion,
+                kind: surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
                 feature_id: 0,
                 reversed: false,
-                boundary_type: 0,
+                boundary_type: crate::surface::BoundaryType::Code00,
                 next_surface: 0,
                 offset: 0,
             },
             surface::SurfaceRow {
                 id: 2,
-                type_byte: surface::SurfaceKind::Plane.canonical_type_byte(),
                 kind: surface::SurfaceKind::Plane,
                 feature_id: 0,
                 reversed: false,
-                boundary_type: 0,
+                boundary_type: crate::surface::BoundaryType::Code00,
                 next_surface: 0,
                 offset: 0,
             },

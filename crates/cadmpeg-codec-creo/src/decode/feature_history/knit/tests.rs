@@ -22,11 +22,10 @@ fn draft_neutral_plane_rejects_duplicate_materialized_roster_entry() {
     );
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 226,
-        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 225,
         reversed: false,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: 0,
     });
@@ -72,21 +71,19 @@ fn feature_surface_transitions_reject_duplicate_output_roster_entry() {
     let rows = vec![
         crate::surface::SurfaceRow {
             id: 11,
-            type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
             kind: crate::surface::SurfaceKind::Plane,
             feature_id: 3,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 11,
         },
         crate::surface::SurfaceRow {
             id: 201,
-            type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
             kind: crate::surface::SurfaceKind::Plane,
             feature_id: 17,
             reversed: false,
-            boundary_type: 0,
+            boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
             offset: 201,
         },

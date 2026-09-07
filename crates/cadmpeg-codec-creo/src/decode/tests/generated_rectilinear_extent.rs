@@ -75,11 +75,10 @@ fn generated_fixture(
 ) {
     let row = |id, reversed| crate::surface::SurfaceRow {
         id,
-        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 7,
         reversed,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: id as usize,
     };
@@ -249,11 +248,10 @@ fn generated_rectilinear_extent_rejects_ambiguous_or_missing_section_flags() {
 fn rectilinear_extent_reconciles_native_and_transferred_planes() {
     let row = |id, reversed| crate::surface::SurfaceRow {
         id,
-        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
         kind: crate::surface::SurfaceKind::Plane,
         feature_id: 7,
         reversed,
-        boundary_type: 0,
+        boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
         offset: id as usize,
     };
