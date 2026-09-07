@@ -507,8 +507,33 @@ struct TextureMappingRecord {
 struct RenderingMaterialReference {
     plugin_uuid: String,
     front_material_uuid: String,
+    #[serde(flatten, serialize_with = "serialize_material_back_face")]
+    back_face: Option<RenderingMaterialBackFace>,
+}
+
+#[derive(Debug)]
+struct RenderingMaterialBackFace {
     back_material_uuid: Option<String>,
-    material_source: Option<u8>,
+    material_source: u8,
+}
+
+fn serialize_material_back_face<S: serde::Serializer>(
+    back_face: &Option<RenderingMaterialBackFace>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeStruct;
+    let mut fields = serializer.serialize_struct("RenderingMaterialBackFace", 2)?;
+    fields.serialize_field(
+        "back_material_uuid",
+        &back_face
+            .as_ref()
+            .and_then(|value| value.back_material_uuid.as_ref()),
+    )?;
+    fields.serialize_field(
+        "material_source",
+        &back_face.as_ref().map(|value| value.material_source),
+    )?;
+    fields.end()
 }
 
 #[derive(Debug, Serialize)]
@@ -3565,20 +3590,22 @@ fn rendering_attributes(
                     )?;
                     value.skip(next_offset - value.position())?;
                 }
-                let (back_material_uuid, material_source) = if minor >= 1 {
+                let back_face = if minor >= 1 {
                     let id = uuid(&mut value)?;
                     let source = value.u8()?;
                     value.skip(3)?;
-                    ((!id.is_nil()).then(|| id.to_string()), Some(source))
+                    Some(RenderingMaterialBackFace {
+                        back_material_uuid: (!id.is_nil()).then(|| id.to_string()),
+                        material_source: source,
+                    })
                 } else {
-                    (None, None)
+                    None
                 };
                 value.skip_remaining()?;
                 Ok(RenderingMaterialReference {
                     plugin_uuid,
                     front_material_uuid,
-                    back_material_uuid,
-                    material_source,
+                    back_face,
                 })
             })();
             presentation.materials.push(parsed?);
@@ -5895,10 +5922,19 @@ mod tests {
             Uuid::from_wire([0x22; 16]).to_string()
         );
         assert_eq!(
-            value.materials[0].back_material_uuid,
+            value.materials[0]
+                .back_face
+                .as_ref()
+                .and_then(|value| value.back_material_uuid.clone()),
             Some(Uuid::from_wire([0x44; 16]).to_string())
         );
-        assert_eq!(value.materials[0].material_source, Some(3));
+        assert_eq!(
+            value.materials[0]
+                .back_face
+                .as_ref()
+                .map(|value| value.material_source),
+            Some(3)
+        );
     }
 
     #[test]
