@@ -213,8 +213,7 @@ impl StepDialect {
             if object_identifier_text.is_none() {
                 return Self::Part21(Part21Dialect::Ap242);
             }
-            return Self::from_ap242_identifier(name, object_identifier)
-                .map_or(Self::Unknown, Self::Part21);
+            return Self::ap242_edition(object_identifier).map_or(Self::Unknown, Self::Part21);
         }
         [
             Part21Dialect::Schema(StepSchema::Ap203Edition1),
@@ -231,13 +230,7 @@ impl StepDialect {
 
     /// The AP242 edition row whose canonical object identifier the declaration
     /// names. A future or malformed object identifier names no verified row.
-    fn from_ap242_identifier(
-        name: &str,
-        object_identifier: Option<&[u64]>,
-    ) -> Option<Part21Dialect> {
-        if !name.eq_ignore_ascii_case(Part21Dialect::Ap242.schema_identifier()) {
-            return None;
-        }
+    fn ap242_edition(object_identifier: Option<&[u64]>) -> Option<Part21Dialect> {
         match object_identifier? {
             [1, 0, 10303, 442, 1, 1, 4] => Some(Part21Dialect::Schema(StepSchema::Ap242Edition1)),
             [1, 0, 10303, 442, 3, 1, 4] => Some(Part21Dialect::Schema(StepSchema::Ap242Edition2)),
