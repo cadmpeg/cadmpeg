@@ -658,6 +658,7 @@ fn map_pcurve_paths(
 
 fn pcurve_endpoint_evidence_from_mapped(
     mapped: &[MappedPcurvePath],
+    authoritative: bool,
 ) -> Option<PcurveEndpointEvidence> {
     let first = mapped.first()?.endpoints;
     mapped
@@ -669,7 +670,7 @@ fn pcurve_endpoint_evidence_from_mapped(
         .then_some(PcurveEndpointEvidence {
             points: first,
             complete: mapped.len() == 2,
-            authoritative: false,
+            authoritative,
         })
 }
 
@@ -731,7 +732,7 @@ fn mapped_pcurve_endpoint_evidence_for_paths(
     paths: impl IntoIterator<Item = (u32, [[f64; 2]; 2])>,
 ) -> Option<PcurveEndpointEvidence> {
     let mapped = map_pcurve_paths(ir, paths);
-    pcurve_endpoint_evidence_from_mapped(&mapped.mapped)
+    pcurve_endpoint_evidence_from_mapped(&mapped.mapped, false)
 }
 
 pub fn pcurve_edge_endpoint_evidence(
@@ -825,9 +826,8 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
         if carrier_proof_available && selected_paths.is_empty() {
             diagnostics.carrier_rejected_records += 1;
         }
-        match pcurve_endpoint_evidence_from_mapped(&selected_paths) {
-            Some(mut evidence) => {
-                evidence.authoritative = authoritative;
+        match pcurve_endpoint_evidence_from_mapped(&selected_paths, authoritative) {
+            Some(evidence) => {
                 diagnostics.accepted_records += 1;
                 diagnostics.complete_records += usize::from(evidence.complete);
                 candidates.entry(curve_id).or_default().push(evidence);
