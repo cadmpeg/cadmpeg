@@ -137,7 +137,6 @@ pub(crate) enum PmDcFeaturePropertyKind {
         value: u16,
     },
     WideEnumeration {
-        family: PmDcFeatureEnum32Family,
         type_value: u32,
         value: u32,
     },
@@ -190,12 +189,6 @@ pub(crate) enum PmDcFeatureEnumFamily {
     Fillet,
     Chamfer,
     Auxiliary,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum PmDcFeatureEnum32Family {
-    FilletEdgeSelection,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -620,11 +613,7 @@ fn parse_fillet_edge_selection(
     Ok(property(
         version,
         header,
-        PmDcFeaturePropertyKind::WideEnumeration {
-            family: PmDcFeatureEnum32Family::FilletEdgeSelection,
-            type_value,
-            value,
-        },
+        PmDcFeaturePropertyKind::WideEnumeration { type_value, value },
     ))
 }
 
@@ -1166,7 +1155,6 @@ fn project_fillet(
             if !matches!(
                 selection.kind,
                 PmDcFeaturePropertyKind::WideEnumeration {
-                    family: PmDcFeatureEnum32Family::FilletEdgeSelection,
                     type_value: 4,
                     value: 0
                 }
@@ -2045,7 +2033,6 @@ mod tests {
             test_property(
                 5,
                 PmDcFeaturePropertyKind::WideEnumeration {
-                    family: PmDcFeatureEnum32Family::FilletEdgeSelection,
                     type_value: 4,
                     value: 0,
                 },
@@ -2554,7 +2541,6 @@ mod tests {
         assert!(matches!(
             parsed.kind,
             PmDcFeaturePropertyKind::WideEnumeration {
-                family: PmDcFeatureEnum32Family::FilletEdgeSelection,
                 type_value: 4,
                 value: 0
             }
