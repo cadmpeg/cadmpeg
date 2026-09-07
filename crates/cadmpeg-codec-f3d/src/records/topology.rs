@@ -1081,13 +1081,13 @@ pub struct DesignConstructionTrackingPath {
     /// Outer tracking-wrapper header byte offset.
     pub wrapper_byte_offset: u64,
     /// Outer tracking-wrapper dynamic class tag.
-    pub wrapper_class_tag: String,
+    pub wrapper_class_tag: DesignClassTag,
     /// Nested tracking-carrier record identity.
     pub carrier_record_index: u32,
     /// Nested tracking-carrier header byte offset.
     pub carrier_byte_offset: u64,
     /// Nested tracking-carrier dynamic class tag.
-    pub carrier_class_tag: String,
+    pub carrier_class_tag: DesignClassTag,
     /// Primary persistent identity stored by the carrier.
     pub primary_identity: u64,
     /// Byte offset of `primary_identity`.
@@ -1111,7 +1111,7 @@ pub struct DesignConstructionTrackingPath {
     /// Following-record header byte offset.
     pub following_byte_offset: u64,
     /// Following-record dynamic class tag.
-    pub following_class_tag: String,
+    pub following_class_tag: DesignClassTag,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1148,10 +1148,10 @@ impl TryFrom<DesignConstructionTrackingPathWire> for DesignConstructionTrackingP
         Ok(Self {
             wrapper_record_index: wire.wrapper_record_index,
             wrapper_byte_offset: wire.wrapper_byte_offset,
-            wrapper_class_tag: wire.wrapper_class_tag,
+            wrapper_class_tag: wire.wrapper_class_tag.try_into()?,
             carrier_record_index: wire.carrier_record_index,
             carrier_byte_offset: wire.carrier_byte_offset,
-            carrier_class_tag: wire.carrier_class_tag,
+            carrier_class_tag: wire.carrier_class_tag.try_into()?,
             primary_identity: wire.primary_identity,
             primary_identity_offset: wire.primary_identity_offset,
             selector: wire.selector,
@@ -1170,7 +1170,7 @@ impl TryFrom<DesignConstructionTrackingPathWire> for DesignConstructionTrackingP
             )?,
             following_record_index: wire.following_record_index,
             following_byte_offset: wire.following_byte_offset,
-            following_class_tag: wire.following_class_tag,
+            following_class_tag: wire.following_class_tag.try_into()?,
         })
     }
 }
@@ -1180,10 +1180,10 @@ impl From<DesignConstructionTrackingPath> for DesignConstructionTrackingPathWire
         Self {
             wrapper_record_index: value.wrapper_record_index,
             wrapper_byte_offset: value.wrapper_byte_offset,
-            wrapper_class_tag: value.wrapper_class_tag,
+            wrapper_class_tag: value.wrapper_class_tag.into(),
             carrier_record_index: value.carrier_record_index,
             carrier_byte_offset: value.carrier_byte_offset,
-            carrier_class_tag: value.carrier_class_tag,
+            carrier_class_tag: value.carrier_class_tag.into(),
             primary_identity: value.primary_identity,
             primary_identity_offset: value.primary_identity_offset,
             selector: value.selector,
@@ -1200,7 +1200,7 @@ impl From<DesignConstructionTrackingPath> for DesignConstructionTrackingPathWire
                 .map(|located| located.offset),
             following_record_index: value.following_record_index,
             following_byte_offset: value.following_byte_offset,
-            following_class_tag: value.following_class_tag,
+            following_class_tag: value.following_class_tag.into(),
         }
     }
 }

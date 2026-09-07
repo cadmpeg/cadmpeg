@@ -5,8 +5,8 @@
 #[allow(clippy::format_push_string)]
 fn external_version_identity_preserves_wire_and_rejects_partial_forms() {
     {
-        let prefix = r#"{"axis_record_index":0,"axis_class_tag":"identity","axis_byte_offset":0,"axis_paired_class_tag":"identity","axis_paired_byte_offset":0,"selector_record_index":0,"selector_class_tag":"identity","selector_byte_offset":0,"selector_paired_class_tag":"identity","selector_paired_byte_offset":0,"nested_record_index":0,"nested_record_index_offset":0,"selector_asset_id":"identity","selector_asset_id_offset":0,"selector_context_id":"identity","selector_context_id_offset":0,"occurrence_reference":0,"occurrence_reference_offset":0,"external_object_reference":0,"external_object_reference_offset":0,"external_segment":0,"external_segment_offset":0,"external_asset_id":"identity","external_asset_id_offset":0,"external_link_name":"identity","external_link_name_offset":0"#;
-        let suffix = r#","role_record_index":0,"role_class_tag":"identity","role_byte_offset":0,"occurrence_role":"identity","occurrence_role_offset":0}"#;
+        let prefix = r#"{"axis_record_index":0,"axis_class_tag":"327","axis_byte_offset":0,"axis_paired_class_tag":"327","axis_paired_byte_offset":0,"selector_record_index":0,"selector_class_tag":"327","selector_byte_offset":0,"selector_paired_class_tag":"327","selector_paired_byte_offset":0,"nested_record_index":0,"nested_record_index_offset":0,"selector_asset_id":"identity","selector_asset_id_offset":0,"selector_context_id":"identity","selector_context_id_offset":0,"occurrence_reference":0,"occurrence_reference_offset":0,"external_object_reference":0,"external_object_reference_offset":0,"external_segment":0,"external_segment_offset":0,"external_asset_id":"identity","external_asset_id_offset":0,"external_link_name":"identity","external_link_name_offset":0"#;
+        let suffix = r#","role_record_index":0,"role_class_tag":"327","role_byte_offset":0,"occurrence_role":"identity","occurrence_role_offset":0}"#;
         let fields = [
             ("external_property_key", "\"key\""),
             ("external_property_key_offset", "100"),

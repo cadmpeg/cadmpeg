@@ -1523,8 +1523,13 @@ fn construction_tracking_path_decodes_absent_and_present_related_identities() {
     }
 
     let absent = tracking_path(None, None);
-    let absent = parse_construction_tracking_path(&absent, 0, 300, "361")
-        .expect("tracking path without related identities");
+    let absent = parse_construction_tracking_path(
+        &absent,
+        0,
+        300,
+        &crate::records::DesignClassTag::try_from("361".to_owned()).unwrap(),
+    )
+    .expect("tracking path without related identities");
     assert_eq!(absent.carrier_record_index, 301);
     assert_eq!(absent.carrier_byte_offset, 33);
     assert_eq!(absent.primary_identity, 268);
@@ -1537,8 +1542,13 @@ fn construction_tracking_path_decodes_absent_and_present_related_identities() {
     assert_eq!(absent.following_byte_offset, 114);
 
     let present = tracking_path(Some(113), Some(119));
-    let present = parse_construction_tracking_path(&present, 0, 300, "361")
-        .expect("tracking path with related identities");
+    let present = parse_construction_tracking_path(
+        &present,
+        0,
+        300,
+        &crate::records::DesignClassTag::try_from("361".to_owned()).unwrap(),
+    )
+    .expect("tracking path with related identities");
     assert_eq!(
         present
             .first_related_identity

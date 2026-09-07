@@ -5826,13 +5826,13 @@ fn validate_construction_operand_identities<'a>(
                     .get(&(native_stream, path.wrapper_record_index))
                     .is_some_and(|header| {
                         header.byte_offset == path.wrapper_byte_offset
-                            && header.class_tag.as_str() == path.wrapper_class_tag
+                            && header.class_tag == path.wrapper_class_tag
                     })
                 && records_by_index
                     .get(&(native_stream, path.carrier_record_index))
                     .is_some_and(|header| {
                         header.byte_offset == path.carrier_byte_offset
-                            && header.class_tag.as_str() == path.carrier_class_tag
+                            && header.class_tag == path.carrier_class_tag
                     })
                 && path.primary_identity_offset == path.carrier_byte_offset.saturating_add(37)
                 && path.selector_offset == path.carrier_byte_offset.saturating_add(57)
@@ -5845,7 +5845,7 @@ fn validate_construction_operand_identities<'a>(
                     .get(&(native_stream, path.following_record_index))
                     .is_some_and(|header| {
                         header.byte_offset == path.following_byte_offset
-                            && header.class_tag.as_str() == path.following_class_tag
+                            && header.class_tag == path.following_class_tag
                     })
         });
         let chain_entry_shape = if let Some(path) = &identity.tracking_path {
@@ -5858,7 +5858,7 @@ fn validate_construction_operand_identities<'a>(
                     && transform.is_some_and(|transform| {
                         path.wrapper_record_index == transform.following_record_index
                             && path.wrapper_byte_offset == transform.following_byte_offset
-                            && path.wrapper_class_tag == transform.following_class_tag.as_str()
+                            && path.wrapper_class_tag == transform.following_class_tag
                     }))
                 || (identity.wrappers.is_empty()
                     && transform.is_none()
@@ -5876,7 +5876,7 @@ fn validate_construction_operand_identities<'a>(
         let following_shape = if let Some(path) = &identity.tracking_path {
             identity.following_record_index == path.following_record_index
                 && identity.following_byte_offset == path.following_byte_offset
-                && identity.following_class_tag.as_str() == path.following_class_tag
+                && identity.following_class_tag == path.following_class_tag
         } else if let Some(offset) = identity.wrappers.last().map(|wrapper| wrapper.byte_offset) {
             identity.following_byte_offset == offset.saturating_add(24)
         } else {

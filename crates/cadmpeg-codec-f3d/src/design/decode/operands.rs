@@ -2663,12 +2663,12 @@ pub(crate) fn parse_construction_operand_identity(
 ) -> Option<DesignConstructionOperandIdentity> {
     let mut current_at = usize::try_from(wrapper_header.byte_offset).ok()?;
     let mut current_record_index = wrapper_header.record_index;
-    let mut current_class_tag = wrapper_header.class_tag.as_str().to_owned();
+    let mut current_class_tag = wrapper_header.class_tag.clone();
     let mut chain_started = false;
     if let Some(transform) = parse_construction_operand_transform(bytes, wrapper_header) {
         current_at = usize::try_from(transform.following_byte_offset).ok()?;
         current_record_index = transform.following_record_index;
-        current_class_tag = transform.following_class_tag.into();
+        current_class_tag = transform.following_class_tag;
         chain_started = true;
     }
     let mut wrappers = Vec::new();
@@ -2692,13 +2692,13 @@ pub(crate) fn parse_construction_operand_identity(
         wrappers.push(crate::records::topology::DesignIdentityWrapper {
             record_index: current_record_index,
             byte_offset: u64::try_from(current_at).ok()?,
-            class_tag: current_class_tag.try_into().ok()?,
+            class_tag: current_class_tag,
         });
         current_at = current_at.checked_add(24)?;
         let (next_class_tag, after_next_tag) =
             lp_ascii_filtered(bytes, current_at, 0..=2000, u8::is_ascii_graphic)?;
         current_record_index = View::u32_le_at(bytes, after_next_tag)?;
-        current_class_tag = next_class_tag;
+        current_class_tag = next_class_tag.try_into().ok()?;
         chain_started = true;
     }
     let tracking_path = parse_construction_tracking_path(
@@ -2736,7 +2736,7 @@ pub(crate) fn parse_construction_operand_identity(
         wrappers,
         following_record_index: current_record_index,
         following_byte_offset: u64::try_from(current_at).ok()?,
-        following_class_tag: current_class_tag.try_into().ok()?,
+        following_class_tag: current_class_tag,
         tracking_path,
         persistent_identity,
     })
@@ -2746,7 +2746,7 @@ pub(crate) fn parse_construction_tracking_path(
     bytes: &[u8],
     wrapper_at: usize,
     wrapper_record_index: u32,
-    wrapper_class_tag: &str,
+    wrapper_class_tag: &crate::records::DesignClassTag,
 ) -> Option<DesignConstructionTrackingPath> {
     if bytes.get(wrapper_at + 11..wrapper_at + 21)? != [0; 10]
         || bytes.get(wrapper_at + 21) != Some(&1)
@@ -2788,10 +2788,10 @@ pub(crate) fn parse_construction_tracking_path(
     Some(DesignConstructionTrackingPath {
         wrapper_record_index,
         wrapper_byte_offset: u64::try_from(wrapper_at).ok()?,
-        wrapper_class_tag: wrapper_class_tag.to_owned(),
+        wrapper_class_tag: wrapper_class_tag.clone(),
         carrier_record_index,
         carrier_byte_offset: u64::try_from(carrier_at).ok()?,
-        carrier_class_tag,
+        carrier_class_tag: carrier_class_tag.try_into().ok()?,
         primary_identity,
         primary_identity_offset: u64::try_from(carrier_at + 37).ok()?,
         selector,
@@ -2802,7 +2802,7 @@ pub(crate) fn parse_construction_tracking_path(
         second_related_identity,
         following_record_index,
         following_byte_offset: u64::try_from(following_at).ok()?,
-        following_class_tag,
+        following_class_tag: following_class_tag.try_into().ok()?,
     })
 }
 
