@@ -683,11 +683,9 @@ fn termination_consensus_uses_stable_reference_identity_across_lanes() {
 
     let first_depth = super::TerminationVote::Blind {
         depth_m: Some(0.01),
-        second_through_all: false,
     };
     let second_depth = super::TerminationVote::Blind {
         depth_m: Some(0.02),
-        second_through_all: false,
     };
     assert!(super::consensus_termination_vote(&[Some(first_depth), Some(second_depth),]).is_none());
 }

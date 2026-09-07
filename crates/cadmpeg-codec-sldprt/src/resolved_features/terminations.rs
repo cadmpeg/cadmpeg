@@ -27,8 +27,9 @@ const EPS_TERMINATIONS_ENRICH_HISTORY_EXTRUSION_TERMINATIONS_E9: f64 = 1.0e-9;
 pub(super) enum TerminationVote {
     Blind {
         depth_m: Option<f64>,
-        second_through_all: bool,
     },
+    /// Blind termination with a through-all second direction.
+    BlindSecondThroughAll,
     Symmetric,
     ThroughAllBoth,
     ThroughAll,
@@ -53,7 +54,7 @@ pub(super) enum FaceCondition {
 impl TerminationVote {
     fn condition(&self) -> &'static str {
         match self {
-            Self::Blind { .. } => "Blind",
+            Self::Blind { .. } | Self::BlindSecondThroughAll => "Blind",
             Self::Symmetric => "Symmetric",
             Self::ThroughAllBoth => "ThroughAllBoth",
             Self::ThroughAll => "ThroughAll",
@@ -80,17 +81,11 @@ impl TerminationVote {
 
     fn agrees_with(&self, other: &Self) -> bool {
         match (self, other) {
-            (
-                Self::Blind {
-                    depth_m: a,
-                    second_through_all: a_second,
-                },
-                Self::Blind {
-                    depth_m: b,
-                    second_through_all: b_second,
-                },
-            ) => a.map(f64::to_bits) == b.map(f64::to_bits) && a_second == b_second,
-            (Self::Symmetric, Self::Symmetric)
+            (Self::Blind { depth_m: a }, Self::Blind { depth_m: b }) => {
+                a.map(f64::to_bits) == b.map(f64::to_bits)
+            }
+            (Self::BlindSecondThroughAll, Self::BlindSecondThroughAll)
+            | (Self::Symmetric, Self::Symmetric)
             | (Self::ThroughAllBoth, Self::ThroughAllBoth)
             | (Self::ThroughAll, Self::ThroughAll)
             | (Self::ThroughNext, Self::ThroughNext) => true,
@@ -162,10 +157,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
             grouped_blind
                 .entry(owner.id.clone())
                 .or_default()
-                .push(TerminationVote::Blind {
-                    depth_m: None,
-                    second_through_all: false,
-                });
+                .push(TerminationVote::Blind { depth_m: None });
         }
         let mut objects = histories
             .iter()
@@ -264,10 +256,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                             })
                             .min_by_key(|(scalar, _)| scalar.offset)
                             .map(|(scalar, _)| scalar.value);
-                        return Some(TerminationVote::Blind {
-                            depth_m,
-                            second_through_all: false,
-                        });
+                        return Some(TerminationVote::Blind { depth_m });
                     }
                     if compact_extrusion_mid_plane_at(&lane.native_payload, offset) {
                         return Some(TerminationVote::Symmetric);
@@ -294,10 +283,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                             offset,
                         )
                     {
-                        return Some(TerminationVote::Blind {
-                            depth_m: None,
-                            second_through_all: true,
-                        });
+                        return Some(TerminationVote::BlindSecondThroughAll);
                     }
                     // One-sided through-all/through-next forms may retain a
                     // display dimension even when semantic D1/Depth already
@@ -379,24 +365,21 @@ pub(crate) fn enrich_history_extrusion_terminations(
             } => {
                 feature.properties.entry("Face".into()).or_insert(reference);
             }
+            TerminationVote::BlindSecondThroughAll => {
+                feature
+                    .properties
+                    .insert("EndCondition2".into(), "ThroughAll".into());
+            }
             TerminationVote::Blind {
-                depth_m,
-                second_through_all,
+                depth_m: Some(depth_m),
             } => {
-                if second_through_all {
-                    feature
-                        .properties
-                        .insert("EndCondition2".into(), "ThroughAll".into());
-                }
-                if let Some(depth_m) = depth_m {
-                    if !feature.parameters.contains_key("D1")
-                        && !feature.parameters.contains_key("Depth")
-                    {
-                        feature.parameters.insert(
-                            "D1".into(),
-                            crate::history::format_length_mm(depth_m * 1000.0),
-                        );
-                    }
+                if !feature.parameters.contains_key("D1")
+                    && !feature.parameters.contains_key("Depth")
+                {
+                    feature.parameters.insert(
+                        "D1".into(),
+                        crate::history::format_length_mm(depth_m * 1000.0),
+                    );
                 }
             }
             _ => {}
