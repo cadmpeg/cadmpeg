@@ -108,7 +108,6 @@ fn variable_blend_eval_fixture(
                 tail_flag: false,
                 tail_extensions: [0; 3],
                 secondary_curve: None,
-                secondary_range: [None, None],
                 convexity: VariableBlendConvexity::Convex,
                 render_mode: VariableBlendRenderMode::RollingBallEnvelope,
                 post_range: [None, None],

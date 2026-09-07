@@ -732,3 +732,5 @@ mod revision_compound_loft_tail;
 mod rolling_ball_jet;
 
 mod rolling_ball_side;
+
+mod variable_blend_secondary_curve;

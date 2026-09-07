@@ -1105,12 +1105,11 @@ pub(crate) fn var_blend_spl_sur(
     };
     let tail_extensions = [cur.take_long()?, cur.take_long()?, cur.take_long()?];
     let saved = cur.pos();
-    let (secondary_curve, secondary_range) = if cur.take_ident() == Some("null_curve") {
-        (None, [None, None])
+    let secondary_curve = if cur.take_ident() == Some("null_curve") {
+        None
     } else {
         cur.set_pos(saved);
-        let secondary = rolling_ball_curve(&mut cur, reference_context)?;
-        (Some(secondary.curve), secondary.parameter_range)
+        Some(rolling_ball_curve(&mut cur, reference_context)?)
     };
     let convexity = if cur.take_bool()? {
         cadmpeg_ir::geometry::VariableBlendConvexity::Convex
@@ -1174,7 +1173,6 @@ pub(crate) fn var_blend_spl_sur(
                 tail_flag,
                 tail_extensions,
                 secondary_curve,
-                secondary_range,
                 convexity,
                 render_mode,
                 post_range,

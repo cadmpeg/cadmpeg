@@ -4925,6 +4925,50 @@ pub enum VariableBlendSurfaceSubtype {
     SurfaceCurveFree,
 }
 
+mod variable_blend_secondary_curve_wire {
+    use super::{CurveId, RollingBallSupportCurve};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Serialize, Deserialize)]
+    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+    #[serde(bound(deserialize = "C: Deserialize<'de>"))]
+    pub(super) struct Wire<C> {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        secondary_curve: Option<C>,
+        #[serde(default)]
+        secondary_range: [Option<f64>; 2],
+    }
+
+    pub fn serialize<S: Serializer>(
+        curve: &Option<RollingBallSupportCurve>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        Wire {
+            secondary_curve: curve.as_ref().map(|curve| &curve.curve),
+            secondary_range: curve
+                .as_ref()
+                .map_or([None; 2], |curve| curve.parameter_range),
+        }
+        .serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<RollingBallSupportCurve>, D::Error> {
+        let wire = Wire::<CurveId>::deserialize(deserializer)?;
+        match wire.secondary_curve {
+            Some(curve) => Ok(Some(RollingBallSupportCurve {
+                curve,
+                parameter_range: wire.secondary_range,
+            })),
+            None if wire.secondary_range.iter().any(Option::is_some) => Err(
+                serde::de::Error::custom("variable-blend secondary_range requires secondary_curve"),
+            ),
+            None => Ok(None),
+        }
+    }
+}
+
 /// Complete native variable-radius blend construction graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4987,12 +5031,13 @@ pub struct VariableBlendConstruction {
     pub tail_flag: bool,
     /// Three ASM integers following the tail Boolean.
     pub tail_extensions: [i64; 3],
-    /// Secondary curve following the tail extensions, absent for `null_curve`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub secondary_curve: Option<CurveId>,
-    /// Optional native secondary-curve parameter endpoints.
-    #[serde(default)]
-    pub secondary_range: [Option<f64>; 2],
+    /// Secondary curve and its bounds, absent for `null_curve`.
+    #[serde(flatten, with = "variable_blend_secondary_curve_wire")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "variable_blend_secondary_curve_wire::Wire<CurveId>")
+    )]
+    pub secondary_curve: Option<RollingBallSupportCurve>,
     /// Blend convexity.
     pub convexity: VariableBlendConvexity,
     /// Solved-surface representation.

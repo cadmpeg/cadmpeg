@@ -2040,7 +2040,10 @@ fn emit_variable_blend_surface(
     let slice = add_curve("slice", construction.slice);
     let secondary_curve = construction
         .secondary_curve
-        .map(|geometry| add_curve("secondary", geometry));
+        .map(|support| RollingBallSupportCurve {
+            curve: add_curve("secondary", support.curve),
+            parameter_range: support.parameter_range,
+        });
     let post_curve = construction
         .post_curve
         .map(|curve| add_curve("post", CurveGeometry::Nurbs(curve)));
@@ -2064,7 +2067,6 @@ fn emit_variable_blend_surface(
             tail_flag: construction.tail_flag,
             tail_extensions: construction.tail_extensions,
             secondary_curve,
-            secondary_range: construction.secondary_range,
             convexity: construction.convexity,
             render_mode: construction.render_mode,
             post_range: construction.post_range,

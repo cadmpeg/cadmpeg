@@ -3879,13 +3879,13 @@ fn encode_native_variable_blend(
         native_i64(bytes, extension);
     }
     if let Some(secondary) = &construction.secondary_curve {
-        let secondary_range = match construction.secondary_range {
+        let secondary_range = match secondary.parameter_range {
             [Some(lower), Some(upper)] => Some([lower, upper]),
             _ => None,
         };
-        let secondary = native_loft_curve_in_range(target, secondary, secondary_range)?;
-        native_nurbs_curve(bytes, &secondary)?;
-        for endpoint in construction.secondary_range {
+        let curve = native_loft_curve_in_range(target, &secondary.curve, secondary_range)?;
+        native_nurbs_curve(bytes, &curve)?;
+        for endpoint in secondary.parameter_range {
             bytes.push(native_bool(endpoint.is_some()));
             if let Some(value) = endpoint {
                 native_f64(bytes, value);

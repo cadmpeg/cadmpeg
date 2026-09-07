@@ -926,7 +926,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 }
                 for curve in [
                     Some(&construction.slice),
-                    construction.secondary_curve.as_ref(),
+                    construction
+                        .secondary_curve
+                        .as_ref()
+                        .map(|curve| &curve.curve),
                     construction.post_curve.as_ref(),
                 ]
                 .into_iter()

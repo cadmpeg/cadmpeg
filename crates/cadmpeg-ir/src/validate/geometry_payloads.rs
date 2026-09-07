@@ -1391,19 +1391,21 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             let ranges_valid = construction.u_range.iter().all(|value| value.is_finite())
                 && construction.u_range[0] <= construction.u_range[1]
                 && construction.v_lower.is_none_or(f64::is_finite)
-                && [
-                    construction.post_range,
-                    construction.slice_range,
-                    construction.secondary_range,
-                ]
-                .iter()
-                .all(|range| {
-                    range.iter().flatten().all(|value| value.is_finite())
-                        && match (range[0], range[1]) {
-                            (Some(lower), Some(upper)) => lower <= upper,
-                            _ => true,
-                        }
-                });
+                && [&construction.post_range, &construction.slice_range]
+                    .into_iter()
+                    .chain(
+                        construction
+                            .secondary_curve
+                            .as_ref()
+                            .map(|curve| &curve.parameter_range),
+                    )
+                    .all(|range| {
+                        range.iter().flatten().all(|value| value.is_finite())
+                            && match (range[0], range[1]) {
+                                (Some(lower), Some(upper)) => lower <= upper,
+                                _ => true,
+                            }
+                    });
             let sides_valid = construction.sides.iter().all(|side| {
                 side.location.x.is_finite()
                     && side.location.y.is_finite()

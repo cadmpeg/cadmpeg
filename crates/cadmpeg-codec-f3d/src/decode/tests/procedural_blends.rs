@@ -787,7 +787,14 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         assert!(construction.tail_flag);
         assert_eq!(construction.tail_extensions, [31, 32, 33]);
         assert!(construction.secondary_curve.is_some());
-        assert_eq!(construction.secondary_range, [None, None]);
+        assert_eq!(
+            construction
+                .secondary_curve
+                .as_ref()
+                .expect("secondary curve")
+                .parameter_range,
+            [None, None]
+        );
         assert_eq!(
             construction.convexity,
             cadmpeg_ir::geometry::VariableBlendConvexity::Convex

@@ -6294,3 +6294,17 @@ crate = "cadmpeg-asm"
 kind = "deletion"
 item = "cadmpeg_asm::nurbs::proc_surface::EmbeddedRollingBallSide"
 reason = "IR-85: use the paired cadmpeg_ir::geometry::RollingBallSide with embedded geometry payloads directly; remove the duplicate side record and preserve support ranges through emission."
+
+[[change]]
+commit = "d43730d982526d05daef7595dadc737440d250db"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::geometry::VariableBlendConstruction"
+reason = "IR-85: put secondary-curve endpoints in the optional curve payload; a null_curve has no endpoints. Preserve secondary_curve and secondary_range JSON with checked serde. The independently serialized post_range remains separate."
+
+[[change]]
+commit = "d43730d982526d05daef7595dadc737440d250db"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::nurbs::proc_surface::EmbeddedVariableBlend"
+reason = "IR-85: put secondary-curve endpoints in the optional curve payload; a null_curve has no endpoints. Preserve secondary_curve and secondary_range JSON with checked serde. The independently serialized post_range remains separate."

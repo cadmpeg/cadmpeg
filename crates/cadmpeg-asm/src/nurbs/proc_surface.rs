@@ -18,8 +18,8 @@ use crate::sab::Token;
 use cadmpeg_core::decode::bounded_len;
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, NurbsCurve, NurbsSurface, PcurveNurbs,
-    RevisionCacheForm, RevisionSurfaceParameterization, RollingBallSide, SurfaceGeometry,
-    VariableBlendCache,
+    RevisionCacheForm, RevisionSurfaceParameterization, RollingBallSide, RollingBallSupportCurve,
+    SurfaceGeometry, VariableBlendCache,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::num::NonZeroI64;
@@ -275,9 +275,7 @@ pub struct EmbeddedVariableBlend {
     /// Three integers closing the shared tail.
     pub tail_extensions: [i64; 3],
     /// A second embedded curve serialized after the tail, when present.
-    pub secondary_curve: Option<CurveGeometry>,
-    /// Optional parameter bounds of the secondary curve.
-    pub secondary_range: [Option<f64>; 2],
+    pub secondary_curve: Option<RollingBallSupportCurve<CurveGeometry>>,
     /// The convexity enum of the blend.
     pub convexity: cadmpeg_ir::geometry::VariableBlendConvexity,
     /// The render-mode enum of the blend.
