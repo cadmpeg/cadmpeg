@@ -2173,15 +2173,13 @@ mod tests {
             11,
         ));
         let mut sketch = sketch;
-        let entities = &mut sketch.entities;
-        let mut references = entities.references().to_vec();
+        let (marker, metadata, mut references) = sketch.entities.clone().into_parts();
         references.push(PmDcReference {
             index: 12,
             qualified: false,
         });
-        *entities =
-            PmDcReferenceList::new(entities.marker, entities.metadata().cloned(), references)
-                .expect("extended entity list");
+        sketch.entities =
+            PmDcReferenceList::new(marker, metadata, references).expect("extended entity list");
         inventory.sketches[0] = Located::new(sketch, type_id_string(SKETCH_TYPE), "segment", 2);
         let incomplete = project(&inventory, &[]);
         assert_eq!(incomplete.unresolved_sketches, 1);

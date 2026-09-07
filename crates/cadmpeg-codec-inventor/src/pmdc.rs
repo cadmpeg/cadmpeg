@@ -52,28 +52,76 @@ pub(crate) struct PmDcContentHeader {
     pub(crate) source_index: u32,
 }
 
-/// A reference list with metadata and a marker selected by its format.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PmDcReferenceList<M = PmDcListMetadata, Marker = u16> {
-    pub(crate) marker: Marker,
-    items: Option<(M, Vec<PmDcReference>)>,
+/// A reference list with metadata, carrying the marker its format prefixes it with.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "PmDcReferenceListWire", into = "PmDcReferenceListWire")]
+pub(crate) struct PmDcReferenceList {
+    pub(crate) marker: u16,
+    items: Option<(PmDcListMetadata, Vec<PmDcReference>)>,
 }
 
-#[derive(Deserialize)]
-struct PmDcReferenceListWire<M> {
+#[derive(Serialize, Deserialize)]
+struct PmDcReferenceListWire {
     marker: u16,
-    metadata: Option<M>,
+    metadata: Option<PmDcListMetadata>,
     references: Vec<PmDcReference>,
 }
 
-impl<M, Marker> PmDcReferenceList<M, Marker> {
+impl PmDcReferenceList {
     pub(crate) fn new(
-        marker: Marker,
-        metadata: Option<M>,
+        marker: u16,
+        metadata: Option<PmDcListMetadata>,
         references: Vec<PmDcReference>,
     ) -> Option<Self> {
         Some(Self {
             marker,
+            items: paired_items(metadata, references)?,
+        })
+    }
+
+    pub(crate) fn references(&self) -> &[PmDcReference] {
+        self.items
+            .as_ref()
+            .map_or(&[], |(_, references)| references.as_slice())
+    }
+
+    pub(crate) fn into_parts(self) -> (u16, Option<PmDcListMetadata>, Vec<PmDcReference>) {
+        match self.items {
+            None => (self.marker, None, Vec::new()),
+            Some((metadata, references)) => (self.marker, Some(metadata), references),
+        }
+    }
+}
+
+impl From<PmDcReferenceList> for PmDcReferenceListWire {
+    fn from(value: PmDcReferenceList) -> Self {
+        let (marker, metadata, references) = value.into_parts();
+        Self {
+            marker,
+            metadata,
+            references,
+        }
+    }
+}
+
+impl TryFrom<PmDcReferenceListWire> for PmDcReferenceList {
+    type Error = String;
+
+    fn try_from(wire: PmDcReferenceListWire) -> Result<Self, Self::Error> {
+        Self::new(wire.marker, wire.metadata, wire.references)
+            .ok_or_else(|| "PmDc reference list metadata disagrees with length".to_owned())
+    }
+}
+
+/// A reference list with metadata whose format prefixes it with no marker.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PmDcPairedReferenceList<M> {
+    items: Option<(M, Vec<PmDcReference>)>,
+}
+
+impl<M> PmDcPairedReferenceList<M> {
+    pub(crate) fn new(metadata: Option<M>, references: Vec<PmDcReference>) -> Option<Self> {
+        Some(Self {
             items: paired_items(metadata, references)?,
         })
     }
@@ -95,32 +143,9 @@ impl<M, Marker> PmDcReferenceList<M, Marker> {
     }
 }
 
-impl<M> Default for PmDcReferenceList<M, ()> {
+impl<M> Default for PmDcPairedReferenceList<M> {
     fn default() -> Self {
-        Self {
-            marker: (),
-            items: None,
-        }
-    }
-}
-
-impl<M: Serialize> Serialize for PmDcReferenceList<M, u16> {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        use serde::ser::SerializeStruct;
-        let mut wire = serializer.serialize_struct("PmDcReferenceListWire", 3)?;
-        wire.serialize_field("marker", &self.marker)?;
-        wire.serialize_field("metadata", &self.metadata())?;
-        wire.serialize_field("references", self.references())?;
-        wire.end()
-    }
-}
-
-impl<'de, M: Deserialize<'de>> Deserialize<'de> for PmDcReferenceList<M, u16> {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = PmDcReferenceListWire::<M>::deserialize(deserializer)?;
-        Self::new(wire.marker, wire.metadata, wire.references).ok_or_else(|| {
-            serde::de::Error::custom("PmDc reference list metadata disagrees with length")
-        })
+        Self { items: None }
     }
 }
 

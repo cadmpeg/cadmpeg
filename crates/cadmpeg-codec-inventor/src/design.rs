@@ -8,7 +8,9 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Angle, DesignParameter, Length, ParameterId, ParameterValue};
 use serde::{Deserialize, Serialize};
 
-use crate::pmdc::{type_id_string, Cursor, PmDcContentHeader, PmDcReference, PmDcReferenceList};
+use crate::pmdc::{
+    type_id_string, Cursor, PmDcContentHeader, PmDcPairedReferenceList, PmDcReference,
+};
 use crate::record_identity::{Located, RecordPayload};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
@@ -139,8 +141,8 @@ pub(crate) struct PmDcUnitPayload {
 #[serde(try_from = "PmDcUnitKindWire", into = "PmDcUnitKindWire")]
 pub(crate) enum PmDcUnitKind {
     Definition {
-        numerators: PmDcReferenceList<[u16; 2], ()>,
-        denominators: PmDcReferenceList<[u16; 2], ()>,
+        numerators: PmDcPairedReferenceList<[u16; 2]>,
+        denominators: PmDcPairedReferenceList<[u16; 2]>,
         visible: bool,
         derived: PmDcReference,
     },
@@ -217,9 +219,9 @@ impl TryFrom<PmDcUnitKindWire> for PmDcUnitKind {
                 visible,
                 derived,
             } => Self::Definition {
-                numerators: PmDcReferenceList::new((), numerator_metadata, numerators)
+                numerators: PmDcPairedReferenceList::new(numerator_metadata, numerators)
                     .ok_or("unit numerator metadata disagrees with length")?,
-                denominators: PmDcReferenceList::new((), denominator_metadata, denominators)
+                denominators: PmDcPairedReferenceList::new(denominator_metadata, denominators)
                     .ok_or("unit denominator metadata disagrees with length")?,
                 visible,
                 derived,
@@ -886,7 +888,7 @@ impl Cursor<'_> {
         &mut self,
         ctx: &DecodeContext<'_>,
         field: &str,
-    ) -> Result<PmDcReferenceList<[u16; 2], ()>, CodecError> {
+    ) -> Result<PmDcPairedReferenceList<[u16; 2]>, CodecError> {
         let marker = [
             self.u16(&format!("{field} marker 0"))?,
             self.u16(&format!("{field} marker 1"))?,
@@ -910,7 +912,7 @@ impl Cursor<'_> {
         for index in 0..count {
             references.push(self.reference(&format!("{field} reference {index}"))?);
         }
-        PmDcReferenceList::new((), metadata, references).ok_or_else(|| {
+        PmDcPairedReferenceList::new(metadata, references).ok_or_else(|| {
             CodecError::Malformed(
                 "Inventor PmDc unit reference list metadata disagrees with length".into(),
             )
@@ -948,9 +950,10 @@ mod tests {
     #[test]
     fn unit_definition_rejects_detached_reference_metadata() {
         let unit = PmDcUnitKind::Definition {
-            numerators: PmDcReferenceList::new((), Some([3, 7]), vec![reference(1, false)])
+            numerators: PmDcPairedReferenceList::new(Some([3, 7]), vec![reference(1, false)])
                 .expect("valid test fixture"),
-            denominators: PmDcReferenceList::new((), None, Vec::new()).expect("valid test fixture"),
+            denominators: PmDcPairedReferenceList::new(None, Vec::new())
+                .expect("valid test fixture"),
             visible: true,
             derived: reference(0, false),
         };
@@ -1134,9 +1137,12 @@ mod tests {
                 header_value: 0,
                 header_id: 0,
                 kind: PmDcUnitKind::Definition {
-                    numerators: PmDcReferenceList::new((), Some([0, 0]), vec![reference(1, false)])
-                        .expect("valid test fixture"),
-                    denominators: PmDcReferenceList::new((), None, Vec::new())
+                    numerators: PmDcPairedReferenceList::new(
+                        Some([0, 0]),
+                        vec![reference(1, false)],
+                    )
+                    .expect("valid test fixture"),
+                    denominators: PmDcPairedReferenceList::new(None, Vec::new())
                         .expect("valid test fixture"),
                     visible: true,
                     derived: reference(0, false),
