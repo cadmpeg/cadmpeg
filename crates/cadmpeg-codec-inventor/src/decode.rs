@@ -430,7 +430,6 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                     UfrxRepresentationRecord {
                         prefix: state.prefix,
                         active_representation: state.active_representation.clone(),
-                        active_representation_kind: state.active_representation_kind.clone(),
                         secondary_active_lod_state: state.secondary_active_lod_state,
                         active_model_state: state.active_model_state.clone(),
                         active_model_state_state: state.active_model_state_state,

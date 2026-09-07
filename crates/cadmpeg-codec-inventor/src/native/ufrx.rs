@@ -43,13 +43,64 @@ pub(crate) enum UfrxRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    try_from = "UfrxRepresentationRecordWire",
+    into = "UfrxRepresentationRecordWire"
+)]
 pub(crate) struct UfrxRepresentationRecord {
     pub(crate) prefix: u16,
-    pub(crate) active_representation: Option<String>,
-    pub(crate) active_representation_kind: Option<String>,
+    pub(crate) active_representation: Option<(String, String)>,
     pub(crate) secondary_active_lod_state: [u16; 2],
     pub(crate) active_model_state: String,
     pub(crate) active_model_state_state: [u16; 2],
+}
+
+#[derive(Serialize, Deserialize)]
+struct UfrxRepresentationRecordWire {
+    prefix: u16,
+    active_representation: Option<String>,
+    active_representation_kind: Option<String>,
+    secondary_active_lod_state: [u16; 2],
+    active_model_state: String,
+    active_model_state_state: [u16; 2],
+}
+
+impl From<UfrxRepresentationRecord> for UfrxRepresentationRecordWire {
+    fn from(value: UfrxRepresentationRecord) -> Self {
+        let (active_representation, active_representation_kind) = value
+            .active_representation
+            .map_or((None, None), |(name, kind)| (Some(name), Some(kind)));
+        Self {
+            prefix: value.prefix,
+            active_representation,
+            active_representation_kind,
+            secondary_active_lod_state: value.secondary_active_lod_state,
+            active_model_state: value.active_model_state,
+            active_model_state_state: value.active_model_state_state,
+        }
+    }
+}
+
+impl TryFrom<UfrxRepresentationRecordWire> for UfrxRepresentationRecord {
+    type Error = String;
+    fn try_from(wire: UfrxRepresentationRecordWire) -> Result<Self, Self::Error> {
+        let active_representation =
+            match (wire.active_representation, wire.active_representation_kind) {
+                (None, None) => None,
+                (Some(name), Some(kind)) => Some((name, kind)),
+                _ => return Err(
+                    "active_representation and active_representation_kind must be present together"
+                        .into(),
+                ),
+            };
+        Ok(Self {
+            prefix: wire.prefix,
+            active_representation,
+            secondary_active_lod_state: wire.secondary_active_lod_state,
+            active_model_state: wire.active_model_state,
+            active_model_state_state: wire.active_model_state_state,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

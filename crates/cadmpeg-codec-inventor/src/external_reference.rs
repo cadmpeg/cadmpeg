@@ -63,8 +63,7 @@ pub(crate) struct UfrxModelState<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct UfrxRepresentationState {
     pub(crate) prefix: u16,
-    pub(crate) active_representation: Option<String>,
-    pub(crate) active_representation_kind: Option<String>,
+    pub(crate) active_representation: Option<(String, String)>,
     pub(crate) secondary_active_lod_state: [u16; 2],
     pub(crate) active_model_state: String,
     pub(crate) active_model_state_state: [u16; 2],
@@ -234,18 +233,17 @@ fn parse_stream_grammar<'a>(
     };
     let representation = if schema == 15 {
         let prefix = cursor.u16("schema 15 representation prefix")?;
-        let (active_representation, active_representation_kind) = if assembly_representation {
-            (
-                Some(cursor.utf16(ctx, "active representation", 65_536)?),
-                Some(cursor.utf16(ctx, "active representation kind", 65_536)?),
-            )
+        let active_representation = if assembly_representation {
+            Some((
+                cursor.utf16(ctx, "active representation", 65_536)?,
+                cursor.utf16(ctx, "active representation kind", 65_536)?,
+            ))
         } else {
-            (None, None)
+            None
         };
         Some(UfrxRepresentationState {
             prefix,
             active_representation,
-            active_representation_kind,
             secondary_active_lod_state: [
                 cursor.u16("secondary active LOD state")?,
                 cursor.u16("secondary active LOD state")?,
@@ -954,11 +952,17 @@ mod tests {
                     .expect("schema 15 representation state");
                 assert_eq!(representation.active_model_state, "Master");
                 assert_eq!(
-                    representation.active_representation.as_deref(),
+                    representation
+                        .active_representation
+                        .as_ref()
+                        .map(|(name, _)| name.as_str()),
                     Some("Default")
                 );
                 assert_eq!(
-                    representation.active_representation_kind.as_deref(),
+                    representation
+                        .active_representation
+                        .as_ref()
+                        .map(|(_, kind)| kind.as_str()),
                     Some("DesignView")
                 );
                 assert_eq!(document.model_states.len(), 1);
@@ -992,7 +996,6 @@ mod tests {
 
         let representation = document.representation.expect("model-state header parses");
         assert_eq!(representation.active_representation, None);
-        assert_eq!(representation.active_representation_kind, None);
         assert_eq!(representation.active_model_state, "Master");
         assert_eq!(document.model_states.len(), 1);
         assert_eq!(document.references.len(), 1);
