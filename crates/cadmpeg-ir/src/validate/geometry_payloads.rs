@@ -196,15 +196,15 @@ fn variable_blend_value_valid(value: &crate::geometry::VariableBlendValue) -> bo
     use crate::geometry::VariableBlendValuePayload;
     let finite = |values: &[f64]| values.iter().all(|value| value.is_finite());
     match &value.payload {
-        VariableBlendValuePayload::TwoEnds { parameters, radii } => {
-            finite(parameters) && finite(radii)
-        }
-        VariableBlendValuePayload::FixedWidth { parameters, width } => {
-            finite(parameters) && width.is_finite()
-        }
-        VariableBlendValuePayload::EdgeOffset { scalars, lengths } => {
-            finite(scalars) && finite(lengths)
-        }
+        VariableBlendValuePayload::TwoEnds {
+            parameters, radii, ..
+        } => finite(parameters) && finite(radii),
+        VariableBlendValuePayload::FixedWidth {
+            parameters, width, ..
+        } => finite(parameters) && width.is_finite(),
+        VariableBlendValuePayload::EdgeOffset {
+            scalars, lengths, ..
+        } => finite(scalars) && finite(lengths),
         VariableBlendValuePayload::Functional {
             parameter,
             radius,
@@ -213,7 +213,7 @@ fn variable_blend_value_valid(value: &crate::geometry::VariableBlendValue) -> bo
         } => {
             parameter.is_finite()
                 && radius.is_finite()
-                && !matches!(terminal, crate::geometry::LoftBridgeToken::Double(v) if !v.is_finite())
+                && !matches!(terminal, crate::geometry::VariableBlendTerminal::Double(v) if !v.is_finite())
         }
         VariableBlendValuePayload::Constant {
             parameters,

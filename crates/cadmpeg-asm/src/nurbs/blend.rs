@@ -653,8 +653,8 @@ fn variable_blend_value(
     depth: usize,
 ) -> Option<cadmpeg_ir::geometry::VariableBlendValue> {
     use cadmpeg_ir::geometry::{
-        LoftBridgeToken, VariableBlendInterpolationPoint, VariableBlendValue,
-        VariableBlendValuePayload,
+        EdgeOffsetDiscriminator, VariableBlendInterpolationPoint, VariableBlendTerminal,
+        VariableBlendValue, VariableBlendValuePayload,
     };
     if depth > 32 {
         return None;
@@ -669,10 +669,12 @@ fn variable_blend_value(
     let modern_flag = if modern { cur.take_bool()? } else { false };
     let payload = match name.as_str() {
         "fixed_width" => VariableBlendValuePayload::FixedWidth {
+            discriminator,
             parameters: [cur.take_f64()?, cur.take_f64()?],
             width: cur.take_f64()?,
         },
         "two_ends" => VariableBlendValuePayload::TwoEnds {
+            discriminator,
             parameters: [cur.take_f64()?, cur.take_f64()?],
             radii: [cur.take_f64()? * LEN_TO_MM, cur.take_f64()? * LEN_TO_MM],
         },
@@ -680,9 +682,10 @@ fn variable_blend_value(
         // second field is a parameter and only the third is a length. The
         // sub-discriminator selects no layout here; it is still read and written
         // as the format stores it, and no value outside `0` and `1` is defined.
-        "edge_offset" if matches!(discriminator, 0 | 1) => VariableBlendValuePayload::EdgeOffset {
-            scalars: vec![cur.take_f64()?, cur.take_f64()?],
-            lengths: vec![cur.take_f64()? * LEN_TO_MM],
+        "edge_offset" => VariableBlendValuePayload::EdgeOffset {
+            discriminator: EdgeOffsetDiscriminator::from_code(discriminator)?,
+            scalars: [cur.take_f64()?, cur.take_f64()?],
+            lengths: [cur.take_f64()? * LEN_TO_MM],
         },
         "functional" => {
             let parameter = cur.take_f64()?;
@@ -690,11 +693,12 @@ fn variable_blend_value(
             let (function, end) = pcurve_block_with_end(cur.toks(), cur.pos())?;
             cur.set_pos(end);
             let terminal = if matches!(cur.peek(), Some(Token::Double(_))) {
-                LoftBridgeToken::Double(cur.take_f64()?)
+                VariableBlendTerminal::Double(cur.take_f64()?)
             } else {
-                LoftBridgeToken::Text(blend_value_name(cur)?)
+                VariableBlendTerminal::Text(blend_value_name(cur)?)
             };
             VariableBlendValuePayload::Functional {
+                discriminator,
                 parameter,
                 radius,
                 function: radius_function_geometry(function),
@@ -702,6 +706,7 @@ fn variable_blend_value(
             }
         }
         "const" => VariableBlendValuePayload::Constant {
+            discriminator,
             parameters: [cur.take_f64()?, cur.take_f64()?],
             radius: cur.take_f64()? * LEN_TO_MM,
             variable_chamfer: cur.take_enum()?,
@@ -749,6 +754,7 @@ fn variable_blend_value(
             // The payload ends at the last radius point. The enum that follows
             // is the enclosing record's cross-section selector, not a tail flag.
             VariableBlendValuePayload::Interpolated {
+                discriminator,
                 parameter,
                 radius,
                 function: radius_function_geometry(function),
@@ -761,7 +767,6 @@ fn variable_blend_value(
     };
     Some(VariableBlendValue {
         modern_flag,
-        discriminator,
         calibrated,
         payload,
     })
@@ -807,8 +812,11 @@ mod variable_blend_value_tests {
         let decoded = variable_blend_value(&mut cur, true, 0).expect("generated two-ends value");
         assert_eq!(cur.pos(), toks.len());
         assert!(decoded.modern_flag);
-        assert_eq!(decoded.discriminator, 7);
-        let VariableBlendValuePayload::TwoEnds { parameters, radii } = decoded.payload else {
+        assert_eq!(decoded.payload.discriminator(), 7);
+        let VariableBlendValuePayload::TwoEnds {
+            parameters, radii, ..
+        } = decoded.payload
+        else {
             panic!("expected two-ends payload")
         };
         assert_eq!(parameters, [0.25, 0.75]);
@@ -853,7 +861,10 @@ mod variable_blend_value_tests {
         let mut cur = Cur::at(&toks, 0);
         let decoded = variable_blend_value(&mut cur, true, 0).expect("generated fixed-width value");
         assert_eq!(cur.pos(), toks.len());
-        let VariableBlendValuePayload::FixedWidth { parameters, width } = decoded.payload else {
+        let VariableBlendValuePayload::FixedWidth {
+            parameters, width, ..
+        } = decoded.payload
+        else {
             panic!("expected fixed-width payload")
         };
         assert_eq!(parameters, [0.5, 3.5]);

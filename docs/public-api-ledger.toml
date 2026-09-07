@@ -6315,3 +6315,24 @@ crate = "cadmpeg-ir"
 kind = "field"
 item = "cadmpeg_ir::geometry::{VariableBlendValue, VariableBlendValuePayload::native_name}"
 reason = "IR-85: remove the stored blend-value name; derive each of the six native names from the payload variant and reject mismatched legacy name/payload pairs in Deserialize. The five serialized fields retain their order and values for valid payloads."
+
+[[change]]
+commit = "aef730ce8a3c8fc3d727a4f5347f2bf6a55028c4"
+crate = "cadmpeg-ir"
+kind = "field"
+item = "cadmpeg_ir::geometry::{VariableBlendValue, VariableBlendValuePayload}"
+reason = "IR-85: each payload owns its discriminator. EdgeOffset carries the closed zero/one discriminator and fixed [f64; 2]/[f64; 1] lanes; Functional carries only a numeric or text terminal. Preserve the outer integer and nested payload JSON through a private typed wire adapter."
+
+[[change]]
+commit = "aef730ce8a3c8fc3d727a4f5347f2bf6a55028c4"
+crate = "cadmpeg-ir"
+kind = "variant"
+item = "cadmpeg_ir::geometry::{EdgeOffsetDiscriminator, VariableBlendTerminal}"
+reason = "IR-85: define the admitted edge-offset discriminator codes and functional-terminal token classes so their unsupported states cannot be constructed."
+
+[[change]]
+commit = "aef730ce8a3c8fc3d727a4f5347f2bf6a55028c4"
+crate = "cadmpeg-ir"
+kind = "trait_impl"
+item = "cadmpeg_ir::geometry::VariableBlendValuePayload::{Serialize, Deserialize}"
+reason = "IR-85: serialization belongs to VariableBlendValue, which has the native header required to deserialize its payload discriminator. Remove independent payload serde implementations instead of fabricating a discriminator for the old header-free payload JSON."

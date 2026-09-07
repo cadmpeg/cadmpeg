@@ -206,9 +206,9 @@ struct VariableBlendShapeWireTest {
 fn variable_blend_value(discriminator: i64) -> crate::geometry::VariableBlendValue {
     crate::geometry::VariableBlendValue {
         modern_flag: false,
-        discriminator,
         calibrated: 0,
         payload: crate::geometry::VariableBlendValuePayload::TwoEnds {
+            discriminator,
             parameters: [0.0, 1.0],
             radii: [1.0, 2.0],
         },

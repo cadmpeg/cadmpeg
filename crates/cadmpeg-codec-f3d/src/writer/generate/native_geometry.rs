@@ -3281,20 +3281,22 @@ fn native_variable_blend_value(
     value: &cadmpeg_ir::geometry::VariableBlendValue,
     depth: usize,
 ) -> Result<(), CodecError> {
-    use cadmpeg_ir::geometry::{LoftBridgeToken, VariableBlendValuePayload};
+    use cadmpeg_ir::geometry::{VariableBlendTerminal, VariableBlendValuePayload};
     if depth > 32 {
         return Err(CodecError::Malformed(
             "variable blend-value recursion exceeds 32 levels".into(),
         ));
     }
     native_string(bytes, value.payload.native_name())?;
-    if value.discriminator != 1 {
-        native_i64(bytes, value.discriminator);
+    if value.payload.discriminator() != 1 {
+        native_i64(bytes, value.payload.discriminator());
     }
     native_enum(bytes, value.calibrated);
     bytes.push(native_bool(value.modern_flag));
     match &value.payload {
-        VariableBlendValuePayload::TwoEnds { parameters, radii } => {
+        VariableBlendValuePayload::TwoEnds {
+            parameters, radii, ..
+        } => {
             for parameter in parameters {
                 native_f64(bytes, *parameter);
             }
@@ -3302,17 +3304,16 @@ fn native_variable_blend_value(
                 native_f64(bytes, *radius / LEN_TO_MM);
             }
         }
-        VariableBlendValuePayload::FixedWidth { parameters, width } => {
+        VariableBlendValuePayload::FixedWidth {
+            parameters, width, ..
+        } => {
             native_f64(bytes, parameters[0]);
             native_f64(bytes, parameters[1]);
             native_f64(bytes, *width);
         }
-        VariableBlendValuePayload::EdgeOffset { scalars, lengths } => {
-            if (scalars.len(), lengths.len()) != (2, 1) {
-                return Err(CodecError::Malformed(
-                    "variable edge-offset payload has inconsistent arity".into(),
-                ));
-            }
+        VariableBlendValuePayload::EdgeOffset {
+            scalars, lengths, ..
+        } => {
             for scalar in scalars {
                 native_f64(bytes, *scalar);
             }
@@ -3325,18 +3326,14 @@ fn native_variable_blend_value(
             radius,
             function,
             terminal,
+            ..
         } => {
             native_f64(bytes, *parameter);
             native_f64(bytes, *radius / LEN_TO_MM);
             native_radius_function_pcurve_block(bytes, function)?;
             match terminal {
-                LoftBridgeToken::Double(value) => native_f64(bytes, *value),
-                LoftBridgeToken::Text(value) => native_string(bytes, value)?,
-                _ => {
-                    return Err(CodecError::NotImplemented(
-                        "functional variable-blend terminal must be double or text".into(),
-                    ));
-                }
+                VariableBlendTerminal::Double(value) => native_f64(bytes, *value),
+                VariableBlendTerminal::Text(value) => native_string(bytes, value)?,
             }
         }
         VariableBlendValuePayload::Constant {
@@ -3345,6 +3342,7 @@ fn native_variable_blend_value(
             variable_chamfer,
             chamfer_type,
             nested,
+            ..
         } => {
             for parameter in parameters {
                 native_f64(bytes, *parameter);
@@ -3361,6 +3359,7 @@ fn native_variable_blend_value(
             enum_count,
             enum_tagged,
             points,
+            ..
         } => {
             native_f64(bytes, *parameter);
             native_f64(bytes, *radius / LEN_TO_MM);

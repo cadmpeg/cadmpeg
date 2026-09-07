@@ -68,9 +68,9 @@ fn variable_blend_eval_fixture(
     };
     let radius = VariableBlendValue {
         modern_flag: false,
-        discriminator: 0,
         calibrated: 0,
         payload: VariableBlendValuePayload::TwoEnds {
+            discriminator: 0,
             parameters: [0.0, 1.0],
             radii,
         },
@@ -169,9 +169,9 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
 
     let zero_radius = VariableBlendValue {
         modern_flag: false,
-        discriminator: 0,
         calibrated: 0,
         payload: VariableBlendValuePayload::TwoEnds {
+            discriminator: 0,
             parameters: [0.0, 1.0],
             radii: [0.0, 0.0],
         },
@@ -191,9 +191,9 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
     );
     assert!(variable_blend_is_zero_radius(&VariableBlendValue {
         modern_flag: false,
-        discriminator: 0,
         calibrated: 0,
         payload: VariableBlendValuePayload::Constant {
+            discriminator: 0,
             parameters: [0.0, 0.0],
             radius: 0.0,
             variable_chamfer: 0,
@@ -589,9 +589,9 @@ fn rolling_ball_partials_follow_a_changing_section_angle() {
 fn variable_blend_two_ends_radius_extrapolates_its_calibration_line() {
     let value = VariableBlendValue {
         modern_flag: false,
-        discriminator: 0,
         calibrated: 0,
         payload: VariableBlendValuePayload::TwoEnds {
+            discriminator: 0,
             parameters: [2.0, 4.0],
             radii: [5.0, 9.0],
         },
@@ -605,16 +605,16 @@ fn variable_blend_two_ends_radius_extrapolates_its_calibration_line() {
 fn variable_blend_function_uses_its_first_coordinate_as_radius() {
     let value = VariableBlendValue {
         modern_flag: false,
-        discriminator: 0,
         calibrated: 0,
         payload: VariableBlendValuePayload::Functional {
+            discriminator: 0,
             parameter: 0.0,
             radius: 0.0,
             function: PcurveGeometry::Line {
                 origin: Point2::new(2.0, 100.0),
                 direction: Point2::new(3.0, 200.0),
             },
-            terminal: crate::geometry::LoftBridgeToken::Double(0.0),
+            terminal: crate::geometry::VariableBlendTerminal::Double(0.0),
         },
     };
     assert_eq!(variable_blend_radius(&value, 0.5), Some(3.5));

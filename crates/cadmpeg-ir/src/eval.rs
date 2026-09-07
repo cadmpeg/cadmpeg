@@ -5802,6 +5802,7 @@ fn variable_blend_is_zero_radius(value: &crate::geometry::VariableBlendValue) ->
         crate::geometry::VariableBlendValuePayload::TwoEnds {
             parameters: [first_parameter, second_parameter],
             radii: [first_radius, second_radius],
+            ..
         } => {
             first_parameter.is_finite()
                 && second_parameter.is_finite()
@@ -5856,6 +5857,7 @@ fn variable_blend_radius(
         crate::geometry::VariableBlendValuePayload::TwoEnds {
             parameters: [first_parameter, second_parameter],
             radii: [first_radius, second_radius],
+            ..
         } => {
             let width = second_parameter - first_parameter;
             if width == 0.0 {
@@ -5885,6 +5887,7 @@ fn variable_blend_radius_differential(
         crate::geometry::VariableBlendValuePayload::TwoEnds {
             parameters: [first_parameter, second_parameter],
             radii: [first_radius, second_radius],
+            ..
         } => {
             let width = second_parameter - first_parameter;
             if width == 0.0 {

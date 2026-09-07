@@ -669,8 +669,9 @@ fn generated_edge_offset_radius_law_reads_two_parameters_and_one_offset() {
     else {
         panic!("expected variable blend")
     };
-    let VariableBlendValuePayload::EdgeOffset { scalars, lengths } =
-        &construction.radii.first().payload
+    let VariableBlendValuePayload::EdgeOffset {
+        scalars, lengths, ..
+    } = &construction.radii.first().payload
     else {
         panic!("expected edge-offset radius law")
     };
@@ -756,14 +757,15 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
             cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0)
         );
         assert_eq!(construction.offsets, [-2.0, 4.0]);
-        let VariableBlendValuePayload::TwoEnds { parameters, radii } =
-            &construction.radii.first().payload
+        let VariableBlendValuePayload::TwoEnds {
+            parameters, radii, ..
+        } = &construction.radii.first().payload
         else {
             panic!("expected two-ends radius law")
         };
         assert!(construction.radii.is_single());
         assert!(construction.radii.first().modern_flag);
-        assert_eq!(construction.radii.first().discriminator, 7);
+        assert_eq!(construction.radii.first().payload.discriminator(), 7);
         assert_eq!(construction.radii.first().calibrated, 3);
         assert_eq!(*parameters, [0.25, 0.75]);
         assert_eq!(*radii, [15.0, 25.0]);
@@ -930,7 +932,8 @@ fn generated_two_radii_variable_blend_round_trips_rounded_chamfer() {
             second: cadmpeg_ir::geometry::VariableBlendValue {
                 payload: VariableBlendValuePayload::TwoEnds {
                     parameters: [0.1, 0.9],
-                    radii: [35.0, 45.0]
+                    radii: [35.0, 45.0],
+                    ..
                 },
                 ..
             },
@@ -947,7 +950,8 @@ fn generated_two_radii_variable_blend_round_trips_rounded_chamfer() {
         &radius.payload,
         VariableBlendValuePayload::TwoEnds {
             parameters: [0.0, 1.0],
-            radii: [55.0, 65.0]
+            radii: [55.0, 65.0],
+            ..
         }
     ));
 

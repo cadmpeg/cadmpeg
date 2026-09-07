@@ -4587,6 +4587,46 @@ mod variable_blend_tangents_wire {
     }
 }
 
+/// Native edge-offset blend-value sub-discriminator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub enum EdgeOffsetDiscriminator {
+    /// Explicit zero sub-discriminator.
+    Zero,
+    /// One sub-discriminator, including the elided default.
+    One,
+}
+
+impl EdgeOffsetDiscriminator {
+    /// Admit the two native edge-offset codes.
+    pub const fn from_code(code: i64) -> Option<Self> {
+        match code {
+            0 => Some(Self::Zero),
+            1 => Some(Self::One),
+            _ => None,
+        }
+    }
+
+    /// Native integer code.
+    pub const fn code(self) -> i64 {
+        match self {
+            Self::Zero => 0,
+            Self::One => 1,
+        }
+    }
+}
+
+/// Numeric or symbolic terminal of a functional blend-value law.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum VariableBlendTerminal {
+    /// Native double token.
+    Double(f64),
+    /// Native string token.
+    Text(String),
+}
+
 /// Complete recursive native `getBlendValues` payload.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -4594,60 +4634,20 @@ mod variable_blend_tangents_wire {
 pub struct VariableBlendValue {
     /// Native Boolean following the calibrated enum.
     pub modern_flag: bool,
-    /// Native sub-discriminator preceding the calibrated enum.
-    pub discriminator: i64,
     /// Native calibrated enum.
     pub calibrated: i64,
-    /// Type-specific payload; its variant determines the native type name.
+    /// Type-specific payload with its native sub-discriminator.
     pub payload: VariableBlendValuePayload,
 }
 
-#[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct VariableBlendValueWire {
-    name: String,
-    modern_flag: bool,
-    discriminator: i64,
-    calibrated: i64,
-    payload: VariableBlendValuePayload,
-}
-
-impl Serialize for VariableBlendValue {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut wire = serializer.serialize_struct("VariableBlendValue", 5)?;
-        wire.serialize_field("name", self.payload.native_name())?;
-        wire.serialize_field("modern_flag", &self.modern_flag)?;
-        wire.serialize_field("discriminator", &self.discriminator)?;
-        wire.serialize_field("calibrated", &self.calibrated)?;
-        wire.serialize_field("payload", &self.payload)?;
-        wire.end()
-    }
-}
-
-impl<'de> Deserialize<'de> for VariableBlendValue {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = VariableBlendValueWire::deserialize(deserializer)?;
-        if wire.name != wire.payload.native_name() {
-            return Err(serde::de::Error::custom(
-                "variable-blend name must match payload",
-            ));
-        }
-        Ok(Self {
-            modern_flag: wire.modern_flag,
-            discriminator: wire.discriminator,
-            calibrated: wire.calibrated,
-            payload: wire.payload,
-        })
-    }
-}
-
 /// Type-specific payload of a variable blend value.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum VariableBlendValuePayload {
     /// Law-domain parameter range and two endpoint radii.
     TwoEnds {
+        /// Native sub-discriminator preceding the calibrated enum.
+        discriminator: i64,
         /// Law-domain parameter range (lower, upper).
         parameters: [f64; 2],
         /// Endpoint radii in document length units.
@@ -4656,6 +4656,8 @@ pub enum VariableBlendValuePayload {
     /// Fixed-width branch: the parameter-range bounds and the chamfer width
     /// scalar, stored unscaled.
     FixedWidth {
+        /// Native sub-discriminator preceding the calibrated enum.
+        discriminator: i64,
         /// Parameter-range lower and upper bounds.
         parameters: [f64; 2],
         /// Chamfer width.
@@ -4663,13 +4665,17 @@ pub enum VariableBlendValuePayload {
     },
     /// Edge-offset branch.
     EdgeOffset {
+        /// Native sub-discriminator preceding the calibrated enum.
+        discriminator: EdgeOffsetDiscriminator,
         /// Ordered native scalar payload.
-        scalars: Vec<f64>,
+        scalars: [f64; 2],
         /// Ordered length payload in document units.
-        lengths: Vec<f64>,
+        lengths: [f64; 1],
     },
     /// Functional radius law carried by a BS2 pcurve.
     Functional {
+        /// Native sub-discriminator preceding the calibrated enum.
+        discriminator: i64,
         /// Leading scalar.
         parameter: f64,
         /// Leading length in document units.
@@ -4677,10 +4683,12 @@ pub enum VariableBlendValuePayload {
         /// Scalar function whose first coordinate is radius in document units.
         function: PcurveGeometry,
         /// Numeric or symbolic terminal value.
-        terminal: LoftBridgeToken,
+        terminal: VariableBlendTerminal,
     },
     /// Constant law followed by a recursive chamfer value.
     Constant {
+        /// Native sub-discriminator preceding the calibrated enum.
+        discriminator: i64,
         /// Ordered native scalars.
         parameters: [f64; 2],
         /// Radius in document length units.
@@ -4694,6 +4702,8 @@ pub enum VariableBlendValuePayload {
     },
     /// Interpolated radius law.
     Interpolated {
+        /// Native sub-discriminator preceding the calibrated enum.
+        discriminator: i64,
         /// Leading scalar.
         parameter: f64,
         /// Leading radius in document length units.
@@ -4705,7 +4715,6 @@ pub enum VariableBlendValuePayload {
         enum_count: i64,
         /// Whether the extension enum is stored as a `0x15` enum token
         /// (revision-gated streams) rather than a `0x04` integer.
-        #[serde(default)]
         enum_tagged: bool,
         /// Counted radius-point array: each control carries a parameter,
         /// radius, two derivative scalars, a position, and a vector.
@@ -4713,7 +4722,232 @@ pub enum VariableBlendValuePayload {
     },
 }
 
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum VariableBlendPayloadWire<F, T, N, P> {
+    TwoEnds {
+        parameters: [f64; 2],
+        radii: [f64; 2],
+    },
+    FixedWidth {
+        parameters: [f64; 2],
+        width: f64,
+    },
+    EdgeOffset {
+        scalars: [f64; 2],
+        lengths: [f64; 1],
+    },
+    Functional {
+        parameter: f64,
+        radius: f64,
+        function: F,
+        terminal: T,
+    },
+    Constant {
+        parameters: [f64; 2],
+        radius: f64,
+        variable_chamfer: i64,
+        chamfer_type: i64,
+        nested: N,
+    },
+    Interpolated {
+        parameter: f64,
+        radius: f64,
+        function: F,
+        enum_count: i64,
+        #[serde(default)]
+        enum_tagged: bool,
+        points: P,
+    },
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct VariableBlendValueWire {
+    name: String,
+    modern_flag: bool,
+    discriminator: i64,
+    calibrated: i64,
+    payload: VariableBlendPayloadWire<
+        PcurveGeometry,
+        VariableBlendTerminal,
+        Box<VariableBlendValue>,
+        Vec<VariableBlendInterpolationPoint>,
+    >,
+}
+
+impl Serialize for VariableBlendValue {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let payload = match &self.payload {
+            VariableBlendValuePayload::TwoEnds {
+                parameters, radii, ..
+            } => VariableBlendPayloadWire::TwoEnds {
+                parameters: *parameters,
+                radii: *radii,
+            },
+            VariableBlendValuePayload::FixedWidth {
+                parameters, width, ..
+            } => VariableBlendPayloadWire::FixedWidth {
+                parameters: *parameters,
+                width: *width,
+            },
+            VariableBlendValuePayload::EdgeOffset {
+                scalars, lengths, ..
+            } => VariableBlendPayloadWire::EdgeOffset {
+                scalars: *scalars,
+                lengths: *lengths,
+            },
+            VariableBlendValuePayload::Functional {
+                parameter,
+                radius,
+                function,
+                terminal,
+                ..
+            } => VariableBlendPayloadWire::Functional {
+                parameter: *parameter,
+                radius: *radius,
+                function,
+                terminal,
+            },
+            VariableBlendValuePayload::Constant {
+                parameters,
+                radius,
+                variable_chamfer,
+                chamfer_type,
+                nested,
+                ..
+            } => VariableBlendPayloadWire::Constant {
+                parameters: *parameters,
+                radius: *radius,
+                variable_chamfer: *variable_chamfer,
+                chamfer_type: *chamfer_type,
+                nested: nested.as_ref(),
+            },
+            VariableBlendValuePayload::Interpolated {
+                parameter,
+                radius,
+                function,
+                enum_count,
+                enum_tagged,
+                points,
+                ..
+            } => VariableBlendPayloadWire::Interpolated {
+                parameter: *parameter,
+                radius: *radius,
+                function,
+                enum_count: *enum_count,
+                enum_tagged: *enum_tagged,
+                points: points.as_slice(),
+            },
+        };
+        let mut wire = serializer.serialize_struct("VariableBlendValue", 5)?;
+        wire.serialize_field("name", self.payload.native_name())?;
+        wire.serialize_field("modern_flag", &self.modern_flag)?;
+        wire.serialize_field("discriminator", &self.payload.discriminator())?;
+        wire.serialize_field("calibrated", &self.calibrated)?;
+        wire.serialize_field("payload", &payload)?;
+        wire.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for VariableBlendValue {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = VariableBlendValueWire::deserialize(deserializer)?;
+        let payload = match wire.payload {
+            VariableBlendPayloadWire::TwoEnds { parameters, radii } => {
+                VariableBlendValuePayload::TwoEnds {
+                    discriminator: wire.discriminator,
+                    parameters,
+                    radii,
+                }
+            }
+            VariableBlendPayloadWire::FixedWidth { parameters, width } => {
+                VariableBlendValuePayload::FixedWidth {
+                    discriminator: wire.discriminator,
+                    parameters,
+                    width,
+                }
+            }
+            VariableBlendPayloadWire::EdgeOffset { scalars, lengths } => {
+                VariableBlendValuePayload::EdgeOffset {
+                    discriminator: EdgeOffsetDiscriminator::from_code(wire.discriminator)
+                        .ok_or_else(|| {
+                            serde::de::Error::custom("edge-offset discriminator must be 0 or 1")
+                        })?,
+                    scalars,
+                    lengths,
+                }
+            }
+            VariableBlendPayloadWire::Functional {
+                parameter,
+                radius,
+                function,
+                terminal,
+            } => VariableBlendValuePayload::Functional {
+                discriminator: wire.discriminator,
+                parameter,
+                radius,
+                function,
+                terminal,
+            },
+            VariableBlendPayloadWire::Constant {
+                parameters,
+                radius,
+                variable_chamfer,
+                chamfer_type,
+                nested,
+            } => VariableBlendValuePayload::Constant {
+                discriminator: wire.discriminator,
+                parameters,
+                radius,
+                variable_chamfer,
+                chamfer_type,
+                nested,
+            },
+            VariableBlendPayloadWire::Interpolated {
+                parameter,
+                radius,
+                function,
+                enum_count,
+                enum_tagged,
+                points,
+            } => VariableBlendValuePayload::Interpolated {
+                discriminator: wire.discriminator,
+                parameter,
+                radius,
+                function,
+                enum_count,
+                enum_tagged,
+                points,
+            },
+        };
+        if wire.name != payload.native_name() {
+            return Err(serde::de::Error::custom(
+                "variable-blend name must match payload",
+            ));
+        }
+        Ok(Self {
+            modern_flag: wire.modern_flag,
+            calibrated: wire.calibrated,
+            payload,
+        })
+    }
+}
+
 impl VariableBlendValuePayload {
+    /// Native sub-discriminator preceding the calibrated enum.
+    pub const fn discriminator(&self) -> i64 {
+        match self {
+            Self::EdgeOffset { discriminator, .. } => discriminator.code(),
+            Self::TwoEnds { discriminator, .. }
+            | Self::FixedWidth { discriminator, .. }
+            | Self::Functional { discriminator, .. }
+            | Self::Constant { discriminator, .. }
+            | Self::Interpolated { discriminator, .. } => *discriminator,
+        }
+    }
+
     /// Native type name introducing this payload.
     pub const fn native_name(&self) -> &'static str {
         match self {
