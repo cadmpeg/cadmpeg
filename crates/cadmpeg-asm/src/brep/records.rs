@@ -348,12 +348,76 @@ native_record! {
     record_index,
     /// Neutral shell containing the wire.
     shell: ShellId,
-    /// Ordered edge ring owned through the wire's first-coedge reference.
-    edges: Vec<EdgeId> [serde(default, skip_serializing_if = "Vec::is_empty")],
-    /// Isolated vertex owned when the first-coedge reference is null.
-    free_vertex: Option<VertexId> [serde(default, skip_serializing_if = "Option::is_none")],
+    /// Edge ring or isolated vertex owned by the native wire.
+    members: WireMembers [serde(flatten)],
     /// Native side classification.
     side: WireSide,
+}
+
+/// Mutually exclusive native wire members.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "WireMembersWire")]
+pub enum WireMembers {
+    /// Ordered edges reached from the first coedge; empty when none resolve.
+    Edges(Vec<EdgeId>),
+    /// Isolated vertex of a wire with no first coedge.
+    Vertex(VertexId),
+}
+
+impl WireMembers {
+    /// Ordered edge membership, empty for an isolated vertex.
+    #[must_use]
+    pub fn edges(&self) -> &[EdgeId] {
+        match self {
+            Self::Edges(edges) => edges,
+            Self::Vertex(_) => &[],
+        }
+    }
+
+    /// Isolated vertex membership.
+    #[must_use]
+    pub fn free_vertex(&self) -> Option<&VertexId> {
+        match self {
+            Self::Edges(_) => None,
+            Self::Vertex(vertex) => Some(vertex),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct WireMembersWire {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    edges: Vec<EdgeId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    free_vertex: Option<VertexId>,
+}
+
+impl Serialize for WireMembers {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+
+        let mut map = serializer.serialize_map(None)?;
+        match self {
+            Self::Edges(edges) if !edges.is_empty() => map.serialize_entry("edges", edges)?,
+            Self::Edges(_) => {}
+            Self::Vertex(vertex) => map.serialize_entry("free_vertex", vertex)?,
+        }
+        map.end()
+    }
+}
+
+impl TryFrom<WireMembersWire> for WireMembers {
+    type Error = &'static str;
+
+    fn try_from(wire: WireMembersWire) -> Result<Self, Self::Error> {
+        match wire.free_vertex {
+            None => Ok(Self::Edges(wire.edges)),
+            Some(vertex) if wire.edges.is_empty() => Ok(Self::Vertex(vertex)),
+            Some(_) => Err("wire edges and free_vertex are mutually exclusive"),
+        }
+    }
 }
 
 native_record! {
@@ -388,7 +452,8 @@ native_record! {
 
 #[cfg(test)]
 mod tests {
-    use super::EndpointSlot;
+    use super::{EndpointSlot, WireMembers};
+    use cadmpeg_ir::ids::{EdgeId, VertexId};
     use serde::Deserialize;
 
     #[test]
@@ -406,5 +471,49 @@ mod tests {
                 .expect_err("undefined endpoint");
             assert!(error.to_string().contains("endpoint_index"));
         }
+    }
+
+    #[test]
+    fn wire_members_preserve_flat_fields_and_reject_mixed_membership() {
+        use serde_value::Value;
+
+        let edge = EdgeId::mint("asm:edge#1").expect("edge id");
+        let vertex = VertexId::mint("asm:vertex#2").expect("vertex id");
+        let edge_value = serde_value::to_value(&edge).expect("edge wire");
+        let vertex_value = serde_value::to_value(&vertex).expect("vertex wire");
+        for (members, fields) in [
+            (WireMembers::Edges(Vec::new()), Vec::new()),
+            (
+                WireMembers::Edges(vec![edge]),
+                vec![(
+                    Value::String("edges".into()),
+                    Value::Seq(vec![edge_value.clone()]),
+                )],
+            ),
+            (
+                WireMembers::Vertex(vertex),
+                vec![(Value::String("free_vertex".into()), vertex_value.clone())],
+            ),
+        ] {
+            let wire = Value::Map(fields.into_iter().collect());
+            assert_eq!(
+                serde_value::to_value(&members).expect("serialize members"),
+                wire
+            );
+            assert_eq!(
+                WireMembers::deserialize(wire).expect("read members"),
+                members
+            );
+        }
+        let mixed = Value::Map(
+            [
+                (Value::String("edges".into()), Value::Seq(vec![edge_value])),
+                (Value::String("free_vertex".into()), vertex_value),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        let error = WireMembers::deserialize(mixed).expect_err("mixed wire members");
+        assert!(error.to_string().contains("edges and free_vertex"));
     }
 }

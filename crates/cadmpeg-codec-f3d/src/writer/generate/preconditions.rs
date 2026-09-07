@@ -1170,12 +1170,13 @@ pub(crate) fn validate_source_less_design_links(
             .get(wire.shell.as_str())
             .copied()
             .expect("validated wire-topology target");
-        let member_form_is_valid = match (&wire.edges[..], &wire.free_vertex) {
-            (edges, None) if !edges.is_empty() => {
-                edges.iter().all(|edge| shell.wire_edges.contains(edge))
+        let member_form_is_valid = match &wire.members {
+            cadmpeg_asm::brep::records::WireMembers::Edges(edges) => {
+                !edges.is_empty() && edges.iter().all(|edge| shell.wire_edges.contains(edge))
             }
-            ([], Some(vertex)) => shell.free_vertices.contains(vertex),
-            _ => false,
+            cadmpeg_asm::brep::records::WireMembers::Vertex(vertex) => {
+                shell.free_vertices.contains(vertex)
+            }
         };
         if !member_form_is_valid {
             return Err(CodecError::InvalidInput(format!(

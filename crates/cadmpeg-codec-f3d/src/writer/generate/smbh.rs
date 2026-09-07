@@ -1732,7 +1732,7 @@ fn native_wire_side(
         .into_iter()
         .flatten()
         .copied()
-        .filter(|wire| wire.edges == edges && wire.free_vertex.as_ref() == free_vertex);
+        .filter(|wire| wire.members.edges() == edges && wire.members.free_vertex() == free_vertex);
     let side = match (matches.next(), matches.next()) {
         (None, _) => cadmpeg_asm::brep::records::WireSide::Out,
         (Some(wire), None) => wire.side,

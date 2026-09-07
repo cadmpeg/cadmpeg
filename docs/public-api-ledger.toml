@@ -6343,3 +6343,10 @@ crate = "cadmpeg-asm"
 kind = "field"
 item = "cadmpeg_asm::brep::records::VertexOwnership::endpoint_index"
 reason = "ASM-13: replace the raw byte with EndpointSlot Start/End. Preserve the numeric JSON and reject other endpoint_index values during deserialization; writers match exhaustively."
+
+[[change]]
+commit = "b23d9ea61ab0f36a98ab771b09815ed0db59c01c"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::brep::records::WireTopology"
+reason = "ASM-13: combine edge-ring and isolated-vertex membership in WireMembers. Preserve flattened edges/free_vertex JSON and reject mixed membership at deserialization. Empty unresolved edge rosters remain representable and are still refused by source-less export."

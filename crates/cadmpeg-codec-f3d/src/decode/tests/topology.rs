@@ -215,9 +215,9 @@ fn decode_transfers_isolated_vertex_wire_topology() {
     );
     assert!(f3d_native(result.ir()).vertex_ownerships.is_empty());
     let wire = &f3d_native(result.ir()).wire_topologies[0];
-    assert!(wire.edges.is_empty());
+    assert!(wire.members.edges().is_empty());
     assert_eq!(
-        wire.free_vertex,
+        wire.members.free_vertex().cloned(),
         Some(result.ir().model.vertices[0].id.clone())
     );
     let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
@@ -418,7 +418,7 @@ fn generated_source_less_writes_general_face_and_point_wire_body() {
     assert!(f3d_native(round_trip.ir())
         .wire_topologies
         .iter()
-        .any(|wire| wire.edges.is_empty() && wire.free_vertex.is_some()));
+        .any(|wire| wire.members.edges().is_empty() && wire.members.free_vertex().is_some()));
     let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new());
     assert!(
         validation.is_ok(),
@@ -581,9 +581,9 @@ fn generated_source_less_writes_isolated_vertex_wire() {
     );
     assert!(f3d_native(round_trip.ir()).vertex_ownerships.is_empty());
     let wire = &f3d_native(round_trip.ir()).wire_topologies[0];
-    assert!(wire.edges.is_empty());
+    assert!(wire.members.edges().is_empty());
     assert_eq!(
-        wire.free_vertex,
+        wire.members.free_vertex().cloned(),
         Some(round_trip.ir().model.vertices[0].id.clone())
     );
     assert_eq!(wire.side, cadmpeg_asm::brep::records::WireSide::In);
@@ -641,16 +641,16 @@ fn generated_source_less_writes_edge_and_point_wires_on_one_shell() {
     assert!(f3d_native(round_trip.ir())
         .wire_topologies
         .iter()
-        .any(|wire| wire.edges.len() == 1 && wire.free_vertex.is_none()));
+        .any(|wire| wire.members.edges().len() == 1 && wire.members.free_vertex().is_none()));
     assert!(f3d_native(round_trip.ir())
         .wire_topologies
         .iter()
-        .any(|wire| wire.edges.is_empty() && wire.free_vertex.is_some()));
+        .any(|wire| wire.members.edges().is_empty() && wire.members.free_vertex().is_some()));
     assert_eq!(
         f3d_native(round_trip.ir())
             .wire_topologies
             .iter()
-            .filter(|wire| wire.edges.is_empty() && wire.free_vertex.is_some())
+            .filter(|wire| wire.members.edges().is_empty() && wire.members.free_vertex().is_some())
             .count(),
         2
     );

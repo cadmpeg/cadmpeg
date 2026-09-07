@@ -2,7 +2,7 @@
 //! Walk the reachable topology graph, collect wire and shell chains, and
 //! classify edge curve senses.
 
-use super::records::{MeshSurfaceSentinel, WireSide, WireTopology};
+use super::records::{MeshSurfaceSentinel, WireMembers, WireSide, WireTopology};
 use crate::ids::IdFormat;
 use crate::nurbs;
 use crate::sab::{Record, Token};
@@ -613,13 +613,19 @@ pub(crate) fn collect_wire_topology(
                             crate::brep::records::identity::NativeRecordNamespace::new(format),
                         shell: ShellId::mint(id(format, shell_index)).expect("identity grammar"),
                         record_index: wire.index as u32,
-                        edges: wire_edges
-                            .into_iter()
-                            .map(|edge| EdgeId::mint(id(format, edge)).expect("identity grammar"))
-                            .collect(),
-                        free_vertex: free_vertex.map(|vertex| {
-                            VertexId::mint(id(format, vertex)).expect("identity grammar")
-                        }),
+                        members: match free_vertex {
+                            Some(vertex) => WireMembers::Vertex(
+                                VertexId::mint(id(format, vertex)).expect("identity grammar"),
+                            ),
+                            None => WireMembers::Edges(
+                                wire_edges
+                                    .into_iter()
+                                    .map(|edge| {
+                                        EdgeId::mint(id(format, edge)).expect("identity grammar")
+                                    })
+                                    .collect(),
+                            ),
+                        },
                         side,
                     });
                 }
