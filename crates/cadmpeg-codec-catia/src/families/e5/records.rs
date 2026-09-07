@@ -12,6 +12,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
 
+use crate::families::e5::graph::Sign;
 use crate::wire::bytes::{f64_le, f64_point, f64_vector, read_f64_array, u32_le_24};
 use crate::wire::records::scan_vertex_records;
 
@@ -61,24 +62,26 @@ pub struct E5RollingBallJet {
     pub pos: usize,
     /// Persistent E5 record id.
     pub record_id: u32,
-    /// Degree of every scalar jet channel.
-    pub degree: u32,
     /// Knots, multiplicities, and complete derivative channels in native order.
     pub stations: Vec<cadmpeg_ir::geometry::RollingBallJetStation>,
-    /// Native parameter interval repeated in the carrier tail.
-    pub parameter_range: [f64; 2],
-    /// Native radius repeated in the carrier tail.
-    pub radius: f64,
     /// Native surface-sense flag retained without reinterpretation.
-    pub sense: i32,
+    pub sense: Sign,
 }
 
 impl E5RollingBallJet {
+    /// Degree of every scalar jet channel.
+    pub const DEGREE: u32 = 5;
+
+    /// Native parameter interval from the first and last station knots.
+    pub fn parameter_range(&self) -> Option<[f64; 2]> {
+        Some([self.stations.first()?.knot, self.stations.last()?.knot])
+    }
+
     /// Convert the admitted carrier payload to the exact neutral jet form.
     #[must_use]
     pub fn definition(&self) -> ProceduralSurfaceDefinition {
         ProceduralSurfaceDefinition::RollingBallJet {
-            degree: self.degree,
+            degree: Self::DEGREE,
             stations: self.stations.clone(),
         }
     }
@@ -371,7 +374,7 @@ fn parse_e5_rolling_ball_jet(data: &[u8], record: E5Record) -> Option<E5RollingB
     let repeated_station_count = usize::try_from(view.u32_le()?).ok()?;
     let zero2 = view.u32_le()?;
     if station_count < 2
-        || degree != 5
+        || degree != E5RollingBallJet::DEGREE
         || repeated_station_count != station_count
         || [zero0, zero1, zero2] != [0; 3]
         || record.size
@@ -409,7 +412,11 @@ fn parse_e5_rolling_ball_jet(data: &[u8], record: E5Record) -> Option<E5RollingB
     let tail_zero0 = view.f64_le()?;
     let tail_radius0 = view.f64_le()?;
     let tail_radius1 = view.f64_le()?;
-    let sense = view.i32_le()?;
+    let sense = match view.i32_le()? {
+        -1 => Sign::Negative,
+        1 => Sign::Positive,
+        _ => return None,
+    };
     let tail_zero1 = view.f64_le()?;
     let tail_radius2 = view.f64_le()?;
     if parameter_min.to_bits() != knots.first()?.to_bits()
@@ -422,7 +429,6 @@ fn parse_e5_rolling_ball_jet(data: &[u8], record: E5Record) -> Option<E5RollingB
         || tail_radius0 <= 0.0
         || !relative_close(tail_radius0, tail_radius1, E5_D8_RADIUS_TOLERANCE)
         || !relative_close(tail_radius0, tail_radius2, E5_D8_RADIUS_TOLERANCE)
-        || !matches!(sense, -1 | 1)
         || view.array::<3>()? != [1, 0, 0]
     {
         return None;
@@ -525,10 +531,7 @@ fn parse_e5_rolling_ball_jet(data: &[u8], record: E5Record) -> Option<E5RollingB
     Some(E5RollingBallJet {
         pos: record.pos,
         record_id: View::u32_le_at(data, record.pos + 9)?,
-        degree,
         stations,
-        parameter_range: [parameter_min, parameter_max],
-        radius: tail_radius0,
         sense,
     })
 }
@@ -802,7 +805,6 @@ mod tests {
         assert_eq!(jets.len(), 1);
         let jet = &jets[0];
         assert_eq!(jet.record_id, 42);
-        assert_eq!(jet.degree, 5);
         assert_eq!(jet.stations.len(), 2);
         assert_close(jet.stations[0].knot, 2.0);
         assert_close(jet.stations[1].knot, 5.0);
@@ -813,10 +815,9 @@ mod tests {
                 .collect::<Vec<_>>(),
             [6, 6]
         );
-        assert_close(jet.parameter_range[0], 2.0);
-        assert_close(jet.parameter_range[1], 5.0);
-        assert_close(jet.radius, 2.0);
-        assert_eq!(jet.sense, -1);
+        assert_close(jet.parameter_range().unwrap()[0], 2.0);
+        assert_close(jet.parameter_range().unwrap()[1], 5.0);
+        assert_eq!(jet.sense, crate::families::e5::graph::Sign::Negative);
         assert_point_close(jet.stations[0].site.first_limit, Point3::new(2.0, 0.0, 0.0));
         assert_point_close(jet.stations[1].site.center, Point3::new(1.0, 0.0, 0.0));
         assert_close(jet.stations[0].site.angle, std::f64::consts::FRAC_PI_2);

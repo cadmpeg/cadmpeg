@@ -1129,7 +1129,7 @@ pub(crate) fn associate_standard_freeform_e5_rolling_ball_jets(
             };
             let carrier = *carrier_ids.get(tag)?;
             let jet = jets.get(&carrier)?;
-            (*forward == (jet.sense == -1)).then_some((
+            (*forward == (jet.sense == crate::families::e5::graph::Sign::Negative)).then_some((
                 *tag,
                 StandardSurfaceProcedure::RollingBall {
                     carrier_object_id: jet.record_id,

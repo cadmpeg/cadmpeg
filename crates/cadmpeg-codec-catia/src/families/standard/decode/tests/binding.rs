@@ -626,7 +626,7 @@ fn standard_freeform_face_uses_exact_e5_d8_rolling_ball_identity() {
         .copy_from_slice(&1_i32.to_le_bytes());
     assert_eq!(
         crate::families::e5::records::e5_rolling_ball_jets(&reverse_stream)[0].sense,
-        1
+        crate::families::e5::graph::Sign::Positive
     );
     assert!(
         associate_standard_freeform_e5_rolling_ball_jets(&opposite_records, &reverse_stream,)
