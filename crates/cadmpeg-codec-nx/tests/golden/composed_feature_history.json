@@ -89,7 +89,8 @@
           },
           {
             "definition": {
-              "definition": "datum_coordinate_system_unresolved"
+              "definition": "unresolved",
+              "family": "datum_coordinate_system"
             },
             "dependencies": [
               "nx:feature-history:feature#0000000000-0000000003"
@@ -141,7 +142,8 @@
           },
           {
             "definition": {
-              "definition": "datum_plane_unresolved"
+              "definition": "unresolved",
+              "family": "datum_plane"
             },
             "id": "nx:feature-history:feature#0000000000-0000000003",
             "name": "DATUM_PLANE",
@@ -178,7 +180,8 @@
           },
           {
             "definition": {
-              "definition": "datum_point_unresolved"
+              "definition": "unresolved",
+              "family": "datum_point"
             },
             "id": "nx:feature-history:feature#0000000000-0000000004",
             "name": "POINT",
@@ -211,7 +214,8 @@
           },
           {
             "definition": {
-              "definition": "draft_unresolved"
+              "definition": "unresolved",
+              "family": "draft"
             },
             "id": "nx:feature-history:feature#0000000000-0000000005",
             "name": "DRAFT",
@@ -252,7 +256,8 @@
           },
           {
             "definition": {
-              "definition": "loft_unresolved"
+              "definition": "unresolved",
+              "family": "loft"
             },
             "id": "nx:feature-history:feature#0000000000-0000000006",
             "name": "SKIN",

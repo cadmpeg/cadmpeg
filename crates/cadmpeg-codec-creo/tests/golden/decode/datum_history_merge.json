@@ -35,7 +35,8 @@
         },
         {
           "definition": {
-            "definition": "datum_plane_unresolved"
+            "definition": "unresolved",
+            "family": "datum_plane"
           },
           "id": "creo:model:feature#4",
           "name": "Datum Plane id 4",
