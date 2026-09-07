@@ -69,15 +69,58 @@ impl StreamKind {
     pub fn is_parasolid(self) -> bool {
         !matches!(self, StreamKind::Preview)
     }
+}
 
-    /// Return the `CHART_s` Hvec layout required by this stream kind.
-    pub(crate) fn chart_point_layout(self) -> Option<crate::intersection::ChartPointLayout> {
+/// Parasolid stream record subtype.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParasolidSubtype {
+    /// Body snapshot.
+    Partition,
+    /// Edit overlay.
+    Deltas,
+    /// Body without a named subtype.
+    Plain,
+}
+
+impl ParasolidSubtype {
+    pub(crate) fn chart_point_layout(self) -> crate::intersection::ChartPointLayout {
         match self {
-            StreamKind::Partition | StreamKind::Plain => {
-                Some(crate::intersection::ChartPointLayout::Xyz3)
-            }
-            StreamKind::Deltas => Some(crate::intersection::ChartPointLayout::Ext11),
-            StreamKind::Preview => None,
+            Self::Partition | Self::Plain => crate::intersection::ChartPointLayout::Xyz3,
+            Self::Deltas => crate::intersection::ChartPointLayout::Ext11,
+        }
+    }
+}
+
+/// Classified stream body and its Parasolid schema.
+#[derive(Debug, Clone)]
+pub enum StreamBody {
+    /// Parasolid records.
+    Parasolid {
+        /// Record subtype.
+        subtype: ParasolidSubtype,
+        /// Schema token.
+        schema: Option<String>,
+    },
+    /// Non-Parasolid payload.
+    Preview,
+}
+
+impl StreamBody {
+    fn kind(&self) -> StreamKind {
+        match self {
+            Self::Parasolid {
+                subtype: ParasolidSubtype::Partition,
+                ..
+            } => StreamKind::Partition,
+            Self::Parasolid {
+                subtype: ParasolidSubtype::Deltas,
+                ..
+            } => StreamKind::Deltas,
+            Self::Parasolid {
+                subtype: ParasolidSubtype::Plain,
+                ..
+            } => StreamKind::Plain,
+            Self::Preview => StreamKind::Preview,
         }
     }
 }
@@ -99,9 +142,22 @@ pub struct Stream {
     /// Inflated bytes.
     pub inflated: Vec<u8>,
     /// Payload classification.
-    pub kind: StreamKind,
-    /// The Parasolid `SCH_<version>` token, when present.
-    pub schema: Option<String>,
+    pub body: StreamBody,
+}
+
+impl Stream {
+    /// Stream classification.
+    pub fn kind(&self) -> StreamKind {
+        self.body.kind()
+    }
+
+    /// Parasolid schema token.
+    pub fn schema(&self) -> Option<&str> {
+        match &self.body {
+            StreamBody::Parasolid { schema, .. } => schema.as_deref(),
+            StreamBody::Preview => None,
+        }
+    }
 }
 
 /// Owner-flag layouts admitted by the attribute-definition grammar.
@@ -601,16 +657,15 @@ pub fn extract_streams<'a>(
                     start + offset
                 )));
             };
-            let (kind, schema) = classify(&inflated);
+            let body = classify(&inflated);
             streams.push(Stream {
                 file_offset: start + offset,
                 consumed,
                 inflated,
-                kind,
-                schema,
+                body,
             });
         }
-        if streams.iter().any(|stream| stream.kind.is_parasolid()) {
+        if streams.iter().any(|stream| stream.kind().is_parasolid()) {
             return Ok(streams);
         }
         append_unindexed_structural_streams(ctx, part_view, start, &mut streams)?;
@@ -637,17 +692,16 @@ fn append_all_zlib_streams<'a>(
     while i + 2 <= part.len() {
         if is_zlib_header(part[i], part[i + 1]) {
             if let Some((inflated, consumed)) = inflate_stream(ctx, part_view, i)? {
-                let (kind, schema) = classify(&inflated);
+                let body = classify(&inflated);
                 let file_offset = file_start + i;
                 if seen.insert(file_offset)
-                    && (!structural_only || structural_stream_candidate(kind, &inflated))
+                    && (!structural_only || structural_stream_candidate(body.kind(), &inflated))
                 {
                     streams.push(Stream {
                         file_offset,
                         consumed,
                         inflated,
-                        kind,
-                        schema,
+                        body,
                     });
                 }
                 // Resume past the bytes this member consumed, not at the next
@@ -716,7 +770,7 @@ pub fn extract_legacy_streams<'a>(
             "retain legacy NX Parasolid stream",
             Some(part.location()),
         )?;
-        let (kind, schema) = classify(&inflated);
+        let body = classify(&inflated);
         let consumed = u64::try_from(payload.len()).map_err(|_| {
             CodecError::Malformed("legacy Parasolid stream length exceeds u64".into())
         })?;
@@ -727,8 +781,7 @@ pub fn extract_legacy_streams<'a>(
             file_offset,
             consumed,
             inflated,
-            kind,
-            schema,
+            body,
         });
         let Some(next) = next else {
             break;
@@ -806,22 +859,22 @@ fn is_zlib_header(cmf: u8, flg: u8) -> bool {
 }
 
 /// Classify an inflated payload from its prologue text and read the schema token.
-fn classify(inflated: &[u8]) -> (StreamKind, Option<String>) {
+fn classify(inflated: &[u8]) -> StreamBody {
     if !inflated.starts_with(b"PS\x00\x00") {
-        return (StreamKind::Preview, None);
+        return StreamBody::Preview;
     }
     let window = &inflated[..inflated.len().min(512)];
-    let kind = if contains(window, b"(partition)") {
-        StreamKind::Partition
+    let subtype = if contains(window, b"(partition)") {
+        ParasolidSubtype::Partition
     } else if contains(window, b"(deltas)") {
-        StreamKind::Deltas
+        ParasolidSubtype::Deltas
     } else {
-        StreamKind::Plain
+        ParasolidSubtype::Plain
     };
-    (
-        kind,
-        cadmpeg_parasolid::find_schema_token(window).map(|token| token.value().to_owned()),
-    )
+    StreamBody::Parasolid {
+        subtype,
+        schema: cadmpeg_parasolid::find_schema_token(window).map(|token| token.value().to_owned()),
+    }
 }
 
 #[cfg(test)]

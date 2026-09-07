@@ -177,11 +177,11 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
     for (si, stream) in scan.streams.iter().enumerate() {
         let mut attributes = BTreeMap::new();
         attributes.insert("file_offset".to_string(), stream.file_offset.to_string());
-        attributes.insert("kind".to_string(), stream.kind.label().to_string());
-        if let Some(schema) = &stream.schema {
-            attributes.insert("schema".to_string(), schema.clone());
+        attributes.insert("kind".to_string(), stream.kind().label().to_string());
+        if let Some(schema) = stream.schema() {
+            attributes.insert("schema".to_string(), schema.to_owned());
         }
-        if stream.kind.is_parasolid() {
+        if stream.kind().is_parasolid() {
             let graph = topology::Graph::parse(&stream.inflated);
             for (kind, name) in [
                 (12, "body"),
@@ -198,7 +198,7 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
                     graph.of_kind(kind).count().to_string(),
                 );
             }
-            if stream.kind == parasolid::StreamKind::Partition {
+            if stream.kind() == parasolid::StreamKind::Partition {
                 let graph = topology::Graph::parse(&semantic_streams[si]);
                 for (kind, name) in [
                     (12, "body"),
@@ -215,7 +215,7 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
                         graph.of_kind(kind).count().to_string(),
                     );
                 }
-            } else if stream.kind == parasolid::StreamKind::Deltas {
+            } else if stream.kind() == parasolid::StreamKind::Deltas {
                 let census = deltas::walk(&stream.inflated);
                 if census.transmit_header.is_some() {
                     attributes.insert(
@@ -287,7 +287,7 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
         };
         entries.push(ContainerEntry {
             name: format!("parasolid#{si}"),
-            role: if stream.kind.is_parasolid() {
+            role: if stream.kind().is_parasolid() {
                 ContainerRole::ParasolidStream
             } else {
                 ContainerRole::Preview

@@ -1309,7 +1309,7 @@ pub(crate) fn source_meta(scan: &Scan, dialects: &DialectLayers) -> SourceMeta {
     for (index, stream) in scan
         .streams
         .iter()
-        .filter(|stream| stream.kind == StreamKind::Deltas)
+        .filter(|stream| stream.kind() == StreamKind::Deltas)
         .enumerate()
     {
         let census = crate::deltas::walk(&stream.inflated);
@@ -1394,8 +1394,10 @@ mod tests {
             file_offset: 0,
             consumed: 0,
             inflated: vec![1, 2, 3],
-            kind: StreamKind::Partition,
-            schema: None,
+            body: crate::parasolid::StreamBody::Parasolid {
+                subtype: crate::parasolid::ParasolidSubtype::Partition,
+                schema: None,
+            },
         };
 
         assert!(matches!(

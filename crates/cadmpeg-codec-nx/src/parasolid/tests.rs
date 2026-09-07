@@ -245,9 +245,9 @@ fn parasolid_extraction_classifies_partition_and_schema() {
     let streams = extract_streams(&f);
     let part = streams
         .iter()
-        .find(|s| s.kind == StreamKind::Partition)
+        .find(|s| s.kind() == StreamKind::Partition)
         .expect("a partition stream");
-    assert_eq!(part.schema.as_deref(), Some("SCH_TEST_1_9999"));
+    assert_eq!(part.schema(), Some("SCH_TEST_1_9999"));
     assert!(part.inflated.starts_with(b"PS\x00\x00"));
 }
 
@@ -385,7 +385,7 @@ fn extraction_uses_ug_part_bounds_and_all_standard_zlib_headers() {
 
     let streams = extract_streams(&file);
     assert_eq!(streams.len(), 1);
-    assert_eq!(streams[0].schema.as_deref(), Some("SCH_TEST_1_9999"));
+    assert_eq!(streams[0].schema(), Some("SCH_TEST_1_9999"));
 }
 
 #[test]
@@ -397,8 +397,8 @@ fn extraction_accepts_short_complete_zlib_members_in_ug_part() {
 
     assert_eq!(streams.len(), 1);
     assert_eq!(streams[0].inflated, inflated);
-    assert_eq!(streams[0].kind, StreamKind::Plain);
-    assert_eq!(streams[0].schema.as_deref(), Some("SCH_X"));
+    assert_eq!(streams[0].kind(), StreamKind::Plain);
+    assert_eq!(streams[0].schema(), Some("SCH_X"));
 }
 
 #[test]
@@ -471,8 +471,8 @@ fn extraction_uses_ordered_segment_wrappers_in_indexed_payloads() {
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
     let streams = extract_streams(&file);
     assert_eq!(streams.len(), 1);
-    assert_eq!(streams[0].kind, StreamKind::Deltas);
-    assert_eq!(streams[0].schema.as_deref(), Some("SCH_REAL_1_9999"));
+    assert_eq!(streams[0].kind(), StreamKind::Deltas);
+    assert_eq!(streams[0].schema(), Some("SCH_REAL_1_9999"));
 }
 
 #[test]
@@ -503,11 +503,11 @@ fn extraction_falls_back_to_unindexed_structural_streams_when_index_has_no_paras
 
     assert_eq!(streams.len(), 2);
     assert!(streams.iter().any(|stream| {
-        stream.kind == StreamKind::Partition && stream.schema.as_deref() == Some("SCH_TEST_1_9999")
+        stream.kind() == StreamKind::Partition && stream.schema() == Some("SCH_TEST_1_9999")
     }));
     assert!(streams
         .iter()
-        .all(|stream| { stream.schema.as_deref() != Some("SCH_DECOY_1_9999") }));
+        .all(|stream| { stream.schema() != Some("SCH_DECOY_1_9999") }));
 }
 
 #[test]

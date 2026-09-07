@@ -358,19 +358,21 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
         };
     let bindings = [binding("plain-0", 0, 11, 10), binding("plain-1", 1, 12, 16)];
     let image_uses = super::feature_operation_body_image_segment_uses(&writes, &bindings);
-    let stream = |kind| crate::parasolid::Stream {
+    let stream = |subtype| crate::parasolid::Stream {
         file_offset: 0,
         consumed: 0,
         inflated: Vec::new(),
-        kind,
-        schema: Some("SCH_TEST".into()),
+        body: crate::parasolid::StreamBody::Parasolid {
+            subtype,
+            schema: Some("SCH_TEST".into()),
+        },
     };
     let streams = [
-        stream(crate::parasolid::StreamKind::Plain),
-        stream(crate::parasolid::StreamKind::Plain),
-        stream(crate::parasolid::StreamKind::Partition),
-        stream(crate::parasolid::StreamKind::Deltas),
-        stream(crate::parasolid::StreamKind::Partition),
+        stream(crate::parasolid::ParasolidSubtype::Plain),
+        stream(crate::parasolid::ParasolidSubtype::Plain),
+        stream(crate::parasolid::ParasolidSubtype::Partition),
+        stream(crate::parasolid::ParasolidSubtype::Deltas),
+        stream(crate::parasolid::ParasolidSubtype::Partition),
     ];
     let group =
         |id: &str, partition_stream_ordinal| crate::native::parasolid::ParasolidGroupRecord {
@@ -422,9 +424,9 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
     .is_none());
 
     let interrupted_streams = [
-        stream(crate::parasolid::StreamKind::Plain),
-        stream(crate::parasolid::StreamKind::Deltas),
-        stream(crate::parasolid::StreamKind::Partition),
+        stream(crate::parasolid::ParasolidSubtype::Plain),
+        stream(crate::parasolid::ParasolidSubtype::Deltas),
+        stream(crate::parasolid::ParasolidSubtype::Partition),
     ];
     assert!(super::feature_operation_body_partition_uses(
         &writes,

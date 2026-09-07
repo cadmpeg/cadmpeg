@@ -128,7 +128,7 @@ pub(crate) fn parasolid_group_records(
         .collect::<BTreeMap<_, _>>();
     let mut groups = Vec::new();
     for (stream_ordinal, stream) in streams.iter().enumerate() {
-        if stream.kind != crate::parasolid::StreamKind::Partition {
+        if stream.kind() != crate::parasolid::StreamKind::Partition {
             continue;
         }
         let Ok(stream_ordinal_u32) = u32::try_from(stream_ordinal) else {
@@ -324,7 +324,7 @@ pub(crate) fn parasolid_group_members(
     let mut members = streams
         .iter()
         .enumerate()
-        .filter(|(_, stream)| stream.kind == crate::parasolid::StreamKind::Partition)
+        .filter(|(_, stream)| stream.kind() == crate::parasolid::StreamKind::Partition)
         .filter_map(|(stream_ordinal, stream)| {
             let stream_ordinal_u32 = u32::try_from(stream_ordinal).ok()?;
             let mut current = BTreeMap::new();
@@ -914,7 +914,7 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
     let delta_censuses = streams
         .iter()
         .map(|stream| {
-            (stream.kind == crate::parasolid::StreamKind::Deltas)
+            (stream.kind() == crate::parasolid::StreamKind::Deltas)
                 .then(|| crate::deltas::walk(&stream.inflated))
         })
         .collect();
@@ -948,7 +948,7 @@ pub(crate) fn parasolid_deltas_events_with_censuses(
         residual_spans: Vec::new(),
     };
     for (stream_ordinal, stream) in streams.iter().enumerate() {
-        if stream.kind != crate::parasolid::StreamKind::Deltas {
+        if stream.kind() != crate::parasolid::StreamKind::Deltas {
             continue;
         }
         let census = delta_censuses
@@ -1318,7 +1318,7 @@ pub(crate) trait ParasolidScanRecords {
 pub(crate) fn per_parasolid_scan<P: ParasolidScanRecords>(streams: &[Stream]) -> Vec<P::Record> {
     let mut records = Vec::new();
     for (stream_ordinal, stream) in streams.iter().enumerate() {
-        if !stream.kind.is_parasolid() {
+        if !stream.kind().is_parasolid() {
             continue;
         }
         for row in P::scan(&stream.inflated) {
@@ -1713,12 +1713,10 @@ pub struct ParasolidChartRecord {
 pub fn parasolid_chart_records(streams: &[Stream]) -> Vec<ParasolidChartRecord> {
     let mut records = Vec::new();
     for (stream_ordinal, stream) in streams.iter().enumerate() {
-        if !stream.kind.is_parasolid() {
-            continue;
-        }
-        let Some(point_layout) = stream.kind.chart_point_layout() else {
+        let crate::parasolid::StreamBody::Parasolid { subtype, .. } = &stream.body else {
             continue;
         };
+        let point_layout = subtype.chart_point_layout();
         for chart in crate::intersection::chart_source_records(&stream.inflated, point_layout) {
             records.push(ParasolidChartRecord {
                 id: format!(
@@ -2425,7 +2423,7 @@ pub fn parasolid_attribute_definitions(streams: &[Stream]) -> Vec<ParasolidAttri
     streams
         .iter()
         .enumerate()
-        .filter(|(_, stream)| stream.kind.is_parasolid())
+        .filter(|(_, stream)| stream.kind().is_parasolid())
         .flat_map(|(stream_ordinal, stream)| {
             crate::parasolid::attribute_definitions(&stream.inflated)
                 .into_iter()
@@ -2456,7 +2454,7 @@ pub fn parasolid_field_names_records(streams: &[Stream]) -> Vec<ParasolidFieldNa
     let mut records = streams
         .iter()
         .enumerate()
-        .filter(|(_, stream)| stream.kind.is_parasolid())
+        .filter(|(_, stream)| stream.kind().is_parasolid())
         .flat_map(|(stream_ordinal, stream)| {
             crate::parasolid::field_names_records(&stream.inflated)
                 .into_iter()
@@ -2669,7 +2667,7 @@ pub fn parasolid_entity_51_records(streams: &[Stream]) -> Vec<ParasolidEntity51R
     let mut records = streams
         .iter()
         .enumerate()
-        .filter(|(_, stream)| stream.kind.is_parasolid())
+        .filter(|(_, stream)| stream.kind().is_parasolid())
         .flat_map(|(stream_ordinal, stream)| {
             crate::parasolid::entity_51_records(&stream.inflated)
                 .into_iter()
@@ -2709,7 +2707,7 @@ pub(crate) fn parasolid_entity_value_records(
         unicode: Vec::new(),
     };
     for (stream_ordinal, stream) in streams.iter().enumerate() {
-        let owned_offsets = match stream.kind {
+        let owned_offsets = match stream.kind() {
             StreamKind::Deltas => deltas_records
                 .iter()
                 .filter_map(|record| {
@@ -3460,13 +3458,19 @@ mod tests {
         bytes
     }
 
-    fn stream(kind: StreamKind, schema: &str, inflated: Vec<u8>) -> Stream {
+    fn stream(
+        subtype: crate::parasolid::ParasolidSubtype,
+        schema: &str,
+        inflated: Vec<u8>,
+    ) -> Stream {
         Stream {
             file_offset: 0,
             consumed: 0,
             inflated,
-            kind,
-            schema: Some(schema.to_string()),
+            body: crate::parasolid::StreamBody::Parasolid {
+                subtype,
+                schema: Some(schema.to_string()),
+            },
         }
     }
 
@@ -3480,7 +3484,11 @@ mod tests {
         outer.extend_from_slice(&20u16.to_be_bytes());
         outer.extend_from_slice(&0.25f64.to_be_bytes());
 
-        let streams = [stream(StreamKind::Deltas, "SCH_TEST", outer)];
+        let streams = [stream(
+            crate::parasolid::ParasolidSubtype::Deltas,
+            "SCH_TEST",
+            outer,
+        )];
         let events = super::parasolid_deltas_events(&streams);
         let records = super::parasolid_entity_value_records(&streams, &events.records);
 
@@ -3616,8 +3624,16 @@ mod tests {
     #[test]
     fn group_records_keep_equal_node_ids_in_distinct_partition_scopes() {
         let streams = [
-            stream(StreamKind::Partition, "SCH_TEST", group_record(10, 7, 8)),
-            stream(StreamKind::Partition, "SCH_TEST", group_record(11, 7, 9)),
+            stream(
+                crate::parasolid::ParasolidSubtype::Partition,
+                "SCH_TEST",
+                group_record(10, 7, 8),
+            ),
+            stream(
+                crate::parasolid::ParasolidSubtype::Partition,
+                "SCH_TEST",
+                group_record(11, 7, 9),
+            ),
         ];
 
         let groups = super::parasolid_group_records(&streams, &BTreeMap::new(), &[]);
@@ -3634,9 +3650,21 @@ mod tests {
     #[test]
     fn group_records_assign_only_paired_deltas_to_a_partition_scope() {
         let streams = [
-            stream(StreamKind::Partition, "SCH_TEST", group_record(10, 7, 8)),
-            stream(StreamKind::Deltas, "SCH_TEST", group_record(11, 8, 9)),
-            stream(StreamKind::Deltas, "SCH_OTHER", group_record(12, 9, 10)),
+            stream(
+                crate::parasolid::ParasolidSubtype::Partition,
+                "SCH_TEST",
+                group_record(10, 7, 8),
+            ),
+            stream(
+                crate::parasolid::ParasolidSubtype::Deltas,
+                "SCH_TEST",
+                group_record(11, 8, 9),
+            ),
+            stream(
+                crate::parasolid::ParasolidSubtype::Deltas,
+                "SCH_OTHER",
+                group_record(12, 9, 10),
+            ),
         ];
         let events = super::parasolid_deltas_events(&streams);
         let pairs = BTreeMap::from([(0, vec![1])]);
@@ -3683,8 +3711,10 @@ mod tests {
             file_offset: 0,
             consumed: 0,
             inflated: bytes,
-            kind: StreamKind::Deltas,
-            schema: None,
+            body: crate::parasolid::StreamBody::Parasolid {
+                subtype: crate::parasolid::ParasolidSubtype::Deltas,
+                schema: None,
+            },
         }];
 
         let census = crate::deltas::walk(&streams[0].inflated);
@@ -3757,8 +3787,10 @@ mod tests {
             file_offset: 0,
             consumed: 0,
             inflated: bytes,
-            kind: StreamKind::Deltas,
-            schema: None,
+            body: crate::parasolid::StreamBody::Parasolid {
+                subtype: crate::parasolid::ParasolidSubtype::Deltas,
+                schema: None,
+            },
         }];
 
         let events = super::parasolid_deltas_events(&streams);
@@ -3796,8 +3828,10 @@ mod tests {
             file_offset: 0,
             consumed: 0,
             inflated: bytes.clone(),
-            kind: StreamKind::Deltas,
-            schema: None,
+            body: crate::parasolid::StreamBody::Parasolid {
+                subtype: crate::parasolid::ParasolidSubtype::Deltas,
+                schema: None,
+            },
         }];
 
         let events = super::parasolid_deltas_events(&streams);
@@ -3842,8 +3876,10 @@ mod tests {
             file_offset: 0,
             consumed: 0,
             inflated: bytes.clone(),
-            kind: StreamKind::Deltas,
-            schema: Some("SCH_3501171_35102_13006".to_string()),
+            body: crate::parasolid::StreamBody::Parasolid {
+                subtype: crate::parasolid::ParasolidSubtype::Deltas,
+                schema: Some("SCH_3501171_35102_13006".to_string()),
+            },
         }];
 
         let events = super::parasolid_deltas_events(&streams);
@@ -3873,8 +3909,10 @@ mod tests {
             file_offset: 0,
             consumed: 0,
             inflated: bytes.clone(),
-            kind: StreamKind::Deltas,
-            schema: None,
+            body: crate::parasolid::StreamBody::Parasolid {
+                subtype: crate::parasolid::ParasolidSubtype::Deltas,
+                schema: None,
+            },
         }];
 
         let events = super::parasolid_deltas_events(&streams);
@@ -3909,8 +3947,10 @@ mod tests {
             file_offset: 0,
             consumed: 0,
             inflated: bytes.clone(),
-            kind: StreamKind::Deltas,
-            schema: None,
+            body: crate::parasolid::StreamBody::Parasolid {
+                subtype: crate::parasolid::ParasolidSubtype::Deltas,
+                schema: None,
+            },
         }];
 
         let events = super::parasolid_deltas_events(&streams);
@@ -3959,8 +3999,10 @@ mod tests {
             file_offset: 0,
             consumed: 0,
             inflated: bytes.clone(),
-            kind: StreamKind::Deltas,
-            schema: None,
+            body: crate::parasolid::StreamBody::Parasolid {
+                subtype: crate::parasolid::ParasolidSubtype::Deltas,
+                schema: None,
+            },
         }];
 
         let events = super::parasolid_deltas_events(&streams);
@@ -4025,8 +4067,10 @@ mod tests {
             file_offset: 0,
             consumed: 0,
             inflated: bytes.clone(),
-            kind: StreamKind::Deltas,
-            schema: None,
+            body: crate::parasolid::StreamBody::Parasolid {
+                subtype: crate::parasolid::ParasolidSubtype::Deltas,
+                schema: None,
+            },
         }];
 
         let events = super::parasolid_deltas_events(&streams);
@@ -4062,8 +4106,10 @@ mod tests {
             file_offset: 0,
             consumed: 0,
             inflated: bytes.clone(),
-            kind: StreamKind::Deltas,
-            schema: None,
+            body: crate::parasolid::StreamBody::Parasolid {
+                subtype: crate::parasolid::ParasolidSubtype::Deltas,
+                schema: None,
+            },
         }];
 
         let events = super::parasolid_deltas_events(&streams);
@@ -4111,8 +4157,10 @@ mod tests {
             file_offset: 0,
             consumed: 0,
             inflated: bytes.clone(),
-            kind: StreamKind::Deltas,
-            schema: None,
+            body: crate::parasolid::StreamBody::Parasolid {
+                subtype: crate::parasolid::ParasolidSubtype::Deltas,
+                schema: None,
+            },
         }];
 
         let events = super::parasolid_deltas_events(&streams);
@@ -4151,7 +4199,6 @@ mod tests {
 
     use cadmpeg_ir::report::LossCategory;
 
-    use crate::parasolid::StreamKind;
     use crate::test_support::*;
     use crate::NxCodec;
 
@@ -4718,8 +4765,10 @@ mod tests {
             file_offset: 0,
             consumed: 0,
             inflated: bytes.clone(),
-            kind: StreamKind::Deltas,
-            schema: None,
+            body: crate::parasolid::StreamBody::Parasolid {
+                subtype: crate::parasolid::ParasolidSubtype::Deltas,
+                schema: None,
+            },
         }];
 
         let events = super::parasolid_deltas_events(&streams);

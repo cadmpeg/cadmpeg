@@ -156,7 +156,7 @@ pub(crate) fn try_decode_geometry(
         })
         .unwrap_or_default();
     for (si, stream) in scan.streams.iter().enumerate() {
-        if stream.kind.is_parasolid() {
+        if stream.kind().is_parasolid() {
             body_node_ids.extend(topology_body_node_ids(
                 si,
                 &parsed.stream(si).view_for_geometry().graph,
@@ -201,7 +201,7 @@ pub(crate) fn try_decode_geometry(
         .iter()
         .enumerate()
         .filter(|(si, stream)| {
-            stream.kind.is_parasolid()
+            stream.kind().is_parasolid()
                 && preselection
                     .as_ref()
                     .is_none_or(|(_, selected, _)| selected.contains(si))
@@ -242,7 +242,7 @@ pub(crate) fn try_decode_geometry(
     let mut completion_streams = Vec::new();
 
     for (si, stream) in scan.streams.iter().enumerate() {
-        if !stream.kind.is_parasolid() {
+        if !stream.kind().is_parasolid() {
             continue;
         }
         adaptive_geometry_budget.clear_blend_frame_cache();
@@ -259,7 +259,7 @@ pub(crate) fn try_decode_geometry(
             let container_stream = annotations.stream("nx:container");
             annotations
                 .note(unknown.id(), container_stream, stream.file_offset as u64)
-                .tag(stream.kind.label());
+                .tag(stream.kind().label());
             annotations.exactness(unknown.id(), Exactness::Derived);
             unknowns.push(unknown);
             stream_unknowns.push((si, unknown_index));
@@ -272,7 +272,7 @@ pub(crate) fn try_decode_geometry(
         } = parsed.parse_nurbs(si);
         let view = parsed.stream(si).view_for_geometry();
         let semantic = parsed.semantic_bytes(si);
-        let stream_name = format!("parasolid#{si}:{}", stream.kind.label());
+        let stream_name = format!("parasolid#{si}:{}", stream.kind().label());
         let source_stream = annotations.stream(format!("nx:{stream_name}"));
         completion_streams.push((si, source_stream));
         let graph = &view.graph;
@@ -1041,7 +1041,7 @@ pub(crate) fn try_decode_geometry(
         let container_stream = annotations.stream("nx:container");
         annotations
             .note(unknown.id(), container_stream, stream.file_offset as u64)
-            .tag(stream.kind.label());
+            .tag(stream.kind().label());
         annotations.exactness(unknown.id(), Exactness::Derived);
         unknowns.push(unknown);
         stream_unknowns.push((si, unknown_index));
