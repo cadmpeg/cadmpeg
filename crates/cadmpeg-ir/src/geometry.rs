@@ -5225,6 +5225,8 @@ mod variable_blend_secondary_curve_wire {
         secondary_range: [Option<f64>; 2],
     }
 
+    // Serde's field adapter passes a reference to the complete optional field.
+    #[allow(clippy::ref_option)]
     pub fn serialize<S: Serializer>(
         curve: &Option<RollingBallSupportCurve>,
         serializer: S,
