@@ -1481,7 +1481,7 @@ pub struct DesignExtrudeSelectionMember {
     /// Byte offset of the indexed-record header.
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Local persistent selection identity preceding the two UUID fields.
     pub local_id: u64,
     /// Byte offset of `local_id`.

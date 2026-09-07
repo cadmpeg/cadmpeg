@@ -244,7 +244,7 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
         group_member_ordinal: 0,
         record_index: 10,
         byte_offset: 0,
-        class_tag: "278".into(),
+        class_tag: crate::records::DesignClassTag::try_from("278".to_owned()).unwrap(),
         local_id: 200,
         local_id_offset: 0,
         asset_id: "asset".into(),

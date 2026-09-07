@@ -93,7 +93,7 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
         group_member_ordinal: 0,
         record_index: 2,
         byte_offset: 400,
-        class_tag: "300".into(),
+        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         local_id: 42,
         local_id_offset: 421,
         asset_id: "11111111-2222-4333-8444-555555555555".into(),

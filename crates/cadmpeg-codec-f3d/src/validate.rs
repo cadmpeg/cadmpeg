@@ -6515,20 +6515,15 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 design_stream(&header.id) == native_stream
                     && header.byte_offset == member.next_byte_offset
             });
-        let valid = member.class_tag.len() == 3
-            && member.class_tag.bytes().all(|byte| byte.is_ascii_digit())
-            && group.is_some_and(|group| {
-                usize::try_from(member.group_member_ordinal)
-                    .ok()
-                    .and_then(|ordinal| group.members.get(ordinal))
-                    .map(|reference| reference.value)
-                    == Some(member.record_index)
-            })
-            && header.is_some_and(|header| {
-                header.byte_offset == member.byte_offset
-                    && header.class_tag.as_str() == member.class_tag
-            })
-            && member.local_id_offset == member.byte_offset.saturating_add(21)
+        let valid = group.is_some_and(|group| {
+            usize::try_from(member.group_member_ordinal)
+                .ok()
+                .and_then(|ordinal| group.members.get(ordinal))
+                .map(|reference| reference.value)
+                == Some(member.record_index)
+        }) && header.is_some_and(|header| {
+            header.byte_offset == member.byte_offset && header.class_tag == member.class_tag
+        }) && member.local_id_offset == member.byte_offset.saturating_add(21)
             && member.asset_id_offset == member.byte_offset.saturating_add(33)
             && member.context_id_offset > member.asset_id_offset
             && valid_design_guid(&member.asset_id)

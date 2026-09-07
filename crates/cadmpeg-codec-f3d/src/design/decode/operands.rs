@@ -3900,7 +3900,7 @@ pub(crate) fn parse_extrude_selection_member(
         group_member_ordinal,
         record_index: header.record_index,
         byte_offset: header.byte_offset,
-        class_tag: header.class_tag.as_str().to_owned(),
+        class_tag: header.class_tag.clone(),
         local_id: member.local_id,
         local_id_offset: member.local_id_offset,
         asset_id: member.asset_id,
