@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Morph-control payload decoding.
 
+use std::fmt;
 use std::ops::Range;
+
+use serde::{Deserialize, Serialize};
 
 use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface};
 
@@ -35,9 +38,47 @@ pub(crate) enum Control {
     },
 }
 
+/// Localizer code as written by Rhino; the file may carry values outside the
+/// documented table, which decode unchanged.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub(crate) struct LocalizerKind(pub(crate) i32);
+
+impl LocalizerKind {
+    pub(crate) const NONE: Self = Self(0);
+    pub(crate) const SPHERE: Self = Self(1);
+    pub(crate) const PLANE: Self = Self(2);
+    pub(crate) const CYLINDER: Self = Self(3);
+    pub(crate) const CURVE: Self = Self(4);
+    pub(crate) const SURFACE: Self = Self(5);
+    pub(crate) const DISTANCE: Self = Self(6);
+}
+
+impl fmt::Debug for LocalizerKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = match *self {
+            Self::NONE => "None",
+            Self::SPHERE => "Sphere",
+            Self::PLANE => "Plane",
+            Self::CYLINDER => "Cylinder",
+            Self::CURVE => "Curve",
+            Self::SURFACE => "Surface",
+            Self::DISTANCE => "Distance",
+            Self(code) => return write!(f, "LocalizerKind({code})"),
+        };
+        f.write_str(name)
+    }
+}
+
+impl fmt::Display for LocalizerKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct Localizer {
-    pub(crate) kind: i32,
+    pub(crate) kind: LocalizerKind,
     pub(crate) point: [f64; 3],
     pub(crate) vector: [f64; 3],
     pub(crate) interval: [f64; 2],
@@ -215,7 +256,7 @@ fn localizer(
             message: format!("unsupported localizer version {major}.{minor}"),
         });
     }
-    let kind = value.i32()?;
+    let kind = LocalizerKind(value.i32()?);
     let offset = value.position();
     let point = scale_point(point(&mut value)?, scale, offset)?;
     let vector = vector(&mut value)?.0;
@@ -794,8 +835,14 @@ mod tests {
         curve_payload.extend(curve(2.0));
         let mut surface_payload = vec![1];
         surface_payload.extend(surface);
-        for kind in [0_i32, 1, 4, 5, 99] {
-            let mut payload = kind.to_le_bytes().to_vec();
+        for kind in [
+            LocalizerKind::NONE,
+            LocalizerKind::SPHERE,
+            LocalizerKind::CURVE,
+            LocalizerKind::SURFACE,
+            LocalizerKind(99),
+        ] {
+            let mut payload = kind.0.to_le_bytes().to_vec();
             for value in [0.0_f64, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0] {
                 payload.extend(value.to_le_bytes());
             }
