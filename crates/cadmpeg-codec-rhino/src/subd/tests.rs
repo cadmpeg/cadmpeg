@@ -401,7 +401,7 @@ pub(crate) fn quad_payload(archive: ArchiveVersion) -> Vec<u8> {
     })
 }
 
-fn decode_fixture(fixture: Fixture, scale: f64) -> Result<DecodedSubd, SubdError> {
+fn decode_fixture(fixture: Fixture, scale: f64) -> Result<Option<DecodedSubd>, SubdError> {
     let bytes = payload(fixture);
     decode(
         &bytes,
@@ -492,9 +492,8 @@ fn mesh_proxy_requires_identity_and_parent_fingerprint() {
             .expect("valid identity"),
         fingerprint,
     )
-    .expect("valid proxy framing")
-    .expect("valid proxy transfer");
-    assert!(matches!(decoded, DecodedSubd::Surface { .. }));
+    .expect("valid proxy framing");
+    assert!(matches!(decoded, Some(DecodedSubd { .. })));
 
     let mut wrong_hash = fingerprint;
     wrong_hash.face_sha1[0] ^= 1;
@@ -558,7 +557,7 @@ fn decodes_empty_outer_subd_without_carrier() {
             "rhino:test:subd#0".try_into().expect("valid identity")
         )
         .expect("required invariant"),
-        DecodedSubd::Empty
+        None
     ));
     assert!(decode(
         &[2],
@@ -584,7 +583,7 @@ fn nested_crc_mismatch_warns_without_discarding_subd() {
         "rhino:test:subd#0".try_into().expect("valid identity"),
     )
     .expect("recoverable checksum mismatch");
-    let DecodedSubd::Surface { warnings, .. } = decoded else {
+    let Some(DecodedSubd { warnings, .. }) = decoded else {
         panic!("expected surface");
     };
     assert_eq!(warnings.len(), 1);
@@ -609,7 +608,7 @@ fn decodes_minor_suffix_gates_across_archive_bands() {
             1.0,
         )
         .expect("required invariant");
-        assert!(matches!(decoded, DecodedSubd::Surface { .. }));
+        assert!(matches!(decoded, Some(DecodedSubd { .. })));
     }
 }
 
@@ -634,7 +633,7 @@ fn decodes_valid_old_and_new_component_bases() {
 
 #[test]
 fn preserves_directed_reversed_face_edge_use() {
-    let DecodedSubd::Surface { surface, .. } = decode_fixture(
+    let Some(DecodedSubd { surface, .. }) = decode_fixture(
         Fixture {
             reversed_edge: true,
             ..Fixture::default()
@@ -682,7 +681,7 @@ fn rejects_pointer_type_null_and_reciprocity_errors() {
 
 #[test]
 fn preserves_vertex_edge_tags_and_sector_coefficients() {
-    let DecodedSubd::Surface { surface, .. } = decode_fixture(
+    let Some(DecodedSubd { surface, .. }) = decode_fixture(
         Fixture {
             vertex_tag: 4,
             edge_tag: 4,
@@ -700,13 +699,13 @@ fn preserves_vertex_edge_tags_and_sector_coefficients() {
 
 #[test]
 fn maps_scalar_and_preserves_v8_two_ended_sharpness() {
-    let DecodedSubd::Surface { surface, .. } =
+    let Some(DecodedSubd { surface, .. }) =
         decode_fixture(Fixture::default(), 1.0).expect("required invariant")
     else {
         panic!("expected old surface");
     };
     assert_eq!(surface.edges[0].sharpness, [0.25, 0.25]);
-    let DecodedSubd::Surface { surface, .. } = decode_fixture(
+    let Some(DecodedSubd { surface, .. }) = decode_fixture(
         Fixture {
             archive: ArchiveVersion::V8,
             end_sharpness: 0.75,
@@ -746,9 +745,9 @@ fn validates_higher_levels_and_render_mesh_chunks() {
         1.0,
     )
     .expect("required invariant");
-    let DecodedSubd::Surface {
+    let Some(DecodedSubd {
         neutral_metadata, ..
-    } = decoded
+    }) = decoded
     else {
         panic!("expected surface");
     };
@@ -757,7 +756,7 @@ fn validates_higher_levels_and_render_mesh_chunks() {
 
 #[test]
 fn scales_control_points_once_without_scaling_edge_metadata() {
-    let DecodedSubd::Surface { surface, .. } =
+    let Some(DecodedSubd { surface, .. }) =
         decode_fixture(Fixture::default(), 25.4).expect("required invariant")
     else {
         panic!("expected surface");

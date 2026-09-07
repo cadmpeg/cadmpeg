@@ -36,22 +36,17 @@ const MAX_COMPONENTS_PER_LEVEL: usize = 4_000_000;
 const MAX_INCIDENT_COMPONENTS: usize = 65_535;
 const MAX_SAVED_LIMIT_POINTS: usize = 65_535;
 
-/// A completely decoded `SubD` payload.
+/// A validated level-zero Catmull-Clark control cage and its decode metadata.
 #[derive(Debug, Clone)]
-pub(crate) enum DecodedSubd {
-    /// The outer object explicitly contains no `SubDimple`.
-    Empty,
-    /// A validated level-zero Catmull-Clark control cage.
-    Surface {
-        /// Materialized level-zero cage.
-        surface: Box<SubdSurface>,
-        /// Whether valid non-cage metadata was retained without neutral-IR mapping.
-        neutral_metadata: bool,
-        /// Unknown symmetry enumeration values mapped to their neutral values.
-        enum_diagnostics: Vec<SubdEnumDiagnostic>,
-        /// Recoverable nested checksum warnings.
-        warnings: Vec<String>,
-    },
+pub(crate) struct DecodedSubd {
+    /// Materialized level-zero cage.
+    pub(crate) surface: SubdSurface,
+    /// Whether valid non-cage metadata was retained without neutral-IR mapping.
+    pub(crate) neutral_metadata: bool,
+    /// Unknown symmetry enumeration values mapped to their neutral values.
+    pub(crate) enum_diagnostics: Vec<SubdEnumDiagnostic>,
+    /// Recoverable nested checksum warnings.
+    pub(crate) warnings: Vec<String>,
 }
 
 /// Native mesh-array identity saved beside a `SubD` proxy.
@@ -198,7 +193,7 @@ pub(crate) fn decode(
     archive: ArchiveVersion,
     scale: f64,
     id: cadmpeg_ir::ids::SubdId,
-) -> Result<DecodedSubd, SubdError> {
+) -> Result<Option<DecodedSubd>, SubdError> {
     if !scale.is_finite() || scale <= 0.0 {
         return Err(malformed(range.start, "invalid SubD unit scale"));
     }
@@ -208,7 +203,7 @@ pub(crate) fn decode(
     match has_subdimple {
         0 => {
             finish_payload(&mut reader)?;
-            Ok(DecodedSubd::Empty)
+            Ok(None)
         }
         1 => {
             let chunk = anonymous_chunk(&reader, archive, "SubDimple")?;
@@ -233,12 +228,12 @@ pub(crate) fn decode(
             )?;
             finish_chunk_children(&mut reader, &chunk, child, &children, &mut warnings)?;
             finish_payload(&mut reader)?;
-            Ok(DecodedSubd::Surface {
-                surface: Box::new(surface),
+            Ok(Some(DecodedSubd {
+                surface,
                 neutral_metadata: minor > 0 || level_count > 1,
                 enum_diagnostics,
                 warnings,
-            })
+            }))
         }
         value => Err(malformed(
             range.start,
@@ -307,10 +302,7 @@ pub(crate) fn decode_mesh_proxy(
     {
         return Ok(None);
     }
-    match decoded {
-        DecodedSubd::Surface { .. } => Ok(Some(decoded)),
-        DecodedSubd::Empty => Ok(None),
-    }
+    Ok(decoded)
 }
 
 fn embedded_subd_end(

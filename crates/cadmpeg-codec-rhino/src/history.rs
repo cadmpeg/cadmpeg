@@ -845,16 +845,16 @@ fn extended_geometry_json(
         )
         .ok()?;
         match subd {
-            crate::subd::DecodedSubd::Empty => serde_json::json!({
+            None => serde_json::json!({
                 "kind": "subd",
                 "empty": true,
             }),
-            crate::subd::DecodedSubd::Surface {
+            Some(crate::subd::DecodedSubd {
                 surface,
                 neutral_metadata,
                 enum_diagnostics,
                 ..
-            } => serde_json::json!({
+            }) => serde_json::json!({
                 "kind": "subd",
                 "surface": surface,
                 "neutral_metadata": neutral_metadata,

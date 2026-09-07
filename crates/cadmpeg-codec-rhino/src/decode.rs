@@ -890,7 +890,7 @@ impl<'a> DecodeContext<'a> {
                                 subd_id,
                                 mesh.proxy_fingerprint,
                             ) {
-                                Ok(Some(crate::subd::DecodedSubd::Surface {
+                                Ok(Some(crate::subd::DecodedSubd {
                                     surface,
                                     neutral_metadata,
                                     enum_diagnostics,
@@ -898,7 +898,7 @@ impl<'a> DecodeContext<'a> {
                                 })) => {
                                     proxy_transferred = self.commit_subd_surface(
                                         source_order,
-                                        *surface,
+                                        surface,
                                         neutral_metadata,
                                         enum_diagnostics,
                                         warnings,
@@ -920,9 +920,6 @@ impl<'a> DecodeContext<'a> {
                                 Err(error) => self.scan_warning(
                                     source_order,
                                     &format!("SubD mesh proxy dropped: {error}; parent mesh retained"),
-                                ),
-                                Ok(Some(crate::subd::DecodedSubd::Empty)) => unreachable!(
-                                    "mesh proxy decoder does not admit an empty SubD"
                                 ),
                             }
                         }
@@ -2212,18 +2209,18 @@ impl<'a> DecodeContext<'a> {
             scale,
             id,
         ) {
-            Ok(crate::subd::DecodedSubd::Empty) => {
+            Ok(None) => {
                 self.mark_decoded(source_order);
             }
-            Ok(crate::subd::DecodedSubd::Surface {
+            Ok(Some(crate::subd::DecodedSubd {
                 surface,
                 neutral_metadata,
                 enum_diagnostics,
                 warnings,
-            }) => {
+            })) => {
                 if self.commit_subd_surface(
                     source_order,
-                    *surface,
+                    surface,
                     neutral_metadata,
                     enum_diagnostics,
                     warnings,
