@@ -1519,7 +1519,7 @@ pub(super) struct CreoCrossSectionCurveRowRecord {
     pub(super) type_byte: u8,
     pub(super) feature_id: u32,
     pub(super) directions: [u8; 2],
-    pub(super) suffix: [u32; 4],
+    pub(super) suffix: crate::curve::DepdbCurveSuffix,
     pub(super) body: Vec<u8>,
     pub(super) scalar_values: Vec<f64>,
     pub(super) scalar_tokens: Vec<CreoCurveParameterScalar>,

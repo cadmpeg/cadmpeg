@@ -567,7 +567,7 @@ fn decodes_complete_depdb_one_sided_curve_array() {
     assert_eq!(rows[0].type_byte, 8);
     assert_eq!(rows[0].feature_id, 4);
     assert_eq!(rows[0].directions, [1, 0xf6]);
-    assert_eq!(rows[0].suffix, [0, 9, 10, 0]);
+    assert_eq!(rows[0].suffix, DepdbCurveSuffix { x1: 9, face_id: 10 });
     assert_eq!(rows[0].body, [0xe4, 0xff]);
     assert_eq!(rows[0].scalar_tokens.len(), 1);
     assert_eq!(rows[0].scalar_tokens[0].value, 1.0);

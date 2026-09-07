@@ -356,6 +356,19 @@ pub struct CurveTopologyRow {
     pub offset: usize,
 }
 
+/// One-sided DEPDB suffix, serialized as `[0, X1, F1, 0]`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DepdbCurveSuffix {
+    pub x1: u32,
+    pub face_id: u32,
+}
+
+impl serde::Serialize for DepdbCurveSuffix {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serde::Serialize::serialize(&[0, self.x1, self.face_id, 0], serializer)
+    }
+}
+
 /// One DEPDB cross-section curve row with its one-sided topology suffix.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DepdbCurveRow {
@@ -368,7 +381,7 @@ pub struct DepdbCurveRow {
     /// Stored per-side direction flags.
     pub directions: [u8; 2],
     /// The `[0, X1, F1, 0]` one-sided suffix.
-    pub suffix: [u32; 4],
+    pub suffix: DepdbCurveSuffix,
     /// Exact bytes between the fixed prefix and one-sided suffix.
     pub body: Vec<u8>,
     /// Decoded scalar tokens with exact body-relative spans.
@@ -5681,7 +5694,10 @@ fn parse_depdb_curve_segment(
         type_byte: prefix.type_byte,
         feature_id: prefix.feature_id,
         directions: prefix.directions,
-        suffix: *suffix,
+        suffix: DepdbCurveSuffix {
+            x1: suffix[1],
+            face_id: suffix[2],
+        },
         body,
         scalar_tokens,
         references,
