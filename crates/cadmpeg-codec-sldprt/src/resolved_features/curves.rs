@@ -461,17 +461,17 @@ pub(super) fn slot_curve_and_center_indices(
     }
     Some((
         [
-            layout.cells[0].1,
-            layout.cells[1].1,
-            layout.cells[2].1,
-            layout.cells[3].1,
+            layout.indices[0],
+            layout.indices[1],
+            layout.indices[2],
+            layout.indices[3],
         ],
-        [layout.cells[4].1, layout.cells[5].1],
+        [layout.indices[4], layout.indices[5]],
     ))
 }
 
 pub(super) struct SlotReferenceLayout {
-    cells: [(u16, usize); 6],
+    indices: [usize; 6],
     continuation_stride: Option<usize>,
 }
 
@@ -525,7 +525,7 @@ pub(super) fn slot_curve_reference_cells(
                 && cells[4].0 != cells[1].0
                 && cells[5].0 == cells[4].0)
                 .then_some(SlotReferenceLayout {
-                    cells,
+                    indices: cells.map(|(_, index)| index),
                     continuation_stride,
                 })
         })
