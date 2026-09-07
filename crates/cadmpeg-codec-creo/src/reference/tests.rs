@@ -48,7 +48,7 @@ fn decodes_named_conic_fields_without_classifying_the_conic() {
         panic!("one conic");
     };
     assert_eq!(conic.entity_id, 42);
-    assert_eq!(conic.type_id, 30);
+    assert_eq!(conic.type_id, ConicType::Ellipse);
     assert_eq!(conic.flip, 1);
     assert_eq!(conic.start, [1.0, 0.0, 0.0]);
     assert_eq!(conic.end, [-1.0, 0.0, 0.0]);
@@ -157,7 +157,7 @@ fn decodes_positional_conic_with_an_opposite_endpoint_parameter() {
         panic!("one positional conic");
     };
     assert_eq!(conic.entity_id, 43);
-    assert_eq!(conic.type_id, 30);
+    assert_eq!(conic.type_id, ConicType::Ellipse);
     assert_eq!(conic.start, [1.0, 0.0, 0.0]);
     assert_eq!(conic.end, [-1.0, 0.0, 0.0]);
     assert_eq!(conic.parameter_start, Some(0.0));
@@ -207,7 +207,7 @@ fn opposite_endpoint_parameter_requires_a_decoded_start_parameter() {
 fn derives_ellipse_from_orthonormal_frame_and_non_antipodal_endpoints() {
     let conic = ReferenceConic {
         entity_id: 7,
-        type_id: 30,
+        type_id: ConicType::Ellipse,
         flip: 1,
         start: [-3.0, 2.0, 4.0],
         end: [2.0, 4.0, 4.0],

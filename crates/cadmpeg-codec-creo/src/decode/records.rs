@@ -411,7 +411,7 @@ pub(super) struct CreoReferenceCircleRecord {
 pub(super) struct CreoReferenceConicRecord {
     pub(super) id: String,
     pub(super) entity_id: u32,
-    pub(super) type_id: u32,
+    pub(super) type_id: crate::reference::ConicType,
     pub(super) flip: u32,
     pub(super) endpoints: [[f64; 3]; 2],
     pub(super) parameter_interval: [Option<f64>; 2],
