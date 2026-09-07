@@ -881,18 +881,9 @@ impl<'a> DecodeContext<'a> {
                                 subd_id,
                                 mesh.proxy_fingerprint,
                             ) {
-                                Ok(Some(crate::subd::DecodedSubd {
-                                    surface,
-                                    neutral_metadata,
-                                    enum_diagnostics,
-                                    warnings,
-                                })) => {
+                                Ok(Some(decoded)) => {
                                     proxy_transferred = self.commit_subd_surface(
-                                        source_order,
-                                        surface,
-                                        neutral_metadata,
-                                        enum_diagnostics,
-                                        warnings,
+                                        source_order, decoded,
                                         scale != 1.0,
                                     );
                                     if proxy_transferred {
@@ -2195,20 +2186,8 @@ impl<'a> DecodeContext<'a> {
             Ok(None) => {
                 self.mark_decoded(source_order);
             }
-            Ok(Some(crate::subd::DecodedSubd {
-                surface,
-                neutral_metadata,
-                enum_diagnostics,
-                warnings,
-            })) => {
-                if self.commit_subd_surface(
-                    source_order,
-                    surface,
-                    neutral_metadata,
-                    enum_diagnostics,
-                    warnings,
-                    scale != 1.0,
-                ) {
+            Ok(Some(decoded)) => {
+                if self.commit_subd_surface(source_order, decoded, scale != 1.0) {
                     self.mark_decoded(source_order);
                 } else {
                     self.scan_warning(
@@ -2237,12 +2216,15 @@ impl<'a> DecodeContext<'a> {
     fn commit_subd_surface(
         &mut self,
         source_order: usize,
-        surface: cadmpeg_ir::subd::SubdSurface,
-        neutral_metadata: bool,
-        enum_diagnostics: Vec<crate::subd::SubdEnumDiagnostic>,
-        warnings: Vec<String>,
+        decoded: crate::subd::DecodedSubd,
         scaled: bool,
     ) -> bool {
+        let crate::subd::DecodedSubd {
+            mut surface,
+            neutral_metadata,
+            enum_diagnostics,
+            warnings,
+        } = decoded;
         for warning in warnings {
             self.scan_warning(source_order, &warning);
         }
@@ -2257,15 +2239,6 @@ impl<'a> DecodeContext<'a> {
                 "SubD cache, texture, symmetry, or packing metadata is retained without a neutral-IR mapping",
             );
         }
-        self.commit_subd(source_order, surface, scaled)
-    }
-
-    fn commit_subd(
-        &mut self,
-        source_order: usize,
-        mut surface: cadmpeg_ir::subd::SubdSurface,
-        scaled: bool,
-    ) -> bool {
         let Some(object) = self.scan.objects.get(source_order) else {
             return false;
         };
@@ -2582,21 +2555,16 @@ impl<'a> DecodeContext<'a> {
     fn source_record(&mut self, id: UnknownId, range: std::ops::Range<usize>) -> UnknownRecord {
         let bytes = &self.scan.data[range.clone()];
         let byte_len = u64::try_from(bytes.len()).expect("Rhino record length fits u64");
-        let retain = bytes.len() <= self.retention_limits[0]
-            && self
-                .retained_bytes
-                .checked_add(bytes.len())
-                .is_some_and(|end| end <= self.retention_limits[1]);
-        let data = retain.then(|| bytes.to_vec());
-        if retain {
-            self.retained_bytes = self
-                .retained_bytes
-                .checked_add(bytes.len())
-                .expect("retention cap checked");
-        }
+        let retained_end = self.retained_bytes.checked_add(bytes.len()).filter(|end| {
+            bytes.len() <= self.retention_limits[0] && *end <= self.retention_limits[1]
+        });
         let offset = u64::try_from(range.start).expect("Rhino record offset fits u64");
-        match data {
-            Some(data) => UnknownRecord::retained(id, offset, data, Vec::new()),
+        match retained_end {
+            Some(end) => {
+                let data = bytes.to_vec();
+                self.retained_bytes = end;
+                UnknownRecord::retained(id, offset, data, Vec::new())
+            }
             None => UnknownRecord::unavailable(id, offset, byte_len, sha256_hex(bytes), Vec::new()),
         }
     }
