@@ -90,20 +90,24 @@ enum ValueCarrier {
     Uuid,
     Url,
     Color,
-    TextureUri,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Carrier {
-    Value(ValueCarrier),
-    Reference,
+enum ValueLayout {
+    Single(ValueCarrier),
+    Multiple(ValueCarrier),
+    TextureUri,
 }
 
 #[derive(Clone, Debug)]
-struct Property {
-    carrier: Carrier,
-    connectable: bool,
-    multiple: bool,
+enum Property {
+    Reference {
+        multiple: bool,
+    },
+    Value {
+        layout: ValueLayout,
+        connectable: bool,
+    },
 }
 
 #[derive(Debug, Default)]
@@ -325,23 +329,13 @@ fn schemas(protein: &[u8]) -> Result<HashMap<String, Schema>, CodecError> {
             {
                 continue;
             }
-            let Some(mut carrier) = carrier(node.tag_name().name()) else {
+            let Some(property) = schema_property(node) else {
                 continue;
             };
-            if carrier == Carrier::Value(ValueCarrier::Float) && node.attribute("unit").is_some() {
-                carrier = Carrier::Value(ValueCarrier::UnitFloat);
-            }
             let Some(id) = node.attribute("id") else {
                 continue;
             };
-            schema.properties.insert(
-                id.to_owned(),
-                Property {
-                    carrier,
-                    connectable: node.attribute("allowconnectedassets").is_some(),
-                    multiple: node.attribute("allowmultiplevalues") == Some("true"),
-                },
-            );
+            schema.properties.insert(id.to_owned(), property);
         }
         if schemas.insert(uid.to_owned(), schema).is_some() {
             return Err(CodecError::malformed(format_args!(
@@ -352,20 +346,36 @@ fn schemas(protein: &[u8]) -> Result<HashMap<String, Schema>, CodecError> {
     Ok(schemas)
 }
 
-fn carrier(name: &str) -> Option<Carrier> {
-    Some(match name {
-        "Boolean" => Carrier::Value(ValueCarrier::Boolean),
-        "Integer" => Carrier::Value(ValueCarrier::Integer),
-        "Choice" => Carrier::Value(ValueCarrier::Choice),
-        "Float" => Carrier::Value(ValueCarrier::Float),
-        "Distance" => Carrier::Value(ValueCarrier::Distance),
-        "String" => Carrier::Value(ValueCarrier::String),
-        "Uuid" => Carrier::Value(ValueCarrier::Uuid),
-        "URL" => Carrier::Value(ValueCarrier::Url),
-        "Color" => Carrier::Value(ValueCarrier::Color),
-        "Reference" => Carrier::Reference,
-        "TextureURI" => Carrier::Value(ValueCarrier::TextureUri),
+fn schema_property(node: roxmltree::Node<'_, '_>) -> Option<Property> {
+    let multiple = node.attribute("allowmultiplevalues") == Some("true");
+    let connectable = node.attribute("allowconnectedassets").is_some();
+    let carrier = match node.tag_name().name() {
+        "Reference" => return Some(Property::Reference { multiple }),
+        "TextureURI" => {
+            return Some(Property::Value {
+                layout: ValueLayout::TextureUri,
+                connectable,
+            });
+        }
+        "Boolean" => ValueCarrier::Boolean,
+        "Integer" => ValueCarrier::Integer,
+        "Choice" => ValueCarrier::Choice,
+        "Float" if node.attribute("unit").is_some() => ValueCarrier::UnitFloat,
+        "Float" => ValueCarrier::Float,
+        "Distance" => ValueCarrier::Distance,
+        "String" => ValueCarrier::String,
+        "Uuid" => ValueCarrier::Uuid,
+        "URL" => ValueCarrier::Url,
+        "Color" => ValueCarrier::Color,
         _ => return None,
+    };
+    Some(Property::Value {
+        layout: if multiple {
+            ValueLayout::Multiple(carrier)
+        } else {
+            ValueLayout::Single(carrier)
+        },
+        connectable,
     })
 }
 
@@ -426,11 +436,13 @@ fn decode_record(
             continue;
         }
         let property_at = at;
-        let value_offset = if !property.multiple
-            && matches!(
-                property.carrier,
-                Carrier::Value(ValueCarrier::UnitFloat | ValueCarrier::Distance)
-            ) {
+        let value_offset = if matches!(
+            property,
+            Property::Value {
+                layout: ValueLayout::Single(ValueCarrier::UnitFloat | ValueCarrier::Distance),
+                ..
+            }
+        ) {
             property_at.checked_add(4).ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "Protein {schema} instance {guid} property {id} offset overflows usize"
@@ -451,10 +463,9 @@ fn decode_record(
                 record.len()
             ))
         };
-        let content = match property.carrier {
-            Carrier::Reference => {
-                let count = property
-                    .multiple
+        let content = match property {
+            Property::Reference { multiple } => {
+                let count = multiple
                     .then(|| read_count(record, &mut at, &id))
                     .transpose()
                     .map_err(|error| value_error(error, at))?;
@@ -465,11 +476,13 @@ fn decode_record(
                     None => PropertyContent::Reference(targets),
                 }
             }
-            Carrier::Value(carrier) => {
-                let value = read_property(record, &mut at, carrier, property.multiple, &id)
+            Property::Value {
+                layout,
+                connectable,
+            } => {
+                let value = read_property(record, &mut at, layout, &id)
                     .map_err(|error| value_error(error, at))?;
-                let connections = property
-                    .connectable
+                let connections = connectable
                     .then(|| read_connections(record, &mut at))
                     .transpose()
                     .map_err(|error| connection_error(error, at))?;
@@ -520,21 +533,23 @@ fn instance_property_serializes(id: &str) -> bool {
 fn read_property(
     bytes: &[u8],
     at: &mut usize,
-    carrier: ValueCarrier,
-    multiple: bool,
+    layout: ValueLayout,
     id: &str,
 ) -> Result<PropertyValue, CodecError> {
-    // A `TextureURI` carries its own kind byte in place of a count, so its
-    // `allowmultiplevalues="true"` declaration adds no count prefix.
-    if !multiple || carrier == ValueCarrier::TextureUri {
-        return read_value(bytes, at, carrier, id);
+    match layout {
+        ValueLayout::Single(carrier) => read_value(bytes, at, carrier, id),
+        // TextureURI owns its kind byte and optional count; the schema's
+        // multiple-value declaration does not add another count prefix.
+        ValueLayout::TextureUri => read_texture_uri(bytes, at, id),
+        ValueLayout::Multiple(carrier) => {
+            let count = read_count(bytes, at, id)?;
+            let mut values = Vec::with_capacity(count);
+            for _ in 0..count {
+                values.push(read_value(bytes, at, carrier, id)?);
+            }
+            Ok(PropertyValue::Multiple(values))
+        }
     }
-    let count = read_count(bytes, at, id)?;
-    let mut values = Vec::with_capacity(count);
-    for _ in 0..count {
-        values.push(read_value(bytes, at, carrier, id)?);
-    }
-    Ok(PropertyValue::Multiple(values))
 }
 
 /// A `TextureURI` value: a kind byte, then either a counted list of paths
@@ -625,7 +640,6 @@ fn read_value(
             }
             PropertyValue::Color(rgba)
         }
-        ValueCarrier::TextureUri => return read_texture_uri(bytes, at, id),
     })
 }
 
