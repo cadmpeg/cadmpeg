@@ -298,20 +298,14 @@ pub fn e5_surfaces(data: &[u8]) -> Vec<E5Surface> {
     for record in e5_records(data) {
         let pos = record.pos;
         let decoded = match record.class {
-            0xc9 => e5_cylinder(data, pos).and_then(|geometry| {
-                let SurfaceGeometry::Cylinder { radius, .. } = geometry else {
-                    unreachable!()
-                };
+            0xc9 => e5_cylinder(data, pos).and_then(|(geometry, radius)| {
                 let parameter_scale = [1.0 / radius, 1.0];
                 parameter_scale
                     .into_iter()
                     .all(f64::is_finite)
                     .then_some((geometry, parameter_scale))
             }),
-            0xca => e5_cone(data, pos).and_then(|geometry| {
-                let SurfaceGeometry::Cone { half_angle, .. } = geometry else {
-                    unreachable!()
-                };
+            0xca => e5_cone(data, pos).and_then(|(geometry, half_angle)| {
                 let u_scale = f64_le(data, pos + 158)?;
                 let v_scale = f64_le(data, pos + 166)?;
                 let parameter_scale = [1.0 / u_scale, half_angle.cos() / v_scale];
@@ -322,15 +316,7 @@ pub fn e5_surfaces(data: &[u8]) -> Vec<E5Surface> {
                     && parameter_scale.into_iter().all(f64::is_finite))
                 .then_some((geometry, parameter_scale))
             }),
-            0xcc => e5_torus(data, pos).and_then(|geometry| {
-                let SurfaceGeometry::Torus {
-                    major_radius,
-                    minor_radius,
-                    ..
-                } = geometry
-                else {
-                    unreachable!()
-                };
+            0xcc => e5_torus(data, pos).and_then(|(geometry, major_radius, minor_radius)| {
                 let parameter_scale = [1.0 / major_radius, 1.0 / minor_radius];
                 parameter_scale
                     .into_iter()
@@ -718,17 +704,17 @@ fn expand_nurbs_axis(
     (expanded.len() == total).then_some((expanded, control_count))
 }
 
-fn e5_cylinder(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
+fn e5_cylinder(data: &[u8], pos: usize) -> Option<(SurfaceGeometry, f64)> {
     let mut c = crate::wire::cursor::Cursor::new_at(data, pos + 14);
     let origin = c.point3()?;
     let (geometry, radius) = crate::analytic::cylinder_uvr(&mut c, origin)?;
     if !radius.is_finite() || radius <= 0.0 {
         return None;
     }
-    Some(geometry)
+    Some((geometry, radius))
 }
 
-fn e5_cone(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
+fn e5_cone(data: &[u8], pos: usize) -> Option<(SurfaceGeometry, f64)> {
     let mut c = crate::wire::cursor::Cursor::new_at(data, pos + 14);
     let (geometry, radius, half_angle) = crate::analytic::cone_ozra(&mut c)?;
     if !(radius.is_finite()
@@ -739,10 +725,10 @@ fn e5_cone(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
     {
         return None;
     }
-    Some(geometry)
+    Some((geometry, half_angle))
 }
 
-fn e5_torus(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
+fn e5_torus(data: &[u8], pos: usize) -> Option<(SurfaceGeometry, f64, f64)> {
     let mut c = crate::wire::cursor::Cursor::new_at(data, pos + 14);
     let (geometry, major_radius, minor_radius) = crate::analytic::torus_ozrr(&mut c)?;
     if !(major_radius.is_finite()
@@ -752,7 +738,7 @@ fn e5_torus(data: &[u8], pos: usize) -> Option<SurfaceGeometry> {
     {
         return None;
     }
-    Some(geometry)
+    Some((geometry, major_radius, minor_radius))
 }
 
 fn e5_ref(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
