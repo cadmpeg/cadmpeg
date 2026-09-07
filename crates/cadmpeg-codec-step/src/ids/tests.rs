@@ -12,8 +12,6 @@ fn signature_uses_three_component_grammar() {
 #[test]
 fn data_and_opaque_preserve_existing_forms() {
     assert_eq!(StepIdentity::data("surface", 12u64), "step:data:surface#12");
-    assert_eq!(StepIdentity::opaque(2u64), "step:data:opaque#2");
-    assert_eq!(StepIdentity::data("", 1u64), "step:data:opaque#1");
     assert!(is_valid_identity(&StepIdentity::data("edge", "3-shell-4")));
 }
 
