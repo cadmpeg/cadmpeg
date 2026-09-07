@@ -185,7 +185,7 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
     let relation = SketchRelation {
         id: "f3d:BulkStream.dat:relation#30".into(),
         record_index: 30,
-        class_tag: "377".into(),
+        class_tag: crate::records::DesignClassTag::try_from("377".to_owned()).unwrap(),
         byte_offset: 30,
         state_offset: 0,
         owner_reference: 42,
@@ -485,7 +485,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     let relation = |record_index, member| SketchRelation {
         id: format!("f3d:native:relation#{record_index}"),
         record_index,
-        class_tag: "302".into(),
+        class_tag: crate::records::DesignClassTag::try_from("302".to_owned()).unwrap(),
         byte_offset: 600,
         state_offset: 70,
         owner_reference: 172,
@@ -843,7 +843,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     let relation = SketchRelation {
         id: "f3d:Design/BulkStream.dat:relation#105".into(),
         record_index: 105,
-        class_tag: "303".into(),
+        class_tag: crate::records::DesignClassTag::try_from("303".to_owned()).unwrap(),
         byte_offset: 105,
         state_offset: 0,
         owner_reference: 42,

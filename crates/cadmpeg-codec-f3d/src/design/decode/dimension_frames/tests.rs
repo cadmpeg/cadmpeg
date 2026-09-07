@@ -858,7 +858,7 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
     let relation_at = |stream: &str, byte_offset| SketchRelation {
         id: format!("f3d:{stream}:sketch-relation#{byte_offset}"),
         record_index: 249,
-        class_tag: "286".into(),
+        class_tag: crate::records::DesignClassTag::try_from("286".to_owned()).unwrap(),
         byte_offset,
         state_offset: 66,
         owner_reference: 172,

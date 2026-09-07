@@ -823,7 +823,11 @@ fn encode_sketch_relation(
     relation: &crate::records::SketchRelation,
 ) -> Result<(), CodecError> {
     let mut record = vec![0u8; 19];
-    encode_sketch_record_header(&mut record, &relation.class_tag, relation.record_index)?;
+    encode_sketch_record_header(
+        &mut record,
+        relation.class_tag.as_str(),
+        relation.record_index,
+    )?;
     record.push(1);
     let member_count = u32::try_from(relation.members.len())
         .map_err(|_| CodecError::Malformed("sketch relation has too many members".into()))?;

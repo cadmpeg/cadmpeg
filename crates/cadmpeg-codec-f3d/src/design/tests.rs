@@ -284,7 +284,7 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     let relation = |stream: &str| SketchRelation {
         id: format!("f3d:{stream}:sketch-relation#30"),
         record_index: 30,
-        class_tag: "302".into(),
+        class_tag: crate::records::DesignClassTag::try_from("302".to_owned()).unwrap(),
         byte_offset: 0,
         state_offset: 0,
         owner_reference: 100,

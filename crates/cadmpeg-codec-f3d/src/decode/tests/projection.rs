@@ -1319,7 +1319,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     native.sketch_relations.push(SketchRelation {
         id: "native:sketch-relation".into(),
         record_index: 1,
-        class_tag: "000".into(),
+        class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
         byte_offset: 0,
         state_offset: 0,
         owner_reference: 1,

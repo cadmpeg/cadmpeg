@@ -664,7 +664,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     native.sketch_relations = vec![SketchRelation {
         id: "generated:sketch-relation#0".into(),
         record_index: 33,
-        class_tag: "257".into(),
+        class_tag: crate::records::DesignClassTag::try_from("257".to_owned()).unwrap(),
         byte_offset: 0,
         state_offset: 0,
         owner_reference: 277,

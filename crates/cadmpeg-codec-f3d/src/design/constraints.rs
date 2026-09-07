@@ -986,7 +986,7 @@ mod tests {
         SketchRelation {
             id: "f3d:native:sketch-relation#rectangular".into(),
             record_index: 10,
-            class_tag: "300".into(),
+            class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
             byte_offset: 0,
             state_offset: 0,
             owner_reference: 1,
@@ -1223,7 +1223,7 @@ mod tests {
         let relation = |angle| SketchRelation {
             id: "f3d:native:sketch-relation#circular".into(),
             record_index: 10,
-            class_tag: "300".into(),
+            class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
             byte_offset: 0,
             state_offset: 0,
             owner_reference: 1,
@@ -1334,7 +1334,7 @@ mod tests {
         let relation = SketchRelation {
             id: "f3d:native:sketch-relation#circular".into(),
             record_index: 10,
-            class_tag: "300".into(),
+            class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
             byte_offset: 0,
             state_offset: 0,
             owner_reference: 1,
@@ -1421,7 +1421,7 @@ mod tests {
         let relation = SketchRelation {
             id: "f3d:Design/BulkStream.dat:sketch-relation#3".into(),
             record_index: 3,
-            class_tag: "413".into(),
+            class_tag: crate::records::DesignClassTag::try_from("413".to_owned()).unwrap(),
             byte_offset: 0,
             state_offset: 0,
             owner_reference: 1,

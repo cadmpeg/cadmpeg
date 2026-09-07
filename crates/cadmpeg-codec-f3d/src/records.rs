@@ -5887,7 +5887,7 @@ pub struct SketchRelation {
     /// Index of this relation record within the `BulkStream` tree.
     pub record_index: u32,
     /// Source per-file dynamic three-digit ASCII class tag naming this relation's type.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Byte offset of this record within its Design `BulkStream`.
     pub byte_offset: u64,
     /// Byte offset of the constraint mask relative to the record start.
@@ -6145,7 +6145,8 @@ impl TryFrom<SketchRelationSerde> for SketchRelation {
         Ok(Self {
             id: wire.id,
             record_index: wire.record_index,
-            class_tag: wire.class_tag,
+            class_tag: DesignClassTag::try_from(wire.class_tag)
+                .map_err(SketchRelationPayloadError)?,
             byte_offset: wire.byte_offset,
             state_offset: wire.state_offset,
             owner_reference: wire.owner_reference,
@@ -6185,7 +6186,7 @@ impl From<SketchRelation> for SketchRelationSerde {
         Self {
             id: relation.id,
             record_index: relation.record_index,
-            class_tag: relation.class_tag,
+            class_tag: relation.class_tag.into(),
             byte_offset: relation.byte_offset,
             state_offset: relation.state_offset,
             owner_reference: relation.owner_reference,

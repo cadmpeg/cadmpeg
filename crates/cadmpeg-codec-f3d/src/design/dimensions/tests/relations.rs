@@ -378,7 +378,7 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
     let relation = SketchRelation {
         id: "f3d:native:sketch-relation#0".into(),
         record_index: 10,
-        class_tag: "300".into(),
+        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         byte_offset: 0,
         state_offset: 100,
         owner_reference: 1,

@@ -1248,7 +1248,7 @@ pub fn decode_sketch_relations(
             out.push(SketchRelation {
                 id: ids::native_sketch_relation_id(&entry.name, record.record_index),
                 record_index: record.record_index,
-                class_tag: record.class_tag.as_str().to_owned(),
+                class_tag: record.class_tag.clone(),
                 byte_offset: record.byte_offset,
                 state_offset: parsed.state_offset as u32,
                 owner_reference: parsed.owner_reference,
