@@ -82,8 +82,7 @@ pub(crate) struct PmGraphicsPrimaryColorStyle {
 #[derive(Debug)]
 pub(crate) struct PmGraphicsStyleCollection {
     pub(crate) segment_version_major: u8,
-    pub(crate) style_references: Vec<PmDcReference>,
-    pub(crate) list_metadata: Option<[u32; 2]>,
+    pub(crate) style_references: ReferenceList,
 }
 
 #[derive(Debug)]
@@ -99,8 +98,7 @@ pub(crate) struct PmGraphicsFace {
     pub(crate) parent_reference: u32,
     pub(crate) parent_reference_qualified: bool,
     pub(crate) state: u32,
-    pub(crate) edge_references: Vec<PmDcReference>,
-    pub(crate) edge_list_metadata: Option<[u32; 2]>,
+    pub(crate) edge_references: ReferenceList,
     pub(crate) visibility_state: u8,
     pub(crate) bounds: [f64; 6],
     pub(crate) key: u32,
@@ -336,6 +334,7 @@ fn project_face_bindings(
         let collection = collections[0];
         let color_styles = collection
             .style_references
+            .references()
             .iter()
             .filter_map(|reference| reference.index.checked_sub(1))
             .flat_map(|ordinal| {
@@ -567,10 +566,7 @@ fn parse_graphics_style_collection(
         legacy_block_len(version),
         "graphics-style collection legacy prefix",
     )?;
-    let ReferenceList {
-        references: style_references,
-        metadata: list_metadata,
-    } = cursor.reference_list(ctx, "graphics-style collection")?;
+    let style_references = cursor.reference_list(ctx, "graphics-style collection")?;
     let suffix = cursor.remainder()?;
     if !suffix.window().is_empty() {
         return Err(CodecError::malformed(format_args!(
@@ -581,7 +577,6 @@ fn parse_graphics_style_collection(
     Ok(PmGraphicsStyleCollection {
         segment_version_major: version,
         style_references,
-        list_metadata,
     })
 }
 
@@ -609,10 +604,7 @@ fn parse_graphics_face(
         legacy_block_len(version),
         "graphics-face legacy object padding",
     )?;
-    let ReferenceList {
-        references: edge_references,
-        metadata: edge_list_metadata,
-    } = cursor.reference_list(ctx, "graphics-face edge list")?;
+    let edge_references = cursor.reference_list(ctx, "graphics-face edge list")?;
     let visibility_state = cursor.u8("graphics-face visibility state")?;
     cursor.skip(
         legacy_block_len(version) * 2,
@@ -651,7 +643,6 @@ fn parse_graphics_face(
         parent_reference_qualified,
         state,
         edge_references,
-        edge_list_metadata,
         visibility_state,
         bounds,
         key,
@@ -800,9 +791,27 @@ struct Cursor<'a> {
     source: View<'a>,
 }
 
-struct ReferenceList {
-    references: Vec<PmDcReference>,
-    metadata: Option<[u32; 2]>,
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub(crate) struct ReferenceList {
+    items: Option<([u32; 2], Vec<PmDcReference>)>,
+}
+
+impl ReferenceList {
+    pub(crate) fn new(metadata: Option<[u32; 2]>, references: Vec<PmDcReference>) -> Option<Self> {
+        Some(Self {
+            items: crate::pmdc::paired_items(metadata, references)?,
+        })
+    }
+
+    pub(crate) fn references(&self) -> &[PmDcReference] {
+        self.items
+            .as_ref()
+            .map_or(&[], |(_, references)| references.as_slice())
+    }
+
+    pub(crate) fn metadata(&self) -> Option<[u32; 2]> {
+        self.items.as_ref().map(|(metadata, _)| *metadata)
+    }
 }
 
 impl<'a> Cursor<'a> {
@@ -878,14 +887,13 @@ impl<'a> Cursor<'a> {
         }
         let count = self.u32(&format!("{field} count"))? as usize;
         ctx.charge_collection_items(count as u64, "admit Inventor PmGraphics references")?;
-        let metadata = if count == 0 {
-            None
-        } else {
-            Some([
-                self.u32(&format!("{field} metadata 0"))?,
-                self.u32(&format!("{field} metadata 1"))?,
-            ])
-        };
+        if count == 0 {
+            return Ok(ReferenceList::default());
+        }
+        let metadata = [
+            self.u32(&format!("{field} metadata 0"))?,
+            self.u32(&format!("{field} metadata 1"))?,
+        ];
         let mut references = Vec::with_capacity(count);
         for index in 0..count {
             let (reference, qualified) =
@@ -896,8 +904,7 @@ impl<'a> Cursor<'a> {
             });
         }
         Ok(ReferenceList {
-            references,
-            metadata,
+            items: Some((metadata, references)),
         })
     }
 
@@ -1139,7 +1146,7 @@ mod tests {
         assert_eq!(face.parent_reference, 9);
         assert!(face.parent_reference_qualified);
         assert_eq!(
-            face.edge_references,
+            face.edge_references.references(),
             [
                 PmDcReference {
                     index: 13,
@@ -1151,7 +1158,7 @@ mod tests {
                 }
             ]
         );
-        assert_eq!(face.edge_list_metadata, Some([11, 12]));
+        assert_eq!(face.edge_references.metadata(), Some([11, 12]));
         assert_eq!(face.bounds, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
         assert_eq!(face.key, 15);
         assert_eq!(face.values, [16, 17]);
@@ -1175,7 +1182,7 @@ mod tests {
             .expect("graphics style collection parses");
 
         assert_eq!(
-            styles.style_references,
+            styles.style_references.references(),
             [
                 PmDcReference {
                     index: 23,
@@ -1187,7 +1194,7 @@ mod tests {
                 }
             ]
         );
-        assert_eq!(styles.list_metadata, Some([21, 22]));
+        assert_eq!(styles.style_references.metadata(), Some([21, 22]));
     }
 
     #[test]
@@ -1227,8 +1234,7 @@ mod tests {
                 parent_reference: 0,
                 parent_reference_qualified: false,
                 state: 0,
-                edge_references: Vec::new(),
-                edge_list_metadata: None,
+                edge_references: ReferenceList::default(),
                 visibility_state: 0,
                 bounds: [0.0; 6],
                 key: 42,
@@ -1240,11 +1246,14 @@ mod tests {
             record_ordinal: 4,
             value: PmGraphicsStyleCollection {
                 segment_version_major: 26,
-                style_references: vec![PmDcReference {
-                    index: 7,
-                    qualified: true,
-                }],
-                list_metadata: Some([1, 2]),
+                style_references: ReferenceList::new(
+                    Some([1, 2]),
+                    vec![PmDcReference {
+                        index: 7,
+                        qualified: true,
+                    }],
+                )
+                .expect("valid reference list"),
             },
         };
         let style = Located {

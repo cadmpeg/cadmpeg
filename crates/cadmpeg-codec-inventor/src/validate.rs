@@ -1247,6 +1247,7 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
             .chain(
                 record
                     .edge_references
+                    .references()
                     .iter()
                     .map(|reference| reference.index),
             )
@@ -1286,7 +1287,7 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
                 Some(record.id.clone()),
             ));
         }
-        for reference in &record.style_references {
+        for reference in record.style_references.references() {
             if reference.index == 0
                 || !raw_keys.contains(&(
                     record.segment_token.as_str(),

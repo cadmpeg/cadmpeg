@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 
 use crate::pmdc::PmDcReference;
-use crate::presentation::RenderingStyleExtension;
+use crate::presentation::{ReferenceList, RenderingStyleExtension};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct VersionTupleRecord {
@@ -555,8 +555,7 @@ pub(crate) struct PmGraphicsFaceRecord {
     pub(crate) parent_reference: u32,
     pub(crate) parent_reference_qualified: bool,
     pub(crate) state: u32,
-    pub(crate) edge_references: Vec<PmDcReference>,
-    pub(crate) edge_list_metadata: Option<[u32; 2]>,
+    pub(crate) edge_references: ReferenceList,
     pub(crate) visibility_state: u8,
     pub(crate) bounds: [f64; 6],
     pub(crate) key: u32,
@@ -591,7 +590,7 @@ struct PmGraphicsFaceRecordWire {
 impl From<PmGraphicsFaceRecord> for PmGraphicsFaceRecordWire {
     fn from(value: PmGraphicsFaceRecord) -> Self {
         let (edge_references, edge_reference_qualifiers) =
-            PmDcReference::unzip(&value.edge_references);
+            PmDcReference::unzip(value.edge_references.references());
         Self {
             id: value.id,
             segment_token: value.segment_token,
@@ -609,7 +608,7 @@ impl From<PmGraphicsFaceRecord> for PmGraphicsFaceRecordWire {
             state: value.state,
             edge_references,
             edge_reference_qualifiers,
-            edge_list_metadata: value.edge_list_metadata,
+            edge_list_metadata: value.edge_references.metadata(),
             visibility_state: value.visibility_state,
             bounds: value.bounds,
             key: value.key,
@@ -637,11 +636,11 @@ impl TryFrom<PmGraphicsFaceRecordWire> for PmGraphicsFaceRecord {
             parent_reference: wire.parent_reference,
             parent_reference_qualified: wire.parent_reference_qualified,
             state: wire.state,
-            edge_references: PmDcReference::zip(
-                wire.edge_references,
-                wire.edge_reference_qualifiers,
-            )?,
-            edge_list_metadata: wire.edge_list_metadata,
+            edge_references: ReferenceList::new(
+                wire.edge_list_metadata,
+                PmDcReference::zip(wire.edge_references, wire.edge_reference_qualifiers)?,
+            )
+            .ok_or("edge_list_metadata disagrees with edge_references")?,
             visibility_state: wire.visibility_state,
             bounds: wire.bounds,
             key: wire.key,
@@ -660,8 +659,7 @@ pub(crate) struct PmGraphicsStyleCollectionRecord {
     pub(crate) segment_token: String,
     pub(crate) record_ordinal: u32,
     pub(crate) segment_version_major: u8,
-    pub(crate) style_references: Vec<PmDcReference>,
-    pub(crate) list_metadata: Option<[u32; 2]>,
+    pub(crate) style_references: ReferenceList,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -678,7 +676,7 @@ struct PmGraphicsStyleCollectionRecordWire {
 impl From<PmGraphicsStyleCollectionRecord> for PmGraphicsStyleCollectionRecordWire {
     fn from(value: PmGraphicsStyleCollectionRecord) -> Self {
         let (style_references, style_reference_qualifiers) =
-            PmDcReference::unzip(&value.style_references);
+            PmDcReference::unzip(value.style_references.references());
         Self {
             id: value.id,
             segment_token: value.segment_token,
@@ -686,7 +684,7 @@ impl From<PmGraphicsStyleCollectionRecord> for PmGraphicsStyleCollectionRecordWi
             segment_version_major: value.segment_version_major,
             style_references,
             style_reference_qualifiers,
-            list_metadata: value.list_metadata,
+            list_metadata: value.style_references.metadata(),
         }
     }
 }
@@ -700,11 +698,11 @@ impl TryFrom<PmGraphicsStyleCollectionRecordWire> for PmGraphicsStyleCollectionR
             segment_token: wire.segment_token,
             record_ordinal: wire.record_ordinal,
             segment_version_major: wire.segment_version_major,
-            style_references: PmDcReference::zip(
-                wire.style_references,
-                wire.style_reference_qualifiers,
-            )?,
-            list_metadata: wire.list_metadata,
+            style_references: ReferenceList::new(
+                wire.list_metadata,
+                PmDcReference::zip(wire.style_references, wire.style_reference_qualifiers)?,
+            )
+            .ok_or("list_metadata disagrees with style_references")?,
         })
     }
 }

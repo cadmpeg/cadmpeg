@@ -931,7 +931,6 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             parent_reference_qualified: face.parent_reference_qualified,
             state: face.state,
             edge_references: face.edge_references.clone(),
-            edge_list_metadata: face.edge_list_metadata,
             visibility_state: face.visibility_state,
             bounds: face.bounds,
             key: face.key,
@@ -950,7 +949,6 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             record_ordinal: collection.record_ordinal,
             segment_version_major: collection.segment_version_major,
             style_references: collection.style_references.clone(),
-            list_metadata: collection.list_metadata,
         })
         .collect::<Vec<_>>();
     let pm_graphics_primary_color_styles = presentation_inventory
