@@ -4803,10 +4803,10 @@ fn c2_curve_to_nurbs_join(
         } => {
             let mut segments = Vec::with_capacity(children.len());
             let mut warnings = Vec::new();
-            let starts = children.iter().map(|(start, _)| *start).collect::<Vec<_>>();
-            for (index, (_, child)) in children.into_iter().enumerate() {
-                let end = starts.get(index + 1).copied().unwrap_or(end_parameter);
-                let target = [starts[index], end];
+            let mut children = children.into_iter().peekable();
+            while let Some((start, child)) = children.next() {
+                let end = children.peek().map_or(end_parameter, |(start, _)| *start);
+                let target = [start, end];
                 if !target[0].is_finite() || !target[1].is_finite() || target[0] >= target[1] {
                     return Err(crate::curves::error(
                         offset,
