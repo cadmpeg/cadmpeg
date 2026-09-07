@@ -403,11 +403,8 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
         .try_into()
         .expect("uniform member resolution"),
         owner_reference_offset: 90,
-        definition: crate::records::SketchRelationDefinition::new(
-            0x20_0000_0000,
-            crate::records::SketchRelationKind::Unpatterned,
-        )
-        .expect("valid relation definition"),
+        definition: crate::records::SketchRelationDefinition::new(0x20_0000_0000, None)
+            .expect("valid relation definition"),
         entity_genesis: None,
         return_members: ([
             (1, 120, curve(1, 10)),

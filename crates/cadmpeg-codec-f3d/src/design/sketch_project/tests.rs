@@ -7,8 +7,7 @@ use crate::design::dimensions::{exact_atomic_constraint, point_lies_on_sketch_ge
 use crate::design::geometry::{point_on_sketch_entity, sketch_entity_endpoints};
 use crate::records::{
     DesignSketchPlacement, DesignSketchVisibility, SketchCurveIdentity, SketchPoint,
-    SketchRelation, SketchRelationKind, SketchRelationMember, SketchRelationReturnMember,
-    SketchText,
+    SketchRelation, SketchRelationMember, SketchRelationReturnMember, SketchText,
 };
 use cadmpeg_ir::features::Length;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -205,9 +204,7 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
         owner_reference_offset: 0,
         definition: crate::records::SketchRelationDefinition::new(
             0x100_0000_0000,
-            SketchRelationKind::from_pattern(Some(
-                crate::records::SketchPatternDefinition::TextFrame { text_reference: 20 },
-            )),
+            Some(crate::records::SketchPatternDefinition::TextFrame { text_reference: 20 }),
         )
         .expect("valid relation definition"),
         entity_genesis: Some(0),
@@ -502,11 +499,8 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         .try_into()
         .expect("uniform member resolution"),
         owner_reference_offset: 55,
-        definition: crate::records::SketchRelationDefinition::new(
-            0x40,
-            SketchRelationKind::Unpatterned,
-        )
-        .expect("valid relation definition"),
+        definition: crate::records::SketchRelationDefinition::new(0x40, None)
+            .expect("valid relation definition"),
         entity_genesis: None,
         return_members: (vec![member]
             .into_iter()
@@ -530,21 +524,25 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         returned.try_into().expect("uniform member resolution");
     curve_point_coincidence.definition = crate::records::SketchRelationDefinition::new(
         1,
-        curve_point_coincidence.definition.kind().clone(),
+        curve_point_coincidence.definition.pattern().cloned(),
     )
     .expect("valid relation definition");
     let mut midpoint = curve_point_coincidence.clone();
     midpoint.record_index = 703;
     midpoint.id = "f3d:native:relation#703".into();
-    midpoint.definition =
-        crate::records::SketchRelationDefinition::new(0x1000, midpoint.definition.kind().clone())
-            .expect("valid relation definition");
+    midpoint.definition = crate::records::SketchRelationDefinition::new(
+        0x1000,
+        midpoint.definition.pattern().cloned(),
+    )
+    .expect("valid relation definition");
     let mut curvature = curve_point_coincidence.clone();
     curvature.record_index = 704;
     curvature.id = "f3d:native:relation#704".into();
-    curvature.definition =
-        crate::records::SketchRelationDefinition::new(0x200, curvature.definition.kind().clone())
-            .expect("valid relation definition");
+    curvature.definition = crate::records::SketchRelationDefinition::new(
+        0x200,
+        curvature.definition.pattern().cloned(),
+    )
+    .expect("valid relation definition");
     let mut spline_group = relation(705, 218);
     // Reverse the first run so only the specified semantic run can satisfy the
     // assertion below.
@@ -573,7 +571,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     .expect("uniform member resolution");
     spline_group.definition = crate::records::SketchRelationDefinition::new(
         0x8000_0000,
-        spline_group.definition.kind().clone(),
+        spline_group.definition.pattern().cloned(),
     )
     .expect("valid relation definition");
     let mut horizontal_point = relation(701, 175);
@@ -586,7 +584,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     .expect("uniform member resolution");
     horizontal_point.definition = crate::records::SketchRelationDefinition::new(
         0x1_0000_0040,
-        horizontal_point.definition.kind().clone(),
+        horizontal_point.definition.pattern().cloned(),
     )
     .expect("valid relation definition");
     let constraints = project_sketch_constraints(
@@ -860,11 +858,8 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         .try_into()
         .expect("uniform member resolution"),
         owner_reference_offset: 0,
-        definition: crate::records::SketchRelationDefinition::new(
-            0x8000_0000,
-            SketchRelationKind::Unpatterned,
-        )
-        .expect("valid relation definition"),
+        definition: crate::records::SketchRelationDefinition::new(0x8000_0000, None)
+            .expect("valid relation definition"),
         entity_genesis: None,
         return_members: (vec![
             SketchRelationReturnMember::from_index(103),
@@ -896,7 +891,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     midpoint_relation.record_index = 106;
     midpoint_relation.definition = crate::records::SketchRelationDefinition::new(
         0x1000,
-        midpoint_relation.definition.kind().clone(),
+        midpoint_relation.definition.pattern().cloned(),
     )
     .expect("valid relation definition");
     midpoint_relation.members = (vec![106, 101]
@@ -926,7 +921,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     coincident_relation.record_index = 107;
     coincident_relation.definition = crate::records::SketchRelationDefinition::new(
         1,
-        coincident_relation.definition.kind().clone(),
+        coincident_relation.definition.pattern().cloned(),
     )
     .expect("valid relation definition");
     coincident_relation.members = (vec![106, 107]
@@ -946,7 +941,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     horizontal_relation.record_index = 108;
     horizontal_relation.definition = crate::records::SketchRelationDefinition::new(
         0x40,
-        horizontal_relation.definition.kind().clone(),
+        horizontal_relation.definition.pattern().cloned(),
     )
     .expect("valid relation definition");
     horizontal_relation.members = (vec![SketchRelationMember::from_index(108)])
@@ -977,7 +972,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
     point_on_surface_relation.record_index = 109;
     point_on_surface_relation.definition = crate::records::SketchRelationDefinition::new(
         1,
-        point_on_surface_relation.definition.kind().clone(),
+        point_on_surface_relation.definition.pattern().cloned(),
     )
     .expect("valid relation definition");
     point_on_surface_relation.members = (vec![106, 109]

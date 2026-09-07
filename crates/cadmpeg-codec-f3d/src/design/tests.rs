@@ -21,8 +21,8 @@ use crate::ids::{
     neutral_sketch_curve_id, neutral_sketch_point_id,
 };
 use crate::records::{
-    DesignEntityHeader, DesignSketchPlacement, SketchPoint, SketchRelation, SketchRelationKind,
-    SketchRelationMember, SketchRelationReturnMember, DESIGN_MODULE_SKETCH,
+    DesignEntityHeader, DesignSketchPlacement, SketchPoint, SketchRelation, SketchRelationMember,
+    SketchRelationReturnMember, DESIGN_MODULE_SKETCH,
 };
 use cadmpeg_ir::math::Point2;
 use std::collections::HashSet;
@@ -295,11 +295,8 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
             .try_into()
             .expect("uniform member resolution"),
         owner_reference_offset: 0,
-        definition: crate::records::SketchRelationDefinition::new(
-            0,
-            SketchRelationKind::Unpatterned,
-        )
-        .expect("valid relation definition"),
+        definition: crate::records::SketchRelationDefinition::new(0, None)
+            .expect("valid relation definition"),
         entity_genesis: None,
         return_members: (vec![SketchRelationReturnMember::from_index(20)])
             .try_into()

@@ -1039,20 +1039,20 @@ fn timeline_frame_rejects_invalid_source_spans() {
 
 #[test]
 fn sketch_relation_definition_preserves_masks_and_rejects_mismatched_payloads() {
-    use crate::records::{SketchRelationDefinition as Definition, SketchRelationKind as Kind};
+    use crate::records::{SketchPatternDefinition as Kind, SketchRelationDefinition as Definition};
     let patterns = [
         (
             0x1000_0000,
-            Kind::Circular {
+            Some(Kind::Circular {
                 angle_parameter: 2,
                 count_parameter: 3,
                 evaluated_angle: 1.5,
                 evaluated_count: 2,
-            },
+            }),
         ),
         (
             0x2000_0000,
-            Kind::Rectangular {
+            Some(Kind::Rectangular {
                 directions: std::array::from_fn(|_| crate::records::SketchPatternDirection {
                     count_parameter: 2,
                     distance_parameter: 3,
@@ -1060,24 +1060,24 @@ fn sketch_relation_definition_preserves_masks_and_rejects_mismatched_payloads() 
                     direction: [1.0, 0.0, 0.0],
                     evaluated_distance: 1.5,
                 }),
-            },
+            }),
         ),
-        (0x100_0000_0000, Kind::TextFrame { text_reference: 2 }),
+        (0x100_0000_0000, Some(Kind::TextFrame { text_reference: 2 })),
         (
             0x200_0000_0000,
-            Kind::TextPath {
+            Some(Kind::TextPath {
                 text_reference: 2,
                 glyph_transforms: Vec::new(),
-            },
+            }),
         ),
     ];
     for (mask, kind) in &patterns {
         for unknown in [0, 0x4000, 1 << 63] {
             let definition = Definition::new(mask | unknown, kind.clone()).unwrap();
             assert_eq!(definition.state(), mask | unknown);
-            assert_eq!(definition.kind(), kind);
+            assert_eq!(definition.pattern(), kind.as_ref());
         }
-        assert!(Definition::new(*mask, Kind::Unpatterned).is_err());
+        assert!(Definition::new(*mask, None).is_err());
         assert!(Definition::new(0, kind.clone()).is_err());
         assert!(Definition::new(mask | 1, kind.clone()).is_err());
         for (other_mask, _) in &patterns {
@@ -1087,10 +1087,7 @@ fn sketch_relation_definition_preserves_masks_and_rejects_mismatched_payloads() 
         }
     }
     for state in [0, 1, 0x11, 0x4000, 0x8000_0000, 0x20_0000_0000, 0x1000_0001] {
-        assert_eq!(
-            Definition::new(state, Kind::Unpatterned).unwrap().state(),
-            state
-        );
+        assert_eq!(Definition::new(state, None).unwrap().state(), state);
     }
     let wire = r#"{"id":"relation","record_index":1,"class_tag":"000","byte_offset":0,"state_offset":0,"owner_reference":1,"owner_entity_id":"owner","auxiliary_references":[],"auxiliary_reference_offsets":[],"rectangular_counted_reference_count":0,"members":[],"resolved_members":[],"member_offsets":[],"owner_reference_offset":0,"state":1099511627776,"constraint_kinds":["text_frame"],"unknown_constraint_bits":0,"member_relation_ordinals":[],"entity_genesis":null,"pattern":{"kind":"text_frame","text_reference":2},"return_members":[],"resolved_return_members":[],"return_member_offsets":[],"raw_bytes":""}"#;
     let relation: crate::records::SketchRelation = serde_json::from_str(wire).unwrap();

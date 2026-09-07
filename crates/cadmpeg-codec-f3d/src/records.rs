@@ -5801,121 +5801,23 @@ impl From<SketchGlyphTransform> for [[f64; 4]; 4] {
     }
 }
 
-/// Pattern or text payload a sketch relation carries, when the mask names one.
-#[derive(Debug, Clone, PartialEq)]
-pub enum SketchRelationKind {
-    /// No class-specific pattern or text payload.
-    Unpatterned,
-    /// A circular-pattern relation's auxiliary operands.
-    Circular {
-        /// Record index of the total-angle parameter value record.
-        angle_parameter: u32,
-        /// Record index of the instance-count parameter value record.
-        count_parameter: u32,
-        /// Evaluated total pattern angle in radians.
-        evaluated_angle: f64,
-        /// Evaluated instance count.
-        evaluated_count: u32,
-    },
-    /// A rectangular-pattern relation's two direction clauses.
-    Rectangular {
-        /// The two pattern direction clauses in record order.
-        directions: [SketchPatternDirection; 2],
-    },
-    /// A text-frame relation's auxiliary operand.
-    TextFrame {
-        /// Record index of the sketch-text entity the frame curves bind to.
-        text_reference: u32,
-    },
-    /// A text-path relation's auxiliary operands.
-    TextPath {
-        /// Record index of the sketch-text entity placed along the path curve.
-        text_reference: u32,
-        /// Row-major 4×4 character placement transforms in character order,
-        /// in centimetres.
-        glyph_transforms: Vec<SketchGlyphTransform>,
-    },
-}
-
-impl SketchRelationKind {
-    pub(crate) fn from_pattern(pattern: Option<SketchPatternDefinition>) -> Self {
-        match pattern {
-            None => Self::Unpatterned,
-            Some(SketchPatternDefinition::Circular {
-                angle_parameter,
-                count_parameter,
-                evaluated_angle,
-                evaluated_count,
-            }) => Self::Circular {
-                angle_parameter,
-                count_parameter,
-                evaluated_angle,
-                evaluated_count,
-            },
-            Some(SketchPatternDefinition::Rectangular { directions }) => {
-                Self::Rectangular { directions }
-            }
-            Some(SketchPatternDefinition::TextFrame { text_reference }) => {
-                Self::TextFrame { text_reference }
-            }
-            Some(SketchPatternDefinition::TextPath {
-                text_reference,
-                glyph_transforms,
-            }) => Self::TextPath {
-                text_reference,
-                glyph_transforms,
-            },
-        }
-    }
-
-    fn into_pattern(self) -> Option<SketchPatternDefinition> {
-        match self {
-            Self::Unpatterned => None,
-            Self::Circular {
-                angle_parameter,
-                count_parameter,
-                evaluated_angle,
-                evaluated_count,
-            } => Some(SketchPatternDefinition::Circular {
-                angle_parameter,
-                count_parameter,
-                evaluated_angle,
-                evaluated_count,
-            }),
-            Self::Rectangular { directions } => {
-                Some(SketchPatternDefinition::Rectangular { directions })
-            }
-            Self::TextFrame { text_reference } => {
-                Some(SketchPatternDefinition::TextFrame { text_reference })
-            }
-            Self::TextPath {
-                text_reference,
-                glyph_transforms,
-            } => Some(SketchPatternDefinition::TextPath {
-                text_reference,
-                glyph_transforms,
-            }),
-        }
-    }
-}
-
 /// Constraint mask and its matching pattern or text payload.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SketchRelationDefinition {
     state: u64,
-    kind: SketchRelationKind,
+    pattern: Option<SketchPatternDefinition>,
 }
 
 impl SketchRelationDefinition {
     /// Reject a payload that does not match the mask's first constraint kind.
     pub(crate) fn new(
         state: u64,
-        kind: SketchRelationKind,
+        pattern: Option<SketchPatternDefinition>,
     ) -> Result<Self, SketchRelationPayloadError> {
         let (kinds, _) = constraint_kinds_from_state(state);
         let first = kinds.first().copied();
-        let agrees = match &kind {
-            SketchRelationKind::Unpatterned => !matches!(
+        let agrees = match &pattern {
+            None => !matches!(
                 first,
                 Some(
                     SketchConstraintKind::CircularPattern
@@ -5924,21 +5826,25 @@ impl SketchRelationDefinition {
                         | SketchConstraintKind::TextPath
                 )
             ),
-            SketchRelationKind::Circular { .. } => {
+            Some(SketchPatternDefinition::Circular { .. }) => {
                 first == Some(SketchConstraintKind::CircularPattern)
             }
-            SketchRelationKind::Rectangular { .. } => {
+            Some(SketchPatternDefinition::Rectangular { .. }) => {
                 first == Some(SketchConstraintKind::RectangularPattern)
             }
-            SketchRelationKind::TextFrame { .. } => first == Some(SketchConstraintKind::TextFrame),
-            SketchRelationKind::TextPath { .. } => first == Some(SketchConstraintKind::TextPath),
+            Some(SketchPatternDefinition::TextFrame { .. }) => {
+                first == Some(SketchConstraintKind::TextFrame)
+            }
+            Some(SketchPatternDefinition::TextPath { .. }) => {
+                first == Some(SketchConstraintKind::TextPath)
+            }
         };
         if !agrees {
             return Err(SketchRelationPayloadError(
                 "sketch relation pattern disagrees with the first constraint kind".into(),
             ));
         }
-        Ok(Self { state, kind })
+        Ok(Self { state, pattern })
     }
 
     /// Source sketch-constraint bitmask.
@@ -5949,8 +5855,8 @@ impl SketchRelationDefinition {
 
     /// Pattern or text payload selected by the mask.
     #[must_use]
-    pub fn kind(&self) -> &SketchRelationKind {
-        &self.kind
+    pub fn pattern(&self) -> Option<&SketchPatternDefinition> {
+        self.pattern.as_ref()
     }
 }
 
@@ -6231,10 +6137,7 @@ impl TryFrom<SketchRelationSerde> for SketchRelation {
                 "sketch relation unknown_constraint_bits disagrees with state".into(),
             ));
         }
-        let definition = SketchRelationDefinition::new(
-            wire.state,
-            SketchRelationKind::from_pattern(wire.pattern),
-        )?;
+        let definition = SketchRelationDefinition::new(wire.state, wire.pattern)?;
         Ok(Self {
             id: wire.id,
             record_index: wire.record_index,
@@ -6311,7 +6214,7 @@ impl From<SketchRelation> for SketchRelationSerde {
                 .filter_map(|member| member.relation_ordinal)
                 .collect(),
             entity_genesis: relation.entity_genesis,
-            pattern: relation.definition.kind.into_pattern(),
+            pattern: relation.definition.pattern,
             return_members: relation
                 .return_members
                 .iter()

@@ -91,9 +91,11 @@ fn generated_f3d_rewrites_native_sketch_constraint_mask() {
     let (mut edited, _, fidelity) = decoded.into_parts();
     let expected_references = update_f3d_native(&mut edited, |native| {
         let relation = &mut native.sketch_relations[0];
-        relation.definition =
-            crate::records::SketchRelationDefinition::new(0x40, relation.definition.kind().clone())
-                .expect("valid relation definition");
+        relation.definition = crate::records::SketchRelationDefinition::new(
+            0x40,
+            relation.definition.pattern().cloned(),
+        )
+        .expect("valid relation definition");
         relation.members = relation
             .members
             .iter()

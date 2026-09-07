@@ -460,7 +460,7 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
 fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     use crate::records::{
         DesignEntityHeader, SegmentType, SketchCurveGeometry, SketchCurveIdentity, SketchPoint,
-        SketchRelation, SketchRelationKind, SketchRelationMember, SketchRelationReturnMember,
+        SketchRelation, SketchRelationMember, SketchRelationReturnMember,
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
@@ -678,11 +678,8 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         ])
         .try_into()
         .expect("uniform member resolution"),
-        definition: crate::records::SketchRelationDefinition::new(
-            0x11,
-            SketchRelationKind::Unpatterned,
-        )
-        .expect("valid relation definition"),
+        definition: crate::records::SketchRelationDefinition::new(0x11, None)
+            .expect("valid relation definition"),
         entity_genesis: None,
         return_members: (vec![
             SketchRelationReturnMember::from_index(600),

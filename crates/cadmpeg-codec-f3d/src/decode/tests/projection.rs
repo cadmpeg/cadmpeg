@@ -25,7 +25,7 @@ use crate::records::{
     DesignBodyBinding, DesignDimensionLocusPair, DesignDimensionNullLocusPair,
     DesignDimensionRecipeRecord, DesignFeatureTimeline, DesignParameter, DesignParameterCompanion,
     DesignParameterOwner, DesignSketchPlacement, LostEdgeReference, SketchCurveIdentity,
-    SketchPoint, SketchRelation, SketchRelationKind,
+    SketchPoint, SketchRelation,
 };
 
 #[test]
@@ -1328,11 +1328,8 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         rectangular_counted_reference_count: None,
         members: (Vec::new()).try_into().expect("uniform member resolution"),
         owner_reference_offset: 0,
-        definition: crate::records::SketchRelationDefinition::new(
-            0,
-            SketchRelationKind::Unpatterned,
-        )
-        .expect("valid relation definition"),
+        definition: crate::records::SketchRelationDefinition::new(0, None)
+            .expect("valid relation definition"),
         entity_genesis: None,
         return_members: (Vec::new()).try_into().expect("uniform member resolution"),
         raw_bytes: Vec::new(),

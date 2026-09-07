@@ -26,8 +26,7 @@ use crate::records::{
     SketchPoint,
 };
 use crate::records::{
-    SketchConstraintKind, SketchRelation, SketchRelationKind, SketchRelationMember,
-    SketchRelationReturnMember,
+    SketchConstraintKind, SketchRelation, SketchRelationMember, SketchRelationReturnMember,
 };
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::ids::{EdgeId, FaceId};
@@ -879,11 +878,8 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
         .try_into()
         .expect("uniform member resolution"),
         owner_reference_offset: 56,
-        definition: crate::records::SketchRelationDefinition::new(
-            0,
-            SketchRelationKind::Unpatterned,
-        )
-        .expect("valid relation definition"),
+        definition: crate::records::SketchRelationDefinition::new(0, None)
+            .expect("valid relation definition"),
         entity_genesis: None,
         return_members: ([(217, 79), (175, 90)]
             .into_iter()

@@ -1220,8 +1220,8 @@ pub fn decode_sketch_relations(
                 continue;
             }
             let pattern = decode_pattern_definition(payload, &parsed);
-            let kind = crate::records::SketchRelationKind::from_pattern(pattern);
-            let Ok(definition) = crate::records::SketchRelationDefinition::new(parsed.state, kind)
+            let Ok(definition) =
+                crate::records::SketchRelationDefinition::new(parsed.state, pattern)
             else {
                 continue;
             };
