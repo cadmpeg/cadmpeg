@@ -1011,7 +1011,7 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
                     }
                 };
                 *object_typecodes
-                    .entry(descriptor.object_type())
+                    .entry(descriptor.framed().map_or(0, |object| object.object_type))
                     .or_insert(0) += 1;
                 all_objects.push(descriptor);
             }
@@ -1105,7 +1105,9 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
     }
     let mut classes = BTreeMap::<Uuid, (usize, usize)>::new();
     for object in &scan.objects {
-        let entry = classes.entry(object.class_uuid()).or_insert((0, 0));
+        // The container report groups degraded records under the nil class UUID.
+        let class_uuid = object.class_uuid().unwrap_or_else(Uuid::nil);
+        let entry = classes.entry(class_uuid).or_insert((0, 0));
         entry.0 += 1;
         entry.1 += object.range().len();
     }

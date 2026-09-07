@@ -1067,7 +1067,7 @@ fn report_attributes_aggregated_class_losses_to_first_object_record() {
     );
     let scan = crate::container::scan_owned(bytes).expect("required invariant");
     let offset = scan.objects[0].range().start as u64;
-    let class = scan.objects[0].class_uuid().to_string();
+    let class = scan.objects[0].class_uuid().unwrap().to_string();
     let result = crate::decode::decode_for_test(&scan);
 
     let loss = result

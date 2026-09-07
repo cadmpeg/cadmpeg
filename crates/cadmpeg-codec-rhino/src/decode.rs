@@ -741,7 +741,7 @@ impl<'a> DecodeContext<'a> {
         if !self.transition(source_order, GeometryStatus::NativeRetained) {
             return false;
         }
-        let class = self.scan.objects[source_order].class_uuid().to_string();
+        let class = report_class(&self.scan.objects[source_order]);
         let outcome = self.outcomes.get_mut(&class).expect("status class exists");
         let count = outcome
             .native
@@ -2084,7 +2084,10 @@ impl<'a> DecodeContext<'a> {
                 }
             };
             let member = &self.scan.objects[member_order];
-            if crate::instances::is_reference_class(member.class_uuid()) {
+            if member
+                .class_uuid()
+                .is_some_and(crate::instances::is_reference_class)
+            {
                 let nested = self.expand_reference_inner(member_order, transform, path, stack)?;
                 self.append_links(member_order, &nested);
                 self.mark_decoded(member_order);
@@ -2612,8 +2615,8 @@ impl<'a> DecodeContext<'a> {
         for source_order in 0..self.scan.objects.len() {
             let object = &self.scan.objects[source_order];
             let id = Self::mint_unknown_id(source_order);
-            let class = object.class_uuid().to_string();
-            let object_type = object.object_type();
+            let class = report_class(object);
+            let object_type = object.framed().map_or(0, |object| object.object_type);
             let framing_degraded = object.is_degraded();
             let attributes_degraded = object
                 .framed()
@@ -2682,7 +2685,7 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn scan_warning(&mut self, source_order: usize, message: &str) {
-        let class = self.scan.objects[source_order].class_uuid().to_string();
+        let class = report_class(&self.scan.objects[source_order]);
         self.scan_warnings_for_class(&class, message);
     }
 
@@ -2693,7 +2696,7 @@ impl<'a> DecodeContext<'a> {
                 .scan
                 .objects
                 .iter()
-                .find(|object| object.class_uuid().to_string() == class)
+                .find(|object| report_class(object) == class)
                 .map_or(0, |object| object.range().start as u64);
         }
         self.report
@@ -3488,7 +3491,7 @@ impl<'a> DecodeContext<'a> {
             return false;
         }
         let object = &self.scan.objects[source_order];
-        let class = object.class_uuid().to_string();
+        let class = report_class(object);
         let outcome = self.outcomes.get_mut(&class).expect("status class exists");
         match current {
             GeometryStatus::Retained => outcome.retained -= 1,
@@ -3505,6 +3508,14 @@ impl<'a> DecodeContext<'a> {
         self.statuses[source_order] = next;
         true
     }
+}
+
+// Decode reports retain the nil-class label for records without class framing.
+fn report_class(object: &crate::objects::ObjectRecord) -> String {
+    object
+        .class_uuid()
+        .unwrap_or_else(crate::wire::Uuid::nil)
+        .to_string()
 }
 
 fn integrity_diagnostic(message: &str) -> bool {

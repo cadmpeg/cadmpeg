@@ -344,13 +344,8 @@ impl ObjectRecord {
         matches!(self, Self::Degraded { .. })
     }
 
-    pub(crate) fn class_uuid(&self) -> Uuid {
-        self.framed()
-            .map_or_else(Uuid::nil, |object| object.class_uuid)
-    }
-
-    pub(crate) fn object_type(&self) -> u32 {
-        self.framed().map_or(0, |object| object.object_type)
+    pub(crate) fn class_uuid(&self) -> Option<Uuid> {
+        self.framed().map(|object| object.class_uuid)
     }
 
     pub(crate) fn identity(&self) -> Option<&SourceIdentity> {
@@ -1524,8 +1519,6 @@ pub(crate) fn parse_object_record(
             "class wrapper has trailing bytes",
         ));
     }
-    let mut attributes_range = None;
-    let mut attributes_body_range = None;
     let mut attributes_chunk = None;
     let mut attributes_userdata_body_range = None;
     let mut history = None;
@@ -1550,8 +1543,6 @@ pub(crate) fn parse_object_record(
             OBJECT_RECORD_ATTRIBUTES if phase == 0 => {
                 require_long(&item, OBJECT_RECORD_ATTRIBUTES)?;
                 attributes_chunk = Some(item.clone());
-                attributes_range = Some(item.range());
-                attributes_body_range = Some(item.body().clone());
                 phase = 1;
             }
             OBJECT_RECORD_ATTRIBUTES_USERDATA if phase <= 1 => {
@@ -1594,29 +1585,26 @@ pub(crate) fn parse_object_record(
         ));
     }
     let mut attributes_degraded = false;
-    let mut attributes =
-        attributes_body_range.as_ref().and_then(|body_range| {
-            match parse_attributes(
-                bytes,
-                body_range.clone(),
-                attributes_range
-                    .clone()
-                    .unwrap_or_else(|| body_range.clone()),
-                archive,
-                writer_version,
-                &mut warnings,
-            ) {
-                Ok(value) => Some(value),
-                Err(error) => {
-                    attributes_degraded = true;
-                    warnings.push(format!(
-                        "object attributes at {} degraded: {error}",
-                        body_range.start
-                    ));
-                    None
-                }
+    let mut attributes = attributes_chunk.as_ref().and_then(|chunk| {
+        match parse_attributes(
+            bytes,
+            chunk.body(),
+            chunk.range(),
+            archive,
+            writer_version,
+            &mut warnings,
+        ) {
+            Ok(value) => Some(value),
+            Err(error) => {
+                attributes_degraded = true;
+                warnings.push(format!(
+                    "object attributes at {} degraded: {error}",
+                    chunk.body().start
+                ));
+                None
             }
-        });
+        }
+    });
     if let Some(item) = attributes_chunk.as_ref() {
         let children = attributes
             .as_ref()
