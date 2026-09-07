@@ -129,6 +129,9 @@ pub fn decode_dimension_recipe_records(
             let Some(program) = contiguous_i32_program(bytes, program_offset, record_end) else {
                 continue;
             };
+            let Ok(class_tag) = crate::records::DesignClassTag::try_from(class_tag) else {
+                continue;
+            };
             out.push(DesignDimensionRecipeRecord {
                 id: ids::native_design_dimension_recipe_record_id(&entry.name, recipe.byte_offset),
                 companion_record_index: companion.record_index,

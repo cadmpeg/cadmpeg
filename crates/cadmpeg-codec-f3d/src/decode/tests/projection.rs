@@ -1764,7 +1764,7 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
             recipe_id: format!("{stream}:construction-recipe#31"),
             recipe_kind: crate::records::ConstructionRecipeKind::Edge,
             byte_offset: 278,
-            class_tag: "423".into(),
+            class_tag: crate::records::DesignClassTag::try_from("423".to_owned()).unwrap(),
             record_index: 31,
             frame_length: 100,
             prefix_offset: 300,

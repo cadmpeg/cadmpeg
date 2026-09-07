@@ -1323,7 +1323,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         recipe_id: "recipe".into(),
         recipe_kind: ConstructionRecipeKind::Edge,
         byte_offset: 0,
-        class_tag: "423".into(),
+        class_tag: crate::records::DesignClassTag::try_from("423".to_owned()).unwrap(),
         record_index: 1,
         frame_length: 4,
         prefix_offset: 0,

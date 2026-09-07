@@ -1068,7 +1068,7 @@ pub struct DesignDimensionRecipeRecord {
     /// Byte offset of the indexed record header.
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Source indexed-record identity.
     pub record_index: u32,
     /// Number of bytes from this header to the next indexed header or the end

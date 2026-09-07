@@ -93,7 +93,7 @@ fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
         recipe_id: format!("{stream}:construction-recipe#{record_index}"),
         recipe_kind: ConstructionRecipeKind::Edge,
         byte_offset: 0,
-        class_tag: "423".into(),
+        class_tag: crate::records::DesignClassTag::try_from("423".to_owned()).unwrap(),
         record_index,
         frame_length: 10,
         prefix_offset: 0,

@@ -7918,9 +7918,7 @@ fn validate_dimension_recipe_records<'a>(
                         design::construction_recipe_family_name_len(recipe.kind) as u64,
                     )
         });
-        let valid = record.class_tag.len() == 3
-            && record.class_tag.bytes().all(|byte| byte.is_ascii_digit())
-            && record.frame_length >= 11
+        let valid = record.frame_length >= 11
             && !record.prefix_bytes.is_empty()
             && references_match
             && edge_operands_match
