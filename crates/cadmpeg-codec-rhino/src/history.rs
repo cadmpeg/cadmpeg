@@ -7,7 +7,7 @@ use std::ops::Range;
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::{OpaqueRecord, Record};
 use crate::objects::{parse_class_wrapper, parse_class_wrapper_with_userdata, UserdataDescriptor};
-use crate::polyedge::{PolyEdge, Segment};
+use crate::polyedge::{EdgeDomains, HistoryPolyEdge, HistoryReference, PolyEdge, Segment};
 use crate::settings::{point, utf16, vector, xform, Point3, Vector3, Xform};
 use crate::wire::Uuid;
 
@@ -44,7 +44,7 @@ pub(crate) enum Value {
     ObjectReferences(Vec<ObjectReference>),
     Geometries(Vec<EmbeddedGeometry>),
     Uuids(Vec<Uuid>),
-    PolyEdges(Vec<PolyEdge>),
+    PolyEdges(Vec<HistoryPolyEdge>),
     SubdEdgeChains(Vec<SubdEdgeChain>),
     Opaque { type_code: i32, range: Range<usize> },
 }
@@ -59,8 +59,13 @@ pub(crate) struct EmbeddedGeometry {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SubdEdgeChain {
     pub(crate) subd_id: Uuid,
-    pub(crate) edge_ids: Vec<u32>,
-    pub(crate) orientations: Vec<u8>,
+    pub(crate) edges: Vec<SubdEdge>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SubdEdge {
+    pub(crate) id: u32,
+    pub(crate) reversed: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -88,8 +93,13 @@ pub(crate) struct InstanceReference {
     pub(crate) transform: Xform,
     pub(crate) definition_id: Uuid,
     pub(crate) geometry_index: i32,
-    pub(crate) component: Option<[i32; 2]>,
-    pub(crate) evaluation: Option<EvaluationParameter>,
+    pub(crate) evaluation: Option<InstanceEvaluation>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct InstanceEvaluation {
+    pub(crate) component: [i32; 2],
+    pub(crate) parameter: EvaluationParameter,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -123,7 +133,7 @@ fn anonymous(
     offset: usize,
     end: usize,
     archive: ArchiveVersion,
-) -> Result<(BoundedReader<'_>, usize, i32), FramingError> {
+) -> Result<(BoundedReader<'_>, usize, u32), FramingError> {
     let chunk = chunk_at(bytes, offset, end, archive, false)?;
     if chunk.typecode != ANONYMOUS || chunk.short() {
         return Err(FramingError::structural(
@@ -133,8 +143,8 @@ fn anonymous(
     }
     let mut reader = BoundedReader::new(bytes, chunk.body().start, chunk.body().end)?;
     let major = reader.i32()?;
-    let minor = reader.i32()?;
-    if major != 1 || minor < 0 {
+    let minor = reader.u32()?;
+    if major != 1 || minor > i32::MAX.unsigned_abs() {
         return Err(FramingError::structural(
             chunk.body().start,
             "unsupported anonymous major version",
@@ -213,32 +223,23 @@ fn instance_reference(
     archive: ArchiveVersion,
 ) -> Result<(InstanceReference, usize), FramingError> {
     let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
-    if minor < 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "unsupported instance-reference path version",
-        ));
-    }
     let reference_id = uuid(&mut reader)?;
     let transform = xform(&mut reader)?;
     let definition_id = uuid(&mut reader)?;
     let geometry_index = reader.i32()?;
-    let (component, evaluation) = if minor >= 1 {
+    let evaluation = if minor >= 1 {
         let component = component(&mut reader)?;
-        let (mut nested, nested_next, nested_minor) =
+        let (mut nested, nested_next, _) =
             anonymous(bytes, reader.position(), reader.end(), archive)?;
-        if nested_minor < 0 {
-            return Err(FramingError::structural(
-                nested.position(),
-                "unsupported object-evaluation version",
-            ));
-        }
         let evaluation = evaluation(&mut nested, 3)?;
         nested.skip_remaining()?;
         reader.skip(nested_next - reader.position())?;
-        (Some(component), Some(evaluation))
+        Some(InstanceEvaluation {
+            component,
+            parameter: evaluation,
+        })
     } else {
-        (None, None)
+        None
     };
     reader.skip_remaining()?;
     Ok((
@@ -247,7 +248,6 @@ fn instance_reference(
             transform,
             definition_id,
             geometry_index,
-            component,
             evaluation,
         },
         next,
@@ -261,12 +261,6 @@ fn object_reference(
     archive: ArchiveVersion,
 ) -> Result<(ObjectReference, usize), FramingError> {
     let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
-    if minor < 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "unsupported object-reference version",
-        ));
-    }
     let object_id = uuid(&mut reader)?;
     let component = component(&mut reader)?;
     let geometry_type = reader.i32()?;
@@ -326,18 +320,12 @@ fn geometries(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
 ) -> Result<Vec<EmbeddedGeometry>, FramingError> {
-    let (mut nested, next, minor) = anonymous(
+    let (mut nested, next, _) = anonymous(
         reader.backing_bytes(),
         reader.position(),
         reader.end(),
         archive,
     )?;
-    if minor < 0 {
-        return Err(FramingError::structural(
-            nested.position(),
-            "unsupported geometry-value version",
-        ));
-    }
     let count = count(&mut nested, 1)?;
     let mut values = Vec::new();
     for _ in 0..count {
@@ -367,37 +355,33 @@ fn curve_proxy(
     offset: usize,
     end: usize,
     archive: ArchiveVersion,
-) -> Result<(Segment, usize), FramingError> {
+) -> Result<(Segment<HistoryReference>, usize), FramingError> {
     let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
-    if minor < 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "unsupported curve-proxy version",
-        ));
-    }
     let (curve, curve_next) = object_reference(bytes, reader.position(), reader.end(), archive)?;
     reader.skip(curve_next - reader.position())?;
     let reversed = reader.bool()?;
     let full_domain = interval(&mut reader)?;
     let sub_domain = interval(&mut reader)?;
     let proxy_domain = interval(&mut reader)?;
-    let (edge_domain, trim_domain) = if minor >= 1 {
-        (Some(interval(&mut reader)?), Some(interval(&mut reader)?))
+    let domains = if minor >= 1 {
+        Some(EdgeDomains {
+            edge: interval(&mut reader)?,
+            trim: interval(&mut reader)?,
+        })
     } else {
-        (None, None)
+        None
     };
     reader.skip_remaining()?;
     Ok((
         Segment {
-            object_id: curve.object_id,
-            component: curve.component,
-            edge_domain,
-            trim_domain,
+            reference: HistoryReference {
+                curve,
+                sub_domain,
+                domains,
+            },
             reversed,
             domain: full_domain,
             proxy_domain,
-            sub_domain: Some(sub_domain),
-            reference: Some(curve),
         },
         next,
     ))
@@ -408,14 +392,8 @@ fn poly_edge(
     offset: usize,
     end: usize,
     archive: ArchiveVersion,
-) -> Result<(PolyEdge, usize), FramingError> {
-    let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
-    if minor < 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "unsupported polyedge version",
-        ));
-    }
+) -> Result<(HistoryPolyEdge, usize), FramingError> {
+    let (mut reader, next, _) = anonymous(bytes, offset, end, archive)?;
     let segment_count = count(&mut reader, 1)?;
     let mut segments = Vec::new();
     for _ in 0..segment_count {
@@ -423,14 +401,16 @@ fn poly_edge(
         reader.skip(segment_next - reader.position())?;
         segments.push(segment);
     }
-    let parameters = array(&mut reader, 8, read_f64)?;
+    let parameters = array(&mut reader, 8, |reader| reader.f64())?;
     let evaluation_mode = reader.i32()?;
     reader.skip_remaining()?;
     Ok((
-        PolyEdge {
-            segments,
-            parameters,
-            evaluation_mode: Some(evaluation_mode),
+        HistoryPolyEdge {
+            polyedge: PolyEdge {
+                segments,
+                parameters,
+            },
+            evaluation_mode,
         },
         next,
     ))
@@ -439,19 +419,13 @@ fn poly_edge(
 fn poly_edges(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-) -> Result<Vec<PolyEdge>, FramingError> {
-    let (mut nested, next, minor) = anonymous(
+) -> Result<Vec<HistoryPolyEdge>, FramingError> {
+    let (mut nested, next, _) = anonymous(
         reader.backing_bytes(),
         reader.position(),
         reader.end(),
         archive,
     )?;
-    if minor < 0 {
-        return Err(FramingError::structural(
-            nested.position(),
-            "unsupported polyedge-value version",
-        ));
-    }
     let count = count(&mut nested, 1)?;
     let mut values = Vec::new();
     for _ in 0..count {
@@ -485,27 +459,25 @@ fn subd_edge_chain(
     }
     let subd_id = uuid(&mut reader)?;
     let count = count(&mut reader, 1)?;
-    let mut edge_ids = array(&mut reader, 4, read_u32)?;
-    let mut orientations = array(&mut reader, 1, read_u8)?;
-    if edge_ids.len() != count || orientations.len() != count {
+    let edge_ids = array(&mut reader, 4, |reader| reader.u32())?;
+    let orientations = array(&mut reader, 1, |reader| reader.u8())?;
+    let edges = if edge_ids.len() != count || orientations.len() != count {
         warnings.push(
             "redundant history SubD edge-chain count mismatch; both arrays dropped".to_string(),
         );
-        edge_ids.clear();
-        orientations.clear();
-    }
-    for orientation in &mut orientations {
-        *orientation = u8::from(*orientation == 1);
-    }
+        Vec::new()
+    } else {
+        edge_ids
+            .into_iter()
+            .zip(orientations)
+            .map(|(id, orientation)| SubdEdge {
+                id,
+                reversed: orientation == 1,
+            })
+            .collect()
+    };
     reader.skip_remaining()?;
-    Ok((
-        SubdEdgeChain {
-            subd_id,
-            edge_ids,
-            orientations,
-        },
-        next,
-    ))
+    Ok((SubdEdgeChain { subd_id, edges }, next))
 }
 
 fn subd_edge_chains(
@@ -561,22 +533,16 @@ fn parse_value_with_warnings(
     archive: ArchiveVersion,
     warnings: &mut Vec<String>,
 ) -> Result<(HistoryValue, usize), FramingError> {
-    let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
-    if minor < 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "unsupported history-value version",
-        ));
-    }
+    let (mut reader, next, _) = anonymous(bytes, offset, end, archive)?;
     let type_code = reader.i32()?;
     let id = reader.i32()?;
     let payload = reader.position()..reader.end();
     let value = match type_code {
         0 => Value::None,
-        1 => Value::Booleans(array(&mut reader, 1, read_bool)?),
-        2 => Value::Integers(array(&mut reader, 4, read_i32)?),
-        3 => Value::Doubles(array(&mut reader, 8, read_f64)?),
-        4 => Value::Colors(array(&mut reader, 4, read_color)?),
+        1 => Value::Booleans(array(&mut reader, 1, |reader| reader.bool())?),
+        2 => Value::Integers(array(&mut reader, 4, |reader| reader.i32())?),
+        3 => Value::Doubles(array(&mut reader, 8, |reader| reader.f64())?),
+        4 => Value::Colors(array(&mut reader, 4, |reader| reader.array())?),
         5 => Value::Points(array(&mut reader, 24, point)?),
         6 => Value::Vectors(array(&mut reader, 24, vector)?),
         7 => Value::Transforms(array(&mut reader, 128, xform)?),
@@ -596,30 +562,6 @@ fn parse_value_with_warnings(
     };
     reader.skip_remaining()?;
     Ok((HistoryValue { id, value }, next))
-}
-
-fn read_bool(reader: &mut BoundedReader<'_>) -> Result<bool, FramingError> {
-    reader.bool()
-}
-
-fn read_i32(reader: &mut BoundedReader<'_>) -> Result<i32, FramingError> {
-    reader.i32()
-}
-
-fn read_u32(reader: &mut BoundedReader<'_>) -> Result<u32, FramingError> {
-    reader.u32()
-}
-
-fn read_u8(reader: &mut BoundedReader<'_>) -> Result<u8, FramingError> {
-    reader.u8()
-}
-
-fn read_f64(reader: &mut BoundedReader<'_>) -> Result<f64, FramingError> {
-    reader.f64()
-}
-
-fn read_color(reader: &mut BoundedReader<'_>) -> Result<[u8; 4], FramingError> {
-    reader.array()
 }
 
 fn parse_record(
@@ -647,12 +589,6 @@ fn parse_record(
         class.class_data_range.end,
         archive,
     )?;
-    if minor < 0 {
-        return Err(FramingError::structural(
-            reader.position(),
-            "unsupported history-record version",
-        ));
-    }
     let id = uuid(&mut reader)?;
     let version = reader.i32()?;
     let command_id = uuid(&mut reader)?;
@@ -660,14 +596,7 @@ fn parse_record(
     reader.skip(next - reader.position())?;
     let (antecedents, next) = uuid_list(bytes, reader.position(), reader.end(), archive)?;
     reader.skip(next - reader.position())?;
-    let (mut values_reader, next, values_minor) =
-        anonymous(bytes, reader.position(), reader.end(), archive)?;
-    if values_minor < 0 {
-        return Err(FramingError::structural(
-            values_reader.position(),
-            "unsupported history-values version",
-        ));
-    }
+    let (mut values_reader, next, _) = anonymous(bytes, reader.position(), reader.end(), archive)?;
     let value_count = count(&mut values_reader, 1)?;
     let mut values = Vec::new();
     for _ in 0..value_count {
@@ -734,10 +663,10 @@ pub(crate) fn parse_records(
     result
 }
 
-fn list<T: ToString>(values: &[T]) -> String {
+fn list<T: ToString>(values: impl IntoIterator<Item = T>) -> String {
     values
-        .iter()
-        .map(ToString::to_string)
+        .into_iter()
+        .map(|value| value.to_string())
         .collect::<Vec<_>>()
         .join(",")
 }
@@ -848,11 +777,13 @@ fn object_reference_properties(
             format!("{path}.geometry_index"),
             instance.geometry_index.to_string(),
         );
-        if let Some(component) = instance.component {
-            properties.insert(format!("{path}.component"), list(&component));
-        }
         if let Some(evaluation) = &instance.evaluation {
-            evaluation_properties(&format!("{path}.evaluation"), evaluation, properties);
+            properties.insert(format!("{path}.component"), list(&evaluation.component));
+            evaluation_properties(
+                &format!("{path}.evaluation"),
+                &evaluation.parameter,
+                properties,
+            );
         }
     }
 }
@@ -1204,41 +1135,43 @@ fn structured_value_properties(
             properties.insert(format!("{key}.count"), values.len().to_string());
             for (edge_index, edge) in values.iter().enumerate() {
                 let edge_key = format!("{key}.{edge_index}");
-                properties.insert(format!("{edge_key}.parameters"), list(&edge.parameters));
+                properties.insert(
+                    format!("{edge_key}.parameters"),
+                    list(&edge.polyedge.parameters),
+                );
                 properties.insert(
                     format!("{edge_key}.evaluation_mode"),
-                    edge.evaluation_mode.unwrap_or(0).to_string(),
+                    edge.evaluation_mode.to_string(),
                 );
                 properties.insert(
                     format!("{edge_key}.segment_count"),
-                    edge.segments.len().to_string(),
+                    edge.polyedge.segments.len().to_string(),
                 );
-                for (segment_index, segment) in edge.segments.iter().enumerate() {
+                for (segment_index, segment) in edge.polyedge.segments.iter().enumerate() {
                     let segment_key = format!("{edge_key}.segment_{segment_index}");
-                    if let Some(curve) = &segment.reference {
-                        object_reference_properties(
-                            &format!("{segment_key}.curve"),
-                            curve,
-                            properties,
-                        );
-                    }
+                    object_reference_properties(
+                        &format!("{segment_key}.curve"),
+                        &segment.reference.curve,
+                        properties,
+                    );
                     properties.insert(
                         format!("{segment_key}.reversed"),
                         segment.reversed.to_string(),
                     );
                     properties.insert(format!("{segment_key}.full_domain"), list(&segment.domain));
-                    if let Some(sub_domain) = segment.sub_domain {
-                        properties.insert(format!("{segment_key}.sub_domain"), list(&sub_domain));
-                    }
+                    properties.insert(
+                        format!("{segment_key}.sub_domain"),
+                        list(&segment.reference.sub_domain),
+                    );
                     properties.insert(
                         format!("{segment_key}.proxy_domain"),
                         list(&segment.proxy_domain),
                     );
-                    if let Some(domain) = segment.edge_domain {
-                        properties.insert(format!("{segment_key}.edge_domain"), list(&domain));
-                    }
-                    if let Some(domain) = segment.trim_domain {
-                        properties.insert(format!("{segment_key}.trim_domain"), list(&domain));
+                    if let Some(domains) = &segment.reference.domains {
+                        properties
+                            .insert(format!("{segment_key}.edge_domain"), list(&domains.edge));
+                        properties
+                            .insert(format!("{segment_key}.trim_domain"), list(&domains.trim));
                     }
                 }
             }
@@ -1248,10 +1181,13 @@ fn structured_value_properties(
             for (index, chain) in values.iter().enumerate() {
                 let chain_key = format!("{key}.{index}");
                 properties.insert(format!("{chain_key}.subd_id"), chain.subd_id.to_string());
-                properties.insert(format!("{chain_key}.edge_ids"), list(&chain.edge_ids));
+                properties.insert(
+                    format!("{chain_key}.edge_ids"),
+                    list(chain.edges.iter().map(|edge| edge.id)),
+                );
                 properties.insert(
                     format!("{chain_key}.orientations"),
-                    list(&chain.orientations),
+                    list(chain.edges.iter().map(|edge| u8::from(edge.reversed))),
                 );
             }
         }

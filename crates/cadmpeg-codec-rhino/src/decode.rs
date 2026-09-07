@@ -1368,7 +1368,7 @@ impl<'a> DecodeContext<'a> {
         let segment_objects = polyedge
             .segments
             .iter()
-            .map(|segment| segment.object_id)
+            .map(|segment| segment.reference.object_id)
             .collect::<Vec<_>>();
         let parameters = self
             .resolve_object_records(source_order, "polyedge segment", &segment_objects)

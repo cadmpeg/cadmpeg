@@ -331,9 +331,9 @@ fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
         panic!("expected polyedges");
     };
     assert_eq!(values.len(), 1);
-    assert!(values[0].segments.is_empty());
-    assert_eq!(values[0].parameters, [0.25, 0.75]);
-    assert_eq!(values[0].evaluation_mode, Some(3));
+    assert!(values[0].polyedge.segments.is_empty());
+    assert_eq!(values[0].polyedge.parameters, [0.25, 0.75]);
+    assert_eq!(Some(values[0].evaluation_mode), Some(3));
 
     let subd_id = id(42);
     let mut chain = [0_u8; 16].to_vec();
@@ -352,8 +352,8 @@ fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
     assert!(matches!(parsed.value, Value::SubdEdgeChains(values)
         if values.len() == 1
             && values[0].subd_id == subd_id
-            && values[0].edge_ids == [11, 12]
-            && values[0].orientations == [0, 1]));
+            && values[0].edges.iter().map(|edge| edge.id).collect::<Vec<_>>() == [11, 12]
+            && values[0].edges.iter().map(|edge| u8::from(edge.reversed)).collect::<Vec<_>>() == [0, 1]));
 }
 
 #[test]
@@ -377,8 +377,7 @@ fn subd_edge_chain_count_mismatch_drops_dependent_arrays_with_a_diagnostic() {
         parsed.value,
         Value::SubdEdgeChains(values)
             if values.len() == 1
-                && values[0].edge_ids.is_empty()
-                && values[0].orientations.is_empty()
+                && values[0].edges.is_empty()
     ));
     assert_eq!(warnings.len(), 1);
 }
@@ -629,4 +628,83 @@ pub(crate) fn scan_decodes_history_identity_dependencies_and_typed_values() {
         decoded.ir().model.features[0].native_ref.as_deref(),
         Some("rhino:history:record#00000001-0002-0003-0405-060708090a0b")
     );
+}
+
+#[test]
+fn history_polyedge_minor_versions_preserve_reference_and_paired_domains() {
+    // The major-1 layouts are specified in rhino_3dm.md section 7.1.
+    let mut reference = id(9).to_wire().to_vec();
+    for value in [2_i32, 17, 4] {
+        reference.extend(value.to_le_bytes());
+    }
+    for value in [1.0_f64, 2.0, 3.0] {
+        reference.extend(value.to_le_bytes());
+    }
+    for value in [0_i32, 2, 17] {
+        reference.extend(value.to_le_bytes());
+    }
+    for value in [0.0_f64, 1.0, 2.0, 3.0] {
+        reference.extend(value.to_le_bytes());
+    }
+    reference.extend(0_i32.to_le_bytes());
+    let reference = anonymous_value(0, &reference);
+
+    for minor in [0, 1] {
+        let mut proxy = reference.clone();
+        proxy.push(1);
+        for value in [10.0_f64, 20.0, 12.0, 18.0, 0.0, 1.0] {
+            proxy.extend(value.to_le_bytes());
+        }
+        if minor >= 1 {
+            for value in [2.0_f64, 6.0, 3.0, 5.0] {
+                proxy.extend(value.to_le_bytes());
+            }
+        }
+        let mut edge = 1_i32.to_le_bytes().to_vec();
+        edge.extend(anonymous_value(minor, &proxy));
+        edge.extend(2_i32.to_le_bytes());
+        for value in [0.0_f64, 1.0] {
+            edge.extend(value.to_le_bytes());
+        }
+        edge.extend(3_i32.to_le_bytes());
+        let bytes = anonymous_value(0, &edge);
+        let (edge, next) = poly_edge(&bytes, 0, bytes.len(), ArchiveVersion::V8)
+            .expect("source-shaped history polyedge");
+        assert_eq!(next, bytes.len());
+        let mut properties = BTreeMap::new();
+        let mut sink = GeometrySink {
+            untyped: 0,
+            failed: 0,
+            redundant_repairs: 0,
+        };
+        structured_value_properties(
+            "value_7",
+            &Value::PolyEdges(vec![edge]),
+            None,
+            &mut properties,
+            &mut sink,
+        );
+        assert_eq!(properties["value_7.0.evaluation_mode"], "3");
+        assert_eq!(
+            properties["value_7.0.segment_0.curve.object_id"],
+            id(9).to_string()
+        );
+        assert_eq!(properties["value_7.0.segment_0.curve.component"], "2,17");
+        assert_eq!(properties["value_7.0.segment_0.reversed"], "true");
+        assert_eq!(properties["value_7.0.segment_0.full_domain"], "10,20");
+        assert_eq!(properties["value_7.0.segment_0.sub_domain"], "12,18");
+        assert_eq!(properties["value_7.0.segment_0.proxy_domain"], "0,1");
+        assert_eq!(
+            properties
+                .get("value_7.0.segment_0.edge_domain")
+                .map(String::as_str),
+            (minor >= 1).then_some("2,6")
+        );
+        assert_eq!(
+            properties
+                .get("value_7.0.segment_0.trim_domain")
+                .map(String::as_str),
+            (minor >= 1).then_some("3,5")
+        );
+    }
 }
