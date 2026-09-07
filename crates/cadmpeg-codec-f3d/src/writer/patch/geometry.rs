@@ -16,6 +16,7 @@ use super::edits::{
 };
 use crate::writer::primitives::{finite_vector, unique_knot_count};
 use cadmpeg_asm::brep::attributes::{attribute_chain_color_carrier, DirectColorCarrier};
+use cadmpeg_asm::brep::records::EndpointSlot;
 use cadmpeg_asm::edit::{
     AsmEditSet, InlinePcurveEdit, NurbsCurveEdit as AsmNurbsCurveEdit,
     NurbsSurfaceEdit as AsmNurbsSurfaceEdit, PcurveEdit as AsmPcurveEdit,
@@ -90,7 +91,7 @@ pub(crate) struct GeometryEdits<'a> {
     pub(crate) procedural_surface_fits: &'a BTreeMap<String, f64>,
     pub(crate) creation_timestamps: &'a BTreeMap<usize, f64>,
     pub(crate) edge_continuities: &'a BTreeMap<usize, (Sense, String)>,
-    pub(crate) vertex_ownerships: &'a BTreeMap<usize, (i64, u8)>,
+    pub(crate) vertex_ownerships: &'a BTreeMap<usize, (i64, EndpointSlot)>,
     pub(crate) face_sidedness: &'a BTreeMap<usize, cadmpeg_asm::brep::records::FaceContainment>,
     pub(crate) tolerant_edges: &'a BTreeMap<usize, f64>,
     pub(crate) tolerant_vertices: &'a BTreeMap<usize, (f64, [f64; 2])>,
@@ -307,7 +308,7 @@ fn patch_asm_geometry(
             }
             for (index, tag, value) in [
                 (3usize, 0x0c, *owning_edge),
-                (4, 0x04, i64::from(*endpoint_index)),
+                (4, 0x04, i64::from(endpoint_index.code())),
             ] {
                 asm_edits.patch_integer_field(bytes, record, index, tag, value)?;
             }

@@ -6336,3 +6336,10 @@ crate = "cadmpeg-ir"
 kind = "trait_impl"
 item = "cadmpeg_ir::geometry::VariableBlendValuePayload::{Serialize, Deserialize}"
 reason = "IR-85: serialization belongs to VariableBlendValue, which has the native header required to deserialize its payload discriminator. Remove independent payload serde implementations instead of fabricating a discriminator for the old header-free payload JSON."
+
+[[change]]
+commit = "701d4756333ce8a200f9a5ada628df4e14584081"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::brep::records::VertexOwnership::endpoint_index"
+reason = "ASM-13: replace the raw byte with EndpointSlot Start/End. Preserve the numeric JSON and reject other endpoint_index values during deserialization; writers match exhaustively."

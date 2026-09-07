@@ -2,6 +2,7 @@
 //! SMBH body encoders and edge/vertex/point normalization for source-less
 //! generation.
 
+use cadmpeg_asm::brep::records::EndpointSlot;
 use std::collections::{BTreeMap, HashMap};
 
 use crate::native::F3dNative;
@@ -1613,7 +1614,7 @@ fn encode_source_less_edges_vertices_points(
         } else {
             let (edge, endpoint_index) = vertex_ownership(target, topology, vertex)?;
             native_ref(records, native_record_index(edge_start, edge)?);
-            native_i64(records, i64::from(endpoint_index));
+            native_i64(records, i64::from(endpoint_index.code()));
         }
         native_ref(records, native_record_index(point_start, point)?);
         native_tolerant_vertex_tail(records, topology, vertex)?;
@@ -1641,7 +1642,7 @@ fn vertex_ownership(
     target: &CadIr,
     topology: &NativeGenerationIndex<'_>,
     vertex: &cadmpeg_ir::topology::Vertex,
-) -> Result<(usize, u8), CodecError> {
+) -> Result<(usize, EndpointSlot), CodecError> {
     let model = &target.model;
     if let Some(metadata) = topology.vertex_ownerships.get(vertex.id.as_str()) {
         let ordinal = model
@@ -1656,14 +1657,15 @@ fn vertex_ownership(
             })?;
         let edge = &model.edges[ordinal];
         let valid = match metadata.endpoint_index {
-            0 => edge.start == vertex.id,
-            1 => edge.end == vertex.id,
-            _ => false,
+            EndpointSlot::Start => edge.start == vertex.id,
+            EndpointSlot::End => edge.end == vertex.id,
         };
         if !valid {
             return Err(CodecError::malformed(format_args!(
                 "vertex {} endpoint slot {} conflicts with owning edge {}",
-                vertex.id, metadata.endpoint_index, metadata.owning_edge
+                vertex.id,
+                metadata.endpoint_index.code(),
+                metadata.owning_edge
             )));
         }
         return Ok((ordinal, metadata.endpoint_index));
@@ -1674,9 +1676,9 @@ fn vertex_ownership(
         .enumerate()
         .find_map(|(ordinal, edge)| {
             if edge.start == vertex.id {
-                Some((ordinal, 0))
+                Some((ordinal, EndpointSlot::Start))
             } else if edge.end == vertex.id {
-                Some((ordinal, 1))
+                Some((ordinal, EndpointSlot::End))
             } else {
                 None
             }

@@ -508,7 +508,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     assert_eq!(
         ownerships
             .iter()
-            .map(|metadata| metadata.endpoint_index)
+            .map(|metadata| metadata.endpoint_index.code())
             .collect::<Vec<_>>(),
         [0, 1, 0]
     );

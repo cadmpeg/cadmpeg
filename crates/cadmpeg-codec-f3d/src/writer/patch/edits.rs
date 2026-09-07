@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Edit validators that diff the target against the baseline and build edit sets.
 
+use cadmpeg_asm::brep::records::EndpointSlot;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::history_records::{AsmBulletinBoard, AsmDeltaState, AsmEntityChange};
@@ -241,7 +242,7 @@ pub(crate) fn validate_edge_ownership_edits(
 pub(crate) fn validate_vertex_ownership_edits(
     native: PatchNatives<'_>,
     target: &CadIr,
-) -> Result<BTreeMap<usize, (i64, u8)>, CodecError> {
+) -> Result<BTreeMap<usize, (i64, EndpointSlot)>, CodecError> {
     let baseline = native
         .baseline
         .map_or(&[][..], |native| native.vertex_ownerships.as_slice());
@@ -288,9 +289,8 @@ pub(crate) fn validate_vertex_ownership_edits(
                 ))
             })?;
         let valid = match after.endpoint_index {
-            0 => edge.start == after.vertex,
-            1 => edge.end == after.vertex,
-            _ => false,
+            EndpointSlot::Start => edge.start == after.vertex,
+            EndpointSlot::End => edge.end == after.vertex,
         };
         if !valid {
             return Err(CodecError::malformed(format_args!(

@@ -3,9 +3,9 @@
 //! graph, one pass per entity kind.
 
 use super::records::{
-    BodyNativeKey, EdgeContinuity, EdgeOwnership, FaceContainment, FaceNativeKey, FaceSidedness,
-    TolerantCoedgeExtension, TolerantCoedgeParameters, TolerantEdgeTail, TolerantVertexTail,
-    TransformHints, VertexOwnership,
+    BodyNativeKey, EdgeContinuity, EdgeOwnership, EndpointSlot, FaceContainment, FaceNativeKey,
+    FaceSidedness, TolerantCoedgeExtension, TolerantCoedgeParameters, TolerantEdgeTail,
+    TolerantVertexTail, TransformHints, VertexOwnership,
 };
 use crate::ids::IdFormat;
 use crate::nurbs;
@@ -3480,13 +3480,17 @@ pub(crate) fn emit_vertices(
                             });
                         }
                     }
-                    if let (Some(owning_edge), Some(Token::Long(endpoint_index @ 0..=1))) = (
+                    if let (Some(owning_edge), Some(endpoint_index)) = (
                         r.ref_at(3).filter(|owner| {
                             by_index
                                 .get(owner)
                                 .is_some_and(|record| is_edge_record(record))
                         }),
-                        r.chunk(4),
+                        match r.chunk(4) {
+                            Some(Token::Long(0)) => Some(EndpointSlot::Start),
+                            Some(Token::Long(1)) => Some(EndpointSlot::End),
+                            _ => None,
+                        },
                     ) {
                         out.vertex_ownerships.push(VertexOwnership {
                             source_namespace:
@@ -3495,7 +3499,7 @@ pub(crate) fn emit_vertices(
                             record_index: r.index as u32,
                             owning_edge: EdgeId::mint(id(format, owning_edge))
                                 .expect("identity grammar"),
-                            endpoint_index: *endpoint_index as u8,
+                            endpoint_index,
                         });
                     }
                 }

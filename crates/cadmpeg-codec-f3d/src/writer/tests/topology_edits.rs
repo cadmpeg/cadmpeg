@@ -314,7 +314,8 @@ fn generated_f3d_rewrites_vertex_ownership() {
     {
         let mut native = f3d_native_mut(&mut edited);
         native.vertex_ownerships[1].owning_edge = replacement.clone();
-        native.vertex_ownerships[1].endpoint_index = 0;
+        native.vertex_ownerships[1].endpoint_index =
+            cadmpeg_asm::brep::records::EndpointSlot::Start;
     }
 
     let mut regenerated = Vec::new();
@@ -325,7 +326,7 @@ fn generated_f3d_rewrites_vertex_ownership() {
         .expect("regenerated F3D decode");
     let ownership = &f3d_native(round_trip.ir()).vertex_ownerships[1];
     assert_eq!(ownership.owning_edge, replacement);
-    assert_eq!(ownership.endpoint_index, 0);
+    assert_eq!(ownership.endpoint_index.code(), 0);
 }
 
 #[test]

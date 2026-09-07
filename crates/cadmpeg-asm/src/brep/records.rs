@@ -155,7 +155,47 @@ native_record! {
     /// Edge selected as this vertex record's native owner.
     owning_edge: EdgeId,
     /// Endpoint slot on `owning_edge`: `0` for start, `1` for end.
-    endpoint_index: u8,
+    endpoint_index: EndpointSlot,
+}
+
+/// Endpoint selected by a native vertex ownership record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "u8", into = "u8")]
+pub enum EndpointSlot {
+    /// Start vertex of the owning edge.
+    Start,
+    /// End vertex of the owning edge.
+    End,
+}
+
+impl EndpointSlot {
+    /// Native endpoint index.
+    #[must_use]
+    pub const fn code(self) -> u8 {
+        match self {
+            Self::Start => 0,
+            Self::End => 1,
+        }
+    }
+}
+
+impl From<EndpointSlot> for u8 {
+    fn from(value: EndpointSlot) -> Self {
+        value.code()
+    }
+}
+
+impl TryFrom<u8> for EndpointSlot {
+    type Error = &'static str;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Start),
+            1 => Ok(Self::End),
+            _ => Err("endpoint_index must be 0 or 1"),
+        }
+    }
 }
 
 /// Conditional containment direction on a double-sided ASM face.
@@ -344,4 +384,27 @@ native_record! {
     reflection: bool,
     /// The linear transform includes shear.
     shear: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::EndpointSlot;
+    use serde::Deserialize;
+
+    #[test]
+    fn endpoint_slot_preserves_numeric_wire_and_rejects_other_indices() {
+        for (slot, code) in [(EndpointSlot::Start, 0), (EndpointSlot::End, 1)] {
+            let wire = serde_value::to_value(slot).expect("serialize endpoint");
+            assert_eq!(wire, serde_value::Value::U8(code));
+            assert_eq!(
+                EndpointSlot::deserialize(wire).expect("read endpoint"),
+                slot
+            );
+        }
+        for code in [2, u8::MAX] {
+            let error = EndpointSlot::deserialize(serde_value::Value::U8(code))
+                .expect_err("undefined endpoint");
+            assert!(error.to_string().contains("endpoint_index"));
+        }
+    }
 }

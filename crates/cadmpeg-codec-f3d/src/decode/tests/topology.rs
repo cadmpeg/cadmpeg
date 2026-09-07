@@ -49,7 +49,7 @@ fn decode_builds_valid_topology_and_geometry() {
     assert_eq!(
         ownerships
             .iter()
-            .map(|metadata| metadata.endpoint_index)
+            .map(|metadata| metadata.endpoint_index.code())
             .collect::<Vec<_>>(),
         [0, 1, 0]
     );
