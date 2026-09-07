@@ -742,8 +742,7 @@ fn native_namespace_rejects_alias_row_views_disagreeing_with_their_source_bytes(
         rows[0][field] = replacement;
         namespace.set_arena("alias_rows", &rows).unwrap();
         let error = crate::native::CatiaNative::load(&namespace)
-            .err()
-            .expect("alias-row view disagreeing with its source bytes");
+            .expect_err("alias-row view disagreeing with its source bytes");
         assert!(error.to_string().contains(field), "{error}");
     }
 }
