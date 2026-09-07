@@ -2469,12 +2469,12 @@ pub(crate) fn parse_construction_operand_transform(
         crate::records::topology::DesignConstructionOperandTransform {
             record_index: header.record_index,
             byte_offset: header.byte_offset,
-            class_tag: header.class_tag.as_str().to_owned(),
+            class_tag: header.class_tag.clone(),
             transform,
             transform_offset: u64::try_from(transform_at).ok()?,
             following_record_index,
             following_byte_offset: u64::try_from(following_at).ok()?,
-            following_class_tag,
+            following_class_tag: following_class_tag.try_into().ok()?,
         },
     )
 }
@@ -2668,7 +2668,7 @@ pub(crate) fn parse_construction_operand_identity(
     if let Some(transform) = parse_construction_operand_transform(bytes, wrapper_header) {
         current_at = usize::try_from(transform.following_byte_offset).ok()?;
         current_record_index = transform.following_record_index;
-        current_class_tag = transform.following_class_tag;
+        current_class_tag = transform.following_class_tag.into();
         chain_started = true;
     }
     let mut wrappers = Vec::new();

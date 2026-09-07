@@ -1345,7 +1345,7 @@ fn construction_operand_trailing_transform_has_exact_affine_frame() {
     assert_eq!(parsed.transform_offset, 22);
     assert_eq!(parsed.following_record_index, 301);
     assert_eq!(parsed.following_byte_offset, following_at as u64);
-    assert_eq!(parsed.following_class_tag, "432");
+    assert_eq!(parsed.following_class_tag.as_str(), "432");
 
     bytes[150] = 0;
     assert!(parse_construction_operand_transform(&bytes, &header).is_none());

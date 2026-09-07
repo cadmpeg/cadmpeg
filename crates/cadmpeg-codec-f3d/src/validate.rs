@@ -4377,7 +4377,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         .get(&(native_stream, transform.record_index))
                         .is_some_and(|header| {
                             header.byte_offset == transform.byte_offset
-                                && header.class_tag.as_str() == transform.class_tag
+                                && header.class_tag == transform.class_tag
                         })
                     && crate::records::valid_sketch_transform(&transform.transform)
                     && transform.following_record_index == transform.record_index.saturating_add(1)
@@ -4387,7 +4387,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         .get(&(native_stream, transform.following_record_index))
                         .is_some_and(|header| {
                             header.byte_offset == transform.following_byte_offset
-                                && header.class_tag.as_str() == transform.following_class_tag
+                                && header.class_tag == transform.following_class_tag
                         })
             })
             && frame
@@ -5860,7 +5860,7 @@ fn validate_construction_operand_identities<'a>(
                     && transform.is_some_and(|transform| {
                         path.wrapper_record_index == transform.following_record_index
                             && path.wrapper_byte_offset == transform.following_byte_offset
-                            && path.wrapper_class_tag == transform.following_class_tag
+                            && path.wrapper_class_tag == transform.following_class_tag.as_str()
                     }))
                 || (identity.wrappers.is_empty()
                     && transform.is_none()
@@ -5891,7 +5891,7 @@ fn validate_construction_operand_identities<'a>(
                 transform.is_some_and(|transform| {
                     identity.following_record_index == transform.following_record_index
                         && identity.following_byte_offset == transform.following_byte_offset
-                        && identity.following_class_tag == transform.following_class_tag
+                        && identity.following_class_tag == transform.following_class_tag.as_str()
                 })
             }
             && records_by_index

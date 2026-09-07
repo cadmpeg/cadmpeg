@@ -770,7 +770,7 @@ pub struct DesignConstructionOperandTransform {
     /// Transform-record header byte offset.
     pub byte_offset: u64,
     /// Per-file dynamic transform-record class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Row-major local-to-model affine transform.
     pub transform: [[f64; 4]; 4],
     /// Byte offset of the first matrix scalar.
@@ -780,7 +780,7 @@ pub struct DesignConstructionOperandTransform {
     /// Following-record header byte offset.
     pub following_byte_offset: u64,
     /// Per-file dynamic following-record class tag.
-    pub following_class_tag: String,
+    pub following_class_tag: DesignClassTag,
 }
 
 /// Two ordered affine placements named by an operand group's trailing run.
