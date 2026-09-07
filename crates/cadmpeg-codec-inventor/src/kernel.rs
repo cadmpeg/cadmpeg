@@ -153,8 +153,8 @@ pub(crate) fn select_active_carrier<'a>(
         return ActiveCarrierState::Unavailable("PmBRep bulk stream is unavailable".into());
     };
     let table = match &bulk.records {
-        Some(RecordFrameState::Framed(table)) => table,
-        Some(RecordFrameState::Unavailable(_)) | None => {
+        RecordFrameState::Framed(table) => table,
+        RecordFrameState::Unavailable(_) => {
             return ActiveCarrierState::Unavailable("PmBRep record table is unavailable".into());
         }
     };

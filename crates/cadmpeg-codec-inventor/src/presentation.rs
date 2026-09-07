@@ -425,7 +425,7 @@ pub(crate) fn inventory<'a>(
         let SegmentBulkState::Framed(bulk) = &segment.bulk else {
             continue;
         };
-        let Some(RecordFrameState::Framed(table)) = &bulk.records else {
+        let RecordFrameState::Framed(table) = &bulk.records else {
             continue;
         };
         for record in &table.records {

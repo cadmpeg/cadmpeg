@@ -695,7 +695,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             let SegmentBulkState::Framed(bulk) = &segment.bulk else {
                 return Vec::new();
             };
-            let Some(RecordFrameState::Framed(table)) = &bulk.records else {
+            let RecordFrameState::Framed(table) = &bulk.records else {
                 return Vec::new();
             };
             table
@@ -731,19 +731,16 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 return None;
             };
             let records = match &bulk.records {
-                Some(RecordFrameState::Framed(table)) => crate::native::SegmentBulkFrame::Framed {
+                RecordFrameState::Framed(table) => crate::native::SegmentBulkFrame::Framed {
                     record_count: table.records.len() as u64,
                     stream_trailer_len: table.stream_trailer.window().len() as u64,
                     stream_trailer_sha256: sha256_hex(table.stream_trailer.window()),
                 },
-                Some(RecordFrameState::Unavailable(detail)) => {
+                RecordFrameState::Unavailable(detail) => {
                     crate::native::SegmentBulkFrame::Unavailable {
                         detail: detail.clone(),
                     }
                 }
-                None => crate::native::SegmentBulkFrame::Unavailable {
-                    detail: "records are not framed".into(),
-                },
             };
             Some(SegmentBulkRecord {
                 id: format!("inventor:rse:segment-bulk#{}", segment.pair.token.as_str()),
