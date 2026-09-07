@@ -96,6 +96,7 @@ pub(crate) enum TrailingPointerAnalysis {
     Macro,
     Unambiguous {
         groups: TrailingPointerGroups,
+        #[cfg(test)]
         candidates: usize,
     },
     SingleInvalid(TrailingPointerGroups),
@@ -167,10 +168,6 @@ impl ParameterRecord {
         tokens: Vec<Token>,
         comment: Vec<u8>,
     ) -> Self {
-        assert!(
-            parameter_end <= tokens.len(),
-            "parameter_end exceeds tokens"
-        );
         Self {
             directory_sequence,
             line_range,
@@ -546,6 +543,7 @@ fn analyze_trailing_pointer_groups_from_end(
     match valid_groups.into_iter().next() {
         Some(groups) if valid == 1 => TrailingPointerAnalysis::Unambiguous {
             groups,
+            #[cfg(test)]
             candidates: candidates.len(),
         },
         None if candidates.len() == 1 => {
