@@ -28,7 +28,6 @@ pub(crate) mod schema_identifier;
 
 /// One parsed Part 21 parameter value.
 #[derive(Debug, Clone, PartialEq)]
-#[non_exhaustive]
 #[allow(clippy::enum_variant_names)] // STEP names mirror the EXPRESS value kinds.
 pub enum Value {
     /// Reference to a DATA entity instance.
@@ -147,7 +146,6 @@ pub struct DataSection {
 
 /// One edition-3 ANCHOR binding.
 #[derive(Debug, Clone, PartialEq)]
-#[non_exhaustive]
 pub struct AnchorEntry {
     /// Local resource name.
     pub name: String,
@@ -159,7 +157,6 @@ pub struct AnchorEntry {
 
 /// One edition-3 metadata tag attached to an ANCHOR binding.
 #[derive(Debug, Clone, PartialEq)]
-#[non_exhaustive]
 pub struct AnchorTag {
     /// Tag name, preserving source case.
     pub name: String,
@@ -394,7 +391,6 @@ pub enum ParseError {
 
 /// A recoverable deviation from canonical Part 21 source syntax.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum ParseDiagnosticKind {
     /// Complex-entity partials are not in their canonical alphabetical order.
     ComplexPartialsNotAlphabetical,

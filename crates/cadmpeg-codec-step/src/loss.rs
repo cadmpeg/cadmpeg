@@ -19,7 +19,6 @@ use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 ///
 /// Variants are grouped by the record family whose transfer degraded. The
 /// string form (via [`StepLossCode::code`]) is the stable contract.
-#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum StepLossCode {
     /// Parser recovered noncanonical Part 21 syntax.
