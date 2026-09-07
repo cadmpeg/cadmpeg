@@ -1119,7 +1119,7 @@ fn om_fset_reference_graph_requires_exact_groups_and_bounds() {
         .each_ref()
         .map(|(index, ())| crate::om::fset_references::word_reference_bytes(*index));
     assert_eq!(
-        raw.each_ref().map(|raw| raw.as_slice()),
+        raw.each_ref().map(<[u8; 3]>::as_slice),
         [[0x90, 0x19, 0x40].as_slice(), [0x90, 0x19, 0x41].as_slice(),]
     );
 
