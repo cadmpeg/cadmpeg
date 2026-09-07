@@ -1326,7 +1326,6 @@ fn round_edge_envelopes_for_plane(
                 *face_id != plane_id
                     && rows.get(face_id).is_some_and(|row| {
                         row.kind == crate::surface::SurfaceKind::Cylinder
-                            && row.kind == crate::surface::SurfaceKind::Cylinder
                             && crate::decode::sketch_transfer::feature_schema_class(
                                 scan,
                                 row.feature_id,
