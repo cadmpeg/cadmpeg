@@ -57,7 +57,7 @@ struct ViewRecord {
     show_construction_axes: bool,
     show_world_axes: bool,
     legacy_display_mode: Option<i64>,
-    #[serde(flatten, serialize_with = "serialize_view_attributes")]
+    #[serde(flatten, serialize_with = "serialize_view_attributes_field")]
     attributes: Option<ViewAttributes>,
     construction_plane: Option<ConstructionPlane>,
     viewport: Option<Viewport>,
@@ -67,36 +67,29 @@ struct ViewRecord {
     parse_warnings: Vec<String>,
 }
 
+fn serialize_view_attributes_field<'a, S: serde::Serializer>(
+    attributes: impl Into<Option<&'a ViewAttributes>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serialize_view_attributes(attributes.into(), serializer)
+}
+
 fn serialize_view_attributes<S: serde::Serializer>(
-    attributes: &Option<ViewAttributes>,
+    attributes: Option<&ViewAttributes>,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
     use serde::ser::SerializeMap;
 
     let mut map = serializer.serialize_map(Some(6))?;
-    map.serialize_entry(
-        "view_type",
-        &attributes.as_ref().map(|value| value.view_type),
-    )?;
-    map.serialize_entry(
-        "page_width_mm",
-        &attributes.as_ref().map(|value| value.width),
-    )?;
-    map.serialize_entry(
-        "page_height_mm",
-        &attributes.as_ref().map(|value| value.height),
-    )?;
+    map.serialize_entry("view_type", &attributes.map(|value| value.view_type))?;
+    map.serialize_entry("page_width_mm", &attributes.map(|value| value.width))?;
+    map.serialize_entry("page_height_mm", &attributes.map(|value| value.height))?;
     map.serialize_entry(
         "display_mode_uuid",
-        &attributes
-            .as_ref()
-            .and_then(|value| value.display.as_deref()),
+        &attributes.and_then(|value| value.display.as_deref()),
     )?;
-    map.serialize_entry(
-        "attributes_version",
-        &attributes.as_ref().map(|value| value.version),
-    )?;
-    map.serialize_entry("attributes", attributes)?;
+    map.serialize_entry("attributes_version", &attributes.map(|value| value.version))?;
+    map.serialize_entry("attributes", &attributes)?;
     map.end()
 }
 

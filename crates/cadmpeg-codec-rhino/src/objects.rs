@@ -352,13 +352,6 @@ impl<I> ObjectRecord<I> {
         }
     }
 
-    pub(crate) fn framed_mut(&mut self) -> Option<&mut ObjectDescriptor<I>> {
-        match self {
-            Self::Framed(object) => Some(object),
-            Self::Degraded { .. } => None,
-        }
-    }
-
     pub(crate) fn is_degraded(&self) -> bool {
         matches!(self, Self::Degraded { .. })
     }

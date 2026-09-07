@@ -240,7 +240,7 @@ struct V1BrepFace {
 
 #[derive(Debug, Serialize)]
 struct V1NurbsBrep {
-    #[serde(flatten, serialize_with = "serialize_brep_version")]
+    #[serde(flatten, serialize_with = "serialize_brep_version_field")]
     wire_version: i32,
     curves_2d: Vec<V1NurbsCurveGroup>,
     curves_3d: Vec<V1NurbsCurveGroup>,
@@ -253,15 +253,22 @@ struct V1NurbsBrep {
     bbox: [[f64; 3]; 2],
 }
 
+fn serialize_brep_version_field<S: serde::Serializer>(
+    version: impl std::borrow::Borrow<i32>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serialize_brep_version(*version.borrow(), serializer)
+}
+
 fn serialize_brep_version<S: serde::Serializer>(
-    version: &i32,
+    version: i32,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
     use serde::ser::SerializeMap;
 
     let mut map = serializer.serialize_map(Some(2))?;
-    map.serialize_entry("wire_version", version)?;
-    map.serialize_entry("version", version)?;
+    map.serialize_entry("wire_version", &version)?;
+    map.serialize_entry("version", &version)?;
     map.end()
 }
 

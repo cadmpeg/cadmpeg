@@ -230,37 +230,37 @@ pub struct GuiStateRecord {
 /// A supported semantic annotation runtime type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AnnotationRuntimeType {
-    /// The App::Annotation runtime type.
+    /// The `App::Annotation` runtime type.
     Annotation,
-    /// The App::AnnotationLabel runtime type.
+    /// The `App::AnnotationLabel` runtime type.
     AnnotationLabel,
-    /// The TechDraw::DrawViewAnnotation runtime type.
+    /// The `TechDraw::DrawViewAnnotation` runtime type.
     DrawViewAnnotation,
-    /// The TechDraw::DrawViewAnnotationPython runtime type.
+    /// The `TechDraw::DrawViewAnnotationPython` runtime type.
     DrawViewAnnotationPython,
-    /// The TechDraw::DrawRichAnno runtime type.
+    /// The `TechDraw::DrawRichAnno` runtime type.
     DrawRichAnno,
-    /// The TechDraw::DrawRichAnnoPython runtime type.
+    /// The `TechDraw::DrawRichAnnoPython` runtime type.
     DrawRichAnnoPython,
-    /// The TechDraw::DrawViewDimension runtime type.
+    /// The `TechDraw::DrawViewDimension` runtime type.
     DrawViewDimension,
-    /// The TechDraw::DrawViewDimExtent runtime type.
+    /// The `TechDraw::DrawViewDimExtent` runtime type.
     DrawViewDimExtent,
-    /// The TechDraw::LandmarkDimension runtime type.
+    /// The `TechDraw::LandmarkDimension` runtime type.
     LandmarkDimension,
-    /// The TechDraw::DrawViewBalloon runtime type.
+    /// The `TechDraw::DrawViewBalloon` runtime type.
     DrawViewBalloon,
-    /// The TechDraw::DrawLeaderLine runtime type.
+    /// The `TechDraw::DrawLeaderLine` runtime type.
     DrawLeaderLine,
-    /// The TechDraw::DrawLeaderLinePython runtime type.
+    /// The `TechDraw::DrawLeaderLinePython` runtime type.
     DrawLeaderLinePython,
-    /// The TechDraw::DrawViewSymbol runtime type.
+    /// The `TechDraw::DrawViewSymbol` runtime type.
     DrawViewSymbol,
-    /// The TechDraw::DrawViewSymbolPython runtime type.
+    /// The `TechDraw::DrawViewSymbolPython` runtime type.
     DrawViewSymbolPython,
-    /// The TechDraw::DrawWeldSymbol runtime type.
+    /// The `TechDraw::DrawWeldSymbol` runtime type.
     DrawWeldSymbol,
-    /// The TechDraw::DrawWeldSymbolPython runtime type.
+    /// The `TechDraw::DrawWeldSymbolPython` runtime type.
     DrawWeldSymbolPython,
 }
 

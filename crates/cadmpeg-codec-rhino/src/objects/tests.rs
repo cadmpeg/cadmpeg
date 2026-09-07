@@ -587,10 +587,10 @@ fn identity_resolution_warns_and_keys_nil_and_duplicate_uuids_by_record() {
         ObjectRecord::Framed(descriptor(duplicate, 20)),
         ObjectRecord::Framed(descriptor(duplicate_again, 30)),
     ];
-    objects[0]
-        .framed_mut()
-        .expect("test object is framed")
-        .class_uuid = Uuid::from_wire([9; 16]);
+    let ObjectRecord::Framed(object) = &mut objects[0] else {
+        panic!("test object is framed");
+    };
+    object.class_uuid = Uuid::from_wire([9; 16]);
     let mut warnings = Vec::new();
     let objects = crate::objects::resolve_identities(
         objects,
@@ -1038,10 +1038,10 @@ fn geometry_decode_does_not_clear_attribute_degradation() {
         ],
     );
     let mut scan = crate::container::scan_owned(bytes).expect("required invariant");
-    scan.objects[0]
-        .framed_mut()
-        .expect("test object is framed")
-        .attributes = AttributeState::Degraded;
+    let ObjectRecord::Framed(object) = &mut scan.objects[0] else {
+        panic!("test object is framed");
+    };
+    object.attributes = AttributeState::Degraded;
     crate::decode::with_expand(&scan, |expand| {
         let mut context = crate::decode::DecodeContext::new(&scan, expand);
         assert!(context.mark_decoded(0));

@@ -981,9 +981,9 @@ pub(crate) fn set_identity(
     color: Option<[u8; 4]>,
     visible: bool,
 ) {
-    let object = scan.objects[source_order]
-        .framed_mut()
-        .expect("test object is framed");
+    let crate::objects::ObjectRecord::Framed(object) = &mut scan.objects[source_order] else {
+        panic!("test object is framed");
+    };
     object.identity = crate::objects::SourceIdentity {
         source_id: format!("rhino:object:record#{source_key}"),
         object_id: Uuid::from_wire(object_id),
