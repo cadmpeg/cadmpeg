@@ -496,10 +496,25 @@ pub(in super::super) fn native_section_segment_radius_definition(
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SegmentRadiusField {
+    Primary,
+    Secondary,
+}
+
+impl SegmentRadiusField {
+    const fn key(self) -> &'static str {
+        match self {
+            Self::Primary => "radius",
+            Self::Secondary => "radius2",
+        }
+    }
+}
+
 struct SectionSegmentRadiusBinding {
     suffix: String,
     external_id: u32,
-    field: &'static str,
+    field: SegmentRadiusField,
     ordinal: u32,
     offset: usize,
     typed_circle: Option<(u32, ParameterId)>,
@@ -517,8 +532,8 @@ fn section_segment_radius_bindings(
     for segment in segments.rows.ordinary() {
         let suffix = section_segment_identity_suffix(&unique_segment_ids, segment);
         for (field, ordinal) in [
-            ("radius", segment.radius_ref),
-            ("radius2", segment.radius2_ref),
+            (SegmentRadiusField::Primary, segment.radius_ref),
+            (SegmentRadiusField::Secondary, segment.radius2_ref),
         ] {
             let Some(ordinal) = ordinal else {
                 continue;
@@ -556,7 +571,7 @@ fn section_segment_radius_bindings(
         bindings.push(SectionSegmentRadiusBinding {
             suffix,
             external_id: segment.external_id,
-            field: "radius",
+            field: SegmentRadiusField::Primary,
             ordinal: segment.radius_ref,
             offset: segment.offset,
             typed_circle,
@@ -565,8 +580,8 @@ fn section_segment_radius_bindings(
     for segment in segments.rows.opaque() {
         let suffix = opaque_section_segment_identity_suffix(&unique_segment_ids, segment);
         for (field, ordinal) in [
-            ("radius", segment.radius_ref),
-            ("radius2", segment.radius2_ref),
+            (SegmentRadiusField::Primary, segment.radius_ref),
+            (SegmentRadiusField::Secondary, segment.radius2_ref),
         ] {
             let Some(ordinal) = ordinal else {
                 continue;
@@ -603,10 +618,10 @@ fn section_segment_radius_constraint(
                 sketch,
                 entity.clone(),
                 binding.external_id,
-                binding.field,
+                binding.field.key(),
                 binding.ordinal,
             ),
-            if binding.field == "radius2" {
+            if binding.field == SegmentRadiusField::Secondary {
                 "segtab-radius2"
             } else {
                 "segtab-radius"
@@ -683,7 +698,7 @@ fn reconcile_section_segment_radius_constraint(
         sketch,
         sketch_entity_id(sketch, &binding.suffix),
         binding.external_id,
-        binding.field,
+        binding.field.key(),
         binding.ordinal,
     );
     reconcile_constraint_entity_references(constraint_definition, emitted)
