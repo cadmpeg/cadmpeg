@@ -1463,12 +1463,7 @@ fn resolve_e5_ownership(topology: &crate::families::e5::graph::E5Topology) -> Op
         topology
             .bodies
             .iter()
-            .map(|body| {
-                (
-                    Some(body.record_id),
-                    body.faces.iter().map(|member| member.face).collect(),
-                )
-            })
+            .map(|body| (Some(body.record_id), body.faces.clone()))
             .collect()
     };
     let Some(ownership) = e5_ownership_plan(topology, &body_faces) else {
@@ -1785,7 +1780,7 @@ fn emit_e5_faces_loops_coedges(
             id: face_id.clone(),
             shell: face_shell[&face.record_id].clone(),
             surface: surface_for_ref[&face.surface].0.clone(),
-            sense: if face.trailer_sign > 0 {
+            sense: if face.trailer_sign == crate::families::e5::graph::Sign::Positive {
                 Sense::Forward
             } else {
                 Sense::Reversed
@@ -2967,14 +2962,13 @@ mod route_tests {
             faces: vec![E5Face {
                 record_id: 1,
                 surface: 100,
-                trailer_sign: 1,
+                trailer_sign: crate::families::e5::graph::Sign::Positive,
                 loops: vec![E5Loop {
                     record_id: 2,
                     surface: 100,
                     members: e5_loop_members(&pcurve_refs, &edge_refs, &vec![false; segment_count]),
                     oriented_members: None,
                     outer: Some(true),
-                    orientation_signs: Vec::new(),
                     orientation_hint: None,
                 }],
             }],
@@ -3008,14 +3002,13 @@ mod route_tests {
             faces: vec![E5Face {
                 record_id: 1,
                 surface: 100,
-                trailer_sign: 1,
+                trailer_sign: crate::families::e5::graph::Sign::Positive,
                 loops: vec![E5Loop {
                     record_id: 2,
                     surface: 100,
                     members: e5_loop_members(&[20, 21], &[10, 11], &[false, false]),
                     oriented_members: None,
                     outer: Some(true),
-                    orientation_signs: Vec::new(),
                     orientation_hint: None,
                 }],
             }],
@@ -3223,7 +3216,7 @@ mod route_tests {
             faces: vec![E5Face {
                 record_id: 1,
                 surface: 100,
-                trailer_sign: 1,
+                trailer_sign: crate::families::e5::graph::Sign::Positive,
                 loops: vec![E5Loop {
                     record_id: 2,
                     surface: 100,
@@ -3233,7 +3226,6 @@ mod route_tests {
                         reversed: false,
                     }]),
                     outer: Some(true),
-                    orientation_signs: Vec::new(),
                     orientation_hint: None,
                 }],
             }],
@@ -3393,7 +3385,7 @@ mod route_tests {
                 E5Face {
                     record_id: 1,
                     surface: 100,
-                    trailer_sign: 1,
+                    trailer_sign: crate::families::e5::graph::Sign::Positive,
                     loops: vec![E5Loop {
                         record_id: 2,
                         surface: 100,
@@ -3403,14 +3395,13 @@ mod route_tests {
                             reversed: false,
                         }]),
                         outer: Some(true),
-                        orientation_signs: Vec::new(),
                         orientation_hint: None,
                     }],
                 },
                 E5Face {
                     record_id: 3,
                     surface: 100,
-                    trailer_sign: 1,
+                    trailer_sign: crate::families::e5::graph::Sign::Positive,
                     loops: vec![E5Loop {
                         record_id: 4,
                         surface: 100,
@@ -3420,7 +3411,6 @@ mod route_tests {
                             reversed: false,
                         }]),
                         outer: Some(true),
-                        orientation_signs: Vec::new(),
                         orientation_hint: None,
                     }],
                 },
@@ -3498,7 +3488,7 @@ mod route_tests {
             faces: vec![E5Face {
                 record_id: 1,
                 surface: 100,
-                trailer_sign: 1,
+                trailer_sign: crate::families::e5::graph::Sign::Positive,
                 loops: vec![E5Loop {
                     record_id: 2,
                     surface: 100,
@@ -3508,7 +3498,6 @@ mod route_tests {
                         reversed: false,
                     }]),
                     outer: Some(true),
-                    orientation_signs: Vec::new(),
                     orientation_hint: None,
                 }],
             }],
@@ -3613,7 +3602,7 @@ mod route_tests {
         let face = |record_id, edge_use| E5Face {
             record_id,
             surface: 100 + record_id,
-            trailer_sign: 1,
+            trailer_sign: crate::families::e5::graph::Sign::Positive,
             loops: vec![E5Loop {
                 record_id: 200 + record_id,
                 surface: 100 + record_id,
@@ -3623,7 +3612,6 @@ mod route_tests {
                     reversed: false,
                 }]),
                 outer: Some(true),
-                orientation_signs: Vec::new(),
                 orientation_hint: None,
             }],
         };
