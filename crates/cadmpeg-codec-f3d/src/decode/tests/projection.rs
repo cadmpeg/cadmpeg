@@ -1814,7 +1814,7 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
             companion_record_index: 99,
             governing_companion_record_index: 30,
             byte_offset: 278,
-            class_tag: "423".into(),
+            class_tag: crate::records::DesignClassTag::try_from("423".to_owned()).unwrap(),
             record_index: 31,
             frame_length: 100,
             null_reference_offset: 300,
@@ -1824,7 +1824,7 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
             geometry_reference_offset: 310,
             geometry_role: 3,
             geometry_role_offset: 320,
-            paired_class_tag: "259".into(),
+            paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
             paired_byte_offset: 378,
         });
     assert_eq!(unresolved_dimension_companion_count(&native, &ir), 0);

@@ -703,7 +703,7 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     assert_eq!(pair.null_role, 10);
     assert_eq!(pair.geometry_record_index, 1109);
     assert_eq!(pair.geometry_role, 7);
-    assert_eq!(pair.paired_class_tag, "273");
+    assert_eq!(pair.paired_class_tag.as_str(), "273");
 
     assert!(parse_dimension_null_locus_pair(&bytes, 0, 1290, &HashSet::from([1110]),).is_none());
 

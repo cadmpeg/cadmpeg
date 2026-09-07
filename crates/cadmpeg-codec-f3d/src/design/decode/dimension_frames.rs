@@ -979,8 +979,6 @@ pub(crate) fn parse_dimension_null_locus_pair(
     let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
     let record_index = View::u32_le_at(bytes, after_tag)?;
     if after_tag != start.checked_add(7)?
-        || class_tag.len() != 3
-        || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
         || bytes.get(start + 11..start + 19) != Some(&[0; 8])
         || bytes.get(start + 19) != Some(&1)
         || View::u32_le_at(bytes, start + 20) != Some(2)
@@ -1011,7 +1009,7 @@ pub(crate) fn parse_dimension_null_locus_pair(
         companion_record_index,
         governing_companion_record_index: companion_record_index,
         byte_offset: start as u64,
-        class_tag,
+        class_tag: class_tag.try_into().ok()?,
         record_index,
         frame_length: u64::try_from(paired_byte_offset.checked_sub(start)?).ok()?,
         null_reference_offset: (start + 25) as u64,
@@ -1021,7 +1019,7 @@ pub(crate) fn parse_dimension_null_locus_pair(
         geometry_reference_offset: (start + 40) as u64,
         geometry_role: View::u32_le_at(bytes, start + 50)?,
         geometry_role_offset: (start + 50) as u64,
-        paired_class_tag,
+        paired_class_tag: paired_class_tag.try_into().ok()?,
         paired_byte_offset: paired_byte_offset as u64,
     })
 }

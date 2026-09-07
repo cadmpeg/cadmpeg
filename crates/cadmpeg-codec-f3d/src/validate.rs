@@ -8429,14 +8429,7 @@ fn validate_dimension_null_locus_pairs<'a>(
         let companion_has_typed_frame = locus_pair_companions
             .contains(&(native_stream, pair.companion_record_index))
             || locus_group_companions.contains(&(native_stream, pair.companion_record_index));
-        let valid = pair.class_tag.len() == 3
-            && pair.class_tag.bytes().all(|byte| byte.is_ascii_digit())
-            && pair.paired_class_tag.len() == 3
-            && pair
-                .paired_class_tag
-                .bytes()
-                .all(|byte| byte.is_ascii_digit())
-            && companion_contains_frame
+        let valid = companion_contains_frame
             && dimension_companion
             && governs_following_dimension
             && !companion_has_typed_frame
