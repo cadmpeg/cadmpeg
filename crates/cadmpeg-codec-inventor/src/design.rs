@@ -9,6 +9,7 @@ use cadmpeg_ir::features::{Angle, DesignParameter, Length, ParameterId, Paramete
 use serde::{Deserialize, Serialize};
 
 use crate::pmdc::{type_id_string, Cursor, PmDcContentHeader, PmDcReference};
+use crate::record_identity::{Located, RecordPayload};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
@@ -63,11 +64,7 @@ pub(crate) struct DesignInventory {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct PmDcParameter {
-    pub(crate) id: String,
-    pub(crate) type_id: String,
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
+pub(crate) struct PmDcParameterPayload {
     pub(crate) save_version_major: u8,
     #[serde(flatten)]
     pub(crate) header: PmDcContentHeader,
@@ -82,11 +79,7 @@ pub(crate) struct PmDcParameter {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct PmDcExpression {
-    pub(crate) id: String,
-    pub(crate) type_id: String,
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
+pub(crate) struct PmDcExpressionPayload {
     pub(crate) save_version_major: u8,
     pub(crate) header_value: u32,
     pub(crate) header_id: u16,
@@ -135,11 +128,7 @@ pub(crate) enum PmDcBinaryOperation {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct PmDcUnit {
-    pub(crate) id: String,
-    pub(crate) type_id: String,
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
+pub(crate) struct PmDcUnitPayload {
     pub(crate) save_version_major: u8,
     pub(crate) header_value: u32,
     pub(crate) header_id: u16,
@@ -288,84 +277,68 @@ pub(crate) fn inventory(
         };
         for record in &table.records {
             let result = if record.type_id == PARAMETER_FULL_TYPE {
-                parse_parameter(ctx, record.payload, version).map(|mut value| {
-                    value.segment_token = segment.pair.token.as_str().into();
-                    value.record_ordinal = record.ordinal;
-                    value.type_id = type_id_string(record.type_id);
-                    value.id = format!(
-                        "inventor:pmdc:parameter#{}-{}",
-                        value.segment_token, value.record_ordinal
-                    );
-                    inventory.parameters.push(value);
+                parse_parameter(ctx, record.payload, version).map(|value| {
+                    inventory.parameters.push(Located::new(
+                        value,
+                        type_id_string(record.type_id),
+                        segment.pair.token.as_str(),
+                        record.ordinal,
+                    ));
                 })
             } else if let Some(operation) = binary_operation(record.type_id) {
-                parse_binary_expression(record.payload, version, operation).map(|mut value| {
-                    value.segment_token = segment.pair.token.as_str().into();
-                    value.record_ordinal = record.ordinal;
-                    value.type_id = type_id_string(record.type_id);
-                    value.id = format!(
-                        "inventor:pmdc:expression#{}-{}",
-                        value.segment_token, value.record_ordinal
-                    );
-                    inventory.expressions.push(value);
+                parse_binary_expression(record.payload, version, operation).map(|value| {
+                    inventory.expressions.push(Located::new(
+                        value,
+                        type_id_string(record.type_id),
+                        segment.pair.token.as_str(),
+                        record.ordinal,
+                    ));
                 })
             } else if let Some(operation) = unary_operation(record.type_id) {
-                parse_unary_expression(record.payload, version, operation).map(|mut value| {
-                    value.segment_token = segment.pair.token.as_str().into();
-                    value.record_ordinal = record.ordinal;
-                    value.type_id = type_id_string(record.type_id);
-                    value.id = format!(
-                        "inventor:pmdc:expression#{}-{}",
-                        value.segment_token, value.record_ordinal
-                    );
-                    inventory.expressions.push(value);
+                parse_unary_expression(record.payload, version, operation).map(|value| {
+                    inventory.expressions.push(Located::new(
+                        value,
+                        type_id_string(record.type_id),
+                        segment.pair.token.as_str(),
+                        record.ordinal,
+                    ));
                 })
             } else if record.type_id == EXPRESSION_VALUE_TYPE {
-                parse_value_expression(record.payload, version).map(|mut value| {
-                    value.segment_token = segment.pair.token.as_str().into();
-                    value.record_ordinal = record.ordinal;
-                    value.type_id = type_id_string(record.type_id);
-                    value.id = format!(
-                        "inventor:pmdc:expression#{}-{}",
-                        value.segment_token, value.record_ordinal
-                    );
-                    inventory.expressions.push(value);
+                parse_value_expression(record.payload, version).map(|value| {
+                    inventory.expressions.push(Located::new(
+                        value,
+                        type_id_string(record.type_id),
+                        segment.pair.token.as_str(),
+                        record.ordinal,
+                    ));
                 })
             } else if record.type_id == EXPRESSION_REFERENCE_TYPE {
-                parse_reference_expression(record.payload, version).map(|mut value| {
-                    value.segment_token = segment.pair.token.as_str().into();
-                    value.record_ordinal = record.ordinal;
-                    value.type_id = type_id_string(record.type_id);
-                    value.id = format!(
-                        "inventor:pmdc:expression#{}-{}",
-                        value.segment_token, value.record_ordinal
-                    );
-                    inventory.expressions.push(value);
+                parse_reference_expression(record.payload, version).map(|value| {
+                    inventory.expressions.push(Located::new(
+                        value,
+                        type_id_string(record.type_id),
+                        segment.pair.token.as_str(),
+                        record.ordinal,
+                    ));
                 })
             } else if record.type_id == UNIT_TYPE {
-                parse_unit_definition(ctx, record.payload, version).map(|mut value| {
-                    value.segment_token = segment.pair.token.as_str().into();
-                    value.record_ordinal = record.ordinal;
-                    value.type_id = type_id_string(record.type_id);
-                    value.id = format!(
-                        "inventor:pmdc:unit#{}-{}",
-                        value.segment_token, value.record_ordinal
-                    );
-                    inventory.units.push(value);
+                parse_unit_definition(ctx, record.payload, version).map(|value| {
+                    inventory.units.push(Located::new(
+                        value,
+                        type_id_string(record.type_id),
+                        segment.pair.token.as_str(),
+                        record.ordinal,
+                    ));
                 })
             } else if let Some((dimension, symbol, scale)) = base_unit(record.type_id) {
-                parse_base_unit(record.payload, version, dimension, symbol, scale).map(
-                    |mut value| {
-                        value.segment_token = segment.pair.token.as_str().into();
-                        value.record_ordinal = record.ordinal;
-                        value.type_id = type_id_string(record.type_id);
-                        value.id = format!(
-                            "inventor:pmdc:unit#{}-{}",
-                            value.segment_token, value.record_ordinal
-                        );
-                        inventory.units.push(value);
-                    },
-                )
+                parse_base_unit(record.payload, version, dimension, symbol, scale).map(|value| {
+                    inventory.units.push(Located::new(
+                        value,
+                        type_id_string(record.type_id),
+                        segment.pair.token.as_str(),
+                        record.ordinal,
+                    ));
+                })
             } else {
                 continue;
             };
@@ -395,30 +368,45 @@ pub(crate) fn inventory(
 
 pub(crate) fn project_parameters(inventory: &DesignInventory) -> (Vec<DesignParameter>, usize) {
     let expressions = unique_by_ordinal(&inventory.expressions, |record| {
-        (&record.segment_token, record.record_ordinal)
+        (
+            &record.identity.segment_token,
+            record.identity.record_ordinal,
+        )
     });
     let units = unique_by_ordinal(&inventory.units, |record| {
-        (&record.segment_token, record.record_ordinal)
+        (
+            &record.identity.segment_token,
+            record.identity.record_ordinal,
+        )
     });
     let parameters = unique_by_ordinal(&inventory.parameters, |record| {
-        (&record.segment_token, record.record_ordinal)
+        (
+            &record.identity.segment_token,
+            record.identity.record_ordinal,
+        )
     });
     let mut projected = Vec::new();
     let mut unresolved = 0usize;
     for parameter in &inventory.parameters {
-        if !parameters.contains_key(&(parameter.segment_token.clone(), parameter.record_ordinal)) {
+        if !parameters.contains_key(&(
+            parameter.identity.segment_token.clone(),
+            parameter.identity.record_ordinal,
+        )) {
             unresolved += 1;
             continue;
         }
-        let Some(unit) = resolve_unit(&parameter.segment_token, parameter.unit.index, &units)
-        else {
+        let Some(unit) = resolve_unit(
+            &parameter.identity.segment_token,
+            parameter.unit.index,
+            &units,
+        ) else {
             unresolved += 1;
             continue;
         };
         let mut dependencies = Vec::new();
         let mut visiting = HashSet::new();
         let Some(expression) = render_expression(
-            &parameter.segment_token,
+            &parameter.identity.segment_token,
             parameter.formula.index,
             &expressions,
             &units,
@@ -451,7 +439,7 @@ pub(crate) fn project_parameters(inventory: &DesignInventory) -> (Vec<DesignPara
             dependencies,
             properties: std::collections::BTreeMap::new(),
             pmi: None,
-            native_ref: Some(native_parameter_id(parameter)),
+            native_ref: Some(parameter.id()),
         });
     }
     let (projected, graph_rejections) = close_parameter_graph(projected);
@@ -495,14 +483,10 @@ fn close_parameter_graph(parameters: Vec<DesignParameter>) -> (Vec<DesignParamet
     )
 }
 
-fn native_parameter_id(parameter: &PmDcParameter) -> String {
-    parameter.id.clone()
-}
-
 fn parameter_id(parameter: &PmDcParameter) -> ParameterId {
     ParameterId::mint(format!(
         "inventor:design:parameter#{}-{}",
-        parameter.segment_token, parameter.record_ordinal
+        parameter.identity.segment_token, parameter.identity.record_ordinal
     ))
     .expect("identity grammar")
 }
@@ -660,7 +644,7 @@ fn parse_parameter(
     ctx: &DecodeContext<'_>,
     source: View<'_>,
     version: u8,
-) -> Result<PmDcParameter, CodecError> {
+) -> Result<PmDcParameterPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header_value = cursor.u32("parameter header value")?;
     let header_id = cursor.u16("parameter header id")?;
@@ -677,11 +661,7 @@ fn parse_parameter(
     let tolerance = cursor.u16("parameter tolerance")?;
     let terminal_value = cursor.i16("parameter terminal value")?;
     cursor.finish("parameter")?;
-    Ok(PmDcParameter {
-        id: String::new(),
-        type_id: String::new(),
-        segment_token: String::new(),
-        record_ordinal: 0,
+    Ok(PmDcParameterPayload {
         save_version_major: version,
         header: PmDcContentHeader {
             header_value,
@@ -712,7 +692,10 @@ fn expression_header(
     Ok((cursor, header_value, header_id, unit))
 }
 
-fn parse_value_expression(source: View<'_>, version: u8) -> Result<PmDcExpression, CodecError> {
+fn parse_value_expression(
+    source: View<'_>,
+    version: u8,
+) -> Result<PmDcExpressionPayload, CodecError> {
     let (mut cursor, header_value, header_id, unit) = expression_header(source)?;
     let value = cursor.f64("literal expression value")?;
     let value_type = cursor.u16("literal expression type")?;
@@ -722,11 +705,7 @@ fn parse_value_expression(source: View<'_>, version: u8) -> Result<PmDcExpressio
         None
     };
     cursor.finish("literal expression")?;
-    Ok(PmDcExpression {
-        id: String::new(),
-        type_id: String::new(),
-        segment_token: String::new(),
-        record_ordinal: 0,
+    Ok(PmDcExpressionPayload {
         save_version_major: version,
         header_value,
         header_id,
@@ -739,15 +718,14 @@ fn parse_value_expression(source: View<'_>, version: u8) -> Result<PmDcExpressio
     })
 }
 
-fn parse_reference_expression(source: View<'_>, version: u8) -> Result<PmDcExpression, CodecError> {
+fn parse_reference_expression(
+    source: View<'_>,
+    version: u8,
+) -> Result<PmDcExpressionPayload, CodecError> {
     let (mut cursor, header_value, header_id, unit) = expression_header(source)?;
     let operand = cursor.reference("parameter-reference operand")?;
     cursor.finish("parameter-reference expression")?;
-    Ok(PmDcExpression {
-        id: String::new(),
-        type_id: String::new(),
-        segment_token: String::new(),
-        record_ordinal: 0,
+    Ok(PmDcExpressionPayload {
         save_version_major: version,
         header_value,
         header_id,
@@ -760,15 +738,11 @@ fn parse_unary_expression(
     source: View<'_>,
     version: u8,
     operation: PmDcUnaryOperation,
-) -> Result<PmDcExpression, CodecError> {
+) -> Result<PmDcExpressionPayload, CodecError> {
     let (mut cursor, header_value, header_id, unit) = expression_header(source)?;
     let operand = cursor.reference("unary expression operand")?;
     cursor.finish("unary expression")?;
-    Ok(PmDcExpression {
-        id: String::new(),
-        type_id: String::new(),
-        segment_token: String::new(),
-        record_ordinal: 0,
+    Ok(PmDcExpressionPayload {
         save_version_major: version,
         header_value,
         header_id,
@@ -781,16 +755,12 @@ fn parse_binary_expression(
     source: View<'_>,
     version: u8,
     operation: PmDcBinaryOperation,
-) -> Result<PmDcExpression, CodecError> {
+) -> Result<PmDcExpressionPayload, CodecError> {
     let (mut cursor, header_value, header_id, unit) = expression_header(source)?;
     let left = cursor.reference("binary expression left operand")?;
     let right = cursor.reference("binary expression right operand")?;
     cursor.finish("binary expression")?;
-    Ok(PmDcExpression {
-        id: String::new(),
-        type_id: String::new(),
-        segment_token: String::new(),
-        record_ordinal: 0,
+    Ok(PmDcExpressionPayload {
         save_version_major: version,
         header_value,
         header_id,
@@ -807,7 +777,7 @@ fn parse_unit_definition(
     ctx: &DecodeContext<'_>,
     source: View<'_>,
     version: u8,
-) -> Result<PmDcUnit, CodecError> {
+) -> Result<PmDcUnitPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header_value = cursor.u32("unit header value")?;
     let header_id = cursor.u16("unit header id")?;
@@ -816,11 +786,7 @@ fn parse_unit_definition(
     let visible = cursor.u8("unit visibility")? != 0;
     let derived = cursor.reference("unit derived reference")?;
     cursor.finish("unit")?;
-    Ok(PmDcUnit {
-        id: String::new(),
-        type_id: String::new(),
-        segment_token: String::new(),
-        record_ordinal: 0,
+    Ok(PmDcUnitPayload {
         save_version_major: version,
         header_value,
         header_id,
@@ -839,18 +805,14 @@ fn parse_base_unit(
     dimension: PmDcUnitDimension,
     symbol: &str,
     scale_to_internal: f64,
-) -> Result<PmDcUnit, CodecError> {
+) -> Result<PmDcUnitPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header_value = cursor.u32("base-unit header value")?;
     let header_id = cursor.u16("base-unit header id")?;
     let magnitude = cursor.f64("base-unit magnitude")?;
     let factor = cursor.f64("base-unit factor")?;
     cursor.finish("base unit")?;
-    Ok(PmDcUnit {
-        id: String::new(),
-        type_id: String::new(),
-        segment_token: String::new(),
-        record_ordinal: 0,
+    Ok(PmDcUnitPayload {
         save_version_major: version,
         header_value,
         header_id,
@@ -983,6 +945,24 @@ impl Cursor<'_> {
             )
         })
     }
+}
+
+pub(crate) type PmDcParameter = Located<PmDcParameterPayload>;
+
+impl RecordPayload for PmDcParameterPayload {
+    const KIND: &'static str = "parameter";
+}
+
+pub(crate) type PmDcExpression = Located<PmDcExpressionPayload>;
+
+impl RecordPayload for PmDcExpressionPayload {
+    const KIND: &'static str = "expression";
+}
+
+pub(crate) type PmDcUnit = Located<PmDcUnitPayload>;
+
+impl RecordPayload for PmDcUnitPayload {
+    const KIND: &'static str = "unit";
 }
 
 #[cfg(test)]
@@ -1160,112 +1140,119 @@ mod tests {
     #[test]
     fn projects_closed_parameter_dependencies_and_units() {
         let token = "segment".to_string();
-        let base = PmDcUnit {
-            id: "unit-base".into(),
-            type_id: String::new(),
-            segment_token: token.clone(),
-            record_ordinal: 0,
-            save_version_major: 22,
-            header_value: 0,
-            header_id: 0,
-            kind: PmDcUnitKind::Base {
-                dimension: PmDcUnitDimension::Length,
-                symbol: "in".into(),
-                scale_to_internal: 2.54,
-                magnitude: 1.0,
-                factor: 1.0,
-            },
-        };
-        let unit = PmDcUnit {
-            id: "unit".into(),
-            type_id: String::new(),
-            segment_token: token.clone(),
-            record_ordinal: 1,
-            save_version_major: 22,
-            header_value: 0,
-            header_id: 0,
-            kind: PmDcUnitKind::Definition {
-                numerators: ReferenceArray::new(Some([0, 0]), vec![reference(1, false)])
-                    .expect("valid test fixture"),
-                denominators: ReferenceArray::new(None, Vec::new()).expect("valid test fixture"),
-                visible: true,
-                derived: reference(0, false),
-            },
-        };
-        let literal = PmDcExpression {
-            id: "literal".into(),
-            type_id: String::new(),
-            segment_token: token.clone(),
-            record_ordinal: 2,
-            save_version_major: 22,
-            header_value: 0,
-            header_id: 0,
-            unit: reference(2, false),
-            kind: PmDcExpressionKind::Value {
-                value: 60.96,
-                value_type: 0,
-                state: Some(0),
-            },
-        };
-        let first = PmDcParameter {
-            id: "native-first".into(),
-            type_id: String::new(),
-            segment_token: token.clone(),
-            record_ordinal: 3,
-            save_version_major: 22,
-            header: PmDcContentHeader {
+        let base = Located::new(
+            PmDcUnitPayload {
+                save_version_major: 22,
                 header_value: 0,
                 header_id: 0,
-                next: reference(0, false),
-                flags: 0,
-                context: reference(0, false),
-                source_index: 0,
+                kind: PmDcUnitKind::Base {
+                    dimension: PmDcUnitDimension::Length,
+                    symbol: "in".into(),
+                    scale_to_internal: 2.54,
+                    magnitude: 1.0,
+                    factor: 1.0,
+                },
             },
-            name: "width".into(),
-            name_value: 0,
-            unit: reference(2, false),
-            formula: reference(3, false),
-            nominal_value: 60.96,
-            model_value: 60.96,
-            tolerance: 0,
-            terminal_value: -1,
-        };
-        let reference_expression = PmDcExpression {
-            id: "reference".into(),
-            type_id: String::new(),
-            segment_token: token.clone(),
-            record_ordinal: 4,
-            save_version_major: 22,
-            header_value: 0,
-            header_id: 0,
-            unit: reference(2, false),
-            kind: PmDcExpressionKind::ParameterReference {
-                operand: reference(4, true),
-            },
-        };
-        let second = PmDcParameter {
-            id: "native-second".into(),
-            type_id: String::new(),
-            segment_token: token,
-            record_ordinal: 5,
-            save_version_major: 22,
-            header: PmDcContentHeader {
+            String::new(),
+            &token,
+            0,
+        );
+        let unit = Located::new(
+            PmDcUnitPayload {
+                save_version_major: 22,
                 header_value: 0,
                 header_id: 0,
-                next: reference(0, false),
-                flags: 0,
-                context: reference(0, false),
-                source_index: 1,
+                kind: PmDcUnitKind::Definition {
+                    numerators: ReferenceArray::new(Some([0, 0]), vec![reference(1, false)])
+                        .expect("valid test fixture"),
+                    denominators: ReferenceArray::new(None, Vec::new())
+                        .expect("valid test fixture"),
+                    visible: true,
+                    derived: reference(0, false),
+                },
             },
-            name: "height".into(),
-            name_value: 0,
-            unit: reference(2, false),
-            formula: reference(5, false),
-            nominal_value: 60.96,
-            model_value: 60.96,
-            tolerance: 0,
-            terminal_value: -1,
-        };
+            String::new(),
+            &token,
+            1,
+        );
+        let literal = Located::new(
+            PmDcExpressionPayload {
+                save_version_major: 22,
+                header_value: 0,
+                header_id: 0,
+                unit: reference(2, false),
+                kind: PmDcExpressionKind::Value {
+                    value: 60.96,
+                    value_type: 0,
+                    state: Some(0),
+                },
+            },
+            String::new(),
+            &token,
+            2,
+        );
+        let first = Located::new(
+            PmDcParameterPayload {
+                save_version_major: 22,
+                header: PmDcContentHeader {
+                    header_value: 0,
+                    header_id: 0,
+                    next: reference(0, false),
+                    flags: 0,
+                    context: reference(0, false),
+                    source_index: 0,
+                },
+                name: "width".into(),
+                name_value: 0,
+                unit: reference(2, false),
+                formula: reference(3, false),
+                nominal_value: 60.96,
+                model_value: 60.96,
+                tolerance: 0,
+                terminal_value: -1,
+            },
+            String::new(),
+            &token,
+            3,
+        );
+        let reference_expression = Located::new(
+            PmDcExpressionPayload {
+                save_version_major: 22,
+                header_value: 0,
+                header_id: 0,
+                unit: reference(2, false),
+                kind: PmDcExpressionKind::ParameterReference {
+                    operand: reference(4, true),
+                },
+            },
+            String::new(),
+            &token,
+            4,
+        );
+        let second = Located::new(
+            PmDcParameterPayload {
+                save_version_major: 22,
+                header: PmDcContentHeader {
+                    header_value: 0,
+                    header_id: 0,
+                    next: reference(0, false),
+                    flags: 0,
+                    context: reference(0, false),
+                    source_index: 1,
+                },
+                name: "height".into(),
+                name_value: 0,
+                unit: reference(2, false),
+                formula: reference(5, false),
+                nominal_value: 60.96,
+                model_value: 60.96,
+                tolerance: 0,
+                terminal_value: -1,
+            },
+            String::new(),
+            &token,
+            5,
+        );
         let inventory = DesignInventory {
             parameters: vec![first, second],
             expressions: vec![literal, reference_expression],

@@ -199,23 +199,32 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
     };
     unique(
         findings,
-        data.pm_dc_parameters
-            .iter()
-            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        data.pm_dc_parameters.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
         "Inventor PmDc parameter",
     );
     unique(
         findings,
-        data.pm_dc_expressions
-            .iter()
-            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        data.pm_dc_expressions.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
         "Inventor PmDc expression",
     );
     unique(
         findings,
-        data.pm_dc_units
-            .iter()
-            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        data.pm_dc_units.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
         "Inventor PmDc unit",
     );
     for parameter in &data.pm_dc_parameters {
@@ -225,18 +234,20 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
             parameter.unit.index,
             parameter.formula.index,
         ];
-        if raw.get(&(parameter.segment_token.as_str(), parameter.record_ordinal))
-            != Some(&parameter.type_id.as_str())
+        if raw.get(&(
+            parameter.identity.segment_token.as_str(),
+            parameter.identity.record_ordinal,
+        )) != Some(&parameter.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&parameter.segment_token, reference))
+                .any(|reference| !resolves(&parameter.identity.segment_token, reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc parameter record or reference does not resolve".into(),
                 Some(format!(
                     "inventor:pmdc:parameter#{}-{}",
-                    parameter.segment_token, parameter.record_ordinal
+                    parameter.identity.segment_token, parameter.identity.record_ordinal
                 )),
             ));
         }
@@ -252,18 +263,20 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
                 references.push(right.index);
             }
         }
-        if raw.get(&(expression.segment_token.as_str(), expression.record_ordinal))
-            != Some(&expression.type_id.as_str())
+        if raw.get(&(
+            expression.identity.segment_token.as_str(),
+            expression.identity.record_ordinal,
+        )) != Some(&expression.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&expression.segment_token, reference))
+                .any(|reference| !resolves(&expression.identity.segment_token, reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc expression record or reference does not resolve".into(),
                 Some(format!(
                     "inventor:pmdc:expression#{}-{}",
-                    expression.segment_token, expression.record_ordinal
+                    expression.identity.segment_token, expression.identity.record_ordinal
                 )),
             ));
         }
@@ -284,18 +297,20 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
                 .collect::<Vec<_>>(),
             PmDcUnitKind::Base { .. } => Vec::new(),
         };
-        if raw.get(&(unit.segment_token.as_str(), unit.record_ordinal))
-            != Some(&unit.type_id.as_str())
+        if raw.get(&(
+            unit.identity.segment_token.as_str(),
+            unit.identity.record_ordinal,
+        )) != Some(&unit.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&unit.segment_token, reference))
+                .any(|reference| !resolves(&unit.identity.segment_token, reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc unit record or reference does not resolve".into(),
                 Some(format!(
                     "inventor:pmdc:unit#{}-{}",
-                    unit.segment_token, unit.record_ordinal
+                    unit.identity.segment_token, unit.identity.record_ordinal
                 )),
             ));
         }
@@ -306,7 +321,7 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
         .map(|record| {
             format!(
                 "inventor:pmdc:parameter#{}-{}",
-                record.segment_token, record.record_ordinal
+                record.identity.segment_token, record.identity.record_ordinal
             )
         })
         .collect::<HashSet<_>>();
@@ -356,37 +371,52 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
     };
     unique(
         findings,
-        data.pm_dc_sketches
-            .iter()
-            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        data.pm_dc_sketches.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
         "Inventor PmDc sketch",
     );
     unique(
         findings,
-        data.pm_dc_sketch_entities
-            .iter()
-            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        data.pm_dc_sketch_entities.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
         "Inventor PmDc sketch entity",
     );
     unique(
         findings,
-        data.pm_dc_transforms
-            .iter()
-            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        data.pm_dc_transforms.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
         "Inventor PmDc transform",
     );
     unique(
         findings,
-        data.pm_dc_sketch_constraints
-            .iter()
-            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        data.pm_dc_sketch_constraints.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
         "Inventor PmDc sketch constraint",
     );
     unique(
         findings,
-        data.pm_dc_directions
-            .iter()
-            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        data.pm_dc_directions.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
         "Inventor PmDc direction",
     );
     for sketch in &data.pm_dc_sketches {
@@ -413,15 +443,15 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
         )
         .collect::<Vec<_>>();
         if !record_is_exact(
-            &sketch.segment_token,
-            sketch.record_ordinal,
-            &sketch.type_id,
-        ) || !references_resolve(&sketch.segment_token, &references)
+            &sketch.identity.segment_token,
+            sketch.identity.record_ordinal,
+            &sketch.identity.type_id,
+        ) || !references_resolve(&sketch.identity.segment_token, &references)
         {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc sketch record or reference does not resolve".into(),
-                Some(sketch.id.clone()),
+                Some(sketch.id()),
             ));
         }
     }
@@ -475,31 +505,31 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             }
         }
         if !record_is_exact(
-            &entity.segment_token,
-            entity.record_ordinal,
-            &entity.type_id,
-        ) || !references_resolve(&entity.segment_token, &references)
+            &entity.identity.segment_token,
+            entity.identity.record_ordinal,
+            &entity.identity.type_id,
+        ) || !references_resolve(&entity.identity.segment_token, &references)
         {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc sketch-entity record or reference does not resolve".into(),
-                Some(entity.id.clone()),
+                Some(entity.id()),
             ));
         }
     }
     for transform in &data.pm_dc_transforms {
         if !record_is_exact(
-            &transform.segment_token,
-            transform.record_ordinal,
-            &transform.type_id,
+            &transform.identity.segment_token,
+            transform.identity.record_ordinal,
+            &transform.identity.type_id,
         ) || !references_resolve(
-            &transform.segment_token,
+            &transform.identity.segment_token,
             &[transform.header.next.index, transform.header.context.index],
         ) {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc transform record or reference does not resolve".into(),
-                Some(transform.id.clone()),
+                Some(transform.id()),
             ));
         }
     }
@@ -554,48 +584,48 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
             }
         }
         if !record_is_exact(
-            &constraint.segment_token,
-            constraint.record_ordinal,
-            &constraint.type_id,
-        ) || !references_resolve(&constraint.segment_token, &references)
+            &constraint.identity.segment_token,
+            constraint.identity.record_ordinal,
+            &constraint.identity.type_id,
+        ) || !references_resolve(&constraint.identity.segment_token, &references)
         {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc sketch-constraint record or reference does not resolve".into(),
-                Some(constraint.id.clone()),
+                Some(constraint.id()),
             ));
         }
     }
     for direction in &data.pm_dc_directions {
         if !record_is_exact(
-            &direction.segment_token,
-            direction.record_ordinal,
-            &direction.type_id,
+            &direction.identity.segment_token,
+            direction.identity.record_ordinal,
+            &direction.identity.type_id,
         ) || !references_resolve(
-            &direction.segment_token,
+            &direction.identity.segment_token,
             &[direction.header.next.index, direction.header.context.index],
         ) {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc direction record or reference does not resolve".into(),
-                Some(direction.id.clone()),
+                Some(direction.id()),
             ));
         }
     }
     let native_sketches = data
         .pm_dc_sketches
         .iter()
-        .map(|record| record.id.as_str())
+        .map(|record| record.id())
         .collect::<HashSet<_>>();
     let native_entities = data
         .pm_dc_sketch_entities
         .iter()
-        .map(|record| record.id.as_str())
+        .map(|record| record.id())
         .collect::<HashSet<_>>();
     let native_constraints = data
         .pm_dc_sketch_constraints
         .iter()
-        .map(|record| record.id.as_str())
+        .map(|record| record.id())
         .collect::<HashSet<_>>();
     for sketch in &ir.model.sketches {
         if sketch
@@ -666,37 +696,52 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
     };
     unique(
         findings,
-        data.pm_dc_features
-            .iter()
-            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        data.pm_dc_features.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
         "Inventor PmDc feature",
     );
     unique(
         findings,
-        data.pm_dc_feature_terminators
-            .iter()
-            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        data.pm_dc_feature_terminators.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
         "Inventor PmDc feature terminator",
     );
     unique(
         findings,
-        data.pm_dc_pattern_features
-            .iter()
-            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        data.pm_dc_pattern_features.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
         "Inventor PmDc pattern feature",
     );
     unique(
         findings,
-        data.pm_dc_feature_properties
-            .iter()
-            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        data.pm_dc_feature_properties.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
         "Inventor PmDc feature property",
     );
     unique(
         findings,
-        data.pm_dc_feature_labels
-            .iter()
-            .map(|record| (record.segment_token.as_str(), record.record_ordinal)),
+        data.pm_dc_feature_labels.iter().map(|record| {
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
+        }),
         "Inventor PmDc feature label",
     );
     for feature in &data.pm_dc_features {
@@ -709,16 +754,18 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
                     .iter()
                     .map(|reference| reference.index),
             );
-        if raw.get(&(feature.segment_token.as_str(), feature.record_ordinal))
-            != Some(&feature.type_id.as_str())
+        if raw.get(&(
+            feature.identity.segment_token.as_str(),
+            feature.identity.record_ordinal,
+        )) != Some(&feature.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&feature.segment_token, reference))
+                .any(|reference| !resolves(&feature.identity.segment_token, reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc feature record or reference does not resolve".into(),
-                Some(feature.id.clone()),
+                Some(feature.id()),
             ));
         }
     }
@@ -745,16 +792,18 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
                     .iter()
                     .map(|reference| reference.index),
             );
-        if raw.get(&(feature.segment_token.as_str(), feature.record_ordinal))
-            != Some(&feature.type_id.as_str())
+        if raw.get(&(
+            feature.identity.segment_token.as_str(),
+            feature.identity.record_ordinal,
+        )) != Some(&feature.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&feature.segment_token, reference))
+                .any(|reference| !resolves(&feature.identity.segment_token, reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc pattern-feature record or reference does not resolve".into(),
-                Some(feature.id.clone()),
+                Some(feature.id()),
             ));
         }
     }
@@ -785,16 +834,18 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             | PmDcFeaturePropertyKind::RdxVariable { .. }
             | PmDcFeaturePropertyKind::EdgeItem { .. } => {}
         }
-        if raw.get(&(property.segment_token.as_str(), property.record_ordinal))
-            != Some(&property.type_id.as_str())
+        if raw.get(&(
+            property.identity.segment_token.as_str(),
+            property.identity.record_ordinal,
+        )) != Some(&property.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&property.segment_token, reference))
+                .any(|reference| !resolves(&property.identity.segment_token, reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc feature-property record or reference does not resolve".into(),
-                Some(property.id.clone()),
+                Some(property.id()),
             ));
         }
     }
@@ -804,16 +855,18 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             link.header.parent.index,
             link.header.next.index,
         ];
-        if raw.get(&(link.segment_token.as_str(), link.record_ordinal))
-            != Some(&link.type_id.as_str())
+        if raw.get(&(
+            link.identity.segment_token.as_str(),
+            link.identity.record_ordinal,
+        )) != Some(&link.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&link.segment_token, reference))
+                .any(|reference| !resolves(&link.identity.segment_token, reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc entity-style-link record or reference does not resolve".into(),
-                Some(link.id.clone()),
+                Some(link.id()),
             ));
         }
     }
@@ -831,18 +884,20 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
                 .iter()
                 .map(|reference| reference.index),
         );
-        if raw.get(&(label.segment_token.as_str(), label.record_ordinal))
-            != Some(&label.type_id.as_str())
+        if raw.get(&(
+            label.identity.segment_token.as_str(),
+            label.identity.record_ordinal,
+        )) != Some(&label.identity.type_id.as_str())
             || label.name.is_empty()
             || label.class_id.len() != 32
             || references
                 .into_iter()
-                .any(|reference| !resolves(&label.segment_token, reference))
+                .any(|reference| !resolves(&label.identity.segment_token, reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc feature-label record or reference does not resolve".into(),
-                Some(label.id.clone()),
+                Some(label.id()),
             ));
         }
     }
@@ -851,23 +906,25 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             terminator.header.next.index,
             terminator.header.context.index,
         ];
-        if raw.get(&(terminator.segment_token.as_str(), terminator.record_ordinal))
-            != Some(&terminator.type_id.as_str())
+        if raw.get(&(
+            terminator.identity.segment_token.as_str(),
+            terminator.identity.record_ordinal,
+        )) != Some(&terminator.identity.type_id.as_str())
             || references
                 .into_iter()
-                .any(|reference| !resolves(&terminator.segment_token, reference))
+                .any(|reference| !resolves(&terminator.identity.segment_token, reference))
         {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor PmDc feature-terminator record or reference does not resolve".into(),
-                Some(terminator.id.clone()),
+                Some(terminator.id()),
             ));
         }
     }
     let raw_features = data
         .pm_dc_features
         .iter()
-        .map(|feature| (feature.id.as_str(), feature))
+        .map(|feature| (feature.id(), feature))
         .collect::<HashMap<_, _>>();
     let labels = data
         .pm_dc_feature_labels
@@ -875,7 +932,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         .filter_map(|label| {
             Some((
                 (
-                    label.segment_token.as_str(),
+                    label.identity.segment_token.as_str(),
                     label.header.owner.index.checked_sub(1)?,
                 ),
                 label,
@@ -885,14 +942,17 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
     let properties = data
         .pm_dc_feature_properties
         .iter()
-        .map(|property| (property.id.as_str(), property))
+        .map(|property| (property.id(), property))
         .collect::<HashMap<_, _>>();
     let properties_by_record = data
         .pm_dc_feature_properties
         .iter()
         .map(|property| {
             (
-                (property.segment_token.as_str(), property.record_ordinal),
+                (
+                    property.identity.segment_token.as_str(),
+                    property.identity.record_ordinal,
+                ),
                 property,
             )
         })
@@ -934,8 +994,8 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
         if expected_class.is_empty()
             || labels
                 .get(&(
-                    raw_feature.segment_token.as_str(),
-                    raw_feature.record_ordinal,
+                    raw_feature.identity.segment_token.as_str(),
+                    raw_feature.identity.record_ordinal,
                 ))
                 .is_none_or(|label| label.class_id != expected_class)
         {
@@ -952,14 +1012,14 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             .and_then(|reference| reference.index.checked_sub(1))
             .and_then(|ordinal| {
                 properties_by_record
-                    .get(&(raw_feature.segment_token.as_str(), ordinal))
+                    .get(&(raw_feature.identity.segment_token.as_str(), ordinal))
                     .copied()
             });
         if expected_collection.is_none_or(|collection| {
             results
                 .get(&feature.id)
                 .and_then(|result| result.native_ref.as_deref())
-                != Some(collection.id.as_str())
+                != Some(collection.id().as_str())
         }) {
             findings.push(finding(
                 Check::NativeLinks,
@@ -999,11 +1059,11 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             .filter_map(|reference| {
                 let ordinal = reference.index.checked_sub(1)?;
                 properties_by_record
-                    .get(&(collection.segment_token.as_str(), ordinal))
+                    .get(&(collection.identity.segment_token.as_str(), ordinal))
                     .filter(|property| {
                         matches!(property.kind, PmDcFeaturePropertyKind::SurfaceBody { .. })
                     })
-                    .map(|property| property.id.as_str())
+                    .map(|property| property.id())
             })
             .collect::<Vec<_>>();
         if expected_bodies.len() != items.references().len()

@@ -20,6 +20,7 @@ use crate::pmdc::{
     content_header, reference_list, type_id_string, u32_list, Cursor, PmDcContentHeader,
     PmDcReferenceList, PmDcU32List,
 };
+use crate::record_identity::{Located, RecordPayload};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 use crate::{design::DesignInventory, sketch::SketchInventory};
@@ -121,11 +122,7 @@ pub(crate) struct FeatureProjection {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct PmDcFeatureProperty {
-    pub(crate) id: String,
-    pub(crate) type_id: String,
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
+pub(crate) struct PmDcFeaturePropertyPayload {
     pub(crate) save_version_major: u8,
     pub(crate) header: PmDcContentHeader,
     pub(crate) kind: PmDcFeaturePropertyKind,
@@ -209,11 +206,7 @@ pub(crate) enum PmDcPatternFamily {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct PmDcPatternFeature {
-    pub(crate) id: String,
-    pub(crate) type_id: String,
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
+pub(crate) struct PmDcPatternFeaturePayload {
     pub(crate) save_version_major: u8,
     pub(crate) header: PmDcContentHeader,
     pub(crate) state: i32,
@@ -248,11 +241,7 @@ pub(crate) struct PmDcLinkedHeader {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct PmDcFeatureLabel {
-    pub(crate) id: String,
-    pub(crate) type_id: String,
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
+pub(crate) struct PmDcFeatureLabelPayload {
     pub(crate) save_version_major: u8,
     pub(crate) header: PmDcLinkedHeader,
     pub(crate) index: u32,
@@ -262,11 +251,7 @@ pub(crate) struct PmDcFeatureLabel {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct PmDcEntityStyleLink {
-    pub(crate) id: String,
-    pub(crate) type_id: String,
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
+pub(crate) struct PmDcEntityStyleLinkPayload {
     pub(crate) save_version_major: u8,
     pub(crate) header: PmDcLinkedHeader,
     pub(crate) value: u32,
@@ -275,11 +260,7 @@ pub(crate) struct PmDcEntityStyleLink {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct PmDcFeature {
-    pub(crate) id: String,
-    pub(crate) type_id: String,
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
+pub(crate) struct PmDcFeaturePayload {
     pub(crate) save_version_major: u8,
     pub(crate) header: PmDcContentHeader,
     pub(crate) state: i32,
@@ -289,11 +270,7 @@ pub(crate) struct PmDcFeature {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct PmDcFeatureTerminator {
-    pub(crate) id: String,
-    pub(crate) type_id: String,
-    pub(crate) segment_token: String,
-    pub(crate) record_ordinal: u32,
+pub(crate) struct PmDcFeatureTerminatorPayload {
     pub(crate) save_version_major: u8,
     pub(crate) header: PmDcContentHeader,
     pub(crate) state: i32,
@@ -330,16 +307,13 @@ pub(crate) fn inventory(
         };
         for record in &table.records {
             let parsed = match record.type_id {
-                FEATURE_TYPE => parse_feature(ctx, record.payload, version).map(|mut feature| {
-                    feature.id = format!(
-                        "inventor:pmdc:feature#{}-{}",
+                FEATURE_TYPE => parse_feature(ctx, record.payload, version).map(|feature| {
+                    inventory.features.push(Located::new(
+                        feature,
+                        type_id_string(record.type_id),
                         segment.pair.token.as_str(),
-                        record.ordinal
-                    );
-                    feature.type_id = type_id_string(record.type_id);
-                    feature.segment_token = segment.pair.token.as_str().into();
-                    feature.record_ordinal = record.ordinal;
-                    inventory.features.push(feature);
+                        record.ordinal,
+                    ));
                 }),
                 RECTANGULAR_PATTERN_FEATURE_TYPE | MIRROR_FEATURE_TYPE => {
                     let family = if record.type_id == RECTANGULAR_PATTERN_FEATURE_TYPE {
@@ -347,82 +321,56 @@ pub(crate) fn inventory(
                     } else {
                         PmDcPatternFamily::Mirror
                     };
-                    parse_pattern_feature(ctx, record.payload, version, family).map(
-                        |mut feature| {
-                            feature.id = format!(
-                                "inventor:pmdc:pattern-feature#{}-{}",
-                                segment.pair.token.as_str(),
-                                record.ordinal
-                            );
-                            feature.type_id = type_id_string(record.type_id);
-                            feature.segment_token = segment.pair.token.as_str().into();
-                            feature.record_ordinal = record.ordinal;
-                            inventory.pattern_features.push(feature);
-                        },
-                    )
-                }
-                END_OF_FEATURES_TYPE => {
-                    parse_terminator(record.payload, version).map(|mut terminator| {
-                        terminator.id = format!(
-                            "inventor:pmdc:feature-terminator#{}-{}",
+                    parse_pattern_feature(ctx, record.payload, version, family).map(|feature| {
+                        inventory.pattern_features.push(Located::new(
+                            feature,
+                            type_id_string(record.type_id),
                             segment.pair.token.as_str(),
-                            record.ordinal
-                        );
-                        terminator.type_id = type_id_string(record.type_id);
-                        terminator.segment_token = segment.pair.token.as_str().into();
-                        terminator.record_ordinal = record.ordinal;
-                        inventory.terminators.push(terminator);
+                            record.ordinal,
+                        ));
                     })
                 }
-                FEATURE_LABEL_TYPE => parse_label(ctx, record.payload, version).map(|mut label| {
+                END_OF_FEATURES_TYPE => {
+                    parse_terminator(record.payload, version).map(|terminator| {
+                        inventory.terminators.push(Located::new(
+                            terminator,
+                            type_id_string(record.type_id),
+                            segment.pair.token.as_str(),
+                            record.ordinal,
+                        ));
+                    })
+                }
+                FEATURE_LABEL_TYPE => parse_label(ctx, record.payload, version).map(|label| {
                     if label.name.is_empty() {
                         return;
                     }
-                    (
-                        label.id,
-                        label.type_id,
-                        label.segment_token,
-                        label.record_ordinal,
-                    ) = identity(
-                        "feature-label",
+                    inventory.labels.push(Located::new(
+                        label,
+                        type_id_string(record.type_id),
                         segment.pair.token.as_str(),
                         record.ordinal,
-                        record.type_id,
-                    );
-                    inventory.labels.push(label);
+                    ));
                 }),
                 ENTITY_STYLE_LINK_TYPE => {
-                    parse_entity_style_link(record.payload, version).map(|mut link| {
-                        (
-                            link.id,
-                            link.type_id,
-                            link.segment_token,
-                            link.record_ordinal,
-                        ) = identity(
-                            "entity-style-link",
+                    parse_entity_style_link(record.payload, version).map(|link| {
+                        inventory.entity_style_links.push(Located::new(
+                            link,
+                            type_id_string(record.type_id),
                             segment.pair.token.as_str(),
                             record.ordinal,
-                            record.type_id,
-                        );
-                        inventory.entity_style_links.push(link);
+                        ));
                     })
                 }
                 type_id => feature_property_parser(type_id).map_or_else(
                     || Ok(()),
                     |parser| {
-                        parser(ctx, record.payload, version).map(|mut property| {
-                            (
-                                property.id,
-                                property.type_id,
-                                property.segment_token,
-                                property.record_ordinal,
-                            ) = identity(
-                                "feature-property",
+                        parser(ctx, record.payload, version).map(|property| {
+                            inventory.properties.push(Located::new(
+                                property,
+                                type_id_string(record.type_id),
                                 segment.pair.token.as_str(),
                                 record.ordinal,
-                                record.type_id,
-                            );
-                            inventory.properties.push(property);
+                            ));
                         })
                     },
                 ),
@@ -459,7 +407,7 @@ fn parse_pattern_feature(
     source: View<'_>,
     version: u8,
     family: PmDcPatternFamily,
-) -> Result<PmDcPatternFeature, CodecError> {
+) -> Result<PmDcPatternFeaturePayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
     let state = cursor.u32("pattern-feature state")? as i32;
@@ -501,11 +449,7 @@ fn parse_pattern_feature(
         }
     }
     cursor.finish("pattern feature")?;
-    Ok(PmDcPatternFeature {
-        id: String::new(),
-        type_id: String::new(),
-        segment_token: String::new(),
-        record_ordinal: 0,
+    Ok(PmDcPatternFeaturePayload {
         save_version_major: version,
         header,
         state,
@@ -524,7 +468,7 @@ fn parse_feature(
     ctx: &DecodeContext<'_>,
     source: View<'_>,
     version: u8,
-) -> Result<PmDcFeature, CodecError> {
+) -> Result<PmDcFeaturePayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
     let state = cursor.u32("feature state")? as i32;
@@ -532,11 +476,7 @@ fn parse_feature(
     let properties = reference_list(ctx, &mut cursor, 2, "feature property list")?;
     let value = cursor.u32("feature value")?;
     cursor.finish("feature")?;
-    Ok(PmDcFeature {
-        id: String::new(),
-        type_id: String::new(),
-        segment_token: String::new(),
-        record_ordinal: 0,
+    Ok(PmDcFeaturePayload {
         save_version_major: version,
         header,
         state,
@@ -546,16 +486,15 @@ fn parse_feature(
     })
 }
 
-fn parse_terminator(source: View<'_>, version: u8) -> Result<PmDcFeatureTerminator, CodecError> {
+fn parse_terminator(
+    source: View<'_>,
+    version: u8,
+) -> Result<PmDcFeatureTerminatorPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
     let state = cursor.u32("feature-terminator state")? as i32;
     cursor.finish("feature terminator")?;
-    Ok(PmDcFeatureTerminator {
-        id: String::new(),
-        type_id: String::new(),
-        segment_token: String::new(),
-        record_ordinal: 0,
+    Ok(PmDcFeatureTerminatorPayload {
         save_version_major: version,
         header,
         state,
@@ -563,7 +502,7 @@ fn parse_terminator(source: View<'_>, version: u8) -> Result<PmDcFeatureTerminat
 }
 
 type PropertyParser =
-    for<'a> fn(&DecodeContext<'a>, View<'a>, u8) -> Result<PmDcFeatureProperty, CodecError>;
+    for<'a> fn(&DecodeContext<'a>, View<'a>, u8) -> Result<PmDcFeaturePropertyPayload, CodecError>;
 
 fn feature_property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
     match type_id {
@@ -590,30 +529,12 @@ fn feature_property_parser(type_id: [u8; 16]) -> Option<PropertyParser> {
     }
 }
 
-fn identity(
-    family: &str,
-    segment_token: &str,
-    record_ordinal: u32,
-    type_id: [u8; 16],
-) -> (String, String, String, u32) {
-    (
-        format!("inventor:pmdc:{family}#{segment_token}-{record_ordinal}"),
-        type_id_string(type_id),
-        segment_token.into(),
-        record_ordinal,
-    )
-}
-
 fn property(
     version: u8,
     header: PmDcContentHeader,
     kind: PmDcFeaturePropertyKind,
-) -> PmDcFeatureProperty {
-    PmDcFeatureProperty {
-        id: String::new(),
-        type_id: String::new(),
-        segment_token: String::new(),
-        record_ordinal: 0,
+) -> PmDcFeaturePropertyPayload {
+    PmDcFeaturePropertyPayload {
         save_version_major: version,
         header,
         kind,
@@ -624,7 +545,7 @@ fn parse_enumeration(
     source: View<'_>,
     version: u8,
     family: PmDcFeatureEnumFamily,
-) -> Result<PmDcFeatureProperty, CodecError> {
+) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
     let type_value = cursor.i16("feature enumeration type")?;
@@ -647,7 +568,7 @@ macro_rules! enum_parser {
             _: &DecodeContext<'_>,
             source: View<'_>,
             version: u8,
-        ) -> Result<PmDcFeatureProperty, CodecError> {
+        ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
             parse_enumeration(source, version, PmDcFeatureEnumFamily::$family)
         }
     };
@@ -663,7 +584,7 @@ fn parse_chamfer(
     _: &DecodeContext<'_>,
     source: View<'_>,
     version: u8,
-) -> Result<PmDcFeatureProperty, CodecError> {
+) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
     let type_value = cursor.i16("chamfer enumeration type")?;
@@ -690,7 +611,7 @@ fn parse_fillet_edge_selection(
     _: &DecodeContext<'_>,
     source: View<'_>,
     version: u8,
-) -> Result<PmDcFeatureProperty, CodecError> {
+) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
     let type_value = cursor.u32("fillet edge-selection enumeration type")?;
@@ -711,7 +632,7 @@ fn parse_boolean(
     ctx: &DecodeContext<'_>,
     source: View<'_>,
     version: u8,
-) -> Result<PmDcFeatureProperty, CodecError> {
+) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
     let name = cursor.utf16(ctx, "feature Boolean name")?;
@@ -739,7 +660,7 @@ fn parse_references(
     source: View<'_>,
     version: u8,
     family: PmDcFeatureReferenceFamily,
-) -> Result<PmDcFeatureProperty, CodecError> {
+) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
     let items = reference_list(ctx, &mut cursor, 2, "feature-property references")?;
@@ -757,7 +678,7 @@ macro_rules! reference_parser {
             ctx: &DecodeContext<'_>,
             source: View<'_>,
             version: u8,
-        ) -> Result<PmDcFeatureProperty, CodecError> {
+        ) -> Result<PmDcFeaturePropertyPayload, CodecError> {
             parse_references(ctx, source, version, PmDcFeatureReferenceFamily::$family)
         }
     };
@@ -773,7 +694,7 @@ fn parse_rdx_variable(
     ctx: &DecodeContext<'_>,
     source: View<'_>,
     version: u8,
-) -> Result<PmDcFeatureProperty, CodecError> {
+) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
     let name = cursor.utf16(ctx, "feature RDx variable name")?;
@@ -797,7 +718,7 @@ fn parse_surface_body(
     _: &DecodeContext<'_>,
     source: View<'_>,
     version: u8,
-) -> Result<PmDcFeatureProperty, CodecError> {
+) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
     let body = cursor.reference("feature surface-body reference")?;
@@ -813,7 +734,7 @@ fn parse_profile_selection(
     _: &DecodeContext<'_>,
     source: View<'_>,
     version: u8,
-) -> Result<PmDcFeatureProperty, CodecError> {
+) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
     let entity_link = cursor.reference("profile-selection entity link")?;
@@ -829,18 +750,14 @@ fn parse_profile_selection(
 fn parse_entity_style_link(
     source: View<'_>,
     version: u8,
-) -> Result<PmDcEntityStyleLink, CodecError> {
+) -> Result<PmDcEntityStyleLinkPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = linked_header(&mut cursor)?;
     let value = cursor.u32("entity-style-link value")?;
     let associative_id = cursor.u32("entity-style-link associative id")?;
     let entity_type = cursor.u32("entity-style-link entity type")?;
     cursor.finish("entity-style link")?;
-    Ok(PmDcEntityStyleLink {
-        id: String::new(),
-        type_id: String::new(),
-        segment_token: String::new(),
-        record_ordinal: 0,
+    Ok(PmDcEntityStyleLinkPayload {
         save_version_major: version,
         header,
         value,
@@ -853,7 +770,7 @@ fn parse_placement(
     _: &DecodeContext<'_>,
     source: View<'_>,
     version: u8,
-) -> Result<PmDcFeatureProperty, CodecError> {
+) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
     let transform = cursor.reference("feature placement transform")?;
@@ -875,7 +792,7 @@ fn parse_fillet_edge_set(
     _: &DecodeContext<'_>,
     source: View<'_>,
     version: u8,
-) -> Result<PmDcFeatureProperty, CodecError> {
+) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
     let edges = cursor.reference("fillet edge-set collection")?;
@@ -899,7 +816,7 @@ fn parse_edge_item(
     ctx: &DecodeContext<'_>,
     source: View<'_>,
     version: u8,
-) -> Result<PmDcFeatureProperty, CodecError> {
+) -> Result<PmDcFeaturePropertyPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = content_header(&mut cursor)?;
     let index_references = u32_list(ctx, &mut cursor, 2, "edge-item index references")?;
@@ -939,7 +856,7 @@ fn parse_label(
     ctx: &DecodeContext<'_>,
     source: View<'_>,
     version: u8,
-) -> Result<PmDcFeatureLabel, CodecError> {
+) -> Result<PmDcFeatureLabelPayload, CodecError> {
     let mut cursor = Cursor::new(source);
     let header = linked_header(&mut cursor)?;
     let index = cursor.u32("feature-label index")?;
@@ -952,11 +869,7 @@ fn parse_label(
             .expect("sixteen-byte class id"),
     );
     cursor.finish("feature label")?;
-    Ok(PmDcFeatureLabel {
-        id: String::new(),
-        type_id: String::new(),
-        segment_token: String::new(),
-        record_ordinal: 0,
+    Ok(PmDcFeatureLabelPayload {
         save_version_major: version,
         header,
         index,
@@ -996,12 +909,12 @@ pub(crate) fn project(
     let feature_tokens = inventory
         .features
         .iter()
-        .map(|feature| feature.segment_token.as_str())
+        .map(|feature| feature.identity.segment_token.as_str())
         .chain(
             inventory
                 .pattern_features
                 .iter()
-                .map(|feature| feature.segment_token.as_str()),
+                .map(|feature| feature.identity.segment_token.as_str()),
         )
         .collect::<HashSet<_>>();
     if feature_tokens.len() > 1 {
@@ -1015,10 +928,16 @@ pub(crate) fn project(
 
     let index = ProjectionIndex {
         properties: unique_by_key(&inventory.properties, |record| {
-            (record.segment_token.as_str(), record.record_ordinal)
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
         }),
         parameters: unique_by_key(&design.parameters, |record| {
-            (record.segment_token.as_str(), record.record_ordinal)
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
         }),
         parameter_values: parameters
             .iter()
@@ -1027,7 +946,10 @@ pub(crate) fn project(
             })
             .collect(),
         sketches: unique_by_key(&sketch.sketches, |record| {
-            (record.segment_token.as_str(), record.record_ordinal)
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
         }),
         sketch_ids: sketches
             .iter()
@@ -1039,27 +961,40 @@ pub(crate) fn project(
             })
             .collect(),
         directions: unique_by_key(&sketch.directions, |record| {
-            (record.segment_token.as_str(), record.record_ordinal)
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
         }),
         transforms: unique_by_key(&sketch.transforms, |record| {
-            (record.segment_token.as_str(), record.record_ordinal)
+            (
+                record.identity.segment_token.as_str(),
+                record.identity.record_ordinal,
+            )
         }),
         entity_style_links: inventory
             .entity_style_links
             .iter()
-            .map(|record| (record.segment_token.as_str(), record.record_ordinal))
+            .map(|record| {
+                (
+                    record.identity.segment_token.as_str(),
+                    record.identity.record_ordinal,
+                )
+            })
             .collect(),
     };
     let labels = unique_by_key(&inventory.labels, |label| {
         (
-            label.segment_token.as_str(),
+            label.identity.segment_token.as_str(),
             label.header.owner.index.saturating_sub(1),
         )
     });
     let mut projected = Vec::new();
     for feature in &inventory.features {
-        let Some(label) = labels.get(&(feature.segment_token.as_str(), feature.record_ordinal))
-        else {
+        let Some(label) = labels.get(&(
+            feature.identity.segment_token.as_str(),
+            feature.identity.record_ordinal,
+        )) else {
             continue;
         };
         let value = match label.class_id.as_str() {
@@ -1115,7 +1050,8 @@ fn project_extrusion(
         .references()
         .iter()
         .map(|reference| {
-            let property = resolve_property(&source.segment_token, reference.index, index)?;
+            let property =
+                resolve_property(&source.identity.segment_token, reference.index, index)?;
             let PmDcFeaturePropertyKind::ProfileSelection { entity_link, .. } = &property.kind
             else {
                 return None;
@@ -1123,8 +1059,8 @@ fn project_extrusion(
             let ordinal = entity_link.index.checked_sub(1)?;
             index
                 .entity_style_links
-                .contains(&(source.segment_token.as_str(), ordinal))
-                .then(|| property.id.clone())
+                .contains(&(source.identity.segment_token.as_str(), ordinal))
+                .then(|| property.id())
         })
         .collect::<Option<Vec<_>>>()?;
     if selections.is_empty() || label.participants.references().len() != 1 {
@@ -1132,10 +1068,10 @@ fn project_extrusion(
     }
     let sketch_reference = label.participants.references().first()?;
     let sketch = index.sketches.get(&(
-        source.segment_token.as_str(),
+        source.identity.segment_token.as_str(),
         sketch_reference.index.checked_sub(1)?,
     ))?;
-    let sketch_id = index.sketch_ids.get(sketch.id.as_str())?.clone();
+    let sketch_id = index.sketch_ids.get(sketch.id().as_str())?.clone();
 
     let direction_record = resolve_direction(source, 2, index)?;
     let mut direction = Vector3::new(
@@ -1194,7 +1130,7 @@ fn project_extrusion(
             length_along_profile_normal: None,
             allow_multi_profile_faces: None,
         },
-        native_ref: Some(source.id.clone()),
+        native_ref: Some(source.id()),
     };
     Some((feature, result))
 }
@@ -1215,7 +1151,7 @@ fn project_fillet(
         .references()
         .iter()
         .map(|reference| {
-            let set = resolve_property(&source.segment_token, reference.index, index)?;
+            let set = resolve_property(&source.identity.segment_token, reference.index, index)?;
             let PmDcFeaturePropertyKind::FilletEdgeSet {
                 edges,
                 radius,
@@ -1225,7 +1161,8 @@ fn project_fillet(
             else {
                 return None;
             };
-            let selection = resolve_property(&source.segment_token, selection.index, index)?;
+            let selection =
+                resolve_property(&source.identity.segment_token, selection.index, index)?;
             if !matches!(
                 selection.kind,
                 PmDcFeaturePropertyKind::WideEnumeration {
@@ -1234,12 +1171,13 @@ fn project_fillet(
                     value: 0
                 }
             ) || !matches!(
-                resolve_property(&source.segment_token, continuity.index, index)?.kind,
+                resolve_property(&source.identity.segment_token, continuity.index, index)?.kind,
                 PmDcFeaturePropertyKind::Boolean { value: false, .. }
             ) {
                 return None;
             }
-            let edge_collection = resolve_property(&source.segment_token, edges.index, index)?;
+            let edge_collection =
+                resolve_property(&source.identity.segment_token, edges.index, index)?;
             let PmDcFeaturePropertyKind::References {
                 family: PmDcFeatureReferenceFamily::EdgeCollection,
                 items,
@@ -1247,13 +1185,13 @@ fn project_fillet(
             else {
                 return None;
             };
-            if !closed_edge_items(&source.segment_token, items, index) {
+            if !closed_edge_items(&source.identity.segment_token, items, index) {
                 return None;
             }
             Some(FilletGroup {
-                edges: EdgeSelection::Native(edge_collection.id.clone()),
+                edges: EdgeSelection::Native(edge_collection.id()),
                 radius: RadiusSpec::Constant {
-                    radius: length_reference(&source.segment_token, radius.index, index)?,
+                    radius: length_reference(&source.identity.segment_token, radius.index, index)?,
                 },
                 tangency_weight: None,
             })
@@ -1276,7 +1214,7 @@ fn project_fillet(
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Fillet { groups },
-            native_ref: Some(source.id.clone()),
+            native_ref: Some(source.id()),
         },
         result,
     ))
@@ -1298,7 +1236,7 @@ fn project_chamfer(
     else {
         return None;
     };
-    if !closed_edge_items(&source.segment_token, items, index) {
+    if !closed_edge_items(&source.identity.segment_token, items, index) {
         return None;
     }
     let (feature_id, result) = feature_result(source, 11, index)?;
@@ -1316,14 +1254,14 @@ fn project_chamfer(
             outputs: Vec::new(),
             definition: FeatureDefinition::Chamfer {
                 groups: vec![ChamferGroup {
-                    edges: EdgeSelection::Native(edges.id.clone()),
+                    edges: EdgeSelection::Native(edges.id()),
                     spec: ChamferSpec::Distance {
                         distance: length_parameter(source, 2, index)?,
                     },
                 }],
                 flip_direction: boolean(source, 5, index)?,
             },
-            native_ref: Some(source.id.clone()),
+            native_ref: Some(source.id()),
         },
         result,
     ))
@@ -1372,7 +1310,7 @@ fn project_hole(
     };
     let transform_reference = source.properties.references().get(8)?;
     let transform = index.transforms.get(&(
-        source.segment_token.as_str(),
+        source.identity.segment_token.as_str(),
         transform_reference.index.checked_sub(1)?,
     ))?;
     if transform.matrix[3]
@@ -1441,7 +1379,7 @@ fn project_hole(
                 taper_angle: None,
                 allow_multi_profile_faces: None,
             },
-            native_ref: Some(source.id.clone()),
+            native_ref: Some(source.id()),
         },
         result,
     ))
@@ -1464,9 +1402,8 @@ fn feature_result(
         .references()
         .iter()
         .map(|reference| {
-            let body = resolve_property(&source.segment_token, reference.index, index)?;
-            matches!(body.kind, PmDcFeaturePropertyKind::SurfaceBody { .. })
-                .then(|| body.id.clone())
+            let body = resolve_property(&source.identity.segment_token, reference.index, index)?;
+            matches!(body.kind, PmDcFeaturePropertyKind::SurfaceBody { .. }).then(|| body.id())
         })
         .collect::<Option<Vec<_>>>()?;
     if bodies.is_empty() {
@@ -1474,13 +1411,13 @@ fn feature_result(
     }
     let feature_id = FeatureId::mint(format!(
         "inventor:design:feature#{}-{}",
-        source.segment_token, source.record_ordinal
+        source.identity.segment_token, source.identity.record_ordinal
     ))
     .expect("identity grammar");
     let result = FeatureResultTopology {
         id: FeatureResultTopologyId::mint(format!(
             "inventor:design:feature-result#{}-{}",
-            source.segment_token, source.record_ordinal
+            source.identity.segment_token, source.identity.record_ordinal
         ))
         .expect("identity grammar"),
         output_of: feature_id.clone(),
@@ -1488,7 +1425,7 @@ fn feature_result(
         faces: Vec::new(),
         edges: Vec::new(),
         vertices: Vec::new(),
-        native_ref: Some(collection.id.clone()),
+        native_ref: Some(collection.id()),
     };
     Some((feature_id, result))
 }
@@ -1514,7 +1451,7 @@ fn slot_property<'a>(
     index: &'a ProjectionIndex<'a>,
 ) -> Option<&'a PmDcFeatureProperty> {
     resolve_property(
-        &source.segment_token,
+        &source.identity.segment_token,
         source.properties.references().get(slot)?.index,
         index,
     )
@@ -1585,7 +1522,7 @@ fn resolve_direction<'a>(
     index
         .directions
         .get(&(
-            source.segment_token.as_str(),
+            source.identity.segment_token.as_str(),
             reference.index.checked_sub(1)?,
         ))
         .copied()
@@ -1597,7 +1534,7 @@ fn length_parameter(
     index: &ProjectionIndex<'_>,
 ) -> Option<Length> {
     length_reference(
-        &source.segment_token,
+        &source.identity.segment_token,
         source.properties.references().get(slot)?.index,
         index,
     )
@@ -1605,7 +1542,7 @@ fn length_parameter(
 
 fn length_reference(token: &str, reference: u32, index: &ProjectionIndex<'_>) -> Option<Length> {
     let parameter = index.parameters.get(&(token, reference.checked_sub(1)?))?;
-    match index.parameter_values.get(parameter.id.as_str())? {
+    match index.parameter_values.get(parameter.id().as_str())? {
         ParameterValue::Length(value) if value.0.is_finite() && value.0 >= 0.0 => Some(*value),
         _ => None,
     }
@@ -1618,10 +1555,10 @@ fn angle_parameter(
 ) -> Option<Angle> {
     let reference = source.properties.references().get(slot)?;
     let parameter = index.parameters.get(&(
-        source.segment_token.as_str(),
+        source.identity.segment_token.as_str(),
         reference.index.checked_sub(1)?,
     ))?;
-    match index.parameter_values.get(parameter.id.as_str())? {
+    match index.parameter_values.get(parameter.id().as_str())? {
         ParameterValue::Angle(value) if value.0.is_finite() => Some(*value),
         _ => None,
     }
@@ -1657,6 +1594,42 @@ fn unique_by_key<'a, T, K: Eq + std::hash::Hash + Copy>(
         unique.remove(&key);
     }
     unique
+}
+
+pub(crate) type PmDcFeatureProperty = Located<PmDcFeaturePropertyPayload>;
+
+impl RecordPayload for PmDcFeaturePropertyPayload {
+    const KIND: &'static str = "feature-property";
+}
+
+pub(crate) type PmDcPatternFeature = Located<PmDcPatternFeaturePayload>;
+
+impl RecordPayload for PmDcPatternFeaturePayload {
+    const KIND: &'static str = "pattern-feature";
+}
+
+pub(crate) type PmDcFeatureLabel = Located<PmDcFeatureLabelPayload>;
+
+impl RecordPayload for PmDcFeatureLabelPayload {
+    const KIND: &'static str = "feature-label";
+}
+
+pub(crate) type PmDcEntityStyleLink = Located<PmDcEntityStyleLinkPayload>;
+
+impl RecordPayload for PmDcEntityStyleLinkPayload {
+    const KIND: &'static str = "entity-style-link";
+}
+
+pub(crate) type PmDcFeature = Located<PmDcFeaturePayload>;
+
+impl RecordPayload for PmDcFeaturePayload {
+    const KIND: &'static str = "feature";
+}
+
+pub(crate) type PmDcFeatureTerminator = Located<PmDcFeatureTerminatorPayload>;
+
+impl RecordPayload for PmDcFeatureTerminatorPayload {
+    const KIND: &'static str = "feature-terminator";
 }
 
 #[cfg(test)]
@@ -1739,15 +1712,16 @@ mod tests {
     }
 
     fn test_property(ordinal: u32, kind: PmDcFeaturePropertyKind) -> PmDcFeatureProperty {
-        PmDcFeatureProperty {
-            id: format!("inventor:pmdc:feature-property#{SEGMENT}-{ordinal}"),
-            type_id: format!("{ordinal:032x}"),
-            segment_token: SEGMENT.into(),
-            record_ordinal: ordinal,
-            save_version_major: 16,
-            header: test_header(),
-            kind,
-        }
+        Located::new(
+            PmDcFeaturePropertyPayload {
+                save_version_major: 16,
+                header: test_header(),
+                kind,
+            },
+            format!("{ordinal:032x}"),
+            SEGMENT,
+            ordinal,
+        )
     }
 
     fn test_feature(ordinal: u32, slot_count: usize, slots: &[(usize, u32)]) -> PmDcFeature {
@@ -1755,72 +1729,75 @@ mod tests {
         for (slot, record_ordinal) in slots {
             references[*slot] = reference(record_ordinal + 1);
         }
-        PmDcFeature {
-            id: format!("inventor:pmdc:feature#{SEGMENT}-{ordinal}"),
-            type_id: type_id_string(FEATURE_TYPE),
-            segment_token: SEGMENT.into(),
-            record_ordinal: ordinal,
-            save_version_major: 16,
-            header: test_header(),
-            state: 69,
-            outline_value: 0,
-            properties: PmDcReferenceList::new(
-                2,
-                (!references.is_empty())
-                    .then_some(crate::pmdc::PmDcListMetadata::U32([slot_count as u32, 0])),
-                references,
-            )
-            .expect("test list metadata matches length"),
-            value: 0,
-        }
+        Located::new(
+            PmDcFeaturePayload {
+                save_version_major: 16,
+                header: test_header(),
+                state: 69,
+                outline_value: 0,
+                properties: PmDcReferenceList::new(
+                    2,
+                    (!references.is_empty())
+                        .then_some(crate::pmdc::PmDcListMetadata::U32([slot_count as u32, 0])),
+                    references,
+                )
+                .expect("test list metadata matches length"),
+                value: 0,
+            },
+            type_id_string(FEATURE_TYPE),
+            SEGMENT,
+            ordinal,
+        )
     }
 
     fn test_label(owner_ordinal: u32, index: u32, class_id: &str) -> PmDcFeatureLabel {
-        PmDcFeatureLabel {
-            id: format!("inventor:pmdc:feature-label#{SEGMENT}-{owner_ordinal}"),
-            type_id: type_id_string(FEATURE_LABEL_TYPE),
-            segment_token: SEGMENT.into(),
-            record_ordinal: owner_ordinal + 1000,
-            save_version_major: 16,
-            header: PmDcLinkedHeader {
-                header_value: 0,
-                header_id: 0,
-                values: [0; 2],
-                owner: reference(owner_ordinal + 1),
-                parent: reference(0),
-                next: reference(0),
+        Located::new(
+            PmDcFeatureLabelPayload {
+                save_version_major: 16,
+                header: PmDcLinkedHeader {
+                    header_value: 0,
+                    header_id: 0,
+                    values: [0; 2],
+                    owner: reference(owner_ordinal + 1),
+                    parent: reference(0),
+                    next: reference(0),
+                },
+                index,
+                participants: reference_list(&[]),
+                name: format!("Feature {index}"),
+                class_id: class_id.into(),
             },
-            index,
-            participants: reference_list(&[]),
-            name: format!("Feature {index}"),
-            class_id: class_id.into(),
-        }
+            type_id_string(FEATURE_LABEL_TYPE),
+            SEGMENT,
+            owner_ordinal + 1000,
+        )
     }
 
     fn raw_parameter(ordinal: u32) -> crate::design::PmDcParameter {
-        crate::design::PmDcParameter {
-            id: format!("inventor:pmdc:parameter#{SEGMENT}-{ordinal}"),
-            type_id: "264d8790d011f8d10008cabc0663dc09".into(),
-            segment_token: SEGMENT.into(),
-            record_ordinal: ordinal,
-            save_version_major: 16,
-            header: crate::pmdc::PmDcContentHeader {
-                header_value: 0,
-                header_id: 0,
-                next: reference(0),
-                flags: 0,
-                context: reference(0),
-                source_index: ordinal,
+        Located::new(
+            crate::design::PmDcParameterPayload {
+                save_version_major: 16,
+                header: crate::pmdc::PmDcContentHeader {
+                    header_value: 0,
+                    header_id: 0,
+                    next: reference(0),
+                    flags: 0,
+                    context: reference(0),
+                    source_index: ordinal,
+                },
+                name: format!("p{ordinal}"),
+                name_value: 0,
+                unit: reference(0),
+                formula: reference(0),
+                nominal_value: 0.0,
+                model_value: 0.0,
+                tolerance: 0,
+                terminal_value: 0,
             },
-            name: format!("p{ordinal}"),
-            name_value: 0,
-            unit: reference(0),
-            formula: reference(0),
-            nominal_value: 0.0,
-            model_value: 0.0,
-            tolerance: 0,
-            terminal_value: 0,
-        }
+            "264d8790d011f8d10008cabc0663dc09".into(),
+            SEGMENT,
+            ordinal,
+        )
     }
 
     fn neutral_parameter(
@@ -1828,10 +1805,13 @@ mod tests {
         value: ParameterValue,
     ) -> DesignParameter {
         DesignParameter {
-            id: ParameterId::mint(format!("inventor:design:parameter#{}", raw.record_ordinal))
-                .expect("identity grammar"),
+            id: ParameterId::mint(format!(
+                "inventor:design:parameter#{}",
+                raw.identity.record_ordinal
+            ))
+            .expect("identity grammar"),
             owner: None,
-            ordinal: raw.record_ordinal,
+            ordinal: raw.identity.record_ordinal,
             name: raw.name.clone(),
             expression: String::new(),
             display: None,
@@ -1839,7 +1819,7 @@ mod tests {
             dependencies: Vec::new(),
             properties: BTreeMap::new(),
             pmi: None,
-            native_ref: Some(raw.id.clone()),
+            native_ref: Some(raw.id()),
         }
     }
 
@@ -1860,7 +1840,10 @@ mod tests {
                 .iter()
                 .map(|record| {
                     (
-                        (record.segment_token.as_str(), record.record_ordinal),
+                        (
+                            record.identity.segment_token.as_str(),
+                            record.identity.record_ordinal,
+                        ),
                         record,
                     )
                 })
@@ -1869,7 +1852,10 @@ mod tests {
                 .iter()
                 .map(|record| {
                     (
-                        (record.segment_token.as_str(), record.record_ordinal),
+                        (
+                            record.identity.segment_token.as_str(),
+                            record.identity.record_ordinal,
+                        ),
                         record,
                     )
                 })
@@ -1884,7 +1870,10 @@ mod tests {
                 .iter()
                 .map(|record| {
                     (
-                        (record.segment_token.as_str(), record.record_ordinal),
+                        (
+                            record.identity.segment_token.as_str(),
+                            record.identity.record_ordinal,
+                        ),
                         record,
                     )
                 })
@@ -1902,7 +1891,10 @@ mod tests {
                 .iter()
                 .map(|record| {
                     (
-                        (record.segment_token.as_str(), record.record_ordinal),
+                        (
+                            record.identity.segment_token.as_str(),
+                            record.identity.record_ordinal,
+                        ),
                         record,
                     )
                 })
@@ -1911,14 +1903,22 @@ mod tests {
                 .iter()
                 .map(|record| {
                     (
-                        (record.segment_token.as_str(), record.record_ordinal),
+                        (
+                            record.identity.segment_token.as_str(),
+                            record.identity.record_ordinal,
+                        ),
                         record,
                     )
                 })
                 .collect(),
             entity_style_links: entity_style_links
                 .iter()
-                .map(|record| (record.segment_token.as_str(), record.record_ordinal))
+                .map(|record| {
+                    (
+                        record.identity.segment_token.as_str(),
+                        record.identity.record_ordinal,
+                    )
+                })
                 .collect(),
         }
     }
@@ -2103,7 +2103,7 @@ mod tests {
             FeatureDefinition::Fillet { groups }
                 if matches!(groups[0].radius, RadiusSpec::Constant { radius: Length(2.5) })
         ));
-        assert_eq!(result.bodies, vec![fillet_properties[8].id.clone()]);
+        assert_eq!(result.bodies, vec![fillet_properties[8].id()]);
 
         let raw_distance = raw_parameter(40);
         let neutral_distance =
@@ -2189,21 +2189,22 @@ mod tests {
             neutral_parameter(&raw_length, ParameterValue::Length(Length(12.0))),
             neutral_parameter(&raw_taper, ParameterValue::Angle(Angle(0.1))),
         ];
-        let raw_sketch = crate::sketch::PmDcSketch {
-            id: format!("inventor:pmdc:sketch#{SEGMENT}-50"),
-            type_id: "114d8790d011f8d10008cabc0663dc09".into(),
-            segment_token: SEGMENT.into(),
-            record_ordinal: 50,
-            save_version_major: 16,
-            header: test_header(),
-            state: 0,
-            count_value: 0,
-            entities: PmDcReferenceList::new(8, None, Vec::new()).expect("empty entity list"),
-            transform: reference(0),
-            direction: reference(0),
-            values: [0; 2],
-            auxiliary: None,
-        };
+        let raw_sketch = Located::new(
+            crate::sketch::PmDcSketchPayload {
+                save_version_major: 16,
+                header: test_header(),
+                state: 0,
+                count_value: 0,
+                entities: PmDcReferenceList::new(8, None, Vec::new()).expect("empty entity list"),
+                transform: reference(0),
+                direction: reference(0),
+                values: [0; 2],
+                auxiliary: None,
+            },
+            "114d8790d011f8d10008cabc0663dc09".into(),
+            SEGMENT,
+            50,
+        );
         let neutral_sketch = Sketch {
             id: SketchId(format!("inventor:design:sketch#{SEGMENT}-50")),
             name: None,
@@ -2215,38 +2216,40 @@ mod tests {
                 u_axis: Vector3::new(1.0, 0.0, 0.0),
             },
             profiles: Vec::new(),
-            native_ref: Some(raw_sketch.id.clone()),
+            native_ref: Some(raw_sketch.id()),
         };
-        let direction = crate::sketch::PmDcDirection {
-            id: format!("inventor:pmdc:direction#{SEGMENT}-60"),
-            type_id: "40df52ced011d0d20008ccbc0663dc09".into(),
-            segment_token: SEGMENT.into(),
-            record_ordinal: 60,
-            save_version_major: 16,
-            header: test_header(),
-            entity_flags: 0,
-            parameter: 0.0,
-            extension: None,
-            direction: [0.0, 0.0, 1.0],
-        };
-        let entity_link = PmDcEntityStyleLink {
-            id: format!("inventor:pmdc:entity-style-link#{SEGMENT}-51"),
-            type_id: type_id_string(ENTITY_STYLE_LINK_TYPE),
-            segment_token: SEGMENT.into(),
-            record_ordinal: 51,
-            save_version_major: 16,
-            header: PmDcLinkedHeader {
-                header_value: 0,
-                header_id: 0,
-                values: [0; 2],
-                owner: reference(0),
-                parent: reference(0),
-                next: reference(0),
+        let direction = Located::new(
+            crate::sketch::PmDcDirectionPayload {
+                save_version_major: 16,
+                header: test_header(),
+                entity_flags: 0,
+                parameter: 0.0,
+                extension: None,
+                direction: [0.0, 0.0, 1.0],
             },
-            value: 0,
-            associative_id: 1,
-            entity_type: 1,
-        };
+            "40df52ced011d0d20008ccbc0663dc09".into(),
+            SEGMENT,
+            60,
+        );
+        let entity_link = Located::new(
+            PmDcEntityStyleLinkPayload {
+                save_version_major: 16,
+                header: PmDcLinkedHeader {
+                    header_value: 0,
+                    header_id: 0,
+                    values: [0; 2],
+                    owner: reference(0),
+                    parent: reference(0),
+                    next: reference(0),
+                },
+                value: 0,
+                associative_id: 1,
+                entity_type: 1,
+            },
+            type_id_string(ENTITY_STYLE_LINK_TYPE),
+            SEGMENT,
+            51,
+        );
         let properties = vec![
             test_property(
                 1,
@@ -2375,35 +2378,37 @@ mod tests {
         .zip(&raw_parameters)
         .map(|(value, raw)| neutral_parameter(raw, value))
         .collect::<Vec<_>>();
-        let transform = crate::sketch::PmDcTransform {
-            id: format!("inventor:pmdc:transform#{SEGMENT}-60"),
-            type_id: "184d8790d011f8d10008cabc0663dc09".into(),
-            segment_token: SEGMENT.into(),
-            record_ordinal: 60,
-            save_version_major: 16,
-            header: test_header(),
-            prefix: None,
-            value_mask: 0,
-            zero_mask: 0,
-            matrix: [
-                [1.0, 0.0, 0.0, 1.0],
-                [0.0, 1.0, 0.0, 2.0],
-                [0.0, 0.0, 1.0, 3.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ],
-        };
-        let direction = crate::sketch::PmDcDirection {
-            id: format!("inventor:pmdc:direction#{SEGMENT}-61"),
-            type_id: "40df52ced011d0d20008ccbc0663dc09".into(),
-            segment_token: SEGMENT.into(),
-            record_ordinal: 61,
-            save_version_major: 16,
-            header: test_header(),
-            entity_flags: 0,
-            parameter: 0.0,
-            extension: None,
-            direction: [0.0, 0.0, -1.0],
-        };
+        let transform = Located::new(
+            crate::sketch::PmDcTransformPayload {
+                save_version_major: 16,
+                header: test_header(),
+                prefix: None,
+                value_mask: 0,
+                zero_mask: 0,
+                matrix: [
+                    [1.0, 0.0, 0.0, 1.0],
+                    [0.0, 1.0, 0.0, 2.0],
+                    [0.0, 0.0, 1.0, 3.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ],
+            },
+            "184d8790d011f8d10008cabc0663dc09".into(),
+            SEGMENT,
+            60,
+        );
+        let direction = Located::new(
+            crate::sketch::PmDcDirectionPayload {
+                save_version_major: 16,
+                header: test_header(),
+                entity_flags: 0,
+                parameter: 0.0,
+                extension: None,
+                direction: [0.0, 0.0, -1.0],
+            },
+            "40df52ced011d0d20008ccbc0663dc09".into(),
+            SEGMENT,
+            61,
+        );
         let properties = vec![
             test_property(
                 1,
