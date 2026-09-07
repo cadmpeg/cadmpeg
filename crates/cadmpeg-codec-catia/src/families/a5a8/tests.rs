@@ -44,7 +44,14 @@ fn selected_nested_a8_surface_frame_decodes_without_a_flat_rescan() {
     )
     .expect("selected nested surface header");
     assert_eq!(
-        (header.u_count().unwrap(), header.v_count().unwrap()),
+        (
+            header
+                .u_count()
+                .expect("fixture U lattice has a valid pole count"),
+            header
+                .v_count()
+                .expect("fixture V lattice has a valid pole count")
+        ),
         (3, 3)
     );
     let surface = crate::families::a5a8::records::resolved_a8_surface_from_object_frame(
@@ -250,7 +257,14 @@ fn a8_surface_header_survives_an_opaque_pole_representation() {
     assert_eq!(headers[0].object_id, 0xdeca_fbad);
     assert_eq!((headers[0].u_degree, headers[0].v_degree), (2, 2));
     assert_eq!(
-        (headers[0].u_count().unwrap(), headers[0].v_count().unwrap()),
+        (
+            headers[0]
+                .u_count()
+                .expect("fixture U lattice has a valid pole count"),
+            headers[0]
+                .v_count()
+                .expect("fixture V lattice has a valid pole count")
+        ),
         (3, 3)
     );
     assert_eq!(headers[0].u_multiplicities, [3, 3]);

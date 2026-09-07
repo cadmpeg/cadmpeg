@@ -62,7 +62,8 @@ fn standard_analytic_carriers_have_no_model_size_cutoff() {
             &crate::families::standard::records::SurfacePrefix {
                 pos: 0,
                 target: 0,
-                kind: AnalyticSurfaceKind::from_marker(kind).unwrap(),
+                kind: AnalyticSurfaceKind::from_marker(kind)
+                    .expect("fixture uses an analytic surface marker"),
             },
         )
         .expect("large analytic carrier");
@@ -1072,7 +1073,8 @@ fn analytic_surface_records_retain_trimmed_face_bounds_after_their_parameters() 
             StandardSurfaceRecord::Analytic(crate::families::standard::records::SurfacePrefix {
                 pos: 5,
                 target: 1,
-                kind: AnalyticSurfaceKind::from_marker(kind).unwrap(),
+                kind: AnalyticSurfaceKind::from_marker(kind)
+                    .expect("fixture uses an analytic surface marker"),
             });
         assert_eq!(
             crate::families::standard::records::standard_face_bounds(&bytes, &record),

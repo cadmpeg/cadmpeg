@@ -72,11 +72,6 @@ impl E5RollingBallJet {
     /// Degree of every scalar jet channel.
     pub const DEGREE: u32 = 5;
 
-    /// Native parameter interval from the first and last station knots.
-    pub fn parameter_range(&self) -> Option<[f64; 2]> {
-        Some([self.stations.first()?.knot, self.stations.last()?.knot])
-    }
-
     /// Convert the admitted carrier payload to the exact neutral jet form.
     #[must_use]
     pub fn definition(&self) -> ProceduralSurfaceDefinition {
@@ -815,8 +810,6 @@ mod tests {
                 .collect::<Vec<_>>(),
             [6, 6]
         );
-        assert_close(jet.parameter_range().unwrap()[0], 2.0);
-        assert_close(jet.parameter_range().unwrap()[1], 5.0);
         assert_eq!(jet.sense, crate::families::e5::graph::Sign::Negative);
         assert_point_close(jet.stations[0].site.first_limit, Point3::new(2.0, 0.0, 0.0));
         assert_point_close(jet.stations[1].site.center, Point3::new(1.0, 0.0, 0.0));

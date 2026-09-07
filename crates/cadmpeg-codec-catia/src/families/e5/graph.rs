@@ -1459,7 +1459,7 @@ fn parse_loop(record: &Record<'_>) -> Option<RawLoop> {
         edges.push(wire::object_ref(record.payload, &mut position, false)?);
     }
     let surface = wire::object_ref(record.payload, &mut position, false)?;
-    let outer = parse_loop_signs(record.payload.get(position..)?, member_count / 2)?;
+    let outer = parse_loop_signs(record.payload.get(position..)?, member_count / 2).ok()?;
     Some(RawLoop {
         id: record.id,
         surface,
@@ -1469,24 +1469,33 @@ fn parse_loop(record: &Record<'_>) -> Option<RawLoop> {
     })
 }
 
-fn parse_loop_signs(trailing: &[u8], edge_count: usize) -> Option<Option<bool>> {
+#[derive(Debug)]
+enum LoopSignError {
+    Count,
+    Frame,
+    Sign,
+}
+
+fn parse_loop_signs(trailing: &[u8], edge_count: usize) -> Result<Option<bool>, LoopSignError> {
     if trailing.is_empty() {
-        return Some(None);
+        return Ok(None);
     }
     let expected_head = u8::try_from(edge_count)
         .ok()
-        .and_then(|n| 0x80u8.checked_add(n))?;
+        .and_then(|n| 0x80u8.checked_add(n))
+        .ok_or(LoopSignError::Count)?;
     if trailing.first() != Some(&expected_head) || trailing.len() != 1 + 2 * (3 * edge_count + 4) {
-        return None;
+        return Err(LoopSignError::Frame);
     }
     let signs: Vec<i16> = trailing[1..]
         .chunks_exact(2)
         .map(|bytes| View::i16_le_at(bytes, 0))
-        .collect::<Option<Vec<_>>>()?;
+        .collect::<Option<Vec<_>>>()
+        .ok_or(LoopSignError::Frame)?;
     if signs.iter().any(|sign| !matches!(sign, -1..=1)) || !matches!(signs[1], -1 | 1) {
-        return None;
+        return Err(LoopSignError::Sign);
     }
-    Some(Some(signs[1] == 1))
+    Ok(Some(signs[1] == 1))
 }
 
 fn parse_edge(record: &Record<'_>) -> Option<E5Edge> {
