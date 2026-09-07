@@ -71,7 +71,10 @@ fn unique_complete_local_system_supplies_section_plane_equation() {
 
     assert_eq!(
         definition_local_plane_equation(&definition),
-        Some(([1.0, 0.0, 0.0], 3.0))
+        Some(SignedPlaneEquation {
+            normal: [1.0, 0.0, 0.0],
+            offset: 3.0
+        })
     );
 
     definition.parameter_frames.push(FeatureParameterFrame {
@@ -82,7 +85,10 @@ fn unique_complete_local_system_supplies_section_plane_equation() {
     });
     assert_eq!(
         definition_local_plane_equation(&definition),
-        Some(([1.0, 0.0, 0.0], 3.0))
+        Some(SignedPlaneEquation {
+            normal: [1.0, 0.0, 0.0],
+            offset: 3.0
+        })
     );
 
     definition.parameter_frames.push(FeatureParameterFrame {
@@ -141,7 +147,10 @@ fn unresolved_local_system_does_not_hide_a_complete_outline_plane() {
 
     assert_eq!(
         plane_equation(7, &[], &[unresolved], &[outline]),
-        Some(([0.0, 0.0, 1.0], 3.0))
+        Some(SignedPlaneEquation {
+            normal: [0.0, 0.0, 1.0],
+            offset: 3.0
+        })
     );
 }
 

@@ -58,13 +58,18 @@ pub(crate) struct PlacementSources<'a> {
     pub affected_ids: &'a [FeatureAffectedIds],
 }
 
-type PlaneEquation = ([f64; 3], f64);
+/// Plane in scalar form: `dot(normal, point) = offset`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct SignedPlaneEquation {
+    normal: [f64; 3],
+    offset: f64,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct SectionFrameCandidate {
     reference_id: u32,
-    sketch: PlaneEquation,
-    reference: PlaneEquation,
+    sketch: SignedPlaneEquation,
+    reference: SignedPlaneEquation,
 }
 
 fn generated_cylinder_section_transform(
@@ -466,7 +471,7 @@ fn plane_equation(
     datums: &[DatumPlaneRecord],
     model_planes: &[PlaneLocalSystem],
     outline_planes: &[OutlinePlane],
-) -> Option<([f64; 3], f64)> {
+) -> Option<SignedPlaneEquation> {
     let datums = datums
         .iter()
         .filter(|datum| datum.id == id)
@@ -481,7 +486,10 @@ fn plane_equation(
             frame
                 .normal
                 .zip(frame.origin)
-                .map(|(normal, origin)| (normal, dot(normal, origin)))
+                .map(|(normal, origin)| SignedPlaneEquation {
+                    normal,
+                    offset: dot(normal, origin),
+                })
         }
         _ => None,
     };
@@ -490,7 +498,10 @@ fn plane_equation(
         .filter(|plane| plane.surface_id == id)
         .collect::<Vec<_>>();
     let outline_equation = match outline_planes.as_slice() {
-        [plane] => Some((plane.normal, dot(plane.normal, plane.origin))),
+        [plane] => Some(SignedPlaneEquation {
+            normal: plane.normal,
+            offset: dot(plane.normal, plane.origin),
+        }),
         _ => None,
     };
     // The datum-geometry and model-surface identifiers are separate namespaces;
@@ -499,7 +510,10 @@ fn plane_equation(
         return None;
     }
     if let [datum] = datums.as_slice() {
-        return Some((datum.plane.normal(), datum.plane.offset));
+        return Some(SignedPlaneEquation {
+            normal: datum.plane.normal(),
+            offset: datum.plane.offset,
+        });
     }
     if !datums.is_empty() {
         return None;
@@ -513,12 +527,15 @@ fn plane_equation(
     outline_equation
 }
 
-fn definition_local_plane_equation(definition: &FeatureDefinition) -> Option<([f64; 3], f64)> {
+fn definition_local_plane_equation(definition: &FeatureDefinition) -> Option<SignedPlaneEquation> {
     let values = unique_complete_local_system(definition)?;
     let raw_normal: [f64; 3] = values[6..9].try_into().ok()?;
     let normal = normalize(raw_normal)?;
     let origin: [f64; 3] = values[9..12].try_into().ok()?;
-    Some((normal, dot(normal, origin)))
+    Some(SignedPlaneEquation {
+        normal,
+        offset: dot(normal, origin),
+    })
 }
 
 pub(crate) fn unique_complete_local_system(definition: &FeatureDefinition) -> Option<[f64; 12]> {
@@ -616,7 +633,7 @@ fn generated_datum_plane_equation(
     reference_id: u32,
     reference_normal: [f64; 3],
     sources: &PlacementSources<'_>,
-) -> Option<([f64; 3], f64)> {
+) -> Option<SignedPlaneEquation> {
     let datum_ids = sources
         .geometry_tables
         .iter()
@@ -657,7 +674,10 @@ fn generated_datum_plane_equation(
                 .datums
                 .iter()
                 .filter(|datum| datum.feature_id == **other)
-                .map(|datum| (datum.plane.normal(), datum.plane.offset))
+                .map(|datum| SignedPlaneEquation {
+                    normal: datum.plane.normal(),
+                    offset: datum.plane.offset,
+                })
                 .chain(
                     sources
                         .surface_rows
@@ -695,12 +715,15 @@ fn generated_datum_plane_equation(
                                 let coordinate = corners[0][axis]?;
                                 let mut normal = [0.0; 3];
                                 normal[axis] = 1.0;
-                                Some((normal, coordinate))
+                                Some(SignedPlaneEquation {
+                                    normal,
+                                    offset: coordinate,
+                                })
                             })
                         }),
                 )
-                .filter(|(normal, _)| dot(*normal, reference_normal).abs() <= EPS_FRAME_ORTHO)
-                .fold(Vec::<([f64; 3], f64)>::new(), |mut unique, equation| {
+                .filter(|equation| dot(equation.normal, reference_normal).abs() <= EPS_FRAME_ORTHO)
+                .fold(Vec::<SignedPlaneEquation>::new(), |mut unique, equation| {
                     if !unique.contains(&equation) {
                         unique.push(equation);
                     }
@@ -723,7 +746,7 @@ fn feature_generated_plane_equation(
     definitions: &[FeatureDefinition],
     transforms: &[FeatureSectionTransform],
     sources: &PlacementSources<'_>,
-) -> Option<([f64; 3], f64)> {
+) -> Option<SignedPlaneEquation> {
     let surface_rows = sources
         .surface_rows
         .iter()
@@ -775,13 +798,16 @@ fn feature_generated_plane_equation(
     let magnitude = dot(normal, normal).sqrt();
     (magnitude > EPS_VECTOR_NONZERO).then_some(())?;
     let normal = scale(normal, magnitude.recip());
-    Some((normal, dot(normal, start)))
+    Some(SignedPlaneEquation {
+        normal,
+        offset: dot(normal, start),
+    })
 }
 
 fn generated_cap_pair_plane_equation(
     table: &FeatureEntityTable,
     sources: &PlacementSources<'_>,
-) -> Option<([f64; 3], f64)> {
+) -> Option<SignedPlaneEquation> {
     let [first, second, ..] = table.entries.as_slice() else {
         return None;
     };
@@ -800,16 +826,16 @@ fn generated_cap_pair_plane_equation(
         sources.model_planes,
         sources.outline_planes,
     )?;
-    let oriented_cosine = dot(first.0, second.0);
+    let oriented_cosine = dot(first.normal, second.normal);
     let cosine = oriented_cosine.abs();
     let second_offset = if oriented_cosine.is_sign_negative() {
-        -second.1
+        -second.offset
     } else {
-        second.1
+        second.offset
     };
-    let scale = first.1.abs().max(second.1.abs()).max(1.0);
+    let scale = first.offset.abs().max(second.offset.abs()).max(1.0);
     ((cosine - 1.0).abs() <= EPS_AXIS_ALIGNMENT
-        && (first.1 - second_offset).abs() > EPS_PLANE_SEPARATION * scale)
+        && (first.offset - second_offset).abs() > EPS_PLANE_SEPARATION * scale)
         .then_some(first)
 }
 
@@ -818,7 +844,7 @@ fn generated_section_cap_plane_equation(
     feature_id: u32,
     sources: &PlacementSources<'_>,
     entity_tables: &[FeatureEntityTable],
-) -> Option<([f64; 3], f64)> {
+) -> Option<SignedPlaneEquation> {
     let datum_tables = sources
         .geometry_tables
         .iter()
@@ -846,10 +872,10 @@ fn zero_offset_standard_section_plane_equation(
     definition: &FeatureDefinition,
     section: &crate::feature::FeatureSection3d,
     reference_id: u32,
-    reference: ([f64; 3], f64),
+    reference: SignedPlaneEquation,
     sources: &PlacementSources<'_>,
     entity_tables: &[FeatureEntityTable],
-) -> Option<([f64; 3], f64)> {
+) -> Option<SignedPlaneEquation> {
     let feature_id = definition.owner_feature_id?;
     let sketch_id = section.sketch_plane_entity_id?;
     let instructions = placement_instructions(definition);
@@ -911,9 +937,12 @@ fn zero_offset_standard_section_plane_equation(
         .datums
         .iter()
         .filter_map(|datum| {
-            let equation = (datum.plane.normal(), datum.plane.offset);
-            let cap_alignment = dot(equation.0, cap.0).abs();
-            let reference_alignment = dot(equation.0, reference.0).abs();
+            let equation = SignedPlaneEquation {
+                normal: datum.plane.normal(),
+                offset: datum.plane.offset,
+            };
+            let cap_alignment = dot(equation.normal, cap.normal).abs();
+            let reference_alignment = dot(equation.normal, reference.normal).abs();
             ((cap_alignment - 1.0).abs() <= EPS_AXIS_ALIGNMENT
                 && reference_alignment <= EPS_AXIS_ALIGNMENT)
                 .then_some(equation)
@@ -922,20 +951,20 @@ fn zero_offset_standard_section_plane_equation(
     let [candidate] = candidates.as_slice() else {
         return None;
     };
-    let aligned_cap_offset = if dot(candidate.0, cap.0).is_sign_negative() {
-        -cap.1
+    let aligned_cap_offset = if dot(candidate.normal, cap.normal).is_sign_negative() {
+        -cap.offset
     } else {
-        cap.1
+        cap.offset
     };
-    let separation = (candidate.1 - aligned_cap_offset).abs();
-    let scale = candidate.1.abs().max(cap.1.abs()).max(1.0);
+    let separation = (candidate.offset - aligned_cap_offset).abs();
+    let scale = candidate.offset.abs().max(cap.offset.abs()).max(1.0);
     (separation > EPS_PLANE_SEPARATION * scale).then_some(*candidate)
 }
 
 fn circular_profile_aligned_origin(
     definition: &FeatureDefinition,
     feature_id: u32,
-    sketch_plane: ([f64; 3], f64),
+    sketch_plane: SignedPlaneEquation,
     u_axis: [f64; 3],
     v_axis: [f64; 3],
     sources: &PlacementSources<'_>,
@@ -1020,8 +1049,8 @@ fn circular_profile_aligned_origin(
         && (0.5 * spans[0] - radius).abs() <= EPS_SPAN_AGREEMENT * tolerance_scale)
         .then_some(())?;
     let cap_center: [f64; 3] = std::array::from_fn(|index| 0.5 * (first[index] + second[index]));
-    let signed_distance = dot(sketch_plane.0, cap_center) - sketch_plane.1;
-    let profile_center = add(cap_center, scale(sketch_plane.0, -signed_distance));
+    let signed_distance = dot(sketch_plane.normal, cap_center) - sketch_plane.offset;
+    let profile_center = add(cap_center, scale(sketch_plane.normal, -signed_distance));
     Some(add(
         add(profile_center, scale(u_axis, -center_u)),
         scale(v_axis, -center_v),
@@ -1081,7 +1110,12 @@ pub(crate) fn resolve(
             if let Some(sketch) = direct_sketch {
                 let reference = direct_reference
                     .or_else(|| {
-                        generated_datum_plane_equation(reference_id, sketch_id, sketch.0, sources)
+                        generated_datum_plane_equation(
+                            reference_id,
+                            sketch_id,
+                            sketch.normal,
+                            sources,
+                        )
                     })
                     .or_else(|| {
                         feature_generated_plane_equation(
@@ -1092,7 +1126,7 @@ pub(crate) fn resolve(
                         )
                     });
                 if let Some(reference) = reference {
-                    if dot(sketch.0, reference.0).abs() < 1.0 - EPS_AXIS_ALIGNMENT
+                    if dot(sketch.normal, reference.normal).abs() < 1.0 - EPS_AXIS_ALIGNMENT
                         && !candidates.iter().any(|candidate| {
                             candidate.sketch == sketch && candidate.reference == reference
                         })
@@ -1105,20 +1139,23 @@ pub(crate) fn resolve(
                     }
                 }
             } else if let Some(reference) = direct_reference {
-                if let Some(sketch) =
-                    generated_datum_plane_equation(sketch_id, reference_id, reference.0, sources)
-                        .or_else(|| {
-                            zero_offset_standard_section_plane_equation(
-                                definition,
-                                section,
-                                reference_id,
-                                reference,
-                                sources,
-                                entity_tables,
-                            )
-                        })
-                {
-                    if dot(sketch.0, reference.0).abs() < 1.0 - EPS_AXIS_ALIGNMENT
+                if let Some(sketch) = generated_datum_plane_equation(
+                    sketch_id,
+                    reference_id,
+                    reference.normal,
+                    sources,
+                )
+                .or_else(|| {
+                    zero_offset_standard_section_plane_equation(
+                        definition,
+                        section,
+                        reference_id,
+                        reference,
+                        sources,
+                        entity_tables,
+                    )
+                }) {
+                    if dot(sketch.normal, reference.normal).abs() < 1.0 - EPS_AXIS_ALIGNMENT
                         && !candidates.iter().any(|candidate| {
                             candidate.sketch == sketch && candidate.reference == reference
                         })
@@ -1143,8 +1180,14 @@ pub(crate) fn resolve(
         let [candidate] = candidates.as_slice() else {
             continue;
         };
-        let (mut sketch_normal, mut sketch_offset) = candidate.sketch;
-        let (mut reference_normal, mut reference_offset) = candidate.reference;
+        let SignedPlaneEquation {
+            normal: mut sketch_normal,
+            offset: mut sketch_offset,
+        } = candidate.sketch;
+        let SignedPlaneEquation {
+            normal: mut reference_normal,
+            offset: mut reference_offset,
+        } = candidate.reference;
         if section.sketch_plane_flip == Some(BinaryFlag::Set) {
             sketch_normal = scale(sketch_normal, -1.0);
             sketch_offset = -sketch_offset;
@@ -1194,7 +1237,10 @@ pub(crate) fn resolve(
                 circular_profile_aligned_origin(
                     definition,
                     feature_id,
-                    (sketch_normal, sketch_offset),
+                    SignedPlaneEquation {
+                        normal: sketch_normal,
+                        offset: sketch_offset,
+                    },
                     u_axis,
                     reference_axis,
                     sources,
