@@ -1220,7 +1220,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         scope_reference_ordinal: 0,
         record_index: 200,
         byte_offset: 0,
-        class_tag: "264".into(),
+        class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
         members: vec![crate::records::Located {
             value: 201,
             offset: 0,
@@ -1247,7 +1247,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         extrude_role: None,
         role_offset: 0,
 
-        paired_class_tag: "264".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
         paired_byte_offset: 0,
     };
     assert!(matches!(

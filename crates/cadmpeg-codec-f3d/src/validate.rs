@@ -4491,312 +4491,293 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 .collect::<HashSet<_>>()
                 .len()
                 == frame.auxiliary_paths.len();
-        let valid = group.class_tag.len() == 3
-            && group.class_tag.bytes().all(|byte| byte.is_ascii_digit())
-            && group.paired_class_tag.len() == 3
-            && group
-                .paired_class_tag
-                .bytes()
-                .all(|byte| byte.is_ascii_digit())
-            && scope.is_some_and(|scope| {
-                let role_is_valid = match design::design_feature_family(&scope.kind()) {
-                    Some(design::DesignFeatureFamily::Extrude) => match group.extrude_role {
-                        Some(records::topology::DesignExtrudeOperandRole::Bodies) => {
-                            matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0008_0000_0000)
+        let valid = scope.is_some_and(|scope| {
+            let role_is_valid = match design::design_feature_family(&scope.kind()) {
+                Some(design::DesignFeatureFamily::Extrude) => match group.extrude_role {
+                    Some(records::topology::DesignExtrudeOperandRole::Bodies) => {
+                        matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0008_0000_0000)
+                    }
+                    Some(records::topology::DesignExtrudeOperandRole::Profile) => {
+                        group.role == 0x0000_0041_0000_0000
+                            && scope.extrude_profile().is_none_or(|profile| {
+                                group.members.first().map(|member| &member.value)
+                                    == Some(&profile.record_index)
+                            })
+                    }
+                    Some(records::topology::DesignExtrudeOperandRole::Faces(Some(_))) => {
+                        group.role == 0x0000_0011_0000_0000
+                            || group.role == 0x0000_0012_0000_0000
+                                && scope
+                                    .extrude_prologue()
+                                    .and_then(records::feature::DesignExtrudePrologue::extent)
+                                    == Some(records::feature::DesignExtrudeExtent::OneSidedToFace)
+                            || group.role == 0x0000_0012_0000_0000
+                                && is_class_296_two_sided_to_faces_scope(scope)
+                            || group.role == 0x0000_0005_0000_0000
+                                && scope
+                                    .extrude_prologue()
+                                    .map(records::feature::DesignExtrudePrologue::start)
+                                    == Some(records::feature::DesignExtrudeStart::FromFace)
+                    }
+                    Some(records::topology::DesignExtrudeOperandRole::Faces(None)) => false,
+                    None => group.role == 0x0000_0005_0000_0000,
+                },
+                Some(
+                    design::DesignFeatureFamily::Fillet | design::DesignFeatureFamily::Chamfer,
+                ) => group.extrude_role.is_none() && group.extrude_face_role().is_none(),
+                Some(design::DesignFeatureFamily::Coil) => {
+                    group.role
+                        == if scope.kind()
+                            == crate::records::feature::DesignFeatureKind::CoilPrimitive
+                            && scope.reference_members.len() == 10
+                            && scope.coil_operation_offset() == scope.byte_offset.checked_add(22)
+                        {
+                            0x0000_0004_0000_0000
+                        } else {
+                            0x0000_0008_0000_0000
                         }
-                        Some(records::topology::DesignExtrudeOperandRole::Profile) => {
-                            group.role == 0x0000_0041_0000_0000
-                                && scope.extrude_profile().is_none_or(|profile| {
-                                    group.members.first().map(|member| &member.value)
-                                        == Some(&profile.record_index)
-                                })
-                        }
-                        Some(records::topology::DesignExtrudeOperandRole::Faces(Some(_))) => {
-                            group.role == 0x0000_0011_0000_0000
-                                || group.role == 0x0000_0012_0000_0000
-                                    && scope
-                                        .extrude_prologue()
-                                        .and_then(records::feature::DesignExtrudePrologue::extent)
-                                        == Some(
-                                            records::feature::DesignExtrudeExtent::OneSidedToFace,
-                                        )
-                                || group.role == 0x0000_0012_0000_0000
-                                    && is_class_296_two_sided_to_faces_scope(scope)
-                                || group.role == 0x0000_0005_0000_0000
-                                    && scope
-                                        .extrude_prologue()
-                                        .map(records::feature::DesignExtrudePrologue::start)
-                                        == Some(records::feature::DesignExtrudeStart::FromFace)
-                        }
-                        Some(records::topology::DesignExtrudeOperandRole::Faces(None)) => false,
-                        None => group.role == 0x0000_0005_0000_0000,
-                    },
-                    Some(
-                        design::DesignFeatureFamily::Fillet | design::DesignFeatureFamily::Chamfer,
-                    ) => group.extrude_role.is_none() && group.extrude_face_role().is_none(),
-                    Some(design::DesignFeatureFamily::Coil) => {
-                        group.role
-                            == if scope.kind()
-                                == crate::records::feature::DesignFeatureKind::CoilPrimitive
-                                && scope.reference_members.len() == 10
-                                && scope.coil_operation_offset()
-                                    == scope.byte_offset.checked_add(22)
-                            {
-                                0x0000_0004_0000_0000
-                            } else {
-                                0x0000_0008_0000_0000
-                            }
-                            && group.extrude_role.is_none()
-                            && group.extrude_face_role().is_none()
-                    }
-                    Some(design::DesignFeatureFamily::Move) => {
-                        group.role == 0x0000_0004_0000_0000
-                            && group.extrude_role.is_none()
-                            && group.extrude_face_role().is_none()
-                    }
-                    Some(design::DesignFeatureFamily::OffsetFaces) => {
-                        group.role == 0x0000_0010_0000_0000
-                            && group.extrude_role.is_none()
-                            && group.extrude_face_role().is_none()
-                    }
-                    Some(design::DesignFeatureFamily::Draft) => {
-                        matches!(group.role, 0x0000_0010_0000_0000 | 0x0000_0021_0000_0000)
-                            && group.extrude_role.is_none()
-                            && group.extrude_face_role().is_none()
-                    }
-                    Some(design::DesignFeatureFamily::ReplaceFace) => {
-                        matches!(group.role, 0x0000_0009_0000_0000 | 0x0000_0010_0000_0000)
-                            && group.extrude_role.is_none()
-                            && group.extrude_face_role().is_none()
-                    }
-                    Some(design::DesignFeatureFamily::Revolve) => {
-                        matches!(
+                        && group.extrude_role.is_none()
+                        && group.extrude_face_role().is_none()
+                }
+                Some(design::DesignFeatureFamily::Move) => {
+                    group.role == 0x0000_0004_0000_0000
+                        && group.extrude_role.is_none()
+                        && group.extrude_face_role().is_none()
+                }
+                Some(design::DesignFeatureFamily::OffsetFaces) => {
+                    group.role == 0x0000_0010_0000_0000
+                        && group.extrude_role.is_none()
+                        && group.extrude_face_role().is_none()
+                }
+                Some(design::DesignFeatureFamily::Draft) => {
+                    matches!(group.role, 0x0000_0010_0000_0000 | 0x0000_0021_0000_0000)
+                        && group.extrude_role.is_none()
+                        && group.extrude_face_role().is_none()
+                }
+                Some(design::DesignFeatureFamily::ReplaceFace) => {
+                    matches!(group.role, 0x0000_0009_0000_0000 | 0x0000_0010_0000_0000)
+                        && group.extrude_role.is_none()
+                        && group.extrude_face_role().is_none()
+                }
+                Some(design::DesignFeatureFamily::Revolve) => {
+                    matches!(
+                        group.role,
+                        0x0000_0004_0000_0000
+                            | 0x0000_0008_0000_0000
+                            | 0x0000_0021_0000_0000
+                            | 0x0000_0041_0000_0000
+                    ) && group.extrude_role.is_none()
+                        && group.extrude_face_role().is_none()
+                }
+                Some(design::DesignFeatureFamily::Shell) => {
+                    matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0010_0000_0000)
+                        && group.extrude_role.is_none()
+                        && group.extrude_face_role().is_none()
+                }
+                Some(design::DesignFeatureFamily::Thicken) => {
+                    matches!(group.role, 0x0000_0005_0000_0000 | 0x0000_0012_0000_0000)
+                        && group.extrude_role.is_none()
+                        && group.extrude_face_role().is_none()
+                }
+                Some(design::DesignFeatureFamily::Loft) => {
+                    (!scope.has_path_construction()
+                        || matches!(
                             group.role,
                             0x0000_0004_0000_0000
-                                | 0x0000_0008_0000_0000
-                                | 0x0000_0021_0000_0000
+                                | 0x0000_0005_0000_0000
                                 | 0x0000_0041_0000_0000
-                        ) && group.extrude_role.is_none()
-                            && group.extrude_face_role().is_none()
-                    }
-                    Some(design::DesignFeatureFamily::Shell) => {
-                        matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0010_0000_0000)
-                            && group.extrude_role.is_none()
-                            && group.extrude_face_role().is_none()
-                    }
-                    Some(design::DesignFeatureFamily::Thicken) => {
-                        matches!(group.role, 0x0000_0005_0000_0000 | 0x0000_0012_0000_0000)
-                            && group.extrude_role.is_none()
-                            && group.extrude_face_role().is_none()
-                    }
-                    Some(design::DesignFeatureFamily::Loft) => {
-                        (!scope.has_path_construction()
-                            || matches!(
-                                group.role,
-                                0x0000_0004_0000_0000
-                                    | 0x0000_0005_0000_0000
-                                    | 0x0000_0041_0000_0000
-                                    | 0x0000_0043_0000_0000
-                                    | 0x0000_0007_0000_0000
-                            ))
-                            && group.extrude_role.is_none()
-                            && group.extrude_face_role().is_none()
-                    }
-                    Some(design::DesignFeatureFamily::Sweep) => {
-                        (!scope.has_path_construction()
-                            || matches!(
-                                group.role,
-                                0x0000_0004_0000_0000
-                                    | 0x0000_0005_0000_0000
-                                    | 0x0000_0011_0000_0000
-                                    | 0x0000_0041_0000_0000
-                            ))
-                            && group.extrude_role.is_none()
-                            && group.extrude_face_role().is_none()
-                    }
-                    Some(design::DesignFeatureFamily::Pipe) => {
-                        group.role == 0x0000_0005_0000_0000
-                            && group.extrude_role.is_none()
-                            && group.extrude_face_role().is_none()
-                    }
-                    Some(design::DesignFeatureFamily::CircularPattern) => {
-                        matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0008_0000_0000)
-                            && group.extrude_role.is_none()
-                            && group.extrude_face_role().is_none()
-                    }
-                    Some(design::DesignFeatureFamily::RectangularPattern) => {
-                        matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0008_0000_0000)
-                            && group.extrude_role.is_none()
-                            && group.extrude_face_role().is_none()
-                    }
-                    Some(design::DesignFeatureFamily::Mirror) => {
-                        matches!(
+                                | 0x0000_0043_0000_0000
+                                | 0x0000_0007_0000_0000
+                        ))
+                        && group.extrude_role.is_none()
+                        && group.extrude_face_role().is_none()
+                }
+                Some(design::DesignFeatureFamily::Sweep) => {
+                    (!scope.has_path_construction()
+                        || matches!(
                             group.role,
-                            0x0000_0004_0000_0000 | 0x0000_0005_0000_0000 | 0x0000_0008_0000_0000
-                        ) && group.extrude_role.is_none()
-                            && group.extrude_face_role().is_none()
-                    }
-                    Some(design::DesignFeatureFamily::SurfacePatch) => {
-                        matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0041_0000_0000)
-                            && group.extrude_role.is_none()
-                            && group.extrude_face_role().is_none()
-                    }
-                    Some(design::DesignFeatureFamily::SurfaceOffset) => {
-                        group.role == 0x0000_0041_0000_0000
-                            && group.extrude_role.is_none()
-                            && group.extrude_face_role().is_none()
-                    }
-                    Some(design::DesignFeatureFamily::SurfaceRuled) => {
-                        group.role == 0x0000_0008_0000_0000
-                            && group.extrude_role.is_none()
-                            && group.extrude_face_role().is_none()
-                            && scope.ruled_surface_operation().is_some_and(|operation| {
-                                operation
-                                    .edge_group_record_indices
-                                    .contains(&group.record_index)
-                            })
-                    }
-                    Some(design::DesignFeatureFamily::BoundaryFill) => {
-                        matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0005_0000_0000)
-                            && group.extrude_role.is_none()
-                            && group.extrude_face_role().is_none()
-                    }
-                    Some(design::DesignFeatureFamily::Hole) => {
-                        matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0005_0000_0000)
-                            && group.extrude_role.is_none()
-                            && group.extrude_face_role().is_none()
-                    }
-                    Some(design::DesignFeatureFamily::SurfaceTrim) => {
-                        matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0021_0000_0000)
-                            && group.extrude_role.is_none()
-                            && group.extrude_face_role().is_none()
-                    }
-                    Some(design::DesignFeatureFamily::Split) => {
-                        matches!(
-                            group.role,
-                            0x0000_0004_0000_0000 | 0x0000_0009_0000_0000 | 0x0000_0021_0000_0000
-                        ) && group.extrude_role.is_none()
-                            && group.extrude_face_role().is_none()
-                    }
-                    Some(design::DesignFeatureFamily::Scale) => {
-                        group.role == 0x0000_0004_0000_0000
-                            && group.extrude_role.is_none()
-                            && group.extrude_face_role().is_none()
-                    }
-                    Some(design::DesignFeatureFamily::Thread) => {
-                        group.role == 0x0000_0010_0000_0000
-                            && group.extrude_role.is_none()
-                            && group.extrude_face_role().is_none()
-                            && scope.thread_construction().is_some_and(|construction| {
-                                construction
-                                    .face_group_record_indices
-                                    .contains(&group.record_index)
-                            })
-                    }
-                    Some(design::DesignFeatureFamily::SheetMetalEdgeFlange) => {
-                        matches!(
-                            group.role,
-                            0x0000_0008_0000_0000 | 0x0000_0021_0000_0000 | 0x0000_0043_0000_0000
-                        ) && group.extrude_role.is_none()
-                            && group.extrude_face_role().is_none()
-                    }
-                    Some(design::DesignFeatureFamily::SheetMetalHem) => {
-                        matches!(group.role, 0x0000_0008_0000_0000 | 0x0000_0043_0000_0000)
-                            && group.extrude_role.is_none()
-                            && group.extrude_face_role().is_none()
-                    }
-                    Some(_) => false,
-                    None if scope.kind()
-                        == crate::records::feature::DesignFeatureKind::RemoveBody =>
-                    {
-                        group.role == 0x0000_0004_0000_0000
-                            && group.extrude_role.is_none()
-                            && group.extrude_face_role().is_none()
-                    }
-                    None if scope.kind()
-                        == crate::records::feature::DesignFeatureKind::SurfaceStitch =>
-                    {
-                        group.role == 0x0000_0005_0000_0000
-                            && group.extrude_role.is_none()
-                            && group.extrude_face_role().is_none()
-                    }
-                    None if scope.kind()
-                        == crate::records::feature::DesignFeatureKind::SplitFace =>
-                    {
-                        matches!(group.role, 0x0000_0010_0000_0000 | 0x0000_0021_0000_0000)
-                            && group.extrude_role.is_none()
-                            && group.extrude_face_role().is_none()
-                    }
-                    None if matches!(
-                        scope.kind(),
-                        crate::records::feature::DesignFeatureKind::DeleteFace
-                            | crate::records::feature::DesignFeatureKind::SurfaceDeleteFace
-                    ) =>
-                    {
-                        group.role == 0x0000_0010_0000_0000
-                            && group.extrude_role.is_none()
-                            && group.extrude_face_role().is_none()
-                    }
-                    None if scope.kind() == crate::records::feature::DesignFeatureKind::Decal => {
-                        group.role == 0x0000_0004_0000_0000
-                            && group.extrude_role.is_none()
-                            && group.extrude_face_role().is_none()
-                    }
-                    None if scope.kind()
-                        == crate::records::feature::DesignFeatureKind::BaseFlange =>
-                    {
-                        group.role == 0x0000_0041_0000_0000
-                            && group.extrude_role.is_none()
-                            && group.extrude_face_role().is_none()
-                            && scope.base_flange_profile().as_ref().is_some_and(|profile| {
-                                group
-                                    .members
-                                    .iter()
-                                    .map(|member| member.value)
-                                    .eq([profile.record_index])
-                            })
-                    }
-                    None if scope.kind() == crate::records::feature::DesignFeatureKind::Hem => {
-                        matches!(group.role, 0x0000_0008_0000_0000 | 0x0000_0043_0000_0000)
-                            && group.extrude_role.is_none()
-                            && group.extrude_face_role().is_none()
-                    }
-                    None => false,
-                };
-                (design::design_feature_family(&scope.kind()).is_some()
-                    || matches!(
-                        scope.kind(),
-                        crate::records::feature::DesignFeatureKind::RemoveBody
-                            | crate::records::feature::DesignFeatureKind::SurfaceStitch
-                            | crate::records::feature::DesignFeatureKind::SplitFace
-                            | crate::records::feature::DesignFeatureKind::DeleteFace
-                            | crate::records::feature::DesignFeatureKind::SurfaceDeleteFace
-                            | crate::records::feature::DesignFeatureKind::Decal
-                            | crate::records::feature::DesignFeatureKind::BaseFlange
-                            | crate::records::feature::DesignFeatureKind::EdgeFlange
-                            | crate::records::feature::DesignFeatureKind::Hem
-                    ))
-                    && role_is_valid
-                    && usize::try_from(group.scope_reference_ordinal)
-                        .ok()
-                        .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
-                        == Some(&group.record_index)
-                    && group
-                        .members
-                        .iter()
-                        .map(|member| &member.value)
-                        .all(|member| {
-                            scope
-                                .reference_members
-                                .values()
-                                .any(|value| value == member)
+                            0x0000_0004_0000_0000
+                                | 0x0000_0005_0000_0000
+                                | 0x0000_0011_0000_0000
+                                | 0x0000_0041_0000_0000
+                        ))
+                        && group.extrude_role.is_none()
+                        && group.extrude_face_role().is_none()
+                }
+                Some(design::DesignFeatureFamily::Pipe) => {
+                    group.role == 0x0000_0005_0000_0000
+                        && group.extrude_role.is_none()
+                        && group.extrude_face_role().is_none()
+                }
+                Some(design::DesignFeatureFamily::CircularPattern) => {
+                    matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0008_0000_0000)
+                        && group.extrude_role.is_none()
+                        && group.extrude_face_role().is_none()
+                }
+                Some(design::DesignFeatureFamily::RectangularPattern) => {
+                    matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0008_0000_0000)
+                        && group.extrude_role.is_none()
+                        && group.extrude_face_role().is_none()
+                }
+                Some(design::DesignFeatureFamily::Mirror) => {
+                    matches!(
+                        group.role,
+                        0x0000_0004_0000_0000 | 0x0000_0005_0000_0000 | 0x0000_0008_0000_0000
+                    ) && group.extrude_role.is_none()
+                        && group.extrude_face_role().is_none()
+                }
+                Some(design::DesignFeatureFamily::SurfacePatch) => {
+                    matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0041_0000_0000)
+                        && group.extrude_role.is_none()
+                        && group.extrude_face_role().is_none()
+                }
+                Some(design::DesignFeatureFamily::SurfaceOffset) => {
+                    group.role == 0x0000_0041_0000_0000
+                        && group.extrude_role.is_none()
+                        && group.extrude_face_role().is_none()
+                }
+                Some(design::DesignFeatureFamily::SurfaceRuled) => {
+                    group.role == 0x0000_0008_0000_0000
+                        && group.extrude_role.is_none()
+                        && group.extrude_face_role().is_none()
+                        && scope.ruled_surface_operation().is_some_and(|operation| {
+                            operation
+                                .edge_group_record_indices
+                                .contains(&group.record_index)
                         })
-            })
-            && header.is_some_and(|header| {
-                header.byte_offset == group.byte_offset
-                    && header.class_tag.as_str() == group.class_tag
-            })
-            && frame_valid
+                }
+                Some(design::DesignFeatureFamily::BoundaryFill) => {
+                    matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0005_0000_0000)
+                        && group.extrude_role.is_none()
+                        && group.extrude_face_role().is_none()
+                }
+                Some(design::DesignFeatureFamily::Hole) => {
+                    matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0005_0000_0000)
+                        && group.extrude_role.is_none()
+                        && group.extrude_face_role().is_none()
+                }
+                Some(design::DesignFeatureFamily::SurfaceTrim) => {
+                    matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0021_0000_0000)
+                        && group.extrude_role.is_none()
+                        && group.extrude_face_role().is_none()
+                }
+                Some(design::DesignFeatureFamily::Split) => {
+                    matches!(
+                        group.role,
+                        0x0000_0004_0000_0000 | 0x0000_0009_0000_0000 | 0x0000_0021_0000_0000
+                    ) && group.extrude_role.is_none()
+                        && group.extrude_face_role().is_none()
+                }
+                Some(design::DesignFeatureFamily::Scale) => {
+                    group.role == 0x0000_0004_0000_0000
+                        && group.extrude_role.is_none()
+                        && group.extrude_face_role().is_none()
+                }
+                Some(design::DesignFeatureFamily::Thread) => {
+                    group.role == 0x0000_0010_0000_0000
+                        && group.extrude_role.is_none()
+                        && group.extrude_face_role().is_none()
+                        && scope.thread_construction().is_some_and(|construction| {
+                            construction
+                                .face_group_record_indices
+                                .contains(&group.record_index)
+                        })
+                }
+                Some(design::DesignFeatureFamily::SheetMetalEdgeFlange) => {
+                    matches!(
+                        group.role,
+                        0x0000_0008_0000_0000 | 0x0000_0021_0000_0000 | 0x0000_0043_0000_0000
+                    ) && group.extrude_role.is_none()
+                        && group.extrude_face_role().is_none()
+                }
+                Some(design::DesignFeatureFamily::SheetMetalHem) => {
+                    matches!(group.role, 0x0000_0008_0000_0000 | 0x0000_0043_0000_0000)
+                        && group.extrude_role.is_none()
+                        && group.extrude_face_role().is_none()
+                }
+                Some(_) => false,
+                None if scope.kind() == crate::records::feature::DesignFeatureKind::RemoveBody => {
+                    group.role == 0x0000_0004_0000_0000
+                        && group.extrude_role.is_none()
+                        && group.extrude_face_role().is_none()
+                }
+                None if scope.kind()
+                    == crate::records::feature::DesignFeatureKind::SurfaceStitch =>
+                {
+                    group.role == 0x0000_0005_0000_0000
+                        && group.extrude_role.is_none()
+                        && group.extrude_face_role().is_none()
+                }
+                None if scope.kind() == crate::records::feature::DesignFeatureKind::SplitFace => {
+                    matches!(group.role, 0x0000_0010_0000_0000 | 0x0000_0021_0000_0000)
+                        && group.extrude_role.is_none()
+                        && group.extrude_face_role().is_none()
+                }
+                None if matches!(
+                    scope.kind(),
+                    crate::records::feature::DesignFeatureKind::DeleteFace
+                        | crate::records::feature::DesignFeatureKind::SurfaceDeleteFace
+                ) =>
+                {
+                    group.role == 0x0000_0010_0000_0000
+                        && group.extrude_role.is_none()
+                        && group.extrude_face_role().is_none()
+                }
+                None if scope.kind() == crate::records::feature::DesignFeatureKind::Decal => {
+                    group.role == 0x0000_0004_0000_0000
+                        && group.extrude_role.is_none()
+                        && group.extrude_face_role().is_none()
+                }
+                None if scope.kind() == crate::records::feature::DesignFeatureKind::BaseFlange => {
+                    group.role == 0x0000_0041_0000_0000
+                        && group.extrude_role.is_none()
+                        && group.extrude_face_role().is_none()
+                        && scope.base_flange_profile().as_ref().is_some_and(|profile| {
+                            group
+                                .members
+                                .iter()
+                                .map(|member| member.value)
+                                .eq([profile.record_index])
+                        })
+                }
+                None if scope.kind() == crate::records::feature::DesignFeatureKind::Hem => {
+                    matches!(group.role, 0x0000_0008_0000_0000 | 0x0000_0043_0000_0000)
+                        && group.extrude_role.is_none()
+                        && group.extrude_face_role().is_none()
+                }
+                None => false,
+            };
+            (design::design_feature_family(&scope.kind()).is_some()
+                || matches!(
+                    scope.kind(),
+                    crate::records::feature::DesignFeatureKind::RemoveBody
+                        | crate::records::feature::DesignFeatureKind::SurfaceStitch
+                        | crate::records::feature::DesignFeatureKind::SplitFace
+                        | crate::records::feature::DesignFeatureKind::DeleteFace
+                        | crate::records::feature::DesignFeatureKind::SurfaceDeleteFace
+                        | crate::records::feature::DesignFeatureKind::Decal
+                        | crate::records::feature::DesignFeatureKind::BaseFlange
+                        | crate::records::feature::DesignFeatureKind::EdgeFlange
+                        | crate::records::feature::DesignFeatureKind::Hem
+                ))
+                && role_is_valid
+                && usize::try_from(group.scope_reference_ordinal)
+                    .ok()
+                    .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
+                    == Some(&group.record_index)
+                && group
+                    .members
+                    .iter()
+                    .map(|member| &member.value)
+                    .all(|member| {
+                        scope
+                            .reference_members
+                            .values()
+                            .any(|value| value == member)
+                    })
+        }) && header.is_some_and(|header| {
+            header.byte_offset == group.byte_offset && header.class_tag == group.class_tag
+        }) && frame_valid
             && !group.members.is_empty()
             && group
                 .members

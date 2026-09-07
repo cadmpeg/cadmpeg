@@ -83,7 +83,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         scope_reference_ordinal: 4,
         record_index: 20,
         byte_offset: 0,
-        class_tag: "312".into(),
+        class_tag: crate::records::DesignClassTag::try_from("312".to_owned()).unwrap(),
         members: vec![crate::records::Located {
             value: 21,
             offset: 0,
@@ -106,7 +106,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         role: 0x0000_0005_0000_0000,
         extrude_role: None,
         role_offset: 0,
-        paired_class_tag: "258".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
         paired_byte_offset: 0,
     };
 

@@ -27,7 +27,7 @@ fn move_body_selection_uses_unique_owning_history() {
         scope_reference_ordinal: 0,
         record_index: 20,
         byte_offset: 0,
-        class_tag: "280".into(),
+        class_tag: crate::records::DesignClassTag::try_from("280".to_owned()).unwrap(),
         members: vec![crate::records::Located {
             value: 21,
             offset: 0,
@@ -50,7 +50,7 @@ fn move_body_selection_uses_unique_owning_history() {
         role: 0x0000_0004_0000_0000,
         extrude_role: None,
         role_offset: 0,
-        paired_class_tag: "259".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
         paired_byte_offset: 0,
     };
     let topology = || AsmHistoricalTopology {

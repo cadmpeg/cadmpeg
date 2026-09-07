@@ -464,7 +464,7 @@ pub struct DesignConstructionOperandGroup {
     /// Primary indexed-header byte offset.
     pub byte_offset: u64,
     /// Per-file dynamic primary class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Ordered operand-record references.
     pub members: Vec<Located<u32>>,
     /// Ordered unresolved-edge records whose run terminates at this group's identity.
@@ -479,7 +479,7 @@ pub struct DesignConstructionOperandGroup {
     /// Byte offset of `role`.
     pub role_offset: u64,
     /// Per-file dynamic paired class tag.
-    pub paired_class_tag: String,
+    pub paired_class_tag: DesignClassTag,
     /// Same-index paired-header byte offset.
     pub paired_byte_offset: u64,
 }
@@ -545,7 +545,7 @@ impl TryFrom<DesignConstructionOperandGroupSerde> for DesignConstructionOperandG
             scope_reference_ordinal: wire.scope_reference_ordinal,
             record_index: wire.record_index,
             byte_offset: wire.byte_offset,
-            class_tag: wire.class_tag,
+            class_tag: wire.class_tag.try_into()?,
             members: wire
                 .members
                 .into_iter()
@@ -557,7 +557,7 @@ impl TryFrom<DesignConstructionOperandGroupSerde> for DesignConstructionOperandG
             role: wire.role,
             extrude_role,
             role_offset: wire.role_offset,
-            paired_class_tag: wire.paired_class_tag,
+            paired_class_tag: wire.paired_class_tag.try_into()?,
             paired_byte_offset: wire.paired_byte_offset,
         })
     }
@@ -588,7 +588,7 @@ impl From<DesignConstructionOperandGroup> for DesignConstructionOperandGroupSerd
             scope_reference_ordinal: group.scope_reference_ordinal,
             record_index: group.record_index,
             byte_offset: group.byte_offset,
-            class_tag: group.class_tag,
+            class_tag: group.class_tag.into(),
             members,
             lost_edge_references: group.lost_edge_references,
             member_offsets,
@@ -597,7 +597,7 @@ impl From<DesignConstructionOperandGroup> for DesignConstructionOperandGroupSerd
             extrude_role,
             extrude_face_role,
             role_offset: group.role_offset,
-            paired_class_tag: group.paired_class_tag,
+            paired_class_tag: group.paired_class_tag.into(),
             paired_byte_offset: group.paired_byte_offset,
         }
     }

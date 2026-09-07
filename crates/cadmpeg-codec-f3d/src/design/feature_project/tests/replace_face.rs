@@ -28,7 +28,7 @@ fn group(
         scope_reference_ordinal,
         record_index,
         byte_offset: 0,
-        class_tag: "277".into(),
+        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
         members: vec![crate::records::Located {
             value: member,
             offset: 0,
@@ -51,7 +51,7 @@ fn group(
         role,
         extrude_role: None,
         role_offset: 0,
-        paired_class_tag: "258".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
         paired_byte_offset: 0,
     }
 }

@@ -187,7 +187,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
         scope_reference_ordinal: 0,
         record_index: 100,
         byte_offset: 1000,
-        class_tag: "332".into(),
+        class_tag: crate::records::DesignClassTag::try_from("332".to_owned()).unwrap(),
         members: vec![crate::records::Located {
             value: 200,
             offset: 1026,
@@ -214,7 +214,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
         extrude_role: Some(DesignExtrudeOperandRole::Bodies),
         role_offset: 1053,
 
-        paired_class_tag: "259".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
         paired_byte_offset: 1124,
     };
     let wrapper_header = DesignRecordHeader {
@@ -321,7 +321,7 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
         scope_reference_ordinal: 0,
         record_index: 90,
         byte_offset: 900,
-        class_tag: "269".into(),
+        class_tag: crate::records::DesignClassTag::try_from("269".to_owned()).unwrap(),
         members: vec![crate::records::Located {
             value: 100,
             offset: 926,
@@ -348,7 +348,7 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
         extrude_role: None,
         role_offset: 953,
 
-        paired_class_tag: "265".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("265".to_owned()).unwrap(),
         paired_byte_offset: 1024,
     };
     let record = DesignRecordHeader {

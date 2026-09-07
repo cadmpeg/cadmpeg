@@ -652,7 +652,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         scope_reference_ordinal: 1,
         record_index: 101,
         byte_offset: 1000,
-        class_tag: "332".into(),
+        class_tag: crate::records::DesignClassTag::try_from("332".to_owned()).unwrap(),
         members: vec![crate::records::Located {
             value: 200,
             offset: 1026,
@@ -679,7 +679,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         extrude_role: Some(DesignExtrudeOperandRole::Bodies),
         role_offset: 1054,
 
-        paired_class_tag: "259".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
         paired_byte_offset: 1125,
     };
     set_extrude_operation(&mut scope, DesignExtrudeOperation::Join);

@@ -805,7 +805,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         scope_reference_ordinal: 0,
         record_index: 20,
         byte_offset: 0,
-        class_tag: "280".into(),
+        class_tag: crate::records::DesignClassTag::try_from("280".to_owned()).unwrap(),
         members: vec![crate::records::Located {
             value: 21,
             offset: 0,
@@ -828,7 +828,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         role: 0x0000_0008_0000_0000,
         extrude_role: None,
         role_offset: 0,
-        paired_class_tag: "259".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
         paired_byte_offset: 0,
     };
     let operand = crate::records::topology::DesignBodyRecipeOperand {
@@ -1138,7 +1138,7 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
         scope_reference_ordinal: 2,
         record_index: 100,
         byte_offset: 1000,
-        class_tag: "297".into(),
+        class_tag: crate::records::DesignClassTag::try_from("297".to_owned()).unwrap(),
         members: vec![crate::records::Located {
             value: 200,
             offset: 1010,
@@ -1161,7 +1161,7 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
         role: 0x0000_0010_0000_0000,
         extrude_role: None,
         role_offset: 1030,
-        paired_class_tag: "259".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
         paired_byte_offset: 1100,
     };
     let operand = DesignFaceOperand {
@@ -1309,7 +1309,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         scope_reference_ordinal: 0,
         record_index: 100,
         byte_offset: 1_000,
-        class_tag: "297".into(),
+        class_tag: crate::records::DesignClassTag::try_from("297".to_owned()).unwrap(),
         members: vec![crate::records::Located {
             value: 200,
             offset: 1_010,
@@ -1332,7 +1332,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         role: 0x0000_0010_0000_0000,
         extrude_role: None,
         role_offset: 1_030,
-        paired_class_tag: "259".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
         paired_byte_offset: 1_100,
     };
     let reference = |token: &str, design_reference, candidates: &[i64]| DesignRecipeReference {

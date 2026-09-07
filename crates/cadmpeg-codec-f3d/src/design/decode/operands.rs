@@ -2167,13 +2167,16 @@ pub(crate) fn parse_construction_operand_group(
     ) else {
         return Unclosed;
     };
+    let Ok(paired_class_tag) = paired_class_tag.try_into() else {
+        return Unclosed;
+    };
     Complete(Box::new(DesignConstructionOperandGroup {
         id: String::new(),
         scope_record_index: scope.record_index,
         scope_reference_ordinal,
         record_index: header.record_index,
         byte_offset: header.byte_offset,
-        class_tag: header.class_tag.as_str().to_owned(),
+        class_tag: header.class_tag.clone(),
         members,
         lost_edge_references: Vec::new(),
         frame: DesignConstructionOperandGroupFrame {

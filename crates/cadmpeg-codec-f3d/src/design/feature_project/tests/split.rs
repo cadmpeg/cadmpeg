@@ -22,7 +22,7 @@ fn group(
         scope_reference_ordinal,
         record_index,
         byte_offset: 0,
-        class_tag: "262".into(),
+        class_tag: crate::records::DesignClassTag::try_from("262".to_owned()).unwrap(),
 
         members: members
             .into_iter()
@@ -46,7 +46,7 @@ fn group(
         role,
         extrude_role: None,
         role_offset: 0,
-        paired_class_tag: "258".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
         paired_byte_offset: 0,
     }
 }

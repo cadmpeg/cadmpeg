@@ -456,7 +456,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             scope_reference_ordinal,
             record_index,
             byte_offset: 0,
-            class_tag: "264".into(),
+            class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
             members: members
                 .iter()
                 .copied()
@@ -480,7 +480,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             role,
             extrude_role: None,
             role_offset: 0,
-            paired_class_tag: "264".into(),
+            paired_class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
             paired_byte_offset: 0,
         }
     };

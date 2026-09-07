@@ -34,7 +34,7 @@ fn group() -> DesignConstructionOperandGroup {
         scope_reference_ordinal: 0,
         record_index: 9,
         byte_offset: 0,
-        class_tag: "277".into(),
+        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
         members: vec![
             crate::records::Located {
                 value: 10,
@@ -63,7 +63,7 @@ fn group() -> DesignConstructionOperandGroup {
         role: 0x5_0000_0000,
         extrude_role: None,
         role_offset: 0,
-        paired_class_tag: "277".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
         paired_byte_offset: 0,
     }
 }

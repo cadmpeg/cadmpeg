@@ -23,7 +23,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         scope_reference_ordinal: 0,
         record_index: 90,
         byte_offset: 900,
-        class_tag: "269".into(),
+        class_tag: crate::records::DesignClassTag::try_from("269".to_owned()).unwrap(),
         members: vec![crate::records::Located {
             value: 100,
             offset: 926,
@@ -50,7 +50,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         extrude_role: None,
         role_offset: 953,
 
-        paired_class_tag: "265".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("265".to_owned()).unwrap(),
         paired_byte_offset: 1024,
     };
     let record = DesignRecordHeader {
@@ -301,7 +301,7 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
         scope_reference_ordinal: 1,
         record_index: 90,
         byte_offset: 0,
-        class_tag: "287".into(),
+        class_tag: crate::records::DesignClassTag::try_from("287".to_owned()).unwrap(),
         members: vec![crate::records::Located {
             value: 100,
             offset: 21,
@@ -324,7 +324,7 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
         role: 0x0000_0004_0000_0000,
         extrude_role: None,
         role_offset: 0,
-        paired_class_tag: "264".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
         paired_byte_offset: 0,
     };
     let record = DesignRecordHeader {
@@ -715,7 +715,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         scope_reference_ordinal: 0,
         record_index: 90,
         byte_offset: 900,
-        class_tag: "288".into(),
+        class_tag: crate::records::DesignClassTag::try_from("288".to_owned()).unwrap(),
         members: vec![crate::records::Located {
             value: 100,
             offset: 926,
@@ -743,7 +743,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         extrude_role: None,
         role_offset: 960,
 
-        paired_class_tag: "259".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
         paired_byte_offset: 1_000,
     };
     let recovered = crate::design::edge_resolve::resolved_edge_group(
@@ -1624,7 +1624,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         scope_reference_ordinal: 0,
         record_index: 90,
         byte_offset: 900,
-        class_tag: "306".into(),
+        class_tag: crate::records::DesignClassTag::try_from("306".to_owned()).unwrap(),
         members: vec![crate::records::Located {
             value: operand.record_index,
             offset: 924,
@@ -1653,7 +1653,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         ))),
         role_offset: 946,
 
-        paired_class_tag: "259".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
         paired_byte_offset: 980,
     };
     assert!(matches!(

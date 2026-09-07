@@ -451,7 +451,7 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
             scope_reference_ordinal,
             record_index,
             byte_offset,
-            class_tag: "277".into(),
+            class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
             members: vec![crate::records::Located {
                 value: member,
                 offset: byte_offset + 26,
@@ -474,7 +474,7 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
             role,
             extrude_role: None,
             role_offset,
-            paired_class_tag: "258".into(),
+            paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
             paired_byte_offset: byte_offset + 80,
         }
     };
@@ -582,7 +582,7 @@ fn validation_checks_pipe_path_group_roles() {
         scope_reference_ordinal: 4,
         record_index: 20,
         byte_offset: 1_000,
-        class_tag: "312".into(),
+        class_tag: crate::records::DesignClassTag::try_from("312".to_owned()).unwrap(),
         members: Vec::new(),
         lost_edge_references: Vec::new(),
         frame: DesignConstructionOperandGroupFrame {
@@ -602,7 +602,7 @@ fn validation_checks_pipe_path_group_roles() {
         role: 0x0000_0005_0000_0000,
         extrude_role: None,
         role_offset: 1_040,
-        paired_class_tag: "258".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
         paired_byte_offset: 1_100,
     };
     {
@@ -1072,7 +1072,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         scope_reference_ordinal: 1,
         record_index: 30,
         byte_offset: 400,
-        class_tag: "302".into(),
+        class_tag: crate::records::DesignClassTag::try_from("302".to_owned()).unwrap(),
         members: vec![crate::records::Located {
             value: 20,
             offset: 424,
@@ -1099,7 +1099,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         extrude_role: Some(DesignExtrudeOperandRole::Profile),
         role_offset: 450,
 
-        paired_class_tag: "262".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("262".to_owned()).unwrap(),
         paired_byte_offset: 500,
     };
     {
@@ -1170,7 +1170,7 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
         scope_reference_ordinal: 0,
         record_index: 100,
         byte_offset: 1_000,
-        class_tag: "271".into(),
+        class_tag: crate::records::DesignClassTag::try_from("271".to_owned()).unwrap(),
         members: Vec::new(),
         lost_edge_references: Vec::new(),
         frame: DesignConstructionOperandGroupFrame {
@@ -1193,7 +1193,7 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
         role: 0,
         extrude_role: None,
         role_offset: 1_041,
-        paired_class_tag: "261".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: 1_050,
     };
     let identity = DesignConstructionOperandIdentity {
@@ -1278,7 +1278,7 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
         scope_reference_ordinal: 0,
         record_index: 100,
         byte_offset: 900,
-        class_tag: "277".into(),
+        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
         members: vec![crate::records::Located {
             value: 200,
             offset: 926,
@@ -1301,7 +1301,7 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
         role: 0x41_0000_0000,
         extrude_role: Some(crate::records::topology::DesignExtrudeOperandRole::Profile),
         role_offset: 953,
-        paired_class_tag: "265".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("265".to_owned()).unwrap(),
         paired_byte_offset: 1024,
     };
     let header = DesignRecordHeader {

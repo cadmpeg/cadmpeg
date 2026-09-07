@@ -525,7 +525,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             scope_reference_ordinal,
             record_index,
             byte_offset: 1_000 + u64::from(scope_reference_ordinal),
-            class_tag: "288".into(),
+            class_tag: crate::records::DesignClassTag::try_from("288".to_owned()).unwrap(),
             members: vec![crate::records::Located {
                 value: record_index + 100,
                 offset: 1_026 + u64::from(scope_reference_ordinal),
@@ -551,7 +551,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             role: 0x0000_0008_0000_0000,
             extrude_role: None,
             role_offset: 1_060 + u64::from(scope_reference_ordinal),
-            paired_class_tag: "259".into(),
+            paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
             paired_byte_offset: 1_100 + u64::from(scope_reference_ordinal),
         };
     let mut construction_groups = [construction_group(90, 17), construction_group(80, 4)];
@@ -623,7 +623,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         scope_reference_ordinal: 0,
         record_index,
         byte_offset: 0,
-        class_tag: "000".into(),
+        class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
         members: vec![crate::records::Located {
             value: member,
             offset: 0,
@@ -646,7 +646,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         role,
         extrude_role: None,
         role_offset: 0,
-        paired_class_tag: "000".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
         paired_byte_offset: 0,
     };
     let groups = [
@@ -942,7 +942,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         scope_reference_ordinal: ordinal,
         record_index,
         byte_offset: 1000 + u64::from(ordinal) * 200,
-        class_tag: "288".into(),
+        class_tag: crate::records::DesignClassTag::try_from("288".to_owned()).unwrap(),
 
         members: members
             .into_iter()
@@ -974,7 +974,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         extrude_role: None,
         role_offset: 1110 + u64::from(ordinal) * 200,
 
-        paired_class_tag: "259".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
         paired_byte_offset: 1200 + u64::from(ordinal) * 200,
     };
     let mut operand_groups = [group(100, 0, vec![200]), group(101, 1, vec![201, 202])];

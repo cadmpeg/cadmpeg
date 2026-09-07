@@ -43,7 +43,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         scope_reference_ordinal,
         record_index,
         byte_offset: 0,
-        class_tag: "282".into(),
+        class_tag: crate::records::DesignClassTag::try_from("282".to_owned()).unwrap(),
         members: vec![crate::records::Located {
             value: member,
             offset: 0,
@@ -66,7 +66,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         role: 0x0000_0005_0000_0000,
         extrude_role: None,
         role_offset: 0,
-        paired_class_tag: "261".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         paired_byte_offset: 0,
     };
     let groups = vec![group(100, 0, 200), group(110, 2, 210)];

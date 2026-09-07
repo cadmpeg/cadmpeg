@@ -113,7 +113,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         scope_reference_ordinal: 1,
         record_index: 385,
         byte_offset: 0,
-        class_tag: "000".into(),
+        class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
         members: vec![crate::records::Located {
             value: 388,
             offset: 0,
@@ -136,7 +136,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         role: 0x0000_0008_0000_0000,
         extrude_role: None,
         role_offset: 0,
-        paired_class_tag: "000".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
         paired_byte_offset: 0,
     };
 
@@ -583,7 +583,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         scope_reference_ordinal: 1,
         record_index: 385,
         byte_offset: 0,
-        class_tag: "000".into(),
+        class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
         members: vec![crate::records::Located {
             value: 388,
             offset: 0,
@@ -606,7 +606,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         role: 0x0000_0008_0000_0000,
         extrude_role: None,
         role_offset: 0,
-        paired_class_tag: "000".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
         paired_byte_offset: 0,
     };
     let mut target_group = edge_group.clone();
@@ -885,7 +885,7 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
         scope_reference_ordinal: ordinal,
         record_index,
         byte_offset: 0,
-        class_tag: "277".into(),
+        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
         members: vec![crate::records::Located {
             value: member,
             offset: 0,
@@ -908,7 +908,7 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
         role: 0x0000_0004_0000_0000,
         extrude_role: None,
         role_offset: 0,
-        paired_class_tag: "260".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("260".to_owned()).unwrap(),
         paired_byte_offset: 0,
     };
     let shifted_groups = [group(100, 1, 101), group(110, 4, 111), group(120, 7, 121)];
@@ -1021,7 +1021,7 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             scope_reference_ordinal: 0,
             record_index,
             byte_offset: 0,
-            class_tag: "000".into(),
+            class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
             members: vec![crate::records::Located {
                 value: member,
                 offset: 0,
@@ -1044,7 +1044,7 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             role,
             extrude_role: None,
             role_offset: 0,
-            paired_class_tag: "000".into(),
+            paired_class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
             paired_byte_offset: 0,
         }
     };
