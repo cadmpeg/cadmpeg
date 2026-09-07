@@ -215,6 +215,12 @@ pub(crate) enum CapType {
     Dome,
 }
 
+impl serde::Serialize for CapType {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
 impl CapType {
     pub(crate) fn as_str(self) -> &'static str {
         match self {

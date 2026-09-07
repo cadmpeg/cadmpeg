@@ -563,7 +563,7 @@ struct CurvePipingRecord {
     segments: i32,
     faceted: bool,
     accuracy: i32,
-    cap_type: String,
+    cap_type: crate::mesh_modifiers::CapType,
 }
 
 #[derive(Debug, Serialize)]
@@ -669,7 +669,7 @@ fn curve_piping_record(
         segments: curve_piping.segments,
         faceted: curve_piping.faceted,
         accuracy: curve_piping.accuracy,
-        cap_type: curve_piping.cap_type.as_str().to_string(),
+        cap_type: curve_piping.cap_type,
     }
 }
 
