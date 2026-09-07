@@ -405,7 +405,7 @@ fn exact_legacy_as_built_face_selection(
             Some(DesignAssemblyLegacySelection {
                 record_index,
                 byte_offset: u64::try_from(byte_offset).ok()?,
-                class_tag,
+                class_tag: header.class_tag,
                 asset_id: prefix.asset_id,
                 asset_id_offset: prefix.asset_id_offset,
                 context_id: prefix.context_id,

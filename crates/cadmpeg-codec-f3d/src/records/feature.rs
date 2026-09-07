@@ -2063,7 +2063,7 @@ pub struct DesignAssemblyLegacySelection {
     /// Byte offset of the selection record header.
     pub byte_offset: u64,
     /// Dynamic class of the selection record.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Asset UUID qualifying the selection namespace.
     pub asset_id: String,
     /// Byte offset of the asset UUID's UTF-16LE payload.

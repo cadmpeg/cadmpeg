@@ -988,7 +988,7 @@ mod tests {
         let selection = DesignAssemblyLegacySelection {
             record_index: 7,
             byte_offset: 100,
-            class_tag: "264".into(),
+            class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
             asset_id: "A B".into(),
             asset_id_offset: 110,
             context_id: "CTX#".into(),
