@@ -172,10 +172,7 @@ pub fn evaluate_saved_body_census(ir: &CadIr) -> BodyCensusEvaluation {
     let rederived = match rederived_body_census(ir) {
         Ok(bodies) => bodies,
         Err((feature, reason)) => {
-            return BodyCensusEvaluation::Unsupported {
-                feature: feature_boundary(ir, &feature),
-                reason,
-            };
+            return BodyCensusEvaluation::Unsupported { feature, reason };
         }
     };
     let saved = ir
@@ -199,23 +196,14 @@ pub fn evaluate_saved_body_census(ir: &CadIr) -> BodyCensusEvaluation {
     }
 }
 
-fn feature_boundary(ir: &CadIr, id: &FeatureId) -> FeatureBoundary {
-    let boundary_feature = ir
-        .model
-        .features
-        .iter()
-        .find(|candidate| candidate.id == *id);
+fn feature_boundary(feature: &cadmpeg_ir::features::Feature) -> FeatureBoundary {
     FeatureBoundary {
-        id: id.clone(),
-        name: boundary_feature.and_then(|feature| feature.name.clone()),
-        family: boundary_feature.and_then(|feature| {
-            serde_json::to_value(&feature.definition)
-                .ok()?
-                .get("definition")?
-                .as_str()
-                .map(str::to_string)
-        }),
-        ordinal: boundary_feature.map_or(0, |feature| feature.ordinal),
+        id: feature.id.clone(),
+        name: feature.name.clone(),
+        family: serde_json::to_value(&feature.definition)
+            .ok()
+            .and_then(|definition| definition.get("definition")?.as_str().map(str::to_string)),
+        ordinal: feature.ordinal,
     }
 }
 
@@ -252,7 +240,7 @@ fn active_configuration_is_admitted(ir: &CadIr, saved: &BTreeSet<BodyId>) -> boo
 
 fn rederived_body_census(
     ir: &CadIr,
-) -> Result<BTreeSet<BodyId>, (FeatureId, UnsupportedBodyCensusReason)> {
+) -> Result<BTreeSet<BodyId>, (FeatureBoundary, UnsupportedBodyCensusReason)> {
     let mut bodies = BTreeSet::new();
     let saved_bodies = ir
         .model
@@ -273,7 +261,7 @@ fn rederived_body_census(
                 .any(|dependency| !seen_features.contains(dependency))
         {
             return Err((
-                feature.id.clone(),
+                feature_boundary(feature),
                 UnsupportedBodyCensusReason::InvalidHistoryOrder,
             ));
         }
@@ -284,7 +272,7 @@ fn rederived_body_census(
                 && !suppression_is_body_census_invariant(feature, &bodies) =>
             {
                 return Err((
-                    feature.id.clone(),
+                    feature_boundary(feature),
                     UnsupportedBodyCensusReason::UnresolvedSuppression,
                 ));
             }
@@ -313,7 +301,7 @@ fn rederived_body_census(
             | FeatureDefinition::SectionShape { .. } => {
                 if !feature.outputs.is_empty() {
                     return Err((
-                        feature.id.clone(),
+                        feature_boundary(feature),
                         UnsupportedBodyCensusReason::InvalidOutputLineage,
                     ));
                 }
@@ -332,13 +320,13 @@ fn rederived_body_census(
             } if dimensions.iter().copied().all(positive_length) && placement.is_proper_rigid() => {
                 let [output] = feature.outputs.as_slice() else {
                     return Err((
-                        feature.id.clone(),
+                        feature_boundary(feature),
                         UnsupportedBodyCensusReason::InvalidOutputLineage,
                     ));
                 };
                 if !bodies.insert(output.clone()) {
                     return Err((
-                        feature.id.clone(),
+                        feature_boundary(feature),
                         UnsupportedBodyCensusReason::InvalidOutputLineage,
                     ));
                 }
@@ -362,7 +350,7 @@ fn rederived_body_census(
             }
             FeatureDefinition::Block { .. } => {
                 return Err((
-                    feature.id.clone(),
+                    feature_boundary(feature),
                     UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
                 ));
             }
@@ -384,7 +372,7 @@ fn rederived_body_census(
                 family: UnresolvedFamily::Brep,
             } => {
                 return Err((
-                    feature.id.clone(),
+                    feature_boundary(feature),
                     UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
                 ));
             }
@@ -411,7 +399,7 @@ fn rederived_body_census(
                 family: UnresolvedFamily::SubdivisionBody,
             } => {
                 return Err((
-                    feature.id.clone(),
+                    feature_boundary(feature),
                     UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
                 ));
             }
@@ -422,7 +410,7 @@ fn rederived_body_census(
                 family: UnresolvedFamily::TopologyOptimization,
             } => {
                 return Err((
-                    feature.id.clone(),
+                    feature_boundary(feature),
                     UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
                 ));
             }
@@ -490,7 +478,7 @@ fn rederived_body_census(
             | FeatureDefinition::InsertBodies { bodies: selection } => {
                 let Some(selected) = explicit_body_selection(selection) else {
                     return Err((
-                        feature.id.clone(),
+                        feature_boundary(feature),
                         UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
                     ));
                 };
@@ -498,7 +486,7 @@ fn rederived_body_census(
                     || selected.iter().any(|body| bodies.contains(body))
                 {
                     return Err((
-                        feature.id.clone(),
+                        feature_boundary(feature),
                         UnsupportedBodyCensusReason::InvalidOutputLineage,
                     ));
                 }
@@ -510,7 +498,7 @@ fn rederived_body_census(
                 }
                 let Some(sources) = explicit_body_selection(source) else {
                     return Err((
-                        feature.id.clone(),
+                        feature_boundary(feature),
                         UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
                     ));
                 };
@@ -521,7 +509,7 @@ fn rederived_body_census(
                         != feature.outputs.len()
                 {
                     return Err((
-                        feature.id.clone(),
+                        feature_boundary(feature),
                         UnsupportedBodyCensusReason::InvalidOutputLineage,
                     ));
                 }
@@ -636,7 +624,7 @@ fn rederived_body_census(
             }
             _ => {
                 return Err((
-                    feature.id.clone(),
+                    feature_boundary(feature),
                     UnsupportedBodyCensusReason::UnsupportedFeatureDefinition,
                 ));
             }
@@ -829,11 +817,11 @@ fn preserve_in_place_single_output(
     feature: &cadmpeg_ir::features::Feature,
     bodies: &BTreeSet<BodyId>,
     saved_bodies: &BTreeSet<BodyId>,
-) -> Result<(), (FeatureId, UnsupportedBodyCensusReason)> {
+) -> Result<(), (FeatureBoundary, UnsupportedBodyCensusReason)> {
     preserve_in_place_outputs(feature, bodies, saved_bodies)?;
     if feature.outputs.len() > 1 {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::InvalidOutputLineage,
         ));
     }
@@ -844,7 +832,7 @@ fn preserve_in_place_outputs(
     feature: &cadmpeg_ir::features::Feature,
     bodies: &BTreeSet<BodyId>,
     saved_bodies: &BTreeSet<BodyId>,
-) -> Result<(), (FeatureId, UnsupportedBodyCensusReason)> {
+) -> Result<(), (FeatureBoundary, UnsupportedBodyCensusReason)> {
     // A retained body image can be the final saved output of an in-place edit
     // even when no replay writer has established it yet. In-place operations
     // never create a body, so accept that terminal identity without inserting
@@ -857,7 +845,7 @@ fn preserve_in_place_outputs(
             .any(|output| !bodies.contains(output) && !saved_bodies.contains(output))
     {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::InvalidOutputLineage,
         ));
     }
@@ -869,10 +857,10 @@ fn apply_complete_boolean_outputs(
     bodies: &mut BTreeSet<BodyId>,
     op: BooleanOp,
     incomplete: bool,
-) -> Result<(), (FeatureId, UnsupportedBodyCensusReason)> {
+) -> Result<(), (FeatureBoundary, UnsupportedBodyCensusReason)> {
     if incomplete || matches!(op, BooleanOp::Unresolved) {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
         ));
     }
@@ -880,7 +868,7 @@ fn apply_complete_boolean_outputs(
         || feature.outputs.iter().collect::<BTreeSet<_>>().len() != feature.outputs.len()
     {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::InvalidOutputLineage,
         ));
     }
@@ -897,7 +885,7 @@ fn apply_complete_boolean_outputs(
             if feature.outputs.iter().all(|output| bodies.contains(output)) => {}
         _ => {
             return Err((
-                feature.id.clone(),
+                feature_boundary(feature),
                 UnsupportedBodyCensusReason::InvalidOutputLineage,
             ));
         }
@@ -912,10 +900,10 @@ fn apply_complete_body_combine(
     tools: &BodySelection,
     keep_tools: bool,
     incomplete: bool,
-) -> Result<(), (FeatureId, UnsupportedBodyCensusReason)> {
+) -> Result<(), (FeatureBoundary, UnsupportedBodyCensusReason)> {
     if incomplete {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
         ));
     }
@@ -924,7 +912,7 @@ fn apply_complete_body_combine(
         explicit_body_selection(tools),
     ) else {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
         ));
     };
@@ -933,7 +921,7 @@ fn apply_complete_body_combine(
         || tools.iter().any(|tool| !bodies.contains(tool))
     {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::InvalidOutputLineage,
         ));
     }
@@ -950,16 +938,16 @@ fn apply_complete_body_replacement(
     bodies: &mut BTreeSet<BodyId>,
     inputs: &BodySelection,
     incomplete: bool,
-) -> Result<(), (FeatureId, UnsupportedBodyCensusReason)> {
+) -> Result<(), (FeatureBoundary, UnsupportedBodyCensusReason)> {
     if incomplete {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
         ));
     }
     let Some(inputs) = explicit_body_selection(inputs) else {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
         ));
     };
@@ -973,7 +961,7 @@ fn apply_complete_body_replacement(
             .any(|output| bodies.contains(output) && !input_set.contains(output))
     {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::InvalidOutputLineage,
         ));
     }
@@ -990,10 +978,10 @@ fn apply_complete_body_retention(
     selection: &BodySelection,
     mode: BodyRetentionMode,
     incomplete: bool,
-) -> Result<(), (FeatureId, UnsupportedBodyCensusReason)> {
+) -> Result<(), (FeatureBoundary, UnsupportedBodyCensusReason)> {
     if incomplete {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
         ));
     }
@@ -1005,13 +993,13 @@ fn apply_complete_body_retention(
     }
     let Some(selected) = explicit_body_selection(selection) else {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
         ));
     };
     if !feature.outputs.is_empty() || selected.iter().any(|body| !bodies.contains(body)) {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::InvalidOutputLineage,
         ));
     }
@@ -1033,10 +1021,10 @@ fn preserve_complete_body_targets(
     targets: &BodySelection,
     tools: &BodySelection,
     incomplete: bool,
-) -> Result<(), (FeatureId, UnsupportedBodyCensusReason)> {
+) -> Result<(), (FeatureBoundary, UnsupportedBodyCensusReason)> {
     if incomplete {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
         ));
     }
@@ -1045,7 +1033,7 @@ fn preserve_complete_body_targets(
         explicit_body_selection(tools),
     ) else {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
         ));
     };
@@ -1054,7 +1042,7 @@ fn preserve_complete_body_targets(
         || tools.iter().any(|tool| !bodies.contains(tool))
     {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::InvalidOutputLineage,
         ));
     }
@@ -1067,16 +1055,16 @@ fn apply_complete_body_pattern(
     seeds: &[PatternSeed],
     occurrence_count: Option<usize>,
     incomplete: bool,
-) -> Result<(), (FeatureId, UnsupportedBodyCensusReason)> {
+) -> Result<(), (FeatureBoundary, UnsupportedBodyCensusReason)> {
     if incomplete {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
         ));
     }
     let Some(occurrence_count) = occurrence_count else {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
         ));
     };
@@ -1085,7 +1073,7 @@ fn apply_complete_body_pattern(
         .any(|seed| !matches!(seed, PatternSeed::Bodies(_)))
     {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::UnsupportedFeatureDefinition,
         ));
     }
@@ -1098,7 +1086,7 @@ fn apply_complete_body_pattern(
         .collect::<Option<Vec<_>>>()
     else {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::IncompleteFeatureDefinition,
         ));
     };
@@ -1113,7 +1101,7 @@ fn apply_complete_body_pattern(
         || feature.outputs.iter().any(|output| bodies.contains(output))
     {
         return Err((
-            feature.id.clone(),
+            feature_boundary(feature),
             UnsupportedBodyCensusReason::InvalidOutputLineage,
         ));
     }
