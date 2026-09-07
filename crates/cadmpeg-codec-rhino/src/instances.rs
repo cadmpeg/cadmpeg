@@ -4,6 +4,7 @@
 use std::collections::HashSet;
 use std::ops::Range;
 
+use cadmpeg_ir::products::NonEmptyString;
 use cadmpeg_ir::transform::Transform;
 
 use crate::chunks::{
@@ -92,34 +93,28 @@ pub(crate) struct FileReference {
 pub(crate) enum LinkSource {
     /// No linked path or structured file reference.
     None,
-    /// V5 packed path. Userdata may fill the unused slot, so both strings can be nonempty.
-    Legacy {
-        /// Full linked path.
-        full_path: String,
-        /// Relative linked path.
-        relative_path: String,
-        /// Whether the packed V5 path was the relative slot.
-        relative_preferred: bool,
+    /// Legacy full path without a relative-path alternative.
+    LegacyFull(NonEmptyString),
+    /// Preferred legacy relative path, with an optional full-path alternative.
+    LegacyRelative {
+        relative_path: NonEmptyString,
+        full_path: Option<NonEmptyString>,
     },
     /// Structured `ON_FileReference` payload.
     Structured(FileReference),
 }
 
 impl LinkSource {
-    fn from_legacy(full_path: String, relative_path: String, relative_preferred: bool) -> Self {
-        if full_path.is_empty() && relative_path.is_empty() {
-            Self::None
-        } else {
-            Self::Legacy {
-                full_path,
+    fn from_legacy(full_path: String, relative_path: String) -> Self {
+        let full_path = NonEmptyString::new(full_path);
+        if let Some(relative_path) = NonEmptyString::new(relative_path) {
+            Self::LegacyRelative {
                 relative_path,
-                relative_preferred,
+                full_path,
             }
+        } else {
+            full_path.map_or(Self::None, Self::LegacyFull)
         }
-    }
-
-    fn from_file_reference(value: Option<FileReference>) -> Self {
-        value.map_or(Self::None, Self::Structured)
     }
 }
 
@@ -165,25 +160,24 @@ impl InstanceDefinition {
 
     pub(crate) fn legacy_linked_path(&self) -> &str {
         match &self.link {
-            LinkSource::Legacy { full_path, .. } => full_path,
+            LinkSource::LegacyFull(path) => path.as_str(),
+            LinkSource::LegacyRelative {
+                full_path: Some(path),
+                ..
+            } => path.as_str(),
             _ => "",
         }
     }
 
     pub(crate) fn legacy_relative_linked_path(&self) -> &str {
         match &self.link {
-            LinkSource::Legacy { relative_path, .. } => relative_path,
+            LinkSource::LegacyRelative { relative_path, .. } => relative_path.as_str(),
             _ => "",
         }
     }
 
     pub(crate) fn legacy_relative_path(&self) -> bool {
-        match &self.link {
-            LinkSource::Legacy {
-                relative_preferred, ..
-            } => *relative_preferred,
-            _ => false,
-        }
+        matches!(self.link, LinkSource::LegacyRelative { .. })
     }
 }
 
@@ -750,11 +744,7 @@ fn parse_v5(
         linked_appearance,
         link: match file_reference {
             Some(value) => LinkSource::Structured(value),
-            None => LinkSource::from_legacy(
-                legacy_linked_path,
-                legacy_relative_linked_path,
-                legacy_relative_path,
-            ),
+            None => LinkSource::from_legacy(legacy_linked_path, legacy_relative_linked_path),
         },
     })
 }
@@ -807,8 +797,7 @@ fn parse_v6(
     };
     let mut linked_depth = 0;
     let mut linked_appearance = 0;
-    let mut linked_file = None;
-    if reader.bool()? {
+    let linked_file = if reader.bool()? {
         let (linked_chunk, mut linked, linked_version) =
             anonymous_versioned(data, &mut reader, archive, "linked type", false, warnings)?;
         if linked_version.0 != 1 || linked_version.1 < 0 {
@@ -817,12 +806,8 @@ fn parse_v6(
                 "unsupported linked-type version",
             ));
         }
-        linked_file = Some(file_reference(data, &mut linked, archive, warnings)?);
-        let mut linked_children = vec![linked_file
-            .as_ref()
-            .expect("file reference assigned")
-            .source_range
-            .clone()];
+        let reference = file_reference(data, &mut linked, archive, warnings)?;
+        let mut linked_children = vec![reference.source_range.clone()];
         linked_depth = linked.i32()?;
         linked_appearance = linked.u32()?;
         if linked.bool()? {
@@ -837,7 +822,10 @@ fn parse_v6(
             warnings,
         )?;
         outer_children.push(linked_chunk.range());
-    }
+        Some(reference)
+    } else {
+        None
+    };
     finish(&mut reader, "instance definition")?;
     checksum_warning_excluding(
         data,
@@ -859,7 +847,7 @@ fn parse_v6(
         units,
         linked_depth,
         linked_appearance,
-        link: LinkSource::from_file_reference(linked_file),
+        link: linked_file.map_or(LinkSource::None, LinkSource::Structured),
     })
 }
 
@@ -978,39 +966,40 @@ fn apply_idef_alternative_path(
                 continue;
             }
         };
-        let path = path.trim();
-        if path.is_empty() {
+        let Some(path) = NonEmptyString::new(path.trim()) else {
             continue;
-        }
+        };
         match &mut definition.link {
             LinkSource::Structured(reference) => {
                 if relative {
                     if reference.relative_path.is_empty() {
-                        path.clone_into(&mut reference.relative_path);
+                        path.as_str().clone_into(&mut reference.relative_path);
                     }
                 } else if reference.full_path.is_empty() {
-                    path.clone_into(&mut reference.full_path);
+                    path.as_str().clone_into(&mut reference.full_path);
                 }
             }
-            LinkSource::Legacy {
-                full_path,
-                relative_path,
-                relative_preferred,
-            } => {
+            LinkSource::LegacyFull(full_path) => {
                 if relative {
-                    if relative_path.is_empty() {
-                        path.clone_into(relative_path);
-                        *relative_preferred = true;
-                    }
-                } else if full_path.is_empty() {
-                    path.clone_into(full_path);
+                    definition.link = LinkSource::LegacyRelative {
+                        relative_path: path,
+                        full_path: Some(full_path.clone()),
+                    };
+                }
+            }
+            LinkSource::LegacyRelative { full_path, .. } => {
+                if !relative && full_path.is_none() {
+                    *full_path = Some(path);
                 }
             }
             LinkSource::None => {
                 definition.link = if relative {
-                    LinkSource::from_legacy(String::new(), path.to_string(), true)
+                    LinkSource::LegacyRelative {
+                        relative_path: path,
+                        full_path: None,
+                    }
                 } else {
-                    LinkSource::from_legacy(path.to_string(), String::new(), false)
+                    LinkSource::LegacyFull(path)
                 };
             }
         }

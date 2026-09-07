@@ -99,42 +99,49 @@ fn hex(bytes: &[u8]) -> String {
 
 fn external_record(definition_uuid: Uuid, link: &LinkSource) -> Option<ExternalReferenceRecord> {
     let definition = definition_id(definition_uuid);
-    Some(match link {
+    let (full_path, relative_path, relative_path_preferred) = match link {
         LinkSource::None => return None,
-        LinkSource::Structured(value) => ExternalReferenceRecord {
-            id: external_id(definition_uuid),
-            definition_uuid: definition_uuid.to_string(),
-            full_path: value.full_path.clone(),
-            relative_path: value.relative_path.clone(),
-            relative_path_preferred: false,
-            byte_count: Some(value.content_hash.byte_count),
-            hash_time: Some(value.content_hash.hash_time),
-            content_time: Some(value.content_hash.content_time),
-            name_sha1: Some(hex(&value.content_hash.name_sha1)),
-            content_sha1: Some(hex(&value.content_hash.content_sha1)),
-            path_status: Some(value.path_status),
-            embedded_file_uuid: value.embedded_file_id.map(|id| id.to_string()),
-            links: vec![definition],
-        },
-        LinkSource::Legacy {
+        LinkSource::Structured(value) => {
+            return Some(ExternalReferenceRecord {
+                id: external_id(definition_uuid),
+                definition_uuid: definition_uuid.to_string(),
+                full_path: value.full_path.clone(),
+                relative_path: value.relative_path.clone(),
+                relative_path_preferred: false,
+                byte_count: Some(value.content_hash.byte_count),
+                hash_time: Some(value.content_hash.hash_time),
+                content_time: Some(value.content_hash.content_time),
+                name_sha1: Some(hex(&value.content_hash.name_sha1)),
+                content_sha1: Some(hex(&value.content_hash.content_sha1)),
+                path_status: Some(value.path_status),
+                embedded_file_uuid: value.embedded_file_id.map(|id| id.to_string()),
+                links: vec![definition],
+            })
+        }
+        LinkSource::LegacyFull(path) => (path.as_str(), "", false),
+        LinkSource::LegacyRelative {
             full_path,
             relative_path,
-            relative_preferred,
-        } => ExternalReferenceRecord {
-            id: external_id(definition_uuid),
-            definition_uuid: definition_uuid.to_string(),
-            full_path: full_path.clone(),
-            relative_path: relative_path.clone(),
-            relative_path_preferred: *relative_preferred,
-            byte_count: None,
-            hash_time: None,
-            content_time: None,
-            name_sha1: None,
-            content_sha1: None,
-            path_status: None,
-            embedded_file_uuid: None,
-            links: vec![definition],
-        },
+        } => (
+            full_path.as_ref().map_or("", |path| path.as_str()),
+            relative_path.as_str(),
+            true,
+        ),
+    };
+    Some(ExternalReferenceRecord {
+        id: external_id(definition_uuid),
+        definition_uuid: definition_uuid.to_string(),
+        full_path: full_path.to_owned(),
+        relative_path: relative_path.to_owned(),
+        relative_path_preferred,
+        byte_count: None,
+        hash_time: None,
+        content_time: None,
+        name_sha1: None,
+        content_sha1: None,
+        path_status: None,
+        embedded_file_uuid: None,
+        links: vec![definition],
     })
 }
 
