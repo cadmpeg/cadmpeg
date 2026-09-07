@@ -304,6 +304,7 @@ impl ReferenceSignature {
             .collect()
     }
     /// Offset of the first signature byte.
+    #[cfg(test)]
     pub fn signature_offset(&self) -> usize {
         self.signature_offset
     }
