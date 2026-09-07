@@ -1317,7 +1317,7 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
         group_member_ordinal: 0,
         record_index: 200,
         byte_offset: 1_000,
-        class_tag: "338".into(),
+        class_tag: crate::records::DesignClassTag::try_from("338".to_owned()).unwrap(),
         asset_id: "11111111-2222-4333-8444-555555555555".into(),
         asset_id_offset: 1_034,
         context_id: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee".into(),

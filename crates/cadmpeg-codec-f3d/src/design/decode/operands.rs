@@ -3028,7 +3028,7 @@ pub(crate) fn parse_entity_selection_operand(
 pub(crate) struct EntitySelectionFrame {
     pub(crate) record_index: u32,
     pub(crate) byte_offset: u64,
-    pub(crate) class_tag: String,
+    pub(crate) class_tag: crate::records::DesignClassTag,
     pub(crate) asset_id: String,
     pub(crate) asset_id_offset: u64,
     pub(crate) context_id: String,
@@ -3324,7 +3324,7 @@ pub(crate) fn parse_entity_selection_frame(
     Some(EntitySelectionFrame {
         record_index,
         byte_offset,
-        class_tag: class_tag.to_owned(),
+        class_tag: class_tag.to_owned().try_into().ok()?,
         asset_id: prefix.asset_id,
         asset_id_offset: prefix.asset_id_offset,
         context_id: prefix.context_id,

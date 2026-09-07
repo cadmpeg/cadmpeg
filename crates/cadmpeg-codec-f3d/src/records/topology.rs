@@ -1542,7 +1542,7 @@ pub struct DesignEntitySelectionOperand {
     /// Primary indexed-header byte offset.
     pub byte_offset: u64,
     /// Source per-file dynamic primary class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Asset UUID qualifying the selection namespace.
     pub asset_id: String,
     /// Byte offset of the asset identifier's UTF-16LE code units.
@@ -1649,7 +1649,7 @@ impl TryFrom<DesignEntitySelectionOperandWire> for DesignEntitySelectionOperand 
             group_member_ordinal: wire.group_member_ordinal,
             record_index: wire.record_index,
             byte_offset: wire.byte_offset,
-            class_tag: wire.class_tag,
+            class_tag: wire.class_tag.try_into()?,
             asset_id: wire.asset_id,
             asset_id_offset: wire.asset_id_offset,
             context_id: wire.context_id,
@@ -1688,7 +1688,7 @@ impl From<DesignEntitySelectionOperand> for DesignEntitySelectionOperandWire {
             group_member_ordinal: record.group_member_ordinal,
             record_index: record.record_index,
             byte_offset: record.byte_offset,
-            class_tag: record.class_tag,
+            class_tag: record.class_tag.into(),
             asset_id: record.asset_id,
             asset_id_offset: record.asset_id_offset,
             context_id: record.context_id,

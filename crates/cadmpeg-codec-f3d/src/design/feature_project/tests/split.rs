@@ -126,7 +126,7 @@ fn direct_single_identity_split_face_member_projects_historical_edge_path() {
         group_member_ordinal: 0,
         record_index: 101,
         byte_offset: 0,
-        class_tag: "277".into(),
+        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
         asset_id: "asset".into(),
         asset_id_offset: 0,
         context_id: "context".into(),

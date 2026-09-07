@@ -6565,7 +6565,7 @@ fn validate_entity_selection_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let native_stream = design_stream(&operand.id);
         let group = operand_groups_by_index.get(&(native_stream, operand.group_record_index));
         let header = records_by_index.get(&(native_stream, operand.record_index));
-        let class_338_curve_identity = operand.class_tag == "338"
+        let class_338_curve_identity = operand.class_tag.as_str() == "338"
             && operand.primary_identity_offset
                 == operand
                     .identity_record_offset
@@ -6585,20 +6585,15 @@ fn validate_entity_selection_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 == operand
                     .identity_record_offset
                     .saturating_add(class_338_curve::LEN as u64);
-        let valid = operand.class_tag.len() == 3
-            && operand.class_tag.bytes().all(|byte| byte.is_ascii_digit())
-            && group.is_some_and(|group| {
-                group.scope_record_index == operand.scope_record_index
-                    && usize::try_from(operand.group_member_ordinal)
-                        .ok()
-                        .and_then(|ordinal| group.members.get(ordinal).map(|member| &member.value))
-                        == Some(&operand.record_index)
-            })
-            && header.is_some_and(|header| {
-                header.byte_offset == operand.byte_offset
-                    && header.class_tag.as_str() == operand.class_tag
-            })
-            && valid_design_guid(&operand.asset_id)
+        let valid = group.is_some_and(|group| {
+            group.scope_record_index == operand.scope_record_index
+                && usize::try_from(operand.group_member_ordinal)
+                    .ok()
+                    .and_then(|ordinal| group.members.get(ordinal).map(|member| &member.value))
+                    == Some(&operand.record_index)
+        }) && header.is_some_and(|header| {
+            header.byte_offset == operand.byte_offset && header.class_tag == operand.class_tag
+        }) && valid_design_guid(&operand.asset_id)
             && valid_design_guid(&operand.context_id)
             && operand.identity_record_index == operand.record_index.saturating_add(3)
             && (class_338_curve_identity

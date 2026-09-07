@@ -660,7 +660,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         group_member_ordinal: 0,
         record_index: 112,
         byte_offset: 0,
-        class_tag: "000".into(),
+        class_tag: crate::records::DesignClassTag::try_from("000".to_owned()).unwrap(),
         asset_id: "asset".into(),
         asset_id_offset: 0,
         context_id: "context".into(),

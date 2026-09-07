@@ -626,7 +626,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         group_member_ordinal: 0,
         record_index: 424,
         byte_offset: 0,
-        class_tag: "377".into(),
+        class_tag: crate::records::DesignClassTag::try_from("377".to_owned()).unwrap(),
         asset_id: "asset".into(),
         asset_id_offset: 0,
         context_id: "context".into(),
