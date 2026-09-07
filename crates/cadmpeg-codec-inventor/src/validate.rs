@@ -1653,7 +1653,7 @@ fn validate_segments(data: &NativeData, findings: &mut Vec<Finding>) {
                 *counts.entry(record.token.as_str()).or_default() += 1;
                 if !type_keys.contains(&(
                     record.token.as_str(),
-                    record.type_index,
+                    record.type_index(),
                     record.type_id.as_str(),
                 )) {
                     findings.push(finding(
@@ -1697,7 +1697,7 @@ fn validate_segments(data: &NativeData, findings: &mut Vec<Finding>) {
         .map(|bulk| (bulk.token.as_str(), bulk.expanded_len))
         .collect::<HashMap<_, _>>();
     for record in &data.records {
-        let end = record.payload_offset.checked_add(record.payload_len);
+        let end = record.payload_offset.checked_add(record.payload_len());
         if end.is_none_or(|end| {
             end > expanded_lengths
                 .get(record.token.as_str())

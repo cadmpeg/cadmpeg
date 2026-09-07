@@ -965,19 +965,108 @@ impl TryFrom<SegmentBulkRecordWire> for SegmentBulkRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "RseRecordRecordWire", into = "RseRecordRecordWire")]
 pub(crate) struct RseRecordRecord {
     pub(crate) id: String,
     pub(crate) token: String,
     pub(crate) ordinal: u32,
-    pub(crate) selector: u32,
-    pub(crate) type_index: u8,
+    selector: u32,
+    type_index: u8,
     pub(crate) type_id: String,
     pub(crate) payload_offset: u64,
-    pub(crate) payload_len: u64,
+    payload_len: u64,
     pub(crate) payload_sha256: String,
-    pub(crate) trailing_payload_len: u32,
+    trailing_payload_len: u32,
     pub(crate) trailer_len: u64,
     pub(crate) trailer_sha256: String,
+}
+
+impl RseRecordRecord {
+    pub(crate) fn from_frame(token: &str, frame: &crate::records::RseRecordFrame<'_>) -> Self {
+        Self {
+            id: format!("inventor:rse:record#{token}-{}", frame.ordinal),
+            token: token.into(),
+            ordinal: frame.ordinal,
+            selector: frame.selector,
+            type_index: frame.type_index(),
+            type_id: crate::pmdc::type_id_string(frame.type_id),
+            payload_offset: frame.payload_offset,
+            payload_len: u64::from(frame.payload_len()),
+            payload_sha256: cadmpeg_ir::hash::sha256_hex(frame.payload.window()),
+            trailing_payload_len: frame.trailing_payload_len(),
+            trailer_len: frame.trailer.window().len() as u64,
+            trailer_sha256: cadmpeg_ir::hash::sha256_hex(frame.trailer.window()),
+        }
+    }
+    pub(crate) fn type_index(&self) -> u8 {
+        self.type_index
+    }
+    pub(crate) fn payload_len(&self) -> u64 {
+        self.payload_len
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct RseRecordRecordWire {
+    id: String,
+    token: String,
+    ordinal: u32,
+    selector: u32,
+    type_index: u8,
+    type_id: String,
+    payload_offset: u64,
+    payload_len: u64,
+    payload_sha256: String,
+    trailing_payload_len: u32,
+    trailer_len: u64,
+    trailer_sha256: String,
+}
+
+impl From<RseRecordRecord> for RseRecordRecordWire {
+    fn from(record: RseRecordRecord) -> Self {
+        Self {
+            id: record.id,
+            token: record.token,
+            ordinal: record.ordinal,
+            selector: record.selector,
+            type_index: record.type_index,
+            type_id: record.type_id,
+            payload_offset: record.payload_offset,
+            payload_len: record.payload_len,
+            payload_sha256: record.payload_sha256,
+            trailing_payload_len: record.trailing_payload_len,
+            trailer_len: record.trailer_len,
+            trailer_sha256: record.trailer_sha256,
+        }
+    }
+}
+
+impl TryFrom<RseRecordRecordWire> for RseRecordRecord {
+    type Error = String;
+    fn try_from(wire: RseRecordRecordWire) -> Result<Self, Self::Error> {
+        if wire.type_index != wire.selector as u8 {
+            return Err("type_index disagrees with selector".into());
+        }
+        if wire.trailing_payload_len != 0
+            && u64::from(wire.trailing_payload_len) != wire.payload_len
+        {
+            return Err("trailing_payload_len disagrees with payload_len".into());
+        }
+        Ok(Self {
+            id: wire.id,
+            token: wire.token,
+            ordinal: wire.ordinal,
+            selector: wire.selector,
+            type_index: wire.type_index,
+            type_id: wire.type_id,
+            payload_offset: wire.payload_offset,
+            payload_len: wire.payload_len,
+            payload_sha256: wire.payload_sha256,
+            trailing_payload_len: wire.trailing_payload_len,
+            trailer_len: wire.trailer_len,
+            trailer_sha256: wire.trailer_sha256,
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -701,24 +701,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             table
                 .records
                 .iter()
-                .map(|record| RseRecordRecord {
-                    id: format!(
-                        "inventor:rse:record#{}-{}",
-                        segment.pair.token.as_str(),
-                        record.ordinal
-                    ),
-                    token: segment.pair.token.as_str().into(),
-                    ordinal: record.ordinal,
-                    selector: record.selector,
-                    type_index: record.type_index,
-                    type_id: hex(&record.type_id),
-                    payload_offset: record.payload_offset,
-                    payload_len: record.declared_payload_len as u64,
-                    payload_sha256: sha256_hex(record.payload.window()),
-                    trailing_payload_len: record.trailing_payload_len,
-                    trailer_len: record.trailer.window().len() as u64,
-                    trailer_sha256: sha256_hex(record.trailer.window()),
-                })
+                .map(|record| RseRecordRecord::from_frame(segment.pair.token.as_str(), record))
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
