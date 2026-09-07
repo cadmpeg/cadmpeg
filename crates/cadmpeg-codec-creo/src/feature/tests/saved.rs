@@ -766,19 +766,19 @@ fn decodes_mdlstatus_recipe_discriminators_within_their_records() {
     let operations = operations(payload);
     assert_eq!(operations.len(), 6);
     assert_eq!(
-        operations[0].recipe.candidate(),
+        operations[0].recipe.resolved(),
         Some(FeatureRecipe::ProtrudeExtrude)
     );
     assert_eq!(
-        operations[1].recipe.candidate(),
+        operations[1].recipe.resolved(),
         Some(FeatureRecipe::ProtrudeRevolve)
     );
     assert_eq!(
-        operations[2].recipe.candidate(),
+        operations[2].recipe.resolved(),
         Some(FeatureRecipe::CutExtrude)
     );
     assert_eq!(
-        operations[3].recipe.candidate(),
+        operations[3].recipe.resolved(),
         Some(FeatureRecipe::CutRevolve)
     );
     assert_eq!(operations[4].recipe.candidate(), None);
@@ -827,13 +827,10 @@ fn conflicting_inline_recipes_across_display_states_remain_conflicting() {
     let states = operation_states(payload);
     assert_eq!(states.len(), 2);
     assert_eq!(
-        states[0].recipe.candidate(),
+        states[0].recipe.resolved(),
         Some(FeatureRecipe::ProtrudeExtrude)
     );
-    assert_eq!(
-        states[1].recipe.candidate(),
-        Some(FeatureRecipe::CutExtrude)
-    );
+    assert_eq!(states[1].recipe.resolved(), Some(FeatureRecipe::CutExtrude));
 
     let current_operations = operations(payload);
     let [current] = current_operations.as_slice() else {
@@ -856,7 +853,7 @@ fn binds_depdb_recipe_records_to_compact_feature_ids() {
     assert_eq!(operations.len(), 2);
     assert_eq!(operations[0].feature_id, 247);
     assert_eq!(
-        operations[0].recipe.candidate(),
+        operations[0].recipe.resolved(),
         Some(FeatureRecipe::ProtrudeRevolve)
     );
     assert_eq!(
@@ -868,7 +865,7 @@ fn binds_depdb_recipe_records_to_compact_feature_ids() {
     assert_eq!(operations[0].parent_feature_id(), Some(32));
     assert_eq!(operations[1].feature_id, 8053);
     assert_eq!(
-        operations[1].recipe.candidate(),
+        operations[1].recipe.resolved(),
         Some(FeatureRecipe::ProtrudeExtrude)
     );
     assert_eq!(
@@ -930,16 +927,17 @@ fn preserves_competing_depdb_recipe_bindings() {
             \xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 2\0\xf6\0protextrude\0";
     let repeated_states = operation_states(repeated);
     assert_eq!(repeated_states.len(), 2);
+    assert_eq!(repeated_states[0].recipe, repeated_states[1].recipe);
     assert_eq!(
-        repeated_states[0].recipe.candidate(),
-        repeated_states[1].recipe.candidate()
+        repeated_states[0].recipe.resolved(),
+        Some(FeatureRecipe::ProtrudeExtrude)
     );
     assert_ne!(repeated_states[0].offset, repeated_states[1].offset);
     let repeated_current = operations(repeated);
     assert_eq!(repeated_current.len(), 1);
     assert_eq!(repeated_current[0].kind.as_str(), "Extrude");
     assert_eq!(
-        repeated_current[0].recipe.candidate(),
+        repeated_current[0].recipe.resolved(),
         Some(FeatureRecipe::ProtrudeExtrude)
     );
     assert_eq!(
@@ -1014,7 +1012,7 @@ fn promotes_depdb_recipe_without_operation_display_name() {
     assert_eq!(operations[0].feature_id, 8053);
     assert_eq!(operations[0].kind.as_str(), "Extrude");
     assert_eq!(
-        operations[0].recipe.candidate(),
+        operations[0].recipe.resolved(),
         Some(FeatureRecipe::ProtrudeExtrude)
     );
     assert_eq!(

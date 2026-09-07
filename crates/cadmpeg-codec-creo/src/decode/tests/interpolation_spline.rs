@@ -1584,7 +1584,7 @@ fn current_feature_state_controls_recipe_and_parent_projection() {
     let historical = operation(crate::feature::FeatureRecipe::ProtrudeExtrude, 4, 10);
     let current = operation(crate::feature::FeatureRecipe::ProtrudeRevolve, 5, 20);
     let states = [historical, current.clone()];
-    assert_ne!(states[0].recipe.candidate(), states[1].recipe.candidate());
+    assert_ne!(states[0].recipe.resolved(), states[1].recipe.resolved());
     assert_ne!(states[0].parent_feature_id(), states[1].parent_feature_id());
     assert_eq!(
         current_feature_recipe(std::slice::from_ref(&current), 6),
