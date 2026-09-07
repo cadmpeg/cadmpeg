@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::decode::feature_completeness::{
+    combine_definition_is_incomplete, incomplete_expression_parameters,
+};
+
 use cadmpeg_ir::math::Point2;
 
 use super::*;
@@ -1307,7 +1311,7 @@ fn nx_inch_expression_values_are_attached_in_millimeters() {
             .map(String::as_str),
         Some("inch")
     );
-    assert!(crate::decode::incomplete_expression_parameters(&ir).is_empty());
+    assert!(incomplete_expression_parameters(&ir).is_empty());
 }
 
 #[test]
@@ -1338,7 +1342,7 @@ fn nx_native_expression_units_remain_outside_neutral_values() {
         Some("custom/unit")
     );
     assert_eq!(
-        crate::decode::incomplete_expression_parameters(&ir),
+        incomplete_expression_parameters(&ir),
         [ir.model.parameters[0].id.clone()].into()
     );
 }
@@ -1741,7 +1745,7 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
         definition,
         native_ref: None,
     };
-    assert!(!crate::decode::combine_definition_is_incomplete(&feature));
+    assert!(!combine_definition_is_incomplete(&feature));
 }
 
 #[test]

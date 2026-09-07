@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Neutral evaluation of Siemens NX feature-history effects.
 
+use crate::decode::feature_completeness;
+
 use std::collections::BTreeSet;
 
 use cadmpeg_ir::document::CadIr;
@@ -10,7 +12,9 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::ids::BodyId;
 
-use crate::decode::{output_free_local_body_construction, output_free_native_snapshot};
+use crate::decode::feature_completeness::{
+    output_free_local_body_construction, output_free_native_snapshot,
+};
 use serde::{Deserialize, Serialize};
 
 /// Why a saved-body census cannot yet be evaluated exactly.
@@ -235,7 +239,7 @@ fn active_configuration_is_admitted(ir: &CadIr, saved: &BTreeSet<BodyId>) -> boo
         && configuration_bodies.iter().collect::<BTreeSet<_>>()
             == saved.iter().collect::<BTreeSet<_>>()
         && (ir.model.features.iter().all(is_body_neutral_feature)
-            || !crate::decode::active_configuration_state_is_incomplete(ir, configuration))
+            || !feature_completeness::active_configuration_state_is_incomplete(ir, configuration))
 }
 
 fn rederived_body_census(
@@ -359,7 +363,7 @@ fn rederived_body_census(
                     feature,
                     &mut bodies,
                     *op,
-                    crate::decode::sphere_definition_is_incomplete(feature),
+                    feature_completeness::sphere_definition_is_incomplete(feature),
                 )?;
             }
             FeatureDefinition::Unresolved {
@@ -419,7 +423,7 @@ fn rederived_body_census(
                     feature,
                     &mut bodies,
                     *op,
-                    crate::decode::loft_definition_is_incomplete(feature),
+                    feature_completeness::loft_definition_is_incomplete(feature),
                 )?;
             }
             FeatureDefinition::Extrude {
@@ -434,7 +438,7 @@ fn rederived_body_census(
                     feature,
                     &mut bodies,
                     *op,
-                    crate::decode::extrude_definition_is_incomplete(feature),
+                    feature_completeness::extrude_definition_is_incomplete(feature),
                 )?;
             }
             FeatureDefinition::Revolve { .. } if output_free_local_body_construction(feature) => {}
@@ -443,7 +447,7 @@ fn rederived_body_census(
                     feature,
                     &mut bodies,
                     *op,
-                    crate::decode::revolve_definition_is_incomplete(feature),
+                    feature_completeness::revolve_definition_is_incomplete(feature),
                 )?;
             }
             FeatureDefinition::Rib { .. } if output_free_local_body_construction(feature) => {}
@@ -452,7 +456,7 @@ fn rederived_body_census(
                     feature,
                     &mut bodies,
                     *op,
-                    crate::decode::rib_definition_is_incomplete(feature),
+                    feature_completeness::rib_definition_is_incomplete(feature),
                 )?;
             }
             FeatureDefinition::Sweep { .. } if output_free_local_body_construction(feature) => {}
@@ -467,7 +471,7 @@ fn rederived_body_census(
                     feature,
                     &mut bodies,
                     op,
-                    crate::decode::sweep_definition_is_incomplete(feature),
+                    feature_completeness::sweep_definition_is_incomplete(feature),
                 )?;
             }
             FeatureDefinition::BaseFeature { .. } if output_free_native_snapshot(feature) => {}
@@ -566,7 +570,7 @@ fn rederived_body_census(
                     target,
                     tools,
                     *keep_tools,
-                    crate::decode::combine_definition_is_incomplete(feature),
+                    feature_completeness::combine_definition_is_incomplete(feature),
                 )?;
             }
             FeatureDefinition::SewBodies {
@@ -579,7 +583,7 @@ fn rederived_body_census(
                     feature,
                     &mut bodies,
                     selection,
-                    crate::decode::sew_bodies_definition_is_incomplete(feature),
+                    feature_completeness::sew_bodies_definition_is_incomplete(feature),
                 )?;
             }
             FeatureDefinition::TrimBodies { targets, tools, .. } => {
@@ -591,7 +595,7 @@ fn rederived_body_census(
                     &bodies,
                     targets,
                     tools,
-                    crate::decode::trim_bodies_definition_is_incomplete(feature),
+                    feature_completeness::trim_bodies_definition_is_incomplete(feature),
                 )?;
             }
             FeatureDefinition::DeleteBody {
@@ -603,7 +607,7 @@ fn rederived_body_census(
                     &mut bodies,
                     selection,
                     *mode,
-                    crate::decode::delete_body_definition_is_incomplete(feature),
+                    feature_completeness::delete_body_definition_is_incomplete(feature),
                 )?;
             }
             FeatureDefinition::Pattern { seeds, pattern } => {
@@ -614,8 +618,8 @@ fn rederived_body_census(
                     feature,
                     &mut bodies,
                     seeds,
-                    crate::decode::pattern_occurrence_count(pattern),
-                    crate::decode::pattern_feature_is_incomplete(
+                    feature_completeness::operands::pattern_occurrence_count(pattern),
+                    feature_completeness::operands::pattern_feature_is_incomplete(
                         seeds,
                         pattern,
                         &feature.dependencies,
@@ -691,8 +695,8 @@ fn suppression_is_body_census_invariant(
     let output_free_trim = feature.outputs.is_empty()
         && matches!(&feature.definition, FeatureDefinition::TrimBodies { .. });
     let output_free_pattern = matches!(&feature.definition, FeatureDefinition::Pattern { .. })
-        && (crate::decode::output_free_pattern_construction(feature)
-            || crate::decode::output_free_local_body_construction(feature));
+        && (feature_completeness::output_free_pattern_construction(feature)
+            || feature_completeness::output_free_local_body_construction(feature));
     let output_free_combine = feature.outputs.is_empty()
         && matches!(
             &feature.definition,
@@ -1824,7 +1828,7 @@ mod tests {
         *placements = None;
         ir.model.features.push(hole);
 
-        assert!(crate::decode::hole_definition_is_incomplete(
+        assert!(feature_completeness::hole_definition_is_incomplete(
             &ir.model.features[1]
         ));
         assert_eq!(
@@ -2613,7 +2617,7 @@ mod tests {
             },
         ));
 
-        assert!(crate::decode::chamfer_definition_is_incomplete(
+        assert!(feature_completeness::chamfer_definition_is_incomplete(
             &ir.model.features[1]
         ));
         assert_eq!(
@@ -2752,10 +2756,14 @@ mod tests {
             ));
             assert!(match &ir.model.features[1].definition {
                 FeatureDefinition::TrimSurface { .. } => {
-                    crate::decode::trim_surface_definition_is_incomplete(&ir.model.features[1])
+                    feature_completeness::trim_surface_definition_is_incomplete(
+                        &ir.model.features[1],
+                    )
                 }
                 FeatureDefinition::ExtendSurface { .. } => {
-                    crate::decode::extend_surface_definition_is_incomplete(&ir.model.features[1])
+                    feature_completeness::extend_surface_definition_is_incomplete(
+                        &ir.model.features[1],
+                    )
                 }
                 _ => unreachable!("surface edit fixture"),
             });
@@ -3068,7 +3076,7 @@ mod tests {
             },
         ));
 
-        assert!(crate::decode::replace_face_definition_is_incomplete(
+        assert!(feature_completeness::replace_face_definition_is_incomplete(
             &ir.model.features[1]
         ));
         assert_eq!(

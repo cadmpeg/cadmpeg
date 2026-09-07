@@ -2,6 +2,13 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use crate::decode::blend::blend_surface_point;
+use crate::decode::offset::{offset_surface_parameters, offset_surface_parameters_with_tolerance};
+use crate::decode::support_uv::{
+    complete_ext11_support_uv, complete_parameterization_equivalent_support_uv,
+    invalidate_inconsistent_support_uv, parameterization_equivalent_surfaces, SerializedSupportUv,
+};
+
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -12,7 +19,6 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
-use crate::decode::SerializedSupportUv;
 use crate::test_support::*;
 use crate::NxCodec;
 
@@ -36,8 +42,7 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
     )
     .unwrap();
 
-    let actual =
-        crate::decode::offset_surface_parameters(result.ir(), &surface, point, None).unwrap();
+    let actual = offset_surface_parameters(result.ir(), &surface, point, None).unwrap();
 
     assert!((actual.u - expected.u).abs() < 1.0e-8);
     assert!((actual.v - expected.v).abs() < 1.0e-8);
@@ -57,7 +62,7 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
         expected.v,
     )
     .unwrap();
-    let translated_parameters = crate::decode::offset_surface_parameters_with_tolerance(
+    let translated_parameters = offset_surface_parameters_with_tolerance(
         &translated,
         &surface,
         translated_point,
@@ -110,7 +115,7 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
         expected.v,
     )
     .unwrap();
-    let nested_parameters = crate::decode::offset_surface_parameters_with_tolerance(
+    let nested_parameters = offset_surface_parameters_with_tolerance(
         &translated,
         &nested_surface,
         nested_point,
@@ -143,7 +148,7 @@ fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
     .unwrap();
     point.x += 0.01;
 
-    let actual = crate::decode::offset_surface_parameters_with_tolerance(
+    let actual = offset_surface_parameters_with_tolerance(
         result.ir(),
         &surface,
         point,
@@ -246,7 +251,7 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
         expected.v,
     )
     .expect("offset point");
-    let actual = crate::decode::offset_surface_parameters_with_tolerance(
+    let actual = offset_surface_parameters_with_tolerance(
         &ir,
         &offset,
         point,
@@ -292,7 +297,7 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
         expected.v,
     )
     .expect("nested offset point");
-    let nested_actual = crate::decode::offset_surface_parameters_with_tolerance(
+    let nested_actual = offset_surface_parameters_with_tolerance(
         &ir,
         &nested,
         nested_point,
@@ -847,7 +852,7 @@ fn ext11_uv_completion_runs_after_support_incidence_resolution() {
         ]),
     )];
 
-    crate::decode::complete_ext11_support_uv(&mut result.ir_mut(), &pending);
+    complete_ext11_support_uv(&mut result.ir_mut(), &pending);
 
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
         &result.ir().model.procedural_curves[0].definition()
@@ -1286,9 +1291,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
     );
     let points = parameters
         .iter()
-        .map(|parameter| {
-            crate::decode::blend_surface_point(result.ir(), &blend, *parameter, 0.5).unwrap()
-        })
+        .map(|parameter| blend_surface_point(result.ir(), &blend, *parameter, 0.5).unwrap())
         .collect::<Vec<_>>();
 
     let dependent_id =
@@ -1569,7 +1572,7 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
         SerializedSupportUv::default(),
     )];
 
-    crate::decode::invalidate_inconsistent_support_uv(&mut result.ir_mut(), &pending);
+    invalidate_inconsistent_support_uv(&mut result.ir_mut(), &pending);
     crate::decode::support_uv::complete_support_uv(&mut result.ir_mut(), &pending);
 
     assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
@@ -1663,12 +1666,12 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
         ),
     );
 
-    assert!(crate::decode::parameterization_equivalent_surfaces(
+    assert!(parameterization_equivalent_surfaces(
         &ir,
         &offsets[0],
         &offsets[1]
     ));
-    crate::decode::complete_parameterization_equivalent_support_uv(&mut ir);
+    complete_parameterization_equivalent_support_uv(&mut ir);
     let ProceduralCurveDefinition::Intersection { context, .. } =
         ir.model.procedural_curves[0].definition()
     else {
@@ -1684,7 +1687,7 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
             *support_extension = Some(cadmpeg_ir::geometry::OffsetSupportExtension::Linear);
         }
     });
-    assert!(!crate::decode::parameterization_equivalent_surfaces(
+    assert!(!parameterization_equivalent_surfaces(
         &ir,
         &offsets[0],
         &offsets[1]
@@ -1700,7 +1703,7 @@ fn equivalent_offset_supports_share_a_complete_parameter_lane() {
             *distance = 31.0;
         }
     });
-    assert!(!crate::decode::parameterization_equivalent_surfaces(
+    assert!(!parameterization_equivalent_surfaces(
         &ir,
         &offsets[0],
         &offsets[1]

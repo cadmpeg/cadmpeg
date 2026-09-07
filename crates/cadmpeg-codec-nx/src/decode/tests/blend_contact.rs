@@ -2,13 +2,22 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use crate::decode::blend::{
+    blend_contact_offset_matches, blend_surface_parameters, blend_surface_parameters_for_fit,
+    blend_surface_point, blend_surface_u_derivative, closest_pcurve_parameters,
+    closest_spine_parameter, coarse_blend_surface_parameters, constant_surface_offset_between,
+    refine_blend_surface_parameters, BlendParameterGrid,
+};
+use crate::decode::offset::{
+    continue_surface_intersection_parameters, point_distance, solve_damped_least_squares_4x4,
+};
+use crate::decode::pcurves::blend_boundary_parameter_from_support_spine;
+
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, ProceduralCurveDefinition,
     ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point2, Vector3};
-
-use crate::decode::point_distance;
 
 fn test_surface(
     u_knots: Vec<f64>,
@@ -119,13 +128,8 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
         Point3::new(-1.0e-4, 2.0e-4, 2.0),
         Point3::new(2.0e-4, 1.0e-4, 5.0),
     ];
-    let lanes = crate::decode::continue_surface_intersection_parameters(
-        &ir,
-        [&first, &second],
-        &chart,
-        1.0e-3,
-    )
-    .unwrap();
+    let lanes =
+        continue_surface_intersection_parameters(&ir, [&first, &second], &chart, 1.0e-3).unwrap();
     assert_eq!(lanes[0].len(), chart.len());
     for (ordinal, expected_z) in [0.0, 2.0, 5.0].into_iter().enumerate() {
         let first_point = cadmpeg_ir::eval::model_surface_point_by_id(
@@ -149,20 +153,13 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
     }
 
     let off_branch = [chart[0], Point3::new(1.0, 1.0, 2.0)];
-    assert!(crate::decode::continue_surface_intersection_parameters(
-        &ir,
-        [&first, &second],
-        &off_branch,
-        1.0e-3,
-    )
-    .is_none());
-    assert!(crate::decode::continue_surface_intersection_parameters(
-        &ir,
-        [&first, &first],
-        &chart,
-        1.0e-3,
-    )
-    .is_none());
+    assert!(
+        continue_surface_intersection_parameters(&ir, [&first, &second], &off_branch, 1.0e-3,)
+            .is_none()
+    );
+    assert!(
+        continue_surface_intersection_parameters(&ir, [&first, &first], &chart, 1.0e-3,).is_none()
+    );
 
     let cylinder = SurfaceId::mint("test:model:entity#synthetic:intersection-cylinder")
         .expect("identity grammar");
@@ -191,7 +188,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
     ]);
     let circular_chart =
         [0.0_f64, 0.3, 0.8].map(|angle| Point3::new(2.0 * angle.cos(), 2.0 * angle.sin(), 1.0e-5));
-    let circular_lanes = crate::decode::continue_surface_intersection_parameters(
+    let circular_lanes = continue_surface_intersection_parameters(
         &ir,
         [&cylinder, &section_plane],
         &circular_chart,
@@ -244,7 +241,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
         },
     ]);
     let tangent_chart = [0.0, 1.0, 3.0, 6.0].map(|y| Point3::new(0.0, y, 0.0));
-    let tangent_lanes = crate::decode::continue_surface_intersection_parameters(
+    let tangent_lanes = continue_surface_intersection_parameters(
         &ir,
         [&tangent_cylinder, &tangent_plane],
         &tangent_chart,
@@ -258,7 +255,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
 
     let seam_chart = [3.0_f64, 3.1, 3.2, 3.3]
         .map(|angle| Point3::new(2.0 * angle.cos(), 2.0 * angle.sin(), 1.0e-5));
-    let seam_lanes = crate::decode::continue_surface_intersection_parameters(
+    let seam_lanes = continue_surface_intersection_parameters(
         &ir,
         [&cylinder, &section_plane],
         &seam_chart,
@@ -300,7 +297,7 @@ fn surface_intersection_continuation_corrects_a_chart_selected_branch() {
     ]);
     let nurbs_chart = [3.8, 3.9, 4.1, 4.2]
         .map(|u| cadmpeg_ir::eval::nurbs_surface_point(&periodic_geometry, u, 0.5).unwrap());
-    let nurbs_lanes = crate::decode::continue_surface_intersection_parameters(
+    let nurbs_lanes = continue_surface_intersection_parameters(
         &ir,
         [&periodic_nurbs, &nurbs_section],
         &nurbs_chart,
@@ -346,13 +343,9 @@ fn surface_intersection_jacobian_is_stable_at_large_model_coordinates() {
     let chart =
         [0.0, 4.0, 8.0].map(|distance| Point3::new(origin.x + distance, origin.y, origin.z));
 
-    let lanes = crate::decode::continue_surface_intersection_parameters(
-        &ir,
-        [&horizontal, &vertical],
-        &chart,
-        0.1,
-    )
-    .expect("exact plane partials keep the continuation Jacobian full rank");
+    let lanes =
+        continue_surface_intersection_parameters(&ir, [&horizontal, &vertical], &chart, 0.1)
+            .expect("exact plane partials keep the continuation Jacobian full rank");
 
     for (ordinal, expected) in [0.0, 4.0, 8.0].into_iter().enumerate() {
         assert_eq!(lanes[0][ordinal], Point2::new(expected, 0.0));
@@ -370,7 +363,7 @@ fn damped_intersection_correction_reduces_a_rank_deficient_system() {
     ];
     let rhs = [2.0, -4.0, 0.0, 6.0];
 
-    let step = crate::decode::solve_damped_least_squares_4x4(matrix, rhs).unwrap();
+    let step = solve_damped_least_squares_4x4(matrix, rhs).unwrap();
     let residual = std::array::from_fn::<_, 4, _>(|row| {
         (0..4)
             .map(|column| matrix[row][column] * step[column])
@@ -526,7 +519,7 @@ fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
         source_object: None,
     });
 
-    let actual = crate::decode::closest_spine_parameter(
+    let actual = closest_spine_parameter(
         &ir,
         &curve,
         cadmpeg_ir::math::Point3::new(-5.0, 2.0, 0.0),
@@ -550,10 +543,8 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         None,
     );
 
-    let first =
-        crate::decode::closest_pcurve_parameters(&pcurve, Point2::new(0.5, 4.5), None).unwrap()[0];
-    let second =
-        crate::decode::closest_pcurve_parameters(&pcurve, Point2::new(5.0, 4.5), None).unwrap()[0];
+    let first = closest_pcurve_parameters(&pcurve, Point2::new(0.5, 4.5), None).unwrap()[0];
+    let second = closest_pcurve_parameters(&pcurve, Point2::new(5.0, 4.5), None).unwrap()[0];
 
     assert!((first - 3.5).abs() < 1.0e-12);
     assert!((second - 8.0).abs() < 1.0e-12);
@@ -565,8 +556,7 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         Some(vec![1.0, 2.0]),
     );
     let rational_parameter =
-        crate::decode::closest_pcurve_parameters(&rational, Point2::new(0.5, 0.0), None).unwrap()
-            [0];
+        closest_pcurve_parameters(&rational, Point2::new(0.5, 0.0), None).unwrap()[0];
     assert!((rational_parameter - 1.0 / 3.0).abs() < 1.0e-10);
 
     let quadratic = test_pcurve(
@@ -580,8 +570,7 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         None,
     );
     let quadratic_parameter =
-        crate::decode::closest_pcurve_parameters(&quadratic, Point2::new(1.0, 0.5), None).unwrap()
-            [0];
+        closest_pcurve_parameters(&quadratic, Point2::new(1.0, 0.5), None).unwrap()[0];
     assert!((quadratic_parameter - 0.5).abs() < 1.0e-10);
 
     let folded = test_pcurve(
@@ -595,21 +584,17 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         None,
     );
     let first_fold =
-        crate::decode::closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(0.1))
-            .unwrap()[0];
+        closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(0.1)).unwrap()[0];
     let second_fold =
-        crate::decode::closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(1.9))
-            .unwrap()[0];
+        closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(1.9)).unwrap()[0];
     assert_eq!(first_fold, 0.0);
     assert_eq!(second_fold, 2.0);
     assert_eq!(
-        crate::decode::closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(0.1))
-            .unwrap(),
+        closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(0.1)).unwrap(),
         [0.0, 2.0]
     );
     assert_eq!(
-        crate::decode::closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(1.9))
-            .unwrap(),
+        closest_pcurve_parameters(&folded, Point2::new(0.0, 0.0), Some(1.9)).unwrap(),
         [2.0, 0.0]
     );
 
@@ -626,21 +611,11 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
     )
     .unwrap();
     assert_eq!(
-        crate::decode::closest_pcurve_parameters(
-            &rational_folded,
-            Point2::new(0.0, 0.0),
-            Some(0.1),
-        )
-        .unwrap(),
+        closest_pcurve_parameters(&rational_folded, Point2::new(0.0, 0.0), Some(0.1),).unwrap(),
         [0.0, 2.0]
     );
     assert_eq!(
-        crate::decode::closest_pcurve_parameters(
-            &rational_folded,
-            Point2::new(0.0, 0.0),
-            Some(1.9),
-        )
-        .unwrap(),
+        closest_pcurve_parameters(&rational_folded, Point2::new(0.0, 0.0), Some(1.9),).unwrap(),
         [2.0, 0.0]
     );
 
@@ -655,37 +630,25 @@ fn spine_contact_pcurve_inverts_linear_and_rational_support_parameters() {
         None,
     );
     assert_eq!(
-        crate::decode::closest_pcurve_parameters(
-            &quadratic_folded,
-            Point2::new(0.0, 0.0),
-            Some(0.1),
-        )
-        .unwrap(),
+        closest_pcurve_parameters(&quadratic_folded, Point2::new(0.0, 0.0), Some(0.1),).unwrap(),
         [0.0, 1.0]
     );
     assert_eq!(
-        crate::decode::closest_pcurve_parameters(
-            &quadratic_folded,
-            Point2::new(0.0, 0.0),
-            Some(0.9),
-        )
-        .unwrap(),
+        closest_pcurve_parameters(&quadratic_folded, Point2::new(0.0, 0.0), Some(0.9),).unwrap(),
         [1.0, 0.0]
     );
 }
 
 #[test]
 fn blend_contact_offset_requires_the_radius_magnitude() {
-    assert!(crate::decode::blend_contact_offset_matches(2.0, 5.0, 3.0));
-    assert!(crate::decode::blend_contact_offset_matches(2.0, -1.0, 3.0));
-    assert!(crate::decode::blend_contact_offset_matches(
+    assert!(blend_contact_offset_matches(2.0, 5.0, 3.0));
+    assert!(blend_contact_offset_matches(2.0, -1.0, 3.0));
+    assert!(blend_contact_offset_matches(
         2.0,
         f64::from_bits(5.0f64.to_bits() + 1),
         3.0,
     ));
-    assert!(!crate::decode::blend_contact_offset_matches(
-        2.0, 5.001, 3.0
-    ));
+    assert!(!blend_contact_offset_matches(2.0, 5.001, 3.0));
 }
 
 #[test]
@@ -715,14 +678,14 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
     ]);
 
     assert_eq!(
-        crate::decode::constant_surface_offset_between(&ir, &support, &offset, 0),
+        constant_surface_offset_between(&ir, &support, &offset, 0),
         Some(5.0)
     );
     let SurfaceGeometry::Cylinder { origin, .. } = &mut ir.model.surfaces[1].geometry else {
         unreachable!()
     };
     origin.y = 1.0;
-    assert!(crate::decode::constant_surface_offset_between(&ir, &support, &offset, 0).is_none());
+    assert!(constant_surface_offset_between(&ir, &support, &offset, 0).is_none());
 
     let support_plane =
         SurfaceId::mint("test:model:entity#synthetic:support-plane").expect("identity grammar");
@@ -742,17 +705,14 @@ fn blend_contact_matches_separate_analytic_offset_carriers() {
         plane(offset_plane.clone(), Point3::new(10.0, 20.0, 35.0)),
     ]);
     assert_eq!(
-        crate::decode::constant_surface_offset_between(&ir, &support_plane, &offset_plane, 0),
+        constant_surface_offset_between(&ir, &support_plane, &offset_plane, 0),
         Some(5.0)
     );
     let SurfaceGeometry::Plane { origin, .. } = &mut ir.model.surfaces[3].geometry else {
         unreachable!()
     };
     origin.x += 1.0;
-    assert!(
-        crate::decode::constant_surface_offset_between(&ir, &support_plane, &offset_plane, 0)
-            .is_none()
-    );
+    assert!(constant_surface_offset_between(&ir, &support_plane, &offset_plane, 0).is_none());
 }
 
 #[test]
@@ -845,7 +805,7 @@ fn blend_contact_matches_concentric_blend_carriers() {
     }
 
     assert_eq!(
-        crate::decode::constant_surface_offset_between(&ir, &inner, &outer, 0),
+        constant_surface_offset_between(&ir, &inner, &outer, 0),
         Some(3.0)
     );
     let outer_definition = ir
@@ -864,7 +824,7 @@ fn blend_contact_matches_concentric_blend_carriers() {
         };
         supports[0].as_mut().unwrap().reversed = true;
     });
-    assert!(crate::decode::constant_surface_offset_between(&ir, &inner, &outer, 0).is_none());
+    assert!(constant_surface_offset_between(&ir, &inner, &outer, 0).is_none());
 }
 
 #[test]
@@ -1070,8 +1030,8 @@ fn closest_spine_parameter_inverts_periodic_analytic_curves() {
         source_object: None,
     });
 
-    let first = crate::decode::closest_spine_parameter(&ir, &ellipse, point, None).unwrap();
-    let continued = crate::decode::closest_spine_parameter(
+    let first = closest_spine_parameter(&ir, &ellipse, point, None).unwrap();
+    let continued = closest_spine_parameter(
         &ir,
         &ellipse,
         point,
@@ -1086,8 +1046,8 @@ fn closest_spine_parameter_inverts_periodic_analytic_curves() {
     );
 
     let center = Point3::new(2.0, 3.0, 4.0);
-    let upper = crate::decode::closest_spine_parameter(&ir, &ellipse, center, Some(1.4)).unwrap();
-    let lower = crate::decode::closest_spine_parameter(&ir, &ellipse, center, Some(4.8)).unwrap();
+    let upper = closest_spine_parameter(&ir, &ellipse, center, Some(1.4)).unwrap();
+    let lower = closest_spine_parameter(&ir, &ellipse, center, Some(4.8)).unwrap();
     assert!(
         (upper - std::f64::consts::FRAC_PI_2).abs() < 1.0e-8,
         "{upper}"
@@ -1202,17 +1162,12 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         None,
     ));
     let expected = Point2::new(8.0, 0.35);
-    let point = crate::decode::blend_surface_point(&ir, &surface, expected.u, expected.v).unwrap();
-    let boundary_without_contact_chart =
-        crate::decode::blend_surface_point(&ir, &surface, expected.u, 1.0)
-            .expect("analytic supports provide a blend boundary without a spine pcurve");
-    let boundary_without_contact_parameters = crate::decode::blend_surface_parameters(
-        &ir,
-        &surface,
-        boundary_without_contact_chart,
-        None,
-    )
-    .expect("blend inverse evaluates an analytic-support boundary");
+    let point = blend_surface_point(&ir, &surface, expected.u, expected.v).unwrap();
+    let boundary_without_contact_chart = blend_surface_point(&ir, &surface, expected.u, 1.0)
+        .expect("analytic supports provide a blend boundary without a spine pcurve");
+    let boundary_without_contact_parameters =
+        blend_surface_parameters(&ir, &surface, boundary_without_contact_chart, None)
+            .expect("blend inverse evaluates an analytic-support boundary");
     assert!((0.0..=1.0).contains(&boundary_without_contact_parameters.v));
 
     assert_eq!(
@@ -1258,27 +1213,19 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         1.0
     );
 
-    let actual = crate::decode::blend_surface_parameters(&ir, &surface, point, None).unwrap();
+    let actual = blend_surface_parameters(&ir, &surface, point, None).unwrap();
 
     assert!((actual.u - expected.u).abs() < 1.0e-8);
     assert!((actual.v - expected.v).abs() < 1.0e-8);
 
-    let boundary_point =
-        crate::decode::blend_surface_point(&ir, &surface, expected.u, 1.0).unwrap();
-    let boundary_parameters =
-        crate::decode::blend_surface_parameters(&ir, &surface, boundary_point, None)
-            .expect("blend inverse returns the section boundary");
+    let boundary_point = blend_surface_point(&ir, &surface, expected.u, 1.0).unwrap();
+    let boundary_parameters = blend_surface_parameters(&ir, &surface, boundary_point, None)
+        .expect("blend inverse returns the section boundary");
     assert!((0.0..=1.0).contains(&boundary_parameters.v));
 
-    let outside_boundary_point = crate::decode::blend_surface_point(
-        &ir,
-        &surface,
-        expected.u,
-        1.0 + OUTSIDE_BLEND_SECTION_DELTA,
-    )
-    .unwrap();
-    let outside_parameters =
-        crate::decode::blend_surface_parameters(&ir, &surface, outside_boundary_point, None);
+    let outside_boundary_point =
+        blend_surface_point(&ir, &surface, expected.u, 1.0 + OUTSIDE_BLEND_SECTION_DELTA).unwrap();
+    let outside_parameters = blend_surface_parameters(&ir, &surface, outside_boundary_point, None);
     assert!(outside_parameters.is_none());
     let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(
         crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
@@ -1290,7 +1237,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             outside_boundary_point,
             None,
             1.0e-8,
-            crate::decode::BlendParameterGrid::Disabled,
+            BlendParameterGrid::Disabled,
             &geometry_budget,
         )
         .expect("bounded source continuation admits the certified section point");
@@ -1318,7 +1265,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             < DIRECT_INVERSE_TOLERANCE
     );
 
-    let continued = crate::decode::blend_surface_parameters_for_fit(
+    let continued = blend_surface_parameters_for_fit(
         &ir,
         &surface,
         point,
@@ -1368,29 +1315,13 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             });
         });
     let parameters = Point2::new(0.4, 0.35);
-    let exact = crate::decode::blend_surface_u_derivative(
-        &varying_frame,
-        &surface,
-        parameters.u,
-        parameters.v,
-        0,
-    )
-    .expect("complete rolling-ball frame has an exact derivative");
+    let exact = blend_surface_u_derivative(&varying_frame, &surface, parameters.u, parameters.v, 0)
+        .expect("complete rolling-ball frame has an exact derivative");
     let step = 1.0e-6;
-    let before = crate::decode::blend_surface_point(
-        &varying_frame,
-        &surface,
-        parameters.u - step,
-        parameters.v,
-    )
-    .unwrap();
-    let after = crate::decode::blend_surface_point(
-        &varying_frame,
-        &surface,
-        parameters.u + step,
-        parameters.v,
-    )
-    .unwrap();
+    let before =
+        blend_surface_point(&varying_frame, &surface, parameters.u - step, parameters.v).unwrap();
+    let after =
+        blend_surface_point(&varying_frame, &surface, parameters.u + step, parameters.v).unwrap();
     let numerical = Vector3::new(
         (after.x - before.x) / (2.0 * step),
         (after.y - before.y) / (2.0 * step),
@@ -1429,8 +1360,8 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     origin.z += 1.0e12;
     *cache = cadmpeg_ir::geometry::SolvedCurveGeometry::new(geometry).expect("translated line");
     let translated_point =
-        crate::decode::blend_surface_point(&translated, &surface, expected.u, expected.v).unwrap();
-    let translated_parameters = crate::decode::blend_surface_parameters_for_fit(
+        blend_surface_point(&translated, &surface, expected.u, expected.v).unwrap();
+    let translated_parameters = blend_surface_parameters_for_fit(
         &translated,
         &surface,
         translated_point,
@@ -1500,7 +1431,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     assert_eq!(nurbs.control_points().first(), Some(&Point2::new(0.0, 0.0)));
     assert_eq!(nurbs.control_points().last(), Some(&Point2::new(1.0, 0.0)));
     assert_eq!(
-        crate::decode::blend_boundary_parameter_from_support_spine(
+        blend_boundary_parameter_from_support_spine(
             &ir,
             &surface,
             &first,
@@ -1524,7 +1455,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             record: None,
         });
     assert_eq!(
-        crate::decode::blend_boundary_parameter_from_support_spine(
+        blend_boundary_parameter_from_support_spine(
             &ir,
             &surface,
             &first,
@@ -1560,9 +1491,8 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         ))
         .expect("solved NURBS spine"),
     );
-    let coarse = crate::decode::coarse_blend_surface_parameters(&ir, &surface, point, 0).unwrap();
-    let coarse_point =
-        crate::decode::blend_surface_point(&ir, &surface, coarse.u, coarse.v).unwrap();
+    let coarse = coarse_blend_surface_parameters(&ir, &surface, point, 0).unwrap();
+    let coarse_point = blend_surface_point(&ir, &surface, coarse.u, coarse.v).unwrap();
     assert!(
         ((coarse_point.x - point.x).powi(2)
             + (coarse_point.y - point.y).powi(2)
@@ -1571,7 +1501,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
             < 1.0
     );
 
-    let refined = crate::decode::refine_blend_surface_parameters(
+    let refined = refine_blend_surface_parameters(
         &ir,
         &surface,
         point,
@@ -1579,8 +1509,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         0,
     )
     .unwrap();
-    let refined_point =
-        crate::decode::blend_surface_point(&ir, &surface, refined.u, refined.v).unwrap();
+    let refined_point = blend_surface_point(&ir, &surface, refined.u, refined.v).unwrap();
     let refined_error = ((refined_point.x - point.x).powi(2)
         + (refined_point.y - point.y).powi(2)
         + (refined_point.z - point.z).powi(2))
@@ -1642,7 +1571,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         None,
     ));
     let expected = Point2::new(4.0, 0.2);
-    let point = crate::decode::blend_surface_point(&ir, &outer, expected.u, expected.v).unwrap();
+    let point = blend_surface_point(&ir, &outer, expected.u, expected.v).unwrap();
     let outer_geometry = ir
         .model
         .surfaces
@@ -1665,7 +1594,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     )
     .expect("budgeted evaluation handles a nested blend support");
     assert!(point_distance(evaluated, point) <= 64.0 * f64::EPSILON);
-    let actual = crate::decode::blend_surface_parameters(&ir, &outer, point, None).unwrap();
+    let actual = blend_surface_parameters(&ir, &outer, point, None).unwrap();
     assert!((actual.u - expected.u).abs() < 1.0e-8);
     assert!((actual.v - expected.v).abs() < 1.0e-8);
 
@@ -1685,5 +1614,5 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
         };
         supports[0].as_mut().unwrap().surface = outer.clone();
     });
-    assert!(crate::decode::blend_surface_point(&ir, &outer, expected.u, expected.v).is_none());
+    assert!(blend_surface_point(&ir, &outer, expected.u, expected.v).is_none());
 }

@@ -1,25 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometry-report losses for NX decode.
 
+use super::feature_completeness::operands::{
+    body_selection_is_incomplete, body_selections_overlap, face_selection_is_incomplete,
+    path_ref_is_incomplete, pattern_feature_is_incomplete,
+};
 use super::feature_completeness::{
-    active_configuration_state_is_incomplete, body_selection_is_incomplete,
-    body_selections_overlap, chamfer_definition_is_incomplete, combine_definition_is_incomplete,
-    datum_coordinate_system_is_incomplete, datum_plane_is_incomplete,
-    delete_body_definition_is_incomplete, draft_definition_is_incomplete,
-    extend_surface_definition_is_incomplete, extrude_definition_is_incomplete,
-    face_blend_definition_is_incomplete, face_selection_is_incomplete,
+    active_configuration_state_is_incomplete, chamfer_definition_is_incomplete,
+    combine_definition_is_incomplete, datum_coordinate_system_is_incomplete,
+    datum_plane_is_incomplete, delete_body_definition_is_incomplete,
+    draft_definition_is_incomplete, extend_surface_definition_is_incomplete,
+    extrude_definition_is_incomplete, face_blend_definition_is_incomplete,
     fillet_definition_is_incomplete, finite_feature_point, hole_definition_is_incomplete,
     incomplete_expression_parameters, loft_definition_is_incomplete,
     offset_surface_definition_is_incomplete, output_free_local_body_construction,
     output_free_native_snapshot, output_free_pattern_construction,
-    output_free_trim_surface_construction, path_ref_is_incomplete, pattern_feature_is_incomplete,
-    positive_feature_length, projected_curve_direction_is_incomplete,
-    replace_face_definition_is_incomplete, revolve_definition_is_incomplete,
-    rib_definition_is_incomplete, sew_bodies_definition_is_incomplete,
-    shell_definition_is_incomplete, sphere_definition_is_incomplete,
-    sweep_definition_is_incomplete, thicken_definition_is_incomplete,
-    trim_bodies_definition_is_incomplete, trim_surface_definition_is_incomplete,
-    valid_feature_direction,
+    output_free_trim_surface_construction, positive_feature_length,
+    projected_curve_direction_is_incomplete, replace_face_definition_is_incomplete,
+    revolve_definition_is_incomplete, rib_definition_is_incomplete,
+    sew_bodies_definition_is_incomplete, shell_definition_is_incomplete,
+    sphere_definition_is_incomplete, sweep_definition_is_incomplete,
+    thicken_definition_is_incomplete, trim_bodies_definition_is_incomplete,
+    trim_surface_definition_is_incomplete, valid_feature_direction,
 };
 use super::geometry_work::{
     MAX_ADAPTIVE_GEOMETRY_WORK, MAX_COUPLED_SUPPORT_UV_GEOMETRY_WORK,

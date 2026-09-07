@@ -4,6 +4,22 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use crate::decode::feature_completeness::operands::{
+    body_selection_is_incomplete, body_selections_overlap, edge_selection_is_incomplete,
+    extrude_extent_is_incomplete, extrude_start_is_incomplete, face_selection_is_incomplete,
+    face_selections_overlap, hole_auxiliary_semantics_are_incomplete, hole_feature_is_incomplete,
+    loft_section_is_incomplete, path_ref_is_incomplete, pattern_feature_is_incomplete,
+    pattern_is_incomplete, pattern_occurrence_count, profile_dependency_is_incomplete,
+    profile_ref_is_incomplete, radius_spec_is_incomplete, revolve_feature_is_incomplete,
+    rib_feature_is_incomplete, sweep_mode_is_incomplete, sweep_orientation_is_incomplete,
+    termination_dependency_is_incomplete, termination_is_incomplete,
+};
+use crate::decode::feature_completeness::{
+    datum_coordinate_system_is_incomplete, datum_plane_is_incomplete,
+    projected_curve_direction_is_incomplete, shell_definition_is_incomplete,
+};
+use crate::decode::report::append_design_intent_losses;
+
 #[test]
 fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operands() {
     use cadmpeg_ir::features::{
@@ -19,7 +35,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         position: Point3::new(f64::NAN, 2.0, 3.0),
         direction: Vector3::new(0.0, 0.0, 1.0),
     };
-    assert!(!super::hole_feature_is_incomplete(
+    assert!(!hole_feature_is_incomplete(
         None,
         None,
         Some(std::slice::from_ref(&directed)),
@@ -27,7 +43,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         Some(Length(5.0)),
         Some(&LinearTermination::ThroughAll),
     ));
-    assert!(super::hole_feature_is_incomplete(
+    assert!(hole_feature_is_incomplete(
         None,
         None,
         Some(std::slice::from_ref(&invalid_directed)),
@@ -35,7 +51,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         Some(Length(5.0)),
         Some(&LinearTermination::ThroughAll),
     ));
-    assert!(!super::hole_feature_is_incomplete(
+    assert!(!hole_feature_is_incomplete(
         None,
         None,
         Some(std::slice::from_ref(&directed)),
@@ -47,7 +63,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         origin: Point3::new(1.0, 2.0, 3.0),
         axis: Vector3::new(0.0, 0.0, 1.0),
     };
-    assert!(!super::hole_feature_is_incomplete(
+    assert!(!hole_feature_is_incomplete(
         None,
         None,
         Some(std::slice::from_ref(&axis)),
@@ -77,7 +93,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
             LinearTermination::ThroughAll,
         ),
     ] {
-        assert!(super::hole_feature_is_incomplete(
+        assert!(hole_feature_is_incomplete(
             None,
             None,
             Some(&placements),
@@ -86,7 +102,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
             Some(&extent),
         ));
     }
-    assert!(super::hole_feature_is_incomplete(
+    assert!(hole_feature_is_incomplete(
         Some(&ProfileRef::Unresolved("hole".into())),
         Some(&FaceSelection::Unresolved),
         None,
@@ -94,7 +110,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         Some(Length(5.0)),
         Some(&LinearTermination::ThroughAll),
     ));
-    assert!(super::hole_feature_is_incomplete(
+    assert!(hole_feature_is_incomplete(
         None,
         None,
         Some(std::slice::from_ref(&directed)),
@@ -102,7 +118,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         Some(Length(5.0)),
         Some(&LinearTermination::Unresolved),
     ));
-    assert!(super::hole_feature_is_incomplete(
+    assert!(hole_feature_is_incomplete(
         None,
         None,
         Some(std::slice::from_ref(&directed)),
@@ -115,7 +131,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         Some(Length(5.0)),
         Some(&LinearTermination::ThroughAll),
     ));
-    assert!(super::hole_feature_is_incomplete(
+    assert!(hole_feature_is_incomplete(
         None,
         None,
         Some(std::slice::from_ref(&directed)),
@@ -123,7 +139,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
         Some(Length(0.0)),
         Some(&LinearTermination::ThroughAll),
     ));
-    assert!(super::hole_feature_is_incomplete(
+    assert!(hole_feature_is_incomplete(
         None,
         None,
         Some(std::slice::from_ref(&directed)),
@@ -162,7 +178,7 @@ fn nx_hole_completeness_accepts_independent_placement_and_rejects_opaque_operand
             angle: cadmpeg_ir::features::Angle(0.5),
         },
     ] {
-        assert!(super::hole_feature_is_incomplete(
+        assert!(hole_feature_is_incomplete(
             None,
             None,
             Some(std::slice::from_ref(&directed)),
@@ -182,34 +198,34 @@ fn nx_datum_completeness_requires_coherent_finite_frames() {
     let y_axis = Vector3::new(0.0, 1.0, 0.0);
     let z_axis = Vector3::new(0.0, 0.0, 1.0);
 
-    assert!(!super::datum_plane_is_incomplete(origin, z_axis, x_axis,));
-    assert!(super::datum_plane_is_incomplete(
+    assert!(!datum_plane_is_incomplete(origin, z_axis, x_axis,));
+    assert!(datum_plane_is_incomplete(
         origin,
         z_axis,
         Vector3::new(1.0, 0.0, 1.0),
     ));
-    assert!(super::datum_plane_is_incomplete(
+    assert!(datum_plane_is_incomplete(
         Point3::new(f64::NAN, 2.0, 3.0),
         z_axis,
         x_axis,
     ));
 
-    assert!(!super::datum_coordinate_system_is_incomplete(
+    assert!(!datum_coordinate_system_is_incomplete(
         origin, x_axis, y_axis, z_axis,
     ));
-    assert!(super::datum_coordinate_system_is_incomplete(
+    assert!(datum_coordinate_system_is_incomplete(
         origin,
         x_axis,
         y_axis,
         Vector3::new(0.0, 0.0, -1.0),
     ));
-    assert!(super::datum_coordinate_system_is_incomplete(
+    assert!(datum_coordinate_system_is_incomplete(
         origin,
         Vector3::new(2.0, 0.0, 0.0),
         y_axis,
         z_axis,
     ));
-    assert!(super::datum_coordinate_system_is_incomplete(
+    assert!(datum_coordinate_system_is_incomplete(
         origin,
         x_axis,
         Vector3::new(1.0e-6, 1.0, 0.0),
@@ -224,7 +240,7 @@ fn nx_hole_completeness_checks_nested_auxiliary_semantics() {
         ThreadHand,
     };
 
-    assert!(!super::hole_auxiliary_semantics_are_incomplete(
+    assert!(!hole_auxiliary_semantics_are_incomplete(
         Some(&HoleProfileFilter {
             points: true,
             circles: false,
@@ -237,7 +253,7 @@ fn nx_hole_completeness_checks_nested_auxiliary_semantics() {
         Some(Angle(0.1)),
         None,
     ));
-    assert!(super::hole_auxiliary_semantics_are_incomplete(
+    assert!(hole_auxiliary_semantics_are_incomplete(
         Some(&HoleProfileFilter {
             points: false,
             circles: false,
@@ -247,7 +263,7 @@ fn nx_hole_completeness_checks_nested_auxiliary_semantics() {
         None,
         None,
     ));
-    assert!(super::hole_auxiliary_semantics_are_incomplete(
+    assert!(hole_auxiliary_semantics_are_incomplete(
         None,
         Some(&HoleBottom::Angled {
             included_angle: Angle(f64::NAN),
@@ -256,7 +272,7 @@ fn nx_hole_completeness_checks_nested_auxiliary_semantics() {
         None,
         None,
     ));
-    assert!(super::hole_auxiliary_semantics_are_incomplete(
+    assert!(hole_auxiliary_semantics_are_incomplete(
         None,
         None,
         Some(Angle(std::f64::consts::PI)),
@@ -274,7 +290,7 @@ fn nx_hole_completeness_checks_nested_auxiliary_semantics() {
         depth: HoleThreadDepth::Blind { depth: Length(0.0) },
         clearance: None,
     };
-    assert!(super::hole_auxiliary_semantics_are_incomplete(
+    assert!(hole_auxiliary_semantics_are_incomplete(
         None,
         None,
         None,
@@ -287,19 +303,19 @@ fn nx_projected_curve_completeness_requires_a_valid_direction_law() {
     use cadmpeg_ir::features::{CurveProjectionDirection, CurveProjectionDirectionState};
     use cadmpeg_ir::math::Vector3;
 
-    assert!(!super::projected_curve_direction_is_incomplete(
+    assert!(!projected_curve_direction_is_incomplete(
         CurveProjectionDirection::State(CurveProjectionDirectionState::TargetNormal),
     ));
-    assert!(!super::projected_curve_direction_is_incomplete(
+    assert!(!projected_curve_direction_is_incomplete(
         CurveProjectionDirection::Vector(Vector3::new(0.0, 0.0, 1.0)),
     ));
-    assert!(super::projected_curve_direction_is_incomplete(
+    assert!(projected_curve_direction_is_incomplete(
         CurveProjectionDirection::State(CurveProjectionDirectionState::Unresolved),
     ));
-    assert!(super::projected_curve_direction_is_incomplete(
+    assert!(projected_curve_direction_is_incomplete(
         CurveProjectionDirection::Vector(Vector3::new(0.0, 0.0, 0.0)),
     ));
-    assert!(super::projected_curve_direction_is_incomplete(
+    assert!(projected_curve_direction_is_incomplete(
         CurveProjectionDirection::Vector(Vector3::new(f64::NAN, 0.0, 1.0)),
     ));
 }
@@ -317,7 +333,7 @@ fn nx_extent_completeness_checks_nested_and_face_termination() {
         draft: None,
     };
 
-    assert!(!super::extrude_extent_is_incomplete(
+    assert!(!extrude_extent_is_incomplete(
         &ExtrudeExtent::TwoSided {
             first: side(LinearTermination::Blind {
                 length: Length(5.0),
@@ -326,13 +342,13 @@ fn nx_extent_completeness_checks_nested_and_face_termination() {
         },
         &[],
     ));
-    assert!(super::extrude_extent_is_incomplete(
+    assert!(extrude_extent_is_incomplete(
         &ExtrudeExtent::Symmetric {
             side: side(LinearTermination::Unresolved),
         },
         &[],
     ));
-    assert!(super::extrude_extent_is_incomplete(
+    assert!(extrude_extent_is_incomplete(
         &ExtrudeExtent::OneSided {
             side: side(LinearTermination::Blind {
                 length: Length(f64::NAN),
@@ -340,7 +356,7 @@ fn nx_extent_completeness_checks_nested_and_face_termination() {
         },
         &[],
     ));
-    assert!(super::extrude_extent_is_incomplete(
+    assert!(extrude_extent_is_incomplete(
         &ExtrudeExtent::OneSided {
             side: ExtrudeSide {
                 termination: LinearTermination::ThroughAll,
@@ -349,31 +365,25 @@ fn nx_extent_completeness_checks_nested_and_face_termination() {
         },
         &[],
     ));
-    assert!(super::termination_is_incomplete(
-        &LinearTermination::ToFace {
-            face: FaceSelection::Native("nx:face-selection#0".to_string()),
-            offset: None,
-        }
-    ));
-    assert!(super::termination_is_incomplete(
-        &LinearTermination::ToShape {
-            target: FaceSelection::Resolved {
-                faces: Vec::new(),
-                native: "nx:face-selection#1".to_string(),
-            },
-        }
-    ));
-    assert!(super::termination_is_incomplete(
+    assert!(termination_is_incomplete(&LinearTermination::ToFace {
+        face: FaceSelection::Native("nx:face-selection#0".to_string()),
+        offset: None,
+    }));
+    assert!(termination_is_incomplete(&LinearTermination::ToShape {
+        target: FaceSelection::Resolved {
+            faces: Vec::new(),
+            native: "nx:face-selection#1".to_string(),
+        },
+    }));
+    assert!(termination_is_incomplete(
         &LinearTermination::OffsetFromFace {
             face: FaceSelection::Native("nx:face-selection#2".to_string()),
             offset: Length(1.0),
         }
     ));
-    assert!(super::termination_is_incomplete(
-        &LinearTermination::ToVertex {
-            vertex: VertexSelection::Native("nx:vertex-selection#0".to_string()),
-        }
-    ));
+    assert!(termination_is_incomplete(&LinearTermination::ToVertex {
+        vertex: VertexSelection::Native("nx:vertex-selection#0".to_string()),
+    }));
     let vertex_feature = FeatureId::mint("test:feature#0").expect("identity grammar");
     let generated_vertex = LinearTermination::ToVertex {
         vertex: VertexSelection::Generated {
@@ -384,31 +394,23 @@ fn nx_extent_completeness_checks_nested_and_face_termination() {
             native: "nx:vertex-selection#1".into(),
         },
     };
-    assert!(!super::termination_is_incomplete(&generated_vertex));
-    assert!(super::termination_dependency_is_incomplete(
-        &generated_vertex,
-        &[],
-    ));
-    assert!(!super::termination_dependency_is_incomplete(
+    assert!(!termination_is_incomplete(&generated_vertex));
+    assert!(termination_dependency_is_incomplete(&generated_vertex, &[],));
+    assert!(!termination_dependency_is_incomplete(
         &generated_vertex,
         &[vertex_feature],
     ));
-    assert!(super::extrude_start_is_incomplete(
-        &ExtrudeStart::FromFace {
-            face: FaceSelection::Native("nx:face-selection#3".to_string()),
-            offset: None,
-        }
-    ));
-    assert!(!super::extrude_start_is_incomplete(
-        &ExtrudeStart::FromFace {
-            face: FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId::mint(
-                "test:model:face#start"
-            )
-            .expect("identity grammar")]),
-            offset: None,
-        }
-    ));
-    assert!(super::extrude_start_is_incomplete(
+    assert!(extrude_start_is_incomplete(&ExtrudeStart::FromFace {
+        face: FaceSelection::Native("nx:face-selection#3".to_string()),
+        offset: None,
+    }));
+    assert!(!extrude_start_is_incomplete(&ExtrudeStart::FromFace {
+        face: FaceSelection::Faces(vec![
+            cadmpeg_ir::ids::FaceId::mint("test:model:face#start").expect("identity grammar")
+        ]),
+        offset: None,
+    }));
+    assert!(extrude_start_is_incomplete(
         &ExtrudeStart::OffsetProfilePlane {
             offset: Length(f64::INFINITY),
         }
@@ -427,44 +429,26 @@ fn nx_rib_completeness_requires_a_resolved_profile() {
         side: Some(RibSide::Centered),
         draft: RibDraft::None,
     };
-    assert!(super::rib_feature_is_incomplete(
-        &construction,
-        BooleanOp::Join,
-    ));
+    assert!(rib_feature_is_incomplete(&construction, BooleanOp::Join,));
     construction.profile = Some(ProfileRef::Faces(vec![cadmpeg_ir::ids::FaceId::mint(
         "test:model:entity#face%230".to_string(),
     )
     .expect("identity grammar")]));
-    assert!(!super::rib_feature_is_incomplete(
-        &construction,
-        BooleanOp::Join,
-    ));
+    assert!(!rib_feature_is_incomplete(&construction, BooleanOp::Join,));
     construction.direction = Some(Vector3::new(0.0, 0.0, 0.0));
-    assert!(super::rib_feature_is_incomplete(
-        &construction,
-        BooleanOp::Join,
-    ));
+    assert!(rib_feature_is_incomplete(&construction, BooleanOp::Join,));
     construction.direction = Some(Vector3::new(0.0, 0.0, 1.0));
     construction.thickness = Some(Length(0.0));
-    assert!(super::rib_feature_is_incomplete(
-        &construction,
-        BooleanOp::Join,
-    ));
+    assert!(rib_feature_is_incomplete(&construction, BooleanOp::Join,));
     construction.thickness = Some(Length(2.0));
     construction.profile = Some(ProfileRef::Faces(Vec::new()));
-    assert!(super::rib_feature_is_incomplete(
-        &construction,
-        BooleanOp::Join,
-    ));
+    assert!(rib_feature_is_incomplete(&construction, BooleanOp::Join,));
     construction.profile = Some(ProfileRef::Faces(vec![cadmpeg_ir::ids::FaceId::mint(
         "test:model:entity#face%230".to_string(),
     )
     .expect("identity grammar")]));
     construction.draft = RibDraft::Angle(cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2));
-    assert!(super::rib_feature_is_incomplete(
-        &construction,
-        BooleanOp::Join,
-    ));
+    assert!(rib_feature_is_incomplete(&construction, BooleanOp::Join,));
 }
 
 #[test]
@@ -473,10 +457,10 @@ fn nx_loft_completeness_validates_point_sections() {
     use cadmpeg_ir::ids::VertexId;
     use cadmpeg_ir::math::Point3;
 
-    assert!(!super::loft_section_is_incomplete(&LoftSection::Point(
+    assert!(!loft_section_is_incomplete(&LoftSection::Point(
         LoftPointSection::Point(Point3::new(1.0, 2.0, 3.0))
     ),));
-    assert!(super::loft_section_is_incomplete(&LoftSection::Point(
+    assert!(loft_section_is_incomplete(&LoftSection::Point(
         LoftPointSection::Point(Point3::new(1.0, f64::NAN, 3.0,))
     ),));
     assert!(VertexId::mint(" ").is_err());
@@ -486,16 +470,16 @@ fn nx_loft_completeness_validates_point_sections() {
 fn nx_sweep_completeness_checks_nested_mode_and_orientation_operands() {
     use cadmpeg_ir::features::{PathRef, SweepMode, SweepOrientation};
 
-    assert!(super::sweep_mode_is_incomplete(SweepMode::Unresolved));
-    assert!(!super::sweep_mode_is_incomplete(SweepMode::NewBody));
-    assert!(super::sweep_orientation_is_incomplete(
+    assert!(sweep_mode_is_incomplete(SweepMode::Unresolved));
+    assert!(!sweep_mode_is_incomplete(SweepMode::NewBody));
+    assert!(sweep_orientation_is_incomplete(
         &SweepOrientation::Auxiliary {
             path: PathRef::Native("nx:auxiliary-path#0".into()),
             tangent: false,
             curvilinear: false,
         }
     ));
-    assert!(!super::sweep_orientation_is_incomplete(
+    assert!(!sweep_orientation_is_incomplete(
         &SweepOrientation::Auxiliary {
             path: PathRef::Curves(vec![cadmpeg_ir::ids::CurveId::mint(
                 "test:model:curve#auxiliary"
@@ -505,7 +489,7 @@ fn nx_sweep_completeness_checks_nested_mode_and_orientation_operands() {
             curvilinear: false,
         }
     ));
-    assert!(super::sweep_orientation_is_incomplete(
+    assert!(sweep_orientation_is_incomplete(
         &SweepOrientation::Binormal {
             direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 0.0),
         }
@@ -525,37 +509,37 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
         count: 3,
         second: None,
     };
-    assert!(!super::pattern_is_incomplete(&linear));
-    assert!(super::pattern_is_incomplete(&PatternKind::Linear {
+    assert!(!pattern_is_incomplete(&linear));
+    assert!(pattern_is_incomplete(&PatternKind::Linear {
         direction: None,
         spacing: Length(10.0),
         count: 3,
         second: None,
     }));
-    assert!(super::pattern_is_incomplete(&PatternKind::Linear {
+    assert!(pattern_is_incomplete(&PatternKind::Linear {
         direction: Some(Vector3::new(1.0, 0.0, 0.0)),
         spacing: Length(0.0),
         count: 3,
         second: None,
     }));
-    assert!(super::pattern_is_incomplete(&PatternKind::Linear {
+    assert!(pattern_is_incomplete(&PatternKind::Linear {
         direction: Some(Vector3::new(0.0, 0.0, 0.0)),
         spacing: Length(10.0),
         count: 3,
         second: None,
     }));
-    assert!(super::pattern_is_incomplete(&PatternKind::Linear {
+    assert!(pattern_is_incomplete(&PatternKind::Linear {
         direction: Some(Vector3::new(1.0, 0.0, 0.0)),
         spacing: Length(10.0),
         count: 1,
         second: None,
     }));
-    assert!(super::pattern_is_incomplete(&PatternKind::CurveDriven {
+    assert!(pattern_is_incomplete(&PatternKind::CurveDriven {
         path: Some(PathRef::Native("nx:path".into())),
         spacing: Length(10.0),
         count: 3,
     }));
-    assert!(super::pattern_is_incomplete(&PatternKind::Composite {
+    assert!(pattern_is_incomplete(&PatternKind::Composite {
         stages: vec![PatternStage {
             pattern: Box::new(PatternKind::Linear {
                 direction: None,
@@ -566,7 +550,7 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
             combination: PatternStageCombination::Initialize,
         }],
     }));
-    assert!(super::pattern_is_incomplete(&PatternKind::Composite {
+    assert!(pattern_is_incomplete(&PatternKind::Composite {
         stages: vec![
             PatternStage {
                 pattern: Box::new(linear.clone()),
@@ -597,24 +581,24 @@ fn nx_pattern_completeness_requires_every_regeneration_operand() {
             },
         ],
     };
-    assert!(!super::pattern_is_incomplete(&composite));
-    assert_eq!(super::pattern_occurrence_count(&composite), Some(6));
+    assert!(!pattern_is_incomplete(&composite));
+    assert_eq!(pattern_occurrence_count(&composite), Some(6));
 }
 
 #[test]
 fn nx_variable_radius_completeness_requires_a_law_interval() {
     use cadmpeg_ir::features::{Length, RadiusSpec, VariableRadius};
 
-    assert!(super::radius_spec_is_incomplete(&RadiusSpec::Variable {
+    assert!(radius_spec_is_incomplete(&RadiusSpec::Variable {
         points: Vec::new()
     }));
-    assert!(super::radius_spec_is_incomplete(&RadiusSpec::Variable {
+    assert!(radius_spec_is_incomplete(&RadiusSpec::Variable {
         points: vec![VariableRadius {
             parameter: 0.0,
             radius: Length(2.0),
         }],
     }));
-    assert!(super::radius_spec_is_incomplete(&RadiusSpec::Variable {
+    assert!(radius_spec_is_incomplete(&RadiusSpec::Variable {
         points: vec![
             VariableRadius {
                 parameter: 0.5,
@@ -626,7 +610,7 @@ fn nx_variable_radius_completeness_requires_a_law_interval() {
             },
         ],
     }));
-    assert!(!super::radius_spec_is_incomplete(&RadiusSpec::Variable {
+    assert!(!radius_spec_is_incomplete(&RadiusSpec::Variable {
         points: vec![
             VariableRadius {
                 parameter: 0.0,
@@ -638,10 +622,10 @@ fn nx_variable_radius_completeness_requires_a_law_interval() {
             },
         ],
     }));
-    assert!(!super::radius_spec_is_incomplete(&RadiusSpec::Constant {
+    assert!(!radius_spec_is_incomplete(&RadiusSpec::Constant {
         radius: Length(2.0),
     }));
-    assert!(super::radius_spec_is_incomplete(&RadiusSpec::Constant {
+    assert!(radius_spec_is_incomplete(&RadiusSpec::Constant {
         radius: Length(0.0),
     }));
 }
@@ -653,67 +637,55 @@ fn nx_selection_completeness_requires_nonempty_unique_identities() {
         ProfileRef,
     };
 
-    assert!(super::body_selection_is_incomplete(&BodySelection::Bodies(
+    assert!(body_selection_is_incomplete(&BodySelection::Bodies(
         Vec::new()
     )));
-    assert!(!super::body_selection_is_incomplete(
-        &BodySelection::Local {
-            bodies: vec!["nx:om-body-object#12".into()],
-            native: "nx:om-object-index#12".into(),
-        }
-    ));
-    assert!(super::body_selection_is_incomplete(&BodySelection::Local {
+    assert!(!body_selection_is_incomplete(&BodySelection::Local {
+        bodies: vec!["nx:om-body-object#12".into()],
+        native: "nx:om-object-index#12".into(),
+    }));
+    assert!(body_selection_is_incomplete(&BodySelection::Local {
         bodies: vec!["nx:om-body-object#12".into(), "nx:om-body-object#12".into()],
         native: "nx:om-object-indices#12,13".into(),
     }));
-    assert!(super::face_selection_is_incomplete(
-        &FaceSelection::Resolved {
-            faces: Vec::new(),
-            native: "nx:faces".into(),
-        }
-    ));
-    assert!(super::edge_selection_is_incomplete(&EdgeSelection::Edges(
+    assert!(face_selection_is_incomplete(&FaceSelection::Resolved {
+        faces: Vec::new(),
+        native: "nx:faces".into(),
+    }));
+    assert!(edge_selection_is_incomplete(&EdgeSelection::Edges(
         Vec::new()
     )));
-    assert!(!super::edge_selection_is_incomplete(&EdgeSelection::All));
-    assert!(super::profile_ref_is_incomplete(&ProfileRef::Faces(
-        Vec::new()
-    )));
-    assert!(super::profile_ref_is_incomplete(
-        &ProfileRef::SketchSelection {
-            sketch: cadmpeg_ir::sketches::SketchId("test:sketch#0".into()),
-            selections: vec!["nx:sketch-selection#0".into()],
-        }
-    ));
-    assert!(super::profile_ref_is_incomplete(
-        &ProfileRef::SketchProfiles {
-            sketch: cadmpeg_ir::sketches::SketchId("test:sketch#0".into()),
-            profiles: Vec::new(),
-        }
-    ));
-    assert!(super::path_ref_is_incomplete(&PathRef::Curves(Vec::new())));
-    assert!(super::path_ref_is_incomplete(
-        &PathRef::SpatialSketchSelection {
-            sketch: cadmpeg_ir::sketches::SpatialSketchId("test:spatial-sketch#0".into()),
-            selections: vec!["nx:path-selection#0".into()],
-        }
-    ));
+    assert!(!edge_selection_is_incomplete(&EdgeSelection::All));
+    assert!(profile_ref_is_incomplete(&ProfileRef::Faces(Vec::new())));
+    assert!(profile_ref_is_incomplete(&ProfileRef::SketchSelection {
+        sketch: cadmpeg_ir::sketches::SketchId("test:sketch#0".into()),
+        selections: vec!["nx:sketch-selection#0".into()],
+    }));
+    assert!(profile_ref_is_incomplete(&ProfileRef::SketchProfiles {
+        sketch: cadmpeg_ir::sketches::SketchId("test:sketch#0".into()),
+        profiles: Vec::new(),
+    }));
+    assert!(path_ref_is_incomplete(&PathRef::Curves(Vec::new())));
+    assert!(path_ref_is_incomplete(&PathRef::SpatialSketchSelection {
+        sketch: cadmpeg_ir::sketches::SpatialSketchId("test:spatial-sketch#0".into()),
+        selections: vec!["nx:path-selection#0".into()],
+    }));
     let edge =
         cadmpeg_ir::ids::EdgeId::mint("test:model:entity#edge%230").expect("identity grammar");
-    assert!(super::path_ref_is_incomplete(&PathRef::Edges(vec![
+    assert!(path_ref_is_incomplete(&PathRef::Edges(vec![
         edge.clone(),
         edge
     ])));
     let curve =
         cadmpeg_ir::ids::CurveId::mint("test:model:entity#curve%230").expect("identity grammar");
-    assert!(super::path_ref_is_incomplete(&PathRef::Curves(vec![
+    assert!(path_ref_is_incomplete(&PathRef::Curves(vec![
         curve.clone(),
         curve
     ])));
-    assert!(super::loft_section_is_incomplete(&LoftSection::Point(
+    assert!(loft_section_is_incomplete(&LoftSection::Point(
         LoftPointSection::Native("nx:point-selection#0".into(),)
     )));
-    assert!(!super::loft_section_is_incomplete(&LoftSection::Point(
+    assert!(!loft_section_is_incomplete(&LoftSection::Point(
         LoftPointSection::Point(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),)
     )));
 }
@@ -761,7 +733,7 @@ fn nx_loft_completeness_checks_native_point_sections_and_centerlines() {
     });
 
     let mut losses = Vec::new();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("loft (1)"));
 
@@ -773,7 +745,7 @@ fn nx_loft_completeness_checks_native_point_sections_and_centerlines() {
         None,
     );
     losses.clear();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("loft (1)"));
 
@@ -785,7 +757,7 @@ fn nx_loft_completeness_checks_native_point_sections_and_centerlines() {
         None,
     );
     losses.clear();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
 }
 
@@ -801,34 +773,34 @@ fn nx_pattern_completeness_requires_distinct_seeds() {
         plane_normal: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
     };
 
-    assert!(!super::pattern_feature_is_incomplete(
+    assert!(!pattern_feature_is_incomplete(
         std::slice::from_ref(&seed),
         &pattern,
         std::slice::from_ref(&seed_id),
     ));
-    assert!(super::pattern_feature_is_incomplete(
+    assert!(pattern_feature_is_incomplete(
         std::slice::from_ref(&seed),
         &pattern,
         &[],
     ));
-    assert!(super::pattern_feature_is_incomplete(
+    assert!(pattern_feature_is_incomplete(
         &[seed.clone(), seed],
         &pattern,
         std::slice::from_ref(&seed_id),
     ));
-    assert!(super::pattern_feature_is_incomplete(
+    assert!(pattern_feature_is_incomplete(
         &[PatternSeed::Faces(FaceSelection::Native(
             "nx:pattern-face-selection#0".into(),
         ))],
         &pattern,
         &[],
     ));
-    assert!(super::pattern_feature_is_incomplete(
+    assert!(pattern_feature_is_incomplete(
         &[PatternSeed::Bodies(BodySelection::Unresolved)],
         &pattern,
         &[],
     ));
-    assert!(!super::pattern_feature_is_incomplete(
+    assert!(!pattern_feature_is_incomplete(
         &[PatternSeed::Bodies(BodySelection::Bodies(vec![
             cadmpeg_ir::ids::BodyId::mint("test:model:body#seed").expect("identity grammar"),
         ]))],
@@ -846,21 +818,18 @@ fn nx_face_blend_completeness_requires_disjoint_supports() {
     let distinct = FaceId::mint("test:model:face#distinct").expect("identity grammar");
     let first = FaceSelection::Faces(vec![shared.clone()]);
 
-    assert!(super::face_selections_overlap(
+    assert!(face_selections_overlap(
         &first,
         &FaceSelection::Resolved {
             faces: vec![shared],
             native: "test:first-support".into(),
         },
     ));
-    assert!(!super::face_selections_overlap(
+    assert!(!face_selections_overlap(
         &first,
         &FaceSelection::Faces(vec![distinct]),
     ));
-    assert!(!super::face_selections_overlap(
-        &first,
-        &FaceSelection::Unresolved,
-    ));
+    assert!(!face_selections_overlap(&first, &FaceSelection::Unresolved,));
 }
 
 #[test]
@@ -887,13 +856,13 @@ fn nx_replace_face_completeness_requires_resolved_disjoint_operands() {
         .body_output_family(),
         Some("replace face")
     );
-    assert!(!super::face_selection_is_incomplete(&complete_targets));
-    assert!(!super::face_selection_is_incomplete(&complete_replacements));
-    assert!(!super::face_selections_overlap(
+    assert!(!face_selection_is_incomplete(&complete_targets));
+    assert!(!face_selection_is_incomplete(&complete_replacements));
+    assert!(!face_selections_overlap(
         &complete_targets,
         &complete_replacements
     ));
-    assert!(super::face_selections_overlap(
+    assert!(face_selections_overlap(
         &complete_targets,
         &overlapping_replacements
     ));
@@ -949,7 +918,7 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
     });
 
     let mut losses = Vec::new();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
 
     for incomplete in [
@@ -979,7 +948,7 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
     ] {
         ir.model.features[0].definition = incomplete;
         losses.clear();
-        super::append_design_intent_losses(&ir, &mut losses);
+        append_design_intent_losses(&ir, &mut losses);
         assert_eq!(losses.len(), 1);
         assert!(losses[0].message.contains("extrude (1)"));
     }
@@ -987,7 +956,7 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
     ir.model.features[0].definition = complete;
     ir.model.features[0].outputs.clear();
     losses.clear();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("extrude (1)"));
 
@@ -1004,7 +973,7 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
             native_ref: Some("test:native-body-writer#0".into()),
         });
     losses.clear();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
 }
 
@@ -1035,7 +1004,7 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
         None,
         None,
     );
-    assert!(!super::revolve_feature_is_incomplete(
+    assert!(!revolve_feature_is_incomplete(
         &complete,
         BooleanOp::NewBody,
         &[],
@@ -1051,28 +1020,28 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
 
     let mut incomplete = complete.clone();
     incomplete.set_profile(None);
-    assert!(super::revolve_feature_is_incomplete(
+    assert!(revolve_feature_is_incomplete(
         &incomplete,
         BooleanOp::NewBody,
         &[],
     ));
     incomplete = complete.clone();
     incomplete.set_axis(None);
-    assert!(super::revolve_feature_is_incomplete(
+    assert!(revolve_feature_is_incomplete(
         &incomplete,
         BooleanOp::NewBody,
         &[],
     ));
     incomplete = complete.clone();
     incomplete.axis_mut().unwrap().direction = Vector3::new(0.0, 0.0, 2.0);
-    assert!(super::revolve_feature_is_incomplete(
+    assert!(revolve_feature_is_incomplete(
         &incomplete,
         BooleanOp::NewBody,
         &[],
     ));
     incomplete = complete.clone();
     incomplete.set_extent(None);
-    assert!(super::revolve_feature_is_incomplete(
+    assert!(revolve_feature_is_incomplete(
         &incomplete,
         BooleanOp::NewBody,
         &[],
@@ -1081,21 +1050,21 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
     incomplete.set_extent(Some(RevolveExtent::OneSided {
         termination: AngularTermination::Angle { angle: Angle(0.0) },
     }));
-    assert!(super::revolve_feature_is_incomplete(
+    assert!(revolve_feature_is_incomplete(
         &incomplete,
         BooleanOp::NewBody,
         &[],
     ));
     incomplete = complete.clone();
     incomplete.axis_mut().unwrap().reference = Some(PathRef::Native("test:axis".into()));
-    assert!(super::revolve_feature_is_incomplete(
+    assert!(revolve_feature_is_incomplete(
         &incomplete,
         BooleanOp::NewBody,
         &[],
     ));
     incomplete = complete.clone();
     incomplete.set_solid(None);
-    assert!(super::revolve_feature_is_incomplete(
+    assert!(revolve_feature_is_incomplete(
         &incomplete,
         BooleanOp::NewBody,
         &[],
@@ -1113,17 +1082,17 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
             },
         },
     }));
-    assert!(super::revolve_feature_is_incomplete(
+    assert!(revolve_feature_is_incomplete(
         &incomplete,
         BooleanOp::NewBody,
         &[],
     ));
-    assert!(!super::revolve_feature_is_incomplete(
+    assert!(!revolve_feature_is_incomplete(
         &incomplete,
         BooleanOp::NewBody,
         &[source],
     ));
-    assert!(super::revolve_feature_is_incomplete(
+    assert!(revolve_feature_is_incomplete(
         &complete,
         BooleanOp::Unresolved,
         &[],
@@ -1147,11 +1116,11 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
         native_ref: None,
     });
     let mut losses = Vec::new();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
 
     ir.model.features[0].outputs.clear();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("revolve (1)"));
 }
@@ -1164,12 +1133,13 @@ fn nx_selection_completeness_rejects_repeated_faces_and_edges() {
     use cadmpeg_ir::ids::{EdgeId, FaceId};
 
     let face = FaceId::mint("test:model:face#repeated").expect("identity grammar");
-    assert!(super::face_selection_is_incomplete(&FaceSelection::Faces(
-        vec![face.clone(), face]
-    ),));
+    assert!(face_selection_is_incomplete(&FaceSelection::Faces(vec![
+        face.clone(),
+        face
+    ]),));
 
     let face = FaceId::mint("test:model:profile-face#repeated").expect("identity grammar");
-    assert!(super::profile_ref_is_incomplete(&ProfileRef::Faces(vec![
+    assert!(profile_ref_is_incomplete(&ProfileRef::Faces(vec![
         face.clone(),
         face
     ]),));
@@ -1181,23 +1151,21 @@ fn nx_selection_completeness_rejects_repeated_faces_and_edges() {
         }],
         native: "test:profile-selection".into(),
     };
-    assert!(!super::profile_ref_is_incomplete(&generated));
-    assert!(super::profile_dependency_is_incomplete(&generated, &[],));
-    assert!(!super::profile_dependency_is_incomplete(
+    assert!(!profile_ref_is_incomplete(&generated));
+    assert!(profile_dependency_is_incomplete(&generated, &[],));
+    assert!(!profile_dependency_is_incomplete(
         &generated,
         std::slice::from_ref(&producer),
     ));
     let direct = ProfileRef::Feature(producer.clone());
-    assert!(super::profile_dependency_is_incomplete(&direct, &[],));
-    assert!(!super::profile_dependency_is_incomplete(
-        &direct,
-        &[producer],
-    ));
+    assert!(profile_dependency_is_incomplete(&direct, &[],));
+    assert!(!profile_dependency_is_incomplete(&direct, &[producer],));
 
     let edge = EdgeId::mint("test:model:edge#repeated").expect("identity grammar");
-    assert!(super::edge_selection_is_incomplete(&EdgeSelection::Edges(
-        vec![edge.clone(), edge]
-    ),));
+    assert!(edge_selection_is_incomplete(&EdgeSelection::Edges(vec![
+        edge.clone(),
+        edge
+    ]),));
 }
 
 #[test]
@@ -1212,7 +1180,7 @@ fn nx_hole_completeness_rejects_opaque_supplied_operands() {
         direction: Vector3::new(0.0, 0.0, 1.0),
     };
     let incomplete = |profile, face| {
-        super::hole_feature_is_incomplete(
+        hole_feature_is_incomplete(
             profile,
             face,
             Some(std::slice::from_ref(&placement)),
@@ -1301,7 +1269,7 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
     });
 
     let mut losses = Vec::new();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0]
         .message
@@ -1317,27 +1285,28 @@ fn nx_body_operation_completeness_requires_disjoint_roles() {
     let distinct = BodyId::mint("test:model:body#distinct").expect("identity grammar");
     let target = BodySelection::Bodies(vec![shared.clone()]);
 
-    assert!(super::body_selection_is_incomplete(&BodySelection::Bodies(
-        vec![shared.clone(), shared.clone()]
-    ),));
-    assert!(!super::body_selection_is_incomplete(&target));
+    assert!(body_selection_is_incomplete(&BodySelection::Bodies(vec![
+        shared.clone(),
+        shared.clone()
+    ]),));
+    assert!(!body_selection_is_incomplete(&target));
 
-    assert!(super::body_selections_overlap(
+    assert!(body_selections_overlap(
         &target,
         &BodySelection::Resolved {
             bodies: vec![shared],
             native: "test:tools".into(),
         },
     ));
-    assert!(!super::body_selections_overlap(
+    assert!(!body_selections_overlap(
         &target,
         &BodySelection::Bodies(vec![distinct]),
     ));
-    assert!(!super::body_selections_overlap(
+    assert!(!body_selections_overlap(
         &target,
         &BodySelection::Unresolved,
     ));
-    assert!(super::body_selections_overlap(
+    assert!(body_selections_overlap(
         &BodySelection::Local {
             bodies: vec!["nx:om-body-object#10".into()],
             native: "nx:om-object-index#10".into(),
@@ -1380,18 +1349,18 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
     });
 
     let mut losses = Vec::new();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("1 NX design configuration"));
 
     ir.model.configurations[0].bodies = ConfigurationBodies::Resolved(bodies);
     losses.clear();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
 
     ir.model.configurations[0].active = false;
     losses.clear();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("1 NX design configuration"));
 
@@ -1415,7 +1384,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
     };
     ir.model.features.push(feature.clone());
     losses.clear();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("1 NX design configuration"));
 
@@ -1429,7 +1398,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
         },
     );
     losses.clear();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
 
     let parameter = DesignParameter {
@@ -1447,7 +1416,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
     };
     ir.model.parameters.push(parameter.clone());
     losses.clear();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("1 NX design configuration"));
 
@@ -1455,7 +1424,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
         .parameter_values
         .insert(parameter.id, parameter.value.expect("evaluated parameter"));
     losses.clear();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
 
     let suppressed = Feature {
@@ -1477,7 +1446,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
     };
     ir.model.features.push(suppressed.clone());
     losses.clear();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert!(losses
         .iter()
         .any(|loss| loss.message.contains("1 NX design configuration")));
@@ -1492,7 +1461,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
         },
     );
     losses.clear();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
 }
 
@@ -1524,26 +1493,26 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     });
 
     let mut losses = Vec::new();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("block (1)"));
 
     let output = cadmpeg_ir::ids::BodyId::mint("test:model:body#output").expect("identity grammar");
     ir.model.features[0].outputs = vec![output.clone()];
     losses.clear();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("block (1)"));
 
     ir.model.features[0].outputs = vec![output.clone(), output.clone()];
     losses.clear();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("block (1)"));
 
     ir.model.features[0].suppressed = Some(true);
     losses.clear();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
 
     {
@@ -1559,7 +1528,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             placement: Some(invalid_placement),
             op: BooleanOp::NewBody,
         };
-        super::append_design_intent_losses(&ir, &mut losses);
+        append_design_intent_losses(&ir, &mut losses);
         assert_eq!(losses.len(), 1);
         assert!(losses[0].message.contains("block (1)"));
         losses.clear();
@@ -1577,7 +1546,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         max_degree: None,
         allow_multi_profile_faces: None,
     };
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("loft (1)"));
 
@@ -1594,7 +1563,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         outward: Some(false),
     };
     losses.clear();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("draft (1)"));
 
@@ -1638,7 +1607,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     ] {
         ir.model.features[0].definition = incomplete;
         losses.clear();
-        super::append_design_intent_losses(&ir, &mut losses);
+        append_design_intent_losses(&ir, &mut losses);
         assert_eq!(losses.len(), 1);
         assert!(losses[0].message.contains("draft (1)"));
     }
@@ -1648,7 +1617,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         distance: Length(5.0),
     };
     losses.clear();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("datum plane (1)"));
 
@@ -1660,7 +1629,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         distance: Length(5.0),
     };
     losses.clear();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("datum plane (1)"));
 
@@ -1682,13 +1651,13 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         native_ref: None,
     });
     losses.clear();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("datum plane (1)"));
 
     ir.model.features[0].dependencies.push(datum);
     losses.clear();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
 
     ir.model.features[0].definition = FeatureDefinition::SewBodies {
@@ -1696,7 +1665,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         gap_tolerance: Some(Length(0.01)),
     };
     losses.clear();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("sew bodies (1)"));
 
@@ -1708,7 +1677,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         gap_tolerance: Some(Length(0.01)),
     };
     losses.clear();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("sew bodies (1)"));
 
@@ -1725,7 +1694,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         keep_tools: false,
     };
     losses.clear();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("body combine (1)"));
 
@@ -1733,7 +1702,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
         bodies: cadmpeg_ir::features::BodySelection::Unresolved,
     };
     losses.clear();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("base feature (1)"));
 
@@ -1819,7 +1788,7 @@ fn nx_exact_empty_base_feature_is_a_complete_replay_boundary() {
     });
 
     let mut losses = Vec::new();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
 
     assert!(losses.is_empty());
 }
@@ -1852,7 +1821,7 @@ fn nx_master_snapshot_base_feature_is_an_output_free_replay_boundary() {
     });
 
     let mut losses = Vec::new();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
 
     assert!(losses.is_empty());
 }
@@ -1887,7 +1856,7 @@ fn nx_sew_completeness_does_not_invent_a_gap_tolerance() {
     });
 
     let mut losses = Vec::new();
-    super::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
 
     for tolerance in [Length(0.0), Length(-0.01), Length(f64::NAN)] {
@@ -1898,7 +1867,7 @@ fn nx_sew_completeness_does_not_invent_a_gap_tolerance() {
         };
         *gap_tolerance = Some(tolerance);
         losses.clear();
-        super::append_design_intent_losses(&ir, &mut losses);
+        append_design_intent_losses(&ir, &mut losses);
         assert_eq!(losses.len(), 1);
         assert!(losses[0].message.contains("sew bodies (1)"));
     }
@@ -1921,7 +1890,7 @@ fn nx_shell_completeness_requires_each_construction_field() {
         resolve_intersections: None,
         allow_self_intersections: None,
     };
-    assert!(super::shell_definition_is_incomplete(&incomplete));
+    assert!(shell_definition_is_incomplete(&incomplete));
 
     let complete = FeatureDefinition::Shell {
         bodies: Some(BodySelection::Bodies(vec![BodyId::mint(
@@ -1938,6 +1907,6 @@ fn nx_shell_completeness_requires_each_construction_field() {
         resolve_intersections: Some(true),
         allow_self_intersections: Some(false),
     };
-    assert!(!super::shell_definition_is_incomplete(&complete));
+    assert!(!shell_definition_is_incomplete(&complete));
     assert_eq!(complete.body_output_family(), Some("shell"));
 }

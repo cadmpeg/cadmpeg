@@ -2,6 +2,7 @@
 //! Topology emission, unresolved carriers, and source metadata.
 
 use super::geometry_work::GeometryWorkBudget;
+use super::jpeg::jpeg_dimensions;
 use super::offset::point_distance;
 use super::pcurves::{
     attach_tolerant_edge_intersections_with_budget,
@@ -12,7 +13,7 @@ use super::pcurves::{
     pcurve_matches_edge_range_with_index_and_budget, pcurve_parameter_range, EndpointWitnesses,
     IntersectionEntityStarts, IntersectionIncidenceIndex, TransferBudget,
 };
-use super::{jpeg_dimensions, offset_store_control_counts, Scan, MISSING_TOLERANCE};
+use super::{offset_store_control_counts, Scan, MISSING_TOLERANCE};
 use crate::framing::node_kind::NodeKind;
 use crate::parasolid::{Stream, StreamKind};
 use crate::topology::{Graph, Node};

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::decode::pcurves::{orient_tolerant_intersection_pcurve, reverse_pcurve_over_range};
+
 use super::*;
 
 #[test]
@@ -19,8 +21,7 @@ fn reversed_nurbs_pcurve_preserves_the_selected_interval() {
         .unwrap(),
     };
     let range = [0.25, 1.75];
-    let reversed =
-        super::super::reverse_pcurve_over_range(&pcurve, range).expect("reversible NURBS pcurve");
+    let reversed = reverse_pcurve_over_range(&pcurve, range).expect("reversible NURBS pcurve");
     for parameter in [range[0], 0.5, 1.0, 1.5, range[1]] {
         let expected =
             cadmpeg_ir::eval::pcurve_uv(&pcurve, range[0] + range[1] - parameter).unwrap();
@@ -56,7 +57,7 @@ fn reversed_symmetric_analytic_pcurves_preserve_the_selected_interval() {
     ];
     let range = [-1.5, 1.5];
     for carrier in carriers {
-        let reversed = super::super::reverse_pcurve_over_range(&carrier, range)
+        let reversed = reverse_pcurve_over_range(&carrier, range)
             .expect("symmetric analytic pcurve is exactly reversible");
         for parameter in [-1.5, -0.75, 0.0, 0.75, 1.5] {
             let expected = cadmpeg_ir::eval::pcurve_uv(&carrier, -parameter).unwrap();
@@ -87,7 +88,7 @@ fn reversed_analytic_conics_preserve_arbitrary_selected_intervals() {
     ];
     let range = [0.25, 1.75];
     for carrier in carriers {
-        let reversed = super::super::reverse_pcurve_over_range(&carrier, range)
+        let reversed = reverse_pcurve_over_range(&carrier, range)
             .expect("a finite conic interval has an exact coefficient reflection");
         assert!(matches!(
             (&carrier, &reversed),
@@ -107,7 +108,7 @@ fn reversed_analytic_conics_preserve_arbitrary_selected_intervals() {
             assert!((actual.v - expected.v).abs() < 1.0e-12);
         }
 
-        let reflected_twice = super::super::reverse_pcurve_over_range(&reversed, range)
+        let reflected_twice = reverse_pcurve_over_range(&reversed, range)
             .expect("general conic coefficients remain exactly reversible");
         for parameter in [0.25, 0.75, 1.25, 1.75] {
             let expected = cadmpeg_ir::eval::pcurve_uv(&carrier, parameter).unwrap();
@@ -127,7 +128,7 @@ fn reversed_parabola_preserves_an_arbitrary_selected_interval() {
         focal_distance: 0.75,
     };
     let range = [0.25, 2.75];
-    let reversed = super::super::reverse_pcurve_over_range(&pcurve, range)
+    let reversed = reverse_pcurve_over_range(&pcurve, range)
         .expect("a finite parabola interval has an exact quadratic reflection");
     assert!(matches!(
         &reversed,
@@ -146,9 +147,8 @@ fn reversed_parabola_preserves_an_arbitrary_selected_interval() {
         distance: 1.25,
         basis: Box::new(pcurve.clone()),
     };
-    let PcurveGeometry::Offset { distance, basis } =
-        super::super::reverse_pcurve_over_range(&offset, range)
-            .expect("offset parabola reflection closes recursively")
+    let PcurveGeometry::Offset { distance, basis } = reverse_pcurve_over_range(&offset, range)
+        .expect("offset parabola reflection closes recursively")
     else {
         panic!("reversed offset parabola");
     };
@@ -171,7 +171,7 @@ fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
             direction: Point2::new(2.0, -1.0),
         }),
     };
-    let reversed = super::super::reverse_pcurve_over_range(&pcurve, [2.0, 6.0])
+    let reversed = reverse_pcurve_over_range(&pcurve, [2.0, 6.0])
         .expect("offset construction is exactly reversible");
     let PcurveGeometry::Offset { distance, basis } = &reversed else {
         panic!("reversed offset");
@@ -208,7 +208,7 @@ fn reversed_offset_pcurve_reverses_its_basis_and_signed_side() {
     });
     let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 2.0).unwrap();
     let second = cadmpeg_ir::eval::pcurve_uv(&pcurve, 6.0).unwrap();
-    let oriented = super::super::orient_tolerant_intersection_pcurve(
+    let oriented = orient_tolerant_intersection_pcurve(
         &ir,
         &CurveId::mint("test:model:entity#nx:test:unused-orientation-curve")
             .expect("identity grammar"),

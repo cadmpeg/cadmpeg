@@ -1,6 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode-owner unit tests.
 
+use crate::decode::blend::{
+    bezier_spans, closest_nurbs_curve_parameter, closest_pcurve_parameters,
+    homogeneous_residual_distance, real_polynomial_roots, surface_contact_direction,
+    surface_offset_lineage,
+};
+use crate::decode::build::{
+    rmfastload_selected_bodies, rmfastload_stream_indices, select_active_body,
+};
+use crate::decode::emit::orient_edge_range;
+use crate::decode::offset::{
+    certified_offset_cache_fit, point_distance, subdivide_offset_rectangle, translation_net_normal,
+};
+use crate::decode::pcurves::{
+    coincident_pcurve_pair, complete_tolerant_intersection_pcurves_from_serialized_branches,
+    exact_boundary_pcurve, orient_tolerant_intersection_pcurve, pcurve_matches_edge,
+};
+
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
@@ -55,7 +72,7 @@ fn active_body_selection_accepts_a_complete_singleton_membership() {
         (second, BTreeSet::from([8])),
     ]);
 
-    assert!(super::select_active_body(&mut ir, &body_node_ids, &[7]));
+    assert!(select_active_body(&mut ir, &body_node_ids, &[7]));
     assert_eq!(ir.model.bodies.len(), 1);
     assert_eq!(ir.model.bodies[0].id, first);
     assert_eq!(
@@ -76,10 +93,10 @@ fn rmfastload_preselection_keeps_only_streams_with_selected_body_images() {
         (second, BTreeSet::from([8, 9])),
     ]);
 
-    let selected = super::rmfastload_selected_bodies(&body_node_ids, &[7, 8]);
+    let selected = rmfastload_selected_bodies(&body_node_ids, &[7, 8]);
     assert_eq!(selected, BTreeSet::from([first]));
     assert_eq!(
-        super::rmfastload_stream_indices(&selected),
+        rmfastload_stream_indices(&selected),
         Some(BTreeSet::from([3]))
     );
 }
@@ -242,7 +259,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
                 uv.v,
             )
             .unwrap();
-            assert!(super::point_distance(expected, actual) < 1.0e-12);
+            assert!(point_distance(expected, actual) < 1.0e-12);
         }
     }
 
@@ -396,7 +413,7 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
         source_object: None,
     });
 
-    assert!(super::exact_boundary_pcurve(
+    assert!(exact_boundary_pcurve(
         &ir,
         &curve,
         &surface,
@@ -411,7 +428,7 @@ fn boundary_pcurve_requires_an_affine_carrier_witness() {
         direction: Vector3::new(10.0, 0.0, 0.0),
     };
     assert!(matches!(
-        super::exact_boundary_pcurve(
+        exact_boundary_pcurve(
             &ir,
             &curve,
             &surface,
@@ -445,7 +462,7 @@ fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
     });
 
     assert!(matches!(
-        super::exact_boundary_pcurve(
+        exact_boundary_pcurve(
             &ir,
             &curve,
             &surface,
@@ -574,7 +591,7 @@ fn planar_offset_cache_fit_is_certified_over_the_control_net() {
     };
     candidate.control_points_mut()[3].z += 0.000_5;
 
-    let fit = super::certified_offset_cache_fit(
+    let fit = certified_offset_cache_fit(
         &support,
         &SurfaceGeometry::Nurbs(candidate.clone()),
         4.0,
@@ -582,7 +599,7 @@ fn planar_offset_cache_fit_is_certified_over_the_control_net() {
     )
     .expect("whole-patch fit");
     assert!((fit - 0.000_5).abs() < 1.0e-12);
-    assert!(super::certified_offset_cache_fit(
+    assert!(certified_offset_cache_fit(
         &support,
         &SurfaceGeometry::Nurbs(candidate.clone()),
         4.0,
@@ -699,7 +716,7 @@ fn pcurve_edge_admission_fails_closed_when_the_geometry_slice_is_empty() {
 #[test]
 fn offset_cache_fit_accepts_higher_degree_translation_nets() {
     assert_eq!(
-        super::certified_offset_cache_fit(
+        certified_offset_cache_fit(
             &quadratic_translation_surface(0.0),
             &quadratic_translation_surface(4.0),
             4.0,
@@ -723,14 +740,14 @@ fn periodic_offset_cache_fit_covers_the_complete_active_domain() {
     candidate_surface.set_u_periodic(true);
 
     assert_eq!(
-        super::certified_offset_cache_fit(&support, &candidate, 0.0, 0.0),
+        certified_offset_cache_fit(&support, &candidate, 0.0, 0.0),
         Some(0.0)
     );
 }
 
 #[test]
 fn offset_cache_fit_certifies_differing_bases_on_one_parameter_domain() {
-    let bound = super::certified_offset_cache_fit(
+    let bound = certified_offset_cache_fit(
         &affine_nurbs_surface(0.0),
         &degree_elevated_affine_surface(4.0),
         4.0,
@@ -744,10 +761,10 @@ fn offset_cache_fit_certifies_differing_bases_on_one_parameter_domain() {
 fn curved_offset_cache_fit_uses_span_local_derivative_bounds() {
     let support = quadratic_paraboloid_surface();
     assert_eq!(
-        super::certified_offset_cache_fit(&support, &support, 0.0, 0.0),
+        certified_offset_cache_fit(&support, &support, 0.0, 0.0),
         Some(0.0)
     );
-    let bound = super::certified_offset_cache_fit(&support, &support, 0.01, 0.02)
+    let bound = certified_offset_cache_fit(&support, &support, 0.01, 0.02)
         .expect("nonzero curved offset certified");
     assert!((0.01..=0.02).contains(&bound));
 }
@@ -775,7 +792,7 @@ fn offset_cache_fit_decouples_distant_knot_span_scale() {
         .unwrap(),
     );
 
-    let bound = super::certified_offset_cache_fit(&support, &support, 0.01, 0.02)
+    let bound = certified_offset_cache_fit(&support, &support, 0.01, 0.02)
         .expect("each regular knot span certifies independently");
     assert!((0.01..=0.02).contains(&bound));
 }
@@ -803,7 +820,7 @@ fn offset_cache_fit_certifies_regular_c0_knot_spans() {
         .unwrap(),
     );
 
-    let bound = super::certified_offset_cache_fit(&support, &support, 0.01, 0.02)
+    let bound = certified_offset_cache_fit(&support, &support, 0.01, 0.02)
         .expect("regular spans certify across the C0 knot break");
     assert!((0.01..=0.02).contains(&bound));
 }
@@ -817,7 +834,7 @@ fn curved_offset_cache_fit_rejects_an_uncertified_fold() {
     for v in 0..3 {
         surface.control_points_mut()[2 * 3 + v] = surface.control_points()[3 + v];
     }
-    assert!(super::certified_offset_cache_fit(&support, &support, 0.0, 1.0).is_none());
+    assert!(certified_offset_cache_fit(&support, &support, 0.0, 1.0).is_none());
 }
 
 #[test]
@@ -830,7 +847,7 @@ fn curved_offset_cache_fit_accepts_a_regular_turning_control_net() {
         surface.control_points_mut()[2 * 3 + v].x = 0.0;
     }
     assert_eq!(
-        super::certified_offset_cache_fit(&support, &support, 0.0, 0.0),
+        certified_offset_cache_fit(&support, &support, 0.0, 0.0),
         Some(0.0)
     );
 }
@@ -862,9 +879,9 @@ fn curved_offset_cache_fit_certifies_deeply_localized_regularity() {
         unreachable!();
     };
 
-    assert!(super::translation_net_normal(surface).is_none());
+    assert!(translation_net_normal(surface).is_none());
     assert_eq!(
-        super::certified_offset_cache_fit(&support, &support, 0.0, 0.0),
+        certified_offset_cache_fit(&support, &support, 0.0, 0.0),
         Some(0.0)
     );
 }
@@ -876,7 +893,7 @@ fn offset_cache_subdivision_uses_the_remaining_divisible_axis() {
     let u = u0 + (u1 - u0) * 0.5;
     let mut rectangles = Vec::new();
 
-    assert!(super::subdivide_offset_rectangle(
+    assert!(subdivide_offset_rectangle(
         &mut rectangles,
         [u0, u1, 0.0, 1.0],
         [u, 0.5],
@@ -901,10 +918,10 @@ fn curved_offset_cache_fit_certifies_varying_positive_weights() {
         .unwrap();
 
     assert_eq!(
-        super::certified_offset_cache_fit(&support, &support, 0.0, 0.0),
+        certified_offset_cache_fit(&support, &support, 0.0, 0.0),
         Some(0.0)
     );
-    assert!(super::certified_offset_cache_fit(&support, &support, 0.01, 0.02).is_some());
+    assert!(certified_offset_cache_fit(&support, &support, 0.01, 0.02).is_some());
 }
 
 #[test]
@@ -927,7 +944,7 @@ fn rational_offset_cache_bounds_are_translation_invariant() {
         ))
         .unwrap();
 
-    let bound = super::certified_offset_cache_fit(&support, &support, 0.01, 0.02)
+    let bound = certified_offset_cache_fit(&support, &support, 0.01, 0.02)
         .expect("absolute placement does not widen rational derivative bounds");
     assert!(bound <= 0.02);
 }
@@ -946,7 +963,7 @@ fn nurbs_surface_fit_uses_the_declared_geometric_tolerance() {
     let mapped =
         cadmpeg_ir::eval::nurbs_surface_point(&surface, parameters.u, parameters.v).unwrap();
 
-    assert!(super::point_distance(mapped, point) <= 0.01);
+    assert!(point_distance(mapped, point) <= 0.01);
 }
 
 #[test]
@@ -961,10 +978,10 @@ fn nurbs_blend_contact_requires_the_declared_radius_shell() {
     });
     let center = Point3::new(1.2, 0.7, 2.0);
 
-    let direction = super::surface_contact_direction(&ir, &surface, center, 2.0, 0)
+    let direction = surface_contact_direction(&ir, &surface, center, 2.0, 0)
         .expect("the support contains one contact at the blend radius");
     assert!((direction - Vector3::new(0.0, 0.0, -1.0)).norm() < 1.0e-10);
-    assert!(super::surface_contact_direction(&ir, &surface, center, 1.0, 0).is_none());
+    assert!(surface_contact_direction(&ir, &surface, center, 1.0, 0).is_none());
 }
 
 #[test]
@@ -1004,10 +1021,7 @@ fn saved_offset_cache_retains_its_procedural_lineage() {
         .add_procedural_surface(cache.clone(), procedural)
         .unwrap();
 
-    assert_eq!(
-        super::surface_offset_lineage(&ir, &cache, 0),
-        Some((support, 4.0))
-    );
+    assert_eq!(surface_offset_lineage(&ir, &cache, 0), Some((support, 4.0)));
 }
 
 #[test]
@@ -1151,7 +1165,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         })
         .into_iter()
         .collect();
-    super::complete_tolerant_intersection_pcurves_from_serialized_branches(
+    complete_tolerant_intersection_pcurves_from_serialized_branches(
         &mut ir,
         &serialized,
         &mut AnnotationBuilder::new(),
@@ -1169,7 +1183,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         };
         metadata.fit_tolerance = Some(0.01);
     }
-    super::complete_tolerant_intersection_pcurves_from_serialized_branches(
+    complete_tolerant_intersection_pcurves_from_serialized_branches(
         &mut ir,
         &serialized,
         &mut AnnotationBuilder::new(),
@@ -1217,7 +1231,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             direction: Point2::new(-1.0, 0.0),
         };
     }
-    super::complete_tolerant_intersection_pcurves_from_serialized_branches(
+    complete_tolerant_intersection_pcurves_from_serialized_branches(
         &mut ir,
         &serialized,
         &mut AnnotationBuilder::new(),
@@ -1281,7 +1295,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
             minor_radius: 2.0,
         };
     }
-    super::complete_tolerant_intersection_pcurves_from_serialized_branches(
+    complete_tolerant_intersection_pcurves_from_serialized_branches(
         &mut ir,
         &serialized,
         &mut AnnotationBuilder::new(),
@@ -1312,7 +1326,7 @@ fn serialized_surface_curves_select_a_terminal_intersection_branch() {
         *parameterization = None;
     });
     ir.model.edges[0].param_range = None;
-    super::complete_tolerant_intersection_pcurves_from_serialized_branches(
+    complete_tolerant_intersection_pcurves_from_serialized_branches(
         &mut ir,
         &serialized,
         &mut AnnotationBuilder::new(),
@@ -1360,7 +1374,7 @@ fn closed_serialized_pcurve_uses_carrier_tangent_for_orientation() {
     };
     let endpoint = Point3::new(2.0, 0.0, 0.0);
 
-    let oriented = super::orient_tolerant_intersection_pcurve(
+    let oriented = orient_tolerant_intersection_pcurve(
         &ir,
         &curve,
         &support,
@@ -1506,18 +1520,16 @@ fn edge_incidence_uses_only_declared_tolerances_at_large_scale() {
         .unwrap(),
     };
 
-    assert!(super::orient_edge_range(&ir, &curve_id, [0.0, 1.0], &start, &end, None).is_none());
-    assert!(!super::pcurve_matches_edge(
-        &ir, &edge, &surface, &pcurve, None,
-    ));
-    assert!(super::pcurve_matches_edge(
+    assert!(orient_edge_range(&ir, &curve_id, [0.0, 1.0], &start, &end, None).is_none());
+    assert!(!pcurve_matches_edge(&ir, &edge, &surface, &pcurve, None,));
+    assert!(pcurve_matches_edge(
         &ir,
         &edge,
         &surface,
         &pcurve,
         Some(0.01),
     ));
-    let large_distance = super::point_distance(
+    let large_distance = point_distance(
         Point3::new(1.0e200, 1.0e200, 1.0e200),
         Point3::new(0.0, 0.0, 0.0),
     );
@@ -1571,7 +1583,7 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
         origin: Point2::new(0.0, 0.0),
         direction: Point2::new(0.0, 1.0),
     };
-    assert!(super::coincident_pcurve_pair(
+    assert!(coincident_pcurve_pair(
         &ir,
         [&surfaces[0], &surfaces[1]],
         [&pcurve, &pcurve],
@@ -1583,7 +1595,7 @@ fn boundary_coincidence_is_certified_between_uniform_samples() {
         unreachable!()
     };
     second.control_points_mut()[1].z = 1.0;
-    assert!(!super::coincident_pcurve_pair(
+    assert!(!coincident_pcurve_pair(
         &ir,
         [&surfaces[0], &surfaces[1]],
         [&pcurve, &pcurve],
@@ -1616,7 +1628,7 @@ fn rational_pcurve_incidence_isolates_close_branches() {
         )
         .unwrap(),
     };
-    let roots = super::closest_pcurve_parameters(&pcurve, Point2::new(0.0, 0.0), Some(0.11))
+    let roots = closest_pcurve_parameters(&pcurve, Point2::new(0.0, 0.0), Some(0.11))
         .expect("complete homogeneous root isolation");
 
     assert_eq!(roots.len(), 4);
@@ -1649,9 +1661,8 @@ fn rational_pcurve_closest_search_retains_close_global_branches() {
         )
         .unwrap(),
     };
-    let parameters =
-        super::closest_pcurve_parameters(&pcurve, Point2::new(0.0, 1.0e-4), Some(0.11))
-            .expect("complete global closest-point search");
+    let parameters = closest_pcurve_parameters(&pcurve, Point2::new(0.0, 1.0e-4), Some(0.11))
+        .expect("complete global closest-point search");
 
     assert_eq!(parameters.len(), 4, "{parameters:?}");
     for (actual, expected) in parameters.iter().zip([0.1001, 0.1, 0.7, 0.9]) {
@@ -1683,12 +1694,12 @@ fn rational_spine_closest_search_resolves_close_global_branches() {
     .unwrap();
     let point = Point3::new(0.0, 1.0e-4, 0.0);
 
-    let first = super::closest_nurbs_curve_parameter(&curve, point, Some(0.099))
-        .expect("first close branch");
-    let second = super::closest_nurbs_curve_parameter(&curve, point, Some(0.101))
-        .expect("second close branch");
-    let remote = super::closest_nurbs_curve_parameter(&curve, point, Some(0.69))
-        .expect("remote global branch");
+    let first =
+        closest_nurbs_curve_parameter(&curve, point, Some(0.099)).expect("first close branch");
+    let second =
+        closest_nurbs_curve_parameter(&curve, point, Some(0.101)).expect("second close branch");
+    let remote =
+        closest_nurbs_curve_parameter(&curve, point, Some(0.69)).expect("remote global branch");
 
     assert!((first - 0.1).abs() < 1.0e-8);
     assert!((second - 0.1001).abs() < 1.0e-8);
@@ -1726,12 +1737,12 @@ fn periodic_nurbs_inversion_lifts_the_continuation_phase() {
     .unwrap();
 
     assert_eq!(
-        super::closest_pcurve_parameters(&pcurve, Point2::new(0.0, 0.0), Some(4.1))
+        closest_pcurve_parameters(&pcurve, Point2::new(0.0, 0.0), Some(4.1))
             .expect("periodic pcurve phase"),
         [4.0]
     );
     assert_eq!(
-        super::closest_nurbs_curve_parameter(&curve, Point3::new(0.0, 0.0, 0.0), Some(4.1),)
+        closest_nurbs_curve_parameter(&curve, Point3::new(0.0, 0.0, 0.0), Some(4.1),)
             .expect("periodic curve phase"),
         4.0
     );
@@ -1739,8 +1750,7 @@ fn periodic_nurbs_inversion_lifts_the_continuation_phase() {
 
 #[test]
 fn polynomial_root_isolation_retains_repeated_real_roots() {
-    let roots =
-        super::real_polynomial_roots(&[-1.0, 3.5, -3.0, -0.5, 1.0]).expect("finite quartic roots");
+    let roots = real_polynomial_roots(&[-1.0, 3.5, -3.0, -0.5, 1.0]).expect("finite quartic roots");
 
     assert_eq!(roots.len(), 3);
     for (actual, expected) in roots.iter().zip([-2.0, 0.5, 1.0]) {
@@ -1760,7 +1770,7 @@ fn coincident_pcurve_interval_retains_seed_and_boundaries() {
         )
         .unwrap(),
     };
-    let roots = super::closest_pcurve_parameters(&pcurve, Point2::new(2.0, -3.0), Some(0.3))
+    let roots = closest_pcurve_parameters(&pcurve, Point2::new(2.0, -3.0), Some(0.3))
         .expect("coincident interval");
 
     assert_eq!(roots, [0.3, 0.0, 1.0]);
@@ -1782,7 +1792,7 @@ fn pcurve_bezier_extraction_preserves_rational_knot_spans() {
         .zip(weights)
         .map(|(point, weight)| [point.u * weight, point.v * weight, weight])
         .collect();
-    let spans = super::bezier_spans(2, &knots, controls).expect("valid Bézier extraction");
+    let spans = bezier_spans(2, &knots, controls).expect("valid Bézier extraction");
 
     assert_eq!(spans.len(), 3);
     for span in spans {
@@ -1791,8 +1801,7 @@ fn pcurve_bezier_extraction_preserves_rational_knot_spans() {
             let expected =
                 cadmpeg_ir::eval::nurbs_pcurve_uv(2, &knots, &points, Some(&weights), parameter)
                     .expect("source NURBS evaluation");
-            let actual =
-                super::homogeneous_residual_distance(&span.controls, parameter, span.domain);
+            let actual = homogeneous_residual_distance(&span.controls, parameter, span.domain);
             assert!((actual - expected.u.hypot(expected.v)).abs() < 1.0e-12);
         }
     }

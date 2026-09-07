@@ -2,6 +2,10 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use crate::decode::build::{rmfastload_allows_terminal_lineage, topology_body_node_ids};
+use crate::decode::feature_completeness::output_free_local_body_construction;
+use crate::decode::report::append_design_intent_losses;
+
 use crate::framing::node_kind::NodeKind;
 use std::{collections::BTreeSet, io::Cursor};
 
@@ -738,16 +742,13 @@ fn rmfastload_membership_precedes_terminal_lineage_for_any_complete_match() {
     let first = BodyId::mint("nx:s3:body#first").expect("identity grammar");
     let second = BodyId::mint("nx:s8:body#second").expect("identity grammar");
     let selected = BTreeSet::from([first.clone()]);
-    assert!(!super::rmfastload_allows_terminal_lineage(2, &selected));
-    assert!(!super::rmfastload_allows_terminal_lineage(
+    assert!(!rmfastload_allows_terminal_lineage(2, &selected));
+    assert!(!rmfastload_allows_terminal_lineage(
         2,
         &BTreeSet::from([first, second]),
     ));
-    assert!(super::rmfastload_allows_terminal_lineage(
-        2,
-        &BTreeSet::new()
-    ));
-    assert!(!super::rmfastload_allows_terminal_lineage(1, &selected));
+    assert!(rmfastload_allows_terminal_lineage(2, &BTreeSet::new()));
+    assert!(!rmfastload_allows_terminal_lineage(1, &selected));
 }
 
 #[test]
@@ -760,7 +761,7 @@ fn rmfastload_membership_declines_when_a_referenced_topology_entity_is_missing()
     put_ref(&mut stream, fin + 16, 99);
 
     let graph = crate::topology::Graph::parse(&stream);
-    assert!(super::topology_body_node_ids(0, &graph).is_empty());
+    assert!(topology_body_node_ids(0, &graph).is_empty());
 }
 
 #[test]
@@ -1223,7 +1224,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     ]);
 
     let mut losses = Vec::new();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
 
     assert_eq!(losses.len(), 7);
     assert_eq!(losses[0].code.category(), LossCategory::DesignIntent);
@@ -1267,7 +1268,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id)),
     };
     losses.clear();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
 
     assert_eq!(losses.len(), 6);
     assert!(losses[4].message.contains("block (1)"));
@@ -1367,7 +1368,7 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
     ]);
 
     let mut losses = Vec::new();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
 }
 
@@ -1417,7 +1418,7 @@ fn design_intent_losses_do_not_scope_to_retained_base_feature_alone() {
     ]);
 
     let mut losses = Vec::new();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
 
     assert_eq!(losses.len(), 2);
     assert!(losses[0]
@@ -1459,7 +1460,7 @@ fn design_intent_losses_accept_output_free_local_body_operations() {
     });
 
     let mut losses = Vec::new();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
 
     assert_eq!(losses.len(), 1);
     assert!(losses[0]
@@ -1493,7 +1494,7 @@ fn design_intent_losses_accept_pattern_construction_without_body_reference() {
     ir.model.features.push(feature);
 
     let mut losses = Vec::new();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
 
     assert_eq!(losses.len(), 1);
     assert!(losses[0]
@@ -1505,7 +1506,7 @@ fn design_intent_losses_accept_pattern_construction_without_body_reference() {
         .source_properties
         .insert("body_reference.0".into(), "42".into());
     losses.clear();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0]
         .message
@@ -1545,13 +1546,13 @@ fn design_intent_losses_accept_unbound_trim_surface_construction() {
     });
 
     let mut losses = Vec::new();
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert!(losses.is_empty());
 
     ir.model.features[0]
         .source_properties
         .insert("body_reference.0".into(), "42".into());
-    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    append_design_intent_losses(&ir, &mut losses);
     assert_eq!(losses.len(), 1);
     assert!(losses[0]
         .message
@@ -1585,15 +1586,13 @@ fn output_free_local_body_construction_requires_unbound_primary_body() {
         native_ref: None,
     };
 
-    assert!(crate::decode::output_free_local_body_construction(&feature));
+    assert!(output_free_local_body_construction(&feature));
 
     feature.source_properties.remove("primary_body_reference");
     feature
         .source_properties
         .insert("body_reference.0".to_string(), "42".to_string());
-    assert!(!crate::decode::output_free_local_body_construction(
-        &feature
-    ));
+    assert!(!output_free_local_body_construction(&feature));
 
     feature.source_properties.insert(
         "primary_body_reference".to_string(),
@@ -1603,7 +1602,5 @@ fn output_free_local_body_construction_requires_unbound_primary_body() {
         "primary_body_segment_use".to_string(),
         "segment-use".to_string(),
     );
-    assert!(!crate::decode::output_free_local_body_construction(
-        &feature
-    ));
+    assert!(!output_free_local_body_construction(&feature));
 }
