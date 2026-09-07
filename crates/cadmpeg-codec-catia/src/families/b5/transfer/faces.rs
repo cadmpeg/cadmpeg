@@ -72,23 +72,13 @@ pub(super) fn ownership_plan(graph: &B5Graph) -> Option<OwnershipPlan> {
         let next = labels.len();
         face_components.push(*labels.entry(root).or_insert(next));
     }
-    let mut component_faces =
-        alloc_filled(labels.len(), Vec::new(), "catia b5 component faces").ok()?;
-    for (face, component) in face_components.iter().copied().enumerate() {
-        component_faces[component].push(face);
-    }
-    let mut closed_components = cadmpeg_core::decode::alloc_filled(
-        component_faces.len(),
-        true,
-        "catia b5 closed components",
-    )
-    .ok()?;
-    let mut component_has_edges = cadmpeg_core::decode::alloc_filled(
-        component_faces.len(),
-        false,
-        "catia b5 component edge marks",
-    )
-    .ok()?;
+    let component_count = labels.len();
+    let mut closed_components =
+        cadmpeg_core::decode::alloc_filled(component_count, true, "catia b5 closed components")
+            .ok()?;
+    let mut component_has_edges =
+        cadmpeg_core::decode::alloc_filled(component_count, false, "catia b5 component edge marks")
+            .ok()?;
     for (&edge, &uses) in &edge_uses {
         let component = face_components[first_face_by_edge[&edge]];
         component_has_edges[component] = true;
@@ -100,17 +90,16 @@ pub(super) fn ownership_plan(graph: &B5Graph) -> Option<OwnershipPlan> {
         .filter(|(closed, has_edges)| **closed && *has_edges)
         .count();
     let body_kind = if edge_uses.values().any(|uses| *uses > 2)
-        || (closed_component_count != 0 && closed_component_count != component_faces.len())
+        || (closed_component_count != 0 && closed_component_count != component_count)
     {
         BodyKind::General
-    } else if closed_component_count == component_faces.len() && !component_faces.is_empty() {
+    } else if closed_component_count == component_count && component_count != 0 {
         BodyKind::Solid
     } else {
         BodyKind::Sheet
     };
     Some(OwnershipPlan {
         body_kind,
-        components: component_faces,
         face_components,
         loop_owners,
     })
@@ -368,12 +357,17 @@ pub(super) fn emit_faces(
     edge_id_map: &HashMap<u32, EdgeId>,
 ) -> bool {
     let ownership = &plan.ownership;
+    let components = ownership.components();
     let loop_orientation = &plan.loop_orientation;
 
     let body_id = BodyId::mint("catia:b5:body#0".to_string()).expect("identity grammar");
-    let region_ids: Vec<RegionId> = (0..ownership.components.len())
-        .map(|component| {
-            RegionId::mint(format!("catia:b5:region#{component}")).expect("identity grammar")
+    let region_ids: BTreeMap<usize, RegionId> = components
+        .keys()
+        .map(|&component| {
+            (
+                component,
+                RegionId::mint(format!("catia:b5:region#{component}")).expect("identity grammar"),
+            )
         })
         .collect();
     annotate(
@@ -389,13 +383,13 @@ pub(super) fn emit_faces(
     ir.model.bodies.push(Body {
         id: body_id.clone(),
         kind: ownership.body_kind,
-        regions: region_ids.clone(),
+        regions: region_ids.values().cloned().collect(),
         transform: None,
         name: None,
         color: None,
         visible: None,
     });
-    for (component_index, component_faces) in ownership.components.iter().enumerate() {
+    for (component_index, component_faces) in &components {
         let region_id = region_ids[component_index].clone();
         let shell_id =
             ShellId::mint(format!("catia:b5:shell#{component_index}")).expect("identity grammar");

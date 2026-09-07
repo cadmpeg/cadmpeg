@@ -91,9 +91,18 @@ struct HelixPlan {
 
 struct OwnershipPlan {
     body_kind: BodyKind,
-    components: Vec<Vec<usize>>,
     face_components: Vec<usize>,
     loop_owners: HashMap<u32, usize>,
+}
+
+impl OwnershipPlan {
+    fn components(&self) -> BTreeMap<usize, Vec<usize>> {
+        let mut components = BTreeMap::<usize, Vec<usize>>::new();
+        for (face, &component) in self.face_components.iter().enumerate() {
+            components.entry(component).or_default().push(face);
+        }
+        components
+    }
 }
 
 struct OrientedLoop {

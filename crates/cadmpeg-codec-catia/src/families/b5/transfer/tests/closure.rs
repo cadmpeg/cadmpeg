@@ -927,7 +927,7 @@ fn body_kind_requires_unique_complete_loop_ownership() {
     graph.edge_vertices.insert(7, [0, 1]);
     let ownership = ownership_plan(&graph).expect("required invariant");
     assert_eq!(ownership.face_components, vec![0, 1]);
-    assert_eq!(ownership.components.len(), 2);
+    assert_eq!(ownership.components().len(), 2);
     assert_eq!(ownership.body_kind, BodyKind::Sheet);
     assert_eq!(ownership.loop_owners.get(&2), Some(&0));
     assert_eq!(ownership.loop_owners.get(&6), Some(&1));
@@ -958,7 +958,7 @@ fn body_kind_requires_unique_complete_loop_ownership() {
     graph.loops.get_mut(&6).expect("required invariant").members[0].edge = 3;
     let ownership = ownership_plan(&graph).expect("required invariant");
     assert_eq!(ownership.face_components, vec![0, 0]);
-    assert_eq!(ownership.components.len(), 1);
+    assert_eq!(ownership.components().len(), 1);
     assert_eq!(ownership.body_kind, BodyKind::Solid);
 
     graph.faces.pop();
