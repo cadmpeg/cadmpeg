@@ -206,7 +206,7 @@ mod tests {
         for (old, new, field) in [
             ("\"ordinal\":254", "\"ordinal\":255", "ordinal"),
             ("\"ordinal\":0", "\"ordinal\":1", "members.ordinal"),
-            ("\"ordinal\":2", "\"ordinal\":0", "terminal.ordinal"),
+            ("\"ordinal\":2,", "\"ordinal\":0,", "terminal.ordinal"),
             (
                 "\"source_offset\":103",
                 "\"source_offset\":104",
