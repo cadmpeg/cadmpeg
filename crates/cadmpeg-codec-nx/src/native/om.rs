@@ -641,7 +641,7 @@ impl TryFrom<ExpressionDeclarationWire> for ExpressionDeclaration {
 pub struct Expression {
     /// Globally unique native-record identity.
     pub id: String,
-    /// Externally bounded OM record and its optional persistent identity.
+    /// Externally bounded OM record and its persistent identity.
     pub owner: Option<ExpressionOwner>,
     /// Exact-name declaration record for this parameter, when unique.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -667,7 +667,7 @@ pub struct Expression {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExpressionOwner {
-    pub object_id: Option<u32>,
+    pub object_id: u32,
     pub record: String,
 }
 
@@ -706,9 +706,9 @@ struct ExpressionWire {
 
 impl From<Expression> for ExpressionWire {
     fn from(value: Expression) -> Self {
-        let (object_id, record) = value
-            .owner
-            .map_or((None, None), |owner| (owner.object_id, Some(owner.record)));
+        let (object_id, record) = value.owner.map_or((None, None), |owner| {
+            (Some(owner.object_id), Some(owner.record))
+        });
         Self {
             object_id,
             record,
@@ -736,8 +736,8 @@ impl TryFrom<ExpressionWire> for Expression {
         }
         let owner = match (wire.object_id, wire.record) {
             (None, None) => None,
-            (object_id, Some(record)) => Some(ExpressionOwner { object_id, record }),
-            (Some(_), None) => return Err("object_id requires record".into()),
+            (Some(object_id), Some(record)) => Some(ExpressionOwner { object_id, record }),
+            _ => return Err("object_id and record are present together".into()),
         };
         Ok(Self {
             owner,
@@ -3904,7 +3904,7 @@ pub fn expressions(container: &Container) -> Vec<Expression> {
             indexed.insert(
                 (entry.name.clone(), expression.offset),
                 (
-                    Some(object_id),
+                    object_id,
                     format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}"),
                 ),
             );
@@ -5016,10 +5016,7 @@ mod tests {
         let expressions = super::expressions(&container);
         assert_eq!(expressions.len(), 1);
         assert_eq!(
-            expressions[0]
-                .owner
-                .as_ref()
-                .and_then(|owner| owner.object_id),
+            expressions[0].owner.as_ref().map(|owner| owner.object_id),
             None
         );
         assert_eq!(
@@ -5182,10 +5179,7 @@ mod tests {
             .expect("required invariant");
         assert_eq!(expressions.len(), 1);
         assert_eq!(
-            expressions[0]
-                .owner
-                .as_ref()
-                .and_then(|owner| owner.object_id),
+            expressions[0].owner.as_ref().map(|owner| owner.object_id),
             Some(0x102)
         );
         assert_eq!(expressions[0].name.index(), Some(8));

@@ -40,13 +40,19 @@ fn expression_names_reject_conflicting_derived_wire_fields() {
 
 #[test]
 fn expression_owner_requires_record_for_persistent_identity() {
+    for field in ["record", "object_id"] {
+        let mut wire: serde_json::Value = serde_json::from_str(EXPRESSION).unwrap();
+        wire[field] = serde_json::Value::Null;
+        let error = serde_json::from_value::<Expression>(wire.clone()).unwrap_err();
+        assert!(error.to_string().contains("object_id and record"));
+        wire.as_object_mut().unwrap().remove(field);
+        let error = serde_json::from_value::<Expression>(wire).unwrap_err();
+        assert!(error.to_string().contains("object_id and record"));
+    }
     let mut wire: serde_json::Value = serde_json::from_str(EXPRESSION).unwrap();
     wire["record"] = serde_json::Value::Null;
-    let error = serde_json::from_value::<Expression>(wire.clone()).unwrap_err();
-    assert!(error.to_string().contains("object_id requires record"));
     wire["object_id"] = serde_json::Value::Null;
-    assert!(serde_json::from_value::<Expression>(wire)
-        .unwrap()
-        .owner
-        .is_none());
+    let expression = serde_json::from_value::<Expression>(wire.clone()).unwrap();
+    assert!(expression.owner.is_none());
+    assert_eq!(serde_json::to_value(expression).unwrap(), wire);
 }
