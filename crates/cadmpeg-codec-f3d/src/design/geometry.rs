@@ -1542,7 +1542,7 @@ impl ProfileBoundary {
 
     fn certified_loop(&self) -> Option<CertifiedProfileLoop> {
         match self {
-            Self::Polygon(vertices) => CertifiedProfileLoop::from_vertices(vertices.clone()),
+            Self::Polygon(vertices) => CertifiedProfileLoop::from_vertices(vertices),
             Self::CircularArcLoop(segments) => certified_analytic_loop(segments),
             Self::Circle { center, radius } => certified_circle(*center, *radius),
             Self::CertifiedLoop(loop_) => Some(loop_.clone()),
@@ -1559,9 +1559,9 @@ impl CertifiedProfileLoop {
         self.tubes.iter().map(|tube| tube.start)
     }
 
-    fn from_vertices(vertices: Vec<Point2>) -> Option<Self> {
+    fn from_vertices(vertices: &[Point2]) -> Option<Self> {
         Self::new(
-            polygon_edges(&vertices)
+            polygon_edges(vertices)
                 .map(|(start, end)| CertifiedCurveTube {
                     start,
                     end,

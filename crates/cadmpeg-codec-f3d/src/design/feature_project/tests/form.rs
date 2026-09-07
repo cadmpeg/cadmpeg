@@ -192,21 +192,21 @@ fn serializer_joins_class_335_surface_with_class_331_pair() {
 
     let mut wrong_pair = bytes.clone();
     wrong_pair[132 + 4..132 + 7].copy_from_slice(b"457");
-    assert!(!super::form_cage_serializers(
+    assert!(super::form_cage_serializers(
         &wrong_pair,
         &crate::design::decode::sketch::IndexedRecordOffsets::build(&wrong_pair),
     )
     .entry_name(8304)
-    .is_some());
+    .is_none());
 
     let mut nonzero_tail = bytes;
     nonzero_tail[131] = 1;
-    assert!(!super::form_cage_serializers(
+    assert!(super::form_cage_serializers(
         &nonzero_tail,
         &crate::design::decode::sketch::IndexedRecordOffsets::build(&nonzero_tail),
     )
     .entry_name(8304)
-    .is_some());
+    .is_none());
 }
 
 #[test]
