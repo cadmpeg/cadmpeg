@@ -73,18 +73,48 @@ pub struct PcurvePatchLayout {
     pub int_width: RefWidth,
     /// Tagged-integer payload offset for the curve degree.
     pub degree_value_offset: usize,
-    /// Tagged-double payload offsets in `(u, v)` pole order.
-    pub control_value_offsets: Vec<usize>,
-    /// Tagged-double payload offsets for homogeneous weights.
-    pub weight_value_offsets: Vec<usize>,
+    control_start: usize,
+    rational: bool,
     /// Number of UV control points.
     pub control_count: usize,
     /// Native unique-knot payloads and expanded run lengths.
     pub knots: KnotLayout,
     /// Payload offset for the closure enum.
     pub periodic_value_offset: usize,
-    /// Offset immediately after the final UV control component.
-    pub control_end: usize,
+}
+
+impl PcurvePatchLayout {
+    fn control_stride(&self) -> usize {
+        if self.rational {
+            27
+        } else {
+            18
+        }
+    }
+
+    /// Whether each native pole carries a homogeneous weight.
+    pub fn rational(&self) -> bool {
+        self.rational
+    }
+
+    /// Tagged-double payload offsets in `(u, v)` pole order.
+    pub fn control_value_offsets(&self) -> impl ExactSizeIterator<Item = [usize; 2]> + '_ {
+        (0..self.control_count).map(|ordinal| {
+            let u = self.control_start + ordinal * self.control_stride() + 1;
+            [u, u + 9]
+        })
+    }
+
+    /// Tagged-double payload offsets for homogeneous weights.
+    pub fn weight_value_offsets(&self) -> impl ExactSizeIterator<Item = usize> + '_ {
+        (0..if self.rational { self.control_count } else { 0 })
+            .map(|ordinal| self.control_start + ordinal * 27 + 19)
+    }
+
+    /// Offset immediately after the final control component.
+    pub fn control_end(&self) -> usize {
+        self.control_start + self.control_count * self.control_stride()
+    }
 }
 
 /// Locate the final valid 2D pcurve block at the stream's known integer width.
@@ -111,31 +141,22 @@ fn final_pcurve_patch_layout_at(record: &[u8], int_width: RefWidth) -> Option<Pc
             }
             let (_knots, control_count, knot_layout) =
                 read_knots(record, &mut pos, unique as usize, degree, int_width)?;
-            let mut offsets = Vec::with_capacity(control_count * 2);
-            let mut weight_offsets = Vec::with_capacity(control_count * usize::from(rational));
-            for _ in 0..control_count * 2 {
+            let control_start = pos;
+            let components = if rational { 3 } else { 2 };
+            for _ in 0..control_count * components {
                 if record.get(pos) != Some(&0x06) {
                     return None;
                 }
-                offsets.push(pos + 1);
                 pos += 9;
-                if rational && offsets.len() % 2 == 0 {
-                    if record.get(pos) != Some(&0x06) {
-                        return None;
-                    }
-                    weight_offsets.push(pos + 1);
-                    pos += 9;
-                }
             }
             Some(PcurvePatchLayout {
                 int_width,
                 degree_value_offset,
-                control_value_offsets: offsets,
-                weight_value_offsets: weight_offsets,
+                control_start,
+                rational,
                 control_count,
                 knots: knot_layout,
                 periodic_value_offset,
-                control_end: pos,
             })
         })
         .next_back()

@@ -6203,3 +6203,24 @@ crate = "cadmpeg-asm"
 kind = "deletion"
 item = "cadmpeg_asm::nurbs::reader::KnotLayout::multiplicity_offsets"
 reason = "ASM-01: each multiplicity payload follows its knot value payload by nine bytes; derive it instead of storing a parallel offset vector"
+
+[[change]]
+commit = "75e172924b2e6df4e2fcd0eb14b437a15ecef6e7"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout::control_end"
+reason = "ASM-02: derive UV and weight offsets and the control end from one native control origin, count, and rationality instead of independent vectors and an end field"
+
+[[change]]
+commit = "75e172924b2e6df4e2fcd0eb14b437a15ecef6e7"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout::control_value_offsets"
+reason = "ASM-02: derive UV and weight offsets and the control end from one native control origin, count, and rationality instead of independent vectors and an end field"
+
+[[change]]
+commit = "75e172924b2e6df4e2fcd0eb14b437a15ecef6e7"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout::weight_value_offsets"
+reason = "ASM-02: derive UV and weight offsets and the control end from one native control origin, count, and rationality instead of independent vectors and an end field"

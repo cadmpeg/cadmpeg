@@ -190,7 +190,7 @@ fn patch_layout_roles_exclude_nested_construction_caches() {
         assert_eq!(
             super::final_pcurve_patch_layout(&pcurves, int_width)
                 .expect("final owned pcurve layout")
-                .control_end,
+                .control_end(),
             pcurve_end
         );
     }

@@ -1769,8 +1769,7 @@ fn patch_nurbs_pcurve_record(
         ))
     })?;
     if layout.control_count != nurbs.control_points().len()
-        || layout.control_value_offsets.len() != nurbs.control_points().len() * 2
-        || layout.weight_value_offsets.len() != nurbs.weights().map_or(0, <[f64]>::len)
+        || layout.rational() != nurbs.weights().is_some()
     {
         return Err(CodecError::NotImplemented(format!(
             "pcurve record {} changed UV cache structure",
@@ -1864,19 +1863,19 @@ fn patch_nurbs_pcurve_record(
         }
     }
     if let Some(tolerance) = edit.fit_tolerance {
-        if bytes.get(scope.start + layout.control_end) != Some(&0x06) {
+        if bytes.get(scope.start + layout.control_end()) != Some(&0x06) {
             return Err(CodecError::NotImplemented(format!(
                 "pcurve record {} has no writable fit-tolerance carrier",
                 record.index
             )));
         }
-        let at = scope.start + layout.control_end + 1;
+        let at = scope.start + layout.control_end() + 1;
         AsmEditSet::patch_f64_payload(bytes, at, tolerance)?;
     }
     for (point, offsets) in nurbs
         .control_points()
         .iter()
-        .zip(layout.control_value_offsets.chunks_exact(2))
+        .zip(layout.control_value_offsets())
     {
         for (value, offset) in [point.u, point.v].into_iter().zip(offsets) {
             let at = scope.start + offset;
@@ -1884,7 +1883,7 @@ fn patch_nurbs_pcurve_record(
         }
     }
     if let Some(weights) = nurbs.weights() {
-        for (weight, offset) in weights.iter().zip(&layout.weight_value_offsets) {
+        for (weight, offset) in weights.iter().zip(layout.weight_value_offsets()) {
             let at = scope.start + offset;
             AsmEditSet::patch_f64_payload(bytes, at, *weight)?;
         }
