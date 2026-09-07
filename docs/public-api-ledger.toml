@@ -3,4 +3,4 @@
 baseline_commit = "087baee8ba7e4374fa45a0355eb3268824fd81d8"
 audit_baseline_commit = "14a0a4dfc89b77e04fac53d478f6479449a84deb"
 api_baseline_dir = "docs/api-baseline"
-measured_at = "c7d5fabc9d085b1e7cd9269820d9d686e7867b12"
+measured_at = "5bbac46bfe4a788dfae26094bf13ae7a84b2de4a"
