@@ -163,11 +163,10 @@ mod tests {
         let decoded = decode(&bytes, 0..bytes.len(), 10.0, ArchiveVersion::V8, 0)
             .expect("required invariant");
         assert!(decoded.model_curve.is_some());
-        let cadmpeg_ir::geometry::CurveGeometry::Nurbs(c2) = decoded
-            .parameter_curve
-            .leaf_geometry()
-            .cloned()
-            .expect("parameter curve geometry")
+        let crate::curves::DecodedCurve::Leaf {
+            geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(c2),
+            ..
+        } = decoded.parameter_curve
         else {
             panic!("expected NURBS parameter curve");
         };

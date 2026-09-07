@@ -142,13 +142,6 @@ impl DecodedCurve {
         matches!(self, Self::Compound { .. })
     }
 
-    pub(crate) fn leaf_geometry(&self) -> Option<&CurveGeometry> {
-        match self {
-            Self::Leaf { geometry, .. } => Some(geometry),
-            Self::Compound { .. } => None,
-        }
-    }
-
     pub(crate) fn into_leaf_geometry(self) -> Option<CurveGeometry> {
         match self {
             Self::Leaf { geometry, .. } => Some(geometry),
