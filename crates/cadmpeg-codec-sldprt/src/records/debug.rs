@@ -43,3 +43,22 @@ impl Debug for super::FeatureInputClass {
             .finish()
     }
 }
+
+impl Debug for super::FeatureInputScalar {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> Result {
+        formatter
+            .debug_struct("FeatureInputScalar")
+            .field("id", &self.id)
+            .field("parent", &self.parent)
+            .field("feature_ref", &self.feature_ref)
+            .field("ordinal", &self.ordinal)
+            .field("offset", &self.offset)
+            .field("object_id", &self.object_id)
+            .field("name", &self.name)
+            .field("value", &self.value)
+            .field("role", &self.role)
+            .field("entity_indices", &self.entity_indices())
+            .field("operands", &self.operands)
+            .finish()
+    }
+}

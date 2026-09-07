@@ -686,7 +686,7 @@ pub struct FeatureInputName {
 }
 
 /// One named scalar serialized in native SI units.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FeatureInputScalar {
     /// Globally unique deterministic identifier for this scalar record.
