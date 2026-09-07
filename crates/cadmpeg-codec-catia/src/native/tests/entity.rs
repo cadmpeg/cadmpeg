@@ -413,6 +413,20 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    crate::native::CatiaNative::decode(&bytes)
+        .store(&mut namespace)
+        .expect("store reference-signature cohort");
+    let mut cohorts: Vec<serde_json::Value> =
+        namespace.arena_as("reference_signature_cohorts").unwrap();
+    cohorts[0]["second_reference"] = serde_json::json!(6);
+    namespace
+        .set_arena("reference_signature_cohorts", &cohorts)
+        .unwrap();
+    let error = crate::native::CatiaNative::load(&namespace)
+        .expect_err("cohort second_reference not following its first");
+    assert!(error.to_string().contains("second_reference"), "{error}");
 }
 
 #[test]
