@@ -925,7 +925,7 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         .as_mut()
         .expect("segments")
         .rows
-        .edit_opaque(|rows| rows.pop());
+        .edit_opaque(Vec::pop);
     assert_eq!(
         materialized_saved_section_external_ids(&incomplete_segment_table),
         BTreeSet::from([42])

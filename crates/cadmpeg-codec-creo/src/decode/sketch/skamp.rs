@@ -521,7 +521,7 @@ mod tests {
             outlines: Vec::new(),
             variables: None,
             segments: Some(crate::feature::FeatureSegmentTable {
-                declared_count: declared_count,
+                declared_count,
                 has_elided_prototype: false,
                 entity_ref: None,
                 rows: (rows)
@@ -1095,7 +1095,7 @@ mod tests {
 
         let mut ordinary = special;
         let segments = ordinary.segments.as_mut().expect("segments");
-        segments.rows.edit_circles(|rows| rows.clear());
+        segments.rows.edit_circles(Vec::clear);
         segments
             .rows
             .insert(crate::feature::segment_rows::SegmentRow::Ordinary(line(7)));

@@ -802,7 +802,7 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
                 body: Vec::new(),
                 offset: 0,
             },
-        ])
+        ]);
     });
     let dimensions = saved_endpoint_definition
         .dimensions

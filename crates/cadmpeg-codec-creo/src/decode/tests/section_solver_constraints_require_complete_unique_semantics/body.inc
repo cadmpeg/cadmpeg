@@ -789,7 +789,7 @@ offset: 30,
         .segments
         .as_mut()
         .expect("segments")
-        .rows.edit_bounded_curves(|rows| rows.clear());
+        .rows.edit_bounded_curves(Vec::clear);
     assert!(matches!(
         section_skamp_constraints(
             &missing_bounded_curve,
@@ -4705,7 +4705,7 @@ offset: 30,
         .segments
         .as_mut()
         .expect("segments")
-        .rows.edit_ordinary(|rows| rows.pop());
+        .rows.edit_ordinary(Vec::pop);
     synchronize_segment_count(&mut radius_definition);
     radius_definition
         .dimensions
@@ -5090,10 +5090,10 @@ offset: 30,
         .segments
         .as_mut()
         .expect("segments");
-    special_segments.rows.edit_ordinary(|rows| rows.clear());
-    special_segments.rows.edit_circles(|rows| rows.clear());
-    special_segments.rows.edit_points(|rows| rows.clear());
-    special_segments.rows.edit_centered_lines(|rows| rows.clear());
+    special_segments.rows.edit_ordinary(Vec::clear);
+    special_segments.rows.edit_circles(Vec::clear);
+    special_segments.rows.edit_points(Vec::clear);
+    special_segments.rows.edit_centered_lines(Vec::clear);
     special_segments.rows.edit_reference_lines(|rows| *rows =  vec![crate::feature::FeatureReferenceLineSegment {
         directions: [None; 3],
         point_ids: [Some(1), Some(4)],
@@ -5112,8 +5112,8 @@ offset: 30,
         external_id: 102,
         offset: 92,
     }]);
-    special_segments.rows.edit_conics(|rows| rows.clear());
-    special_segments.rows.edit_opaque(|rows| rows.clear());
+    special_segments.rows.edit_conics(Vec::clear);
+    special_segments.rows.edit_opaque(Vec::clear);
     special_segments.declared_count = 2;
     let special_relation = &mut special_endpoint_dimension
         .relations

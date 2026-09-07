@@ -1052,13 +1052,13 @@ mod tests {
             line.external_id = 8;
             line.vertical_horizontal = None;
             table.rows.edit_ordinary(|rows| *rows = vec![arc, line]);
-            table.rows.edit_circles(|rows| rows.clear());
-            table.rows.edit_points(|rows| rows.clear());
-            table.rows.edit_centered_lines(|rows| rows.clear());
-            table.rows.edit_reference_lines(|rows| rows.clear());
-            table.rows.edit_bounded_curves(|rows| rows.clear());
-            table.rows.edit_conics(|rows| rows.clear());
-            table.rows.edit_opaque(|rows| rows.clear());
+            table.rows.edit_circles(Vec::clear);
+            table.rows.edit_points(Vec::clear);
+            table.rows.edit_centered_lines(Vec::clear);
+            table.rows.edit_reference_lines(Vec::clear);
+            table.rows.edit_bounded_curves(Vec::clear);
+            table.rows.edit_conics(Vec::clear);
+            table.rows.edit_opaque(Vec::clear);
         }
         let table = definition.segments.as_ref().expect("segments");
         let segments = table.rows.ordinary().collect::<Vec<_>>();
@@ -1089,7 +1089,7 @@ mod tests {
                     radius_ref: 0,
                     external_id: 9,
                     offset: 2,
-                }]
+                }];
             });
         }
         let table = circle_definition.segments.as_ref().expect("segments");

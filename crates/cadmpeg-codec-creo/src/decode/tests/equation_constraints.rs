@@ -1212,7 +1212,7 @@ fn equation_function_thirty_five_emits_point_on_line() {
         .as_mut()
         .expect("segments");
     segments.rows.edit_ordinary(|rows| {
-        rows.retain(|segment| matches!(segment.kind, crate::feature::FeatureSegmentKind::Point(_)))
+        rows.retain(|segment| matches!(segment.kind, crate::feature::FeatureSegmentKind::Point(_)));
     });
     segments.rows.edit_reference_lines(|rows| {
         *rows = vec![crate::feature::FeatureReferenceLineSegment {
@@ -1221,7 +1221,7 @@ fn equation_function_thirty_five_emits_point_on_line() {
             vertical_horizontal: None,
             external_id: 10,
             offset: 10,
-        }]
+        }];
     });
     let reference_line_constraints =
         section_equation_point_on_line_constraints(&reference_line_definition, &sketch);

@@ -357,7 +357,7 @@ mod tests {
             declared_count: 0,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: Default::default(),
+            rows: crate::feature::segment_rows::SegmentRows::default(),
             offset: 0,
         }
     }

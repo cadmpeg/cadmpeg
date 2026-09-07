@@ -238,7 +238,7 @@ fn signed_distance_without_a_spanning_line_requires_equal_endpoint_coordinate() 
 
     let mut endpoint_carriers = definition.clone();
     let endpoint_segments = endpoint_carriers.segments.as_mut().expect("segments");
-    endpoint_segments.rows.edit_ordinary(|rows| rows.clear());
+    endpoint_segments.rows.edit_ordinary(Vec::clear);
     endpoint_segments
         .rows
         .insert(crate::feature::segment_rows::SegmentRow::ReferenceLine(
@@ -283,7 +283,7 @@ fn signed_distance_without_a_spanning_line_requires_equal_endpoint_coordinate() 
         .segments
         .as_mut()
         .expect("segments");
-    centered_segments.rows.edit_ordinary(|rows| rows.clear());
+    centered_segments.rows.edit_ordinary(Vec::clear);
     centered_segments
         .rows
         .insert(crate::feature::segment_rows::SegmentRow::CenteredLine(

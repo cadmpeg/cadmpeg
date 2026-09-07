@@ -510,9 +510,9 @@ fn dimension_identity_includes_its_feature_definition() {
         .as_mut()
         .expect("segment table")
         .rows
-        .edit_ordinary(|rows| rows.clear());
+        .edit_ordinary(Vec::clear);
     let segments = definition.segments.as_mut().expect("segment table");
-    segments.rows.edit_opaque(|rows| rows.clear());
+    segments.rows.edit_opaque(Vec::clear);
     segments
         .rows
         .insert(crate::feature::segment_rows::SegmentRow::Circle(circle));
