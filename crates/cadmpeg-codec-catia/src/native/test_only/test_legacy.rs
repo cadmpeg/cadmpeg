@@ -4,15 +4,9 @@ pub(super) fn valid_entity_record_shape(record: &CatiaEntityRecord) -> bool {
     if let Some(body) = &record.inline_body() {
         return record.lead == 0x03
             && body.first() == Some(&record.lead)
-            && u64::try_from(body.len())
-                .ok()
-                .and_then(|len| len.checked_add(6))
-                == Some(record.byte_len)
-            && record.definition_len() == 0
             && record.definition_prefix().is_empty()
             && record.definition_schema_selections.is_empty()
             && record.definition_suffix().is_empty()
-            && record.value_len() == 0
             && record.value_payload().is_empty()
             && record.value_fields().is_empty()
             && record.value_schema_selections.is_empty()
@@ -22,42 +16,11 @@ pub(super) fn valid_entity_record_shape(record: &CatiaEntityRecord) -> bool {
             && record.suffix_framing().is_none()
             && record.suffix_schema_selection.is_none();
     }
-    let Some(definition_body_len) = u64::try_from(record.definition_prefix().len())
-        .ok()
-        .and_then(|prefix_len| prefix_len.checked_add(5))
-        .and_then(|len| {
-            u64::try_from(record.definition_suffix().len())
-                .ok()
-                .and_then(|suffix_len| len.checked_add(suffix_len))
-        })
-    else {
-        return false;
-    };
-    let Some(value_len) = u64::try_from(record.value_payload().len())
-        .ok()
-        .and_then(|len| len.checked_add(6))
-    else {
-        return false;
-    };
-    let Some(total_len) = 7_u64
-        .checked_add(u64::from(record.definition_len()))
-        .and_then(|len| len.checked_add(u64::from(record.value_len())))
-        .and_then(|len| {
-            u64::try_from(record.record_suffix().len())
-                .ok()
-                .and_then(|suffix_len| len.checked_add(suffix_len))
-        })
-    else {
-        return false;
-    };
-    u64::from(record.definition_len()) == definition_body_len + 6
-        && u64::from(record.value_len()) == value_len
-        && record.byte_len == total_len
-        && record
-            .reference_signature
-            .as_ref()
-            .map(|signature| &signature.production)
-            == entity_table::parse_reference_signature(record.value_payload()).as_ref()
+    record
+        .reference_signature
+        .as_ref()
+        .map(|signature| &signature.production)
+        == entity_table::parse_reference_signature(record.value_payload()).as_ref()
         && record.suffix_value() == entity_suffix_value(record.record_suffix()).as_ref()
 }
 

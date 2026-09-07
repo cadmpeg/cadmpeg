@@ -605,8 +605,6 @@ fn parse_numeric_value_packet(
 pub struct EntityRecord {
     /// Byte offset of the `7C05` marker.
     pub pos: usize,
-    /// Total framed byte length.
-    pub total_len: usize,
     /// Byte between the `7C05` length and nested `7C06` marker.
     pub lead: u8,
     /// Stored entity identity.
@@ -622,16 +620,10 @@ pub enum EntityBody {
     Inline(Vec<u8>),
     /// Nested `7C06` definition and `7C07` value frames.
     Nested {
-        /// Stored nested `7C06` length.
-        definition_len: u32,
         /// Exact definition prefix before the `0xEA` identity delimiter.
         prefix: Vec<u8>,
-        /// Source-schema selectors decoded from the complete definition prefix.
-        selectors: Vec<DefinitionSchemaSelector>,
         /// Exact definition bytes after the identity.
         suffix: Vec<u8>,
-        /// Stored nested `7C07` total length.
-        value_len: u32,
         /// Exact nested `7C07` payload.
         value_payload: Vec<u8>,
         /// Exact bytes after the nested `7C07` frame.
@@ -640,6 +632,19 @@ pub enum EntityBody {
 }
 
 impl EntityRecord {
+    /// Total framed byte length.
+    pub fn total_len(&self) -> usize {
+        match &self.body {
+            EntityBody::Inline(bytes) => 6 + bytes.len(),
+            EntityBody::Nested {
+                prefix,
+                suffix,
+                value_payload,
+                record_suffix,
+            } => 24 + prefix.len() + suffix.len() + value_payload.len() + record_suffix.len(),
+        }
+    }
+
     /// Complete reference-signature view when the entire value payload has that production.
     #[must_use]
     pub fn reference_signature(&self) -> Option<ReferenceSignature> {
@@ -724,9 +729,7 @@ struct EntityRecordCandidates {
 #[derive(Clone, Copy)]
 enum EntityRecordLayout {
     Nested {
-        definition_len: u32,
         definition_end: usize,
-        value_len: u32,
         value_end: usize,
     },
     Inline,
@@ -847,9 +850,7 @@ fn parse_candidate_variants(data: &[u8], pos: usize) -> Option<EntityRecordCandi
         total_len,
         lead,
         layout: EntityRecordLayout::Nested {
-            definition_len,
             definition_end,
-            value_len,
             value_end,
         },
         identities,
@@ -910,17 +911,15 @@ fn materialize_record(
     if matches!(candidate.layout, EntityRecordLayout::Inline) {
         return Some(EntityRecord {
             pos: candidate.pos,
-            total_len: candidate.total_len,
             lead: candidate.lead,
             entity_id: identity.entity_id,
             body: EntityBody::Inline(data.get(candidate.pos + 6..record_end)?.to_vec()),
         });
     }
     let EntityRecordLayout::Nested {
-        definition_len,
         definition_end,
-        value_len,
         value_end,
+        ..
     } = candidate.layout
     else {
         unreachable!("inline entity returned before nested materialization")
@@ -931,15 +930,11 @@ fn materialize_record(
     let prefix = data.get(definition_start..identity.delimiter)?;
     Some(EntityRecord {
         pos: candidate.pos,
-        total_len: candidate.total_len,
         lead: candidate.lead,
         entity_id: identity.entity_id,
         body: EntityBody::Nested {
-            definition_len,
             prefix: prefix.to_vec(),
-            selectors: parse_definition_schema_selectors(prefix),
             suffix: data.get(identity_end..definition_end)?.to_vec(),
-            value_len,
             value_payload: value_payload.to_vec(),
             record_suffix: data.get(value_end..record_end)?.to_vec(),
         },
@@ -1209,29 +1204,26 @@ mod tests {
     fn nested_body(
         record: &EntityRecord,
     ) -> (
-        u32,
+        usize,
         &[u8],
-        &[DefinitionSchemaSelector],
+        Vec<DefinitionSchemaSelector>,
         &[u8],
-        u32,
+        usize,
         &[u8],
         &[u8],
     ) {
         match &record.body {
             EntityBody::Nested {
-                definition_len,
                 prefix,
-                selectors,
                 suffix,
-                value_len,
                 value_payload,
                 record_suffix,
             } => (
-                *definition_len,
+                prefix.len() + suffix.len() + 11,
                 prefix.as_slice(),
-                selectors.as_slice(),
+                parse_definition_schema_selectors(prefix),
                 suffix.as_slice(),
-                *value_len,
+                value_payload.len() + 6,
                 value_payload.as_slice(),
                 record_suffix.as_slice(),
             ),

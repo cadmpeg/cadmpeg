@@ -196,7 +196,6 @@ mod tests {
             object_record: "catia:object#dimension".to_string(),
             ordinal: 0,
             byte_offset: 0,
-            byte_len: 0,
             lead: 2,
             body: CatiaEntityRecordBody::empty_nested(),
             definition_schema_selections: Vec::new(),

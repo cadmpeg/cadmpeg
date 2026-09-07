@@ -152,7 +152,6 @@ fn entity_record(
         object_record: object_record.to_string(),
         ordinal: 0,
         byte_offset,
-        byte_len: 0,
         lead: 0,
         body: CatiaEntityRecordBody::empty_nested(),
         definition_schema_selections: Vec::new(),

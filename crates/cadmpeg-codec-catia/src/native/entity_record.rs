@@ -40,14 +40,10 @@ pub enum CatiaEntityRecordBody {
     Inline(Vec<u8>),
     /// Nested `7C06` definition and `7C07` value frames.
     Nested {
-        /// Stored nested `7C06` length.
-        definition_len: u32,
         /// Exact definition prefix before the `0xEA` identity delimiter.
         definition_prefix: Vec<u8>,
         /// Exact definition bytes after the identity.
         definition_suffix: Vec<u8>,
-        /// Stored nested `7C07` total length.
-        value_len: u32,
         /// Exact nested `7C07` payload.
         value_payload: Vec<u8>,
         /// Exact bytes after the nested `7C07` frame.
@@ -79,8 +75,6 @@ pub struct CatiaEntityRecord {
     pub ordinal: u64,
     /// Byte offset of the `7C05` marker.
     pub byte_offset: u64,
-    /// Total framed byte length.
-    pub byte_len: u64,
     /// Byte between the `7C05` length and nested `7C06` marker.
     pub lead: u8,
     /// Inline body or nested definition/value frames.
@@ -109,10 +103,8 @@ impl CatiaEntityRecordBody {
     #[cfg(test)]
     pub fn empty_nested() -> Self {
         Self::Nested {
-            definition_len: 0,
             definition_prefix: Vec::new(),
             definition_suffix: Vec::new(),
-            value_len: 0,
             value_payload: Vec::new(),
             record_suffix: Vec::new(),
         }
@@ -120,6 +112,24 @@ impl CatiaEntityRecordBody {
 }
 
 impl CatiaEntityRecord {
+    /// Total framed byte length.
+    pub fn byte_len(&self) -> u64 {
+        match &self.body {
+            CatiaEntityRecordBody::Inline(bytes) => 6 + bytes.len() as u64,
+            CatiaEntityRecordBody::Nested {
+                definition_prefix,
+                definition_suffix,
+                value_payload,
+                record_suffix,
+            } => {
+                24 + definition_prefix.len() as u64
+                    + definition_suffix.len() as u64
+                    + value_payload.len() as u64
+                    + record_suffix.len() as u64
+            }
+        }
+    }
+
     pub fn value_packets(&self) -> Vec<entity_table::EntityValuePacket> {
         entity_table::value_packets(self.value_payload(), &self.value_fields())
     }
@@ -275,14 +285,6 @@ impl CatiaEntityRecord {
         }
     }
 
-    #[cfg(test)]
-    pub fn definition_len(&self) -> u32 {
-        match self.body {
-            CatiaEntityRecordBody::Inline(_) => 0,
-            CatiaEntityRecordBody::Nested { definition_len, .. } => definition_len,
-        }
-    }
-
     pub fn definition_prefix(&self) -> &[u8] {
         match &self.body {
             CatiaEntityRecordBody::Inline(_) => &[],
@@ -299,14 +301,6 @@ impl CatiaEntityRecord {
             CatiaEntityRecordBody::Nested {
                 definition_suffix, ..
             } => definition_suffix,
-        }
-    }
-
-    #[cfg(test)]
-    pub fn value_len(&self) -> u32 {
-        match self.body {
-            CatiaEntityRecordBody::Inline(_) => 0,
-            CatiaEntityRecordBody::Nested { value_len, .. } => value_len,
         }
     }
 
@@ -372,7 +366,7 @@ pub(super) struct CatiaEntityRecordWire {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "schema", schemars(with = "Option<String>"))]
     inline_body: Option<Vec<u8>>,
-    definition_len: u32,
+    definition_len: u64,
     #[serde(with = "cadmpeg_ir::bytes")]
     #[cfg_attr(feature = "schema", schemars(with = "String"))]
     definition_prefix: Vec<u8>,
@@ -382,7 +376,7 @@ pub(super) struct CatiaEntityRecordWire {
     #[serde(with = "cadmpeg_ir::bytes")]
     #[cfg_attr(feature = "schema", schemars(with = "String"))]
     definition_suffix: Vec<u8>,
-    value_len: u32,
+    value_len: u64,
     #[serde(with = "cadmpeg_ir::bytes")]
     #[cfg_attr(feature = "schema", schemars(with = "String"))]
     value_payload: Vec<u8>,
@@ -437,6 +431,7 @@ pub(super) struct CatiaEntityRecordWire {
 
 impl From<CatiaEntityRecord> for CatiaEntityRecordWire {
     fn from(value: CatiaEntityRecord) -> Self {
+        let byte_len = value.byte_len();
         let (
             inline_body,
             definition_len,
@@ -456,18 +451,16 @@ impl From<CatiaEntityRecord> for CatiaEntityRecordWire {
                 Vec::new(),
             ),
             CatiaEntityRecordBody::Nested {
-                definition_len,
                 definition_prefix,
                 definition_suffix,
-                value_len,
                 value_payload,
                 record_suffix,
             } => (
                 None,
-                definition_len,
+                11 + definition_prefix.len() as u64 + definition_suffix.len() as u64,
                 definition_prefix,
                 definition_suffix,
-                value_len,
+                6 + value_payload.len() as u64,
                 value_payload,
                 record_suffix,
             ),
@@ -530,7 +523,7 @@ impl From<CatiaEntityRecord> for CatiaEntityRecordWire {
             object_record: value.object_record,
             ordinal: value.ordinal,
             byte_offset: value.byte_offset,
-            byte_len: value.byte_len,
+            byte_len,
             lead: value.lead,
             inline_body,
             definition_len,
@@ -567,6 +560,23 @@ impl TryFrom<CatiaEntityRecordWire> for CatiaEntityRecord {
     type Error = String;
 
     fn try_from(wire: CatiaEntityRecordWire) -> Result<Self, Self::Error> {
+        if wire.inline_body.is_none() {
+            if wire.definition_len
+                != 11 + wire.definition_prefix.len() as u64 + wire.definition_suffix.len() as u64
+            {
+                return Err("definition_len disagrees with definition bytes".to_owned());
+            }
+            if wire.value_len != 6 + wire.value_payload.len() as u64 {
+                return Err("value_len disagrees with value_payload".to_owned());
+            }
+        }
+        let byte_len = match &wire.inline_body {
+            Some(bytes) => 6 + bytes.len() as u64,
+            None => 7 + wire.definition_len + wire.value_len + wire.record_suffix.len() as u64,
+        };
+        if wire.byte_len != byte_len {
+            return Err("byte_len disagrees with body".to_owned());
+        }
         let nested_occupied = wire.definition_len != 0
             || !wire.definition_prefix.is_empty()
             || !wire.definition_suffix.is_empty()
@@ -581,10 +591,8 @@ impl TryFrom<CatiaEntityRecordWire> for CatiaEntityRecord {
             }
             (Some(bytes), false) => CatiaEntityRecordBody::Inline(bytes),
             (None, _) => CatiaEntityRecordBody::Nested {
-                definition_len: wire.definition_len,
                 definition_prefix: wire.definition_prefix,
                 definition_suffix: wire.definition_suffix,
-                value_len: wire.value_len,
                 value_payload: wire.value_payload,
                 record_suffix: wire.record_suffix,
             },
@@ -660,7 +668,6 @@ impl TryFrom<CatiaEntityRecordWire> for CatiaEntityRecord {
             object_record: wire.object_record,
             ordinal: wire.ordinal,
             byte_offset: wire.byte_offset,
-            byte_len: wire.byte_len,
             lead: wire.lead,
             body,
             definition_schema_selections: wire.definition_schema_selections,

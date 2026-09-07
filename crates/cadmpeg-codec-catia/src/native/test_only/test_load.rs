@@ -272,13 +272,13 @@ impl CatiaNative {
                             })
                     })
                     || graph_entities.windows(2).any(|pair| {
-                        pair[0].byte_offset.checked_add(pair[0].byte_len)
+                        pair[0].byte_offset.checked_add(pair[0].byte_len())
                             != Some(pair[1].byte_offset)
                     })
                     || graph_entities.last().and_then(|entity| {
                         entity
                             .byte_offset
-                            .checked_add(entity.byte_len)?
+                            .checked_add(entity.byte_len())?
                             .checked_add(1)
                     }) != Some(graph.byte_offset))
             {

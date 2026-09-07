@@ -8808,7 +8808,7 @@ impl CatiaNative {
         let paired_object_graph_roots = entity_runs
             .iter()
             .filter_map(|run| {
-                let end = run.last()?.pos.checked_add(run.last()?.total_len)?;
+                let end = run.last()?.pos.checked_add(run.last()?.total_len())?;
                 (bytes.get(end) == Some(&0xde)).then_some((end + 1, run.len()))
             })
             .collect::<HashMap<_, _>>();
@@ -8843,7 +8843,7 @@ impl CatiaNative {
         let mut entity_runs = entity_runs
             .into_iter()
             .filter_map(|run| {
-                let end = run.last()?.pos.checked_add(run.last()?.total_len)?;
+                let end = run.last()?.pos.checked_add(run.last()?.total_len())?;
                 (bytes.get(end) == Some(&0xde)).then_some(((end + 1, run.len()), run))
             })
             .collect::<HashMap<_, _>>();
@@ -9394,18 +9394,14 @@ fn native_object_graph(
             let body = match entity.body {
                 entity_table::EntityBody::Inline(bytes) => CatiaEntityRecordBody::Inline(bytes),
                 entity_table::EntityBody::Nested {
-                    definition_len,
                     prefix,
                     suffix,
-                    value_len,
                     value_payload,
                     record_suffix,
                     ..
                 } => CatiaEntityRecordBody::Nested {
-                    definition_len,
                     definition_prefix: prefix,
                     definition_suffix: suffix,
-                    value_len,
                     value_payload,
                     record_suffix,
                 },
@@ -9417,8 +9413,6 @@ fn native_object_graph(
                 ordinal: u64::try_from(ordinal).expect("bounded entity-table ordinal fits u64"),
                 byte_offset: u64::try_from(entity.pos)
                     .expect("bounded entity-table offset fits u64"),
-                byte_len: u64::try_from(entity.total_len)
-                    .expect("bounded entity-table length fits u64"),
                 lead: entity.lead,
                 body,
                 definition_schema_selections: Vec::new(),

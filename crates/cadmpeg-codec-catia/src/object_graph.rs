@@ -534,7 +534,7 @@ pub(crate) fn surface_alias_tag_map(data: &[u8]) -> HashMap<u32, Option<u32>> {
     let paired_object_graph_roots = entity_runs
         .iter()
         .filter_map(|run| {
-            let end = run.last()?.pos.checked_add(run.last()?.total_len)?;
+            let end = run.last()?.pos.checked_add(run.last()?.total_len())?;
             (data.get(end) == Some(&0xde)).then_some((end + 1, run.len()))
         })
         .collect::<HashMap<_, _>>();
