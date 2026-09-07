@@ -711,7 +711,9 @@ fn chart_records(stream: &[u8], point_layout: ChartPointLayout) -> BTreeMap<u32,
             continue;
         }
         let has_native_parameters = source.data.point_layout() == ChartPointLayout::Ext11;
-        let (samples, ext_support_uv) = source.data.into_samples(source.preamble);
+        let Some((samples, ext_support_uv)) = source.data.into_samples(source.preamble) else {
+            continue;
+        };
         let candidate = Chart {
             samples,
             fit_tolerance,
@@ -729,7 +731,7 @@ fn chart_records(stream: &[u8], point_layout: ChartPointLayout) -> BTreeMap<u32,
                         .samples
                         .points()
                         .iter()
-                        .zip(candidate.samples.points())
+                        .zip(candidate.samples.points().iter())
                         .all(|(first, second)| {
                             distance(*first, *second)
                                 <= entry.get().fit_tolerance.max(candidate.fit_tolerance)

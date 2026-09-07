@@ -6,50 +6,56 @@ use cadmpeg_ir::math::Point3;
 /// At least two chart points, each with one native parameter.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ChartSamples {
-    points: Vec<Point3>,
-    parameters: Vec<f64>,
+    samples: crate::om::nonempty::NonEmpty<(Point3, f64)>,
 }
 
 impl ChartSamples {
+    fn new(samples: impl IntoIterator<Item = (Point3, f64)>) -> Option<Self> {
+        let samples = crate::om::nonempty::NonEmpty::new(samples)?;
+        (samples.len() >= 2).then_some(Self { samples })
+    }
+
     #[cfg(test)]
     pub(crate) fn from_test_values(
         points: Vec<Point3>,
         parameters: Vec<f64>,
     ) -> Result<Self, &'static str> {
-        if points.len() < 2 {
-            return Err("points: at least two points required");
-        }
         if points.len() != parameters.len() {
             return Err("parameters: one value per point required");
         }
-        Ok(Self { points, parameters })
+        Self::new(points.into_iter().zip(parameters)).ok_or("points: at least two points required")
     }
 
-    pub(crate) fn points(&self) -> &[Point3] {
-        &self.points
+    pub(crate) fn points(&self) -> Vec<Point3> {
+        self.samples.iter().map(|sample| sample.0).collect()
     }
 
-    pub(crate) fn parameters(&self) -> &[f64] {
-        &self.parameters
+    pub(crate) fn parameters(&self) -> Vec<f64> {
+        self.samples.iter().map(|sample| sample.1).collect()
     }
 
     pub(crate) fn endpoints(&self) -> [Point3; 2] {
-        [self.points[0], self.points[self.points.len() - 1]]
+        [self.samples.first().0, self.samples.last().0]
     }
 
     pub(crate) fn parameter_range(&self) -> [f64; 2] {
-        [
-            self.parameters[0],
-            self.parameters[self.parameters.len() - 1],
-        ]
+        [self.samples.first().1, self.samples.last().1]
     }
 
     /// Replace the parameterization when both charts have the same sample count.
     pub(super) fn replace_parameters_from(&mut self, other: &Self) -> bool {
-        if self.points.len() != other.points.len() {
+        if self.samples.len() != other.samples.len() {
             return false;
         }
-        self.parameters.clone_from(&other.parameters);
+        let Some(replacement) = Self::new(
+            self.samples
+                .iter()
+                .zip(other.samples.iter())
+                .map(|(point, parameter)| (point.0, parameter.1)),
+        ) else {
+            return false;
+        };
+        *self = replacement;
         true
     }
 }
@@ -208,7 +214,10 @@ impl SourceChartData {
         }
     }
 
-    pub(crate) fn into_samples(self, preamble: ChartPreamble) -> (ChartSamples, super::SupportUv) {
+    pub(crate) fn into_samples(
+        self,
+        preamble: ChartPreamble,
+    ) -> Option<(ChartSamples, super::SupportUv)> {
         let (parameters, support_uv) = match self.encoding {
             SourceEncoding::Xyz3 => {
                 let mut parameter = preamble.base_parameter();
@@ -226,13 +235,10 @@ impl SourceChartData {
                 support_uv,
             } => (parameters, support_uv),
         };
-        (
-            ChartSamples {
-                points: self.points,
-                parameters,
-            },
+        Some((
+            ChartSamples::new(self.points.into_iter().zip(parameters))?,
             support_uv,
-        )
+        ))
     }
 }
 #[cfg(test)]
@@ -245,6 +251,7 @@ mod tests {
         let make_samples = |points, parameters| {
             SourceChartData::ext11(points, parameters, [None, None]).map(|data| {
                 data.into_samples(ChartPreamble::new(0.0, 1.0, 0.01, 0.0).unwrap())
+                    .unwrap()
                     .0
             })
         };
@@ -279,7 +286,9 @@ mod tests {
         )
         .is_err());
         let xyz = SourceChartData::xyz3(points.clone()).unwrap();
-        let (samples, uv) = xyz.into_samples(ChartPreamble::new(2.0, 1000.0, 0.01, 0.0).unwrap());
+        let (samples, uv) = xyz
+            .into_samples(ChartPreamble::new(2.0, 1000.0, 0.01, 0.0).unwrap())
+            .unwrap();
         assert_eq!(samples.points(), points);
         assert_eq!(samples.parameters(), [2.0, 3.0]);
         assert_eq!(uv, [None, None]);
