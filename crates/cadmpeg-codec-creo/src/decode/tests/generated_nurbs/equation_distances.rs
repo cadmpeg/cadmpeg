@@ -19,8 +19,10 @@ fn equation_function_six_derives_positive_point_distance() {
         offset: 0,
     };
     let definition = |radius| crate::feature::FeatureDefinition {
-        id: 40,
-        owner_feature_id: None,
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(40),
+            owner_feature_id: None,
+        },
         body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
                 \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
                 \x01\x06\xf8\x05\x00\x01\x02\x03\x04\xf6\xe2"
@@ -96,8 +98,10 @@ fn equation_function_forty_three_derives_unique_axis_distance_scalar() {
     };
     let definition =
         |first: [f64; 2], second: [f64; 2], distance| crate::feature::FeatureDefinition {
-            id: 40,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(40),
+                owner_feature_id: None,
+            },
             body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
                     \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
                     \x01\x2b\xf8\x08\x00\x01\x02\x03\x04\x05\x06\x07\xf6\xe2"
@@ -192,8 +196,10 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
         offset: 0,
     };
     let definition = crate::feature::FeatureDefinition {
-        id: 40,
-        owner_feature_id: None,
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(40),
+            owner_feature_id: None,
+        },
         body: b"eqtn_arr\0\xf2\xf8\x03\xf7\x80\x9f\xfb\xe2\
                 \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
                 \x01\x03\xf8\x03\x00\x01\x03\xf6\xe2\
@@ -327,8 +333,10 @@ fn equation_function_thirty_three_solves_unique_equal_line_length_coordinate() {
         offset: 0,
     };
     let definition = crate::feature::FeatureDefinition {
-        id: 40,
-        owner_feature_id: None,
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(40),
+            owner_feature_id: None,
+        },
         body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
                 \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
                 \x01\x21\xf8\x09\x00\x01\x02\x03\x04\x05\x06\x07\x08\xf6\xe2"

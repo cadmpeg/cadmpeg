@@ -198,17 +198,21 @@ pub(crate) fn feature_definition_record_id(
         .features
         .definitions
         .iter()
-        .filter(|candidate| candidate.id == definition.id)
+        .filter(|candidate| candidate.identity.id() == definition.identity.id())
         .count()
         != 1
-        || (definition.id == 0 && definition.owner_feature_id.is_none())
+        || (definition.identity.schema_id().is_none()
+            && definition.identity.owner_feature_id().is_none())
     {
         format!(
             "creo:featdefs:feature_definition#offset:{}",
             definition.offset
         )
     } else {
-        format!("creo:featdefs:feature_definition#{}", definition.id)
+        format!(
+            "creo:featdefs:feature_definition#{}",
+            definition.identity.id()
+        )
     }
 }
 
@@ -220,14 +224,15 @@ pub(crate) fn feature_sketch_record_id_in_scan(
         .features
         .definitions
         .iter()
-        .filter(|candidate| candidate.id == definition.id)
+        .filter(|candidate| candidate.identity.id() == definition.identity.id())
         .count()
         != 1
-        || (definition.id == 0 && definition.owner_feature_id.is_none())
+        || (definition.identity.schema_id().is_none()
+            && definition.identity.owner_feature_id().is_none())
     {
         format!("creo:featdefs:sketch#offset:{}", definition.offset)
     } else {
-        format!("creo:featdefs:sketch#{}", definition.id)
+        format!("creo:featdefs:sketch#{}", definition.identity.id())
     }
 }
 
@@ -307,7 +312,7 @@ pub(crate) fn owning_feature_definition_ref(
         .features
         .definitions
         .iter()
-        .filter(|definition| definition.owner_feature_id == Some(feature_id))
+        .filter(|definition| definition.identity.owner_feature_id() == Some(feature_id))
         .collect::<Vec<_>>();
     let [definition] = definitions.as_slice() else {
         return None;

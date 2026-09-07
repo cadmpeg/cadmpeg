@@ -76,7 +76,7 @@ fn generated_cylinder_section_transform(
     sources: &PlacementSources<'_>,
     entity_tables: &[FeatureEntityTable],
 ) -> Option<FeatureSectionTransform> {
-    let feature_id = definition.owner_feature_id?;
+    let feature_id = definition.identity.owner_feature_id()?;
     definition.segments.as_ref()?.is_complete().then_some(())?;
     let points = definition.variables.as_ref()?.reconciled_points();
     points.1.is_empty().then_some(())?;
@@ -200,7 +200,7 @@ fn generated_cylinder_section_transform(
         |section| Some(section.offset),
     )?;
     Some(FeatureSectionTransform {
-        definition_id: definition.id,
+        definition_id: definition.identity.id(),
         feature_id: Some(feature_id),
         origin: frame.0,
         u_axis: frame.1,
@@ -215,7 +215,7 @@ fn generated_planar_section_transform(
     sources: &PlacementSources<'_>,
     entity_tables: &[FeatureEntityTable],
 ) -> Option<FeatureSectionTransform> {
-    let feature_id = definition.owner_feature_id?;
+    let feature_id = definition.identity.owner_feature_id()?;
     let segments = definition.segments.as_ref()?;
     segments.is_complete().then_some(())?;
     let (points, conflicting_points) = definition.variables.as_ref()?.reconciled_points();
@@ -408,7 +408,7 @@ fn generated_planar_section_transform(
         .as_ref()
         .map_or(table.offset, |section| section.offset);
     Some(FeatureSectionTransform {
-        definition_id: definition.id,
+        definition_id: definition.identity.id(),
         feature_id: Some(feature_id),
         origin: *origin,
         u_axis: *u_axis,
@@ -597,7 +597,7 @@ fn definition_local_frame_transform(
     definition: &FeatureDefinition,
     section: &crate::feature::FeatureSection3d,
 ) -> Option<FeatureSectionTransform> {
-    let feature_id = definition.owner_feature_id?;
+    let feature_id = definition.identity.owner_feature_id()?;
     let values = unique_complete_local_system(definition)?;
     let mut u_axis = normalize(values[0..3].try_into().ok()?)?;
     let raw_normal = normalize(values[6..9].try_into().ok()?)?;
@@ -616,7 +616,7 @@ fn definition_local_frame_transform(
     let v_axis = cross(normal, u_axis);
     ((dot(v_axis, v_axis) - 1.0).abs() <= EPS_PLACEMENT_EXACT_GEOMETRY).then_some(
         FeatureSectionTransform {
-            definition_id: definition.id,
+            definition_id: definition.identity.id(),
             feature_id: Some(feature_id),
             origin,
             u_axis,
@@ -763,7 +763,7 @@ fn feature_generated_plane_equation(
     };
     let definitions = definitions
         .iter()
-        .filter(|definition| definition.id == transform.definition_id)
+        .filter(|definition| definition.identity.id() == transform.definition_id)
         .collect::<Vec<_>>();
     let [definition] = definitions.as_slice() else {
         return None;
@@ -872,7 +872,7 @@ fn zero_offset_standard_section_plane_equation(
     sources: &PlacementSources<'_>,
     entity_tables: &[FeatureEntityTable],
 ) -> Option<SignedPlaneEquation> {
-    let feature_id = definition.owner_feature_id?;
+    let feature_id = definition.identity.owner_feature_id()?;
     let sketch_id = section.sketch_plane_entity_id?;
     let instructions = placement_instructions(definition);
     let instruction = instructions.first()?;
@@ -1088,7 +1088,7 @@ pub(crate) fn resolve(
         .or_else(|| {
             generated_section_cap_plane_equation(
                 sketch_id,
-                definition.owner_feature_id?,
+                definition.identity.owner_feature_id()?,
                 sources,
                 entity_tables,
             )
@@ -1226,7 +1226,8 @@ pub(crate) fn resolve(
             scale(reference_normal, reference_factor),
         );
         let origin = definition
-            .owner_feature_id
+            .identity
+            .owner_feature_id()
             .and_then(|feature_id| {
                 circular_profile_aligned_origin(
                     definition,
@@ -1243,8 +1244,8 @@ pub(crate) fn resolve(
             })
             .unwrap_or(intersection_origin);
         let direct_transform = FeatureSectionTransform {
-            definition_id: definition.id,
-            feature_id: definition.owner_feature_id,
+            definition_id: definition.identity.id(),
+            feature_id: definition.identity.owner_feature_id(),
             origin,
             u_axis,
             v_axis: reference_axis,
@@ -1256,7 +1257,7 @@ pub(crate) fn resolve(
     for definition in definitions {
         if result
             .iter()
-            .any(|transform| transform.definition_id == definition.id)
+            .any(|transform| transform.definition_id == definition.identity.id())
         {
             continue;
         }

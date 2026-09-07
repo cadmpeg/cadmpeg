@@ -2032,7 +2032,7 @@ fn feature_definitions(data: &[u8], sections: &[Section]) -> Vec<FeatureDefiniti
                 .collect::<Vec<_>>();
             if let [operation] = recipe_operations.as_slice() {
                 if let Some(mut definition) =
-                    feature::depdb_section_definition(payload, operation.feature_id)
+                    feature::depdb_section_definition(payload, Some(operation.feature_id))
                 {
                     offset_feature_definition(&mut definition, section.offset);
                     if let Some(existing) = definitions
@@ -2055,8 +2055,7 @@ fn feature_row_definitions(rows: &[FeatureRow]) -> Vec<FeatureDefinition> {
     let mut definitions = rows
         .iter()
         .filter_map(|row| {
-            let mut definition = feature::depdb_section_definition(&row.body, row.feature_id)?;
-            definition.owner_feature_id = None;
+            let mut definition = feature::depdb_section_definition(&row.body, None)?;
             offset_feature_definition(&mut definition, row.body_offset);
             Some(definition)
         })
@@ -2593,26 +2592,27 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let feature_loop_restore_directions = feature::loop_restore_directions(&feature_rows);
     let feature_entity_tables =
         feature_entity_tables(&data, &sections, &feature_ids, &surface_rows);
-    let mut feature_definitions = feature_definitions(&data, &sections);
-    feature::bind_definition_owners(&mut feature_definitions, &feature_geometry_tables);
-    feature::bind_trimmed_definition_owners(&mut feature_definitions, &feature_entity_tables);
+    let feature_definitions = feature_definitions(&data, &sections);
+    let feature_definitions =
+        feature::bind_definition_owners(feature_definitions, &feature_geometry_tables);
+    let mut feature_definitions =
+        feature::bind_trimmed_definition_owners(feature_definitions, &feature_entity_tables);
     feature_definitions.extend(feature_row_definitions(&feature_rows));
     feature_definitions.sort_by_key(|definition| definition.offset);
     let claimed_definition_owners = feature_definitions
         .iter()
-        .filter_map(|definition| definition.owner_feature_id)
+        .filter_map(|definition| definition.identity.owner_feature_id())
         .collect();
-    let mut replay_definitions = positional_replay_definitions(&data, &sections);
-    feature::bind_replay_definition_owners(
-        &mut replay_definitions,
+    let replay_definitions = feature::bind_replay_definition_owners(
+        positional_replay_definitions(&data, &sections),
         &feature_entity_tables,
         &claimed_definition_owners,
     );
     feature_definitions.extend(replay_definitions);
     feature_definitions.sort_by_key(|definition| definition.offset);
     let section_owner_ranges = section_owner_ranges(&sections, &feature_rows);
-    feature::bind_section_owners(
-        &mut feature_definitions,
+    let feature_definitions = feature::bind_section_owners(
+        feature_definitions,
         &feature_operations,
         &section_owner_ranges,
     );
@@ -3051,8 +3051,8 @@ mod feature_row_definition_tests {
         let definitions = feature_row_definitions(&[row]);
 
         assert_eq!(definitions.len(), 1);
-        assert_eq!(definitions[0].id, 2);
-        assert_eq!(definitions[0].owner_feature_id, None);
+        assert_eq!(definitions[0].identity.id(), 2);
+        assert_eq!(definitions[0].identity.owner_feature_id(), None);
         assert_eq!(definitions[0].offset, 127);
     }
 
@@ -3071,7 +3071,7 @@ mod feature_row_definition_tests {
             body_offset: 120,
             offset: 118,
         };
-        let mut definitions = feature_row_definitions(std::slice::from_ref(&row));
+        let definitions = feature_row_definitions(std::slice::from_ref(&row));
         let operation = |feature_id, recipe, offset| FeatureOperation {
             feature_id,
             kind: crate::feature::OperationKind::Stored(String::new()),
@@ -3085,7 +3085,7 @@ mod feature_row_definition_tests {
         };
 
         assert_eq!(definitions.len(), 1);
-        assert_eq!(definitions[0].owner_feature_id, None);
+        assert_eq!(definitions[0].identity.owner_feature_id(), None);
         assert_eq!(
             definitions[0]
                 .section_3d
@@ -3094,8 +3094,8 @@ mod feature_row_definition_tests {
             Some(249)
         );
 
-        feature::bind_section_owners(
-            &mut definitions,
+        let definitions = feature::bind_section_owners(
+            definitions,
             &[
                 operation(247, Some(FeatureRecipe::ProtrudeRevolve), 10),
                 operation(248, None, 20),
@@ -3103,8 +3103,8 @@ mod feature_row_definition_tests {
             &section_owner_ranges(&[], &[row]),
         );
 
-        assert_eq!(definitions[0].id, 2);
-        assert_eq!(definitions[0].owner_feature_id, Some(247));
+        assert_eq!(definitions[0].identity.id(), 2);
+        assert_eq!(definitions[0].identity.owner_feature_id(), Some(247));
     }
 }
 

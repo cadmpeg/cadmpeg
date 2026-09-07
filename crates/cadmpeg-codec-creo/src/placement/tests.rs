@@ -39,8 +39,10 @@ fn datum(id: u32, axis: crate::datum::Axis, offset: f64) -> DatumPlaneRecord {
 
 fn blank_definition() -> FeatureDefinition {
     FeatureDefinition {
-        id: 42,
-        owner_feature_id: Some(42),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(42),
+            owner_feature_id: Some(42),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
@@ -186,8 +188,10 @@ fn plane_namespace_collision_withholds_equation() {
 #[test]
 fn resolves_perpendicular_datum_frame() {
     let definition = FeatureDefinition {
-        id: 42,
-        owner_feature_id: Some(42),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(42),
+            owner_feature_id: Some(42),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
@@ -403,8 +407,10 @@ fn resolves_section_from_complete_local_frame_when_references_are_unresolved() {
 #[test]
 fn resolves_generated_section_from_declared_cap_pair() {
     let definition = FeatureDefinition {
-        id: 917,
-        owner_feature_id: Some(40),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(917),
+            owner_feature_id: Some(40),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
@@ -530,8 +536,10 @@ fn resolves_generated_section_from_declared_cap_pair() {
 #[test]
 fn resolves_oblique_reference_from_an_earlier_extruded_line() {
     let source = FeatureDefinition {
-        id: 917,
-        owner_feature_id: Some(40),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(917),
+            owner_feature_id: Some(40),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
@@ -597,8 +605,10 @@ fn resolves_oblique_reference_from_an_earlier_extruded_line() {
         offset: 5,
     };
     let dependent = FeatureDefinition {
-        id: 579,
-        owner_feature_id: Some(579),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(579),
+            owner_feature_id: Some(579),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
@@ -688,8 +698,10 @@ fn resolves_oblique_reference_from_an_earlier_extruded_line() {
 #[test]
 fn resolves_orientation_from_an_outline_plane_carrier() {
     let definition = FeatureDefinition {
-        id: 42,
-        owner_feature_id: Some(42),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(42),
+            owner_feature_id: Some(42),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
@@ -744,8 +756,10 @@ fn resolves_orientation_from_an_outline_plane_carrier() {
 #[test]
 fn resolves_generated_sketch_datum_from_unique_parent_relation() {
     let definition = FeatureDefinition {
-        id: 80,
-        owner_feature_id: Some(40),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(80),
+            owner_feature_id: Some(40),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
@@ -813,8 +827,10 @@ fn resolves_generated_sketch_datum_from_unique_parent_relation() {
 #[test]
 fn resolves_generated_plane_from_contextually_unambiguous_envelope_axis() {
     let definition = FeatureDefinition {
-        id: 80,
-        owner_feature_id: Some(40),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(80),
+            owner_feature_id: Some(40),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
@@ -910,8 +926,10 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
         offset: external_id as usize,
     };
     let definition = FeatureDefinition {
-        id: 917,
-        owner_feature_id: Some(40),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(917),
+            owner_feature_id: Some(40),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
@@ -1097,8 +1115,10 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
         offset: external_id as usize,
     };
     let definition = FeatureDefinition {
-        id: 917,
-        owner_feature_id: Some(10),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(917),
+            owner_feature_id: Some(10),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),

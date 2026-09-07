@@ -165,7 +165,7 @@ pub(in super::super) fn generated_arc_cylinder_extent(
     definition: &crate::feature::FeatureDefinition,
     transform: &crate::placement::FeatureSectionTransform,
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
-    let feature_id = definition.owner_feature_id?;
+    let feature_id = definition.identity.owner_feature_id()?;
     definition.segments.as_ref()?.is_complete().then_some(())?;
     let mut surface_ids = BTreeSet::new();
     for (_, entry) in scan

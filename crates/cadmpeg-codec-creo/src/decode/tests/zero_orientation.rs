@@ -76,8 +76,10 @@ fn zero_orientation_arc_runs_clockwise_from_first_endpoint() {
 #[test]
 fn profile_chain_follows_trim_vertex_incidence() {
     let definition = crate::feature::FeatureDefinition {
-        id: 40,
-        owner_feature_id: Some(40),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(40),
+            owner_feature_id: Some(40),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
@@ -330,8 +332,10 @@ fn multi_incident_trim_vertex_requires_one_agreeing_pairwise_intersection() {
 #[test]
 fn revolution_axis_uses_the_unique_complete_section_centerline() {
     let definition = crate::feature::FeatureDefinition {
-        id: 40,
-        owner_feature_id: Some(40),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(40),
+            owner_feature_id: Some(40),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
@@ -470,8 +474,10 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
         })
     );
     let carrier_only_definition = crate::feature::FeatureDefinition {
-        id: 7,
-        owner_feature_id: Some(7),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(7),
+            owner_feature_id: Some(7),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
@@ -531,8 +537,10 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
 #[test]
 fn named_revolve_transfers_profile_axis() {
     let definition = crate::feature::FeatureDefinition {
-        id: 822,
-        owner_feature_id: Some(822),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(822),
+            owner_feature_id: Some(822),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
@@ -834,8 +842,10 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         Some(SketchGeometry::Nurbs { curve }) if curve.degree() == 3
     ));
     let definition = crate::feature::FeatureDefinition {
-        id: 917,
-        owner_feature_id: Some(40),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(917),
+            owner_feature_id: Some(40),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),

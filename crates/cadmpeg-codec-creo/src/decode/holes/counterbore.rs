@@ -86,7 +86,7 @@ pub fn counterbore_dimensions(
         scan.features
             .definitions
             .iter()
-            .filter(|definition| definition.id == 911)
+            .filter(|definition| definition.identity.id() == 911)
             .filter_map(|definition| definition.dimensions.as_ref())
     };
     counterbore_dimension_values(dimension_tables(), &generated_radii).or_else(|| {

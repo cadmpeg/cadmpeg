@@ -187,8 +187,10 @@ fn signed_distance_without_a_spanning_line_requires_equal_endpoint_coordinate() 
         offset: 0,
     };
     let definition = crate::feature::FeatureDefinition {
-        id: 40,
-        owner_feature_id: None,
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(40),
+            owner_feature_id: None,
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),

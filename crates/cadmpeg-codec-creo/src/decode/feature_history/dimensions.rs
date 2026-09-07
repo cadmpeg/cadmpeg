@@ -192,7 +192,7 @@ pub(in super::super) fn transfer_feature_dimensions(
     let mut candidates = Vec::new();
     for definition in &scan.features.definitions {
         let sketch = model_sketch_id(scan, definition);
-        let owner = section_owner_feature_id(scan, definition.id, &sketch);
+        let owner = section_owner_feature_id(scan, definition.identity.id(), &sketch);
         if !feature_ids.contains(&owner) {
             continue;
         }
@@ -204,7 +204,7 @@ pub(in super::super) fn transfer_feature_dimensions(
         }
     }
     candidates.sort_by_key(|(_, definition, source_ordinal, _)| {
-        (definition.offset, definition.id, *source_ordinal)
+        (definition.offset, definition.identity.id(), *source_ordinal)
     });
     let keys = candidates
         .iter()
@@ -224,7 +224,7 @@ pub(in super::super) fn transfer_feature_dimensions(
     for ((sketch, definition, source_ordinal, dimension), (ordinal, name, occurrence)) in
         candidates.into_iter().zip(layout)
     {
-        let owner_id = section_owner_feature_id(scan, definition.id, &sketch);
+        let owner_id = section_owner_feature_id(scan, definition.identity.id(), &sketch);
         let id = feature_dimension_parameter_row_id(&sketch, dimension.external_id, occurrence);
         if unique_external_ids[&dimension.external_id] == 1 {
             relation_parameters.insert(format!("d{}", dimension.external_id), id.clone());
@@ -238,7 +238,10 @@ pub(in super::super) fn transfer_feature_dimensions(
             Exactness::Derived,
         );
         let mut properties = BTreeMap::from([
-            ("definition_id".to_string(), definition.id.to_string()),
+            (
+                "definition_id".to_string(),
+                definition.identity.id().to_string(),
+            ),
             ("source_ordinal".to_string(), source_ordinal.to_string()),
             ("external_id".to_string(), dimension.external_id.to_string()),
             (

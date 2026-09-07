@@ -848,8 +848,10 @@ fn thicken_plane_offsets_require_parallel_agreeing_oriented_distances() {
 #[test]
 fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
     let definition = crate::feature::FeatureDefinition {
-        id: 822,
-        owner_feature_id: Some(822),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(822),
+            owner_feature_id: Some(822),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
@@ -893,12 +895,12 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
             std::slice::from_ref(&transform),
             822,
         )
-        .map(|definition| definition.id),
+        .map(|definition| definition.identity.id()),
         Some(822)
     );
     assert_eq!(
         unique_feature_profile_definition(std::slice::from_ref(&definition), &[], 822)
-            .map(|definition| definition.id),
+            .map(|definition| definition.identity.id()),
         Some(822)
     );
     assert!(
@@ -917,7 +919,7 @@ fn feature_profile_definition_uses_unique_transform_or_unique_owner() {
             std::slice::from_ref(&mismatched_transform),
             822,
         )
-        .map(|definition| definition.id),
+        .map(|definition| definition.identity.id()),
         Some(822)
     );
 
@@ -1315,8 +1317,10 @@ fn datum_feature_uses_its_unique_complete_local_system() {
     scan.features
         .definitions
         .push(crate::feature::FeatureDefinition {
-            id: 5,
-            owner_feature_id: Some(5),
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(5),
+                owner_feature_id: Some(5),
+            },
             body: Vec::new(),
             parameter_frames: vec![
                 crate::feature::FeatureParameterFrame {
@@ -1363,8 +1367,10 @@ fn coordinate_system_feature_uses_its_unique_complete_local_system() {
     scan.features
         .definitions
         .push(crate::feature::FeatureDefinition {
-            id: 7,
-            owner_feature_id: Some(7),
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(7),
+                owner_feature_id: Some(7),
+            },
             body: Vec::new(),
             parameter_frames: vec![
                 crate::feature::FeatureParameterFrame {
@@ -1412,8 +1418,10 @@ fn coordinate_system_feature_rejects_a_reflected_local_system() {
     scan.features
         .definitions
         .push(crate::feature::FeatureDefinition {
-            id: 7,
-            owner_feature_id: Some(7),
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(7),
+                owner_feature_id: Some(7),
+            },
             body: Vec::new(),
             parameter_frames: vec![crate::feature::FeatureParameterFrame {
                 kind: crate::feature::FeatureParameterFrameKind::LocalSystem,

@@ -1375,10 +1375,11 @@ pub(super) fn feature_placement_instruction_records(
                 .map(|instruction| CreoFeaturePlacementInstructionRecord {
                     id: format!(
                         "creo:featdefs:placement_instruction#{}:{}",
-                        definition.id, instruction.offset
+                        definition.identity.id(),
+                        instruction.offset
                     ),
-                    definition_id: definition.id,
-                    owner_feature_id: definition.owner_feature_id,
+                    definition_id: definition.identity.id(),
+                    owner_feature_id: definition.identity.owner_feature_id(),
                     instruction_type: instruction.kind,
                     zero_offset: instruction.zero_offset,
                     dimension_id: instruction.dimension_id,
@@ -2124,8 +2125,8 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
         .filter(|definition| feature_definition_has_sketch_design(definition))
         .map(|definition| CreoSketchRecord {
             id: feature_sketch_record_id_in_scan(scan, definition),
-            definition_id: definition.id,
-            owner_feature_id: definition.owner_feature_id,
+            definition_id: definition.identity.id(),
+            owner_feature_id: definition.identity.owner_feature_id(),
             source_section: source_section(scan, definition.offset),
             offset: definition.offset,
             section_3d: definition
@@ -2562,8 +2563,8 @@ pub(super) fn feature_definition_records(scan: &ContainerScan) -> Vec<CreoFeatur
         .iter()
         .map(|definition| CreoFeatureDefinitionRecord {
             id: feature_definition_record_id(scan, definition),
-            definition_id: definition.id,
-            owner_feature_id: definition.owner_feature_id,
+            definition_id: definition.identity.id(),
+            owner_feature_id: definition.identity.owner_feature_id(),
             source_section: source_section(scan, definition.offset),
             body: definition.body.clone(),
             parameter_frames: definition

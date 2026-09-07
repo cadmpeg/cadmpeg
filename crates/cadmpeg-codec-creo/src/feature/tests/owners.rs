@@ -10,9 +10,11 @@ use super::super::rows::*;
 
 #[test]
 fn binds_missing_definition_owner_from_unique_generated_datum_table() {
-    let mut definitions = [FeatureDefinition {
-        id: 917,
-        owner_feature_id: None,
+    let definitions = [FeatureDefinition {
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(917),
+            owner_feature_id: None,
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
@@ -36,8 +38,8 @@ fn binds_missing_definition_owner_from_unique_generated_datum_table() {
         saved_section: None,
         offset: 0,
     }];
-    bind_definition_owners(
-        &mut definitions,
+    let definitions = bind_definition_owners(
+        definitions.into(),
         &[FeatureGeometryTable {
             feature_id: 10,
             kind: FeatureGeometryTableKind::DatumIds(Some(vec![12])),
@@ -47,13 +49,15 @@ fn binds_missing_definition_owner_from_unique_generated_datum_table() {
         }],
     );
 
-    assert_eq!(definitions[0].owner_feature_id, Some(10));
+    assert_eq!(definitions[0].identity.owner_feature_id(), Some(10));
 }
 
 fn pending_replay(external_ids: &[u32]) -> FeatureDefinition {
     FeatureDefinition {
-        id: 0,
-        owner_feature_id: None,
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: None,
+            owner_feature_id: None,
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
@@ -87,7 +91,10 @@ fn pending_replay(external_ids: &[u32]) -> FeatureDefinition {
 
 fn pending_trimmed_definition(external_ids: &[u32]) -> FeatureDefinition {
     let mut definition = pending_replay(&[]);
-    definition.id = 917;
+    definition.identity = DefinitionIdentity::Parsed {
+        schema_id: std::num::NonZeroU32::new(917),
+        owner_feature_id: None,
+    };
     definition.trim_entities = Some(FeatureTrimEntityTable {
         declared_count: Some(external_ids.len() as u32),
         entity_ref: Some(1),
@@ -135,25 +142,51 @@ fn generated_entity_table(owner: u32, source_ids: &[u32]) -> FeatureEntityTable 
 
 #[test]
 fn binds_replay_owner_from_unique_source_entity_subset() {
-    let mut definitions = [pending_replay(&[10, 11, 12])];
-    bind_replay_definition_owners(
-        &mut definitions,
+    let definitions = [pending_replay(&[10, 11, 12])];
+    let definitions = bind_replay_definition_owners(
+        definitions.into(),
         &[generated_entity_table(42, &[10, 12])],
         &BTreeSet::new(),
     );
 
-    assert_eq!(definitions[0].id, 42);
-    assert_eq!(definitions[0].owner_feature_id, Some(42));
+    assert_eq!(definitions[0].identity.id(), 42);
+    assert_eq!(definitions[0].identity.owner_feature_id(), Some(42));
+}
+
+#[test]
+fn replay_binding_retains_the_inherited_schema_identifier() {
+    let definition = FeatureDefinition {
+        identity: DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(917),
+            owner_feature_id: None,
+        },
+        ..pending_replay(&[10, 11, 12])
+    };
+    let definitions = bind_replay_definition_owners(
+        vec![definition],
+        &[generated_entity_table(42, &[10, 12])],
+        &BTreeSet::new(),
+    );
+
+    assert_eq!(definitions[0].identity.id(), 42);
+    assert_eq!(definitions[0].identity.owner_feature_id(), Some(42));
+    assert_eq!(
+        definitions[0].identity.schema_id(),
+        std::num::NonZeroU32::new(917)
+    );
 }
 
 #[test]
 fn binds_replay_owner_from_exact_trimmed_entity_set() {
     let mut definition = pending_trimmed_definition(&[9, 10, 11, 12]);
-    definition.id = 0;
+    definition.identity = DefinitionIdentity::Parsed {
+        schema_id: None,
+        owner_feature_id: None,
+    };
     definition.order_table = pending_replay(&[10, 11, 12]).order_table;
-    let mut definitions = [definition];
-    bind_replay_definition_owners(
-        &mut definitions,
+    let definitions = [definition];
+    let definitions = bind_replay_definition_owners(
+        definitions.into(),
         &[
             generated_entity_table(42, &[12, 11, 10, 9]),
             generated_entity_table(43, &[10]),
@@ -161,72 +194,81 @@ fn binds_replay_owner_from_exact_trimmed_entity_set() {
         &BTreeSet::new(),
     );
 
-    assert_eq!(definitions[0].id, 42);
-    assert_eq!(definitions[0].owner_feature_id, Some(42));
+    assert_eq!(definitions[0].identity.id(), 42);
+    assert_eq!(definitions[0].identity.owner_feature_id(), Some(42));
 }
 
 #[test]
 fn falls_back_to_replay_order_when_trimmed_entities_do_not_join() {
     let mut definition = pending_trimmed_definition(&[9, 10]);
-    definition.id = 0;
+    definition.identity = DefinitionIdentity::Parsed {
+        schema_id: None,
+        owner_feature_id: None,
+    };
     definition.order_table = pending_replay(&[10, 11, 12]).order_table;
-    let mut definitions = [definition];
-    bind_replay_definition_owners(
-        &mut definitions,
+    let definitions = [definition];
+    let definitions = bind_replay_definition_owners(
+        definitions.into(),
         &[generated_entity_table(42, &[10, 12])],
         &BTreeSet::new(),
     );
 
-    assert_eq!(definitions[0].id, 42);
-    assert_eq!(definitions[0].owner_feature_id, Some(42));
+    assert_eq!(definitions[0].identity.id(), 42);
+    assert_eq!(definitions[0].identity.owner_feature_id(), Some(42));
 }
 
 #[test]
 fn falls_back_to_replay_order_for_duplicate_trimmed_entity_ids() {
     let mut definition = pending_trimmed_definition(&[9, 9]);
-    definition.id = 0;
+    definition.identity = DefinitionIdentity::Parsed {
+        schema_id: None,
+        owner_feature_id: None,
+    };
     definition.order_table = pending_replay(&[9]).order_table;
-    let mut definitions = [definition];
-    bind_replay_definition_owners(
-        &mut definitions,
+    let definitions = [definition];
+    let definitions = bind_replay_definition_owners(
+        definitions.into(),
         &[generated_entity_table(42, &[9])],
         &BTreeSet::new(),
     );
 
-    assert_eq!(definitions[0].id, 42);
-    assert_eq!(definitions[0].owner_feature_id, Some(42));
+    assert_eq!(definitions[0].identity.id(), 42);
+    assert_eq!(definitions[0].identity.owner_feature_id(), Some(42));
 }
 
 #[test]
 fn binds_saved_section_owner_from_exact_trimmed_entity_set() {
-    let mut definitions = [pending_trimmed_definition(&[9, 10, 11, 14, 21])];
-    bind_trimmed_definition_owners(
-        &mut definitions,
+    let definitions = [pending_trimmed_definition(&[9, 10, 11, 14, 21])];
+    let definitions = bind_trimmed_definition_owners(
+        definitions.into(),
         &[generated_entity_table(667, &[14, 21, 11, 10, 9])],
     );
 
-    assert_eq!(definitions[0].id, 917);
-    assert_eq!(definitions[0].owner_feature_id, Some(667));
+    assert_eq!(definitions[0].identity.id(), 917);
+    assert_eq!(definitions[0].identity.owner_feature_id(), Some(667));
 }
 
 #[test]
 fn withholds_saved_section_owner_for_partial_reused_or_duplicate_entity_sets() {
-    let mut partial = [pending_trimmed_definition(&[9, 10, 11])];
-    bind_trimmed_definition_owners(&mut partial, &[generated_entity_table(667, &[9, 10])]);
-    assert_eq!(partial[0].owner_feature_id, None);
+    let partial = [pending_trimmed_definition(&[9, 10, 11])];
+    let partial =
+        bind_trimmed_definition_owners(partial.into(), &[generated_entity_table(667, &[9, 10])]);
+    assert_eq!(partial[0].identity.owner_feature_id(), None);
 
-    let mut reused = [
+    let reused = [
         pending_trimmed_definition(&[9, 10]),
         pending_trimmed_definition(&[9, 10]),
     ];
-    bind_trimmed_definition_owners(&mut reused, &[generated_entity_table(667, &[9, 10])]);
+    let reused =
+        bind_trimmed_definition_owners(reused.into(), &[generated_entity_table(667, &[9, 10])]);
     assert!(reused
         .iter()
-        .all(|definition| definition.owner_feature_id.is_none()));
+        .all(|definition| definition.identity.owner_feature_id().is_none()));
 
-    let mut duplicate = [pending_trimmed_definition(&[9, 9])];
-    bind_trimmed_definition_owners(&mut duplicate, &[generated_entity_table(667, &[9])]);
-    assert_eq!(duplicate[0].owner_feature_id, None);
+    let duplicate = [pending_trimmed_definition(&[9, 9])];
+    let duplicate =
+        bind_trimmed_definition_owners(duplicate.into(), &[generated_entity_table(667, &[9])]);
+    assert_eq!(duplicate[0].identity.owner_feature_id(), None);
 }
 
 #[test]
@@ -241,65 +283,68 @@ fn saved_section_owner_uses_only_class_200_source_ids() {
         end_offset: 2,
         is_surface: false,
     });
-    let mut definitions = [pending_trimmed_definition(&[9, 10])];
+    let definitions = [pending_trimmed_definition(&[9, 10])];
 
-    bind_trimmed_definition_owners(&mut definitions, &[table]);
+    let definitions = bind_trimmed_definition_owners(definitions.into(), &[table]);
 
-    assert_eq!(definitions[0].owner_feature_id, None);
+    assert_eq!(definitions[0].identity.owner_feature_id(), None);
 }
 
 #[test]
 fn withholds_replay_owner_for_empty_or_ambiguous_source_joins() {
-    let mut empty = [pending_replay(&[10])];
-    bind_replay_definition_owners(
-        &mut empty,
+    let empty = [pending_replay(&[10])];
+    let empty = bind_replay_definition_owners(
+        empty.into(),
         &[generated_entity_table(42, &[])],
         &BTreeSet::new(),
     );
-    assert_eq!(empty[0].owner_feature_id, None);
+    assert_eq!(empty[0].identity.owner_feature_id(), None);
 
-    let mut ambiguous = [pending_replay(&[10, 11])];
-    bind_replay_definition_owners(
-        &mut ambiguous,
+    let ambiguous = [pending_replay(&[10, 11])];
+    let ambiguous = bind_replay_definition_owners(
+        ambiguous.into(),
         &[
             generated_entity_table(42, &[10]),
             generated_entity_table(43, &[11]),
         ],
         &BTreeSet::new(),
     );
-    assert_eq!(ambiguous[0].owner_feature_id, None);
+    assert_eq!(ambiguous[0].identity.owner_feature_id(), None);
 
-    let mut repeated_owner = [pending_replay(&[10]), pending_replay(&[10, 11])];
-    bind_replay_definition_owners(
-        &mut repeated_owner,
+    let repeated_owner = [pending_replay(&[10]), pending_replay(&[10, 11])];
+    let repeated_owner = bind_replay_definition_owners(
+        repeated_owner.into(),
         &[generated_entity_table(42, &[10])],
         &BTreeSet::new(),
     );
     assert!(repeated_owner
         .iter()
-        .all(|definition| definition.owner_feature_id.is_none()));
+        .all(|definition| definition.identity.owner_feature_id().is_none()));
 
-    let mut claimed = [pending_replay(&[10])];
-    bind_replay_definition_owners(
-        &mut claimed,
+    let claimed = [pending_replay(&[10])];
+    let claimed = bind_replay_definition_owners(
+        claimed.into(),
         &[generated_entity_table(42, &[10])],
         &BTreeSet::from([42]),
     );
-    assert_eq!(claimed[0].owner_feature_id, None);
+    assert_eq!(claimed[0].identity.owner_feature_id(), None);
 
     let mut exact_ambiguous = pending_trimmed_definition(&[9, 10]);
-    exact_ambiguous.id = 0;
+    exact_ambiguous.identity = DefinitionIdentity::Parsed {
+        schema_id: None,
+        owner_feature_id: None,
+    };
     exact_ambiguous.order_table = pending_replay(&[9]).order_table;
-    let mut exact_ambiguous = [exact_ambiguous];
-    bind_replay_definition_owners(
-        &mut exact_ambiguous,
+    let exact_ambiguous = [exact_ambiguous];
+    let exact_ambiguous = bind_replay_definition_owners(
+        exact_ambiguous.into(),
         &[
             generated_entity_table(42, &[9, 10]),
             generated_entity_table(43, &[10, 9]),
         ],
         &BTreeSet::new(),
     );
-    assert_eq!(exact_ambiguous[0].owner_feature_id, None);
+    assert_eq!(exact_ambiguous[0].identity.owner_feature_id(), None);
 }
 
 fn operation(feature_id: u32, recipe: Option<FeatureRecipe>, offset: usize) -> FeatureOperation {
@@ -334,20 +379,21 @@ fn binds_unique_depdb_section_from_recipe_datum_plane_chain() {
         operation(248, None, 20),
     ];
 
-    bind_section_owners(
-        std::slice::from_mut(&mut definition),
-        &operations,
-        &[(0, usize::MAX)],
-    );
+    let definition = bind_section_owners(vec![definition], &operations, &[(0, usize::MAX)])
+        .pop()
+        .expect("definition");
 
-    assert_eq!(definition.id, 247);
-    assert_eq!(definition.owner_feature_id, Some(247));
+    assert_eq!(definition.identity.id(), 247);
+    assert_eq!(definition.identity.owner_feature_id(), Some(247));
 }
 
 #[test]
 fn depdb_owner_binding_preserves_stored_definition_identifier() {
     let mut definition = pending_replay(&[]);
-    definition.id = 2;
+    definition.identity = DefinitionIdentity::Parsed {
+        schema_id: std::num::NonZeroU32::new(2),
+        owner_feature_id: None,
+    };
     definition.section_3d = Some(FeatureSection3d {
         sketch_plane_entity_id: Some(249),
         sketch_plane_flip: None,
@@ -363,21 +409,21 @@ fn depdb_owner_binding_preserves_stored_definition_identifier() {
         operation(248, None, 20),
     ];
 
-    bind_section_owners(
-        std::slice::from_mut(&mut definition),
-        &operations,
-        &[(0, usize::MAX)],
-    );
+    let definition = bind_section_owners(vec![definition], &operations, &[(0, usize::MAX)])
+        .pop()
+        .expect("definition");
 
-    assert_eq!(definition.id, 2);
-    assert_eq!(definition.owner_feature_id, Some(247));
+    assert_eq!(definition.identity.id(), 2);
+    assert_eq!(definition.identity.owner_feature_id(), Some(247));
 }
 
 #[test]
 fn decodes_owned_depdb_full_turn_for_rotational_recipe() {
     let mut definition = pending_replay(&[]);
-    definition.id = 247;
-    definition.owner_feature_id = Some(247);
+    definition.identity = DefinitionIdentity::Parsed {
+        schema_id: std::num::NonZeroU32::new(247),
+        owner_feature_id: Some(247),
+    };
     definition.offset = 100;
     definition.body = vec![
         0x83, 0xdf, 0xf6, 0xe3, 0x00, 0x00, 0xea, 0x44, 0x00, 0x00, 0xf6, 0xf6, 0xf6, 0x00, 0x00,
@@ -402,8 +448,10 @@ fn preserves_repeated_identical_depdb_full_turn_states() {
         0x00, 0x00,
     ];
     let mut definition = pending_replay(&[]);
-    definition.id = 247;
-    definition.owner_feature_id = Some(247);
+    definition.identity = DefinitionIdentity::Parsed {
+        schema_id: std::num::NonZeroU32::new(247),
+        owner_feature_id: Some(247),
+    };
     definition.offset = 100;
     definition.body.extend(sequence);
     definition.body.extend([0xe7, 0x04, 0x00, 0xe1]);
@@ -437,10 +485,10 @@ fn withholds_depdb_owner_for_repeated_plane_or_nonconsecutive_datum() {
         operation(247, Some(FeatureRecipe::ProtrudeRevolve), 10),
         operation(248, None, 20),
     ];
-    bind_section_owners(&mut repeated, &consecutive, &[(0, usize::MAX)]);
+    let repeated = bind_section_owners(repeated.into(), &consecutive, &[(0, usize::MAX)]);
     assert!(repeated
         .iter()
-        .all(|definition| definition.owner_feature_id.is_none()));
+        .all(|definition| definition.identity.owner_feature_id().is_none()));
 
     let mut separated = pending_replay(&[]);
     separated.section_3d = Some(section);
@@ -449,16 +497,16 @@ fn withholds_depdb_owner_for_repeated_plane_or_nonconsecutive_datum() {
         operation(900, None, 15),
         operation(248, None, 20),
     ];
-    bind_section_owners(
-        std::slice::from_mut(&mut separated),
-        &operations,
-        &[(0, usize::MAX)],
-    );
-    assert_eq!(separated.owner_feature_id, None);
+    let separated = bind_section_owners(vec![separated], &operations, &[(0, usize::MAX)])
+        .pop()
+        .expect("definition");
+    assert_eq!(separated.identity.owner_feature_id(), None);
 
     let mut claimed = pending_replay(&[]);
-    claimed.id = 247;
-    claimed.owner_feature_id = Some(247);
+    claimed.identity = DefinitionIdentity::Parsed {
+        schema_id: std::num::NonZeroU32::new(247),
+        owner_feature_id: Some(247),
+    };
     let mut candidate = pending_replay(&[]);
     candidate.section_3d = Some(FeatureSection3d {
         sketch_plane_entity_id: Some(249),
@@ -470,9 +518,9 @@ fn withholds_depdb_owner_for_repeated_plane_or_nonconsecutive_datum() {
         dimension_ids: Vec::new(),
         offset: 0,
     });
-    let mut definitions = [claimed, candidate];
-    bind_section_owners(&mut definitions, &consecutive, &[(0, usize::MAX)]);
-    assert_eq!(definitions[1].owner_feature_id, None);
+    let definitions = [claimed, candidate];
+    let definitions = bind_section_owners(definitions.into(), &consecutive, &[(0, usize::MAX)]);
+    assert_eq!(definitions[1].identity.owner_feature_id(), None);
 }
 
 #[test]
@@ -491,16 +539,16 @@ fn section_owner_binding_does_not_cross_source_range_boundaries() {
     });
     let mut outside = in_range.clone();
     outside.offset = 200;
-    let mut definitions = [in_range, outside];
+    let definitions = [in_range, outside];
     let operations = [
         operation(247, Some(FeatureRecipe::ProtrudeRevolve), 10),
         operation(248, None, 20),
     ];
 
-    bind_section_owners(&mut definitions, &operations, &[(100, 150)]);
+    let definitions = bind_section_owners(definitions.into(), &operations, &[(100, 150)]);
 
-    assert_eq!(definitions[0].owner_feature_id, Some(247));
-    assert_eq!(definitions[1].owner_feature_id, None);
+    assert_eq!(definitions[0].identity.owner_feature_id(), Some(247));
+    assert_eq!(definitions[1].identity.owner_feature_id(), None);
 }
 
 #[test]
@@ -512,8 +560,8 @@ fn positional_replays_exclude_the_contextually_owned_instance() {
     let decoded = positional_replay_definitions(payload);
 
     assert_eq!(decoded.len(), 1);
-    assert_eq!(decoded[0].id, 917);
-    assert_eq!(decoded[0].owner_feature_id, None);
+    assert_eq!(decoded[0].identity.id(), 917);
+    assert_eq!(decoded[0].identity.owner_feature_id(), None);
     assert!(decoded[0].body.starts_with(b"\xe3S2D0004\0"));
     assert!(decoded[0].body.ends_with(b"pending"));
 }
@@ -537,11 +585,11 @@ fn positional_saved_section_starts_an_owned_definition() {
     let decoded = definitions(payload);
 
     assert_eq!(decoded.len(), 2);
-    assert_eq!(decoded[0].id, 917);
-    assert_eq!(decoded[0].owner_feature_id, Some(40));
+    assert_eq!(decoded[0].identity.id(), 917);
+    assert_eq!(decoded[0].identity.owner_feature_id(), Some(40));
     assert_eq!(decoded[0].body.last(), Some(&0));
-    assert_eq!(decoded[1].id, 42);
-    assert_eq!(decoded[1].owner_feature_id, Some(42));
+    assert_eq!(decoded[1].identity.id(), 42);
+    assert_eq!(decoded[1].identity.owner_feature_id(), Some(42));
     assert!(decoded[1].body.starts_with(b"\xe0\x01feat_id\0"));
     assert!(decoded[1].body.ends_with(b"saved"));
 }

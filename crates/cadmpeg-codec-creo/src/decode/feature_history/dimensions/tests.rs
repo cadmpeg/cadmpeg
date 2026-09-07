@@ -23,8 +23,10 @@ fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
     scan.features
         .definitions
         .push(crate::feature::FeatureDefinition {
-            id: 917,
-            owner_feature_id: Some(40),
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(917),
+                owner_feature_id: Some(40),
+            },
             body: Vec::new(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),

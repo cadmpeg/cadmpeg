@@ -564,7 +564,7 @@ fn depdb_data_with_sparse_sections_selects_depdb() {
         .features
         .definitions
         .iter()
-        .any(|definition| definition.id == 12));
+        .any(|definition| definition.identity.id() == 12));
     assert_eq!(scan.features.operations.len(), 1);
     assert_eq!(scan.features.operations[0].feature_id, 17);
     assert_eq!(

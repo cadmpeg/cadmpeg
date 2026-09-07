@@ -23,7 +23,7 @@ fn scan_decodes_featdefs_records_and_parameter_frames() {
     let scan = container::scan_bytes(data.clone());
 
     assert_eq!(scan.features.definitions.len(), 2);
-    assert_eq!(scan.features.definitions[0].id, 40);
+    assert_eq!(scan.features.definitions[0].identity.id(), 40);
     assert_eq!(scan.features.definitions[0].parameter_frames.len(), 2);
     assert_eq!(
         scan.features.definitions[0].parameter_frames[0].kind,

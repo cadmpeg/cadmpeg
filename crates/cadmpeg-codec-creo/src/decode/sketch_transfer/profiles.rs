@@ -644,8 +644,10 @@ mod tests {
             offset: 7,
         }];
         crate::feature::FeatureDefinition {
-            id: 917,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(917),
+                owner_feature_id: None,
+            },
             body: Vec::new(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),

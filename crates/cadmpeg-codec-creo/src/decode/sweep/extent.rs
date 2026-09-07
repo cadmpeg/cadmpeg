@@ -849,7 +849,7 @@ pub(in super::super) fn feature_id_for_section_transform(
     definition: &crate::feature::FeatureDefinition,
     transform: &crate::placement::FeatureSectionTransform,
 ) -> Option<u32> {
-    match (definition.owner_feature_id, transform.feature_id) {
+    match (definition.identity.owner_feature_id(), transform.feature_id) {
         (Some(definition_feature_id), Some(transform_feature_id))
             if definition_feature_id != transform_feature_id =>
         {

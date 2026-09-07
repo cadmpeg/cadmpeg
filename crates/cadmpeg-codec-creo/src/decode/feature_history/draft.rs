@@ -194,7 +194,7 @@ pub(in super::super) fn schema_feature_definition(
                 let section = definition.section_3d.as_ref()?;
                 unique_feature_section_transform(
                     &scan.features.section_transforms,
-                    definition.id,
+                    definition.identity.id(),
                     section.offset,
                 )?;
                 let sketch = model_sketch_id(scan, definition);
@@ -474,7 +474,7 @@ pub(in super::super) fn schema_feature_definition(
                     |definition| {
                         sweep
                             .section_definition_id
-                            .is_none_or(|definition_id| definition_id == definition.id)
+                            .is_none_or(|definition_id| definition_id == definition.identity.id())
                     },
                 );
             let profile = definition.map_or_else(
@@ -615,7 +615,7 @@ pub(in super::super) fn schema_feature_definition(
             .features
             .definitions
             .iter()
-            .filter(|definition| definition.owner_feature_id == Some(feature_id))
+            .filter(|definition| definition.identity.owner_feature_id() == Some(feature_id))
             .collect::<Vec<_>>();
         if let [definition] = definitions.as_slice() {
             if let Some(values) = crate::placement::unique_complete_local_system(definition) {
@@ -645,7 +645,7 @@ pub(in super::super) fn schema_feature_definition(
             .features
             .definitions
             .iter()
-            .filter(|definition| definition.owner_feature_id == Some(feature_id))
+            .filter(|definition| definition.identity.owner_feature_id() == Some(feature_id))
             .collect::<Vec<_>>();
         if let [definition] = definitions.as_slice() {
             if let Some(values) = crate::placement::unique_complete_local_system(definition) {

@@ -2039,8 +2039,10 @@ mod tests {
             offset: 0,
         };
         let definition = crate::feature::FeatureDefinition {
-            id: 40,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(40),
+                owner_feature_id: None,
+            },
             body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
                     \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
                     \x01\x10\xf8\x04\x00\x01\x02\x03\xf6\xe2"
@@ -2103,8 +2105,10 @@ mod tests {
             offset: 0,
         };
         let definition = crate::feature::FeatureDefinition {
-            id: 40,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(40),
+                owner_feature_id: None,
+            },
             body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
                     \xe0\x01id\0\0\xf1\xf7\x80\x9f\xe2\
                     \x01\x05\xf8\x03\x00\x01\x02\xf6\xe2"
@@ -2167,8 +2171,10 @@ mod tests {
             offset: 11,
         };
         let definition = crate::feature::FeatureDefinition {
-            id: 1,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(1),
+                owner_feature_id: None,
+            },
             body: Vec::new(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),

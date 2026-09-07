@@ -740,8 +740,8 @@ fn scan_binds_standalone_depdb_section_to_its_recipe_owner() {
 
     assert_eq!(scan.features.definitions.len(), 1);
     let definition = &scan.features.definitions[0];
-    assert_eq!(definition.id, 2);
-    assert_eq!(definition.owner_feature_id, Some(17));
+    assert_eq!(definition.identity.id(), 2);
+    assert_eq!(definition.identity.owner_feature_id(), Some(17));
     let variables = definition.variables.as_ref().expect("var_arr");
     assert_eq!(variables.points.len(), 1);
     assert_eq!(variables.points[0].point_id, 7);

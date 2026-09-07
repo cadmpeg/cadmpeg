@@ -1106,8 +1106,10 @@ mod tests {
     #[test]
     fn standalone_point_rows_supply_point_loci() {
         let definition = crate::feature::FeatureDefinition {
-            id: 917,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(917),
+                owner_feature_id: None,
+            },
             body: Vec::new(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
@@ -1155,8 +1157,10 @@ mod tests {
     #[test]
     fn endpoint_carriers_supply_ordered_point_loci() {
         let definition = crate::feature::FeatureDefinition {
-            id: 917,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(917),
+                owner_feature_id: None,
+            },
             body: Vec::new(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
@@ -1273,8 +1277,10 @@ mod tests {
     #[test]
     fn circular_segment_centers_supply_center_loci() {
         let definition = crate::feature::FeatureDefinition {
-            id: 917,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(917),
+                owner_feature_id: None,
+            },
             body: Vec::new(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
@@ -1346,8 +1352,10 @@ mod tests {
             offset: id as usize,
         };
         let definition = crate::feature::FeatureDefinition {
-            id: 917,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(917),
+                owner_feature_id: None,
+            },
             body: Vec::new(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
@@ -1563,8 +1571,10 @@ mod tests {
             offset: 99,
         };
         let definition = crate::feature::FeatureDefinition {
-            id: 917,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(917),
+                owner_feature_id: None,
+            },
             body: Vec::new(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
@@ -1662,8 +1672,10 @@ mod tests {
             offset: external_id as usize,
         };
         let definition = crate::feature::FeatureDefinition {
-            id: 917,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(917),
+                owner_feature_id: None,
+            },
             body: Vec::new(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
@@ -1743,8 +1755,10 @@ mod tests {
             };
         let item = |entity_id, sense| crate::feature::FeatureSkampItem { entity_id, sense };
         let definition = crate::feature::FeatureDefinition {
-            id: 917,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(917),
+                owner_feature_id: None,
+            },
             body: Vec::new(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
@@ -1902,8 +1916,10 @@ mod tests {
     #[test]
     fn saved_line_fallback_rejects_special_segment_identity_collision() {
         let definition = crate::feature::FeatureDefinition {
-            id: 917,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(917),
+                owner_feature_id: None,
+            },
             body: Vec::new(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),

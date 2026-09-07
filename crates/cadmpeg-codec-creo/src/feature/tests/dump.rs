@@ -408,8 +408,11 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
         ],
     );
     let scan = container::scan_bytes(data.clone());
-    assert_eq!(scan.features.definitions[0].id, 917);
-    assert_eq!(scan.features.definitions[0].owner_feature_id, Some(40));
+    assert_eq!(scan.features.definitions[0].identity.id(), 917);
+    assert_eq!(
+        scan.features.definitions[0].identity.owner_feature_id(),
+        Some(40)
+    );
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
@@ -780,7 +783,7 @@ fn decode_retains_dimensions_from_repeated_feature_definition_ids() {
         .features
         .definitions
         .iter()
-        .all(|definition| definition.id == 917));
+        .all(|definition| definition.identity.id() == 917));
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
@@ -1099,7 +1102,7 @@ fn decode_preserves_unowned_depdb_section_instances_with_unique_native_ids() {
     assert_eq!(positional.len(), 2);
     assert!(positional
         .iter()
-        .all(|definition| definition.owner_feature_id.is_none()));
+        .all(|definition| definition.identity.owner_feature_id().is_none()));
     let expected_positional_ids = positional
         .iter()
         .map(|definition| {

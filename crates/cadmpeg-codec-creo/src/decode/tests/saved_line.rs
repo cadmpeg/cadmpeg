@@ -43,8 +43,10 @@ fn saved_line_joins_through_order_table() {
         offset: 40,
     };
     let definition = crate::feature::FeatureDefinition {
-        id: 5,
-        owner_feature_id: Some(6),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(5),
+            owner_feature_id: Some(6),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
@@ -1156,8 +1158,10 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
         offset: 20,
     };
     let definition = crate::feature::FeatureDefinition {
-        id: 5,
-        owner_feature_id: Some(6),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(5),
+            owner_feature_id: Some(6),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
@@ -1334,8 +1338,10 @@ fn saved_arc_joins_through_order_table() {
         offset: 40,
     };
     let definition = crate::feature::FeatureDefinition {
-        id: 5,
-        owner_feature_id: Some(6),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(5),
+            owner_feature_id: Some(6),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
@@ -1738,8 +1744,10 @@ fn trimmed_line_reconciles_carrier_and_solver_orientation() {
         offset: 55,
     };
     let mut definition = crate::feature::FeatureDefinition {
-        id: 5,
-        owner_feature_id: Some(6),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(5),
+            owner_feature_id: Some(6),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
@@ -1885,8 +1893,10 @@ fn arc_carriers_use_trim_vertices() {
         offset: 40,
     };
     let definition = crate::feature::FeatureDefinition {
-        id: 5,
-        owner_feature_id: Some(6),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(5),
+            owner_feature_id: Some(6),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),

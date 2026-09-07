@@ -255,7 +255,7 @@ pub(in super::super) fn transfer_saved_spline_curves(
             );
             let curve_id = CurveId::mint(format!(
                 "creo:featdefs:saved_spline_curve#{}:{suffix}",
-                definition.id
+                definition.identity.id()
             ))
             .expect("identity grammar");
             if ir.model.curves.iter().any(|curve| curve.id == curve_id) {

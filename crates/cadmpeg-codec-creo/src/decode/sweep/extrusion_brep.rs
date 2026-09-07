@@ -67,7 +67,7 @@ pub(in super::super) fn sketch_profiles_cover_generated_extrusion_sides(
                 let external_id = entry.source_entity_id()?;
                 let entity = SketchEntityId(format!(
                     "creo:featdefs:sketch_entity#{}:{external_id}",
-                    definition.id
+                    definition.identity.id()
                 ));
                 (profile_entity_set.contains(&entity)
                     && generated_profile_entry_is_admissible(

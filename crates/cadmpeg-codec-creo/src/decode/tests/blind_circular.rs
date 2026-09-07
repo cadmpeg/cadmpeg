@@ -1561,8 +1561,10 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         generated_bounded_cylinder_extent(&scan, &ir, 7, None)
     );
     let definition = crate::feature::FeatureDefinition {
-        id: 7,
-        owner_feature_id: Some(7),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(7),
+            owner_feature_id: Some(7),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),

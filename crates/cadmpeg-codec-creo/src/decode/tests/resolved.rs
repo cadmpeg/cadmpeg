@@ -310,8 +310,10 @@ fn decode_reports_missing_declared_solver_variable_rows() {
 #[test]
 fn incomplete_section_tables_keep_saved_endpoint_witnesses() {
     let definition = crate::feature::FeatureDefinition {
-        id: 7,
-        owner_feature_id: Some(8),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(7),
+            owner_feature_id: Some(8),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
@@ -404,8 +406,10 @@ fn signed_distance_with_spanning_line_rejects_conflicting_fixed_coordinate() {
         offset: 0,
     };
     let definition = crate::feature::FeatureDefinition {
-        id: 40,
-        owner_feature_id: None,
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(40),
+            owner_feature_id: None,
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
@@ -483,8 +487,10 @@ fn signed_distance_with_spanning_line_rejects_conflicting_fixed_coordinate() {
 #[test]
 fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions() {
     let definition = crate::feature::FeatureDefinition {
-        id: 40,
-        owner_feature_id: None,
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(40),
+            owner_feature_id: None,
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),

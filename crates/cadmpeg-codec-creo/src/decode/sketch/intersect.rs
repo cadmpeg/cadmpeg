@@ -675,8 +675,10 @@ mod tests {
             offset: 0,
         };
         let definition = crate::feature::FeatureDefinition {
-            id: 1,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(1),
+                owner_feature_id: None,
+            },
             body: Vec::new(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
@@ -783,8 +785,10 @@ mod tests {
             offset: 0,
         };
         let definition = crate::feature::FeatureDefinition {
-            id: 2,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(2),
+                owner_feature_id: None,
+            },
             body: Vec::new(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),

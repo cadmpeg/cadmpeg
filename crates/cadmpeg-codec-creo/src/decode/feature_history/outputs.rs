@@ -531,7 +531,7 @@ pub(in super::super) fn feature_parameters(
         .features
         .definitions
         .iter()
-        .filter(|definition| definition.owner_feature_id == Some(feature_id))
+        .filter(|definition| definition.identity.owner_feature_id() == Some(feature_id))
         .collect::<Vec<_>>();
     if let [definition] = owned_definitions.as_slice() {
         parameters.insert(
@@ -621,7 +621,7 @@ pub(in super::super) fn owned_section_feature_id(
         .features
         .definitions
         .iter()
-        .filter(|definition| definition.id == definition_id)
+        .filter(|definition| definition.identity.id() == definition_id)
         .collect::<Vec<_>>();
     let [definition] = definitions.as_slice() else {
         return None;

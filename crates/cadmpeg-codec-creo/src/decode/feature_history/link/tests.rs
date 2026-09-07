@@ -12,8 +12,10 @@ fn section_scan() -> crate::container::ContainerScan<'static> {
     scan.features
         .definitions
         .push(crate::feature::FeatureDefinition {
-            id: 7,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(7),
+                owner_feature_id: None,
+            },
             body: Vec::new(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),

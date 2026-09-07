@@ -803,8 +803,10 @@ mod tests {
 
     fn incomplete_segment_definition() -> FeatureDefinition {
         FeatureDefinition {
-            id: 1,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(1),
+                owner_feature_id: None,
+            },
             body: Vec::new(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
@@ -1099,8 +1101,10 @@ mod tests {
         body.extend_from_slice(b"\x02\x1f\xf8\x04\x02\x03\x09\x0a\xf6\xe2");
         body.extend_from_slice(b"\x03\x1f\xf8\x04\x04\x05\x0b\x0c\xf6\xe2");
         let definition = FeatureDefinition {
-            id: 2,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(2),
+                owner_feature_id: None,
+            },
             body,
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
@@ -1174,8 +1178,10 @@ mod tests {
         equation(6, 0x1f, &[4, 5, 11, 14]);
         equation(7, 0x1f, &[6, 7, 17, 20]);
         let definition = FeatureDefinition {
-            id: 3,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(3),
+                owner_feature_id: None,
+            },
             body,
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
@@ -1256,8 +1262,10 @@ mod tests {
         equation(5, 0x2a, &[0, 17, 21]);
         equation(6, 0x1f, &[19, 20, 21, 22]);
         let definition = FeatureDefinition {
-            id: 4,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(4),
+                owner_feature_id: None,
+            },
             body,
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
@@ -1337,8 +1345,10 @@ mod tests {
         equation(2, 0x02, &[2, 3]);
         equation(3, 0x1f, &[5, 6, 3, 4]);
         let definition = FeatureDefinition {
-            id: 5,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(5),
+                owner_feature_id: None,
+            },
             body,
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
@@ -1402,8 +1412,10 @@ mod tests {
         equation(2, 0x02, &[6, 8]);
         equation(3, 0x00, &[9, 10, 11, 12, 8, 13]);
         let definition = FeatureDefinition {
-            id: 6,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(6),
+                owner_feature_id: None,
+            },
             body,
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
@@ -1473,8 +1485,10 @@ mod tests {
         equation(1, 0x02, &[0, 1]);
         equation(2, 0x00, &[2, 3, 4, 5, 1, 6]);
         let mut definition = FeatureDefinition {
-            id: 7,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(7),
+                owner_feature_id: None,
+            },
             body,
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
@@ -1548,8 +1562,10 @@ mod tests {
             .to_vec();
         body.extend_from_slice(b"\x01\x00\xf8\x06\x01\x02\x03\x04\x00\x05\xf6\xe2");
         let definition = FeatureDefinition {
-            id: 8,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(8),
+                owner_feature_id: None,
+            },
             body,
             parameter_frames: Vec::new(),
             outlines: Vec::new(),

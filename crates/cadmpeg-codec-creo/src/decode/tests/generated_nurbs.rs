@@ -162,8 +162,10 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
 #[test]
 fn equation_function_two_joins_coordinate_rows_by_position() {
     let definition = crate::feature::FeatureDefinition {
-        id: 40,
-        owner_feature_id: None,
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(40),
+            owner_feature_id: None,
+        },
         body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
                 \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
                 \x01\x02\xf8\x02\x00\x01\xf6\xe2"
@@ -240,8 +242,10 @@ fn equation_function_two_propagates_non_coordinate_scalar_components() {
         offset: 0,
     };
     let definition = |middle_value, last_value| crate::feature::FeatureDefinition {
-        id: 40,
-        owner_feature_id: None,
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(40),
+            owner_feature_id: None,
+        },
         body: b"eqtn_arr\0\xf2\xf8\x03\xf7\x80\x9f\xfb\xe2\
                 \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
                 \x01\x02\xf8\x02\x00\x01\xf6\xe2\
@@ -299,8 +303,10 @@ fn equation_function_five_propagates_direct_type_six_equality() {
     };
     let definition =
         |first_value, second_value, selector_value| crate::feature::FeatureDefinition {
-            id: 40,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(40),
+                owner_feature_id: None,
+            },
             body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
                     \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
                     \x01\x05\xf8\x03\x00\x01\x02\xf6\xe2"
@@ -362,8 +368,10 @@ fn equation_function_two_propagates_radius_components() {
         offset: 0,
     };
     let definition = |first_value, second_value| crate::feature::FeatureDefinition {
-        id: 40,
-        owner_feature_id: None,
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(40),
+            owner_feature_id: None,
+        },
         body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
                 \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
                 \x01\x02\xf8\x02\x00\x01\xf6\xe2"
@@ -399,8 +407,10 @@ fn equation_function_two_propagates_radius_components() {
 #[test]
 fn equation_function_two_binds_radius_row_to_dimension_row() {
     let definition = crate::feature::FeatureDefinition {
-        id: 40,
-        owner_feature_id: None,
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(40),
+            owner_feature_id: None,
+        },
         body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
                 \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
                 \x01\x02\xf8\x02\x00\x01\xf6\xe2"
@@ -522,8 +532,10 @@ fn equation_function_forty_two_transfers_midpoint_coordinates_and_scalar() {
         offset: 0,
     };
     let definition = |first, second, midpoint| crate::feature::FeatureDefinition {
-        id: 40,
-        owner_feature_id: None,
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(40),
+            owner_feature_id: None,
+        },
         body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
                 \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
                 \x01\x2a\xf8\x03\x00\x01\x02\xf6\xe2"
@@ -578,8 +590,10 @@ fn equation_function_thirty_one_transfers_point_coordinates_and_scalars() {
         offset: 0,
     };
     let definition = |u, v, first, second| crate::feature::FeatureDefinition {
-        id: 40,
-        owner_feature_id: None,
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(40),
+            owner_feature_id: None,
+        },
         body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
                 \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
                 \x01\x1f\xf8\x04\x00\x01\x02\x03\xf6\xe2"
@@ -644,8 +658,10 @@ fn equation_function_sixteen_derives_direct_angle_difference() {
         offset: 0,
     };
     let definition = |first, second, difference, selector| crate::feature::FeatureDefinition {
-        id: 40,
-        owner_feature_id: None,
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(40),
+            owner_feature_id: None,
+        },
         body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
                 \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
                 \x01\x10\xf8\x04\x00\x01\x02\x03\xf6\xe2"
@@ -724,8 +740,10 @@ fn equation_function_zero_solves_radial_endpoint_and_opaque_scalars() {
     };
     let definition = |second: [Option<f64>; 2], radius: Option<f64>, angle: Option<f64>| {
         crate::feature::FeatureDefinition {
-            id: 40,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(40),
+                owner_feature_id: None,
+            },
             body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
                 \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
                 \x01\x00\xf8\x06\x00\x01\x02\x03\x04\x05\xf6\xe2"
@@ -817,8 +835,10 @@ fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
         offset: 0,
     };
     let definition = crate::feature::FeatureDefinition {
-        id: 40,
-        owner_feature_id: None,
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(40),
+            owner_feature_id: None,
+        },
         body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
                 \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
                 \x01\x0d\xf8\x03\x00\x01\x02\xf6\xe2"
@@ -933,8 +953,10 @@ fn equation_function_thirty_five_solves_point_on_reference_line() {
         offset: 0,
     };
     let definition = crate::feature::FeatureDefinition {
-        id: 40,
-        owner_feature_id: None,
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(40),
+            owner_feature_id: None,
+        },
         body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
                 \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
                 \x01\x23\xf8\x09\x00\x01\x02\x03\x04\x05\x06\x07\x08\xf6\xe2"
@@ -1135,8 +1157,10 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
         offset: 40,
     };
     let definition = crate::feature::FeatureDefinition {
-        id: 5,
-        owner_feature_id: Some(6),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(5),
+            owner_feature_id: Some(6),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
@@ -1225,7 +1249,7 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
     );
     assert_eq!(
         unique_owned_feature_definition(std::slice::from_ref(&definition), 6)
-            .map(|matched| matched.id),
+            .map(|matched| matched.identity.id()),
         Some(5)
     );
     assert!(
@@ -1484,8 +1508,10 @@ fn unresolved_material_join_does_not_hide_exact_base_body_candidate() {
             state_offset: feature_id as usize,
         };
     let definition = |id, section_offset, offset| crate::feature::FeatureDefinition {
-        id,
-        owner_feature_id: Some(id),
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(id),
+            owner_feature_id: Some(id),
+        },
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),

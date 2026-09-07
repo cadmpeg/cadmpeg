@@ -228,7 +228,7 @@ fn positional_definition_inherits_the_labeled_dimension_table_class() {
     let decoded = definitions(&payload);
     let dimensions = decoded[1].dimensions.as_ref().expect("positional dimtab");
 
-    assert_eq!(decoded[1].owner_feature_id, Some(42));
+    assert_eq!(decoded[1].identity.owner_feature_id(), Some(42));
     assert_eq!(dimensions.entity_ref, Some(88));
     assert_eq!(dimensions.rows.len(), 1);
     assert_eq!(dimensions.rows[0].value.resolved(), Some(3.0));
@@ -248,11 +248,11 @@ fn depdb_gsec2d_definition_anchors_positional_table_replay() {
     let dimensions = decoded[1].dimensions.as_ref().expect("positional dimtab");
 
     assert_eq!(decoded.len(), 2);
-    assert_eq!(decoded[0].id, 2);
-    assert_eq!(decoded[1].id, 2);
+    assert_eq!(decoded[0].identity.id(), 2);
+    assert_eq!(decoded[1].identity.id(), 2);
     assert!(decoded
         .iter()
-        .all(|definition| definition.owner_feature_id.is_none()));
+        .all(|definition| definition.identity.owner_feature_id().is_none()));
     assert_eq!(dimensions.entity_ref, Some(88));
     assert_eq!(dimensions.rows.len(), 1);
     assert_eq!(dimensions.rows[0].value.resolved(), Some(3.0));
@@ -515,7 +515,10 @@ fn named_gsec3d_uses_the_outer_plane_id_before_reference_rows() {
             \xe0\x01flip_flag\0\x00\
             \xe0\x00p_saved_result\0";
 
-    let definitions = definitions_in_ranges(&payload[..], &[(0, 1, None, false)]);
+    let definitions = definitions_in_ranges(
+        &payload[..],
+        &[(0, std::num::NonZeroU32::new(1), None, false)],
+    );
     let section = definitions[0].section_3d.as_ref().expect("named gsec3d");
 
     assert_eq!(section.sketch_plane_entity_id, Some(42));
@@ -883,7 +886,10 @@ fn positional_definition_preserves_its_named_solver_tables() {
 
     let definitions = definitions_in_ranges(
         &payload,
-        &[(0, 1, None, false), (positional_start, 2, None, true)],
+        &[
+            (0, std::num::NonZeroU32::new(1), None, false),
+            (positional_start, std::num::NonZeroU32::new(2), None, true),
+        ],
     );
     let relations = definitions[1].relations.as_ref().expect("relations");
 

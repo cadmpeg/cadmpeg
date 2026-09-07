@@ -81,7 +81,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             .flat_map(|table| &table.rows)
             .filter_map(|row| trim_segment_id(definition, row))
             .collect::<BTreeSet<_>>();
-        let sketch_id = SketchId(format!("creo:model:sketch#{}", definition.id));
+        let sketch_id = SketchId(format!("creo:model:sketch#{}", definition.identity.id()));
         if let Some(sketch) = exactly_one(
             ir.model
                 .sketches
@@ -90,7 +90,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
         ) {
             let segments = complete_section_segment_rows(definition).to_vec();
             generating_ids.extend(profile_segment_ids(
-                definition.id,
+                definition.identity.id(),
                 &segments,
                 &sketch.profiles,
             ));
@@ -275,7 +275,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             );
             let curve_id = CurveId::mint(format!(
                 "creo:featdefs:saved_spline_curve#{}:{suffix}",
-                definition.id
+                definition.identity.id()
             ))
             .expect("identity grammar");
             let Some(CurveGeometry::Nurbs(directrix)) =
@@ -401,7 +401,7 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
         ) else {
             continue;
         };
-        let sketch_id = SketchId(format!("creo:model:sketch#{}", definition.id));
+        let sketch_id = SketchId(format!("creo:model:sketch#{}", definition.identity.id()));
         for (profile_index, vertices) in connected_sketch_profile_vertices(ir, &sketch_id) {
             for (vertex_index, point) in vertices.iter().enumerate() {
                 let Some(geometry) = revolved_section_circle(transform, *point, &axis) else {

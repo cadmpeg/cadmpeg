@@ -20,8 +20,10 @@ use std::collections::BTreeSet;
 #[test]
 fn equation_native_fallback_retains_untyped_row_slots_and_activity() {
     let definition = crate::feature::FeatureDefinition {
-        id: 40,
-        owner_feature_id: None,
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(40),
+            owner_feature_id: None,
+        },
         body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
                 \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
                 \x01\x04\xf8\x03\xf6\x02\x03\xf6\xe2"
@@ -153,8 +155,10 @@ fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() 
         offset: external_id as usize,
     };
     let mut definition = crate::feature::FeatureDefinition {
-        id: 40,
-        owner_feature_id: None,
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(40),
+            owner_feature_id: None,
+        },
         body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
                 \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
                 \x01\x0a\xf8\x07\x00\x01\x02\x03\x04\x05\x06\xf6\xe2"
@@ -279,8 +283,10 @@ fn equation_function_two_emits_radius_dimension_constraint_with_incomplete_segme
             offset: 0,
         };
     let definition = crate::feature::FeatureDefinition {
-        id: 40,
-        owner_feature_id: None,
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(40),
+            owner_feature_id: None,
+        },
         body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
                 \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
                 \x01\x02\xf8\x02\x00\x01\xf6\xe2"
@@ -426,8 +432,10 @@ fn equation_function_zero_emits_polar_distance_constraint() {
         offset: external_id as usize,
     };
     let definition = crate::feature::FeatureDefinition {
-        id: 40,
-        owner_feature_id: None,
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(40),
+            owner_feature_id: None,
+        },
         body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
                 \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
                 \x01\x00\xf8\x06\x00\x01\x02\x03\x04\x05\xf6\xe2"
@@ -596,8 +604,10 @@ fn equation_function_six_emits_fixed_distance_constraint() {
         offset: external_id as usize,
     };
     let definition = crate::feature::FeatureDefinition {
-        id: 40,
-        owner_feature_id: None,
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(40),
+            owner_feature_id: None,
+        },
         body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
                 \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
                 \x01\x06\xf8\x05\x00\x01\x02\x03\x04\xf6\xe2"
@@ -756,8 +766,10 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
     };
     let sketch = cadmpeg_ir::sketches::SketchId("creo:model:sketch#40".into());
     let function_forty_two = crate::feature::FeatureDefinition {
-        id: 40,
-        owner_feature_id: None,
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(40),
+            owner_feature_id: None,
+        },
         body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
                 \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
                 \x01\x2a\xf8\x03\x00\x01\x02\xf6\xe2"
@@ -871,8 +883,10 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
     );
 
     let function_thirty_one = crate::feature::FeatureDefinition {
-        id: 40,
-        owner_feature_id: None,
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(40),
+            owner_feature_id: None,
+        },
         body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
                 \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
                 \x01\x1f\xf8\x04\x00\x01\x02\x03\xf6\xe2"
@@ -1011,8 +1025,10 @@ fn equation_function_thirty_three_emits_equal_distance_pairs() {
         offset: external_id as usize,
     };
     let definition = crate::feature::FeatureDefinition {
-        id: 40,
-        owner_feature_id: None,
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(40),
+            owner_feature_id: None,
+        },
         body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
                 \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
                 \x01\x21\xf8\x09\x00\x01\x02\x03\x04\x05\x06\x07\x08\xf6\xe2"
@@ -1158,8 +1174,10 @@ fn equation_function_thirty_five_emits_point_on_line() {
         offset: external_id as usize,
     };
     let definition = crate::feature::FeatureDefinition {
-        id: 40,
-        owner_feature_id: None,
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(40),
+            owner_feature_id: None,
+        },
         body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
                 \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
                 \x01\x23\xf8\x09\x00\x01\x02\x03\x04\x05\x06\x07\x08\xf6\xe2"
@@ -1316,8 +1334,10 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
         offset: 0,
     };
     let definition = crate::feature::FeatureDefinition {
-        id: 40,
-        owner_feature_id: None,
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(40),
+            owner_feature_id: None,
+        },
         body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
                 \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
                 \x01\x03\xf8\x03\x00\x01\x02\xf6\xe2"
@@ -1459,8 +1479,10 @@ fn equation_function_forty_three_emits_parameterized_axis_distance() {
         offset: 0,
     };
     let definition = |second: [f64; 2], dimension_value| crate::feature::FeatureDefinition {
-        id: 40,
-        owner_feature_id: None,
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(40),
+            owner_feature_id: None,
+        },
         body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
                 \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
                 \x01\x2b\xf8\x08\x00\x01\x02\x03\x04\x05\x06\x07\xf6\xe2"

@@ -674,8 +674,10 @@ mod tests {
         let variable_points =
             std::collections::BTreeMap::from([(1, [Some(0.0), None]), (2, [Some(0.0), None])]);
         let definition = crate::feature::FeatureDefinition {
-            id: 916,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(916),
+                owner_feature_id: None,
+            },
             body: Vec::new(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
@@ -767,8 +769,10 @@ mod tests {
     #[test]
     fn unique_arc_rows_remain_radius_sources_in_incomplete_segment_tables() {
         let definition = crate::feature::FeatureDefinition {
-            id: 917,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(917),
+                owner_feature_id: None,
+            },
             body: Vec::new(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),

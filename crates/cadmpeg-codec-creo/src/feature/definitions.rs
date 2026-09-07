@@ -2,6 +2,7 @@
 //! `FeatDefs` / DEPDB feature definitions and owner binding.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroU32;
 
 use cadmpeg_core::decode::bounded_len;
 
@@ -1212,13 +1213,8 @@ pub struct FeatureSavedSection {
 /// One byte-bounded feature-definition template or instantiated saved section.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FeatureDefinition {
-    /// Numeric identifier embedded in `feat_defs_<id>`. A positional replay
-    /// inherits that schema identifier until an exact owner join replaces it
-    /// with the canonical feature identifier.
-    pub id: u32,
-    /// Canonical definition owner, joining the definition to its modeling
-    /// feature.
-    pub owner_feature_id: Option<u32>,
+    /// Parsed definition identity and any established canonical owner.
+    pub identity: DefinitionIdentity,
     /// Exact record bytes through the next feature definition or section end.
     pub body: Vec<u8>,
     /// Definition-space local-system and transform fields.
@@ -1245,6 +1241,50 @@ pub struct FeatureDefinition {
     pub saved_section: Option<FeatureSavedSection>,
     /// Byte offset of the record name in the original stream.
     pub offset: usize,
+}
+
+/// Definition naming before and after a join selects the owner as its identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DefinitionIdentity {
+    /// A recorded or inherited identifier, with ownership independent of its name.
+    Parsed {
+        schema_id: Option<NonZeroU32>,
+        owner_feature_id: Option<u32>,
+    },
+    /// A unique join selects the canonical owner for record naming.
+    BoundOwner {
+        schema_id: Option<NonZeroU32>,
+        owner_feature_id: u32,
+    },
+}
+
+impl DefinitionIdentity {
+    /// Numeric record identity. Anonymous source definitions retain zero on the wire.
+    pub fn id(self) -> u32 {
+        match self {
+            Self::Parsed { schema_id, .. } => schema_id.map_or(0, NonZeroU32::get),
+            Self::BoundOwner {
+                owner_feature_id, ..
+            } => owner_feature_id,
+        }
+    }
+
+    pub fn schema_id(self) -> Option<NonZeroU32> {
+        match self {
+            Self::Parsed { schema_id, .. } | Self::BoundOwner { schema_id, .. } => schema_id,
+        }
+    }
+
+    pub fn owner_feature_id(self) -> Option<u32> {
+        match self {
+            Self::Parsed {
+                owner_feature_id, ..
+            } => owner_feature_id,
+            Self::BoundOwner {
+                owner_feature_id, ..
+            } => Some(owner_feature_id),
+        }
+    }
 }
 
 fn decode_parameter_scalar(
@@ -6163,7 +6203,7 @@ pub fn definition_revolution_extents(
     ];
     let mut result = Vec::new();
     for definition in definitions {
-        let Some(feature_id) = definition.owner_feature_id else {
+        let Some(feature_id) = definition.identity.owner_feature_id() else {
             continue;
         };
         let recipe_matches = operations.iter().any(|operation| {
@@ -6192,7 +6232,7 @@ pub fn definition_revolution_extents(
 
 pub(crate) fn definitions_in_ranges(
     payload: &[u8],
-    starts: &[(usize, u32, Option<u32>, bool)],
+    starts: &[(usize, Option<NonZeroU32>, Option<u32>, bool)],
 ) -> Vec<FeatureDefinition> {
     let cache = scalar::ScalarCache::from_section(payload);
     let mut result = Vec::new();
@@ -6448,8 +6488,10 @@ pub(crate) fn definitions_in_ranges(
             ids.first().copied().filter(|_| ids.len() == 1)
         });
         result.push(FeatureDefinition {
-            id,
-            owner_feature_id,
+            identity: DefinitionIdentity::Parsed {
+                schema_id: id,
+                owner_feature_id,
+            },
             body: payload[start..end].to_vec(),
             parameter_frames,
             outlines,
@@ -6499,7 +6541,7 @@ fn contextual_references(
 
 /// Decode `FeatDefs` feature-definition records and their `f9 04 03`
 /// definition-space parameter frames.
-fn definition_starts(payload: &[u8]) -> Vec<(usize, u32, Option<u32>, bool)> {
+fn definition_starts(payload: &[u8]) -> Vec<(usize, Option<NonZeroU32>, Option<u32>, bool)> {
     const PREFIX: &[u8] = b"feat_defs_";
     let mut starts = Vec::new();
     for offset in 0..payload.len() {
@@ -6517,7 +6559,7 @@ fn definition_starts(payload: &[u8]) -> Vec<(usize, u32, Option<u32>, bool)> {
         let Ok(id) = String::from_utf8_lossy(digits).parse::<u32>() else {
             continue;
         };
-        starts.push((offset, id, None, false));
+        starts.push((offset, NonZeroU32::new(id), None, false));
     }
     starts.sort_unstable_by_key(|&(offset, _, _, _)| offset);
     let labeled_starts = starts.clone();
@@ -6528,7 +6570,7 @@ fn definition_starts(payload: &[u8]) -> Vec<(usize, u32, Option<u32>, bool)> {
         for (offset, owner) in
             contextual_references(payload, start, end, b"feat_id", b"ref_model_info")
         {
-            starts.push((offset, owner, Some(owner), true));
+            starts.push((offset, NonZeroU32::new(owner), Some(owner), true));
         }
     }
     starts.sort_unstable_by_key(|&(offset, _, _, _)| offset);
@@ -6536,7 +6578,7 @@ fn definition_starts(payload: &[u8]) -> Vec<(usize, u32, Option<u32>, bool)> {
     starts
 }
 
-fn depdb_gsec2d_starts(payload: &[u8]) -> Vec<(usize, u32, Option<u32>, bool)> {
+fn depdb_gsec2d_starts(payload: &[u8]) -> Vec<(usize, Option<NonZeroU32>, Option<u32>, bool)> {
     const GSEC: &[u8] = b"gsec2d_ptr\0";
     const NAME: &[u8] = b"name\0S2D";
     payload
@@ -6555,7 +6597,7 @@ fn depdb_gsec2d_starts(payload: &[u8]) -> Vec<(usize, u32, Option<u32>, bool)> {
                 return None;
             }
             let id = String::from_utf8_lossy(digits).parse::<u32>().ok()?;
-            Some((start, id, None, false))
+            Some((start, NonZeroU32::new(id), None, false))
         })
         .collect()
 }
@@ -6620,19 +6662,19 @@ fn s2d_replay_starts(payload: &[u8]) -> Vec<usize> {
 }
 
 fn inherited_definition_id(
-    starts: &[(usize, u32, Option<u32>, bool)],
+    starts: &[(usize, Option<NonZeroU32>, Option<u32>, bool)],
     replay_offset: usize,
-) -> u32 {
+) -> Option<NonZeroU32> {
     starts
         .iter()
         .filter(|(offset, _, _, positional)| !positional && *offset < replay_offset)
         .max_by_key(|(offset, _, _, _)| *offset)
-        .map_or(0, |(_, id, _, _)| *id)
+        .and_then(|(_, id, _, _)| *id)
 }
 
 fn claimed_s2d_replay_markers(
     payload: &[u8],
-    starts: &[(usize, u32, Option<u32>, bool)],
+    starts: &[(usize, Option<NonZeroU32>, Option<u32>, bool)],
     replay_markers: &[usize],
 ) -> BTreeSet<usize> {
     starts
@@ -6675,11 +6717,11 @@ pub fn positional_replay_definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
         .collect()
 }
 
-/// Decode one standalone DEPDB `gsec2d_ptr` section whose owner is established
-/// by the section's unique procedural-recipe record.
+/// Decode one standalone DEPDB `gsec2d_ptr` section with an optional proven owner.
+/// The sole `gsec2d_ptr` starts the range, so no contextual owner pair occurs inside it.
 pub fn depdb_section_definition(
     payload: &[u8],
-    owner_feature_id: u32,
+    owner_feature_id: Option<u32>,
 ) -> Option<FeatureDefinition> {
     const GSEC: &[u8] = b"gsec2d_ptr\0";
     const NAME: &[u8] = b"name\0S2D";
@@ -6707,7 +6749,7 @@ pub fn depdb_section_definition(
         find_bytes(payload, PREFIX, *start + GSEC.len(), payload.len()).unwrap_or(payload.len());
     definitions_in_ranges(
         &payload[..end],
-        &[(*start, section_id, Some(owner_feature_id), true)],
+        &[(*start, NonZeroU32::new(section_id), owner_feature_id, true)],
     )
     .pop()
 }
@@ -6715,52 +6757,62 @@ pub fn depdb_section_definition(
 /// Bind an owner omitted by `feat_id` through the section's unique generated
 /// datum entry. An explicit canonical `feat_id` remains authoritative.
 pub fn bind_definition_owners(
-    definitions: &mut [FeatureDefinition],
+    definitions: Vec<FeatureDefinition>,
     geometry_tables: &[FeatureGeometryTable],
-) {
-    for definition in definitions
-        .iter_mut()
-        .filter(|definition| definition.owner_feature_id.is_none())
-    {
-        let Some(sketch_plane) = definition
-            .section_3d
-            .as_ref()
-            .and_then(|section| section.sketch_plane_entity_id)
-        else {
-            continue;
-        };
-        let owners = geometry_tables
-            .iter()
-            .filter(|table| {
-                table
-                    .kind
-                    .datum_ids()
-                    .is_some_and(|ids| ids.contains(&sketch_plane))
-            })
-            .map(|table| table.feature_id)
-            .collect::<BTreeSet<_>>();
-        if let [owner] = owners.into_iter().collect::<Vec<_>>().as_slice() {
-            definition.owner_feature_id = Some(*owner);
-        }
-    }
+) -> Vec<FeatureDefinition> {
+    definitions
+        .into_iter()
+        .map(|definition| {
+            if definition.identity.owner_feature_id().is_some() {
+                return definition;
+            }
+            let Some(sketch_plane) = definition
+                .section_3d
+                .as_ref()
+                .and_then(|section| section.sketch_plane_entity_id)
+            else {
+                return definition;
+            };
+            let owners = geometry_tables
+                .iter()
+                .filter(|table| {
+                    table
+                        .kind
+                        .datum_ids()
+                        .is_some_and(|ids| ids.contains(&sketch_plane))
+                })
+                .map(|table| table.feature_id)
+                .collect::<BTreeSet<_>>();
+            let Some(owner) = owners.first().copied().filter(|_| owners.len() == 1) else {
+                return definition;
+            };
+            FeatureDefinition {
+                identity: DefinitionIdentity::Parsed {
+                    schema_id: definition.identity.schema_id(),
+                    owner_feature_id: Some(owner),
+                },
+                ..definition
+            }
+        })
+        .collect()
 }
 
 /// Bind instantiated saved sections through the exact set of trimmed section
 /// entities copied into the owning feature's generated-entity table. Schema
 /// identifiers remain unchanged; only the omitted canonical owner is filled.
 pub fn bind_trimmed_definition_owners(
-    definitions: &mut [FeatureDefinition],
+    definitions: Vec<FeatureDefinition>,
     entity_tables: &[FeatureEntityTable],
-) {
+) -> Vec<FeatureDefinition> {
     let claimed_owner_ids = definitions
         .iter()
-        .filter_map(|definition| definition.owner_feature_id)
+        .filter_map(|definition| definition.identity.owner_feature_id())
         .collect::<BTreeSet<_>>();
     let candidates = definitions
         .iter()
         .map(|definition| {
             let external_ids = unique_trimmed_external_ids(definition);
-            if definition.owner_feature_id.is_some() || external_ids.is_empty() {
+            if definition.identity.owner_feature_id().is_some() || external_ids.is_empty() {
                 return BTreeSet::new();
             }
             entity_tables
@@ -6780,17 +6832,27 @@ pub fn bind_trimmed_definition_owners(
     for owner in candidates.iter().flat_map(|owners| owners.iter()) {
         *owner_candidate_counts.entry(*owner).or_insert(0usize) += 1;
     }
-    for (definition, owners) in definitions.iter_mut().zip(candidates) {
-        let Some(owner) = owners
-            .first()
-            .copied()
-            .filter(|_| owners.len() == 1)
-            .filter(|owner| owner_candidate_counts.get(owner) == Some(&1))
-        else {
-            continue;
-        };
-        definition.owner_feature_id = Some(owner);
-    }
+    definitions
+        .into_iter()
+        .zip(candidates)
+        .map(|(definition, owners)| {
+            let Some(owner) = owners
+                .first()
+                .copied()
+                .filter(|_| owners.len() == 1)
+                .filter(|owner| owner_candidate_counts.get(owner) == Some(&1))
+            else {
+                return definition;
+            };
+            FeatureDefinition {
+                identity: DefinitionIdentity::Parsed {
+                    schema_id: definition.identity.schema_id(),
+                    owner_feature_id: Some(owner),
+                },
+                ..definition
+            }
+        })
+        .collect()
 }
 
 /// Bind unlabeled positional definitions through section-entity IDs in the
@@ -6798,14 +6860,14 @@ pub fn bind_trimmed_definition_owners(
 /// exact; otherwise the generated IDs must be a nonempty subset of the order
 /// table. Empty and non-unique joins remain unbound.
 pub fn bind_replay_definition_owners(
-    definitions: &mut [FeatureDefinition],
+    definitions: Vec<FeatureDefinition>,
     entity_tables: &[FeatureEntityTable],
     claimed_owner_ids: &BTreeSet<u32>,
-) {
+) -> Vec<FeatureDefinition> {
     let candidates = definitions
         .iter()
         .map(|definition| {
-            if definition.owner_feature_id.is_some() {
+            if definition.identity.owner_feature_id().is_some() {
                 return BTreeSet::new();
             }
             let trimmed_external_ids = unique_trimmed_external_ids(definition);
@@ -6856,18 +6918,27 @@ pub fn bind_replay_definition_owners(
     for owner in candidates.iter().flat_map(|owners| owners.iter()) {
         *owner_candidate_counts.entry(*owner).or_insert(0usize) += 1;
     }
-    for (definition, owners) in definitions.iter_mut().zip(candidates) {
-        let Some(owner) = owners
-            .first()
-            .copied()
-            .filter(|_| owners.len() == 1)
-            .filter(|owner| owner_candidate_counts.get(owner) == Some(&1))
-        else {
-            continue;
-        };
-        definition.id = owner;
-        definition.owner_feature_id = Some(owner);
-    }
+    definitions
+        .into_iter()
+        .zip(candidates)
+        .map(|(definition, owners)| {
+            let Some(owner) = owners
+                .first()
+                .copied()
+                .filter(|_| owners.len() == 1)
+                .filter(|owner| owner_candidate_counts.get(owner) == Some(&1))
+            else {
+                return definition;
+            };
+            FeatureDefinition {
+                identity: DefinitionIdentity::BoundOwner {
+                    schema_id: definition.identity.schema_id(),
+                    owner_feature_id: owner,
+                },
+                ..definition
+            }
+        })
+        .collect()
 }
 
 fn unique_trimmed_external_ids(definition: &FeatureDefinition) -> BTreeSet<u32> {
@@ -6884,10 +6955,10 @@ fn unique_trimmed_external_ids(definition: &FeatureDefinition) -> BTreeSet<u32> 
 /// plane remain unowned because the current regeneration snapshot is not
 /// established.
 pub fn bind_section_owners(
-    definitions: &mut [FeatureDefinition],
+    definitions: Vec<FeatureDefinition>,
     operations: &[FeatureOperation],
     section_ranges: &[(usize, usize)],
-) {
+) -> Vec<FeatureDefinition> {
     let in_section_range = |offset: usize| {
         section_ranges
             .iter()
@@ -6895,50 +6966,67 @@ pub fn bind_section_owners(
     };
     let claimed_owner_ids = definitions
         .iter()
-        .filter_map(|definition| definition.owner_feature_id)
+        .filter_map(|definition| definition.identity.owner_feature_id())
         .collect::<BTreeSet<_>>();
     let mut definitions_per_plane = BTreeMap::new();
     for plane_id in definitions.iter().filter_map(|definition| {
-        (definition.owner_feature_id.is_none() && in_section_range(definition.offset))
+        (definition.identity.owner_feature_id().is_none() && in_section_range(definition.offset))
             .then_some(definition.section_3d.as_ref()?.sketch_plane_entity_id?)
     }) {
         *definitions_per_plane.entry(plane_id).or_insert(0usize) += 1;
     }
     let mut ordered_operations = operations.iter().collect::<Vec<_>>();
     ordered_operations.sort_by_key(|operation| operation.offset);
-    for definition in definitions.iter_mut().filter(|definition| {
-        definition.owner_feature_id.is_none() && in_section_range(definition.offset)
-    }) {
-        let Some(plane_id) = definition
-            .section_3d
-            .as_ref()
-            .and_then(|section| section.sketch_plane_entity_id)
-            .filter(|plane_id| *plane_id >= 2)
-        else {
-            continue;
-        };
-        if definitions_per_plane.get(&plane_id) != Some(&1) {
-            continue;
-        }
-        let owner_id = plane_id - 2;
-        let datum_id = plane_id - 1;
-        if claimed_owner_ids.contains(&owner_id) {
-            continue;
-        }
-        let matches = ordered_operations
-            .windows(2)
-            .filter(|pair| {
-                pair[0].feature_id == owner_id
-                    && pair[0].recipe.is_some()
-                    && pair[1].feature_id == datum_id
-                    && pair[1].recipe.is_none()
-            })
-            .count();
-        if matches == 1 {
-            if definition.id == 0 {
-                definition.id = owner_id;
+    definitions
+        .into_iter()
+        .map(|definition| {
+            if definition.identity.owner_feature_id().is_some()
+                || !in_section_range(definition.offset)
+            {
+                return definition;
             }
-            definition.owner_feature_id = Some(owner_id);
-        }
-    }
+            let Some(plane_id) = definition
+                .section_3d
+                .as_ref()
+                .and_then(|section| section.sketch_plane_entity_id)
+                .filter(|plane_id| *plane_id >= 2)
+            else {
+                return definition;
+            };
+            if definitions_per_plane.get(&plane_id) != Some(&1) {
+                return definition;
+            }
+            let owner_id = plane_id - 2;
+            let datum_id = plane_id - 1;
+            if claimed_owner_ids.contains(&owner_id) {
+                return definition;
+            }
+            let matches = ordered_operations
+                .windows(2)
+                .filter(|pair| {
+                    pair[0].feature_id == owner_id
+                        && pair[0].recipe.is_some()
+                        && pair[1].feature_id == datum_id
+                        && pair[1].recipe.is_none()
+                })
+                .count();
+            if matches != 1 {
+                return definition;
+            }
+            let identity = match definition.identity.schema_id() {
+                Some(schema_id) => DefinitionIdentity::Parsed {
+                    schema_id: Some(schema_id),
+                    owner_feature_id: Some(owner_id),
+                },
+                None => DefinitionIdentity::BoundOwner {
+                    schema_id: None,
+                    owner_feature_id: owner_id,
+                },
+            };
+            FeatureDefinition {
+                identity,
+                ..definition
+            }
+        })
+        .collect()
 }

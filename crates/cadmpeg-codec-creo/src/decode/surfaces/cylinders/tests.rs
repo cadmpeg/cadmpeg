@@ -710,8 +710,10 @@ fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerSc
     scan.features
         .definitions
         .push(crate::feature::FeatureDefinition {
-            id: 911,
-            owner_feature_id: None,
+            identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                schema_id: std::num::NonZeroU32::new(911),
+                owner_feature_id: None,
+            },
             body: Vec::new(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),

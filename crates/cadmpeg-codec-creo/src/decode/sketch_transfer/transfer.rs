@@ -74,7 +74,7 @@ pub(in super::super) fn transfer_sketches(
         let transform = definition.section_3d.as_ref().and_then(|section| {
             unique_feature_section_transform(
                 &scan.features.section_transforms,
-                definition.id,
+                definition.identity.id(),
                 section.offset,
             )
         });
@@ -372,7 +372,7 @@ pub(in super::super) fn transfer_sketches(
                 let expected_kinds = section_generated_profile_surface_kinds(&geometry)?;
                 section_entity_is_generated_profile(
                     complete_segment_table,
-                    definition.owner_feature_id,
+                    definition.identity.owner_feature_id(),
                     segment.external_id,
                     expected_kinds,
                     &scan.features.entity_tables,
@@ -391,7 +391,7 @@ pub(in super::super) fn transfer_sketches(
                         let expected_kinds = section_generated_profile_surface_kinds(&geometry)?;
                         section_entity_is_generated_profile(
                             complete_segment_table,
-                            definition.owner_feature_id,
+                            definition.identity.owner_feature_id(),
                             segment.external_id,
                             expected_kinds,
                             &scan.features.entity_tables,
@@ -831,7 +831,7 @@ pub(in super::super) fn transfer_sketches(
             profiles,
             native_ref: Some(sketch_native_ref(&sketch_id)),
         });
-        if owned_section_feature_id(scan, definition.id).is_none() {
+        if owned_section_feature_id(scan, definition.identity.id()).is_none() {
             let feature_id = sketch_feature_id(&sketch_id);
             annotate(
                 annotations,

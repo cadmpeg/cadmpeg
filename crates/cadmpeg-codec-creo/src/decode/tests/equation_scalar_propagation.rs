@@ -36,8 +36,10 @@ fn definition(
     rows: Vec<crate::feature::FeatureVariableRow>,
 ) -> crate::feature::FeatureDefinition {
     crate::feature::FeatureDefinition {
-        id: 40,
-        owner_feature_id: None,
+        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+            schema_id: std::num::NonZeroU32::new(40),
+            owner_feature_id: None,
+        },
         body: body.to_vec(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),

@@ -547,7 +547,7 @@ pub(super) fn transfer_section_entities(
             section_generated_profile_surface_kinds(&geometry).is_some_and(|expected_kinds| {
                 section_entity_is_generated_profile(
                     complete_segment_table,
-                    definition.owner_feature_id,
+                    definition.identity.owner_feature_id(),
                     external_id,
                     expected_kinds,
                     &scan.features.entity_tables,
@@ -617,7 +617,7 @@ pub(super) fn transfer_section_entities(
             };
             section_entity_is_generated_profile(
                 complete_segment_table,
-                definition.owner_feature_id,
+                definition.identity.owner_feature_id(),
                 external_id,
                 expected_kinds,
                 &scan.features.entity_tables,
