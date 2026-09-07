@@ -437,6 +437,21 @@ struct TextStyleRecord {
     font: FontRecord,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EmbeddedImageCompression {
+    Raw,
+    Compressed,
+}
+
+impl Serialize for EmbeddedImageCompression {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_i32(match self {
+            Self::Raw => 0,
+            Self::Compressed => 1,
+        })
+    }
+}
+
 #[derive(Debug, Serialize)]
 struct EmbeddedImageRecord {
     id: String,
@@ -445,7 +460,7 @@ struct EmbeddedImageRecord {
     name: String,
     file_path: String,
     image_crc32: u32,
-    compression_method: i32,
+    compression_method: EmbeddedImageCompression,
     uncompressed_byte_len: u64,
     buffer_offset: u64,
     buffer_byte_len: u64,
@@ -3149,24 +3164,27 @@ fn parse_embedded_image(
     }
     let file_path = utf16(&mut reader)?;
     let image_crc32 = reader.u32()?;
-    let compression_method = reader.i32()?;
-    if !matches!(compression_method, 0 | 1) {
-        return Err(FramingError::structural(
-            reader.position() - 4,
-            "embedded-image compression method is unsupported",
-        ));
-    }
+    let compression_method = match reader.i32()? {
+        0 => EmbeddedImageCompression::Raw,
+        1 => EmbeddedImageCompression::Compressed,
+        _ => {
+            return Err(FramingError::structural(
+                reader.position() - 4,
+                "embedded-image compression method is unsupported",
+            ));
+        }
+    };
     let buffer_offset = reader.position();
     let uncompressed_byte_len = u64::from(reader.u32()?);
     match compression_method {
-        0 => {
+        EmbeddedImageCompression::Raw => {
             if uncompressed_byte_len != 0 {
                 let size = usize::try_from(uncompressed_byte_len)
                     .map_err(|_| FramingError::structural(buffer_offset, "image size overflow"))?;
                 reader.skip(size)?;
             }
         }
-        1 => {
+        EmbeddedImageCompression::Compressed => {
             if uncompressed_byte_len != 0 {
                 reader.skip(4)?;
                 let method = reader.u8()?;
@@ -3193,7 +3211,6 @@ fn parse_embedded_image(
                 }
             }
         }
-        _ => unreachable!("embedded image compression method checked"),
     }
     let buffer_end = reader.position();
     let source_uuid = if packed & 0x0f >= 1 {
@@ -4869,13 +4886,16 @@ mod tests {
         assert_eq!(minor_one.source_uuid, Some(id.to_string()));
         assert_eq!(minor_one.name, "preview");
         assert_eq!(minor_one.image_crc32, 0x1122_3344);
-        assert_eq!(minor_one.compression_method, 1);
+        assert_eq!(
+            minor_one.compression_method,
+            EmbeddedImageCompression::Compressed
+        );
         assert_eq!(minor_one.buffer_byte_len, 4);
 
         let raw_bytes = embedded_bitmap_payload(0, id, 0);
         let raw = parse_embedded_image(&raw_bytes, 0..raw_bytes.len(), ArchiveVersion::V8, 42)
             .expect("raw embedded bitmap");
-        assert_eq!(raw.compression_method, 0);
+        assert_eq!(raw.compression_method, EmbeddedImageCompression::Raw);
         assert_eq!(raw.uncompressed_byte_len, 3);
         assert_eq!(raw.buffer_byte_len, 7);
     }
