@@ -515,14 +515,16 @@ fn world_horizontal_in_plane(plane: &Plane) -> [f64; 2] {
 fn ordinate_direction(stored: i32, definition: [f64; 2], leader: [f64; 2]) -> Option<i32> {
     match stored {
         0 | 1 => Some(stored + 1),
-        -1 => Some(
-            if (leader[0] - definition[0]).abs() <= (leader[1] - definition[1]).abs() {
-                1
-            } else {
-                2
-            },
-        ),
+        -1 => Some(inferred_ordinate_direction(definition, leader)),
         _ => None,
+    }
+}
+
+fn inferred_ordinate_direction(definition: [f64; 2], leader: [f64; 2]) -> i32 {
+    if (leader[0] - definition[0]).abs() <= (leader[1] - definition[1]).abs() {
+        1
+    } else {
+        2
     }
 }
 
@@ -614,6 +616,19 @@ pub(crate) fn v2_effective_text(annotation: &V2Annotation) -> String {
         .to_owned()
 }
 
+enum LegacyDimensionFields {
+    Linear,
+    Radial,
+    Angular {
+        angle: f64,
+        radius: f64,
+    },
+    Ordinate {
+        direction: i32,
+        kink_offsets: [f64; 2],
+    },
+}
+
 fn decode_legacy(
     data: &[u8],
     class: Uuid,
@@ -666,7 +681,11 @@ fn decode_legacy(
     if class == V5_RADIAL && annotation.points.len() == 5 {
         annotation.points.truncate(4);
     }
-    let stored_angular = if class == V5_ANGULAR {
+    let fields = if class == V5_LINEAR {
+        LegacyDimensionFields::Linear
+    } else if class == V5_RADIAL {
+        LegacyDimensionFields::Radial
+    } else if class == V5_ANGULAR {
         let angle = outer.f64()?;
         let radius = scaled_coordinate(outer.f64()?, scale).ok_or_else(|| {
             FramingError::structural(outer.position() - 8, "invalid legacy angular radius")
@@ -677,11 +696,8 @@ fn decode_legacy(
                 "invalid legacy angular angle",
             ));
         }
-        Some((angle, radius))
+        LegacyDimensionFields::Angular { angle, radius }
     } else {
-        None
-    };
-    let stored_ordinate = if class == V5_ORDINATE {
         let direction = outer.i32()?;
         let kink_offsets = if minor >= 1 {
             [
@@ -701,111 +717,117 @@ fn decode_legacy(
         } else {
             [0.0, 0.0]
         };
-        Some((direction, kink_offsets))
-    } else {
-        None
+        LegacyDimensionFields::Ordinate {
+            direction,
+            kink_offsets,
+        }
     };
     outer.skip_remaining()?;
-    let (plane, definition, user_text_point, measurement) = if class == V5_LINEAR {
-        if !matches!(annotation.kind, 1 | 2) || annotation.points.len() != 5 {
-            return Err(FramingError::structural(
-                range.start,
-                "invalid legacy linear definition",
-            ));
+    let (plane, definition, user_text_point, measurement) = match fields {
+        LegacyDimensionFields::Linear => {
+            if !matches!(annotation.kind, 1 | 2) || annotation.points.len() != 5 {
+                return Err(FramingError::structural(
+                    range.start,
+                    "invalid legacy linear definition",
+                ));
+            }
+            let origin = annotation.points[0];
+            let definition_point = difference(annotation.points[2], origin);
+            let arrow_midpoint = [
+                (annotation.points[1][0] + annotation.points[3][0]) * 0.5,
+                (annotation.points[1][1] + annotation.points[3][1]) * 0.5,
+            ];
+            let dimension_line_point = difference(arrow_midpoint, origin);
+            (
+                shifted_plane(annotation.plane, origin),
+                Definition::Linear {
+                    definition_point,
+                    dimension_line_point,
+                },
+                difference(annotation.points[4], origin),
+                definition_point[0].abs(),
+            )
         }
-        let origin = annotation.points[0];
-        let definition_point = difference(annotation.points[2], origin);
-        let arrow_midpoint = [
-            (annotation.points[1][0] + annotation.points[3][0]) * 0.5,
-            (annotation.points[1][1] + annotation.points[3][1]) * 0.5,
-        ];
-        let dimension_line_point = difference(arrow_midpoint, origin);
-        (
-            shifted_plane(annotation.plane, origin),
-            Definition::Linear {
-                definition_point,
+        LegacyDimensionFields::Radial => {
+            if !matches!(annotation.kind, 4 | 5) || annotation.points.len() != 4 {
+                return Err(FramingError::structural(
+                    range.start,
+                    "invalid legacy radial definition",
+                ));
+            }
+            let origin = annotation.points[0];
+            let radius_point = difference(annotation.points[1], origin);
+            let dimension_line_point = difference(annotation.points[2], origin);
+            let diameter = annotation.kind == 4;
+            (
+                shifted_plane(annotation.plane, origin),
+                Definition::Radial {
+                    radius_point,
+                    dimension_line_point,
+                    diameter,
+                },
                 dimension_line_point,
-            },
-            difference(annotation.points[4], origin),
-            definition_point[0].abs(),
-        )
-    } else if class == V5_RADIAL {
-        if !matches!(annotation.kind, 4 | 5) || annotation.points.len() != 4 {
-            return Err(FramingError::structural(
-                range.start,
-                "invalid legacy radial definition",
-            ));
+                radius_point[0].hypot(radius_point[1]) * if diameter { 2.0 } else { 1.0 },
+            )
         }
-        let origin = annotation.points[0];
-        let radius_point = difference(annotation.points[1], origin);
-        let dimension_line_point = difference(annotation.points[2], origin);
-        let diameter = annotation.kind == 4;
-        (
-            shifted_plane(annotation.plane, origin),
-            Definition::Radial {
-                radius_point,
-                dimension_line_point,
-                diameter,
-            },
-            dimension_line_point,
-            radius_point[0].hypot(radius_point[1]) * if diameter { 2.0 } else { 1.0 },
-        )
-    } else if class == V5_ANGULAR {
-        if annotation.kind != 3 || annotation.points.len() != 4 {
-            return Err(FramingError::structural(
-                range.start,
-                "invalid legacy angular definition",
-            ));
+        LegacyDimensionFields::Angular { angle, radius } => {
+            if annotation.kind != 3 || annotation.points.len() != 4 {
+                return Err(FramingError::structural(
+                    range.start,
+                    "invalid legacy angular definition",
+                ));
+            }
+            let first_direction = [1.0, 0.0];
+            let second_direction = [angle.cos(), angle.sin()];
+            let dimension_line_point = [radius * (0.5 * angle).cos(), radius * (0.5 * angle).sin()];
+            (
+                annotation.plane,
+                Definition::Angular {
+                    first_direction,
+                    second_direction,
+                    // ON_OBSOLETE_V5_DimAngular returns -1 when its optional
+                    // ON_AngularDimension2Extra userdata is absent.
+                    first_extension_offset: -1.0,
+                    second_extension_offset: -1.0,
+                    dimension_line_point,
+                },
+                annotation.points[0],
+                angle,
+            )
         }
-        let (angle, radius) = stored_angular.expect("angular family has stored fields");
-        let first_direction = [1.0, 0.0];
-        let second_direction = [angle.cos(), angle.sin()];
-        let dimension_line_point = [radius * (0.5 * angle).cos(), radius * (0.5 * angle).sin()];
-        (
-            annotation.plane,
-            Definition::Angular {
-                first_direction,
-                second_direction,
-                // ON_OBSOLETE_V5_DimAngular returns -1 when its optional
-                // ON_AngularDimension2Extra userdata is absent.
-                first_extension_offset: -1.0,
-                second_extension_offset: -1.0,
-                dimension_line_point,
-            },
-            annotation.points[0],
-            angle,
-        )
-    } else {
-        if annotation.kind != 8 || annotation.points.len() != 2 {
-            return Err(FramingError::structural(
-                range.start,
-                "invalid legacy ordinate definition",
-            ));
-        }
-        let definition_point = annotation.points[0];
-        let leader_point = annotation.points[1];
-        let (stored_direction, kink_offsets) =
-            stored_ordinate.expect("ordinate family has stored fields");
-        let measured_direction =
-            ordinate_direction(stored_direction, definition_point, leader_point).ok_or_else(
-                || FramingError::structural(range.start, "invalid legacy ordinate direction"),
-            )?;
-        let measurement = if measured_direction == 1 {
-            definition_point[0].abs()
-        } else {
-            definition_point[1].abs()
-        };
-        (
-            annotation.plane,
-            Definition::Ordinate {
-                definition_point,
+        LegacyDimensionFields::Ordinate {
+            direction: stored_direction,
+            kink_offsets,
+        } => {
+            if annotation.kind != 8 || annotation.points.len() != 2 {
+                return Err(FramingError::structural(
+                    range.start,
+                    "invalid legacy ordinate definition",
+                ));
+            }
+            let definition_point = annotation.points[0];
+            let leader_point = annotation.points[1];
+            let measured_direction =
+                ordinate_direction(stored_direction, definition_point, leader_point).ok_or_else(
+                    || FramingError::structural(range.start, "invalid legacy ordinate direction"),
+                )?;
+            let measurement = if measured_direction == 1 {
+                definition_point[0].abs()
+            } else {
+                definition_point[1].abs()
+            };
+            (
+                annotation.plane,
+                Definition::Ordinate {
+                    definition_point,
+                    leader_point,
+                    measured_direction,
+                    kink_offsets,
+                },
                 leader_point,
-                measured_direction,
-                kink_offsets,
-            },
-            leader_point,
-            measurement,
-        )
+                measurement,
+            )
+        }
     };
     if !measurement.is_finite() {
         return Err(FramingError::structural(
@@ -1115,8 +1137,7 @@ pub(crate) fn decode(
         let offset = outer.position();
         let leader_point = scaled_point(point2(&mut outer)?, scale, offset)?;
         let measured_direction = if stored_direction == 0 {
-            ordinate_direction(-1, definition_point, leader_point)
-                .expect("inferred ordinate direction")
+            inferred_ordinate_direction(definition_point, leader_point)
         } else {
             stored_direction
         };
