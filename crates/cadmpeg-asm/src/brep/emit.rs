@@ -2604,26 +2604,22 @@ fn emit_carrier_curve(
                 }
             }
             ProceduralCurveConstruction::TwoSidedOffset(embedded) => {
-                let surfaces: [Option<SurfaceId>; 2] = embedded
-                    .surfaces
-                    .into_iter()
-                    .enumerate()
-                    .map(|(side, geometry)| {
-                        let geometry = geometry?;
-                        let id = SurfaceId::mint(format!(
-                            "{format}:brep:procedural_curve#{i}:support{side}"
-                        ))
-                        .expect("identity grammar");
-                        out.surfaces.push(Surface {
-                            id: id.clone(),
-                            geometry,
-                            source_object: None,
-                        });
-                        Some(id)
-                    })
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .expect("two fixed support sides");
+                let mut next_side = 0;
+                let surfaces: [Option<SurfaceId>; 2] = embedded.surfaces.map(|geometry| {
+                    let side = next_side;
+                    next_side += 1;
+                    let geometry = geometry?;
+                    let id = SurfaceId::mint(format!(
+                        "{format}:brep:procedural_curve#{i}:support{side}"
+                    ))
+                    .expect("identity grammar");
+                    out.surfaces.push(Surface {
+                        id: id.clone(),
+                        geometry,
+                        source_object: None,
+                    });
+                    Some(id)
+                });
                 let pcurves = embedded
                     .pcurves
                     .map(|pcurve| pcurve.map(|nurbs| PcurveGeometry::Nurbs { nurbs }));
@@ -2644,26 +2640,22 @@ fn emit_carrier_curve(
                 }
             }
             ProceduralCurveConstruction::Intersection(embedded, discontinuity_flag) => {
-                let surfaces: [Option<SurfaceId>; 2] = embedded
-                    .surfaces
-                    .into_iter()
-                    .enumerate()
-                    .map(|(side, geometry)| {
-                        let geometry = geometry.into_surface()?;
-                        let id = SurfaceId::mint(format!(
-                            "{format}:brep:procedural_curve#{i}:support{side}"
-                        ))
-                        .expect("identity grammar");
-                        out.surfaces.push(Surface {
-                            id: id.clone(),
-                            geometry,
-                            source_object: None,
-                        });
-                        Some(id)
-                    })
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .expect("two fixed support sides");
+                let mut next_side = 0;
+                let surfaces: [Option<SurfaceId>; 2] = embedded.surfaces.map(|geometry| {
+                    let side = next_side;
+                    next_side += 1;
+                    let geometry = geometry.into_surface()?;
+                    let id = SurfaceId::mint(format!(
+                        "{format}:brep:procedural_curve#{i}:support{side}"
+                    ))
+                    .expect("identity grammar");
+                    out.surfaces.push(Surface {
+                        id: id.clone(),
+                        geometry,
+                        source_object: None,
+                    });
+                    Some(id)
+                });
                 let pcurves = embedded
                     .pcurves
                     .map(|pcurve| pcurve.map(|nurbs| PcurveGeometry::Nurbs { nurbs }));
@@ -2683,25 +2675,21 @@ fn emit_carrier_curve(
                 }
             }
             ProceduralCurveConstruction::ThreeSurface(embedded) => {
-                let surface_ids: [SurfaceId; 3] = embedded
-                    .surfaces
-                    .into_iter()
-                    .enumerate()
-                    .map(|(side, geometry)| {
-                        let id = SurfaceId::mint(format!(
-                            "{format}:brep:procedural_curve#{i}:support{side}"
-                        ))
-                        .expect("identity grammar");
-                        out.surfaces.push(Surface {
-                            id: id.clone(),
-                            geometry,
-                            source_object: None,
-                        });
-                        id
-                    })
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .expect("three fixed support sides");
+                let mut next_side = 0;
+                let surface_ids: [SurfaceId; 3] = embedded.surfaces.map(|geometry| {
+                    let side = next_side;
+                    next_side += 1;
+                    let id = SurfaceId::mint(format!(
+                        "{format}:brep:procedural_curve#{i}:support{side}"
+                    ))
+                    .expect("identity grammar");
+                    out.surfaces.push(Surface {
+                        id: id.clone(),
+                        geometry,
+                        source_object: None,
+                    });
+                    id
+                });
                 let pcurves = embedded
                     .pcurves
                     .map(|nurbs| PcurveGeometry::Nurbs { nurbs });
@@ -2740,27 +2728,23 @@ fn emit_carrier_curve(
                 emit_spring_curve(out, i, embedded, format)
             }
             ProceduralCurveConstruction::Deformable(embedded) => {
-                let support_ids: [Option<SurfaceId>; 2] = embedded
-                    .surfaces
-                    .into_iter()
-                    .enumerate()
-                    .map(|(side, geometry)| {
-                        geometry.map(|geometry| {
-                            let id = SurfaceId::mint(format!(
-                                "{format}:brep:procedural_curve#{i}:deformable_support{side}"
-                            ))
-                            .expect("identity grammar");
-                            out.surfaces.push(Surface {
-                                id: id.clone(),
-                                geometry,
-                                source_object: None,
-                            });
-                            id
-                        })
+                let mut next_side = 0;
+                let support_ids: [Option<SurfaceId>; 2] = embedded.surfaces.map(|geometry| {
+                    let side = next_side;
+                    next_side += 1;
+                    geometry.map(|geometry| {
+                        let id = SurfaceId::mint(format!(
+                            "{format}:brep:procedural_curve#{i}:deformable_support{side}"
+                        ))
+                        .expect("identity grammar");
+                        out.surfaces.push(Surface {
+                            id: id.clone(),
+                            geometry,
+                            source_object: None,
+                        });
+                        id
                     })
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .expect("two fixed support sides");
+                });
                 let pcurves = embedded
                     .pcurves
                     .map(|pcurve| pcurve.map(|nurbs| PcurveGeometry::Nurbs { nurbs }));
@@ -2911,25 +2895,20 @@ fn emit_surface_curve_family(
     family: crate::nurbs::proc_curve::EmbeddedSurfaceCurve,
 ) -> cadmpeg_ir::geometry::SurfaceCurveFamily {
     let mut map_context = |embedded: crate::nurbs::proc_curve::EmbeddedIntersection| {
-        let surfaces: [Option<SurfaceId>; 2] = embedded
-            .surfaces
-            .into_iter()
-            .enumerate()
-            .map(|(side, geometry)| {
-                let geometry = geometry.into_surface()?;
-                let id =
-                    SurfaceId::mint(format!("{format}:brep:procedural_curve#{i}:support{side}"))
-                        .expect("identity grammar");
-                out.surfaces.push(Surface {
-                    id: id.clone(),
-                    geometry,
-                    source_object: None,
-                });
-                Some(id)
-            })
-            .collect::<Vec<_>>()
-            .try_into()
-            .expect("two fixed support sides");
+        let mut next_side = 0;
+        let surfaces: [Option<SurfaceId>; 2] = embedded.surfaces.map(|geometry| {
+            let side = next_side;
+            next_side += 1;
+            let geometry = geometry.into_surface()?;
+            let id = SurfaceId::mint(format!("{format}:brep:procedural_curve#{i}:support{side}"))
+                .expect("identity grammar");
+            out.surfaces.push(Surface {
+                id: id.clone(),
+                geometry,
+                source_object: None,
+            });
+            Some(id)
+        });
         let pcurves = embedded
             .pcurves
             .map(|pcurve| pcurve.map(|nurbs| PcurveGeometry::Nurbs { nurbs }));
@@ -2977,25 +2956,20 @@ fn emit_silhouette_curve(
     embedded: EmbeddedSilhouette,
     format: IdFormat<'_>,
 ) -> cadmpeg_ir::geometry::ProceduralCurveDefinition {
-    let support_ids: [Option<SurfaceId>; 2] = embedded
-        .context
-        .surfaces
-        .into_iter()
-        .enumerate()
-        .map(|(side, geometry)| {
-            let geometry = geometry.into_surface()?;
-            let id = SurfaceId::mint(format!("{format}:brep:procedural_curve#{i}:support{side}"))
-                .expect("identity grammar");
-            out.surfaces.push(Surface {
-                id: id.clone(),
-                geometry,
-                source_object: None,
-            });
-            Some(id)
-        })
-        .collect::<Vec<_>>()
-        .try_into()
-        .expect("two fixed support sides");
+    let mut next_side = 0;
+    let support_ids: [Option<SurfaceId>; 2] = embedded.context.surfaces.map(|geometry| {
+        let side = next_side;
+        next_side += 1;
+        let geometry = geometry.into_surface()?;
+        let id = SurfaceId::mint(format!("{format}:brep:procedural_curve#{i}:support{side}"))
+            .expect("identity grammar");
+        out.surfaces.push(Surface {
+            id: id.clone(),
+            geometry,
+            source_object: None,
+        });
+        Some(id)
+    });
     let pcurves = embedded
         .context
         .pcurves
@@ -3029,25 +3003,20 @@ fn emit_surface_offset_curve(
     embedded: EmbeddedSurfaceOffset,
     format: IdFormat<'_>,
 ) -> cadmpeg_ir::geometry::ProceduralCurveDefinition {
-    let support_ids: [Option<SurfaceId>; 2] = embedded
-        .context
-        .surfaces
-        .into_iter()
-        .enumerate()
-        .map(|(side, geometry)| {
-            let geometry = geometry.into_surface()?;
-            let id = SurfaceId::mint(format!("{format}:brep:procedural_curve#{i}:support{side}"))
-                .expect("identity grammar");
-            out.surfaces.push(Surface {
-                id: id.clone(),
-                geometry,
-                source_object: None,
-            });
-            Some(id)
-        })
-        .collect::<Vec<_>>()
-        .try_into()
-        .expect("two fixed support sides");
+    let mut next_side = 0;
+    let support_ids: [Option<SurfaceId>; 2] = embedded.context.surfaces.map(|geometry| {
+        let side = next_side;
+        next_side += 1;
+        let geometry = geometry.into_surface()?;
+        let id = SurfaceId::mint(format!("{format}:brep:procedural_curve#{i}:support{side}"))
+            .expect("identity grammar");
+        out.surfaces.push(Surface {
+            id: id.clone(),
+            geometry,
+            source_object: None,
+        });
+        Some(id)
+    });
     let pcurves = embedded
         .context
         .pcurves
@@ -3189,23 +3158,19 @@ fn emit_projection_curve(
     embedded: EmbeddedProjection,
     format: IdFormat<'_>,
 ) -> cadmpeg_ir::geometry::ProceduralCurveDefinition {
-    let surfaces: [Option<SurfaceId>; 2] = embedded
-        .surfaces
-        .into_iter()
-        .enumerate()
-        .map(|(side, geometry)| {
-            let id = SurfaceId::mint(format!("{format}:brep:procedural_curve#{i}:support{side}"))
-                .expect("identity grammar");
-            out.surfaces.push(Surface {
-                id: id.clone(),
-                geometry,
-                source_object: None,
-            });
-            Some(id)
-        })
-        .collect::<Vec<_>>()
-        .try_into()
-        .expect("two fixed support sides");
+    let mut next_side = 0;
+    let surfaces: [Option<SurfaceId>; 2] = embedded.surfaces.map(|geometry| {
+        let side = next_side;
+        next_side += 1;
+        let id = SurfaceId::mint(format!("{format}:brep:procedural_curve#{i}:support{side}"))
+            .expect("identity grammar");
+        out.surfaces.push(Surface {
+            id: id.clone(),
+            geometry,
+            source_object: None,
+        });
+        Some(id)
+    });
     let pcurves = embedded
         .pcurves
         .map(|pcurve| Some(PcurveGeometry::Nurbs { nurbs: pcurve }));
@@ -3317,25 +3282,20 @@ fn emit_law_curve(
             }
         }
     }
-    let surfaces: [Option<SurfaceId>; 2] = embedded
-        .context
-        .surfaces
-        .into_iter()
-        .enumerate()
-        .map(|(side, geometry)| {
-            let geometry = geometry.into_surface()?;
-            let id = SurfaceId::mint(format!("{format}:brep:procedural_curve#{i}:support{side}"))
-                .expect("identity grammar");
-            out.surfaces.push(Surface {
-                id: id.clone(),
-                geometry,
-                source_object: None,
-            });
-            Some(id)
-        })
-        .collect::<Vec<_>>()
-        .try_into()
-        .expect("two fixed support sides");
+    let mut next_side = 0;
+    let surfaces: [Option<SurfaceId>; 2] = embedded.context.surfaces.map(|geometry| {
+        let side = next_side;
+        next_side += 1;
+        let geometry = geometry.into_surface()?;
+        let id = SurfaceId::mint(format!("{format}:brep:procedural_curve#{i}:support{side}"))
+            .expect("identity grammar");
+        out.surfaces.push(Surface {
+            id: id.clone(),
+            geometry,
+            source_object: None,
+        });
+        Some(id)
+    });
     let pcurves = embedded
         .context
         .pcurves
