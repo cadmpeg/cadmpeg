@@ -615,17 +615,17 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
     let native_sketches = data
         .pm_dc_sketches
         .iter()
-        .map(|record| record.id())
+        .map(crate::record_identity::Located::id)
         .collect::<HashSet<_>>();
     let native_entities = data
         .pm_dc_sketch_entities
         .iter()
-        .map(|record| record.id())
+        .map(crate::record_identity::Located::id)
         .collect::<HashSet<_>>();
     let native_constraints = data
         .pm_dc_sketch_constraints
         .iter()
-        .map(|record| record.id())
+        .map(crate::record_identity::Located::id)
         .collect::<HashSet<_>>();
     for sketch in &ir.model.sketches {
         if sketch
