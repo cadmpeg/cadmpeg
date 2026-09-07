@@ -40,10 +40,9 @@ fn binds_missing_definition_owner_from_unique_generated_datum_table() {
         &mut definitions,
         &[FeatureGeometryTable {
             feature_id: 10,
-            kind: FeatureGeometryTableKind::DatumIds,
+            kind: FeatureGeometryTableKind::DatumIds(Some(vec![12])),
             count: 1,
             entity_class: 87,
-            entry_ids: Some(vec![12]),
             offset: 2,
         }],
     );

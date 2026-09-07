@@ -11,7 +11,7 @@ use crate::scalar;
 use super::entity::{generated_class_200_source_entity_ids, FeatureEntityTable};
 use super::helpers::find_bytes;
 use super::operations::{FeatureOperation, FeatureRecipeKind};
-use super::rows::{FeatureGeometryTable, FeatureGeometryTableKind, FeatureRevolutionExtent};
+use super::rows::{FeatureGeometryTable, FeatureRevolutionExtent};
 
 const EPS_PARAMETER_AGREEMENT: f64 = 1.0e-9;
 
@@ -6731,11 +6731,10 @@ pub fn bind_definition_owners(
         };
         let owners = geometry_tables
             .iter()
-            .filter(|table| table.kind == FeatureGeometryTableKind::DatumIds)
             .filter(|table| {
                 table
-                    .entry_ids
-                    .as_ref()
+                    .kind
+                    .datum_ids()
                     .is_some_and(|ids| ids.contains(&sketch_plane))
             })
             .map(|table| table.feature_id)

@@ -335,11 +335,11 @@ fn positional_datum_table_replays_the_named_stream_schema() {
 
     assert_eq!(decoded.len(), 2);
     assert_eq!(decoded[0].feature_id, 1);
-    assert_eq!(decoded[0].entry_ids, Some(vec![42]));
+    assert_eq!(decoded[0].kind.datum_ids(), Some(&[42][..]));
     assert_eq!(decoded[1].feature_id, 2);
     assert_eq!(decoded[1].count, 2);
     assert_eq!(decoded[1].entity_class, 87);
-    assert_eq!(decoded[1].entry_ids, Some(vec![145, 146]));
+    assert_eq!(decoded[1].kind.datum_ids(), Some(&[145, 146][..]));
     assert_eq!(decoded[1].offset, 201);
 }
 

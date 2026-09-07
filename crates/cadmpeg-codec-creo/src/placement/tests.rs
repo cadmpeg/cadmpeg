@@ -12,9 +12,9 @@ use crate::CreoCodec;
 use super::*;
 
 use crate::feature::{
-    FeatureEntityTableEntry, FeatureParameterFrame, FeatureSection3d, FeatureSectionOrientation,
-    FeatureSectionPoint, FeatureSectionReferencePlane, FeatureSegment, FeatureSegmentTable,
-    FeatureVariableTable,
+    FeatureEntityTableEntry, FeatureGeometryTableKind, FeatureParameterFrame, FeatureSection3d,
+    FeatureSectionOrientation, FeatureSectionPoint, FeatureSectionReferencePlane, FeatureSegment,
+    FeatureSegmentTable, FeatureVariableTable,
 };
 use crate::surface::{PositionalCylinderFrame, SurfaceBodyBoundary, SurfaceParameterRecord};
 
@@ -455,10 +455,9 @@ fn resolves_generated_section_from_declared_cap_pair() {
     ];
     let geometry_tables = [FeatureGeometryTable {
         feature_id: 40,
-        kind: FeatureGeometryTableKind::DatumIds,
+        kind: FeatureGeometryTableKind::DatumIds(Some(vec![42])),
         count: 1,
         entity_class: 1,
-        entry_ids: Some(vec![42]),
         offset: 80,
     }];
     let entries = [(43, 204), (92, 203)].map(|(entity_id, class_id)| {
@@ -777,10 +776,9 @@ fn resolves_generated_sketch_datum_from_unique_parent_relation() {
     };
     let geometry_table = FeatureGeometryTable {
         feature_id: 40,
-        kind: FeatureGeometryTableKind::DatumIds,
+        kind: FeatureGeometryTableKind::DatumIds(Some(vec![42])),
         count: 1,
         entity_class: 87,
-        entry_ids: Some(vec![42]),
         offset: 20,
     };
     let parents = FeatureAffectedIds {
@@ -842,10 +840,9 @@ fn resolves_generated_plane_from_contextually_unambiguous_envelope_axis() {
     };
     let geometry_table = FeatureGeometryTable {
         feature_id: 40,
-        kind: FeatureGeometryTableKind::DatumIds,
+        kind: FeatureGeometryTableKind::DatumIds(Some(vec![42])),
         count: 1,
         entity_class: 87,
-        entry_ids: Some(vec![42]),
         offset: 20,
     };
     let parents = FeatureAffectedIds {

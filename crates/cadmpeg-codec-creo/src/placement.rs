@@ -5,8 +5,7 @@ use crate::datum::DatumPlaneRecord;
 use crate::decode::uniqueness::exactly_one;
 use crate::feature::{
     placement_instructions, AffectedIdKind, BinaryFlag, FeatureAffectedIds, FeatureDefinition,
-    FeatureEntityTable, FeatureGeometryTable, FeatureGeometryTableKind, FeatureParameterFrameKind,
-    FeatureSegmentKind,
+    FeatureEntityTable, FeatureGeometryTable, FeatureParameterFrameKind, FeatureSegmentKind,
 };
 use crate::surface::{
     unique_surface_row, OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem,
@@ -637,8 +636,7 @@ fn generated_datum_plane_equation(
     let datum_ids = sources
         .geometry_tables
         .iter()
-        .filter(|table| table.kind == FeatureGeometryTableKind::DatumIds)
-        .filter_map(|table| table.entry_ids.as_ref())
+        .filter_map(|table| table.kind.datum_ids())
         .flatten()
         .filter(|id| **id == sketch_id)
         .count();
@@ -849,9 +847,7 @@ fn generated_section_cap_plane_equation(
         .geometry_tables
         .iter()
         .filter(|table| {
-            table.feature_id == feature_id
-                && table.kind == FeatureGeometryTableKind::DatumIds
-                && table.entry_ids.as_deref() == Some(&[sketch_id])
+            table.feature_id == feature_id && table.kind.datum_ids() == Some(&[sketch_id])
         })
         .collect::<Vec<_>>();
     let [_] = datum_tables.as_slice() else {
@@ -906,9 +902,7 @@ fn zero_offset_standard_section_plane_equation(
         .geometry_tables
         .iter()
         .filter(|table| {
-            table.feature_id == feature_id
-                && table.kind == FeatureGeometryTableKind::DatumIds
-                && table.entry_ids.as_deref() == Some(&[sketch_id])
+            table.feature_id == feature_id && table.kind.datum_ids() == Some(&[sketch_id])
         })
         .count();
     (datum_tables == 1).then_some(())?;

@@ -112,7 +112,7 @@ pub struct FeatureChoiceField {
 }
 
 /// Generated-geometry namespace declared inside a feature row.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FeatureGeometryTableKind {
     /// `edg_id_tab_ptr` edge identifiers.
     EdgeIds,
@@ -124,8 +124,17 @@ pub enum FeatureGeometryTableKind {
     UsedBodies,
     /// `geom_lists` geometry-list references.
     GeometryLists,
-    /// `dtm_id_tab` datum identifiers.
-    DatumIds,
+    /// `dtm_id_tab` datum identifiers, absent when the body is incomplete.
+    DatumIds(Option<Vec<u32>>),
+}
+
+impl FeatureGeometryTableKind {
+    pub fn datum_ids(&self) -> Option<&[u32]> {
+        match self {
+            Self::DatumIds(ids) => ids.as_deref(),
+            _ => None,
+        }
+    }
 }
 
 /// One typed generated-geometry table header owned by a feature.
@@ -139,9 +148,6 @@ pub struct FeatureGeometryTable {
     pub count: u32,
     /// Entity-class identifier following the `f7` marker.
     pub entity_class: u32,
-    /// Complete datum identifiers for a `dtm_id_tab`; other table bodies remain
-    /// untyped.
-    pub entry_ids: Option<Vec<u32>>,
     /// Byte offset of the field label in the original stream.
     pub offset: usize,
 }
@@ -665,30 +671,29 @@ pub fn geometry_tables(rows: &[FeatureRow]) -> Vec<FeatureGeometryTable> {
         (b"bnd_type", FeatureGeometryTableKind::Boundaries),
         (b"used_bodies", FeatureGeometryTableKind::UsedBodies),
         (b"geom_lists", FeatureGeometryTableKind::GeometryLists),
-        (b"dtm_id_tab", FeatureGeometryTableKind::DatumIds),
+        (b"dtm_id_tab", FeatureGeometryTableKind::DatumIds(None)),
     ];
     let mut tables = Vec::new();
     let mut datum_class_by_stream = BTreeMap::<usize, u32>::new();
     for row in rows {
-        for &(label, kind) in FIELDS {
-            let needle = [label, b"\0"].concat();
+        for (label, kind) in FIELDS {
+            let needle = [*label, b"\0"].concat();
             let mut from = 0;
             while let Some(offset) = find_from(&row.body, &needle, from) {
                 from = offset + needle.len();
-                let Some((count, entity_class, entry_ids)) =
-                    geometry_table_at(&row.body, offset + needle.len(), kind)
+                let Some((count, entity_class, decoded_kind)) =
+                    geometry_table_at(&row.body, offset + needle.len(), kind.clone())
                 else {
                     continue;
                 };
                 tables.push(FeatureGeometryTable {
                     feature_id: row.feature_id,
-                    kind,
+                    kind: decoded_kind,
                     count,
                     entity_class,
-                    entry_ids,
                     offset: row.body_offset + offset,
                 });
-                if kind == FeatureGeometryTableKind::DatumIds {
+                if matches!(kind, FeatureGeometryTableKind::DatumIds(_)) {
                     datum_class_by_stream.insert(row.stream_offset, entity_class);
                 }
             }
@@ -704,10 +709,9 @@ pub fn geometry_tables(rows: &[FeatureRow]) -> Vec<FeatureGeometryTable> {
             };
             tables.push(FeatureGeometryTable {
                 feature_id: row.feature_id,
-                kind: FeatureGeometryTableKind::DatumIds,
+                kind: FeatureGeometryTableKind::DatumIds(Some(entry_ids)),
                 count,
                 entity_class,
-                entry_ids: Some(entry_ids),
                 offset: row.body_offset + cursor,
             });
         }
@@ -770,8 +774,8 @@ fn positional_datum_geometry_table_at(
 fn geometry_table_at(
     body: &[u8],
     mut cursor: usize,
-    kind: FeatureGeometryTableKind,
-) -> Option<(u32, u32, Option<Vec<u32>>)> {
+    mut kind: FeatureGeometryTableKind,
+) -> Option<(u32, u32, FeatureGeometryTableKind)> {
     if body
         .get(cursor)
         .is_some_and(|byte| matches!(byte, 0xf1 | 0xf2))
@@ -792,7 +796,7 @@ fn geometry_table_at(
     if body.get(after_class) == Some(&0xe2) {
         after_class += 1;
     }
-    let entry_ids = if kind == FeatureGeometryTableKind::DatumIds {
+    if let FeatureGeometryTableKind::DatumIds(ids) = &mut kind {
         let mut entries = Vec::new();
         let mut entry_cursor = after_class;
         for _ in 0..count {
@@ -809,11 +813,9 @@ fn geometry_table_at(
             entries.push(entry);
             entry_cursor = next;
         }
-        (entries.len() == usize::try_from(count).unwrap_or(usize::MAX)).then_some(entries)
-    } else {
-        None
-    };
-    Some((count, entity_class, entry_ids))
+        *ids = (entries.len() == usize::try_from(count).unwrap_or(usize::MAX)).then_some(entries);
+    }
+    Some((count, entity_class, kind))
 }
 
 /// Decode complete named affected-ID arrays from known feature rows.

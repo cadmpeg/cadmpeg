@@ -459,11 +459,11 @@ fn scan_decodes_allfeatur_generated_geometry_manifest() {
     );
     assert_eq!(
         scan.features.geometry_tables[2].kind,
-        crate::feature::FeatureGeometryTableKind::DatumIds
+        crate::feature::FeatureGeometryTableKind::DatumIds(Some(vec![42, 43]))
     );
     assert_eq!(
-        scan.features.geometry_tables[2].entry_ids,
-        Some(vec![42, 43])
+        scan.features.geometry_tables[2].kind.datum_ids(),
+        Some(&[42, 43][..])
     );
 
     let result = CreoCodec
@@ -776,10 +776,15 @@ fn scan_binds_standalone_depdb_datum_and_parent_tables_to_recipe_owner() {
         .features
         .geometry_tables
         .iter()
-        .find(|table| table.kind == crate::feature::FeatureGeometryTableKind::DatumIds)
+        .find(|table| {
+            matches!(
+                table.kind,
+                crate::feature::FeatureGeometryTableKind::DatumIds(_)
+            )
+        })
         .expect("datum table");
     assert_eq!(datum_table.feature_id, 17);
-    assert_eq!(datum_table.entry_ids.as_deref(), Some(&[41][..]));
+    assert_eq!(datum_table.kind.datum_ids(), Some(&[41][..]));
 
     let parents = scan
         .features

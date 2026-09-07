@@ -752,17 +752,17 @@ pub(super) fn feature_geometry_table_records(
         .map(|table| CreoFeatureGeometryTableRecord {
             id: format!("creo:feature:geometry_table#{}", table.offset),
             owner_feature_id: table.feature_id,
-            kind: match table.kind {
+            kind: match &table.kind {
                 crate::feature::FeatureGeometryTableKind::EdgeIds => "edge_ids",
                 crate::feature::FeatureGeometryTableKind::LoopIds => "loop_ids",
                 crate::feature::FeatureGeometryTableKind::Boundaries => "boundaries",
                 crate::feature::FeatureGeometryTableKind::UsedBodies => "used_bodies",
                 crate::feature::FeatureGeometryTableKind::GeometryLists => "geometry_lists",
-                crate::feature::FeatureGeometryTableKind::DatumIds => "datum_ids",
+                crate::feature::FeatureGeometryTableKind::DatumIds(_) => "datum_ids",
             },
             declared_count: table.count,
             entity_class_id: table.entity_class,
-            entry_ids: table.entry_ids.clone(),
+            entry_ids: table.kind.datum_ids().map(<[u32]>::to_vec),
             offset: table.offset,
             source_section: source_section(scan, table.offset),
         })
