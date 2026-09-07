@@ -61,8 +61,6 @@ pub struct BodyModifier {
     pub body_attr: u16,
     /// One-based ordinal in the ordered Keywords modeling-feature records.
     pub history_ordinal: u32,
-    /// Byte offset of the attribute-instance record.
-    pub offset: usize,
     /// Emitted body identity, resolved once the graph retains its bodies.
     pub target: Option<String>,
 }
@@ -377,7 +375,6 @@ pub fn scan_body_modifiers(buf: &[u8]) -> Vec<BodyModifier> {
         let modifier = BodyModifier {
             body_attr,
             history_ordinal: values[0],
-            offset: off,
             target: None,
         };
         match found.get_mut(&body_attr) {
