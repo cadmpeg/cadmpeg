@@ -30,6 +30,24 @@ const PROTOTYPE_FIELDS: [&[u8]; 8] = [
     b"object_data",
 ];
 
+/// Layout marker between the loop-array label and its array opener.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LayoutMarker {
+    /// The `f2` marker.
+    F2,
+    /// The `f3` marker.
+    F3,
+}
+
+impl serde::Serialize for LayoutMarker {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u8(match self {
+            Self::F2 => 0xf2,
+            Self::F3 => 0xf3,
+        })
+    }
+}
+
 /// One validated `lo_array` frame.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoopArrayFrame {
@@ -37,7 +55,7 @@ pub struct LoopArrayFrame {
     pub offset: usize,
     /// Optional layout marker immediately after the label: `f2` or `f3`.
     /// Older frames omit this marker and begin directly with `f8`.
-    pub variant: Option<u8>,
+    pub variant: Option<LayoutMarker>,
     /// Stored loop-array slot extent.
     pub declared_count: u32,
     /// Native class reference from the frame header and prototype close.
@@ -200,14 +218,12 @@ fn parse_frame(
 ) -> Option<(LoopArrayFrame, Vec<LoopArrayRecord>)> {
     let mut cursor = offset.checked_add(LO_ARRAY_LABEL.len())?;
     let variant = match *data.get(cursor)? {
-        0xf2 | 0xf3 => {
-            let marker = data[cursor];
-            cursor += 1;
-            Some(marker)
-        }
+        0xf2 => Some(LayoutMarker::F2),
+        0xf3 => Some(LayoutMarker::F3),
         0xf8 => None,
         _ => return None,
     };
+    cursor += usize::from(variant.is_some());
     if data.get(cursor) != Some(&0xf8) {
         return None;
     }

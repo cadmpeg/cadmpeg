@@ -65,7 +65,7 @@ fn retains_bounded_rows_and_frame_header() {
     let parsed = scan(&payload);
 
     assert_eq!(parsed.frames.len(), 1);
-    assert_eq!(parsed.frames[0].variant, Some(0xf3));
+    assert_eq!(parsed.frames[0].variant, Some(super::LayoutMarker::F3));
     assert_eq!(parsed.frames[0].declared_count, 2);
     assert_eq!(parsed.frames[0].class_id, 0x2a);
     assert_eq!(parsed.frames[0].materialized_count, 2);

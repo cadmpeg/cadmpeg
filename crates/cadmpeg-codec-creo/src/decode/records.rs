@@ -305,7 +305,7 @@ pub(super) struct CreoLoopRecord {
 #[derive(Serialize)]
 pub(super) struct CreoLoopArrayFrameRecord {
     pub(super) id: String,
-    pub(super) variant: Option<u8>,
+    pub(super) variant: Option<crate::loop_array::LayoutMarker>,
     pub(super) declared_count: u32,
     pub(super) class_id: u32,
     pub(super) materialized_count: usize,
