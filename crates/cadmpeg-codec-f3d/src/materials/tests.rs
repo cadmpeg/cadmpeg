@@ -1093,15 +1093,19 @@ fn decode_transfers_generated_protein_appearance() {
     assert_eq!(sketch_header.class_tag.as_str(), "257");
     assert!(sketch_header.optional_slot_present);
     assert_eq!(
-        sketch_header.module.as_deref(),
+        sketch_header.module(),
         Some(crate::records::DESIGN_MODULE_SKETCH)
     );
-    assert_eq!(sketch_header.record_reference, Some(584));
+    assert_eq!(
+        sketch_header
+            .sketch_references()
+            .and_then(|list| list.record_reference),
+        Some(584)
+    );
     assert_eq!(sketch_header.declared_reference_count(), Some(2));
     assert_eq!(
         sketch_header
-            .references
-            .values()
+            .reference_values()
             .copied()
             .collect::<Vec<_>>(),
         [33, 44]

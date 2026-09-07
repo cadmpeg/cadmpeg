@@ -2773,29 +2773,107 @@ pub struct DesignEntityHeader {
     pub class_tag: DesignClassTag,
     /// Whether the flag-selected four-byte optional slot is present.
     pub optional_slot_present: bool,
-    /// Add-in module of the `MetaStream` type whose entity-id list contains this
-    /// header's entity, when the `MetaStream` registers that entity.
-    pub module: Option<String>,
-    /// Index of an associated `BulkStream` record, when the header carries one.
+    /// Module registration and its sketch-owned data.
+    pub registration: DesignEntityRegistration,
+}
+
+/// A sketch header's located reference-list slot.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SketchHeaderReferences {
+    /// Owning record, absent for the no-base-record sentinel.
     pub record_reference: Option<u32>,
-    /// Byte offset of the base-record slot, including its no-base-record sentinel.
-    pub record_reference_offset: Option<u64>,
-    /// Whether the wire includes the reference count; its value is derived from the run.
-    pub reference_count_present: bool,
-    /// Padded record-reference run owned by a sketch entity container.
-    pub references: ReferenceRun<u32>,
-    /// Counted member-record run from the paired same-index container record.
-    pub members: ReferenceRun<u32>,
+    /// Byte offset of the owning-record slot.
+    pub record_reference_offset: u64,
+    /// Located references in the counted list.
+    pub references: Vec<Located<u32>>,
+}
+
+/// Module registration with data owned only by sketch headers.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DesignEntityRegistration(DesignEntityRegistrationKind);
+
+#[derive(Debug, Clone, PartialEq)]
+enum DesignEntityRegistrationKind {
+    Other(Option<String>),
+    Sketch {
+        references: Option<SketchHeaderReferences>,
+        members: ReferenceRun<u32>,
+    },
+}
+
+impl DesignEntityRegistration {
+    /// Construct a module registration and its sketch data.
+    pub fn new(
+        module: Option<String>,
+        references: Option<SketchHeaderReferences>,
+        members: ReferenceRun<u32>,
+    ) -> Result<Self, String> {
+        if module.as_deref() == Some(DESIGN_MODULE_SKETCH) {
+            Ok(Self(DesignEntityRegistrationKind::Sketch {
+                references,
+                members,
+            }))
+        } else if references.is_some() || !members.is_empty() {
+            Err("module must be MSketch for sketch references or members".into())
+        } else {
+            Ok(Self(DesignEntityRegistrationKind::Other(module)))
+        }
+    }
 }
 
 impl DesignEntityHeader {
+    /// Declared reference count for a present sketch reference list.
     pub fn declared_reference_count(&self) -> Option<usize> {
-        self.reference_count_present.then(|| self.references.len())
+        self.sketch_references().map(|list| list.references.len())
     }
 
-    /// Whether the `MetaStream` registers this entity under the sketch module.
+    /// Registered module name.
+    pub fn module(&self) -> Option<&str> {
+        match &self.registration.0 {
+            DesignEntityRegistrationKind::Other(module) => module.as_deref(),
+            DesignEntityRegistrationKind::Sketch { .. } => Some(DESIGN_MODULE_SKETCH),
+        }
+    }
+
+    /// Located sketch reference-list slot.
+    pub fn sketch_references(&self) -> Option<&SketchHeaderReferences> {
+        match &self.registration.0 {
+            DesignEntityRegistrationKind::Sketch { references, .. } => references.as_ref(),
+            DesignEntityRegistrationKind::Other(_) => None,
+        }
+    }
+
+    /// Mutable located sketch reference-list slot.
+    pub fn sketch_references_mut(&mut self) -> Option<&mut SketchHeaderReferences> {
+        match &mut self.registration.0 {
+            DesignEntityRegistrationKind::Sketch { references, .. } => references.as_mut(),
+            DesignEntityRegistrationKind::Other(_) => None,
+        }
+    }
+
+    /// Referenced record indices.
+    pub fn reference_values(&self) -> impl Iterator<Item = &u32> {
+        self.sketch_references()
+            .into_iter()
+            .flat_map(|list| list.references.iter().map(|row| &row.value))
+    }
+
+    /// Member record indices.
+    pub fn member_values(&self) -> impl Iterator<Item = &u32> {
+        match &self.registration.0 {
+            DesignEntityRegistrationKind::Sketch { members, .. } => Some(members),
+            DesignEntityRegistrationKind::Other(_) => None,
+        }
+        .into_iter()
+        .flat_map(ReferenceRun::values)
+    }
+
+    /// Whether the entity belongs to the sketch module.
     pub fn in_sketch_module(&self) -> bool {
-        self.module.as_deref() == Some(DESIGN_MODULE_SKETCH)
+        matches!(
+            self.registration.0,
+            DesignEntityRegistrationKind::Sketch { .. }
+        )
     }
 }
 
@@ -2855,26 +2933,33 @@ impl TryFrom<DesignEntityHeaderWire> for DesignEntityHeader {
         if entity_id.suffix() != wire.entity_suffix {
             return Err("entity_suffix disagrees with entity_id".into());
         }
+        let references = match (wire.record_reference_offset, wire.declared_reference_count) {
+            (Some(offset), Some(_)) => {
+                if wire.reference_indices.len() != wire.reference_offsets.len() {
+                    return Err("reference_offsets must locate every reference_indices entry".into());
+                }
+                Some(SketchHeaderReferences {
+                    record_reference: wire.record_reference,
+                    record_reference_offset: offset,
+                    references: wire.reference_indices.into_iter().zip(wire.reference_offsets)
+                        .map(|(value, offset)| Located { value, offset }).collect(),
+                })
+            }
+            (None, None) if wire.record_reference.is_none() && wire.reference_indices.is_empty() && wire.reference_offsets.is_empty() => None,
+            _ => return Err("record_reference_offset and declared_reference_count must accompany reference_indices and record_reference".into()),
+        };
+        let members = ReferenceRun::from_columns(
+            wire.member_indices,
+            wire.member_offsets,
+            "member_indices/member_offsets",
+        )?;
         Ok(Self {
-            reference_count_present: wire.declared_reference_count.is_some(),
-            references: ReferenceRun::from_columns(
-                wire.reference_indices,
-                wire.reference_offsets,
-                "reference_indices/reference_offsets",
-            )?,
-            members: ReferenceRun::from_columns(
-                wire.member_indices,
-                wire.member_offsets,
-                "member_indices/member_offsets",
-            )?,
+            registration: DesignEntityRegistration::new(wire.module, references, members)?,
             id: wire.id,
             byte_offset: wire.byte_offset,
             entity_id,
             class_tag: DesignClassTag::try_from(wire.class_tag)?,
             optional_slot_present: wire.optional_slot_present,
-            module: wire.module,
-            record_reference: wire.record_reference,
-            record_reference_offset: wire.record_reference_offset,
         })
     }
 }
@@ -2882,8 +2967,33 @@ impl TryFrom<DesignEntityHeaderWire> for DesignEntityHeader {
 impl From<DesignEntityHeader> for DesignEntityHeaderWire {
     fn from(header: DesignEntityHeader) -> Self {
         let declared_reference_count = header.declared_reference_count();
-        let (reference_indices, reference_offsets) = header.references.into_wire();
-        let (member_indices, member_offsets) = header.members.into_wire();
+        let (module, references, members) = match header.registration.0 {
+            DesignEntityRegistrationKind::Other(module) => {
+                (module, None, ReferenceRun::Unlocated(Vec::new()))
+            }
+            DesignEntityRegistrationKind::Sketch {
+                references,
+                members,
+            } => (Some(DESIGN_MODULE_SKETCH.to_owned()), references, members),
+        };
+        let (record_reference, record_reference_offset, reference_indices, reference_offsets) =
+            match references {
+                Some(list) => {
+                    let (values, offsets) = list
+                        .references
+                        .into_iter()
+                        .map(|row| (row.value, row.offset))
+                        .unzip();
+                    (
+                        list.record_reference,
+                        Some(list.record_reference_offset),
+                        values,
+                        offsets,
+                    )
+                }
+                None => (None, None, Vec::new(), Vec::new()),
+            };
+        let (member_indices, member_offsets) = members.into_wire();
         Self {
             declared_reference_count,
             reference_indices,
@@ -2896,9 +3006,9 @@ impl From<DesignEntityHeader> for DesignEntityHeaderWire {
             entity_id: header.entity_id.0,
             class_tag: header.class_tag.into(),
             optional_slot_present: header.optional_slot_present,
-            module: header.module,
-            record_reference: header.record_reference,
-            record_reference_offset: header.record_reference_offset,
+            module,
+            record_reference,
+            record_reference_offset,
         }
     }
 }

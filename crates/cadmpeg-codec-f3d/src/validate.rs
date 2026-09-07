@@ -1797,7 +1797,7 @@ fn validate_body_bounds(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let valid = entity_headers_by_suffix
             .get(&(native_stream, bounds.entity_suffix))
             .is_some_and(|entity| {
-                entity.module.as_deref() == Some(records::DESIGN_MODULE_BODY)
+                entity.module() == Some(records::DESIGN_MODULE_BODY)
                     && entity.byte_offset == bounds.entity_byte_offset
             })
             && expected_indices == Some(bounds.record_indices)
@@ -8532,8 +8532,7 @@ fn validate_entity_headers(ctx: &Ctx, findings: &mut Vec<Finding>) {
     for header in &native.design_entity_headers {
         let native_stream = design_stream(&header.id);
         let references_resolve = header
-            .references
-            .values()
+            .reference_values()
             .all(|index| record_indices.contains(&(native_stream, *index)));
         if !references_resolve {
             findings.push(Finding {
@@ -8850,7 +8849,7 @@ fn validate_sketch_relation_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let Ok(owner) = u32::try_from(entity.entity_id.suffix()) else {
             continue;
         };
-        for member in entity.members.values() {
+        for member in entity.member_values() {
             if !typed_sketch_records.contains(&(native_stream, *member)) {
                 continue;
             }

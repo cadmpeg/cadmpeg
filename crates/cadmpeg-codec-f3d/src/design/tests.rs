@@ -249,18 +249,20 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
             .expect("valid entity ID"),
         class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         optional_slot_present: true,
-        module: Some(DESIGN_MODULE_SKETCH.to_owned()),
-        record_reference: None,
-        record_reference_offset: None,
-        reference_count_present: true,
-        references: crate::records::ReferenceRun::Located(
-            vec![30]
-                .into_iter()
-                .zip(vec![0])
-                .map(|(value, offset)| crate::records::Located { value, offset })
-                .collect(),
-        ),
-        members: crate::records::ReferenceRun::Unlocated(Vec::new()),
+        registration: crate::records::DesignEntityRegistration::new(
+            Some(DESIGN_MODULE_SKETCH.to_owned()),
+            Some(crate::records::SketchHeaderReferences {
+                record_reference: None,
+                record_reference_offset: 0,
+                references: vec![30]
+                    .into_iter()
+                    .zip(vec![0])
+                    .map(|(value, offset)| crate::records::Located { value, offset })
+                    .collect(),
+            }),
+            crate::records::ReferenceRun::Unlocated(Vec::new()),
+        )
+        .expect("valid module registration"),
     };
     let point = |stream: &str| SketchPoint {
         id: format!("f3d:{stream}:sketch-point#0"),

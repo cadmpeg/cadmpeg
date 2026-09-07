@@ -58,11 +58,11 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         .find(|header| header.in_sketch_module())
         .expect("generated sketch entity header");
     assert!(header.byte_offset > 0);
-    assert!(header.record_reference_offset.is_some());
-    header.record_reference = Some(585);
-    let crate::records::ReferenceRun::Located(references) = &mut header.references else {
-        panic!("parsed reference locations");
-    };
+    let list = header
+        .sketch_references_mut()
+        .expect("parsed reference list");
+    list.record_reference = Some(585);
+    let references = &mut list.references;
     assert_eq!(references.len(), 2);
     let [first, second] = references.as_mut_slice() else {
         panic!("two reference slots");
@@ -195,9 +195,14 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         .expect("round-trip sketch entity header");
     assert_eq!(header.entity_id.suffix(), 277);
     assert_eq!(header.entity_id.as_str(), "0_277");
-    assert_eq!(header.record_reference, Some(585));
     assert_eq!(
-        header.references.values().copied().collect::<Vec<_>>(),
+        header
+            .sketch_references()
+            .and_then(|list| list.record_reference),
+        Some(585)
+    );
+    assert_eq!(
+        header.reference_values().copied().collect::<Vec<_>>(),
         [44, 33]
     );
     let object = f3d_native(round_trip.ir())

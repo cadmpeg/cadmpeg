@@ -158,7 +158,7 @@ pub(crate) fn encode_design_bulkstream(
         || native
             .design_entity_headers
             .iter()
-            .any(|header| !header.members.is_empty())
+            .any(|header| header.member_values().next().is_some())
     {
         return Err(CodecError::NotImplemented(
             "source-less F3D Design parameter records are not writable".into(),
@@ -261,10 +261,13 @@ pub(crate) fn encode_design_bulkstream(
         }
         native_lp_utf16(&mut out, header.entity_id.as_str())?;
         if header.in_sketch_module() {
-            let count = u32::try_from(header.references.len()).map_err(|_| {
+            let count = u32::try_from(header.reference_values().count()).map_err(|_| {
                 CodecError::Malformed("Design sketch header exceeds u32::MAX references".into())
             })?;
-            match header.record_reference {
+            match header
+                .sketch_references()
+                .and_then(|list| list.record_reference)
+            {
                 Some(record_reference) => {
                     out.extend_from_slice(&record_reference.to_le_bytes());
                     out.extend_from_slice(&[0; 4]);
@@ -274,7 +277,7 @@ pub(crate) fn encode_design_bulkstream(
             }
             out.push(1);
             out.extend_from_slice(&count.to_le_bytes());
-            for reference in header.references.values() {
+            for reference in header.reference_values() {
                 out.push(1);
                 out.extend_from_slice(&reference.to_le_bytes());
                 out.extend_from_slice(&[0; 6]);

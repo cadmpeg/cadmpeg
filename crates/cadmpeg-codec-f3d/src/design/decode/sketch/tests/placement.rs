@@ -319,12 +319,12 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
             .expect("valid entity ID"),
         class_tag: crate::records::DesignClassTag::try_from("281".to_owned()).unwrap(),
         optional_slot_present: false,
-        module: Some(DESIGN_MODULE_SKETCH.to_owned()),
-        record_reference: None,
-        record_reference_offset: None,
-        reference_count_present: false,
-        references: crate::records::ReferenceRun::Unlocated(Vec::new()),
-        members: crate::records::ReferenceRun::Unlocated(Vec::new()),
+        registration: crate::records::DesignEntityRegistration::new(
+            Some(DESIGN_MODULE_SKETCH.to_owned()),
+            None,
+            crate::records::ReferenceRun::Unlocated(Vec::new()),
+        )
+        .expect("valid module registration"),
     };
     let records = IndexedRecordOffsets::build(&bytes);
     let placement = crate::design::decode::sketch::parse_member_run_head_placement(
@@ -801,17 +801,17 @@ fn sketch_member_run_backfills_relation_free_owners() {
             .expect("valid entity ID"),
         class_tag: crate::records::DesignClassTag::try_from("281".to_owned()).unwrap(),
         optional_slot_present: false,
-        module: Some(DESIGN_MODULE_SKETCH.to_owned()),
-        record_reference: None,
-        record_reference_offset: None,
-        reference_count_present: false,
-        references: crate::records::ReferenceRun::Unlocated(Vec::new()),
-        members: crate::records::ReferenceRun::Located(
-            members
-                .into_iter()
-                .map(|value| crate::records::Located { value, offset: 0 })
-                .collect(),
-        ),
+        registration: crate::records::DesignEntityRegistration::new(
+            Some(DESIGN_MODULE_SKETCH.to_owned()),
+            None,
+            crate::records::ReferenceRun::Located(
+                members
+                    .into_iter()
+                    .map(|value| crate::records::Located { value, offset: 0 })
+                    .collect(),
+            ),
+        )
+        .expect("valid module registration"),
     };
     let point = |record_index: u32| SketchPoint {
         id: format!("f3d:native:sketch-point#{record_index}"),

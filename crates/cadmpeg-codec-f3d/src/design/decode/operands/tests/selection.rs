@@ -42,12 +42,16 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
             .expect("valid entity ID"),
         class_tag: crate::records::DesignClassTag::try_from("269".to_owned()).unwrap(),
         optional_slot_present: false,
-        module: Some(DESIGN_MODULE_SKETCH.to_owned()),
-        record_reference: Some(200),
-        record_reference_offset: Some(1010),
-        reference_count_present: true,
-        references: crate::records::ReferenceRun::Unlocated(Vec::new()),
-        members: crate::records::ReferenceRun::Unlocated(Vec::new()),
+        registration: crate::records::DesignEntityRegistration::new(
+            Some(DESIGN_MODULE_SKETCH.to_owned()),
+            Some(crate::records::SketchHeaderReferences {
+                record_reference: Some(200),
+                record_reference_offset: 1010,
+                references: Vec::new(),
+            }),
+            crate::records::ReferenceRun::Unlocated(Vec::new()),
+        )
+        .expect("valid module registration"),
     };
 
     let profile = parse_sketch_profile(
@@ -150,12 +154,12 @@ fn generated_base_flange_profile_frame_resolves() {
             .expect("valid entity ID"),
         class_tag: crate::records::DesignClassTag::try_from("365".to_owned()).unwrap(),
         optional_slot_present: false,
-        module: Some(DESIGN_MODULE_SKETCH.to_owned()),
-        record_reference: None,
-        record_reference_offset: None,
-        reference_count_present: false,
-        references: crate::records::ReferenceRun::Unlocated(Vec::new()),
-        members: crate::records::ReferenceRun::Unlocated(Vec::new()),
+        registration: crate::records::DesignEntityRegistration::new(
+            Some(DESIGN_MODULE_SKETCH.to_owned()),
+            None,
+            crate::records::ReferenceRun::Unlocated(Vec::new()),
+        )
+        .expect("valid module registration"),
     };
     let profile = parse_sketch_profile(
         &bytes,

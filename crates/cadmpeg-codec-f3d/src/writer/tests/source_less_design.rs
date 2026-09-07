@@ -373,12 +373,19 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
             .expect("valid entity ID"),
         class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
         optional_slot_present: true,
-        module: Some(crate::records::DESIGN_MODULE_SKETCH.to_owned()),
-        record_reference: Some(584),
-        record_reference_offset: None,
-        reference_count_present: true,
-        references: crate::records::ReferenceRun::Unlocated(vec![33, 44]),
-        members: crate::records::ReferenceRun::Unlocated(Vec::new()),
+        registration: crate::records::DesignEntityRegistration::new(
+            Some(crate::records::DESIGN_MODULE_SKETCH.to_owned()),
+            Some(crate::records::SketchHeaderReferences {
+                record_reference: Some(584),
+                record_reference_offset: 0,
+                references: vec![33, 44]
+                    .into_iter()
+                    .map(|value| crate::records::Located { value, offset: 0 })
+                    .collect(),
+            }),
+            crate::records::ReferenceRun::Unlocated(Vec::new()),
+        )
+        .expect("valid module registration"),
     }];
     native.design_record_headers = vec![
         DesignRecordHeader {
@@ -403,7 +410,13 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
         .expect("source-less Design ownership encode");
     {
         let mut native = f3d_native_mut(&mut source_less);
-        native.design_entity_headers[0].module = Some("Body".to_owned());
+        native.design_entity_headers[0].registration =
+            crate::records::DesignEntityRegistration::new(
+                Some("Body".to_owned()),
+                None,
+                crate::records::ReferenceRun::Unlocated(Vec::new()),
+            )
+            .expect("body registration");
     }
     let error = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -425,11 +438,15 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
         native.design_entity_headers[0].declared_reference_count(),
         Some(2)
     );
-    assert_eq!(native.design_entity_headers[0].record_reference, Some(584));
     assert_eq!(
         native.design_entity_headers[0]
-            .references
-            .values()
+            .sketch_references()
+            .and_then(|list| list.record_reference),
+        Some(584)
+    );
+    assert_eq!(
+        native.design_entity_headers[0]
+            .reference_values()
             .copied()
             .collect::<Vec<_>>(),
         [33, 44]
@@ -538,12 +555,19 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             .expect("valid entity ID"),
         class_tag: crate::records::DesignClassTag::try_from("256".to_owned()).unwrap(),
         optional_slot_present: true,
-        module: Some(crate::records::DESIGN_MODULE_SKETCH.to_owned()),
-        record_reference: Some(584),
-        record_reference_offset: None,
-        reference_count_present: true,
-        references: crate::records::ReferenceRun::Unlocated(vec![33]),
-        members: crate::records::ReferenceRun::Unlocated(Vec::new()),
+        registration: crate::records::DesignEntityRegistration::new(
+            Some(crate::records::DESIGN_MODULE_SKETCH.to_owned()),
+            Some(crate::records::SketchHeaderReferences {
+                record_reference: Some(584),
+                record_reference_offset: 0,
+                references: vec![33]
+                    .into_iter()
+                    .map(|value| crate::records::Located { value, offset: 0 })
+                    .collect(),
+            }),
+            crate::records::ReferenceRun::Unlocated(Vec::new()),
+        )
+        .expect("valid module registration"),
     }];
     native.sketch_points = vec![SketchPoint {
         id: "generated:sketch-point#0".into(),

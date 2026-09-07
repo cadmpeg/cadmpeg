@@ -1000,42 +1000,15 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
                 .and_then(|modules| modules.get(&entity_suffix))
                 .cloned();
             let in_sketch_module = module.as_deref() == Some(DESIGN_MODULE_SKETCH);
-            let (
-                record_reference,
-                record_reference_offset,
-                reference_count_present,
-                references,
-                record_end,
-            ) = if in_sketch_module {
-                decode_reference_list(bytes, end).map_or_else(
-                    || {
-                        (
-                            None,
-                            None,
-                            false,
-                            crate::records::ReferenceRun::Unlocated(Vec::new()),
-                            end,
-                        )
-                    },
-                    |list| {
-                        (
-                            list.record_reference.value,
-                            Some(list.record_reference.offset),
-                            true,
-                            crate::records::ReferenceRun::Located(list.references),
-                            list.end,
-                        )
-                    },
-                )
-            } else {
-                (
-                    None,
-                    None,
-                    false,
-                    crate::records::ReferenceRun::Unlocated(Vec::new()),
-                    end,
-                )
-            };
+            let list = in_sketch_module
+                .then(|| decode_reference_list(bytes, end))
+                .flatten();
+            let record_end = list.as_ref().map_or(end, |list| list.end);
+            let references = list.map(|list| crate::records::SketchHeaderReferences {
+                record_reference: list.record_reference.value,
+                record_reference_offset: list.record_reference.offset,
+                references: list.references,
+            });
             let members = if genesis_form && in_sketch_module {
                 parse_sketch_member_run(bytes, record_end, entity_suffix)
             } else {
@@ -1048,12 +1021,12 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
                 entity_id,
                 class_tag,
                 optional_slot_present,
-                module,
-                record_reference,
-                record_reference_offset,
-                reference_count_present,
-                references,
-                members: crate::records::ReferenceRun::Located(members),
+                registration: crate::records::DesignEntityRegistration::new(
+                    module,
+                    references,
+                    crate::records::ReferenceRun::Located(members),
+                )
+                .map_err(CodecError::Malformed)?,
             });
         }
 
@@ -1110,12 +1083,12 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
                 ),
                 class_tag,
                 optional_slot_present: false,
-                module: Some(DESIGN_MODULE_SKETCH.to_owned()),
-                record_reference: None,
-                record_reference_offset: None,
-                reference_count_present: false,
-                references: crate::records::ReferenceRun::Unlocated(Vec::new()),
-                members: crate::records::ReferenceRun::Located(members),
+                registration: crate::records::DesignEntityRegistration::new(
+                    Some(DESIGN_MODULE_SKETCH.to_owned()),
+                    None,
+                    crate::records::ReferenceRun::Located(members),
+                )
+                .map_err(CodecError::Malformed)?,
             });
         }
     }
@@ -1137,8 +1110,7 @@ pub fn decode_record_headers(
             let scope = native_stream(&entity.id)?;
             Some(
                 entity
-                    .references
-                    .values()
+                    .reference_values()
                     .map(move |record_index| (scope.to_owned(), *record_index)),
             )
         })
@@ -3028,7 +3000,7 @@ pub(crate) fn bind_sketch_graph(
         ) else {
             continue;
         };
-        for record_index in entity.members.values() {
+        for record_index in entity.member_values() {
             if !typed_records.contains(&(scope, *record_index)) {
                 continue;
             }

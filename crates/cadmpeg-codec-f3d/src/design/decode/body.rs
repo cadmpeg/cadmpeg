@@ -97,7 +97,7 @@ pub fn decode_body_bounds(
     let mut out = Vec::new();
     for entity in entities
         .iter()
-        .filter(|entity| entity.module.as_deref() == Some(DESIGN_MODULE_BODY))
+        .filter(|entity| entity.module() == Some(DESIGN_MODULE_BODY))
     {
         let Some(stream) = native_stream(&entity.id) else {
             continue;

@@ -324,16 +324,9 @@ fn segment_entity_runs_preserve_authored_and_located_wire() {
 
 #[test]
 fn entity_header_runs_derive_counts_and_preserve_absent_reference_slots() {
-    let prefix = r#"{"id":"header","byte_offset":0,"entity_suffix":1,"entity_id":"0_1","class_tag":"256","optional_slot_present":false"#;
+    let prefix = r#"{"id":"header","byte_offset":0,"entity_suffix":1,"entity_id":"0_1","class_tag":"256","optional_slot_present":false,"module":"MSketch""#;
     for (fields, references, offsets, members) in [
         ("", "[]", "[]", ""),
-        ("", "[34]", "[]", ""),
-        (
-            r#","record_reference":33,"declared_reference_count":1"#,
-            "[34]",
-            "[]",
-            "",
-        ),
         (
             r#","record_reference_offset":40,"declared_reference_count":0"#,
             "[]",
@@ -367,20 +360,6 @@ fn entity_header_runs_derive_counts_and_preserve_absent_reference_slots() {
             .is_err()
         );
     }
-}
-
-#[test]
-fn empty_reference_runs_compare_equal_across_wire_round_trip() {
-    let wire = r#"{"id":"header","byte_offset":0,"entity_suffix":1,"entity_id":"0_1","class_tag":"256","optional_slot_present":false,"declared_reference_count":0,"reference_indices":[],"reference_offsets":[]}"#;
-    let mut header: crate::records::DesignEntityHeader =
-        serde_json::from_str(wire).expect("empty header");
-    header.references = crate::records::ReferenceRun::Located(Vec::new());
-    header.members = crate::records::ReferenceRun::Located(Vec::new());
-    let serialized = serde_json::to_string(&header).expect("empty located runs");
-    assert_eq!(serialized, wire);
-    let decoded: crate::records::DesignEntityHeader =
-        serde_json::from_str(&serialized).expect("empty run wire");
-    assert_eq!(decoded, header);
 }
 
 #[test]

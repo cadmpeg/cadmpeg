@@ -1860,12 +1860,12 @@ pub(super) fn continue_fixed_kind_operations(
             .expect("valid entity ID"),
         class_tag: crate::records::DesignClassTag::try_from("366".to_owned()).unwrap(),
         optional_slot_present: false,
-        module: Some("MSketch".into()),
-        record_reference: None,
-        record_reference_offset: None,
-        reference_count_present: false,
-        references: crate::records::ReferenceRun::Unlocated(Vec::new()),
-        members: crate::records::ReferenceRun::Unlocated(Vec::new()),
+        registration: crate::records::DesignEntityRegistration::new(
+            Some("MSketch".into()),
+            None,
+            crate::records::ReferenceRun::Unlocated(Vec::new()),
+        )
+        .expect("valid module registration"),
     };
     bind_parameter_companion_payloads(
         std::slice::from_mut(&mut companion),
