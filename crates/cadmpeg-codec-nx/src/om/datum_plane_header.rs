@@ -374,7 +374,7 @@ mod tests {
             assert_eq!(
                 frame
                     .objects()
-                    .map(|(_, _, offset)| offset)
+                    .map(|(_, (), offset)| offset)
                     .collect::<Vec<_>>(),
                 [object_offset]
             );
@@ -400,7 +400,7 @@ mod tests {
             assert_eq!(
                 frame
                     .objects()
-                    .map(|(_, _, offset)| offset)
+                    .map(|(_, (), offset)| offset)
                     .collect::<Vec<_>>(),
                 [110, second_offset]
             );
