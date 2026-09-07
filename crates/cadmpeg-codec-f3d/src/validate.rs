@@ -6575,9 +6575,7 @@ fn validate_entity_selection_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     == Some(&operand.record_index)
         }) && header.is_some_and(|header| {
             header.byte_offset == operand.byte_offset && header.class_tag == operand.class_tag
-        }) && valid_design_guid(&operand.asset_id)
-            && valid_design_guid(&operand.context_id)
-            && operand.identity_record_index == operand.record_index.saturating_add(3)
+        }) && operand.identity_record_index == operand.record_index.saturating_add(3)
             && (class_338_curve_identity
                 || matches!(
                 (operand.primary_identity_offset, operand.secondary),

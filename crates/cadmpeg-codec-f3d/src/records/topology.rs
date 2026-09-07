@@ -1544,11 +1544,11 @@ pub struct DesignEntitySelectionOperand {
     /// Source per-file dynamic primary class tag.
     pub class_tag: DesignClassTag,
     /// Asset UUID qualifying the selection namespace.
-    pub asset_id: String,
+    pub asset_id: DesignGuidText,
     /// Byte offset of the asset identifier's UTF-16LE code units.
     pub asset_id_offset: u64,
     /// UUID of the selection context.
-    pub context_id: String,
+    pub context_id: DesignGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
     pub context_id_offset: u64,
     /// Nested indexed record that carries the persistent entity identity.
@@ -1650,9 +1650,9 @@ impl TryFrom<DesignEntitySelectionOperandWire> for DesignEntitySelectionOperand 
             record_index: wire.record_index,
             byte_offset: wire.byte_offset,
             class_tag: wire.class_tag.try_into()?,
-            asset_id: wire.asset_id,
+            asset_id: wire.asset_id.try_into()?,
             asset_id_offset: wire.asset_id_offset,
-            context_id: wire.context_id,
+            context_id: wire.context_id.try_into()?,
             context_id_offset: wire.context_id_offset,
             identity_record_index: wire.identity_record_index,
             identity_record_offset: wire.identity_record_offset,
@@ -1689,9 +1689,9 @@ impl From<DesignEntitySelectionOperand> for DesignEntitySelectionOperandWire {
             record_index: record.record_index,
             byte_offset: record.byte_offset,
             class_tag: record.class_tag.into(),
-            asset_id: record.asset_id,
+            asset_id: record.asset_id.into(),
             asset_id_offset: record.asset_id_offset,
-            context_id: record.context_id,
+            context_id: record.context_id.into(),
             context_id_offset: record.context_id_offset,
             identity_record_index: record.identity_record_index,
             identity_record_offset: record.identity_record_offset,

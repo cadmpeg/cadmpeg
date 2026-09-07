@@ -29,7 +29,7 @@ fn parameter_discriminator_preserves_wire_and_rejects_partial_location() {
 
 #[test]
 fn selection_secondary_identities_preserve_wire_and_reject_partial_locations() {
-    let fields = r#""record_index":2,"byte_offset":0,"class_tag":"365","asset_id":"asset","asset_id_offset":100,"context_id":"context","context_id_offset":150,"identity_record_index":5,"identity_record_offset":180,"primary_identity":183,"primary_identity_offset":209"#;
+    let fields = r#""record_index":2,"byte_offset":0,"class_tag":"365","asset_id":"0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d","asset_id_offset":100,"context_id":"1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e","context_id_offset":150,"identity_record_index":5,"identity_record_offset":180,"primary_identity":183,"primary_identity_offset":209"#;
     let suffix = r#","next_record_index":6,"next_byte_offset":225}"#;
     for prefix in ["{", "{\"id\":\"operand\",\"scope_record_index\":1,\"group_record_index\":2,\"group_member_ordinal\":0,"] {
         for identities in ["", ",\"secondary_identity\":249,\"secondary_identity_offset\":217", ",\"secondary_identity\":249,\"secondary_identity_offset\":217,\"curve_secondary_identity\":77,\"curve_secondary_identity_offset\":201"] {
@@ -60,6 +60,21 @@ fn selection_secondary_identities_preserve_wire_and_reject_partial_locations() {
         };
         assert!(error.contains("secondary_identity"));
         assert!(error.contains("curve_secondary_identity"));
+        for guid in [
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e",
+        ] {
+            let wire = format!("{prefix}{fields}{suffix}").replace(guid, "not-a-guid");
+            if prefix != "{" {
+                let error =
+                    serde_json::from_str::<crate::records::topology::DesignEntitySelectionOperand>(
+                        &wire,
+                    )
+                    .expect_err("non-GUID entity selection identity")
+                    .to_string();
+                assert!(error.contains("GUID"), "{error}");
+            }
+        }
     }
 }
 

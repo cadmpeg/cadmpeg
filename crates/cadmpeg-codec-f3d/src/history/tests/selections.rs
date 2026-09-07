@@ -1660,8 +1660,8 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
         serde_json::from_value(serde_json::json!({
             "id": "f3d:Design/BulkStream.dat:operand#40", "scope_record_index": 42,
             "group_record_index": 30, "group_member_ordinal": 0, "record_index": 40,
-            "byte_offset": 0, "class_tag": "313", "asset_id": "asset",
-            "asset_id_offset": 0, "context_id": "context", "context_id_offset": 0,
+            "byte_offset": 0, "class_tag": "313", "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+            "asset_id_offset": 0, "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e", "context_id_offset": 0,
             "identity_record_index": 41, "identity_record_offset": 0,
             "primary_identity": 10, "primary_identity_offset": 0,
             "next_record_index": 42, "next_byte_offset": 0

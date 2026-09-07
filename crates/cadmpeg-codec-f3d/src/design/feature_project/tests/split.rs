@@ -127,9 +127,15 @@ fn direct_single_identity_split_face_member_projects_historical_edge_path() {
         record_index: 101,
         byte_offset: 0,
         class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
-        asset_id: "asset".into(),
+        asset_id: crate::records::DesignGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
         asset_id_offset: 0,
-        context_id: "context".into(),
+        context_id: crate::records::DesignGuidText::try_from(
+            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+        )
+        .unwrap(),
         context_id_offset: 0,
         identity_record_index: 102,
         identity_record_offset: 0,
