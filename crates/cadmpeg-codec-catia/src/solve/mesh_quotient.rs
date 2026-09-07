@@ -4680,13 +4680,63 @@ fn endpoint_configuration_directions(
 #[derive(Clone)]
 pub(crate) struct MeshEndpointRelationChoice {
     pub(crate) id: usize,
-    pub(crate) assignments: Vec<usize>,
-    pub(crate) edge_pairs: MeshFaceEndpointConfiguration,
+    pub(crate) selection: MeshEndpointRelationSelection,
 }
+/// Enumerated endpoint relation or deferred enumeration.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) enum MeshEndpointRelationSelection {
+    Enumerated {
+        assignments: Vec<usize>,
+        edge_pairs: MeshFaceEndpointConfiguration,
+    },
+    Deferred,
+}
+
+impl MeshEndpointRelationSelection {
+    /// Explicit edge constraints of this selection.
+    pub(crate) fn edge_pairs(&self) -> &[(usize, [usize; 2])] {
+        match self {
+            Self::Enumerated { edge_pairs, .. } => edge_pairs,
+            Self::Deferred => &[],
+        }
+    }
+
+    fn is_unconstrained(&self) -> bool {
+        match self {
+            Self::Enumerated { edge_pairs, .. } => edge_pairs.is_empty(),
+            Self::Deferred => true,
+        }
+    }
+
+    /// Selection with canonical assignment and endpoint ordering.
+    pub(crate) fn normalized(&self) -> Self {
+        match self {
+            Self::Enumerated {
+                assignments,
+                edge_pairs,
+            } => {
+                let mut assignments = assignments.clone();
+                assignments.sort_unstable();
+                assignments.dedup();
+                let mut edge_pairs = edge_pairs.clone();
+                for (_, pair) in &mut edge_pairs {
+                    pair.sort_unstable();
+                }
+                edge_pairs.sort_unstable();
+                Self::Enumerated {
+                    assignments,
+                    edge_pairs,
+                }
+            }
+            Self::Deferred => Self::Deferred,
+        }
+    }
+}
+
 type MeshEndpointRelationSelections = Vec<Vec<usize>>;
 pub(crate) type MeshEndpointRelationStateSignature = (
     Vec<Option<[usize; 2]>>,
-    Vec<Vec<(Vec<usize>, Vec<(usize, [usize; 2])>)>>,
+    Vec<Vec<MeshEndpointRelationSelection>>,
 );
 type MeshEndpointSolutionPredicate<'a> = dyn Fn(&[Option<[usize; 2]>]) -> bool + 'a;
 type MeshFixedDirectionOption = (Vec<Vec<bool>>, MeshQuotient, Vec<Option<bool>>);
@@ -4710,21 +4760,7 @@ fn raw_endpoint_relation_state_signature(
         .map(|choices| {
             let mut choices = choices
                 .iter()
-                .map(|choice| {
-                    let mut assignments = choice.assignments.clone();
-                    assignments.sort_unstable();
-                    assignments.dedup();
-                    let mut edge_pairs = choice
-                        .edge_pairs
-                        .iter()
-                        .map(|&(edge, mut pair)| {
-                            pair.sort_unstable();
-                            (edge, pair)
-                        })
-                        .collect::<Vec<_>>();
-                    edge_pairs.sort_unstable();
-                    (assignments, edge_pairs)
-                })
+                .map(|choice| choice.selection.normalized())
                 .collect::<Vec<_>>();
             choices.sort_unstable();
             choices
@@ -4755,17 +4791,17 @@ fn relation_coordinate_candidate_domains(
     if assigned.len() != base_candidates.len() {
         return None;
     }
-    let has_unknown_choice = domains
+    let has_unconstrained_choice = domains
         .iter()
         .flatten()
-        .any(|choice| choice.edge_pairs.is_empty());
+        .any(|choice| choice.selection.is_unconstrained());
     let mut candidates = base_candidates.to_vec();
     let mut possible = (0..base_candidates.len())
         .map(|_| Vec::<[usize; 2]>::new())
         .collect::<Vec<_>>();
-    if !has_unknown_choice {
+    if !has_unconstrained_choice {
         for choice in domains.iter().flatten() {
-            for &(edge, pair) in &choice.edge_pairs {
+            for &(edge, pair) in choice.selection.edge_pairs() {
                 possible.get_mut(edge)?.push(pair);
             }
         }
@@ -4773,7 +4809,7 @@ fn relation_coordinate_candidate_domains(
     for (edge, (assigned, base)) in assigned.iter().zip(base_candidates).enumerate() {
         if let Some(pair) = assigned {
             candidates[edge].retain(|candidate| same_unordered_pair(*candidate, *pair));
-        } else if !has_unknown_choice && !possible[edge].is_empty() {
+        } else if !has_unconstrained_choice && !possible[edge].is_empty() {
             candidates[edge].retain(|candidate| {
                 possible[edge]
                     .iter()
@@ -4826,7 +4862,8 @@ fn canonical_endpoint_relation_key(
         .iter()
         .map(|&edge| {
             choice
-                .edge_pairs
+                .selection
+                .edge_pairs()
                 .iter()
                 .find_map(|&(candidate, pair)| (candidate == edge).then_some(pair))
                 .map(|mut pair| {
@@ -4847,7 +4884,7 @@ fn build_endpoint_relation_constraints(
     let mut edge_faces = HashMap::<usize, BTreeSet<usize>>::new();
     for (face, choices) in domains.iter().enumerate() {
         for choice in choices {
-            for &(edge, _) in &choice.edge_pairs {
+            for &(edge, _) in choice.selection.edge_pairs() {
                 edge_faces.entry(edge).or_default().insert(face);
             }
         }
@@ -4873,7 +4910,8 @@ fn build_endpoint_relation_constraints(
         let left_complete = domains[face].iter().all(|choice| {
             edges.iter().all(|edge| {
                 choice
-                    .edge_pairs
+                    .selection
+                    .edge_pairs()
                     .iter()
                     .any(|(candidate, _)| candidate == edge)
             })
@@ -4881,7 +4919,8 @@ fn build_endpoint_relation_constraints(
         let right_complete = domains[neighbor].iter().all(|choice| {
             edges.iter().all(|edge| {
                 choice
-                    .edge_pairs
+                    .selection
+                    .edge_pairs()
                     .iter()
                     .any(|(candidate, _)| candidate == edge)
             })
@@ -4934,18 +4973,17 @@ fn build_endpoint_relation_constraints(
                     )
                     .ok()?;
                     for other in &domains[neighbor] {
-                        let compatible = edges.iter().all(|&edge| {
-                            let left = choice
-                                .edge_pairs
-                                .iter()
-                                .find_map(|&(candidate, pair)| (candidate == edge).then_some(pair));
-                            let right = other
-                                .edge_pairs
-                                .iter()
-                                .find_map(|&(candidate, pair)| (candidate == edge).then_some(pair));
-                            left.zip(right)
-                                .is_none_or(|(left, right)| same_unordered_pair(left, right))
-                        });
+                        let compatible =
+                            edges.iter().all(|&edge| {
+                                let left = choice.selection.edge_pairs().iter().find_map(
+                                    |&(candidate, pair)| (candidate == edge).then_some(pair),
+                                );
+                                let right = other.selection.edge_pairs().iter().find_map(
+                                    |&(candidate, pair)| (candidate == edge).then_some(pair),
+                                );
+                                left.zip(right)
+                                    .is_none_or(|(left, right)| same_unordered_pair(left, right))
+                            });
                         if compatible {
                             mask[other.id / 64] |= 1u64 << (other.id % 64);
                         }
@@ -4987,7 +5025,7 @@ fn propagate_endpoint_relation_domains(
             }
             let before = choices.len();
             choices.retain(|choice| {
-                choice.edge_pairs.iter().all(|&(edge, pair)| {
+                choice.selection.edge_pairs().iter().all(|&(edge, pair)| {
                     assigned[edge].is_none_or(|selected| same_unordered_pair(selected, pair))
                 })
             });
@@ -5083,7 +5121,7 @@ fn propagate_endpoint_relation_domains(
             let mut pairs = HashMap::<usize, HashSet<[usize; 2]>>::new();
             let mut counts = HashMap::<usize, usize>::new();
             for choice in choices {
-                for &(edge, pair) in &choice.edge_pairs {
+                for &(edge, pair) in choice.selection.edge_pairs() {
                     pairs.entry(edge).or_default().insert(pair);
                     *counts.entry(edge).or_default() += 1;
                 }
@@ -5109,7 +5147,7 @@ fn propagate_endpoint_relation_domains(
             if choices.len() != 1 {
                 continue;
             }
-            for &(edge, pair) in &choices[0].edge_pairs {
+            for &(edge, pair) in choices[0].selection.edge_pairs() {
                 match assigned[edge] {
                     Some(selected) if !same_unordered_pair(selected, pair) => return false,
                     Some(_) => {}
@@ -5172,7 +5210,7 @@ where
     if domains
         .iter()
         .flatten()
-        .all(|choice| !choice.edge_pairs.is_empty())
+        .all(|choice| !choice.selection.is_unconstrained())
     {
         let mut possible_points = assigned
             .iter()
@@ -5184,7 +5222,13 @@ where
             domains
                 .iter()
                 .flatten()
-                .flat_map(|choice| choice.edge_pairs.iter().flat_map(|(_, pair)| pair))
+                .flat_map(|choice| {
+                    choice
+                        .selection
+                        .edge_pairs()
+                        .iter()
+                        .flat_map(|(_, pair)| pair)
+                })
                 .copied(),
         );
         if possible_points.len() < point_count {
@@ -5237,7 +5281,7 @@ where
             let priority_count = priority_edges.map_or(0, |edges| {
                 choices
                     .iter()
-                    .flat_map(|choice| choice.edge_pairs.iter().map(|(edge, _)| *edge))
+                    .flat_map(|choice| choice.selection.edge_pairs().iter().map(|(edge, _)| *edge))
                     .filter(|edge| edges.get(*edge).copied().unwrap_or(false))
                     .collect::<HashSet<_>>()
                     .len()
@@ -5253,7 +5297,7 @@ where
     else {
         let mut edge_pairs = assigned;
         for choice in domains.iter().filter_map(|choices| choices.first()) {
-            for &(edge, pair) in &choice.edge_pairs {
+            for &(edge, pair) in choice.selection.edge_pairs() {
                 match edge_pairs[edge] {
                     Some(selected) if !same_unordered_pair(selected, pair) => return false,
                     Some(_) => {}
@@ -5269,8 +5313,10 @@ where
             .enumerate()
             .map(|(face, choices)| {
                 let choice = choices.first()?;
-                if choice.assignments != [usize::MAX] {
-                    return Some(choice.assignments.clone());
+                if let MeshEndpointRelationSelection::Enumerated { assignments, .. } =
+                    &choice.selection
+                {
+                    return Some(assignments.clone());
                 }
                 let viable = face_assignments[face]
                     .iter()
@@ -5301,7 +5347,8 @@ where
     for choices in &domains {
         for choice in choices {
             let points = choice
-                .edge_pairs
+                .selection
+                .edge_pairs()
                 .iter()
                 .flat_map(|(_, pair)| pair)
                 .copied()
@@ -5315,7 +5362,8 @@ where
     branch_choices.sort_unstable_by(|left, right| {
         let score = |choice: &MeshEndpointRelationChoice| {
             choice
-                .edge_pairs
+                .selection
+                .edge_pairs()
                 .iter()
                 .flat_map(|(_, pair)| pair)
                 .copied()
@@ -5403,13 +5451,16 @@ fn collect_endpoint_relation_face_choices(
             assignments.dedup();
             MeshEndpointRelationChoice {
                 id: 0,
-                assignments,
-                edge_pairs,
+                selection: MeshEndpointRelationSelection::Enumerated {
+                    assignments,
+                    edge_pairs,
+                },
             }
         })
         .collect::<Vec<_>>();
     choices.sort_unstable_by(|left, right| {
-        (&left.edge_pairs, &left.assignments).cmp(&(&right.edge_pairs, &right.assignments))
+        (left.selection.edge_pairs(), &left.selection)
+            .cmp(&(right.selection.edge_pairs(), &right.selection))
     });
     if unknown {
         // A stopped enumeration is not evidence that the assignment has no
@@ -5417,8 +5468,7 @@ fn collect_endpoint_relation_face_choices(
         // assignment to the complete endpoint search.
         choices.push(MeshEndpointRelationChoice {
             id: 0,
-            assignments: vec![usize::MAX],
-            edge_pairs: Vec::new(),
+            selection: MeshEndpointRelationSelection::Deferred,
         });
     }
     for (id, choice) in choices.iter_mut().enumerate() {
@@ -8899,13 +8949,17 @@ fn relation_coordinate_candidates_keep_only_surviving_pair_values() {
     let domains = vec![
         vec![MeshEndpointRelationChoice {
             id: 0,
-            assignments: vec![0],
-            edge_pairs: vec![(0, [0, 1]), (1, [1, 2])],
+            selection: MeshEndpointRelationSelection::Enumerated {
+                assignments: vec![0],
+                edge_pairs: vec![(0, [0, 1]), (1, [1, 2])],
+            },
         }],
         vec![MeshEndpointRelationChoice {
             id: 1,
-            assignments: vec![0],
-            edge_pairs: vec![(0, [0, 1])],
+            selection: MeshEndpointRelationSelection::Enumerated {
+                assignments: vec![0],
+                edge_pairs: vec![(0, [0, 1])],
+            },
         }],
     ];
     let assigned = vec![None, None];
@@ -8916,8 +8970,7 @@ fn relation_coordinate_candidates_keep_only_surviving_pair_values() {
 
     let unknown_domains = vec![vec![MeshEndpointRelationChoice {
         id: 0,
-        assignments: vec![usize::MAX],
-        edge_pairs: Vec::new(),
+        selection: MeshEndpointRelationSelection::Deferred,
     }]];
     assert_eq!(
         relation_coordinate_candidate_domains(&unknown_domains, &assigned, &base_candidates),
@@ -9210,10 +9263,10 @@ fn endpoint_relation_keeps_stopped_face_assignments() {
     assert!(covered[0]);
     assert!(choices
         .iter()
-        .any(|choice| { choice.assignments == [usize::MAX] && choice.edge_pairs.is_empty() }));
+        .any(|choice| { matches!(choice.selection, MeshEndpointRelationSelection::Deferred) }));
     assert!(choices
         .iter()
-        .any(|choice| choice.assignments == [0] && choice.edge_pairs == [(0, [0, 0])]));
+        .any(|choice| matches!(&choice.selection, MeshEndpointRelationSelection::Enumerated { assignments, edge_pairs } if assignments == &[0] && edge_pairs == &[(0, [0, 0])])));
 }
 
 #[test]
@@ -9222,38 +9275,50 @@ fn raw_endpoint_relation_state_signature_ignores_local_order() {
         vec![
             MeshEndpointRelationChoice {
                 id: 7,
-                assignments: vec![2, 0, 2],
-                edge_pairs: vec![(1, [3, 2]), (0, [1, 0])],
+                selection: MeshEndpointRelationSelection::Enumerated {
+                    assignments: vec![2, 0, 2],
+                    edge_pairs: vec![(1, [3, 2]), (0, [1, 0])],
+                },
             },
             MeshEndpointRelationChoice {
                 id: 3,
-                assignments: vec![4],
-                edge_pairs: vec![(2, [5, 4])],
+                selection: MeshEndpointRelationSelection::Enumerated {
+                    assignments: vec![4],
+                    edge_pairs: vec![(2, [5, 4])],
+                },
             },
         ],
         vec![MeshEndpointRelationChoice {
             id: 9,
-            assignments: vec![3, 1],
-            edge_pairs: vec![(0, [1, 0])],
+            selection: MeshEndpointRelationSelection::Enumerated {
+                assignments: vec![3, 1],
+                edge_pairs: vec![(0, [1, 0])],
+            },
         }],
     ];
     let right = vec![
         vec![
             MeshEndpointRelationChoice {
                 id: 30,
-                assignments: vec![4],
-                edge_pairs: vec![(2, [4, 5])],
+                selection: MeshEndpointRelationSelection::Enumerated {
+                    assignments: vec![4],
+                    edge_pairs: vec![(2, [4, 5])],
+                },
             },
             MeshEndpointRelationChoice {
                 id: 70,
-                assignments: vec![0, 2],
-                edge_pairs: vec![(0, [0, 1]), (1, [2, 3])],
+                selection: MeshEndpointRelationSelection::Enumerated {
+                    assignments: vec![0, 2],
+                    edge_pairs: vec![(0, [0, 1]), (1, [2, 3])],
+                },
             },
         ],
         vec![MeshEndpointRelationChoice {
             id: 90,
-            assignments: vec![1, 3],
-            edge_pairs: vec![(0, [0, 1])],
+            selection: MeshEndpointRelationSelection::Enumerated {
+                assignments: vec![1, 3],
+                edge_pairs: vec![(0, [0, 1])],
+            },
         }],
     ];
     let left_assigned = vec![Some([3, 2]), None, Some([5, 4])];
@@ -9271,25 +9336,33 @@ fn endpoint_relation_requires_one_joint_support_for_all_shared_edges() {
         vec![
             MeshEndpointRelationChoice {
                 id: 0,
-                assignments: vec![0],
-                edge_pairs: vec![(0, [0, 1]), (1, [2, 3])],
+                selection: MeshEndpointRelationSelection::Enumerated {
+                    assignments: vec![0],
+                    edge_pairs: vec![(0, [0, 1]), (1, [2, 3])],
+                },
             },
             MeshEndpointRelationChoice {
                 id: 1,
-                assignments: vec![1],
-                edge_pairs: vec![(0, [4, 5]), (1, [6, 7])],
+                selection: MeshEndpointRelationSelection::Enumerated {
+                    assignments: vec![1],
+                    edge_pairs: vec![(0, [4, 5]), (1, [6, 7])],
+                },
             },
         ],
         vec![
             MeshEndpointRelationChoice {
                 id: 0,
-                assignments: vec![0],
-                edge_pairs: vec![(0, [0, 1]), (1, [6, 7])],
+                selection: MeshEndpointRelationSelection::Enumerated {
+                    assignments: vec![0],
+                    edge_pairs: vec![(0, [0, 1]), (1, [6, 7])],
+                },
             },
             MeshEndpointRelationChoice {
                 id: 1,
-                assignments: vec![1],
-                edge_pairs: vec![(0, [4, 5]), (1, [6, 7])],
+                selection: MeshEndpointRelationSelection::Enumerated {
+                    assignments: vec![1],
+                    edge_pairs: vec![(0, [4, 5]), (1, [6, 7])],
+                },
             },
         ],
     ];
@@ -9326,25 +9399,33 @@ fn endpoint_relation_treats_optional_shared_edges_as_wildcards() {
         vec![
             MeshEndpointRelationChoice {
                 id: 0,
-                assignments: vec![0],
-                edge_pairs: vec![(0, [0, 1])],
+                selection: MeshEndpointRelationSelection::Enumerated {
+                    assignments: vec![0],
+                    edge_pairs: vec![(0, [0, 1])],
+                },
             },
             MeshEndpointRelationChoice {
                 id: 1,
-                assignments: vec![1],
-                edge_pairs: vec![(0, [2, 3])],
+                selection: MeshEndpointRelationSelection::Enumerated {
+                    assignments: vec![1],
+                    edge_pairs: vec![(0, [2, 3])],
+                },
             },
         ],
         vec![
             MeshEndpointRelationChoice {
                 id: 0,
-                assignments: vec![0],
-                edge_pairs: vec![(0, [4, 5])],
+                selection: MeshEndpointRelationSelection::Enumerated {
+                    assignments: vec![0],
+                    edge_pairs: vec![(0, [4, 5])],
+                },
             },
             MeshEndpointRelationChoice {
                 id: 1,
-                assignments: vec![1],
-                edge_pairs: Vec::new(),
+                selection: MeshEndpointRelationSelection::Enumerated {
+                    assignments: vec![1],
+                    edge_pairs: Vec::new(),
+                },
             },
         ],
     ];
