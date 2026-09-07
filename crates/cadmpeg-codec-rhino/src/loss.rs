@@ -13,7 +13,7 @@
 //! leaves only the per-instance message to the caller. Local codes appear on
 //! [`LossNote::code`] under the `rhino` namespace.
 //!
-//! [`RhinoLossCode::shared_code`] is an exhaustive match with no fall-through
+//! [`RhinoLossCode::shared_taxonomy`] is an exhaustive match with no fall-through
 //! arm. A default arm would silently assign a category to a code added later,
 //! and the categories this codec spans (geometry, annotation, attribute,
 //! diagnostic) have no honest common default.
@@ -135,7 +135,8 @@ pub enum RhinoLossCode {
 
 impl RhinoLossCode {
     /// Every code, in declaration order.
-    pub const ALL: &'static [RhinoLossCode] = &[
+    #[cfg(test)]
+    const ALL: &'static [RhinoLossCode] = &[
         Self::ContainerScanDiagnostic,
         Self::IntegrityFailure,
         Self::PresentationRecordDropped,

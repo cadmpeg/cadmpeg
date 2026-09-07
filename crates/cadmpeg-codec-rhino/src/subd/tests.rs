@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(dead_code, clippy::disallowed_methods)]
+#![allow(clippy::disallowed_methods)]
 
 use super::*;
 use crate::objects::ClassUserdata;

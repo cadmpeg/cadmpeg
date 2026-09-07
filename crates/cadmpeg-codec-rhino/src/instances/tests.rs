@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(dead_code, clippy::disallowed_methods)]
+#![allow(clippy::disallowed_methods)]
 
 use super::{
     anonymous, file_reference as parse_file_reference, parse_reference, scale_translation,
