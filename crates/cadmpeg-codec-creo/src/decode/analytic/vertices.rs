@@ -388,13 +388,34 @@ fn carrier_failure_kind(diagnostics: CarrierSolveDiagnostics) -> Option<CarrierF
     }
 }
 
-fn carrier_kind(carrier: CarrierEquation) -> &'static str {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CarrierKind {
+    Plane,
+    Cylinder,
+    Cone,
+    Sphere,
+    Torus,
+}
+
+impl std::fmt::Display for CarrierKind {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Plane => "plane",
+            Self::Cylinder => "cylinder",
+            Self::Cone => "cone",
+            Self::Sphere => "sphere",
+            Self::Torus => "torus",
+        })
+    }
+}
+
+fn carrier_kind(carrier: CarrierEquation) -> CarrierKind {
     match carrier {
-        CarrierEquation::Plane(_) => "plane",
-        CarrierEquation::Cylinder(_) => "cylinder",
-        CarrierEquation::Cone(_) => "cone",
-        CarrierEquation::Sphere(_) => "sphere",
-        CarrierEquation::Torus(_) => "torus",
+        CarrierEquation::Plane(_) => CarrierKind::Plane,
+        CarrierEquation::Cylinder(_) => CarrierKind::Cylinder,
+        CarrierEquation::Cone(_) => CarrierKind::Cone,
+        CarrierEquation::Sphere(_) => CarrierKind::Sphere,
+        CarrierEquation::Torus(_) => CarrierKind::Torus,
     }
 }
 
@@ -402,7 +423,7 @@ fn carrier_kind(carrier: CarrierEquation) -> &'static str {
 pub struct CarrierVertexDiagnostic {
     pub vertex_id: u32,
     pub incident_face_ids: Vec<u32>,
-    pub carrier_kinds: Vec<&'static str>,
+    pub carrier_kinds: Vec<CarrierKind>,
     pub pair_intersections: usize,
     pub triple_intersections: usize,
     pub valid_candidates: usize,
