@@ -626,7 +626,7 @@ fn decode_component_link(bytes: &[u8], frame: &RecordFrame, stream: &str) -> Opt
     Some(ComponentLink::Root(ActRootComponent {
         id: crate::ids::native_scoped_id(stream, "act-root-component", frame.start),
         record_index: frame.record_index,
-        class_tag: frame.class_tag.clone(),
+        class_tag: frame.class_tag.clone().try_into().ok()?,
         instance_root_record,
         components_root_record,
         registry_flag,

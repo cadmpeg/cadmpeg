@@ -8336,7 +8336,7 @@ pub struct ActRootComponent {
     /// Index of this record within the ACT `BulkStream`.
     pub record_index: u32,
     /// Source per-file dynamic three-digit ASCII class tag naming this record's type.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Record index of the instance registry root.
     pub instance_root_record: u32,
     /// Record index of the components registry root.
@@ -8429,7 +8429,10 @@ impl TryFrom<ActRootComponentWire> for ActRootComponent {
         Ok(Self {
             id: wire.id,
             record_index: wire.record_index,
-            class_tag: wire.class_tag,
+            class_tag: wire
+                .class_tag
+                .try_into()
+                .map_err(|error| format!("class_tag: {error}"))?,
             instance_root_record: wire.instance_root_record,
             components_root_record: wire.components_root_record,
             registry_flag: wire.registry_flag,
@@ -8443,7 +8446,7 @@ impl From<ActRootComponent> for ActRootComponentWire {
         Self {
             id: root.id,
             record_index: root.record_index,
-            class_tag: root.class_tag,
+            class_tag: root.class_tag.into(),
             instance_root_record: root.instance_root_record,
             components_root_record: root.components_root_record,
             registry_flag: root.registry_flag,

@@ -1075,8 +1075,7 @@ fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
         }
         let unique_record_index =
             stream.is_some_and(|stream| record_indices.insert((stream, root.record_index)));
-        let valid =
-            stream.is_some() && unique_record_index && valid_dynamic_class_tag(&root.class_tag);
+        let valid = stream.is_some() && unique_record_index;
         if !valid {
             findings.push(Finding {
                 check: Check::NativeLinks,
