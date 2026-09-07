@@ -476,7 +476,7 @@ fn entity_graph_requires_the_solid_features_root() {
     assert_eq!(entities[0].name, "Sld_Features");
     assert_eq!(references.len(), 1);
     assert_eq!(references[0].source_entity_id, Some(1));
-    assert!(references[0].target_resolved);
+    assert!((references[0].target_entity_id as usize) < entities.len());
 }
 
 #[test]

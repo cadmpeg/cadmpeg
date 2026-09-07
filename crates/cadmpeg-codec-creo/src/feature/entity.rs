@@ -191,8 +191,6 @@ pub struct FeatureEntityReference {
     pub source_entity_id: Option<u32>,
     /// Referenced walker-order entity identifier.
     pub target_entity_id: u32,
-    /// Whether the target identifier exists in the decoded entity table.
-    pub target_resolved: bool,
     /// Byte offset of the `f7` token in the original stream.
     pub offset: usize,
 }
@@ -236,7 +234,6 @@ pub fn entity_graph(payload: &[u8]) -> (Vec<FeatureEntity>, Vec<FeatureEntityRef
             offset: token.offset,
         });
     }
-    let entity_count = entities.len() as u32;
     let entity_by_offset = entities
         .iter()
         .map(|entity| (entity.offset, entity.entity_id))
@@ -253,7 +250,6 @@ pub fn entity_graph(payload: &[u8]) -> (Vec<FeatureEntity>, Vec<FeatureEntityRef
             references.push(FeatureEntityReference {
                 source_entity_id: source,
                 target_entity_id,
-                target_resolved: target_entity_id < entity_count,
                 offset: token.offset,
             });
         }

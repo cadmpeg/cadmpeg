@@ -707,7 +707,7 @@ pub(super) fn feature_entity_reference_records(
             id: format!("creo:allfeatur:entity_reference#{}", reference.offset),
             source_entity_id: reference.source_entity_id,
             target_entity_id: reference.target_entity_id,
-            target_resolved: reference.target_resolved,
+            target_resolved: (reference.target_entity_id as usize) < scan.features.entities.len(),
             offset: reference.offset,
         })
         .collect()

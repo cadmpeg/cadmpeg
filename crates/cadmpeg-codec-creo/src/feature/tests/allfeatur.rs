@@ -287,7 +287,10 @@ fn scan_resolves_allfeatur_walker_order_entity_references() {
     assert_eq!(scan.features.entity_references.len(), 2);
     assert_eq!(scan.features.entity_references[0].source_entity_id, Some(1));
     assert_eq!(scan.features.entity_references[0].target_entity_id, 2);
-    assert!(scan.features.entity_references[0].target_resolved);
+    assert!(
+        (scan.features.entity_references[0].target_entity_id as usize)
+            < scan.features.entities.len()
+    );
     assert_eq!(scan.features.entity_references[1].source_entity_id, Some(2));
     assert_eq!(scan.features.entity_references[1].target_entity_id, 1);
 
