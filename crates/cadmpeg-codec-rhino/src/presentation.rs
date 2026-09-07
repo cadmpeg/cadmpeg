@@ -202,7 +202,8 @@ fn serialize_material_textures<S: serde::Serializer>(
 
 #[derive(Debug, Serialize)]
 struct PhysicallyBasedMaterialRecord {
-    version: i32,
+    #[serde(flatten)]
+    revision: PhysicallyBasedMaterialRevision,
     base_color: [f32; 4],
     brdf: i32,
     subsurface: f64,
@@ -222,7 +223,39 @@ struct PhysicallyBasedMaterialRecord {
     opacity: f64,
     opacity_roughness: f64,
     emission: [f32; 4],
-    alpha: f64,
+}
+
+#[derive(Debug)]
+enum PhysicallyBasedMaterialRevision {
+    V1,
+    V2 { alpha: f64 },
+}
+
+impl PhysicallyBasedMaterialRevision {
+    fn version(&self) -> i32 {
+        match self {
+            Self::V1 => 1,
+            Self::V2 { .. } => 2,
+        }
+    }
+
+    fn alpha(&self) -> f64 {
+        match self {
+            Self::V1 => 1.0,
+            Self::V2 { alpha } => *alpha,
+        }
+    }
+}
+
+impl Serialize for PhysicallyBasedMaterialRevision {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+
+        let mut fields = serializer.serialize_map(Some(2))?;
+        fields.serialize_entry("version", &self.version())?;
+        fields.serialize_entry("alpha", &self.alpha())?;
+        fields.end()
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -1317,14 +1350,16 @@ fn parse_physically_based_material(
     let opacity = read_finite(&mut reader, "opacity")?;
     let opacity_roughness = read_finite(&mut reader, "opacity roughness")?;
     let emission = read_color_f32(&mut reader, "emission")?;
-    let alpha = if version >= 2 {
-        read_finite(&mut reader, "alpha")?
+    let revision = if version == 2 {
+        PhysicallyBasedMaterialRevision::V2 {
+            alpha: read_finite(&mut reader, "alpha")?,
+        }
     } else {
-        1.0
+        PhysicallyBasedMaterialRevision::V1
     };
     reader.skip_remaining()?;
     Ok(PhysicallyBasedMaterialRecord {
-        version,
+        revision,
         base_color,
         brdf,
         subsurface,
@@ -1344,7 +1379,6 @@ fn parse_physically_based_material(
         opacity,
         opacity_roughness,
         emission,
-        alpha,
     })
 }
 
@@ -5853,7 +5887,7 @@ mod tests {
             .expect("outer userdata payload");
         let material = parse_physically_based_material(&bytes, payload.body(), ArchiveVersion::V8)
             .expect("physically based material");
-        assert_eq!(material.version, 2);
+        assert_eq!(material.revision.version(), 2);
         assert_eq!(material.base_color, [0.1, 0.2, 0.3, 0.4]);
         assert_eq!(material.brdf, 1);
         assert_eq!(material.subsurface, 0.5);
@@ -5873,7 +5907,7 @@ mod tests {
         assert_eq!(material.opacity, 13.0);
         assert_eq!(material.opacity_roughness, 14.0);
         assert_eq!(material.emission, [0.11, 0.22, 0.33, 0.44]);
-        assert_eq!(material.alpha, 0.77);
+        assert_eq!(material.revision.alpha(), 0.77);
     }
 
     #[test]
@@ -5883,8 +5917,8 @@ mod tests {
             .expect("outer userdata payload");
         let material = parse_physically_based_material(&bytes, payload.body(), ArchiveVersion::V8)
             .expect("version one physically based material");
-        assert_eq!(material.version, 1);
-        assert_eq!(material.alpha, 1.0);
+        assert_eq!(material.revision.version(), 1);
+        assert_eq!(material.revision.alpha(), 1.0);
     }
 
     fn legacy_rdk_payload(xml: &str, terminated: bool, suffix: &[u8]) -> Vec<u8> {
