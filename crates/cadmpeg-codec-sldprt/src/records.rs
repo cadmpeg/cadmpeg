@@ -817,7 +817,7 @@ pub enum FeatureInputScalarRole {
 }
 
 /// One class declaration in a native feature-input stream.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct FeatureInputClass {
     /// Globally unique deterministic identifier for this declaration.

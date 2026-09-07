@@ -29,3 +29,17 @@ impl Debug for super::Feature {
             .finish()
     }
 }
+
+impl Debug for super::FeatureInputClass {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> Result {
+        formatter
+            .debug_struct("FeatureInputClass")
+            .field("id", &self.id)
+            .field("parent", &self.parent)
+            .field("ordinal", &self.ordinal)
+            .field("offset", &self.offset)
+            .field("name", &self.name)
+            .field("role", &self.role())
+            .finish()
+    }
+}
