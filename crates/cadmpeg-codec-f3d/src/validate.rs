@@ -6447,8 +6447,8 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         .as_ref()
                         .is_some_and(|persistent| {
                             persistent.local_id == member.local_id
-                                && persistent.asset_id.as_str() == member.asset_id
-                                && persistent.context_id.as_str() == member.context_id
+                                && persistent.asset_id == member.asset_id
+                                && persistent.context_id == member.context_id
                         })
             })
             .collect::<Vec<_>>();
@@ -6510,9 +6510,7 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
         }) && member.local_id_offset == member.byte_offset.saturating_add(21)
             && member.asset_id_offset == member.byte_offset.saturating_add(33)
             && member.context_id_offset > member.asset_id_offset
-            && valid_design_guid(&member.asset_id)
-            && valid_design_guid(&member.context_id)
-            && selected_profile.is_none_or(|profile| profile.asset_id.as_str() == member.asset_id)
+            && selected_profile.is_none_or(|profile| profile.asset_id == member.asset_id)
             && member.resolved_geometry == expected_target
             && member
                 .operand_identity_ids
@@ -6666,7 +6664,7 @@ fn validate_extrude_selection_group_members(ctx: &Ctx, findings: &mut Vec<Findin
                     .and_then(|ordinal| {
                         members_by_slot.get(&(native_stream, group.record_index, ordinal))
                     })
-                    .is_some_and(|member| member.context_id == context_id)
+                    .is_some_and(|member| member.context_id.as_str() == context_id)
             })
         });
         if !(complete && context_consistent) {

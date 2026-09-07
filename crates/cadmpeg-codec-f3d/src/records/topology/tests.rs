@@ -635,12 +635,24 @@ fn historical_binding_wire_rejects_partial_identity_and_orphan_states() {
         "id": "member", "group_record_index": 1, "group_member_ordinal": 0,
         "record_index": 2, "byte_offset": 10, "class_tag": "346",
         "local_id": 17, "local_id_offset": 20,
-        "asset_id": "asset", "asset_id_offset": 30,
-        "context_id": "context", "context_id_offset": 40,
+        "asset_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", "asset_id_offset": 30,
+        "context_id": "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e", "context_id_offset": 40,
         "tail_slot_present": false, "tail_slot_offset": 0,
         "next_record_index": 3, "next_byte_offset": 50
     });
     check::<crate::records::topology::DesignExtrudeSelectionMember>(&member);
+    for field in ["asset_id", "context_id"] {
+        let mut invalid = member.clone();
+        invalid[field] = serde_json::json!("asset");
+        assert!(
+            serde_json::from_value::<crate::records::topology::DesignExtrudeSelectionMember>(
+                invalid
+            )
+            .expect_err("non-GUID selection identity")
+            .to_string()
+            .contains("GUID")
+        );
+    }
     for field in [
         "tail_slot_present",
         "tail_slot_offset",

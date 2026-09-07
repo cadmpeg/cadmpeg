@@ -6867,7 +6867,12 @@ pub(crate) fn historical_extrude_selection_identity_kind(
     body_bindings: &[DesignBodyBinding],
     histories: &[AsmHistory],
 ) -> Option<(AsmHistoricalEntityKind, i64, Vec<i64>)> {
-    match component_histories(&member.context_id, naming_spaces, body_bindings, histories) {
+    match component_histories(
+        member.context_id.as_str(),
+        naming_spaces,
+        body_bindings,
+        histories,
+    ) {
         Some(selected) => HistoricalIdentityIndex::build(selected, [member.local_id])
             .selection_identity_kind(member.local_id),
         None => historical_selection_identity_kind(histories, member.local_id),

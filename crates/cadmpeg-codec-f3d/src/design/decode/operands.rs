@@ -3878,8 +3878,8 @@ pub fn bind_extrude_selection_identities(
                         .as_ref()
                         .is_some_and(|persistent| {
                             persistent.local_id == member.local_id
-                                && persistent.asset_id.as_str() == member.asset_id
-                                && persistent.context_id.as_str() == member.context_id
+                                && persistent.asset_id == member.asset_id
+                                && persistent.context_id == member.context_id
                         })
             })
             .collect::<Vec<_>>();
@@ -3909,9 +3909,9 @@ pub(crate) fn parse_extrude_selection_member(
         class_tag: header.class_tag.clone(),
         local_id: member.local_id,
         local_id_offset: member.local_id_offset,
-        asset_id: member.asset_id,
+        asset_id: member.asset_id.try_into().ok()?,
         asset_id_offset: member.asset_id_offset,
-        context_id: member.context_id,
+        context_id: member.context_id.try_into().ok()?,
         context_id_offset: member.context_id_offset,
         tail_slot_present: member.tail_slot_present,
         tail_slot_offset: member.tail_slot_offset,
