@@ -273,7 +273,7 @@ pub struct PcurveEndpointDiagnostics {
 
 #[derive(Debug, Default)]
 struct PcurvePathActivity {
-    active_paths: BTreeSet<(u32, u32)>,
+    active_paths: BTreeSet<(Option<std::num::NonZeroU32>, u32)>,
     topology_faces: BTreeMap<u32, [u32; 2]>,
     prototype_faces: BTreeMap<u32, [u32; 2]>,
 }
@@ -320,8 +320,10 @@ impl PcurvePathActivity {
             &self.topology_faces
         };
         (topology_faces.get(&curve_id) == Some(&faces)).then_some([
-            self.active_paths.contains(&(faces[0], curve_id)),
-            self.active_paths.contains(&(faces[1], curve_id)),
+            self.active_paths
+                .contains(&(std::num::NonZeroU32::new(faces[0]), curve_id)),
+            self.active_paths
+                .contains(&(std::num::NonZeroU32::new(faces[1]), curve_id)),
         ])
     }
 }
@@ -2066,7 +2068,7 @@ mod tests {
             offset: 0,
         });
         scan.topology.loops.push(crate::topology::Loop {
-            face_id: 10,
+            face_id: std::num::NonZeroU32::new(10),
             half_edges: vec![crate::topology::HalfEdgeId {
                 curve_id: 7,
                 side: crate::topology::Side::Zero,

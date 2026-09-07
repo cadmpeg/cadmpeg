@@ -1145,7 +1145,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
 #[test]
 fn planar_loop_containment_selects_one_outer_boundary() {
     let make_loop = |face_id: u32, first_curve: u32| crate::topology::Loop {
-        face_id,
+        face_id: std::num::NonZeroU32::new(face_id),
         half_edges: (0_u32..4)
             .map(|index| HalfEdgeId {
                 curve_id: first_curve + index,
@@ -1218,7 +1218,7 @@ fn planar_loop_containment_selects_one_outer_boundary() {
 #[test]
 fn planar_loop_containment_derives_plane_from_solved_boundary_vertices() {
     let make_loop = |first_curve: u32| crate::topology::Loop {
-        face_id: 9,
+        face_id: std::num::NonZeroU32::new(9),
         half_edges: (0_u32..4)
             .map(|index| HalfEdgeId {
                 curve_id: first_curve + index,

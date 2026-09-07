@@ -369,7 +369,7 @@ mod tests {
                     curve_id: 10,
                     side: crate::topology::Side::Zero,
                 },
-                face_id: 1,
+                face_id: std::num::NonZeroU32::new(1),
                 next: None,
             },
             HalfEdge {
@@ -377,7 +377,7 @@ mod tests {
                     curve_id: 10,
                     side: crate::topology::Side::One,
                 },
-                face_id: 2,
+                face_id: std::num::NonZeroU32::new(2),
                 next: None,
             },
         ];

@@ -1045,7 +1045,7 @@ pub(super) fn half_edge_records(scan: &ContainerScan) -> Vec<CreoHalfEdgeRecord>
                 ),
                 curve_id: edge.id.curve_id,
                 side: edge.id.side,
-                face_id: edge.face_id,
+                face_id: edge.face_id.map_or(0, std::num::NonZeroU32::get),
                 next: edge.next.map(half_edge_ref),
                 offset: row.offset,
                 source_section: source_section(scan, row.offset),
@@ -1061,7 +1061,7 @@ pub(super) fn loop_records(scan: &ContainerScan) -> Vec<CreoLoopRecord> {
         .enumerate()
         .map(|(index, record)| CreoLoopRecord {
             id: format!("creo:topology:loop#{}", index + 1),
-            face_id: record.face_id,
+            face_id: record.face_id.map_or(0, std::num::NonZeroU32::get),
             half_edges: record
                 .half_edges
                 .iter()

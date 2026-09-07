@@ -703,12 +703,12 @@ fn component_is_closed(
             .iter()
             .filter(|half_edge| half_edge.curve_id == *curve_id)
             .filter_map(|half_edge| half_edges.get(half_edge))
-            .map(|half_edge| half_edge.face_id)
+            .filter_map(|half_edge| half_edge.face_id)
             .collect::<Vec<_>>();
         face_uses.len() == 2
             && face_uses
                 .iter()
-                .all(|face_id| *face_id != 0 && faces.contains(face_id))
+                .all(|face_id| faces.contains(&face_id.get()))
     })
 }
 
@@ -1134,8 +1134,8 @@ pub(in super::super) fn transfer_native_brep(
         .collect::<BTreeSet<_>>();
     let mut loops_by_face = BTreeMap::<u32, Vec<&crate::topology::Loop>>::new();
     for lp in &scan.topology.loops {
-        if lp.face_id != 0 {
-            loops_by_face.entry(lp.face_id).or_default().push(lp);
+        if let Some(face_id) = lp.face_id {
+            loops_by_face.entry(face_id.get()).or_default().push(lp);
         }
     }
     let topology_face_reference_ids = scan

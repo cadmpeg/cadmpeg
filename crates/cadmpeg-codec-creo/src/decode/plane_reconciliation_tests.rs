@@ -180,7 +180,7 @@ fn unique_native_conic_loop_places_its_plane_surface() {
             offset: 20,
         });
     scan.topology.loops.push(crate::topology::Loop {
-        face_id: 5,
+        face_id: std::num::NonZeroU32::new(5),
         half_edges: vec![crate::topology::HalfEdgeId {
             curve_id: 11,
             side: crate::topology::Side::Zero,
@@ -263,7 +263,7 @@ fn unique_nurbs_line_loop_places_its_plane_surface() {
             });
     }
     scan.topology.loops.push(crate::topology::Loop {
-        face_id: 5,
+        face_id: std::num::NonZeroU32::new(5),
         half_edges: [11, 12]
             .into_iter()
             .map(|curve_id| crate::topology::HalfEdgeId {

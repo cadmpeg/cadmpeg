@@ -88,7 +88,7 @@ pub fn transfer_topology_bound_planes(
             .topology
             .loops
             .iter()
-            .filter(|lp| lp.face_id == row.id)
+            .filter(|lp| lp.face_id == std::num::NonZeroU32::new(row.id))
             .flat_map(|lp| lp.half_edges.iter())
             .filter_map(|half_edge| {
                 unique_curve_ids

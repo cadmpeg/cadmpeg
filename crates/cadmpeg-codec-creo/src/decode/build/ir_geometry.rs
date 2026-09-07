@@ -723,7 +723,7 @@ mod tests {
             },
         ];
         scan.topology.loops.push(crate::topology::Loop {
-            face_id: 5,
+            face_id: std::num::NonZeroU32::new(5),
             half_edges: vec![crate::topology::HalfEdgeId {
                 curve_id: 10,
                 side: crate::topology::Side::Zero,

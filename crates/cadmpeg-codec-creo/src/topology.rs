@@ -7,6 +7,7 @@
 #![deny(clippy::disallowed_methods)]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroU32;
 
 use crate::curve::CurveTopologyRow;
 
@@ -80,7 +81,7 @@ pub struct HalfEdge {
     pub id: HalfEdgeId,
     /// The `srf_array` face identifier this half-edge side bounds (the
     /// corresponding `F0`/`F1` suffix field).
-    pub face_id: u32,
+    pub face_id: Option<NonZeroU32>,
     /// The next half-edge on the same face, when exactly one candidate
     /// successor matched the row's `E0`/`E1` next-edge field on that face.
     /// `None` when the successor is absent or ambiguous.
@@ -91,7 +92,7 @@ pub struct HalfEdge {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Loop {
     /// The `srf_array` face identifier this loop bounds.
-    pub face_id: u32,
+    pub face_id: Option<NonZeroU32>,
     /// The ring of half-edges in traversal order, starting from the first
     /// half-edge encountered for this face.
     pub half_edges: Vec<HalfEdgeId>,
@@ -182,8 +183,8 @@ pub fn vertex_incident_faces(
                         },
                     ]
                 })
-                .filter_map(|half_edge| by_id.get(&half_edge).copied())
-                .filter(|face_id| *face_id != 0)
+                .filter_map(|half_edge| by_id.get(&half_edge).copied().flatten())
+                .map(NonZeroU32::get)
                 .collect();
             (vertex.id, faces)
         })
@@ -319,14 +320,16 @@ pub fn face_components(rows: &[CurveTopologyRow]) -> Vec<FaceComponent> {
     let mut adjacency = BTreeMap::<u32, BTreeSet<u32>>::new();
     let mut face_curves = BTreeMap::<u32, BTreeSet<u32>>::new();
     for row in &rows {
-        let [left, right] = row.faces;
-        for face in [left, right].into_iter().filter(|face| *face != 0) {
+        let [left, right] = row.faces.map(NonZeroU32::new);
+        for face in [left, right].into_iter().flatten().map(NonZeroU32::get) {
             adjacency.entry(face).or_default();
             face_curves.entry(face).or_default().insert(row.id);
         }
-        if left != 0 && right != 0 && left != right {
-            adjacency.entry(left).or_default().insert(right);
-            adjacency.entry(right).or_default().insert(left);
+        if let (Some(left), Some(right)) = (left, right) {
+            if left != right {
+                adjacency.entry(left.get()).or_default().insert(right.get());
+                adjacency.entry(right.get()).or_default().insert(left.get());
+            }
         }
     }
     let mut seen = BTreeSet::new();
@@ -380,11 +383,11 @@ pub(crate) fn selected_body_count(
 /// Ambiguous or missing successors remain `None` and cannot form loops.
 pub fn build(rows: &[CurveTopologyRow]) -> (Vec<HalfEdge>, Vec<Loop>) {
     let rows = uniquely_identified_rows(rows);
-    let mut face_sides: BTreeMap<u32, Vec<HalfEdgeId>> = BTreeMap::new();
+    let mut face_sides: BTreeMap<Option<NonZeroU32>, Vec<HalfEdgeId>> = BTreeMap::new();
     for row in &rows {
         for side in [Side::Zero, Side::One] {
             face_sides
-                .entry(row.faces[side.index()])
+                .entry(NonZeroU32::new(row.faces[side.index()]))
                 .or_default()
                 .push(HalfEdgeId {
                     curve_id: row.id,
@@ -395,7 +398,7 @@ pub fn build(rows: &[CurveTopologyRow]) -> (Vec<HalfEdge>, Vec<Loop>) {
     let mut edges = Vec::new();
     for row in rows {
         for side in [Side::Zero, Side::One] {
-            let face_id = row.faces[side.index()];
+            let face_id = NonZeroU32::new(row.faces[side.index()]);
             let candidates = face_sides
                 .get(&face_id)
                 .into_iter()
