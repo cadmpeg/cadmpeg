@@ -627,12 +627,7 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
     );
     assert_eq!(
         prototype.field("i_pnts").map(|field| &field.value),
-        Some(
-            &crate::surface::SurfaceNamedValue::ContiguousEntityReferences {
-                start_id: 128,
-                entity_ids: vec![128, 129, 130],
-            }
-        )
+        Some(&crate::surface::SurfaceNamedValue::ContiguousEntityReferences(vec![128, 129, 130]))
     );
     assert_eq!(
         prototype.field("id").map(|field| &field.value),

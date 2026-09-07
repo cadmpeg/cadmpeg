@@ -408,7 +408,7 @@ pub(super) fn surface_named_parameter_record(
             Vec::new(),
             Vec::new(),
         ),
-        crate::surface::SurfaceNamedValue::ContiguousEntityReferences { entity_ids, .. } => (
+        crate::surface::SurfaceNamedValue::ContiguousEntityReferences(entity_ids) => (
             "contiguous_entity_references",
             entity_ids.clone(),
             None,

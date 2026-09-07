@@ -312,12 +312,7 @@ pub enum SurfaceNamedValue {
     /// Count-bounded compact-integer array.
     CompactIntArray(Vec<u32>),
     /// Count consecutive entity IDs beginning at one stored reference.
-    ContiguousEntityReferences {
-        /// First entity identifier.
-        start_id: u32,
-        /// Expanded consecutive identifiers.
-        entity_ids: Vec<u32>,
-    },
+    ContiguousEntityReferences(Vec<u32>),
     /// Dimensioned `f9` scalar body.
     ScalarArray {
         /// Stored dimension value.
@@ -413,7 +408,7 @@ impl SurfacePrototypeRecord {
         if self.family != SurfacePrototypeFamily::Extrusion(ExtrusionLabel::TabulatedCylinder) {
             return None;
         }
-        let SurfaceNamedValue::ContiguousEntityReferences { entity_ids, .. } =
+        let SurfaceNamedValue::ContiguousEntityReferences(entity_ids) =
             &self.field("c_pnts")?.value
         else {
             return None;
@@ -3141,10 +3136,9 @@ fn named_surface_value(
                 if let Ok((start_id, next)) = psb::reference_id(body, cursor + 1) {
                     if body.get(next) == Some(&psb::token::ARRAY_CLOSE) {
                         if let Some(end_id) = start_id.checked_add(count) {
-                            return SurfaceNamedValue::ContiguousEntityReferences {
-                                start_id,
-                                entity_ids: (start_id..end_id).collect(),
-                            };
+                            return SurfaceNamedValue::ContiguousEntityReferences(
+                                (start_id..end_id).collect(),
+                            );
                         }
                     }
                 }
