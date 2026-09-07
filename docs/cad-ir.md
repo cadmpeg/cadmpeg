@@ -188,7 +188,7 @@ more than once when the source serializes repeated consumption slots.
 
 ## Native namespaces
 
-A native namespace holds one `arenas` map. It carries no version of its own.
+A native namespace is a map of arena name to arena.
 
 Fusion native data includes ACT, Design, persistent-reference, sketch-link, construction-recipe, and ASM-history records. SOLIDWORKS native data includes feature histories and feature-input lanes. Inventor native data includes RSe segment inventories, OLE property sets, Protein package assets, external-reference records, presentation joins, and design-parameter, sketch, and feature arenas. Bare SAT streams retain ASM-native topology and unknown SAB records under `native.sat`.
 
@@ -236,7 +236,6 @@ An unknown product record has an ID and related entity IDs. Source offset, byte 
 
 Validation uses reference lookup and in-IR arithmetic. It checks:
 
-- the exact IR version;
 - non-empty globally unique IDs and strict arena ordering;
 - document and per-entity tolerance bounds;
 - all neutral and native references;
