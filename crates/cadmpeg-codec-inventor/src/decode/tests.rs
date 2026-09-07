@@ -55,6 +55,7 @@ fn inventor_clipboard_preview_requires_matching_png_dimensions() {
     let (_, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
         .expect("synthetic preview fits policy");
     let value = PropertyValue::Clipboard {
+        type_code: 0x0047,
         format: u32::MAX,
         data: root,
     };
@@ -68,6 +69,7 @@ fn inventor_clipboard_preview_requires_matching_png_dimensions() {
     let (_, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
         .expect("synthetic preview fits policy");
     let value = PropertyValue::Clipboard {
+        type_code: 0x0047,
         format: u32::MAX,
         data: root,
     };

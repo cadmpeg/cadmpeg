@@ -215,7 +215,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                             fmtid: hex(&section.fmtid),
                             property_id: property.id,
                             name: property_name,
-                            value_kind: property_value_kind(&property.value, property.type_code),
+                            value_kind: property_value_kind(&property.value),
                             scalar_value,
                             raw_len: property.raw.window().len() as u64,
                             raw_sha256: sha256_hex(property.raw.window()),
@@ -1940,34 +1940,53 @@ fn built_in_property_name(set_name: &str, id: u32) -> Option<&'static str> {
     }
 }
 
-fn property_value_kind(value: &PropertyValue<'_>, type_code: Option<u16>) -> PropertyValueKind {
-    let Some(type_code) = type_code else {
-        return PropertyValueKind::Dictionary;
-    };
+fn property_value_kind(value: &PropertyValue<'_>) -> PropertyValueKind {
     match value {
-        PropertyValue::Empty => PropertyValueKind::Empty { type_code },
-        PropertyValue::Signed(_) => PropertyValueKind::Signed { type_code },
-        PropertyValue::Unsigned(_) => PropertyValueKind::Unsigned { type_code },
-        PropertyValue::Float(_) => PropertyValueKind::Float { type_code },
-        PropertyValue::Bool(_) => PropertyValueKind::Bool { type_code },
-        PropertyValue::Filetime(_) => PropertyValueKind::Filetime { type_code },
-        PropertyValue::String(_) => PropertyValueKind::String { type_code },
-        PropertyValue::Guid(_) => PropertyValueKind::Guid { type_code },
-        PropertyValue::Binary(data) => PropertyValueKind::Binary {
-            type_code,
-            len: data.window().len(),
+        PropertyValue::Empty { type_code, .. } => PropertyValueKind::Empty {
+            type_code: *type_code,
         },
-        PropertyValue::Clipboard { format, data } => PropertyValueKind::Clipboard {
+        PropertyValue::Signed { type_code, .. } => PropertyValueKind::Signed {
+            type_code: *type_code,
+        },
+        PropertyValue::Unsigned { type_code, .. } => PropertyValueKind::Unsigned {
+            type_code: *type_code,
+        },
+        PropertyValue::Float { type_code, .. } => PropertyValueKind::Float {
+            type_code: *type_code,
+        },
+        PropertyValue::Bool { type_code, .. } => PropertyValueKind::Bool {
+            type_code: *type_code,
+        },
+        PropertyValue::Filetime { type_code, .. } => PropertyValueKind::Filetime {
+            type_code: *type_code,
+        },
+        PropertyValue::String { type_code, .. } => PropertyValueKind::String {
+            type_code: *type_code,
+        },
+        PropertyValue::Guid { type_code, .. } => PropertyValueKind::Guid {
+            type_code: *type_code,
+        },
+        PropertyValue::Binary { type_code, value } => PropertyValueKind::Binary {
+            type_code: *type_code,
+            len: value.window().len(),
+        },
+        PropertyValue::Clipboard {
             type_code,
+            format,
+            data,
+        } => PropertyValueKind::Clipboard {
+            type_code: *type_code,
             format: *format,
             len: data.window().len(),
         },
-        PropertyValue::Vector(values) => PropertyValueKind::Vector {
-            type_code,
+        PropertyValue::Vector { type_code, values } => PropertyValueKind::Vector {
+            type_code: *type_code,
             len: values.len(),
         },
         PropertyValue::Dictionary => PropertyValueKind::Dictionary,
-        PropertyValue::Unknown => PropertyValueKind::Unknown { type_code },
+        PropertyValue::Unknown { type_code } => PropertyValueKind::Unknown {
+            type_code: *type_code,
+        },
     }
 }
 
@@ -1983,8 +2002,8 @@ fn is_preview(fmtid: &[u8; 16], property_id: u32, name: Option<&str>) -> bool {
 
 fn preview_bytes<'a>(value: &'a PropertyValue<'a>) -> Option<(&'a [u8], &'static str)> {
     let bytes = match value {
-        PropertyValue::Binary(view) => view.window(),
-        PropertyValue::Clipboard { format, data } if *format == u32::MAX => {
+        PropertyValue::Binary { value: view, .. } => view.window(),
+        PropertyValue::Clipboard { format, data, .. } if *format == u32::MAX => {
             let bytes = data.window();
             let mut header = View::over_retained(bytes);
             let image_kind = header.u32_le()?;
