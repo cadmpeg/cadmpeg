@@ -205,6 +205,7 @@ impl ObjectRecord {
         }
     }
 
+    #[cfg(test)]
     pub fn subtype(&self) -> PayloadSubtype {
         classify(&self.payload().fields)
     }
@@ -1720,6 +1721,7 @@ fn blob_declared_end(bytes: &[u8], at: usize) -> Option<usize> {
     at.checked_add(5)?.checked_add(declared_len)
 }
 
+/// Structural classification of decoded payload fields.
 pub(crate) fn classify(fields: &[PayloadField]) -> PayloadSubtype {
     if fields
         .iter()
