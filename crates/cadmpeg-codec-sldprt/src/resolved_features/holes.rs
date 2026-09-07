@@ -1,8 +1,7 @@
 //! Hole construction, bore topology and hole axis projection.
 
 use super::compact_reference_planes::{
-    compact_profile_component_plane_frame, compact_profile_reference_plane_source,
-    CompactReferencePlaneIndex,
+    compact_profile_component_plane_frame, CompactReferencePlaneIndex,
 };
 use super::curves::{lane_sketch_plane_frames, SketchPlaneFrame, SketchPlaneUAxisSource};
 use super::helix::fit_helix_polyline;
@@ -3921,7 +3920,8 @@ pub(super) fn feature_input_sketch_frame(
     start: usize,
     end: usize,
 ) -> Option<(Point3, Vector3, Vector3)> {
-    let reference = compact_profile_reference_plane_source(plane_index, context_start, start, end)
+    let reference = plane_index
+        .profile_source(context_start, start, end)
         .and_then(|source| plane_frames.get(&source).copied());
     let component = compact_profile_component_plane_frame(payload, context_start, start, end);
     let explicit = || {
