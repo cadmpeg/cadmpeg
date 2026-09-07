@@ -1031,16 +1031,7 @@ fn native_lp_utf16(out: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
 }
 
 fn validate_guid(value: &str, field: &str) -> Result<(), CodecError> {
-    let bytes = value.as_bytes();
-    let valid = bytes.len() == 36
-        && [8, 13, 18, 23]
-            .into_iter()
-            .all(|index| bytes.get(index) == Some(&b'-'))
-        && bytes
-            .iter()
-            .enumerate()
-            .all(|(index, byte)| [8, 13, 18, 23].contains(&index) || byte.is_ascii_hexdigit());
-    if valid {
+    if crate::bytes::is_guid_hyphenated(value) {
         Ok(())
     } else {
         Err(CodecError::malformed(format_args!(
