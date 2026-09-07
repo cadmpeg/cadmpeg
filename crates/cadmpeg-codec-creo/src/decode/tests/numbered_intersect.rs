@@ -1035,7 +1035,10 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
         type_byte: 8,
         feature_id: 97,
         directions: [1, 0xf6],
-        faces: [98, 145],
+        faces: [
+            std::num::NonZeroU32::new(98),
+            std::num::NonZeroU32::new(145),
+        ],
         next_edges: [77, 77],
         offset: 0,
     }];
@@ -1219,7 +1222,7 @@ fn generated_curve_edges_require_unique_rows_and_materialized_producers() {
         type_byte: 8,
         feature_id,
         directions: [1, 0xf6],
-        faces: [10, 11],
+        faces: [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)],
         next_edges: [id, id],
         offset,
     };
@@ -1281,7 +1284,7 @@ fn mixed_current_and_generated_edges_remain_native() {
             type_byte: 8,
             feature_id: 97,
             directions: [1, 0xf6],
-            faces: [1, 2],
+            faces: [std::num::NonZeroU32::new(1), std::num::NonZeroU32::new(2)],
             next_edges: [45, 45],
             offset: 0,
         },
@@ -1290,7 +1293,7 @@ fn mixed_current_and_generated_edges_remain_native() {
             type_byte: 8,
             feature_id: 97,
             directions: [1, 0xf6],
-            faces: [1, 2],
+            faces: [std::num::NonZeroU32::new(1), std::num::NonZeroU32::new(2)],
             next_edges: [46, 46],
             offset: 1,
         },
@@ -1419,7 +1422,7 @@ fn geometry_generator_features_join_surface_and_curve_evidence() {
             type_byte: 8,
             feature_id: 50,
             directions: [1, 0xf6],
-            faces: [61, 62],
+            faces: [std::num::NonZeroU32::new(61), std::num::NonZeroU32::new(62)],
             next_edges: [59, 59],
             offset: 100,
         });
@@ -1462,7 +1465,7 @@ fn model_feature_ids_include_row_backed_generated_producers() {
             type_byte: 8,
             feature_id: 50,
             directions: [1, 0xf6],
-            faces: [61, 62],
+            faces: [std::num::NonZeroU32::new(61), std::num::NonZeroU32::new(62)],
             next_edges: [59, 59],
             offset: 100,
         });

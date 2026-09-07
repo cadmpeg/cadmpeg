@@ -54,7 +54,7 @@ fn pcurve_endpoint_slots_must_be_finite() {
         type_byte: 0,
         feature_id: 1,
         directions: [1, 1],
-        faces: [2, 3],
+        faces: [std::num::NonZeroU32::new(2), std::num::NonZeroU32::new(3)],
         next_edges: [7, 7],
         offset: 1,
     };
@@ -190,7 +190,10 @@ fn decodes_only_complete_fc02_short_pcurve_endpoints() {
         type_byte: 0,
         feature_id: 57,
         directions: [0x01, 0xf6],
-        faces: [43, 163],
+        faces: [
+            std::num::NonZeroU32::new(43),
+            std::num::NonZeroU32::new(163),
+        ],
         next_edges: [841, 164],
         offset: 100,
     };
@@ -258,7 +261,10 @@ fn promotes_only_referenced_unique_prototype_topology() {
     }];
     let prototype_topology = [CurvePrototypeTopology {
         curve_id: 44,
-        faces: [43, 141],
+        faces: [
+            std::num::NonZeroU32::new(43),
+            std::num::NonZeroU32::new(141),
+        ],
         next_edges: [271, 142],
         offset: 100,
     }];
@@ -267,7 +273,10 @@ fn promotes_only_referenced_unique_prototype_topology() {
         type_byte: 0,
         feature_id: 547,
         directions: [0x01, 0xf6],
-        faces: [43, 235],
+        faces: [
+            std::num::NonZeroU32::new(43),
+            std::num::NonZeroU32::new(235),
+        ],
         next_edges: [44, 597],
         offset: 200,
     }];
@@ -283,7 +292,10 @@ fn promotes_only_referenced_unique_prototype_topology() {
             type_byte: 0,
             feature_id: 40,
             directions: [0x01, 0xf6],
-            faces: [43, 141],
+            faces: [
+                std::num::NonZeroU32::new(43),
+                std::num::NonZeroU32::new(141)
+            ],
             next_edges: [271, 142],
             offset: 100,
         }]
@@ -404,7 +416,7 @@ fn decodes_a_uniquely_delimited_topology_suffix() {
             type_byte: 8,
             feature_id: 4,
             directions: [1, 0xf6],
-            faces: [10, 11],
+            faces: [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)],
             next_edges: [7, 7],
             offset: 15,
         }]
@@ -425,7 +437,7 @@ fn retains_nonzero_reference_geometry_after_topology_references() {
 
     assert_eq!(
         topology_rows_with_face_ids(&payload, Some(&face_ids))[0].faces,
-        [10, 11]
+        [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)]
     );
     let parameters = parameter_records_with_face_ids(&payload, Some(&face_ids));
     assert_eq!(parameters.len(), 1);
@@ -464,7 +476,10 @@ fn face_namespace_resolves_ambiguous_reference_boundaries() {
             type_byte: 0,
             feature_id: 40,
             directions: [1, 0xf6],
-            faces: [143, 141],
+            faces: [
+                std::num::NonZeroU32::new(143),
+                std::num::NonZeroU32::new(141)
+            ],
             next_edges: [273, 44],
             offset: 15,
         }]
@@ -491,7 +506,13 @@ fn topology_evidence_resolves_an_ambiguous_suffix_with_an_unmaterialized_face() 
     let rows = topology_rows_with_face_ids(&payload, Some(&face_ids));
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[1].id, 144);
-    assert_eq!(rows[1].faces, [143, 141]);
+    assert_eq!(
+        rows[1].faces,
+        [
+            std::num::NonZeroU32::new(143),
+            std::num::NonZeroU32::new(141)
+        ]
+    );
     assert_eq!(rows[1].next_edges, [273, 44]);
 }
 
@@ -550,7 +571,7 @@ fn final_curve_row_uses_the_next_array_boundary() {
             type_byte: 8,
             feature_id: 4,
             directions: [1, 0xf6],
-            faces: [10, 11],
+            faces: [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)],
             next_edges: [7, 7],
             offset: 15,
         }]
@@ -610,7 +631,10 @@ fn binds_agreeing_fc05_caps_to_one_typed_cylinder() {
         type_byte: 5,
         feature_id: 4,
         directions: [1, 0xf6],
-        faces: [10, plane_id],
+        faces: [
+            std::num::NonZeroU32::new(10),
+            std::num::NonZeroU32::new(plane_id),
+        ],
         next_edges: [curve_id, curve_id],
         offset,
     };
@@ -680,7 +704,10 @@ fn fc05_cap_pairs_require_unique_topology_and_surface_identities() {
         type_byte: 5,
         feature_id: 4,
         directions: [1, 0xf6],
-        faces: [10, plane_id],
+        faces: [
+            std::num::NonZeroU32::new(10),
+            std::num::NonZeroU32::new(plane_id),
+        ],
         next_edges: [curve_id, curve_id],
         offset,
     };

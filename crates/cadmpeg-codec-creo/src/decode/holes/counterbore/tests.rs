@@ -35,7 +35,7 @@ fn boundary_scan() -> crate::container::ContainerScan<'static> {
             type_byte: 0,
             feature_id: 42,
             directions: [1, 1],
-            faces: [2, 1],
+            faces: [std::num::NonZeroU32::new(2), std::num::NonZeroU32::new(1)],
             next_edges: [11, 11],
             offset: 11,
         });

@@ -821,9 +821,10 @@ pub fn counterbore_source_boundary_circle(
             .into_iter()
             .filter_map(|edge| {
                 (edge.feature_id == feature_id && edge.type_byte == 0).then_some(())?;
+                let cylinder = std::num::NonZeroU32::new(cylinder_id)?;
                 let other = match edge.faces {
-                    [left, right] if left == cylinder_id => right,
-                    [left, right] if right == cylinder_id => left,
+                    [Some(left), Some(right)] if left == cylinder => right.get(),
+                    [Some(left), Some(right)] if right == cylinder => left.get(),
                     _ => return None,
                 };
                 let plane = rows.get(&other)?;

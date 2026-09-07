@@ -1212,7 +1212,7 @@ pub(super) fn curve_prototype_topology_records(
         .map(|record| CreoCurvePrototypeTopologyRecord {
             id: format!("creo:curve:prototype_topology#{}", record.curve_id),
             curve_id: record.curve_id,
-            faces: record.faces,
+            faces: record.stored_face_ids(),
             next_edges: record.next_edges,
             offset: record.offset,
             source_section: source_section(scan, record.offset),
@@ -1808,7 +1808,7 @@ pub(super) fn curve_topology_row_records(
             type_byte: row.type_byte,
             feature_id: row.feature_id,
             directions: row.directions,
-            faces: row.faces,
+            faces: row.stored_face_ids(),
             next_edges: row.next_edges,
             offset: row.offset,
             source_section: source_section(scan, row.offset),

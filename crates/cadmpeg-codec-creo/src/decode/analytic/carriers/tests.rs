@@ -402,7 +402,7 @@ fn topology_bound_plane_rejects_duplicate_model_curve_ids() {
             type_byte: 0,
             feature_id: 1,
             directions: [0; 2],
-            faces: [5, 0],
+            faces: [std::num::NonZeroU32::new(5), None],
             next_edges: [11, 0],
             offset: 20,
         });

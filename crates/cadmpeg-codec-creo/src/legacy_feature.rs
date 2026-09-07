@@ -409,7 +409,7 @@ mod tests {
             type_byte: 0,
             feature_id: 139,
             directions: [1, 1],
-            faces: [0, 0],
+            faces: [None, None],
             next_edges: [0, 0],
             offset: id as usize,
         }

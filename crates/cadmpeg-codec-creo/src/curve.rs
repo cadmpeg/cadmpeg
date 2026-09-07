@@ -6,6 +6,7 @@
 //! parameter bodies are not interpreted here.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroU32;
 
 use cadmpeg_core::bytes::{find_from as find, find_in};
 use cadmpeg_core::decode::{alloc_filled, bounded_len};
@@ -352,14 +353,41 @@ pub struct CurveTopologyRow {
     /// ([spec §4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#4-curve-namespace-crv_array)).
     pub directions: [u8; 2],
     /// The `F0`/`F1` suffix fields: the `srf_array` face identifiers
-    /// bounding the curve's two half-edge sides.
-    pub faces: [u32; 2],
+    /// bounding the curve's two half-edge sides, absent where the side is
+    /// unbounded.
+    pub faces: [Option<NonZeroU32>; 2],
     /// The `E0`/`E1` suffix fields: the `crv_array` identifier of the next
     /// edge for each of the two half-edge sides, used to walk loops
     /// ([spec §4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#4-curve-namespace-crv_array)).
     pub next_edges: [u32; 2],
     /// Byte offset of the row's `crv_id` field in the original stream.
     pub offset: usize,
+}
+
+impl CurveTopologyRow {
+    /// The face identifiers bounding the two half-edge sides, in side order,
+    /// skipping sides that bound no face.
+    pub fn bounded_face_ids(&self) -> impl Iterator<Item = u32> + '_ {
+        self.faces.iter().flatten().map(|face| face.get())
+    }
+
+    /// Whether either half-edge side bounds `face_id`.
+    pub fn bounds_face(&self, face_id: u32) -> bool {
+        self.bounded_face_ids().any(|bounded| bounded == face_id)
+    }
+
+    /// The stored `F0`/`F1` fields, with `0` for a side that bounds no face.
+    pub fn stored_face_ids(&self) -> [u32; 2] {
+        self.faces.map(stored_face_reference)
+    }
+}
+
+impl CurvePrototypeTopology {
+    /// The stored `crv_hdr_geom_ptr[0/1]` fields, with `0` for a side that
+    /// names no surface.
+    pub fn stored_face_ids(&self) -> [u32; 2] {
+        self.faces.map(stored_face_reference)
+    }
 }
 
 /// One-sided DEPDB suffix, serialized as `[0, X1, F1, 0]`.
@@ -690,8 +718,9 @@ pub struct PrototypePcurveEndpoints {
 pub struct CurvePrototypeTopology {
     /// Prototype curve identifier.
     pub curve_id: u32,
-    /// Adjacent surface identifiers from `crv_hdr_geom_ptr[0/1]`.
-    pub faces: [u32; 2],
+    /// Adjacent surface identifiers from `crv_hdr_geom_ptr[0/1]`, absent
+    /// where the side names no surface.
+    pub faces: [Option<NonZeroU32>; 2],
     /// Per-face successor curve identifiers from `next_crv_hdr_ptr[0/1]`.
     pub next_edges: [u32; 2],
     /// Byte offset of the prototype namespace.
@@ -805,7 +834,7 @@ pub fn prototype_topology_rows(
             || !topology
                 .faces
                 .iter()
-                .all(|face_id| *face_id == 0 || face_ids.contains(face_id))
+                .all(|face_id| face_id.is_none_or(|id| face_ids.contains(&id.get())))
         {
             continue;
         }
@@ -6154,7 +6183,7 @@ pub fn pcurve_endpoints(
             (topology.type_byte == record.type_byte).then_some(())?;
             Some(PcurveEndpoints {
                 curve_id: record.curve_id,
-                faces: topology.faces,
+                faces: topology.faces.map(stored_face_reference),
                 face_0_endpoints: [[values[0], values[1]], [values[4], values[5]]],
                 face_1_endpoints: [[values[2], values[3]], [values[6], values[7]]],
                 offset: record.offset,
@@ -6343,7 +6372,7 @@ pub fn fc02_short_pcurve_endpoints(
             (topology.type_byte == record.type_byte).then_some(())?;
             Some(Fc02ShortPcurveEndpoints {
                 curve_id: record.curve_id,
-                faces: topology.faces,
+                faces: topology.faces.map(stored_face_reference),
                 face_0_endpoints,
                 offset: record.offset,
             })
@@ -6584,7 +6613,7 @@ pub fn fc05_cylinder_cap_pairs(
     let faces = crate::topology::uniquely_identified_rows(topology)
         .into_iter()
         .map(|row| (row.id, row.faces))
-        .collect::<BTreeMap<_, _>>();
+        .collect::<BTreeMap<_, [Option<NonZeroU32>; 2]>>();
     let mut circle_counts = BTreeMap::<u32, usize>::new();
     for circle in circles {
         *circle_counts.entry(circle.curve_id).or_default() += 1;
@@ -6599,19 +6628,21 @@ pub fn fc05_cylinder_cap_pairs(
         };
         let cylinders = adjacent
             .iter()
+            .flatten()
+            .map(|face| face.get())
             .filter(|face| {
-                crate::surface::unique_surface_row(surfaces, **face)
+                crate::surface::unique_surface_row(surfaces, *face)
                     .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
             })
-            .copied()
             .collect::<Vec<_>>();
         let planes = adjacent
             .iter()
+            .flatten()
+            .map(|face| face.get())
             .filter(|face| {
-                crate::surface::unique_surface_row(surfaces, **face)
+                crate::surface::unique_surface_row(surfaces, *face)
                     .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Plane)
             })
-            .copied()
             .collect::<Vec<_>>();
         if let ([cylinder], [plane], Some(ordinate)) = (
             cylinders.as_slice(),
@@ -6779,7 +6810,7 @@ pub fn prototype_topology(payload: &[u8]) -> Vec<CurvePrototypeTopology> {
         };
         result.push(CurvePrototypeTopology {
             curve_id,
-            faces: [face_0, face_1],
+            faces: [face_0, face_1].map(NonZeroU32::new),
             next_edges: [next_0, next_1],
             offset: namespace,
         });
@@ -6811,7 +6842,7 @@ pub fn bind_prototype_pcurves(
                 .find(|topology| topology.curve_id == pcurve.curve_id)?;
             Some(BoundPrototypePcurve {
                 curve_id: pcurve.curve_id,
-                faces: topology.faces,
+                faces: topology.faces.map(stored_face_reference),
                 face_0_endpoints: pcurve.face_0_endpoints,
                 face_1_endpoints: pcurve.face_1_endpoints,
                 offset: pcurve.offset,
@@ -6820,6 +6851,11 @@ pub fn bind_prototype_pcurves(
         .collect::<Vec<_>>();
     result.sort_by_key(|record| record.offset);
     result
+}
+
+/// The stored face identifier of a bounded half-edge side; `0` is unbounded.
+fn stored_face_reference(face: Option<NonZeroU32>) -> u32 {
+    face.map_or(0, NonZeroU32::get)
 }
 
 fn parse_topology_row(
@@ -6834,7 +6870,7 @@ fn parse_topology_row(
         type_byte: prefix.type_byte,
         feature_id: prefix.feature_id,
         directions: prefix.directions,
-        faces: [f0, f1],
+        faces: [f0, f1].map(NonZeroU32::new),
         next_edges: [e0, e1],
         offset: absolute_offset,
     })
@@ -6877,9 +6913,9 @@ fn topology_suffix_with_face_ids(
         let role_matches = candidates
             .iter()
             .filter(|(_, references, _)| {
-                references[..2]
-                    .iter()
-                    .all(|&face_id| face_id == 0 || ids.contains(&face_id))
+                references[..2].iter().all(|&face_id| {
+                    NonZeroU32::new(face_id).is_none_or(|id| ids.contains(&id.get()))
+                })
             })
             .copied()
             .collect::<Vec<_>>();
@@ -6893,7 +6929,7 @@ fn topology_suffix_with_face_ids(
     let mut role_matches = candidates.into_iter().filter(|(_, references, _)| {
         references[..2]
             .iter()
-            .all(|&face_id| face_id == 0 || ids.contains(&face_id))
+            .all(|&face_id| NonZeroU32::new(face_id).is_none_or(|id| ids.contains(&id.get())))
     });
     let candidate = role_matches.next()?;
     role_matches.next().is_none().then_some(candidate)

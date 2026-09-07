@@ -25,7 +25,7 @@ fn generated_edge_outputs_follow_producer_history_before_ir_feature_insertion() 
         type_byte: 8,
         feature_id,
         directions: [1, 0xf6],
-        faces: [10, 11],
+        faces: [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)],
         next_edges: [id, id],
         offset: 0,
     };

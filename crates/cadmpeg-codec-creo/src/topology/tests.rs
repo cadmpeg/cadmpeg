@@ -18,7 +18,7 @@ fn row(id: u32, next: u32) -> CurveTopologyRow {
         type_byte: 0,
         feature_id: 0,
         directions: [1, 1],
-        faces: [10, 20],
+        faces: [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(20)],
         next_edges: [next, next],
         offset: 0,
     }
@@ -68,7 +68,7 @@ fn withholds_ambiguous_successors() {
     let (half_edges, loops) = build(&[
         row(1, 2),
         CurveTopologyRow {
-            faces: [10, 10],
+            faces: [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(10)],
             ..row(2, 1)
         },
     ]);

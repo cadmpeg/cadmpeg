@@ -2930,7 +2930,7 @@ mod feature_row_definition_tests {
             type_byte: 8,
             feature_id: 41,
             directions: [1, 0xf6],
-            faces: [12, 13],
+            faces: [std::num::NonZeroU32::new(12), std::num::NonZeroU32::new(13)],
             next_edges: [45, 45],
             offset: 0,
         };

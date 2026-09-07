@@ -316,22 +316,19 @@ pub(super) fn transfer_fc05_cap_circles(
             continue;
         };
         let cap_planes = topology
-            .faces
-            .iter()
+            .bounded_face_ids()
             .filter_map(|face| {
-                crate::surface::unique_surface_row(&scan.surfaces.rows, *face)
+                crate::surface::unique_surface_row(&scan.surfaces.rows, face)
                     .filter(|row| row.kind == crate::surface::SurfaceKind::Plane)?;
-                crate::surface::unique_outline_plane(&scan.planes.outlines, *face)
+                crate::surface::unique_outline_plane(&scan.planes.outlines, face)
             })
             .collect::<Vec<_>>();
         let cylinders = topology
-            .faces
-            .iter()
+            .bounded_face_ids()
             .filter(|face| {
-                crate::surface::unique_surface_row(&scan.surfaces.rows, **face)
+                crate::surface::unique_surface_row(&scan.surfaces.rows, *face)
                     .is_some_and(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
             })
-            .copied()
             .collect::<Vec<_>>();
         let ([cap], [cylinder_id], Some(_)) = (
             cap_planes.as_slice(),

@@ -38,7 +38,10 @@ fn scan_discovers_curve_halfedge_topology() {
     let scan = container::scan_bytes(data.clone());
 
     assert_eq!(scan.curves.topology_rows.len(), 1);
-    assert_eq!(scan.curves.topology_rows[0].faces, [10, 11]);
+    assert_eq!(
+        scan.curves.topology_rows[0].faces,
+        [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)]
+    );
     assert_eq!(scan.curves.topology_rows[0].next_edges, [7, 7]);
     assert_eq!(scan.topology.half_edges.len(), 2);
     let result = CreoCodec
@@ -132,9 +135,15 @@ fn scan_decodes_long_terminated_rows_in_each_curve_namespace() {
 
     assert_eq!(scan.curves.topology_rows.len(), 2);
     assert_eq!(scan.curves.topology_rows[0].id, 7);
-    assert_eq!(scan.curves.topology_rows[0].faces, [10, 11]);
+    assert_eq!(
+        scan.curves.topology_rows[0].faces,
+        [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)]
+    );
     assert_eq!(scan.curves.topology_rows[1].id, 8);
-    assert_eq!(scan.curves.topology_rows[1].faces, [12, 13]);
+    assert_eq!(
+        scan.curves.topology_rows[1].faces,
+        [std::num::NonZeroU32::new(12), std::num::NonZeroU32::new(13)]
+    );
 }
 
 #[test]
@@ -553,7 +562,10 @@ fn scan_decodes_and_binds_labeled_prototype_topology() {
 
     assert_eq!(scan.curves.prototype_topology.len(), 1);
     assert_eq!(scan.curves.prototype_topology[0].curve_id, 44);
-    assert_eq!(scan.curves.prototype_topology[0].faces, [10, 11]);
+    assert_eq!(
+        scan.curves.prototype_topology[0].faces,
+        [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)]
+    );
     assert_eq!(scan.curves.prototype_topology[0].next_edges, [44, 44]);
     assert_eq!(scan.curves.bound_prototype_pcurves.len(), 1);
     assert_eq!(scan.curves.bound_prototype_pcurves[0].faces, [10, 11]);
@@ -599,7 +611,7 @@ fn prototype_pcurve_binding_requires_unique_native_identity() {
     };
     let topology = crate::curve::CurvePrototypeTopology {
         curve_id: 44,
-        faces: [10, 11],
+        faces: [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(11)],
         next_edges: [44, 44],
         offset: 20,
     };

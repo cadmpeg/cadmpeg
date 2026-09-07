@@ -1344,7 +1344,7 @@ pub(in super::super) fn transfer_native_brep(
         .collect::<BTreeMap<_, _>>();
     let curve_faces = crate::topology::uniquely_identified_rows(&scan.curves.topology_rows)
         .into_iter()
-        .map(|row| (row.id, row.faces))
+        .map(|row| (row.id, row.stored_face_ids()))
         .collect::<BTreeMap<_, _>>();
 
     let eligible_face_ids = eligible_faces.keys().copied().collect::<BTreeSet<_>>();

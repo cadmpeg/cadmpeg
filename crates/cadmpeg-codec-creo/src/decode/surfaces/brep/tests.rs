@@ -616,7 +616,7 @@ fn native_brep_rejects_ambiguous_model_carriers() {
             type_byte: 0,
             feature_id: 0,
             directions: [0x01, 0xf6],
-            faces: [5, 0],
+            faces: [std::num::NonZeroU32::new(5), None],
             next_edges: [id, 0],
             offset: 0,
         })

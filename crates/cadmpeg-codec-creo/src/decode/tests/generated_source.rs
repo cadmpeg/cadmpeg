@@ -1438,7 +1438,7 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
         type_byte,
         feature_id: 17,
         directions: [0x01, 0xf6],
-        faces: [1, 2],
+        faces: [std::num::NonZeroU32::new(1), std::num::NonZeroU32::new(2)],
         next_edges: [id, id],
         offset: 0,
     };

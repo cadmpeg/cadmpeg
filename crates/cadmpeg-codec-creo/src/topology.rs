@@ -310,17 +310,16 @@ pub fn vertex_orbits(edges: &[HalfEdge]) -> (Vec<TopologicalVertex>, Vec<HalfEdg
     (vertices, incidence)
 }
 
-/// Group non-null face references connected by uniquely identified curve
+/// Group bounded face references connected by uniquely identified curve
 /// topology rows.
 ///
-/// Face identifier zero is a boundary sentinel, never a shell face. A curve
-/// contributes to a component when either of its sides names a nonzero face.
+/// A curve contributes to a component when either of its sides names a face.
 pub fn face_components(rows: &[CurveTopologyRow]) -> Vec<FaceComponent> {
     let rows = uniquely_identified_rows(rows);
     let mut adjacency = BTreeMap::<u32, BTreeSet<u32>>::new();
     let mut face_curves = BTreeMap::<u32, BTreeSet<u32>>::new();
     for row in &rows {
-        let [left, right] = row.faces.map(NonZeroU32::new);
+        let [left, right] = row.faces;
         for face in [left, right].into_iter().flatten().map(NonZeroU32::get) {
             adjacency.entry(face).or_default();
             face_curves.entry(face).or_default().insert(row.id);
@@ -387,7 +386,7 @@ pub fn build(rows: &[CurveTopologyRow]) -> (Vec<HalfEdge>, Vec<Loop>) {
     for row in &rows {
         for side in [Side::Zero, Side::One] {
             face_sides
-                .entry(NonZeroU32::new(row.faces[side.index()]))
+                .entry(row.faces[side.index()])
                 .or_default()
                 .push(HalfEdgeId {
                     curve_id: row.id,
@@ -398,7 +397,7 @@ pub fn build(rows: &[CurveTopologyRow]) -> (Vec<HalfEdge>, Vec<Loop>) {
     let mut edges = Vec::new();
     for row in rows {
         for side in [Side::Zero, Side::One] {
-            let face_id = NonZeroU32::new(row.faces[side.index()]);
+            let face_id = row.faces[side.index()];
             let candidates = face_sides
                 .get(&face_id)
                 .into_iter()

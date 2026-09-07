@@ -18,7 +18,7 @@ fn topology_row(id: u32, faces: [u32; 2]) -> CurveTopologyRow {
         type_byte: 0x05,
         feature_id: 0,
         directions: [0x01, 0xf6],
-        faces,
+        faces: faces.map(std::num::NonZeroU32::new),
         next_edges: [id, id],
         offset: 0,
     }
