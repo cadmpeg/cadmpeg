@@ -2911,7 +2911,19 @@ mod tests {
     fn parses_and_projects_semantic_graph() {
         let parsed = parse_unique_root(&encoded_root()).expect("synthetic SWIFT root");
         let annotations = project(&parsed);
-        assert_eq!(annotations.len(), 5);
+        assert_eq!(
+            annotations
+                .iter()
+                .map(|annotation| annotation.id.clone())
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([
+                pmi_id("A10"),
+                pmi_id("A20"),
+                pmi_id("A20:datum-system"),
+                pmi_id("A30"),
+                pmi_id("A40"),
+            ])
+        );
         assert_eq!(dimension_nominal(&annotations, "A30"), None);
 
         let position = annotations
