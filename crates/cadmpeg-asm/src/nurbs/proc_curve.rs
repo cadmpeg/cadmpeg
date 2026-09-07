@@ -1161,21 +1161,27 @@ fn embedded_spring(
             direction,
         });
     }
-    let mut supports = Vec::with_capacity(2);
-    let mut surface_charts = [NativeSupportChart::Canonical; 2];
-    for surface_chart in &mut surface_charts {
+    let mut take_support = || {
         let saved = cur.pos();
         if cur.take_ident() == Some("null_surface") {
-            supports.push(EmbeddedSpringSupport::Ranges([
-                [cur.take_range_value()?, cur.take_range_value()?],
-                [cur.take_range_value()?, cur.take_range_value()?],
-            ]));
+            Some((
+                EmbeddedSpringSupport::Ranges([
+                    [cur.take_range_value()?, cur.take_range_value()?],
+                    [cur.take_range_value()?, cur.take_range_value()?],
+                ]),
+                NativeSupportChart::Canonical,
+            ))
         } else {
             cur.set_pos(saved);
-            *surface_chart = native_support_chart(toks, cur.pos());
-            supports.push(EmbeddedSpringSupport::Surface(embedded_surface(&mut cur)?));
+            let chart = native_support_chart(toks, cur.pos());
+            Some((
+                EmbeddedSpringSupport::Surface(embedded_surface(&mut cur)?),
+                chart,
+            ))
         }
-    }
+    };
+    let [(first_support, first_chart), (second_support, second_chart)] =
+        [take_support()?, take_support()?];
     let saved = cur.pos();
     let mut first_pcurve = if cur.take_ident() == Some("nullbs") {
         EmbeddedSpringPcurve::Range([cur.take_range_value()?, cur.take_range_value()?])
@@ -1195,11 +1201,11 @@ fn embedded_spring(
         Some(pcurve)
     };
     if let EmbeddedSpringPcurve::Pcurve(pcurve) = &mut first_pcurve {
-        normalize_support_pcurve(surface_charts[0], pcurve);
+        normalize_support_pcurve(first_chart, pcurve);
     }
     let mut second_pcurve = second_pcurve;
     if let Some(pcurve) = &mut second_pcurve {
-        normalize_support_pcurve(surface_charts[1], pcurve);
+        normalize_support_pcurve(second_chart, pcurve);
     }
     let parameter_range = [cur.take_range_value()?, cur.take_range_value()?];
     let discontinuities = [
@@ -1211,7 +1217,7 @@ fn embedded_spring(
     let direction = cur.take_enum()?;
     Some(EmbeddedSpring {
         layout: EmbeddedSpringLayout::ContextFirst {
-            supports: supports.try_into().ok()?,
+            supports: [first_support, second_support],
             first_pcurve,
             second_pcurve,
             parameter_range,
