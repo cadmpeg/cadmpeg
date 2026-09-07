@@ -2223,11 +2223,6 @@ fn parse_linetype(
     let component = if version.0 == 1 && version.1 >= 0 {
         let index = reader.i32()?;
         let name = utf16(&mut reader)?;
-        let value = Component {
-            index: Some(index),
-            id: Uuid::nil(),
-            name,
-        };
         let values = segments(&mut reader)?;
         let id = if version.1 >= 1 {
             uuid(&mut reader)?
@@ -2236,8 +2231,11 @@ fn parse_linetype(
         };
         reader.skip_remaining()?;
         return Ok(linetype_record(
-            value,
-            id,
+            Component {
+                index: Some(index),
+                id,
+                name,
+            },
             values,
             source_offset,
             0,
@@ -2320,10 +2318,8 @@ fn parse_linetype(
     // the anonymous chunk. Its value has no generic width and remains a
     // bounded suffix.
     reader.skip_remaining()?;
-    let component_id = component.id;
     Ok(linetype_record(
         component,
-        component_id,
         values,
         source_offset,
         cap,
@@ -2338,7 +2334,6 @@ fn parse_linetype(
 #[allow(clippy::too_many_arguments)]
 fn linetype_record(
     component: Component,
-    fallback_id: Uuid,
     segments: Vec<LinetypeSegment>,
     source_offset: usize,
     line_cap: u8,
@@ -2348,11 +2343,7 @@ fn linetype_record(
     taper_points: Vec<[f64; 2]>,
     always_model_distance: bool,
 ) -> LinetypeRecord {
-    let id = if component.id.is_nil() {
-        fallback_id
-    } else {
-        component.id
-    };
+    let id = component.id;
     let key = if id.is_nil() {
         format!("record-{source_offset}")
     } else {
@@ -5323,7 +5314,6 @@ mod tests {
                 id: Uuid::nil(),
                 name: String::new(),
             },
-            Uuid::nil(),
             Vec::new(),
             7,
             0,
