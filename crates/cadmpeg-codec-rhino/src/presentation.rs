@@ -918,6 +918,8 @@ impl Serialize for settings::LayerPerViewportSettings {
     }
 }
 
+// Serde passes the field by reference to this adapter.
+#[allow(clippy::ref_option)]
 fn serialize_layer_hierarchy<S: serde::Serializer>(
     hierarchy: &Option<settings::LayerHierarchy>,
     serializer: S,
@@ -936,6 +938,8 @@ fn serialize_layer_hierarchy<S: serde::Serializer>(
     record.end()
 }
 
+// Serde passes the field by reference to this adapter.
+#[allow(clippy::ref_option)]
 fn serialize_layer_plot<S: serde::Serializer>(
     plot: &Option<settings::LayerPlot>,
     serializer: S,
