@@ -10,6 +10,7 @@ use super::{
     section_skamp_point_locus, section_skamp_same_coordinate, section_skamp_same_coordinate_axis,
     section_skamp_tangent_loci, unique_bounded_curve_segment,
 };
+use crate::feature::definitions::SolverSubtable;
 use cadmpeg_ir::features::Angle;
 use cadmpeg_ir::sketches::{
     SketchConstraint, SketchConstraintDefinition, SketchCoordinateAxis, SketchEntityId,
@@ -28,7 +29,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
     let complete_skamps = relations
         .skamps
         .as_ref()
-        .is_none_or(|table| table.is_complete());
+        .is_none_or(SolverSubtable::is_complete);
     let skamp_id_counts =
         relations
             .skamps()
@@ -59,7 +60,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                 && relations
                     .triples
                     .as_ref()
-                    .is_none_or(|table| table.is_complete())
+                    .is_none_or(SolverSubtable::is_complete)
             {
                 let mut equation_ids = relations
                     .triples()

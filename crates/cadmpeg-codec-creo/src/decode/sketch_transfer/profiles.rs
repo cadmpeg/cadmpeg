@@ -11,6 +11,7 @@ use super::{
     unique_centered_line_segment, unique_circle_segment, unique_point_segment,
     unique_reference_line_segment,
 };
+use crate::feature::definitions::FeatureRelationTable;
 use crate::feature::segment_rows::SegmentRow;
 use cadmpeg_ir::sketches::{SketchEntityUse, SketchId};
 use std::collections::{BTreeMap, BTreeSet};
@@ -255,7 +256,7 @@ pub(in super::super) fn solver_only_section_entities(
     definition
         .relations
         .iter()
-        .flat_map(|relations| relations.skamps())
+        .flat_map(FeatureRelationTable::skamps)
         .flat_map(|skamp| {
             skamp
                 .items
@@ -381,7 +382,7 @@ fn section_incidence_curve_family_evidence_with_solver_roles(
         .relations
         .iter()
         .filter(|relations| feature_skamp_table_complete(relations))
-        .flat_map(|relations| relations.skamps())
+        .flat_map(FeatureRelationTable::skamps)
     {
         for item in &skamp.items {
             if item.entity_id == entity_id && matches!(item.sense, 2 | 3) {

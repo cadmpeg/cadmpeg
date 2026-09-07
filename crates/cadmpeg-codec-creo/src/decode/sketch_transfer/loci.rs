@@ -14,6 +14,7 @@ use super::{
     unique_section_incidence_curve_family, unique_section_segment_external_ids,
     SectionEntityIncidenceFamily,
 };
+use crate::feature::definitions::FeatureRelationTable;
 use crate::feature::segment_rows::SegmentRow;
 use cadmpeg_ir::sketches::{
     SketchCoordinateAxis, SketchEntityId, SketchGeometry, SketchId, SketchLocus,
@@ -1032,7 +1033,7 @@ pub(in super::super) fn complete_section_skamps(
         .relations
         .iter()
         .filter(|relations| feature_skamp_table_complete(relations))
-        .flat_map(|relations| relations.skamps())
+        .flat_map(FeatureRelationTable::skamps)
 }
 
 pub(in super::super) fn active_complete_section_skamps(

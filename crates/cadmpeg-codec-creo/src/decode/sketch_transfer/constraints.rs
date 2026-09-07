@@ -2,6 +2,7 @@
 //! Section constraint reconciliation, incidence, and dimension emission.
 
 use crate::decode::sketch::equations_scalar::SectionScalarVariable;
+use crate::feature::definitions::SolverSubtable;
 
 use super::super::feature_history::{
     feature_relation_table_complete, resolved_feature_dimension_parameter,
@@ -283,11 +284,11 @@ pub(in super::super) fn joined_relation_incidence_link(
     if !relations
         .triples
         .as_ref()
-        .is_none_or(|table| table.is_complete())
+        .is_none_or(SolverSubtable::is_complete)
         || !relations
             .skamps
             .as_ref()
-            .is_none_or(|table| table.is_complete())
+            .is_none_or(SolverSubtable::is_complete)
     {
         return None;
     }
@@ -345,11 +346,11 @@ pub(in super::super) fn section_solver_equation_is_disabled(
     if !relations
         .triples
         .as_ref()
-        .is_none_or(|table| table.is_complete())
+        .is_none_or(SolverSubtable::is_complete)
         || !relations
             .skamps
             .as_ref()
-            .is_none_or(|table| table.is_complete())
+            .is_none_or(SolverSubtable::is_complete)
     {
         return false;
     }

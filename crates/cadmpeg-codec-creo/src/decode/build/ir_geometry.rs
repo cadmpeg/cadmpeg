@@ -7,6 +7,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::AnnotationBuilder;
 
 use crate::container::ContainerScan;
+use crate::feature::definitions::SolverSubtable;
 
 use super::super::analytic::{
     reconcile_support_apex_cone_parameter_branches, retain_unresolved_surface_carriers,
@@ -157,7 +158,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
             relations
                 .skamps
                 .as_ref()
-                .map_or(0, |table| table.missing_rows())
+                .map_or(0, SolverSubtable::missing_rows)
         })
         .sum::<usize>();
     let skamp_constraint_coverage =
@@ -199,7 +200,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
             relations
                 .triples
                 .as_ref()
-                .map_or(0, |table| table.missing_rows())
+                .map_or(0, SolverSubtable::missing_rows)
         })
         .sum::<usize>();
     let relation_constraint_coverage = design_constraint_transfer_coverage(

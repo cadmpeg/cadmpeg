@@ -13,6 +13,7 @@ use cadmpeg_ir::sketches::SketchId;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::container::ContainerScan;
+use crate::feature::definitions::SolverSubtable;
 
 use super::super::native::annotate;
 use super::super::sketch_ids::{
@@ -132,7 +133,7 @@ pub(in super::super) fn feature_skamp_table_complete(
     table
         .skamps
         .as_ref()
-        .is_none_or(|table| table.is_complete())
+        .is_none_or(SolverSubtable::is_complete)
 }
 
 pub(in super::super) fn feature_dimension_parameter_layout(
