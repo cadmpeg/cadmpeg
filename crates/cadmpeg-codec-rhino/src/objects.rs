@@ -1155,10 +1155,10 @@ pub(crate) fn parse_attributes(
                 )?);
             }
             AttributeItem::Color => {
-                attributes.color = reader.take(4)?.try_into().expect("color width checked")
+                attributes.color = reader.take(4)?.try_into().expect("color width checked");
             }
             AttributeItem::PlotColor => {
-                attributes.plot_color = reader.take(4)?.try_into().expect("color width checked")
+                attributes.plot_color = reader.take(4)?.try_into().expect("color width checked");
             }
             AttributeItem::PlotWeight => {
                 attributes.plot_weight =
@@ -1167,7 +1167,7 @@ pub(crate) fn parse_attributes(
             AttributeItem::Decoration => attributes.decoration = i32::from(reader.u8()?),
             AttributeItem::WireDensity => attributes.wire_density = reader.i32()?,
             AttributeItem::Visible => {
-                attributes.visible = reader.bool_with_writer_version(writer_version)?
+                attributes.visible = reader.bool_with_writer_version(writer_version)?;
             }
             AttributeItem::ObjectMode => attributes.object_mode = reader.u8()?,
             AttributeItem::ColorSource => attributes.color_source = reader.u8()?,
@@ -1201,14 +1201,14 @@ pub(crate) fn parse_attributes(
             AttributeItem::LineJoinSource => attributes.line_join_source = reader.u8()?,
             AttributeItem::LineJoinStyle => attributes.line_join_style = reader.u8()?,
             AttributeItem::ClipParticipationSource => {
-                attributes.clip_participation_source = reader.u8()?
+                attributes.clip_participation_source = reader.u8()?;
             }
             AttributeItem::Clipping => {
                 attributes.clipping_proof = reader.bool_with_writer_version(writer_version)?;
                 attributes.clipping_plane_ids = read_uuid_list(&mut reader, archive)?;
             }
             AttributeItem::SectionAttributesSource => {
-                attributes.section_attributes_source = reader.u8()?
+                attributes.section_attributes_source = reader.u8()?;
             }
             AttributeItem::HatchPatternIndex => attributes.hatch_pattern_index = reader.i32()?,
             AttributeItem::SectionHatchScale => {
@@ -1236,7 +1236,7 @@ pub(crate) fn parse_attributes(
                     reader.bool_with_writer_version(writer_version)?;
             }
             AttributeItem::ObjectFrame => {
-                attributes.object_frame = Some(settings::xform(&mut reader)?)
+                attributes.object_frame = Some(settings::xform(&mut reader)?);
             }
             AttributeItem::SectionFillRule => attributes.section_fill_rule = reader.u8()?,
             AttributeItem::EmbeddedLinetype => {
@@ -1256,7 +1256,7 @@ pub(crate) fn parse_attributes(
                 )?);
             }
             AttributeItem::ClippingPlaneLabelStyle => {
-                attributes.clipping_plane_label_style = reader.u8()?
+                attributes.clipping_plane_label_style = reader.u8()?;
             }
             AttributeItem::SelectiveClippingList => {
                 attributes.selective_clipping_list =
