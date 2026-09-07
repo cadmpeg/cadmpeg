@@ -121,14 +121,15 @@ pub(crate) fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String
         FeatureDefinition::Native { kind, .. } if valid_xml_name(kind.as_str()) => kind.as_str(),
         FeatureDefinition::Native { .. } => "Feature",
         FeatureDefinition::Unresolved {
-            family: UnresolvedFamily::DatumPoint | UnresolvedFamily::DatumCoordinateSystem,
+            family:
+                UnresolvedFamily::DatumPoint
+                | UnresolvedFamily::DatumCoordinateSystem
+                | UnresolvedFamily::Loft
+                | UnresolvedFamily::FreeformSurface
+                | UnresolvedFamily::Draft,
         }
         | FeatureDefinition::Block { .. }
         | FeatureDefinition::ExtractBody { .. }
-        | FeatureDefinition::Unresolved {
-            family:
-                UnresolvedFamily::Loft | UnresolvedFamily::FreeformSurface | UnresolvedFamily::Draft,
-        }
         | FeatureDefinition::FaceBlend { .. }
         | FeatureDefinition::SewBodies { .. }
         | FeatureDefinition::TrimBodies { .. } => "Feature",

@@ -392,14 +392,15 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             FeatureDefinition::HelicalSweep { .. } => self.encode_helical_sweep(),
             FeatureDefinition::Binder { .. } => self.encode_binder(),
             FeatureDefinition::Unresolved {
-                family: UnresolvedFamily::DatumPoint | UnresolvedFamily::DatumCoordinateSystem,
+                family:
+                    UnresolvedFamily::DatumPoint
+                    | UnresolvedFamily::DatumCoordinateSystem
+                    | UnresolvedFamily::Loft
+                    | UnresolvedFamily::FreeformSurface
+                    | UnresolvedFamily::Draft,
             }
             | FeatureDefinition::Block { .. }
             | FeatureDefinition::ExtractBody { .. }
-            | FeatureDefinition::Unresolved {
-                family:
-                    UnresolvedFamily::Loft | UnresolvedFamily::FreeformSurface | UnresolvedFamily::Draft,
-            }
             | FeatureDefinition::FaceBlend { .. }
             | FeatureDefinition::SewBodies { .. }
             | FeatureDefinition::TrimBodies { .. } => self.encode_explicitly_unsupported(),

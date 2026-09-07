@@ -230,21 +230,17 @@ fn rederived_body_census(
             | FeatureDefinition::DatumPrincipalPlane { .. }
             | FeatureDefinition::DatumPlane { .. }
             | FeatureDefinition::Unresolved {
-                family: UnresolvedFamily::DatumPlane,
+                family:
+                    UnresolvedFamily::DatumPlane
+                    | UnresolvedFamily::DatumAxis
+                    | UnresolvedFamily::DatumPoint
+                    | UnresolvedFamily::DatumCoordinateSystem
+                    | UnresolvedFamily::BridgeCurve,
             }
             | FeatureDefinition::DatumOffsetPlane { .. }
             | FeatureDefinition::DatumAxis { .. }
-            | FeatureDefinition::Unresolved {
-                family: UnresolvedFamily::DatumAxis,
-            }
             | FeatureDefinition::DatumPoint { .. }
-            | FeatureDefinition::Unresolved {
-                family: UnresolvedFamily::DatumPoint,
-            }
             | FeatureDefinition::DatumCoordinateSystem { .. }
-            | FeatureDefinition::Unresolved {
-                family: UnresolvedFamily::DatumCoordinateSystem | UnresolvedFamily::BridgeCurve,
-            }
             | FeatureDefinition::Sketch { .. }
             | FeatureDefinition::ProjectedCurve { .. }
             | FeatureDefinition::SectionShape { .. } => {
@@ -591,23 +587,15 @@ fn is_body_neutral_feature(feature: &cadmpeg_ir::features::Feature) -> bool {
                 | FeatureDefinition::DatumPlane { .. }
                 | FeatureDefinition::Unresolved {
                     family: UnresolvedFamily::DatumPlane
+                        | UnresolvedFamily::DatumAxis
+                        | UnresolvedFamily::DatumPoint
+                        | UnresolvedFamily::DatumCoordinateSystem
+                        | UnresolvedFamily::BridgeCurve,
                 }
                 | FeatureDefinition::DatumOffsetPlane { .. }
                 | FeatureDefinition::DatumAxis { .. }
-                | FeatureDefinition::Unresolved {
-                    family: UnresolvedFamily::DatumAxis
-                }
                 | FeatureDefinition::DatumPoint { .. }
-                | FeatureDefinition::Unresolved {
-                    family: UnresolvedFamily::DatumPoint
-                }
                 | FeatureDefinition::DatumCoordinateSystem { .. }
-                | FeatureDefinition::Unresolved {
-                    family: UnresolvedFamily::DatumCoordinateSystem
-                }
-                | FeatureDefinition::Unresolved {
-                    family: UnresolvedFamily::BridgeCurve
-                }
                 | FeatureDefinition::Sketch { .. }
                 | FeatureDefinition::ProjectedCurve { .. }
                 | FeatureDefinition::SectionShape { .. }
@@ -713,9 +701,11 @@ fn suppression_is_body_census_invariant(
                 FeatureDefinition::TrimSurface { .. }
                     | FeatureDefinition::Unresolved {
                         family: UnresolvedFamily::Loft
-                    }
-                    | FeatureDefinition::Unresolved {
-                        family: UnresolvedFamily::FreeformSurface
+                            | UnresolvedFamily::FreeformSurface
+                            | UnresolvedFamily::DeleteFace
+                            | UnresolvedFamily::MirrorFace
+                            | UnresolvedFamily::SubdivisionBody
+                            | UnresolvedFamily::TopologyOptimization,
                     }
                     | FeatureDefinition::ExtendSurface { .. }
                     | FeatureDefinition::Hole { .. }
@@ -725,18 +715,6 @@ fn suppression_is_body_census_invariant(
                     | FeatureDefinition::OffsetSurface { .. }
                     | FeatureDefinition::Thicken { .. }
                     | FeatureDefinition::Draft { .. }
-                    | FeatureDefinition::Unresolved {
-                        family: UnresolvedFamily::DeleteFace
-                    }
-                    | FeatureDefinition::Unresolved {
-                        family: UnresolvedFamily::MirrorFace
-                    }
-                    | FeatureDefinition::Unresolved {
-                        family: UnresolvedFamily::SubdivisionBody
-                    }
-                    | FeatureDefinition::Unresolved {
-                        family: UnresolvedFamily::TopologyOptimization
-                    }
                     | FeatureDefinition::ReplaceFace { .. }
             ))
 }
