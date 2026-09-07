@@ -617,3 +617,16 @@ fn unknown_property_runtime_names_do_not_select_a_family_by_substring() {
     assert_eq!(property.family, crate::native::PropertyFamily::Unknown);
     assert!(property.links().is_empty());
 }
+
+#[test]
+fn empty_and_absent_xlink_file_attributes_decode_to_one_typed_value() {
+    let link = |markup: &str| {
+        let parsed = roxmltree::Document::parse(markup).expect("parse XLink markup");
+        super::xlink(parsed.root_element()).expect("decode XLink")
+    };
+    let empty = link(r#"<XLink file="" name="Body"/>"#);
+    let absent = link(r#"<XLink name="Body"/>"#);
+    assert_eq!(empty, absent);
+    assert_eq!(empty.document, None);
+    assert_eq!(empty.document_attribute(), None);
+}
