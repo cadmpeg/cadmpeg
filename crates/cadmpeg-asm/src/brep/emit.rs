@@ -2414,8 +2414,10 @@ fn emit_blend_surface(
         spine_id
     });
     let native = native.map(|native| {
-        let mut resolved_sides = Vec::with_capacity(2);
-        for (side_index, side) in native.sides.into_iter().enumerate() {
+        let mut next_side_index = 0;
+        let resolved_sides = (*native.sides).map(|side| {
+            let side_index = next_side_index;
+            next_side_index += 1;
             let prefix = format!("{format}:brep:procedural_surface#{i}:native_side{side_index}");
             let surface = side.surface.map(|geometry| {
                 let id = SurfaceId::mint(format!("{prefix}:surface")).expect("identity grammar");
@@ -2441,7 +2443,7 @@ fn emit_blend_surface(
                 });
                 id
             });
-            resolved_sides.push(RollingBallSide {
+            RollingBallSide {
                 support_kind: side.support_kind,
                 surface,
                 surface_ranges: side.surface_ranges,
@@ -2456,11 +2458,8 @@ fn emit_blend_surface(
                 tertiary_pcurve: side
                     .tertiary_pcurve
                     .map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
-            });
-        }
-        let [first, second]: [RollingBallSide; 2] = resolved_sides
-            .try_into()
-            .expect("invariant: native rolling-ball has two sides");
+            }
+        });
         let slice = CurveId::mint(format!("{format}:brep:procedural_surface#{i}:native_slice"))
             .expect("identity grammar");
         out.curves.push(Curve {
@@ -2500,7 +2499,7 @@ fn emit_blend_surface(
         });
         Box::new(RollingBallConstruction {
             definition_index: native.definition_index,
-            sides: Box::new([first, second]),
+            sides: Box::new(resolved_sides),
             slice,
             slice_range: native.slice_range,
             offsets: native.offsets,
