@@ -298,3 +298,103 @@ pub(in super::super) fn retain_native_feature_parameters(
         source_properties.insert(format!("native_parameter.{name}"), value.clone());
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{surface_intersect_feature_definition, BodySelection, IrFeatureDefinition};
+
+    #[test]
+    fn numbered_intersect_name_identifies_section_shape_feature() {
+        let table = || {
+            crate::feature::FeatureEntityTable {
+                feature_id: 50,
+                table_class_id: 29,
+                entries: vec![
+                    crate::feature::dummy_table_entry(61, true),
+                    crate::feature::dummy_table_entry(75, true),
+                ],
+                offset: 0,
+            }
+            .with_surface_ids([61, 75])
+        };
+        let surface = |id, feature_id| crate::surface::SurfaceRow {
+            id,
+            kind: crate::surface::SurfaceKind::Plane,
+            feature_id,
+            reversed: false,
+            boundary_type: crate::surface::BoundaryType::Code00,
+            next_surface: 0,
+            offset: 0,
+        };
+        let valid_scan = || {
+            let mut scan = crate::container::scan_bytes(Vec::new());
+            scan.features.entity_tables.push(table());
+            scan.surfaces
+                .rows
+                .extend([surface(61, 50), surface(75, 50)]);
+            scan
+        };
+
+        let mut scan = crate::container::scan_bytes(Vec::new());
+        assert_eq!(
+            surface_intersect_feature_definition(&scan, 50, "Intersect 1"),
+            None
+        );
+        scan = valid_scan();
+        assert_eq!(
+            surface_intersect_feature_definition(&scan, 50, "Intersect 1"),
+            Some(IrFeatureDefinition::SectionShape {
+                first: BodySelection::Unresolved,
+                second: BodySelection::Unresolved,
+                approximate: None,
+            })
+        );
+        scan.surfaces.rows.pop();
+        assert_eq!(
+            surface_intersect_feature_definition(&scan, 50, "Intersect 1"),
+            None
+        );
+
+        let mut duplicate_surface_row = valid_scan();
+        duplicate_surface_row.surfaces.rows.push(surface(61, 50));
+        assert_eq!(
+            surface_intersect_feature_definition(&duplicate_surface_row, 50, "Intersect 1"),
+            None
+        );
+
+        let mut foreign_surface = valid_scan();
+        foreign_surface.surfaces.rows[1].feature_id = 51;
+        assert_eq!(
+            surface_intersect_feature_definition(&foreign_surface, 50, "Intersect 1"),
+            None
+        );
+
+        let mut duplicate_surface_id = valid_scan();
+        duplicate_surface_id.features.entity_tables[0]
+            .entries
+            .push(crate::feature::dummy_table_entry(61, true));
+        assert_eq!(
+            surface_intersect_feature_definition(&duplicate_surface_id, 50, "Intersect 1"),
+            None
+        );
+
+        let mut multiple_materialized_tables = valid_scan();
+        multiple_materialized_tables
+            .features
+            .entity_tables
+            .push(table());
+        assert_eq!(
+            surface_intersect_feature_definition(&multiple_materialized_tables, 50, "Intersect 1"),
+            None
+        );
+
+        assert_eq!(
+            surface_intersect_feature_definition(&scan, 50, "Intersect"),
+            None
+        );
+        assert_eq!(
+            surface_intersect_feature_definition(&scan, 50, "Intersect copy"),
+            None
+        );
+    }
+}
