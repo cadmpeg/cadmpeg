@@ -49,8 +49,23 @@ enum LoopUse {
 #[derive(Clone)]
 struct FaceDefinition {
     surface: u32,
-    loops: Vec<u32>,
-    has_outer_loop: bool,
+    loops: FaceLoopPointers,
+}
+
+#[derive(Clone)]
+enum FaceLoopPointers {
+    OuterFirst { outer: u32, inner: Vec<u32> },
+    Unclassified { first: u32, rest: Vec<u32> },
+}
+
+impl FaceLoopPointers {
+    fn iter(&self) -> impl Iterator<Item = u32> + '_ {
+        let (first, rest) = match self {
+            Self::OuterFirst { outer, inner } => (outer, inner),
+            Self::Unclassified { first, rest } => (first, rest),
+        };
+        std::iter::once(*first).chain(rest.iter().copied())
+    }
 }
 
 #[derive(Clone)]
@@ -521,16 +536,26 @@ pub(super) fn project(
                 continue;
             }
         };
-        let Some(face_loops) = (0..count)
-            .map(|index| pointer(record, 4 + index))
-            .collect::<Option<Vec<_>>>()
-        else {
+        let Some((first, rest)) = pointer(record, 4).and_then(|first| {
+            (1..count)
+                .map(|index| pointer(record, 4 + index))
+                .collect::<Option<Vec<_>>>()
+                .map(|rest| (first, rest))
+        }) else {
             losses.push(entity_loss(entry, "face loop pointer is invalid"));
             continue;
         };
+        let face_loops = if has_outer_loop {
+            FaceLoopPointers::OuterFirst {
+                outer: first,
+                inner: rest,
+            }
+        } else {
+            FaceLoopPointers::Unclassified { first, rest }
+        };
         if face_loops
             .iter()
-            .any(|sequence| !loops.contains_key(sequence))
+            .any(|sequence| !loops.contains_key(&sequence))
         {
             losses.push(entity_loss(entry, "face loop is missing"));
             continue;
@@ -540,7 +565,6 @@ pub(super) fn project(
             FaceDefinition {
                 surface,
                 loops: face_loops,
-                has_outer_loop,
             },
         );
     }
@@ -787,12 +811,13 @@ pub(super) fn project(
                 let face_id =
                     FaceId::mint(format!("iges:model:face#{shell_stem}:D{face_sequence}"))
                         .expect("identity grammar");
-                let mut face_loops = Vec::new();
-                for loop_sequence in face_definition.loops {
+                let loop_id_for = |sequence| {
+                    LoopId::mint(format!("iges:model:loop#{shell_stem}:D{sequence}"))
+                        .expect("identity grammar")
+                };
+                for loop_sequence in face_definition.loops.iter() {
                     let uses = loops[&loop_sequence].clone();
-                    let loop_id =
-                        LoopId::mint(format!("iges:model:loop#{shell_stem}:D{loop_sequence}"))
-                            .expect("identity grammar");
+                    let loop_id = loop_id_for(loop_sequence);
                     let edge_use_indices = uses
                         .iter()
                         .enumerate()
@@ -1080,7 +1105,6 @@ pub(super) fn project(
                         face: face_id.clone(),
                         boundary,
                     });
-                    face_loops.push(loop_id);
                     consumed.insert(loop_sequence);
                 }
                 if !valid {
@@ -1091,13 +1115,21 @@ pub(super) fn project(
                     shell: shell_id.clone(),
                     surface: surface_id,
                     sense: face_sense,
-                    loops: {
-                        let mut loops = cadmpeg_ir::topology::FaceLoops::from(face_loops);
-                        if face_definition.has_outer_loop {
-                            let outer = loops.first().cloned();
-                            loops.classify_outer(outer.as_ref());
+                    loops: match face_definition.loops {
+                        FaceLoopPointers::OuterFirst { outer, inner } => {
+                            cadmpeg_ir::topology::FaceLoops::classified(
+                                Some(loop_id_for(outer)),
+                                inner.into_iter().map(loop_id_for).collect(),
+                            )
                         }
-                        loops
+                        FaceLoopPointers::Unclassified { first, rest } => {
+                            cadmpeg_ir::topology::FaceLoops::unspecified(
+                                std::iter::once(first)
+                                    .chain(rest)
+                                    .map(loop_id_for)
+                                    .collect(),
+                            )
+                        }
                     },
                     name: None,
                     color: None,
