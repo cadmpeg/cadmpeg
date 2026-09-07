@@ -289,10 +289,6 @@ fn valid_sketch_profile_region_selection(
     cursor.checked_add(5) == Some(selection.companion_byte_offset)
 }
 
-fn valid_dynamic_class_tag(class_tag: &str) -> bool {
-    class_tag.len() == 3 && class_tag.bytes().all(|byte| byte.is_ascii_digit())
-}
-
 fn design_header_matches(
     records_by_index: &HashMap<(&str, u32), &records::DesignRecordHeader>,
     stream: &str,
@@ -1205,7 +1201,9 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) {
         for entity_id in design_type.entities.values() {
             let valid_type =
                 crate::design::decode::meta::is_supported_feature_timeline_type(design_type)
-                    && class_tag.as_deref().is_some_and(valid_dynamic_class_tag);
+                    && class_tag
+                        .as_ref()
+                        .is_some_and(|tag| records::DesignClassTag::try_from(tag.clone()).is_ok());
             let Some(class_tag) = class_tag.clone() else {
                 continue;
             };
@@ -7455,7 +7453,6 @@ fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         let local_id_offset = member.byte_offset.checked_add(21);
                         let asset_id_offset = member.byte_offset.checked_add(33);
                         unique_record
-                            && valid_dynamic_class_tag(&member.class_tag)
                             && member.byte_offset > group.carrier_span.start()
                             && local_id_offset == Some(persistent.local_id_offset)
                             && asset_id_offset == Some(persistent.asset_id_offset)

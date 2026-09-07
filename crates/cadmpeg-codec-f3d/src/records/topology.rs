@@ -3514,7 +3514,7 @@ pub struct DesignFaceSourceMember {
     /// Byte offset of the persistent-identity record's indexed header.
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII identity class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Fixed persistent identity carried by the source record.
     pub persistent_identity: DesignConstructionPersistentIdentity,
 }

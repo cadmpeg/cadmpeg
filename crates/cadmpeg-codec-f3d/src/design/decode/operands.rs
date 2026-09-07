@@ -988,7 +988,7 @@ pub fn decode_face_source_groups(
                         value: DesignFaceSourceMember {
                             record_index: source_record_index,
                             byte_offset: source_byte_offset_u64,
-                            class_tag: source_class_tag,
+                            class_tag: source_class_tag.try_into().ok()?,
                             persistent_identity: DesignConstructionPersistentIdentity {
                                 local_id: member.local_id,
                                 local_id_offset: member.local_id_offset,
