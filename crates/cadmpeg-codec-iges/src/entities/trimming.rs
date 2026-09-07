@@ -943,18 +943,11 @@ fn linear_ring_is_simple(points: &[[f64; 2]]) -> bool {
     !planar_polyline_has_self_intersection(points)
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum PlanarPointLocation {
-    Inside,
-    Boundary,
-    Outside,
-}
-
-fn planar_point_location(point: [f64; 2], ring: &[[f64; 2]]) -> PlanarPointLocation {
+fn planar_point_is_strictly_inside(point: [f64; 2], ring: &[[f64; 2]]) -> bool {
     if ring.windows(2).any(|segment| {
         super::geometry::planar_segments_contain_point(point, [segment[0], segment[1]])
     }) {
-        return PlanarPointLocation::Boundary;
+        return false;
     }
     let mut inside = false;
     for segment in ring.windows(2) {
@@ -967,11 +960,7 @@ fn planar_point_location(point: [f64; 2], ring: &[[f64; 2]]) -> PlanarPointLocat
             }
         }
     }
-    if inside {
-        PlanarPointLocation::Inside
-    } else {
-        PlanarPointLocation::Outside
-    }
+    inside
 }
 
 fn linear_boundary_rings(
@@ -996,7 +985,7 @@ fn inner_boundaries_are_disjoint_and_inside(outer: &[[f64; 2]], inners: &[Vec<[f
         if planar_polylines_intersect(outer, inner)
             || inner[..inner.len() - 1]
                 .iter()
-                .any(|point| planar_point_location(*point, outer) != PlanarPointLocation::Inside)
+                .any(|point| !planar_point_is_strictly_inside(*point, outer))
         {
             return false;
         }
@@ -1004,8 +993,8 @@ fn inner_boundaries_are_disjoint_and_inside(outer: &[[f64; 2]], inners: &[Vec<[f
     inners.iter().enumerate().all(|(left_index, left)| {
         inners.iter().skip(left_index + 1).all(|right| {
             !planar_polylines_intersect(left, right)
-                && planar_point_location(left[0], right) != PlanarPointLocation::Inside
-                && planar_point_location(right[0], left) != PlanarPointLocation::Inside
+                && !planar_point_is_strictly_inside(left[0], right)
+                && !planar_point_is_strictly_inside(right[0], left)
         })
     })
 }
@@ -1058,8 +1047,8 @@ fn linear_boundary_relationship_is_valid(
     Some(rings.iter().enumerate().all(|(left_index, left)| {
         rings.iter().skip(left_index + 1).all(|right| {
             !planar_polylines_intersect(left, right)
-                && planar_point_location(left[0], right) != PlanarPointLocation::Inside
-                && planar_point_location(right[0], left) != PlanarPointLocation::Inside
+                && !planar_point_is_strictly_inside(left[0], right)
+                && !planar_point_is_strictly_inside(right[0], left)
         })
     }))
 }
