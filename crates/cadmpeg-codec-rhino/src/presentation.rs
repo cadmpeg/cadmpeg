@@ -4390,7 +4390,8 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> NativeInstall {
                 ))),
             }
         }
-        if let (Some(identity), Some(attributes)) = (&object.identity, object.attributes.parsed()) {
+        if let Some(attributes) = object.attributes.parsed() {
+            let identity = &object.identity;
             let key = if identity.object_id.is_nil()
                 || object_id_counts.get(&identity.object_id).copied() != Some(1)
             {

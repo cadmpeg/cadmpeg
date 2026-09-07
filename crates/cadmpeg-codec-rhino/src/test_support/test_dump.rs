@@ -145,7 +145,7 @@ pub(crate) fn tagged_attributes(items: &[(u8, Vec<u8>)], minor: u8) -> Vec<u8> {
 pub(crate) fn descriptor(
     attributes: crate::objects::ObjectAttributes,
     offset: usize,
-) -> crate::objects::ObjectDescriptor {
+) -> crate::objects::ObjectDescriptor<()> {
     crate::objects::ObjectDescriptor {
         range: offset..offset + 10,
         object_type: 0,
@@ -153,7 +153,7 @@ pub(crate) fn descriptor(
         class_data_range: offset..offset,
         attributes: crate::objects::AttributeState::Parsed(Box::new(attributes)),
         attributes_userdata: Vec::new(),
-        identity: None,
+        identity: (),
         userdata: Vec::new(),
         history: None,
         unknown_trailer: Vec::new(),
@@ -981,10 +981,10 @@ pub(crate) fn set_identity(
     color: Option<[u8; 4]>,
     visible: bool,
 ) {
-    let object = scan.objects[source_order]
-        .framed_mut()
-        .expect("test object is framed");
-    object.identity = Some(crate::objects::SourceIdentity {
+    let crate::objects::ObjectRecord::Framed(object) = &mut scan.objects[source_order] else {
+        panic!("test object is framed");
+    };
+    object.identity = crate::objects::SourceIdentity {
         source_id: format!("rhino:object:record#{source_key}"),
         object_id: Uuid::from_wire(object_id),
         class_uuid: object.class_uuid,
@@ -998,7 +998,7 @@ pub(crate) fn set_identity(
         source: settings::SourceRange {
             range: object.range.clone(),
         },
-    });
+    };
 }
 
 pub(crate) fn scan_with_objects(objects: &[Vec<u8>]) -> crate::container::Scan<'static> {

@@ -792,7 +792,7 @@ fn cage_json(cage: &crate::cage::Cage) -> serde_json::Value {
     serde_json::json!({
         "kind": "nurbs_cage",
         "dimension": cage.dimension,
-        "rational": cage.rational,
+        "rational": cage.rational(),
         "orders": cage.orders,
         "counts": cage.counts,
         "knots": cage.knots,
@@ -948,7 +948,7 @@ fn extended_geometry_json(
             .iter()
             .map(|localizer| {
                 serde_json::json!({
-                    "kind": localizer.kind.as_i32(),
+                    "kind": localizer.kind,
                     "point": localizer.point,
                     "vector": localizer.vector,
                     "interval": localizer.interval,

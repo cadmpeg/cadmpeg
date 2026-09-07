@@ -1327,7 +1327,7 @@ mod tests {
         EntryRecord {
             id: name.into(),
             name: name.into(),
-            role: "element-map".into(),
+            role: cadmpeg_core::container::ContainerRole::Auxiliary,
             referenced_by: Vec::new(),
             data: data.to_vec(),
         }

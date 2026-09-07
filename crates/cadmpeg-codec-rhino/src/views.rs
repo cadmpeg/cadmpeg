@@ -57,11 +57,7 @@ struct ViewRecord {
     show_construction_axes: bool,
     show_world_axes: bool,
     legacy_display_mode: Option<i64>,
-    view_type: Option<i32>,
-    page_width_mm: Option<f64>,
-    page_height_mm: Option<f64>,
-    display_mode_uuid: Option<String>,
-    attributes_version: Option<[u8; 2]>,
+    #[serde(flatten, serialize_with = "serialize_view_attributes_field")]
     attributes: Option<ViewAttributes>,
     construction_plane: Option<ConstructionPlane>,
     viewport: Option<Viewport>,
@@ -69,6 +65,32 @@ struct ViewRecord {
     wallpaper: Option<Wallpaper>,
     children: Vec<ViewChild>,
     parse_warnings: Vec<String>,
+}
+
+fn serialize_view_attributes_field<'a, S: serde::Serializer>(
+    attributes: impl Into<Option<&'a ViewAttributes>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serialize_view_attributes(attributes.into(), serializer)
+}
+
+fn serialize_view_attributes<S: serde::Serializer>(
+    attributes: Option<&ViewAttributes>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+
+    let mut map = serializer.serialize_map(Some(6))?;
+    map.serialize_entry("view_type", &attributes.map(|value| value.view_type))?;
+    map.serialize_entry("page_width_mm", &attributes.map(|value| value.width))?;
+    map.serialize_entry("page_height_mm", &attributes.map(|value| value.height))?;
+    map.serialize_entry(
+        "display_mode_uuid",
+        &attributes.and_then(|value| value.display.as_deref()),
+    )?;
+    map.serialize_entry("attributes_version", &attributes.map(|value| value.version))?;
+    map.serialize_entry("attributes", &attributes)?;
+    map.end()
 }
 
 struct ViewportUserdataScan {
@@ -886,11 +908,6 @@ fn parse_view(
     let mut show_axes = true;
     let mut show_world_axes = true;
     let mut legacy_display_mode = None;
-    let mut view_type = None;
-    let mut page_width = None;
-    let mut page_height = None;
-    let mut display_mode_uuid = None;
-    let mut attributes_version = None;
     let mut attributes_detail = None;
     let mut construction_plane = None;
     let mut viewport = None;
@@ -999,11 +1016,6 @@ fn parse_view(
                     checksum_warnings
                         .push(crate::loss::RhinoLossCode::IntegrityFailure.note(warning));
                 }
-                view_type = Some(attributes.view_type);
-                page_width = Some(attributes.width);
-                page_height = Some(attributes.height);
-                display_mode_uuid.clone_from(&attributes.display);
-                attributes_version = Some(attributes.version);
                 attributes_detail = Some(attributes);
             }
             VIEW_VIEWPORT_USERDATA => {
@@ -1093,11 +1105,6 @@ fn parse_view(
             show_construction_axes: show_axes,
             show_world_axes,
             legacy_display_mode,
-            view_type,
-            page_width_mm: page_width,
-            page_height_mm: page_height,
-            display_mode_uuid,
-            attributes_version,
             attributes: attributes_detail,
             construction_plane,
             viewport,
@@ -1324,8 +1331,8 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> NativeInstall {
 mod tests {
     use super::{
         legacy_clipping_depth, parse_attributes, parse_cplane, parse_list, parse_trace_image,
-        parse_viewport, parse_wallpaper, parse_window_position, Viewport, NAMED_CPLANES,
-        UNSET_POSITIVE_FLOAT,
+        parse_viewport, parse_wallpaper, parse_window_position, ViewAttributes, Viewport,
+        NAMED_CPLANES, UNSET_POSITIVE_FLOAT,
     };
     use crate::chunks::ArchiveVersion;
     use crate::container::Record;
@@ -1922,5 +1929,74 @@ mod tests {
         assert!(losses
             .iter()
             .any(|loss| loss.message.contains("0x20008d3b")));
+    }
+
+    struct AttributesField<'a>(Option<&'a ViewAttributes>);
+
+    impl serde::Serialize for AttributesField<'_> {
+        fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            super::serialize_view_attributes(self.0, serializer)
+        }
+    }
+
+    fn sample_attributes() -> ViewAttributes {
+        ViewAttributes {
+            view_type: 1,
+            width: 210.0,
+            height: 297.0,
+            display: Some("display-uuid".to_string()),
+            version: [1, 2],
+            page_settings: None,
+            projection_locked: false,
+            clipping_planes: Vec::new(),
+            named_view_uuid: None,
+            show_construction_z_axis: false,
+            focal_blur_distance_mm: None,
+            focal_blur_aperture: None,
+            focal_blur_jitter: None,
+            focal_blur_sample_count: None,
+            focal_blur_mode: None,
+            rendering_size_pixels: None,
+            section_behavior: None,
+        }
+    }
+
+    #[test]
+    fn view_attributes_projection_emits_the_documented_keys_in_order() {
+        let attributes = sample_attributes();
+        let json = serde_json::to_string(&AttributesField(Some(&attributes)))
+            .expect("view attributes serialize");
+        let keys = [
+            "\"view_type\":1",
+            "\"page_width_mm\":210.0",
+            "\"page_height_mm\":297.0",
+            "\"display_mode_uuid\":\"display-uuid\"",
+            "\"attributes_version\":[1,2]",
+            "\"attributes\":{",
+        ];
+        let mut cursor = 0;
+        for key in keys {
+            let found = json[cursor..]
+                .find(key)
+                .unwrap_or_else(|| panic!("{key} missing after offset {cursor} in {json}"));
+            cursor += found + key.len();
+        }
+    }
+
+    #[test]
+    fn view_attributes_projection_emits_null_keys_when_absent() {
+        let json =
+            serde_json::to_string(&AttributesField(None)).expect("view attributes serialize");
+        assert_eq!(
+            json,
+            concat!(
+                "{\"view_type\":null,",
+                "\"page_width_mm\":null,",
+                "\"page_height_mm\":null,",
+                "\"display_mode_uuid\":null,",
+                "\"attributes_version\":null,",
+                "\"attributes\":null}"
+            )
+        );
     }
 }

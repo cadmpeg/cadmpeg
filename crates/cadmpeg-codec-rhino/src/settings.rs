@@ -148,11 +148,11 @@ pub(crate) struct Notes {
     /// Source range.
     pub(crate) source: SourceRange,
     /// HTML flag.
-    pub(crate) html: i32,
+    pub(crate) html: bool,
     /// Text.
     pub(crate) text: String,
     /// Visibility flag.
-    pub(crate) visible: i32,
+    pub(crate) visible: bool,
     /// Window rectangle.
     pub(crate) rectangle: [i32; 4],
     /// Lock flag introduced by version 1.1.
@@ -975,9 +975,9 @@ fn parse_notes(data: &[u8], record: &Record) -> Result<Notes, FramingError> {
             "unsupported notes version",
         ));
     }
-    let html = reader.i32()?;
+    let html = reader.i32()? != 0;
     let text = utf16(&mut reader)?;
-    let visible = reader.i32()?;
+    let visible = reader.i32()? != 0;
     let rectangle = [reader.i32()?, reader.i32()?, reader.i32()?, reader.i32()?];
     let locked = version.1 >= 1 && reader.bool()?;
     let value = Notes {

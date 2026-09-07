@@ -294,7 +294,7 @@ impl AttributeState {
 
 /// A fully framed Rhino object record.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct ObjectDescriptor {
+pub(crate) struct ObjectDescriptor<I = SourceIdentity> {
     /// Complete object-record range.
     pub(crate) range: Range<usize>,
     /// Object type filter bits.
@@ -308,7 +308,7 @@ pub(crate) struct ObjectDescriptor {
     /// Attribute-userdata descriptors.
     pub(crate) attributes_userdata: Vec<AttributeUserdataDescriptor>,
     /// Resolved source identity.
-    pub(crate) identity: Option<SourceIdentity>,
+    pub(crate) identity: I,
     /// Class userdata descriptors.
     pub(crate) userdata: Vec<UserdataDescriptor>,
     /// Optional history descriptor.
@@ -325,7 +325,7 @@ pub(crate) struct ObjectDescriptor {
 #[derive(Debug, Clone, PartialEq)]
 // Framed records are the common case; retain their descriptors inline during table traversal.
 #[allow(clippy::large_enum_variant)]
-pub(crate) enum ObjectRecord {
+pub(crate) enum ObjectRecord<I = SourceIdentity> {
     /// Bounded inner framing was malformed; only the outer range survived.
     Degraded {
         /// Complete object-record range.
@@ -334,10 +334,10 @@ pub(crate) enum ObjectRecord {
         warning: String,
     },
     /// Fully framed object record.
-    Framed(ObjectDescriptor),
+    Framed(ObjectDescriptor<I>),
 }
 
-impl ObjectRecord {
+impl<I> ObjectRecord<I> {
     pub(crate) fn range(&self) -> Range<usize> {
         match self {
             Self::Degraded { range, .. } => range.clone(),
@@ -345,14 +345,7 @@ impl ObjectRecord {
         }
     }
 
-    pub(crate) fn framed(&self) -> Option<&ObjectDescriptor> {
-        match self {
-            Self::Framed(object) => Some(object),
-            Self::Degraded { .. } => None,
-        }
-    }
-
-    pub(crate) fn framed_mut(&mut self) -> Option<&mut ObjectDescriptor> {
+    pub(crate) fn framed(&self) -> Option<&ObjectDescriptor<I>> {
         match self {
             Self::Framed(object) => Some(object),
             Self::Degraded { .. } => None,
@@ -366,9 +359,11 @@ impl ObjectRecord {
     pub(crate) fn class_uuid(&self) -> Option<Uuid> {
         self.framed().map(|object| object.class_uuid)
     }
+}
 
+impl ObjectRecord {
     pub(crate) fn identity(&self) -> Option<&SourceIdentity> {
-        self.framed().and_then(|object| object.identity.as_ref())
+        self.framed().map(|object| &object.identity)
     }
 }
 
@@ -1502,12 +1497,12 @@ fn parse_per_object_mesh_userdata(
 }
 
 fn resolve_identity(
-    descriptor: &mut ObjectDescriptor,
+    descriptor: &ObjectDescriptor<()>,
     layers: &HashMap<i32, &crate::settings::LayerRecord>,
     warnings: &mut Vec<String>,
     index: usize,
     seen_ids: &mut HashSet<Uuid>,
-) {
+) -> SourceIdentity {
     let attributes = descriptor.attributes.parsed();
     let object_id = attributes.map_or(Uuid::nil(), |value| value.object_id);
     let layer_index = attributes.map_or(-1, |value| value.layer_index);
@@ -1560,7 +1555,7 @@ fn resolve_identity(
         object_id.to_string()
     };
     let source_id = stable_source_id("object", "record", &source_key);
-    descriptor.identity = Some(SourceIdentity {
+    SourceIdentity {
         source_id,
         object_id,
         class_uuid: descriptor.class_uuid,
@@ -1577,7 +1572,7 @@ fn resolve_identity(
         source: SourceRange {
             range: descriptor.range.clone(),
         },
-    });
+    }
 }
 
 /// Parses one bounded object record and returns identity plus child ranges.
@@ -1587,7 +1582,7 @@ pub(crate) fn parse_object_record(
     archive: ArchiveVersion,
     writer_version: Option<i64>,
     global_warnings: &mut Vec<String>,
-) -> Result<ObjectRecord, FramingError> {
+) -> Result<ObjectRecord<()>, FramingError> {
     let mut warnings = Vec::new();
     if record.typecode != 0x2000_8070 || record.is_short() {
         return Err(FramingError::structural(
@@ -1769,7 +1764,7 @@ pub(crate) fn parse_object_record(
         class_data_range,
         attributes,
         attributes_userdata,
-        identity: None,
+        identity: (),
         userdata,
         history,
         unknown_trailer,
@@ -1782,7 +1777,7 @@ pub(crate) fn parse_object_record(
 }
 
 /// Builds a range-preserving descriptor for a malformed bounded object record.
-pub(crate) fn degraded_object_record(record: &Record, error: &FramingError) -> ObjectRecord {
+pub(crate) fn degraded_object_record(record: &Record, error: &FramingError) -> ObjectRecord<()> {
     ObjectRecord::Degraded {
         range: record.range.clone(),
         warning: format!(
@@ -1794,24 +1789,43 @@ pub(crate) fn degraded_object_record(record: &Record, error: &FramingError) -> O
 
 /// Resolves per-object source identity after document layer metadata is known.
 pub(crate) fn resolve_identities(
-    objects: &mut [ObjectRecord],
+    objects: Vec<ObjectRecord<()>>,
     metadata: &DocumentMetadata,
     warnings: &mut Vec<String>,
-) {
+) -> Vec<ObjectRecord> {
     let mut seen_ids = HashSet::new();
     let mut layers = HashMap::with_capacity(metadata.layers.len());
     for layer in &metadata.layers {
         layers.entry(layer.index).or_insert(layer);
     }
-    for (index, object) in objects.iter_mut().enumerate() {
-        let Some(object) = object.framed_mut() else {
-            continue;
-        };
-        let mut local_warnings = Vec::new();
-        resolve_identity(object, &layers, &mut local_warnings, index, &mut seen_ids);
-        warnings.extend(local_warnings.iter().cloned());
-        object.warnings.extend(local_warnings);
-    }
+    objects
+        .into_iter()
+        .enumerate()
+        .map(|(index, object)| match object {
+            ObjectRecord::Degraded { range, warning } => ObjectRecord::Degraded { range, warning },
+            ObjectRecord::Framed(mut object) => {
+                let mut local_warnings = Vec::new();
+                let identity =
+                    resolve_identity(&object, &layers, &mut local_warnings, index, &mut seen_ids);
+                warnings.extend(local_warnings.iter().cloned());
+                object.warnings.extend(local_warnings);
+                ObjectRecord::Framed(ObjectDescriptor {
+                    identity,
+                    range: object.range,
+                    object_type: object.object_type,
+                    class_uuid: object.class_uuid,
+                    class_data_range: object.class_data_range,
+                    attributes: object.attributes,
+                    attributes_userdata: object.attributes_userdata,
+                    userdata: object.userdata,
+                    history: object.history,
+                    unknown_trailer: object.unknown_trailer,
+                    checksum_warnings: object.checksum_warnings,
+                    warnings: object.warnings,
+                })
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]

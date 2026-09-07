@@ -834,13 +834,7 @@ impl<'a> DecodeContext<'a> {
                 continue;
             };
             if crate::mesh::supported_class(object.class_uuid) {
-                let Some(identity) = object.identity.as_ref() else {
-                    self.scan_warning(
-                        source_order,
-                        "mesh retained because identity is unavailable",
-                    );
-                    continue;
-                };
+                let identity = &object.identity;
                 let key = self.object_key(identity, source_order);
                 let decoded = crate::mesh::decode(
                     self.expand,
@@ -1006,13 +1000,7 @@ impl<'a> DecodeContext<'a> {
                 );
                 continue;
             };
-            let Some(identity) = object.identity.as_ref() else {
-                self.scan_warning(
-                    source_order,
-                    "dimension retained because identity is unavailable",
-                );
-                continue;
-            };
+            let identity = &object.identity;
             let key = self.object_key(identity, source_order);
             match crate::dimensions::decode(
                 self.scan.data,
@@ -1122,13 +1110,7 @@ impl<'a> DecodeContext<'a> {
             );
             return;
         };
-        let Some(identity) = object.identity.as_ref() else {
-            self.scan_warning(
-                source_order,
-                "hatch retained because identity is unavailable",
-            );
-            return;
-        };
+        let identity = &object.identity;
         let mut hatch = match crate::hatch::decode(
             self.expand,
             object.class_data_range.clone(),
@@ -1286,13 +1268,7 @@ impl<'a> DecodeContext<'a> {
     fn decode_polyedge(&mut self, source_order: usize, object: &ObjectDescriptor) {
         use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
 
-        let Some(identity) = object.identity.as_ref() else {
-            self.scan_warning(
-                source_order,
-                "polyedge retained because identity is unavailable",
-            );
-            return;
-        };
+        let identity = &object.identity;
         let polyedge = match crate::polyedge::decode(
             self.expand,
             object.class_data_range.clone(),
@@ -1363,13 +1339,7 @@ impl<'a> DecodeContext<'a> {
     fn decode_detail(&mut self, source_order: usize, object: &ObjectDescriptor) {
         use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
 
-        let Some(identity) = object.identity.as_ref() else {
-            self.scan_warning(
-                source_order,
-                "detail retained because identity is unavailable",
-            );
-            return;
-        };
+        let identity = &object.identity;
         let detail = match crate::detail::decode(
             self.scan.data,
             object.class_data_range.clone(),
@@ -1461,13 +1431,7 @@ impl<'a> DecodeContext<'a> {
             );
             return;
         };
-        let Some(identity) = object.identity.as_ref() else {
-            self.scan_warning(
-                source_order,
-                "NURBS cage retained because identity is unavailable",
-            );
-            return;
-        };
+        let identity = &object.identity;
         let cage = match crate::cage::decode(
             self.expand,
             object.class_data_range.clone(),
@@ -1549,7 +1513,7 @@ impl<'a> DecodeContext<'a> {
                 kind: "nurbs_cage".into(),
                 parameters: BTreeMap::from([
                     ("dimension".to_string(), cage.dimension.to_string()),
-                    ("rational".to_string(), cage.rational.to_string()),
+                    ("rational".to_string(), cage.rational().to_string()),
                     (
                         "orders".to_string(),
                         format!("{},{},{}", cage.orders[0], cage.orders[1], cage.orders[2]),
@@ -1588,13 +1552,7 @@ impl<'a> DecodeContext<'a> {
             );
             return;
         };
-        let Some(identity) = object.identity.as_ref() else {
-            self.scan_warning(
-                source_order,
-                "morph control retained because identity is unavailable",
-            );
-            return;
-        };
+        let identity = &object.identity;
         let morph = match crate::morph::decode(
             self.expand,
             object.class_data_range.clone(),
@@ -1654,13 +1612,7 @@ impl<'a> DecodeContext<'a> {
             );
             return;
         };
-        let Some(identity) = object.identity.as_ref() else {
-            self.scan_warning(
-                source_order,
-                "curve-on-surface retained because identity is unavailable",
-            );
-            return;
-        };
+        let identity = &object.identity;
         let construction = match crate::curve_on_surface::decode(
             self.scan.data,
             object.class_data_range.clone(),
@@ -1798,9 +1750,7 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn is_definition_member(&self, object: &ObjectDescriptor) -> bool {
-        let Some(identity) = object.identity.as_ref() else {
-            return false;
-        };
+        let identity = &object.identity;
         self.scan
             .definitions
             .member_object_ids
@@ -1946,10 +1896,7 @@ impl<'a> DecodeContext<'a> {
         let object = object
             .framed()
             .ok_or_else(|| "reference identity is unavailable".to_string())?;
-        let identity = object
-            .identity
-            .as_ref()
-            .ok_or_else(|| "reference identity is unavailable".to_string())?;
+        let identity = &object.identity;
         let reference =
             crate::instances::parse_reference(self.scan.data, object.class_data_range.clone())
                 .map_err(|error| error.to_string())?;
@@ -2170,13 +2117,7 @@ impl<'a> DecodeContext<'a> {
             );
             return;
         };
-        let Some(identity) = object.identity.as_ref() else {
-            self.scan_warning(
-                source_order,
-                "SubD retained because identity is unavailable",
-            );
-            return;
-        };
+        let identity = &object.identity;
         let key = self.object_key(identity, source_order);
         let id: cadmpeg_ir::ids::SubdId = format!("rhino:object:subd#{key}")
             .try_into()
@@ -3191,13 +3132,7 @@ impl<'a> DecodeContext<'a> {
                 self.scan_warning(source_order, warning);
             }
         }
-        let Some(identity) = object.identity.as_ref() else {
-            self.scan_warning(
-                source_order,
-                "Brep retained because identity is unavailable",
-            );
-            return;
-        };
+        let identity = &object.identity;
         self.report
             .phase_losses
             .extend(raw.losses.iter().cloned().map(|mut loss| {

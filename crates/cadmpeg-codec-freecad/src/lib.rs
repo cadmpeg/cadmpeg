@@ -496,7 +496,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
             .side_entries
             .iter()
             .any(|entry| !entry_names.contains(entry.as_str()));
-        if object.is_none_or(|object| object.type_name != annotation.kind)
+        if object.is_none_or(|object| object.type_name != annotation.kind.as_str())
             || missing_reference
             || missing_entry
         {
@@ -1010,7 +1010,7 @@ impl CodecBackend for FcstdCodec {
                     Ok(native::EntryRecord {
                         id: native::native_id("entry", &entry.name),
                         name: entry.name.clone(),
-                        role: entry.role.to_string(),
+                        role: entry.role,
                         referenced_by,
                         data: bytes.to_vec(),
                     })

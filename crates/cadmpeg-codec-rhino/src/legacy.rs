@@ -240,8 +240,8 @@ struct V1BrepFace {
 
 #[derive(Debug, Serialize)]
 struct V1NurbsBrep {
+    #[serde(flatten, serialize_with = "serialize_brep_version_field")]
     wire_version: i32,
-    version: i32,
     curves_2d: Vec<V1NurbsCurveGroup>,
     curves_3d: Vec<V1NurbsCurveGroup>,
     surfaces: Vec<V1NurbsSurface>,
@@ -251,6 +251,25 @@ struct V1NurbsBrep {
     loops: Vec<V1BrepLoop>,
     faces: Vec<V1BrepFace>,
     bbox: [[f64; 3]; 2],
+}
+
+fn serialize_brep_version_field<S: serde::Serializer>(
+    version: impl std::borrow::Borrow<i32>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serialize_brep_version(*version.borrow(), serializer)
+}
+
+fn serialize_brep_version<S: serde::Serializer>(
+    version: i32,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+
+    let mut map = serializer.serialize_map(Some(2))?;
+    map.serialize_entry("wire_version", &version)?;
+    map.serialize_entry("version", &version)?;
+    map.end()
 }
 
 #[derive(Debug, Serialize)]
@@ -1151,7 +1170,6 @@ fn v1_nurbs_brep(data: &[u8], chunk: &crate::chunks::Chunk) -> Result<V1NurbsBre
     outer.skip_remaining().map_err(malformed)?;
     Ok(V1NurbsBrep {
         wire_version,
-        version: wire_version,
         curves_2d,
         curves_3d,
         surfaces,
@@ -3225,5 +3243,19 @@ mod tests {
         let coedges = &result.ir().model.coedges;
         assert_eq!(coedges[0].edge, coedges[1].edge);
         assert_eq!(coedges[2].edge, coedges[3].edge);
+    }
+
+    struct BrepVersionField(i32);
+
+    impl serde::Serialize for BrepVersionField {
+        fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            super::serialize_brep_version(self.0, serializer)
+        }
+    }
+
+    #[test]
+    fn brep_version_projection_emits_the_documented_keys_in_order() {
+        let json = serde_json::to_string(&BrepVersionField(3)).expect("brep version serialize");
+        assert_eq!(json, "{\"wire_version\":3,\"version\":3}");
     }
 }

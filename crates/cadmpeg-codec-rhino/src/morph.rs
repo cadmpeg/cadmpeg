@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Morph-control payload decoding.
 
+use std::fmt;
 use std::ops::Range;
+
+use serde::{Deserialize, Serialize};
 
 use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface};
 
@@ -35,52 +38,41 @@ pub(crate) enum Control {
     },
 }
 
-/// Morph localizer type. Unknown values are not mapped to `None`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum LocalizerKind {
-    /// Type 0.
-    None,
-    /// Type 1.
-    Sphere,
-    /// Type 2.
-    Plane,
-    /// Type 3.
-    Cylinder,
-    /// Type 4.
-    Curve,
-    /// Type 5.
-    Surface,
-    /// Type 6.
-    Distance,
-    /// An unrecognized type code.
-    Unknown(i32),
-}
+/// Localizer code as written by Rhino; the file may carry values outside the
+/// documented table, which decode unchanged.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub(crate) struct LocalizerKind(pub(crate) i32);
 
 impl LocalizerKind {
-    fn from_i32(value: i32) -> Self {
-        match value {
-            0 => Self::None,
-            1 => Self::Sphere,
-            2 => Self::Plane,
-            3 => Self::Cylinder,
-            4 => Self::Curve,
-            5 => Self::Surface,
-            6 => Self::Distance,
-            other => Self::Unknown(other),
-        }
-    }
+    pub(crate) const NONE: Self = Self(0);
+    pub(crate) const SPHERE: Self = Self(1);
+    pub(crate) const PLANE: Self = Self(2);
+    pub(crate) const CYLINDER: Self = Self(3);
+    pub(crate) const CURVE: Self = Self(4);
+    pub(crate) const SURFACE: Self = Self(5);
+    pub(crate) const DISTANCE: Self = Self(6);
+}
 
-    pub(crate) fn as_i32(self) -> i32 {
-        match self {
-            Self::None => 0,
-            Self::Sphere => 1,
-            Self::Plane => 2,
-            Self::Cylinder => 3,
-            Self::Curve => 4,
-            Self::Surface => 5,
-            Self::Distance => 6,
-            Self::Unknown(value) => value,
-        }
+impl fmt::Debug for LocalizerKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = match *self {
+            Self::NONE => "None",
+            Self::SPHERE => "Sphere",
+            Self::PLANE => "Plane",
+            Self::CYLINDER => "Cylinder",
+            Self::CURVE => "Curve",
+            Self::SURFACE => "Surface",
+            Self::DISTANCE => "Distance",
+            Self(code) => return write!(f, "LocalizerKind({code})"),
+        };
+        f.write_str(name)
+    }
+}
+
+impl fmt::Display for LocalizerKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
     }
 }
 
@@ -264,7 +256,7 @@ fn localizer(
             message: format!("unsupported localizer version {major}.{minor}"),
         });
     }
-    let kind = LocalizerKind::from_i32(value.i32()?);
+    let kind = LocalizerKind(value.i32()?);
     let offset = value.position();
     let point = scale_point(point(&mut value)?, scale, offset)?;
     let vector = vector(&mut value)?.0;
@@ -526,7 +518,7 @@ fn cage_properties(
     properties: &mut std::collections::BTreeMap<String, String>,
 ) {
     properties.insert(format!("{prefix}_dimension"), cage.dimension.to_string());
-    properties.insert(format!("{prefix}_rational"), cage.rational.to_string());
+    properties.insert(format!("{prefix}_rational"), cage.rational().to_string());
     properties.insert(
         format!("{prefix}_orders"),
         format!("{},{},{}", cage.orders[0], cage.orders[1], cage.orders[2]),
@@ -598,10 +590,7 @@ pub(crate) fn project(
     };
     for (index, localizer) in morph.localizers.iter().enumerate() {
         let prefix = format!("localizer_{index}");
-        properties.insert(
-            format!("{prefix}_type"),
-            localizer.kind.as_i32().to_string(),
-        );
+        properties.insert(format!("{prefix}_type"), localizer.kind.to_string());
         properties.insert(format!("{prefix}_point"), numbers(localizer.point));
         properties.insert(format!("{prefix}_vector"), numbers(localizer.vector));
         properties.insert(format!("{prefix}_interval"), numbers(localizer.interval));
@@ -846,8 +835,14 @@ mod tests {
         curve_payload.extend(curve(2.0));
         let mut surface_payload = vec![1];
         surface_payload.extend(surface);
-        for kind in [0_i32, 1, 4, 5, 99] {
-            let mut payload = kind.to_le_bytes().to_vec();
+        for kind in [
+            LocalizerKind::NONE,
+            LocalizerKind::SPHERE,
+            LocalizerKind::CURVE,
+            LocalizerKind::SURFACE,
+            LocalizerKind(99),
+        ] {
+            let mut payload = kind.0.to_le_bytes().to_vec();
             for value in [0.0_f64, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0] {
                 payload.extend(value.to_le_bytes());
             }
@@ -857,7 +852,7 @@ mod tests {
             let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("localizer bounds");
             let value =
                 localizer(&bytes, &mut reader, 1.0, ArchiveVersion::V8).expect("localizer fields");
-            assert_eq!(value.kind.as_i32(), kind);
+            assert_eq!(value.kind, kind);
             assert!(value.curve.is_some());
             assert!(value.surface.is_some());
             assert_eq!(reader.remaining(), 0);
