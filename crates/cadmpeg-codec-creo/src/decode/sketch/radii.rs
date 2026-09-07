@@ -464,11 +464,6 @@ pub(crate) fn section_arc_carrier(
     Some((center, radius))
 }
 
-#[derive(Clone)]
-pub(crate) struct SectionIntersectionCarrier {
-    pub(crate) geometry: SketchGeometry,
-}
-
 pub(crate) fn section_axis_line_carrier_with_points(
     variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
     segment: &crate::feature::FeatureSegment,
@@ -580,27 +575,25 @@ pub(crate) fn section_segment_intersection_carrier_with_missing_line(
     segment: &crate::feature::FeatureSegment,
     missing_line: Option<&(usize, SketchGeometry)>,
     variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
-) -> Option<SectionIntersectionCarrier> {
+) -> Option<SketchGeometry> {
     if let Some(geometry) = resolved_section_segment_geometry_with_missing_line(
         definition,
         points,
         segment,
         missing_line,
     ) {
-        return Some(SectionIntersectionCarrier { geometry });
+        return Some(geometry);
     }
     if let Some(geometry) = section_proven_axis_line_carrier(definition, variable_points, segment) {
-        return Some(SectionIntersectionCarrier { geometry });
+        return Some(geometry);
     }
     let ([center_u, center_v], radius) = section_arc_carrier(radii, points, segment)
         .or_else(|| saved_section_arc_carrier(definition, segment))?;
-    Some(SectionIntersectionCarrier {
-        geometry: SketchGeometry::Arc {
-            center: cadmpeg_ir::math::Point2::new(center_u, center_v),
-            radius: Length(radius),
-            start_angle: Angle(0.0),
-            end_angle: Angle(std::f64::consts::TAU),
-        },
+    Some(SketchGeometry::Arc {
+        center: cadmpeg_ir::math::Point2::new(center_u, center_v),
+        radius: Length(radius),
+        start_angle: Angle(0.0),
+        end_angle: Angle(std::f64::consts::TAU),
     })
 }
 

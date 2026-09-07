@@ -1680,8 +1680,7 @@ fn saved_arc_joins_through_order_table() {
             &resolved_section_radii(&trimmed),
             &BTreeMap::new(),
             segment,
-        )
-        .map(|carrier| carrier.geometry),
+        ),
         Some(SketchGeometry::Arc {
             center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
             radius: Length(2.0),

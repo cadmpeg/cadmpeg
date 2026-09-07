@@ -14,7 +14,6 @@ use crate::decode::feature_history::{
 };
 use crate::decode::sketch::{
     intersect_incident_section_carriers, section_arc_geometry, trim_segment_id,
-    SectionIntersectionCarrier,
 };
 use crate::decode::sketch_transfer::{
     materialized_saved_section_external_ids, resolved_profile_chains,
@@ -293,11 +292,9 @@ fn profile_chain_follows_trim_vertex_incidence() {
 
 #[test]
 fn multi_incident_trim_vertex_requires_one_agreeing_pairwise_intersection() {
-    let line = |start: [f64; 2], end: [f64; 2]| SectionIntersectionCarrier {
-        geometry: SketchGeometry::Line {
-            start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
-            end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
-        },
+    let line = |start: [f64; 2], end: [f64; 2]| SketchGeometry::Line {
+        start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
+        end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
     };
     let concurrent = [
         line([-1.0, 0.0], [1.0, 0.0]),

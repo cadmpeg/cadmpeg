@@ -16,7 +16,6 @@ use super::geometry::{
 use super::radii::{
     resolved_section_radii, section_arc_carrier,
     section_segment_intersection_carrier_with_missing_line, trim_segment_id,
-    SectionIntersectionCarrier,
 };
 use super::skamp::section_line_entity_fixed_coordinate_with_unique_rows;
 
@@ -211,26 +210,24 @@ pub(crate) fn intersect_tangent_section_arcs(
 }
 
 pub(crate) fn intersect_section_carriers(
-    first: &SectionIntersectionCarrier,
-    second: &SectionIntersectionCarrier,
+    first: &SketchGeometry,
+    second: &SketchGeometry,
 ) -> Option<[f64; 2]> {
     let line_arc_is_bounded = matches!(
-        (&first.geometry, &second.geometry),
+        (first, second),
         (SketchGeometry::Line { .. }, SketchGeometry::Arc { .. })
             | (SketchGeometry::Arc { .. }, SketchGeometry::Line { .. })
     );
-    intersect_section_lines(&first.geometry, &second.geometry)
+    intersect_section_lines(first, second)
         .or_else(|| {
             line_arc_is_bounded
-                .then(|| intersect_section_line_arc(&first.geometry, &second.geometry))
+                .then(|| intersect_section_line_arc(first, second))
                 .flatten()
         })
-        .or_else(|| intersect_tangent_section_arcs(&first.geometry, &second.geometry))
+        .or_else(|| intersect_tangent_section_arcs(first, second))
 }
 
-pub(crate) fn intersect_incident_section_carriers(
-    carriers: &[SectionIntersectionCarrier],
-) -> Option<[f64; 2]> {
+pub(crate) fn intersect_incident_section_carriers(carriers: &[SketchGeometry]) -> Option<[f64; 2]> {
     (carriers.len() >= 2).then_some(())?;
     let mut candidates = Vec::new();
     for first in 0..carriers.len() {
