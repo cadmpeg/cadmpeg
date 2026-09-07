@@ -39,10 +39,13 @@ fn feature_local_plane(scan: &ContainerScan, surface_id: u32) -> Result<Option<P
                 .collect::<Vec<_>>();
             match frames.as_slice() {
                 [] => Ok(None),
-                [frame] => Ok(frame
-                    .origin
-                    .zip(frame.normal)
-                    .map(|(origin, normal)| PlaneEquation { origin, normal })),
+                [frame] => {
+                    let frame = frame.frame();
+                    Ok(frame
+                        .origin
+                        .zip(frame.normal)
+                        .map(|(origin, normal)| PlaneEquation { origin, normal }))
+                }
                 _ => Err(()),
             }
         }

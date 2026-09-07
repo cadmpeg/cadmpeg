@@ -1203,10 +1203,8 @@ fn counterbore_step_support_supplies_only_its_unoriented_normal_axis() {
     let frame = crate::surface::PlaneLocalSystem {
         surface_id: 13,
         body: Vec::new(),
-        slots: vec![Some(0.0); 12],
-        origin: Some([2.0, 3.0, 4.0]),
-        u_axis: Some([0.0, 0.0, 1.0]),
-        normal: Some([0.0, -2.0, 0.0]),
+        slots: [0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, -2.0, 0.0, 2.0, 3.0, 4.0].map(Some),
+        layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
         classification: crate::surface::LocalSystemClassification::Simple,
         row_offset: 0,
         offset: 0,
@@ -1224,7 +1222,7 @@ fn counterbore_step_support_supplies_only_its_unoriented_normal_axis() {
             .is_none()
     );
     let mut incomplete = frame.clone();
-    incomplete.normal = None;
+    incomplete.slots[6] = None;
     assert!(counterbore_support_axis_placement(
         9,
         &table,

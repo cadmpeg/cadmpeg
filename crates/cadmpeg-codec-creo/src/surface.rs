@@ -2307,19 +2307,35 @@ pub struct PlaneLocalSystem {
     /// Exact bytes between the envelope close and local-system close.
     pub body: Vec<u8>,
     /// Twelve inherited `f9 04 03` scalar slots; unresolved slots remain `None`.
-    pub slots: Vec<Option<f64>>,
-    /// Slots 9 through 11 when all three decode.
-    pub origin: Option<[f64; 3]>,
-    /// Normalized first in-plane direction from slots 0 through 2.
-    pub u_axis: Option<[f64; 3]>,
-    /// Normalized plane normal from the decoded support-frame layout.
-    pub normal: Option<[f64; 3]>,
+    pub slots: [Option<f64>; 12],
+    /// Decoded support-frame layout, when the scalar carrier is complete.
+    pub layout: Option<scalar::PlaneSupportFrameLayout>,
     /// Compact versus raw-preserved chunk classification.
     pub classification: LocalSystemClassification,
     /// Byte offset of the plane row in the original stream.
     pub row_offset: usize,
     /// Byte offset of the local-system chunk in the original stream.
     pub offset: usize,
+}
+
+impl PlaneLocalSystem {
+    pub(crate) fn complete_slots(&self) -> Option<[f64; 12]> {
+        let mut slots = [0.0; 12];
+        for (value, slot) in slots.iter_mut().zip(self.slots) {
+            *value = slot?;
+        }
+        Some(slots)
+    }
+
+    pub(crate) fn frame(&self) -> PlaneFrame {
+        match self.layout {
+            Some(scalar::PlaneSupportFrameLayout::DirectNormalTriples) => {
+                plane_direct_frame(&self.slots)
+            }
+            Some(scalar::PlaneSupportFrameLayout::MatrixColumns) => plane_matrix_frame(&self.slots),
+            _ => plane_frame(&self.slots),
+        }
+    }
 }
 
 /// Return whether a retained plane frame agrees with the strict matrix form.
@@ -2329,10 +2345,8 @@ pub struct PlaneLocalSystem {
 /// equal across two stored corners; treating that bound as a second plane
 /// equation would reject valid oblique planes.
 pub(crate) fn uses_matrix_column_frame(frame: &PlaneLocalSystem) -> bool {
-    let Ok(slots) = <[Option<f64>; 12]>::try_from(frame.slots.as_slice()) else {
-        return false;
-    };
-    let matrix = plane_matrix_frame(&slots);
+    let matrix = plane_matrix_frame(&frame.slots);
+    let frame = frame.frame();
     let Some(matrix_u_axis) = matrix.u_axis else {
         return false;
     };
@@ -2650,7 +2664,10 @@ pub fn frame_bound_outline_planes(
         let support_frames = frames
             .iter()
             .filter(|frame| frame.surface_id == record.surface_id)
-            .filter_map(|frame| Some((frame.normal?, frame.u_axis?)))
+            .filter_map(|frame| {
+                let frame = frame.frame();
+                Some((frame.normal?, frame.u_axis?))
+            })
             .collect::<Vec<_>>();
         let Some(&(normal, u_axis)) = support_frames.first() else {
             continue;
@@ -7890,10 +7907,10 @@ fn sequential_named_local_system_slots(
     Some(slots)
 }
 
-struct PlaneFrame {
-    origin: Option<[f64; 3]>,
-    u_axis: Option<[f64; 3]>,
-    normal: Option<[f64; 3]>,
+pub(crate) struct PlaneFrame {
+    pub(crate) origin: Option<[f64; 3]>,
+    pub(crate) u_axis: Option<[f64; 3]>,
+    pub(crate) normal: Option<[f64; 3]>,
 }
 
 fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
@@ -8173,13 +8190,7 @@ fn plane_local_systems_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<Plan
             let slots = decoded
                 .as_ref()
                 .map_or([None; 12], |(slots, _)| slots.map(Some));
-            let frame = match decoded.as_ref().map(|(_, layout)| *layout) {
-                Some(scalar::PlaneSupportFrameLayout::DirectNormalTriples) => {
-                    plane_direct_frame(&slots)
-                }
-                Some(scalar::PlaneSupportFrameLayout::MatrixColumns) => plane_matrix_frame(&slots),
-                _ => plane_frame(&slots),
-            };
+            let layout = decoded.as_ref().map(|(_, layout)| *layout);
             let frame_body = body.strip_suffix(&[0xe1]).unwrap_or(&body);
             let simple = matches!(frame_body.first(), Some(0x0f | 0x10 | 0x18))
                 && frame_body.len() <= 24
@@ -8193,10 +8204,8 @@ fn plane_local_systems_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<Plan
                 PlaneLocalSystem {
                     surface_id: row.id,
                     body,
-                    slots: slots.to_vec(),
-                    origin: frame.origin,
-                    u_axis: frame.u_axis,
-                    normal: frame.normal,
+                    slots,
+                    layout,
                     classification: if simple {
                         LocalSystemClassification::Simple
                     } else {

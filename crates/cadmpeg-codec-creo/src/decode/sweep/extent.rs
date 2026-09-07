@@ -536,10 +536,13 @@ fn section_plane_evidence(scan: &ContainerScan, id: u32) -> SectionPlaneEvidence
         .filter(|plane| plane.surface_id == id)
         .collect::<Vec<_>>();
     let model_equation = match model_planes.as_slice() {
-        [plane] => plane
-            .normal
-            .zip(plane.origin)
-            .and_then(|(normal, origin)| normalized_plane(normal, dot(normal, origin))),
+        [plane] => {
+            let frame = plane.frame();
+            frame
+                .normal
+                .zip(frame.origin)
+                .and_then(|(normal, origin)| normalized_plane(normal, dot(normal, origin)))
+        }
         _ => None,
     };
     let outline_planes = if scan

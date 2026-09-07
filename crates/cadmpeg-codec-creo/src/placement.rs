@@ -476,10 +476,13 @@ fn plane_equation(
         .filter(|plane| plane.surface_id == id)
         .collect::<Vec<_>>();
     let model_equation = match model_planes.as_slice() {
-        [plane] => plane
-            .normal
-            .zip(plane.origin)
-            .map(|(normal, origin)| (normal, dot(normal, origin))),
+        [plane] => {
+            let frame = plane.frame();
+            frame
+                .normal
+                .zip(frame.origin)
+                .map(|(normal, origin)| (normal, dot(normal, origin)))
+        }
         _ => None,
     };
     let outline_planes = outline_planes

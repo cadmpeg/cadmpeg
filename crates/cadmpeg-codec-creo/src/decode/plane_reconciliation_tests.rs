@@ -401,7 +401,7 @@ fn held_envelope_assigns_mixed_support_frame_roles() {
     let mut frame = PlaneLocalSystem {
         surface_id: 141,
         body: Vec::new(),
-        slots: vec![
+        slots: [
             Some(0.0),
             Some(0.0),
             Some(1.0),
@@ -415,9 +415,7 @@ fn held_envelope_assigns_mixed_support_frame_roles() {
             Some(0.0),
             Some(-0.85),
         ],
-        origin: Some([8.0, 0.0, -0.85]),
-        u_axis: Some([0.0, 0.0, 1.0]),
-        normal: Some([0.0, 1.0, 0.0]),
+        layout: Some(crate::scalar::PlaneSupportFrameLayout::SupportTriples),
         classification: LocalSystemClassification::Simple,
         row_offset: 10,
         offset: 20,
@@ -427,7 +425,7 @@ fn held_envelope_assigns_mixed_support_frame_roles() {
     assert_eq!(candidate.equation.normal, equation.normal);
     assert_eq!(candidate.chart.expect("chart").u_axis, [1.0, 0.0, 0.0]);
 
-    frame.origin = Some([8.0, 0.0, 1.0]);
+    frame.slots[11] = Some(1.0);
     assert!(envelope_reconciled_plane_candidate(&frame, equation).is_none());
 }
 
@@ -436,10 +434,8 @@ fn frame_bound_outline_supplies_the_plane_chart_origin() {
     let frame = PlaneLocalSystem {
         surface_id: 52,
         body: Vec::new(),
-        slots: vec![Some(0.0); 12],
-        origin: Some([-9.0, 48.0, 0.0]),
-        u_axis: Some([0.0, 0.0, 1.0]),
-        normal: Some([0.0, 1.0, 0.0]),
+        slots: [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -9.0, 48.0, 0.0].map(Some),
+        layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
         classification: LocalSystemClassification::Simple,
         row_offset: 10,
         offset: 20,
@@ -491,10 +487,11 @@ fn support_frame_selects_one_axis_from_a_line_shaped_plane_outline() {
     scan.planes.local_systems.push(PlaneLocalSystem {
         surface_id: 42,
         body: Vec::new(),
-        slots: Vec::new(),
-        origin: Some([100.0, 200.0, 300.0]),
-        u_axis: Some([0.0, 0.0, 1.0]),
-        normal: Some([0.0, 1.0, 0.0]),
+        slots: [
+            0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 100.0, 200.0, 300.0,
+        ]
+        .map(Some),
+        layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
         classification: LocalSystemClassification::Unclassified,
         row_offset: 10,
         offset: 30,
@@ -542,7 +539,7 @@ fn matrix_frame_owns_conflicting_held_coordinate_plane() {
     scan.planes.local_systems.push(PlaneLocalSystem {
         surface_id: 42,
         body: Vec::new(),
-        slots: vec![
+        slots: [
             Some(1.0),
             Some(0.0),
             Some(1.0),
@@ -556,9 +553,7 @@ fn matrix_frame_owns_conflicting_held_coordinate_plane() {
             Some(0.0),
             Some(0.0),
         ],
-        origin: Some([0.0, 0.0, 0.0]),
-        u_axis: Some([component, 0.0, -component]),
-        normal: Some([component, 0.0, component]),
+        layout: Some(crate::scalar::PlaneSupportFrameLayout::MatrixColumns),
         classification: LocalSystemClassification::Unclassified,
         row_offset: 10,
         offset: 30,
@@ -639,7 +634,7 @@ fn fc05_cap_pair_tangency_selects_one_stored_plane_branch() {
     scan.planes.local_systems.push(PlaneLocalSystem {
         surface_id: 5,
         body: Vec::new(),
-        slots: vec![
+        slots: [
             Some(0.8),
             Some(0.0),
             Some(-0.6),
@@ -653,9 +648,7 @@ fn fc05_cap_pair_tangency_selects_one_stored_plane_branch() {
             Some(0.0),
             Some(origin_z),
         ],
-        origin: Some([0.0, 0.0, origin_z]),
-        u_axis: Some([0.8, 0.0, -0.6]),
-        normal: Some([-0.6, 0.0, 0.8]),
+        layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
         classification: LocalSystemClassification::Unclassified,
         row_offset: 50,
         offset: 60,
@@ -857,7 +850,7 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
     scan.planes.local_systems.push(PlaneLocalSystem {
         surface_id: 5,
         body: Vec::new(),
-        slots: vec![
+        slots: [
             Some(0.8),
             Some(0.0),
             Some(-0.6),
@@ -871,9 +864,7 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
             Some(0.0),
             Some(origin_z),
         ],
-        origin: Some([0.0, 0.0, origin_z]),
-        u_axis: Some([0.8, 0.0, -0.6]),
-        normal: Some([0.6, 0.0, 0.8]),
+        layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
         classification: LocalSystemClassification::Unclassified,
         row_offset: 50,
         offset: 60,
@@ -950,7 +941,7 @@ fn fc05_model_witness_uses_a_unique_reference_when_tangency_improves() {
     scan.planes.local_systems.push(PlaneLocalSystem {
         surface_id: 1,
         body: Vec::new(),
-        slots: vec![
+        slots: [
             Some(0.8),
             Some(0.0),
             Some(-0.6),
@@ -964,9 +955,7 @@ fn fc05_model_witness_uses_a_unique_reference_when_tangency_improves() {
             Some(0.0),
             Some(0.0),
         ],
-        origin: Some([0.0, 0.0, 0.0]),
-        u_axis: Some([0.8, 0.0, -0.6]),
-        normal: Some([0.6, 0.0, 0.8]),
+        layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
         classification: LocalSystemClassification::Unclassified,
         row_offset: 10,
         offset: 11,
@@ -1005,23 +994,8 @@ fn stored_frame_branch_scan(with_pcurve: bool) -> crate::container::ContainerSca
         crate::surface::PlaneLocalSystem {
             surface_id: 1,
             body: Vec::new(),
-            slots: vec![
-                Some(0.6),
-                Some(0.0),
-                Some(-0.8),
-                Some(0.0),
-                Some(0.0),
-                Some(0.0),
-                Some(0.8),
-                Some(0.0),
-                Some(0.6),
-                Some(0.0),
-                Some(0.0),
-                Some(0.0),
-            ],
-            origin: Some([0.0, 0.0, 0.0]),
-            u_axis: Some([0.6, 0.0, 0.8]),
-            normal: Some([0.8, 0.0, -0.6]),
+            slots: [0.6, 0.0, 0.8, 0.0, 0.0, 0.0, 0.8, 0.0, -0.6, 0.0, 0.0, 0.0].map(Some),
+            layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
             classification: LocalSystemClassification::Unclassified,
             row_offset: 1,
             offset: 10,
@@ -1029,10 +1003,8 @@ fn stored_frame_branch_scan(with_pcurve: bool) -> crate::container::ContainerSca
         crate::surface::PlaneLocalSystem {
             surface_id: 2,
             body: Vec::new(),
-            slots: vec![None; 12],
-            origin: Some([0.0, 1.0, 0.0]),
-            u_axis: Some([1.0, 0.0, 0.0]),
-            normal: Some([0.0, 1.0, 0.0]),
+            slots: [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0].map(Some),
+            layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
             classification: LocalSystemClassification::Simple,
             row_offset: 2,
             offset: 20,
@@ -1134,7 +1106,6 @@ fn stored_parameter_normal_branch_considers_every_bounded_frame_candidate() {
     later.offset += 1;
     later.slots[9] = Some(5.0);
     later.slots[10] = Some(5.0);
-    later.origin = Some([5.0, 5.0, 0.0]);
     scan.planes.local_systems.push(later);
 
     let candidates = plane_candidates(&scan);

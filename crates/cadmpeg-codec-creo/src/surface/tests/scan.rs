@@ -443,9 +443,9 @@ fn scan_decodes_plane_local_system_support_frame() {
     let frame = &scan.planes.local_systems[0];
     assert_eq!(frame.surface_id, 7);
     assert_eq!(frame.slots.len(), 12);
-    assert_eq!(frame.origin, Some([3.0, 0.0, 1.0]));
-    assert_eq!(frame.u_axis, Some([0.0, 1.0, 0.0]));
-    assert_eq!(frame.normal, Some([0.0, 0.0, -1.0]));
+    assert_eq!(frame.frame().origin, Some([3.0, 0.0, 1.0]));
+    assert_eq!(frame.frame().u_axis, Some([0.0, 1.0, 0.0]));
+    assert_eq!(frame.frame().normal, Some([0.0, 0.0, -1.0]));
     assert_eq!(
         frame.classification,
         crate::surface::LocalSystemClassification::Simple

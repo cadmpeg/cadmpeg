@@ -498,6 +498,7 @@ pub fn counterbore_support_axis_placement(
     let [frame] = matching_frames.as_slice() else {
         return None;
     };
+    let frame = frame.frame();
     let origin = frame
         .origin
         .filter(|origin| origin.iter().all(|value| value.is_finite()))?;

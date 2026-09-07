@@ -66,17 +66,20 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
         },
         source_object: None,
     };
-    let local_plane = |surface_id, origin, normal| crate::surface::PlaneLocalSystem {
-        surface_id,
-        body: Vec::new(),
-        slots: Vec::new(),
-        origin: Some(origin),
-        u_axis: Some([1.0, 0.0, 0.0]),
-        normal: Some(normal),
-        classification: crate::surface::LocalSystemClassification::Simple,
-        row_offset: 0,
-        offset: 0,
-    };
+    let local_plane =
+        |surface_id, origin: [f64; 3], normal: [f64; 3]| crate::surface::PlaneLocalSystem {
+            surface_id,
+            body: Vec::new(),
+            slots: [
+                1.0, 0.0, 0.0, 0.0, 0.0, 0.0, normal[0], normal[1], normal[2], origin[0],
+                origin[1], origin[2],
+            ]
+            .map(Some),
+            layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
+            classification: crate::surface::LocalSystemClassification::Simple,
+            row_offset: 0,
+            offset: 0,
+        };
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.surfaces.rows.extend([
         row(
@@ -144,6 +147,6 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
         Some(expected_extent())
     );
 
-    scan.planes.local_systems[1].origin = Some([0.0, 0.0, 3.0]);
+    scan.planes.local_systems[1].slots[9..12].copy_from_slice(&[Some(0.0), Some(0.0), Some(3.0)]);
     assert!(generated_nurbs_translation_extent(&scan, &ir, 7, None).is_none());
 }

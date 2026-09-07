@@ -191,14 +191,14 @@ fn plane_local_system_follows_a_parameter_scalar_containing_a_named_record_heade
     assert_eq!(systems.len(), 1);
     assert_eq!(systems[0].surface_id, 7);
     assert_eq!(
-        systems[0].origin,
+        systems[0].frame().origin,
         Some([-1.335_000_000_000_026_4, 17.5, -3.595_135_602_449_500_5])
     );
     assert_eq!(
-        systems[0].u_axis,
+        systems[0].frame().u_axis,
         Some([0.0, 0.121_869_343_405_147_49, -0.992_546_151_641_322_1])
     );
-    assert_eq!(systems[0].normal, Some([1.0, 0.0, 0.0]));
+    assert_eq!(systems[0].frame().normal, Some([1.0, 0.0, 0.0]));
     assert_eq!(systems[0].body.len(), 52);
 }
 

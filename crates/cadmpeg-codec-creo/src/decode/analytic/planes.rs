@@ -464,13 +464,7 @@ fn stored_parameter_normal_candidate(
     mirror_z: bool,
     mirror_origin_z: bool,
 ) -> Option<PlaneCandidate> {
-    let slots: [f64; 12] = frame
-        .slots
-        .iter()
-        .copied()
-        .collect::<Option<Vec<_>>>()?
-        .try_into()
-        .ok()?;
+    let slots = frame.complete_slots()?;
     if slots[3..6].iter().any(|value| *value != 0.0) {
         return None;
     }
@@ -555,13 +549,7 @@ fn stored_parameter_normal_candidates_with_origin_branches(
     if frame.classification == crate::surface::LocalSystemClassification::Simple {
         return None;
     }
-    let slots: [f64; 12] = frame
-        .slots
-        .iter()
-        .copied()
-        .collect::<Option<Vec<_>>>()?
-        .try_into()
-        .ok()?;
+    let slots = frame.complete_slots()?;
     if slots[3..6].iter().any(|value| *value != 0.0) {
         return None;
     }
@@ -1359,14 +1347,18 @@ fn select_round_edge_origin_branches(
     candidates: &mut BTreeMap<u32, Vec<PlaneCandidate>>,
 ) {
     for frame in &scan.planes.local_systems {
+        let decoded_frame = frame.frame();
         if frame.classification != crate::surface::LocalSystemClassification::Simple {
             continue;
         }
         let Some(existing) = candidates.get(&frame.surface_id) else {
             continue;
         };
-        let (Some(origin), Some(normal), Some(u_axis)) = (frame.origin, frame.normal, frame.u_axis)
-        else {
+        let (Some(origin), Some(normal), Some(u_axis)) = (
+            decoded_frame.origin,
+            decoded_frame.normal,
+            decoded_frame.u_axis,
+        ) else {
             continue;
         };
         let base = PlaneCandidate {
@@ -1430,10 +1422,11 @@ pub fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidat
     );
     let mut candidates = BTreeMap::<u32, Vec<PlaneCandidate>>::new();
     for frame in &scan.planes.local_systems {
-        let (Some(origin), Some(normal)) = (frame.origin, frame.normal) else {
+        let decoded_frame = frame.frame();
+        let (Some(origin), Some(normal)) = (decoded_frame.origin, decoded_frame.normal) else {
             continue;
         };
-        let Some(u_axis) = frame.u_axis else {
+        let Some(u_axis) = decoded_frame.u_axis else {
             continue;
         };
         let frame_candidate = PlaneCandidate {
@@ -1469,7 +1462,12 @@ pub fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidat
         .planes
         .local_systems
         .iter()
-        .filter(|frame| frame.origin.is_some() && frame.normal.is_some() && frame.u_axis.is_some())
+        .filter(|frame| {
+            let decoded_frame = frame.frame();
+            decoded_frame.origin.is_some()
+                && decoded_frame.normal.is_some()
+                && decoded_frame.u_axis.is_some()
+        })
         .map(|frame| frame.surface_id)
         .collect::<BTreeSet<_>>();
     for outline in &scan.planes.outlines {
@@ -1549,13 +1547,14 @@ pub fn frame_bound_outline_plane_candidate(
     outline: &crate::surface::OutlinePlane,
 ) -> Option<PlaneCandidate> {
     (frame.surface_id == outline.surface_id).then_some(())?;
-    let frame_normal = normalized(frame.normal?)?;
-    let frame_u_axis = normalized(frame.u_axis?)?;
+    let decoded_frame = frame.frame();
+    let frame_normal = normalized(decoded_frame.normal?)?;
+    let frame_u_axis = normalized(decoded_frame.u_axis?)?;
     let outline_normal = normalized(outline.normal)?;
     let outline_u_axis = normalized(outline.u_axis)?;
     (dot(frame_normal, outline_normal) >= 1.0 - EPS_AGREE).then_some(())?;
     (dot(frame_u_axis, outline_u_axis) >= 1.0 - EPS_AGREE).then_some(())?;
-    let frame_origin = frame.origin?;
+    let frame_origin = decoded_frame.origin?;
     let displacement = dot(outline_normal, outline.origin) - dot(outline_normal, frame_origin);
     let chart_origin =
         std::array::from_fn(|axis| displacement.mul_add(outline_normal[axis], frame_origin[axis]));
@@ -1566,8 +1565,8 @@ pub fn frame_bound_outline_plane_candidate(
         },
         chart: Some(PlaneChart {
             origin: chart_origin,
-            normal: frame.normal?,
-            u_axis: frame.u_axis?,
+            normal: decoded_frame.normal?,
+            u_axis: decoded_frame.u_axis?,
         }),
         offset: frame.offset,
     })
@@ -1577,7 +1576,8 @@ pub fn envelope_reconciled_plane_candidate(
     frame: &crate::surface::PlaneLocalSystem,
     equation: PlaneEquation,
 ) -> Option<PlaneCandidate> {
-    let origin = frame.origin?;
+    let decoded_frame = frame.frame();
+    let origin = decoded_frame.origin?;
     let normal = normalized(equation.normal)?;
     let origin_scale = origin
         .iter()
@@ -1586,13 +1586,7 @@ pub fn envelope_reconciled_plane_candidate(
         .fold(1.0, f64::max);
     ((dot(normal, origin) - dot(normal, equation.origin)).abs() <= EPS_AGREE * origin_scale)
         .then_some(())?;
-    let slots: [f64; 12] = frame
-        .slots
-        .iter()
-        .copied()
-        .collect::<Option<Vec<_>>>()?
-        .try_into()
-        .ok()?;
+    let slots = frame.complete_slots()?;
     let supports = [
         <[f64; 3]>::try_from(&slots[0..3]).ok()?,
         <[f64; 3]>::try_from(&slots[3..6]).ok()?,

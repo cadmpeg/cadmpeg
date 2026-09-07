@@ -83,6 +83,7 @@ pub(in super::super) fn build_report(
         .local_systems
         .iter()
         .filter(|frame| {
+            let frame = frame.frame();
             frame.origin.is_some()
                 && frame.u_axis.is_some()
                 && frame.normal.is_some_and(|normal| !is_axis_aligned(normal))

@@ -763,10 +763,11 @@ fn support_frame_selects_held_axis_with_unresolved_other_coordinate() {
     let frames = [PlaneLocalSystem {
         surface_id: 42,
         body: Vec::new(),
-        slots: Vec::new(),
-        origin: Some([100.0, 200.0, 300.0]),
-        u_axis: Some([0.0, 0.0, 1.0]),
-        normal: Some([0.0, 1.0, 0.0]),
+        slots: [
+            0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 100.0, 200.0, 300.0,
+        ]
+        .map(Some),
+        layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
         classification: LocalSystemClassification::Unclassified,
         row_offset: 10,
         offset: 30,
@@ -789,7 +790,7 @@ fn support_frame_selects_held_axis_with_unresolved_other_coordinate() {
         frame_bound_outline_planes(&records, &frames)
     );
     let mut conflicting = frames[0].clone();
-    conflicting.normal = Some([1.0, 0.0, 0.0]);
+    conflicting.slots[6..9].copy_from_slice(&[Some(1.0), Some(0.0), Some(0.0)]);
     assert!(frame_bound_outline_planes(&records, &[frames[0].clone(), conflicting]).is_empty());
 }
 
@@ -824,10 +825,11 @@ fn support_frame_maps_shortened_terminal_outline_coordinate() {
     let frames = [PlaneLocalSystem {
         surface_id: 42,
         body: Vec::new(),
-        slots: Vec::new(),
-        origin: Some([100.0, 200.0, 300.0]),
-        u_axis: Some([0.0, 0.0, 1.0]),
-        normal: Some([0.0, 1.0, 0.0]),
+        slots: [
+            0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 100.0, 200.0, 300.0,
+        ]
+        .map(Some),
+        layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
         classification: LocalSystemClassification::Simple,
         row_offset: 10,
         offset: 30,
@@ -949,7 +951,7 @@ fn positional_plane_frame_classifies_rank_two_image_before_null_tail() {
     let systems = plane_local_systems(&payload);
     assert_eq!(systems.len(), 1);
     assert_eq!(systems[0].classification, LocalSystemClassification::Simple);
-    assert_eq!(systems[0].normal, Some([0.0, 0.0, -1.0]));
+    assert_eq!(systems[0].frame().normal, Some([0.0, 0.0, -1.0]));
 }
 
 #[test]

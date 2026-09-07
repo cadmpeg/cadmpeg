@@ -1430,8 +1430,12 @@ pub(in super::super) fn transfer_cross_section_planes(
 ) -> usize {
     let mut transferred = 0;
     for frame in &scan.planes.cross_section_local_systems {
-        let (Some(origin), Some(normal), Some(u_axis)) = (frame.origin, frame.normal, frame.u_axis)
-        else {
+        let decoded_frame = frame.frame();
+        let (Some(origin), Some(normal), Some(u_axis)) = (
+            decoded_frame.origin,
+            decoded_frame.normal,
+            decoded_frame.u_axis,
+        ) else {
             continue;
         };
         if is_axis_aligned(normal) {

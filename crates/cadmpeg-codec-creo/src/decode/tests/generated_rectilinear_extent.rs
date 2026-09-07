@@ -111,10 +111,22 @@ fn generated_fixture(
         .push(crate::surface::PlaneLocalSystem {
             surface_id: 30,
             body: Vec::new(),
-            slots: Vec::new(),
-            origin: Some([0.0, section_origin, 0.0]),
-            u_axis: Some([1.0, 0.0, 0.0]),
-            normal: Some([0.0, 1.0, 0.0]),
+            slots: [
+                1.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+                0.0,
+                section_origin,
+                0.0,
+            ]
+            .map(Some),
+            layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
             classification: crate::surface::LocalSystemClassification::Simple,
             row_offset: 0,
             offset: 0,
@@ -229,10 +241,8 @@ fn generated_rectilinear_extent_rejects_ambiguous_or_missing_section_flags() {
         .push(crate::surface::PlaneLocalSystem {
             surface_id: 30,
             body: Vec::new(),
-            slots: Vec::new(),
-            origin: Some([0.0, 0.0, 0.0]),
-            u_axis: Some([1.0, 0.0, 0.0]),
-            normal: Some([0.0, 1.0, 0.0]),
+            slots: [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0].map(Some),
+            layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
             classification: crate::surface::LocalSystemClassification::Simple,
             row_offset: 1,
             offset: 1,
@@ -302,10 +312,8 @@ fn rectilinear_extent_reconciles_native_and_transferred_planes() {
         .push(crate::surface::PlaneLocalSystem {
             surface_id: 32,
             body: Vec::new(),
-            slots: Vec::new(),
-            origin: Some([0.0, 48.0, 0.0]),
-            u_axis: Some([0.0, 0.0, 1.0]),
-            normal: Some([0.0, 1.0, 0.0]),
+            slots: [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 48.0, 0.0].map(Some),
+            layout: Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples),
             classification: crate::surface::LocalSystemClassification::Simple,
             row_offset: 0,
             offset: 0,
@@ -332,6 +340,6 @@ fn rectilinear_extent_reconciles_native_and_transferred_planes() {
         Some(expected_extent())
     );
 
-    scan.planes.local_systems[0].origin = Some([0.0, 49.0, 0.0]);
+    scan.planes.local_systems[0].slots[10] = Some(49.0);
     assert!(generated_rectilinear_plane_extent(&scan, &ir, 7, Some(&section())).is_none());
 }

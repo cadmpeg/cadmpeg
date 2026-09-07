@@ -1231,21 +1231,24 @@ pub(super) fn plane_local_system_records(
 ) -> Vec<CreoPlaneLocalSystemRecord> {
     systems
         .iter()
-        .map(|record| CreoPlaneLocalSystemRecord {
-            id: format!("{id_prefix}#{}:{}", record.offset, record.surface_id),
-            surface_id: record.surface_id,
-            body: record.body.clone(),
-            slots: record.slots.clone(),
-            origin: record.origin,
-            u_axis: record.u_axis,
-            normal: record.normal,
-            classification: match record.classification {
-                crate::surface::LocalSystemClassification::Simple => "simple",
-                crate::surface::LocalSystemClassification::Unclassified => "unclassified",
-            },
-            row_offset: record.row_offset,
-            offset: record.offset,
-            source_section: source_section(scan, record.offset),
+        .map(|record| {
+            let frame = record.frame();
+            CreoPlaneLocalSystemRecord {
+                id: format!("{id_prefix}#{}:{}", record.offset, record.surface_id),
+                surface_id: record.surface_id,
+                body: record.body.clone(),
+                slots: record.slots.to_vec(),
+                origin: frame.origin,
+                u_axis: frame.u_axis,
+                normal: frame.normal,
+                classification: match record.classification {
+                    crate::surface::LocalSystemClassification::Simple => "simple",
+                    crate::surface::LocalSystemClassification::Unclassified => "unclassified",
+                },
+                row_offset: record.row_offset,
+                offset: record.offset,
+                source_section: source_section(scan, record.offset),
+            }
         })
         .collect()
 }
