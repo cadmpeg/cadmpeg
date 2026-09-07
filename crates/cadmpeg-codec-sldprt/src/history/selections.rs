@@ -657,7 +657,7 @@ mod tests {
             ordinal: 0,
             offset: 0,
             selector: 2,
-            endpoint_selector: None,
+            kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
             object_name_ref: "feature".into(),
             feature_ref: feature_ref.into(),
             producer_feature_refs: Vec::new(),

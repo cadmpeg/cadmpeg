@@ -530,7 +530,7 @@ impl SldprtNative {
                         .terminal_feature_ref
                         .as_deref()
                         .is_some_and(|feature| !feature_ids.contains(feature)))
-                || record.endpoint_selector.is_some_and(|selector| {
+                || record.endpoint_selector().is_some_and(|selector| {
                     usize::try_from(record.offset)
                         .ok()
                         .and_then(|offset| offset.checked_sub(4))

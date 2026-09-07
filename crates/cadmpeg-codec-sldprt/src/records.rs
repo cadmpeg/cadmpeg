@@ -443,10 +443,13 @@ pub struct FeatureInputSurfaceSelection {
     /// Low selector subtype stored in the vector header.
     #[serde(default)]
     pub selector: u8,
-    /// Opaque endpoint selector stored four bytes before an edge-endpoint
-    /// `ToVertex` selection vector marker.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub endpoint_selector: Option<u32>,
+    /// Component selection form; extrusion endpoints carry their opaque selector.
+    #[serde(flatten, with = "surface_selection_kind_wire")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "surface_selection_kind_wire::Wire")
+    )]
+    pub kind: FeatureInputSurfaceSelectionKind,
     /// Feature-input name record owning this selection.
     pub object_name_ref: String,
     /// Native history feature owning this selection.
@@ -460,6 +463,59 @@ pub struct FeatureInputSurfaceSelection {
     /// Ordered typed entries in the persistent surface-component path.
     #[serde(default)]
     pub components: Vec<FeatureInputComponentPathEntry>,
+}
+
+/// Form of a retained surface-component selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FeatureInputSurfaceSelectionKind {
+    Component,
+    ExtrusionEndpoint { endpoint_selector: u32 },
+}
+
+impl FeatureInputSurfaceSelection {
+    pub fn endpoint_selector(&self) -> Option<u32> {
+        match self.kind {
+            FeatureInputSurfaceSelectionKind::Component => None,
+            FeatureInputSurfaceSelectionKind::ExtrusionEndpoint { endpoint_selector } => {
+                Some(endpoint_selector)
+            }
+        }
+    }
+}
+
+mod surface_selection_kind_wire {
+    use super::FeatureInputSurfaceSelectionKind;
+    use serde::{ser::SerializeMap, Deserialize, Deserializer, Serializer};
+
+    #[derive(Deserialize)]
+    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+    pub(super) struct Wire {
+        #[serde(default)]
+        endpoint_selector: Option<u32>,
+    }
+
+    pub(super) fn serialize<S: Serializer>(
+        kind: &FeatureInputSurfaceSelectionKind,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(None)?;
+        if let FeatureInputSurfaceSelectionKind::ExtrusionEndpoint { endpoint_selector } = kind {
+            map.serialize_entry("endpoint_selector", endpoint_selector)?;
+        }
+        map.end()
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<FeatureInputSurfaceSelectionKind, D::Error> {
+        let wire = Wire::deserialize(deserializer)?;
+        Ok(match wire.endpoint_selector {
+            Some(endpoint_selector) => {
+                FeatureInputSurfaceSelectionKind::ExtrusionEndpoint { endpoint_selector }
+            }
+            None => FeatureInputSurfaceSelectionKind::Component,
+        })
+    }
 }
 
 /// One persistent identity of a surface produced by a regenerated feature.
@@ -1466,6 +1522,29 @@ impl SketchRelationKind {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn surface_selection_kind_preserves_the_endpoint_wire() {
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct Selection {
+            #[serde(flatten, with = "super::surface_selection_kind_wire")]
+            kind: super::FeatureInputSurfaceSelectionKind,
+        }
+        for wire in [
+            serde_json::json!({}),
+            serde_json::json!({"endpoint_selector": 0}),
+        ] {
+            let selection: Selection = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(
+                matches!(
+                    selection.kind,
+                    super::FeatureInputSurfaceSelectionKind::ExtrusionEndpoint { .. }
+                ),
+                wire.get("endpoint_selector").is_some(),
+            );
+            assert_eq!(serde_json::to_value(selection).unwrap(), wire);
+        }
+    }
+
     #[test]
     fn pmi_display_text_wire_keeps_text_and_offset_together() {
         #[derive(serde::Serialize, serde::Deserialize)]

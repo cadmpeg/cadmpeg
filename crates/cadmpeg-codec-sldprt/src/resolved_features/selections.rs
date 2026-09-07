@@ -533,7 +533,7 @@ pub(super) fn compact_surface_selections(
                     compact_extrusion_to_face_at(&lane.native_payload, offset, end)
                         .or_else(|| {
                             compact_extrusion_to_vertex_at(&lane.native_payload, offset, end)
-                                .map(|(marker, _, _)| marker)
+                                .map(|(marker, _)| marker)
                         })
                         .or_else(|| {
                             compact_extrusion_offset_from_face_at(&lane.native_payload, offset, end)
@@ -652,7 +652,14 @@ pub(super) fn compact_surface_selections(
                 ordinal: result.len() as u32,
                 offset: offset as u64,
                 selector: lane.native_payload[offset.saturating_sub(8)],
-                endpoint_selector,
+                kind: match endpoint_selector {
+                    Some(endpoint_selector) => {
+                        crate::records::FeatureInputSurfaceSelectionKind::ExtrusionEndpoint {
+                            endpoint_selector,
+                        }
+                    }
+                    None => crate::records::FeatureInputSurfaceSelectionKind::Component,
+                },
                 object_name_ref: name.id.clone(),
                 feature_ref: feature.id.clone(),
                 producer_feature_refs,
@@ -674,8 +681,10 @@ fn compact_extrusion_endpoint_selector_for_marker(
     marker: usize,
 ) -> Option<u32> {
     (start..end).find_map(|body| {
-        let (candidate, _, selector) = compact_extrusion_to_vertex_at(payload, body, end)?;
-        (candidate == marker).then_some(selector).flatten()
+        let (candidate, kind) = compact_extrusion_to_vertex_at(payload, body, end)?;
+        (candidate == marker)
+            .then(|| kind.endpoint_selector())
+            .flatten()
     })
 }
 

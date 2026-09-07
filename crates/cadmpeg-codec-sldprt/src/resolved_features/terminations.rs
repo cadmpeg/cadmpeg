@@ -310,12 +310,12 @@ pub(crate) fn enrich_history_extrusion_terminations(
                         Some(TerminationVote::ThroughNext)
                     } else if has_depth {
                         None
-                    } else if let Some((reference, kind, _endpoint_selector)) =
+                    } else if let Some((reference, kind)) =
                         compact_extrusion_to_vertex_at(&lane.native_payload, offset, end_spec_end)
                     {
                         let prefix = match kind {
                             CompactPointReferenceKind::Point => "point-ref",
-                            CompactPointReferenceKind::EdgeEndpoint => "edge-endpoint-ref",
+                            CompactPointReferenceKind::EdgeEndpoint { .. } => "edge-endpoint-ref",
                         };
                         let reference =
                             format!("sldprt:feature-input:{prefix}:{lane_key}:{reference}");
@@ -1247,14 +1247,23 @@ pub(crate) enum CompactPointReferenceKind {
     Point,
     /// Edge endpoint reference; the path selects an edge and the endpoint
     /// selector stays native.
-    EdgeEndpoint,
+    EdgeEndpoint { selector: u32 },
+}
+
+impl CompactPointReferenceKind {
+    pub(crate) fn endpoint_selector(self) -> Option<u32> {
+        match self {
+            Self::Point => None,
+            Self::EdgeEndpoint { selector } => Some(selector),
+        }
+    }
 }
 
 pub(super) fn compact_extrusion_to_vertex_at(
     payload: &[u8],
     offset: usize,
     end: usize,
-) -> Option<(usize, CompactPointReferenceKind, Option<u32>)> {
+) -> Option<(usize, CompactPointReferenceKind)> {
     let end = end.min(payload.len());
     let payload = payload.get(..end)?;
     if !compact_extrusion_end_spec_header(payload, offset, 3)
@@ -1272,6 +1281,10 @@ pub(super) fn compact_extrusion_to_vertex_at(
                 .is_some_and(|bytes| bytes == [0xa9, 0x80] || bytes == [0x2b, 0x80])
             && payload.get(body + 4..body + 9) == Some(&[2, 0, 0, 0, 0])
     };
+    let candidates = compact_termination_reference_candidates(payload, child, end, true);
+    let [marker] = candidates.as_slice() else {
+        return None;
+    };
     let kind = if (payload.get(child..child + point_declaration.len()) == Some(point_declaration)
         && point_body_at(child + point_declaration.len()))
         || point_body_at(child)
@@ -1287,21 +1300,13 @@ pub(super) fn compact_extrusion_to_vertex_at(
         {
             return None;
         }
-        CompactPointReferenceKind::EdgeEndpoint
+        CompactPointReferenceKind::EdgeEndpoint {
+            selector: View::u32_le_at(payload, marker.checked_sub(4)?)?,
+        }
     } else {
         return None;
     };
-    let candidates = compact_termination_reference_candidates(payload, child, end, true);
-    let [marker] = candidates.as_slice() else {
-        return None;
-    };
-    let endpoint_selector = match kind {
-        CompactPointReferenceKind::Point => None,
-        CompactPointReferenceKind::EdgeEndpoint => {
-            Some(View::u32_le_at(payload, marker.checked_sub(4)?)?)
-        }
-    };
-    Some((*marker, kind, endpoint_selector))
+    Some((*marker, kind))
 }
 
 pub(super) fn compact_extrusion_offset_from_face_at(
