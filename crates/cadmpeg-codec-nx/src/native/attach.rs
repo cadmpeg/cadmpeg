@@ -6174,7 +6174,7 @@ fn non_boolean_feature_definition_with_parameters(
                     None,
                     None,
                 ),
-                |(_, form, extent, start_treatment, end_treatment)| {
+                |(form, extent, start_treatment, end_treatment)| {
                     let kind = match start_treatment {
                         crate::native::features::holes::SimpleHoleEndTreatment::Chamfer => {
                             HoleKind::Unresolved(Some(HoleForm::Chamfer))
@@ -6233,7 +6233,6 @@ fn non_boolean_feature_definition_with_parameters(
                         (
                             Some(chamfer),
                             Some((
-                                _,
                                 crate::native::features::holes::SimpleHoleForm::Simple,
                                 crate::native::features::holes::SimpleHoleExtent::Through,
                                 crate::native::features::holes::SimpleHoleEndTreatment::Chamfer,
@@ -6248,7 +6247,6 @@ fn non_boolean_feature_definition_with_parameters(
                     (
                         Some(chamfer),
                         Some((
-                            _,
                             crate::native::features::holes::SimpleHoleForm::Simple,
                             crate::native::features::holes::SimpleHoleExtent::Through,
                             crate::native::features::holes::SimpleHoleEndTreatment::Chamfer,
@@ -7867,7 +7865,6 @@ fn simple_hole_chamfers(
 fn unique_simple_hole_template(
     payload_strings: &[&str],
 ) -> Option<(
-    crate::native::features::holes::SimpleHoleFamily,
     crate::native::features::holes::SimpleHoleForm,
     crate::native::features::holes::SimpleHoleExtent,
     crate::native::features::holes::SimpleHoleEndTreatment,
