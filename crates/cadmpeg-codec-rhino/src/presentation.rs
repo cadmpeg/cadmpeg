@@ -1427,7 +1427,6 @@ fn parse_light_record_attributes(
     let wrapper = chunk_at(data, record.body().start, record.body().end, archive, false)?;
     let mut offset = wrapper.next_offset();
     let mut attributes_chunk = None;
-    let mut attributes_body_range = None;
     let mut attributes_userdata_body_range = None;
     let mut phase = 0_u8;
     let mut record_end_seen = false;
@@ -1458,7 +1457,6 @@ fn parse_light_record_attributes(
                     ));
                 }
                 attributes_chunk = Some(item.clone());
-                attributes_body_range = Some(item.body().clone());
                 phase = 1;
             }
             LIGHT_RECORD_ATTRIBUTES_USERDATA if phase <= 1 => {
@@ -1487,15 +1485,13 @@ fn parse_light_record_attributes(
         ));
     }
 
-    let mut attributes = attributes_body_range
+    let mut attributes = attributes_chunk
         .as_ref()
-        .map(|body_range| {
+        .map(|chunk| {
             parse_attributes(
                 data,
-                body_range.clone(),
-                attributes_chunk
-                    .as_ref()
-                    .map_or_else(|| body_range.clone(), crate::chunks::Chunk::range),
+                chunk.body(),
+                chunk.range(),
                 archive,
                 writer_version,
                 &mut warnings,
