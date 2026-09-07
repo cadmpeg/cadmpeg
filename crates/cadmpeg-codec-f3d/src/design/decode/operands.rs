@@ -396,7 +396,7 @@ pub fn bind_work_point_input_carriers(
             }
             input.carrier = Some(Box::new(DesignWorkPointInputCarrier::WorkPlane {
                 selection: DesignWorkPointPlaneSelection {
-                    class_tag: header.class_tag.as_str().to_owned(),
+                    class_tag: header.class_tag.clone(),
                     asset_id: selection.asset_id,
                     asset_id_offset: selection.asset_id_offset,
                     context_id: selection.context_id,
