@@ -4239,8 +4239,10 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> NativeInstall {
                     color: settings.color,
                     plot_color: settings.plot_color,
                     plot_weight_mm: settings.plot_weight_mm,
-                    visible: settings.visible,
-                    persistent_visibility: settings.persistent_visibility,
+                    visible: settings.visible.map(settings::LayerVisibility::as_u8),
+                    persistent_visibility: settings
+                        .persistent_visibility
+                        .map(settings::LayerVisibility::as_u8),
                 })
                 .collect(),
         });

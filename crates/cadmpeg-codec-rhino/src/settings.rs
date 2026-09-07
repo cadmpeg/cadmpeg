@@ -541,10 +541,34 @@ pub(crate) struct LayerPerViewportSettings {
     pub(crate) plot_color: Option<[u8; 4]>,
     /// Per-viewport plot weight in millimeters, if effective.
     pub(crate) plot_weight_mm: Option<f64>,
-    /// Raw source visibility value, 1 for visible and 2 for off.
-    pub(crate) visible: Option<u8>,
-    /// Raw source persistent-visibility value, 1 or 2, for child layers.
-    pub(crate) persistent_visibility: Option<u8>,
+    /// Source visibility override.
+    pub(crate) visible: Option<LayerVisibility>,
+    /// Source persistent-visibility override for child layers.
+    pub(crate) persistent_visibility: Option<LayerVisibility>,
+}
+
+/// Effective visibility values, ordered by their source encoding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum LayerVisibility {
+    Visible,
+    Hidden,
+}
+
+impl LayerVisibility {
+    fn from_byte(value: u8) -> Option<Self> {
+        match value {
+            1 => Some(Self::Visible),
+            2 => Some(Self::Hidden),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn as_u8(self) -> u8 {
+        match self {
+            Self::Visible => 1,
+            Self::Hidden => 2,
+        }
+    }
 }
 
 impl LayerPerViewportSettings {
@@ -838,11 +862,11 @@ fn parse_layer_extensions(
         let plot_color = plot_color_value.filter(|value| *value != [u8::MAX; 4]);
         let plot_weight_mm = plot_weight_value
             .filter(|value| value.is_finite() && (*value >= 0.0 || *value == -1.0));
-        let visible = visible_value.filter(|value| matches!(value, 1 | 2));
+        let visible = visible_value.and_then(LayerVisibility::from_byte);
         let persistent_visibility = if parent_is_nil {
             None
         } else {
-            persistent_value.filter(|value| matches!(value, 1 | 2))
+            persistent_value.and_then(LayerVisibility::from_byte)
         };
         if !viewport_id.is_nil()
             && (color.is_some()
@@ -864,45 +888,27 @@ fn parse_layer_extensions(
     }
     outer_reader.skip_remaining()?;
     values.sort_by(|a, b| {
-        let mut ordering = a.viewport_id.cmp(&b.viewport_id);
-        if ordering == std::cmp::Ordering::Equal {
-            ordering = a.settings_mask().cmp(&b.settings_mask());
-        }
-        if ordering == std::cmp::Ordering::Equal
-            && a.settings_mask() & LAYER_PER_VIEWPORT_VISIBLE != 0
-        {
-            ordering = a.visible.cmp(&b.visible);
-        }
-        if ordering == std::cmp::Ordering::Equal
-            && a.settings_mask() & LAYER_PER_VIEWPORT_PERSISTENT_VISIBILITY != 0
-        {
-            ordering = a.persistent_visibility.cmp(&b.persistent_visibility);
-        }
-        if ordering == std::cmp::Ordering::Equal
-            && a.settings_mask() & LAYER_PER_VIEWPORT_COLOR != 0
-        {
-            ordering = a
-                .color
-                .map(u32::from_le_bytes)
-                .cmp(&b.color.map(u32::from_le_bytes));
-        }
-        if ordering == std::cmp::Ordering::Equal
-            && a.settings_mask() & LAYER_PER_VIEWPORT_PLOT_COLOR != 0
-        {
-            ordering = a
-                .plot_color
-                .map(u32::from_le_bytes)
-                .cmp(&b.plot_color.map(u32::from_le_bytes));
-        }
-        if ordering == std::cmp::Ordering::Equal
-            && a.settings_mask() & LAYER_PER_VIEWPORT_PLOT_WEIGHT != 0
-        {
-            ordering = a
-                .plot_weight_mm
-                .expect("plot weight mask has a value")
-                .total_cmp(&b.plot_weight_mm.expect("plot weight mask has a value"));
-        }
-        ordering
+        a.viewport_id
+            .cmp(&b.viewport_id)
+            .then_with(|| a.settings_mask().cmp(&b.settings_mask()))
+            .then_with(|| a.visible.cmp(&b.visible))
+            .then_with(|| a.persistent_visibility.cmp(&b.persistent_visibility))
+            .then_with(|| {
+                a.color
+                    .map(u32::from_le_bytes)
+                    .cmp(&b.color.map(u32::from_le_bytes))
+            })
+            .then_with(|| {
+                a.plot_color
+                    .map(u32::from_le_bytes)
+                    .cmp(&b.plot_color.map(u32::from_le_bytes))
+            })
+            .then_with(|| match (a.plot_weight_mm, b.plot_weight_mm) {
+                (Some(a), Some(b)) => a.total_cmp(&b),
+                (None, None) => std::cmp::Ordering::Equal,
+                (None, Some(_)) => std::cmp::Ordering::Less,
+                (Some(_), None) => std::cmp::Ordering::Greater,
+            })
     });
     Ok(values)
 }
