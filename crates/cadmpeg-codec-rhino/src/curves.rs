@@ -1194,54 +1194,47 @@ fn read_cloud(reader: &mut BoundedReader<'_>, scale: f64) -> Result<PointCloud, 
                 .ok_or_else(|| error(reader.position(), "scaled point coordinate is invalid"))?,
         );
     }
-    let native_plane = plane(reader)?;
-    let _bounds = bbox(reader)?;
-    let flags = reader.i32()?;
+    plane(reader)?;
+    bbox(reader)?;
+    reader.i32()?;
     let mut warnings = Vec::new();
-    let normals = if minor >= 1 {
-        read_vectors(reader, point_count, &mut warnings)?
-    } else {
-        Vec::new()
-    };
-    let colors = if minor >= 1 {
+    if minor >= 1 {
+        let normal_count = count(reader, 24)?;
+        if normal_count != 0 && normal_count != point_count {
+            warnings
+                .push("redundant point-cloud normal count mismatch; channel dropped".to_string());
+        }
+        for _ in 0..normal_count {
+            crate::settings::vector(reader)?;
+        }
         let color_count = count(reader, 4)?;
-        let mut values: Vec<[u8; 4]> = Vec::with_capacity(color_count);
         for _ in 0..color_count {
-            values.push(reader.take(4)?.try_into().expect("color width checked"));
+            reader.take(4)?;
         }
         if color_count != 0 && color_count != point_count {
             warnings
                 .push("redundant point-cloud color count mismatch; channel dropped".to_string());
         }
-        values
-    } else {
-        Vec::new()
-    };
-    let values = if minor >= 2 {
+    }
+    if minor >= 2 {
         let value_count = count(reader, 8)?;
-        let mut values = Vec::with_capacity(value_count);
         for _ in 0..value_count {
             let value = reader.f64()?;
             if !value.is_finite() {
                 return Err(error(reader.position(), "point-cloud value is not finite"));
             }
-            values.push(value);
         }
         if value_count != 0 && value_count != point_count {
             warnings
                 .push("redundant point-cloud scalar count mismatch; channel dropped".to_string());
         }
-        values
-    } else {
-        Vec::new()
-    };
+    }
     if point_count == 0 {
         return Err(error(
             reader.position(),
             "point-cloud point count is invalid",
         ));
     }
-    let _ = (normals, colors, values, flags, native_plane);
     reader.skip_remaining()?;
     Ok(PointCloud {
         points,
@@ -1620,22 +1613,6 @@ fn circle_point_scaled(circle: &Circle, angle: f64, radial_scale: f64) -> Point3
         circle.center.y + radial.y * circle.radius * radial_scale,
         circle.center.z + radial.z * circle.radius * radial_scale,
     )
-}
-
-fn read_vectors(
-    reader: &mut BoundedReader<'_>,
-    expected: usize,
-    warnings: &mut Vec<String>,
-) -> Result<Vec<Vector3>, GeometryError> {
-    let count = count(reader, 24)?;
-    if count != 0 && count != expected {
-        warnings.push("redundant point-cloud normal count mismatch; channel dropped".to_string());
-    }
-    let mut values = Vec::with_capacity(count);
-    for _ in 0..count {
-        values.push(vector(crate::settings::vector(reader)?));
-    }
-    Ok(values)
 }
 
 fn vector(value: crate::settings::Vector3) -> Vector3 {
