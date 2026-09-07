@@ -355,10 +355,10 @@ pub(crate) fn surface_prototype_family_name(
         crate::surface::SurfacePrototypeFamily::Plane => "plane".to_string(),
         crate::surface::SurfacePrototypeFamily::Cylinder => "cylinder".to_string(),
         crate::surface::SurfacePrototypeFamily::Cone => "cone".to_string(),
-        crate::surface::SurfacePrototypeFamily::Torus => "torus_or_sphere".to_string(),
-        crate::surface::SurfacePrototypeFamily::Spline => "spline".to_string(),
-        crate::surface::SurfacePrototypeFamily::Fillet => "fillet".to_string(),
-        crate::surface::SurfacePrototypeFamily::Extrusion => "extrusion".to_string(),
+        crate::surface::SurfacePrototypeFamily::Torus(_) => "torus_or_sphere".to_string(),
+        crate::surface::SurfacePrototypeFamily::Spline(_) => "spline".to_string(),
+        crate::surface::SurfacePrototypeFamily::Fillet(_) => "fillet".to_string(),
+        crate::surface::SurfacePrototypeFamily::Extrusion(_) => "extrusion".to_string(),
         crate::surface::SurfacePrototypeFamily::Other(name) => format!("other:{name}"),
     }
 }

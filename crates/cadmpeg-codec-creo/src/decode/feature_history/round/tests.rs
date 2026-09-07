@@ -647,8 +647,7 @@ fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
         value_offset: 0,
     };
     let prototype = |offset| crate::surface::SurfacePrototypeRecord {
-        declared_family: "torus".to_string(),
-        family: crate::surface::SurfacePrototypeFamily::Torus,
+        family: crate::surface::SurfacePrototypeFamily::Torus(crate::surface::TorusLabel::Torus),
         parameters: vec![scalar("radius1", 10.0), scalar("radius2", 0.5)],
         offset,
     };

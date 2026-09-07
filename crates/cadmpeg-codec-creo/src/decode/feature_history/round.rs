@@ -305,8 +305,10 @@ pub(in super::super) fn unique_section_torus_minor_radius(
         row.offset >= section.offset && row.offset < section.offset.saturating_add(section.length)
     })?;
     let prototype = exactly_one(scan.surfaces.prototype_records.iter().filter(|prototype| {
-        prototype.family == crate::surface::SurfacePrototypeFamily::Torus
-            && prototype.offset >= section.offset
+        matches!(
+            prototype.family,
+            crate::surface::SurfacePrototypeFamily::Torus(_)
+        ) && prototype.offset >= section.offset
             && prototype.offset < section.offset.saturating_add(section.length)
     }))?;
     prototype_scalar(prototype, "radius2").filter(|radius| radius.is_finite() && *radius > 0.0)
@@ -330,8 +332,10 @@ pub(in super::super) fn prototype_round_radius(
         unique_surface_prototype_associations(scan)
             .into_iter()
             .filter(|(record, row, _)| {
-                record.family == crate::surface::SurfacePrototypeFamily::Torus
-                    && row.feature_id == feature_id
+                matches!(
+                    record.family,
+                    crate::surface::SurfacePrototypeFamily::Torus(_)
+                ) && row.feature_id == feature_id
                     && rows.iter().any(|candidate| candidate.offset == row.offset)
             })
             .filter_map(|(record, _, _)| {

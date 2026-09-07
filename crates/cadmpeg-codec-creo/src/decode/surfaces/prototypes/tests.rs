@@ -177,8 +177,7 @@ fn first_instance_type26_radius_override_replaces_prototype_radii() {
 #[test]
 fn prototype_local_frame_rejects_nonfinite_origin() {
     let record = crate::surface::SurfacePrototypeRecord {
-        declared_family: "torus".to_string(),
-        family: crate::surface::SurfacePrototypeFamily::Torus,
+        family: crate::surface::SurfacePrototypeFamily::Torus(crate::surface::TorusLabel::Torus),
         parameters: vec![crate::surface::SurfaceNamedParameter {
             name: "local_sys".to_string(),
             value: crate::surface::SurfaceNamedValue::ScalarArray {
@@ -216,8 +215,7 @@ fn prototype_local_frame_rejects_nonfinite_origin() {
 #[test]
 fn prototype_local_frame_rejects_nonfinite_unused_support_values() {
     let record = crate::surface::SurfacePrototypeRecord {
-        declared_family: "torus".to_string(),
-        family: crate::surface::SurfacePrototypeFamily::Torus,
+        family: crate::surface::SurfacePrototypeFamily::Torus(crate::surface::TorusLabel::Torus),
         parameters: vec![crate::surface::SurfaceNamedParameter {
             name: "local_sys".to_string(),
             value: crate::surface::SurfaceNamedValue::ScalarArray {

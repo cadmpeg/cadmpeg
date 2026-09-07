@@ -1239,7 +1239,7 @@ fn dimensioned_scalar_arrays_decode_compact_extents() {
         values,
         ..
     } = named_surface_value(
-        &SurfacePrototypeFamily::Spline,
+        &SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Spline),
         "i_points",
         &body,
         &scalar::ScalarCache::default(),
@@ -1491,7 +1491,7 @@ fn spline_metadata_rejects_malformed_compact_wrappers() {
     ] {
         assert_eq!(
             named_surface_value(
-                &SurfacePrototypeFamily::Spline,
+                &SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Spline),
                 name,
                 body,
                 &scalar::ScalarCache::default(),
@@ -1527,7 +1527,7 @@ fn parent_feature_array_rejects_malformed_reference_trailers() {
         body.extend_from_slice(trailer);
         assert_eq!(
             named_surface_value(
-                &SurfacePrototypeFamily::Spline,
+                &SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Spline),
                 "parent_feats",
                 &body,
                 &scalar::ScalarCache::default(),

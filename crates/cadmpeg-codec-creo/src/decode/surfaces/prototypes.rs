@@ -98,7 +98,10 @@ pub(in super::super) fn prototype_local_frame(
     let third: [f64; 3] = slots[6..9].try_into().ok()?;
     let first_norm = dot(first, first).sqrt();
     let reference = normalized(first)?;
-    let torus = matches!(record.family, crate::surface::SurfacePrototypeFamily::Torus);
+    let torus = matches!(
+        record.family,
+        crate::surface::SurfacePrototypeFamily::Torus(_)
+    );
     let mut second_candidates =
         [(middle, torus), (third, true)]
             .into_iter()
@@ -190,11 +193,13 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
             crate::surface::SurfacePrototypeFamily::Cylinder => {
                 crate::surface::SurfaceKind::Cylinder
             }
-            crate::surface::SurfacePrototypeFamily::Torus => {
+            crate::surface::SurfacePrototypeFamily::Torus(_) => {
                 crate::surface::SurfaceKind::TorusOrSphere
             }
             crate::surface::SurfacePrototypeFamily::Cone => crate::surface::SurfaceKind::Cone,
-            crate::surface::SurfacePrototypeFamily::Spline => crate::surface::SurfaceKind::Spline,
+            crate::surface::SurfacePrototypeFamily::Spline(_) => {
+                crate::surface::SurfaceKind::Spline
+            }
             _ => continue,
         };
         let Some(section) = scan.framing.sections.iter().find(|section| {
@@ -271,7 +276,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                     radius,
                 }
             }
-            crate::surface::SurfacePrototypeFamily::Torus => {
+            crate::surface::SurfacePrototypeFamily::Torus(_) => {
                 let Some((origin, axis, reference)) = prototype_local_frame(record) else {
                     continue;
                 };
@@ -330,7 +335,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                     half_angle: frame.half_angle,
                 }
             }
-            crate::surface::SurfacePrototypeFamily::Spline => {
+            crate::surface::SurfacePrototypeFamily::Spline(_) => {
                 let Some(nurbs) = prototype_spline_nurbs(record) else {
                     continue;
                 };

@@ -430,8 +430,14 @@ fn distinguishes_spline_and_fillet_surface_families() {
     let records = named_prototype_records(payload);
 
     assert_eq!(records.len(), 2);
-    assert_eq!(records[0].family, SurfacePrototypeFamily::Spline);
-    assert_eq!(records[1].family, SurfacePrototypeFamily::Fillet);
+    assert_eq!(
+        records[0].family,
+        SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Splsrf)
+    );
+    assert_eq!(
+        records[1].family,
+        SurfacePrototypeFamily::Fillet(crate::surface::FilletLabel::FilletSrf)
+    );
     assert_eq!(prototype_count(payload), 2);
 }
 
@@ -444,7 +450,10 @@ fn retains_named_spline_point_and_tangent_arrays() {
     let records = named_prototype_records(payload);
 
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].family, SurfacePrototypeFamily::Spline);
+    assert_eq!(
+        records[0].family,
+        SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Splsrf)
+    );
     assert_eq!(
         records[0].field("i_points").map(|field| &field.value),
         Some(&SurfaceNamedValue::ScalarArray {
@@ -477,7 +486,7 @@ fn retains_named_spline_point_and_tangent_arrays() {
 fn spline_slots_consume_unresolved_tokens_without_scanning_their_payloads() {
     let body = [0xaa, 0xe4, 1, 2, 3, 4, 5, 0xe4];
     let slots = named_spline_scalar_slots(
-        &SurfacePrototypeFamily::Spline,
+        &SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Spline),
         "tangts",
         &body,
         2,
@@ -498,7 +507,7 @@ fn interpolation_point_aliases_expand_continuation_and_terminal_zero() {
     let body = [0xe4, 0x0f, 0xe4, 0xf9, 0x00, 0x2f, 0x14, 0x00, 0x18];
     for name in ["i_pnts", "i_points"] {
         let slots = named_spline_scalar_slots(
-            &SurfacePrototypeFamily::Spline,
+            &SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Spline),
             name,
             &body,
             6,
@@ -527,7 +536,7 @@ fn spline_tangents_use_the_signed_coordinate_dict_lattice() {
     ];
     for name in ["end_v_tangts", "end_tangts"] {
         let slots = named_spline_scalar_slots(
-            &SurfacePrototypeFamily::Spline,
+            &SurfacePrototypeFamily::Spline(crate::surface::SplineLabel::Spline),
             name,
             &body,
             3,

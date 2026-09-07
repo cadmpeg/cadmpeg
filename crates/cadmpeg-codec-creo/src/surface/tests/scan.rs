@@ -581,7 +581,7 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
 
     assert_eq!(scan.surfaces.prototype_records.len(), 1);
     let prototype = &scan.surfaces.prototype_records[0];
-    assert_eq!(prototype.declared_family, "cylinder");
+    assert_eq!(prototype.family.name(), "cylinder");
     assert_eq!(
         prototype.family,
         crate::surface::SurfacePrototypeFamily::Cylinder

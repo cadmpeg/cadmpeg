@@ -1592,7 +1592,7 @@ pub(super) fn surface_prototype_records(
         .iter()
         .map(|record| CreoSurfacePrototypeRecord {
             id: format!("creo:{id_namespace}:surface_prototype#{}", record.offset),
-            declared_family: record.declared_family.clone(),
+            declared_family: record.family.name().to_owned(),
             family: surface_prototype_family_name(&record.family),
             parameters: record
                 .parameters

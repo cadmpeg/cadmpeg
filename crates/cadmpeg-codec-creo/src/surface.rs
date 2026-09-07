@@ -179,15 +179,45 @@ pub enum SurfacePrototypeFamily {
     /// Cone prototype.
     Cone,
     /// Torus or sphere prototype.
-    Torus,
+    Torus(TorusLabel),
     /// Spline-surface prototype.
-    Spline,
+    Spline(SplineLabel),
     /// Fillet-surface prototype.
-    Fillet,
+    Fillet(FilletLabel),
     /// Surface-of-extrusion prototype.
-    Extrusion,
+    Extrusion(ExtrusionLabel),
     /// Structurally valid family name outside the defined set.
     Other(String),
+}
+
+/// Exact torus-family label.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TorusLabel {
+    Torus,
+    Sphere,
+}
+
+/// Exact spline-family label.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SplineLabel {
+    Spline,
+    Splsrf,
+}
+
+/// Exact fillet-family label.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FilletLabel {
+    Fillet,
+    FilletSrf,
+}
+
+/// Exact extrusion-family label.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExtrusionLabel {
+    SurfaceOfExtrusion,
+    Extrusion,
+    TabulatedCylinder,
+    RuledSurface,
 }
 
 impl SurfacePrototypeFamily {
@@ -196,11 +226,37 @@ impl SurfacePrototypeFamily {
             "plane" => Self::Plane,
             "cylinder" => Self::Cylinder,
             "cone" => Self::Cone,
-            "torus" | "sphere" => Self::Torus,
-            "spline" | "splsrf" => Self::Spline,
-            "fillet" | "fillet_srf" => Self::Fillet,
-            "surface_of_extrusion" | "extrusion" | "tab_cyl" | "ruled_srf" => Self::Extrusion,
+            "torus" => Self::Torus(TorusLabel::Torus),
+            "sphere" => Self::Torus(TorusLabel::Sphere),
+            "spline" => Self::Spline(SplineLabel::Spline),
+            "splsrf" => Self::Spline(SplineLabel::Splsrf),
+            "fillet" => Self::Fillet(FilletLabel::Fillet),
+            "fillet_srf" => Self::Fillet(FilletLabel::FilletSrf),
+            "surface_of_extrusion" => Self::Extrusion(ExtrusionLabel::SurfaceOfExtrusion),
+            "extrusion" => Self::Extrusion(ExtrusionLabel::Extrusion),
+            "tab_cyl" => Self::Extrusion(ExtrusionLabel::TabulatedCylinder),
+            "ruled_srf" => Self::Extrusion(ExtrusionLabel::RuledSurface),
             other => Self::Other(other.to_string()),
+        }
+    }
+
+    /// Exact family name inside `srf_prim_ptr(<family>)`.
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Plane => "plane",
+            Self::Cylinder => "cylinder",
+            Self::Cone => "cone",
+            Self::Torus(TorusLabel::Torus) => "torus",
+            Self::Torus(TorusLabel::Sphere) => "sphere",
+            Self::Spline(SplineLabel::Spline) => "spline",
+            Self::Spline(SplineLabel::Splsrf) => "splsrf",
+            Self::Fillet(FilletLabel::Fillet) => "fillet",
+            Self::Fillet(FilletLabel::FilletSrf) => "fillet_srf",
+            Self::Extrusion(ExtrusionLabel::SurfaceOfExtrusion) => "surface_of_extrusion",
+            Self::Extrusion(ExtrusionLabel::Extrusion) => "extrusion",
+            Self::Extrusion(ExtrusionLabel::TabulatedCylinder) => "tab_cyl",
+            Self::Extrusion(ExtrusionLabel::RuledSurface) => "ruled_srf",
+            Self::Other(name) => name,
         }
     }
 }
@@ -265,8 +321,6 @@ pub struct SurfaceNamedParameter {
 /// Bounded `srf_prim_ptr(<kind>)` prototype and its named parameters.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SurfacePrototypeRecord {
-    /// Exact family name inside `srf_prim_ptr(<family>)`.
-    pub declared_family: String,
     /// Surface family named by the prototype label.
     pub family: SurfacePrototypeFamily,
     /// Selected named parameters in byte order.
@@ -285,7 +339,7 @@ impl SurfacePrototypeRecord {
 
     /// Return the chart-origin vector carried by a `tab_cyl` local system.
     pub(crate) fn tabulated_cylinder_chart_origin(&self) -> Option<[f64; 3]> {
-        if self.declared_family != "tab_cyl" || self.family != SurfacePrototypeFamily::Extrusion {
+        if self.family != SurfacePrototypeFamily::Extrusion(ExtrusionLabel::TabulatedCylinder) {
             return None;
         }
         let SurfaceNamedValue::ScalarArray {
@@ -315,7 +369,7 @@ impl SurfacePrototypeRecord {
 
     /// Return the four contiguous control-point IDs in a `tab_cyl` prototype.
     pub(crate) fn tabulated_cylinder_control_point_ids(&self) -> Option<[u32; 4]> {
-        if self.declared_family != "tab_cyl" || self.family != SurfacePrototypeFamily::Extrusion {
+        if self.family != SurfacePrototypeFamily::Extrusion(ExtrusionLabel::TabulatedCylinder) {
             return None;
         }
         let SurfaceNamedValue::ContiguousEntityReferences { entity_ids, .. } =
@@ -441,7 +495,7 @@ fn complete_spline_parameter_count(
 }
 
 fn spline_replay_shape(prototype: &SurfacePrototypeRecord) -> Option<SplineReplayShape> {
-    (prototype.family == SurfacePrototypeFamily::Spline).then_some(())?;
+    matches!(prototype.family, SurfacePrototypeFamily::Spline(_)).then_some(())?;
     let SurfaceNamedValue::CompactIntArray(tangent_conditions) =
         &prototype.field("tan_cond")?.value
     else {
@@ -484,7 +538,7 @@ fn associated_spline_replay_prototype(
     let mut prototypes = named_prototype_records(payload)
         .into_iter()
         .filter(|prototype| {
-            prototype.family == SurfacePrototypeFamily::Spline
+            matches!(prototype.family, SurfacePrototypeFamily::Spline(_))
                 && prototype.offset >= frame_start
                 && prototype.offset < frame_end
         });
@@ -534,8 +588,13 @@ fn take_spline_scalars(
     (count <= body.len().saturating_sub(*cursor)).then_some(())?;
     let mut values = Vec::new();
     for _ in 0..count {
-        let (value, next) =
-            named_spline_scalar_slot(&SurfacePrototypeFamily::Spline, name, body, *cursor, cache)?;
+        let (value, next) = named_spline_scalar_slot(
+            &SurfacePrototypeFamily::Spline(SplineLabel::Spline),
+            name,
+            body,
+            *cursor,
+            cache,
+        )?;
         let value = value?;
         (next > *cursor && value.is_finite()).then_some(())?;
         values.push(value);
@@ -2884,7 +2943,7 @@ const PROTOTYPE_PARAMETER_NAMES: &[&str] = &[
 
 fn prototype_parameter_allowed(family: &SurfacePrototypeFamily, name: &str) -> bool {
     PROTOTYPE_PARAMETER_NAMES.contains(&name)
-        && !(matches!(family, SurfacePrototypeFamily::Torus)
+        && !(matches!(family, SurfacePrototypeFamily::Torus(_))
             && matches!(name, "i_pnts" | "i_points" | "c_pnts"))
 }
 
@@ -3220,7 +3279,6 @@ pub fn named_prototype_records(payload: &[u8]) -> Vec<SurfacePrototypeRecord> {
             });
         }
         records.push(SurfacePrototypeRecord {
-            declared_family: family_name.into_owned(),
             family,
             parameters,
             offset: record_start,
@@ -7332,7 +7390,7 @@ fn counted_parameter_scalar_slots(
             }
 
             if let Some((value, next)) = named_spline_scalar_slot(
-                &SurfacePrototypeFamily::Spline,
+                &SurfacePrototypeFamily::Spline(SplineLabel::Spline),
                 "params",
                 body,
                 cursor,
@@ -7422,14 +7480,14 @@ fn named_spline_scalar_slot(
         return scalar::decode_tabulated_cylinder_second_coordinate(body, offset, cache)
             .map(|(value, next)| (Some(value), next));
     }
-    if matches!(family, SurfacePrototypeFamily::Fillet)
+    if matches!(family, SurfacePrototypeFamily::Fillet(_))
         && name == "tangts"
         && scalar::is_tabulated_cylinder_second_coordinate_opener(head)
     {
         return scalar::decode_tabulated_cylinder_second_coordinate(body, offset, cache)
             .map(|(value, next)| (Some(value), next));
     }
-    if matches!(family, SurfacePrototypeFamily::Fillet)
+    if matches!(family, SurfacePrototypeFamily::Fillet(_))
         && matches!(name, "i_pnts" | "i_points")
         && matches!(head, 0xa4..=0xdf)
     {

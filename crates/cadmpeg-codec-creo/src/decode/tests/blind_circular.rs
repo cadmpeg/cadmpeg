@@ -703,8 +703,9 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
     scan.surfaces
         .prototype_records
         .push(crate::surface::SurfacePrototypeRecord {
-            declared_family: "torus".to_string(),
-            family: crate::surface::SurfacePrototypeFamily::Torus,
+            family: crate::surface::SurfacePrototypeFamily::Torus(
+                crate::surface::TorusLabel::Torus,
+            ),
             parameters: vec![scalar("radius1", 10.0), scalar("radius2", 0.5)],
             offset: 150,
         });

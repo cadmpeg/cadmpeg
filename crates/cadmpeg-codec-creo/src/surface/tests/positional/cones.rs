@@ -54,7 +54,6 @@ fn positional_cone_frame_requires_complete_support_apex_and_angle() {
     let mut local_system_body = vec![0xf9, 0x04, 0x03];
     local_system_body.extend_from_slice(&body[..angle.start]);
     let prototype = SurfacePrototypeRecord {
-        declared_family: "cone".to_string(),
         family: SurfacePrototypeFamily::Cone,
         parameters: vec![
             SurfaceNamedParameter {
