@@ -3244,4 +3244,18 @@ mod tests {
         assert_eq!(coedges[0].edge, coedges[1].edge);
         assert_eq!(coedges[2].edge, coedges[3].edge);
     }
+
+    struct BrepVersionField(i32);
+
+    impl serde::Serialize for BrepVersionField {
+        fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            super::serialize_brep_version(self.0, serializer)
+        }
+    }
+
+    #[test]
+    fn brep_version_projection_emits_the_documented_keys_in_order() {
+        let json = serde_json::to_string(&BrepVersionField(3)).expect("brep version serialize");
+        assert_eq!(json, "{\"wire_version\":3,\"version\":3}");
+    }
 }
