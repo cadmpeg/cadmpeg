@@ -8257,6 +8257,7 @@ pub(crate) fn boolean_feature_definition(
     }
 }
 
+#[derive(Clone, Copy)]
 enum DeleteBodyField<'a> {
     Native(u32),
     OffsetStore {
