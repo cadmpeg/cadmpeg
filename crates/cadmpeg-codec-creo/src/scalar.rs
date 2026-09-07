@@ -136,22 +136,17 @@ pub fn double_xar_tables(data: &[u8]) -> Vec<DoubleXarTable> {
 /// Section-local dictionary formed by distinct raw `0x46` token images.
 #[derive(Debug, Clone, Default)]
 pub struct ScalarCache {
-    entries: Vec<CacheEntry>,
+    entries: Vec<f64>,
     /// Unique leading payload byte for each paired-form tail. `None` marks a
     /// tail shared by distinct cache images.
     paired_byte_1_by_tail: BTreeMap<[u8; 6], Option<u8>>,
-}
-
-#[derive(Debug, Clone)]
-struct CacheEntry {
-    value: f64,
 }
 
 impl ScalarCache {
     /// Build the dictionary in first-appearance order from every complete
     /// eight-byte sequence beginning with `0x46` in one section.
     pub fn from_section(section: &[u8]) -> Self {
-        let mut entries = Vec::<CacheEntry>::new();
+        let mut entries = Vec::<f64>::new();
         let mut seen = HashSet::<[u8; 8]>::new();
         let mut paired_byte_1_by_tail = BTreeMap::new();
         for offset in 0..section.len() {
@@ -174,9 +169,7 @@ impl ScalarCache {
                     *paired_byte_1 = None;
                 }
             }
-            entries.push(CacheEntry {
-                value: f64::from_be_bytes(ieee),
-            });
+            entries.push(f64::from_be_bytes(ieee));
         }
         Self {
             entries,
@@ -185,9 +178,7 @@ impl ScalarCache {
     }
 
     fn value(&self, index: u32) -> Option<f64> {
-        self.entries
-            .get(usize::try_from(index).ok()?)
-            .map(|entry| entry.value)
+        self.entries.get(usize::try_from(index).ok()?).copied()
     }
 
     fn paired_byte_1(&self, tail: &[u8]) -> Option<u8> {
@@ -2321,7 +2312,7 @@ mod tests {
     #[test]
     fn complete_local_system_rejects_a_nonfinite_slot() {
         let cache = ScalarCache {
-            entries: vec![CacheEntry { value: 1.0 }, CacheEntry { value: f64::NAN }],
+            entries: vec![1.0, f64::NAN],
             paired_byte_1_by_tail: BTreeMap::new(),
         };
         let mut body = Vec::new();
