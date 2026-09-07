@@ -743,7 +743,7 @@ pub fn feature_simple_hole_templates(
             let [(string, label)] = candidates.as_slice() else {
                 return None;
             };
-            let (family, form, extent, start_treatment, end_treatment) =
+            let (form, extent, start_treatment, end_treatment) =
                 parse_simple_hole_template(string.value.as_str())?;
             Some(FeatureSimpleHoleTemplate {
                 id: string
@@ -751,7 +751,7 @@ pub fn feature_simple_hole_templates(
                     .replacen("payload-string", "simple-hole-template", 1),
                 operation_label: label.id.clone(),
                 payload_string: string.id.clone(),
-                family,
+                family: SimpleHoleFamily::GeneralHole,
                 form,
                 extent,
                 start_treatment,
@@ -1106,7 +1106,6 @@ pub fn feature_hole_package_construction_group_uses(
 pub(crate) fn parse_simple_hole_template(
     value: &str,
 ) -> Option<(
-    SimpleHoleFamily,
     SimpleHoleForm,
     SimpleHoleExtent,
     SimpleHoleEndTreatment,
@@ -1142,13 +1141,7 @@ pub(crate) fn parse_simple_hole_template(
         }
         _ => return None,
     };
-    Some((
-        SimpleHoleFamily::GeneralHole,
-        form,
-        extent,
-        start_treatment,
-        end_treatment,
-    ))
+    Some((form, extent, start_treatment, end_treatment))
 }
 
 pub(crate) fn parse_threaded_hole_template(

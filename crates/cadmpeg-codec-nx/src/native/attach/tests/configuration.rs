@@ -1358,7 +1358,7 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
             &BTreeMap::new(),
             "nx:om-object-indices#94,122".to_string(),
         )
-        .selection,
+        .into_selection(),
         BodySelection::Local {
             bodies: vec![
                 "nx:om-body-object#94".to_string(),
@@ -1374,7 +1374,7 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
             &BTreeMap::new(),
             "nx:om-object-indices#94,123".to_string(),
         )
-        .selection,
+        .into_selection(),
         BodySelection::Native(_)
     ));
     let aliases = BTreeMap::from([(94, 94), (150, 94)]);
@@ -1385,7 +1385,7 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
             &BTreeMap::new(),
             "nx:om-object-indices#94,150".to_string(),
         )
-        .selection,
+        .into_selection(),
         BodySelection::Local {
             bodies: vec!["nx:om-body-object#94".to_string()],
             native: "nx:om-object-indices#94,150".to_string(),
@@ -1412,7 +1412,7 @@ fn feature_body_selection_retains_complete_input_local_identities_atomically() {
             &bindings,
             "nx:om-object-index#94".to_string(),
         )
-        .selection,
+        .into_selection(),
         BodySelection::Resolved {
             bodies: vec![first.clone()],
             native: "nx:om-object-index#94".to_string(),
@@ -1453,7 +1453,7 @@ fn feature_body_selection_uses_complete_offset_store_proof_for_colliding_index()
         "nx:om-object-index#94".to_string(),
     );
     assert_eq!(
-        selection.selection,
+        selection.into_selection(),
         BodySelection::Local {
             bodies: vec!["nx:om-data-blocks-3:block#94".to_string()],
             native: "nx:om-object-index#94".to_string(),

@@ -123,7 +123,7 @@ fn nx_block_dimensions_do_not_cross_expression_sections() {
     let expression = |index: u32, source_entry: &str, source_table: &str| Expression {
         id: format!("expression-{index}"),
         owner: Some(crate::native::om::ExpressionOwner {
-            object_id: Some(index),
+            object_id: index,
             record: format!("{source_entry}:entry#{index}"),
         }),
         declaration: Some(format!("declaration-{index}")),

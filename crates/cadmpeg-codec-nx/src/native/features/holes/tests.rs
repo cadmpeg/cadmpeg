@@ -106,7 +106,6 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
             "Hole_GeneralHole_Counterbored_Through"
         ),
         Some((
-            SimpleHoleFamily::GeneralHole,
             SimpleHoleForm::Counterbored,
             SimpleHoleExtent::Through,
             SimpleHoleEndTreatment::None,
@@ -116,7 +115,6 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
     assert_eq!(
         crate::native::features::holes::parse_simple_hole_template("Hole_GeneralHole_Simple_Blind"),
         Some((
-            SimpleHoleFamily::GeneralHole,
             SimpleHoleForm::Simple,
             SimpleHoleExtent::Blind,
             SimpleHoleEndTreatment::None,
@@ -128,7 +126,6 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
             "Hole_GeneralHole_Countersunk_Through"
         ),
         Some((
-            SimpleHoleFamily::GeneralHole,
             SimpleHoleForm::Countersunk,
             SimpleHoleExtent::Through,
             SimpleHoleEndTreatment::None,
@@ -140,7 +137,6 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
             "Hole_GeneralHole_Countersunk_Blind"
         ),
         Some((
-            SimpleHoleFamily::GeneralHole,
             SimpleHoleForm::Countersunk,
             SimpleHoleExtent::Blind,
             SimpleHoleEndTreatment::None,

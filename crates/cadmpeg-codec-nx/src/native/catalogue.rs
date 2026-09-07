@@ -699,7 +699,7 @@ fn note_display_jt_display_jt_indices(
         a.note(&index.id, annotation_stream, index.source_offset)
             .tag("DISPLAY_JT_INDEX");
         a.exactness(&index.id, Exactness::ByteExact);
-        for row in &index.rows {
+        for row in index.rows() {
             a.note(&row.id, annotation_stream, row.source_offset)
                 .tag("DISPLAY_JT_INDEX_ROW");
             a.exactness(&row.id, Exactness::ByteExact);
@@ -1195,7 +1195,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
     },
     CatalogueRow {
         arena: "parasolid_group_members",
-        tag: Some("PARASOLID_GROUP_MEMBER"),
+        tag: None,
         exactness: Exactness::Derived,
         phase: Phase::ArenaOnly,
         emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_group_members, r, ns),
@@ -1515,7 +1515,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
     },
     CatalogueRow {
         arena: "parasolid_field_names_records",
-        tag: Some("FIELD_NAMES"),
+        tag: None,
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
         emit: |m, r, ns| emit_arena(&m.parasolid.parasolid_field_names_records, r, ns),
@@ -2246,7 +2246,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
     },
     CatalogueRow {
         arena: "external_reference_records",
-        tag: Some("EXTREFSTREAM_RECORD"),
+        tag: None,
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
         emit: |m, r, ns| emit_arena(&m.om.external_reference_records, r, ns),
@@ -2255,7 +2255,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
     },
     CatalogueRow {
         arena: "material_texture_assets",
-        tag: Some("TIFF_MATERIAL_TEXTURE"),
+        tag: None,
         exactness: Exactness::ByteExact,
         phase: Phase::ArenaOnly,
         emit: |m, r, ns| emit_arena(&m.om.material_texture_assets, r, ns),
@@ -2264,7 +2264,7 @@ pub(crate) const CATALOGUE: &[CatalogueRow] = &[
     },
     CatalogueRow {
         arena: "material_texture_catalog_entries",
-        tag: Some("QAF_MATERIAL_TEXTURE_CATALOG_ENTRY"),
+        tag: None,
         exactness: Exactness::Derived,
         phase: Phase::ArenaOnly,
         emit: |m, r, ns| emit_arena(&m.om.material_texture_catalog_entries, r, ns),

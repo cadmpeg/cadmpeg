@@ -303,43 +303,49 @@ fn nx_delete_body_requires_a_primary_body_field() {
 
     let roots = BTreeMap::from([(20, 20)]);
     assert_eq!(
-        super::delete_body_feature_definition(Some(20), None, &roots, &BTreeMap::new()),
-        Some(FeatureDefinition::DeleteBody {
+        super::delete_body_feature_definition(
+            super::DeleteBodyField::Native(20),
+            &roots,
+            &BTreeMap::new()
+        ),
+        FeatureDefinition::DeleteBody {
             bodies: BodySelection::Local {
                 bodies: vec!["nx:om-body-object#20".to_string()],
                 native: "nx:om-object-index#20".to_string(),
             },
             mode: BodyRetentionMode::DeleteSelected,
-        })
+        }
     );
     assert_eq!(
-        super::delete_body_feature_definition(Some(72), None, &roots, &BTreeMap::new()),
-        Some(FeatureDefinition::DeleteBody {
+        super::delete_body_feature_definition(
+            super::DeleteBodyField::Native(72),
+            &roots,
+            &BTreeMap::new()
+        ),
+        FeatureDefinition::DeleteBody {
             bodies: BodySelection::Local {
                 bodies: vec!["nx:om-body-object#72".to_string()],
                 native: "nx:om-object-index#72".to_string(),
             },
             mode: BodyRetentionMode::DeleteSelected,
-        })
-    );
-    assert_eq!(
-        super::delete_body_feature_definition(None, None, &roots, &BTreeMap::new()),
-        None
+        }
     );
     assert_eq!(
         super::delete_body_feature_definition(
-            None,
-            Some((72, "nx:om-data-blocks-2:block#72")),
+            super::DeleteBodyField::OffsetStore {
+                object_index: 72,
+                data_block: "nx:om-data-blocks-2:block#72",
+            },
             &roots,
             &BTreeMap::new(),
         ),
-        Some(FeatureDefinition::DeleteBody {
+        FeatureDefinition::DeleteBody {
             bodies: BodySelection::Local {
                 bodies: vec!["nx:om-data-blocks-2:block#72".to_string()],
                 native: "nx:om-object-index#72".to_string(),
             },
             mode: BodyRetentionMode::DeleteSelected,
-        })
+        }
     );
 }
 
@@ -1347,7 +1353,6 @@ fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
             has_complete_projection: true,
             has_complete_primitive_construction: false,
             outputs: std::slice::from_ref(&body),
-            outputs_are_proven: true,
             body_reference_count: 0,
             provisional_feature: Some(&provisional),
             native_primary_body: None,
@@ -1365,7 +1370,6 @@ fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
             has_complete_projection: true,
             has_complete_primitive_construction: false,
             outputs: std::slice::from_ref(&body),
-            outputs_are_proven: true,
             body_reference_count: 0,
             provisional_feature: Some(&provisional),
             native_primary_body: None,
@@ -1382,7 +1386,6 @@ fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
             has_complete_projection: true,
             has_complete_primitive_construction: false,
             outputs: std::slice::from_ref(&body),
-            outputs_are_proven: true,
             body_reference_count: 1,
             provisional_feature: Some(&provisional),
             native_primary_body: Some(7),
@@ -1396,7 +1399,6 @@ fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
             has_complete_projection: false,
             has_complete_primitive_construction: false,
             outputs: std::slice::from_ref(&body),
-            outputs_are_proven: false,
             body_reference_count: 0,
             provisional_feature: Some(&provisional),
             native_primary_body: None,
@@ -1414,7 +1416,6 @@ fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
             has_complete_projection: true,
             has_complete_primitive_construction: false,
             outputs: std::slice::from_ref(&body),
-            outputs_are_proven: false,
             body_reference_count: 1,
             provisional_feature: Some(&provisional),
             native_primary_body: None,
@@ -1430,7 +1431,6 @@ fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
             has_complete_projection: true,
             has_complete_primitive_construction: false,
             outputs: std::slice::from_ref(&body),
-            outputs_are_proven: false,
             body_reference_count: 1,
             provisional_feature: Some(&provisional),
             native_primary_body: None,
@@ -1445,7 +1445,6 @@ fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
             has_complete_projection: true,
             has_complete_primitive_construction: false,
             outputs: std::slice::from_ref(&body),
-            outputs_are_proven: false,
             body_reference_count: 2,
             provisional_feature: Some(&provisional),
             native_primary_body: None,
@@ -1460,7 +1459,6 @@ fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
             has_complete_projection: true,
             has_complete_primitive_construction: true,
             outputs: std::slice::from_ref(&body),
-            outputs_are_proven: false,
             body_reference_count: 2,
             provisional_feature: Some(&provisional),
             native_primary_body: None,

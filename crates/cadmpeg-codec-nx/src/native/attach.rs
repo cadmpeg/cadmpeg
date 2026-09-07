@@ -3233,7 +3233,6 @@ fn attach_feature_operations(
         let block_projection = (label.value == "BLOCK")
             .then(|| block_placement(ir, block_dimension_values?, &outputs))
             .flatten();
-        let block_outputs_are_proven = !outputs.is_empty() || block_projection.is_some();
         if outputs.is_empty() {
             if let Some((body, _)) = &block_projection {
                 outputs.push(body.clone());
@@ -3272,7 +3271,6 @@ fn attach_feature_operations(
                         })
                 }),
             outputs: &outputs,
-            outputs_are_proven: block_outputs_are_proven,
             body_reference_count,
             provisional_feature: initial_body_id.as_ref(),
             native_primary_body,
@@ -3286,7 +3284,6 @@ fn attach_feature_operations(
                     has_complete_projection: true,
                     has_complete_primitive_construction: true,
                     outputs: sphere_outputs,
-                    outputs_are_proven: true,
                     body_reference_count,
                     provisional_feature: initial_body_id.as_ref(),
                     native_primary_body,
@@ -3442,19 +3439,28 @@ fn attach_feature_operations(
         });
         let delete_projection = deletes_body
             .then(|| {
-                delete_body_feature_definition(
-                    body_references.get(label.id.as_str()).copied(),
-                    offset_store_bodies_by_operation
-                        .get(label.id.as_str())
-                        .and_then(|uses| match uses.as_slice() {
-                            [(object_index, data_block)] => {
-                                Some((*object_index, data_block.as_str()))
-                            }
-                            _ => None,
-                        }),
+                let field = body_references
+                    .get(label.id.as_str())
+                    .copied()
+                    .map(DeleteBodyField::Native)
+                    .or_else(|| {
+                        offset_store_bodies_by_operation
+                            .get(label.id.as_str())
+                            .and_then(|uses| match uses.as_slice() {
+                                [(object_index, data_block)] => {
+                                    Some(DeleteBodyField::OffsetStore {
+                                        object_index: *object_index,
+                                        data_block,
+                                    })
+                                }
+                                _ => None,
+                            })
+                    })?;
+                Some(delete_body_feature_definition(
+                    field,
                     &body_alias_roots,
                     &bodies_by_object_index,
-                )
+                ))
             })
             .flatten();
         let extract_body_projection = (label.value == "EXTRACT_BODY").then(|| {
@@ -5862,7 +5868,6 @@ struct NewBodyEvidence<'a> {
     has_complete_projection: bool,
     has_complete_primitive_construction: bool,
     outputs: &'a [BodyId],
-    outputs_are_proven: bool,
     body_reference_count: usize,
     provisional_feature: Option<&'a FeatureId>,
     native_primary_body: Option<u32>,
@@ -5883,18 +5888,13 @@ fn new_body_boolean_op(evidence: &NewBodyEvidence<'_>) -> BooleanOp {
     {
         return BooleanOp::Unresolved;
     }
-    let writer_outputs = if evidence.outputs_are_proven {
-        evidence.outputs
-    } else {
-        &[]
-    };
     if evidence.has_complete_projection
         && matches!(evidence.outputs, [_])
         && !evidence.history.has_preceding_writer(
             evidence.provisional_feature,
             evidence.native_primary_body,
             evidence.offset_store_primary_body,
-            writer_outputs,
+            evidence.outputs,
         )
     {
         BooleanOp::NewBody
@@ -6174,7 +6174,7 @@ fn non_boolean_feature_definition_with_parameters(
                     None,
                     None,
                 ),
-                |(_, form, extent, start_treatment, end_treatment)| {
+                |(form, extent, start_treatment, end_treatment)| {
                     let kind = match start_treatment {
                         crate::native::features::holes::SimpleHoleEndTreatment::Chamfer => {
                             HoleKind::Unresolved(Some(HoleForm::Chamfer))
@@ -6233,7 +6233,6 @@ fn non_boolean_feature_definition_with_parameters(
                         (
                             Some(chamfer),
                             Some((
-                                _,
                                 crate::native::features::holes::SimpleHoleForm::Simple,
                                 crate::native::features::holes::SimpleHoleExtent::Through,
                                 crate::native::features::holes::SimpleHoleEndTreatment::Chamfer,
@@ -6248,7 +6247,6 @@ fn non_boolean_feature_definition_with_parameters(
                     (
                         Some(chamfer),
                         Some((
-                            _,
                             crate::native::features::holes::SimpleHoleForm::Simple,
                             crate::native::features::holes::SimpleHoleExtent::Through,
                             crate::native::features::holes::SimpleHoleEndTreatment::Chamfer,
@@ -7867,7 +7865,6 @@ fn simple_hole_chamfers(
 fn unique_simple_hole_template(
     payload_strings: &[&str],
 ) -> Option<(
-    crate::native::features::holes::SimpleHoleFamily,
     crate::native::features::holes::SimpleHoleForm,
     crate::native::features::holes::SimpleHoleExtent,
     crate::native::features::holes::SimpleHoleEndTreatment,
@@ -7898,9 +7895,34 @@ fn offset_store_identity(data_block: &str) -> Option<&str> {
         .map(|(store, _)| store)
 }
 
-struct FeatureBodySelection {
-    selection: BodySelection,
-    identity_keys: Option<Vec<FeatureBodyIdentity>>,
+enum FeatureBodySelection {
+    Native(String),
+    Local {
+        bodies: Vec<String>,
+        native: String,
+        identity_keys: Vec<FeatureBodyIdentity>,
+    },
+    Resolved {
+        bodies: Vec<BodyId>,
+        native: String,
+        identity_keys: Vec<FeatureBodyIdentity>,
+    },
+}
+
+impl FeatureBodySelection {
+    fn into_selection(self) -> BodySelection {
+        match self {
+            Self::Native(native) => BodySelection::Native(native),
+            Self::Local { bodies, native, .. } => BodySelection::Local { bodies, native },
+            Self::Resolved { bodies, native, .. } => BodySelection::Resolved { bodies, native },
+        }
+    }
+
+    fn into_native(self) -> BodySelection {
+        let (Self::Native(native) | Self::Local { native, .. } | Self::Resolved { native, .. }) =
+            self;
+        BodySelection::Native(native)
+    }
 }
 
 /// Resolve a complete object-index selection only when every alias root owns one
@@ -7955,18 +7977,12 @@ fn feature_body_selection_with_offset_blocks(
                 }
             }
             (None, None) => {
-                return FeatureBodySelection {
-                    selection: BodySelection::Native(native),
-                    identity_keys: None,
-                };
+                return FeatureBodySelection::Native(native);
             }
         }
     }
     if !roots.is_empty() && !offset_blocks.is_empty() {
-        return FeatureBodySelection {
-            selection: BodySelection::Native(native),
-            identity_keys: None,
-        };
+        return FeatureBodySelection::Native(native);
     }
     let offset_store = offset_blocks
         .first()
@@ -7977,23 +7993,16 @@ fn feature_body_selection_with_offset_blocks(
                 .iter()
                 .any(|block| offset_store_identity(block) != offset_store))
     {
-        return FeatureBodySelection {
-            selection: BodySelection::Native(native),
-            identity_keys: None,
-        };
+        return FeatureBodySelection::Native(native);
     }
     if !offset_blocks.is_empty() {
-        return FeatureBodySelection {
-            selection: BodySelection::Local {
-                bodies: offset_blocks.clone(),
-                native,
-            },
-            identity_keys: Some(
-                offset_blocks
-                    .into_iter()
-                    .map(FeatureBodyIdentity::OffsetStore)
-                    .collect(),
-            ),
+        return FeatureBodySelection::Local {
+            bodies: offset_blocks.clone(),
+            native,
+            identity_keys: offset_blocks
+                .into_iter()
+                .map(FeatureBodyIdentity::OffsetStore)
+                .collect(),
         };
     }
     let resolved = roots
@@ -8008,30 +8017,25 @@ fn feature_body_selection_with_offset_blocks(
     if let Some(bodies) =
         resolved.filter(|bodies| bodies.iter().collect::<BTreeSet<_>>().len() == bodies.len())
     {
-        return FeatureBodySelection {
-            selection: BodySelection::Resolved { bodies, native },
-            identity_keys: Some(
-                roots
-                    .into_iter()
-                    .map(FeatureBodyIdentity::Segment)
-                    .collect(),
-            ),
-        };
-    }
-    FeatureBodySelection {
-        selection: BodySelection::Local {
-            bodies: roots
-                .iter()
-                .map(|root| format!("nx:om-body-object#{root}"))
-                .collect(),
+        return FeatureBodySelection::Resolved {
+            bodies,
             native,
-        },
-        identity_keys: Some(
-            roots
+            identity_keys: roots
                 .into_iter()
                 .map(FeatureBodyIdentity::Segment)
                 .collect(),
-        ),
+        };
+    }
+    FeatureBodySelection::Local {
+        bodies: roots
+            .iter()
+            .map(|root| format!("nx:om-body-object#{root}"))
+            .collect(),
+        native,
+        identity_keys: roots
+            .into_iter()
+            .map(FeatureBodyIdentity::Segment)
+            .collect(),
     }
 }
 
@@ -8078,8 +8082,25 @@ fn atomic_disjoint_body_selections(
     left: FeatureBodySelection,
     right: FeatureBodySelection,
 ) -> (BodySelection, BodySelection) {
-    let complete = left.identity_keys.as_ref().is_some_and(|left| {
-        right.identity_keys.as_ref().is_some_and(|right| {
+    let complete = match (&left, &right) {
+        (
+            FeatureBodySelection::Local {
+                identity_keys: left,
+                ..
+            }
+            | FeatureBodySelection::Resolved {
+                identity_keys: left,
+                ..
+            },
+            FeatureBodySelection::Local {
+                identity_keys: right,
+                ..
+            }
+            | FeatureBodySelection::Resolved {
+                identity_keys: right,
+                ..
+            },
+        ) => {
             let same_namespace =
                 left.first()
                     .zip(right.first())
@@ -8092,27 +8113,14 @@ fn atomic_disjoint_body_selections(
                         _ => false,
                     });
             same_namespace && !left.iter().any(|key| right.contains(key))
-        })
-    });
-    let left = left.selection;
-    let right = right.selection;
-    if complete {
-        return (left, right);
-    }
-    let native = |selection: BodySelection| match selection {
-        BodySelection::Resolved { native, .. }
-        | BodySelection::Local { native, .. }
-        | BodySelection::Native(native) => BodySelection::Native(native),
-        BodySelection::ResolvedSet { native, .. } => BodySelection::NativeSet(native),
-        BodySelection::NativeSet(members) => BodySelection::NativeSet(members),
-        BodySelection::Bodies(bodies) => BodySelection::Bodies(bodies),
-        BodySelection::Generated { .. }
-        | BodySelection::Historical { .. }
-        | BodySelection::HistoricalSet { .. }
-        | BodySelection::HistoricalUnorderedSet { .. }
-        | BodySelection::Unresolved => BodySelection::Unresolved,
+        }
+        _ => false,
     };
-    (native(left), native(right))
+    if complete {
+        (left.into_selection(), right.into_selection())
+    } else {
+        (left.into_native(), right.into_native())
+    }
 }
 
 /// Resolve one Boolean participant through the namespace selected by the
@@ -8249,47 +8257,50 @@ pub(crate) fn boolean_feature_definition(
     }
 }
 
+#[derive(Clone, Copy)]
+enum DeleteBodyField<'a> {
+    Native(u32),
+    OffsetStore {
+        object_index: u32,
+        data_block: &'a str,
+    },
+}
+
 /// Project `DELETE` as body deletion only when its bounded operation record
 /// carries a primary-body field. Other `DELETE` payloads target a different
 /// object family and remain native until that family is decoded.
 fn delete_body_feature_definition(
-    body_object_index: Option<u32>,
-    offset_store_body: Option<(u32, &str)>,
+    field: DeleteBodyField<'_>,
     body_alias_roots: &BTreeMap<u32, u32>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
-) -> Option<FeatureDefinition> {
-    let selection = if let Some(body) = body_object_index {
-        feature_body_selection(
+) -> FeatureDefinition {
+    let bodies = match field {
+        DeleteBodyField::Native(body) => match feature_body_selection(
             &[body],
             body_alias_roots,
             bodies_by_object_index,
             format!("nx:om-object-index#{body}"),
-        )
-        .selection
-    } else if let Some((object_index, data_block)) = offset_store_body {
-        BodySelection::Local {
-            bodies: vec![data_block.to_string()],
-            native: format!("nx:om-object-index#{object_index}"),
-        }
-    } else {
-        return None;
-    };
-    let bodies = match selection {
-        BodySelection::Native(native) => {
-            let body = body_object_index.expect("native DELETE selection has a body index");
-            BodySelection::Local {
+        ) {
+            FeatureBodySelection::Native(native) => BodySelection::Local {
                 bodies: vec![format!("nx:om-body-object#{body}")],
                 native,
-            }
-        }
-        selection => selection,
+            },
+            selection => selection.into_selection(),
+        },
+        DeleteBodyField::OffsetStore {
+            object_index,
+            data_block,
+        } => BodySelection::Local {
+            bodies: vec![data_block.to_string()],
+            native: format!("nx:om-object-index#{object_index}"),
+        },
     };
-    Some(FeatureDefinition::DeleteBody {
+    FeatureDefinition::DeleteBody {
         // A typed DELETE primary-body field names one exact feature input. It
         // needs no cross-selection alias proof when it has no segment binding.
         bodies,
         mode: BodyRetentionMode::DeleteSelected,
-    })
+    }
 }
 
 /// Project the exact source body of an `EXTRACT_BODY` operation.
@@ -8314,7 +8325,7 @@ fn extract_body_feature_definition(
                 bodies_by_object_index,
                 format!("nx:om-object-index#{body}"),
             )
-            .selection
+            .into_selection()
         },
     );
     FeatureDefinition::ExtractBody { source }
@@ -8480,7 +8491,7 @@ fn trim_body_feature_definition(
                 bodies_by_object_index,
                 native_target,
             )
-            .selection,
+            .into_selection(),
             tools: BodySelection::Unresolved,
             keep: BodyTrimSide::Unresolved,
         };
