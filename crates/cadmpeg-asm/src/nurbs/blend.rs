@@ -8,7 +8,7 @@ use crate::nurbs::core::{
     decode_owned_curve_cache_resolving_refs_at, decode_owned_surface_cache_at,
     decode_owned_surface_cache_resolving_refs_at, decode_surface_block, surface_block,
 };
-use crate::nurbs::pcurve::{pcurve_block_with_end, NurbsPcurve};
+use crate::nurbs::pcurve::pcurve_block_with_end;
 use crate::nurbs::proc_curve::{
     decode_embedded_surface_with_ranges, decode_par_int_cur_isoline,
     embedded_base_curve_resolving_refs, embedded_surface, embedded_surface_with_ranges,
@@ -29,8 +29,8 @@ use crate::nurbs::subtypes::{subtype_span, SubtypeTables};
 use crate::nurbs::toks::{self, Cur, SubtypeTable};
 use crate::sab::Token;
 use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, RevisionCacheForm,
-    SurfaceGeometry, VariableBlendCache,
+    BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, PcurveNurbs,
+    RevisionCacheForm, SurfaceGeometry, VariableBlendCache,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -635,11 +635,11 @@ fn blend_value_name(cur: &mut Cur<'_>) -> Option<String> {
     cur.take_ident().map(str::to_string)
 }
 
-fn radius_function_geometry(mut function: NurbsPcurve) -> PcurveGeometry {
+fn radius_function_geometry(mut function: PcurveNurbs) -> PcurveGeometry {
     for point in function.control_points_mut() {
         point.u *= LEN_TO_MM;
     }
-    function.into_geometry()
+    PcurveGeometry::Nurbs { nurbs: function }
 }
 
 fn variable_blend_value(

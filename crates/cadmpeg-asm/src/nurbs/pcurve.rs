@@ -9,63 +9,8 @@ use crate::nurbs::reader::{
 use crate::nurbs::toks::{self, Cur};
 use crate::sab::Token;
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::geometry::{PcurveGeometry, PcurveNurbs};
+use cadmpeg_ir::geometry::PcurveNurbs;
 use cadmpeg_ir::math::Point2;
-
-/// The decoded payload of a 2D `nubs` or `nurbs` pcurve block.
-#[derive(Clone)]
-pub struct NurbsPcurve(PcurveNurbs);
-
-impl NurbsPcurve {
-    pub(crate) fn new(
-        degree: u32,
-        knots: Vec<f64>,
-        control_points: Vec<Point2>,
-        weights: Option<Vec<f64>>,
-        periodic: bool,
-    ) -> Option<Self> {
-        PcurveNurbs::new(degree, knots, control_points, weights, periodic)
-            .ok()
-            .map(Self)
-    }
-
-    /// Polynomial degree.
-    pub fn degree(&self) -> u32 {
-        self.0.degree()
-    }
-
-    /// Expanded knot vector.
-    pub fn knots(&self) -> &[f64] {
-        self.0.knots()
-    }
-
-    pub(crate) fn knots_mut(&mut self) -> &mut [f64] {
-        self.0.knots_mut()
-    }
-
-    /// Parameter-space control points.
-    pub fn control_points(&self) -> &[Point2] {
-        self.0.control_points()
-    }
-
-    pub(crate) fn control_points_mut(&mut self) -> &mut [Point2] {
-        self.0.control_points_mut()
-    }
-
-    /// Optional rational weights.
-    pub fn weights(&self) -> Option<&[f64]> {
-        self.0.weights()
-    }
-
-    pub(crate) fn weights_mut(&mut self) -> Option<&mut [f64]> {
-        self.0.weights_mut()
-    }
-
-    /// Convert the parsed cache to its cardinality-checked IR form.
-    pub(crate) fn into_geometry(self) -> PcurveGeometry {
-        PcurveGeometry::Nurbs { nurbs: self.0 }
-    }
-}
 
 /// Writable value offsets for one 2D pcurve cache.
 pub struct PcurvePatchLayout {
@@ -158,7 +103,7 @@ pub fn final_pcurve_patch_layout(record: &[u8], int_width: RefWidth) -> Option<P
         .next_back()
 }
 
-fn decode_pcurve_block(b: &[u8], marker_pos: usize, int_width: RefWidth) -> Option<NurbsPcurve> {
+fn decode_pcurve_block(b: &[u8], marker_pos: usize, int_width: RefWidth) -> Option<PcurveNurbs> {
     decode_pcurve_block_with_end(b, marker_pos, int_width).map(|(pcurve, _)| pcurve)
 }
 
@@ -166,7 +111,7 @@ pub(crate) fn decode_pcurve_block_with_end(
     b: &[u8],
     marker_pos: usize,
     int_width: RefWidth,
-) -> Option<(NurbsPcurve, usize)> {
+) -> Option<(PcurveNurbs, usize)> {
     let (_cp_dims, marker_len, rational) = marker_at(b, marker_pos)?;
     let mut pos = marker_pos + marker_len;
     let degree = take_tagged_int(b, &mut pos, 0x04, int_width)?;
@@ -203,13 +148,14 @@ pub(crate) fn decode_pcurve_block_with_end(
         }
     }
     Some((
-        NurbsPcurve::new(
+        PcurveNurbs::new(
             degree as u32,
             knots,
             control_points,
             weights,
             is_periodic(closure),
-        )?,
+        )
+        .ok()?,
         pos,
     ))
 }
@@ -218,7 +164,7 @@ pub(crate) fn decode_pcurve_block_with_end(
 ///
 /// This generic entry point has no stream-width or owning-scope witness. It
 /// therefore withholds when more than one `(width, marker)` candidate decodes.
-pub fn decode_pcurve_cache(record_bytes: &[u8]) -> Option<NurbsPcurve> {
+pub fn decode_pcurve_cache(record_bytes: &[u8]) -> Option<PcurveNurbs> {
     let mut decoded = None;
     for int_width in INT_WIDTHS {
         for position in marker_positions(record_bytes) {
@@ -239,7 +185,7 @@ pub fn decode_pcurve_cache(record_bytes: &[u8]) -> Option<NurbsPcurve> {
 pub(crate) fn pcurve_block_with_end(
     toks: &[Token],
     marker_pos: usize,
-) -> Option<(NurbsPcurve, usize)> {
+) -> Option<(PcurveNurbs, usize)> {
     let rational = toks::marker_at(toks, marker_pos)?.rational();
     let mut cur = Cur::at(toks, marker_pos + 1);
     let degree = cur.take_long()?;
@@ -263,18 +209,19 @@ pub(crate) fn pcurve_block_with_end(
         }
     }
     Some((
-        NurbsPcurve::new(
+        PcurveNurbs::new(
             degree as u32,
             knots,
             control_points,
             weights,
             is_periodic(closure),
-        )?,
+        )
+        .ok()?,
         cur.pos(),
     ))
 }
 
-fn pcurve_block(toks: &[Token], marker_pos: usize) -> Option<NurbsPcurve> {
+fn pcurve_block(toks: &[Token], marker_pos: usize) -> Option<PcurveNurbs> {
     pcurve_block_with_end(toks, marker_pos).map(|(pcurve, _)| pcurve)
 }
 
@@ -282,7 +229,7 @@ fn pcurve_block(toks: &[Token], marker_pos: usize) -> Option<NurbsPcurve> {
 ///
 /// The scope grammar makes its first owned B-spline block the pcurve. Nested
 /// support references are not searched because they belong to other fields.
-pub fn explicit_pcurve_cache(toks: &[Token]) -> Option<NurbsPcurve> {
+pub fn explicit_pcurve_cache(toks: &[Token]) -> Option<PcurveNurbs> {
     let position = toks::owned_marker_positions(toks).into_iter().next()?;
     pcurve_block(toks, position)
 }
@@ -291,7 +238,7 @@ pub fn explicit_pcurve_cache(toks: &[Token]) -> Option<NurbsPcurve> {
 pub fn explicit_pcurve_cache_from_subtype_ref(
     index: i64,
     table: &toks::SubtypeTable,
-) -> Option<NurbsPcurve> {
+) -> Option<PcurveNurbs> {
     let index = usize::try_from(index).ok()?;
     explicit_pcurve_cache(table.span(index)?)
 }

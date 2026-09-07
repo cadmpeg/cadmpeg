@@ -7,7 +7,7 @@ use crate::nurbs::blend::{
     var_blend_spl_sur, vertex_blend_spl_sur,
 };
 use crate::nurbs::core::{curve_block, surface_block};
-use crate::nurbs::pcurve::{decode_pcurve_block_with_end, pcurve_block_with_end, NurbsPcurve};
+use crate::nurbs::pcurve::{decode_pcurve_block_with_end, pcurve_block_with_end};
 use crate::nurbs::proc_curve::{
     embedded_base_curve_resolving_refs, embedded_surface, embedded_surface_with_ranges,
     optional_embedded_surface_with_bounds, optional_helix_revision,
@@ -17,8 +17,8 @@ use crate::nurbs::toks::{self, Cur, SubtypeTable};
 use crate::sab::Token;
 use cadmpeg_core::decode::bounded_len;
 use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, CurveGeometry, NurbsCurve, NurbsSurface, RevisionCacheForm,
-    RevisionSurfaceParameterization, SurfaceGeometry, VariableBlendCache,
+    BlendCrossSection, BlendRadiusLaw, CurveGeometry, NurbsCurve, NurbsSurface, PcurveNurbs,
+    RevisionCacheForm, RevisionSurfaceParameterization, SurfaceGeometry, VariableBlendCache,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::num::NonZeroI64;
@@ -60,7 +60,7 @@ pub enum DecodedProceduralSurfaceDefinition {
         /// Embedded reference curve.
         reference: NurbsCurve,
         /// Embedded UV curve, absent for `nullbs`.
-        pcurve: Option<NurbsPcurve>,
+        pcurve: Option<PcurveNurbs>,
         /// Native taper parameter.
         parameter: f64,
         /// Subtype-specific tail.
@@ -185,15 +185,15 @@ pub struct EmbeddedRollingBallSide {
     /// Optional parameter bounds of the support curve.
     pub curve_range: [Option<f64>; 2],
     /// The embedded NURBS parameter curve on the support surface.
-    pub pcurve: Option<NurbsPcurve>,
+    pub pcurve: Option<PcurveNurbs>,
     /// The support location point.
     pub location: Point3,
     /// A second embedded parameter curve, when serialized.
-    pub secondary_pcurve: Option<NurbsPcurve>,
+    pub secondary_pcurve: Option<PcurveNurbs>,
     /// The extension integer serialized after the secondary pcurve.
     pub extension: Option<i64>,
     /// A third embedded parameter curve, when serialized.
-    pub tertiary_pcurve: Option<NurbsPcurve>,
+    pub tertiary_pcurve: Option<PcurveNurbs>,
 }
 
 /// Embedded revision-gated G2 blend before stable IR ids are assigned.
@@ -246,15 +246,15 @@ pub struct EmbeddedRollingBallThirdSide {
     /// The embedded support curve.
     pub curve: NurbsCurve,
     /// The embedded NURBS parameter curve on the support surface.
-    pub pcurve: Option<NurbsPcurve>,
+    pub pcurve: Option<PcurveNurbs>,
     /// The support direction vector.
     pub direction: Vector3,
     /// A second embedded parameter curve, when serialized.
-    pub secondary_pcurve: Option<NurbsPcurve>,
+    pub secondary_pcurve: Option<PcurveNurbs>,
     /// The extension integer serialized after the secondary pcurve.
     pub extension: i64,
     /// A third embedded parameter curve, when serialized.
-    pub tertiary_pcurve: Option<NurbsPcurve>,
+    pub tertiary_pcurve: Option<PcurveNurbs>,
     /// The boolean closing the third side.
     pub flag: bool,
 }
@@ -310,7 +310,7 @@ pub struct EmbeddedVariableBlend {
     /// An embedded curve closing the record, when present.
     pub post_curve: Option<NurbsCurve>,
     /// An embedded parameter curve closing the record, when present.
-    pub post_pcurve: Option<NurbsPcurve>,
+    pub post_pcurve: Option<PcurveNurbs>,
 }
 
 /// The geometry form of one vertex-blend boundary.
@@ -342,7 +342,7 @@ pub enum EmbeddedVertexBlendBoundaryGeometry {
         /// Optional UV bounds of the support surface.
         support_bounds: [Option<f64>; 4],
         /// The embedded NURBS parameter curve.
-        pcurve: Option<NurbsPcurve>,
+        pcurve: Option<PcurveNurbs>,
         /// The sense boolean of the boundary.
         sense: bool,
         /// The fit tolerance of the boundary approximation.
@@ -434,7 +434,7 @@ pub struct EmbeddedG2Side {
     /// The embedded support curve.
     pub curve: NurbsCurve,
     /// Two embedded NURBS parameter curves on the support surface.
-    pub pcurves: [Option<NurbsPcurve>; 2],
+    pub pcurves: [Option<PcurveNurbs>; 2],
     /// The support direction vector.
     pub direction: Vector3,
 }
@@ -452,7 +452,7 @@ pub enum EmbeddedG2FirstShape {
         /// The bridge token serialized after the tolerance, when present.
         extension: Option<cadmpeg_ir::geometry::LoftBridgeToken>,
         /// The embedded parameter curve closing the block, when present.
-        pcurve: Option<NurbsPcurve>,
+        pcurve: Option<PcurveNurbs>,
     },
 }
 
@@ -486,7 +486,7 @@ pub(crate) fn decode_nullable_embedded_pcurve(
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
-) -> Option<Nullable<NurbsPcurve>> {
+) -> Option<Nullable<PcurveNurbs>> {
     let saved = *position;
     if take_native_ident(bytes, position).as_deref() == Some("nullbs") {
         return Some(Nullable::Null);
@@ -499,7 +499,7 @@ pub(crate) fn decode_nullable_embedded_pcurve(
 
 /// Decode a `nullbs`-or-2D-block pcurve slot. Token-space counterpart of
 /// [`decode_nullable_embedded_pcurve`].
-pub(crate) fn nullable_embedded_pcurve(cur: &mut Cur<'_>) -> Option<Nullable<NurbsPcurve>> {
+pub(crate) fn nullable_embedded_pcurve(cur: &mut Cur<'_>) -> Option<Nullable<PcurveNurbs>> {
     let saved = cur.pos();
     if cur.take_ident() == Some("nullbs") {
         return Some(Nullable::Null);
@@ -709,7 +709,7 @@ pub struct ClassicLoftProfileData {
     /// The embedded support surface.
     pub surface: SurfaceGeometry,
     /// The nullable support pcurve.
-    pub pcurve: Option<NurbsPcurve>,
+    pub pcurve: Option<PcurveNurbs>,
     /// The boolean preceding the subdata.
     pub first_flag: bool,
     /// The ASM extension integer.
@@ -733,7 +733,7 @@ pub enum LoftProfileData {
         /// Optional support bounds.
         support_bounds: [Option<f64>; 4],
         /// The nullable support pcurve.
-        pcurve: Option<NurbsPcurve>,
+        pcurve: Option<PcurveNurbs>,
         /// The boolean preceding the subdata.
         first_flag: bool,
         /// The stream-version-gated ASM extension.
@@ -746,9 +746,9 @@ pub enum LoftProfileData {
     /// Revision-gated zero member with two nullable pcurve slots.
     RevisionPcurvePair {
         /// The first pcurve slot.
-        pcurve: Option<NurbsPcurve>,
+        pcurve: Option<PcurveNurbs>,
         /// The second pcurve slot.
-        secondary_pcurve: Option<NurbsPcurve>,
+        secondary_pcurve: Option<PcurveNurbs>,
         /// The stream-version-gated ASM extension.
         asm_extension: Option<i64>,
         /// Constraint subdata.

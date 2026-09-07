@@ -10,7 +10,7 @@ use crate::nurbs::core::{
     curve_block, decode_curve_block, decode_surface_block, owned_curve_cache_resolving_refs,
     owned_surface_cache_resolving_refs, surface_block,
 };
-use crate::nurbs::pcurve::{decode_pcurve_block_with_end, pcurve_block_with_end, NurbsPcurve};
+use crate::nurbs::pcurve::{decode_pcurve_block_with_end, pcurve_block_with_end};
 use crate::nurbs::proc_surface::{
     decode_nullable_embedded_pcurve, ellipse_to_nurbs, law_formula, nullable_embedded_pcurve,
     EmbeddedLawFormula,
@@ -25,7 +25,7 @@ use crate::nurbs::subtypes::{
 };
 use crate::nurbs::toks::{Cur, SubtypeTable};
 use crate::sab::Token;
-use cadmpeg_ir::geometry::{NurbsCurve, SurfaceGeometry};
+use cadmpeg_ir::geometry::{NurbsCurve, PcurveNurbs, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 const EPS_PARAMETER_AGREEMENT: f64 = 1.0e-12;
@@ -54,7 +54,7 @@ pub struct EmbeddedTwoSidedOffset {
     /// Two ordered embedded support surfaces.
     pub surfaces: [Option<SurfaceGeometry>; 2],
     /// Two ordered embedded NURBS parameter curves.
-    pub pcurves: [Option<NurbsPcurve>; 2],
+    pub pcurves: [Option<PcurveNurbs>; 2],
     /// Shared native parameter interval.
     pub parameter_range: [f64; 2],
     /// Three discontinuity arrays.
@@ -97,7 +97,7 @@ pub struct EmbeddedIntersection {
     /// Two ordered native support slots.
     pub surfaces: [SupportSlot; 2],
     /// Two ordered embedded NURBS parameter curves.
-    pub pcurves: [Option<NurbsPcurve>; 2],
+    pub pcurves: [Option<PcurveNurbs>; 2],
     /// Shared native parameter interval.
     pub parameter_range: [f64; 2],
     /// Three discontinuity arrays.
@@ -193,7 +193,7 @@ fn native_support_chart(toks: &[Token], position: usize) -> NativeSupportChart {
     }
 }
 
-fn normalize_support_pcurve(chart: NativeSupportChart, pcurve: &mut NurbsPcurve) {
+fn normalize_support_pcurve(chart: NativeSupportChart, pcurve: &mut PcurveNurbs) {
     match chart {
         NativeSupportChart::Canonical => {}
         NativeSupportChart::PlaneLengths => {
@@ -217,7 +217,7 @@ fn normalize_support_pcurve(chart: NativeSupportChart, pcurve: &mut NurbsPcurve)
 pub(crate) fn normalize_pcurve_for_surface_record(
     surface_head: &str,
     surface_tokens: &[Token],
-    pcurve: &mut NurbsPcurve,
+    pcurve: &mut PcurveNurbs,
 ) {
     let chart = match surface_head {
         "plane" => NativeSupportChart::PlaneLengths,
@@ -246,7 +246,7 @@ pub(crate) fn normalize_pcurve_for_surface_record(
     normalize_support_pcurve(chart, pcurve);
 }
 
-fn required_support_pair(cur: &mut Cur<'_>) -> Option<([SurfaceGeometry; 2], [NurbsPcurve; 2])> {
+fn required_support_pair(cur: &mut Cur<'_>) -> Option<([SurfaceGeometry; 2], [PcurveNurbs; 2])> {
     let first_surface_start = cur.pos();
     let first_surface = embedded_surface(cur)?;
     let second_surface_start = cur.pos();
@@ -274,7 +274,7 @@ pub struct EmbeddedThreeSurfaceIntersection {
     /// Three ordered embedded support surfaces.
     pub surfaces: [SurfaceGeometry; 3],
     /// Three ordered embedded NURBS parameter curves.
-    pub pcurves: [NurbsPcurve; 3],
+    pub pcurves: [PcurveNurbs; 3],
     /// Shared native parameter interval.
     pub parameter_range: [f64; 2],
     /// Three discontinuity arrays.
@@ -288,7 +288,7 @@ pub struct EmbeddedProjection {
     /// Two ordered embedded support surfaces.
     pub surfaces: [SurfaceGeometry; 2],
     /// Two ordered embedded NURBS parameter curves.
-    pub pcurves: [NurbsPcurve; 2],
+    pub pcurves: [PcurveNurbs; 2],
     /// Shared native parameter interval.
     pub parameter_range: [f64; 2],
     /// Three discontinuity arrays.
@@ -350,7 +350,7 @@ pub enum EmbeddedSpringSupport {
 /// First context-first spring pcurve slot.
 pub enum EmbeddedSpringPcurve {
     /// Embedded pcurve.
-    Pcurve(NurbsPcurve),
+    Pcurve(PcurveNurbs),
     /// Parameter range stored in place of a null pcurve.
     Range([f64; 2]),
 }
@@ -366,7 +366,7 @@ pub enum EmbeddedSpringLayout {
         /// First pcurve slot.
         first_pcurve: EmbeddedSpringPcurve,
         /// Nullable second pcurve slot.
-        second_pcurve: Option<NurbsPcurve>,
+        second_pcurve: Option<PcurveNurbs>,
         /// Shared parameter interval.
         parameter_range: [f64; 2],
         /// Three discontinuity arrays.
@@ -459,7 +459,7 @@ pub struct EmbeddedDeformable {
     /// Two ordered embedded support surfaces.
     pub surfaces: [Option<SurfaceGeometry>; 2],
     /// Two ordered embedded NURBS parameter curves.
-    pub pcurves: [Option<NurbsPcurve>; 2],
+    pub pcurves: [Option<PcurveNurbs>; 2],
     /// Shared native parameter interval.
     pub parameter_range: [f64; 2],
     /// Three discontinuity arrays.
@@ -581,7 +581,7 @@ pub fn pcurve_for_selector_resolving_refs(
     toks: &[Token],
     selector: i64,
     table: &SubtypeTable,
-) -> Option<NurbsPcurve> {
+) -> Option<PcurveNurbs> {
     pcurve_for_selector_with_chart(toks, selector, table).map(|(pcurve, _)| pcurve)
 }
 
@@ -591,7 +591,7 @@ pub(crate) fn pcurve_for_selector_with_chart(
     toks: &[Token],
     selector: i64,
     table: &SubtypeTable,
-) -> Option<(NurbsPcurve, bool)> {
+) -> Option<(PcurveNurbs, bool)> {
     let slot = match selector {
         1 | -1 => 0,
         2 | -2 => 1,
@@ -605,7 +605,7 @@ fn pcurve_for_selector_recursive(
     slot: usize,
     table: &SubtypeTable,
     seen: &mut Vec<usize>,
-) -> Option<(NurbsPcurve, bool)> {
+) -> Option<(PcurveNurbs, bool)> {
     // A record-level intcurve wrapper can carry only a compact `{ref N}`
     // scope. Follow that one construction reference before decoding the
     // wrapper. Typed constructions may contain support references, but their
@@ -700,9 +700,9 @@ fn direct_subtype_reference(toks: &[Token]) -> Option<usize> {
 
 fn selected_support_pcurve(
     surfaces: &[SupportSlot; 2],
-    pcurves: &[Option<NurbsPcurve>; 2],
+    pcurves: &[Option<PcurveNurbs>; 2],
     slot: usize,
-) -> Option<NurbsPcurve> {
+) -> Option<PcurveNurbs> {
     match surfaces.get(slot)? {
         SupportSlot::Surface(_) => pcurves.get(slot)?.clone(),
         SupportSlot::Absent | SupportSlot::DeclaredOnly => None,
@@ -711,14 +711,14 @@ fn selected_support_pcurve(
 
 fn selected_optional_pcurve(
     surfaces: &[Option<SurfaceGeometry>; 2],
-    pcurves: &[Option<NurbsPcurve>; 2],
+    pcurves: &[Option<PcurveNurbs>; 2],
     slot: usize,
-) -> Option<NurbsPcurve> {
+) -> Option<PcurveNurbs> {
     surfaces.get(slot)?.as_ref()?;
     pcurves.get(slot)?.clone()
 }
 
-fn selected_pcurve(decoded: &DecodedProceduralCurve, slot: usize) -> Option<NurbsPcurve> {
+fn selected_pcurve(decoded: &DecodedProceduralCurve, slot: usize) -> Option<PcurveNurbs> {
     match &decoded.construction {
         ProceduralCurveConstruction::TwoSidedOffset(context) => {
             selected_optional_pcurve(&context.surfaces, &context.pcurves, slot)
@@ -777,7 +777,7 @@ fn selected_pcurve(decoded: &DecodedProceduralCurve, slot: usize) -> Option<Nurb
     }
 }
 
-fn direct_pcurve_after_curve(toks: &[Token]) -> Option<NurbsPcurve> {
+fn direct_pcurve_after_curve(toks: &[Token]) -> Option<PcurveNurbs> {
     let position = crate::nurbs::toks::owned_marker_positions(toks)
         .into_iter()
         .next()?;
@@ -1949,7 +1949,7 @@ pub(crate) fn par_int_cur_isoline(
 /// isoline of the support's full domain.
 fn surface_isoline_along(
     support: &cadmpeg_ir::geometry::NurbsSurface,
-    pcurve: &NurbsPcurve,
+    pcurve: &PcurveNurbs,
 ) -> Option<NurbsCurve> {
     use cadmpeg_ir::eval::IsolineDirection;
     (pcurve.degree() == 1 && pcurve.control_points().len() == 2 && pcurve.weights().is_none())
@@ -2004,7 +2004,7 @@ fn agree(left: f64, right: f64, scale: f64) -> bool {
 struct CacheFirstCurveContext {
     form: cadmpeg_ir::geometry::CacheFirstCurveForm,
     surfaces: [SupportSlot; 2],
-    pcurves: [Option<NurbsPcurve>; 2],
+    pcurves: [Option<PcurveNurbs>; 2],
     parameter_range: [f64; 2],
     discontinuities: [Vec<f64>; 3],
 }
@@ -2596,7 +2596,7 @@ fn optional_embedded_surface(cur: &mut Cur<'_>) -> Option<Nullable<SurfaceGeomet
     embedded_surface(cur).map(Nullable::Value)
 }
 
-fn optional_pcurve(cur: &mut Cur<'_>) -> Option<Nullable<NurbsPcurve>> {
+fn optional_pcurve(cur: &mut Cur<'_>) -> Option<Nullable<PcurveNurbs>> {
     let start = cur.pos();
     if cur.take_ident()? == "nullbs" {
         return Some(Nullable::Null);
@@ -3332,8 +3332,8 @@ mod cache_form_tests {
     use super::*;
     use cadmpeg_ir::math::Point2;
 
-    fn linear_pcurve(points: [Point2; 2]) -> NurbsPcurve {
-        NurbsPcurve::new(1, vec![0.0, 0.0, 1.0, 1.0], points.into(), None, false).unwrap()
+    fn linear_pcurve(points: [Point2; 2]) -> PcurveNurbs {
+        PcurveNurbs::new(1, vec![0.0, 0.0, 1.0, 1.0], points.into(), None, false).unwrap()
     }
 
     #[test]

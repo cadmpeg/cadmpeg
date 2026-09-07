@@ -3,7 +3,6 @@
 //! curve orientation, and recognize procedural carriers as analytic geometry.
 
 use super::records::TolerantCoedgeExtension;
-use crate::nurbs;
 use crate::nurbs::proc_surface::{
     DecodedProceduralSurfaceDefinition, EmbeddedRollingBall, EmbeddedScaledCompoundLoftShape,
 };
@@ -342,7 +341,7 @@ pub(crate) fn edge_pcurve_parameter_ranges(edge: &Record) -> Option<[[f64; 2]; 2
 /// Edge sense orders the two signs, but it cannot move a NURBS use outside the
 /// carrier's knot domain. The full knot domain is the final fallback.
 pub(crate) fn pcurve_ranges_on_domain(
-    candidate: &nurbs::pcurve::NurbsPcurve,
+    candidate: &cadmpeg_ir::geometry::PcurveNurbs,
     edge: Option<&Record>,
 ) -> Option<Vec<[f64; 2]>> {
     let (&first, &last) = (candidate.knots().first()?, candidate.knots().last()?);
@@ -462,7 +461,7 @@ pub fn reverse_nurbs_curve(curve: &mut NurbsCurve) {
 
 /// Reparameterize a referenced pcurve to its opposite orientation, preserving
 /// its UV chart while negating the parameterization.
-pub(crate) fn reverse_nurbs_pcurve(curve: &mut nurbs::pcurve::NurbsPcurve) {
+pub(crate) fn reverse_nurbs_pcurve(curve: &mut cadmpeg_ir::geometry::PcurveNurbs) {
     curve.control_points_mut().reverse();
     if let Some(weights) = curve.weights_mut() {
         weights.reverse();

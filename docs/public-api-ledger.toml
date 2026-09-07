@@ -6224,3 +6224,31 @@ crate = "cadmpeg-asm"
 kind = "deletion"
 item = "cadmpeg_asm::nurbs::pcurve::PcurvePatchLayout::weight_value_offsets"
 reason = "ASM-02: derive UV and weight offsets and the control end from one native control origin, count, and rationality instead of independent vectors and an end field"
+
+[[change]]
+commit = "e21f1ac36b132e9898b15767a7ec842647189ec0"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::pcurve::NurbsPcurve"
+reason = "ASM-02: remove a wrapper whose constructor and accessors delegate to the checked cadmpeg_ir::geometry::PcurveNurbs payload."
+
+[[change]]
+commit = "e21f1ac36b132e9898b15767a7ec842647189ec0"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::nurbs::pcurve::{decode_pcurve_cache, explicit_pcurve_cache, explicit_pcurve_cache_from_subtype_ref}"
+reason = "ASM-02: return the checked IR PcurveNurbs payload directly after deleting the redundant NurbsPcurve wrapper."
+
+[[change]]
+commit = "e21f1ac36b132e9898b15767a7ec842647189ec0"
+crate = "cadmpeg-asm"
+kind = "signature"
+item = "cadmpeg_asm::nurbs::proc_curve::pcurve_for_selector_resolving_refs"
+reason = "ASM-02: return PcurveNurbs directly; construction, chart normalization and selection behavior are unchanged."
+
+[[change]]
+commit = "e21f1ac36b132e9898b15767a7ec842647189ec0"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::nurbs::{proc_curve, proc_surface} embedded pcurve fields"
+reason = "ASM-02: all embedded pcurve fields use cadmpeg_ir::geometry::PcurveNurbs directly instead of the delegating NurbsPcurve wrapper; cardinality checks remain in the same checked constructor."

@@ -946,7 +946,7 @@ fn reversed_edge_negates_its_pcurve_validation_interval() {
         edge_pcurve_parameter_ranges(&edge),
         Some([[-0.55, -0.60], [0.55, 0.60]])
     );
-    let candidate = nurbs::pcurve::NurbsPcurve::new(
+    let candidate = cadmpeg_ir::geometry::PcurveNurbs::new(
         1,
         vec![0.0, 0.0, 1.0, 1.0],
         vec![

@@ -63,8 +63,10 @@ use self::topology::{
     classify_edge_curve_senses, collect_wire_topology, decode_analytic_carriers,
     keep_faces_and_carriers, walk_reachable_topology,
 };
-pub(crate) fn embedded_pcurve_geometry(pcurve: nurbs::pcurve::NurbsPcurve) -> PcurveGeometry {
-    pcurve.into_geometry()
+pub(crate) fn embedded_pcurve_geometry(
+    pcurve: cadmpeg_ir::geometry::PcurveNurbs,
+) -> PcurveGeometry {
+    PcurveGeometry::Nurbs { nurbs: pcurve }
 }
 
 /// The decoded ASM B-rep graph plus loss accounting. Every field is a fact
