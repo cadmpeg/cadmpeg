@@ -5330,7 +5330,7 @@ offset: 30,
     let related_line = unique_section_skamp_segment(&coincident_definition, 17).expect("line");
     assert_eq!(
         section_line_fixed_coordinate(&coincident_definition, related_line),
-        Some(0)
+        Some(crate::decode::sketch::axis::SectionAxis::U)
     );
     let coincident_points = resolved_section_points(&coincident_definition);
     assert_eq!(coincident_points.get(&5), Some(&[3.0, 4.0]));
@@ -5446,7 +5446,7 @@ offset: 30,
         .skamps()[0];
     assert_eq!(
         section_skamp_point_on_line(&point_row_type_nine, point_row_type_nine_skamp),
-        Some((1, 7, 1))
+        Some((1, 7, crate::decode::sketch::axis::SectionAxis::V))
     );
     assert_eq!(
         resolved_section_coordinates(&point_row_type_nine).get(&7),
@@ -5577,7 +5577,7 @@ offset: 30,
     let segment = unique_section_skamp_segment(&saved_definition, 12).expect("segment line");
     assert_eq!(
         section_line_fixed_coordinate(&saved_definition, segment),
-        Some(1)
+        Some(crate::decode::sketch::axis::SectionAxis::V)
     );
     append_points(saved_definition.variables.as_mut().expect("variables"), vec![crate::feature::FeatureSectionPoint {
             point_id: 4,
@@ -5649,7 +5649,7 @@ offset: 30,
             &saved_point_row_type_nine,
             saved_point_row_type_nine_skamp,
         ),
-        Some((7, 1, 1.0))
+        Some((7, crate::decode::sketch::axis::SectionAxis::V, 1.0))
     );
     assert_eq!(
         resolved_section_coordinates(&saved_point_row_type_nine).get(&7),

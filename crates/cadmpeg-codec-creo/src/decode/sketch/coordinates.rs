@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resolved section point coordinates from variables, dimensions, and equations.
 
+use super::axis::SectionAxis;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::super::feature_history::feature_relation_table_complete;
@@ -97,8 +99,8 @@ fn append_point_on_line_equations(
         let delta_u = second_u - first_u;
         let delta_v = second_v - first_v;
         let mut equation = SectionCoordinateEquation::default();
-        equation.add_point(target, 0, -delta_v);
-        equation.add_point(target, 1, delta_u);
+        equation.add_point(target, SectionAxis::U, -delta_v);
+        equation.add_point(target, SectionAxis::V, delta_u);
         equation.rhs = delta_u * first_v - delta_v * first_u;
         let missing_coefficient = if target_u.is_none() {
             delta_v.abs()
@@ -143,7 +145,7 @@ fn append_equal_length_coordinate_values(
 fn append_unique_auxiliary_coordinate_constraints(
     constraints: &SectionEquationAuxiliaryConstraints,
     scalar_values: &BTreeMap<SectionScalarVariable, Option<f64>>,
-    stored_coordinates: &BTreeMap<(u32, usize), f64>,
+    stored_coordinates: &BTreeMap<(u32, SectionAxis), f64>,
     equations: &mut Vec<SectionCoordinateEquation>,
 ) -> bool {
     let previous_len = equations.len();
@@ -170,7 +172,7 @@ fn append_unique_auxiliary_coordinate_constraints(
 fn solve_section_coordinates_with_derived_constraints(
     definition: &crate::feature::FeatureDefinition,
     equations: &mut Vec<SectionCoordinateEquation>,
-    stored_coordinates: &BTreeMap<(u32, usize), f64>,
+    stored_coordinates: &BTreeMap<(u32, SectionAxis), f64>,
     point_on_line_constraints: &[(u32, u32, u32)],
     equal_length_constraints: &[SectionEqualLengthConstraint],
     auxiliary_constraints: &SectionEquationAuxiliaryConstraints,
@@ -431,7 +433,7 @@ pub(crate) fn resolved_section_coordinates(
         section_equation_radial_constraints(definition, &points, &ambiguous_point_ids);
     let equal_length_constraints =
         section_equation_equal_length_constraints(definition, &ambiguous_point_ids);
-    let mut signed_dimensions = BTreeMap::<(u32, u32, usize), Option<f64>>::new();
+    let mut signed_dimensions = BTreeMap::<(u32, u32, SectionAxis), Option<f64>>::new();
     for (first, second, coordinate, delta) in signed_dimension_candidates {
         let (key, canonical_delta) = if first <= second {
             ((first, second, coordinate), delta)
@@ -455,7 +457,10 @@ pub(crate) fn resolved_section_coordinates(
         .collect::<Vec<_>>();
     let mut equations = Vec::new();
     for (&point_id, coordinates) in &points {
-        for (coordinate, value) in coordinates.iter().copied().enumerate() {
+        for (coordinate, value) in SectionAxis::ALL
+            .into_iter()
+            .zip(coordinates.iter().copied())
+        {
             if let Some(value) = value {
                 equations.push(SectionCoordinateEquation::point_value(
                     point_id, coordinate, value,
@@ -464,7 +469,7 @@ pub(crate) fn resolved_section_coordinates(
         }
     }
     for &(point_id, coordinates) in &saved_segment_points {
-        for (coordinate, value) in coordinates.into_iter().enumerate() {
+        for (coordinate, value) in SectionAxis::ALL.into_iter().zip(coordinates.into_iter()) {
             equations.push(SectionCoordinateEquation::point_value(
                 point_id, coordinate, value,
             ));
@@ -486,7 +491,7 @@ pub(crate) fn resolved_section_coordinates(
         ));
     }
     for &[first, second] in &coincident_points {
-        for coordinate in 0..2 {
+        for coordinate in SectionAxis::ALL {
             equations.push(SectionCoordinateEquation::source_difference(
                 first, second, coordinate, 0.0,
             ));
@@ -506,13 +511,13 @@ pub(crate) fn resolved_section_coordinates(
             equations.push(SectionCoordinateEquation::point_difference(
                 constraint.first,
                 constraint.second,
-                0,
+                SectionAxis::U,
                 offset[0],
             ));
             equations.push(SectionCoordinateEquation::point_difference(
                 constraint.first,
                 constraint.second,
-                1,
+                SectionAxis::V,
                 offset[1],
             ));
         }
@@ -533,7 +538,7 @@ pub(crate) fn resolved_section_coordinates(
         ));
     }
     for &(point_sources, point) in &line_midpoint_constraints {
-        for coordinate in 0..2 {
+        for coordinate in SectionAxis::ALL {
             let mut equation = SectionCoordinateEquation::default();
             equation.add_source(point_sources[0], coordinate, 1.0);
             equation.add_source(point_sources[1], coordinate, 1.0);
@@ -542,7 +547,7 @@ pub(crate) fn resolved_section_coordinates(
         }
     }
     for &(axis, first, second, fixed_coordinate) in &symmetric_point_constraints {
-        let parallel_coordinate = 1usize.saturating_sub(fixed_coordinate);
+        let parallel_coordinate = fixed_coordinate.other();
         equations.push(SectionCoordinateEquation::source_difference(
             first,
             second,
@@ -561,7 +566,7 @@ pub(crate) fn resolved_section_coordinates(
         equations.push(equation);
     }
     for &(center, first, second) in &point_symmetric_constraints {
-        for coordinate in 0..2 {
+        for coordinate in SectionAxis::ALL {
             let mut equation = SectionCoordinateEquation::default();
             equation.add_source(first, coordinate, 1.0);
             equation.add_source(second, coordinate, 1.0);
@@ -572,10 +577,9 @@ pub(crate) fn resolved_section_coordinates(
     let stored_coordinates = points
         .iter()
         .flat_map(|(&point, coordinates)| {
-            coordinates
-                .iter()
-                .copied()
-                .enumerate()
+            SectionAxis::ALL
+                .into_iter()
+                .zip(coordinates.iter().copied())
                 .filter_map(move |(coordinate, value)| Some(((point, coordinate), value?)))
         })
         .collect();
@@ -614,13 +618,13 @@ pub(crate) fn resolved_section_coordinates(
             equations.push(SectionCoordinateEquation::point_difference(
                 constraint.first,
                 constraint.second,
-                0,
+                SectionAxis::U,
                 offset[0],
             ));
             equations.push(SectionCoordinateEquation::point_difference(
                 constraint.first,
                 constraint.second,
-                1,
+                SectionAxis::V,
                 offset[1],
             ));
         }
@@ -656,7 +660,7 @@ pub(crate) fn resolved_section_coordinates(
         })
         .collect::<Vec<_>>();
     for &(point_id, midpoint) in &arc_midpoint_constraints {
-        for (coordinate, value) in midpoint.into_iter().enumerate() {
+        for (coordinate, value) in SectionAxis::ALL.into_iter().zip(midpoint.into_iter()) {
             equations.push(SectionCoordinateEquation::point_value(
                 point_id, coordinate, value,
             ));
@@ -673,7 +677,7 @@ pub(crate) fn section_linear_distance_coordinate(
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
     saved_segment_points: &[(u32, [f64; 2])],
     ambiguous_point_ids: &BTreeSet<u32>,
-) -> Option<usize> {
+) -> Option<SectionAxis> {
     let matching_segments = segments
         .iter()
         .copied()
@@ -681,14 +685,14 @@ pub(crate) fn section_linear_distance_coordinate(
             segment.point_ids() == [first, second] || segment.point_ids() == [second, first]
         })
         .collect::<Vec<_>>();
-    let point_coordinate = |point_id: u32, coordinate: usize| -> Result<Option<f64>, ()> {
+    let point_coordinate = |point_id: u32, coordinate: SectionAxis| -> Result<Option<f64>, ()> {
         if ambiguous_point_ids.contains(&point_id) {
             return Err(());
         }
         let mut values = Vec::new();
         if let Some(value) = coordinates
             .get(&point_id)
-            .and_then(|point| point[coordinate])
+            .and_then(|point| point[coordinate.index()])
         {
             value.is_finite().then_some(()).ok_or(())?;
             values.push(value);
@@ -697,7 +701,7 @@ pub(crate) fn section_linear_distance_coordinate(
             .iter()
             .filter(|(saved_point_id, _)| *saved_point_id == point_id)
         {
-            let value = point[coordinate];
+            let value = point[coordinate.index()];
             value.is_finite().then_some(()).ok_or(())?;
             values.push(value);
         }
@@ -727,7 +731,7 @@ pub(crate) fn section_linear_distance_coordinate(
                     return None;
                 }
             }
-            return 1usize.checked_sub(fixed_coordinate);
+            return Some(fixed_coordinate.other());
         }
     }
     if matching_segments.len() > 1 {
@@ -764,19 +768,19 @@ pub(crate) fn section_linear_distance_coordinate(
     };
     has_unique_incident_entity(first).then_some(())?;
     has_unique_incident_entity(second).then_some(())?;
-    let equal_coordinate = |coordinate: usize| -> Option<bool> {
+    let equal_coordinate = |coordinate: SectionAxis| -> Option<bool> {
         let first = point_coordinate(first, coordinate).ok().flatten()?;
         let second = point_coordinate(second, coordinate).ok().flatten()?;
         let scale = first.abs().max(second.abs()).max(1.0);
         Some((first - second).abs() <= EPS_SECTION_COORDINATE * scale)
     };
-    let equal_u = equal_coordinate(0);
-    let equal_v = equal_coordinate(1);
+    let equal_u = equal_coordinate(SectionAxis::U);
+    let equal_v = equal_coordinate(SectionAxis::V);
     if equal_u == Some(true) && equal_v != Some(true) {
-        return Some(1);
+        return Some(SectionAxis::V);
     }
     if equal_v == Some(true) && equal_u != Some(true) {
-        return Some(0);
+        return Some(SectionAxis::U);
     }
     None
 }
@@ -996,7 +1000,7 @@ mod tests {
                 &[],
                 &std::collections::BTreeSet::new(),
             ),
-            Some(1)
+            Some(crate::decode::sketch::axis::SectionAxis::V)
         );
 
         let mut duplicate = definition;
@@ -1075,7 +1079,7 @@ mod tests {
                 &[],
                 &BTreeSet::new(),
             ),
-            Some(1)
+            Some(crate::decode::sketch::axis::SectionAxis::V)
         );
 
         let mut circle_definition = definition;
@@ -1104,7 +1108,7 @@ mod tests {
                 &[],
                 &BTreeSet::new(),
             ),
-            Some(1)
+            Some(crate::decode::sketch::axis::SectionAxis::V)
         );
     }
 

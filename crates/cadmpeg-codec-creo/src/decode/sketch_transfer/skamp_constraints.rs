@@ -444,7 +444,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                                         first,
                                         second,
                                         axis: [SketchCoordinateAxis::U, SketchCoordinateAxis::V]
-                                            [axis],
+                                            [axis.index()],
                                     }
                                 }
                                 _ => native_constraint()?,

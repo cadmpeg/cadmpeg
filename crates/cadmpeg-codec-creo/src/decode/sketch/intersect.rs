@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Section carrier intersection, trim vertices, and coordinate reconciliation.
 
+use super::axis::SectionAxis;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::features::{Angle, Length};
@@ -613,8 +615,12 @@ pub(crate) fn trimmed_section_segment_geometry_with_missing_line(
             definition,
             segment.external_id,
         ) {
-            Some(0) => (start[0] - end[0]).abs() <= EPS_SKETCH_INTERSECTION_GEOMETRY * scale,
-            Some(1) => (start[1] - end[1]).abs() <= EPS_SKETCH_INTERSECTION_GEOMETRY * scale,
+            Some(SectionAxis::U) => {
+                (start[0] - end[0]).abs() <= EPS_SKETCH_INTERSECTION_GEOMETRY * scale
+            }
+            Some(SectionAxis::V) => {
+                (start[1] - end[1]).abs() <= EPS_SKETCH_INTERSECTION_GEOMETRY * scale
+            }
             _ => false,
         };
         orientation_matches.then_some(())?;

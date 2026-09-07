@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Section point, segment, and SKAMP locus resolution.
 
+use crate::decode::sketch::axis::SectionAxis;
+
 use super::super::feature_history::feature_skamp_table_complete;
 use super::super::sketch::{
     resolved_section_points, section_skamp_incidence_point,
@@ -521,7 +523,7 @@ pub(in super::super) fn section_skamp_same_coordinate(
     let first_locus = section_skamp_point_locus(definition, sketch, first)?;
     let second_locus = section_skamp_point_locus(definition, sketch, second)?;
     let coordinate = section_skamp_same_coordinate_axis(skamp)?;
-    let axis = [SketchCoordinateAxis::U, SketchCoordinateAxis::V][coordinate];
+    let axis = [SketchCoordinateAxis::U, SketchCoordinateAxis::V][coordinate.index()];
     if require_satisfied {
         let ([first_source, second_source], _) =
             section_skamp_same_coordinate_sources(definition, skamp)?;
@@ -539,7 +541,7 @@ pub(in super::super) fn section_skamp_same_coordinate(
                 .chain(&second_point)
                 .map(|coordinate| coordinate.abs())
                 .fold(1.0, f64::max);
-            ((first_point[coordinate] - second_point[coordinate]).abs()
+            ((first_point[coordinate.index()] - second_point[coordinate.index()]).abs()
                 <= EPS_LOCUS_COORDINATE * scale)
                 .then_some(())?;
         }
@@ -550,7 +552,7 @@ pub(in super::super) fn section_skamp_same_coordinate(
 pub(in super::super) fn section_skamp_same_coordinate_sources(
     definition: &crate::feature::FeatureDefinition,
     skamp: &crate::feature::FeatureSkamp,
-) -> Option<([SectionPointSource; 2], usize)> {
+) -> Option<([SectionPointSource; 2], SectionAxis)> {
     if matches!(skamp.kind, 12 | 13) {
         let [item] = skamp.items.as_slice() else {
             return None;
@@ -585,14 +587,14 @@ pub(in super::super) fn section_skamp_same_coordinate_sources(
 
 pub(in super::super) fn section_skamp_same_coordinate_axis(
     skamp: &crate::feature::FeatureSkamp,
-) -> Option<usize> {
+) -> Option<SectionAxis> {
     Some(match (skamp.kind, skamp.flags) {
-        (12, _) => 1,
-        (13, _) => 0,
-        (15 | 17, 1) => 0,
-        (15 | 17, 2) => 1,
-        (30, _) => 1,
-        (31, _) => 0,
+        (12, _) => SectionAxis::V,
+        (13, _) => SectionAxis::U,
+        (15 | 17, 1) => SectionAxis::U,
+        (15 | 17, 2) => SectionAxis::V,
+        (30, _) => SectionAxis::V,
+        (31, _) => SectionAxis::U,
         _ => return None,
     })
 }
@@ -1758,7 +1760,7 @@ mod tests {
         };
         assert!(matches!(first, SectionPointSource::Point(1)));
         assert!(matches!(second, SectionPointSource::Point(4)));
-        assert_eq!(coordinate, 0);
+        assert_eq!(coordinate, crate::decode::sketch::axis::SectionAxis::U);
 
         let arc_alignment = crate::feature::FeatureSkamp {
             id: 12,
@@ -1775,7 +1777,7 @@ mod tests {
         };
         assert!(matches!(first, SectionPointSource::Point(5)));
         assert!(matches!(second, SectionPointSource::Point(6)));
-        assert_eq!(coordinate, 1);
+        assert_eq!(coordinate, crate::decode::sketch::axis::SectionAxis::V);
 
         let line_midpoint = crate::feature::FeatureSkamp {
             id: 35,
