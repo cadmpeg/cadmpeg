@@ -976,7 +976,7 @@ mod tests {
         CatiaEntitySchemaValue, CatiaObjectGraph, CatiaObjectOwner, CatiaObjectRecordReference,
         CatiaObjectRecordReferenceSource,
     };
-    use crate::object_graph::{ObjectPayload, PayloadField, PayloadSubtype};
+    use crate::object_graph::{ObjectPayload, PayloadField};
 
     fn design_object(id: &str, owner_design_object: Option<&str>) -> CatiaDesignObject {
         CatiaDesignObject {
@@ -1030,9 +1030,7 @@ mod tests {
                 size: 1,
                 fields: vec![PayloadField::Terminator],
             },
-            repeated_reference_suffix: None,
             repeated_reference_schema_selection: None,
-            subtype: PayloadSubtype::Empty,
             references: Vec::new(),
         }
     }
@@ -1044,7 +1042,6 @@ mod tests {
             object_record: object_record.to_string(),
             ordinal: 0,
             byte_offset: 0,
-            byte_len: 0,
             lead: 0,
             body: CatiaEntityRecordBody::empty_nested(),
             definition_schema_selections: Vec::new(),

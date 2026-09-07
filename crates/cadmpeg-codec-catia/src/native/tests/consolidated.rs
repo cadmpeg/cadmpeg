@@ -1027,12 +1027,12 @@ fn owner_chart_width_coded_supports_select_unique_alias_rows() {
     let surface_alias = native
         .alias_rows
         .iter()
-        .find(|alias| alias.tag == 100)
+        .find(|alias| alias.tag() == 100)
         .expect("support-surface alias");
     let pcurve_alias = native
         .alias_rows
         .iter()
-        .find(|alias| alias.tag == 101)
+        .find(|alias| alias.tag() == 101)
         .expect("support-pcurve alias");
     assert_eq!(
         support_surfaces[0]

@@ -272,13 +272,13 @@ impl CatiaNative {
                             })
                     })
                     || graph_entities.windows(2).any(|pair| {
-                        pair[0].byte_offset.checked_add(pair[0].byte_len)
+                        pair[0].byte_offset.checked_add(pair[0].byte_len())
                             != Some(pair[1].byte_offset)
                     })
                     || graph_entities.last().and_then(|entity| {
                         entity
                             .byte_offset
-                            .checked_add(entity.byte_len)?
+                            .checked_add(entity.byte_len())?
                             .checked_add(1)
                     }) != Some(graph.byte_offset))
             {
@@ -318,14 +318,7 @@ impl CatiaNative {
             }
             for (ordinal, record) in graph.records.iter().enumerate() {
                 let expected_head_roles = object_graph::head_roles(record.lead, &record.head);
-                let expected_owner = expected_head_roles
-                    .owner_ref
-                    .map(CatiaObjectOwner::Entity)
-                    .or_else(|| {
-                        expected_head_roles
-                            .owner_literal
-                            .map(CatiaObjectOwner::UnassignedLiteral)
-                    });
+                let expected_owner = expected_head_roles.owner.map(CatiaObjectOwner::from);
                 let expected_design_object = record
                     .owner_entity_id()
                     .map(|owner| design_object_id(graph.byte_offset, owner));
@@ -349,8 +342,6 @@ impl CatiaNative {
                     || paired_entity.is_some_and(|entity| entity.object_record != record.id)
                     || (record.storage_record(), record.storage_design_object())
                         != (expected_storage.0.as_deref(), expected_storage.1.as_deref())
-                    || record.repeated_reference_suffix
-                        != object_graph::repeated_reference_suffix(&record.payload)
                     || record.inline_body.as_ref().is_some_and(|body| {
                         (graph_entities.is_empty() && !object_graph::is_inline_body(body))
                             || body.first() != Some(&record.lead)
@@ -360,7 +351,6 @@ impl CatiaNative {
                             || record.storage_ref().is_some()
                             || record.payload.size != 0
                             || !record.payload.fields.is_empty()
-                            || record.subtype != PayloadSubtype::Empty
                     })
                     || record.inline_body.is_none() && record.head.is_empty()
                     || record.references

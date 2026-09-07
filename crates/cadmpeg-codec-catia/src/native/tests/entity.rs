@@ -86,27 +86,56 @@ fn native_namespace_retains_and_validates_repeated_reference_suffixes() {
     let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x81], &payload)];
     let native = crate::native::CatiaNative::decode(&entity_backed_object_graph(&records, &[1]));
     let suffix = native.object_graphs[0].records[0]
-        .repeated_reference_suffix
-        .as_ref()
+        .repeated_reference_suffix()
         .expect("repeated reference suffix");
     assert_eq!(suffix.schema_preamble, None);
     assert_eq!(suffix.repeated_references, [60, 62]);
     assert_eq!(suffix.terminal_reference, 49);
 
-    let mut malformed = native;
-    malformed.object_graphs[0].records[0]
-        .repeated_reference_suffix
-        .as_mut()
-        .expect("repeated reference suffix")
-        .terminal_reference += 1;
+    let error = load_tampered_object_record(&native, |record| {
+        record["repeated_reference_suffix"]["terminal_reference"] = serde_json::json!(50);
+    });
+    assert!(error.contains("repeated_reference_suffix"), "{error}");
+}
+
+/// Store `native`, rewrite its first object record with `tamper`, and return
+/// the message of the load failure the rewritten namespace produces.
+fn load_tampered_object_record(
+    native: &crate::native::CatiaNative,
+    tamper: impl FnOnce(&mut serde_json::Value),
+) -> String {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    malformed
-        .store(&mut namespace)
-        .expect("store malformed repeated-reference-suffix view");
-    assert!(matches!(
-        crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
-    ));
+    native.store(&mut namespace).expect("store object records");
+    let arena = namespace
+        .arenas_mut()
+        .get_mut("object_graph_records")
+        .expect("object-record arena");
+    let mut record = serde_json::to_value(&arena[0]).unwrap();
+    tamper(&mut record);
+    arena[0] = serde_json::from_value(record).unwrap();
+    match crate::native::CatiaNative::load(&namespace) {
+        Ok(_) => panic!("tampered object record loaded"),
+        Err(error) => error.to_string(),
+    }
+}
+
+#[test]
+fn native_namespace_rejects_an_object_record_subtype_disagreeing_with_its_payload() {
+    let payload = [
+        0xb0, 0x83, 0x81, 0xbc, 0x81, 0xbe, 0x81, 0xb1, 0x83, 0x81, 0xbc, 0x81, 0xbe, 0xd1, 0x80,
+        0xfe,
+    ];
+    let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x81], &payload)];
+    let native = crate::native::CatiaNative::decode(&entity_backed_object_graph(&records, &[1]));
+    assert_eq!(
+        native.object_graphs[0].records[0].subtype(),
+        crate::object_graph::PayloadSubtype::AtomVector
+    );
+
+    let error = load_tampered_object_record(&native, |record| {
+        record["subtype"] = serde_json::json!("Empty");
+    });
+    assert!(error.contains("subtype"), "{error}");
 }
 
 #[test]
@@ -234,20 +263,20 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .reference_signature
         .as_ref()
         .expect("complete reference signature");
-    assert_eq!(signature.production.first_reference, 3);
+    assert_eq!(signature.production.first_reference(), 3);
     assert_eq!(signature.first_entity.entity_id(), 3);
     assert_eq!(
         signature.first_entity.entity(),
         Some(native.entity_records[2].id.as_str())
     );
     assert!(!signature.first_entity.is_null());
-    assert_eq!(signature.production.second_reference, 4);
+    assert_eq!(signature.production.second_reference(), 4);
     assert_eq!(signature.second_entity.entity_id(), 4);
     assert!(signature.second_entity.entity().is_none());
     assert!(signature.second_entity.is_null());
-    assert_eq!(signature.production.second_reference_offset, 17);
-    assert_eq!(signature.production.signature, "2(E)");
-    assert_eq!(signature.production.signature_offset, 12);
+    assert_eq!(signature.production.second_reference_offset(), 17);
+    assert_eq!(signature.production.signature(), "2(E)");
+    assert_eq!(signature.production.signature_offset(), 12);
     let [cohort] = native.reference_signature_cohorts.as_slice() else {
         panic!("one reference-signature cohort");
     };
@@ -261,8 +290,8 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         format!("catia:outer:reference-signature-cohort#{graph_key}:00000000")
     );
     assert_eq!(cohort.ordinal, 0);
-    assert_eq!(cohort.first_reference, 3);
-    assert_eq!(cohort.second_reference, 4);
+    assert_eq!(cohort.first_reference(), 3);
+    assert_eq!(cohort.second_reference(), 4);
     assert!(cohort.schema_selection.is_none());
     assert_eq!(
         cohort.members,
@@ -375,39 +404,6 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
     ));
 
     let mut malformed = crate::native::CatiaNative::decode(&bytes);
-    malformed.entity_records[0]
-        .reference_signature
-        .as_mut()
-        .expect("complete reference signature")
-        .production
-        .signature_offset += 1;
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    malformed
-        .store(&mut namespace)
-        .expect("store malformed reference-signature incidence");
-    assert!(matches!(
-        crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
-    ));
-
-    let mut malformed = crate::native::CatiaNative::decode(&bytes);
-    malformed.entity_records[0]
-        .reference_signature
-        .as_mut()
-        .expect("complete reference signature")
-        .production
-        .signature_program
-        .clear();
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    malformed
-        .store(&mut namespace)
-        .expect("store malformed reference-signature program");
-    assert!(matches!(
-        crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
-    ));
-
-    let mut malformed = crate::native::CatiaNative::decode(&bytes);
     malformed.reference_signature_cohorts[0].members.clear();
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     malformed
@@ -417,6 +413,20 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    crate::native::CatiaNative::decode(&bytes)
+        .store(&mut namespace)
+        .expect("store reference-signature cohort");
+    let mut cohorts: Vec<serde_json::Value> =
+        namespace.arena_as("reference_signature_cohorts").unwrap();
+    cohorts[0]["second_reference"] = serde_json::json!(6);
+    namespace
+        .set_arena("reference_signature_cohorts", &cohorts)
+        .unwrap();
+    let error = crate::native::CatiaNative::load(&namespace)
+        .expect_err("cohort second_reference not following its first");
+    assert!(error.to_string().contains("second_reference"), "{error}");
 }
 
 #[test]
@@ -1313,4 +1323,29 @@ fn entity_value_schema_selection_excludes_a_packet_crossing_its_boundary() {
         .store(&mut namespace)
         .expect("store crossing packet fixture");
     crate::native::CatiaNative::load(&namespace).expect("validate canonical packet ownership");
+}
+
+/// The minimal `7C05` frame the parser accepts carries four empty byte
+/// vectors, so `empty_nested` names a producible record rather than an
+/// unreachable one.
+#[test]
+fn the_minimal_parsed_entity_frame_is_the_empty_nested_body() {
+    let frame = entity_table_record_with_definition_and_value(1, &[], &[]);
+    let mut bytes = frame.clone();
+    bytes.push(0xde);
+    bytes.extend(object_graph_from_records(&[object_graph_record(
+        &[0x04, 0x01, 0x81, 0x81],
+        &[0xfe],
+    )]));
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let [record] = native.entity_records.as_slice() else {
+        panic!("one minimal entity record");
+    };
+    assert_eq!(
+        record.body,
+        crate::native::CatiaEntityRecordBody::empty_nested()
+    );
+    assert_eq!(record.byte_len(), 24);
+    assert_eq!(record.byte_len() as usize, frame.len());
 }

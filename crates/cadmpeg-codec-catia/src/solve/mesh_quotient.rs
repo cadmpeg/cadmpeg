@@ -76,13 +76,9 @@ pub(crate) enum MeshEndpointIncidenceRejection {
     BoundaryReconstruction,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum CoordinateRootClosure {
-    Solved(HashMap<usize, usize>),
-    Rejected,
-    Ambiguous,
-    Exhausted,
-}
+/// Coordinate root closure with unclassified failures.
+pub(crate) type CoordinateRootClosure =
+    MeshSolve<HashMap<usize, usize>, MeshCandidateFailure<(), (), ()>>;
 
 enum PointAssignmentOutcome {
     Complete(Vec<HashMap<usize, usize>>),
@@ -105,20 +101,35 @@ pub(crate) enum MeshCandidateExhaustion {
     FaceDomainEnumeration,
 }
 
-#[derive(Debug)]
-pub(crate) enum MeshCandidateSolve {
-    Solved(StandardTopology, Vec<usize>),
-    Rejected(MeshCandidateRejection),
-    Ambiguous(MeshCandidateAmbiguity),
-    Exhausted(MeshCandidateExhaustion),
+/// Solved mesh payload or its failure.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum MeshSolve<T, F = MeshCandidateFailure> {
+    Solved(T),
+    Failed(F),
 }
+
+impl<T, F> MeshSolve<T, F> {
+    fn into_option(self) -> Option<T> {
+        match self {
+            Self::Solved(value) => Some(value),
+            Self::Failed(_) => None,
+        }
+    }
+}
+
+/// Mesh candidate topology and endpoint assignment.
+pub(crate) type MeshCandidateSolve = MeshSolve<(StandardTopology, Vec<usize>)>;
 
 /// Non-solved mesh candidate outcomes stored on topology diagnostics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum MeshCandidateFailure {
-    Rejected(MeshCandidateRejection),
-    Ambiguous(MeshCandidateAmbiguity),
-    Exhausted(MeshCandidateExhaustion),
+pub(crate) enum MeshCandidateFailure<
+    R = MeshCandidateRejection,
+    A = MeshCandidateAmbiguity,
+    E = MeshCandidateExhaustion,
+> {
+    Rejected(R),
+    Ambiguous(A),
+    Exhausted(E),
 }
 
 /// Exclusive search status: a solved candidate cannot also be ambiguous or exhausted.
@@ -158,13 +169,9 @@ impl<T> SearchOutcome<T> {
     }
 }
 
-#[derive(Debug)]
-pub(crate) enum MeshFaceDomainCandidateSolve {
-    Solved(Vec<[usize; 2]>, StandardTopology, Vec<usize>),
-    Rejected(MeshCandidateRejection),
-    Ambiguous(MeshCandidateAmbiguity),
-    Exhausted(MeshCandidateExhaustion),
-}
+/// Selected face domains, topology, and endpoint assignment.
+pub(crate) type MeshFaceDomainCandidateSolve =
+    MeshSolve<(Vec<[usize; 2]>, StandardTopology, Vec<usize>)>;
 
 #[derive(Clone, Copy)]
 pub(crate) enum MeshFaceAssignmentCandidates<'a> {
@@ -179,20 +186,16 @@ pub(crate) enum MeshFaceAssignmentCandidates<'a> {
     },
 }
 
-#[derive(Clone)]
-enum MeshEndpointResolve {
-    Solved(StandardTopology, Vec<usize>),
-    Rejected,
-    Ambiguous,
-    Exhausted,
-}
+type MeshEndpointResolve =
+    MeshSolve<(StandardTopology, Vec<usize>), MeshCandidateFailure<(), (), ()>>;
 
-impl MeshEndpointResolve {
-    #[cfg(test)]
-    fn into_option(self) -> Option<(StandardTopology, Vec<usize>)> {
-        match self {
-            Self::Solved(topology, assignment) => Some((topology, assignment)),
-            Self::Rejected | Self::Ambiguous | Self::Exhausted => None,
+impl<T> From<SearchOutcome<T>> for MeshSolve<T, MeshCandidateFailure<(), (), ()>> {
+    fn from(outcome: SearchOutcome<T>) -> Self {
+        match outcome {
+            SearchOutcome::Open => Self::Failed(MeshCandidateFailure::Rejected(())),
+            SearchOutcome::Solved(value) => Self::Solved(value),
+            SearchOutcome::Ambiguous => Self::Failed(MeshCandidateFailure::Ambiguous(())),
+            SearchOutcome::Exhausted => Self::Failed(MeshCandidateFailure::Exhausted(())),
         }
     }
 }
@@ -1372,12 +1375,8 @@ impl MeshQuotient {
         edge_candidates: &[Vec<[usize; 2]>],
         budget: Option<&WorkBudget<'_>>,
     ) -> Option<HashMap<usize, usize>> {
-        match self.coordinate_root_closure_outcome(point_count, edge_candidates, None, budget) {
-            CoordinateRootClosure::Solved(assignment) => Some(assignment),
-            CoordinateRootClosure::Rejected
-            | CoordinateRootClosure::Ambiguous
-            | CoordinateRootClosure::Exhausted => None,
-        }
+        self.coordinate_root_closure_outcome(point_count, edge_candidates, None, budget)
+            .into_option()
     }
 
     #[cfg(test)]
@@ -1394,17 +1393,13 @@ impl MeshQuotient {
             && edge_faces.iter().flatten().all(|face| *face < face_count)
             && boundary_domains.len() == face_count)
             .then_some(())?;
-        match self.coordinate_root_closure_outcome(
+        self.coordinate_root_closure_outcome(
             point_count,
             edge_candidates,
             Some((edge_faces, boundary_domains)),
             budget,
-        ) {
-            CoordinateRootClosure::Solved(assignment) => Some(assignment),
-            CoordinateRootClosure::Rejected
-            | CoordinateRootClosure::Ambiguous
-            | CoordinateRootClosure::Exhausted => None,
-        }
+        )
+        .into_option()
     }
 
     pub(crate) fn coordinate_root_closure_outcome_for_incidence(
@@ -1420,7 +1415,7 @@ impl MeshQuotient {
             || edge_faces.iter().flatten().any(|face| *face >= face_count)
             || boundary_domains.len() != face_count
         {
-            return CoordinateRootClosure::Rejected;
+            return MeshSolve::Failed(MeshCandidateFailure::Rejected(()));
         }
         self.coordinate_root_closure_outcome_with_component_budget(
             point_count,
@@ -1468,12 +1463,12 @@ impl MeshQuotient {
             &exhausted,
         );
         match result {
-            Some(assignment) => CoordinateRootClosure::Solved(assignment),
+            Some(assignment) => MeshSolve::Solved(assignment),
             None if exhausted.get() || budget.is_some_and(WorkBudget::exhausted) => {
-                CoordinateRootClosure::Exhausted
+                MeshSolve::Failed(MeshCandidateFailure::Exhausted(()))
             }
-            None if ambiguous.get() => CoordinateRootClosure::Ambiguous,
-            None => CoordinateRootClosure::Rejected,
+            None if ambiguous.get() => MeshSolve::Failed(MeshCandidateFailure::Ambiguous(())),
+            None => MeshSolve::Failed(MeshCandidateFailure::Rejected(())),
         }
     }
 
@@ -4680,13 +4675,63 @@ fn endpoint_configuration_directions(
 #[derive(Clone)]
 pub(crate) struct MeshEndpointRelationChoice {
     pub(crate) id: usize,
-    pub(crate) assignments: Vec<usize>,
-    pub(crate) edge_pairs: MeshFaceEndpointConfiguration,
+    pub(crate) selection: MeshEndpointRelationSelection,
 }
+/// Enumerated endpoint relation or deferred enumeration.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) enum MeshEndpointRelationSelection {
+    Enumerated {
+        assignments: Vec<usize>,
+        edge_pairs: MeshFaceEndpointConfiguration,
+    },
+    Deferred,
+}
+
+impl MeshEndpointRelationSelection {
+    /// Explicit edge constraints of this selection.
+    pub(crate) fn edge_pairs(&self) -> &[(usize, [usize; 2])] {
+        match self {
+            Self::Enumerated { edge_pairs, .. } => edge_pairs,
+            Self::Deferred => &[],
+        }
+    }
+
+    fn is_unconstrained(&self) -> bool {
+        match self {
+            Self::Enumerated { edge_pairs, .. } => edge_pairs.is_empty(),
+            Self::Deferred => true,
+        }
+    }
+
+    /// Selection with canonical assignment and endpoint ordering.
+    pub(crate) fn normalized(&self) -> Self {
+        match self {
+            Self::Enumerated {
+                assignments,
+                edge_pairs,
+            } => {
+                let mut assignments = assignments.clone();
+                assignments.sort_unstable();
+                assignments.dedup();
+                let mut edge_pairs = edge_pairs.clone();
+                for (_, pair) in &mut edge_pairs {
+                    pair.sort_unstable();
+                }
+                edge_pairs.sort_unstable();
+                Self::Enumerated {
+                    assignments,
+                    edge_pairs,
+                }
+            }
+            Self::Deferred => Self::Deferred,
+        }
+    }
+}
+
 type MeshEndpointRelationSelections = Vec<Vec<usize>>;
 pub(crate) type MeshEndpointRelationStateSignature = (
     Vec<Option<[usize; 2]>>,
-    Vec<Vec<(Vec<usize>, Vec<(usize, [usize; 2])>)>>,
+    Vec<Vec<MeshEndpointRelationSelection>>,
 );
 type MeshEndpointSolutionPredicate<'a> = dyn Fn(&[Option<[usize; 2]>]) -> bool + 'a;
 type MeshFixedDirectionOption = (Vec<Vec<bool>>, MeshQuotient, Vec<Option<bool>>);
@@ -4710,21 +4755,7 @@ fn raw_endpoint_relation_state_signature(
         .map(|choices| {
             let mut choices = choices
                 .iter()
-                .map(|choice| {
-                    let mut assignments = choice.assignments.clone();
-                    assignments.sort_unstable();
-                    assignments.dedup();
-                    let mut edge_pairs = choice
-                        .edge_pairs
-                        .iter()
-                        .map(|&(edge, mut pair)| {
-                            pair.sort_unstable();
-                            (edge, pair)
-                        })
-                        .collect::<Vec<_>>();
-                    edge_pairs.sort_unstable();
-                    (assignments, edge_pairs)
-                })
+                .map(|choice| choice.selection.normalized())
                 .collect::<Vec<_>>();
             choices.sort_unstable();
             choices
@@ -4755,17 +4786,17 @@ fn relation_coordinate_candidate_domains(
     if assigned.len() != base_candidates.len() {
         return None;
     }
-    let has_unknown_choice = domains
+    let has_unconstrained_choice = domains
         .iter()
         .flatten()
-        .any(|choice| choice.edge_pairs.is_empty());
+        .any(|choice| choice.selection.is_unconstrained());
     let mut candidates = base_candidates.to_vec();
     let mut possible = (0..base_candidates.len())
         .map(|_| Vec::<[usize; 2]>::new())
         .collect::<Vec<_>>();
-    if !has_unknown_choice {
+    if !has_unconstrained_choice {
         for choice in domains.iter().flatten() {
-            for &(edge, pair) in &choice.edge_pairs {
+            for &(edge, pair) in choice.selection.edge_pairs() {
                 possible.get_mut(edge)?.push(pair);
             }
         }
@@ -4773,7 +4804,7 @@ fn relation_coordinate_candidate_domains(
     for (edge, (assigned, base)) in assigned.iter().zip(base_candidates).enumerate() {
         if let Some(pair) = assigned {
             candidates[edge].retain(|candidate| same_unordered_pair(*candidate, *pair));
-        } else if !has_unknown_choice && !possible[edge].is_empty() {
+        } else if !has_unconstrained_choice && !possible[edge].is_empty() {
             candidates[edge].retain(|candidate| {
                 possible[edge]
                     .iter()
@@ -4826,7 +4857,8 @@ fn canonical_endpoint_relation_key(
         .iter()
         .map(|&edge| {
             choice
-                .edge_pairs
+                .selection
+                .edge_pairs()
                 .iter()
                 .find_map(|&(candidate, pair)| (candidate == edge).then_some(pair))
                 .map(|mut pair| {
@@ -4847,7 +4879,7 @@ fn build_endpoint_relation_constraints(
     let mut edge_faces = HashMap::<usize, BTreeSet<usize>>::new();
     for (face, choices) in domains.iter().enumerate() {
         for choice in choices {
-            for &(edge, _) in &choice.edge_pairs {
+            for &(edge, _) in choice.selection.edge_pairs() {
                 edge_faces.entry(edge).or_default().insert(face);
             }
         }
@@ -4873,7 +4905,8 @@ fn build_endpoint_relation_constraints(
         let left_complete = domains[face].iter().all(|choice| {
             edges.iter().all(|edge| {
                 choice
-                    .edge_pairs
+                    .selection
+                    .edge_pairs()
                     .iter()
                     .any(|(candidate, _)| candidate == edge)
             })
@@ -4881,7 +4914,8 @@ fn build_endpoint_relation_constraints(
         let right_complete = domains[neighbor].iter().all(|choice| {
             edges.iter().all(|edge| {
                 choice
-                    .edge_pairs
+                    .selection
+                    .edge_pairs()
                     .iter()
                     .any(|(candidate, _)| candidate == edge)
             })
@@ -4934,18 +4968,17 @@ fn build_endpoint_relation_constraints(
                     )
                     .ok()?;
                     for other in &domains[neighbor] {
-                        let compatible = edges.iter().all(|&edge| {
-                            let left = choice
-                                .edge_pairs
-                                .iter()
-                                .find_map(|&(candidate, pair)| (candidate == edge).then_some(pair));
-                            let right = other
-                                .edge_pairs
-                                .iter()
-                                .find_map(|&(candidate, pair)| (candidate == edge).then_some(pair));
-                            left.zip(right)
-                                .is_none_or(|(left, right)| same_unordered_pair(left, right))
-                        });
+                        let compatible =
+                            edges.iter().all(|&edge| {
+                                let left = choice.selection.edge_pairs().iter().find_map(
+                                    |&(candidate, pair)| (candidate == edge).then_some(pair),
+                                );
+                                let right = other.selection.edge_pairs().iter().find_map(
+                                    |&(candidate, pair)| (candidate == edge).then_some(pair),
+                                );
+                                left.zip(right)
+                                    .is_none_or(|(left, right)| same_unordered_pair(left, right))
+                            });
                         if compatible {
                             mask[other.id / 64] |= 1u64 << (other.id % 64);
                         }
@@ -4987,7 +5020,7 @@ fn propagate_endpoint_relation_domains(
             }
             let before = choices.len();
             choices.retain(|choice| {
-                choice.edge_pairs.iter().all(|&(edge, pair)| {
+                choice.selection.edge_pairs().iter().all(|&(edge, pair)| {
                     assigned[edge].is_none_or(|selected| same_unordered_pair(selected, pair))
                 })
             });
@@ -5083,7 +5116,7 @@ fn propagate_endpoint_relation_domains(
             let mut pairs = HashMap::<usize, HashSet<[usize; 2]>>::new();
             let mut counts = HashMap::<usize, usize>::new();
             for choice in choices {
-                for &(edge, pair) in &choice.edge_pairs {
+                for &(edge, pair) in choice.selection.edge_pairs() {
                     pairs.entry(edge).or_default().insert(pair);
                     *counts.entry(edge).or_default() += 1;
                 }
@@ -5109,7 +5142,7 @@ fn propagate_endpoint_relation_domains(
             if choices.len() != 1 {
                 continue;
             }
-            for &(edge, pair) in &choices[0].edge_pairs {
+            for &(edge, pair) in choices[0].selection.edge_pairs() {
                 match assigned[edge] {
                     Some(selected) if !same_unordered_pair(selected, pair) => return false,
                     Some(_) => {}
@@ -5172,7 +5205,7 @@ where
     if domains
         .iter()
         .flatten()
-        .all(|choice| !choice.edge_pairs.is_empty())
+        .all(|choice| !choice.selection.is_unconstrained())
     {
         let mut possible_points = assigned
             .iter()
@@ -5184,7 +5217,13 @@ where
             domains
                 .iter()
                 .flatten()
-                .flat_map(|choice| choice.edge_pairs.iter().flat_map(|(_, pair)| pair))
+                .flat_map(|choice| {
+                    choice
+                        .selection
+                        .edge_pairs()
+                        .iter()
+                        .flat_map(|(_, pair)| pair)
+                })
                 .copied(),
         );
         if possible_points.len() < point_count {
@@ -5237,7 +5276,7 @@ where
             let priority_count = priority_edges.map_or(0, |edges| {
                 choices
                     .iter()
-                    .flat_map(|choice| choice.edge_pairs.iter().map(|(edge, _)| *edge))
+                    .flat_map(|choice| choice.selection.edge_pairs().iter().map(|(edge, _)| *edge))
                     .filter(|edge| edges.get(*edge).copied().unwrap_or(false))
                     .collect::<HashSet<_>>()
                     .len()
@@ -5253,7 +5292,7 @@ where
     else {
         let mut edge_pairs = assigned;
         for choice in domains.iter().filter_map(|choices| choices.first()) {
-            for &(edge, pair) in &choice.edge_pairs {
+            for &(edge, pair) in choice.selection.edge_pairs() {
                 match edge_pairs[edge] {
                     Some(selected) if !same_unordered_pair(selected, pair) => return false,
                     Some(_) => {}
@@ -5269,8 +5308,10 @@ where
             .enumerate()
             .map(|(face, choices)| {
                 let choice = choices.first()?;
-                if choice.assignments != [usize::MAX] {
-                    return Some(choice.assignments.clone());
+                if let MeshEndpointRelationSelection::Enumerated { assignments, .. } =
+                    &choice.selection
+                {
+                    return Some(assignments.clone());
                 }
                 let viable = face_assignments[face]
                     .iter()
@@ -5301,7 +5342,8 @@ where
     for choices in &domains {
         for choice in choices {
             let points = choice
-                .edge_pairs
+                .selection
+                .edge_pairs()
                 .iter()
                 .flat_map(|(_, pair)| pair)
                 .copied()
@@ -5315,7 +5357,8 @@ where
     branch_choices.sort_unstable_by(|left, right| {
         let score = |choice: &MeshEndpointRelationChoice| {
             choice
-                .edge_pairs
+                .selection
+                .edge_pairs()
                 .iter()
                 .flat_map(|(_, pair)| pair)
                 .copied()
@@ -5403,13 +5446,16 @@ fn collect_endpoint_relation_face_choices(
             assignments.dedup();
             MeshEndpointRelationChoice {
                 id: 0,
-                assignments,
-                edge_pairs,
+                selection: MeshEndpointRelationSelection::Enumerated {
+                    assignments,
+                    edge_pairs,
+                },
             }
         })
         .collect::<Vec<_>>();
     choices.sort_unstable_by(|left, right| {
-        (&left.edge_pairs, &left.assignments).cmp(&(&right.edge_pairs, &right.assignments))
+        (left.selection.edge_pairs(), &left.selection)
+            .cmp(&(right.selection.edge_pairs(), &right.selection))
     });
     if unknown {
         // A stopped enumeration is not evidence that the assignment has no
@@ -5417,8 +5463,7 @@ fn collect_endpoint_relation_face_choices(
         // assignment to the complete endpoint search.
         choices.push(MeshEndpointRelationChoice {
             id: 0,
-            assignments: vec![usize::MAX],
-            edge_pairs: Vec::new(),
+            selection: MeshEndpointRelationSelection::Deferred,
         });
     }
     for (id, choice) in choices.iter_mut().enumerate() {
@@ -5470,10 +5515,10 @@ fn resolve_endpoint_configuration_relation_streaming(
             &mut covered,
         )?;
         if choices.is_empty() {
-            return Some(MeshEndpointResolve::Rejected);
+            return Some(MeshSolve::Failed(MeshCandidateFailure::Rejected(())));
         }
         if !budget.charge_by(choices.len()) {
-            return Some(MeshEndpointResolve::Exhausted);
+            return Some(MeshSolve::Failed(MeshCandidateFailure::Exhausted(())));
         }
         domains.push(choices);
     }
@@ -5481,7 +5526,7 @@ fn resolve_endpoint_configuration_relation_streaming(
         return None;
     }
     let Some(constraints) = build_endpoint_relation_constraints(&domains, budget) else {
-        return Some(MeshEndpointResolve::Exhausted);
+        return Some(MeshSolve::Failed(MeshCandidateFailure::Exhausted(())));
     };
     let mut resolved = None;
     let mut relation_state_memo =
@@ -5540,17 +5585,20 @@ fn resolve_endpoint_configuration_relation_streaming(
                 .into_iter()
                 .map(|mut domain| domain.pop())
                 .collect::<Option<Vec<_>>>();
-            selected.map_or(MeshEndpointResolve::Rejected, |selected| {
-                resolve_fixed_mesh_endpoint_pairs(
-                    edge_rows,
-                    vertex_points,
-                    &candidates,
-                    &selected,
-                    port_identities,
-                    &endpoint_resolution_budget,
-                    candidate_gauge,
-                )
-            })
+            selected.map_or(
+                MeshSolve::Failed(MeshCandidateFailure::Rejected(())),
+                |selected| {
+                    resolve_fixed_mesh_endpoint_pairs(
+                        edge_rows,
+                        vertex_points,
+                        &candidates,
+                        &selected,
+                        port_identities,
+                        &endpoint_resolution_budget,
+                        candidate_gauge,
+                    )
+                },
+            )
         } else {
             resolve_fixed_mesh_endpoint_assignment_domains(
                 edge_rows,
@@ -5563,7 +5611,7 @@ fn resolve_endpoint_configuration_relation_streaming(
             )
         };
         match outcome {
-            MeshEndpointResolve::Solved(topology, assignment) => {
+            MeshSolve::Solved((topology, assignment)) => {
                 if let Some(valid) = complete_solution_valid {
                     let Some(candidate_pairs) = mesh_candidate_point_pairs(&topology, &assignment)
                     else {
@@ -5588,15 +5636,15 @@ fn resolve_endpoint_configuration_relation_streaming(
                     resolved = Some(candidate);
                 }
             }
-            MeshEndpointResolve::Ambiguous => {
+            MeshSolve::Failed(MeshCandidateFailure::Ambiguous(())) => {
                 ambiguous = true;
                 return true;
             }
-            MeshEndpointResolve::Exhausted => {
+            MeshSolve::Failed(MeshCandidateFailure::Exhausted(())) => {
                 exhausted = true;
                 return true;
             }
-            MeshEndpointResolve::Rejected => {}
+            MeshSolve::Failed(MeshCandidateFailure::Rejected(())) => {}
         }
         if budget.exhausted() {
             exhausted = true;
@@ -5625,13 +5673,13 @@ fn resolve_endpoint_configuration_relation_streaming(
         &mut evaluate,
     );
     if ambiguous {
-        Some(MeshEndpointResolve::Ambiguous)
+        Some(MeshSolve::Failed(MeshCandidateFailure::Ambiguous(())))
     } else if exhausted || budget.exhausted() {
-        Some(MeshEndpointResolve::Exhausted)
+        Some(MeshSolve::Failed(MeshCandidateFailure::Exhausted(())))
     } else if let Some((topology, assignment)) = resolved {
-        Some(MeshEndpointResolve::Solved(topology, assignment))
+        Some(MeshSolve::Solved((topology, assignment)))
     } else {
-        Some(MeshEndpointResolve::Rejected)
+        Some(MeshSolve::Failed(MeshCandidateFailure::Rejected(())))
     }
 }
 
@@ -5939,7 +5987,7 @@ fn resolve_fixed_mesh_endpoint_pairs(
         || edge_candidates.len() != edge_rows.len()
         || port_identities.len() != edge_rows.len()
     {
-        return MeshEndpointResolve::Rejected;
+        return MeshSolve::Failed(MeshCandidateFailure::Rejected(()));
     }
     let assignment_domains = selected
         .iter()
@@ -5950,7 +5998,7 @@ fn resolve_fixed_mesh_endpoint_pairs(
         .iter()
         .any(|candidates| candidates.len() != 1)
     {
-        return MeshEndpointResolve::Rejected;
+        return MeshSolve::Failed(MeshCandidateFailure::Rejected(()));
     }
     if let Some(resolved) = resolve_singleton_mesh_endpoint_candidates(
         edge_rows,
@@ -5962,24 +6010,26 @@ fn resolve_fixed_mesh_endpoint_pairs(
         budget,
         candidate_gauge,
     ) {
-        if !matches!(&resolved, MeshEndpointResolve::Rejected) {
+        if !matches!(
+            &resolved,
+            MeshSolve::Failed(MeshCandidateFailure::Rejected(()))
+        ) {
             return resolved;
         }
     }
     let edge_pairs = edge_candidates
         .iter()
         .map(|candidates| candidates.first().copied())
-        .collect::<Option<Vec<_>>>()
-        .ok_or(MeshEndpointResolve::Rejected);
-    let Ok(edge_pairs) = edge_pairs else {
-        return MeshEndpointResolve::Rejected;
+        .collect::<Option<Vec<_>>>();
+    let Some(edge_pairs) = edge_pairs else {
+        return MeshSolve::Failed(MeshCandidateFailure::Rejected(()));
     };
     let mut fixed_face_directions = Vec::with_capacity(selected.len());
     let mut direction_overflow = false;
     for assignment in selected {
         let Some(configuration) = endpoint_configuration_for_assignment(assignment, &edge_pairs)
         else {
-            return MeshEndpointResolve::Rejected;
+            return MeshSolve::Failed(MeshCandidateFailure::Rejected(()));
         };
         let directions = match endpoint_configuration_directions(assignment, &configuration) {
             Ok(directions) => directions,
@@ -5987,10 +6037,12 @@ fn resolve_fixed_mesh_endpoint_pairs(
                 direction_overflow = true;
                 break;
             }
-            Err(MeshDirectionEnumerationError::Invalid) => return MeshEndpointResolve::Rejected,
+            Err(MeshDirectionEnumerationError::Invalid) => {
+                return MeshSolve::Failed(MeshCandidateFailure::Rejected(()))
+            }
         };
         if directions.is_empty() {
-            return MeshEndpointResolve::Rejected;
+            return MeshSolve::Failed(MeshCandidateFailure::Rejected(()));
         }
         fixed_face_directions.push(Some(directions));
     }
@@ -6001,7 +6053,7 @@ fn resolve_fixed_mesh_endpoint_pairs(
             None,
             "catia_general_mesh_fixed_face_directions",
         ) else {
-            return MeshEndpointResolve::Rejected;
+            return MeshSolve::Failed(MeshCandidateFailure::Rejected(()));
         };
         fixed_face_directions = directions;
     }
@@ -6010,7 +6062,7 @@ fn resolve_fixed_mesh_endpoint_pairs(
         false,
         "catia_fixed_mesh_edge_directions",
     ) else {
-        return MeshEndpointResolve::Rejected;
+        return MeshSolve::Failed(MeshCandidateFailure::Rejected(()));
     };
     for use_ in selected
         .iter()
@@ -6019,7 +6071,7 @@ fn resolve_fixed_mesh_endpoint_pairs(
     {
         if use_.reversed.is_some() {
             let Some(fixed) = edge_has_fixed_direction.get_mut(use_.edge) else {
-                return MeshEndpointResolve::Rejected;
+                return MeshSolve::Failed(MeshCandidateFailure::Rejected(()));
             };
             *fixed = true;
         }
@@ -6027,7 +6079,7 @@ fn resolve_fixed_mesh_endpoint_pairs(
     let Some(quotient) =
         initial_mesh_quotient(edge_candidates, vertex_points.len(), port_identities)
     else {
-        return MeshEndpointResolve::Rejected;
+        return MeshSolve::Failed(MeshCandidateFailure::Rejected(()));
     };
     let mut direct_quotient = quotient.clone();
     let mut direct_orientations = edge_has_fixed_direction
@@ -6102,12 +6154,12 @@ fn resolve_fixed_mesh_endpoint_pairs(
         });
         if let Some(outcome) = outcome {
             match outcome {
-                MeshEndpointResolve::Rejected => {}
+                MeshSolve::Failed(MeshCandidateFailure::Rejected(())) => {}
                 resolved => return resolved,
             }
         }
         if budget.exhausted() {
-            return MeshEndpointResolve::Exhausted;
+            return MeshSolve::Failed(MeshCandidateFailure::Exhausted(()));
         }
     }
     let mut search = MeshSelectionSearch {
@@ -6140,7 +6192,7 @@ fn resolve_fixed_mesh_endpoint_pairs(
         },
         selected: match alloc_filled(assignment_domains.len(), None, "catia_fixed_mesh_selection") {
             Ok(selected) => selected,
-            Err(_) => return MeshEndpointResolve::Rejected,
+            Err(_) => return MeshSolve::Failed(MeshCandidateFailure::Rejected(())),
         },
         visited_states: HashSet::new(),
         outcome: SearchOutcome::Open,
@@ -6151,14 +6203,7 @@ fn resolve_fixed_mesh_endpoint_pairs(
     } else {
         search.search_with_budget(&quotient, budget, budget);
     }
-    match search.outcome {
-        SearchOutcome::Exhausted => MeshEndpointResolve::Exhausted,
-        SearchOutcome::Ambiguous => MeshEndpointResolve::Ambiguous,
-        SearchOutcome::Solved((topology, assignment)) => {
-            MeshEndpointResolve::Solved(topology, assignment)
-        }
-        SearchOutcome::Open => MeshEndpointResolve::Rejected,
-    }
+    search.outcome.into()
 }
 
 /// Materialize boundary-assignment alternatives after the relation phase has
@@ -6184,7 +6229,7 @@ fn resolve_fixed_mesh_endpoint_assignment_domains(
             .iter()
             .any(|candidates| candidates.len() != 1)
     {
-        return MeshEndpointResolve::Rejected;
+        return MeshSolve::Failed(MeshCandidateFailure::Rejected(()));
     }
     // Keep recursive search state explicit so budget, solution, and ambiguity
     // ownership remain visible at every branch.
@@ -6219,15 +6264,15 @@ fn resolve_fixed_mesh_endpoint_assignment_domains(
                 candidate_gauge,
             );
             match resolved {
-                MeshEndpointResolve::Solved(topology, assignment) => {
+                MeshSolve::Solved((topology, assignment)) => {
                     let candidate = (topology, assignment);
                     outcome.record_solved(candidate, |previous, next| {
                         mesh_candidates_equivalent_with_context(previous, next, candidate_gauge)
                     });
                 }
-                MeshEndpointResolve::Rejected => {}
-                MeshEndpointResolve::Ambiguous => outcome.mark_ambiguous(),
-                MeshEndpointResolve::Exhausted => outcome.exhaust(),
+                MeshSolve::Failed(MeshCandidateFailure::Rejected(())) => {}
+                MeshSolve::Failed(MeshCandidateFailure::Ambiguous(())) => outcome.mark_ambiguous(),
+                MeshSolve::Failed(MeshCandidateFailure::Exhausted(())) => outcome.exhaust(),
             }
             return;
         }
@@ -6265,15 +6310,10 @@ fn resolve_fixed_mesh_endpoint_assignment_domains(
         candidate_gauge,
         &mut outcome,
     );
-    if matches!(outcome, SearchOutcome::Ambiguous) {
-        MeshEndpointResolve::Ambiguous
-    } else if matches!(outcome, SearchOutcome::Exhausted) || budget.exhausted() {
-        MeshEndpointResolve::Exhausted
-    } else if let SearchOutcome::Solved((topology, assignment)) = outcome {
-        MeshEndpointResolve::Solved(topology, assignment)
-    } else {
-        MeshEndpointResolve::Rejected
+    if budget.exhausted() {
+        outcome.exhaust();
     }
+    outcome.into()
 }
 
 pub(crate) fn prune_mesh_endpoint_pair_support(
@@ -7085,7 +7125,7 @@ impl MeshSelectionSearch<'_> {
                 return;
             };
             match outcome {
-                MeshEndpointResolve::Solved(topology, assignment) => {
+                MeshSolve::Solved((topology, assignment)) => {
                     let candidate = (topology, assignment);
                     let gauge = self.candidate_gauge;
                     self.outcome.record_solved(candidate, |previous, next| {
@@ -7093,9 +7133,11 @@ impl MeshSelectionSearch<'_> {
                             || mesh_candidates_equivalent_with_context(previous, next, gauge)
                     });
                 }
-                MeshEndpointResolve::Ambiguous => self.outcome.mark_ambiguous(),
-                MeshEndpointResolve::Exhausted => self.outcome.exhaust(),
-                MeshEndpointResolve::Rejected => {}
+                MeshSolve::Failed(MeshCandidateFailure::Ambiguous(())) => {
+                    self.outcome.mark_ambiguous();
+                }
+                MeshSolve::Failed(MeshCandidateFailure::Exhausted(())) => self.outcome.exhaust(),
+                MeshSolve::Failed(MeshCandidateFailure::Rejected(())) => {}
             }
             return;
         };
@@ -7350,7 +7392,7 @@ impl MeshSelectionSearch<'_> {
                     );
                     if let Some(outcome) = outcome {
                         match outcome {
-                            MeshEndpointResolve::Solved(topology, assignment) => {
+                            MeshSolve::Solved((topology, assignment)) => {
                                 let candidate = (topology, assignment);
                                 let gauge = self.candidate_gauge;
                                 self.outcome.record_solved(candidate, |previous, next| {
@@ -7360,9 +7402,13 @@ impl MeshSelectionSearch<'_> {
                                         )
                                 });
                             }
-                            MeshEndpointResolve::Ambiguous => self.outcome.mark_ambiguous(),
-                            MeshEndpointResolve::Exhausted => self.outcome.exhaust(),
-                            MeshEndpointResolve::Rejected => {}
+                            MeshSolve::Failed(MeshCandidateFailure::Ambiguous(())) => {
+                                self.outcome.mark_ambiguous();
+                            }
+                            MeshSolve::Failed(MeshCandidateFailure::Exhausted(())) => {
+                                self.outcome.exhaust();
+                            }
+                            MeshSolve::Failed(MeshCandidateFailure::Rejected(())) => {}
                         }
                         if self.should_stop() {
                             return;
@@ -7891,10 +7937,10 @@ fn resolve_mesh_selection_from_quotient(
             }
         }
     }
-    Some(MeshEndpointResolve::Solved(
+    Some(MeshSolve::Solved((
         topology,
         point_assignment.into_iter().collect::<Option<Vec<_>>>()?,
-    ))
+    )))
 }
 
 fn reduced_distinct_matching(
@@ -8033,7 +8079,9 @@ fn resolve_singleton_mesh_selection(
     let first_assignment =
         reduced_distinct_matching(&domain_values, vertex_points.len(), budget, None);
     let Some(first_assignment) = first_assignment else {
-        return budget.exhausted().then_some(MeshEndpointResolve::Exhausted);
+        return budget
+            .exhausted()
+            .then_some(MeshSolve::Failed(MeshCandidateFailure::Exhausted(())));
     };
     let mut edge_use_counts =
         alloc_filled(edge_rows.len(), 0usize, "catia_mesh_edge_use_counts").ok()?;
@@ -8106,7 +8154,7 @@ fn resolve_singleton_mesh_selection(
             Some((root, first_assignment[root])),
         ) else {
             if budget.exhausted() {
-                return Some(MeshEndpointResolve::Exhausted);
+                return Some(MeshSolve::Failed(MeshCandidateFailure::Exhausted(())));
             }
             continue;
         };
@@ -8114,10 +8162,10 @@ fn resolve_singleton_mesh_selection(
             continue;
         };
         if !mesh_candidates_equivalent_with_context(&first, &alternate, candidate_gauge) {
-            return Some(MeshEndpointResolve::Ambiguous);
+            return Some(MeshSolve::Failed(MeshCandidateFailure::Ambiguous(())));
         }
     }
-    Some(MeshEndpointResolve::Solved(first.0, first.1))
+    Some(MeshSolve::Solved((first.0, first.1)))
 }
 
 // The arguments are independent serialized evidence, solver state, and budget
@@ -8180,10 +8228,10 @@ fn resolve_singleton_mesh_endpoint_candidates(
         &selected,
         &endpoint_labelled_directions,
     ) {
-        return Some(MeshEndpointResolve::Solved(
+        return Some(MeshSolve::Solved((
             topology,
             (0..vertex_points.len()).collect(),
-        ));
+        )));
     }
     // An unresolved coedge direction does not select a point endpoint. It is
     // a row-orientation gauge. Let the exact coordinate binding prove the
@@ -8217,7 +8265,7 @@ fn resolve_singleton_mesh_endpoint_candidates(
         candidate_gauge,
     ) {
         match resolved {
-            MeshEndpointResolve::Rejected => {}
+            MeshSolve::Failed(MeshCandidateFailure::Rejected(())) => {}
             resolved => return Some(resolved),
         }
     }
@@ -8255,23 +8303,23 @@ fn resolve_standard_mesh_endpoint_candidates(
     let face_count = assignments.len();
     let mut edge_candidates = edge_candidates.to_vec();
     if !prune_mesh_endpoint_pair_support(&mut assignments, &mut edge_candidates) {
-        return MeshEndpointResolve::Rejected;
+        return MeshSolve::Failed(MeshCandidateFailure::Rejected(()));
     }
     let Some(quotient) = prepared_quotient
         .cloned()
         .or_else(|| initial_mesh_quotient(&edge_candidates, vertex_points.len(), port_identities))
     else {
-        return MeshEndpointResolve::Rejected;
+        return MeshSolve::Failed(MeshCandidateFailure::Rejected(()));
     };
     for face in &mut assignments {
         face.retain(|assignment| {
             quotient.assignment_has_option(assignment, &edge_candidates, Some(budget))
         });
         if budget.exhausted() {
-            return MeshEndpointResolve::Exhausted;
+            return MeshSolve::Failed(MeshCandidateFailure::Exhausted(()));
         }
         if face.is_empty() {
-            return MeshEndpointResolve::Rejected;
+            return MeshSolve::Failed(MeshCandidateFailure::Rejected(()));
         }
     }
     if let Some(resolved) = resolve_singleton_mesh_endpoint_candidates(
@@ -8308,10 +8356,10 @@ fn resolve_standard_mesh_endpoint_candidates(
         .collect::<Option<Vec<_>>>()
         .and_then(|work| work.into_iter().try_fold(0usize, usize::checked_add))
     else {
-        return MeshEndpointResolve::Rejected;
+        return MeshSolve::Failed(MeshCandidateFailure::Rejected(()));
     };
     if total_work > MAX_SELECTION_WORK {
-        return MeshEndpointResolve::Exhausted;
+        return MeshSolve::Failed(MeshCandidateFailure::Exhausted(()));
     }
     let face_equations = possible_face_equations(&assignments);
     let Some(face_choices) = possible_face_choices_with_limit(
@@ -8319,14 +8367,14 @@ fn resolve_standard_mesh_endpoint_candidates(
         &face_equations,
         MAX_MESH_CONSTRAINT_OPERATIONS,
     ) else {
-        return MeshEndpointResolve::Exhausted;
+        return MeshSolve::Failed(MeshCandidateFailure::Exhausted(()));
     };
     let Ok(unselected) = alloc_filled(
         edge_candidates.len(),
         None,
         "catia_endpoint_unselected_edges",
     ) else {
-        return MeshEndpointResolve::Rejected;
+        return MeshSolve::Failed(MeshCandidateFailure::Rejected(()));
     };
     let configuration_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let endpoint_configurations = assignments
@@ -8390,27 +8438,20 @@ fn resolve_standard_mesh_endpoint_candidates(
             "catia_mesh_fixed_face_directions",
         ) {
             Ok(fixed_face_directions) => fixed_face_directions,
-            Err(_) => return MeshEndpointResolve::Rejected,
+            Err(_) => return MeshSolve::Failed(MeshCandidateFailure::Rejected(())),
         },
         fixed_edge_orientations: Vec::new(),
         edge_has_fixed_direction: Vec::new(),
         selected: match alloc_filled(face_count, None, "catia_mesh_selected_faces") {
             Ok(selected) => selected,
-            Err(_) => return MeshEndpointResolve::Rejected,
+            Err(_) => return MeshSolve::Failed(MeshCandidateFailure::Rejected(())),
         },
         visited_states: HashSet::new(),
         outcome: SearchOutcome::Open,
         face_equation_cache: RefCell::default(),
     };
     search.search_with_budget(&quotient, budget, budget);
-    match search.outcome {
-        SearchOutcome::Exhausted => MeshEndpointResolve::Exhausted,
-        SearchOutcome::Ambiguous => MeshEndpointResolve::Ambiguous,
-        SearchOutcome::Solved((topology, assignment)) => {
-            MeshEndpointResolve::Solved(topology, assignment)
-        }
-        SearchOutcome::Open => MeshEndpointResolve::Rejected,
-    }
+    search.outcome.into()
 }
 
 /// Resolve geometric endpoint alternatives through face incidence before
@@ -8471,7 +8512,9 @@ where
             port_identities,
         ))
     })() else {
-        return MeshCandidateSolve::Rejected(MeshCandidateRejection::InputStructure);
+        return MeshSolve::Failed(MeshCandidateFailure::Rejected(
+            MeshCandidateRejection::InputStructure,
+        ));
     };
     let coordinate_gauge = build_mesh_coordinate_gauge(
         vertex_points.len(),
@@ -8510,10 +8553,14 @@ where
             .flatten()
             .any(|point| *point >= vertex_points.len())
     {
-        return MeshCandidateSolve::Rejected(MeshCandidateRejection::InputCardinality);
+        return MeshSolve::Failed(MeshCandidateFailure::Rejected(
+            MeshCandidateRejection::InputCardinality,
+        ));
     }
     if mesh_domains.len() != face_count {
-        return MeshCandidateSolve::Rejected(MeshCandidateRejection::FaceBoundaryCardinality);
+        return MeshSolve::Failed(MeshCandidateFailure::Rejected(
+            MeshCandidateRejection::FaceBoundaryCardinality,
+        ));
     }
     for domain in &mut mesh_domains {
         if let MeshFaceBoundaryDomain::Ordered(assignments) = domain {
@@ -8521,10 +8568,14 @@ where
         }
     }
     if !mesh_domains_have_incident_edge_support(edge_faces, &mesh_domains) {
-        return MeshCandidateSolve::Rejected(MeshCandidateRejection::QuotientPreparation);
+        return MeshSolve::Failed(MeshCandidateFailure::Rejected(
+            MeshCandidateRejection::QuotientPreparation,
+        ));
     }
     if port_identities.len() != edge_rows.len() {
-        return MeshCandidateSolve::Rejected(MeshCandidateRejection::PortCardinality);
+        return MeshSolve::Failed(MeshCandidateFailure::Rejected(
+            MeshCandidateRejection::PortCardinality,
+        ));
     }
     let Some((mesh_quotient, completed_edge_candidates)) = (|| {
         let mut mesh_quotient =
@@ -8555,12 +8606,16 @@ where
         }
         Some((mesh_quotient, completed_edge_candidates))
     })() else {
-        return MeshCandidateSolve::Rejected(MeshCandidateRejection::QuotientPreparation);
+        return MeshSolve::Failed(MeshCandidateFailure::Rejected(
+            MeshCandidateRejection::QuotientPreparation,
+        ));
     };
     let Some(class_constraint) =
         edge_class_search_constraint(edge_classes, &completed_edge_candidates)
     else {
-        return MeshCandidateSolve::Rejected(MeshCandidateRejection::EdgeClassConstraint);
+        return MeshSolve::Failed(MeshCandidateFailure::Rejected(
+            MeshCandidateRejection::EdgeClassConstraint,
+        ));
     };
     let constraint_edges = partial_constraint_edges
         .iter()
@@ -8666,13 +8721,15 @@ where
                 resolution
             };
             let candidate = match endpoint_resolution {
-                MeshEndpointResolve::Solved(topology, assignment) => (topology, assignment),
-                MeshEndpointResolve::Rejected => return ControlFlow::Continue(()),
-                MeshEndpointResolve::Ambiguous => {
+                MeshSolve::Solved((topology, assignment)) => (topology, assignment),
+                MeshSolve::Failed(MeshCandidateFailure::Rejected(())) => {
+                    return ControlFlow::Continue(())
+                }
+                MeshSolve::Failed(MeshCandidateFailure::Ambiguous(())) => {
                     incidence_ambiguity = Some(MeshCandidateAmbiguity::EndpointResolution);
                     return ControlFlow::Break(());
                 }
-                MeshEndpointResolve::Exhausted => {
+                MeshSolve::Failed(MeshCandidateFailure::Exhausted(())) => {
                     incidence_exhausted = true;
                     return ControlFlow::Break(());
                 }
@@ -8697,13 +8754,15 @@ where
         },
     );
     if let Some(ambiguity) = incidence_ambiguity {
-        return MeshCandidateSolve::Ambiguous(ambiguity);
+        return MeshSolve::Failed(MeshCandidateFailure::Ambiguous(ambiguity));
     }
     if matches!(pair_solutions, IncidenceSolve::Ambiguous) {
-        return MeshCandidateSolve::Ambiguous(MeshCandidateAmbiguity::CoordinateRootClosure);
+        return MeshSolve::Failed(MeshCandidateFailure::Ambiguous(
+            MeshCandidateAmbiguity::CoordinateRootClosure,
+        ));
     }
     if incidence_exhausted || matches!(pair_solutions, IncidenceSolve::Exhausted) {
-        return MeshCandidateSolve::Exhausted(if incidence_exhausted {
+        return MeshSolve::Failed(MeshCandidateFailure::Exhausted(if incidence_exhausted {
             if complete_preference_rejected.get() {
                 MeshCandidateExhaustion::PreferredSolutionSearch
             } else {
@@ -8713,14 +8772,14 @@ where
             MeshCandidateExhaustion::PreferredSolutionSearch
         } else {
             MeshCandidateExhaustion::IncidenceEnumeration
-        });
+        }));
     }
     if let Some((topology, assignment)) = incidence_solution {
         // Canonicalization is a representation step; retain the validated raw candidate if unavailable.
         let (topology, assignment) =
             canonicalize_mesh_candidate_for_output(&topology, &assignment, candidate_gauge)
                 .unwrap_or((topology, assignment));
-        return MeshCandidateSolve::Solved(topology, assignment);
+        return MeshSolve::Solved((topology, assignment));
     }
     let incidence_rejection = match pair_solutions {
         IncidenceSolve::Rejected(rejection) => {
@@ -8756,26 +8815,28 @@ where
         Some(resolution)
     })();
     match fallback {
-        Some(MeshEndpointResolve::Solved(topology, assignment)) => {
+        Some(MeshSolve::Solved((topology, assignment))) => {
             // Canonicalization is a representation step; retain the validated raw candidate if unavailable.
             let (topology, assignment) =
                 canonicalize_mesh_candidate_for_output(&topology, &assignment, candidate_gauge)
                     .unwrap_or((topology, assignment));
-            MeshCandidateSolve::Solved(topology, assignment)
+            MeshSolve::Solved((topology, assignment))
         }
-        Some(MeshEndpointResolve::Ambiguous) => {
-            MeshCandidateSolve::Ambiguous(MeshCandidateAmbiguity::EndpointResolution)
-        }
-        Some(MeshEndpointResolve::Exhausted) => {
-            MeshCandidateSolve::Exhausted(if complete_preference_rejected.get() {
+        Some(MeshSolve::Failed(MeshCandidateFailure::Ambiguous(()))) => MeshSolve::Failed(
+            MeshCandidateFailure::Ambiguous(MeshCandidateAmbiguity::EndpointResolution),
+        ),
+        Some(MeshSolve::Failed(MeshCandidateFailure::Exhausted(()))) => MeshSolve::Failed(
+            MeshCandidateFailure::Exhausted(if complete_preference_rejected.get() {
                 MeshCandidateExhaustion::PreferredSolutionSearch
             } else {
                 MeshCandidateExhaustion::EndpointResolution
-            })
-        }
-        Some(MeshEndpointResolve::Rejected) | None => MeshCandidateSolve::Rejected(
-            MeshCandidateRejection::EndpointIncidence(incidence_rejection),
+            }),
         ),
+        Some(MeshSolve::Failed(MeshCandidateFailure::Rejected(()))) | None => {
+            MeshSolve::Failed(MeshCandidateFailure::Rejected(
+                MeshCandidateRejection::EndpointIncidence(incidence_rejection),
+            ))
+        }
     }
 }
 
@@ -8809,7 +8870,7 @@ where
             return false;
         }
         match outcome {
-            MeshCandidateSolve::Solved(topology, point_assignment) => {
+            MeshSolve::Solved((topology, point_assignment)) => {
                 if let Some((_, stored_topology, stored_assignment)) = &solution {
                     if stored_topology != &topology || stored_assignment != &point_assignment {
                         ambiguity = Some(MeshCandidateAmbiguity::DistinctTopologySolutions);
@@ -8820,15 +8881,15 @@ where
                 solution = Some((assignment.to_vec(), topology, point_assignment));
                 true
             }
-            MeshCandidateSolve::Rejected(reason) => {
+            MeshSolve::Failed(MeshCandidateFailure::Rejected(reason)) => {
                 rejection.get_or_insert(reason);
                 true
             }
-            MeshCandidateSolve::Ambiguous(reason) => {
+            MeshSolve::Failed(MeshCandidateFailure::Ambiguous(reason)) => {
                 ambiguity = Some(reason);
                 false
             }
-            MeshCandidateSolve::Exhausted(reason) => {
+            MeshSolve::Failed(MeshCandidateFailure::Exhausted(reason)) => {
                 exhaustion = Some(reason);
                 false
             }
@@ -8871,25 +8932,27 @@ where
         }
     };
     if visit.is_none() {
-        return MeshFaceDomainCandidateSolve::Rejected(MeshCandidateRejection::InputStructure);
+        return MeshSolve::Failed(MeshCandidateFailure::Rejected(
+            MeshCandidateRejection::InputStructure,
+        ));
     }
     if let Some(ambiguity) = ambiguity {
-        return MeshFaceDomainCandidateSolve::Ambiguous(ambiguity);
+        return MeshSolve::Failed(MeshCandidateFailure::Ambiguous(ambiguity));
     }
     if let Some(exhaustion) = exhaustion {
-        return MeshFaceDomainCandidateSolve::Exhausted(exhaustion);
+        return MeshSolve::Failed(MeshCandidateFailure::Exhausted(exhaustion));
     }
     if matches!(visit, Some(DuplicateFaceAssignmentVisit::Exhausted)) {
-        return MeshFaceDomainCandidateSolve::Exhausted(
+        return MeshSolve::Failed(MeshCandidateFailure::Exhausted(
             MeshCandidateExhaustion::FaceDomainEnumeration,
-        );
+        ));
     }
     if let Some((faces, topology, point_assignment)) = solution {
-        MeshFaceDomainCandidateSolve::Solved(faces, topology, point_assignment)
+        MeshSolve::Solved((faces, topology, point_assignment))
     } else {
-        MeshFaceDomainCandidateSolve::Rejected(
+        MeshSolve::Failed(MeshCandidateFailure::Rejected(
             rejection.unwrap_or(MeshCandidateRejection::InputStructure),
-        )
+        ))
     }
 }
 
@@ -8899,13 +8962,17 @@ fn relation_coordinate_candidates_keep_only_surviving_pair_values() {
     let domains = vec![
         vec![MeshEndpointRelationChoice {
             id: 0,
-            assignments: vec![0],
-            edge_pairs: vec![(0, [0, 1]), (1, [1, 2])],
+            selection: MeshEndpointRelationSelection::Enumerated {
+                assignments: vec![0],
+                edge_pairs: vec![(0, [0, 1]), (1, [1, 2])],
+            },
         }],
         vec![MeshEndpointRelationChoice {
             id: 1,
-            assignments: vec![0],
-            edge_pairs: vec![(0, [0, 1])],
+            selection: MeshEndpointRelationSelection::Enumerated {
+                assignments: vec![0],
+                edge_pairs: vec![(0, [0, 1])],
+            },
         }],
     ];
     let assigned = vec![None, None];
@@ -8916,8 +8983,7 @@ fn relation_coordinate_candidates_keep_only_surviving_pair_values() {
 
     let unknown_domains = vec![vec![MeshEndpointRelationChoice {
         id: 0,
-        assignments: vec![usize::MAX],
-        edge_pairs: Vec::new(),
+        selection: MeshEndpointRelationSelection::Deferred,
     }]];
     assert_eq!(
         relation_coordinate_candidate_domains(&unknown_domains, &assigned, &base_candidates),
@@ -8952,7 +9018,9 @@ fn mesh_candidate_rejection_retains_the_failed_solver_stage() {
             |_| true,
             |_| true,
         ),
-        MeshCandidateSolve::Rejected(MeshCandidateRejection::InputStructure)
+        MeshSolve::Failed(MeshCandidateFailure::Rejected(
+            MeshCandidateRejection::InputStructure
+        ))
     ));
 }
 
@@ -8972,7 +9040,7 @@ fn face_domain_solver_returns_the_unique_concrete_assignment() {
         |faces, _| {
             visited.push(faces.to_vec());
             if faces[0][1] == 2 {
-                MeshCandidateSolve::Solved(
+                MeshSolve::Solved((
                     StandardTopology {
                         faces: Vec::new(),
                         edge_rows: Vec::new(),
@@ -8980,14 +9048,16 @@ fn face_domain_solver_returns_the_unique_concrete_assignment() {
                         logical_vertex_count: 0,
                     },
                     Vec::new(),
-                )
+                ))
             } else {
-                MeshCandidateSolve::Rejected(MeshCandidateRejection::InputStructure)
+                MeshSolve::Failed(MeshCandidateFailure::Rejected(
+                    MeshCandidateRejection::InputStructure,
+                ))
             }
         },
     );
 
-    let MeshFaceDomainCandidateSolve::Solved(faces, _, _) = result else {
+    let MeshSolve::Solved((faces, _, _)) = result else {
         panic!("face-domain solver did not retain the unique branch");
     };
     assert_eq!(visited, vec![vec![[0, 0]], vec![[0, 1]], vec![[0, 2]]]);
@@ -9008,7 +9078,7 @@ fn face_domain_solver_evaluates_only_endpoint_closed_assignments() {
         |faces, _| {
             visited.push(faces.to_vec());
             if faces[0][1] == 2 {
-                MeshCandidateSolve::Solved(
+                MeshSolve::Solved((
                     StandardTopology {
                         faces: Vec::new(),
                         edge_rows: Vec::new(),
@@ -9016,14 +9086,16 @@ fn face_domain_solver_evaluates_only_endpoint_closed_assignments() {
                         logical_vertex_count: 0,
                     },
                     Vec::new(),
-                )
+                ))
             } else {
-                MeshCandidateSolve::Rejected(MeshCandidateRejection::InputStructure)
+                MeshSolve::Failed(MeshCandidateFailure::Rejected(
+                    MeshCandidateRejection::InputStructure,
+                ))
             }
         },
     );
 
-    let MeshFaceDomainCandidateSolve::Solved(faces, _, _) = result else {
+    let MeshSolve::Solved((faces, _, _)) = result else {
         panic!("face-domain solver did not retain the closed assignment");
     };
     assert_eq!(visited, assignments);
@@ -9043,7 +9115,7 @@ fn face_domain_solver_reports_distinct_assignments_as_ambiguity() {
         },
         &budget,
         |assignment, _| {
-            MeshCandidateSolve::Solved(
+            MeshSolve::Solved((
                 StandardTopology {
                     faces: Vec::new(),
                     edge_rows: Vec::new(),
@@ -9051,13 +9123,15 @@ fn face_domain_solver_reports_distinct_assignments_as_ambiguity() {
                     logical_vertex_count: 0,
                 },
                 vec![assignment[0][1]],
-            )
+            ))
         },
     );
 
     assert!(matches!(
         result,
-        MeshFaceDomainCandidateSolve::Ambiguous(MeshCandidateAmbiguity::DistinctTopologySolutions)
+        MeshSolve::Failed(MeshCandidateFailure::Ambiguous(
+            MeshCandidateAmbiguity::DistinctTopologySolutions
+        ))
     ));
 }
 
@@ -9102,7 +9176,7 @@ fn endpoint_configuration_relation_solves_cycle_orientation_globally() {
     let port_identities = vec![[0, 1], [2, 3], [4, 5]];
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
 
-    let Some(MeshEndpointResolve::Solved(topology, point_assignment)) =
+    let Some(MeshSolve::Solved((topology, point_assignment))) =
         resolve_endpoint_configuration_relation_streaming(
             &assignments,
             &endpoint_configurations,
@@ -9179,7 +9253,7 @@ fn fixed_endpoint_pairs_materialize_duplicate_boundary_assignments() {
         None,
     );
 
-    let Some(MeshEndpointResolve::Solved(topology, point_assignment)) = result else {
+    let Some(MeshSolve::Solved((topology, point_assignment))) = result else {
         panic!("endpoint relation did not materialize duplicate assignments");
     };
     assert_eq!(topology.faces.len(), 1);
@@ -9210,10 +9284,10 @@ fn endpoint_relation_keeps_stopped_face_assignments() {
     assert!(covered[0]);
     assert!(choices
         .iter()
-        .any(|choice| { choice.assignments == [usize::MAX] && choice.edge_pairs.is_empty() }));
+        .any(|choice| { matches!(choice.selection, MeshEndpointRelationSelection::Deferred) }));
     assert!(choices
         .iter()
-        .any(|choice| choice.assignments == [0] && choice.edge_pairs == [(0, [0, 0])]));
+        .any(|choice| matches!(&choice.selection, MeshEndpointRelationSelection::Enumerated { assignments, edge_pairs } if assignments == &[0] && edge_pairs == &[(0, [0, 0])])));
 }
 
 #[test]
@@ -9222,38 +9296,50 @@ fn raw_endpoint_relation_state_signature_ignores_local_order() {
         vec![
             MeshEndpointRelationChoice {
                 id: 7,
-                assignments: vec![2, 0, 2],
-                edge_pairs: vec![(1, [3, 2]), (0, [1, 0])],
+                selection: MeshEndpointRelationSelection::Enumerated {
+                    assignments: vec![2, 0, 2],
+                    edge_pairs: vec![(1, [3, 2]), (0, [1, 0])],
+                },
             },
             MeshEndpointRelationChoice {
                 id: 3,
-                assignments: vec![4],
-                edge_pairs: vec![(2, [5, 4])],
+                selection: MeshEndpointRelationSelection::Enumerated {
+                    assignments: vec![4],
+                    edge_pairs: vec![(2, [5, 4])],
+                },
             },
         ],
         vec![MeshEndpointRelationChoice {
             id: 9,
-            assignments: vec![3, 1],
-            edge_pairs: vec![(0, [1, 0])],
+            selection: MeshEndpointRelationSelection::Enumerated {
+                assignments: vec![3, 1],
+                edge_pairs: vec![(0, [1, 0])],
+            },
         }],
     ];
     let right = vec![
         vec![
             MeshEndpointRelationChoice {
                 id: 30,
-                assignments: vec![4],
-                edge_pairs: vec![(2, [4, 5])],
+                selection: MeshEndpointRelationSelection::Enumerated {
+                    assignments: vec![4],
+                    edge_pairs: vec![(2, [4, 5])],
+                },
             },
             MeshEndpointRelationChoice {
                 id: 70,
-                assignments: vec![0, 2],
-                edge_pairs: vec![(0, [0, 1]), (1, [2, 3])],
+                selection: MeshEndpointRelationSelection::Enumerated {
+                    assignments: vec![0, 2],
+                    edge_pairs: vec![(0, [0, 1]), (1, [2, 3])],
+                },
             },
         ],
         vec![MeshEndpointRelationChoice {
             id: 90,
-            assignments: vec![1, 3],
-            edge_pairs: vec![(0, [0, 1])],
+            selection: MeshEndpointRelationSelection::Enumerated {
+                assignments: vec![1, 3],
+                edge_pairs: vec![(0, [0, 1])],
+            },
         }],
     ];
     let left_assigned = vec![Some([3, 2]), None, Some([5, 4])];
@@ -9271,25 +9357,33 @@ fn endpoint_relation_requires_one_joint_support_for_all_shared_edges() {
         vec![
             MeshEndpointRelationChoice {
                 id: 0,
-                assignments: vec![0],
-                edge_pairs: vec![(0, [0, 1]), (1, [2, 3])],
+                selection: MeshEndpointRelationSelection::Enumerated {
+                    assignments: vec![0],
+                    edge_pairs: vec![(0, [0, 1]), (1, [2, 3])],
+                },
             },
             MeshEndpointRelationChoice {
                 id: 1,
-                assignments: vec![1],
-                edge_pairs: vec![(0, [4, 5]), (1, [6, 7])],
+                selection: MeshEndpointRelationSelection::Enumerated {
+                    assignments: vec![1],
+                    edge_pairs: vec![(0, [4, 5]), (1, [6, 7])],
+                },
             },
         ],
         vec![
             MeshEndpointRelationChoice {
                 id: 0,
-                assignments: vec![0],
-                edge_pairs: vec![(0, [0, 1]), (1, [6, 7])],
+                selection: MeshEndpointRelationSelection::Enumerated {
+                    assignments: vec![0],
+                    edge_pairs: vec![(0, [0, 1]), (1, [6, 7])],
+                },
             },
             MeshEndpointRelationChoice {
                 id: 1,
-                assignments: vec![1],
-                edge_pairs: vec![(0, [4, 5]), (1, [6, 7])],
+                selection: MeshEndpointRelationSelection::Enumerated {
+                    assignments: vec![1],
+                    edge_pairs: vec![(0, [4, 5]), (1, [6, 7])],
+                },
             },
         ],
     ];
@@ -9326,25 +9420,33 @@ fn endpoint_relation_treats_optional_shared_edges_as_wildcards() {
         vec![
             MeshEndpointRelationChoice {
                 id: 0,
-                assignments: vec![0],
-                edge_pairs: vec![(0, [0, 1])],
+                selection: MeshEndpointRelationSelection::Enumerated {
+                    assignments: vec![0],
+                    edge_pairs: vec![(0, [0, 1])],
+                },
             },
             MeshEndpointRelationChoice {
                 id: 1,
-                assignments: vec![1],
-                edge_pairs: vec![(0, [2, 3])],
+                selection: MeshEndpointRelationSelection::Enumerated {
+                    assignments: vec![1],
+                    edge_pairs: vec![(0, [2, 3])],
+                },
             },
         ],
         vec![
             MeshEndpointRelationChoice {
                 id: 0,
-                assignments: vec![0],
-                edge_pairs: vec![(0, [4, 5])],
+                selection: MeshEndpointRelationSelection::Enumerated {
+                    assignments: vec![0],
+                    edge_pairs: vec![(0, [4, 5])],
+                },
             },
             MeshEndpointRelationChoice {
                 id: 1,
-                assignments: vec![1],
-                edge_pairs: Vec::new(),
+                selection: MeshEndpointRelationSelection::Enumerated {
+                    assignments: vec![1],
+                    edge_pairs: Vec::new(),
+                },
             },
         ],
     ];
@@ -9491,7 +9593,10 @@ fn coordinate_root_closure_distinguishes_symmetric_assignments() {
     };
     let outcome = quotient.coordinate_root_closure_outcome(2, &[vec![[0, 1]]], None, None);
 
-    assert_eq!(outcome, CoordinateRootClosure::Ambiguous);
+    assert_eq!(
+        outcome,
+        MeshSolve::Failed(MeshCandidateFailure::Ambiguous(()))
+    );
 }
 
 #[test]
@@ -9508,7 +9613,7 @@ fn coordinate_root_closure_rejects_a_single_prefix_after_budget_refusal() {
 
     assert_eq!(
         quotient.coordinate_root_closure_outcome(2, &[vec![[0, 1]]], None, Some(&budget),),
-        CoordinateRootClosure::Exhausted
+        MeshSolve::Failed(MeshCandidateFailure::Exhausted(()))
     );
     assert!(budget.exhausted());
 }
@@ -9549,7 +9654,10 @@ fn coordinate_root_closure_rejects_a_refused_incidence_check() {
         Some((&edge_faces, &boundary_domains)),
         Some(&refused_budget),
     );
-    assert_eq!(refused, CoordinateRootClosure::Exhausted);
+    assert_eq!(
+        refused,
+        MeshSolve::Failed(MeshCandidateFailure::Exhausted(()))
+    );
     assert!(refused_budget.exhausted());
     let complete_budget = WorkBudget::new(39);
     let complete = make_quotient().coordinate_root_closure_outcome(
@@ -9558,7 +9666,7 @@ fn coordinate_root_closure_rejects_a_refused_incidence_check() {
         Some((&edge_faces, &boundary_domains)),
         Some(&complete_budget),
     );
-    assert!(matches!(complete, CoordinateRootClosure::Solved(_)));
+    assert!(matches!(complete, MeshSolve::Solved(_)));
     assert!(!complete_budget.exhausted());
 }
 
@@ -9606,7 +9714,7 @@ fn coordinate_root_preparation_budgets_independent_components_separately() {
             None,
             Some(&shared_budget),
         ),
-        CoordinateRootClosure::Exhausted
+        MeshSolve::Failed(MeshCandidateFailure::Exhausted(()))
     );
 
     let shared_incidence_budget = WorkBudget::new(100);
@@ -9632,10 +9740,7 @@ fn coordinate_root_preparation_budgets_independent_components_separately() {
         &boundary_domains,
         Some(&preparation_budget),
     );
-    assert!(
-        matches!(outcome, CoordinateRootClosure::Solved(_)),
-        "{outcome:?}"
-    );
+    assert!(matches!(outcome, MeshSolve::Solved(_)), "{outcome:?}");
     assert!(!preparation_budget.exhausted());
 }
 
@@ -9688,7 +9793,7 @@ fn singleton_mesh_path_handles_many_independent_face_cycles() {
         }]);
     }
 
-    let MeshEndpointResolve::Solved(topology, point_assignment) =
+    let MeshSolve::Solved((topology, point_assignment)) =
         resolve_singleton_mesh_endpoint_candidates(
             &edge_rows,
             &vertex_points,
@@ -9735,7 +9840,7 @@ fn singleton_mesh_path_filters_endpoint_incompatible_face_assignments() {
         },
     ]];
 
-    let MeshEndpointResolve::Solved(topology, point_assignment) =
+    let MeshSolve::Solved((topology, point_assignment)) =
         resolve_singleton_mesh_endpoint_candidates(
             &edge_rows,
             &vertex_points,
@@ -9774,7 +9879,7 @@ fn singleton_mesh_path_handles_closed_endpoint_pairs() {
     }]];
     let port_identities = vec![[0, 0]];
 
-    let MeshEndpointResolve::Solved(topology, point_assignment) =
+    let MeshSolve::Solved((topology, point_assignment)) =
         resolve_singleton_mesh_endpoint_candidates(
             &edge_rows,
             &vertex_points,

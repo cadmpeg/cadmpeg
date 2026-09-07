@@ -282,7 +282,7 @@ fn finish_decode(
         .object_graphs
         .iter()
         .flat_map(|graph| &graph.records)
-        .filter(|record| record.repeated_reference_suffix.is_some())
+        .filter(|record| record.repeated_reference_suffix().is_some())
         .count();
     let repeated_reference_schema_selection_count = native
         .object_graphs
@@ -660,7 +660,7 @@ fn finish_decode(
         .iter()
         .filter_map(|record| record.reference_signature.as_ref())
         .filter(|signature| {
-            signature.production.prefix == entity_table::ReferenceSignaturePrefix::Atom2
+            signature.production.prefix() == entity_table::ReferenceSignaturePrefix::Atom2
         })
         .count();
     let reference_signature_prefix_atom_35_count =
@@ -686,7 +686,7 @@ fn finish_decode(
         .iter()
         .filter_map(|record| record.reference_signature.as_ref())
         .fold((0_usize, 0_usize), |(instructions, tokens), signature| {
-            let program = &signature.production.signature_program;
+            let program = signature.production.signature_program();
             let qualifier_count = program
                 .iter()
                 .filter(|instruction| {

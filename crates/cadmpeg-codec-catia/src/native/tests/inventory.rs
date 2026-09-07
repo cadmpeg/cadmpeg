@@ -637,9 +637,9 @@ fn native_namespace_retains_surface_alias_core() {
         panic!("one alias row")
     };
     assert_eq!(row.byte_offset, 4);
-    assert_eq!(row.tag, 0x0012_3456);
+    assert_eq!(row.tag(), 0x0012_3456);
     assert_eq!(row.tag_raw, 0xab12_3456);
-    assert_eq!(row.entity_record_ordinal, 7);
+    assert_eq!(row.entity_record_ordinal(), 7);
     assert!(row.design_object.is_none());
     assert_eq!((row.f2, row.f3), (0x1122_3344, 0x5566_7788));
     assert!(row.group.is_none());
@@ -717,4 +717,32 @@ fn native_alias_f1_resolves_record_in_declared_part_container() {
         .expect("store alias linked to declared part container");
     crate::native::CatiaNative::load(&namespace)
         .expect("load alias linked to declared part container");
+}
+
+#[test]
+fn native_namespace_rejects_alias_row_views_disagreeing_with_their_source_bytes() {
+    let mut bytes = vec![0x02, 0x00];
+    bytes.extend_from_slice(&0xafu32.to_le_bytes());
+    bytes.extend_from_slice(&0x148u32.to_le_bytes());
+    bytes.extend_from_slice(&[0x00, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x30, 0x00, 0x00]);
+    let mut alias = surface_alias_stream();
+    alias[15..19].copy_from_slice(&0x0000_017bu32.to_le_bytes());
+    bytes.extend(alias);
+    let native = crate::native::CatiaNative::decode(&bytes);
+
+    for (field, replacement) in [
+        ("lead", serde_json::json!("NonSurfaceAlias")),
+        ("tag", serde_json::json!(0)),
+        ("entity_record_ordinal", serde_json::json!(0xff)),
+    ] {
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        native.store(&mut namespace).expect("store alias row");
+        let mut rows: Vec<serde_json::Value> = namespace.arena_as("alias_rows").unwrap();
+        assert_ne!(rows[0][field], replacement);
+        rows[0][field] = replacement;
+        namespace.set_arena("alias_rows", &rows).unwrap();
+        let error = crate::native::CatiaNative::load(&namespace)
+            .expect_err("alias-row view disagreeing with its source bytes");
+        assert!(error.to_string().contains(field), "{error}");
+    }
 }

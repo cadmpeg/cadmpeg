@@ -56,13 +56,18 @@ struct ObjectRecordWire {
 impl From<ObjectRecord> for ObjectRecordWire {
     fn from(record: ObjectRecord) -> Self {
         let roles = record.roles();
+        let (owner_ref, owner_literal) = match roles.owner {
+            Some(HeadOwner::Entity(value)) => (Some(value), None),
+            Some(HeadOwner::UnassignedLiteral(value)) => (None, Some(value)),
+            None => (None, None),
+        };
         Self {
             pos: record.pos,
             total_len: record.total_len,
             lead: record.lead,
             body: record.body,
-            owner_ref: roles.owner_ref,
-            owner_literal: roles.owner_literal,
+            owner_ref,
+            owner_literal,
             class_ref: roles.class_ref,
             storage_ref: roles.storage_ref,
         }
@@ -73,9 +78,14 @@ impl TryFrom<ObjectRecordWire> for ObjectRecord {
     type Error = &'static str;
 
     fn try_from(wire: ObjectRecordWire) -> Result<Self, Self::Error> {
+        let owner = match (wire.owner_ref, wire.owner_literal) {
+            (Some(value), None) => Some(HeadOwner::Entity(value)),
+            (None, Some(value)) => Some(HeadOwner::UnassignedLiteral(value)),
+            (None, None) => None,
+            (Some(_), Some(_)) => return Err("owner_ref and owner_literal are mutually exclusive"),
+        };
         let supplied = HeadRoles {
-            owner_ref: wire.owner_ref,
-            owner_literal: wire.owner_literal,
+            owner,
             class_ref: wire.class_ref,
             storage_ref: wire.storage_ref,
         };
@@ -95,7 +105,22 @@ impl TryFrom<ObjectRecordWire> for ObjectRecord {
 /// Inline or nested body of one `7C09` object record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "ObjectRecordBodyWire", into = "ObjectRecordBodyWire")]
 pub enum ObjectRecordBody {
+    /// Complete alternate inline body when the record has no nested `7C0A`.
+    Inline(Vec<u8>),
+    /// Nested head tokens and `7C0A` payload.
+    Nested {
+        /// Decoded head tokens.
+        head: Vec<HeadToken>,
+        /// Decoded nested payload.
+        payload: ObjectPayload,
+    },
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+enum ObjectRecordBodyWire {
     /// Complete alternate inline body when the record has no nested `7C0A`.
     Inline(Vec<u8>),
     /// Nested head tokens and `7C0A` payload.
@@ -110,6 +135,42 @@ pub enum ObjectRecordBody {
         /// Structural payload classification.
         subtype: PayloadSubtype,
     },
+}
+
+impl From<ObjectRecordBody> for ObjectRecordBodyWire {
+    fn from(body: ObjectRecordBody) -> Self {
+        match body {
+            ObjectRecordBody::Inline(bytes) => Self::Inline(bytes),
+            ObjectRecordBody::Nested { head, payload } => Self::Nested {
+                subtype: classify(&payload.fields),
+                repeated_reference_suffix: repeated_reference_suffix(&payload),
+                head,
+                payload,
+            },
+        }
+    }
+}
+impl TryFrom<ObjectRecordBodyWire> for ObjectRecordBody {
+    type Error = &'static str;
+    fn try_from(wire: ObjectRecordBodyWire) -> Result<Self, Self::Error> {
+        match wire {
+            ObjectRecordBodyWire::Inline(bytes) => Ok(Self::Inline(bytes)),
+            ObjectRecordBodyWire::Nested {
+                head,
+                payload,
+                subtype,
+                repeated_reference_suffix: suffix,
+            } => {
+                if subtype != classify(&payload.fields) {
+                    return Err("subtype disagrees with payload");
+                }
+                if suffix != repeated_reference_suffix(&payload) {
+                    return Err("repeated_reference_suffix disagrees with payload");
+                }
+                Ok(Self::Nested { head, payload })
+            }
+        }
+    }
 }
 
 impl ObjectRecord {
@@ -144,21 +205,9 @@ impl ObjectRecord {
         }
     }
 
-    pub fn repeated_reference_suffix(&self) -> Option<&RepeatedReferenceSuffix> {
-        match &self.body {
-            ObjectRecordBody::Inline(_) => None,
-            ObjectRecordBody::Nested {
-                repeated_reference_suffix,
-                ..
-            } => repeated_reference_suffix.as_ref(),
-        }
-    }
-
+    #[cfg(test)]
     pub fn subtype(&self) -> PayloadSubtype {
-        match &self.body {
-            ObjectRecordBody::Inline(_) => PayloadSubtype::Empty,
-            ObjectRecordBody::Nested { subtype, .. } => *subtype,
-        }
+        classify(&self.payload().fields)
     }
 }
 
@@ -259,6 +308,7 @@ pub struct BulkTableRow {
 /// One schema-free field in a `7C0A` payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "PayloadFieldWire", into = "PayloadFieldWire")]
 pub enum PayloadField {
     /// Untagged atom.
     Atom {
@@ -285,9 +335,7 @@ pub enum PayloadField {
     },
     /// Length-framed `0xe5` binary descriptor.
     Blob {
-        /// Length declared by the frame.
-        declared_len: usize,
-        /// Available blob bytes.
+        /// Complete blob bytes.
         #[serde(with = "cadmpeg_ir::bytes")]
         #[cfg_attr(feature = "schema", schemars(with = "String"))]
         bytes: Vec<u8>,
@@ -298,8 +346,6 @@ pub enum PayloadField {
     BulkTable {
         /// Count atom preceding the table count.
         count: u32,
-        /// Little-endian table row count.
-        table_count: u32,
         /// Complete allocation rows in serialized order.
         rows: Vec<BulkTableRow>,
         /// Byte offset within the payload.
@@ -321,6 +367,130 @@ pub enum PayloadField {
     },
     /// `0xfe` payload terminator.
     Terminator,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+enum PayloadFieldWire {
+    Atom {
+        value: u32,
+        offset: usize,
+    },
+    Reference {
+        value: u32,
+        offset: usize,
+    },
+    Scalar {
+        tag: u8,
+        value: u32,
+        offset: usize,
+    },
+    Blob {
+        declared_len: usize,
+        #[serde(with = "cadmpeg_ir::bytes")]
+        #[cfg_attr(feature = "schema", schemars(with = "String"))]
+        bytes: Vec<u8>,
+        offset: usize,
+    },
+    BulkTable {
+        count: u32,
+        table_count: usize,
+        rows: Vec<BulkTableRow>,
+        offset: usize,
+    },
+    List {
+        declared_count: u32,
+        items: Vec<ListItem>,
+        offset: usize,
+    },
+    Sentinel {
+        offset: usize,
+    },
+    Terminator,
+}
+
+impl From<PayloadField> for PayloadFieldWire {
+    fn from(value: PayloadField) -> Self {
+        match value {
+            PayloadField::Atom { value, offset } => Self::Atom { value, offset },
+            PayloadField::Reference { value, offset } => Self::Reference { value, offset },
+            PayloadField::Scalar { tag, value, offset } => Self::Scalar { tag, value, offset },
+            PayloadField::Blob { bytes, offset } => Self::Blob {
+                declared_len: bytes.len(),
+                bytes,
+                offset,
+            },
+            PayloadField::BulkTable {
+                count,
+                rows,
+                offset,
+            } => Self::BulkTable {
+                count,
+                table_count: rows.len(),
+                rows,
+                offset,
+            },
+            PayloadField::List {
+                declared_count,
+                items,
+                offset,
+            } => Self::List {
+                declared_count,
+                items,
+                offset,
+            },
+            PayloadField::Sentinel { offset } => Self::Sentinel { offset },
+            PayloadField::Terminator => Self::Terminator,
+        }
+    }
+}
+impl TryFrom<PayloadFieldWire> for PayloadField {
+    type Error = &'static str;
+    fn try_from(wire: PayloadFieldWire) -> Result<Self, Self::Error> {
+        match wire {
+            PayloadFieldWire::Atom { value, offset } => Ok(Self::Atom { value, offset }),
+            PayloadFieldWire::Reference { value, offset } => Ok(Self::Reference { value, offset }),
+            PayloadFieldWire::Scalar { tag, value, offset } => {
+                Ok(Self::Scalar { tag, value, offset })
+            }
+            PayloadFieldWire::Blob {
+                declared_len,
+                bytes,
+                offset,
+            } => {
+                if declared_len != bytes.len() {
+                    return Err("declared_len disagrees with blob bytes");
+                }
+                Ok(Self::Blob { bytes, offset })
+            }
+            PayloadFieldWire::BulkTable {
+                count,
+                table_count,
+                rows,
+                offset,
+            } => {
+                if table_count != rows.len() {
+                    return Err("table_count disagrees with rows");
+                }
+                Ok(Self::BulkTable {
+                    count,
+                    rows,
+                    offset,
+                })
+            }
+            PayloadFieldWire::List {
+                declared_count,
+                items,
+                offset,
+            } => Ok(Self::List {
+                declared_count,
+                items,
+                offset,
+            }),
+            PayloadFieldWire::Sentinel { offset } => Ok(Self::Sentinel { offset }),
+            PayloadFieldWire::Terminator => Ok(Self::Terminator),
+        }
+    }
 }
 
 /// Structural role of a decoded payload.
@@ -359,6 +529,22 @@ pub enum AliasLead {
     Unclassified(u32),
 }
 
+impl AliasLead {
+    /// Classification of a stored alias lead word.
+    pub fn from_raw(raw: u32) -> Self {
+        if raw & 0xff == 1 {
+            Self::SurfaceSupportStorage
+        } else {
+            match raw {
+                0x8e => Self::E5LinkedSurfaceStorage,
+                0x8f => Self::OrdinalLinkedStorage8f,
+                0 => Self::NonSurfaceAlias,
+                _ => Self::Unclassified(raw),
+            }
+        }
+    }
+}
+
 /// Group-allocation header attached to an outer surface-alias row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -380,26 +566,36 @@ pub struct AliasGroupMembership {
 pub struct SurfaceAlias {
     /// Marker byte offset.
     pub pos: usize,
-    /// Classified preceding word.
-    pub lead: AliasLead,
     /// Complete preceding word.
     pub lead_raw: u32,
-    /// Low 24 bits of the stored carrier tag.
-    pub tag: u32,
     /// Complete stored tag word.
     pub tag_raw: u32,
     /// Single-byte row flag.
     pub flag: u8,
     /// Three-byte F1 field.
     pub f1: [u8; 3],
-    /// `7C08` entity-table record ordinal in F1's third byte.
-    pub entity_record_ordinal: u8,
     /// First trailing fixed-width field.
     pub f2: u32,
     /// Second trailing fixed-width field.
     pub f3: u32,
     /// Group-allocation header immediately preceding this alias core.
     pub group: Option<AliasGroupMembership>,
+}
+
+impl SurfaceAlias {
+    /// Classification of the stored alias lead word.
+    pub fn lead(&self) -> AliasLead {
+        AliasLead::from_raw(self.lead_raw)
+    }
+    /// Low 24 bits of the stored tag word.
+    pub fn tag(&self) -> u32 {
+        self.tag_raw & 0x00ff_ffff
+    }
+    /// Entity-table ordinal from the F1 field.
+    #[cfg(test)]
+    pub fn entity_record_ordinal(&self) -> u8 {
+        self.f1[2]
+    }
 }
 
 /// Literal unresolved `7C D9` marker occurrence and bounded source context.
@@ -442,27 +638,17 @@ pub fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
         .filter_map(|(pos, _)| {
             let row = pos.checked_sub(alias_row::MARKER)?;
             let tag_raw = View::u32_le_at(data, row + alias_row::TAG)?;
-            let tag = tag_raw & 0x00ff_ffff;
             if row + alias_row::LEN > data.len() {
                 return None;
             }
             let lead_raw = View::u32_le_at(data, row + alias_row::LEAD)?;
             let group = alias_group_membership(data, pos);
-            let lead = if lead_raw & 0xff == 1 {
-                AliasLead::SurfaceSupportStorage
-            } else if lead_raw == 0x8e {
-                AliasLead::E5LinkedSurfaceStorage
-            } else if lead_raw == 0x8f {
-                AliasLead::OrdinalLinkedStorage8f
-            } else if lead_raw == 0x0000_0133 {
-                AliasLead::Unclassified(lead_raw)
-            } else if group.is_none() {
+            if lead_raw & 0xff != 1
+                && !matches!(lead_raw, 0x8e | 0x8f | 0x0000_0133)
+                && group.is_none()
+            {
                 return None;
-            } else if lead_raw == 0 {
-                AliasLead::NonSurfaceAlias
-            } else {
-                AliasLead::Unclassified(lead_raw)
-            };
+            }
             let f1 = [
                 data[row + alias_row::F1],
                 data[row + alias_row::F1 + 1],
@@ -470,13 +656,10 @@ pub fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
             ];
             Some(SurfaceAlias {
                 pos,
-                lead,
                 lead_raw,
-                tag,
                 tag_raw,
                 flag: data[row + alias_row::FLAG],
                 f1,
-                entity_record_ordinal: f1[2],
                 f2: View::u32_le_at(data, row + alias_row::F2)?,
                 f3: View::u32_le_at(data, row + alias_row::F3)?,
                 group,
@@ -496,7 +679,7 @@ pub(crate) fn surface_alias_tag_map(data: &[u8]) -> HashMap<u32, Option<u32>> {
     let paired_object_graph_roots = entity_runs
         .iter()
         .filter_map(|run| {
-            let end = run.last()?.pos.checked_add(run.last()?.total_len)?;
+            let end = run.last()?.pos.checked_add(run.last()?.total_len())?;
             (data.get(end) == Some(&0xde)).then_some((end + 1, run.len()))
         })
         .collect::<HashMap<_, _>>();
@@ -542,19 +725,19 @@ pub(crate) fn surface_alias_tag_map(data: &[u8]) -> HashMap<u32, Option<u32>> {
         let Some(group) = row.group.as_ref() else {
             continue;
         };
-        if row.lead != AliasLead::SurfaceSupportStorage {
+        if row.lead() != AliasLead::SurfaceSupportStorage {
             continue;
         }
         stored_by_group
             .entry((group.prototype, group.group_id))
             .and_modify(|stored| *stored = None)
-            .or_insert(Some(row.tag));
+            .or_insert(Some(row.tag()));
     }
 
     let mut tags = HashMap::<u32, Option<u32>>::new();
     for row in rows {
-        let canonical = match row.lead {
-            AliasLead::SurfaceSupportStorage => Some(row.tag),
+        let canonical = match row.lead() {
+            AliasLead::SurfaceSupportStorage => Some(row.tag()),
             AliasLead::NonSurfaceAlias => row.group.as_ref().and_then(|group| {
                 stored_by_group
                     .get(&(group.prototype, group.group_id))
@@ -563,7 +746,7 @@ pub(crate) fn surface_alias_tag_map(data: &[u8]) -> HashMap<u32, Option<u32>> {
             }),
             _ => None,
         };
-        tags.entry(row.tag)
+        tags.entry(row.tag())
             .and_modify(|stored| *stored = None)
             .or_insert(canonical);
     }
@@ -759,17 +942,7 @@ fn parse_candidate(
                 let lead = *head_bytes.first()?;
                 let head = decode_head(head_bytes);
                 let payload = decode_payload(&data[child + 6..record_end])?;
-                let repeated_reference_suffix = repeated_reference_suffix(&payload);
-                let subtype = classify(&payload.fields);
-                (
-                    lead,
-                    ObjectRecordBody::Nested {
-                        head,
-                        payload,
-                        repeated_reference_suffix,
-                        subtype,
-                    },
-                )
+                (lead, ObjectRecordBody::Nested { head, payload })
             }
             None if is_inline_body(body) => {
                 let lead = body[0];
@@ -797,10 +970,16 @@ fn parse_candidate(
     })
 }
 
+/// Occupant of the object head owner slot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HeadOwner {
+    Entity(u32),
+    UnassignedLiteral(u8),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct HeadRoles {
-    pub(crate) owner_ref: Option<u32>,
-    pub(crate) owner_literal: Option<u8>,
+    pub(crate) owner: Option<HeadOwner>,
     pub(crate) class_ref: Option<u32>,
     pub(crate) storage_ref: Option<u32>,
 }
@@ -897,18 +1076,17 @@ pub(crate) fn head_roles(lead: u8, head: &[HeadToken]) -> HeadRoles {
         Some(HeadToken::Reference(value)) => Some(*value),
         _ => None,
     };
-    let role_literal = |index: Option<usize>| match index.and_then(|index| head.get(index)) {
-        Some(HeadToken::Literal(value)) => Some(*value),
+    let role_owner = |index: Option<usize>| match index.and_then(|index| head.get(index)) {
+        Some(HeadToken::Reference(value)) => Some(HeadOwner::Entity(*value)),
+        Some(HeadToken::Literal(value)) => Some(HeadOwner::UnassignedLiteral(*value)),
         _ => None,
     };
     if class_first {
         let class_ref = role_reference(class_index);
         let storage_ref = class_ref.and_then(|_| role_reference(storage_index));
-        let owner_ref = storage_ref.and_then(|_| role_reference(owner_index));
-        let owner_literal = storage_ref.and_then(|_| role_literal(owner_index));
+        let owner = storage_ref.and_then(|_| role_owner(owner_index));
         HeadRoles {
-            owner_ref,
-            owner_literal,
+            owner,
             class_ref,
             storage_ref,
         }
@@ -917,8 +1095,7 @@ pub(crate) fn head_roles(lead: u8, head: &[HeadToken]) -> HeadRoles {
         let class_ref = owner_ref.and_then(|_| role_reference(class_index));
         let storage_ref = class_ref.and_then(|_| role_reference(storage_index));
         HeadRoles {
-            owner_ref,
-            owner_literal: None,
+            owner: owner_ref.map(HeadOwner::Entity),
             class_ref,
             storage_ref,
         }
@@ -1222,16 +1399,14 @@ pub(crate) fn repeated_reference_suffix(
 fn reference_schema_preamble(fields: &[PayloadField]) -> Option<ReferenceSchemaPreamble> {
     let mut matches = fields.windows(4).filter_map(|fields| match fields {
         [
-            PayloadField::Blob {
-                declared_len: 59, ..
-            },
+            PayloadField::Blob { bytes, .. },
             PayloadField::Atom { value: 5, .. },
             PayloadField::Atom { value: 46, .. },
             PayloadField::Atom {
                 value: schema_ref,
                 offset,
             },
-        ] => Some(ReferenceSchemaPreamble::BlobThenSchema {
+        ] if bytes.len() == 59 => Some(ReferenceSchemaPreamble::BlobThenSchema {
             schema_ref: *schema_ref,
             offset: *offset,
         }),
@@ -1241,11 +1416,9 @@ fn reference_schema_preamble(fields: &[PayloadField]) -> Option<ReferenceSchemaP
                 offset,
             },
             PayloadField::Atom { value: 34, .. },
-            PayloadField::Blob {
-                declared_len: 59, ..
-            },
+            PayloadField::Blob { bytes, .. },
             PayloadField::Atom { value: 5, .. },
-        ] => Some(ReferenceSchemaPreamble::SchemaThenBlob {
+        ] if bytes.len() == 59 => Some(ReferenceSchemaPreamble::SchemaThenBlob {
             schema_ref: *schema_ref,
             offset: *offset,
         }),
@@ -1324,13 +1497,9 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                 break;
             }
             0xe5 if blob_end(bytes, at).is_some() => {
-                let declared_len =
-                    usize::try_from(View::u32_le_at(bytes, at + 1).expect("checked blob header"))
-                        .expect("u32 fits supported usize");
                 let start = at + 5;
                 let end = blob_end(bytes, at).expect("checked blob extent");
                 fields.push(PayloadField::Blob {
-                    declared_len,
                     bytes: bytes[start..end].to_vec(),
                     offset,
                 });
@@ -1361,7 +1530,6 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                     let (rows, end) = parse_bulk_table_rows(bytes, table_end, table_count)?;
                     fields.push(PayloadField::BulkTable {
                         count,
-                        table_count,
                         rows,
                         offset,
                     });
@@ -1553,7 +1721,8 @@ fn blob_declared_end(bytes: &[u8], at: usize) -> Option<usize> {
     at.checked_add(5)?.checked_add(declared_len)
 }
 
-fn classify(fields: &[PayloadField]) -> PayloadSubtype {
+/// Structural classification of decoded payload fields.
+pub(crate) fn classify(fields: &[PayloadField]) -> PayloadSubtype {
     if fields
         .iter()
         .any(|field| matches!(field, PayloadField::BulkTable { .. }))
@@ -1623,7 +1792,6 @@ mod repeated_reference_suffix_tests {
             fields: vec![
                 atom(44, 0),
                 PayloadField::Blob {
-                    declared_len: 59,
                     bytes: vec![0; 59],
                     offset: 1,
                 },
@@ -1667,7 +1835,6 @@ mod repeated_reference_suffix_tests {
                 atom(19, 1),
                 atom(34, 2),
                 PayloadField::Blob {
-                    declared_len: 59,
                     bytes: vec![0; 59],
                     offset: 3,
                 },

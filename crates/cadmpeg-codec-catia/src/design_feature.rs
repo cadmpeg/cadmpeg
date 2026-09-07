@@ -1399,7 +1399,7 @@ fn complete_empty_declaration(
     bound_declaration(record, design_object, owner_entity_id)
         && record.storage_ref().is_none()
         && record.references.is_empty()
-        && record.subtype == PayloadSubtype::Empty
+        && record.subtype() == PayloadSubtype::Empty
         && record.payload.size == 1
         && record.payload.fields == [PayloadField::Terminator]
 }

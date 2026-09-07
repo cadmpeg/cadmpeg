@@ -22,7 +22,7 @@ pub(crate) struct TransferResult {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Packet {
-    AllFaces([u8; 4]),
+    AllFaces([u8; 3]),
     Body([u8; 4]),
 }
 
@@ -35,7 +35,8 @@ struct SourcedPacket {
 impl SourcedPacket {
     fn rgba(&self) -> [u8; 4] {
         match self.packet {
-            Packet::AllFaces(rgba) | Packet::Body(rgba) => rgba,
+            Packet::AllFaces([r, g, b]) => [r, g, b, 0xff],
+            Packet::Body(rgba) => rgba,
         }
     }
 
@@ -98,7 +99,7 @@ pub(crate) fn transfer(
     let all_faces = packets
         .iter()
         .filter_map(|packet| match packet.packet {
-            Packet::AllFaces(rgba) => Some(rgba),
+            Packet::AllFaces(_) => Some(packet.rgba()),
             Packet::Body(_) => None,
         })
         .collect::<Vec<_>>();
@@ -200,12 +201,12 @@ fn same_color_multiset(left: &[[u8; 4]], right: &[[u8; 4]]) -> bool {
 }
 
 fn packet(field: &ValueField) -> Option<Packet> {
-    let ValueField::Inline { code, bytes, .. } = field else {
+    let ValueField::Inline { bytes, .. } = field else {
         return None;
     };
-    match (*code, bytes.as_slice()) {
-        (0xeb, [0x01, r, g, b]) => Some(Packet::AllFaces([*r, *g, *b, 0xff])),
-        (0xec, [0x03, r, g, b, a]) => Some(Packet::Body([*r, *g, *b, *a])),
+    match bytes.as_slice() {
+        [0x01, r, g, b] => Some(Packet::AllFaces([*r, *g, *b])),
+        [0x03, r, g, b, a] => Some(Packet::Body([*r, *g, *b, *a])),
         _ => None,
     }
 }
@@ -353,10 +354,12 @@ mod tests {
         let payload = fields
             .iter()
             .flat_map(|field| {
-                let ValueField::Inline { code, bytes, .. } = field else {
+                let ValueField::Inline { bytes, .. } = field else {
                     panic!("appearance fixture requires inline fields");
                 };
-                [0x8e, *code, 0x84].into_iter().chain(bytes.iter().copied())
+                [0x8e, bytes.code(), 0x84]
+                    .into_iter()
+                    .chain(bytes.as_slice().iter().copied())
             })
             .collect::<Vec<_>>();
         native.value_blocks.push(CatiaValueBlock {
@@ -370,10 +373,9 @@ mod tests {
         native
     }
 
-    fn inline(code: u8, bytes: &[u8]) -> ValueField {
+    fn inline(bytes: &[u8]) -> ValueField {
         ValueField::Inline {
-            code,
-            bytes: bytes.to_vec(),
+            bytes: bytes.to_vec().try_into().expect("inline byte count"),
             offset: 0,
         }
     }
@@ -386,22 +388,28 @@ mod tests {
 
     #[test]
     fn accepts_only_exact_display_packets() {
-        let inline = |code, bytes| ValueField::Inline {
-            code,
-            bytes,
+        let inline = |bytes: Vec<u8>| ValueField::Inline {
+            bytes: bytes.try_into().expect("inline byte count"),
             offset: 0,
         };
         assert_eq!(
-            packet(&inline(0xeb, vec![1, 0xd1, 0x1a, 0x1f])),
-            Some(Packet::AllFaces([0xd1, 0x1a, 0x1f, 0xff]))
+            packet(&inline(vec![1, 0xd1, 0x1a, 0x1f])),
+            Some(Packet::AllFaces([0xd1, 0x1a, 0x1f]))
         );
         assert_eq!(
-            packet(&inline(0xec, vec![3, 0xd1, 0x1a, 0x1f, 0x99])),
+            packet(&inline(vec![3, 0xd1, 0x1a, 0x1f, 0x99])),
             Some(Packet::Body([0xd1, 0x1a, 0x1f, 0x99]))
         );
-        assert_eq!(packet(&inline(0xec, vec![3, 1, 2, 3])), None);
-        assert_eq!(packet(&inline(0xeb, vec![1, 1, 2, 3, 4])), None);
-        assert_eq!(packet(&inline(0xec, vec![1, 0xd1, 0x1a, 0x1f])), None);
+        assert_eq!(packet(&inline(vec![2, 0xd1, 0x1a, 0x1f])), None);
+        assert_eq!(packet(&inline(vec![1, 0xd1, 0x1a, 0x1f, 0x99])), None);
+        assert_eq!(packet(&inline(vec![3, 0xd1, 0x1a, 0x1f])), None);
+        assert_eq!(
+            packet(&ValueField::Marker {
+                code: 0xe7,
+                offset: 0
+            }),
+            None
+        );
     }
 
     #[test]
@@ -416,7 +424,7 @@ mod tests {
         let mut ir = model(6);
         let result = transfer(
             &mut ir,
-            &native(vec![inline(0xec, &[3, 0xd1, 0x1a, 0x1f, 0xff])]),
+            &native(vec![inline(&[3, 0xd1, 0x1a, 0x1f, 0xff])]),
             None,
             None,
         );
@@ -442,7 +450,7 @@ mod tests {
         let mut ir = model(6);
         let result = transfer(
             &mut ir,
-            &native(vec![inline(0xeb, &[1, 0xd1, 0x1a, 0x1f])]),
+            &native(vec![inline(&[1, 0xd1, 0x1a, 0x1f])]),
             None,
             None,
         );
@@ -469,8 +477,8 @@ mod tests {
         let result = transfer(
             &mut ir,
             &native(vec![
-                inline(0xeb, &[1, 0xd1, 0x1a, 0x1f]),
-                inline(0xec, &[3, 0x14, 0x3d, 0xe0, 0xff]),
+                inline(&[1, 0xd1, 0x1a, 0x1f]),
+                inline(&[3, 0x14, 0x3d, 0xe0, 0xff]),
             ]),
             None,
             None,
@@ -542,7 +550,7 @@ mod tests {
     fn positional_transparency_requires_matching_fbb_values() {
         let rgba = [0xd1, 0x1a, 0x1f, 0x99];
         let fields = (0..6)
-            .map(|_| inline(0xec, &[3, rgba[0], rgba[1], rgba[2], rgba[3]]))
+            .map(|_| inline(&[3, rgba[0], rgba[1], rgba[2], rgba[3]]))
             .collect::<Vec<_>>();
         let mut ir = model(6);
         let result = transfer(
@@ -599,7 +607,7 @@ mod tests {
     fn positional_colors_require_standard_face_population_provenance() {
         let rgba = [0xd1, 0x1a, 0x1f, 0x99];
         let fields = (0..6)
-            .map(|_| inline(0xec, &[3, rgba[0], rgba[1], rgba[2], rgba[3]]))
+            .map(|_| inline(&[3, rgba[0], rgba[1], rgba[2], rgba[3]]))
             .collect::<Vec<_>>();
         let mut ir = model(6);
         let result = transfer(&mut ir, &native(fields), None, None);
@@ -622,8 +630,8 @@ mod tests {
     #[test]
     fn positional_population_supersedes_but_still_accounts_for_all_faces_packet() {
         let rgba = [0xd1, 0x1a, 0x1f, 0x99];
-        let mut fields = vec![inline(0xeb, &[1, 0xd1, 0x1a, 0x1f])];
-        fields.extend((0..6).map(|_| inline(0xec, &[3, rgba[0], rgba[1], rgba[2], rgba[3]])));
+        let mut fields = vec![inline(&[1, 0xd1, 0x1a, 0x1f])];
+        fields.extend((0..6).map(|_| inline(&[3, rgba[0], rgba[1], rgba[2], rgba[3]])));
         let mut ir = model(6);
         let result = transfer(
             &mut ir,
@@ -694,8 +702,8 @@ mod tests {
             let result = transfer(
                 &mut ir,
                 &native(vec![
-                    inline(0xeb, &[1, gray[0], gray[1], gray[2]]),
-                    inline(0xec, &[3, blue[0], blue[1], blue[2], blue[3]]),
+                    inline(&[1, gray[0], gray[1], gray[2]]),
+                    inline(&[3, blue[0], blue[1], blue[2], blue[3]]),
                 ]),
                 None,
                 Some(&brep),
@@ -731,11 +739,11 @@ mod tests {
             [0xd9, 0x0d, 0xbf, 0xff],
             [0x0d, 0xcc, 0xd9, 0xff],
         ];
-        let fields = std::iter::once(inline(0xeb, &[1, colors[0][0], colors[0][1], colors[0][2]]))
+        let fields = std::iter::once(inline(&[1, colors[0][0], colors[0][1], colors[0][2]]))
             .chain(
                 colors[1..]
                     .iter()
-                    .map(|rgba| inline(0xec, &[3, rgba[0], rgba[1], rgba[2], rgba[3]])),
+                    .map(|rgba| inline(&[3, rgba[0], rgba[1], rgba[2], rgba[3]])),
             )
             .collect::<Vec<_>>();
         let brep = colors

@@ -3,7 +3,15 @@
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
+use super::{HeadOwner, ObjectRecord};
 use crate::test_support::*;
+
+fn owner_ref(record: &ObjectRecord) -> Option<u32> {
+    match record.roles().owner {
+        Some(HeadOwner::Entity(value)) => Some(value),
+        Some(HeadOwner::UnassignedLiteral(_)) | None => None,
+    }
+}
 
 #[test]
 fn outer_object_graph_parser_reads_nested_heads_and_payload_fields() {
@@ -11,7 +19,7 @@ fn outer_object_graph_parser_reads_nested_heads_and_payload_fields() {
 
     let graph = crate::object_graph::parse(&object_graph_stream()).unwrap();
     assert_eq!(graph.records.len(), 2);
-    assert_eq!(graph.records[0].roles().owner_ref, Some(2));
+    assert_eq!(owner_ref(&graph.records[0]), Some(2));
     assert_eq!(graph.records[0].roles().class_ref, Some(3));
     assert_eq!(graph.records[0].roles().storage_ref, Some(4));
     assert_eq!(graph.records[0].subtype(), PayloadSubtype::Mixed);
@@ -42,7 +50,7 @@ fn outer_object_graph_uses_the_unique_length_closing_child_frame() {
     let graph = crate::object_graph::parse(&object_graph_from_records(&records))
         .expect("length-closing object payload");
     assert_eq!(graph.records.len(), 2);
-    assert_eq!(graph.records[0].roles().owner_ref, None);
+    assert_eq!(owner_ref(&graph.records[0]), None);
     assert_eq!(graph.records[0].roles().class_ref, None);
     assert_eq!(
         &graph.records[0].head()[graph.records[0].head().len() - 2..],
@@ -99,7 +107,6 @@ fn object_graph_payload_assigns_blobs_only_inside_the_terminator_boundary() {
         graph.records[0].payload().fields.as_slice(),
         [
             PayloadField::Blob {
-                declared_len: 1,
                 bytes,
                 ..
             },
@@ -206,7 +213,7 @@ fn outer_object_graph_accepts_one_length_closed_record() {
     let graph = crate::object_graph::parse(&bytes).expect("one-record object graph");
 
     assert_eq!(graph.records.len(), 1);
-    assert_eq!(graph.records[0].roles().owner_ref, Some(1));
+    assert_eq!(owner_ref(&graph.records[0]), Some(1));
     assert_eq!(graph.records[0].roles().class_ref, Some(1));
     assert_eq!(
         graph.records[0].subtype(),
@@ -388,7 +395,7 @@ fn outer_object_graph_keeps_adjacent_compact_head_references_separate() {
     let graph = crate::object_graph::parse(&bytes).expect("compact object head");
     let record = &graph.records[0];
 
-    assert_eq!(record.roles().owner_ref, Some(1));
+    assert_eq!(owner_ref(record), Some(1));
     assert_eq!(record.roles().class_ref, Some(3));
     assert_eq!(record.roles().storage_ref, Some(4));
     assert_eq!(
@@ -410,7 +417,7 @@ fn outer_object_graph_does_not_slide_head_roles_across_null_handles() {
     let graph = crate::object_graph::parse(&bytes).expect("null-interrupted object head");
     let record = &graph.records[0];
 
-    assert_eq!(record.roles().owner_ref, Some(2));
+    assert_eq!(owner_ref(record), Some(2));
     assert_eq!(record.roles().class_ref, None);
     assert_eq!(record.roles().storage_ref, None);
     assert!(matches!(
@@ -427,7 +434,7 @@ fn outer_object_graph_does_not_promote_unassigned_head_bytes() {
     )]);
     let graph = crate::object_graph::parse(&bytes).expect("literal head bytes");
 
-    assert_eq!(graph.records[0].roles().owner_ref, None);
+    assert_eq!(owner_ref(&graph.records[0]), None);
     assert_eq!(graph.records[0].roles().class_ref, None);
     assert_eq!(graph.records[0].roles().storage_ref, None);
     assert_eq!(
@@ -448,7 +455,7 @@ fn outer_object_graph_requires_the_head_separator_for_relations() {
         object_graph_from_records(&[object_graph_record(&[0x04, 0x82, 0x83, 0x84], &[0xfe])]);
     let graph = crate::object_graph::parse(&bytes).expect("retained malformed head");
 
-    assert_eq!(graph.records[0].roles().owner_ref, None);
+    assert_eq!(owner_ref(&graph.records[0]), None);
     assert_eq!(graph.records[0].roles().class_ref, None);
     assert_eq!(graph.records[0].roles().storage_ref, None);
     assert!(graph.records[0]
@@ -466,12 +473,12 @@ fn outer_object_graph_reads_compact_owner_and_field_roles() {
     ]);
     let graph = crate::object_graph::parse(&bytes).expect("compact heads");
 
-    assert_eq!(graph.records[0].roles().owner_ref, Some(2));
+    assert_eq!(owner_ref(&graph.records[0]), Some(2));
     assert_eq!(graph.records[0].roles().class_ref, None);
-    assert_eq!(graph.records[1].roles().owner_ref, Some(2));
+    assert_eq!(owner_ref(&graph.records[1]), Some(2));
     assert_eq!(graph.records[1].roles().class_ref, Some(3));
     assert_eq!(graph.records[1].roles().storage_ref, None);
-    assert_eq!(graph.records[2].roles().owner_ref, Some(2));
+    assert_eq!(owner_ref(&graph.records[2]), Some(2));
     assert_eq!(graph.records[2].roles().class_ref, Some(3));
     assert_eq!(graph.records[2].roles().storage_ref, Some(4));
 }
@@ -485,7 +492,7 @@ fn outer_object_graph_reads_extended_compact_owner_roles() {
     let graph = crate::object_graph::parse(&bytes).expect("extended compact heads");
 
     for record in &graph.records {
-        assert_eq!(record.roles().owner_ref, Some(2));
+        assert_eq!(owner_ref(record), Some(2));
         assert_eq!(record.roles().class_ref, None);
         assert_eq!(record.roles().storage_ref, None);
     }
@@ -501,7 +508,7 @@ fn outer_object_graph_rejects_incomplete_extended_compact_owner_framing() {
         let bytes = object_graph_from_records(&[object_graph_record(head, &[0xfe])]);
         let graph = crate::object_graph::parse(&bytes).expect("retained compact head");
 
-        assert_eq!(graph.records[0].roles().owner_ref, None);
+        assert_eq!(owner_ref(&graph.records[0]), None);
         assert_eq!(graph.records[0].roles().class_ref, None);
         assert_eq!(graph.records[0].roles().storage_ref, None);
     }
@@ -521,7 +528,7 @@ fn outer_object_graph_reads_extended_class_storage_owner_roles() {
     for record in &graph.records {
         assert_eq!(record.roles().class_ref, Some(20));
         assert_eq!(record.roles().storage_ref, Some(0));
-        assert_eq!(record.roles().owner_ref, Some(21));
+        assert_eq!(owner_ref(record), Some(21));
     }
 }
 
@@ -536,7 +543,7 @@ fn outer_object_graph_reads_short_extended_class_storage_owner_roles() {
     for record in &graph.records {
         assert_eq!(record.roles().class_ref, Some(20));
         assert_eq!(record.roles().storage_ref, Some(21));
-        assert_eq!(record.roles().owner_ref, Some(0));
+        assert_eq!(owner_ref(record), Some(0));
     }
 }
 
@@ -553,12 +560,12 @@ fn outer_object_graph_reads_reference_terminated_class_storage_owner_roles() {
         assert_eq!(record.roles().class_ref, Some(20));
     }
     assert_eq!(graph.records[0].roles().storage_ref, Some(22));
-    assert_eq!(graph.records[0].roles().owner_ref, Some(0));
+    assert_eq!(owner_ref(&graph.records[0]), Some(0));
     for record in &graph.records[1..] {
         assert_eq!(record.roles().storage_ref, Some(0));
     }
-    assert_eq!(graph.records[1].roles().owner_ref, Some(22));
-    assert_eq!(graph.records[2].roles().owner_ref, None);
+    assert_eq!(owner_ref(&graph.records[1]), Some(22));
+    assert_eq!(owner_ref(&graph.records[2]), None);
     for record in &graph.records[1..] {
         assert!(matches!(
             record.head().last(),
@@ -580,7 +587,7 @@ fn outer_object_graph_rejects_partial_reference_terminated_roles() {
 
         assert_eq!(graph.records[0].roles().class_ref, None);
         assert_eq!(graph.records[0].roles().storage_ref, None);
-        assert_eq!(graph.records[0].roles().owner_ref, None);
+        assert_eq!(owner_ref(&graph.records[0]), None);
     }
 }
 
@@ -596,7 +603,7 @@ fn outer_object_graph_rejects_partial_short_extended_class_storage_owner_roles()
 
         assert_eq!(graph.records[0].roles().class_ref, None);
         assert_eq!(graph.records[0].roles().storage_ref, None);
-        assert_eq!(graph.records[0].roles().owner_ref, None);
+        assert_eq!(owner_ref(&graph.records[0]), None);
     }
 }
 
@@ -618,13 +625,13 @@ fn outer_object_graph_reads_two_block_extended_class_storage_owner_roles() {
     ]);
     let graph = crate::object_graph::parse(&bytes).expect("two-block extended compact heads");
 
-    assert_eq!(graph.records[0].roles().owner_ref, Some(21));
+    assert_eq!(owner_ref(&graph.records[0]), Some(21));
     for record in &graph.records {
         assert_eq!(record.roles().class_ref, Some(20));
         assert_eq!(record.roles().storage_ref, Some(0));
     }
-    assert_eq!(graph.records[1].roles().owner_ref, None);
-    assert_eq!(graph.records[2].roles().owner_ref, None);
+    assert_eq!(owner_ref(&graph.records[1]), None);
+    assert_eq!(owner_ref(&graph.records[2]), None);
 }
 
 #[test]
@@ -638,8 +645,14 @@ fn outer_object_graph_retains_roles_before_a_literal_short_extended_owner() {
 
     assert_eq!(record.roles().class_ref, Some(20));
     assert_eq!(record.roles().storage_ref, Some(0));
-    assert_eq!(record.roles().owner_ref, None);
-    assert_eq!(record.roles().owner_literal, Some(66));
+    assert_eq!(owner_ref(record), None);
+    assert_eq!(
+        record.roles().owner.and_then(|owner| match owner {
+            HeadOwner::UnassignedLiteral(value) => Some(value),
+            HeadOwner::Entity(_) => None,
+        }),
+        Some(66)
+    );
 }
 
 #[test]
@@ -654,7 +667,7 @@ fn outer_object_graph_rejects_partial_two_block_extended_roles() {
 
         assert_eq!(graph.records[0].roles().class_ref, None);
         assert_eq!(graph.records[0].roles().storage_ref, None);
-        assert_eq!(graph.records[0].roles().owner_ref, None);
+        assert_eq!(owner_ref(&graph.records[0]), None);
     }
 }
 
@@ -670,7 +683,7 @@ fn outer_object_graph_rejects_partial_extended_class_storage_owner_roles() {
 
         assert_eq!(graph.records[0].roles().class_ref, None);
         assert_eq!(graph.records[0].roles().storage_ref, None);
-        assert_eq!(graph.records[0].roles().owner_ref, None);
+        assert_eq!(owner_ref(&graph.records[0]), None);
     }
 }
 
@@ -685,7 +698,7 @@ fn outer_object_graph_reads_class_storage_owner_compact_roles() {
 
     assert_eq!(record.roles().class_ref, Some(18));
     assert_eq!(record.roles().storage_ref, Some(300));
-    assert_eq!(record.roles().owner_ref, Some(314));
+    assert_eq!(owner_ref(record), Some(314));
 }
 
 #[test]
@@ -698,10 +711,10 @@ fn outer_object_graph_retains_class_first_roles_before_an_unassigned_slot() {
 
     assert_eq!(graph.records[0].roles().class_ref, Some(20));
     assert_eq!(graph.records[0].roles().storage_ref, Some(21));
-    assert_eq!(graph.records[0].roles().owner_ref, None);
+    assert_eq!(owner_ref(&graph.records[0]), None);
     assert_eq!(graph.records[1].roles().class_ref, Some(20));
     assert_eq!(graph.records[1].roles().storage_ref, None);
-    assert_eq!(graph.records[1].roles().owner_ref, None);
+    assert_eq!(owner_ref(&graph.records[1]), None);
 }
 
 #[test]
@@ -732,9 +745,9 @@ fn outer_object_graph_reads_null_lane_class_storage_owner_roles() {
         assert_eq!(record.roles().class_ref, Some(20));
         assert_eq!(record.roles().storage_ref, Some(0));
     }
-    assert_eq!(graph.records[0].roles().owner_ref, Some(300));
+    assert_eq!(owner_ref(&graph.records[0]), Some(300));
     for record in &graph.records[1..] {
-        assert_eq!(record.roles().owner_ref, Some(0));
+        assert_eq!(owner_ref(record), Some(0));
     }
 }
 
@@ -749,7 +762,7 @@ fn outer_object_graph_reads_terminal_null_lane_roles() {
 
     assert_eq!(record.roles().class_ref, Some(20));
     assert_eq!(record.roles().storage_ref, Some(0));
-    assert_eq!(record.roles().owner_ref, Some(300));
+    assert_eq!(owner_ref(record), Some(300));
     assert!(matches!(
         record.head().last(),
         Some(crate::object_graph::HeadToken::Reference(3))
@@ -768,7 +781,7 @@ fn outer_object_graph_rejects_incomplete_terminal_null_lane_roles() {
 
         assert_eq!(graph.records[0].roles().class_ref, None);
         assert_eq!(graph.records[0].roles().storage_ref, None);
-        assert_eq!(graph.records[0].roles().owner_ref, None);
+        assert_eq!(owner_ref(&graph.records[0]), None);
     }
 }
 
@@ -783,7 +796,7 @@ fn outer_object_graph_reads_terminal_lane_class_storage_owner_roles() {
 
     assert_eq!(record.roles().class_ref, Some(20));
     assert_eq!(record.roles().storage_ref, Some(21));
-    assert_eq!(record.roles().owner_ref, Some(22));
+    assert_eq!(owner_ref(record), Some(22));
     assert!(matches!(
         record.head().last(),
         Some(crate::object_graph::HeadToken::Reference(3))
@@ -808,8 +821,8 @@ fn outer_object_graph_reads_extended_terminal_lane_roles() {
         assert_eq!(record.roles().class_ref, Some(20));
         assert_eq!(record.roles().storage_ref, Some(0));
     }
-    assert_eq!(graph.records[0].roles().owner_ref, Some(22));
-    assert_eq!(graph.records[1].roles().owner_ref, None);
+    assert_eq!(owner_ref(&graph.records[0]), Some(22));
+    assert_eq!(owner_ref(&graph.records[1]), None);
 }
 
 #[test]
@@ -825,7 +838,7 @@ fn outer_object_graph_rejects_incomplete_terminal_lane_roles() {
 
         assert_eq!(graph.records[0].roles().class_ref, None);
         assert_eq!(graph.records[0].roles().storage_ref, None);
-        assert_eq!(graph.records[0].roles().owner_ref, None);
+        assert_eq!(owner_ref(&graph.records[0]), None);
     }
 }
 
@@ -845,7 +858,7 @@ fn outer_object_graph_rejects_incomplete_null_lane_roles() {
         let bytes = object_graph_from_records(&[object_graph_record(head, &[0xfe])]);
         let graph = crate::object_graph::parse(&bytes).expect("retained compact head");
 
-        assert_eq!(graph.records[0].roles().owner_ref, None);
+        assert_eq!(owner_ref(&graph.records[0]), None);
         assert_eq!(graph.records[0].roles().class_ref, None);
         assert_eq!(graph.records[0].roles().storage_ref, None);
     }
@@ -866,7 +879,7 @@ fn outer_object_graph_reads_extended_owner_class_storage_roles() {
     let graph = crate::object_graph::parse(&bytes).expect("extended compact heads");
 
     for record in &graph.records {
-        assert_eq!(record.roles().owner_ref, Some(18));
+        assert_eq!(owner_ref(record), Some(18));
         assert_eq!(record.roles().class_ref, Some(0));
     }
     assert_eq!(graph.records[0].roles().storage_ref, Some(21));
@@ -887,7 +900,7 @@ fn outer_object_graph_rejects_incomplete_extended_owner_class_storage_roles() {
         let bytes = object_graph_from_records(&[object_graph_record(head, &[0xfe])]);
         let graph = crate::object_graph::parse(&bytes).expect("retained compact head");
 
-        assert_eq!(graph.records[0].roles().owner_ref, None);
+        assert_eq!(owner_ref(&graph.records[0]), None);
         assert_eq!(graph.records[0].roles().class_ref, None);
         assert_eq!(graph.records[0].roles().storage_ref, None);
     }
@@ -1272,7 +1285,6 @@ fn object_graph_payload_decodes_3c_bulk_table_rows() {
         [
             PayloadField::BulkTable {
                 count: 0,
-                table_count: 3,
                 rows: vec![
                     BulkTableRow {
                         row_id: 17,
@@ -1329,10 +1341,10 @@ fn outer_surface_alias_parser_reads_fixed_core() {
 
     let rows = crate::object_graph::surface_aliases(&surface_alias_stream());
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].lead, AliasLead::SurfaceSupportStorage);
-    assert_eq!(rows[0].tag, 0x0012_3456);
+    assert_eq!(rows[0].lead(), AliasLead::SurfaceSupportStorage);
+    assert_eq!(rows[0].tag(), 0x0012_3456);
     assert_eq!(rows[0].tag_raw, 0xab12_3456);
-    assert_eq!(rows[0].entity_record_ordinal, 7);
+    assert_eq!(rows[0].entity_record_ordinal(), 7);
     assert_eq!((rows[0].f2, rows[0].f3), (0x1122_3344, 0x5566_7788));
 }
 
@@ -1349,8 +1361,8 @@ fn outer_alias_parser_classifies_both_ordinal_linked_storage_leads() {
         let [row] = crate::object_graph::surface_aliases(&bytes)
             .try_into()
             .expect("one ordinal-linked alias row");
-        assert_eq!(row.lead, expected);
-        assert_eq!(row.entity_record_ordinal, 7);
+        assert_eq!(row.lead(), expected);
+        assert_eq!(row.entity_record_ordinal(), 7);
     }
 }
 
@@ -1363,8 +1375,8 @@ fn outer_alias_parser_retains_exact_unclassified_0133_lead() {
     let [row] = crate::object_graph::surface_aliases(&bytes)
         .try_into()
         .expect("one unclassified alias row");
-    assert_eq!(row.lead, AliasLead::Unclassified(0x0000_0133));
-    assert_eq!(row.entity_record_ordinal, 7);
+    assert_eq!(row.lead(), AliasLead::Unclassified(0x0000_0133));
+    assert_eq!(row.entity_record_ordinal(), 7);
 }
 
 #[test]
@@ -1389,12 +1401,12 @@ fn outer_alias_parser_closes_group_header_and_overlapping_target_slot() {
     let [row] = crate::object_graph::surface_aliases(&bytes)
         .try_into()
         .expect("one grouped alias row");
-    let group = row.group.expect("exact group header");
+    let group = row.group.as_ref().expect("exact group header");
     assert_eq!(group.prototype, 0xaf);
     assert_eq!(group.group_id, 0x148);
     assert_eq!(group.target_slot, 0x17b);
     assert_eq!(group.storage_prefix, [0x01, 0x00, 0x00, 0x00]);
-    assert_eq!(row.entity_record_ordinal, 0x7b);
+    assert_eq!(row.entity_record_ordinal(), 0x7b);
 
     bytes[10] = 1;
     let [row] = crate::object_graph::surface_aliases(&bytes)
@@ -1437,9 +1449,9 @@ fn outer_surface_alias_parser_retains_zero_low_tag_bits() {
 
     let rows = crate::object_graph::surface_aliases(&bytes);
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].tag, 0);
+    assert_eq!(rows[0].tag(), 0);
     assert_eq!(rows[0].tag_raw, 0xab00_0000);
-    assert_eq!(rows[0].entity_record_ordinal, 7);
+    assert_eq!(rows[0].entity_record_ordinal(), 7);
     assert_eq!((rows[0].f2, rows[0].f3), (0x1122_3344, 0x5566_7788));
 }
 
@@ -1483,4 +1495,129 @@ fn object_record_wire_checks_derived_roles() {
     );
     wire["owner_ref"] = serde_json::json!(2);
     assert!(serde_json::from_value::<super::ObjectRecord>(wire).is_err());
+}
+
+fn suffix_bearing_record() -> ObjectRecord {
+    use crate::object_graph::{ObjectPayload, ObjectRecordBody, PayloadField};
+
+    let atom = |value, offset| PayloadField::Atom { value, offset };
+    let reference = |value, offset| PayloadField::Reference { value, offset };
+    ObjectRecord {
+        pos: 0,
+        total_len: 89,
+        lead: 0,
+        body: ObjectRecordBody::Nested {
+            head: Vec::new(),
+            payload: ObjectPayload {
+                size: 83,
+                fields: vec![
+                    atom(44, 0),
+                    PayloadField::Blob {
+                        bytes: vec![0; 59],
+                        offset: 1,
+                    },
+                    atom(5, 65),
+                    atom(46, 66),
+                    atom(19, 67),
+                    atom(48, 68),
+                    atom(3, 69),
+                    reference(60, 70),
+                    reference(62, 72),
+                    reference(49, 74),
+                    atom(3, 76),
+                    reference(60, 77),
+                    reference(62, 79),
+                    atom(129, 81),
+                    PayloadField::Terminator,
+                ],
+            },
+        },
+    }
+}
+
+#[test]
+fn object_record_body_wire_rejects_a_subtype_disagreeing_with_the_payload() {
+    let record = suffix_bearing_record();
+    let mut wire = serde_json::to_value(&record).unwrap();
+    assert_eq!(wire["body"]["Nested"]["subtype"], serde_json::json!("Blob"));
+    assert_eq!(
+        serde_json::from_value::<ObjectRecord>(wire.clone()).unwrap(),
+        record
+    );
+
+    wire["body"]["Nested"]["subtype"] = serde_json::json!("Empty");
+    let error = serde_json::from_value::<ObjectRecord>(wire)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("subtype"), "{error}");
+}
+
+#[test]
+fn object_record_body_wire_rejects_a_repeated_suffix_disagreeing_with_the_payload() {
+    let record = suffix_bearing_record();
+    let mut wire = serde_json::to_value(&record).unwrap();
+    assert_eq!(
+        wire["body"]["Nested"]["repeated_reference_suffix"]["terminal_reference"],
+        serde_json::json!(49)
+    );
+    assert_eq!(
+        serde_json::from_value::<ObjectRecord>(wire.clone()).unwrap(),
+        record
+    );
+
+    wire["body"]["Nested"]["repeated_reference_suffix"]["terminal_reference"] =
+        serde_json::json!(50);
+    let error = serde_json::from_value::<ObjectRecord>(wire)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("repeated_reference_suffix"), "{error}");
+}
+
+#[test]
+fn payload_field_wire_rejects_a_declared_len_disagreeing_with_the_blob() {
+    use crate::object_graph::PayloadField;
+
+    let field = PayloadField::Blob {
+        bytes: vec![1, 2, 3],
+        offset: 4,
+    };
+    let mut wire = serde_json::to_value(&field).unwrap();
+    assert_eq!(wire["Blob"]["declared_len"], serde_json::json!(3));
+    assert_eq!(
+        serde_json::from_value::<PayloadField>(wire.clone()).unwrap(),
+        field
+    );
+
+    wire["Blob"]["declared_len"] = serde_json::json!(2);
+    let error = serde_json::from_value::<PayloadField>(wire)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("declared_len"), "{error}");
+}
+
+#[test]
+fn payload_field_wire_rejects_a_table_count_disagreeing_with_the_rows() {
+    use crate::object_graph::{BulkTableRow, PayloadField};
+
+    let field = PayloadField::BulkTable {
+        count: 1,
+        rows: vec![BulkTableRow {
+            row_id: 7,
+            handle: 9,
+            offset: 11,
+        }],
+        offset: 4,
+    };
+    let mut wire = serde_json::to_value(&field).unwrap();
+    assert_eq!(wire["BulkTable"]["table_count"], serde_json::json!(1));
+    assert_eq!(
+        serde_json::from_value::<PayloadField>(wire.clone()).unwrap(),
+        field
+    );
+
+    wire["BulkTable"]["table_count"] = serde_json::json!(2);
+    let error = serde_json::from_value::<PayloadField>(wire)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("table_count"), "{error}");
 }

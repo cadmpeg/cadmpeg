@@ -481,7 +481,7 @@ pub(super) fn validate_native_links(
                 || record.class_name() != expected_class.map(|(_, value)| value)
                 || record.repeated_reference_schema_selection
                     != repeated_reference_schema_selection(
-                        record.repeated_reference_suffix.as_ref(),
+                        record.repeated_reference_suffix().as_ref(),
                         catalog,
                     )
             {
@@ -509,7 +509,7 @@ pub(super) fn validate_native_links(
                 alias.id
             )));
         }
-        let expected = usize::from(alias.entity_record_ordinal)
+        let expected = usize::from(alias.entity_record_ordinal())
             .checked_sub(1)
             .and_then(|index| {
                 let graph = primary_graph?;

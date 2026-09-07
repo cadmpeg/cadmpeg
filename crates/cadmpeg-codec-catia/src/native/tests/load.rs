@@ -268,46 +268,6 @@ fn native_load_rejects_noncanonical_value_block_views() {
 }
 
 #[test]
-fn native_load_rejects_noncanonical_entity_frame_lengths() {
-    let records = [object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe])];
-    let native =
-        crate::native::CatiaNative::decode(&sequential_entity_backed_object_graph(&records));
-
-    for mutate in [
-        |record: &mut crate::native::entity_record::CatiaEntityRecord| {
-            if let crate::native::entity_record::CatiaEntityRecordBody::Nested {
-                definition_len,
-                ..
-            } = &mut record.body
-            {
-                *definition_len += 1;
-            }
-        },
-        |record: &mut crate::native::entity_record::CatiaEntityRecord| {
-            if let crate::native::entity_record::CatiaEntityRecordBody::Nested {
-                value_len, ..
-            } = &mut record.body
-            {
-                *value_len += 1;
-            }
-        },
-        |record: &mut crate::native::entity_record::CatiaEntityRecord| record.byte_len += 1,
-    ] as [fn(&mut crate::native::entity_record::CatiaEntityRecord); 3]
-    {
-        let mut malformed = native.clone();
-        mutate(&mut malformed.entity_records[0]);
-        let mut namespace = cadmpeg_ir::NativeNamespace::default();
-        malformed
-            .store(&mut namespace)
-            .expect("store malformed entity frame");
-        assert!(matches!(
-            crate::native::CatiaNative::load(&namespace),
-            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
-        ));
-    }
-}
-
-#[test]
 fn schema_configuration_productions_retain_exact_same_graph_incidence() {
     let file = standard_catpart_with_configuration_incidences(8, 5, 7);
     let native = crate::native::CatiaNative::decode(&file);

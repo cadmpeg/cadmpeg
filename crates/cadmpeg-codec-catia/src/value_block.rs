@@ -66,6 +66,61 @@ impl TryFrom<ValueBlockWire> for ValueBlock {
     }
 }
 
+/// One through eight inline bytes with a derived length code.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "InlineBytesWire", into = "InlineBytesWire")]
+pub struct InlineBytes(Vec<u8>);
+
+impl InlineBytes {
+    /// Exact inline bytes.
+    pub fn as_slice(&self) -> &[u8] {
+        &self.0
+    }
+    /// Inline length code.
+    pub fn code(&self) -> u8 {
+        0xe7 + self.0.len() as u8
+    }
+}
+
+impl TryFrom<Vec<u8>> for InlineBytes {
+    type Error = &'static str;
+    fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
+        if !(1..=8).contains(&bytes.len()) {
+            return Err("bytes must contain one through eight inline bytes");
+        }
+        Ok(Self(bytes))
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct InlineBytesWire {
+    code: u8,
+    #[serde(with = "cadmpeg_ir::bytes")]
+    #[cfg_attr(feature = "schema", schemars(with = "String"))]
+    bytes: Vec<u8>,
+}
+
+impl From<InlineBytes> for InlineBytesWire {
+    fn from(value: InlineBytes) -> Self {
+        Self {
+            code: value.code(),
+            bytes: value.0,
+        }
+    }
+}
+impl TryFrom<InlineBytesWire> for InlineBytes {
+    type Error = &'static str;
+    fn try_from(wire: InlineBytesWire) -> Result<Self, Self::Error> {
+        let bytes = Self::try_from(wire.bytes)?;
+        if wire.code != bytes.code() {
+            return Err("code disagrees with inline bytes length");
+        }
+        Ok(bytes)
+    }
+}
+
 /// One token in a `7C0B` value payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -105,12 +160,9 @@ pub enum ValueField {
     },
     /// `8E E8..EF 84` followed by one through eight inline bytes.
     Inline {
-        /// Length code; the payload length is `code - E7`.
-        code: u8,
-        /// Exact inline bytes.
-        #[serde(with = "cadmpeg_ir::bytes")]
-        #[cfg_attr(feature = "schema", schemars(with = "String"))]
-        bytes: Vec<u8>,
+        /// Exact inline bytes and their derived length code.
+        #[serde(flatten)]
+        bytes: InlineBytes,
         /// Byte offset within the value payload.
         offset: usize,
     },
@@ -237,8 +289,7 @@ pub(crate) fn tokenize(payload: &[u8]) -> Vec<ValueField> {
             let end = at + 3 + len;
             if end <= payload.len() {
                 fields.push(ValueField::Inline {
-                    code,
-                    bytes: payload[at + 3..end].to_vec(),
+                    bytes: InlineBytes(payload[at + 3..end].to_vec()),
                     offset,
                 });
                 at = end;

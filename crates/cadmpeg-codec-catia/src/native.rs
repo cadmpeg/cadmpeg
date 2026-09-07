@@ -1485,25 +1485,20 @@ pub struct CatiaPreviewImage {
 /// One exact outer `01 00 04 00` alias-row core.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "CatiaAliasRowWire", into = "CatiaAliasRowWire")]
 pub struct CatiaAliasRow {
     /// Globally unique alias-row identity.
     pub id: String,
     /// Byte offset of the four-byte alias marker.
     pub byte_offset: u64,
-    /// Classification of the preceding four-byte word.
-    pub lead: AliasLead,
     /// Complete preceding four-byte word.
     pub lead_raw: u32,
-    /// Low 24 bits of the stored tag word.
-    pub tag: u32,
     /// Complete stored tag word.
     pub tag_raw: u32,
     /// Single-byte row flag.
     pub flag: u8,
     /// Complete three-byte F1 field.
     pub f1: [u8; 3],
-    /// One-based object-graph record ordinal carried by F1.
-    pub entity_record_ordinal: u8,
     /// Primary object graph selected by the valid F1 ordinal.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub object_graph: Option<String>,
@@ -1523,6 +1518,100 @@ pub struct CatiaAliasRow {
     /// Canonical persistent surface-roster tag selected by this alias row.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub canonical_surface_tag: Option<u32>,
+}
+
+impl CatiaAliasRow {
+    /// Classification of the stored alias lead word.
+    pub fn lead(&self) -> AliasLead {
+        AliasLead::from_raw(self.lead_raw)
+    }
+    /// Low 24 bits of the stored tag word.
+    pub fn tag(&self) -> u32 {
+        self.tag_raw & 0x00ff_ffff
+    }
+    /// Entity-table ordinal from the F1 field.
+    pub fn entity_record_ordinal(&self) -> u8 {
+        self.f1[2]
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct CatiaAliasRowWire {
+    id: String,
+    byte_offset: u64,
+    lead: AliasLead,
+    lead_raw: u32,
+    tag: u32,
+    tag_raw: u32,
+    flag: u8,
+    f1: [u8; 3],
+    entity_record_ordinal: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    object_graph: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    object_record: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    design_object: Option<String>,
+    f2: u32,
+    f3: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    group: Option<AliasGroupMembership>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    canonical_surface_tag: Option<u32>,
+}
+
+impl From<CatiaAliasRow> for CatiaAliasRowWire {
+    fn from(value: CatiaAliasRow) -> Self {
+        Self {
+            lead: value.lead(),
+            tag: value.tag(),
+            entity_record_ordinal: value.entity_record_ordinal(),
+            id: value.id,
+            byte_offset: value.byte_offset,
+            lead_raw: value.lead_raw,
+            tag_raw: value.tag_raw,
+            flag: value.flag,
+            f1: value.f1,
+            object_graph: value.object_graph,
+            object_record: value.object_record,
+            design_object: value.design_object,
+            f2: value.f2,
+            f3: value.f3,
+            group: value.group,
+            canonical_surface_tag: value.canonical_surface_tag,
+        }
+    }
+}
+
+impl TryFrom<CatiaAliasRowWire> for CatiaAliasRow {
+    type Error = &'static str;
+    fn try_from(wire: CatiaAliasRowWire) -> Result<Self, Self::Error> {
+        if wire.lead != AliasLead::from_raw(wire.lead_raw) {
+            return Err("lead disagrees with source bytes");
+        }
+        if wire.tag != wire.tag_raw & 0x00ff_ffff {
+            return Err("tag disagrees with source bytes");
+        }
+        if wire.entity_record_ordinal != wire.f1[2] {
+            return Err("entity_record_ordinal disagrees with source bytes");
+        }
+        Ok(Self {
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            lead_raw: wire.lead_raw,
+            tag_raw: wire.tag_raw,
+            flag: wire.flag,
+            f1: wire.f1,
+            object_graph: wire.object_graph,
+            object_record: wire.object_record,
+            design_object: wire.design_object,
+            f2: wire.f2,
+            f3: wire.f3,
+            group: wire.group,
+            canonical_surface_tag: wire.canonical_surface_tag,
+        })
+    }
 }
 
 /// One exact `7C0B` value block adjacent to its source-schema catalog.
@@ -1941,7 +2030,7 @@ pub struct CatiaEntitySchemaValue {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
-    try_from = "CatiaRelationExpressionWire",
+    from = "CatiaRelationExpressionWire",
     into = "CatiaRelationExpressionWire"
 )]
 pub struct CatiaRelationExpression {
@@ -1998,17 +2087,15 @@ impl From<CatiaRelationExpression> for CatiaRelationExpressionWire {
     }
 }
 
-impl TryFrom<CatiaRelationExpressionWire> for CatiaRelationExpression {
-    type Error = String;
-
-    fn try_from(wire: CatiaRelationExpressionWire) -> Result<Self, Self::Error> {
-        Ok(Self {
+impl From<CatiaRelationExpressionWire> for CatiaRelationExpression {
+    fn from(wire: CatiaRelationExpressionWire) -> Self {
+        Self {
             framing: wire.framing,
             expression: wire.expression,
             parameter_role: wire.parameter_role,
             type_signature: wire.type_signature,
             function_role: wire.function_role,
-        })
+        }
     }
 }
 
@@ -2715,10 +2802,7 @@ fn stored_payload_entity_reference(
 /// One stored entity identity and its optional same-graph resolution.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(
-    try_from = "CatiaEntityReferenceWire",
-    into = "CatiaEntityReferenceWire"
-)]
+#[serde(from = "CatiaEntityReferenceWire", into = "CatiaEntityReferenceWire")]
 pub enum CatiaEntityReference {
     /// The stored identity is the graph's terminal null identity.
     Null { entity_id: u32 },
@@ -2840,22 +2924,20 @@ impl From<CatiaEntityReference> for CatiaEntityReferenceWire {
     }
 }
 
-impl TryFrom<CatiaEntityReferenceWire> for CatiaEntityReference {
-    type Error = String;
-
-    fn try_from(wire: CatiaEntityReferenceWire) -> Result<Self, Self::Error> {
+impl From<CatiaEntityReferenceWire> for CatiaEntityReference {
+    fn from(wire: CatiaEntityReferenceWire) -> Self {
         match (wire.is_null, wire.entity) {
-            (true, _) => Ok(Self::Null {
+            (true, _) => Self::Null {
                 entity_id: wire.entity_id,
-            }),
-            (false, None) => Ok(Self::Unresolved {
+            },
+            (false, None) => Self::Unresolved {
                 entity_id: wire.entity_id,
-            }),
-            (false, Some(entity)) => Ok(Self::Resolved {
+            },
+            (false, Some(entity)) => Self::Resolved {
                 entity_id: wire.entity_id,
                 entity,
                 class_name: wire.class_name,
-            }),
+            },
         }
     }
 }
@@ -2876,19 +2958,20 @@ pub struct CatiaReferenceSignature {
 /// Source-ordered descriptor records sharing one exact reference pair.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    try_from = "CatiaReferenceSignatureCohortWire",
+    into = "CatiaReferenceSignatureCohortWire"
+)]
 pub struct CatiaReferenceSignatureCohort {
+    references: entity_table::ConsecutiveReferences,
     /// Globally unique cohort identity.
     pub id: String,
     /// Containing object graph.
     pub parent: String,
     /// Zero-based order of the cohort's first member within the graph.
     pub ordinal: u64,
-    /// First identity shared by every member.
-    pub first_reference: u32,
     /// Common same-graph incidence selected by the first identity.
     pub first_entity: CatiaEntityReference,
-    /// Consecutive second identity shared by every member.
-    pub second_reference: u32,
     /// Common same-graph incidence selected by the second identity.
     pub second_entity: CatiaEntityReference,
     /// Unique schema selected by descriptor-bearing members after `_SpecList`.
@@ -2896,6 +2979,77 @@ pub struct CatiaReferenceSignatureCohort {
     pub schema_selection: Option<CatiaReferenceSignatureSchemaSelection>,
     /// Descriptor-bearing entity records in source order.
     pub members: Vec<String>,
+}
+
+impl CatiaReferenceSignatureCohort {
+    /// First reference identity shared by the cohort.
+    pub fn first_reference(&self) -> u32 {
+        self.references.first()
+    }
+    /// Second reference identity shared by the cohort.
+    pub fn second_reference(&self) -> u32 {
+        self.references.second()
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct CatiaReferenceSignatureCohortWire {
+    /// Globally unique cohort identity.
+    id: String,
+    /// Containing object graph.
+    parent: String,
+    /// Zero-based order of the cohort's first member within the graph.
+    ordinal: u64,
+    /// First identity shared by every member.
+    first_reference: u32,
+    /// Common same-graph incidence selected by the first identity.
+    first_entity: CatiaEntityReference,
+    /// Consecutive second identity shared by every member.
+    second_reference: u32,
+    /// Common same-graph incidence selected by the second identity.
+    second_entity: CatiaEntityReference,
+    /// Unique schema selected by descriptor-bearing members after `_SpecList`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    schema_selection: Option<CatiaReferenceSignatureSchemaSelection>,
+    /// Descriptor-bearing entity records in source order.
+    members: Vec<String>,
+}
+
+impl From<CatiaReferenceSignatureCohort> for CatiaReferenceSignatureCohortWire {
+    fn from(value: CatiaReferenceSignatureCohort) -> Self {
+        Self {
+            first_reference: value.first_reference(),
+            second_reference: value.second_reference(),
+            id: value.id,
+            parent: value.parent,
+            ordinal: value.ordinal,
+            first_entity: value.first_entity,
+            second_entity: value.second_entity,
+            schema_selection: value.schema_selection,
+            members: value.members,
+        }
+    }
+}
+impl TryFrom<CatiaReferenceSignatureCohortWire> for CatiaReferenceSignatureCohort {
+    type Error = &'static str;
+    fn try_from(wire: CatiaReferenceSignatureCohortWire) -> Result<Self, Self::Error> {
+        let references = entity_table::ConsecutiveReferences::new(wire.first_reference)
+            .ok_or("first_reference has no consecutive successor")?;
+        if references.second() != wire.second_reference {
+            return Err("second_reference must follow first_reference");
+        }
+        Ok(Self {
+            references,
+            id: wire.id,
+            parent: wire.parent,
+            ordinal: wire.ordinal,
+            first_entity: wire.first_entity,
+            second_entity: wire.second_entity,
+            schema_selection: wire.schema_selection,
+            members: wire.members,
+        })
+    }
 }
 
 /// Cohort-level schema incidence selected after the `_SpecList` marker.
@@ -3080,12 +3234,8 @@ pub struct CatiaObjectRecord {
     pub storage: Option<CatiaObjectStorage>,
     /// Typed nested payload, empty for an inline record.
     pub payload: ObjectPayload,
-    /// Counted reference suffix when the payload repeats its reference prefix exactly.
-    pub repeated_reference_suffix: Option<object_graph::RepeatedReferenceSuffix>,
     /// Repeated-reference preamble selector resolved through the graph catalog.
     pub repeated_reference_schema_selection: Option<CatiaRepeatedReferenceSchemaSelection>,
-    /// Structural payload classification.
-    pub subtype: PayloadSubtype,
     /// Ordered same-graph payload-reference links.
     pub references: Vec<CatiaObjectRecordReference>,
 }
@@ -3100,7 +3250,25 @@ pub enum CatiaObjectOwner {
     UnassignedLiteral(u8),
 }
 
+impl From<object_graph::HeadOwner> for CatiaObjectOwner {
+    fn from(owner: object_graph::HeadOwner) -> Self {
+        match owner {
+            object_graph::HeadOwner::Entity(value) => Self::Entity(value),
+            object_graph::HeadOwner::UnassignedLiteral(value) => Self::UnassignedLiteral(value),
+        }
+    }
+}
+
 impl CatiaObjectRecord {
+    /// Structural payload classification.
+    pub fn subtype(&self) -> PayloadSubtype {
+        object_graph::classify(&self.payload.fields)
+    }
+    /// Counted reference suffix of the payload.
+    pub fn repeated_reference_suffix(&self) -> Option<object_graph::RepeatedReferenceSuffix> {
+        object_graph::repeated_reference_suffix(&self.payload)
+    }
+
     pub fn entity_record(&self) -> Option<&str> {
         self.entity.as_ref().map(|entity| entity.record.as_str())
     }
@@ -3196,6 +3364,8 @@ struct CatiaObjectRecordWire {
 
 impl From<CatiaObjectRecord> for CatiaObjectRecordWire {
     fn from(value: CatiaObjectRecord) -> Self {
+        let subtype = value.subtype();
+        let repeated_reference_suffix = value.repeated_reference_suffix();
         let (entity_record, entity_id) = match value.entity {
             Some(entity) => (Some(entity.record), Some(entity.id)),
             None => (None, None),
@@ -3232,9 +3402,9 @@ impl From<CatiaObjectRecord> for CatiaObjectRecordWire {
             storage_record,
             storage_design_object,
             payload: value.payload,
-            repeated_reference_suffix: value.repeated_reference_suffix,
+            repeated_reference_suffix,
             repeated_reference_schema_selection: value.repeated_reference_schema_selection,
-            subtype: value.subtype,
+            subtype,
             references: value.references,
         }
     }
@@ -3244,6 +3414,14 @@ impl TryFrom<CatiaObjectRecordWire> for CatiaObjectRecord {
     type Error = String;
 
     fn try_from(wire: CatiaObjectRecordWire) -> Result<Self, Self::Error> {
+        if wire.subtype != object_graph::classify(&wire.payload.fields) {
+            return Err("subtype disagrees with payload".to_owned());
+        }
+        if wire.repeated_reference_suffix != object_graph::repeated_reference_suffix(&wire.payload)
+        {
+            return Err("repeated_reference_suffix disagrees with payload".to_owned());
+        }
+
         let entity = match (wire.entity_record, wire.entity_id) {
             (None, None) => None,
             (Some(record), Some(id)) => Some(CatiaObjectEntity { record, id }),
@@ -3291,9 +3469,7 @@ impl TryFrom<CatiaObjectRecordWire> for CatiaObjectRecord {
             class,
             storage,
             payload: wire.payload,
-            repeated_reference_suffix: wire.repeated_reference_suffix,
             repeated_reference_schema_selection: wire.repeated_reference_schema_selection,
-            subtype: wire.subtype,
             references: wire.references,
         })
     }
@@ -3303,7 +3479,7 @@ impl TryFrom<CatiaObjectRecordWire> for CatiaObjectRecord {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
-    try_from = "CatiaObjectRecordReferenceWire",
+    from = "CatiaObjectRecordReferenceWire",
     into = "CatiaObjectRecordReferenceWire"
 )]
 pub enum CatiaObjectRecordReference {
@@ -3461,18 +3637,16 @@ impl From<CatiaObjectRecordReference> for CatiaObjectRecordReferenceWire {
     }
 }
 
-impl TryFrom<CatiaObjectRecordReferenceWire> for CatiaObjectRecordReference {
-    type Error = String;
-
-    fn try_from(wire: CatiaObjectRecordReferenceWire) -> Result<Self, Self::Error> {
-        Ok(Self::from_parts(
+impl From<CatiaObjectRecordReferenceWire> for CatiaObjectRecordReference {
+    fn from(wire: CatiaObjectRecordReferenceWire) -> Self {
+        Self::from_parts(
             wire.entity_id,
             wire.payload_offset,
             wire.source,
             wire.is_null,
             wire.target,
             wire.design_object,
-        ))
+        )
     }
 }
 
@@ -3543,7 +3717,7 @@ pub enum CatiaDesignObjectRelationSource {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
-    try_from = "CatiaDesignReferenceCellWire",
+    from = "CatiaDesignReferenceCellWire",
     into = "CatiaDesignReferenceCellWire"
 )]
 pub enum CatiaDesignReferenceCell {
@@ -3746,18 +3920,16 @@ impl From<CatiaDesignReferenceCell> for CatiaDesignReferenceCellWire {
     }
 }
 
-impl TryFrom<CatiaDesignReferenceCellWire> for CatiaDesignReferenceCell {
-    type Error = String;
-
-    fn try_from(wire: CatiaDesignReferenceCellWire) -> Result<Self, Self::Error> {
-        Ok(Self::from_parts(
+impl From<CatiaDesignReferenceCellWire> for CatiaDesignReferenceCell {
+    fn from(wire: CatiaDesignReferenceCellWire) -> Self {
+        Self::from_parts(
             wire.payload_offset,
             wire.entity_id,
             wire.is_null,
             wire.field,
             wire.field_class,
             wire.design_object,
-        ))
+        )
     }
 }
 
@@ -5258,14 +5430,14 @@ fn reference_signature(
 ) -> CatiaReferenceSignature {
     let first_entity = entity_reference(
         graph_id,
-        production.first_reference,
+        production.first_reference(),
         entity_references.entities,
         entity_references.classes,
         entity_references.terminal_nulls,
     );
     let second_entity = entity_reference(
         graph_id,
-        production.second_reference,
+        production.second_reference(),
         entity_references.entities,
         entity_references.classes,
         entity_references.terminal_nulls,
@@ -5293,7 +5465,7 @@ fn derive_reference_signature_cohorts(
     entity_records: &[CatiaEntityRecord],
 ) -> Vec<CatiaReferenceSignatureCohort> {
     let mut cohorts = Vec::<CatiaReferenceSignatureCohort>::new();
-    let mut cohort_by_pair = HashMap::<(String, u32, u32), usize>::new();
+    let mut cohort_by_pair = HashMap::<(String, u32), usize>::new();
     let mut next_ordinal_by_graph = HashMap::<String, u64>::new();
     for entity in entity_records {
         let Some(signature) = &entity.reference_signature else {
@@ -5301,8 +5473,7 @@ fn derive_reference_signature_cohorts(
         };
         let key = (
             entity.object_graph.clone(),
-            signature.production.first_reference,
-            signature.production.second_reference,
+            signature.production.first_reference(),
         );
         if let Some(index) = cohort_by_pair.get(&key).copied() {
             cohorts[index].members.push(entity.id.clone());
@@ -5324,9 +5495,8 @@ fn derive_reference_signature_cohorts(
             id,
             parent: entity.object_graph.clone(),
             ordinal: *ordinal,
-            first_reference: signature.production.first_reference,
+            references: signature.production.references(),
             first_entity: signature.first_entity.clone(),
-            second_reference: signature.production.second_reference,
             second_entity: signature.second_entity.clone(),
             schema_selection: None,
             members: vec![entity.id.clone()],
@@ -8654,17 +8824,17 @@ fn resolve_alias_surface_tags(rows: &mut [CatiaAliasRow]) {
         let Some(group) = row.group.as_ref() else {
             continue;
         };
-        if row.lead != AliasLead::SurfaceSupportStorage {
+        if row.lead() != AliasLead::SurfaceSupportStorage {
             continue;
         }
         stored_by_group
             .entry((group.prototype, group.group_id))
             .and_modify(|stored| *stored = None)
-            .or_insert(Some(row.tag));
+            .or_insert(Some(row.tag()));
     }
     for row in rows {
-        row.canonical_surface_tag = match row.lead {
-            AliasLead::SurfaceSupportStorage => Some(row.tag),
+        row.canonical_surface_tag = match row.lead() {
+            AliasLead::SurfaceSupportStorage => Some(row.tag()),
             AliasLead::NonSurfaceAlias => row.group.as_ref().and_then(|group| {
                 stored_by_group
                     .get(&(group.prototype, group.group_id))
@@ -8683,7 +8853,7 @@ fn resolve_owner_chart_support_aliases(
     let mut unique_by_tag = HashMap::<u32, Option<&CatiaAliasRow>>::new();
     for alias in aliases {
         unique_by_tag
-            .entry(alias.tag)
+            .entry(alias.tag())
             .and_modify(|unique| *unique = None)
             .or_insert(Some(alias));
     }
@@ -8795,7 +8965,7 @@ impl CatiaNative {
         let paired_object_graph_roots = entity_runs
             .iter()
             .filter_map(|run| {
-                let end = run.last()?.pos.checked_add(run.last()?.total_len)?;
+                let end = run.last()?.pos.checked_add(run.last()?.total_len())?;
                 (bytes.get(end) == Some(&0xde)).then_some((end + 1, run.len()))
             })
             .collect::<HashMap<_, _>>();
@@ -8830,7 +9000,7 @@ impl CatiaNative {
         let mut entity_runs = entity_runs
             .into_iter()
             .filter_map(|run| {
-                let end = run.last()?.pos.checked_add(run.last()?.total_len)?;
+                let end = run.last()?.pos.checked_add(run.last()?.total_len())?;
                 (bytes.get(end) == Some(&0xde)).then_some(((end + 1, run.len()), run))
             })
             .collect::<HashMap<_, _>>();
@@ -8883,7 +9053,7 @@ impl CatiaNative {
                         .map(|entry| entry.value.clone());
                 }
                 record.repeated_reference_schema_selection = repeated_reference_schema_selection(
-                    record.repeated_reference_suffix.as_ref(),
+                    record.repeated_reference_suffix().as_ref(),
                     catalog,
                 );
             }
@@ -8991,7 +9161,7 @@ impl CatiaNative {
         };
         if let Some(graph) = part_graph {
             for row in &mut alias_rows {
-                let Some(index) = usize::from(row.entity_record_ordinal).checked_sub(1) else {
+                let Some(index) = usize::from(row.entity_record_ordinal()).checked_sub(1) else {
                     continue;
                 };
                 let Some(record) = graph.records.get(index) else {
@@ -9245,13 +9415,10 @@ impl From<object_graph::SurfaceAlias> for CatiaAliasRow {
         Self {
             id: format!("catia:outer:alias-row#{:010}", row.pos),
             byte_offset: row.pos as u64,
-            lead: row.lead,
             lead_raw: row.lead_raw,
-            tag: row.tag,
             tag_raw: row.tag_raw,
             flag: row.flag,
             f1: row.f1,
-            entity_record_ordinal: row.entity_record_ordinal,
             object_graph: None,
             object_record: None,
             design_object: None,
@@ -9314,10 +9481,7 @@ fn native_object_graph(
                 lead: record.lead,
                 head: record.head().to_vec(),
                 inline_body: record.inline_body().map(<[u8]>::to_vec),
-                owner: roles
-                    .owner_ref
-                    .map(CatiaObjectOwner::Entity)
-                    .or_else(|| roles.owner_literal.map(CatiaObjectOwner::UnassignedLiteral)),
+                owner: roles.owner.map(CatiaObjectOwner::from),
                 class: roles.class_ref.map(|class_ref| CatiaObjectClass {
                     class_ref,
                     class_name: None,
@@ -9329,9 +9493,7 @@ fn native_object_graph(
                     storage_design_object: None,
                 }),
                 payload: record.payload().clone(),
-                repeated_reference_suffix: record.repeated_reference_suffix().cloned(),
                 repeated_reference_schema_selection: None,
-                subtype: record.subtype(),
                 references: Vec::new(),
             }
         })
@@ -9383,18 +9545,14 @@ fn native_object_graph(
             let body = match entity.body {
                 entity_table::EntityBody::Inline(bytes) => CatiaEntityRecordBody::Inline(bytes),
                 entity_table::EntityBody::Nested {
-                    definition_len,
                     prefix,
                     suffix,
-                    value_len,
                     value_payload,
                     record_suffix,
                     ..
                 } => CatiaEntityRecordBody::Nested {
-                    definition_len,
                     definition_prefix: prefix,
                     definition_suffix: suffix,
-                    value_len,
                     value_payload,
                     record_suffix,
                 },
@@ -9406,8 +9564,6 @@ fn native_object_graph(
                 ordinal: u64::try_from(ordinal).expect("bounded entity-table ordinal fits u64"),
                 byte_offset: u64::try_from(entity.pos)
                     .expect("bounded entity-table offset fits u64"),
-                byte_len: u64::try_from(entity.total_len)
-                    .expect("bounded entity-table length fits u64"),
                 lead: entity.lead,
                 body,
                 definition_schema_selections: Vec::new(),
