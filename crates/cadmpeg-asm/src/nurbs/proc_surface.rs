@@ -768,12 +768,18 @@ pub struct EmbeddedLoftProfileMember<D = LoftProfileData> {
     pub data: D,
 }
 
-/// The path block of an embedded loft section.
-pub struct EmbeddedLoftPath {
-    /// The embedded path curve, when serialized.
-    pub curve: Option<NurbsCurve>,
+/// An embedded loft path curve and its optional endpoint bounds.
+pub struct EmbeddedLoftPathCurve {
+    /// The embedded path curve.
+    pub geometry: NurbsCurve,
     /// Optional endpoint bounds of the path curve.
     pub endpoints: Option<[Option<f64>; 2]>,
+}
+
+/// The path block of an embedded loft section.
+pub struct EmbeddedLoftPath {
+    /// The embedded path curve and its bounds, when serialized.
+    pub curve: Option<EmbeddedLoftPathCurve>,
     /// Auxiliary embedded curves, in stream order.
     pub auxiliaries: Vec<NurbsCurve>,
     /// The integer closing the path block.
@@ -1581,8 +1587,8 @@ fn revision_loft_section(
             });
         }
         let saved = cur.pos();
-        let (path_curve, path_endpoints) = if cur.take_ident() == Some("null_curve") {
-            (None, None)
+        let path_curve = if cur.take_ident() == Some("null_curve") {
+            None
         } else {
             cur.set_pos(saved);
             let curve = embedded_base_curve_resolving_refs(cur, table)?;
@@ -1590,7 +1596,10 @@ fn revision_loft_section(
                 cur.take_optional_range_value()?.value(),
                 cur.take_optional_range_value()?.value(),
             ];
-            (Some(curve), Some(endpoints))
+            Some(EmbeddedLoftPathCurve {
+                geometry: curve,
+                endpoints: Some(endpoints),
+            })
         };
         let auxiliary_count = usize::try_from(cur.take_long()?).ok()?;
         // Each auxiliary consumes at least its curve-block marker token.
@@ -1607,7 +1616,6 @@ fn revision_loft_section(
             profile,
             path: EmbeddedLoftPath {
                 curve: path_curve,
-                endpoints: path_endpoints,
                 auxiliaries,
                 flag,
             },
@@ -1743,8 +1751,10 @@ fn loft_section(cur: &mut Cur<'_>) -> Option<Vec<EmbeddedLoftSectionEntry>> {
             parameter,
             profile,
             path: EmbeddedLoftPath {
-                curve: Some(curve),
-                endpoints: None,
+                curve: Some(EmbeddedLoftPathCurve {
+                    geometry: curve,
+                    endpoints: None,
+                }),
                 auxiliaries,
                 flag,
             },
@@ -1894,8 +1904,8 @@ fn revision_cl_scale(
         });
     }
     let saved = cur.pos();
-    let (path_curve, path_endpoints) = if cur.take_ident() == Some("null_curve") {
-        (None, None)
+    let path_curve = if cur.take_ident() == Some("null_curve") {
+        None
     } else {
         cur.set_pos(saved);
         let curve = embedded_base_curve_resolving_refs(cur, table)?;
@@ -1903,7 +1913,10 @@ fn revision_cl_scale(
             cur.take_optional_range_value()?.value(),
             cur.take_optional_range_value()?.value(),
         ];
-        (Some(curve), Some(endpoints))
+        Some(EmbeddedLoftPathCurve {
+            geometry: curve,
+            endpoints: Some(endpoints),
+        })
     };
     let auxiliary_count = usize::try_from(cur.take_long()?).ok()?;
     // Each auxiliary consumes at least its curve-block marker token.
@@ -1919,7 +1932,6 @@ fn revision_cl_scale(
         profile,
         EmbeddedLoftPath {
             curve: path_curve,
-            endpoints: path_endpoints,
             auxiliaries,
             flag,
         },

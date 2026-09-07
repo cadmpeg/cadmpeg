@@ -6252,3 +6252,10 @@ crate = "cadmpeg-asm"
 kind = "field"
 item = "cadmpeg_asm::nurbs::{proc_curve, proc_surface} embedded pcurve fields"
 reason = "ASM-02: all embedded pcurve fields use cadmpeg_ir::geometry::PcurveNurbs directly instead of the delegating NurbsPcurve wrapper; cardinality checks remain in the same checked constructor."
+
+[[change]]
+commit = "673872d023973e8d2fa234d9b6ad8a07e6b353aa"
+crate = "cadmpeg-asm"
+kind = "field"
+item = "cadmpeg_asm::nurbs::proc_surface::EmbeddedLoftPath::curve"
+reason = "ASM-06: move endpoint bounds into EmbeddedLoftPathCurve so an absent path cannot carry bounds; classic curves retain omitted bounds and revision curves retain their two nullable bounds."
