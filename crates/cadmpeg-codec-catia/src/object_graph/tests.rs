@@ -107,7 +107,6 @@ fn object_graph_payload_assigns_blobs_only_inside_the_terminator_boundary() {
         graph.records[0].payload().fields.as_slice(),
         [
             PayloadField::Blob {
-                declared_len: 1,
                 bytes,
                 ..
             },
@@ -1286,7 +1285,6 @@ fn object_graph_payload_decodes_3c_bulk_table_rows() {
         [
             PayloadField::BulkTable {
                 count: 0,
-                table_count: 3,
                 rows: vec![
                     BulkTableRow {
                         row_id: 17,

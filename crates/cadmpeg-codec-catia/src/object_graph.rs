@@ -307,6 +307,7 @@ pub struct BulkTableRow {
 /// One schema-free field in a `7C0A` payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "PayloadFieldWire", into = "PayloadFieldWire")]
 pub enum PayloadField {
     /// Untagged atom.
     Atom {
@@ -333,9 +334,7 @@ pub enum PayloadField {
     },
     /// Length-framed `0xe5` binary descriptor.
     Blob {
-        /// Length declared by the frame.
-        declared_len: usize,
-        /// Available blob bytes.
+        /// Complete blob bytes.
         #[serde(with = "cadmpeg_ir::bytes")]
         #[cfg_attr(feature = "schema", schemars(with = "String"))]
         bytes: Vec<u8>,
@@ -346,8 +345,6 @@ pub enum PayloadField {
     BulkTable {
         /// Count atom preceding the table count.
         count: u32,
-        /// Little-endian table row count.
-        table_count: u32,
         /// Complete allocation rows in serialized order.
         rows: Vec<BulkTableRow>,
         /// Byte offset within the payload.
@@ -369,6 +366,130 @@ pub enum PayloadField {
     },
     /// `0xfe` payload terminator.
     Terminator,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+enum PayloadFieldWire {
+    Atom {
+        value: u32,
+        offset: usize,
+    },
+    Reference {
+        value: u32,
+        offset: usize,
+    },
+    Scalar {
+        tag: u8,
+        value: u32,
+        offset: usize,
+    },
+    Blob {
+        declared_len: usize,
+        #[serde(with = "cadmpeg_ir::bytes")]
+        #[cfg_attr(feature = "schema", schemars(with = "String"))]
+        bytes: Vec<u8>,
+        offset: usize,
+    },
+    BulkTable {
+        count: u32,
+        table_count: usize,
+        rows: Vec<BulkTableRow>,
+        offset: usize,
+    },
+    List {
+        declared_count: u32,
+        items: Vec<ListItem>,
+        offset: usize,
+    },
+    Sentinel {
+        offset: usize,
+    },
+    Terminator,
+}
+
+impl From<PayloadField> for PayloadFieldWire {
+    fn from(value: PayloadField) -> Self {
+        match value {
+            PayloadField::Atom { value, offset } => Self::Atom { value, offset },
+            PayloadField::Reference { value, offset } => Self::Reference { value, offset },
+            PayloadField::Scalar { tag, value, offset } => Self::Scalar { tag, value, offset },
+            PayloadField::Blob { bytes, offset } => Self::Blob {
+                declared_len: bytes.len(),
+                bytes,
+                offset,
+            },
+            PayloadField::BulkTable {
+                count,
+                rows,
+                offset,
+            } => Self::BulkTable {
+                count,
+                table_count: rows.len(),
+                rows,
+                offset,
+            },
+            PayloadField::List {
+                declared_count,
+                items,
+                offset,
+            } => Self::List {
+                declared_count,
+                items,
+                offset,
+            },
+            PayloadField::Sentinel { offset } => Self::Sentinel { offset },
+            PayloadField::Terminator => Self::Terminator,
+        }
+    }
+}
+impl TryFrom<PayloadFieldWire> for PayloadField {
+    type Error = &'static str;
+    fn try_from(wire: PayloadFieldWire) -> Result<Self, Self::Error> {
+        match wire {
+            PayloadFieldWire::Atom { value, offset } => Ok(Self::Atom { value, offset }),
+            PayloadFieldWire::Reference { value, offset } => Ok(Self::Reference { value, offset }),
+            PayloadFieldWire::Scalar { tag, value, offset } => {
+                Ok(Self::Scalar { tag, value, offset })
+            }
+            PayloadFieldWire::Blob {
+                declared_len,
+                bytes,
+                offset,
+            } => {
+                if declared_len != bytes.len() {
+                    return Err("declared_len disagrees with blob bytes");
+                }
+                Ok(Self::Blob { bytes, offset })
+            }
+            PayloadFieldWire::BulkTable {
+                count,
+                table_count,
+                rows,
+                offset,
+            } => {
+                if table_count != rows.len() {
+                    return Err("table_count disagrees with rows");
+                }
+                Ok(Self::BulkTable {
+                    count,
+                    rows,
+                    offset,
+                })
+            }
+            PayloadFieldWire::List {
+                declared_count,
+                items,
+                offset,
+            } => Ok(Self::List {
+                declared_count,
+                items,
+                offset,
+            }),
+            PayloadFieldWire::Sentinel { offset } => Ok(Self::Sentinel { offset }),
+            PayloadFieldWire::Terminator => Ok(Self::Terminator),
+        }
+    }
 }
 
 /// Structural role of a decoded payload.
@@ -1277,16 +1398,14 @@ pub(crate) fn repeated_reference_suffix(
 fn reference_schema_preamble(fields: &[PayloadField]) -> Option<ReferenceSchemaPreamble> {
     let mut matches = fields.windows(4).filter_map(|fields| match fields {
         [
-            PayloadField::Blob {
-                declared_len: 59, ..
-            },
+            PayloadField::Blob { bytes, .. },
             PayloadField::Atom { value: 5, .. },
             PayloadField::Atom { value: 46, .. },
             PayloadField::Atom {
                 value: schema_ref,
                 offset,
             },
-        ] => Some(ReferenceSchemaPreamble::BlobThenSchema {
+        ] if bytes.len() == 59 => Some(ReferenceSchemaPreamble::BlobThenSchema {
             schema_ref: *schema_ref,
             offset: *offset,
         }),
@@ -1296,11 +1415,9 @@ fn reference_schema_preamble(fields: &[PayloadField]) -> Option<ReferenceSchemaP
                 offset,
             },
             PayloadField::Atom { value: 34, .. },
-            PayloadField::Blob {
-                declared_len: 59, ..
-            },
+            PayloadField::Blob { bytes, .. },
             PayloadField::Atom { value: 5, .. },
-        ] => Some(ReferenceSchemaPreamble::SchemaThenBlob {
+        ] if bytes.len() == 59 => Some(ReferenceSchemaPreamble::SchemaThenBlob {
             schema_ref: *schema_ref,
             offset: *offset,
         }),
@@ -1379,13 +1496,9 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                 break;
             }
             0xe5 if blob_end(bytes, at).is_some() => {
-                let declared_len =
-                    usize::try_from(View::u32_le_at(bytes, at + 1).expect("checked blob header"))
-                        .expect("u32 fits supported usize");
                 let start = at + 5;
                 let end = blob_end(bytes, at).expect("checked blob extent");
                 fields.push(PayloadField::Blob {
-                    declared_len,
                     bytes: bytes[start..end].to_vec(),
                     offset,
                 });
@@ -1416,7 +1529,6 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                     let (rows, end) = parse_bulk_table_rows(bytes, table_end, table_count)?;
                     fields.push(PayloadField::BulkTable {
                         count,
-                        table_count,
                         rows,
                         offset,
                     });
@@ -1678,7 +1790,6 @@ mod repeated_reference_suffix_tests {
             fields: vec![
                 atom(44, 0),
                 PayloadField::Blob {
-                    declared_len: 59,
                     bytes: vec![0; 59],
                     offset: 1,
                 },
@@ -1722,7 +1833,6 @@ mod repeated_reference_suffix_tests {
                 atom(19, 1),
                 atom(34, 2),
                 PayloadField::Blob {
-                    declared_len: 59,
                     bytes: vec![0; 59],
                     offset: 3,
                 },
