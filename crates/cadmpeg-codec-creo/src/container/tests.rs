@@ -28,12 +28,21 @@ fn scan_decodes_length_prefixed_native_model_name() {
         .to_vec();
     let scan = container::scan_bytes(data.clone());
 
-    assert_eq!(scan.framing.model_name.as_deref(), Some("widget.prt "));
+    assert_eq!(
+        scan.framing
+            .model_name
+            .as_ref()
+            .map(|model| model.name.as_str()),
+        Some("widget.prt ")
+    );
     let model_name_offset = data
         .windows(b"widget.prt ".len())
         .position(|window| window == b"widget.prt ")
         .expect("model name offset");
-    assert_eq!(scan.framing.model_name_offset, Some(model_name_offset));
+    assert_eq!(
+        scan.framing.model_name.as_ref().map(|model| model.offset),
+        Some(model_name_offset)
+    );
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
@@ -94,7 +103,6 @@ fn scan_withholds_repeated_native_model_names() {
 
     let scan = container::scan_bytes(data);
     assert!(scan.framing.model_name.is_none());
-    assert!(scan.framing.model_name_offset.is_none());
 }
 
 #[test]
@@ -108,12 +116,21 @@ fn scan_decodes_binary_model_name_field_without_cmnm_header() {
     );
 
     let scan = container::scan_bytes(data.clone());
-    assert_eq!(scan.framing.model_name.as_deref(), Some("WIDGET_ROOT"));
+    assert_eq!(
+        scan.framing
+            .model_name
+            .as_ref()
+            .map(|model| model.name.as_str()),
+        Some("WIDGET_ROOT")
+    );
     let model_name_offset = data
         .windows(b"WIDGET_ROOT".len())
         .position(|window| window == b"WIDGET_ROOT")
         .expect("model name offset");
-    assert_eq!(scan.framing.model_name_offset, Some(model_name_offset));
+    assert_eq!(
+        scan.framing.model_name.as_ref().map(|model| model.offset),
+        Some(model_name_offset)
+    );
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
@@ -140,7 +157,13 @@ fn scan_skips_empty_binary_model_name_fields() {
     );
 
     let scan = container::scan_bytes(data);
-    assert_eq!(scan.framing.model_name.as_deref(), Some("ROOT"));
+    assert_eq!(
+        scan.framing
+            .model_name
+            .as_ref()
+            .map(|model| model.name.as_str()),
+        Some("ROOT")
+    );
 }
 
 #[test]

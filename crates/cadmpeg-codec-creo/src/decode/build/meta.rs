@@ -24,7 +24,7 @@ pub(in super::super) fn source_meta(
         scan.framing.version_line.clone(),
     );
     if let Some(name) = &scan.framing.model_name {
-        attributes.insert("model_name".to_string(), name.clone());
+        attributes.insert("model_name".to_string(), name.name.clone());
     }
     if let Some(legacy) = &scan.framing.legacy_ascii {
         attributes.insert("legacy_ascii_schema".to_string(), legacy.schema.clone());

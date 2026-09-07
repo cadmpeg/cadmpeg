@@ -238,6 +238,12 @@ pub struct ContainerScan<'a> {
     pub features: FeatureScan,
 }
 
+/// Native model name and its source position.
+pub struct ModelName {
+    pub name: String,
+    pub offset: usize,
+}
+
 /// Container framing: raw bytes, header, sections, and model-level diagnostics.
 pub struct FramingScan<'a> {
     /// Complete source bytes.
@@ -246,9 +252,7 @@ pub struct FramingScan<'a> {
     pub version_line: String,
     /// Native root model filename or name from `CMNM` or a binary
     /// `model_name` field.
-    pub model_name: Option<String>,
-    /// Byte offset of the native model name in the source.
-    pub model_name_offset: Option<usize>,
+    pub model_name: Option<ModelName>,
     /// Enumerated sections in file order.
     pub sections: Vec<Section>,
     /// Successfully expanded Unix-compress section payloads.
@@ -2220,8 +2224,7 @@ fn legacy_geom_depend_value(persistence: &legacy::Persistence, field_name: &str)
 pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let data = data.into();
     let version_line = line_at(&data, 0);
-    let (mut model_name, mut model_name_offset) =
-        cmnm_model_name(&data).map_or((None, None), |(name, offset)| (Some(name), Some(offset)));
+    let mut model_name = cmnm_model_name(&data).map(|(name, offset)| ModelName { name, offset });
 
     // The binary body begins after the ASCII header and TOC. Prefer the TOC end
     // marker; fall back to the header end; fall back to the magic line.
@@ -2269,8 +2272,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             .as_ref()
             .and_then(|framing| framing.persistence.model_name())
         {
-            model_name = Some(name);
-            model_name_offset = Some(offset);
+            model_name = Some(ModelName { name, offset });
         }
     }
     if model_name.is_none() {
@@ -2278,8 +2280,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             .as_ref()
             .and_then(|framing| framing.persistence.first_source_model_name())
         {
-            model_name = Some(name);
-            model_name_offset = Some(offset);
+            model_name = Some(ModelName { name, offset });
         }
     }
     let expanded_sections = expanded_sections(&data, &sections);
@@ -2368,8 +2369,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let layout = identify_layout(&data, &sections, legacy_ascii.is_some());
     if model_name.is_none() && layout != Layout::LegacyAscii {
         if let Some((name, offset)) = native_model_name(&data, &sections) {
-            model_name = Some(name);
-            model_name_offset = Some(offset);
+            model_name = Some(ModelName { name, offset });
         }
     }
     let legacy_ascii = if layout == Layout::LegacyAscii {
@@ -2464,7 +2464,9 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let mut curve_expressions = curve_expressions(
         &data,
         &sections,
-        model_name.as_deref().and_then(relation_model_name),
+        model_name
+            .as_ref()
+            .and_then(|model| relation_model_name(&model.name)),
     );
     let topology_face_ids = nonvisible_surface_rows
         .iter()
@@ -2599,7 +2601,9 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     }
     curve::reevaluate_expression_records(
         &mut curve_expressions,
-        model_name.as_deref().and_then(relation_model_name),
+        model_name
+            .as_ref()
+            .and_then(|model| relation_model_name(&model.name)),
         &relation_dimension_symbols,
     );
     let mut feature_revolution_extents = feature::revolution_extents(&feature_rows);
@@ -2635,7 +2639,6 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             data,
             version_line,
             model_name,
-            model_name_offset,
             sections,
             expanded_sections,
             layout,
@@ -2827,7 +2830,7 @@ pub(crate) fn notes(scan: &ContainerScan) -> Vec<String> {
         ),
     ];
     if let Some(name) = &scan.framing.model_name {
-        notes.push(format!("native model name: {name}"));
+        notes.push(format!("native model name: {}", name.name));
     }
     if let Some(legacy) = &scan.framing.legacy_ascii {
         let release = legacy.product_release.as_deref().unwrap_or("unspecified");

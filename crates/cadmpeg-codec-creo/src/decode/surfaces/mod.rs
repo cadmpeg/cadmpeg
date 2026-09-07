@@ -127,9 +127,8 @@ pub(super) fn transfer_part_product(
     let Some(model_name) = scan.framing.model_name.as_ref() else {
         return false;
     };
-    let Some(model_name_offset) = scan.framing.model_name_offset else {
-        return false;
-    };
+    let model_name_offset = model_name.offset;
+    let model_name = &model_name.name;
     let product_id = ProductDefinitionId::mint("creo:model:product_definition#root".to_string())
         .expect("identity grammar");
     let occurrence_id =
