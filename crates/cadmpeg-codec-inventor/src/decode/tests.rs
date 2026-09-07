@@ -99,16 +99,6 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
         native_findings[0].message.contains("segment count"),
         "{native_findings:#?}"
     );
-    assert_eq!(
-        decoded
-            .ir()
-            .native
-            .namespace("inventor")
-            .expect("Inventor native namespace exists")
-            .version(),
-        crate::native::INVENTOR_NATIVE_VERSION
-    );
-
     let options = DecodeOptions {
         container_only: true,
         ..DecodeOptions::default()

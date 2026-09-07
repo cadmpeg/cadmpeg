@@ -12,47 +12,9 @@ use crate::native::NativeConvertError;
 use crate::report::DecodeReport;
 use crate::unknown::UnknownRecord;
 
-/// Current serialized sidecar version.
-pub const SOURCE_FIDELITY_VERSION: &str = "3";
-
-/// Current serialized decode-sidecar version.
-///
-/// Version 4 carries the four-state dialect admission wire (`admitted`,
-/// `unverified`, `residual`, `refused`). Version 3 always carries
-/// `report.dialects` but spells unverified and residual admissions as one
-/// legacy `admitted_unverified` object. Version 2 carries namespaced
-/// [`crate::LossKind`] objects and omits `dialects` when the decode named no
-/// layer. Version 1 additionally spells loss codes as bare `snake_case`
-/// strings. All migrate on read.
-pub const DECODE_SIDECAR_VERSION: &str = "4";
-
-/// Prior decode-sidecar version accepted by [`DecodeSidecar::from_json`].
-pub const DECODE_SIDECAR_VERSION_V1: &str = "1";
-
-/// Prior decode-sidecar version accepted by [`DecodeSidecar::from_json`].
-pub const DECODE_SIDECAR_VERSION_V2: &str = "2";
-
-/// Prior decode-sidecar version accepted by [`DecodeSidecar::from_json`].
-pub const DECODE_SIDECAR_VERSION_V3: &str = "3";
-
-#[cfg(feature = "schema")]
-fn decode_sidecar_version_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
-    schemars::json_schema!({
-        "type": "string",
-        "const": DECODE_SIDECAR_VERSION
-    })
-}
-
-#[cfg(feature = "schema")]
-fn source_fidelity_version_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
-    schemars::json_schema!({
-        "type": "string",
-        "const": SOURCE_FIDELITY_VERSION
-    })
-}
-
 /// A decode report and source fidelity bound to exact CADIR bytes.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DecodeSidecar {
     /// SHA-256 of the exact CADIR bytes this sidecar describes.
     pub ir_sha256: String,
@@ -62,92 +24,30 @@ pub struct DecodeSidecar {
     pub fidelity: SourceFidelity,
 }
 
-#[derive(Serialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct DecodeSidecarWriteWire<'a> {
-    #[cfg_attr(
-        feature = "schema",
-        schemars(schema_with = "decode_sidecar_version_schema")
-    )]
-    version: &'static str,
-    ir_sha256: &'a str,
-    report: &'a DecodeReport,
-    fidelity: &'a SourceFidelity,
-}
-
+/// Read shape of [`DecodeSidecar`], validated before it becomes one.
 #[derive(Deserialize)]
 struct DecodeSidecarWire {
     ir_sha256: String,
     report: DecodeReport,
-    fidelity: SourceFidelityReadWire,
-}
-
-impl Serialize for DecodeSidecar {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        DecodeSidecarWriteWire {
-            version: DECODE_SIDECAR_VERSION,
-            ir_sha256: &self.ir_sha256,
-            report: &self.report,
-            fidelity: &self.fidelity,
-        }
-        .serialize(serializer)
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for DecodeSidecar {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "DecodeSidecar".into()
-    }
-
-    fn schema_id() -> std::borrow::Cow<'static, str> {
-        concat!(module_path!(), "::DecodeSidecar").into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        DecodeSidecarWriteWire::json_schema(generator)
-    }
+    fidelity: SourceFidelity,
 }
 
 impl<'de> Deserialize<'de> for DecodeSidecar {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let value = serde_json::Value::deserialize(deserializer)?;
-        Self::from_value(value).map_err(serde::de::Error::custom)
+        let wire = DecodeSidecarWire::deserialize(deserializer)?;
+        Self::from_wire(wire).map_err(serde::de::Error::custom)
     }
 }
 
 impl DecodeSidecar {
-    fn from_value(mut value: serde_json::Value) -> Result<Self, DecodeSidecarParseError> {
-        let version = value.get("version").and_then(|v| v.as_str()).unwrap_or("");
-        match version {
-            DECODE_SIDECAR_VERSION_V1 => {
-                migrate_sidecar_v1_to_v2(&mut value)?;
-                migrate_sidecar_v2_to_v3(&mut value);
-                migrate_sidecar_v3_to_v4(&mut value);
-            }
-            DECODE_SIDECAR_VERSION_V2 => {
-                migrate_sidecar_v2_to_v3(&mut value);
-                migrate_sidecar_v3_to_v4(&mut value);
-            }
-            DECODE_SIDECAR_VERSION_V3 => migrate_sidecar_v3_to_v4(&mut value),
-            DECODE_SIDECAR_VERSION => {}
-            found => {
-                return Err(DecodeSidecarParseError::Version {
-                    found: found.to_owned(),
-                });
-            }
-        }
-        let wire: DecodeSidecarWire =
-            serde_json::from_value(value).map_err(DecodeSidecarParseError::Json)?;
-        let fidelity =
-            SourceFidelity::from_wire(wire.fidelity).map_err(DecodeSidecarParseError::Fidelity)?;
-        fidelity
+    fn from_wire(wire: DecodeSidecarWire) -> Result<Self, DecodeSidecarParseError> {
+        wire.fidelity
             .validate()
             .map_err(DecodeSidecarParseError::Fidelity)?;
         Ok(Self {
             ir_sha256: wire.ir_sha256,
             report: wire.report,
-            fidelity,
+            fidelity: wire.fidelity,
         })
     }
 
@@ -170,11 +70,6 @@ impl DecodeSidecar {
         }
     }
 
-    /// Sidecar format version emitted by serialization.
-    pub fn version(&self) -> &str {
-        DECODE_SIDECAR_VERSION
-    }
-
     /// Returns whether this sidecar is bound to the supplied CADIR bytes.
     pub fn matches(&self, ir_bytes: &[u8]) -> bool {
         self.ir_sha256 == crate::hash::sha256_hex(ir_bytes)
@@ -187,72 +82,12 @@ impl DecodeSidecar {
         serde_json::to_string(&canonical)
     }
 
-    /// Parses and validates a decode sidecar.
-    ///
-    /// Reads the version first, then applies the migration steps that version
-    /// still owes, oldest first, and only then imposes the current version's
-    /// field expectations. Version [`DECODE_SIDECAR_VERSION_V1`] rewrites bare
-    /// loss `code` strings into namespaced objects under the `shared`
-    /// namespace. Version [`DECODE_SIDECAR_VERSION_V2`] gains an explicit
-    /// `report.dialects: null`, which is what omission meant in v2. Version
-    /// [`DECODE_SIDECAR_VERSION_V3`] keeps its bytes; its legacy admission
-    /// spelling is migrated by the dialect layer wire itself. All are
-    /// restamped to [`DECODE_SIDECAR_VERSION`].
+    /// Parses a decode sidecar and validates its retained records.
     pub fn from_json(text: &str) -> Result<Self, DecodeSidecarParseError> {
-        let value: serde_json::Value =
+        let wire: DecodeSidecarWire =
             serde_json::from_str(text).map_err(DecodeSidecarParseError::Json)?;
-        Self::from_value(value)
+        Self::from_wire(wire)
     }
-}
-
-/// Restamp a v3 sidecar as v4.
-///
-/// The v4 change is the admission wire inside `report.dialects`; the dialect
-/// layer wire reads the legacy spelling itself, so the bytes are kept.
-fn migrate_sidecar_v3_to_v4(value: &mut serde_json::Value) {
-    value["version"] = serde_json::Value::String(DECODE_SIDECAR_VERSION.into());
-}
-
-/// Restamp a v2 sidecar as v3.
-///
-/// The only v3 addition is an always-present `report.dialects`. Its v2
-/// omission means an unclassified report, represented in v3 by JSON `null`.
-fn migrate_sidecar_v2_to_v3(value: &mut serde_json::Value) {
-    if let Some(report) = value
-        .get_mut("report")
-        .and_then(serde_json::Value::as_object_mut)
-    {
-        report.entry("dialects").or_insert(serde_json::Value::Null);
-    }
-    value["version"] = serde_json::Value::String(DECODE_SIDECAR_VERSION_V3.into());
-}
-
-fn migrate_sidecar_v1_to_v2(value: &mut serde_json::Value) -> Result<(), DecodeSidecarParseError> {
-    value["version"] = serde_json::Value::String(DECODE_SIDECAR_VERSION_V2.into());
-    let Some(losses) = value
-        .pointer_mut("/report/losses")
-        .and_then(|losses| losses.as_array_mut())
-    else {
-        return Ok(());
-    };
-    for loss in losses {
-        let Some(code) = loss.get("code") else {
-            continue;
-        };
-        if code.is_object() {
-            continue;
-        }
-        let Some(text) = code.as_str() else {
-            return Err(DecodeSidecarParseError::Migrate(format!(
-                "v1 loss code must be a string, found {code}"
-            )));
-        };
-        let kind = crate::LossKind::from_v1_str(text).ok_or_else(|| {
-            DecodeSidecarParseError::Migrate(format!("unsupported v1 loss code {text:?}"))
-        })?;
-        loss["code"] = serde_json::to_value(kind).map_err(DecodeSidecarParseError::Json)?;
-    }
-    Ok(())
 }
 
 /// Returns the sidecar path for a CADIR path.
@@ -271,15 +106,6 @@ pub enum DecodeSidecarParseError {
     /// Invalid JSON.
     #[error("invalid decode-sidecar JSON: {0}")]
     Json(serde_json::Error),
-    /// Unsupported sidecar version.
-    #[error("unsupported decode-sidecar version: {found}")]
-    Version {
-        /// Version found in the sidecar.
-        found: String,
-    },
-    /// Version 1 → 2 migration failed.
-    #[error("decode-sidecar v1→v2 migration failed: {0}")]
-    Migrate(String),
     /// Invalid source fidelity.
     #[error(transparent)]
     Fidelity(FidelityError),
@@ -423,12 +249,6 @@ impl<'de> Deserialize<'de> for RetainedSourceRecord {
 /// Validation failure in source metadata.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum FidelityError {
-    /// The source-fidelity wire declares an unsupported schema version.
-    #[error("unsupported source-fidelity version: {found}")]
-    Version {
-        /// The version found in the sidecar.
-        found: String,
-    },
     /// Two retained records share an identifier.
     #[error("duplicate retained source record: {id}")]
     DuplicateRecord {
@@ -454,67 +274,15 @@ pub enum FidelityError {
 }
 
 /// Decode-time source annotations and retained native records.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SourceFidelity {
     /// Sparse source locations and conversion exactness.
+    #[serde(default)]
     pub annotations: Annotations,
     /// Native records retained for recovery or replay.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub retained_records: Vec<RetainedSourceRecord>,
-}
-
-#[derive(Serialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct SourceFidelityWriteWire<'a> {
-    #[cfg_attr(
-        feature = "schema",
-        schemars(schema_with = "source_fidelity_version_schema")
-    )]
-    version: &'static str,
-    annotations: &'a Annotations,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    retained_records: &'a Vec<RetainedSourceRecord>,
-}
-
-#[derive(Deserialize)]
-struct SourceFidelityReadWire {
-    version: String,
-    #[serde(default)]
-    annotations: Annotations,
-    #[serde(default)]
-    retained_records: Vec<RetainedSourceRecord>,
-}
-
-impl Serialize for SourceFidelity {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        SourceFidelityWriteWire {
-            version: SOURCE_FIDELITY_VERSION,
-            annotations: &self.annotations,
-            retained_records: &self.retained_records,
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for SourceFidelity {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Self::from_wire(SourceFidelityReadWire::deserialize(deserializer)?)
-            .map_err(serde::de::Error::custom)
-    }
-}
-
-#[cfg(feature = "schema")]
-impl JsonSchema for SourceFidelity {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "SourceFidelity".into()
-    }
-
-    fn schema_id() -> std::borrow::Cow<'static, str> {
-        concat!(module_path!(), "::SourceFidelity").into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        SourceFidelityWriteWire::json_schema(generator)
-    }
 }
 
 // Keep the explicit impl visible in the rustdoc-derived public API baseline.
@@ -529,12 +297,7 @@ impl Default for SourceFidelity {
 }
 
 impl SourceFidelity {
-    /// Representation version emitted by serialization.
-    pub fn version(&self) -> &str {
-        SOURCE_FIDELITY_VERSION
-    }
-
-    /// Current-version fidelity carrying only the given annotations.
+    /// Fidelity carrying only the given annotations.
     pub fn with_annotations(annotations: Annotations) -> Self {
         Self {
             annotations,
@@ -647,25 +410,11 @@ impl SourceFidelity {
 
     /// Parses and validates a sidecar.
     pub fn from_json(text: &str) -> Result<Self, SourceFidelityParseError> {
-        let wire: SourceFidelityReadWire =
-            serde_json::from_str(text).map_err(SourceFidelityParseError::Json)?;
-        let sidecar = Self::from_wire(wire).map_err(SourceFidelityParseError::Fidelity)?;
-        sidecar
+        let fidelity: Self = serde_json::from_str(text).map_err(SourceFidelityParseError::Json)?;
+        fidelity
             .validate()
             .map_err(SourceFidelityParseError::Fidelity)?;
-        Ok(sidecar)
-    }
-
-    fn from_wire(wire: SourceFidelityReadWire) -> Result<Self, FidelityError> {
-        if wire.version != SOURCE_FIDELITY_VERSION {
-            return Err(FidelityError::Version {
-                found: wire.version,
-            });
-        }
-        Ok(Self {
-            annotations: wire.annotations,
-            retained_records: wire.retained_records,
-        })
+        Ok(fidelity)
     }
 }
 
@@ -686,6 +435,17 @@ mod tests {
 
     fn record(id: &str, data: &[u8]) -> RetainedSourceRecord {
         RetainedSourceRecord::retained(id.to_owned(), "source", 0, data.to_vec())
+    }
+
+    fn report() -> DecodeReport {
+        DecodeReport::unclassified(
+            "test",
+            crate::report::DecodeTransfer::full(true),
+            std::collections::BTreeMap::default(),
+            Vec::new(),
+            Vec::new(),
+            crate::report::TransferLedger::default(),
+        )
     }
 
     #[test]
@@ -712,51 +472,8 @@ mod tests {
     }
 
     #[test]
-    fn source_fidelity_version_is_constant_and_rejected_at_the_read_boundary() {
-        let fidelity = SourceFidelity::default();
-        let mut wire = serde_json::to_value(&fidelity).unwrap();
-        assert_eq!(wire["version"], SOURCE_FIDELITY_VERSION);
-        assert_eq!(
-            serde_json::from_value::<SourceFidelity>(wire.clone()).unwrap(),
-            fidelity
-        );
-
-        wire["version"] = "9".into();
-        assert!(matches!(
-            SourceFidelity::from_json(&wire.to_string()),
-            Err(SourceFidelityParseError::Fidelity(FidelityError::Version {
-                found
-            })) if found == "9"
-        ));
-        serde_json::from_value::<SourceFidelity>(wire)
-            .expect_err("direct deserialization rejects an unsupported fidelity version");
-    }
-
-    #[cfg(feature = "schema")]
-    #[test]
-    fn decode_sidecar_schema_constrains_both_constant_versions() {
-        let schema = serde_json::to_value(crate::decode_sidecar_json_schema()).unwrap();
-        assert_eq!(
-            schema.pointer("/properties/version/const"),
-            Some(&serde_json::json!(DECODE_SIDECAR_VERSION))
-        );
-        assert_eq!(
-            schema.pointer("/$defs/SourceFidelity/properties/version/const"),
-            Some(&serde_json::json!(SOURCE_FIDELITY_VERSION))
-        );
-    }
-
-    #[test]
-    fn decode_sidecar_binds_exact_ir_bytes_and_validates_versions() {
-        let report = DecodeReport::unclassified(
-            "test",
-            crate::report::DecodeTransfer::full(true),
-            std::collections::BTreeMap::default(),
-            Vec::new(),
-            Vec::new(),
-            crate::report::TransferLedger::default(),
-        );
-        let sidecar = DecodeSidecar::bind(b"cad-ir", report, SourceFidelity::default());
+    fn decode_sidecar_binds_exact_ir_bytes() {
+        let sidecar = DecodeSidecar::bind(b"cad-ir", report(), SourceFidelity::default());
         assert!(sidecar.matches(b"cad-ir"));
         assert!(!sidecar.matches(b"changed"));
 
@@ -769,125 +486,14 @@ mod tests {
 
         let json = sidecar.to_canonical_json().expect("serialize sidecar");
         assert_eq!(DecodeSidecar::from_json(&json).unwrap(), sidecar);
-        assert!(json.contains("\"version\":\"4\""));
-        let wrong_version = json.replacen("\"version\":\"4\"", "\"version\":\"9\"", 1);
-        assert!(matches!(
-            DecodeSidecar::from_json(&wrong_version),
-            Err(DecodeSidecarParseError::Version { .. })
-        ));
-        let direct_error = serde_json::from_str::<DecodeSidecar>(&wrong_version)
-            .expect_err("public deserialization rejects an unknown sidecar version");
-        assert!(
-            direct_error
-                .to_string()
-                .contains("unsupported decode-sidecar version: 9"),
-            "{direct_error}"
-        );
     }
 
     #[test]
-    fn decode_sidecar_migrates_v1_losses_to_namespaced_v2() {
-        // Pin migrate-on-read against a fixture that carries losses; an empty
-        // losses array would pass under either schema.
-        let v1 = include_str!("../tests/fixtures/decode_sidecar_v1_with_losses.json");
-        let sidecar = DecodeSidecar::from_json(v1).expect("migrate v1 sidecar");
-        assert_eq!(sidecar.version(), DECODE_SIDECAR_VERSION);
-        assert_eq!(sidecar.report.losses.len(), 1);
-        let loss = &sidecar.report.losses[0];
-        assert_eq!(loss.code.namespace(), crate::SHARED_LOSS_NAMESPACE);
-        assert_eq!(loss.code.local_code(), "metadata_not_transferred");
-        assert_eq!(
-            loss.code.taxonomy(),
-            crate::LossTaxonomy::MetadataNotTransferred
-        );
-        assert_eq!(loss.message, "thumbnail");
-    }
-
-    /// A v2 sidecar omits `report.dialects`, which v3 and later always write.
-    /// It must still load, and load as unclassified — that is what a v2 decode
-    /// meant by omitting the key. The v1 fixture reaches v4 through the same
-    /// path, one step further back; a v3 sidecar is restamped as it is.
-    #[test]
-    fn decode_sidecar_loads_every_accepted_version() {
-        let v1 = include_str!("../tests/fixtures/decode_sidecar_v1_with_losses.json");
-        let migrated = DecodeSidecar::from_json(v1).expect("migrate v1 sidecar");
-        let direct_v1: DecodeSidecar =
-            serde_json::from_str(v1).expect("public deserialization migrates v1");
-        assert_eq!(direct_v1, migrated);
-
-        let v4 = migrated.to_canonical_json().expect("serialize sidecar");
-        assert!(v4.contains("\"dialects\":null"), "{v4}");
-
-        let v3 = v4.replacen("\"version\":\"4\"", "\"version\":\"3\"", 1);
-        let from_v3 = DecodeSidecar::from_json(&v3).expect("migrate v3 sidecar");
-        assert_eq!(from_v3.version(), DECODE_SIDECAR_VERSION);
-        assert_eq!(from_v3, migrated);
-
-        let v2 = v3
-            .replacen("\"version\":\"3\"", "\"version\":\"2\"", 1)
-            .replace(",\"dialects\":null", "");
-        assert!(!v2.contains("dialects"), "{v2}");
-
-        let from_v2 = DecodeSidecar::from_json(&v2).expect("migrate v2 sidecar");
-        let direct_v2: DecodeSidecar =
-            serde_json::from_str(&v2).expect("public deserialization migrates v2");
-        assert_eq!(from_v2.version(), DECODE_SIDECAR_VERSION);
-        assert!(from_v2.report.dialects().is_none());
-        assert_eq!(from_v2, migrated);
-        assert_eq!(direct_v2, migrated);
-    }
-
-    #[test]
-    fn version_three_sidecar_migrates_the_legacy_admission_wire() {
-        let dialects = cadmpeg_core::dialect::DialectLayers::of(
-            cadmpeg_core::dialect::DialectMatch::unverified(
-                cadmpeg_core::dialect::DialectId::pinned("test:unknown"),
-                cadmpeg_core::dialect::Grammar::of(&cadmpeg_core::dialect::DialectId::pinned(
-                    "test:known",
-                )),
-            ),
-        );
-        let report = DecodeReport::classified(
-            dialects,
-            crate::report::DecodeTransfer::full(true),
-            std::collections::BTreeMap::new(),
-            Vec::new(),
-            Vec::new(),
-            crate::report::TransferLedger::default(),
-        );
-        let sidecar = DecodeSidecar::bind(b"cad-ir", report, SourceFidelity::default());
-        let mut value = serde_json::to_value(sidecar).unwrap();
-        value["version"] = DECODE_SIDECAR_VERSION_V3.into();
-        value["report"]["dialects"]["primary"]["admission"] = serde_json::json!({
-            "admitted_unverified": { "using": "test:known" }
-        });
-
-        let migrated = DecodeSidecar::from_json(&value.to_string()).expect("migrate v3 sidecar");
-        let matched = migrated
-            .report
-            .dialects()
-            .expect("classified sidecar")
-            .primary();
-        assert!(matches!(
-            matched.admission(),
-            cadmpeg_core::dialect::Admission::Unverified { .. }
-        ));
-        assert_eq!(
-            matched.using(),
-            Some(cadmpeg_core::dialect::DialectId::pinned("test:known"))
-        );
-        let current = migrated.to_canonical_json().unwrap();
-        assert!(current.contains("\"version\":\"4\""), "{current}");
-        assert!(current.contains("\"unverified\""), "{current}");
-        assert!(!current.contains("admitted_unverified"), "{current}");
-    }
-
-    #[test]
-    fn current_decode_sidecar_uses_decode_report_dialect_omission_policy() {
-        let v1 = include_str!("../tests/fixtures/decode_sidecar_v1_with_losses.json");
-        let migrated = DecodeSidecar::from_json(v1).expect("migrate v1 sidecar");
-        let v4 = migrated.to_canonical_json().expect("serialize sidecar");
-        let truncated = v4.replace(",\"dialects\":null", "");
+    fn decode_sidecar_uses_decode_report_dialect_omission_policy() {
+        let sidecar = DecodeSidecar::bind(b"cad-ir", report(), SourceFidelity::default());
+        let json = sidecar.to_canonical_json().expect("serialize sidecar");
+        assert!(json.contains("\"dialects\":null"), "{json}");
+        let truncated = json.replace(",\"dialects\":null", "");
         assert!(!truncated.contains("dialects"), "{truncated}");
 
         let parsed = DecodeSidecar::from_json(&truncated)
@@ -901,21 +507,13 @@ mod tests {
     }
 
     #[test]
-    fn current_decode_sidecar_reports_a_missing_report_at_the_outer_boundary() {
-        let report = DecodeReport::unclassified(
-            "test",
-            crate::report::DecodeTransfer::full(true),
-            std::collections::BTreeMap::default(),
-            Vec::new(),
-            Vec::new(),
-            crate::report::TransferLedger::default(),
-        );
-        let sidecar = DecodeSidecar::bind(b"cad-ir", report, SourceFidelity::default());
+    fn decode_sidecar_reports_a_missing_report_at_the_outer_boundary() {
+        let sidecar = DecodeSidecar::bind(b"cad-ir", report(), SourceFidelity::default());
         let mut value = serde_json::to_value(sidecar).unwrap();
         value.as_object_mut().unwrap().remove("report");
 
         let error = DecodeSidecar::from_json(&value.to_string())
-            .expect_err("a current sidecar requires its report object");
+            .expect_err("a sidecar requires its report object");
         assert!(
             matches!(error, DecodeSidecarParseError::Json(ref error) if error.to_string().contains("missing field `report`")),
             "{error}"
@@ -924,17 +522,9 @@ mod tests {
 
     #[test]
     fn public_decode_sidecar_deserialization_validates_retained_payloads() {
-        let report = DecodeReport::unclassified(
-            "test",
-            crate::report::DecodeTransfer::full(true),
-            std::collections::BTreeMap::default(),
-            Vec::new(),
-            Vec::new(),
-            crate::report::TransferLedger::default(),
-        );
         let mut fidelity = SourceFidelity::default();
         fidelity.retained_records.push(record("record", b"payload"));
-        let sidecar = DecodeSidecar::bind(b"cad-ir", report, fidelity);
+        let sidecar = DecodeSidecar::bind(b"cad-ir", report(), fidelity);
         let mut value = serde_json::to_value(sidecar).unwrap();
         value["fidelity"]["retained_records"][0]["byte_len"] = 1.into();
         let json = value.to_string();

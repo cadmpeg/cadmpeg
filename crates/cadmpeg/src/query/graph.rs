@@ -59,7 +59,7 @@ pub struct GraphArgs {
     /// Conflicts with `--json`.
     #[arg(long, value_delimiter = ',', conflicts_with = "json")]
     pub fields: Option<Vec<String>>,
-    /// Wrap matched walks in the versioned JSON envelope.
+    /// Wrap matched walks in the JSON envelope.
     #[arg(long)]
     pub json: bool,
 }

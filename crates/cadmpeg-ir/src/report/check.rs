@@ -16,8 +16,6 @@ use crate::document::CensusKey;
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum Check {
-    /// The document schema version is not the version accepted by this build.
-    Version,
     /// Entity identifiers are empty, duplicated, or not globally unique.
     Identity,
     /// Product occurrence ownership, references, or acyclicity.
@@ -68,7 +66,6 @@ pub enum Check {
 impl fmt::Display for Check {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Self::Version => "version",
             Self::Identity => "identity",
             Self::ProductStructure => "product_structure",
             Self::Pmi => "pmi",

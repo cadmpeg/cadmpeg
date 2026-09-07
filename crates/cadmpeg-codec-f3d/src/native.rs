@@ -83,9 +83,6 @@ fn group_by_owner<T>(
     grouped
 }
 
-/// Current schema version for the Autodesk Fusion native namespace.
-pub const F3D_NATIVE_VERSION: u32 = 13;
-
 pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "act_entities",
     "act_guids",
@@ -1120,14 +1117,12 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
 ];
 
 const F3D_CATALOGUE: Catalogue<'static, F3dNative, (), cadmpeg_ir::NativeNamespace, ()> =
-    Catalogue::new(F3D_FAMILIES, None);
+    Catalogue::new(F3D_FAMILIES);
 
 /// Autodesk Fusion records retained outside the format-neutral model.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct F3dNative {
-    /// Schema version this namespace was written under; see [`F3D_NATIVE_VERSION`].
-    pub version: u32,
     /// Fusion ACT change-tracking table entities.
     #[serde(default)]
     pub act_entities: Vec<ActEntity>,
@@ -1348,86 +1343,6 @@ pub struct F3dNative {
     pub asm_histories: Vec<AsmHistory>,
 }
 
-impl Default for F3dNative {
-    fn default() -> Self {
-        Self {
-            version: F3D_NATIVE_VERSION,
-            act_entities: Vec::new(),
-            act_guids: Vec::new(),
-            act_registry_channels: Vec::new(),
-            act_root_components: Vec::new(),
-            act_table_references: Vec::new(),
-            body_native_keys: Vec::new(),
-            body_visibilities: Vec::new(),
-            design_types: Vec::new(),
-            design_body_recipe_operands: Vec::new(),
-            design_loft_legacy_body_carriers: Vec::new(),
-            design_canvas_images: Vec::new(),
-            design_decal_images: Vec::new(),
-            design_mesh_features: Vec::new(),
-            design_component_occurrences: Vec::new(),
-            design_component_naming_spaces: Vec::new(),
-            design_dimension_annotation_frames: Vec::new(),
-            design_dimension_presentation_frames: Vec::new(),
-            design_dimension_locus_pairs: Vec::new(),
-            design_dimension_locus_groups: Vec::new(),
-            design_dimension_null_locus_pairs: Vec::new(),
-            design_dimension_recipe_records: Vec::new(),
-            design_edge_operands: Vec::new(),
-            design_edge_treatment_vertex_operands: Vec::new(),
-            design_edge_identity_operands: Vec::new(),
-            design_face_operands: Vec::new(),
-            design_face_source_groups: Vec::new(),
-            design_feature_timelines: Vec::new(),
-            design_construction_operand_groups: Vec::new(),
-            design_construction_operand_identities: Vec::new(),
-            design_extrude_selection_groups: Vec::new(),
-            design_extrude_selection_members: Vec::new(),
-            design_entity_selection_operands: Vec::new(),
-            design_fillet_radius_groups: Vec::new(),
-            design_parameter_companions: Vec::new(),
-            design_parameter_owners: Vec::new(),
-            design_parameter_scopes: Vec::new(),
-            design_surface_trim_operations: Vec::new(),
-            design_parameters: Vec::new(),
-            design_sketch_placements: Vec::new(),
-            design_entity_headers: Vec::new(),
-            design_record_headers: Vec::new(),
-            design_body_members: Vec::new(),
-            design_body_bindings: Vec::new(),
-            design_body_bounds: Vec::new(),
-            design_configurations: Vec::new(),
-            design_material_assignments: Vec::new(),
-            edge_continuities: Vec::new(),
-            edge_ownerships: Vec::new(),
-            face_sidedness: Vec::new(),
-            face_native_keys: Vec::new(),
-            construction_recipes: Vec::new(),
-            creation_timestamps: Vec::new(),
-            persistent_design_links: Vec::new(),
-            persistent_references: Vec::new(),
-            persistent_subentity_tags: Vec::new(),
-            sketch_curve_links: Vec::new(),
-            sketch_relations: Vec::new(),
-            sketch_points: Vec::new(),
-            sketch_curve_identities: Vec::new(),
-            sketch_surfaces: Vec::new(),
-            sketch_texts: Vec::new(),
-            lost_edge_references: Vec::new(),
-            mesh_surface_sentinels: Vec::new(),
-            vertex_ownerships: Vec::new(),
-            tolerant_coedge_parameters: Vec::new(),
-            tolerant_edge_tails: Vec::new(),
-            tolerant_vertex_tails: Vec::new(),
-            transform_hints: Vec::new(),
-            wire_topologies: Vec::new(),
-            xref_designs: Vec::new(),
-            xref_references: Vec::new(),
-            asm_histories: Vec::new(),
-        }
-    }
-}
-
 impl F3dNative {
     pub fn load(
         namespace: &cadmpeg_ir::NativeNamespace,
@@ -1435,7 +1350,6 @@ impl F3dNative {
         #[cfg(test)]
         LOAD_COUNT.set(LOAD_COUNT.get() + 1);
         let mut native = Self {
-            version: namespace.version(),
             act_entities: namespace.arena_as("act_entities")?,
             act_guids: namespace.arena_as("act_guids")?,
             act_registry_channels: namespace.arena_as("act_registry_channels")?,
@@ -1578,9 +1492,6 @@ impl F3dNative {
         &self,
         namespace: &mut cadmpeg_ir::NativeNamespace,
     ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-        namespace.set_version(
-            std::num::NonZeroU32::new(F3D_NATIVE_VERSION).expect("F3D native version is nonzero"),
-        );
         F3D_CATALOGUE.emit_all(self, namespace)?;
         debug_assert!(F3D_ARENA_NAMES
             .iter()

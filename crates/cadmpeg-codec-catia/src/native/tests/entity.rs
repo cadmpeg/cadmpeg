@@ -67,7 +67,7 @@ fn native_namespace_retains_and_validates_definition_schema_selections() {
 
     let mut malformed = native;
     malformed.entity_records[0].definition_schema_selections[0].name = Some("Pad".to_string());
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     malformed
         .store(&mut namespace)
         .expect("store malformed definition-schema view");
@@ -99,7 +99,7 @@ fn native_namespace_retains_and_validates_repeated_reference_suffixes() {
         .as_mut()
         .expect("repeated reference suffix")
         .terminal_reference += 1;
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     malformed
         .store(&mut namespace)
         .expect("store malformed repeated-reference-suffix view");
@@ -133,7 +133,7 @@ fn native_namespace_resolves_and_validates_repeated_reference_schema_selections(
         .as_mut()
         .expect("reference schema selection")
         .name = Some("WrongSchema".to_string());
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     malformed
         .store(&mut namespace)
         .expect("store malformed reference-schema view");
@@ -168,20 +168,6 @@ fn native_namespace_retains_and_validates_complete_entity_numeric_pairs() {
             crate::entity_table::NumericPairSlot::ControlE8 { offset: 17 },
         ]
     );
-
-    let mut legacy_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    native
-        .store(&mut legacy_namespace)
-        .expect("store legacy numeric-pair view");
-    legacy_namespace.arenas.get_mut("entity_records").unwrap()[0]
-        .fields_mut()
-        .remove("numeric_pair");
-    legacy_namespace.set_version(
-        std::num::NonZeroU32::new(crate::native::CATIA_REFERENCE_SIGNATURE_COHORT_VERSION).unwrap(),
-    );
-    let migrated =
-        crate::native::CatiaNative::load(&legacy_namespace).expect("migrate numeric-pair view");
-    assert!(migrated.entity_records[0].numeric_pair().is_some());
 
     let mut wire = serde_json::to_value(&native.entity_records[0]).unwrap();
     wire["numeric_pair"]["slots"][0] =
@@ -286,138 +272,6 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         ]
     );
 
-    let expected = signature.clone();
-    let expected_cohort = cohort.clone();
-    let mut stored = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    native
-        .store(&mut stored)
-        .expect("store reference-signature incidences");
-    stored.set_version(
-        std::num::NonZeroU32::new(crate::native::CATIA_REFERENCE_SIGNATURE_INCIDENCE_VERSION - 1)
-            .unwrap(),
-    );
-    let mut stored_fields = stored
-        .arenas
-        .get_mut("entity_records")
-        .expect("stored entity records")[0]
-        .fields_mut();
-    let stored_signature = stored_fields
-        .get_mut("reference_signature")
-        .expect("stored reference signature")
-        .as_object_mut()
-        .expect("stored reference-signature object");
-    stored_signature.remove("signature_offset");
-    stored_signature.remove("second_reference_offset");
-    drop(stored_fields);
-    let migrated =
-        crate::native::CatiaNative::load(&stored).expect("migrate reference-signature incidences");
-    assert_eq!(
-        migrated.entity_records[0].reference_signature,
-        Some(expected.clone())
-    );
-
-    let mut stored = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    native
-        .store(&mut stored)
-        .expect("store resolved reference-signature incidences");
-    stored.set_version(
-        std::num::NonZeroU32::new(crate::native::CATIA_REFERENCE_SIGNATURE_ENTITY_VERSION - 1)
-            .unwrap(),
-    );
-    let mut stored_fields = stored
-        .arenas
-        .get_mut("entity_records")
-        .expect("stored entity records")[0]
-        .fields_mut();
-    let stored_signature = stored_fields
-        .get_mut("reference_signature")
-        .expect("stored reference signature")
-        .as_object_mut()
-        .expect("stored reference-signature object");
-    stored_signature.remove("first_entity");
-    stored_signature.remove("second_entity");
-    drop(stored_fields);
-    let migrated =
-        crate::native::CatiaNative::load(&stored).expect("resolve reference-signature incidences");
-    assert_eq!(
-        migrated.entity_records[0].reference_signature,
-        Some(expected.clone())
-    );
-
-    let mut stored = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    native
-        .store(&mut stored)
-        .expect("store reference-signature program");
-    stored.set_version(
-        std::num::NonZeroU32::new(crate::native::CATIA_REFERENCE_SIGNATURE_FRAME_VERSION - 1)
-            .unwrap(),
-    );
-    let mut stored_fields = stored
-        .arenas
-        .get_mut("entity_records")
-        .expect("stored entity records")[0]
-        .fields_mut();
-    let stored_signature = stored_fields
-        .get_mut("reference_signature")
-        .expect("stored reference signature")
-        .as_object_mut()
-        .expect("stored reference-signature object");
-    stored_signature.remove("prefix");
-    stored_signature.remove("signature_program");
-    drop(stored_fields);
-    let migrated =
-        crate::native::CatiaNative::load(&stored).expect("parse reference-signature program");
-    assert_eq!(
-        migrated.entity_records[0].reference_signature,
-        Some(expected.clone())
-    );
-
-    let mut stored = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    native
-        .store(&mut stored)
-        .expect("store consecutive reference-signature pair");
-    stored.set_version(
-        std::num::NonZeroU32::new(crate::native::CATIA_REFERENCE_SIGNATURE_PAIR_VERSION - 1)
-            .unwrap(),
-    );
-    let migrated =
-        crate::native::CatiaNative::load(&stored).expect("validate reference-signature pair");
-    assert_eq!(
-        migrated.entity_records[0].reference_signature,
-        Some(expected)
-    );
-
-    let mut stored = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    native
-        .store(&mut stored)
-        .expect("store reference-signature schema incidence");
-    stored.set_version(
-        std::num::NonZeroU32::new(crate::native::CATIA_REFERENCE_SIGNATURE_SCHEMA_VERSION - 1)
-            .unwrap(),
-    );
-    let migrated =
-        crate::native::CatiaNative::load(&stored).expect("derive reference-signature schema");
-    assert_eq!(
-        migrated.reference_signature_cohorts.as_slice(),
-        std::slice::from_ref(&expected_cohort)
-    );
-
-    let mut stored = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    native
-        .store(&mut stored)
-        .expect("store reference-signature cohort");
-    stored.set_version(
-        std::num::NonZeroU32::new(crate::native::CATIA_REFERENCE_SIGNATURE_COHORT_VERSION - 1)
-            .unwrap(),
-    );
-    stored.arenas.remove("reference_signature_cohorts");
-    let migrated =
-        crate::native::CatiaNative::load(&stored).expect("derive reference-signature cohort");
-    assert_eq!(
-        migrated.reference_signature_cohorts.as_slice(),
-        std::slice::from_ref(&expected_cohort)
-    );
-
     let mut file = standard_catpart();
     file.splice(16..16, bytes.clone());
     let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
@@ -511,7 +365,7 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .as_mut()
         .expect("complete reference signature")
         .second_entity = second_entity.with_entity_id(next_entity_id);
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     malformed
         .store(&mut namespace)
         .expect("store malformed reference-signature view");
@@ -527,7 +381,7 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .expect("complete reference signature")
         .production
         .signature_offset += 1;
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     malformed
         .store(&mut namespace)
         .expect("store malformed reference-signature incidence");
@@ -544,7 +398,7 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
         .production
         .signature_program
         .clear();
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     malformed
         .store(&mut namespace)
         .expect("store malformed reference-signature program");
@@ -555,7 +409,7 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
 
     let mut malformed = crate::native::CatiaNative::decode(&bytes);
     malformed.reference_signature_cohorts[0].members.clear();
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     malformed
         .store(&mut namespace)
         .expect("store malformed reference-signature cohort");
@@ -635,7 +489,7 @@ fn native_namespace_resolves_and_validates_entity_value_schema_selections() {
     );
 
     let assert_rejected = |malformed: crate::native::CatiaNative| {
-        let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+        let mut namespace = cadmpeg_ir::NativeNamespace::new();
         malformed
             .store(&mut namespace)
             .expect("store malformed entity-value schema view");
@@ -708,41 +562,12 @@ fn native_namespace_types_and_validates_named_parameter_values() {
         CatiaEntityEvaluation::Unset
     );
 
-    let mut stale_offsets = native.clone();
-    let CatiaEntitySuffixPayload::Evaluation { opcode_offset, .. } = &mut stale_offsets
-        .entity_records[0]
-        .suffix_value_mut()
-        .expect("complete named parameter suffix")
-        .payload
-    else {
-        panic!("named parameter evaluation");
-    };
-    *opcode_offset = 0;
-    stale_offsets.entity_records[0]
-        .parameter_value_mut()
-        .expect("complete named parameter value")
-        .evaluation_opcode_offset = 0;
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    stale_offsets
-        .store(&mut namespace)
-        .expect("store stale named parameter offsets");
-    namespace.set_version(
-        std::num::NonZeroU32::new(crate::native::CATIA_SUFFIX_EVALUATION_OFFSET_VERSION - 1)
-            .unwrap(),
-    );
-    let migrated =
-        crate::native::CatiaNative::load(&namespace).expect("migrate named parameter offsets");
-    assert_eq!(
-        migrated.entity_records[0].parameter_value(),
-        native.entity_records[0].parameter_value()
-    );
-
     let mut malformed_offset = native.clone();
     malformed_offset.entity_records[0]
         .parameter_value_mut()
         .expect("complete named parameter value")
         .evaluation_opcode_offset += 1;
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     malformed_offset
         .store(&mut namespace)
         .expect("store malformed named parameter offset");
@@ -757,7 +582,7 @@ fn native_namespace_types_and_validates_named_parameter_values() {
         .expect("complete named parameter value")
         .name
         .value = "changed".to_string();
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     malformed
         .store(&mut namespace)
         .expect("store malformed parameter value");
@@ -866,7 +691,7 @@ fn native_namespace_binds_two_definition_value_chains() {
     malformed_ownership.design_objects[0]
         .definition_chain_values
         .clear();
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     malformed_ownership
         .store(&mut namespace)
         .expect("store malformed definition-chain ownership");
@@ -880,7 +705,7 @@ fn native_namespace_binds_two_definition_value_chains() {
         .expect("definition-chain evaluation")
         .role
         .value = "changed".to_string();
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     native
         .store(&mut namespace)
         .expect("store malformed definition-chain evaluation");
@@ -1153,7 +978,7 @@ fn design_objects_retain_definition_chain_values_in_field_order() {
 
     let mut reversed = native;
     reversed.design_objects[0].definition_chain_values.reverse();
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     reversed
         .store(&mut namespace)
         .expect("store misordered definition-chain ownership");
@@ -1161,31 +986,10 @@ fn design_objects_retain_definition_chain_values_in_field_order() {
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
-
-    let native =
-        crate::native::CatiaNative::decode(&standard_catpart_with_two_definition_chain_values());
-    let expected = native.design_objects[0].definition_chain_values.clone();
-    let mut previous_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    native
-        .store(&mut previous_namespace)
-        .expect("store current definition-chain ownership");
-    let mut previous_design_objects: Vec<crate::native::CatiaDesignObject> = previous_namespace
-        .arena_as("design_objects")
-        .expect("load stored design objects");
-    for object in &mut previous_design_objects {
-        object.definition_chain_values.clear();
-    }
-    previous_namespace
-        .set_arena("design_objects", &previous_design_objects)
-        .expect("store previous design objects");
-    previous_namespace.set_version(std::num::NonZeroU32::new(195).unwrap());
-    let migrated = crate::native::CatiaNative::load(&previous_namespace)
-        .expect("migrate previous definition-chain ownership");
-    assert_eq!(migrated.design_objects[0].definition_chain_values, expected);
 }
 
 #[test]
-fn literal_owner_slots_remain_unassigned_and_migrate_from_previous_namespaces() {
+fn literal_owner_slots_remain_unassigned() {
     let decoded = CatiaCodec
         .decode(
             &mut Cursor::new(standard_catpart_with_unassigned_definition_chain_value()),
@@ -1238,7 +1042,7 @@ fn literal_owner_slots_remain_unassigned_and_migrate_from_previous_namespaces() 
     let mut malformed = native.clone();
     malformed.object_graphs[0].records[0].owner =
         Some(crate::native::CatiaObjectOwner::UnassignedLiteral(67));
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     malformed
         .store(&mut namespace)
         .expect("store malformed literal owner slot");
@@ -1246,25 +1050,6 @@ fn literal_owner_slots_remain_unassigned_and_migrate_from_previous_namespaces() 
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
-
-    let mut previous_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    native
-        .store(&mut previous_namespace)
-        .expect("store current literal owner slot");
-    let mut previous_records: Vec<crate::native::CatiaObjectRecord> = previous_namespace
-        .arena_as("object_graph_records")
-        .expect("load stored object records");
-    previous_records[0].owner = None;
-    previous_namespace
-        .set_arena("object_graph_records", &previous_records)
-        .expect("store previous object records");
-    previous_namespace.set_version(std::num::NonZeroU32::new(197).unwrap());
-    let migrated = crate::native::CatiaNative::load(&previous_namespace)
-        .expect("migrate previous literal owner slot");
-    assert_eq!(
-        migrated.object_graphs[0].records[0].owner,
-        Some(crate::native::CatiaObjectOwner::UnassignedLiteral(66))
-    );
 }
 
 #[test]
@@ -1346,7 +1131,7 @@ fn native_namespace_binds_and_validates_definition_values() {
         .as_mut()
         .expect("decoded storage role")
         .storage_record = None;
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     malformed_storage
         .store(&mut namespace)
         .expect("store malformed storage link");
@@ -1359,7 +1144,7 @@ fn native_namespace_binds_and_validates_definition_values() {
     malformed_ownership.design_objects[0]
         .definition_values
         .clear();
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     malformed_ownership
         .store(&mut namespace)
         .expect("store malformed definition-value ownership");
@@ -1376,7 +1161,7 @@ fn native_namespace_binds_and_validates_definition_values() {
         evaluation: CatiaEntityEvaluation::Unset,
         encoding: CatiaEntityEvaluationEncoding::Direct,
     };
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     native
         .store(&mut namespace)
         .expect("store malformed definition value");
@@ -1463,7 +1248,7 @@ fn named_parameter_value_requires_the_complete_finite_suffix() {
 }
 
 #[test]
-fn native_retains_migrates_and_validates_typed_schema_selector_incidences() {
+fn native_retains_and_validates_typed_schema_selector_incidences() {
     let native =
         crate::native::CatiaNative::decode(&standard_catpart_with_formula_relation(4, false));
     let expression_entity = &native.entity_records[1];
@@ -1496,45 +1281,13 @@ fn native_retains_migrates_and_validates_typed_schema_selector_incidences() {
         )
     );
 
-    let mut stale = native.clone();
-    let expression = stale.entity_records[1]
-        .relation_expression_mut()
-        .expect("complete relation expression");
-    expression.expression.offset = 0;
-    expression.expression.ordinal = 0;
-    let parameter = stale.entity_records[2]
-        .parameter_value_mut()
-        .expect("complete named parameter");
-    parameter.name.offset = 0;
-    parameter.name.ordinal = 0;
-    parameter.binding.offset = 0;
-    parameter.binding.ordinal = 0;
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    stale
-        .store(&mut namespace)
-        .expect("store stale typed schema incidences");
-    namespace.set_version(
-        std::num::NonZeroU32::new(crate::native::CATIA_ENTITY_SCHEMA_VALUE_INCIDENCE_VERSION - 1)
-            .unwrap(),
-    );
-    let migrated =
-        crate::native::CatiaNative::load(&namespace).expect("migrate typed schema incidences");
-    assert_eq!(
-        migrated.entity_records[1].relation_expression(),
-        native.entity_records[1].relation_expression()
-    );
-    assert_eq!(
-        migrated.entity_records[2].parameter_value(),
-        native.entity_records[2].parameter_value()
-    );
-
     let mut malformed = native;
     malformed.entity_records[2]
         .parameter_value_mut()
         .expect("complete named parameter")
         .name
         .offset = u64::MAX;
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     malformed
         .store(&mut namespace)
         .expect("store malformed typed schema incidence");
@@ -1555,7 +1308,7 @@ fn entity_value_schema_selection_excludes_a_packet_crossing_its_boundary() {
         .iter()
         .all(|selection| selection.packets.is_empty()));
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     native
         .store(&mut namespace)
         .expect("store crossing packet fixture");

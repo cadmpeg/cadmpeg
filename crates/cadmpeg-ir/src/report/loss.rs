@@ -248,11 +248,6 @@ impl LossTaxonomy {
         }
     }
 
-    /// Parse a v1 bare `snake_case` taxonomy identifier.
-    pub fn from_v1_str(text: &str) -> Option<Self> {
-        serde_json::from_value(serde_json::Value::String(text.to_owned())).ok()
-    }
-
     /// Returns the subsystem affected by this kind of loss.
     pub const fn category(self) -> LossCategory {
         match self {
@@ -341,7 +336,7 @@ pub const SHARED_LOSS_NAMESPACE: &str = "shared";
 
 /// Namespaced machine-readable loss code on the decode/export wire.
 ///
-/// Wire form (sidecar v2 / report payloads):
+/// Wire form:
 /// `{ "namespace": "rhino", "code": "brep.trim-pcurve-dropped", "kind": "pcurve_omitted" }`.
 /// The optional `strict_floor` field is omitted when it matches [`LossTaxonomy::strict_floor`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -568,11 +563,6 @@ impl LossKind {
             Self::Shared(taxonomy) => taxonomy.strict_floor(),
             Self::Namespaced(kind) => kind.strict_floor,
         }
-    }
-
-    /// Reconstruct from a v1 bare taxonomy string (`"geometry_not_transferred"`).
-    pub fn from_v1_str(text: &str) -> Option<Self> {
-        LossTaxonomy::from_v1_str(text).map(Self::shared)
     }
 }
 

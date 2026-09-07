@@ -63,8 +63,7 @@
               "id": "step:file:signature#0"
             }
           ]
-        },
-        "version": 1
+        }
       }
     },
     "source": {
@@ -194,7 +193,6 @@
         "sha256": "4658af8ce24b852b03d6801a706d9877e63da748cba1fe3cb94e6f96811fd3db",
         "stream": "source"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

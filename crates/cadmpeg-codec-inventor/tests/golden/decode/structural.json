@@ -165,8 +165,7 @@
           "unpaired_segments": [],
           "vertex_ownerships": [],
           "wire_topologies": []
-        },
-        "version": 25
+        }
       }
     },
     "source": {
@@ -305,7 +304,6 @@
     "notes": []
   },
   "source_fidelity": {
-    "annotations": {},
-    "version": "3"
+    "annotations": {}
   }
 }

@@ -49,7 +49,7 @@ fn native_namespace_types_and_validates_complete_relation_expressions() {
         .expect("complete relation expression")
         .expression
         .value = "changed".to_string();
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     malformed
         .store(&mut namespace)
         .expect("store malformed relation expression");
@@ -426,7 +426,7 @@ fn relation_expression_signature_requires_exact_outer_whitespace() {
 }
 
 #[test]
-fn native_migrates_and_validates_relation_signature_outer_whitespace() {
+fn native_validates_relation_signature_outer_whitespace() {
     let native = crate::native::CatiaNative::decode(
         &standard_catpart_with_relation_expression_signature("param", "", "( ) : LENGTH"),
     );
@@ -436,7 +436,7 @@ fn native_migrates_and_validates_relation_signature_outer_whitespace() {
         .signature()
         .is_none());
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     native
         .store(&mut namespace)
         .expect("store whitespace signature");
@@ -484,7 +484,7 @@ fn relation_expression_signature_requires_canonical_parameter_symbols() {
 }
 
 #[test]
-fn native_migrates_and_validates_relation_signature_parameter_symbols() {
+fn native_validates_relation_signature_parameter_symbols() {
     let native =
         crate::native::CatiaNative::decode(&standard_catpart_with_relation_expression_signature(
             "param",
@@ -495,7 +495,7 @@ fn native_migrates_and_validates_relation_signature_parameter_symbols() {
         .relation_expression()
         .cloned()
         .expect("relation expression");
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     native
         .store(&mut namespace)
         .expect("store relation signature");

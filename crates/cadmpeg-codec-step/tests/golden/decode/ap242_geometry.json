@@ -727,8 +727,7 @@
               ]
             }
           ]
-        },
-        "version": 1
+        }
       }
     },
     "source": {
@@ -840,7 +839,6 @@
         "sha256": "993aa7fb41284a84bc9e8c65099d76a2763b98d04b38cba7d48c74fa631b82ba",
         "stream": "source"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

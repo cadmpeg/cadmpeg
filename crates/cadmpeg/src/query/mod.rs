@@ -2,7 +2,7 @@
 //! Named projections over cadmpeg JSON artifacts.
 //!
 //! `cadmpeg query` reads one of the three JSON artifact kinds the CLI
-//! produces — a decoded CADIR document, a versioned command report, or a
+//! produces — a decoded CADIR document, a CLI command report, or a
 //! `<stem>.fidelity.json` decode sidecar — detects which one it was given, and prints one
 //! named view. Aggregate views print tab-separated rows; `item`, `graph`, and
 //! `join` print pretty-printed JSON records (or a TSV projection with `--fields`). It
@@ -30,8 +30,6 @@ use serde::de::{IgnoredAny, SeqAccess, Visitor};
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
-
-use crate::commands::CLI_SCHEMA_VERSION;
 
 pub use fidelity::FidelityArgs;
 pub use graph::GraphArgs;
@@ -107,8 +105,7 @@ pub enum QueryView {
     Join(JoinArgs),
     /// Retained source bytes.
     ///
-    /// Loads versions 1 and 2 through the supported migrations and validates
-    /// the current sidecar before listing or extracting anything.
+    /// Validates the sidecar before listing or extracting anything.
     ///
     /// The bare view lists `retained_records` as a table (stream, offset,
     /// bytes, whether the bytes are retained, id) with annotation counts
@@ -172,7 +169,7 @@ impl AggregateView {
 
 /// Which artifact kind a JSON file turned out to be.
 enum Artifact {
-    /// A versioned CLI command report (`--report`/`-o`).
+    /// A CLI command report (`--report`/`-o`).
     Report(Box<ReportProbe>),
     /// A decoded CADIR document.
     Cadir(CadirProbe),
@@ -193,10 +190,9 @@ impl Artifact {
 /// Top-level key sniff. Every field optional; unknown fields ignored.
 #[derive(Deserialize)]
 struct KindProbe {
-    schema_version: Option<u32>,
     command: Option<String>,
+    status: Option<String>,
     ir_version: Option<String>,
-    version: Option<String>,
     ir_sha256: Option<String>,
 }
 
@@ -204,15 +200,14 @@ struct KindProbe {
 /// are JSON `null`; sections this build does not know stay unparsed.
 #[derive(Deserialize)]
 struct ReportProbe {
-    schema_version: u32,
     command: String,
     /// Binary that wrote the report; absent in reports from older builds.
     #[serde(default)]
     generator: Option<String>,
-    /// Present from `schema_version` 6 (`ok` | `refused`).
+    /// `ok` | `refused`.
     #[serde(default)]
     status: Option<String>,
-    /// Present from `schema_version` 6; null on success.
+    /// Null on success.
     #[serde(default)]
     refusal: Option<RefusalProbe>,
     #[serde(default)]
@@ -309,46 +304,22 @@ struct LossProbe {
     message: Option<String>,
 }
 
-/// Accepts v1 bare strings and v2 `{ namespace, code, kind }` objects.
+/// Wire loss code: `{ namespace, code, kind }`; `kind` is not projected.
 #[derive(Deserialize)]
-#[serde(untagged)]
-enum LossCodeProbe {
-    Legacy(String),
-    Namespaced { namespace: String, code: String },
+struct LossCodeProbe {
+    namespace: String,
+    code: String,
 }
 
 impl LossCodeProbe {
     fn display(&self) -> String {
-        match self {
-            Self::Legacy(code) => cadmpeg_ir::LossKind::from_v1_str(code)
-                .map_or_else(|| code.clone(), |kind| kind.to_string()),
-            Self::Namespaced { namespace, code } => format!("{namespace}/{code}"),
-        }
+        format!("{}/{}", self.namespace, self.code)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_core::dialect::{Admission, DialectMatch};
-    use cadmpeg_ir::SourceMeta;
-
-    use super::{push_decode_dialect_summary, DecodeReportProbe, LossCodeProbe};
-
-    #[test]
-    fn legacy_loss_codes_use_the_shared_migration_spelling() {
-        assert_eq!(
-            LossCodeProbe::Legacy("metadata_not_transferred".to_owned()).display(),
-            "shared/metadata_not_transferred"
-        );
-    }
-
-    #[test]
-    fn unknown_legacy_loss_codes_remain_visible_in_lenient_queries() {
-        assert_eq!(
-            LossCodeProbe::Legacy("future_loss".to_owned()).display(),
-            "future_loss"
-        );
-    }
+    use super::{push_decode_dialect_summary, DecodeReportProbe};
 
     #[test]
     fn decode_summary_names_every_extra_dialect_layer() {
@@ -364,7 +335,7 @@ mod tests {
                     "format": "acis",
                     "dialect": "acis:sab-22300",
                     "declared": {"save_format": "22300"},
-                    "admission": {"admitted_unverified": {"using": "acis:sab-22200"}},
+                    "admission": {"unverified": {"using": "acis:sab-22200"}},
                     "instance": "member:model.sab"
                 }]
             }
@@ -392,76 +363,6 @@ mod tests {
             ]
         );
     }
-
-    #[test]
-    fn dialect_wire_projects_both_legacy_unverified_states() {
-        let substituted: DialectMatch = serde_json::from_value(serde_json::json!({
-            "format": "acis",
-            "dialect": "acis:sab-22300",
-            "admission": {"admitted_unverified": {"using": "acis:sab-22200"}}
-        }))
-        .unwrap();
-        assert_eq!(
-            substituted
-                .using()
-                .as_ref()
-                .map(cadmpeg_core::dialect::DialectId::as_str),
-            Some("acis:sab-22200")
-        );
-        assert!(matches!(
-            substituted.admission(),
-            Admission::Unverified { .. }
-        ));
-
-        let residual: DialectMatch = serde_json::from_value(serde_json::json!({
-            "format": "acis",
-            "dialect": "acis:sab-22300",
-            "admission": {"admitted_unverified": {}}
-        }))
-        .unwrap();
-        assert_eq!(residual.admission(), &Admission::Residual);
-    }
-
-    #[test]
-    fn source_probe_migrates_legacy_identity_and_rejects_two_identity_fields() {
-        let legacy: SourceMeta = serde_json::from_value(serde_json::json!({
-            "format": "rhino",
-            "dialect": {
-                "format": "rhino",
-                "dialect": "rhino:archive-80",
-                "admission": "admitted"
-            }
-        }))
-        .unwrap();
-        let layers = legacy.dialects().unwrap();
-        assert_eq!(layers.primary().dialect().as_str(), "rhino:archive-80");
-        assert_eq!(layers.iter().count(), 1);
-
-        let Err(error) = serde_json::from_value::<SourceMeta>(serde_json::json!({
-            "format": "rhino",
-            "dialects": {
-                "primary": {
-                    "format": "rhino",
-                    "dialect": "rhino:archive-80",
-                    "admission": "admitted"
-                },
-                "extra": []
-            },
-            "dialect": {
-                "format": "rhino",
-                "dialect": "rhino:archive-80",
-                "admission": "admitted"
-            }
-        })) else {
-            panic!("two source identity fields are ambiguous");
-        };
-        assert!(
-            error
-                .to_string()
-                .contains("cannot contain both dialects and legacy dialect fields"),
-            "{error}"
-        );
-    }
 }
 
 /// Lenient CADIR document probe: arena contents are counted, never
@@ -484,35 +385,12 @@ struct NativeNamespaceProbe {
     arenas: BTreeMap<String, ArenaLen>,
 }
 
-/// Bounded decode-sidecar projection. Versions 1 through 3 are projected
-/// through their version-4 meaning without materializing retained payload
-/// bytes.
+/// Bounded decode-sidecar projection. Retained payload bytes are not
+/// materialized.
 #[derive(Deserialize)]
 struct SidecarProbe {
-    #[serde(deserialize_with = "deserialize_sidecar_version")]
-    version: SidecarVersion,
     #[serde(default)]
     report: Option<DecodeReportProbe>,
-}
-
-enum SidecarVersion {
-    Current,
-    Migrated { from: String },
-}
-
-fn deserialize_sidecar_version<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<SidecarVersion, D::Error> {
-    let found = String::deserialize(deserializer)?;
-    match found.as_str() {
-        cadmpeg_ir::DECODE_SIDECAR_VERSION => Ok(SidecarVersion::Current),
-        cadmpeg_ir::DECODE_SIDECAR_VERSION_V1
-        | cadmpeg_ir::DECODE_SIDECAR_VERSION_V2
-        | cadmpeg_ir::DECODE_SIDECAR_VERSION_V3 => Ok(SidecarVersion::Migrated { from: found }),
-        _ => Err(serde::de::Error::custom(format_args!(
-            "unsupported decode-sidecar version: {found}"
-        ))),
-    }
 }
 
 /// Length of a JSON array, counted without materializing its elements.
@@ -624,7 +502,7 @@ fn detect(bytes: &[u8], path: &Path) -> Result<Artifact> {
             path.display()
         )
     })?;
-    if sniff.schema_version.is_some() && sniff.command.is_some() {
+    if sniff.command.is_some() && sniff.status.is_some() {
         let report: ReportProbe = serde_json::from_slice(bytes)
             .with_context(|| format!("parsing the command report {}", path.display()))?;
         return Ok(Artifact::Report(Box::new(report)));
@@ -634,16 +512,15 @@ fn detect(bytes: &[u8], path: &Path) -> Result<Artifact> {
             .with_context(|| format!("parsing the CADIR document {}", path.display()))?;
         return Ok(Artifact::Cadir(cadir));
     }
-    if sniff.version.is_some() && sniff.ir_sha256.is_some() {
+    if sniff.ir_sha256.is_some() {
         let sidecar: SidecarProbe = serde_json::from_slice(bytes)
             .with_context(|| format!("parsing the decode sidecar {}", path.display()))?;
         return Ok(Artifact::Sidecar(sidecar));
     }
     bail!(
         "{} is JSON but not a recognized artifact; query reads a command report \
-         (top-level `schema_version` and `command`), a decoded CADIR document \
-         (`ir_version` and `model`), or a .fidelity.json decode sidecar (`version` and \
-         `ir_sha256`)",
+         (top-level `command` and `status`), a decoded CADIR document \
+         (`ir_version` and `model`), or a .fidelity.json decode sidecar (`ir_sha256`)",
         path.display()
     )
 }
@@ -659,7 +536,6 @@ fn opt(text: Option<&String>) -> String {
 
 fn print_json(view: &str, payload: &serde_json::Value) {
     let envelope = serde_json::json!({
-        "schema_version": CLI_SCHEMA_VERSION,
         "command": format!("query {view}"),
         view: payload,
     });
@@ -678,10 +554,6 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
         vec![("kind".to_owned(), artifact.kind_name().to_owned())];
     match artifact {
         Artifact::Report(report) => {
-            rows.push((
-                "schema_version".to_owned(),
-                report.schema_version.to_string(),
-            ));
             rows.push(("command".to_owned(), cell(&report.command)));
             if let Some(status) = &report.status {
                 rows.push(("status".to_owned(), cell(status)));
@@ -801,13 +673,6 @@ fn summary(artifact: &Artifact, args: &QueryArgs) {
             }
         }
         Artifact::Sidecar(sidecar) => {
-            rows.push((
-                "sidecar_version".to_owned(),
-                cell(cadmpeg_ir::DECODE_SIDECAR_VERSION),
-            ));
-            if let SidecarVersion::Migrated { from } = &sidecar.version {
-                rows.push(("sidecar_input_version".to_owned(), cell(from)));
-            }
             rows.push((
                 "sidecar_fidelity_validation".to_owned(),
                 "not_run".to_owned(),

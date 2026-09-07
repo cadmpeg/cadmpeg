@@ -177,8 +177,7 @@
                 ]
               }
             ]
-          },
-          "version": 1
+          }
         }
       },
       "source": {
@@ -411,8 +410,7 @@
           "sha256": "245aba508fe241c092bb35eafa5499a11e1461a2689b88d73cf2be8b7cdc68b3",
           "stream": "nx:container"
         }
-      ],
-      "version": "3"
+      ]
     }
   },
   "inspect": {

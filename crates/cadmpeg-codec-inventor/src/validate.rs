@@ -25,7 +25,7 @@ use crate::native::{
     PmGraphicsStyleCollectionRecord, PropertyRecord, PropertySectionRecord, PropertySetIssueRecord,
     PropertySetRecord, RevisionRecord, RseRecordRecord, SegmentBulkIssueRecord, SegmentBulkRecord,
     SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord, SegmentRegistryRecord,
-    StorageBandRecord, StructuralIssueRecord, UnpairedSegmentRecord, INVENTOR_NATIVE_VERSION,
+    StorageBandRecord, StructuralIssueRecord, UnpairedSegmentRecord,
 };
 use crate::pmdc::PmDcReferenceList;
 use crate::record_issue::RecordIssue;
@@ -105,16 +105,6 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let Some(namespace) = ir.native.namespace("inventor") else {
         return Vec::new();
     };
-    if namespace.version() != INVENTOR_NATIVE_VERSION {
-        return vec![finding(
-            Check::Version,
-            format!(
-                "unsupported Inventor native namespace version {}",
-                namespace.version()
-            ),
-            None,
-        )];
-    }
     let actual_arenas = namespace
         .arenas
         .keys()
@@ -135,7 +125,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
         return vec![finding(
             Check::NativeLinks,
             format!(
-                "Inventor native namespace version {INVENTOR_NATIVE_VERSION} has missing arenas {missing:?} and unexpected arenas {unexpected:?}"
+                "Inventor native namespace has missing arenas {missing:?} and unexpected arenas {unexpected:?}"
             ),
             None,
         )];
@@ -145,9 +135,7 @@ pub(crate) fn validate_native(ir: &CadIr) -> Vec<Finding> {
         Err(error) => {
             return vec![finding(
                 Check::NativeLinks,
-                format!(
-                    "Inventor native arenas do not match namespace version {INVENTOR_NATIVE_VERSION}: {error}"
-                ),
+                format!("Inventor native arenas are invalid: {error}"),
                 None,
             )];
         }

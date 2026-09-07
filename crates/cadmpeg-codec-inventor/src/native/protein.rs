@@ -225,7 +225,7 @@ mod tests {
                 uncompressed_size: 0,
             }],
         };
-        let mut namespace = NativeNamespace::new(NonZeroU32::MIN);
+        let mut namespace = NativeNamespace::new();
         record.install(&mut namespace).expect("valid test fixture");
         let mut wire = namespace
             .arena_as::<serde_json::Value>("protein")
@@ -268,7 +268,7 @@ mod tests {
                 detail: "truncated".into(),
             },
         ] {
-            let mut namespace = NativeNamespace::new(NonZeroU32::MIN);
+            let mut namespace = NativeNamespace::new();
             record.install(&mut namespace).expect("valid test fixture");
             assert!(record.entries().is_empty());
             assert_eq!(

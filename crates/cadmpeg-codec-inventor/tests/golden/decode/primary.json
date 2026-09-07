@@ -388,8 +388,7 @@
           "unpaired_segments": [],
           "vertex_ownerships": [],
           "wire_topologies": []
-        },
-        "version": 25
+        }
       }
     },
     "source": {
@@ -564,7 +563,6 @@
         "sha256": "a7035f79b059782669443978e618f275354009908bdcc551817b03b87532ca0d",
         "stream": "RSeStorage/Bseg:expanded"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

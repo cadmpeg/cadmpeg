@@ -1971,8 +1971,7 @@
           "units_data": [],
           "view_visibility": [],
           "views": []
-        },
-        "version": 6
+        }
       }
     },
     "source": {
@@ -2084,7 +2083,6 @@
         "sha256": "e7c052d684cfcccc5a412e1df364618c0978d3fd65e0e986675f2bfe12849752",
         "stream": "iges"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

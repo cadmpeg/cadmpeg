@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Versioned document structure and canonical arena ordering.
 
-use std::borrow::Borrow;
+use std::borrow::{Borrow, Cow};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -1119,7 +1119,7 @@ pub struct CadIr {
     pub tolerances: Tolerances,
     /// Format-neutral model.
     pub model: Model,
-    /// Independently versioned native namespaces.
+    /// Per-format native namespaces, each an arena map with no version.
     pub native: Native,
 }
 
@@ -1270,12 +1270,12 @@ impl CadIr {
             .set_arena_from("unknowns", records)
     }
 
-    /// Return the `format` namespace used for version-1 unknown records.
+    /// Return the `format` namespace holding retained unknown records.
     fn unknowns_namespace_mut(&mut self, format: &str) -> &mut crate::native::NativeNamespace {
-        self.native.namespace_mut(format, std::num::NonZeroU32::MIN)
+        self.native.namespace_mut(format)
     }
 
-    /// Construct an empty current-version document with default tolerances.
+    /// Construct an empty document with default tolerances.
     ///
     /// Fixtures and in-progress assembly use this constructor. Decoders that
     /// have classified source metadata use [`Self::decoded`].
@@ -1398,31 +1398,29 @@ pub struct SourceMeta {
     pub attributes: BTreeMap<String, String>,
 }
 
-#[derive(Deserialize)]
-struct SourceMetaReadWire {
-    format: String,
+/// Wire shape of [`SourceMeta`], used for both directions.
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct SourceMetaWire<'a> {
+    format: Cow<'a, str>,
+    #[serde(default = "SourceMetaWire::default_attributes")]
+    attributes: Cow<'a, BTreeMap<String, String>>,
     #[serde(default)]
-    attributes: BTreeMap<String, String>,
-    #[serde(default)]
-    dialects: Option<DialectLayers>,
-    #[serde(default)]
-    dialect: Option<DialectMatch>,
+    dialects: Option<Cow<'a, DialectLayers>>,
 }
 
-#[derive(Serialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct SourceMetaWriteWire<'a> {
-    format: &'a str,
-    attributes: &'a BTreeMap<String, String>,
-    dialects: Option<&'a DialectLayers>,
+impl SourceMetaWire<'_> {
+    fn default_attributes() -> Cow<'static, BTreeMap<String, String>> {
+        Cow::Owned(BTreeMap::new())
+    }
 }
 
 impl Serialize for SourceMeta {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        SourceMetaWriteWire {
-            format: self.format(),
-            attributes: &self.attributes,
-            dialects: self.dialects(),
+        SourceMetaWire {
+            format: Cow::Borrowed(self.format()),
+            attributes: Cow::Borrowed(&self.attributes),
+            dialects: self.dialects().map(Cow::Borrowed),
         }
         .serialize(serializer)
     }
@@ -1430,22 +1428,13 @@ impl Serialize for SourceMeta {
 
 impl<'de> Deserialize<'de> for SourceMeta {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = SourceMetaReadWire::deserialize(deserializer)?;
-        let dialects = match (wire.dialects, wire.dialect) {
-            (Some(_), Some(_)) => {
-                return Err(serde::de::Error::custom(
-                    "source metadata cannot contain both dialects and legacy dialect fields",
-                ));
-            }
-            (Some(dialects), None) => Some(dialects),
-            (None, Some(dialect)) => Some(DialectLayers::of(dialect)),
-            (None, None) => None,
-        };
+        let wire = SourceMetaWire::deserialize(deserializer)?;
         let classification =
-            FormatIdentity::from_wire(wire.format, dialects).map_err(serde::de::Error::custom)?;
+            FormatIdentity::from_wire(wire.format.into_owned(), wire.dialects.map(Cow::into_owned))
+                .map_err(serde::de::Error::custom)?;
         Ok(Self {
             classification,
-            attributes: wire.attributes,
+            attributes: wire.attributes.into_owned(),
         })
     }
 }
@@ -1461,7 +1450,7 @@ impl JsonSchema for SourceMeta {
     }
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        let mut schema = SourceMetaWriteWire::json_schema(generator);
+        let mut schema = SourceMetaWire::json_schema(generator);
         crate::schema::require_object_fields(&mut schema, ["dialects"]);
         schema
     }

@@ -98,7 +98,7 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
     let mut edited = result.ir().clone();
     edited
         .native
-        .namespace_mut("fcstd", std::num::NonZeroU32::MIN)
+        .namespace_mut("fcstd")
         .set_arena("applications", &altered)
         .unwrap();
     assert!(crate::validate_native(&edited).iter().any(|finding| {
@@ -122,7 +122,7 @@ fn absent_object_data_keeps_the_legacy_empty_wire_without_a_domain_sentinel() {
         order: 0,
         data: None,
     }];
-    let mut namespace = cadmpeg_ir::native::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::native::NativeNamespace::new();
     super::install(&mut namespace, &objects, &[], &[]).unwrap();
     assert!(objects[0].data.is_none());
     let records = namespace

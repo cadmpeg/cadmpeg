@@ -191,7 +191,7 @@ fn native_design_objects_preserve_storage_relations_before_payload_relations() {
 
     let mut malformed = native.clone();
     malformed.design_objects[0].relations.swap(0, 1);
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     malformed
         .store(&mut namespace)
         .expect("store reordered design relations");
@@ -546,7 +546,6 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
     assert!(table.rows()[0].matching_design_object.is_some());
     assert!(table.rows()[1].matching_design_object.is_none());
 
-    let expected = table.clone();
     let mut malformed = native.clone();
     let malformed_cell = malformed.design_objects[0]
         .parallel_reference_table
@@ -562,7 +561,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         .expect("parallel reference table")
         .rows[0]
         .cells[0] = malformed_cell.with_entity_id(malformed_entity_id);
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     malformed
         .store(&mut namespace)
         .expect("store malformed parallel reference table");
@@ -586,7 +585,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         .expect("parallel reference table")
         .rows[0]
         .cells[0] = offset_cell.with_payload_offset(next_offset);
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     malformed_offset
         .store(&mut namespace)
         .expect("store malformed parallel-reference cell offset");
@@ -602,7 +601,7 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         .expect("parallel reference table")
         .columns[0]
         .list_payload_offset += 1;
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     malformed_list_offset
         .store(&mut namespace)
         .expect("store malformed parallel-reference list offset");
@@ -610,174 +609,6 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
-
-    let mut version_256_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    native
-        .store(&mut version_256_namespace)
-        .expect("store pre-column-incidence parallel reference table");
-    let mut stored_fields = version_256_namespace
-        .arenas
-        .get_mut("design_objects")
-        .expect("stored design objects")[0]
-        .fields_mut();
-    let columns = stored_fields
-        .get_mut("parallel_reference_table")
-        .expect("stored parallel reference table")
-        .as_object_mut()
-        .expect("stored parallel reference table")
-        .get_mut("columns")
-        .expect("stored parallel reference columns")
-        .as_array_mut()
-        .expect("stored parallel reference columns");
-    for column in columns {
-        *column = column
-            .as_object()
-            .expect("stored parallel reference column")["field"]
-            .clone();
-    }
-    drop(stored_fields);
-    version_256_namespace.set_version(
-        std::num::NonZeroU32::new(
-            crate::native::CATIA_PARALLEL_REFERENCE_COLUMN_INCIDENCE_VERSION - 1,
-        )
-        .unwrap(),
-    );
-    let migrated = crate::native::CatiaNative::load(&version_256_namespace)
-        .expect("migrate parallel-reference column incidences");
-    assert_eq!(
-        migrated.design_objects[0].parallel_reference_table,
-        Some(expected.clone())
-    );
-
-    let mut version_255_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    native
-        .store(&mut version_255_namespace)
-        .expect("store pre-offset parallel reference table");
-    let mut version_255_objects: Vec<crate::native::CatiaDesignObject> = version_255_namespace
-        .arena_as("design_objects")
-        .expect("load version 255 design objects");
-    for cell in version_255_objects[0]
-        .parallel_reference_table
-        .as_mut()
-        .expect("parallel reference table")
-        .rows
-        .iter_mut()
-        .flat_map(|row| &mut row.cells)
-    {
-        *cell = cell.clone().with_payload_offset(0);
-    }
-    version_255_namespace
-        .set_arena("design_objects", &version_255_objects)
-        .expect("store version 255 design objects");
-    version_255_namespace.set_version(
-        std::num::NonZeroU32::new(crate::native::CATIA_PARALLEL_REFERENCE_CELL_OFFSET_VERSION - 1)
-            .unwrap(),
-    );
-    let migrated = crate::native::CatiaNative::load(&version_255_namespace)
-        .expect("migrate parallel-reference cell offsets");
-    assert_eq!(
-        migrated.design_objects[0].parallel_reference_table,
-        Some(expected.clone())
-    );
-
-    let mut previous_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    native
-        .store(&mut previous_namespace)
-        .expect("store current parallel reference table");
-    let mut previous_objects: Vec<crate::native::CatiaDesignObject> = previous_namespace
-        .arena_as("design_objects")
-        .expect("load stored design objects");
-    previous_objects[0].parallel_reference_table = None;
-    previous_namespace
-        .set_arena("design_objects", &previous_objects)
-        .expect("store previous design objects");
-    previous_namespace.set_version(std::num::NonZeroU32::new(200).unwrap());
-    let migrated = crate::native::CatiaNative::load(&previous_namespace)
-        .expect("migrate previous parallel reference table");
-    assert_eq!(
-        migrated.design_objects[0].parallel_reference_table,
-        Some(expected.clone())
-    );
-
-    let mut version_203_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    native
-        .store(&mut version_203_namespace)
-        .expect("store current parallel reference row matches");
-    let mut version_203_objects: Vec<crate::native::CatiaDesignObject> = version_203_namespace
-        .arena_as("design_objects")
-        .expect("load version 203 design objects");
-    for row in &mut version_203_objects[0]
-        .parallel_reference_table
-        .as_mut()
-        .expect("parallel reference table")
-        .rows
-    {
-        row.matching_design_object = None;
-    }
-    version_203_namespace
-        .set_arena("design_objects", &version_203_objects)
-        .expect("store version 203 design objects");
-    version_203_namespace.set_version(std::num::NonZeroU32::new(203).unwrap());
-    let migrated = crate::native::CatiaNative::load(&version_203_namespace)
-        .expect("migrate version 203 parallel reference row matches");
-    assert_eq!(
-        migrated.design_objects[0].parallel_reference_table,
-        Some(expected.clone())
-    );
-
-    let mut version_202_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    native
-        .store(&mut version_202_namespace)
-        .expect("store current classified parallel reference columns");
-    let mut version_202_objects: Vec<crate::native::CatiaDesignObject> = version_202_namespace
-        .arena_as("design_objects")
-        .expect("load version 202 design objects");
-    for column in &mut version_202_objects[0]
-        .parallel_reference_table
-        .as_mut()
-        .expect("parallel reference table")
-        .columns
-    {
-        column.field_class = None;
-    }
-    version_202_namespace
-        .set_arena("design_objects", &version_202_objects)
-        .expect("store version 202 design objects");
-    version_202_namespace.set_version(std::num::NonZeroU32::new(202).unwrap());
-    let migrated = crate::native::CatiaNative::load(&version_202_namespace)
-        .expect("migrate version 202 source field classes");
-    assert_eq!(
-        migrated.design_objects[0].parallel_reference_table,
-        Some(expected.clone())
-    );
-
-    let mut version_201_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    native
-        .store(&mut version_201_namespace)
-        .expect("store current classified parallel reference table");
-    let mut version_201_objects: Vec<crate::native::CatiaDesignObject> = version_201_namespace
-        .arena_as("design_objects")
-        .expect("load version 201 design objects");
-    for cell in version_201_objects[0]
-        .parallel_reference_table
-        .as_mut()
-        .expect("parallel reference table")
-        .rows
-        .iter_mut()
-        .flat_map(|row| &mut row.cells)
-    {
-        *cell = cell.clone().without_field_class();
-    }
-    version_201_namespace
-        .set_arena("design_objects", &version_201_objects)
-        .expect("store version 201 design objects");
-    version_201_namespace.set_version(std::num::NonZeroU32::new(201).unwrap());
-    let migrated = crate::native::CatiaNative::load(&version_201_namespace)
-        .expect("migrate version 201 target field classes");
-    assert_eq!(
-        migrated.design_objects[0].parallel_reference_table,
-        Some(expected)
-    );
 
     let null_list_a = [0x3b, 0x82, 0x81, 0x83, 0x81, 0x85, 0x85, 0xfe];
     let null_list_b = [0x3b, 0x82, 0x81, 0x84, 0x81, 0x85, 0x86, 0xfe];
@@ -798,50 +629,6 @@ fn native_design_objects_retain_and_validate_parallel_reference_tables() {
             && cell.field().is_none()
             && cell.design_object().is_none()
     }));
-
-    let mut version_210_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    terminal_null
-        .store(&mut version_210_namespace)
-        .expect("store terminal null parallel reference cells");
-    let mut version_210_records: Vec<crate::native::CatiaObjectRecord> = version_210_namespace
-        .arena_as("object_graph_records")
-        .expect("load version 210 object records");
-    for reference in version_210_records
-        .iter_mut()
-        .flat_map(|record| &mut record.references)
-    {
-        *reference = reference.clone().with_null_cleared();
-    }
-    version_210_namespace
-        .set_arena("object_graph_records", &version_210_records)
-        .expect("store version 210 object records");
-    let mut version_210_objects: Vec<crate::native::CatiaDesignObject> = version_210_namespace
-        .arena_as("design_objects")
-        .expect("load version 210 design objects");
-    for cell in version_210_objects[0]
-        .parallel_reference_table
-        .as_mut()
-        .expect("parallel reference table")
-        .rows
-        .iter_mut()
-        .flat_map(|row| &mut row.cells)
-    {
-        *cell = cell.clone().with_null_cleared();
-    }
-    version_210_namespace
-        .set_arena("design_objects", &version_210_objects)
-        .expect("store version 210 design objects");
-    version_210_namespace.set_version(std::num::NonZeroU32::new(210).unwrap());
-    let migrated = crate::native::CatiaNative::load(&version_210_namespace)
-        .expect("migrate terminal null parallel reference cells");
-    assert!(migrated.design_objects[0]
-        .parallel_reference_table
-        .as_ref()
-        .expect("migrated parallel reference table")
-        .rows[1]
-        .cells
-        .iter()
-        .all(super::super::CatiaDesignReferenceCell::is_null));
 
     let three_references = [0x3b, 0x83, 0x81, 0x83, 0x81, 0x84, 0x81, 0x83, 0x86, 0xfe];
     let mismatched = sequential_entity_backed_object_graph(&[
@@ -889,37 +676,6 @@ fn parallel_reference_row_match_requires_distinct_target_fields() {
         table.rows[1].cells[0].field(),
         table.rows[1].cells[1].field()
     );
-
-    let mut version_204_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    native
-        .store(&mut version_204_namespace)
-        .expect("store current parallel reference row matches");
-    let mut version_204_objects: Vec<crate::native::CatiaDesignObject> = version_204_namespace
-        .arena_as("design_objects")
-        .expect("load version 204 design objects");
-    version_204_objects[0]
-        .parallel_reference_table
-        .as_mut()
-        .expect("parallel reference table")
-        .rows[1]
-        .matching_design_object = table.rows[1].cells[0]
-        .design_object()
-        .map(str::to_owned)
-        .clone();
-    version_204_namespace
-        .set_arena("design_objects", &version_204_objects)
-        .expect("store version 204 design objects");
-    version_204_namespace.set_version(std::num::NonZeroU32::new(204).unwrap());
-
-    let migrated = crate::native::CatiaNative::load(&version_204_namespace)
-        .expect("migrate version 204 parallel reference row matches");
-    assert!(migrated.design_objects[0]
-        .parallel_reference_table
-        .as_ref()
-        .expect("migrated parallel reference table")
-        .rows[1]
-        .matching_design_object
-        .is_none());
 }
 
 #[test]
@@ -953,7 +709,7 @@ fn native_design_objects_follow_first_field_order() {
         ]
     );
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     native
         .store(&mut namespace)
         .expect("store source-ordered design objects");

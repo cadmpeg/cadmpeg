@@ -6,8 +6,8 @@
 //! base64 `retained_records`. The bare view lists them as a table — the
 //! extraction address space — and `--stream NAME` reassembles one
 //! stream's retained bytes, byte-exactly, into `-o FILE` (or stdout with
-//! `--binary-stdout`). The view migrates supported legacy sidecars and validates
-//! retained record identity, length, and digest before projecting or extracting.
+//! `--binary-stdout`). The view validates retained record identity, length,
+//! and digest before projecting or extracting.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};

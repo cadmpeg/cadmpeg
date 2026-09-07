@@ -65,7 +65,7 @@ fn inspect_snapshot(bytes: &[u8]) -> String {
 
 /// Serializes one decoded document: the IR, the decode report, and source
 /// fidelity. A decode error is frozen too. Native arena values are omitted;
-/// namespace versions, arena populations, and record identities are pinned.
+/// arena populations and record identities are pinned.
 fn decode_snapshot(bytes: &[u8]) -> String {
     let value = match FcstdCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
     {
@@ -117,7 +117,6 @@ fn native_shape(native: &cadmpeg_ir::Native) -> serde_json::Value {
         shape.insert(
             format.clone(),
             serde_json::json!({
-                "version": namespace.version(),
                 "arenas": namespace_shape,
             }),
         );

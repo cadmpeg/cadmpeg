@@ -432,7 +432,6 @@ impl UfrxRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::num::NonZeroU32;
 
     #[test]
     fn parsed_state_owns_arenas_and_checks_wire_counts() {
@@ -461,7 +460,7 @@ mod tests {
             tail_len: 0,
             tail_sha256: "0".repeat(64),
         };
-        let mut namespace = NativeNamespace::new(NonZeroU32::MIN);
+        let mut namespace = NativeNamespace::new();
         record.install(&mut namespace).expect("valid test fixture");
         assert_eq!(
             UfrxRecord::read(&namespace).expect("valid test fixture"),
@@ -509,7 +508,7 @@ mod tests {
                 detail: "schema".into(),
             },
         ] {
-            let mut namespace = NativeNamespace::new(NonZeroU32::MIN);
+            let mut namespace = NativeNamespace::new();
             record.install(&mut namespace).expect("valid test fixture");
             assert_eq!(
                 UfrxRecord::read(&namespace).expect("valid test fixture"),

@@ -65,8 +65,7 @@
               }
             ],
             "unknowns": []
-          },
-          "version": 189
+          }
         }
       },
       "source": {
@@ -151,8 +150,7 @@
         "streams": [
           "nx:container"
         ]
-      },
-      "version": "3"
+      }
     }
   },
   "inspect": {

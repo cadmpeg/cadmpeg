@@ -54,8 +54,7 @@
             }
           ],
           "unknowns": []
-        },
-        "version": 1
+        }
       }
     },
     "source": {
@@ -551,7 +550,6 @@
       "streams": [
         "creo:SolidPrimdata"
       ]
-    },
-    "version": "3"
+    }
   }
 }

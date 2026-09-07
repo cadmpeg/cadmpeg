@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Command reports: the versioned JSON envelope on stdout and on disk.
+//! Command reports: the JSON command-report envelope on stdout and on disk.
 
 use std::fs;
 
@@ -29,7 +29,6 @@ fn artifact_reports_cover_success_and_semantic_refusal() {
         .success();
     let value: serde_json::Value =
         serde_json::from_slice(&fs::read(success_report).unwrap()).unwrap();
-    assert_eq!(value["schema_version"], 8);
     assert_eq!(value["command"], "convert");
     assert_eq!(value["status"], "ok");
     assert!(value["refusal"].is_null());
@@ -59,7 +58,6 @@ fn artifact_reports_cover_success_and_semantic_refusal() {
     let value: serde_json::Value =
         serde_json::from_slice(&fs::read(refusal_report).unwrap()).unwrap();
     assert_eq!(value["command"], "convert");
-    assert_eq!(value["schema_version"], 8);
     assert_eq!(value["status"], "refused");
     assert_eq!(value["refusal"]["stage"], "plan");
     assert_eq!(value["refusal"]["code"], "empty_geometry");
@@ -172,7 +170,6 @@ fn f3d_export_report_identifies_regenerated_output() {
         .assert()
         .success();
     let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
-    assert_eq!(value["schema_version"], 8);
     assert_eq!(value["export"]["format"], "f3d");
     assert!(value["export"]["notes"]
         .as_array()
@@ -184,7 +181,7 @@ fn f3d_export_report_identifies_regenerated_output() {
 }
 
 #[test]
-fn reporting_commands_emit_versioned_json_only_on_stdout() {
+fn reporting_commands_emit_json_only_on_stdout() {
     let dir = tempdir().unwrap();
     let input = fixture(dir.path(), "cube.json", &unit_cube());
     let validate = Command::cargo_bin("cadmpeg")
@@ -193,7 +190,6 @@ fn reporting_commands_emit_versioned_json_only_on_stdout() {
         .output()
         .unwrap();
     let value: serde_json::Value = serde_json::from_slice(&validate.stdout).unwrap();
-    assert_eq!(value["schema_version"], 8);
     assert_eq!(value["command"], "check");
 
     let diff = Command::cargo_bin("cadmpeg")
@@ -207,7 +203,6 @@ fn reporting_commands_emit_versioned_json_only_on_stdout() {
         .output()
         .unwrap();
     let value: serde_json::Value = serde_json::from_slice(&diff.stdout).unwrap();
-    assert_eq!(value["schema_version"], 8);
     assert_eq!(value["command"], "diff");
 
     let native = geometryless_creo(dir.path(), "ambiguous.bin");
@@ -224,12 +219,11 @@ fn reporting_commands_emit_versioned_json_only_on_stdout() {
         .unwrap();
     assert!(inspect.status.success());
     let value: serde_json::Value = serde_json::from_slice(&inspect.stdout).unwrap();
-    assert_eq!(value["schema_version"], 8);
     assert_eq!(value["command"], "inspect");
 }
 
 #[test]
-fn inspect_report_writes_versioned_summary_to_file() {
+fn inspect_report_writes_summary_to_file() {
     let dir = tempdir().unwrap();
     let input = minimal_rhino_archive(dir.path(), "empty.3dm", "50");
     let report = dir.path().join("inspect-report.json");
@@ -245,14 +239,13 @@ fn inspect_report_writes_versioned_summary_to_file() {
         .success()
         .stdout(predicate::str::contains("format: rhino (detected high)"));
     let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
-    assert_eq!(value["schema_version"], 8);
     assert_eq!(value["command"], "inspect");
     assert_eq!(value["confidence"], "high");
     assert_eq!(value["summary"]["format"], "rhino");
 }
 
 #[test]
-fn validate_report_writes_versioned_result_to_file() {
+fn validate_report_writes_result_to_file() {
     let dir = tempdir().unwrap();
     let input = fixture(dir.path(), "cube.cadir.json", &unit_cube());
     let report = dir.path().join("validate-report.json");
@@ -268,7 +261,6 @@ fn validate_report_writes_versioned_result_to_file() {
         .success()
         .stdout(predicate::str::contains("check: OK"));
     let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
-    assert_eq!(value["schema_version"], 8);
     assert_eq!(value["command"], "check");
     assert!(value["decode_report"].is_null());
     assert!(value["check_report"].is_object());
@@ -426,7 +418,7 @@ fn validate_agrees_between_its_exit_code_printed_summary_and_report() {
 }
 
 #[test]
-fn diff_report_writes_versioned_result_to_file() {
+fn diff_report_writes_result_to_file() {
     let dir = tempdir().unwrap();
     let cube = unit_cube();
     let a = fixture(dir.path(), "a.cadir.json", &cube);
@@ -445,7 +437,6 @@ fn diff_report_writes_versioned_result_to_file() {
         .success()
         .stdout(predicate::str::contains("identical"));
     let value: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
-    assert_eq!(value["schema_version"], 8);
     assert_eq!(value["command"], "diff");
     assert_eq!(value["different"], false);
     assert!(value["diff"].is_object());

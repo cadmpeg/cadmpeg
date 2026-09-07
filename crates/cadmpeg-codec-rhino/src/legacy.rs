@@ -2463,10 +2463,7 @@ pub(crate) fn decode_v1(data: &[u8]) -> Result<Decoded, CodecError> {
         offset = chunk.next_offset();
     }
     if !direct_records.is_empty() {
-        let namespace = ir.native.namespace_mut("rhino", std::num::NonZeroU32::MIN);
-        namespace.ensure_version_at_least(
-            std::num::NonZeroU32::new(2).expect("Rhino native version is nonzero"),
-        );
+        let namespace = ir.native.namespace_mut("rhino");
         namespace
             .set_arena("legacy_v1_records", &direct_records)
             .expect("Rhino V1 direct records serialize");

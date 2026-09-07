@@ -38,7 +38,6 @@ struct Envelope {
     container: &'static str,
     schema_version: u32,
     file_version: u32,
-    native_namespace_version: u32,
     cadir_version: &'static str,
     write_support: bool,
 }
@@ -143,7 +142,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut fixtures = Vec::new();
     let mut observed = Observed::default();
     let mut total_counts = BTreeMap::<String, usize>::new();
-    let mut namespace_version = None;
     for path in paths {
         let bytes = fs::read(&path)?;
         let first = FcstdCodec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default())?;
@@ -189,7 +187,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let typed_edit_round_trip =
             property_value_attribute(edited.ir(), "fcstd:native:document#0", "Label", 0, "value")
                 == Some("cadmpeg L9 edit".to_owned());
-        namespace_version = Some(namespace.version());
         observed.native_arenas.extend(
             namespace
                 .arenas
@@ -262,7 +259,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             container: "ZIP-packaged FCStd",
             schema_version: 4,
             file_version: 1,
-            native_namespace_version: namespace_version.unwrap_or_default(),
             cadir_version: cadmpeg_ir::document::IR_VERSION,
             write_support: true,
         },

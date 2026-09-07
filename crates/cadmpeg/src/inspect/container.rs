@@ -175,7 +175,7 @@ pub fn shell_quote(name: &str) -> String {
     out
 }
 
-/// Formats an entry listing as the versioned JSON envelope.
+/// Formats an entry listing as the JSON command-report envelope.
 ///
 /// Names are raw strings here — shell quoting belongs to the table
 /// rendering, not to JSON.

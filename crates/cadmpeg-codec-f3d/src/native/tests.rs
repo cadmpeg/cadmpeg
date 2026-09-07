@@ -46,7 +46,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         .unwrap();
     let original = decoded.ir().native.namespace("f3d").unwrap();
     let typed = crate::native::F3dNative::load(original).unwrap();
-    let mut round_trip = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut round_trip = cadmpeg_ir::NativeNamespace::new();
     typed.store(&mut round_trip).unwrap();
     assert_eq!(typed, crate::native::F3dNative::load(&round_trip).unwrap());
     for name in crate::native::F3D_ARENA_NAMES {
@@ -56,7 +56,6 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
             "native arena {name} did not survive a typed round trip"
         );
     }
-    assert_eq!(round_trip.version(), crate::native::F3D_NATIVE_VERSION);
     assert_eq!(
         round_trip
             .arenas
@@ -85,7 +84,7 @@ fn diff_reports_design_material_assignment_changes() {
     let mut edited = decoded.ir().clone();
     let assignment = &mut edited
         .native
-        .namespace_mut("f3d", std::num::NonZeroU32::MIN)
+        .namespace_mut("f3d")
         .arenas
         .get_mut("design_material_assignments")
         .unwrap()[0];

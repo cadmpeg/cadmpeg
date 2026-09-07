@@ -122,8 +122,7 @@
       "creo": {
         "arenas": {
           "unknowns": []
-        },
-        "version": 1
+        }
       }
     },
     "source": {
@@ -623,7 +622,6 @@
       "streams": [
         "creo:archive_header"
       ]
-    },
-    "version": "3"
+    }
   }
 }

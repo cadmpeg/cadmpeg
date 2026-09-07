@@ -122,8 +122,7 @@
             }
           ],
           "unknowns": []
-        },
-        "version": 1
+        }
       }
     },
     "source": {
@@ -190,7 +189,6 @@
     ]
   },
   "source_fidelity": {
-    "annotations": {},
-    "version": "3"
+    "annotations": {}
   }
 }

@@ -39,7 +39,6 @@ struct FixtureEvidence {
     filename: String,
     status: DecodeStatus,
     deterministic: bool,
-    native_namespace_version: Option<u32>,
     entities: EntityCounts,
     losses: BTreeMap<LossCategory, usize>,
     loss_codes: BTreeMap<String, usize>,
@@ -145,7 +144,6 @@ struct Assertion {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct DecodedFixtureEvidence {
     canonical_sha256: String,
-    native_namespace_version: Option<u32>,
     entities: EntityCounts,
     losses: BTreeMap<LossCategory, usize>,
     loss_codes: BTreeMap<String, usize>,
@@ -342,7 +340,6 @@ fn fixture_evidence(
         filename,
         status,
         deterministic,
-        native_namespace_version: decoded.native_namespace_version,
         all_bodies_colored: decoded.all_bodies_colored,
         all_faces_colored: decoded.all_faces_colored,
         rederivation: decoded.rederivation,
@@ -365,7 +362,6 @@ fn failed_fixture_evidence(filename: String, status: DecodeStatus) -> FixtureEvi
         filename,
         status,
         deterministic: false,
-        native_namespace_version: None,
         entities: EntityCounts::default(),
         losses: BTreeMap::new(),
         loss_codes: BTreeMap::new(),
@@ -437,11 +433,6 @@ fn decode_fixture(path: &Path) -> Result<DecodedFixtureEvidence, Box<dyn std::er
     };
     Ok(DecodedFixtureEvidence {
         canonical_sha256: canonical_sha256(decoded.ir())?,
-        native_namespace_version: decoded
-            .ir()
-            .native
-            .namespace("nx")
-            .map(cadmpeg_ir::NativeNamespace::version),
         entities: EntityCounts::from_ir(decoded.ir()),
         losses,
         loss_codes,
@@ -857,7 +848,6 @@ mod tests {
             filename: "fixture.prt".to_string(),
             status: DecodeStatus::Complete,
             deterministic: true,
-            native_namespace_version: Some(181),
             entities: EntityCounts::default(),
             losses: BTreeMap::new(),
             loss_codes: BTreeMap::new(),

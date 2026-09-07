@@ -309,7 +309,6 @@
     },
     "native": {
       "f3d": {
-        "version": 13,
         "arenas": {
           "act_entities": [
             {
@@ -1490,7 +1489,6 @@
     }
   },
   "source_fidelity": {
-    "version": "3",
     "annotations": {
       "streams": [
         "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",

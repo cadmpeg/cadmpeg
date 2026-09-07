@@ -2011,8 +2011,7 @@
           "units_data": [],
           "view_visibility": [],
           "views": []
-        },
-        "version": 6
+        }
       }
     },
     "source": {
@@ -2102,7 +2101,6 @@
         "sha256": "4f954d6d9322d80f2b5da7f4d811982cdc7972c3a0f9026bb1c7904704f4d4b0",
         "stream": "iges"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

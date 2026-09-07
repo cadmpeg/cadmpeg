@@ -233,8 +233,7 @@
             }
           ],
           "unknowns": []
-        },
-        "version": 1
+        }
       }
     },
     "source": {
@@ -744,7 +743,6 @@
       "streams": [
         "creo:DEPDB_DATA"
       ]
-    },
-    "version": "3"
+    }
   }
 }

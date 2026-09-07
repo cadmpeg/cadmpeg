@@ -3,7 +3,6 @@
 #![deny(clippy::disallowed_methods)]
 
 use std::collections::BTreeMap;
-use std::num::NonZeroU32;
 
 #[cfg(feature = "schema")]
 use schemars::{JsonSchema, Schema, SchemaGenerator};
@@ -29,9 +28,6 @@ pub struct LossCount {
 /// Conversion failure between codec-owned typed records and generic records.
 #[derive(Debug, thiserror::Error)]
 pub enum NativeConvertError {
-    /// Native namespace version lies outside the codec's declared contract.
-    #[error(transparent)]
-    UnsupportedVersion(#[from] catalogue::NativeVersionError),
     /// A serialized typed record has no string `id` field.
     #[error("native record is missing a string id")]
     MissingId,
@@ -224,41 +220,20 @@ impl JsonSchema for NativeRecord {
     }
 }
 
-/// Independently versioned source-format arena collection.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Source-format arena collection.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct NativeNamespace {
-    /// Codec-owned namespace schema version.
-    version: NonZeroU32,
     /// Record arenas keyed by stable arena name.
     #[serde(default)]
     pub arenas: BTreeMap<String, Vec<NativeRecord>>,
 }
 
 impl NativeNamespace {
-    /// Construct an empty namespace at a nonzero schema version.
+    /// Construct an empty namespace.
     #[must_use]
-    pub fn new(version: NonZeroU32) -> Self {
-        Self {
-            version,
-            arenas: BTreeMap::new(),
-        }
-    }
-
-    /// Return the codec-owned namespace schema version.
-    #[must_use]
-    pub const fn version(&self) -> u32 {
-        self.version.get()
-    }
-
-    /// Replace the schema version with a nonzero version.
-    pub fn set_version(&mut self, version: NonZeroU32) {
-        self.version = version;
-    }
-
-    /// Raise the schema version to a nonzero minimum without lowering it.
-    pub fn ensure_version_at_least(&mut self, minimum: NonZeroU32) {
-        self.version = self.version.max(minimum);
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Replace an arena by serializing codec-owned typed records.
@@ -324,17 +299,9 @@ impl Native {
         self.0.get(format)
     }
 
-    /// Return or create a source-format namespace at `version`.
-    ///
-    /// An existing namespace keeps the version it already carries.
-    pub fn namespace_mut(
-        &mut self,
-        format: impl Into<String>,
-        version: NonZeroU32,
-    ) -> &mut NativeNamespace {
-        self.0
-            .entry(format.into())
-            .or_insert_with(|| NativeNamespace::new(version))
+    /// Return or create a source-format namespace.
+    pub fn namespace_mut(&mut self, format: impl Into<String>) -> &mut NativeNamespace {
+        self.0.entry(format.into()).or_default()
     }
 
     /// Sort every arena into canonical identity order.

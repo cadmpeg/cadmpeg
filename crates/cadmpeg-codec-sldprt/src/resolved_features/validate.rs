@@ -14,15 +14,6 @@ pub(crate) fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<Finding> {
     let Some(namespace) = ir.native.namespace("sldprt") else {
         return Vec::new();
     };
-    if !crate::native::native_version_supported(namespace.version()) {
-        let version = namespace.version();
-        return vec![Finding {
-            check: Check::Version,
-            severity: Severity::Error,
-            message: format!("unsupported SolidWorks native namespace version {version}"),
-            entity: None,
-        }];
-    }
     let native = match crate::native::SldprtNative::load(namespace) {
         Ok(native) => native,
         Err(error) => {

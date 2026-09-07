@@ -37,7 +37,7 @@ fn compiled_read_admissions_match_registry_policy() {
         for family in families.keys() {
             let compatible = match *family {
                 "admitted" => matches!(read, ReadDisposition::Level(_) | ReadDisposition::Detected),
-                "unverified" | "residual" | "legacy_admitted_unverified" => {
+                "unverified" | "residual" => {
                     matches!(read, ReadDisposition::UnclassifiedRecovered)
                 }
                 "refused" => matches!(read, ReadDisposition::Refused),
@@ -84,8 +84,6 @@ fn collect_admissions(
                     "unverified"
                 } else if admission.as_str() == Some("residual") {
                     "residual"
-                } else if admission.get("admitted_unverified").is_some() {
-                    "legacy_admitted_unverified"
                 } else if admission.as_str() == Some("refused") {
                     "refused"
                 } else {

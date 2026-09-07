@@ -469,8 +469,7 @@
             }
           ],
           "unknowns": []
-        },
-        "version": 1
+        }
       }
     },
     "source": {
@@ -1068,7 +1067,6 @@
         "creo:MdlStatus",
         "creo:DEPDB_DATA"
       ]
-    },
-    "version": "3"
+    }
   }
 }

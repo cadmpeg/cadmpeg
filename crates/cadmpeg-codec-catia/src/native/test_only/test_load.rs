@@ -8,10 +8,7 @@ use super::test_consolidated::{
     validate_consolidated_reference_lists, validate_consolidated_revolutions,
     validate_consolidated_spheres, validate_consolidated_tori,
 };
-use super::test_legacy::{
-    legacy_schema_identifiers, legacy_value_name, valid_entity_record_shape,
-    validate_legacy_entity_runs,
-};
+use super::test_legacy::{valid_entity_record_shape, validate_legacy_entity_runs};
 use super::test_links::{
     validate_consolidated_edge_runs, validate_consolidated_owner_packets, validate_native_links,
     ConsolidatedSupportArenas,
@@ -24,7 +21,6 @@ use super::test_zero_entity::{
 use super::*;
 use crate::native::class5b5c::CatiaConsolidatedClass5b5cRecord;
 use crate::native::edge_node::{load_edge_nodes, CatiaConsolidatedEdgeNodeWire};
-use crate::test_support::NativeRecordTestExt;
 
 impl CatiaNative {
     /// Decode CATIA-native records directly from a synthesized record source.
@@ -86,167 +82,20 @@ impl CatiaNative {
             })
             .collect::<Result<Vec<_>, _>>()?;
         let mut graphs: Vec<CatiaObjectGraph> = namespace.arena_as("object_graphs")?;
-        let mut records: Vec<CatiaObjectRecord> = namespace.arena_as("object_graph_records")?;
-        if namespace.version() < CATIA_TYPED_OWNER_SLOT_VERSION {
-            for record in &mut records {
-                let roles = object_graph::head_roles(record.lead, &record.head);
-                record.owner = roles
-                    .owner_ref
-                    .map(CatiaObjectOwner::Entity)
-                    .or_else(|| roles.owner_literal.map(CatiaObjectOwner::UnassignedLiteral));
-            }
-        }
-        let migrate_relation_program = namespace.version()
-            < CATIA_RELATION_PROGRAM_INSTANCE_VERSION
-            || namespace.version() < CATIA_RELATION_PROGRAM_CONTEXT_VERSION
-            || namespace.version() < CATIA_TYPED_INCIDENCE_CLASS_VERSION
-            || namespace.version() < CATIA_RELATION_TYPED_REFERENCE_VERSION
-            || namespace.version() < CATIA_TYPED_INCIDENCE_NULL_VERSION
-            || namespace.version() < CATIA_RELATION_PROGRAM_REFERENCE_INCIDENCE_VERSION
-            || namespace.version() < CATIA_RELATION_PROGRAM_DEPENDENCY_VERSION
-            || namespace.version() < CATIA_RELATION_PROGRAM_INPUT_VERSION
-            || namespace.version() < CATIA_RELATION_PROGRAM_OUTPUT_VERSION
-            || namespace.version() < CATIA_RELATION_DEPENDENCY_OFFSET_VERSION
-            || namespace.version() < CATIA_RELATION_REFERENCE_OFFSET_VERSION
-            || namespace.version() < CATIA_RELATION_STRING_LITERAL_DEPENDENCY_VERSION
-            || namespace.version() < CATIA_RELATION_SIGNATURE_WHITESPACE_VERSION;
-        let migrate_object_production = (namespace.version()
-            < CATIA_FORMULA_DEPENDENCY_CANDIDATE_VERSION
-            || namespace.version() < CATIA_TERMINAL_NULL_REFERENCE_VERSION
-            || namespace.version() < CATIA_FORMULA_OUTPUT_REFERENCE_VERSION
-            || namespace.version() < CATIA_FORMULA_EXPRESSION_REFERENCE_VERSION
-            || namespace.version() < CATIA_FORMULA_DEPENDENCY_REFERENCE_VERSION
-            || namespace.version() < CATIA_TYPED_INCIDENCE_NULL_VERSION
-            || namespace.version() < CATIA_RELATION_DEPENDENCY_OFFSET_VERSION
-            || namespace.version() < CATIA_RELATION_STRING_LITERAL_DEPENDENCY_VERSION
-            || namespace.version() < CATIA_FORMULA_REFERENCE_OFFSET_VERSION
-            || namespace.version() < CATIA_RELATION_SIGNATURE_WHITESPACE_VERSION)
-            || (migrate_relation_program)
-            || (namespace.version() < CATIA_CONFIGURATION_INCIDENCE_VERSION
-                || namespace.version() < CATIA_SCHEMA_CONFIGURATION_REFERENCE_VERSION
-                || namespace.version() < CATIA_TYPED_INCIDENCE_CLASS_VERSION
-                || namespace.version() < CATIA_TYPED_INCIDENCE_NULL_VERSION
-                || namespace.version() < CATIA_CONFIGURATION_PAYLOAD_OFFSET_VERSION);
-        let migrate_value_production = (namespace.version()
-            < CATIA_ENTITY_SCHEMA_VALUE_INCIDENCE_VERSION
-            || namespace.version() < CATIA_RELATION_SIGNATURE_WHITESPACE_VERSION)
-            || (namespace.version() < CATIA_SUFFIX_EVALUATION_OFFSET_VERSION
-                || namespace.version() < CATIA_SUFFIX_TRAILER_8193_VERSION);
-        let mut entity_namespace = namespace.clone();
-        if let Some(records) = entity_namespace.arenas.get_mut("entity_records") {
-            for record in records {
-                let mut fields = record.fields_mut();
-                if namespace.version() < CATIA_REFERENCE_SIGNATURE_ENTITY_VERSION {
-                    fields.remove("reference_signature");
-                }
-                if migrate_value_production {
-                    for field in [
-                        "relation_expression",
-                        "parameter_value",
-                        "constraint_range",
-                        "definition_value",
-                        "definition_chain_value",
-                    ] {
-                        fields.remove(field);
-                    }
-                }
-                if migrate_object_production {
-                    for field in [
-                        "relation_program_instance",
-                        "schema_configuration_record",
-                        "schema_configuration_row_link",
-                        "formula_relation",
-                    ] {
-                        fields.remove(field);
-                    }
-                }
-            }
-        }
+        let records: Vec<CatiaObjectRecord> = namespace.arena_as("object_graph_records")?;
         let entity_wires: Vec<crate::native::entity_record::CatiaEntityRecordWire> =
-            entity_namespace.arena_as("entity_records")?;
-        let mut entity_records = entity_wires
+            namespace.arena_as("entity_records")?;
+        let entity_records = entity_wires
             .into_iter()
-            .map(|mut wire| {
-                if namespace.version() < CATIA_NUMERIC_PAIR_VERSION {
-                    wire.migrate_numeric_pair();
-                }
+            .map(|wire| {
                 CatiaEntityRecord::try_from(wire)
                     .map_err(cadmpeg_ir::NativeConvertError::InvalidOwner)
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let row_chain_arena = if namespace
-            .arenas
-            .contains_key("schema_configuration_row_chains")
-        {
-            "schema_configuration_row_chains"
-        } else {
-            "configuration_row_chains"
-        };
-        let migrate_row_chains = namespace.version() < CATIA_DERIVED_NATIVE_ID_VERSION
-            || namespace.version() < CATIA_SCHEMA_CONFIGURATION_NAMING_VERSION;
-        let mut schema_configuration_row_chains: Vec<CatiaSchemaConfigurationRowChain> =
-            if migrate_row_chains {
-                Vec::new()
-            } else {
-                namespace.arena_as(row_chain_arena)?
-            };
-        let mut reference_signature_cohorts: Vec<CatiaReferenceSignatureCohort> =
+        let schema_configuration_row_chains: Vec<CatiaSchemaConfigurationRowChain> =
+            namespace.arena_as("schema_configuration_row_chains")?;
+        let reference_signature_cohorts: Vec<CatiaReferenceSignatureCohort> =
             namespace.arena_as("reference_signature_cohorts")?;
-        if namespace.version() < CATIA_REFERENCE_SIGNATURE_INCIDENCE_VERSION {
-            for entity in &mut entity_records {
-                entity.reference_signature = entity_table::parse_reference_signature(
-                    entity.value_payload(),
-                )
-                .map(|production| CatiaReferenceSignature {
-                    production,
-                    first_entity: CatiaEntityReference::Unresolved { entity_id: 0 },
-                    second_entity: CatiaEntityReference::Unresolved { entity_id: 0 },
-                });
-            }
-        }
-        if namespace.version() < CATIA_SUFFIX_FRAMING_VERSION {
-            for entity in &mut entity_records {
-                let suffix = entity.record_suffix().to_vec();
-                entity.set_suffix_from_bytes(&suffix);
-            }
-        }
-
-        if namespace.version() < CATIA_SUFFIX_EVALUATION_OFFSET_VERSION
-            || namespace.version() < CATIA_SUFFIX_TRAILER_8193_VERSION
-        {
-            for graph in &graphs {
-                let catalog = graph.catalog.as_deref().and_then(|catalog_id| {
-                    catalogs.iter().find(|catalog| catalog.id == catalog_id)
-                });
-                for entity in entity_records
-                    .iter_mut()
-                    .filter(|entity| entity.object_graph == graph.id)
-                {
-                    let suffix = entity.record_suffix().to_vec();
-                    entity.set_suffix_from_bytes(&suffix);
-                    entity.suffix_schema_selection =
-                        entity_suffix_schema_selection(entity.suffix_value(), catalog);
-                }
-            }
-        }
-        if migrate_value_production {
-            for entity in &mut entity_records {
-                entity.value_production =
-                    value_production(entity, &records, &entity.value_fields());
-            }
-        }
-        if namespace.version() < CATIA_RANGE_NOMINAL_VERSION {
-            for entity in &mut entity_records {
-                entity.range_interval = range_interval(
-                    entity.value_payload(),
-                    &entity.value_schema_selections,
-                    entity.suffix_value(),
-                    &records,
-                    &entity.object_graph,
-                    entity.entity_id,
-                );
-            }
-        }
         let graph_ids = graphs
             .iter()
             .map(|graph| graph.id.as_str())
@@ -295,129 +144,20 @@ impl CatiaNative {
             terminal_nulls_by_graph,
             parameter_bindings,
         ) = semantic_entity_indices(&entity_records, &entity_classes_by_graph_identity);
-        if namespace.version() < CATIA_REFERENCE_SIGNATURE_ENTITY_VERSION {
-            let entity_references = CatiaEntityReferenceIndex {
-                entities: &entities_by_graph_identity,
-                classes: &entity_classes_by_graph_identity,
-                terminal_nulls: &terminal_nulls_by_graph,
-            };
-            for entity in &mut entity_records {
-                if let Some(production) =
-                    entity_table::parse_reference_signature(entity.value_payload())
-                {
-                    entity.reference_signature = Some(reference_signature(
-                        production,
-                        &entity.object_graph,
-                        &entity_references,
-                    ));
-                }
-            }
-        }
-        if namespace.version() < CATIA_REFERENCE_SIGNATURE_FRAME_VERSION {
-            for entity in &mut entity_records {
-                let payload = entity.value_payload().to_vec();
-                let Some(signature) = &mut entity.reference_signature else {
-                    continue;
-                };
-                let Some(production) = entity_table::parse_reference_signature(&payload) else {
-                    continue;
-                };
-                signature.production = production;
-            }
-        }
-        if namespace.version() < CATIA_REFERENCE_SIGNATURE_PAIR_VERSION {
-            let entity_references = CatiaEntityReferenceIndex {
-                entities: &entities_by_graph_identity,
-                classes: &entity_classes_by_graph_identity,
-                terminal_nulls: &terminal_nulls_by_graph,
-            };
-            for entity in &mut entity_records {
-                entity.reference_signature = entity_table::parse_reference_signature(
-                    entity.value_payload(),
-                )
-                .map(|production| {
-                    reference_signature(production, &entity.object_graph, &entity_references)
-                });
-            }
-        }
         let expected_reference_signature_cohorts =
             derive_reference_signature_cohorts(&entity_records);
-        if namespace.version() < CATIA_DERIVED_NATIVE_ID_VERSION {
-            reference_signature_cohorts = expected_reference_signature_cohorts;
-        } else if reference_signature_cohorts != expected_reference_signature_cohorts {
+        if reference_signature_cohorts != expected_reference_signature_cohorts {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 "CATIA reference-signature cohorts are not canonical".to_string(),
             ));
         }
-        if namespace.version() < CATIA_TERMINAL_NULL_REFERENCE_VERSION {
-            for graph in &graphs {
-                let terminal_null = entity_records
-                    .iter()
-                    .filter(|entity| entity.object_graph == graph.id)
-                    .map(|entity| entity.entity_id)
-                    .max()
-                    .and_then(|entity_id| entity_id.checked_add(1));
-                for record in records
-                    .iter_mut()
-                    .filter(|record| record.parent == graph.id)
-                {
-                    for reference in &mut record.references {
-                        *reference = reference
-                            .clone()
-                            .with_null_from_terminal(Some(reference.entity_id()) == terminal_null);
-                    }
-                }
-            }
-        }
-        if migrate_object_production {
-            let records_by_id = records
-                .iter()
-                .map(|record| (record.id.as_str(), record))
-                .collect::<HashMap<_, _>>();
-            let references = CatiaEntityReferenceIndex {
-                entities: &entities_by_graph_identity,
-                classes: &entity_classes_by_graph_identity,
-                terminal_nulls: &terminal_nulls_by_graph,
-            };
-            for entity in &mut entity_records {
-                entity.object_production = records_by_id
-                    .get(entity.object_record.as_str())
-                    .and_then(|object| {
-                        object_production(
-                            entity,
-                            object,
-                            &references,
-                            &relation_expressions,
-                            &relation_expression_entities,
-                            &parameter_bindings,
-                        )
-                    });
-            }
-        }
-
-        if namespace.version() < CATIA_CONSTRAINT_RANGE_INCIDENCE_VERSION
-            || namespace.version() < CATIA_CONSTRAINT_RANGE_SOURCE_ENTITY_VERSION
-            || namespace.version() < CATIA_CONSTRAINT_RANGE_STORAGE_INCIDENCE_VERSION
-        {
-            for entity in &mut entity_records {
-                if let Some(CatiaEntityValueProduction::ConstraintRange(range)) =
-                    &mut entity.value_production
-                {
-                    (range.incoming_references, range.incoming_storage_references) =
-                        entity_incidences(&records, &entity.object_graph, entity.entity_id);
-                }
-            }
-        }
-
         let expected_schema_configuration_row_chains = derive_schema_configuration_row_chains(
             &entity_records,
             &entities_by_graph_identity,
             &entity_classes_by_graph_identity,
             &terminal_nulls_by_graph,
         );
-        if migrate_row_chains {
-            schema_configuration_row_chains = expected_schema_configuration_row_chains;
-        } else if schema_configuration_row_chains != expected_schema_configuration_row_chains {
+        if schema_configuration_row_chains != expected_schema_configuration_row_chains {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
                 "schema-configuration-row chains do not match their successor links".to_string(),
             ));
@@ -672,33 +412,7 @@ impl CatiaNative {
         }
         let design_objects = design_objects(&graphs, &entity_records);
         if namespace.arenas.contains_key("design_objects") {
-            let mut stored: Vec<CatiaDesignObject> = namespace.arena_as("design_objects")?;
-            if namespace.version() < CATIA_DEFINITION_CHAIN_OWNERSHIP_VERSION {
-                let derived_by_id = design_objects
-                    .iter()
-                    .map(|object| (object.id.as_str(), object))
-                    .collect::<HashMap<_, _>>();
-                for object in &mut stored {
-                    if let Some(derived) = derived_by_id.get(object.id.as_str()) {
-                        object
-                            .definition_chain_values
-                            .clone_from(&derived.definition_chain_values);
-                    }
-                }
-            }
-            if namespace.version() < CATIA_PARALLEL_REFERENCE_COLUMN_INCIDENCE_VERSION {
-                let derived_by_id = design_objects
-                    .iter()
-                    .map(|object| (object.id.as_str(), object))
-                    .collect::<HashMap<_, _>>();
-                for object in &mut stored {
-                    if let Some(derived) = derived_by_id.get(object.id.as_str()) {
-                        object
-                            .parallel_reference_table
-                            .clone_from(&derived.parallel_reference_table);
-                    }
-                }
-            }
+            let stored: Vec<CatiaDesignObject> = namespace.arena_as("design_objects")?;
             let stored_by_id = stored
                 .iter()
                 .map(|object| (object.id.as_str(), object))
@@ -721,13 +435,6 @@ impl CatiaNative {
                 Vec::new()
             };
         finjpl_segments.sort_by_key(|segment| segment.byte_offset);
-        if namespace.version() < CATIA_OBJECT_GRAPH_SEGMENT_VERSION {
-            for graph in &mut graphs {
-                graph.finjpl_segment =
-                    containing_finjpl_segment(graph.byte_offset, graph.byte_len, &finjpl_segments)
-                        .map(str::to_owned);
-            }
-        }
         let mut external_references: Vec<CatiaExternalReference> =
             if namespace.arenas.contains_key("external_references") {
                 namespace.arena_as("external_references")?
@@ -749,118 +456,8 @@ impl CatiaNative {
             } else {
                 Vec::new()
             };
-        if namespace.version() < CATIA_LEGACY_IDENTITY_LEAD_VERSION {
-            for identity in legacy_entity_runs
-                .iter_mut()
-                .flat_map(|run| &mut run.identities)
-            {
-                identity.lead = 0x81;
-            }
-        }
-        if namespace.version() < CATIA_LEGACY_ROLE_SELECTOR_VERSION {
-            for run in &mut legacy_entity_runs {
-                for field in &mut run.text_fields {
-                    if let Some(role) = &mut field.role {
-                        role.entity_id = field.entity_id;
-                        run.role_selectors.push(role.clone());
-                    }
-                }
-                run.role_selectors.sort_by_key(|role| role.byte_offset);
-                run.role_selectors.dedup_by_key(|role| role.byte_offset);
-            }
-        }
-        if namespace.version() < CATIA_LEGACY_SCHEMA_IDENTIFIER_VERSION {
-            for program in legacy_entity_runs
-                .iter_mut()
-                .filter_map(|run| run.schema_program.as_mut())
-            {
-                program.identifiers = legacy_schema_identifiers(program).ok_or_else(|| {
-                    cadmpeg_ir::NativeConvertError::InvalidOwner(
-                        "legacy schema-program offset exceeds the platform index range".to_string(),
-                    )
-                })?;
-            }
-        }
-        if namespace.version() < CATIA_LEGACY_SCHEMA_BOUNDARY_VERSION {
-            for program in legacy_entity_runs
-                .iter_mut()
-                .filter_map(|run| run.schema_program.as_mut())
-            {
-                program.boundary = CatiaLegacySchemaProgramBoundary::VendorFooter;
-            }
-        }
-        if namespace.version() < CATIA_LEGACY_EVALUATED_VALUE_NAME_VERSION {
-            for run in &mut legacy_entity_runs {
-                for index in 0..run.scalar_values.len() {
-                    let entity_id = run.scalar_values[index].entity_id;
-                    let value_offset = run.scalar_values[index].byte_offset;
-                    let name = (run
-                        .scalar_values
-                        .iter()
-                        .filter(|value| value.entity_id == entity_id)
-                        .count()
-                        == 1)
-                        .then(|| {
-                            legacy_value_name(
-                                &run.role_selectors,
-                                &run.text_fields,
-                                entity_id,
-                                value_offset,
-                            )
-                        })
-                        .flatten();
-                    run.scalar_values[index].name_field = name.as_ref().map(|(offset, _)| *offset);
-                    run.scalar_values[index].name = name.map(|(_, name)| name);
-                }
-                for index in 0..run.string_values.len() {
-                    let entity_id = run.string_values[index].entity_id;
-                    let value_offset = run.string_values[index].byte_offset;
-                    let name = (run
-                        .string_values
-                        .iter()
-                        .filter(|value| value.entity_id == entity_id)
-                        .count()
-                        == 1)
-                        .then(|| {
-                            legacy_value_name(
-                                &run.role_selectors,
-                                &run.text_fields,
-                                entity_id,
-                                value_offset,
-                            )
-                        })
-                        .flatten();
-                    run.string_values[index].name_field = name.as_ref().map(|(offset, _)| *offset);
-                    run.string_values[index].name = name.map(|(_, name)| name);
-                }
-                for index in 0..run.integer_values.len() {
-                    let entity_id = run.integer_values[index].entity_id;
-                    let value_offset = run.integer_values[index].byte_offset;
-                    let name = (run
-                        .integer_values
-                        .iter()
-                        .filter(|value| value.entity_id == entity_id)
-                        .count()
-                        == 1)
-                        .then(|| {
-                            legacy_value_name(
-                                &run.role_selectors,
-                                &run.text_fields,
-                                entity_id,
-                                value_offset,
-                            )
-                        })
-                        .flatten();
-                    run.integer_values[index].name_field = name.as_ref().map(|(offset, _)| *offset);
-                    run.integer_values[index].name = name.map(|(_, name)| name);
-                }
-            }
-        }
         legacy_entity_runs.sort_by_key(|run| run.byte_offset);
-        validate_legacy_entity_runs(
-            &legacy_entity_runs,
-            namespace.version() >= CATIA_LEGACY_ROLE_FIELD_CODE_VERSION,
-        )?;
+        validate_legacy_entity_runs(&legacy_entity_runs)?;
         let mut preview_images: Vec<CatiaPreviewImage> =
             if namespace.arenas.contains_key("preview_images") {
                 namespace.arena_as("preview_images")?
@@ -1033,13 +630,8 @@ impl CatiaNative {
             &finjpl_segments,
             &value_blocks,
         )?;
-        validate_alias_links(
-            &alias_rows,
-            &consolidated_owner_packets,
-            namespace.version(),
-        )?;
+        validate_alias_links(&alias_rows, &consolidated_owner_packets)?;
         Ok(Self {
-            version: namespace.version(),
             alias_rows,
             catalogs,
             consolidated_circles,

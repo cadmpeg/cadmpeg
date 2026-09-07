@@ -7,9 +7,8 @@
 //! handled the file, and [`Admission`] states how.
 //!
 //! This vocabulary is about the source document. cadmpeg's own version
-//! universe — `IR_VERSION`, `NativeNamespace::version`, report
-//! `schema_version`, sidecar versions — is data about cadmpeg, never merged
-//! with this one and never sharing a type with it.
+//! stamp, `IR_VERSION`, is data about cadmpeg, never merged with this one and
+//! never sharing a type with it.
 //!
 //! # `DialectId` is opaque here
 //!
@@ -175,9 +174,9 @@ impl<'de> Deserialize<'de> for DialectId {
 
 /// How one format layer admitted, or refused, one document.
 ///
-/// Identity and admission are orthogonal: a legacy document can carry a
-/// registry row of its own while its bytes are read with a newer grammar, and
-/// a damaged frame can retain its identity while applying that row's grammar
+/// Identity and admission are orthogonal: a document can carry a registry row
+/// of its own while its bytes are read with another grammar, and a damaged
+/// frame can retain its identity while applying that row's grammar
 /// unverified. The wire form lives on [`DialectMatch`], which owns the format
 /// namespace the grammar name is local to.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -220,8 +219,8 @@ impl Grammar {
     }
 }
 
-/// Current wire form of [`Admission`], with the grammar as a full registry id.
-#[derive(Serialize)]
+/// Wire form of [`Admission`], with the grammar as a full registry id.
+#[derive(Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 enum AdmissionWire {
@@ -229,23 +228,6 @@ enum AdmissionWire {
     Unverified { using: DialectId },
     Residual,
     Refused,
-}
-
-/// Read wire, including the single legacy admission spelling.
-#[derive(Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum AdmissionReadWire {
-    Admitted,
-    Unverified {
-        using: DialectId,
-    },
-    Residual,
-    Refused,
-    /// Legacy spelling: `using` present is `Unverified`, absent is `Residual`.
-    AdmittedUnverified {
-        #[serde(default)]
-        using: Option<DialectId>,
-    },
 }
 
 /// One format layer's identification of one document.
@@ -275,19 +257,19 @@ pub struct DialectMatch {
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct DialectMatchWire<A> {
+struct DialectMatchWire {
     format: String,
     dialect: DialectId,
     #[serde(default)]
     declared: BTreeMap<String, String>,
     #[serde(default)]
     instance: Option<String>,
-    admission: A,
+    admission: AdmissionWire,
 }
 
 impl<'de> Deserialize<'de> for DialectMatch {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = DialectMatchWire::<AdmissionReadWire>::deserialize(deserializer)?;
+        let wire = DialectMatchWire::deserialize(deserializer)?;
         if wire.format != wire.dialect.namespace() {
             return Err(serde::de::Error::custom(format_args!(
                 "dialect {:?} is not in format namespace {:?}",
@@ -307,17 +289,12 @@ impl<'de> Deserialize<'de> for DialectMatch {
             }
         };
         let admission = match wire.admission {
-            AdmissionReadWire::Admitted => Admission::Admitted,
-            AdmissionReadWire::Unverified { using }
-            | AdmissionReadWire::AdmittedUnverified { using: Some(using) } => {
-                Admission::Unverified {
-                    using: grammar(using)?,
-                }
-            }
-            AdmissionReadWire::Residual | AdmissionReadWire::AdmittedUnverified { using: None } => {
-                Admission::Residual
-            }
-            AdmissionReadWire::Refused => Admission::Refused,
+            AdmissionWire::Admitted => Admission::Admitted,
+            AdmissionWire::Unverified { using } => Admission::Unverified {
+                using: grammar(using)?,
+            },
+            AdmissionWire::Residual => Admission::Residual,
+            AdmissionWire::Refused => Admission::Refused,
         };
         Ok(Self {
             dialect: wire.dialect,
@@ -363,7 +340,7 @@ impl JsonSchema for DialectMatch {
     }
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        DialectMatchWire::<AdmissionWire>::json_schema(generator)
+        DialectMatchWire::json_schema(generator)
     }
 }
 
@@ -851,41 +828,6 @@ mod tests {
                 using: Grammar::of(&DialectId::pinned("rhino:unknown")),
             }
         );
-    }
-
-    #[test]
-    fn legacy_admitted_unverified_migrates_on_read() {
-        let with_grammar = serde_json::json!({
-            "format": "rhino",
-            "dialect": "rhino:unknown",
-            "admission": { "admitted_unverified": { "using": "rhino:archive-80" } },
-        });
-        let without_grammar = serde_json::json!({
-            "format": "rhino",
-            "dialect": "rhino:unknown",
-            "admission": { "admitted_unverified": {} },
-        });
-
-        assert_eq!(
-            serde_json::from_value::<DialectMatch>(with_grammar).unwrap(),
-            DialectMatch::unverified(
-                DialectId::pinned("rhino:unknown"),
-                Grammar::of(&DialectId::pinned("rhino:archive-80"))
-            )
-        );
-        assert_eq!(
-            serde_json::from_value::<DialectMatch>(without_grammar).unwrap(),
-            DialectMatch::residual(DialectId::pinned("rhino:unknown"))
-        );
-    }
-
-    #[cfg(feature = "schema")]
-    #[test]
-    fn current_dialect_schema_excludes_the_legacy_admission_spelling() {
-        let schema = serde_json::to_string(&schemars::schema_for!(DialectMatch)).unwrap();
-        assert!(schema.contains("unverified"), "{schema}");
-        assert!(schema.contains("residual"), "{schema}");
-        assert!(!schema.contains("admitted_unverified"), "{schema}");
     }
 
     #[test]

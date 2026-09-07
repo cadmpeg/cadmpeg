@@ -2725,8 +2725,7 @@
               "view_up": null
             }
           ]
-        },
-        "version": 6
+        }
       }
     },
     "source": {
@@ -2891,7 +2890,6 @@
         "sha256": "ee4087791ed52693283c9701a3f76656d028c76d31ddc476c61b3e7136a0059e",
         "stream": "iges"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

@@ -21,7 +21,7 @@ fn native_load_rejects_orphaned_and_ambiguously_owned_design_records() {
         "Sketch",
     ]));
     let native = crate::native::CatiaNative::decode(&bytes);
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     native
         .store(&mut namespace)
         .expect("store CATIA native namespace");
@@ -65,7 +65,7 @@ fn native_load_rejects_orphaned_and_ambiguously_owned_design_records() {
 fn native_load_rejects_dangling_cross_arena_links() {
     let mut value_native = crate::native::CatiaNative::decode(&standard_catpart_with_value_block());
     value_native.value_blocks[0].catalog = "catia:missing-catalog".to_string();
-    let mut value_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut value_namespace = cadmpeg_ir::NativeNamespace::new();
     value_native
         .store(&mut value_namespace)
         .expect("store malformed value link");
@@ -77,7 +77,7 @@ fn native_load_rejects_dangling_cross_arena_links() {
     let mut omitted_value_graph =
         crate::native::CatiaNative::decode(&standard_catpart_with_value_block());
     omitted_value_graph.value_blocks[0].object_graph = None;
-    let mut omitted_value_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut omitted_value_namespace = cadmpeg_ir::NativeNamespace::new();
     omitted_value_graph
         .store(&mut omitted_value_namespace)
         .expect("store omitted value-block graph link");
@@ -89,7 +89,7 @@ fn native_load_rejects_dangling_cross_arena_links() {
     let mut external_native =
         crate::native::CatiaNative::decode(&external_reference_segment("Support.CATPart"));
     external_native.external_references[0].segment = "catia:missing-segment".to_string();
-    let mut external_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut external_namespace = cadmpeg_ir::NativeNamespace::new();
     external_native
         .store(&mut external_namespace)
         .expect("store malformed external-reference link");
@@ -101,7 +101,7 @@ fn native_load_rejects_dangling_cross_arena_links() {
     let mut alias_native = crate::native::CatiaNative::decode(&surface_alias_stream());
     alias_native.alias_rows[0].object_graph = Some("catia:missing-graph".to_string());
     alias_native.alias_rows[0].object_record = Some("catia:missing-record".to_string());
-    let mut alias_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut alias_namespace = cadmpeg_ir::NativeNamespace::new();
     alias_native
         .store(&mut alias_namespace)
         .expect("store malformed alias link");
@@ -121,7 +121,7 @@ fn native_load_rejects_dangling_cross_arena_links() {
     assert!(omitted_alias_links.alias_rows[0].object_graph.is_some());
     omitted_alias_links.alias_rows[0].object_graph = None;
     omitted_alias_links.alias_rows[0].object_record = None;
-    let mut omitted_alias_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut omitted_alias_namespace = cadmpeg_ir::NativeNamespace::new();
     omitted_alias_links
         .store(&mut omitted_alias_namespace)
         .expect("store omitted alias links");
@@ -143,7 +143,7 @@ fn native_load_rejects_noncanonical_catalog_and_record_views() {
     ]));
     let native = crate::native::CatiaNative::decode(&bytes);
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     native.store(&mut namespace).expect("store catalogs");
     let mut catalogs: Vec<serde_json::Value> = namespace.arena_as("catalogs").unwrap();
     catalogs[0]["declared_count"] = serde_json::json!(native.catalogs[0].declared_count() + 1);
@@ -155,7 +155,7 @@ fn native_load_rejects_noncanonical_catalog_and_record_views() {
 
     let mut invalid_entry_ordinal = native.clone();
     invalid_entry_ordinal.catalogs[0].entries[0].ordinal = 1;
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     invalid_entry_ordinal
         .store(&mut namespace)
         .expect("store invalid catalog ordinal");
@@ -166,7 +166,7 @@ fn native_load_rejects_noncanonical_catalog_and_record_views() {
 
     let mut invalid_record_ordinal = native.clone();
     invalid_record_ordinal.object_graphs[0].records[0].ordinal = 9;
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     invalid_record_ordinal
         .store(&mut namespace)
         .expect("store invalid record ordinal");
@@ -177,7 +177,7 @@ fn native_load_rejects_noncanonical_catalog_and_record_views() {
 
     let mut invalid_design_link = native.clone();
     invalid_design_link.object_graphs[0].records[0].design_object = None;
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     invalid_design_link
         .store(&mut namespace)
         .expect("store invalid design-object link");
@@ -190,7 +190,7 @@ fn native_load_rejects_noncanonical_catalog_and_record_views() {
     invalid_references.object_graphs[0].records[0]
         .references
         .clear();
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     invalid_references
         .store(&mut namespace)
         .expect("store invalid payload-reference links");
@@ -203,7 +203,7 @@ fn native_load_rejects_noncanonical_catalog_and_record_views() {
 #[test]
 fn native_load_rejects_noncanonical_value_block_views() {
     let native = crate::native::CatiaNative::decode(&standard_catpart_with_value_block());
-    let mut canonical_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut canonical_namespace = cadmpeg_ir::NativeNamespace::new();
     native
         .store(&mut canonical_namespace)
         .expect("store canonical value selections");
@@ -234,7 +234,7 @@ fn native_load_rejects_noncanonical_value_block_views() {
     ));
 
     let assert_rejected = |malformed: crate::native::CatiaNative| {
-        let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+        let mut namespace = cadmpeg_ir::NativeNamespace::new();
         malformed
             .store(&mut namespace)
             .expect("store malformed value-block view");
@@ -293,7 +293,7 @@ fn native_load_rejects_noncanonical_entity_frame_lengths() {
     {
         let mut malformed = native.clone();
         mutate(&mut malformed.entity_records[0]);
-        let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+        let mut namespace = cadmpeg_ir::NativeNamespace::new();
         malformed
             .store(&mut namespace)
             .expect("store malformed entity frame");
@@ -689,274 +689,17 @@ fn schema_configuration_productions_distinguish_terminal_null_identities() {
 }
 
 #[test]
-fn native_load_migrates_and_validates_configuration_incidences() {
+fn native_load_validates_configuration_incidences() {
     let native = crate::native::CatiaNative::decode(
         &standard_catpart_with_configuration_incidences(8, 5, 7),
     );
-    let mut legacy_named = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    native
-        .store(&mut legacy_named)
-        .expect("store schema-configuration namespace");
-    let entity = legacy_named
-        .arenas
-        .get_mut("entity_records")
-        .expect("stored entity records")
-        .first_mut()
-        .expect("stored schema-configuration entity");
-    let mut fields = entity.fields_mut();
-    let configuration = fields
-        .remove("schema_configuration_record")
-        .expect("stored schema-configuration record");
-    fields.insert("configuration_record".to_string(), configuration);
-    drop(fields);
-    let row_entity = legacy_named
-        .arenas
-        .get_mut("entity_records")
-        .expect("stored entity records")
-        .get_mut(1)
-        .expect("stored schema-configuration-row entity");
-    let mut fields = row_entity.fields_mut();
-    let row_link = fields
-        .remove("schema_configuration_row_link")
-        .expect("stored schema-configuration-row link");
-    fields.insert("configuration_row_link".to_string(), row_link);
-    drop(fields);
-    let row_chains = legacy_named
-        .arenas
-        .remove("schema_configuration_row_chains")
-        .expect("stored schema-configuration-row chains");
-    legacy_named
-        .arenas
-        .insert("configuration_row_chains".to_string(), row_chains);
-    legacy_named.set_version(
-        std::num::NonZeroU32::new(crate::native::CATIA_SCHEMA_CONFIGURATION_NAMING_VERSION - 1)
-            .unwrap(),
-    );
-    let chain = legacy_named
-        .arenas
-        .get_mut("configuration_row_chains")
-        .expect("stored legacy-named schema-configuration-row chains")
-        .first_mut()
-        .expect("stored legacy-named schema-configuration-row chain");
-    let legacy_id = chain.id().replace(
-        ":schema-configuration-row-chain#",
-        ":configuration-row-chain#",
-    );
-    let fields = chain.fields();
-    *chain = cadmpeg_ir::NativeRecord::new(legacy_id, fields);
-    let loaded = crate::native::CatiaNative::load(&legacy_named)
-        .expect("load legacy-named schema-configuration incidences");
-    assert_eq!(
-        loaded.entity_records[0].schema_configuration_record(),
-        native.entity_records[0].schema_configuration_record()
-    );
-    assert_eq!(
-        loaded.entity_records[1].schema_configuration_row_link(),
-        native.entity_records[1].schema_configuration_row_link()
-    );
-    assert_eq!(
-        loaded.schema_configuration_row_chains,
-        native.schema_configuration_row_chains
-    );
-
-    let mut older = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    native
-        .store(&mut older)
-        .expect("store configuration namespace");
-    older.set_version(
-        std::num::NonZeroU32::new(crate::native::CATIA_SCHEMA_CONFIGURATION_REFERENCE_VERSION - 1)
-            .unwrap(),
-    );
-    for entity in older
-        .arenas
-        .get_mut("entity_records")
-        .expect("stored entity records")
-    {
-        let id = entity.id().to_owned();
-        let mut fields = entity.fields();
-        fields.remove("schema_configuration_record");
-        fields.remove("schema_configuration_row_link");
-        *entity = cadmpeg_ir::NativeRecord::new(id, fields);
-    }
-    let migrated =
-        crate::native::CatiaNative::load(&older).expect("migrate configuration incidences");
-    assert_eq!(
-        migrated.entity_records[0].schema_configuration_record(),
-        native.entity_records[0].schema_configuration_record()
-    );
-    assert_eq!(
-        migrated.entity_records[1].schema_configuration_row_link(),
-        native.entity_records[1].schema_configuration_row_link()
-    );
-    assert_eq!(
-        migrated.schema_configuration_row_chains,
-        native.schema_configuration_row_chains
-    );
-
-    let mut version_250 = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    native
-        .store(&mut version_250)
-        .expect("store configuration payload offsets");
-    let entities = version_250
-        .arenas
-        .get_mut("entity_records")
-        .expect("stored entity records");
-    let mut stored_fields = entities[0].fields_mut();
-    let configuration = stored_fields
-        .get_mut("schema_configuration_record")
-        .expect("stored schema-configuration record")
-        .as_object_mut()
-        .expect("stored configuration object");
-    configuration.remove("schema_payload_offset");
-    let entity_reference = configuration["entity_reference"]
-        .as_object()
-        .expect("stored configuration incidence")["reference"]
-        .clone();
-    configuration.insert("entity_reference".to_string(), entity_reference);
-    drop(stored_fields);
-    entities[1]
-        .fields()
-        .get_mut("schema_configuration_row_link")
-        .expect("stored schema-configuration-row link")
-        .as_object_mut()
-        .expect("stored schema-configuration-row object")
-        .remove("successor_payload_offset");
-    version_250.set_version(
-        std::num::NonZeroU32::new(crate::native::CATIA_CONFIGURATION_PAYLOAD_OFFSET_VERSION - 1)
-            .unwrap(),
-    );
-    let migrated = crate::native::CatiaNative::load(&version_250)
-        .expect("migrate configuration payload offsets");
-    assert_eq!(
-        migrated.entity_records[0].schema_configuration_record(),
-        native.entity_records[0].schema_configuration_record()
-    );
-    assert_eq!(
-        migrated.entity_records[1].schema_configuration_row_link(),
-        native.entity_records[1].schema_configuration_row_link()
-    );
-
-    let interval_native =
-        crate::native::CatiaNative::decode(&standard_catpart_with_schema_configuration_row_chain());
-    let mut older = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    interval_native
-        .store(&mut older)
-        .expect("store pre-interval configuration namespace");
-    older.set_version(
-        std::num::NonZeroU32::new(
-            crate::native::CATIA_SCHEMA_CONFIGURATION_ROW_INTERVAL_VERSION - 1,
-        )
-        .unwrap(),
-    );
-    for chain in older
-        .arenas
-        .get_mut("schema_configuration_row_chains")
-        .expect("stored schema-configuration-row chains")
-    {
-        let id = chain.id().to_owned();
-        let mut fields = chain.fields();
-        for link in fields
-            .get_mut("links")
-            .expect("stored schema-configuration-row links")
-            .as_array_mut()
-            .expect("stored schema-configuration-row links")
-        {
-            link.as_object_mut()
-                .expect("stored schema-configuration-row link")
-                .remove("intervening_entities");
-        }
-        *chain = cadmpeg_ir::NativeRecord::new(id, fields);
-    }
-    let migrated = crate::native::CatiaNative::load(&older)
-        .expect("migrate schema-configuration-row successor intervals");
-    assert_eq!(
-        migrated.schema_configuration_row_chains,
-        interval_native.schema_configuration_row_chains
-    );
-
-    let mut older = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    native
-        .store(&mut older)
-        .expect("store pre-chain configuration namespace");
-    older.set_version(
-        std::num::NonZeroU32::new(crate::native::CATIA_SCHEMA_CONFIGURATION_ROW_CHAIN_VERSION - 1)
-            .unwrap(),
-    );
-    older.arenas.remove("schema_configuration_row_chains");
-    let migrated =
-        crate::native::CatiaNative::load(&older).expect("migrate schema-configuration-row chains");
-    assert_eq!(
-        migrated.schema_configuration_row_chains,
-        native.schema_configuration_row_chains
-    );
-
-    let mut version_254 = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    native
-        .store(&mut version_254)
-        .expect("store pre-link-incidence configuration namespace");
-    for chain in version_254
-        .arenas
-        .get_mut("schema_configuration_row_chains")
-        .expect("stored schema-configuration-row chains")
-    {
-        let id = chain.id().to_owned();
-        let mut fields = chain.fields();
-        fields.remove("links");
-        *chain = cadmpeg_ir::NativeRecord::new(id, fields);
-    }
-    version_254.set_version(
-        std::num::NonZeroU32::new(
-            crate::native::CATIA_SCHEMA_CONFIGURATION_ROW_LINK_INCIDENCE_VERSION - 1,
-        )
-        .unwrap(),
-    );
-    let migrated = crate::native::CatiaNative::load(&version_254)
-        .expect("migrate schema-configuration-row link incidences");
-    assert_eq!(
-        migrated.schema_configuration_row_chains,
-        native.schema_configuration_row_chains
-    );
-
-    let mut expected_nulls = crate::native::CatiaNative::decode(
-        &standard_catpart_with_configuration_incidences(8, 8, 8),
-    );
-    let mut stale_nulls = expected_nulls.clone();
-    let configuration = stale_nulls.entity_records[0]
-        .schema_configuration_record_mut()
-        .expect("complete schema-configuration production");
-    configuration.entity_reference.reference = configuration
-        .entity_reference
-        .reference
-        .clone()
-        .with_null_cleared();
-    let row = stale_nulls.entity_records[1]
-        .schema_configuration_row_link_mut()
-        .expect("complete configrow production");
-    row.successor = row.successor.clone().with_null_cleared();
-    let successor = stale_nulls.schema_configuration_row_chains[0]
-        .terminal
-        .clone()
-        .with_null_cleared();
-    stale_nulls.schema_configuration_row_chains[0].terminal = successor;
-    let mut version_239 = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    stale_nulls
-        .store(&mut version_239)
-        .expect("store pre-null-incidence namespace");
-    version_239.set_version(
-        std::num::NonZeroU32::new(crate::native::CATIA_TYPED_INCIDENCE_NULL_VERSION - 1).unwrap(),
-    );
-    let migrated =
-        crate::native::CatiaNative::load(&version_239).expect("migrate incidence null states");
-    expected_nulls.version = migrated.version;
-    assert_eq!(migrated, expected_nulls);
-
     let mut malformed_chain = native.clone();
     malformed_chain.schema_configuration_row_chains[0].terminal = malformed_chain
         .schema_configuration_row_chains[0]
         .terminal
         .clone()
         .with_entity_id(6);
-    let mut current = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut current = cadmpeg_ir::NativeNamespace::new();
     malformed_chain
         .store(&mut current)
         .expect("store malformed configuration chain");
@@ -968,7 +711,7 @@ fn native_load_migrates_and_validates_configuration_incidences() {
     let mut malformed_chain_offset = native.clone();
     malformed_chain_offset.schema_configuration_row_chains[0].links_mut()[0]
         .successor_payload_offset += 1;
-    let mut current = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut current = cadmpeg_ir::NativeNamespace::new();
     malformed_chain_offset
         .store(&mut current)
         .expect("store malformed configuration-chain offset");
@@ -987,7 +730,7 @@ fn native_load_migrates_and_validates_configuration_incidences() {
         .schema_configuration_row_link_mut()
         .expect("decoded configrow link")
         .successor_payload_offset += 1;
-    let mut current = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut current = cadmpeg_ir::NativeNamespace::new();
     malformed_offsets
         .store(&mut current)
         .expect("store malformed configuration offsets");
@@ -996,6 +739,8 @@ fn native_load_migrates_and_validates_configuration_incidences() {
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
 
+    let interval_native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_schema_configuration_row_chain());
     let mut malformed_intervals = interval_native;
     malformed_intervals.schema_configuration_row_chains[0].links_mut()[0]
         .intervening_entities
@@ -1008,7 +753,7 @@ fn native_load_migrates_and_validates_configuration_incidences() {
             .clone();
         current.with_entity_id(8)
     };
-    let mut current = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut current = cadmpeg_ir::NativeNamespace::new();
     malformed_intervals
         .store(&mut current)
         .expect("store malformed schema-configuration-row intervals");
@@ -1028,7 +773,7 @@ fn native_load_migrates_and_validates_configuration_incidences() {
         .schema_configuration_row_link_mut()
         .expect("decoded configrow link")
         .successor = malformed_successor;
-    let mut current = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut current = cadmpeg_ir::NativeNamespace::new();
     malformed
         .store(&mut current)
         .expect("store malformed current namespace");
@@ -1046,7 +791,7 @@ fn native_load_rejects_noncanonical_graph_catalog_views() {
     assert!(native.object_graphs[0].records[0].class_name().is_some());
     assert!(native.object_graphs[0].records[0].class_entry().is_some());
     let assert_rejected = |malformed: crate::native::CatiaNative| {
-        let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+        let mut namespace = cadmpeg_ir::NativeNamespace::new();
         malformed
             .store(&mut namespace)
             .expect("store malformed graph-catalog view");
@@ -1085,7 +830,7 @@ fn native_load_rejects_noncanonical_graph_catalog_views() {
 fn native_load_rejects_invalid_source_identities_and_extents() {
     let native = crate::native::CatiaNative::decode(&standard_catpart_with_value_block());
     let assert_rejected = |malformed: crate::native::CatiaNative| {
-        let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+        let mut namespace = cadmpeg_ir::NativeNamespace::new();
         malformed
             .store(&mut namespace)
             .expect("store malformed source identity");
@@ -1117,7 +862,7 @@ fn native_load_rejects_invalid_source_identities_and_extents() {
 }
 
 #[test]
-fn native_store_paths_write_the_current_schema_version() {
+fn native_store_paths_cover_every_declared_arena() {
     let catalogue_names = crate::native::CATIA_FAMILIES
         .iter()
         .map(|row| row.arena)
@@ -1131,37 +876,11 @@ fn native_store_paths_write_the_current_schema_version() {
             .collect::<std::collections::BTreeSet<_>>()
     );
 
-    let borrowed = crate::native::CatiaNative {
-        version: 1,
-        ..crate::native::CatiaNative::default()
-    };
-    let mut borrowed_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    borrowed
-        .store(&mut borrowed_namespace)
-        .expect("store borrowed CATIA namespace");
-    assert_eq!(
-        borrowed_namespace.version(),
-        crate::native::CATIA_NATIVE_VERSION
-    );
-
-    let owned = crate::native::CatiaNative {
-        version: 1,
-        ..crate::native::CatiaNative::default()
-    };
-    let mut owned_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    owned
-        .store_owned(&mut owned_namespace)
-        .expect("store owned CATIA namespace");
-    assert_eq!(
-        owned_namespace.version(),
-        crate::native::CATIA_NATIVE_VERSION
-    );
-
     let rich = crate::native::CatiaNative::decode(&standard_catpart());
-    let mut rich_borrowed = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut rich_borrowed = cadmpeg_ir::NativeNamespace::new();
     rich.store(&mut rich_borrowed)
         .expect("store populated borrowed CATIA namespace");
-    let mut rich_owned = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut rich_owned = cadmpeg_ir::NativeNamespace::new();
     rich.clone()
         .store_owned(&mut rich_owned)
         .expect("store populated owned CATIA namespace");
@@ -1173,7 +892,7 @@ fn native_store_paths_write_the_current_schema_version() {
 }
 
 #[test]
-fn native_migrates_and_validates_evaluated_value_names() {
+fn native_validates_evaluated_value_names() {
     let mut bytes = Vec::new();
     bytes.push(0xea);
     bytes.extend(1_u32.to_le_bytes());
@@ -1192,22 +911,11 @@ fn native_migrates_and_validates_evaluated_value_names() {
     let mut invalid = native.clone();
     invalid.legacy_entity_runs[0].integer_values[0].name = None;
     invalid.legacy_entity_runs[0].integer_values[0].name_field = None;
-    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::new();
     invalid
         .store(&mut invalid_namespace)
         .expect("store noncanonical evaluated value name");
     assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
-
-    let mut previous_namespace = invalid_namespace;
-    previous_namespace.set_version(std::num::NonZeroU32::new(223).unwrap());
-    let migrated = crate::native::CatiaNative::load(&previous_namespace)
-        .expect("migrate evaluated value name");
-    assert_eq!(
-        migrated.legacy_entity_runs[0].integer_values[0]
-            .name
-            .as_deref(),
-        Some("Count")
-    );
 }
 
 #[test]
@@ -1219,7 +927,7 @@ fn native_load_restores_segment_source_order_and_validates_retained_views() {
         )));
     }
     let native = crate::native::CatiaNative::decode(&bytes);
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     native
         .store(&mut namespace)
         .expect("store indexed FINJPL segments");
@@ -1251,7 +959,7 @@ fn native_load_restores_segment_source_order_and_validates_retained_views() {
     );
 
     let assert_rejected = |malformed: crate::native::CatiaNative| {
-        let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+        let mut namespace = cadmpeg_ir::NativeNamespace::new();
         malformed
             .store(&mut namespace)
             .expect("store malformed FINJPL view");
@@ -1292,7 +1000,7 @@ fn native_load_derives_complete_source_ordered_preview_views() {
     }
     let native = crate::native::CatiaNative::decode(&bytes);
     assert_eq!(native.preview_images.len(), 12);
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     native
         .store(&mut namespace)
         .expect("store indexed preview views");
@@ -1309,7 +1017,7 @@ fn native_load_derives_complete_source_ordered_preview_views() {
     );
 
     let assert_rejected = |malformed: crate::native::CatiaNative| {
-        let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+        let mut namespace = cadmpeg_ir::NativeNamespace::new();
         malformed
             .store(&mut namespace)
             .expect("store malformed preview view");

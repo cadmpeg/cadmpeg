@@ -675,7 +675,7 @@ fn unsupported_retained_native_records_are_refused_before_output() {
     decoded
         .ir_mut()
         .native
-        .namespace_mut("rhino", std::num::NonZeroU32::MIN)
+        .namespace_mut("rhino")
         .arenas
         .entry("materials".into())
         .or_default()

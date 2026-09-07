@@ -142,8 +142,7 @@
               "id": "creo:ActDatums:section#76"
             }
           ]
-        },
-        "version": 1
+        }
       }
     },
     "source": {
@@ -692,7 +691,6 @@
         "sha256": "1b333cc1f4c5d66ca7e15db0abda213fa92895969b69db64fa3f4f796364f9a2",
         "stream": "creo:ActDatums"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

@@ -50,168 +50,6 @@ use crate::object_graph::{
 use crate::value_block;
 use crate::wire::records::{ConsolidatedFrameFlag, ConsolidatedFrameWidth, ConsolidatedRecord};
 
-/// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 288;
-/// Native schema version that links width-coded owner-chart supports to alias rows.
-#[cfg(test)]
-pub(crate) const CATIA_OWNER_CHART_ALIAS_VERSION: u32 = 286;
-/// Native schema version that resolves grouped aliases to persistent surface tags.
-#[cfg(test)]
-pub(crate) const CATIA_ALIAS_SURFACE_TAG_VERSION: u32 = 285;
-/// Native schema version associating exact scalar nominals with `Range` intervals.
-#[cfg(test)]
-pub(crate) const CATIA_RANGE_NOMINAL_VERSION: u32 = 276;
-/// Native schema version admitting the `81 93` entity-suffix value trailer.
-#[cfg(test)]
-pub(crate) const CATIA_SUFFIX_TRAILER_8193_VERSION: u32 = 275;
-/// Native schema version retaining complete source-schema `Range` intervals.
-#[cfg(test)]
-pub(crate) const CATIA_RANGE_INTERVAL_VERSION: u32 = 273;
-/// Native schema version retaining incoming incidences for every `Range` interval.
-#[cfg(test)]
-pub(crate) const CATIA_RANGE_INTERVAL_INCIDENCE_VERSION: u32 = 274;
-/// Native schema version using schema-configuration names and derived identities.
-#[cfg(test)]
-pub(crate) const CATIA_SCHEMA_CONFIGURATION_NAMING_VERSION: u32 = 272;
-#[cfg(test)]
-const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
-#[cfg(test)]
-const CATIA_LEGACY_ROLE_SELECTOR_VERSION: u32 = 212;
-#[cfg(test)]
-const CATIA_LEGACY_ROLE_FIELD_CODE_VERSION: u32 = 220;
-#[cfg(test)]
-const CATIA_LEGACY_SCHEMA_IDENTIFIER_VERSION: u32 = 222;
-#[cfg(test)]
-const CATIA_LEGACY_SCHEMA_BOUNDARY_VERSION: u32 = 223;
-#[cfg(test)]
-const CATIA_LEGACY_EVALUATED_VALUE_NAME_VERSION: u32 = 224;
-#[cfg(test)]
-pub(crate) const CATIA_RELATION_PROGRAM_INSTANCE_VERSION: u32 = 228;
-/// Native schema version adding the compact relation frame's context incidence.
-#[cfg(test)]
-pub(crate) const CATIA_RELATION_PROGRAM_CONTEXT_VERSION: u32 = 231;
-#[cfg(test)]
-pub(crate) const CATIA_CONSTRAINT_RANGE_INCIDENCE_VERSION: u32 = 229;
-#[cfg(test)]
-const CATIA_CONFIGURATION_INCIDENCE_VERSION: u32 = 230;
-/// Native schema version separating schema-configuration selectors and entity references.
-#[cfg(test)]
-pub(crate) const CATIA_SCHEMA_CONFIGURATION_REFERENCE_VERSION: u32 = 232;
-/// Native schema version retaining selected entity classes on typed incidences.
-#[cfg(test)]
-pub(crate) const CATIA_TYPED_INCIDENCE_CLASS_VERSION: u32 = 233;
-/// Native schema version unifying relation-program entity incidences.
-#[cfg(test)]
-pub(crate) const CATIA_RELATION_TYPED_REFERENCE_VERSION: u32 = 234;
-/// Native schema version retaining the source entity of constraint-range incidences.
-#[cfg(test)]
-pub(crate) const CATIA_CONSTRAINT_RANGE_SOURCE_ENTITY_VERSION: u32 = 235;
-/// Native namespace version that unifies formula output incidence.
-#[cfg(test)]
-pub(crate) const CATIA_FORMULA_OUTPUT_REFERENCE_VERSION: u32 = 236;
-/// Native namespace version that unifies formula expression incidence.
-#[cfg(test)]
-pub(crate) const CATIA_FORMULA_EXPRESSION_REFERENCE_VERSION: u32 = 237;
-/// Native namespace version that types formula dependency candidate incidences.
-#[cfg(test)]
-pub(crate) const CATIA_FORMULA_DEPENDENCY_REFERENCE_VERSION: u32 = 238;
-/// Native schema version retaining complete ordered schema-configuration-row chains.
-#[cfg(test)]
-pub(crate) const CATIA_SCHEMA_CONFIGURATION_ROW_CHAIN_VERSION: u32 = 239;
-/// Native schema version retaining terminal-null state on every typed incidence.
-#[cfg(test)]
-pub(crate) const CATIA_TYPED_INCIDENCE_NULL_VERSION: u32 = 240;
-/// Native schema version retaining every exact relation-program reference incidence.
-#[cfg(test)]
-pub(crate) const CATIA_RELATION_PROGRAM_REFERENCE_INCIDENCE_VERSION: u32 = 241;
-/// Native schema version retaining relation-program source-symbol dependencies.
-#[cfg(test)]
-pub(crate) const CATIA_RELATION_PROGRAM_DEPENDENCY_VERSION: u32 = 242;
-/// Native schema version retaining complete ordered relation-program inputs.
-#[cfg(test)]
-pub(crate) const CATIA_RELATION_PROGRAM_INPUT_VERSION: u32 = 243;
-/// Native schema version retaining entities between schema-configuration-row successors.
-#[cfg(test)]
-pub(crate) const CATIA_SCHEMA_CONFIGURATION_ROW_INTERVAL_VERSION: u32 = 244;
-/// Native schema version retaining constraint-range storage incidences.
-#[cfg(test)]
-pub(crate) const CATIA_CONSTRAINT_RANGE_STORAGE_INCIDENCE_VERSION: u32 = 245;
-/// Native schema version retaining each relation-symbol occurrence offset.
-#[cfg(test)]
-pub(crate) const CATIA_RELATION_DEPENDENCY_OFFSET_VERSION: u32 = 246;
-/// Native schema version retaining relation-program reference occurrence offsets.
-#[cfg(test)]
-pub(crate) const CATIA_RELATION_REFERENCE_OFFSET_VERSION: u32 = 247;
-/// Native schema version excluding string-literal contents from relation dependencies.
-#[cfg(test)]
-pub(crate) const CATIA_RELATION_STRING_LITERAL_DEPENDENCY_VERSION: u32 = 248;
-/// Native schema version retaining formula reference occurrence offsets.
-#[cfg(test)]
-pub(crate) const CATIA_FORMULA_REFERENCE_OFFSET_VERSION: u32 = 250;
-/// Native schema version retaining configuration payload occurrence offsets.
-#[cfg(test)]
-pub(crate) const CATIA_CONFIGURATION_PAYLOAD_OFFSET_VERSION: u32 = 251;
-/// Native schema version retaining typed entity-schema selector incidences.
-#[cfg(test)]
-pub(crate) const CATIA_ENTITY_SCHEMA_VALUE_INCIDENCE_VERSION: u32 = 252;
-/// Native schema version retaining suffix schema-selector offsets.
-#[cfg(test)]
-pub(crate) const CATIA_SUFFIX_SCHEMA_OFFSET_VERSION: u32 = 253;
-/// Native schema version retaining suffix evaluation-opcode offsets.
-#[cfg(test)]
-pub(crate) const CATIA_SUFFIX_EVALUATION_OFFSET_VERSION: u32 = 254;
-/// Native schema version retaining ordered schema-configuration-row link incidences.
-#[cfg(test)]
-pub(crate) const CATIA_SCHEMA_CONFIGURATION_ROW_LINK_INCIDENCE_VERSION: u32 = 255;
-/// Native schema version retaining parallel-reference cell offsets.
-#[cfg(test)]
-pub(crate) const CATIA_PARALLEL_REFERENCE_CELL_OFFSET_VERSION: u32 = 256;
-/// Native schema version retaining parallel-reference column incidences.
-#[cfg(test)]
-pub(crate) const CATIA_PARALLEL_REFERENCE_COLUMN_INCIDENCE_VERSION: u32 = 257;
-/// Native schema version requiring exact relation-signature outer whitespace.
-#[cfg(test)]
-pub(crate) const CATIA_RELATION_SIGNATURE_WHITESPACE_VERSION: u32 = 258;
-/// Native schema version retaining reference-signature field incidences.
-#[cfg(test)]
-pub(crate) const CATIA_REFERENCE_SIGNATURE_INCIDENCE_VERSION: u32 = 259;
-/// Native schema version resolving reference-signature entity incidences.
-#[cfg(test)]
-pub(crate) const CATIA_REFERENCE_SIGNATURE_ENTITY_VERSION: u32 = 260;
-/// Native schema version requiring consecutive reference-signature identities.
-#[cfg(test)]
-pub(crate) const CATIA_REFERENCE_SIGNATURE_PAIR_VERSION: u32 = 263;
-/// Native schema version retaining reference-signature cohorts.
-#[cfg(test)]
-pub(crate) const CATIA_REFERENCE_SIGNATURE_COHORT_VERSION: u32 = 264;
-/// Native schema version retaining exact nullable numeric-pair productions.
-#[cfg(test)]
-pub(crate) const CATIA_NUMERIC_PAIR_VERSION: u32 = 265;
-/// Native schema version enforcing canonical reference-signature framing equations.
-#[cfg(test)]
-pub(crate) const CATIA_REFERENCE_SIGNATURE_FRAME_VERSION: u32 = 267;
-/// Native schema version retaining cohort-level descriptor schema incidences.
-#[cfg(test)]
-pub(crate) const CATIA_REFERENCE_SIGNATURE_SCHEMA_VERSION: u32 = 268;
-/// Native schema version assigning canonical identities to graph-derived arenas.
-#[cfg(test)]
-pub(crate) const CATIA_DERIVED_NATIVE_ID_VERSION: u32 = 269;
-/// Native schema version assigning the framing-specific `paramout` result slot.
-#[cfg(test)]
-pub(crate) const CATIA_RELATION_PROGRAM_OUTPUT_VERSION: u32 = 271;
-#[cfg(test)]
-const CATIA_TERMINAL_NULL_REFERENCE_VERSION: u32 = 211;
-#[cfg(test)]
-const CATIA_DEFINITION_CHAIN_OWNERSHIP_VERSION: u32 = 196;
-#[cfg(test)]
-const CATIA_TYPED_OWNER_SLOT_VERSION: u32 = 198;
-#[cfg(test)]
-const CATIA_SUFFIX_FRAMING_VERSION: u32 = 200;
-#[cfg(test)]
-const CATIA_FORMULA_DEPENDENCY_CANDIDATE_VERSION: u32 = 206;
-#[cfg(test)]
-const CATIA_OBJECT_GRAPH_SEGMENT_VERSION: u32 = 208;
-
 /// Consolidated pcurve framing family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2954,14 +2792,6 @@ impl CatiaEntityReference {
     }
 
     #[cfg(test)]
-    pub fn with_null_cleared(self) -> Self {
-        match self {
-            Self::Null { entity_id } => Self::Unresolved { entity_id },
-            other => other,
-        }
-    }
-
-    #[cfg(test)]
     pub fn without_entity(self) -> Self {
         Self::Unresolved {
             entity_id: self.entity_id(),
@@ -3570,35 +3400,6 @@ impl CatiaObjectRecordReference {
             Self::Null { .. } | Self::Unresolved { .. } => None,
         }
     }
-
-    #[cfg(test)]
-    pub fn with_null_cleared(self) -> Self {
-        match self {
-            Self::Null {
-                entity_id,
-                payload_offset,
-                source,
-            } => Self::Unresolved {
-                entity_id,
-                payload_offset,
-                source,
-            },
-            other => other,
-        }
-    }
-
-    #[cfg(test)]
-    pub fn with_null_from_terminal(self, is_null: bool) -> Self {
-        if is_null {
-            Self::Null {
-                entity_id: self.entity_id(),
-                payload_offset: self.payload_offset(),
-                source: self.source().clone(),
-            }
-        } else {
-            self.with_null_cleared()
-        }
-    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -3882,40 +3683,6 @@ impl CatiaDesignReferenceCell {
                 field_class,
                 design_object,
             },
-        }
-    }
-
-    #[cfg(test)]
-    pub fn without_field_class(self) -> Self {
-        match self {
-            Self::Resolved {
-                payload_offset,
-                entity_id,
-                field,
-                design_object,
-                ..
-            } => Self::Resolved {
-                payload_offset,
-                entity_id,
-                field,
-                field_class: None,
-                design_object,
-            },
-            other => other,
-        }
-    }
-
-    #[cfg(test)]
-    pub fn with_null_cleared(self) -> Self {
-        match self {
-            Self::Null {
-                payload_offset,
-                entity_id,
-            } => Self::Unresolved {
-                payload_offset,
-                entity_id,
-            },
-            other => other,
         }
     }
 }
@@ -6885,8 +6652,6 @@ macro_rules! define_catia_arenas {
         #[cfg_attr(feature = "schema", derive(JsonSchema))]
         #[serde(try_from = "CatiaNativeWire", into = "CatiaNativeWire")]
         pub struct CatiaNative {
-            /// Schema version this namespace was written under.
-            pub version: u32,
             $(
                 $(
                     $(#[$attr])*
@@ -6899,7 +6664,6 @@ macro_rules! define_catia_arenas {
         #[derive(Serialize, Deserialize)]
         #[cfg_attr(feature = "schema", derive(JsonSchema))]
         struct CatiaNativeWire {
-            version: u32,
             $($( $(#[$attr])* #[serde(default)]
                 $field: define_catia_arenas!(@native_type $field, $stored, $record),
             )?)*
@@ -6909,7 +6673,6 @@ macro_rules! define_catia_arenas {
             fn from(mut native: CatiaNative) -> Self {
                 let nodes = edge_node_wires(std::mem::take(&mut native.consolidated_edge_nodes), &native.consolidated_vertex_identities);
                 Self {
-                    version: native.version,
                     $($( $field: define_catia_arenas!(@native_value $field, $stored, native, nodes), )?)*
                 }
             }
@@ -6920,7 +6683,6 @@ macro_rules! define_catia_arenas {
             fn try_from(mut wire: CatiaNativeWire) -> Result<Self, Self::Error> {
                 let nodes = load_edge_nodes(std::mem::take(&mut wire.consolidated_edge_nodes), &wire.consolidated_vertex_identities)?;
                 Ok(Self {
-                    version: wire.version,
                     $($( $field: define_catia_arenas!(@native_value $field, $stored, wire, nodes), )?)*
                 })
             }
@@ -7003,7 +6765,6 @@ macro_rules! define_catia_arenas {
         impl Default for CatiaNative {
             fn default() -> Self {
                 Self {
-                    version: CATIA_NATIVE_VERSION,
                     $(
                         $(
                             $field: define_catia_arenas!(@default $stored),
@@ -7242,15 +7003,12 @@ const CATIA_CATALOGUE: Catalogue<
     (),
     cadmpeg_ir::NativeNamespace,
     (),
-> = Catalogue::new(CATIA_FAMILIES, None);
+> = Catalogue::new(CATIA_FAMILIES);
 
 fn store_projection(
     projection: &CatiaArenaProjection,
     namespace: &mut cadmpeg_ir::NativeNamespace,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    namespace.set_version(
-        std::num::NonZeroU32::new(CATIA_NATIVE_VERSION).expect("CATIA native version is nonzero"),
-    );
     CATIA_CATALOGUE.emit_all(projection, namespace)?;
     debug_assert!(CATIA_ARENA_NAMES
         .iter()
@@ -8962,11 +8720,7 @@ fn resolve_owner_chart_support_aliases(
 #[cfg(test)]
 fn validate_alias_surface_tags(
     rows: &[CatiaAliasRow],
-    required: bool,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    if !required {
-        return Ok(());
-    }
     let mut expected = rows.to_vec();
     resolve_alias_surface_tags(&mut expected);
     if rows
@@ -8986,11 +8740,7 @@ fn validate_alias_surface_tags(
 fn validate_owner_chart_support_aliases(
     packets: &[CatiaConsolidatedOwnerPacket],
     aliases: &[CatiaAliasRow],
-    required: bool,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    if !required {
-        return Ok(());
-    }
     let mut expected = packets.to_vec();
     resolve_owner_chart_support_aliases(&mut expected, aliases);
     if packets == expected {
@@ -9006,10 +8756,9 @@ fn validate_owner_chart_support_aliases(
 fn validate_alias_links(
     rows: &[CatiaAliasRow],
     packets: &[CatiaConsolidatedOwnerPacket],
-    version: u32,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
-    validate_alias_surface_tags(rows, version >= CATIA_ALIAS_SURFACE_TAG_VERSION)?;
-    validate_owner_chart_support_aliases(packets, rows, version >= CATIA_OWNER_CHART_ALIAS_VERSION)
+    validate_alias_surface_tags(rows)?;
+    validate_owner_chart_support_aliases(packets, rows)
 }
 
 impl CatiaNative {
@@ -9367,7 +9116,6 @@ impl CatiaNative {
         let consolidated_vertex_identities =
             consolidated_vertex_identities(&consolidated_edge_nodes);
         Self {
-            version: CATIA_NATIVE_VERSION,
             alias_rows,
             catalogs,
             consolidated_circles,

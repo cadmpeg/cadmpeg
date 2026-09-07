@@ -158,8 +158,7 @@
           ],
           "views": [],
           "windows_bitmaps": []
-        },
-        "version": 2
+        }
       }
     },
     "source": {
@@ -244,8 +243,7 @@
     ]
   },
   "source_fidelity": {
-    "annotations": {
-    },
+    "annotations": {},
     "retained_records": [
       {
         "byte_len": 345,
@@ -255,7 +253,6 @@
         "sha256": "afbc3711088d786dee4238433ec11287a13d4119c091d6f1eac9718073d5a605",
         "stream": "source"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

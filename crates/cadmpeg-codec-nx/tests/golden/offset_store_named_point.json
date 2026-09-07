@@ -154,8 +154,7 @@
                 "id": "nx:om-section-0:block#2"
               }
             ]
-          },
-          "version": 189
+          }
         }
       },
       "source": {
@@ -295,8 +294,7 @@
           "sha256": "8c7d2c6f7def9a50d4ad3023702df661be86637f2854eff94de603676a813341",
           "stream": "nx:container"
         }
-      ],
-      "version": "3"
+      ]
     }
   },
   "inspect": {

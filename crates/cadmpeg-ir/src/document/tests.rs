@@ -353,12 +353,10 @@ fn current_document_excludes_source_byte_accounting() {
     assert!(json.get("byte_ledger").is_none());
 }
 
-/// A `SourceMeta` written before dialect layers existed still reads with them
-/// absent. Writing it back now states that absence explicitly,
-/// which is what moves every document digest over a document that has source
-/// metadata.
+/// A `SourceMeta` wire that omits `dialects` reads as unclassified. Writing it
+/// back states that absence explicitly as `"dialects":null`.
 #[test]
-fn pre_migration_source_metadata_reads_back_and_gains_the_dialect_keys() {
+fn unclassified_source_metadata_reads_back_and_writes_an_explicit_absence() {
     let stored = "{\"format\":\"rhino\",\"attributes\":{\"object_count\":\"3\"}}";
     let source: SourceMeta = serde_json::from_str(stored).unwrap();
 
@@ -412,37 +410,9 @@ fn classified_source_metadata_has_one_format_and_rejects_a_foreign_wire_match() 
     );
 }
 
-#[test]
-fn legacy_singular_source_dialect_migrates_to_current_layers() {
-    let stored = "{\"format\":\"rhino\",\"attributes\":{},\"dialect\":{\"format\":\"rhino\",\"dialect\":\"rhino:archive-80\",\"admission\":\"admitted\"}}";
-    let source: SourceMeta = serde_json::from_str(stored).unwrap();
-
-    assert_eq!(
-        source.dialect().unwrap().dialect().as_str(),
-        "rhino:archive-80"
-    );
-    let rewritten = serde_json::to_string(&source).unwrap();
-    let current: serde_json::Value = serde_json::from_str(&rewritten).unwrap();
-    assert!(current.get("dialects").is_some(), "{rewritten}");
-    assert!(current.get("dialect").is_none(), "{rewritten}");
-}
-
-#[test]
-fn source_metadata_rejects_current_and_legacy_identity_together() {
-    let stored = "{\"format\":\"rhino\",\"attributes\":{},\"dialects\":{\"primary\":{\"format\":\"rhino\",\"dialect\":\"rhino:archive-80\",\"admission\":\"admitted\"},\"extra\":[]},\"dialect\":{\"format\":\"rhino\",\"dialect\":\"rhino:archive-80\",\"admission\":\"admitted\"}}";
-    let error = serde_json::from_str::<SourceMeta>(stored).unwrap_err();
-
-    assert!(
-        error
-            .to_string()
-            .contains("cannot contain both dialects and legacy dialect fields"),
-        "{error}"
-    );
-}
-
 #[cfg(feature = "schema")]
 #[test]
-fn current_source_metadata_schema_requires_dialects_and_omits_legacy_dialect() {
+fn source_metadata_schema_requires_dialects_and_has_no_singular_dialect() {
     let schema = serde_json::to_value(schemars::schema_for!(SourceMeta)).unwrap();
     let required = schema["required"].as_array().unwrap();
 

@@ -182,8 +182,7 @@
           ],
           "views": [],
           "windows_bitmaps": []
-        },
-        "version": 2
+        }
       }
     },
     "source": {
@@ -293,7 +292,6 @@
         "sha256": "7bf8fe5cbf4fcf1e166550673e06e1b12b74ff245ed1c994dc07ff85bbe1f099",
         "stream": "source"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

@@ -133,8 +133,7 @@
           "unknowns": [],
           "vertex_ownerships": [],
           "wire_topologies": []
-        },
-        "version": 1
+        }
       }
     },
     "source": {
@@ -214,7 +213,6 @@
     "notes": []
   },
   "source_fidelity": {
-    "annotations": {},
-    "version": "3"
+    "annotations": {}
   }
 }

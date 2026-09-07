@@ -63,9 +63,6 @@ mod tests {
     }
 }
 
-/// Native namespace schema emitted by this crate.
-pub const VERSION: u32 = 23;
-
 /// Machine-derived semantic projection census for one design object.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DesignCensusRecord {

@@ -1,4 +1,4 @@
-# generated at 5526cd5f7
+# generated at a8fa064a0
 pub mod cadmpeg_asm
 pub mod cadmpeg_asm::acis_header
 pub const cadmpeg_asm::acis_header::MAGIC: &[u8; 15]
@@ -265,7 +265,7 @@ pub struct cadmpeg_asm::brep::transfer::AsmTransferRemainder
 pub cadmpeg_asm::brep::transfer::AsmTransferRemainder::annotation_records: alloc::vec::Vec<cadmpeg_asm::brep::annotations::AnnotationRecord>
 pub cadmpeg_asm::brep::transfer::AsmTransferRemainder::stats: cadmpeg_asm::brep::stats::Stats
 pub cadmpeg_asm::brep::transfer::AsmTransferRemainder::unknowns: alloc::vec::Vec<cadmpeg_ir::unknown::UnknownRecord>
-pub fn cadmpeg_asm::brep::transfer::transfer_into_ir(&cadmpeg_core::decode::context::DecodeContext<'_>, &mut cadmpeg_ir::document::CadIr, &str, core::num::nonzero::NonZeroU32, cadmpeg_asm::brep::AsmBrep) -> core::result::Result<cadmpeg_asm::brep::transfer::AsmTransferRemainder, cadmpeg_core::error::CodecError>
+pub fn cadmpeg_asm::brep::transfer::transfer_into_ir(&cadmpeg_core::decode::context::DecodeContext<'_>, &mut cadmpeg_ir::document::CadIr, &str, cadmpeg_asm::brep::AsmBrep) -> core::result::Result<cadmpeg_asm::brep::transfer::AsmTransferRemainder, cadmpeg_core::error::CodecError>
 pub enum cadmpeg_asm::brep::DecodePurpose
 pub cadmpeg_asm::brep::DecodePurpose::History
 pub cadmpeg_asm::brep::DecodePurpose::Model

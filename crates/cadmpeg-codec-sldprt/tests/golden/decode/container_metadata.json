@@ -64,8 +64,7 @@
               "id": "sldprt:file:block#54"
             }
           ]
-        },
-        "version": 13
+        }
       }
     },
     "source": {
@@ -223,7 +222,6 @@
         "sha256": "eb92821540511ea917dc6bcedab92b1a7b30e0aaa4889b1092882536cde5d5cc",
         "stream": "sldprt"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

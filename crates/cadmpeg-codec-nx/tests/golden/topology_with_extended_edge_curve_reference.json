@@ -169,8 +169,7 @@
                 ]
               }
             ]
-          },
-          "version": 1
+          }
         }
       },
       "source": {
@@ -395,8 +394,7 @@
           "sha256": "d34c1c9eeb2529fa7502ca999d1f6b0a9cdafc895070930b027964e772c4415d",
           "stream": "nx:container"
         }
-      ],
-      "version": "3"
+      ]
     }
   },
   "inspect": {

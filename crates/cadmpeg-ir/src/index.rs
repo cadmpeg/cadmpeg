@@ -346,7 +346,7 @@ mod tests {
     fn model_only_index_excludes_native_identity_universe() {
         let mut ir = CadIr::empty();
         let native_id = "test:native#0";
-        let mut namespace = NativeNamespace::new(std::num::NonZeroU32::MIN);
+        let mut namespace = NativeNamespace::new();
         namespace.arenas.insert(
             "records".into(),
             vec![NativeRecord::new(native_id, Map::new())],

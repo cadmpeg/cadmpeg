@@ -45,8 +45,7 @@
         "nx": {
           "arenas": {
             "unknowns": []
-          },
-          "version": 1
+          }
         }
       },
       "source": {
@@ -128,8 +127,7 @@
         "streams": [
           "nx:container"
         ]
-      },
-      "version": "3"
+      }
     }
   },
   "inspect": {

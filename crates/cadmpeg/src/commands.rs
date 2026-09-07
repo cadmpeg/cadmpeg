@@ -37,17 +37,6 @@ use crate::application::{
 use crate::loader;
 use crate::DecodeArgs;
 
-/// CLI command-report envelope version.
-///
-/// Independent of `CadIr.ir_version` and `DECODE_SIDECAR_VERSION`. Version 8
-/// carries the four-state dialect admission wire (`admitted`, `unverified`,
-/// `residual`, `refused`). Version 7 made the dialect fields unconditional:
-/// `dialects` on every container summary and decode report, `target` on every
-/// export report, and `dialect` on every source metadata block. Version 6
-/// added top-level `status` (`ok` | `refused`) and `refusal`
-/// (`{ stage, code, message, dialects?, target? }` or null).
-pub(crate) const CLI_SCHEMA_VERSION: u32 = 8;
-
 type CommandResult<T> = std::result::Result<T, ApplicationError>;
 
 /// Catalogs required by CLI command handlers.
@@ -85,7 +74,7 @@ pub struct ConversionArgs {
     pub destination: DestinationPolicy,
     /// Replace an existing command report.
     pub overwrite_report: bool,
-    /// Optional path for the versioned JSON command report.
+    /// Optional path for the JSON command report.
     pub report: Option<PathBuf>,
     /// Explicit input format selected by the user.
     pub forced_input: Option<ForcedInput>,

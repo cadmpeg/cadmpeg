@@ -455,7 +455,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .collect::<Vec<_>>();
     corrupted
         .native
-        .namespace_mut("fcstd", std::num::NonZeroU32::MIN)
+        .namespace_mut("fcstd")
         .set_arena("logical_ledger", &missing_payload)
         .expect("replace logical ledger");
     assert!(crate::validate_native(&corrupted).iter().any(|finding| {
@@ -469,7 +469,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     invalid_objects[0].dependency_allow_partial = Some(0);
     corrupted
         .native
-        .namespace_mut("fcstd", std::num::NonZeroU32::MIN)
+        .namespace_mut("fcstd")
         .set_arena("objects", &invalid_objects)
         .expect("replace objects");
     assert!(crate::validate_native(&corrupted)
@@ -585,7 +585,7 @@ fn native_validation_rejects_duplicate_extension_identity() {
     extensions.push(extensions[0].clone());
     corrupted
         .native
-        .namespace_mut("fcstd", std::num::NonZeroU32::MIN)
+        .namespace_mut("fcstd")
         .set_arena("extensions", &extensions)
         .expect("replace extensions");
     let findings = crate::validate_native(&corrupted);

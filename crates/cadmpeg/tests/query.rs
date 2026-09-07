@@ -21,7 +21,6 @@ fn write(dir: &std::path::Path, name: &str, content: &str) -> std::path::PathBuf
 }
 
 const CHECK_REPORT: &str = r#"{
-        "schema_version": 8,
   "command": "check",
   "status": "ok",
   "refusal": null,
@@ -53,14 +52,15 @@ const CADIR_DOC: &str = r#"{
 }"#;
 
 const SIDECAR: &str = r#"{
-  "version": "1",
   "ir_sha256": "abc123",
   "report": {
     "format": "f3d",
     "container_only": false,
     "geometry_transferred": true,
     "coverage": {"streams": 7, "segments": 3},
-    "losses": [{"code": "metadata_not_transferred", "severity": "info", "message": "thumbnail"}]
+    "losses": [{"code": {"namespace": "shared", "code": "metadata_not_transferred",
+                         "kind": "metadata_not_transferred"},
+                "severity": "info", "message": "thumbnail"}]
   }
 }"#;
 
@@ -129,7 +129,6 @@ fn summary_exposes_document_and_decode_dialect_identity() {
         dir.path(),
         "classified.fidelity.json",
         r#"{
-          "version": "3",
           "ir_sha256": "abc123",
           "report": {
             "format": "f3d",
@@ -147,7 +146,7 @@ fn summary_exposes_document_and_decode_dialect_identity() {
               "extra": [{
                 "format": "acis",
                 "dialect": "acis:sab-22300",
-                "admission": {"admitted_unverified": {"using": "acis:sab-22200"}},
+                "admission": {"unverified": {"using": "acis:sab-22200"}},
                 "instance": "member:model.sab"
               }]
             }
@@ -178,7 +177,6 @@ fn summary_exposes_inspect_export_and_refusal_identity_without_positional_layers
         dir.path(),
         "identity.report.json",
         r#"{
-        "schema_version": 8,
           "command": "convert",
           "status": "refused",
           "refusal": {
@@ -274,7 +272,6 @@ fn summary_projects_structured_target_refusals() {
         dir.path(),
         "target-refusal.json",
         r#"{
-        "schema_version": 8,
           "command": "convert",
           "status": "refused",
           "refusal": {
@@ -329,33 +326,16 @@ fn summary_projects_structured_target_refusals() {
 }
 
 #[test]
-fn sidecar_summary_projects_supported_versions_and_discloses_unchecked_fidelity() {
+fn sidecar_summary_discloses_unchecked_fidelity() {
     let dir = tempdir().unwrap();
-    let sidecar = write(dir.path(), "legacy.fidelity.json", SIDECAR);
+    let sidecar = write(dir.path(), "model.fidelity.json", SIDECAR);
 
     cadmpeg()
         .args(["query", "summary", sidecar.to_str().unwrap()])
         .assert()
         .success()
-        .stdout(
-            predicate::str::contains("sidecar_version\t4")
-                .and(predicate::str::contains("sidecar_input_version\t1"))
-                .and(predicate::str::contains(
-                    "sidecar_fidelity_validation\tnot_run",
-                )),
-        );
-
-    let unsupported = write(
-        dir.path(),
-        "future.fidelity.json",
-        &SIDECAR.replacen("\"version\": \"1\"", "\"version\": \"9\"", 1),
-    );
-    cadmpeg()
-        .args(["query", "summary", unsupported.to_str().unwrap()])
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains(
-            "unsupported decode-sidecar version: 9",
+        .stdout(predicate::str::contains(
+            "sidecar_fidelity_validation\tnot_run",
         ));
 }
 
@@ -476,7 +456,7 @@ fn findings_on_a_cadir_document_teaches_check_then_query() {
 }
 
 #[test]
-fn query_json_wraps_the_projection_in_the_versioned_envelope() {
+fn query_json_wraps_the_projection_in_an_envelope() {
     let dir = tempdir().unwrap();
     let report = write(dir.path(), "report.json", CHECK_REPORT);
     let output = cadmpeg()
@@ -485,7 +465,6 @@ fn query_json_wraps_the_projection_in_the_versioned_envelope() {
         .unwrap();
     assert!(output.status.success());
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["schema_version"], 8);
     assert_eq!(value["command"], "query findings");
     assert_eq!(value["findings"].as_array().unwrap().len(), 2);
     assert_eq!(value["findings"][0]["check"], "identity");
@@ -499,23 +478,6 @@ fn query_reads_stdin_with_dash() {
         .assert()
         .success()
         .stdout(predicate::str::contains("metadata_not_transferred"));
-}
-
-#[test]
-fn version_two_and_three_sidecars_still_project() {
-    let dir = tempdir().unwrap();
-    for version in ["2", "3"] {
-        let sidecar = write(
-            dir.path(),
-            &format!("model-v{version}.fidelity.json"),
-            &SIDECAR.replace("\"version\": \"1\"", &format!("\"version\": \"{version}\"")),
-        );
-        cadmpeg()
-            .args(["query", "coverage", sidecar.to_str().unwrap()])
-            .assert()
-            .success()
-            .stdout(predicate::str::contains("streams\t7"));
-    }
 }
 
 #[test]
@@ -797,7 +759,6 @@ fn item_json_envelope_uses_item_payload_key() {
         .unwrap();
     assert!(output.status.success());
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["schema_version"], 8);
     assert_eq!(value["command"], "query item");
     assert_eq!(value["item"].as_array().unwrap().len(), 1);
     assert_eq!(
@@ -1304,12 +1265,10 @@ fn schema_sidecar_and_json_envelope() {
 }
 
 const FIDELITY_SIDECAR: &str = r#"{
-  "version": "1",
   "ir_sha256": "abc",
   "report": {"format": "f3d", "container_only": false, "geometry_transferred": true,
              "coverage": {}, "losses": [], "notes": []},
   "fidelity": {
-    "version": "3",
     "annotations": {"streams": ["Contents/Config-0"],
                     "provenance": {"a:b:c#1": {"stream": 0, "offset": 0}},
                     "exactness": {}},

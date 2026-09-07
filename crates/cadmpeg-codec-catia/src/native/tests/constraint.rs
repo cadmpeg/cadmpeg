@@ -385,7 +385,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .constraint_range_mut()
         .expect("complete dimension constraint range")
         .framing = CatiaConstraintRangeFraming::DimensionB8;
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     malformed
         .store(&mut namespace)
         .expect("store malformed constraint range");
@@ -402,7 +402,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .expect("complete dimension constraint range")
         .constraint
         .value = "changed".to_string();
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     malformed
         .store(&mut namespace)
         .expect("store malformed constraint role");
@@ -417,7 +417,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .expect("complete referenced constraint range")
         .incoming_references[0]
         .payload_offset += 1;
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     malformed
         .store(&mut namespace)
         .expect("store malformed constraint-range incidence");
@@ -433,7 +433,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .expect("complete referenced range interval")
         .incoming_references[0]
         .payload_offset += 1;
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     malformed
         .store(&mut namespace)
         .expect("store malformed range-interval incidence");
@@ -448,7 +448,7 @@ fn native_namespace_types_dimension_constraint_ranges() {
         .expect("complete storage-referenced constraint range")
         .incoming_storage_references[0]
         .object_record = unique_native.object_graphs[0].records[0].id.clone();
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     malformed
         .store(&mut namespace)
         .expect("store malformed constraint-range storage incidence");
@@ -456,137 +456,6 @@ fn native_namespace_types_dimension_constraint_ranges() {
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
-
-    let mut stored = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    unique_native
-        .store(&mut stored)
-        .expect("store older constraint-range namespace");
-    stored.set_version(
-        std::num::NonZeroU32::new(crate::native::CATIA_CONSTRAINT_RANGE_INCIDENCE_VERSION - 1)
-            .unwrap(),
-    );
-    stored
-        .arenas
-        .get_mut("entity_records")
-        .expect("stored entity records")[0]
-        .fields()
-        .get_mut("constraint_range")
-        .expect("stored constraint range")
-        .as_object_mut()
-        .expect("stored constraint-range object")
-        .remove("incoming_references");
-    let migrated =
-        crate::native::CatiaNative::load(&stored).expect("migrate constraint-range incidence");
-    assert_eq!(
-        migrated.entity_records[0]
-            .constraint_range()
-            .expect("migrated constraint range")
-            .incoming_references
-            .len(),
-        1
-    );
-
-    let mut stored = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    unique_native
-        .store(&mut stored)
-        .expect("store older range-interval incidence namespace");
-    stored.set_version(
-        std::num::NonZeroU32::new(crate::native::CATIA_RANGE_INTERVAL_INCIDENCE_VERSION - 1)
-            .unwrap(),
-    );
-    stored
-        .arenas
-        .get_mut("entity_records")
-        .expect("stored entity records")[0]
-        .fields()
-        .get_mut("range_interval")
-        .expect("stored range interval")
-        .as_object_mut()
-        .expect("stored range-interval object")
-        .remove("incoming_references");
-    let migrated =
-        crate::native::CatiaNative::load(&stored).expect("migrate range-interval incidence");
-    assert_eq!(
-        migrated.entity_records[0]
-            .range_interval
-            .as_ref()
-            .expect("migrated range interval")
-            .incoming_references
-            .len(),
-        1
-    );
-
-    let mut stored = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    unique_native
-        .store(&mut stored)
-        .expect("store older constraint-range source namespace");
-    stored.set_version(
-        std::num::NonZeroU32::new(crate::native::CATIA_CONSTRAINT_RANGE_SOURCE_ENTITY_VERSION - 1)
-            .unwrap(),
-    );
-    stored
-        .arenas
-        .get_mut("entity_records")
-        .expect("stored entity records")[0]
-        .fields()
-        .get_mut("constraint_range")
-        .expect("stored constraint range")
-        .as_object_mut()
-        .expect("stored constraint-range object")
-        .get_mut("incoming_references")
-        .expect("stored incoming references")
-        .as_array_mut()
-        .expect("stored incoming-reference array")[0]
-        .as_object_mut()
-        .expect("stored incoming-reference object")
-        .remove("source_entity");
-    let migrated =
-        crate::native::CatiaNative::load(&stored).expect("migrate constraint-range source entity");
-    assert_eq!(
-        migrated.entity_records[0]
-            .constraint_range()
-            .expect("migrated constraint range")
-            .incoming_references[0]
-            .source_entity,
-        unique_native.entity_records[0]
-            .constraint_range()
-            .expect("source constraint range")
-            .incoming_references[0]
-            .source_entity
-    );
-
-    let mut stored = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    storage_native
-        .store(&mut stored)
-        .expect("store older constraint-range storage namespace");
-    stored.set_version(
-        std::num::NonZeroU32::new(
-            crate::native::CATIA_CONSTRAINT_RANGE_STORAGE_INCIDENCE_VERSION - 1,
-        )
-        .unwrap(),
-    );
-    stored
-        .arenas
-        .get_mut("entity_records")
-        .expect("stored entity records")[0]
-        .fields()
-        .get_mut("constraint_range")
-        .expect("stored constraint range")
-        .as_object_mut()
-        .expect("stored constraint-range object")
-        .remove("incoming_storage_references");
-    let migrated = crate::native::CatiaNative::load(&stored)
-        .expect("migrate constraint-range storage incidence");
-    assert_eq!(
-        migrated.entity_records[0]
-            .constraint_range()
-            .expect("migrated constraint range")
-            .incoming_storage_references,
-        storage_native.entity_records[0]
-            .constraint_range()
-            .expect("source constraint range")
-            .incoming_storage_references
-    );
 }
 
 #[test]
@@ -744,54 +613,6 @@ fn native_namespace_types_and_validates_range_intervals_independently_of_constra
         2
     );
 
-    let mut previous_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    native
-        .store(&mut previous_namespace)
-        .expect("store range-interval namespace");
-    previous_namespace.set_version(
-        std::num::NonZeroU32::new(crate::native::CATIA_RANGE_INTERVAL_VERSION - 1).unwrap(),
-    );
-    previous_namespace
-        .arenas
-        .get_mut("entity_records")
-        .expect("stored entity records")[0]
-        .fields_mut()
-        .remove("range_interval");
-    let migrated = crate::native::CatiaNative::load(&previous_namespace)
-        .expect("migrate range-interval production");
-    assert_eq!(
-        migrated.entity_records[0].range_interval,
-        Some(range.clone())
-    );
-
-    let mut previous_namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    native
-        .store(&mut previous_namespace)
-        .expect("store pre-nominal range namespace");
-    previous_namespace.set_version(
-        std::num::NonZeroU32::new(crate::native::CATIA_RANGE_NOMINAL_VERSION - 1).unwrap(),
-    );
-    previous_namespace
-        .arenas
-        .get_mut("entity_records")
-        .expect("stored entity records")[0]
-        .fields_mut()
-        .get_mut("range_interval")
-        .expect("stored range interval")
-        .as_object_mut()
-        .expect("stored range interval object")
-        .remove("nominal");
-    let migrated =
-        crate::native::CatiaNative::load(&previous_namespace).expect("migrate Range nominal");
-    assert_eq!(
-        migrated.entity_records[0]
-            .range_interval
-            .as_ref()
-            .expect("migrated range interval")
-            .nominal,
-        Some(nominal.clone())
-    );
-
     let mut malformed_nominal = native.clone();
     malformed_nominal.entity_records[0]
         .range_interval
@@ -801,7 +622,7 @@ fn native_namespace_types_and_validates_range_intervals_independently_of_constra
         .as_mut()
         .expect("finite Range nominal")
         .bits = 12.0_f64.to_bits();
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     malformed_nominal
         .store(&mut namespace)
         .expect("store malformed Range nominal");
@@ -817,7 +638,7 @@ fn native_namespace_types_and_validates_range_intervals_independently_of_constra
         .expect("complete range interval")
         .interval
         .prefix = RangeIntervalPrefix::Compact { value: 8, width: 1 };
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     malformed
         .store(&mut namespace)
         .expect("store malformed range interval");

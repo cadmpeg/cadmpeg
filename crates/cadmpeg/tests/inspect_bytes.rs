@@ -970,7 +970,6 @@ fn container_json_lists_entries_under_the_envelope() {
         .unwrap();
     assert!(output.status.success());
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["schema_version"], 8);
     assert_eq!(value["command"], "inspect container");
     assert!(value["generator"].as_str().unwrap().starts_with("cadmpeg "));
     assert_eq!(value["container_kind"], "zip");
@@ -1003,7 +1002,6 @@ fn container_lists_cfb_directory_rows() {
         .unwrap();
     assert!(output.status.success());
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["schema_version"], 8);
     assert_eq!(value["command"], "inspect container");
     assert_eq!(value["container_kind"], "cfb");
 }
@@ -1111,7 +1109,7 @@ fn find_context_prints_a_window_around_each_hit() {
 }
 
 #[test]
-fn find_json_emits_the_versioned_envelope() {
+fn find_json_emits_the_envelope() {
     let dir = tempdir().unwrap();
     let file = write(dir.path(), "probe.bin", b"AAAAneedleBBBBneedle");
     let output = cadmpeg()

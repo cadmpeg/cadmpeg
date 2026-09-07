@@ -48,8 +48,7 @@
               "id": "creo:THMB_IMG_MAIN:section#91"
             }
           ]
-        },
-        "version": 1
+        }
       }
     },
     "source": {
@@ -550,7 +549,6 @@
         "sha256": "fc16d7dcee9cae83ef3923222a81ccd8fe96c9d25fdb7f504d66f1011e0cd870",
         "stream": "creo:THMB_IMG_MAIN"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

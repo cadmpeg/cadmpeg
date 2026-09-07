@@ -54,8 +54,7 @@
               "id": "step:data:opaque_target#2"
             }
           ]
-        },
-        "version": 1
+        }
       }
     },
     "source": {
@@ -169,7 +168,6 @@
         "sha256": "75760ab0a42cf9aa82d38698bd9745835655906b302565e2425937f2c2085315",
         "stream": "source"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

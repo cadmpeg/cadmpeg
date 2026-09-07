@@ -133,8 +133,7 @@ pub use sketches::{
 };
 pub use source_fidelity::{
     decode_sidecar_path, DecodeSidecar, DecodeSidecarParseError, RetainedSourceRecord,
-    SourceFidelity, DECODE_SIDECAR_VERSION, DECODE_SIDECAR_VERSION_V1, DECODE_SIDECAR_VERSION_V2,
-    DECODE_SIDECAR_VERSION_V3, SOURCE_FIDELITY_VERSION,
+    SourceFidelity,
 };
 pub use spreadsheets::{
     CellAddress, Spreadsheet, SpreadsheetCell, SpreadsheetDimension, SpreadsheetId,

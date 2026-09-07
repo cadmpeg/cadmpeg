@@ -5180,15 +5180,6 @@ mod tests {
             .expect("NX namespace")
             .arena_as::<super::Expression>("expressions")
             .expect("required invariant");
-        assert_eq!(
-            result
-                .ir()
-                .native
-                .namespace("nx")
-                .expect("required invariant")
-                .version(),
-            189
-        );
         assert_eq!(expressions.len(), 1);
         assert_eq!(
             expressions[0]

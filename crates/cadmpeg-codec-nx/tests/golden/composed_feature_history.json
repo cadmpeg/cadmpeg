@@ -6016,8 +6016,7 @@
                 "id": "nx:om-section-0:block#6"
               }
             ]
-          },
-          "version": 189
+          }
         }
       },
       "source": {
@@ -6722,8 +6721,7 @@
           "sha256": "71065c6382c3d4dc6c9d379899c12ff1a5ed95b1167c02101e18ec8dffdc0022",
           "stream": "nx:container"
         }
-      ],
-      "version": "3"
+      ]
     }
   },
   "inspect": {

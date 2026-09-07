@@ -778,9 +778,6 @@ fn rewritable_generated_namespace(namespace: &cadmpeg_ir::NativeNamespace) -> bo
         "opaque_records",
         "unknowns",
     ];
-    if namespace.version() != 2 {
-        return false;
-    }
     if namespace
         .arenas
         .iter()

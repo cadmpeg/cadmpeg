@@ -65,7 +65,6 @@ fn decode_builds_valid_topology_and_geometry() {
     assert!(continuities
         .iter()
         .all(|metadata| metadata.sense == cadmpeg_ir::topology::Sense::Forward));
-    assert_f3d_native_parity(result.ir());
     assert!(result
         .source_fidelity()
         .annotations

@@ -184,9 +184,7 @@ pub(crate) fn writer_rejects_unserialized_declaration_and_stale_payload_edits() 
         .expect("decode source");
 
     let mut declaration_edit = decoded.ir().clone();
-    let namespace = declaration_edit
-        .native
-        .namespace_mut("fcstd", std::num::NonZeroU32::MIN);
+    let namespace = declaration_edit.native.namespace_mut("fcstd");
     let mut objects = namespace
         .arena_as::<crate::native::ObjectRecord>("objects")
         .expect("objects");
@@ -204,9 +202,7 @@ pub(crate) fn writer_rejects_unserialized_declaration_and_stale_payload_edits() 
     assert!(error.to_string().contains("declaration edits"));
 
     let (mut stale_entry, _, _) = decoded.into_parts();
-    let namespace = stale_entry
-        .native
-        .namespace_mut("fcstd", std::num::NonZeroU32::MIN);
+    let namespace = stale_entry.native.namespace_mut("fcstd");
     let mut entries = namespace
         .arena_as::<serde_json::Value>("entries")
         .expect("entries");

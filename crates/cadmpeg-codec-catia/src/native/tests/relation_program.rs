@@ -952,7 +952,7 @@ fn decode_reports_exact_relation_program_instances() {
 }
 
 #[test]
-fn native_load_derives_relation_program_instances_from_older_namespaces() {
+fn native_load_validates_relation_program_instances() {
     for native in [
         crate::native::CatiaNative::decode(&standard_catpart_with_relation_program_instance(
             1, 1, 1, 2,
@@ -961,174 +961,13 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
             &standard_catpart_with_lead54_relation_program_instance(1, 1, 1, 2),
         ),
     ] {
-        let expected = native.entity_records[1]
-            .relation_program_instance()
-            .cloned()
-            .expect("decoded relation-program instance");
-        let mut stored = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-        native
-            .store(&mut stored)
-            .expect("store older relation-program namespace");
-        for (version, remove_context, remove_trailing, remove_framing) in [
-            (
-                crate::native::CATIA_RELATION_PROGRAM_INPUT_VERSION - 1,
-                false,
-                false,
-                false,
-            ),
-            (
-                crate::native::CATIA_RELATION_PROGRAM_REFERENCE_INCIDENCE_VERSION - 1,
-                false,
-                false,
-                false,
-            ),
-            (
-                crate::native::CATIA_RELATION_TYPED_REFERENCE_VERSION - 1,
-                false,
-                false,
-                false,
-            ),
-            (
-                crate::native::CATIA_RELATION_PROGRAM_CONTEXT_VERSION - 1,
-                true,
-                false,
-                false,
-            ),
-            (
-                crate::native::CATIA_RELATION_PROGRAM_CONTEXT_VERSION - 2,
-                true,
-                true,
-                false,
-            ),
-            (
-                crate::native::CATIA_RELATION_PROGRAM_INSTANCE_VERSION,
-                true,
-                true,
-                true,
-            ),
-            (
-                crate::native::CATIA_RELATION_PROGRAM_INSTANCE_VERSION - 1,
-                true,
-                true,
-                true,
-            ),
-        ] {
-            let mut namespace = stored.clone();
-            namespace.set_version(std::num::NonZeroU32::new(version).unwrap());
-            let mut stored_fields = namespace
-                .arenas
-                .get_mut("entity_records")
-                .expect("stored entity records")[1]
-                .fields_mut();
-            let stored_instance = stored_fields
-                .get_mut("relation_program_instance")
-                .expect("stored relation-program field")
-                .as_object_mut()
-                .expect("stored relation-program instance");
-            if remove_context {
-                stored_instance.remove("lead12_context_entity");
-            }
-            if remove_trailing {
-                stored_instance.remove("lead54_trailing_entity");
-            }
-            if remove_framing {
-                stored_instance.remove("framing");
-            }
-            stored_instance.remove("output_entity");
-            stored_instance.remove("inputs");
-            stored_instance.remove("reference_incidences");
-            stored_instance.remove("parameter_dependencies");
-            stored_instance.remove("program_entity");
-            stored_instance.remove("repeated_entity");
-            for field in ["lead12_context_entity", "lead54_trailing_entity"] {
-                if let Some(reference) = stored_instance
-                    .get_mut(field)
-                    .and_then(|value| value.as_object_mut())
-                {
-                    reference.remove("class_name");
-                }
-            }
-
-            drop(stored_fields);
-            let migrated = crate::native::CatiaNative::load(&namespace)
-                .expect("migrate relation-program instance");
-            assert_eq!(
-                migrated.entity_records[1].relation_program_instance(),
-                Some(&expected)
-            );
-        }
-
-        let mut namespace = stored.clone();
-        namespace.set_version(
-            std::num::NonZeroU32::new(crate::native::CATIA_RELATION_REFERENCE_OFFSET_VERSION - 1)
-                .unwrap(),
-        );
-        let mut stored_fields = namespace
-            .arenas
-            .get_mut("entity_records")
-            .expect("stored entity records")[1]
-            .fields_mut();
-        let incidences = stored_fields
-            .get_mut("relation_program_instance")
-            .expect("stored relation-program field")
-            .as_object_mut()
-            .expect("stored relation-program instance")
-            .get_mut("reference_incidences")
-            .expect("stored reference incidences")
-            .as_array_mut()
-            .expect("stored reference incidences");
-        for incidence in incidences {
-            *incidence =
-                incidence.as_object().expect("stored reference incidence")["reference"].clone();
-        }
-        drop(stored_fields);
-        let migrated = crate::native::CatiaNative::load(&namespace)
-            .expect("migrate relation-program reference offsets");
-        assert_eq!(
-            migrated.entity_records[1].relation_program_instance(),
-            Some(&expected)
-        );
-
-        let mut namespace = stored.clone();
-        namespace.set_version(
-            std::num::NonZeroU32::new(crate::native::CATIA_RELATION_DEPENDENCY_OFFSET_VERSION - 1)
-                .unwrap(),
-        );
-        let mut stored_fields = namespace
-            .arenas
-            .get_mut("entity_records")
-            .expect("stored entity records")[1]
-            .fields_mut();
-        let dependencies = stored_fields
-            .get_mut("relation_program_instance")
-            .expect("stored relation-program field")
-            .as_object_mut()
-            .expect("stored relation-program instance")
-            .get_mut("parameter_dependencies")
-            .expect("stored parameter dependencies")
-            .as_array_mut()
-            .expect("stored parameter dependencies");
-        for dependency in dependencies {
-            dependency
-                .as_object_mut()
-                .expect("stored parameter dependency")
-                .remove("source_offset");
-        }
-        drop(stored_fields);
-        let migrated = crate::native::CatiaNative::load(&namespace)
-            .expect("migrate relation-program dependency offsets");
-        assert_eq!(
-            migrated.entity_records[1].relation_program_instance(),
-            Some(&expected)
-        );
-
         let mut malformed_dependencies = native.clone();
         malformed_dependencies.entity_records[1]
             .relation_program_instance_mut()
             .expect("decoded relation-program instance")
             .parameter_dependencies[0]
             .symbol = "#999_".to_string();
-        let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+        let mut namespace = cadmpeg_ir::NativeNamespace::new();
         malformed_dependencies
             .store(&mut namespace)
             .expect("store malformed relation-program dependencies");
@@ -1142,7 +981,7 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
             .relation_program_instance_mut()
             .expect("decoded relation-program instance")
             .inputs = Some(Vec::new());
-        let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+        let mut namespace = cadmpeg_ir::NativeNamespace::new();
         malformed_inputs
             .store(&mut namespace)
             .expect("store malformed relation-program inputs");
@@ -1157,7 +996,7 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
             .expect("decoded relation-program instance")
             .reference_incidences[0]
             .payload_offset = u64::MAX;
-        let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+        let mut namespace = cadmpeg_ir::NativeNamespace::new();
         malformed_offset
             .store(&mut namespace)
             .expect("store malformed relation-program incidence offset");
@@ -1179,7 +1018,7 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
             .expect("decoded relation-program instance")
             .reference_incidences[0]
             .reference = malformed_reference;
-        let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+        let mut namespace = cadmpeg_ir::NativeNamespace::new();
         malformed
             .store(&mut namespace)
             .expect("store malformed relation-program incidences");
@@ -1187,48 +1026,5 @@ fn native_load_derives_relation_program_instances_from_older_namespaces() {
             crate::native::CatiaNative::load(&namespace),
             Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
         ));
-    }
-}
-
-#[test]
-fn native_load_rederives_relation_program_paramout_outputs_from_older_namespaces() {
-    for native in [
-        crate::native::CatiaNative::decode(&standard_catpart_with_relation_program_instance_class(
-            1, 1, 1, 2, "paramout",
-        )),
-        crate::native::CatiaNative::decode(
-            &standard_catpart_with_lead54_relation_program_instance_class(1, 1, 1, 2, "paramout"),
-        ),
-    ] {
-        let expected = native.entity_records[1]
-            .relation_program_instance()
-            .cloned()
-            .expect("decoded paramout relation-program instance");
-        assert!(expected.output_entity().is_some());
-        let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-        native
-            .store(&mut namespace)
-            .expect("store paramout relation-program instance");
-        namespace.set_version(
-            std::num::NonZeroU32::new(crate::native::CATIA_RELATION_PROGRAM_OUTPUT_VERSION - 1)
-                .unwrap(),
-        );
-        namespace
-            .arenas
-            .get_mut("entity_records")
-            .expect("stored entity records")[1]
-            .fields_mut()
-            .get_mut("relation_program_instance")
-            .expect("stored relation-program field")
-            .as_object_mut()
-            .expect("stored relation-program instance")
-            .remove("output_entity");
-
-        let migrated = crate::native::CatiaNative::load(&namespace)
-            .expect("migrate paramout relation-program output");
-        assert_eq!(
-            migrated.entity_records[1].relation_program_instance(),
-            Some(&expected)
-        );
     }
 }

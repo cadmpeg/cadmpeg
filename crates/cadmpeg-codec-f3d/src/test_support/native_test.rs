@@ -31,11 +31,6 @@ impl TestEncode for F3dCodec {
     }
 }
 
-pub(crate) fn assert_f3d_native_parity(ir: &cadmpeg_ir::document::CadIr) {
-    let native = ir.native.namespace("f3d").expect("F3D native namespace");
-    assert_eq!(native.version(), crate::native::F3D_NATIVE_VERSION);
-}
-
 pub(crate) fn f3d_native(ir: &cadmpeg_ir::document::CadIr) -> crate::native::F3dNative {
     crate::native::F3dNative::load(ir.native.namespace("f3d").expect("F3D native namespace"))
         .unwrap()
@@ -63,11 +58,7 @@ impl std::ops::DerefMut for F3dNativeMut<'_> {
 impl Drop for F3dNativeMut<'_> {
     fn drop(&mut self) {
         self.native
-            .store(
-                self.ir
-                    .native
-                    .namespace_mut("f3d", std::num::NonZeroU32::MIN),
-            )
+            .store(self.ir.native.namespace_mut("f3d"))
             .unwrap();
     }
 }

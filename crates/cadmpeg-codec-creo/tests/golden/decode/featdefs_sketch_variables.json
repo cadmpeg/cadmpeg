@@ -232,8 +232,7 @@
             }
           ],
           "unknowns": []
-        },
-        "version": 1
+        }
       }
     },
     "source": {
@@ -763,7 +762,6 @@
       "streams": [
         "creo:FeatDefs"
       ]
-    },
-    "version": "3"
+    }
   }
 }

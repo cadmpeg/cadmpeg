@@ -17,7 +17,7 @@
 
 use cadmpeg_core::container::ContainerRole;
 
-use crate::native::{F3dNative, F3D_NATIVE_VERSION};
+use crate::native::F3dNative;
 use cadmpeg_asm::brep::transfer::{transfer_into_ir, AsmTransferRemainder};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -2882,11 +2882,7 @@ impl<'a> F3dDecodeSession<'a> {
             );
             report_design_projection_gaps(&mut self.report, &self.ir, &self.native);
             self.admit_model_entities("admit F3D entities")?;
-            self.native.store(
-                self.ir
-                    .native
-                    .namespace_mut("f3d", std::num::NonZeroU32::MIN),
-            )?;
+            self.native.store(self.ir.native.namespace_mut("f3d"))?;
             let annotations =
                 populate_annotations(&self.ir, scan, &self.native, None, &self.unknowns);
             let source_image = preserve_source_image(scan);
@@ -2931,11 +2927,7 @@ impl<'a> F3dDecodeSession<'a> {
 
         report_design_projection_gaps(&mut self.report, &self.ir, &self.native);
         self.admit_model_entities("admit F3D entities")?;
-        self.native.store(
-            self.ir
-                .native
-                .namespace_mut("f3d", std::num::NonZeroU32::MIN),
-        )?;
+        self.native.store(self.ir.native.namespace_mut("f3d"))?;
         let geometry = self.geometry.take().expect("geometry");
         let annotations = populate_annotations(
             &self.ir,
@@ -4797,13 +4789,7 @@ fn build_geometry_ir(
         persistent_subentity_tags,
         creation_timestamps,
     } = brep;
-    let remainder = transfer_into_ir(
-        ctx,
-        &mut ir,
-        "f3d",
-        std::num::NonZeroU32::new(F3D_NATIVE_VERSION).expect("F3D native version is nonzero"),
-        asm,
-    )?;
+    let remainder = transfer_into_ir(ctx, &mut ir, "f3d", asm)?;
     let mut native = F3dNative::load(
         ir.native
             .namespace("f3d")

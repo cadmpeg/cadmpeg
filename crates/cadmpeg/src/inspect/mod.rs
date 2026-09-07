@@ -282,7 +282,7 @@ pub struct FindArgs {
     /// `--type` value.
     #[arg(long = "type", hide = true)]
     pub misplaced_type: Option<String>,
-    /// Print the hits as versioned JSON instead of the table.
+    /// Print the hits as JSON instead of the table.
     #[arg(long, conflicts_with = "context")]
     pub json: bool,
 }
@@ -375,7 +375,7 @@ pub struct StructArgs {
 pub struct ContainerArgs {
     #[command(flatten)]
     pub file: FileArg,
-    /// Print the entries as versioned JSON instead of the table.
+    /// Print the entries as JSON instead of the table.
     #[arg(long)]
     pub json: bool,
     /// Resource-limit profile applied while reading the central directory.

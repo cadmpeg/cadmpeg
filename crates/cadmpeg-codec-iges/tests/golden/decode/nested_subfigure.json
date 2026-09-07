@@ -3376,8 +3376,7 @@
           "units_data": [],
           "view_visibility": [],
           "views": []
-        },
-        "version": 6
+        }
       }
     },
     "source": {
@@ -3487,7 +3486,6 @@
         "sha256": "eca6dbc01197d67b5e97456a2d997e4d1744c080178cb0a021101f069beb0f9b",
         "stream": "iges"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

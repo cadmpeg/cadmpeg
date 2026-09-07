@@ -4180,8 +4180,7 @@
           "units_data": [],
           "view_visibility": [],
           "views": []
-        },
-        "version": 6
+        }
       }
     },
     "source": {
@@ -4307,7 +4306,6 @@
         "sha256": "e16cc607a946e9c79a59f9b6da0ec977b3e08235336fe5e54f02cf604675a276",
         "stream": "iges"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

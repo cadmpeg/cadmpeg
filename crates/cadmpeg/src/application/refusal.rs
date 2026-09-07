@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed conversion refusals.
 //!
-//! Report envelope `schema_version` 8 serializes [`RefusalCode`] under
-//! `refusal.code` with `status: "refused"`. [`ConversionRefusal::evidence`] is
-//! the one projection every surface reads.
+//! The command-report envelope serializes [`RefusalCode`] under `refusal.code`
+//! with `status: "refused"`. [`ConversionRefusal::evidence`] is the one
+//! projection every surface reads.
 
 use std::borrow::Cow;
 use std::fmt;

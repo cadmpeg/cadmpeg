@@ -426,8 +426,7 @@
               "id": "sldprt:file:block#8"
             }
           ]
-        },
-        "version": 13
+        }
       }
     },
     "source": {
@@ -745,7 +744,6 @@
         "sha256": "43a6a8e7933e8cdfbb7d2c1bac82ea79ce5d0875001edd635672611ba12df5cb",
         "stream": "sldprt"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

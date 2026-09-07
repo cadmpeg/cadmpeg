@@ -591,7 +591,7 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
     orphaned.set_native_unknowns("f3d", &[]).unwrap();
     let orphan = &mut orphaned
         .native
-        .namespace_mut("f3d", std::num::NonZeroU32::MIN)
+        .namespace_mut("f3d")
         .arenas
         .get_mut("asm_history_records")
         .expect("history-record arena")[0];
@@ -611,7 +611,7 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
     duplicate.set_native_unknowns("f3d", &[]).unwrap();
     let states = duplicate
         .native
-        .namespace_mut("f3d", std::num::NonZeroU32::MIN)
+        .namespace_mut("f3d")
         .arenas
         .get_mut("asm_delta_states")
         .expect("delta-state arena");

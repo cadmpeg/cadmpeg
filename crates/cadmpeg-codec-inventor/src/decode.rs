@@ -38,7 +38,7 @@ use crate::native::{
     PropertySetRecord, PropertyValueKind, RevisionPayloadForm, RevisionRecord, RseRecordRecord,
     SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord,
     SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord,
-    UnpairedMember, UnpairedSegmentRecord, VersionTupleRecord, INVENTOR_NATIVE_VERSION,
+    UnpairedMember, UnpairedSegmentRecord, VersionTupleRecord,
 };
 use crate::property_set::{PropertySection, PropertySetState, PropertyValue};
 use crate::protein::ProteinState;
@@ -1057,13 +1057,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
             .saturating_add(1) as u64,
         "retain Inventor native structural records",
     )?;
-    let namespace = ir
-        .native
-        .namespace_mut("inventor", std::num::NonZeroU32::MIN);
-    namespace.set_version(
-        std::num::NonZeroU32::new(INVENTOR_NATIVE_VERSION)
-            .expect("Inventor native version is nonzero"),
-    );
+    let namespace = ir.native.namespace_mut("inventor");
     namespace.set_arena("storage_bands", &storage_bands)?;
     namespace.set_arena("databases", &databases)?;
     namespace.set_arena("database_issues", &database_issues)?;
@@ -1163,14 +1157,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         unknowns: kernel_unknowns,
         stats: kernel_stats,
         annotation_records: kernel_annotations,
-    } = transfer_into_ir(
-        ctx,
-        &mut ir,
-        "inventor",
-        std::num::NonZeroU32::new(INVENTOR_NATIVE_VERSION)
-            .expect("Inventor native version is nonzero"),
-        kernel_brep,
-    )?;
+    } = transfer_into_ir(ctx, &mut ir, "inventor", kernel_brep)?;
     ir.set_native_unknowns("inventor", &[] as &[NativeUnknownRecord])?;
     let geometry_transferred =
         !(ir.model.surfaces.is_empty() && ir.model.points.is_empty() && ir.model.faces.is_empty());

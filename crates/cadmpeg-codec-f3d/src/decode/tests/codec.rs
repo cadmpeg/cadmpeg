@@ -581,7 +581,6 @@ fn decode_yields_metadata_and_honest_report() {
     );
     // resabs/resnor were carried into tolerances.
     assert_eq!(result.ir().tolerances.linear, 1.0e-6);
-    assert_f3d_native_parity(result.ir());
     assert!(result
         .source_fidelity()
         .annotations

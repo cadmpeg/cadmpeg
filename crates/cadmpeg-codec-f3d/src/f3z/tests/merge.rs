@@ -191,7 +191,7 @@ fn occurrence_merge_remaps_and_retains_native_records() {
     };
     let mut component = Native::default();
     component
-        .namespace_mut("f3d", std::num::NonZeroU32::MIN)
+        .namespace_mut("f3d")
         .set_arena("design_sketch_placements", &[placement])
         .expect("store component native");
     let mut root = Native::default();

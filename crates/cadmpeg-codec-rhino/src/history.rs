@@ -1362,7 +1362,7 @@ pub(crate) fn project(
         })
         .collect::<Vec<_>>();
     ir.native
-        .namespace_mut("rhino", std::num::NonZeroU32::MIN)
+        .namespace_mut("rhino")
         .set_arena("history_records", &native)
         .expect("Rhino history records serialize");
     (

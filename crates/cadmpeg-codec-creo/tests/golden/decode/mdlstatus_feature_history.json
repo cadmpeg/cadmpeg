@@ -354,8 +354,7 @@
             }
           ],
           "unknowns": []
-        },
-        "version": 1
+        }
       }
     },
     "source": {
@@ -937,7 +936,6 @@
       "streams": [
         "creo:MdlStatus"
       ]
-    },
-    "version": "3"
+    }
   }
 }

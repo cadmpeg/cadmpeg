@@ -36,7 +36,7 @@ pub struct ItemArgs {
     /// Conflicts with `--json`.
     #[arg(long, value_delimiter = ',', conflicts_with = "json")]
     pub fields: Option<Vec<String>>,
-    /// Wrap matched records in the versioned JSON envelope.
+    /// Wrap matched records in the JSON envelope.
     #[arg(long)]
     pub json: bool,
 }
@@ -286,7 +286,7 @@ fn resolve_one<'a>(
     }
 }
 
-/// Pretty-print records, TSV `--fields`, or the versioned `--json` envelope.
+/// Pretty-print records, TSV `--fields`, or the `--json` envelope.
 pub(crate) fn emit_values(
     view: &str,
     output: Output<'_>,

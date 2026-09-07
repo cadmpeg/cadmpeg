@@ -48,8 +48,7 @@
               "id": "step:data:example_strings#1"
             }
           ]
-        },
-        "version": 1
+        }
       }
     },
     "source": {
@@ -161,7 +160,6 @@
         "sha256": "c85b49d96ac3523d3e2308874f0b245001c0e1dcf3f0989cd32cc693a4255a87",
         "stream": "source"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

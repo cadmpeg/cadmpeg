@@ -16,20 +16,13 @@ use super::*;
 use super::{
     consolidated_vertex_identities, containing_finjpl_segment, definition_schema_selections,
     derive_reference_signature_cohorts, design_object_id, design_objects, entity_class_index,
-    entity_incidences, entity_suffix_schema_selection, entity_suffix_value,
-    entity_value_schema_selections, external_reference_views, finjpl_family, preview_views,
-    range_interval, reference_signature, repeated_reference_schema_selection,
-    resolved_payload_references, resolved_storage_link, semantic_entity_indices, store_projection,
-    terminal_null_entity_id, valid_legacy_identifier, value_schema_selections,
-    zero_entity_endpoint_locus_candidates, zero_entity_endpoint_pair_candidates,
-    zero_entity_record, zero_entity_vertex_owner, CatiaEntityReferenceIndex,
-    CATIA_CONFIGURATION_INCIDENCE_VERSION, CATIA_DEFINITION_CHAIN_OWNERSHIP_VERSION,
-    CATIA_FORMULA_DEPENDENCY_CANDIDATE_VERSION, CATIA_LEGACY_EVALUATED_VALUE_NAME_VERSION,
-    CATIA_LEGACY_IDENTITY_LEAD_VERSION, CATIA_LEGACY_ROLE_FIELD_CODE_VERSION,
-    CATIA_LEGACY_ROLE_SELECTOR_VERSION, CATIA_LEGACY_SCHEMA_BOUNDARY_VERSION,
-    CATIA_LEGACY_SCHEMA_IDENTIFIER_VERSION, CATIA_OBJECT_GRAPH_SEGMENT_VERSION,
-    CATIA_SUFFIX_FRAMING_VERSION, CATIA_TERMINAL_NULL_REFERENCE_VERSION,
-    CATIA_TYPED_OWNER_SLOT_VERSION,
+    entity_suffix_schema_selection, entity_suffix_value, entity_value_schema_selections,
+    external_reference_views, finjpl_family, preview_views, range_interval, reference_signature,
+    repeated_reference_schema_selection, resolved_payload_references, resolved_storage_link,
+    semantic_entity_indices, store_projection, terminal_null_entity_id, valid_legacy_identifier,
+    value_schema_selections, zero_entity_endpoint_locus_candidates,
+    zero_entity_endpoint_pair_candidates, zero_entity_record, zero_entity_vertex_owner,
+    CatiaEntityReferenceIndex,
 };
 use crate::native::schema_configuration_chain::derive_schema_configuration_row_chains;
 

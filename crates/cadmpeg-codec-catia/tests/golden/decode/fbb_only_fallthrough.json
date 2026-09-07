@@ -175,8 +175,7 @@
           "zero_entity_records": [],
           "zero_entity_support_runs": [],
           "zero_entity_vertex_incidences": []
-        },
-        "version": 288
+        }
       }
     },
     "source": {
@@ -707,7 +706,6 @@
         "sha256": "867e7b5fa60057a348df5093bcadcc75d8e7c8f8795b5f954091bbf7985295fe",
         "stream": "catia:MainDataStream+SurfacicReps"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

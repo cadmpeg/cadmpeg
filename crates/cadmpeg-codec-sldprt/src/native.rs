@@ -6,10 +6,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use std::num::NonZeroU32;
-
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase, VersionContract};
+use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
 
 use crate::records::{
     FeatureHistory, FeatureInputBodySelection, FeatureInputClass, FeatureInputEdgeSelection,
@@ -17,25 +15,6 @@ use crate::records::{
     FeatureInputReference, FeatureInputRelationBinding, FeatureInputRelationInstance,
     FeatureInputScalar, FeatureInputSurfaceSelection, PmiDimension,
 };
-
-/// Current schema version for the SOLIDWORKS native namespace.
-pub const SLDPRT_NATIVE_VERSION: u32 = 13;
-pub const SLDPRT_MIN_NATIVE_VERSION: u32 = 1;
-
-const SLDPRT_VERSION_CONTRACT: VersionContract = VersionContract::new(
-    match NonZeroU32::new(SLDPRT_MIN_NATIVE_VERSION) {
-        Some(version) => version,
-        None => panic!("SLDPRT minimum native version is nonzero"),
-    },
-    match NonZeroU32::new(SLDPRT_NATIVE_VERSION) {
-        Some(version) => version,
-        None => panic!("SLDPRT native version is nonzero"),
-    },
-);
-
-pub(crate) fn native_version_supported(version: u32) -> bool {
-    SLDPRT_VERSION_CONTRACT.check_version(version).is_ok()
-}
 
 pub(crate) const SLDPRT_ARENA_NAMES: &[&str] = &[
     "configurations",
@@ -231,12 +210,12 @@ const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
 ];
 
 const SLDPRT_CATALOGUE: Catalogue<'static, SldprtNative, (), cadmpeg_ir::NativeNamespace, ()> =
-    Catalogue::new(SLDPRT_FAMILIES, Some(SLDPRT_VERSION_CONTRACT));
+    Catalogue::new(SLDPRT_FAMILIES);
 
 /// SOLIDWORKS records retained outside the format-neutral model.
-#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "SldprtNativeWire")]
+#[serde(default)]
 pub struct SldprtNative {
     /// Parametric construction-history timelines decoded from the source part.
     pub feature_histories: Vec<FeatureHistory>,
@@ -246,48 +225,10 @@ pub struct SldprtNative {
     pub pmi_dimensions: Vec<PmiDimension>,
 }
 
-#[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-struct SldprtNativeWire {
-    version: u32,
-    #[serde(default)]
-    feature_histories: Vec<FeatureHistory>,
-    #[serde(default)]
-    feature_input_lanes: Vec<FeatureInputLane>,
-    #[serde(default)]
-    pmi_dimensions: Vec<PmiDimension>,
-}
-
-impl Serialize for SldprtNative {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        use serde::ser::SerializeStruct;
-        let mut record = serializer.serialize_struct("SldprtNative", 4)?;
-        record.serialize_field("version", &SLDPRT_NATIVE_VERSION)?;
-        record.serialize_field("feature_histories", &self.feature_histories)?;
-        record.serialize_field("feature_input_lanes", &self.feature_input_lanes)?;
-        record.serialize_field("pmi_dimensions", &self.pmi_dimensions)?;
-        record.end()
-    }
-}
-
-impl TryFrom<SldprtNativeWire> for SldprtNative {
-    type Error = cadmpeg_ir::NativeConvertError;
-
-    fn try_from(wire: SldprtNativeWire) -> Result<Self, Self::Error> {
-        SLDPRT_CATALOGUE.check_version(wire.version)?;
-        Ok(Self {
-            feature_histories: wire.feature_histories,
-            feature_input_lanes: wire.feature_input_lanes,
-            pmi_dimensions: wire.pmi_dimensions,
-        })
-    }
-}
-
 impl SldprtNative {
     pub fn load(
         namespace: &cadmpeg_ir::NativeNamespace,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
-        SLDPRT_CATALOGUE.check_version(namespace.version())?;
         let mut native = Self {
             feature_histories: namespace.arena_as("feature_histories")?,
             feature_input_lanes: namespace.arena_as("feature_input_lanes")?,
@@ -296,46 +237,17 @@ impl SldprtNative {
         let configurations: Vec<crate::records::Configuration> =
             namespace.arena_as("configurations")?;
         let features: Vec<crate::records::Feature> = namespace.arena_as("features")?;
-        let mut entities: Vec<crate::records::SketchInputEntity> =
+        let entities: Vec<crate::records::SketchInputEntity> =
             namespace.arena_as("sketch_input_entities")?;
         let classes: Vec<FeatureInputClass> = namespace.arena_as("feature_input_classes")?;
-        let body_selections: Vec<FeatureInputBodySelection> = if namespace.version() == 1
-            && !namespace
-                .arenas
-                .contains_key("feature_input_body_selections")
-        {
-            Vec::new()
-        } else {
-            namespace.arena_as("feature_input_body_selections")?
-        };
-        let edge_selections: Vec<FeatureInputEdgeSelection> = if namespace.version() <= 2
-            && !namespace
-                .arenas
-                .contains_key("feature_input_edge_selections")
-        {
-            Vec::new()
-        } else {
-            namespace.arena_as("feature_input_edge_selections")?
-        };
-        let surface_selections: Vec<FeatureInputSurfaceSelection> = if namespace.version() <= 3
-            && !namespace
-                .arenas
-                .contains_key("feature_input_surface_selections")
-        {
-            Vec::new()
-        } else {
-            namespace.arena_as("feature_input_surface_selections")?
-        };
+        let body_selections: Vec<FeatureInputBodySelection> =
+            namespace.arena_as("feature_input_body_selections")?;
+        let edge_selections: Vec<FeatureInputEdgeSelection> =
+            namespace.arena_as("feature_input_edge_selections")?;
+        let surface_selections: Vec<FeatureInputSurfaceSelection> =
+            namespace.arena_as("feature_input_surface_selections")?;
         let generated_surface_identities: Vec<FeatureInputGeneratedSurfaceIdentity> =
-            if namespace.version() <= 12
-                && !namespace
-                    .arenas
-                    .contains_key("feature_input_generated_surface_identities")
-            {
-                Vec::new()
-            } else {
-                namespace.arena_as("feature_input_generated_surface_identities")?
-            };
+            namespace.arena_as("feature_input_generated_surface_identities")?;
         let names: Vec<FeatureInputName> = namespace.arena_as("feature_input_names")?;
         let references: Vec<FeatureInputReference> =
             namespace.arena_as("feature_input_references")?;
@@ -519,17 +431,15 @@ impl SldprtNative {
         if let Some(record) = surface_selections.iter().find(|record| {
             !name_ids.contains(record.object_name_ref.as_str())
                 || !feature_ids.contains(record.feature_ref.as_str())
-                || (namespace.version() >= 8 && record.components.is_empty())
-                || (namespace.version() >= 9
-                    && record
-                        .producer_feature_refs
-                        .iter()
-                        .any(|producer| !feature_ids.contains(producer.as_str())))
-                || (namespace.version() >= 10
-                    && record
-                        .terminal_feature_ref
-                        .as_deref()
-                        .is_some_and(|feature| !feature_ids.contains(feature)))
+                || record.components.is_empty()
+                || record
+                    .producer_feature_refs
+                    .iter()
+                    .any(|producer| !feature_ids.contains(producer.as_str()))
+                || record
+                    .terminal_feature_ref
+                    .as_deref()
+                    .is_some_and(|feature| !feature_ids.contains(feature))
                 || record.endpoint_selector().is_some_and(|selector| {
                     usize::try_from(record.offset)
                         .ok()
@@ -662,28 +572,6 @@ impl SldprtNative {
             history.features.sort_by_key(|record| record.ordinal);
         }
         for lane in &mut native.feature_input_lanes {
-            if namespace.version() <= 4 {
-                for entity in entities
-                    .iter_mut()
-                    .filter(|record| record.parent == lane.id)
-                {
-                    entity.object_index = usize::try_from(entity.offset).ok().and_then(|offset| {
-                        crate::resolved_features::markers::marker_object_index(
-                            &lane.native_payload,
-                            offset,
-                        )
-                    });
-                }
-            } else if namespace.version() <= 6 {
-                for entity in entities
-                    .iter_mut()
-                    .filter(|record| record.parent == lane.id)
-                {
-                    if entity.object_index == Some(u32::MAX) {
-                        entity.object_index = None;
-                    }
-                }
-            }
             lane.classes = classes
                 .iter()
                 .filter(|record| record.parent == lane.id)
@@ -726,20 +614,6 @@ impl SldprtNative {
                 .cloned()
                 .collect();
             lane.body_selections.sort_by_key(|record| record.ordinal);
-            if namespace.version() <= 5 {
-                let modes = lane
-                    .body_selections
-                    .iter()
-                    .map(|selection| {
-                        crate::resolved_features::selections::compact_body_retention_mode_for_selection(
-                            lane, selection,
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                for (selection, mode) in lane.body_selections.iter_mut().zip(modes) {
-                    selection.mode = mode;
-                }
-            }
             if let Some(record) = lane.body_selections.iter().find(|record| {
                 usize::try_from(record.offset).ok().and_then(|offset| {
                     crate::resolved_features::selections::compact_body_selection_at(
@@ -762,51 +636,6 @@ impl SldprtNative {
                 .cloned()
                 .collect();
             lane.edge_selections.sort_by_key(|record| record.ordinal);
-            if namespace.version() <= 11 {
-                for record in &mut lane.edge_selections {
-                    if let Some(local_edge_ids) =
-                        usize::try_from(record.offset).ok().and_then(|offset| {
-                            crate::resolved_features::selections::compact_edge_selection_at(
-                                &lane.native_payload,
-                                offset,
-                            )
-                        })
-                    {
-                        record.local_edge_ids = local_edge_ids;
-                    }
-                    record.components = usize::try_from(record.offset)
-                        .ok()
-                        .and_then(|offset| {
-                            crate::resolved_features::selections::compact_edge_component_path_at(
-                                &lane.native_payload,
-                                offset,
-                            )
-                        })
-                        .unwrap_or_default();
-                    record.producer_feature_refs = usize::try_from(record.offset)
-                        .ok()
-                        .map(|offset| {
-                            crate::resolved_features::selections::compact_edge_producer_features_at(
-                                &lane.native_payload,
-                                offset,
-                                &record.components,
-                                &features,
-                                &record.feature_ref,
-                            )
-                        })
-                        .unwrap_or_default();
-                    record.terminal_feature_ref =
-                        usize::try_from(record.offset).ok().and_then(|offset| {
-                            crate::resolved_features::selections::compact_edge_owner_feature_at(
-                                &lane.native_payload,
-                                offset,
-                                &record.components,
-                                &features,
-                                &record.feature_ref,
-                            )
-                        });
-                }
-            }
             let mut edge_features = features.clone();
             crate::resolved_features::selections::enrich_feature_object_sources(
                 &mut edge_features,
@@ -884,36 +713,6 @@ impl SldprtNative {
                 .cloned()
                 .collect();
             lane.surface_selections.sort_by_key(|record| record.ordinal);
-            if namespace.version() <= 9 {
-                for record in &mut lane.surface_selections {
-                    if namespace.version() <= 7 {
-                        record.components = usize::try_from(record.offset)
-                            .ok()
-                            .and_then(|offset| {
-                                crate::resolved_features::selections::compact_surface_reference_at(
-                                    &lane.native_payload,
-                                    offset,
-                                )
-                            })
-                            .unwrap_or_default();
-                    }
-                    record.terminal_feature_ref =
-                        usize::try_from(record.offset).ok().and_then(|offset| {
-                            crate::resolved_features::selections::surface_selection_terminal_feature_at(
-                                &lane.native_payload,
-                                offset,
-                                &record.components,
-                                &surface_features,
-                            )
-                        });
-                    record.producer_feature_refs =
-                        crate::resolved_features::component_paths::surface_selection_producer_features(
-                            &record.components,
-                            record.terminal_feature_ref.as_deref(),
-                            &surface_features,
-                        );
-                }
-            }
             if let Some(record) = lane.surface_selections.iter().find(|record| {
                 !usize::try_from(record.offset).ok().is_some_and(|offset| {
                     crate::resolved_features::selections::surface_reference_matches_at(
@@ -940,17 +739,13 @@ impl SldprtNative {
                     record.id
                 )));
             }
-            lane.generated_surface_identities = if namespace.version() <= 12 {
-                crate::resolved_features::selections::generated_surface_identities(lane)
-            } else {
-                let mut records = generated_surface_identities
-                    .iter()
-                    .filter(|record| record.parent == lane.id)
-                    .cloned()
-                    .collect::<Vec<_>>();
-                records.sort_by_key(|record| record.ordinal);
-                records
-            };
+            let mut records = generated_surface_identities
+                .iter()
+                .filter(|record| record.parent == lane.id)
+                .cloned()
+                .collect::<Vec<_>>();
+            records.sort_by_key(|record| record.ordinal);
+            lane.generated_surface_identities = records;
             if lane.generated_surface_identities
                 != crate::resolved_features::selections::generated_surface_identities(lane)
             {
@@ -1353,10 +1148,6 @@ impl SldprtNative {
                 "history feature classes do not match the feature-input index".into(),
             ));
         }
-        namespace.set_version(
-            std::num::NonZeroU32::new(SLDPRT_NATIVE_VERSION)
-                .expect("SLDPRT native version is nonzero"),
-        );
         SLDPRT_CATALOGUE.emit_all(self, namespace)?;
         debug_assert!(SLDPRT_ARENA_NAMES
             .iter()

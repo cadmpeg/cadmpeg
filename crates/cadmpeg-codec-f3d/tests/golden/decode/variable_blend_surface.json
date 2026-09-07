@@ -689,10 +689,10 @@
                 null,
                 null
               ],
-              "shape_prefix": 11,
               "shape_parameter": 0.125,
               "shape_length": 6.0,
               "shape_tail": 12,
+              "shape_prefix": 11,
               "tail_enum": 0,
               "discontinuities": [
                 [
@@ -758,7 +758,6 @@
     },
     "native": {
       "f3d": {
-        "version": 13,
         "arenas": {
           "act_entities": [],
           "act_guids": [],
@@ -1020,7 +1019,6 @@
     }
   },
   "source_fidelity": {
-    "version": "3",
     "annotations": {
       "streams": [
         "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",

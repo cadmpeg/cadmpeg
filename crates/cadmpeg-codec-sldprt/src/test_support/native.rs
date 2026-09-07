@@ -17,8 +17,6 @@ pub(crate) fn update_sldprt_native<R>(
 ) -> R {
     let mut native = sldprt_native(ir);
     let result = update(&mut native);
-    native
-        .store(ir.native.namespace_mut("sldprt", std::num::NonZeroU32::MIN))
-        .unwrap();
+    native.store(ir.native.namespace_mut("sldprt")).unwrap();
     result
 }

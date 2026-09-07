@@ -1673,8 +1673,7 @@
               ]
             }
           ]
-        },
-        "version": 6
+        }
       }
     },
     "source": {
@@ -1795,7 +1794,6 @@
         "sha256": "1afc51a6e72e8bd9e4b9d634bd301a82962330a732d25ae10a918af50a5f623e",
         "stream": "iges"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

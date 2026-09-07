@@ -372,7 +372,7 @@ fn object_graphs_retain_exact_finjpl_containment() {
 
     let mut invalid = native;
     invalid.object_graphs[1].finjpl_segment = None;
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     invalid
         .store(&mut namespace)
         .expect("store malformed graph segment link");
@@ -403,7 +403,7 @@ fn object_graphs_retain_exact_outer_container_declarations() {
     assert_eq!(container.stream_name, "1048_62eb7b6f_1825");
     let expected = container.clone();
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     native
         .store(&mut namespace)
         .expect("store outer container binding");
@@ -541,7 +541,7 @@ fn native_namespace_retains_and_validates_alias_group_membership() {
         native.alias_rows[0].canonical_surface_tag,
         Some(0x0012_3456)
     );
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     native
         .store(&mut namespace)
         .expect("store grouped alias row");
@@ -554,7 +554,7 @@ fn native_namespace_retains_and_validates_alias_group_membership() {
         .as_mut()
         .expect("group membership")
         .target_slot += 1;
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     invalid
         .store(&mut namespace)
         .expect("store invalid grouped alias row");
@@ -569,7 +569,7 @@ fn native_namespace_retains_and_validates_alias_group_membership() {
         .as_mut()
         .expect("group membership")
         .storage_prefix = vec![2, 0, 0];
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     invalid
         .store(&mut namespace)
         .expect("store invalid group storage");
@@ -577,24 +577,6 @@ fn native_namespace_retains_and_validates_alias_group_membership() {
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
-
-    let mut legacy = crate::native::CatiaNative::decode(&bytes);
-    for row in &mut legacy.alias_rows {
-        row.canonical_surface_tag = None;
-    }
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
-    legacy
-        .store(&mut namespace)
-        .expect("store legacy alias rows");
-    namespace.set_version(
-        std::num::NonZeroU32::new(crate::native::CATIA_ALIAS_SURFACE_TAG_VERSION - 1).unwrap(),
-    );
-    assert_eq!(
-        crate::native::CatiaNative::load(&namespace)
-            .expect("load legacy alias rows")
-            .alias_rows,
-        legacy.alias_rows
-    );
 }
 
 #[test]
@@ -609,7 +591,7 @@ fn grouped_non_surface_alias_selects_the_unique_surface_storage_tag() {
 
     let mut invalid = native;
     invalid.alias_rows[0].canonical_surface_tag = Some(0x1234);
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     invalid
         .store(&mut namespace)
         .expect("store invalid alias closure");
@@ -664,7 +646,7 @@ fn native_namespace_retains_surface_alias_core() {
 
     let mut invalid = native;
     invalid.alias_rows[0].design_object = Some("catia:missing-design-object".to_string());
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     invalid
         .store(&mut namespace)
         .expect("store unresolved alias with a design-object link");
@@ -692,7 +674,7 @@ fn native_alias_f1_without_part_container_remains_unbound() {
 
     let mut invalid = native;
     invalid.alias_rows[0].design_object = Some("catia:missing-design-object".to_string());
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     invalid
         .store(&mut namespace)
         .expect("store invalid alias design-object link");
@@ -729,7 +711,7 @@ fn native_alias_f1_resolves_record_in_declared_part_container() {
     assert_eq!(row.object_record.as_deref(), Some(record.id.as_str()));
     assert_eq!(row.design_object, record.design_object);
 
-    let mut namespace = cadmpeg_ir::NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut namespace = cadmpeg_ir::NativeNamespace::new();
     native
         .store(&mut namespace)
         .expect("store alias linked to declared part container");

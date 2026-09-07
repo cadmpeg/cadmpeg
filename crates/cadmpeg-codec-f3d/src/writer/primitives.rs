@@ -9,14 +9,6 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::Sense;
 
 pub(crate) fn f3d_native(ir: &CadIr) -> Result<Option<F3dNative>, CodecError> {
-    if let Some(namespace) = ir.native.namespace("f3d") {
-        if namespace.version() != crate::native::F3D_NATIVE_VERSION {
-            let version = namespace.version();
-            return Err(CodecError::malformed(format_args!(
-                "unsupported F3D native namespace version {version}"
-            )));
-        }
-    }
     ir.native
         .namespace("f3d")
         .map(F3dNative::load)

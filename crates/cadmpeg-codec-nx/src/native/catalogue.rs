@@ -3446,4 +3446,4 @@ pub(crate) const NATIVE_CATALOGUE: Catalogue<
     AnnotationBuilder,
     NativeNamespace,
     Exactness,
-> = Catalogue::new(CATALOGUE, None);
+> = Catalogue::new(CATALOGUE);

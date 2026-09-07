@@ -245,7 +245,6 @@ fn valid_legacy_relation_field_pair(
 
 pub(super) fn validate_legacy_entity_runs(
     runs: &[CatiaLegacyEntityRun],
-    require_field_codes: bool,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let mut previous_end = None;
     for (index, run) in runs.iter().enumerate() {
@@ -344,7 +343,7 @@ pub(super) fn validate_legacy_entity_runs(
                             }
                             && run.role_selectors.contains(role)
                             && role.end_offset().is_none_or(|end| end == field.byte_offset)
-                            && (!require_field_codes || role.field_code == Some(0x1200))
+                            && role.field_code == Some(0x1200)
                             && run
                                 .identities
                                 .iter()
@@ -367,12 +366,10 @@ pub(super) fn validate_legacy_entity_runs(
                         roles[0].byte_offset == field.role_byte_offset
                             && roles[0].entity_id == field.entity_id
                             && roles[0].end_offset() == Some(field.byte_offset)
-                            && (!require_field_codes
-                                || roles[0].field_code == Some(field.field_code))
+                            && roles[0].field_code == Some(field.field_code)
                             && roles[1].byte_offset == field.boundary_role_byte_offset
                             && roles[1].entity_id == field.entity_id
-                            && (!require_field_codes
-                                || roles[1].field_code.is_some()
+                            && (roles[1].field_code.is_some()
                                 || legacy_schema_boundary_closes_text(run, field, &roles[0]))
                     })
             })

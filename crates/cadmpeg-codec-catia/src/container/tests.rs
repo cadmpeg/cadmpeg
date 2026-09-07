@@ -767,7 +767,6 @@ fn storage_property_parser_enumerates_external_catia_documents() {
     );
 
     let native = crate::native::CatiaNative::decode(&bytes);
-    assert_eq!(native.version, crate::native::CATIA_NATIVE_VERSION);
     assert_eq!(native.external_references.len(), 2);
     assert_eq!(native.external_references[0].target, "Support.CATPart");
     assert_eq!(

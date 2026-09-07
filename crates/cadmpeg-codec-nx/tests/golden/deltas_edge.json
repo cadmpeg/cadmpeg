@@ -204,8 +204,7 @@
                 "id": "nx:container:parasolid#1"
               }
             ]
-          },
-          "version": 189
+          }
         }
       },
       "source": {
@@ -491,8 +490,7 @@
           "sha256": "9aedfb53e4102397d0e344115ed6af07bad25dd98bcd2be8d1032d12186a6276",
           "stream": "nx:container"
         }
-      ],
-      "version": "3"
+      ]
     }
   },
   "inspect": {

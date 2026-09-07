@@ -13,8 +13,6 @@ use serde::{Serialize, Serializer};
 use crate::application::transcoder::{EmittedArtifact, ExportEmission};
 use crate::application::{ArtifactStore, ConversionRefusal, SidecarPersistOutcome};
 
-use super::CLI_SCHEMA_VERSION;
-
 pub(super) fn print_source_diff(source: &cadmpeg_ir::SourceDiff) {
     if let Some(change) = &source.format_change {
         let before = change.before().unwrap_or("");
@@ -72,8 +70,6 @@ pub(super) enum FidelitySummary {
 pub(super) struct FidelityDiff {
     annotations_changed: bool,
     retained_records_changed: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    version: Option<(String, String)>,
 }
 
 impl FidelityDiff {
@@ -81,13 +77,11 @@ impl FidelityDiff {
         Self {
             annotations_changed: left.annotations != right.annotations,
             retained_records_changed: left.retained_records != right.retained_records,
-            version: (left.version() != right.version())
-                .then(|| (left.version().to_owned(), right.version().to_owned())),
         }
     }
 
     fn is_empty(&self) -> bool {
-        self.version.is_none() && !self.annotations_changed && !self.retained_records_changed
+        !self.annotations_changed && !self.retained_records_changed
     }
 }
 
@@ -156,9 +150,6 @@ pub(super) fn print_fidelity_summary(summary: &FidelitySummary) {
         return;
     }
     println!("  source fidelity:");
-    if let Some((before, after)) = &diff.version {
-        println!("    version: {before} → {after}");
-    }
     if diff.annotations_changed {
         println!("    annotations changed");
     }
@@ -317,7 +308,6 @@ impl Serialize for Outcome<'_> {
 
 #[derive(Serialize)]
 struct CommandReport<'a, P> {
-    schema_version: u32,
     command: &'static str,
     generator: String,
     #[serde(flatten)]
@@ -329,7 +319,6 @@ struct CommandReport<'a, P> {
 impl<'a, P> CommandReport<'a, P> {
     fn ok(command: &'static str, payload: P) -> Self {
         Self {
-            schema_version: CLI_SCHEMA_VERSION,
             command,
             generator: generator(),
             outcome: Outcome::Ok,
@@ -339,7 +328,6 @@ impl<'a, P> CommandReport<'a, P> {
 
     fn refused(command: &'static str, payload: P, refusal: &'a ConversionRefusal) -> Self {
         Self {
-            schema_version: CLI_SCHEMA_VERSION,
             command,
             generator: generator(),
             outcome: Outcome::Refused(refusal.report()),
@@ -494,7 +482,7 @@ mod tests {
     use super::{FidelityDiff, FidelitySummary};
 
     #[test]
-    fn fidelity_summary_serializes_the_v7_diff_shape_without_value_glue() {
+    fn fidelity_summary_serializes_the_diff_shape_without_value_glue() {
         assert_eq!(
             serde_json::to_value(FidelitySummary::None).unwrap(),
             serde_json::Value::Null
@@ -511,7 +499,6 @@ mod tests {
             serde_json::to_value(FidelitySummary::Both(FidelityDiff {
                 annotations_changed: false,
                 retained_records_changed: false,
-                version: None,
             }))
             .unwrap(),
             serde_json::json!({
@@ -527,7 +514,6 @@ mod tests {
             serde_json::to_value(FidelitySummary::Both(FidelityDiff {
                 annotations_changed: true,
                 retained_records_changed: false,
-                version: Some(("1".to_owned(), "2".to_owned())),
             }))
             .unwrap(),
             serde_json::json!({
@@ -535,8 +521,7 @@ mod tests {
                 "different": true,
                 "diff": {
                     "annotations_changed": true,
-                    "retained_records_changed": false,
-                    "version": ["1", "2"]
+                    "retained_records_changed": false
                 }
             })
         );

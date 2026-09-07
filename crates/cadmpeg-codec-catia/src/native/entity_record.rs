@@ -435,13 +435,6 @@ pub(super) struct CatiaEntityRecordWire {
     suffix_schema_selection: Option<CatiaEntitySuffixSchemaSelection>,
 }
 
-#[cfg(test)]
-impl CatiaEntityRecordWire {
-    pub(super) fn migrate_numeric_pair(&mut self) {
-        self.numeric_pair = entity_table::parse_numeric_pair(&self.value_payload);
-    }
-}
-
 impl From<CatiaEntityRecord> for CatiaEntityRecordWire {
     fn from(value: CatiaEntityRecord) -> Self {
         let (

@@ -55,7 +55,7 @@ mod tests {
     fn an_unregistered_namespace_reaches_no_codec_validator() {
         let inputs = InputCatalog::with_builtins();
         let mut ir = CadIr::empty();
-        let _ = ir.native.namespace_mut("absent", std::num::NonZeroU32::MIN);
+        let _ = ir.native.namespace_mut("absent");
         assert!(validate_native(&inputs, &ir).is_empty());
     }
 
@@ -64,11 +64,13 @@ mod tests {
     fn a_registered_namespace_reaches_its_own_codec_validator() {
         let inputs = InputCatalog::with_builtins();
         let mut ir = CadIr::empty();
-        let _ = ir.native.namespace_mut("fcstd", std::num::NonZeroU32::MIN);
+        let _ = ir.native.namespace_mut("fcstd");
         let findings = validate_native(&inputs, &ir);
-        assert_eq!(findings.len(), 1);
+        assert!(!findings.is_empty());
         assert!(
-            findings[0].message.contains("FCStd native namespace"),
+            findings
+                .iter()
+                .any(|finding| finding.message.contains("FCStd")),
             "{findings:?}"
         );
     }

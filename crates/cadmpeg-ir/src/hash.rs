@@ -160,7 +160,7 @@ fn document_local_sha256_with_source_and_charge<E>(
 /// at once.
 fn reduced_unknowns(ir: &CadIr, format: &str, source_image_id: &str) -> Vec<NativeRecord> {
     let mut unreadable = false;
-    let mut projected = NativeNamespace::new(std::num::NonZeroU32::MIN);
+    let mut projected = NativeNamespace::new();
     projected
         .set_arena_from(
             "unknowns",
@@ -203,7 +203,6 @@ struct NormalizedNative<'a> {
 /// One native namespace whose arenas are borrowed in canonical record order.
 #[derive(Serialize)]
 struct NormalizedNamespace<'a> {
-    version: u32,
     arenas: BTreeMap<&'a str, Vec<&'a NativeRecord>>,
 }
 
@@ -224,19 +223,12 @@ fn normalized_native<'a>(
                 .iter()
                 .map(|(arena, records)| (arena.as_str(), sorted_records(records)))
                 .collect();
-            (
-                name.as_str(),
-                NormalizedNamespace {
-                    version: namespace.version(),
-                    arenas,
-                },
-            )
+            (name.as_str(), NormalizedNamespace { arenas })
         })
         .collect::<BTreeMap<_, _>>();
     let namespace = namespaces
         .entry(format)
         .or_insert_with(|| NormalizedNamespace {
-            version: 1,
             arenas: BTreeMap::new(),
         });
     namespace
@@ -342,8 +334,7 @@ mod tests {
 
     fn pinned_native() -> Native {
         let mut native = Native::default();
-        let namespace = native.namespace_mut("pin", std::num::NonZeroU32::MIN);
-        namespace.set_version(std::num::NonZeroU32::new(3).unwrap());
+        let namespace = native.namespace_mut("pin");
         namespace
             .arenas
             .insert("records".into(), vec![pinned_record()]);
@@ -389,7 +380,6 @@ mod tests {
     fn pins_pretty_printed_native_arena_bytes() {
         let expected = r#"{
   "pin": {
-    "version": 3,
     "arenas": {
       "records": [
         {
@@ -433,7 +423,7 @@ mod tests {
     fn pins_native_arena_digest() {
         assert_eq!(
             canonical_json_sha256(&pinned_native()),
-            "acc1d88751dcb143ca47618c3f7a8ce14865edff0a26ab95748d2a0314ee8df0"
+            "086f1689fe59a0c63ce5fa05210c5ae5f4bac5343f79babae7b029b600e01b61"
         );
     }
 
@@ -455,7 +445,7 @@ mod tests {
     fn pinned_document() -> CadIr {
         let mut ir = CadIr::empty();
         ir.native = pinned_native();
-        let namespace = ir.native.namespace_mut("pin", std::num::NonZeroU32::MIN);
+        let namespace = ir.native.namespace_mut("pin");
         namespace.arenas.insert(
             "unknowns".into(),
             vec![
@@ -477,11 +467,11 @@ mod tests {
         let ir = pinned_document();
         assert_eq!(
             canonical_json_sha256(&ir),
-            "a4d15c659fc2df63ff8e2c4190daefdc54526972393a23305e401bb321b5393d"
+            "e7b7efe6b2f24df4cff3d073b2e85e0e92649b919b17d46e68308855140955f0"
         );
         assert_eq!(
             document_local_sha256(&ir, "pin", "pin:test:source-image#0"),
-            "5f0a2e78524883db62ba82c4d53bb5dc95aa0bf48ef05e61576fd9a2d32cc31c"
+            "de27fdd064bd82b015c00e867c808af4eeda13e594fab88f4c59998e49c4dab3"
         );
     }
 
@@ -569,7 +559,7 @@ mod tests {
         let independently_normalized = cloned_local_digest(&ir, "pin", "pin:test:source-image#0");
         assert_eq!(
             independently_normalized,
-            "785b67678870a52363a563d3436442147959b15f218e1af738ec2db15ae26340"
+            "85628a0c1d2d2bc7d4c445a20a202b5826484fbefe7d32a4ba3c1f300092e8a5"
         );
         assert_eq!(
             document_local_sha256(&ir, "pin", "pin:test:source-image#0"),
@@ -670,8 +660,7 @@ mod tests {
                 ],
             )
             .unwrap();
-        let namespace = ir.native.namespace_mut("other", std::num::NonZeroU32::MIN);
-        namespace.set_version(std::num::NonZeroU32::new(3).unwrap());
+        let namespace = ir.native.namespace_mut("other");
         namespace.arenas.insert(
             "records".into(),
             vec![NativeRecord::new("other:record#0", serde_json::Map::new())],

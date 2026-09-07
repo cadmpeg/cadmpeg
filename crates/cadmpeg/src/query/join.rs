@@ -61,7 +61,7 @@ pub struct JoinArgs {
     /// Conflicts with `--json`.
     #[arg(long, value_delimiter = ',', conflicts_with = "json")]
     pub fields: Option<Vec<String>>,
-    /// Wrap join rows in the versioned JSON envelope.
+    /// Wrap join rows in the JSON envelope.
     #[arg(long)]
     pub json: bool,
 }

@@ -428,7 +428,6 @@
     },
     "native": {
       "f3d": {
-        "version": 13,
         "arenas": {
           "act_entities": [],
           "act_guids": [],
@@ -690,7 +689,6 @@
     }
   },
   "source_fidelity": {
-    "version": "3",
     "annotations": {
       "streams": [
         "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",

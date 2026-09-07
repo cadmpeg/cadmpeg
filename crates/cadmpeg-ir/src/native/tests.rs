@@ -8,55 +8,27 @@ use serde::Serialize;
 
 use crate::diff;
 use crate::examples::unit_cube;
-use crate::native::{NativeNamespace, NativeRecord};
+use crate::native::NativeRecord;
 use crate::validate::validate_neutral;
-
-#[test]
-fn native_namespace_version_is_nonzero_in_memory_and_numeric_on_wire() {
-    let namespace = NativeNamespace::new(std::num::NonZeroU32::new(7).unwrap());
-    let wire = serde_json::to_value(&namespace).unwrap();
-    assert_eq!(wire["version"], 7);
-    assert_eq!(
-        serde_json::from_value::<NativeNamespace>(wire)
-            .unwrap()
-            .version(),
-        7
-    );
-    assert!(
-        serde_json::from_value::<NativeNamespace>(serde_json::json!({
-            "version": 0,
-            "arenas": {}
-        }))
-        .is_err()
-    );
-}
 
 #[test]
 fn native_records_use_own_ids_for_counts_diff_and_validation() {
     let left = unit_cube();
     let mut right = left.clone();
-    right
-        .native
-        .namespace_mut("f3d", std::num::NonZeroU32::MIN)
-        .arenas
-        .insert(
-            "act_guids".into(),
-            vec![NativeRecord::new(
-                "f3d:test:act-guid#0",
-                serde_json::Map::new(),
-            )],
-        );
-    right
-        .native
-        .namespace_mut("sldprt", std::num::NonZeroU32::MIN)
-        .arenas
-        .insert(
-            "configurations".into(),
-            vec![NativeRecord::new(
-                "sldprt:test:configuration#0",
-                serde_json::Map::new(),
-            )],
-        );
+    right.native.namespace_mut("f3d").arenas.insert(
+        "act_guids".into(),
+        vec![NativeRecord::new(
+            "f3d:test:act-guid#0",
+            serde_json::Map::new(),
+        )],
+    );
+    right.native.namespace_mut("sldprt").arenas.insert(
+        "configurations".into(),
+        vec![NativeRecord::new(
+            "sldprt:test:configuration#0",
+            serde_json::Map::new(),
+        )],
+    );
     right.native.finalize();
 
     let result = diff(&left, &right);
@@ -85,7 +57,7 @@ fn native_records_use_own_ids_for_counts_diff_and_validation() {
 
     right
         .native
-        .namespace_mut("sldprt", std::num::NonZeroU32::MIN)
+        .namespace_mut("sldprt")
         .arenas
         .get_mut("configurations")
         .unwrap()[0] = NativeRecord::new("f3d:test:act-guid#0", serde_json::Map::new());

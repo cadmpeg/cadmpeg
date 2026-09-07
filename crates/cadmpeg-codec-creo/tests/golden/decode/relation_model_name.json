@@ -194,8 +194,7 @@
             }
           ],
           "unknowns": []
-        },
-        "version": 1
+        }
       }
     },
     "source": {
@@ -722,7 +721,6 @@
         "creo:archive_header",
         "creo:DEPDB_DATA"
       ]
-    },
-    "version": "3"
+    }
   }
 }

@@ -51,8 +51,7 @@
               "id": "creo:VisibGeom:section#76"
             }
           ]
-        },
-        "version": 1
+        }
       }
     },
     "source": {
@@ -587,7 +586,6 @@
         "sha256": "82208f19bedbea1298f72b9d367b07a7bf806c1847da214c4427080271509620",
         "stream": "creo:VisibGeom"
       }
-    ],
-    "version": "3"
+    ]
   }
 }

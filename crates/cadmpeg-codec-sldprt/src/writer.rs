@@ -46,15 +46,7 @@ pub(crate) fn write_semantic_with_records(
     let mut native = ir
         .native
         .namespace("sldprt")
-        .map(|namespace| {
-            if !crate::native::native_version_supported(namespace.version()) {
-                let version = namespace.version();
-                return Err(CodecError::malformed(format_args!(
-                    "unsupported SLDPRT native namespace version {version}"
-                )));
-            }
-            SldprtNative::load(namespace).map_err(Into::into)
-        })
+        .map(|namespace| SldprtNative::load(namespace).map_err(CodecError::from))
         .transpose()?;
     let mut normalized = ir.clone();
     drop_synthesized_configuration_snapshot(&mut normalized);

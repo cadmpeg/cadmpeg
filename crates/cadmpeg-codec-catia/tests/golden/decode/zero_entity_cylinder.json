@@ -128,8 +128,7 @@
           ],
           "zero_entity_support_runs": [],
           "zero_entity_vertex_incidences": []
-        },
-        "version": 288
+        }
       }
     },
     "source": {
@@ -566,7 +565,6 @@
         "sha256": "3dfa4c71c0c9202e4fac447a215b74e7e9326ae9a97b493e0ffd792ace0e9097",
         "stream": "catia:CATPart"
       }
-    ],
-    "version": "3"
+    ]
   }
 }
