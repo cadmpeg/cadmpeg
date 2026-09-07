@@ -518,9 +518,9 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<OpaqueRecord> {
         .map(|value| NotesRecord {
             id: "rhino:document:notes#current".to_string(),
             source_offset: value.source.range.start as u64,
-            html: value.html != 0,
+            html: value.html,
             text: value.text.clone(),
-            visible: value.visible != 0,
+            visible: value.visible,
             window_rectangle: value.rectangle,
             locked: value.locked,
         })
