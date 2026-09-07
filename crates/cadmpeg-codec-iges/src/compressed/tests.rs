@@ -298,8 +298,7 @@ fn compressed_ascii_record_termination_ignores_hollerith_payload_delimiters() {
         b"@12_0@13_0@14_1@15_0@16_@17_@18_POINT@19_0;".as_slice(),
         b"116,1.0,2.0,3H;X;;".as_slice(),
     ];
-    let previous = std::array::from_fn(|_| None);
-    let (entity, next) = parse_data_entity(&lines, 0, &previous, true, b',', b';').unwrap();
+    let (entity, next) = parse_data_entity(&lines, 0, None, b',', b';').unwrap();
     assert_eq!(next, 3);
     assert_eq!(entity.parameter_lines.len(), 1);
 }
