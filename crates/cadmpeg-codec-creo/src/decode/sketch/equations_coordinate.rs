@@ -19,16 +19,52 @@ const EPS_DISCRIMINANT_SCALE: f64 = 1.0e-12;
 const EPS_SOLUTION_AGREEMENT: f64 = 1.0e-9;
 
 #[derive(Clone, Copy)]
+struct PositiveDistance(f64);
+
+impl PositiveDistance {
+    fn new(value: f64) -> Option<Self> {
+        (value.is_finite() && value > 0.0).then_some(Self(value))
+    }
+}
+
+#[derive(Clone, Copy)]
+enum SectionSixDistance {
+    Measured(PositiveDistance),
+    ActiveIncomplete,
+    Inactive(Option<PositiveDistance>),
+}
+
+#[derive(Clone, Copy)]
 pub(crate) struct SectionFunctionSixDistance {
     pub(crate) first: u32,
     pub(crate) second: u32,
     pub(crate) radius: SectionScalarVariable,
-    pub(crate) distance: Option<f64>,
-    pub(crate) coordinate_distance: Option<f64>,
-    pub(crate) points_complete: bool,
+    distance: SectionSixDistance,
     pub(crate) equation_id: u32,
     pub(crate) offset: usize,
-    pub(crate) active: bool,
+}
+
+impl SectionFunctionSixDistance {
+    fn coordinate_distance(self) -> Option<f64> {
+        match self.distance {
+            SectionSixDistance::Measured(distance) => Some(distance.0),
+            SectionSixDistance::ActiveIncomplete | SectionSixDistance::Inactive(_) => None,
+        }
+    }
+
+    /// The distance for an equation with both endpoints resolved.
+    pub(crate) fn constraint_distance(self) -> Option<f64> {
+        match self.distance {
+            SectionSixDistance::Measured(distance) => Some(distance.0),
+            SectionSixDistance::Inactive(distance) => distance.map(|distance| distance.0),
+            SectionSixDistance::ActiveIncomplete => None,
+        }
+    }
+
+    /// Whether the equation is enabled.
+    pub(crate) fn active(self) -> bool {
+        !matches!(self.distance, SectionSixDistance::Inactive(_))
+    }
 }
 
 pub(crate) fn section_equation_function_six_distance_values(
@@ -38,8 +74,7 @@ pub(crate) fn section_equation_function_six_distance_values(
 ) -> Vec<(SectionScalarVariable, f64)> {
     section_equation_function_six_distance_rows(definition, coordinates, ambiguous_point_ids)
         .into_iter()
-        .filter(|equation| equation.active)
-        .filter_map(|equation| Some((equation.radius, equation.coordinate_distance?)))
+        .filter_map(|equation| Some((equation.radius, equation.coordinate_distance()?)))
         .collect()
 }
 
@@ -113,7 +148,7 @@ pub(crate) fn section_equation_function_six_distance_rows(
                 .ok()?;
             let radius_value =
                 reconcile_equation_value(radius.value.value(), radius_equality).ok()?;
-            let stored_distance = radius_value.filter(|value| value.is_finite() && *value > 0.0);
+            let stored_distance = radius_value.and_then(PositiveDistance::new);
             if radius_value.is_some() && stored_distance.is_none() {
                 return None;
             }
@@ -125,36 +160,34 @@ pub(crate) fn section_equation_function_six_distance_rows(
                 .get(&second_u.key)
                 .and_then(|point| Some([point[0]?, point[1]?]));
             let points_complete = first_point.is_some() && second_point.is_some();
-            let (distance, coordinate_distance) = if active {
+            let distance = if active {
                 match (first_point, second_point) {
                     (Some(first), Some(second)) => {
                         let delta = [second[0] - first[0], second[1] - first[1]];
-                        let distance = delta[0].hypot(delta[1]);
-                        if !distance.is_finite() || distance <= 0.0 {
-                            return None;
-                        }
+                        let distance = PositiveDistance::new(delta[0].hypot(delta[1]))?;
                         if stored_distance
-                            .is_some_and(|stored| !approximately_equal(stored, distance))
+                            .is_some_and(|stored| !approximately_equal(stored.0, distance.0))
                         {
                             return None;
                         }
-                        (Some(distance), Some(distance))
+                        SectionSixDistance::Measured(distance)
                     }
-                    _ => (stored_distance, None),
+                    _ => SectionSixDistance::ActiveIncomplete,
                 }
             } else {
-                (stored_distance, None)
+                SectionSixDistance::Inactive(if points_complete {
+                    stored_distance
+                } else {
+                    None
+                })
             };
             Some(SectionFunctionSixDistance {
                 first: first_u.key,
                 second: second_u.key,
                 radius: (radius.variable_type, radius.key),
                 distance,
-                coordinate_distance,
-                points_complete,
                 equation_id: equation.equation_id,
                 offset: equation.offset,
-                active,
             })
         })
         .collect()

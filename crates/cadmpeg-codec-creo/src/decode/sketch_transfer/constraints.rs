@@ -897,13 +897,7 @@ pub(in super::super) fn section_equation_function_six_distance_constraints(
     section_equation_function_six_distance_rows(definition, &coordinates, &ambiguous_point_ids)
         .into_iter()
         .filter_map(|equation| {
-            if !equation.points_complete {
-                return None;
-            }
-            let distance = equation.distance?;
-            if !distance.is_finite() || distance <= 0.0 {
-                return None;
-            }
+            let distance = equation.constraint_distance()?;
             let first = section_point_locus(definition, sketch, equation.first)?;
             let second = section_point_locus(definition, sketch, equation.second)?;
             let parameter = section_equation_dimension_parameter(
@@ -926,7 +920,7 @@ pub(in super::super) fn section_equation_function_six_distance_constraints(
                     },
                     name: None,
                     driving: None,
-                    active: Some(equation.active),
+                    active: Some(equation.active()),
                     virtual_space: None,
                     visible: None,
                     orientation: None,
