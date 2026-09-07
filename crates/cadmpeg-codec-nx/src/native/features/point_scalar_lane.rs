@@ -77,8 +77,8 @@ impl From<FeaturePointConstructionScalarLane> for FeaturePointConstructionScalar
             operation_label: lane.operation_label,
             construction_header: lane.construction_header,
             data_blocks: lane.data_blocks,
-            values: lane.scalars.map(|scalar| scalar.value()),
-            raw_values: lane.scalars.map(|scalar| scalar.raw()),
+            values: lane.scalars.map(ShiftedBinary64::value),
+            raw_values: lane.scalars.map(ShiftedBinary64::raw),
             source_offsets,
         }
     }
