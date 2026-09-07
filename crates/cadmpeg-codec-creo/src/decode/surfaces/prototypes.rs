@@ -490,7 +490,10 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> usize {
-    if scan.framing.layout != crate::container::Layout::LegacyAscii {
+    if !matches!(
+        scan.framing.layout,
+        crate::container::Layout::LegacyAscii(_)
+    ) {
         return 0;
     }
     let mut carrier_counts = BTreeMap::<u32, usize>::new();

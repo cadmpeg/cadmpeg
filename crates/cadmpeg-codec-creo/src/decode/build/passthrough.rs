@@ -128,7 +128,7 @@ pub(in super::super) fn emit_legacy_arenas(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), CodecError> {
-    let Some(legacy) = &scan.framing.legacy_ascii else {
+    let Some(legacy) = scan.framing.layout.legacy_ascii() else {
         return Ok(());
     };
     emit_arena(

@@ -15,7 +15,16 @@ use cadmpeg_core::dialect::Admission;
 
 #[test]
 fn enum_and_registry_rows_are_closed_bidirectionally() {
-    cadmpeg_test_support::assert_dialect_rows_closed(&Layout::ALL.map(Layout::id), FORMAT);
+    cadmpeg_test_support::assert_dialect_rows_closed(
+        &[
+            Layout::Nd,
+            Layout::Depdb,
+            crate::test_support::legacy_layout(),
+            Layout::Unknown(UnknownLayout::NoDiscriminant),
+        ]
+        .map(|layout| layout.id()),
+        FORMAT,
+    );
 }
 
 /// A PSB file whose only section carries the `ND:` raw-name decoration.
@@ -88,78 +97,87 @@ struct Case {
 }
 
 /// Containers spanning every arm of `identify_layout`, including both unknown causes.
-const CASES: &[Case] = &[
-    Case {
-        label: "ND: decorated section",
-        bytes: nd_bytes,
-        layout: Layout::Nd,
-        id: "creo:nd",
-        admitted: true,
-        legacy_schema: None,
-        legacy_release: None,
-    },
-    Case {
-        label: "DEPDB_DATA with the root record",
-        bytes: depdb_bytes,
-        layout: Layout::Depdb,
-        id: "creo:depdb",
-        admitted: true,
-        legacy_schema: None,
-        legacy_release: None,
-    },
-    Case {
-        label: "legacy ASCII frame with a Release banner",
-        bytes: legacy_ascii_bytes,
-        layout: Layout::LegacyAscii,
-        id: "creo:legacy-ascii",
-        admitted: true,
-        legacy_schema: Some("12"),
-        legacy_release: Some("16.0"),
-    },
-    Case {
-        label: "legacy ASCII frame with no release word",
-        bytes: legacy_ascii_without_release_bytes,
-        layout: Layout::LegacyAscii,
-        id: "creo:legacy-ascii",
-        admitted: true,
-        legacy_schema: Some("12"),
-        legacy_release: None,
-    },
-    Case {
-        label: "DEPDB_DATA without the root record",
-        bytes: depdb_without_root_bytes,
-        layout: Layout::Unknown(UnknownLayout::DepdbRootMissing),
-        id: "creo:unknown",
-        admitted: false,
-        legacy_schema: None,
-        legacy_release: None,
-    },
-    Case {
-        label: "DEPDB_DATA without the root record plus ND decoration",
-        bytes: depdb_without_root_and_nd_bytes,
-        layout: Layout::Unknown(UnknownLayout::DepdbRootMissing),
-        id: "creo:unknown",
-        admitted: false,
-        legacy_schema: None,
-        legacy_release: None,
-    },
-    Case {
-        label: "no layout signature at all",
-        bytes: unknown_bytes,
-        layout: Layout::Unknown(UnknownLayout::NoDiscriminant),
-        id: "creo:unknown",
-        admitted: false,
-        legacy_schema: None,
-        legacy_release: None,
-    },
-];
+fn cases() -> [Case; 7] {
+    [
+        Case {
+            label: "ND: decorated section",
+            bytes: nd_bytes,
+            layout: Layout::Nd,
+            id: "creo:nd",
+            admitted: true,
+            legacy_schema: None,
+            legacy_release: None,
+        },
+        Case {
+            label: "DEPDB_DATA with the root record",
+            bytes: depdb_bytes,
+            layout: Layout::Depdb,
+            id: "creo:depdb",
+            admitted: true,
+            legacy_schema: None,
+            legacy_release: None,
+        },
+        Case {
+            label: "legacy ASCII frame with a Release banner",
+            bytes: legacy_ascii_bytes,
+            layout: crate::test_support::legacy_layout(),
+            id: "creo:legacy-ascii",
+            admitted: true,
+            legacy_schema: Some("12"),
+            legacy_release: Some("16.0"),
+        },
+        Case {
+            label: "legacy ASCII frame with no release word",
+            bytes: legacy_ascii_without_release_bytes,
+            layout: crate::test_support::legacy_layout(),
+            id: "creo:legacy-ascii",
+            admitted: true,
+            legacy_schema: Some("12"),
+            legacy_release: None,
+        },
+        Case {
+            label: "DEPDB_DATA without the root record",
+            bytes: depdb_without_root_bytes,
+            layout: Layout::Unknown(UnknownLayout::DepdbRootMissing),
+            id: "creo:unknown",
+            admitted: false,
+            legacy_schema: None,
+            legacy_release: None,
+        },
+        Case {
+            label: "DEPDB_DATA without the root record plus ND decoration",
+            bytes: depdb_without_root_and_nd_bytes,
+            layout: Layout::Unknown(UnknownLayout::DepdbRootMissing),
+            id: "creo:unknown",
+            admitted: false,
+            legacy_schema: None,
+            legacy_release: None,
+        },
+        Case {
+            label: "no layout signature at all",
+            bytes: unknown_bytes,
+            layout: Layout::Unknown(UnknownLayout::NoDiscriminant),
+            id: "creo:unknown",
+            admitted: false,
+            legacy_schema: None,
+            legacy_release: None,
+        },
+    ]
+}
 
 #[test]
 fn each_container_classifies_into_the_row_its_discriminants_match() {
-    for case in CASES {
+    for case in cases() {
         let bytes = (case.bytes)();
         let scan = scan_bytes(bytes.as_slice());
-        assert_eq!(scan.framing.layout, case.layout, "{}", case.label);
+        match &case.layout {
+            Layout::LegacyAscii(_) => assert!(
+                matches!(scan.framing.layout, Layout::LegacyAscii(_)),
+                "{}",
+                case.label
+            ),
+            _ => assert_eq!(scan.framing.layout, case.layout, "{}", case.label),
+        }
 
         let classification = classify(&scan);
         let matched = classification.matched();
@@ -206,13 +224,13 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
     for layout in [
         Layout::Nd,
         Layout::Depdb,
-        Layout::LegacyAscii,
+        crate::test_support::legacy_layout(),
         Layout::Unknown(UnknownLayout::NoDiscriminant),
     ] {
         let bytes = match layout {
             Layout::Nd => nd_bytes(),
             Layout::Depdb => depdb_bytes(),
-            Layout::LegacyAscii => legacy_ascii_bytes(),
+            Layout::LegacyAscii(_) => legacy_ascii_bytes(),
             Layout::Unknown(_) => unknown_bytes(),
         };
         let scan = scan_bytes(bytes.as_slice());
@@ -222,7 +240,7 @@ fn admission_is_admitted_exactly_when_no_dialect_unverified_loss_is_charged() {
         assert_eq!(*matched.admission() == Admission::Admitted, !charged);
     }
 
-    for case in CASES {
+    for case in cases() {
         let bytes = (case.bytes)();
         let scan = scan_bytes(bytes.as_slice());
         let classification = classify(&scan);
@@ -272,7 +290,7 @@ fn the_totality_row_never_carries_a_verified_admission() {
     // `creo:unknown` states that no layout discriminant matched. A document
     // there necessarily skipped every layout-specific decode gate, so the pair
     // (unknown, Admitted) must be unreachable.
-    for case in CASES {
+    for case in cases() {
         let bytes = (case.bytes)();
         let scan = scan_bytes(bytes.as_slice());
         let classification = classify(&scan);
@@ -293,7 +311,7 @@ fn the_layout_token_vocabulary_is_not_the_registry_vocabulary() {
     for layout in [
         Layout::Nd,
         Layout::Depdb,
-        Layout::LegacyAscii,
+        crate::test_support::legacy_layout(),
         Layout::Unknown(UnknownLayout::NoDiscriminant),
     ] {
         let id = layout.id();

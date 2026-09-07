@@ -91,14 +91,14 @@ const VISIBGEOM: &str = "VisibGeom";
 const PRINCIPAL_UNIT_ID: &[u8] = b"_principal_sys_units_id\0";
 
 /// The persistence layout families ([spec §1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)). Dispatched structurally, not per-file.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Layout {
     /// Dense PSB rows in `VisibGeom` (~40+ sections; `ND:` name decoration).
     Nd,
     /// Sparse PSB views plus a persistence database (`DEPDB_DATA`, ~12 sections).
     Depdb,
     /// ASCII `P_OBJECT` persistence used before the ND and DEPDB byte grammars.
-    LegacyAscii,
+    LegacyAscii(Box<LegacyAsciiFraming>),
     /// No verified layout matched, with the failed discriminant retained.
     Unknown(UnknownLayout),
 }
@@ -128,12 +128,19 @@ pub struct LegacyAsciiFraming {
 }
 
 impl Layout {
+    pub fn legacy_ascii(&self) -> Option<&LegacyAsciiFraming> {
+        match self {
+            Self::LegacyAscii(framing) => Some(framing),
+            Self::Nd | Self::Depdb | Self::Unknown(_) => None,
+        }
+    }
+
     /// A short, stable token for human reports.
-    pub fn token(self) -> &'static str {
+    pub fn token(&self) -> &'static str {
         match self {
             Layout::Nd => "ND",
             Layout::Depdb => "DEPDB",
-            Layout::LegacyAscii => "LEGACY_ASCII",
+            Layout::LegacyAscii(_) => "LEGACY_ASCII",
             Layout::Unknown(_) => "unknown",
         }
     }
@@ -259,8 +266,6 @@ pub struct FramingScan<'a> {
     pub expanded_sections: Vec<ExpandedSection>,
     /// Identified layout family.
     pub layout: Layout,
-    /// Legacy ASCII header metadata, present only for that layout family.
-    pub legacy_ascii: Option<LegacyAsciiFraming>,
     /// Visible-geometry namespace census, when a `VisibGeom` section was found.
     pub census: GeomCensus,
     /// Active Creo principal coordinate unit system, when its selector is
@@ -919,7 +924,11 @@ fn legacy_ascii_framing(data: &[u8]) -> Option<LegacyAsciiFraming> {
 /// contain embedded names with the `ND:` decoration. An undecorated file with
 /// neither a valid root record, an outer `ND:` name, nor a complete legacy
 /// ASCII object remains unknown.
-fn identify_layout(data: &[u8], sections: &[Section], has_legacy_ascii_object: bool) -> Layout {
+fn identify_layout(
+    data: &[u8],
+    sections: &[Section],
+    legacy_ascii: Option<LegacyAsciiFraming>,
+) -> Layout {
     let has_depdb_root = sections.iter().any(|section| {
         if section.name != "DEPDB_DATA" {
             return false;
@@ -943,8 +952,8 @@ fn identify_layout(data: &[u8], sections: &[Section], has_legacy_ascii_object: b
         }
     } else if has_nd_decoration {
         Layout::Nd
-    } else if has_legacy_ascii_object {
-        Layout::LegacyAscii
+    } else if let Some(framing) = legacy_ascii {
+        Layout::LegacyAscii(Box::new(framing))
     } else {
         Layout::Unknown(UnknownLayout::NoDiscriminant)
     }
@@ -2366,35 +2375,28 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         })
         .collect();
     let reference_ellipses = reference::ellipse_carriers(&reference_conics);
-    let layout = identify_layout(&data, &sections, legacy_ascii.is_some());
-    if model_name.is_none() && layout != Layout::LegacyAscii {
+    let layout = identify_layout(&data, &sections, legacy_ascii);
+    if model_name.is_none() && !matches!(layout, Layout::LegacyAscii(_)) {
         if let Some((name, offset)) = native_model_name(&data, &sections) {
             model_name = Some(ModelName { name, offset });
         }
     }
-    let legacy_ascii = if layout == Layout::LegacyAscii {
-        legacy_ascii
-    } else {
-        None
-    };
+    let legacy_ascii = layout.legacy_ascii();
     let legacy_geometry = legacy_ascii
-        .as_ref()
         .map(|framing| crate::legacy_geometry::scan(&framing.persistence))
         .unwrap_or_default();
     let legacy_rounds = legacy_ascii
-        .as_ref()
         .map(|framing| {
             crate::legacy_feature::scan(&framing.persistence, &legacy_geometry.topology_rows)
         })
         .unwrap_or_default();
     let model_geometry_sections = model_geometry_sections(&data, &sections);
     let census = geom_census(&data, &sections);
-    let principal_unit = binary_principal_unit(&data)
-        .or_else(|| legacy_ascii.as_ref()?.persistence.principal_unit_system());
+    let principal_unit =
+        binary_principal_unit(&data).or_else(|| legacy_ascii?.persistence.principal_unit_system());
     let family_table = family_table(&data, &sections);
-    let legacy_family_table = legacy_ascii
-        .as_ref()
-        .and_then(|framing| crate::legacy_family::parse(&framing.persistence));
+    let legacy_family_table =
+        legacy_ascii.and_then(|framing| crate::legacy_family::parse(&framing.persistence));
     let nonvisible_geometry_sections = sections
         .iter()
         .filter(|section| section.name == "NovisGeom")
@@ -2493,7 +2495,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let cross_section_curve_rows = cross_section_curve_rows(&data, &sections);
     let mut pcurves = curve::pcurve_endpoints(&curve_parameters, &curve_topology_rows);
     let two_chart_pcurves = two_chart_pcurves(&data, &model_geometry_sections, &topology_face_ids);
-    if layout == Layout::LegacyAscii {
+    if matches!(layout, Layout::LegacyAscii(_)) {
         curve_topology_rows.extend(legacy_geometry.topology_rows.iter().cloned());
         pcurves.extend(legacy_geometry.pcurves.iter().cloned());
         curve_topology_rows.sort_by_key(|row| row.offset);
@@ -2630,7 +2632,6 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     let declared_body_count = geomlists_value(&data, &sections, b"n_bodies\0");
     let first_quilt_ptr = geomlists_value(&data, &sections, b"first_quilt_ptr\0").or_else(|| {
         legacy_ascii
-            .as_ref()
             .and_then(|framing| legacy_geom_depend_value(&framing.persistence, "first_quilt_ptr"))
     });
 
@@ -2642,7 +2643,6 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
             sections,
             expanded_sections,
             layout,
-            legacy_ascii,
             census,
             principal_unit,
             family_table,
@@ -2832,7 +2832,7 @@ pub(crate) fn notes(scan: &ContainerScan) -> Vec<String> {
     if let Some(name) = &scan.framing.model_name {
         notes.push(format!("native model name: {}", name.name));
     }
-    if let Some(legacy) = &scan.framing.legacy_ascii {
+    if let Some(legacy) = scan.framing.layout.legacy_ascii() {
         let release = legacy.product_release.as_deref().unwrap_or("unspecified");
         let continuation_count = legacy.persistence.continuation_count();
         notes.push(format!(

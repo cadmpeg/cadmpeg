@@ -104,15 +104,6 @@ impl DialectClassification {
 }
 
 impl Layout {
-    /// Every dialect identity this enum can name.
-    #[cfg(test)]
-    pub(crate) const ALL: [Self; 4] = [
-        Self::Nd,
-        Self::Depdb,
-        Self::LegacyAscii,
-        Self::Unknown(UnknownLayout::NoDiscriminant),
-    ];
-
     /// The registry-generated id.
     ///
     /// One row of `docs/dialects.toml` under the `creo` namespace, and the only
@@ -123,11 +114,11 @@ impl Layout {
     ///
     /// Total by construction: [`Layout`] is closed and this match is
     /// exhaustive, so `detect`'s whole domain classifies.
-    pub(crate) const fn id(self) -> DialectId {
+    pub(crate) const fn id(&self) -> DialectId {
         match self {
             Self::Nd => CREO_ND,
             Self::Depdb => CREO_DEPDB,
-            Self::LegacyAscii => CREO_LEGACY_ASCII,
+            Self::LegacyAscii(_) => CREO_LEGACY_ASCII,
             Self::Unknown(_) => CREO_UNKNOWN,
         }
     }
@@ -144,13 +135,13 @@ impl Layout {
 /// `creo:nd`, `creo:depdb`, or the residual row itself as a grammar would assert
 /// a substitution that did not happen.
 pub(crate) fn classify(scan: &ContainerScan) -> DialectClassification {
-    let layout = scan.framing.layout;
+    let layout = &scan.framing.layout;
     let mut declared = BTreeMap::new();
     declared.insert(
         DECLARED_VERSION_LINE.into(),
         scan.framing.version_line.clone(),
     );
-    if let Some(legacy) = &scan.framing.legacy_ascii {
+    if let Some(legacy) = scan.framing.layout.legacy_ascii() {
         declared.insert(DECLARED_LEGACY_ASCII_SCHEMA.into(), legacy.schema.clone());
         if let Some(release) = &legacy.product_release {
             declared.insert(
@@ -162,9 +153,9 @@ pub(crate) fn classify(scan: &ContainerScan) -> DialectClassification {
     match layout {
         Layout::Unknown(cause) => DialectClassification(ClassificationState::Recovered {
             matched: DialectMatch::residual(layout.id()).with_declared(declared),
-            cause,
+            cause: *cause,
         }),
-        Layout::Nd | Layout::Depdb | Layout::LegacyAscii => {
+        Layout::Nd | Layout::Depdb | Layout::LegacyAscii(_) => {
             DialectClassification(ClassificationState::Admitted(
                 DialectMatch::admitted(layout.id()).with_declared(declared),
             ))

@@ -966,10 +966,10 @@ fn complete_header_adjacent_p_object_selects_legacy_ascii_layout() {
         #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Version H-01-21\n";
     let scan = container::scan_bytes(data);
 
-    assert_eq!(scan.framing.layout, Layout::LegacyAscii);
+    assert!(matches!(scan.framing.layout, Layout::LegacyAscii(_)));
     assert_eq!(scan.framing.layout.token(), "LEGACY_ASCII");
     assert!(scan.framing.sections.is_empty());
-    let legacy = scan.framing.legacy_ascii.as_ref().expect("legacy framing");
+    let legacy = scan.framing.layout.legacy_ascii().expect("legacy framing");
     assert_eq!(legacy.schema, "6");
     assert_eq!(legacy.product_release.as_deref(), Some("H-01-21"));
     assert_eq!(legacy.persistence.declaration_count(), 1);
@@ -1003,15 +1003,15 @@ fn legacy_ascii_toc_is_authoritative_for_named_section_extents() {
 
     let scan = container::scan_bytes(data);
 
-    assert_eq!(scan.framing.layout, Layout::LegacyAscii);
+    assert!(matches!(scan.framing.layout, Layout::LegacyAscii(_)));
     assert_eq!(scan.framing.sections.len(), 1);
     assert_eq!(scan.framing.sections[0].name, "BasicData");
     assert_eq!(scan.framing.sections[0].offset, section_offset);
     assert_eq!(scan.framing.sections[0].length, section.len());
     let persistence = &scan
         .framing
-        .legacy_ascii
-        .as_ref()
+        .layout
+        .legacy_ascii()
         .expect("legacy framing")
         .persistence;
     assert_eq!(persistence.scopes.len(), 2);
@@ -1024,7 +1024,7 @@ fn legacy_release_banner_and_unspecified_banner_preserve_framing_metadata() {
     let release = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 12\n\
         #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Release 16.0  All Rights Reserved\n";
     let scan = container::scan_bytes(release.as_slice());
-    let legacy = scan.framing.legacy_ascii.as_ref().expect("legacy framing");
+    let legacy = scan.framing.layout.legacy_ascii().expect("legacy framing");
     assert_eq!(legacy.schema, "12");
     assert_eq!(legacy.product_release.as_deref(), Some("16.0"));
 
@@ -1045,13 +1045,13 @@ fn legacy_release_banner_and_unspecified_banner_preserve_framing_metadata() {
     let concatenated_release = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
         #END_OF_P_OBJECT\n#Pro/ENGINEER  TM  Release18.0  All Rights Reserved\n";
     let scan = container::scan_bytes(concatenated_release.as_slice());
-    let legacy = scan.framing.legacy_ascii.as_ref().expect("legacy framing");
+    let legacy = scan.framing.layout.legacy_ascii().expect("legacy framing");
     assert_eq!(legacy.product_release.as_deref(), Some("18.0"));
 
     let unspecified = b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 6\n\
         #END_OF_P_OBJECT\n#Pro/ENGINEER\n";
     let scan = container::scan_bytes(unspecified.as_slice());
-    let legacy = scan.framing.legacy_ascii.as_ref().expect("legacy framing");
+    let legacy = scan.framing.layout.legacy_ascii().expect("legacy framing");
     assert_eq!(legacy.product_release, None);
 }
 

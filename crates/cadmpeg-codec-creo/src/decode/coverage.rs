@@ -20,7 +20,10 @@ pub(crate) fn source_section(scan: &ContainerScan, offset: usize) -> String {
         .find(|section| offset >= section.offset && offset < section.offset + section.length)
         .map_or_else(
             || {
-                if scan.framing.layout == crate::container::Layout::LegacyAscii {
+                if matches!(
+                    scan.framing.layout,
+                    crate::container::Layout::LegacyAscii(_)
+                ) {
                     "legacy_ascii"
                 } else {
                     "unknown"

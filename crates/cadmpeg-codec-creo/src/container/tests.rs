@@ -356,7 +356,7 @@ fn scan_reads_legacy_geom_depend_first_quilt_discriminator() {
 
     let scan = container::scan_bytes(data);
 
-    assert_eq!(scan.framing.layout, Layout::LegacyAscii);
+    assert!(matches!(scan.framing.layout, Layout::LegacyAscii(_)));
     assert_eq!(scan.framing.first_quilt_ptr, Some(0));
 }
 

@@ -143,7 +143,7 @@ fn face_admission_diagnostics_record_unresolved_boundary_operands() {
 #[test]
 fn legacy_brep_admission_retains_components_with_eligible_visible_faces() {
     let mut scan = crate::container::scan_bytes(Vec::new());
-    scan.framing.layout = crate::container::Layout::LegacyAscii;
+    scan.framing.layout = crate::test_support::legacy_layout();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 5,
         type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
@@ -190,7 +190,7 @@ fn legacy_brep_admission_retains_components_with_eligible_visible_faces() {
         all_components
     );
 
-    scan.framing.layout = crate::container::Layout::LegacyAscii;
+    scan.framing.layout = crate::test_support::legacy_layout();
     assert!(!legacy_body_ownership_is_unambiguous(&scan, 2));
     assert!(legacy_body_ownership_is_unambiguous(&scan, 1));
     scan.framing.declared_body_count = Some(2);
@@ -200,7 +200,7 @@ fn legacy_brep_admission_retains_components_with_eligible_visible_faces() {
 #[test]
 fn legacy_brep_admission_excludes_nonvisible_face_references() {
     let mut scan = crate::container::scan_bytes(Vec::new());
-    scan.framing.layout = crate::container::Layout::LegacyAscii;
+    scan.framing.layout = crate::test_support::legacy_layout();
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 5,
         type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),

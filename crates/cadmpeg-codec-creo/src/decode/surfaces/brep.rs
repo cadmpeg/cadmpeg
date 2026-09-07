@@ -581,7 +581,10 @@ fn admitted_face_components(
     scan: &ContainerScan,
     eligible_face_ids: &BTreeSet<u32>,
 ) -> Vec<crate::topology::FaceComponent> {
-    if scan.framing.layout != crate::container::Layout::LegacyAscii {
+    if !matches!(
+        scan.framing.layout,
+        crate::container::Layout::LegacyAscii(_)
+    ) {
         return scan.topology.face_components.clone();
     }
     scan.topology
@@ -606,8 +609,10 @@ fn admitted_face_components(
 /// but admitting their references here would manufacture disconnected body
 /// components and make body ownership appear ambiguous.
 fn is_neutral_face_reference(scan: &ContainerScan, face_id: u32) -> bool {
-    scan.framing.layout != crate::container::Layout::LegacyAscii
-        || scan.surfaces.rows.iter().any(|row| row.id == face_id)
+    !matches!(
+        scan.framing.layout,
+        crate::container::Layout::LegacyAscii(_)
+    ) || scan.surfaces.rows.iter().any(|row| row.id == face_id)
 }
 
 fn merge_body_components(
@@ -623,8 +628,10 @@ fn merge_body_components(
 }
 
 fn legacy_body_ownership_is_unambiguous(scan: &ContainerScan, component_count: usize) -> bool {
-    scan.framing.layout != crate::container::Layout::LegacyAscii
-        || scan.framing.declared_body_count.is_some()
+    !matches!(
+        scan.framing.layout,
+        crate::container::Layout::LegacyAscii(_)
+    ) || scan.framing.declared_body_count.is_some()
         || scan.framing.first_quilt_ptr == Some(0)
         || component_count <= 1
 }
@@ -1357,10 +1364,12 @@ pub(in super::super) fn transfer_native_brep(
         .flat_map(|component| component.curve_ids.iter().copied())
         .filter(|curve_id| admitted_edge_curves.contains(curve_id))
         .filter(|curve_id| {
-            scan.framing.layout != crate::container::Layout::LegacyAscii
-                || curve_faces
-                    .get(curve_id)
-                    .is_some_and(|faces| faces.iter().any(|face| eligible_face_ids.contains(face)))
+            !matches!(
+                scan.framing.layout,
+                crate::container::Layout::LegacyAscii(_)
+            ) || curve_faces
+                .get(curve_id)
+                .is_some_and(|faces| faces.iter().any(|face| eligible_face_ids.contains(face)))
         })
         .collect::<BTreeSet<_>>();
     let body_components = admitted_components

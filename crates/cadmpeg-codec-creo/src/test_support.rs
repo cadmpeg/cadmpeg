@@ -246,3 +246,13 @@ pub(crate) fn assert_unknown_visible_surface(surfaces: &[cadmpeg_ir::geometry::S
         cadmpeg_ir::geometry::SurfaceGeometry::Unknown { record: Some(_) }
     ));
 }
+
+/// A complete legacy layout for tests of layout-dependent projection.
+pub(crate) fn legacy_layout() -> crate::container::Layout {
+    crate::container::scan_bytes(
+        b"#UGC:2 PART 1\n#-END_OF_UGC_HEADER\n#P_OBJECT 12\n#END_OF_P_OBJECT\n#Pro/ENGINEER\n"
+            .as_slice(),
+    )
+    .framing
+    .layout
+}

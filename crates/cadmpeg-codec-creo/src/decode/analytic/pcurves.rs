@@ -52,13 +52,13 @@ fn unique_model_surface(surfaces: &[Surface], face_id: u32) -> Option<&Surface> 
 }
 
 fn topology_ignored_surface_ids(
-    layout: crate::container::Layout,
+    layout: &crate::container::Layout,
     rows: &[crate::surface::SurfaceRow],
 ) -> BTreeSet<u32> {
     // The interpolation carrier makes a legacy spline surface evaluable, but
     // its trim/intersection join is still unresolved. Keep that surface from
     // vetoing endpoint evidence supplied by a proven adjacent analytic face.
-    if layout != crate::container::Layout::LegacyAscii {
+    if !matches!(layout, crate::container::Layout::LegacyAscii(_)) {
         return BTreeSet::new();
     }
     rows.iter()
@@ -761,7 +761,7 @@ pub(super) fn pcurve_edge_endpoint_evidence_with_carriers(
     PcurveEndpointDiagnostics,
 ) {
     let ignored_surface_ids =
-        topology_ignored_surface_ids(scan.framing.layout, &scan.surfaces.rows);
+        topology_ignored_surface_ids(&scan.framing.layout, &scan.surfaces.rows);
     let path_activity = PcurvePathActivity::from_scan(scan);
     let mut candidates = BTreeMap::<u32, Vec<PcurveEndpointEvidence>>::new();
     let mut diagnostics = PcurveEndpointDiagnostics::default();
@@ -1228,7 +1228,7 @@ pub fn transfer_analytic_pcurve_carriers(
 ) -> BTreeSet<CurveId> {
     let reconciled_endpoints = pcurve_edge_endpoints(scan, ir);
     let ignored_surface_ids =
-        topology_ignored_surface_ids(scan.framing.layout, &scan.surfaces.rows);
+        topology_ignored_surface_ids(&scan.framing.layout, &scan.surfaces.rows);
     let mut candidates = BTreeMap::<u32, Vec<(CurveGeometry, usize)>>::new();
     let mut evaluable_path_counts = BTreeMap::<u32, usize>::new();
     {
@@ -1822,10 +1822,10 @@ mod tests {
         ];
 
         assert_eq!(
-            topology_ignored_surface_ids(crate::container::Layout::LegacyAscii, &rows),
+            topology_ignored_surface_ids(&crate::test_support::legacy_layout(), &rows),
             BTreeSet::from([7]),
         );
-        assert!(topology_ignored_surface_ids(crate::container::Layout::Nd, &rows).is_empty());
+        assert!(topology_ignored_surface_ids(&crate::container::Layout::Nd, &rows).is_empty());
     }
 
     #[test]

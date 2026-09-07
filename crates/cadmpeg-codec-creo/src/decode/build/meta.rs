@@ -26,7 +26,7 @@ pub(in super::super) fn source_meta(
     if let Some(name) = &scan.framing.model_name {
         attributes.insert("model_name".to_string(), name.name.clone());
     }
-    if let Some(legacy) = &scan.framing.legacy_ascii {
+    if let Some(legacy) = scan.framing.layout.legacy_ascii() {
         attributes.insert("legacy_ascii_schema".to_string(), legacy.schema.clone());
         if let Some(release) = &legacy.product_release {
             attributes.insert("legacy_ascii_product_release".to_string(), release.clone());
@@ -84,208 +84,206 @@ pub(in super::super) fn source_meta(
             attributes.insert("source_length_scale_mm".to_string(), scale.to_string());
         }
     }
-    if scan.framing.layout == crate::container::Layout::LegacyAscii {
+    if let Some(legacy) = scan.framing.layout.legacy_ascii() {
         coverage.record(
             crate::coverage::DECODED_LEGACY_PRINCIPAL_UNIT_COUNT,
             usize::from(scan.framing.principal_unit.is_some()),
         );
-        if let Some(legacy) = &scan.framing.legacy_ascii {
-            let mut object_arrows = 0usize;
-            let mut object_inlines = 0usize;
-            let mut object_nulls = 0usize;
-            let mut object_arrays = 0usize;
-            for record in &legacy.persistence.objects {
-                match record.payload {
-                    crate::legacy::ObjectPayload::Arrow => object_arrows += 1,
-                    crate::legacy::ObjectPayload::Inline => object_inlines += 1,
-                    crate::legacy::ObjectPayload::Null => object_nulls += 1,
-                    crate::legacy::ObjectPayload::Array { .. } => object_arrays += 1,
-                    crate::legacy::ObjectPayload::Opaque { .. } => {}
-                }
+        let mut object_arrows = 0usize;
+        let mut object_inlines = 0usize;
+        let mut object_nulls = 0usize;
+        let mut object_arrays = 0usize;
+        for record in &legacy.persistence.objects {
+            match record.payload {
+                crate::legacy::ObjectPayload::Arrow => object_arrows += 1,
+                crate::legacy::ObjectPayload::Inline => object_inlines += 1,
+                crate::legacy::ObjectPayload::Null => object_nulls += 1,
+                crate::legacy::ObjectPayload::Array { .. } => object_arrays += 1,
+                crate::legacy::ObjectPayload::Opaque { .. } => {}
             }
-            coverage.record(
-                crate::coverage::DECODED_LEGACY_OBJECT_ARROW_COUNT,
-                object_arrows,
-            );
-            coverage.record(
-                crate::coverage::DECODED_LEGACY_OBJECT_INLINE_COUNT,
-                object_inlines,
-            );
-            coverage.record(
-                crate::coverage::DECODED_LEGACY_OBJECT_NULL_COUNT,
-                object_nulls,
-            );
-            coverage.record(
-                crate::coverage::DECODED_LEGACY_OBJECT_ARRAY_COUNT,
-                object_arrays,
-            );
-            coverage.record(
-                crate::coverage::INCOMPLETE_LEGACY_OBJECT_ARRAY_COUNT,
-                legacy.persistence.incomplete_object_array_count,
-            );
-            coverage.record(
-                crate::coverage::UNRESOLVED_LEGACY_OBJECT_VALUE_COUNT,
-                legacy.persistence.unresolved_object_value_count,
-            );
-            let (integer_scalars, integer_arrays, integer_elements) =
-                legacy_numeric_coverage(&legacy.persistence.integer_values);
-            coverage.record(
-                crate::coverage::DECODED_LEGACY_INTEGER_SCALAR_COUNT,
-                integer_scalars,
-            );
-            coverage.record(
-                crate::coverage::DECODED_LEGACY_INTEGER_ARRAY_COUNT,
-                integer_arrays,
-            );
-            coverage.record(
-                crate::coverage::DECODED_LEGACY_INTEGER_ELEMENT_COUNT,
-                integer_elements,
-            );
-            coverage.record(
-                crate::coverage::UNRESOLVED_LEGACY_INTEGER_VALUE_COUNT,
-                legacy.persistence.unresolved_integer_value_count,
-            );
-            let (real_scalars, real_arrays, real_elements) =
-                legacy_numeric_coverage(&legacy.persistence.real_values);
-            coverage.record(
-                crate::coverage::DECODED_LEGACY_REAL_SCALAR_COUNT,
-                real_scalars,
-            );
-            coverage.record(
-                crate::coverage::DECODED_LEGACY_REAL_ARRAY_COUNT,
-                real_arrays,
-            );
-            coverage.record(
-                crate::coverage::DECODED_LEGACY_REAL_ELEMENT_COUNT,
-                real_elements,
-            );
-            coverage.record(
-                crate::coverage::UNRESOLVED_LEGACY_REAL_VALUE_COUNT,
-                legacy.persistence.unresolved_real_value_count,
-            );
-            let (string_scalars, string_arrays, string_elements, undecoded_encodings) =
-                legacy.persistence.string_values.iter().fold(
-                    (0usize, 0usize, 0usize, 0usize),
-                    |(scalars, arrays, elements, undecoded_encodings), record| {
-                        (
-                            scalars
-                                + usize::from(matches!(
-                                    record.payload,
-                                    crate::legacy::StringPayload::Scalar { .. }
-                                )),
-                            arrays
-                                + usize::from(matches!(
-                                    record.payload,
-                                    crate::legacy::StringPayload::Array { .. }
-                                )),
-                            elements.saturating_add(record.payload.element_count()),
-                            undecoded_encodings
-                                .saturating_add(record.payload.undecoded_encoding_count()),
-                        )
-                    },
-                );
-            coverage.record(
-                crate::coverage::DECODED_LEGACY_STRING_SCALAR_COUNT,
-                string_scalars,
-            );
-            coverage.record(
-                crate::coverage::DECODED_LEGACY_STRING_ARRAY_COUNT,
-                string_arrays,
-            );
-            coverage.record(
-                crate::coverage::DECODED_LEGACY_STRING_ELEMENT_COUNT,
-                string_elements,
-            );
-            coverage.record(
-                crate::coverage::INCOMPLETE_LEGACY_STRING_ARRAY_COUNT,
-                legacy.persistence.incomplete_string_array_count,
-            );
-            coverage.record(
-                crate::coverage::UNRESOLVED_LEGACY_STRING_VALUE_COUNT,
-                legacy.persistence.unresolved_string_value_count,
-            );
-            coverage.record(
-                crate::coverage::UNDECODED_LEGACY_STRING_ENCODING_COUNT,
-                undecoded_encodings,
-            );
-            for (scalar_key, unresolved_key, undecoded_key, records, unresolved) in [
-                (
-                    crate::coverage::DECODED_LEGACY_TYPE_3_SCALAR_COUNT,
-                    crate::coverage::UNRESOLVED_LEGACY_TYPE_3_VALUE_COUNT,
-                    crate::coverage::UNDECODED_LEGACY_TYPE_3_ENCODING_COUNT,
-                    legacy.persistence.type_3_values.as_slice(),
-                    legacy.persistence.unresolved_type_3_value_count,
-                ),
-                (
-                    crate::coverage::DECODED_LEGACY_TYPE_4_SCALAR_COUNT,
-                    crate::coverage::UNRESOLVED_LEGACY_TYPE_4_VALUE_COUNT,
-                    crate::coverage::UNDECODED_LEGACY_TYPE_4_ENCODING_COUNT,
-                    legacy.persistence.type_4_values.as_slice(),
-                    legacy.persistence.unresolved_type_4_value_count,
-                ),
-            ] {
-                let scalars = records.len();
-                let undecoded_encodings = records
-                    .iter()
-                    .map(|record| record.payload.undecoded_encoding_count())
-                    .sum();
-                coverage.record(scalar_key, scalars);
-                coverage.record(unresolved_key, unresolved);
-                coverage.record(undecoded_key, undecoded_encodings);
-            }
-            let mut insert_numbered_numeric_coverage =
-                |scalar_key,
-                 array_key,
-                 element_key,
-                 unresolved_key,
-                 (scalars, arrays, elements),
-                 unresolved| {
-                    coverage.record(scalar_key, scalars);
-                    coverage.record(array_key, arrays);
-                    coverage.record(element_key, elements);
-                    coverage.record(unresolved_key, unresolved);
-                };
-            insert_numbered_numeric_coverage(
-                crate::coverage::DECODED_LEGACY_TYPE_5_SCALAR_COUNT,
-                crate::coverage::DECODED_LEGACY_TYPE_5_ARRAY_COUNT,
-                crate::coverage::DECODED_LEGACY_TYPE_5_ELEMENT_COUNT,
-                crate::coverage::UNRESOLVED_LEGACY_TYPE_5_VALUE_COUNT,
-                legacy_numeric_coverage(&legacy.persistence.type_5_values),
-                legacy.persistence.unresolved_type_5_value_count,
-            );
-            insert_numbered_numeric_coverage(
-                crate::coverage::DECODED_LEGACY_TYPE_6_SCALAR_COUNT,
-                crate::coverage::DECODED_LEGACY_TYPE_6_ARRAY_COUNT,
-                crate::coverage::DECODED_LEGACY_TYPE_6_ELEMENT_COUNT,
-                crate::coverage::UNRESOLVED_LEGACY_TYPE_6_VALUE_COUNT,
-                legacy_numeric_coverage(&legacy.persistence.type_6_values),
-                legacy.persistence.unresolved_type_6_value_count,
-            );
-            insert_numbered_numeric_coverage(
-                crate::coverage::DECODED_LEGACY_TYPE_7_SCALAR_COUNT,
-                crate::coverage::DECODED_LEGACY_TYPE_7_ARRAY_COUNT,
-                crate::coverage::DECODED_LEGACY_TYPE_7_ELEMENT_COUNT,
-                crate::coverage::UNRESOLVED_LEGACY_TYPE_7_VALUE_COUNT,
-                legacy_numeric_coverage(&legacy.persistence.type_7_values),
-                legacy.persistence.unresolved_type_7_value_count,
-            );
-            insert_numbered_numeric_coverage(
-                crate::coverage::DECODED_LEGACY_TYPE_9_SCALAR_COUNT,
-                crate::coverage::DECODED_LEGACY_TYPE_9_ARRAY_COUNT,
-                crate::coverage::DECODED_LEGACY_TYPE_9_ELEMENT_COUNT,
-                crate::coverage::UNRESOLVED_LEGACY_TYPE_9_VALUE_COUNT,
-                legacy_numeric_coverage(&legacy.persistence.type_9_values),
-                legacy.persistence.unresolved_type_9_value_count,
-            );
-            insert_numbered_numeric_coverage(
-                crate::coverage::DECODED_LEGACY_TYPE_11_SCALAR_COUNT,
-                crate::coverage::DECODED_LEGACY_TYPE_11_ARRAY_COUNT,
-                crate::coverage::DECODED_LEGACY_TYPE_11_ELEMENT_COUNT,
-                crate::coverage::UNRESOLVED_LEGACY_TYPE_11_VALUE_COUNT,
-                legacy_numeric_coverage(&legacy.persistence.type_11_values),
-                legacy.persistence.unresolved_type_11_value_count,
-            );
         }
+        coverage.record(
+            crate::coverage::DECODED_LEGACY_OBJECT_ARROW_COUNT,
+            object_arrows,
+        );
+        coverage.record(
+            crate::coverage::DECODED_LEGACY_OBJECT_INLINE_COUNT,
+            object_inlines,
+        );
+        coverage.record(
+            crate::coverage::DECODED_LEGACY_OBJECT_NULL_COUNT,
+            object_nulls,
+        );
+        coverage.record(
+            crate::coverage::DECODED_LEGACY_OBJECT_ARRAY_COUNT,
+            object_arrays,
+        );
+        coverage.record(
+            crate::coverage::INCOMPLETE_LEGACY_OBJECT_ARRAY_COUNT,
+            legacy.persistence.incomplete_object_array_count,
+        );
+        coverage.record(
+            crate::coverage::UNRESOLVED_LEGACY_OBJECT_VALUE_COUNT,
+            legacy.persistence.unresolved_object_value_count,
+        );
+        let (integer_scalars, integer_arrays, integer_elements) =
+            legacy_numeric_coverage(&legacy.persistence.integer_values);
+        coverage.record(
+            crate::coverage::DECODED_LEGACY_INTEGER_SCALAR_COUNT,
+            integer_scalars,
+        );
+        coverage.record(
+            crate::coverage::DECODED_LEGACY_INTEGER_ARRAY_COUNT,
+            integer_arrays,
+        );
+        coverage.record(
+            crate::coverage::DECODED_LEGACY_INTEGER_ELEMENT_COUNT,
+            integer_elements,
+        );
+        coverage.record(
+            crate::coverage::UNRESOLVED_LEGACY_INTEGER_VALUE_COUNT,
+            legacy.persistence.unresolved_integer_value_count,
+        );
+        let (real_scalars, real_arrays, real_elements) =
+            legacy_numeric_coverage(&legacy.persistence.real_values);
+        coverage.record(
+            crate::coverage::DECODED_LEGACY_REAL_SCALAR_COUNT,
+            real_scalars,
+        );
+        coverage.record(
+            crate::coverage::DECODED_LEGACY_REAL_ARRAY_COUNT,
+            real_arrays,
+        );
+        coverage.record(
+            crate::coverage::DECODED_LEGACY_REAL_ELEMENT_COUNT,
+            real_elements,
+        );
+        coverage.record(
+            crate::coverage::UNRESOLVED_LEGACY_REAL_VALUE_COUNT,
+            legacy.persistence.unresolved_real_value_count,
+        );
+        let (string_scalars, string_arrays, string_elements, undecoded_encodings) =
+            legacy.persistence.string_values.iter().fold(
+                (0usize, 0usize, 0usize, 0usize),
+                |(scalars, arrays, elements, undecoded_encodings), record| {
+                    (
+                        scalars
+                            + usize::from(matches!(
+                                record.payload,
+                                crate::legacy::StringPayload::Scalar { .. }
+                            )),
+                        arrays
+                            + usize::from(matches!(
+                                record.payload,
+                                crate::legacy::StringPayload::Array { .. }
+                            )),
+                        elements.saturating_add(record.payload.element_count()),
+                        undecoded_encodings
+                            .saturating_add(record.payload.undecoded_encoding_count()),
+                    )
+                },
+            );
+        coverage.record(
+            crate::coverage::DECODED_LEGACY_STRING_SCALAR_COUNT,
+            string_scalars,
+        );
+        coverage.record(
+            crate::coverage::DECODED_LEGACY_STRING_ARRAY_COUNT,
+            string_arrays,
+        );
+        coverage.record(
+            crate::coverage::DECODED_LEGACY_STRING_ELEMENT_COUNT,
+            string_elements,
+        );
+        coverage.record(
+            crate::coverage::INCOMPLETE_LEGACY_STRING_ARRAY_COUNT,
+            legacy.persistence.incomplete_string_array_count,
+        );
+        coverage.record(
+            crate::coverage::UNRESOLVED_LEGACY_STRING_VALUE_COUNT,
+            legacy.persistence.unresolved_string_value_count,
+        );
+        coverage.record(
+            crate::coverage::UNDECODED_LEGACY_STRING_ENCODING_COUNT,
+            undecoded_encodings,
+        );
+        for (scalar_key, unresolved_key, undecoded_key, records, unresolved) in [
+            (
+                crate::coverage::DECODED_LEGACY_TYPE_3_SCALAR_COUNT,
+                crate::coverage::UNRESOLVED_LEGACY_TYPE_3_VALUE_COUNT,
+                crate::coverage::UNDECODED_LEGACY_TYPE_3_ENCODING_COUNT,
+                legacy.persistence.type_3_values.as_slice(),
+                legacy.persistence.unresolved_type_3_value_count,
+            ),
+            (
+                crate::coverage::DECODED_LEGACY_TYPE_4_SCALAR_COUNT,
+                crate::coverage::UNRESOLVED_LEGACY_TYPE_4_VALUE_COUNT,
+                crate::coverage::UNDECODED_LEGACY_TYPE_4_ENCODING_COUNT,
+                legacy.persistence.type_4_values.as_slice(),
+                legacy.persistence.unresolved_type_4_value_count,
+            ),
+        ] {
+            let scalars = records.len();
+            let undecoded_encodings = records
+                .iter()
+                .map(|record| record.payload.undecoded_encoding_count())
+                .sum();
+            coverage.record(scalar_key, scalars);
+            coverage.record(unresolved_key, unresolved);
+            coverage.record(undecoded_key, undecoded_encodings);
+        }
+        let mut insert_numbered_numeric_coverage =
+            |scalar_key,
+             array_key,
+             element_key,
+             unresolved_key,
+             (scalars, arrays, elements),
+             unresolved| {
+                coverage.record(scalar_key, scalars);
+                coverage.record(array_key, arrays);
+                coverage.record(element_key, elements);
+                coverage.record(unresolved_key, unresolved);
+            };
+        insert_numbered_numeric_coverage(
+            crate::coverage::DECODED_LEGACY_TYPE_5_SCALAR_COUNT,
+            crate::coverage::DECODED_LEGACY_TYPE_5_ARRAY_COUNT,
+            crate::coverage::DECODED_LEGACY_TYPE_5_ELEMENT_COUNT,
+            crate::coverage::UNRESOLVED_LEGACY_TYPE_5_VALUE_COUNT,
+            legacy_numeric_coverage(&legacy.persistence.type_5_values),
+            legacy.persistence.unresolved_type_5_value_count,
+        );
+        insert_numbered_numeric_coverage(
+            crate::coverage::DECODED_LEGACY_TYPE_6_SCALAR_COUNT,
+            crate::coverage::DECODED_LEGACY_TYPE_6_ARRAY_COUNT,
+            crate::coverage::DECODED_LEGACY_TYPE_6_ELEMENT_COUNT,
+            crate::coverage::UNRESOLVED_LEGACY_TYPE_6_VALUE_COUNT,
+            legacy_numeric_coverage(&legacy.persistence.type_6_values),
+            legacy.persistence.unresolved_type_6_value_count,
+        );
+        insert_numbered_numeric_coverage(
+            crate::coverage::DECODED_LEGACY_TYPE_7_SCALAR_COUNT,
+            crate::coverage::DECODED_LEGACY_TYPE_7_ARRAY_COUNT,
+            crate::coverage::DECODED_LEGACY_TYPE_7_ELEMENT_COUNT,
+            crate::coverage::UNRESOLVED_LEGACY_TYPE_7_VALUE_COUNT,
+            legacy_numeric_coverage(&legacy.persistence.type_7_values),
+            legacy.persistence.unresolved_type_7_value_count,
+        );
+        insert_numbered_numeric_coverage(
+            crate::coverage::DECODED_LEGACY_TYPE_9_SCALAR_COUNT,
+            crate::coverage::DECODED_LEGACY_TYPE_9_ARRAY_COUNT,
+            crate::coverage::DECODED_LEGACY_TYPE_9_ELEMENT_COUNT,
+            crate::coverage::UNRESOLVED_LEGACY_TYPE_9_VALUE_COUNT,
+            legacy_numeric_coverage(&legacy.persistence.type_9_values),
+            legacy.persistence.unresolved_type_9_value_count,
+        );
+        insert_numbered_numeric_coverage(
+            crate::coverage::DECODED_LEGACY_TYPE_11_SCALAR_COUNT,
+            crate::coverage::DECODED_LEGACY_TYPE_11_ARRAY_COUNT,
+            crate::coverage::DECODED_LEGACY_TYPE_11_ELEMENT_COUNT,
+            crate::coverage::UNRESOLVED_LEGACY_TYPE_11_VALUE_COUNT,
+            legacy_numeric_coverage(&legacy.persistence.type_11_values),
+            legacy.persistence.unresolved_type_11_value_count,
+        );
     }
     coverage.record(
         crate::coverage::DECODED_PRIMITIVE_TRIANGLE_STRIP_COUNT,
