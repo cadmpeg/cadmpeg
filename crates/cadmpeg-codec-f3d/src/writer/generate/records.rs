@@ -285,8 +285,7 @@ pub(crate) fn encode_design_bulkstream(
         }
     }
     for header in &native.design_record_headers {
-        validate_dynamic_class_tag(&header.class_tag, "Design record header")?;
-        native_lp_ascii(&mut out, &header.class_tag)?;
+        native_lp_ascii(&mut out, header.class_tag.as_str())?;
         out.extend_from_slice(&header.record_index.to_le_bytes());
     }
     for point in &native.sketch_points {

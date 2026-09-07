@@ -882,7 +882,7 @@ fn work_point_stream(
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: 12,
-        class_tag: "427".into(),
+        class_tag: crate::records::DesignClassTag::try_from("427".to_owned()).unwrap(),
         byte_offset: 0,
     };
     let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)

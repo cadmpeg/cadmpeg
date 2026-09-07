@@ -1787,7 +1787,7 @@ pub(super) fn continue_fixed_kind_operations(
     let foreign_header = DesignRecordHeader {
         id: "f3d:native:record-header#55".into(),
         record_index: 55,
-        class_tag: "301".into(),
+        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         byte_offset: 70,
     };
     assert_eq!(

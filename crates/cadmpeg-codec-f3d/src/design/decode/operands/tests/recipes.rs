@@ -56,7 +56,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     let record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
         byte_offset: 0,
-        class_tag: "365".into(),
+        class_tag: crate::records::DesignClassTag::try_from("365".to_owned()).unwrap(),
         record_index: 100,
     };
     let mut bytes = Vec::new();
@@ -330,7 +330,7 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
     let record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
         byte_offset: 0,
-        class_tag: "367".into(),
+        class_tag: crate::records::DesignClassTag::try_from("367".to_owned()).unwrap(),
         record_index: 100,
     };
     let recipe = ConstructionRecipe {
@@ -420,7 +420,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     let record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
         byte_offset: 0,
-        class_tag: "306".into(),
+        class_tag: crate::records::DesignClassTag::try_from("306".to_owned()).unwrap(),
         record_index: 100,
     };
     let recipe = ConstructionRecipe {
@@ -531,7 +531,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     let vertex_header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#200".into(),
         byte_offset: 0,
-        class_tag: "369".into(),
+        class_tag: crate::records::DesignClassTag::try_from("369".to_owned()).unwrap(),
         record_index: 200,
     };
     let vertex_recipe = ConstructionRecipe {

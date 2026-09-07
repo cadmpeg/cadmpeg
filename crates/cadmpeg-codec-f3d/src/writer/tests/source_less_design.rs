@@ -391,13 +391,13 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
         DesignRecordHeader {
             id: "generated:record-header#0".into(),
             record_index: 33,
-            class_tag: "350".into(),
+            class_tag: crate::records::DesignClassTag::try_from("350".to_owned()).unwrap(),
             byte_offset: 0,
         },
         DesignRecordHeader {
             id: "generated:record-header#1".into(),
             record_index: 44,
-            class_tag: "351".into(),
+            class_tag: crate::records::DesignClassTag::try_from("351".to_owned()).unwrap(),
             byte_offset: 0,
         },
     ];
@@ -453,7 +453,7 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
     );
     assert_eq!(native.design_record_headers.len(), 2);
     assert_eq!(native.design_record_headers[0].record_index, 33);
-    assert_eq!(native.design_record_headers[1].class_tag, "351");
+    assert_eq!(native.design_record_headers[1].class_tag.as_str(), "351");
 }
 
 #[test]

@@ -4252,7 +4252,11 @@ fn extend_related_design_records(
                 .push(crate::records::DesignRecordHeader {
                     id: format!("{stream}:design-record-header#{}", scope.byte_offset),
                     record_index: scope.record_index,
-                    class_tag: scope.class_tag.clone(),
+                    class_tag: scope
+                        .class_tag
+                        .clone()
+                        .try_into()
+                        .map_err(CodecError::Malformed)?,
                     byte_offset: scope.byte_offset,
                 });
         }
@@ -4266,7 +4270,11 @@ fn extend_related_design_records(
                             operation.relation_byte_offset
                         ),
                         record_index: operation.relation_record_index,
-                        class_tag: operation.relation_class_tag.clone(),
+                        class_tag: operation
+                            .relation_class_tag
+                            .clone()
+                            .try_into()
+                            .map_err(CodecError::Malformed)?,
                         byte_offset: operation.relation_byte_offset,
                     });
             }

@@ -89,7 +89,7 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: scope_record_index,
-        class_tag: "382".into(),
+        class_tag: crate::records::DesignClassTag::try_from("382".to_owned()).unwrap(),
         byte_offset: 0,
     };
     let mut scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)

@@ -2138,6 +2138,12 @@ impl From<DesignClassTag> for String {
     }
 }
 impl DesignClassTag {
+    /// Numeric value of the three-digit tag.
+    pub(crate) fn code(&self) -> u32 {
+        self.0
+            .bytes()
+            .fold(0, |value, digit| value * 10 + u32::from(digit - b'0'))
+    }
     pub(crate) fn as_str(&self) -> &str {
         &self.0
     }
@@ -3050,8 +3056,8 @@ impl DesignMeshRecordIdentity {
             frame_length,
         })
     }
-    pub fn class_tag(&self) -> &str {
-        self.class_tag.as_str()
+    pub fn class_tag(&self) -> &DesignClassTag {
+        &self.class_tag
     }
     pub fn record_index(&self) -> u32 {
         self.record_index.get()
@@ -5506,7 +5512,7 @@ pub struct DesignRecordHeader {
     /// Index of this record within the recursive `BulkStream` tree.
     pub record_index: u32,
     /// Source per-file dynamic three-digit ASCII class tag naming this record's type.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Byte offset of this header within its Design `BulkStream`.
     pub byte_offset: u64,
 }

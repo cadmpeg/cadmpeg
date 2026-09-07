@@ -1612,7 +1612,7 @@ fn exact_construction_operand_group(
         let header = DesignRecordHeader {
             id: String::new(),
             record_index,
-            class_tag: class_tag.clone(),
+            class_tag: class_tag.clone().try_into().ok()?,
             byte_offset: u64::try_from(start).ok()?,
         };
         if let ConstructionOperandGroupParse::Complete(group) =
@@ -8669,7 +8669,7 @@ pub(crate) fn parameter_scope_candidate_headers(
                     Some(DesignRecordHeader {
                         id: String::new(),
                         record_index,
-                        class_tag,
+                        class_tag: class_tag.try_into().ok()?,
                         byte_offset: *at as u64,
                     })
                 })
@@ -8837,7 +8837,7 @@ pub(crate) fn parse_parameter_scope(
             bytes,
             start,
             paired_at,
-            &header.class_tag,
+            header.class_tag.as_str(),
             &paired_class_tag,
             reference_members,
         )
@@ -8869,7 +8869,7 @@ pub(crate) fn parse_parameter_scope(
             bytes,
             start,
             paired_at,
-            &header.class_tag,
+            header.class_tag.as_str(),
             &paired_class_tag,
             *reference_count_at,
             reference_members,
@@ -8925,7 +8925,7 @@ pub(crate) fn parse_parameter_scope(
     let mut scope = DesignParameterScope {
         id: String::new(),
         byte_offset: header.byte_offset,
-        class_tag: header.class_tag.clone(),
+        class_tag: header.class_tag.as_str().to_owned(),
         record_index: header.record_index,
         frame_length: u64::try_from(paired_at.checked_sub(start)?).ok()?,
         kind_offset: u64::try_from(kind_at.checked_add(4)?).ok()?,
@@ -9468,7 +9468,7 @@ fn exact_coil_face_selection(
     let header = DesignRecordHeader {
         id: scope.id.clone(),
         byte_offset: u64::try_from(selection_start).ok()?,
-        class_tag: selection_class_tag.to_owned(),
+        class_tag: selection_class_tag.to_owned().try_into().ok()?,
         record_index: selection_record_index,
     };
     let face = parse_face_operand(

@@ -388,7 +388,7 @@ fn exact_legacy_as_built_face_selection(
             let header = DesignRecordHeader {
                 id: scope.id.clone(),
                 record_index,
-                class_tag: class_tag.clone(),
+                class_tag: class_tag.clone().try_into().ok()?,
                 byte_offset: u64::try_from(byte_offset).ok()?,
             };
             let operand = parse_face_operand(

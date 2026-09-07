@@ -904,7 +904,7 @@ fn parse_mesh_scope_record(
         let header = DesignRecordHeader {
             id: String::new(),
             record_index: identity.record_index(),
-            class_tag: identity.class_tag().to_owned(),
+            class_tag: identity.class_tag().clone(),
             byte_offset: u64::try_from(frame.start).ok()?,
         };
         let scope = parse_parameter_scope(bytes, records, &header)?;

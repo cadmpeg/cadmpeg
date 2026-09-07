@@ -1159,7 +1159,9 @@ fn decode_headers_for_indices(
                     record_index,
                     class_tag: std::str::from_utf8(&bytes[position + 4..position + 7])
                         .expect("validated indexed-record class tag is ASCII")
-                        .to_owned(),
+                        .to_owned()
+                        .try_into()
+                        .map_err(CodecError::Malformed)?,
                     byte_offset: position as u64,
                 });
             }
@@ -1201,11 +1203,8 @@ pub fn decode_sketch_relations(
             let Some(payload) = bytes.get(at..record_end) else {
                 continue;
             };
-            let class = record
-                .class_tag
-                .parse::<u32>()
-                .ok()
-                .and_then(|class_tag| stream_types.get(&class_tag))
+            let class = stream_types
+                .get(&record.class_tag.code())
                 .and_then(|design_type| {
                     SketchRelationClass::of(&design_type.type_guid, design_type.version)
                 });
@@ -1249,7 +1248,7 @@ pub fn decode_sketch_relations(
             out.push(SketchRelation {
                 id: ids::native_sketch_relation_id(&entry.name, record.record_index),
                 record_index: record.record_index,
-                class_tag: record.class_tag.clone(),
+                class_tag: record.class_tag.as_str().to_owned(),
                 byte_offset: record.byte_offset,
                 state_offset: parsed.state_offset as u32,
                 owner_reference: parsed.owner_reference,

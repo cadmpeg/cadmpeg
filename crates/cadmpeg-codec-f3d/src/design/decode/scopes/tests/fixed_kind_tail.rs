@@ -45,7 +45,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: 12,
-        class_tag: "301".into(),
+        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         byte_offset: 0,
     };
 

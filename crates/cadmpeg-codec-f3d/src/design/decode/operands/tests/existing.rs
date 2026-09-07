@@ -86,7 +86,7 @@ fn body_recipe_envelope_uses_its_structural_record_boundary() {
     let header = DesignRecordHeader {
         id: "stream:record-100".into(),
         record_index: RECORD_INDEX,
-        class_tag: "365".into(),
+        class_tag: crate::records::DesignClassTag::try_from("365".to_owned()).unwrap(),
         byte_offset: 0,
     };
     let early = ConstructionRecipe {

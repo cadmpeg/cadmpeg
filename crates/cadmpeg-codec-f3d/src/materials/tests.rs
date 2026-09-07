@@ -1117,7 +1117,7 @@ fn decode_transfers_generated_protein_appearance() {
         .find(|record| record.record_index == 33)
         .cloned()
         .expect("record 33");
-    assert_eq!(record_33.class_tag, "259");
+    assert_eq!(record_33.class_tag.as_str(), "259");
     assert_eq!(f3d_native(result.ir()).sketch_relations.len(), 2);
     assert_eq!(
         f3d_native(result.ir()).sketch_relations[0].member_indices(),

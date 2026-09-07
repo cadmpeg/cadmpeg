@@ -69,7 +69,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
         byte_offset: 0,
-        class_tag: "332".into(),
+        class_tag: crate::records::DesignClassTag::try_from("332".to_owned()).unwrap(),
         record_index: 100,
     };
     let mut bytes = Vec::new();
@@ -336,7 +336,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     let auxiliary_paired_at = auxiliary.len();
     header(&mut auxiliary, *b"259", 100);
     let auxiliary_record = DesignRecordHeader {
-        class_tag: "283".into(),
+        class_tag: crate::records::DesignClassTag::try_from("283".to_owned()).unwrap(),
         ..record.clone()
     };
     let auxiliary = parse_construction_operand_group(&auxiliary, &scope, 0, &auxiliary_record)
@@ -1181,7 +1181,7 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
         let record = DesignRecordHeader {
             id: format!("f3d:test:legacy-body-record#{group_record_index}"),
             byte_offset: frame_at,
-            class_tag: class_tag.to_owned(),
+            class_tag: crate::records::DesignClassTag::try_from(class_tag.to_owned()).unwrap(),
             record_index: group_record_index,
         };
         let group = parse_construction_operand_group(&bytes, &scope, 0, &record)
@@ -1270,7 +1270,7 @@ fn class_296_two_sided_to_faces_role_0x12_is_a_face_group_only_in_its_exact_scop
     let header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:group#296501".into(),
         byte_offset: 0,
-        class_tag: "323".into(),
+        class_tag: crate::records::DesignClassTag::try_from("323".to_owned()).unwrap(),
         record_index: 296_501,
     };
     let group = parse_construction_operand_group(&bytes, &scope, 0, &header)
@@ -1326,7 +1326,7 @@ fn construction_operand_trailing_transform_has_exact_affine_frame() {
     let header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#300".into(),
         byte_offset: 0,
-        class_tag: "339".into(),
+        class_tag: crate::records::DesignClassTag::try_from("339".to_owned()).unwrap(),
         record_index,
     };
 
@@ -1379,7 +1379,7 @@ fn construction_operand_trailing_flag_has_exact_compact_frame() {
     let header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#33602".into(),
         byte_offset: 0,
-        class_tag: "374".into(),
+        class_tag: crate::records::DesignClassTag::try_from("374".to_owned()).unwrap(),
         record_index: 33602,
     };
 
@@ -1431,7 +1431,7 @@ fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
     let expanded_header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
         byte_offset: 0,
-        class_tag: "304".into(),
+        class_tag: crate::records::DesignClassTag::try_from("304".to_owned()).unwrap(),
         record_index,
     };
     let expanded = parse_construction_operand_path(&expanded, scope_record_index, &expanded_header)
@@ -1624,7 +1624,7 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
         &crate::records::DesignRecordHeader {
             id: "header-322".into(),
             record_index: 100,
-            class_tag: "322".into(),
+            class_tag: crate::records::DesignClassTag::try_from("322".to_owned()).unwrap(),
             byte_offset: 0,
         },
     )
@@ -1651,7 +1651,7 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
         &crate::records::DesignRecordHeader {
             id: "header-322-tail".into(),
             record_index: 200,
-            class_tag: "322".into(),
+            class_tag: crate::records::DesignClassTag::try_from("322".to_owned()).unwrap(),
             byte_offset: 0,
         },
     )
@@ -1673,7 +1673,7 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
         &crate::records::DesignRecordHeader {
             id: "header-411".into(),
             record_index: 300,
-            class_tag: "411".into(),
+            class_tag: crate::records::DesignClassTag::try_from("411".to_owned()).unwrap(),
             byte_offset: 0,
         },
     )
@@ -1696,7 +1696,7 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
         &crate::records::DesignRecordHeader {
             id: "header-322".into(),
             record_index: 100,
-            class_tag: "322".into(),
+            class_tag: crate::records::DesignClassTag::try_from("322".to_owned()).unwrap(),
             byte_offset: 0,
         },
     )
@@ -1709,7 +1709,7 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
         &crate::records::DesignRecordHeader {
             id: "header-322".into(),
             record_index: 400,
-            class_tag: "322".into(),
+            class_tag: crate::records::DesignClassTag::try_from("322".to_owned()).unwrap(),
             byte_offset: 0,
         },
     )

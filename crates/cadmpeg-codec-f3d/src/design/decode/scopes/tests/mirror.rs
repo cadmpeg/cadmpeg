@@ -58,7 +58,7 @@ fn compact_mirror_reference_uses_the_identity_record_lane() {
     let header = DesignRecordHeader {
         id: String::new(),
         record_index,
-        class_tag: "320".into(),
+        class_tag: crate::records::DesignClassTag::try_from("320".to_owned()).unwrap(),
         byte_offset: start as u64,
     };
 

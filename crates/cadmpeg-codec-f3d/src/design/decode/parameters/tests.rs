@@ -887,7 +887,7 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     let header = crate::records::DesignRecordHeader {
         id: crate::ids::native_design_record_header_id(stream, 0),
         record_index: 44,
-        class_tag: "292".into(),
+        class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
         byte_offset: 0,
     };
 

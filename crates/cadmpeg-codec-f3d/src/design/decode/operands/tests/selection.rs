@@ -31,7 +31,7 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
     let header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
         byte_offset: 0,
-        class_tag: "308".into(),
+        class_tag: crate::records::DesignClassTag::try_from("308".to_owned()).unwrap(),
         record_index: 100,
     };
     let entity = DesignEntityHeader {
@@ -88,7 +88,7 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
     bytes.extend_from_slice(b"258");
     bytes.extend_from_slice(&100u32.to_le_bytes());
     let compact_header = DesignRecordHeader {
-        class_tag: "319".into(),
+        class_tag: crate::records::DesignClassTag::try_from("319".to_owned()).unwrap(),
         ..header
     };
     let compact = parse_sketch_profile(
@@ -143,7 +143,7 @@ fn generated_base_flange_profile_frame_resolves() {
     let header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#1501".into(),
         byte_offset: profile_offset as u64,
-        class_tag: "377".into(),
+        class_tag: crate::records::DesignClassTag::try_from("377".to_owned()).unwrap(),
         record_index: 1501,
     };
     let entity = DesignEntityHeader {
@@ -220,7 +220,7 @@ fn extrude_operand_identity_walks_shared_wrapper_grammar_to_a_fixed_leaf() {
     let wrapper_header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#300".into(),
         byte_offset: 0,
-        class_tag: "326".into(),
+        class_tag: crate::records::DesignClassTag::try_from("326".to_owned()).unwrap(),
         record_index: 300,
     };
     let mut bytes = Vec::new();
@@ -354,7 +354,7 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     let record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
         byte_offset: 0,
-        class_tag: "333".into(),
+        class_tag: crate::records::DesignClassTag::try_from("333".to_owned()).unwrap(),
         record_index: 100,
     };
     let mut bytes = Vec::new();
@@ -455,7 +455,7 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     let class_338_next_at = class_338_curve_identity.len();
     header(&mut class_338_curve_identity, *b"268", 104);
     let class_338_record = DesignRecordHeader {
-        class_tag: "338".into(),
+        class_tag: crate::records::DesignClassTag::try_from("338".to_owned()).unwrap(),
         ..record
     };
     let class_338_operand =
@@ -530,7 +530,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     let record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#100".into(),
         byte_offset: 0,
-        class_tag: "331".into(),
+        class_tag: crate::records::DesignClassTag::try_from("331".to_owned()).unwrap(),
         record_index: 100,
     };
     let mut group_bytes = Vec::new();
@@ -578,7 +578,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     let member_record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#200".into(),
         byte_offset: 0,
-        class_tag: "290".into(),
+        class_tag: crate::records::DesignClassTag::try_from("290".to_owned()).unwrap(),
         record_index: 200,
     };
     let mut member_bytes = Vec::new();

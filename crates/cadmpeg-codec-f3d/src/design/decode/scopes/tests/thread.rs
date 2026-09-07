@@ -349,7 +349,7 @@ fn localized_sketch_scope_retains_its_generic_reference_table() {
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: 12,
-        class_tag: "301".into(),
+        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         byte_offset: 0,
     };
 

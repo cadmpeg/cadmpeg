@@ -105,13 +105,13 @@ fn validation_accepts_class_410_component_insert_identity_frame() {
             DesignRecordHeader {
                 id: format!("{stream}:design-record-header#167"),
                 record_index: 167,
-                class_tag: "310".into(),
+                class_tag: crate::records::DesignClassTag::try_from("310".to_owned()).unwrap(),
                 byte_offset: 0,
             },
             DesignRecordHeader {
                 id: format!("{stream}:design-record-header#169"),
                 record_index: 169,
-                class_tag: "410".into(),
+                class_tag: crate::records::DesignClassTag::try_from("410".to_owned()).unwrap(),
                 byte_offset: 100,
             },
         ]);
@@ -344,7 +344,7 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
         headers.push(DesignRecordHeader {
             id: format!("{stream}:design-record-header#{operand_record_index}"),
             record_index: operand_record_index,
-            class_tag: "365".into(),
+            class_tag: crate::records::DesignClassTag::try_from("365".to_owned()).unwrap(),
             byte_offset,
         });
         recipes.push(ConstructionRecipe {
@@ -488,25 +488,25 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
             DesignRecordHeader {
                 id: format!("{stream}:design-record-header#100"),
                 record_index: 100,
-                class_tag: "277".into(),
+                class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
                 byte_offset: 1_000,
             },
             DesignRecordHeader {
                 id: format!("{stream}:design-record-header#101"),
                 record_index: 101,
-                class_tag: "316".into(),
+                class_tag: crate::records::DesignClassTag::try_from("316".to_owned()).unwrap(),
                 byte_offset: 1_100,
             },
             DesignRecordHeader {
                 id: format!("{stream}:design-record-header#200"),
                 record_index: 200,
-                class_tag: "277".into(),
+                class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
                 byte_offset: 2_000,
             },
             DesignRecordHeader {
                 id: format!("{stream}:design-record-header#201"),
                 record_index: 201,
-                class_tag: "316".into(),
+                class_tag: crate::records::DesignClassTag::try_from("316".to_owned()).unwrap(),
                 byte_offset: 2_100,
             },
         ]);
@@ -612,13 +612,13 @@ fn validation_checks_pipe_path_group_roles() {
             DesignRecordHeader {
                 id: format!("{stream}:design-record-header#20"),
                 record_index: 20,
-                class_tag: "312".into(),
+                class_tag: crate::records::DesignClassTag::try_from("312".to_owned()).unwrap(),
                 byte_offset: 1_000,
             },
             DesignRecordHeader {
                 id: format!("{stream}:design-record-header#21"),
                 record_index: 21,
-                class_tag: "316".into(),
+                class_tag: crate::records::DesignClassTag::try_from("316".to_owned()).unwrap(),
                 byte_offset: 1_200,
             },
         ]);
@@ -963,19 +963,19 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
             DesignRecordHeader {
                 id: crate::ids::native_scoped_id(DESIGN_STREAM, "record-header", 100),
                 record_index: 100,
-                class_tag: "268".into(),
+                class_tag: crate::records::DesignClassTag::try_from("268".to_owned()).unwrap(),
                 byte_offset: 1_000,
             },
             DesignRecordHeader {
                 id: crate::ids::native_scoped_id(DESIGN_STREAM, "record-header", 101),
                 record_index: 101,
-                class_tag: "305".into(),
+                class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
                 byte_offset: 1_068,
             },
             DesignRecordHeader {
                 id: crate::ids::native_scoped_id(DESIGN_STREAM, "record-header", 102),
                 record_index: 102,
-                class_tag: "258".into(),
+                class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
                 byte_offset: 1_200,
             },
         ]);
@@ -1223,13 +1223,13 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
     let wrapper = DesignRecordHeader {
         id: format!("{stream}:record-header#1100"),
         record_index: 101,
-        class_tag: "384".into(),
+        class_tag: crate::records::DesignClassTag::try_from("384".to_owned()).unwrap(),
         byte_offset: 1_100,
     };
     let following = DesignRecordHeader {
         id: format!("{stream}:record-header#1124"),
         record_index: 102,
-        class_tag: "395".into(),
+        class_tag: crate::records::DesignClassTag::try_from("395".to_owned()).unwrap(),
         byte_offset: 1_124,
     };
     let identity_id = identity.id.clone();
@@ -1251,7 +1251,7 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
     native.design_record_headers.push(DesignRecordHeader {
         id: format!("{stream}:record-header#1315"),
         record_index: 103,
-        class_tag: "301".into(),
+        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         byte_offset: 1_315,
     });
     native.store(ir.native.namespace_mut("f3d")).unwrap();
@@ -1306,7 +1306,7 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
     let header = DesignRecordHeader {
         id: format!("{stream}:design-record-header#1000"),
         byte_offset: 1_000,
-        class_tag: "338".into(),
+        class_tag: crate::records::DesignClassTag::try_from("338".to_owned()).unwrap(),
         record_index: 200,
     };
     let operand = DesignEntitySelectionOperand {

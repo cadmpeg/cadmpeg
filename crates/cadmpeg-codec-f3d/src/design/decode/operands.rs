@@ -342,7 +342,7 @@ pub fn bind_work_point_input_carriers(
                 bytes,
                 input.record_index,
                 header.byte_offset,
-                &header.class_tag,
+                header.class_tag.as_str(),
             ) {
                 let point_matches = sketch_points
                     .iter()
@@ -378,7 +378,7 @@ pub fn bind_work_point_input_carriers(
                 bytes,
                 input.record_index,
                 header.byte_offset,
-                &header.class_tag,
+                header.class_tag.as_str(),
             ) else {
                 continue;
             };
@@ -396,7 +396,7 @@ pub fn bind_work_point_input_carriers(
             }
             input.carrier = Some(Box::new(DesignWorkPointInputCarrier::WorkPlane {
                 selection: DesignWorkPointPlaneSelection {
-                    class_tag: header.class_tag.clone(),
+                    class_tag: header.class_tag.as_str().to_owned(),
                     asset_id: selection.asset_id,
                     asset_id_offset: selection.asset_id_offset,
                     context_id: selection.context_id,
@@ -635,7 +635,7 @@ pub fn decode_edge_identity_operands(
                 group_member_ordinal,
                 record_index,
                 byte_offset: header.byte_offset,
-                class_tag: header.class_tag.clone(),
+                class_tag: header.class_tag.as_str().to_owned(),
                 compact_layout: parsed.compact_layout,
                 local_id: parsed.local_id,
                 local_id_offset: parsed.local_id_offset,
@@ -1614,7 +1614,7 @@ pub(crate) fn parse_loft_legacy_body_carrier(
         scope_record_index: scope.record_index,
         record_index: header.record_index,
         byte_offset: header.byte_offset,
-        class_tag: header.class_tag.clone(),
+        class_tag: header.class_tag.as_str().to_owned(),
         owner_scope_record_index_offset: u64::try_from(
             start + legacy_loft_322::OWNER_SCOPE_RECORD_INDEX,
         )
@@ -2061,7 +2061,7 @@ pub(crate) fn parse_construction_operand_group(
         });
     }
     let legacy_move_class_328 = scope.kind() == crate::records::feature::DesignFeatureKind::Move
-        && header.class_tag == "328"
+        && header.class_tag.as_str() == "328"
         && auxiliary_reference_slots == [false, true]
         && header.record_index.checked_add(13).is_some_and(|expected| {
             auxiliary_records.len() == 1 && auxiliary_records[0].value == expected
@@ -2176,7 +2176,7 @@ pub(crate) fn parse_construction_operand_group(
         scope_reference_ordinal,
         record_index: header.record_index,
         byte_offset: header.byte_offset,
-        class_tag: header.class_tag.clone(),
+        class_tag: header.class_tag.as_str().to_owned(),
         members,
         lost_edge_references: Vec::new(),
         frame: DesignConstructionOperandGroupFrame {
@@ -2229,7 +2229,8 @@ fn legacy_body_group_tail(
     {
         return None;
     }
-    if scope.kind() == crate::records::feature::DesignFeatureKind::Move && header.class_tag == "328"
+    if scope.kind() == crate::records::feature::DesignFeatureKind::Move
+        && header.class_tag.as_str() == "328"
     {
         if bytes.get(tail) != Some(&0) {
             return None;
@@ -2265,7 +2266,7 @@ fn legacy_body_group_tail(
     }
     let (paired_class_tag, after_tag) = lp_ascii_filtered(bytes, tail, 3..=3, u8::is_ascii_digit)?;
     if scope.kind() == crate::records::feature::DesignFeatureKind::Move
-        && header.class_tag == "328"
+        && header.class_tag.as_str() == "328"
         && paired_class_tag != "263"
     {
         return None;
@@ -2334,7 +2335,7 @@ pub(crate) fn parse_construction_operand_flag(
     Some(crate::records::topology::DesignConstructionOperandFlag {
         record_index: header.record_index,
         byte_offset: header.byte_offset,
-        class_tag: header.class_tag.clone(),
+        class_tag: header.class_tag.as_str().to_owned(),
         value,
         value_offset: u64::try_from(start + 22).ok()?,
     })
@@ -2431,7 +2432,7 @@ pub(crate) fn parse_construction_operand_path(
     Some(crate::records::topology::DesignConstructionOperandPath {
         record_index: header.record_index,
         byte_offset: header.byte_offset,
-        class_tag: header.class_tag.clone(),
+        class_tag: header.class_tag.as_str().to_owned(),
         entity_ref,
         entity_ref_offset,
         placement,
@@ -2468,7 +2469,7 @@ pub(crate) fn parse_construction_operand_transform(
         crate::records::topology::DesignConstructionOperandTransform {
             record_index: header.record_index,
             byte_offset: header.byte_offset,
-            class_tag: header.class_tag.clone(),
+            class_tag: header.class_tag.as_str().to_owned(),
             transform,
             transform_offset: u64::try_from(transform_at).ok()?,
             following_record_index,
@@ -2492,7 +2493,7 @@ pub(crate) fn parse_construction_operand_dual_transform(
         crate::records::topology::DesignConstructionOperandDualTransform {
             record_index: header.record_index,
             byte_offset: header.byte_offset,
-            class_tag: header.class_tag.clone(),
+            class_tag: header.class_tag.as_str().to_owned(),
             first_transform: rigid_transform_at(bytes, first_at)?,
             first_transform_offset: u64::try_from(first_at).ok()?,
             second_transform: rigid_transform_at(bytes, second_at)?,
@@ -2662,7 +2663,7 @@ pub(crate) fn parse_construction_operand_identity(
 ) -> Option<DesignConstructionOperandIdentity> {
     let mut current_at = usize::try_from(wrapper_header.byte_offset).ok()?;
     let mut current_record_index = wrapper_header.record_index;
-    let mut current_class_tag = wrapper_header.class_tag.clone();
+    let mut current_class_tag = wrapper_header.class_tag.as_str().to_owned();
     let mut chain_started = false;
     if let Some(transform) = parse_construction_operand_transform(bytes, wrapper_header) {
         current_at = usize::try_from(transform.following_byte_offset).ok()?;
@@ -2893,7 +2894,7 @@ pub(crate) fn parse_extrude_selection_group(
         scope_reference_ordinal,
         record_index: header.record_index,
         byte_offset: header.byte_offset,
-        class_tag: header.class_tag.clone(),
+        class_tag: header.class_tag.as_str().to_owned(),
         member_count_offset: u64::try_from(start + 32).ok()?,
         members,
         opaque_index,
@@ -2994,7 +2995,7 @@ pub(crate) fn parse_entity_selection_operand(
         bytes,
         header.record_index,
         header.byte_offset,
-        &header.class_tag,
+        header.class_tag.as_str(),
     )?;
     Some(DesignEntitySelectionOperand {
         id: String::new(),
@@ -3707,7 +3708,7 @@ fn parse_body_recipe_operand_frame_with_index(
         owner,
         record_index: header.record_index,
         byte_offset: header.byte_offset,
-        class_tag: header.class_tag.clone(),
+        class_tag: header.class_tag.as_str().to_owned(),
         asset_id,
         asset_id_offset: u64::try_from(asset_id_at + 4).ok()?,
         context_id,
@@ -3902,7 +3903,7 @@ pub(crate) fn parse_extrude_selection_member(
         group_member_ordinal,
         record_index: header.record_index,
         byte_offset: header.byte_offset,
-        class_tag: header.class_tag.clone(),
+        class_tag: header.class_tag.as_str().to_owned(),
         local_id: member.local_id,
         local_id_offset: member.local_id_offset,
         asset_id: member.asset_id,
@@ -4119,7 +4120,7 @@ pub(crate) fn parse_sketch_profile(
         scope_reference_ordinal,
         record_index: header.record_index,
         byte_offset: header.byte_offset,
-        class_tag: header.class_tag.clone(),
+        class_tag: header.class_tag.as_str().to_owned(),
         asset_id,
         asset_id_offset: u64::try_from(start + 40).ok()?,
         entity_id: entity.entity_id.clone(),
@@ -4346,7 +4347,7 @@ pub(crate) fn parse_vertex_recipe(
     Some(DesignVertexRecipe {
         record_index: header.record_index,
         byte_offset: header.byte_offset,
-        class_tag: header.class_tag.clone(),
+        class_tag: header.class_tag.as_str().to_owned(),
         paired_byte_offset: parsed.paired_byte_offset,
         paired_class_tag: parsed.paired_class_tag,
         recipe_record_index: parsed.recipe_record_index,
@@ -4532,7 +4533,7 @@ pub(crate) fn parse_edge_operand(
         scope_reference_ordinal,
         record_index: header.record_index,
         byte_offset: header.byte_offset,
-        class_tag: header.class_tag.clone(),
+        class_tag: header.class_tag.as_str().to_owned(),
         paired_byte_offset: parsed.paired_byte_offset,
         paired_class_tag: parsed.paired_class_tag,
         recipe_record_index: parsed.recipe_record_index,
@@ -5112,7 +5113,7 @@ pub(crate) fn parse_face_operand(
         }),
         record_index: header.record_index,
         byte_offset: header.byte_offset,
-        class_tag: header.class_tag.clone(),
+        class_tag: header.class_tag.as_str().to_owned(),
         paired_byte_offset: u64::try_from(offsets[0]).ok()?,
         paired_class_tag: indexed[0].0.clone(),
         recipe_record_index,

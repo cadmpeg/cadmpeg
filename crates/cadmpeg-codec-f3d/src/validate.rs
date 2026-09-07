@@ -316,7 +316,9 @@ fn design_header_matches(
 ) -> bool {
     records_by_index
         .get(&(stream, record_index))
-        .is_some_and(|header| header.class_tag == class_tag && header.byte_offset == byte_offset)
+        .is_some_and(|header| {
+            header.class_tag.as_str() == class_tag && header.byte_offset == byte_offset
+        })
 }
 
 fn valid_axial_selector_identity(
@@ -1861,7 +1863,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 == Some(&profile.record_index)
                 && header.is_some_and(|header| {
                     header.byte_offset == profile.byte_offset
-                        && header.class_tag == profile.class_tag
+                        && header.class_tag.as_str() == profile.class_tag
                 })
                 && entity.is_some_and(|entity| {
                     entity.in_sketch_module() && entity.entity_id == profile.entity_id
@@ -2048,11 +2050,11 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         == body_count.saturating_mul(2)
                     && group_header.is_some_and(|header| {
                         header.byte_offset == operation.body_group_byte_offset
-                            && header.class_tag == operation.body_group_class_tag
+                            && header.class_tag.as_str() == operation.body_group_class_tag
                     })
                     && relation_header.is_some_and(|header| {
                         header.byte_offset == operation.relation_byte_offset
-                            && header.class_tag == operation.relation_class_tag
+                            && header.class_tag.as_str() == operation.relation_class_tag
                     })
                     && operation
                         .bodies
@@ -2361,8 +2363,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             == Some(frame.reference_record_index)
                         && scope.reference_members.offsets().nth(8).copied()
                             == Some(frame.reference_offset)
-                        && header.class_tag == generation.frame_class_tag()
-                        && frame.class_tag == header.class_tag
+                        && header.class_tag.as_str() == generation.frame_class_tag()
+                        && frame.class_tag == header.class_tag.as_str()
                         && frame.record_byte_offset == header.byte_offset
                         && frame.transform_offset
                             == frame.record_byte_offset
@@ -3995,7 +3997,7 @@ fn valid_work_point_construction(
                             .bytes()
                             .all(|byte| byte.is_ascii_digit())
                         && header.is_some_and(|header| {
-                            header.class_tag == selection.class_tag
+                            header.class_tag.as_str() == selection.class_tag
                                 && selection.asset_id_offset > header.byte_offset
                         })
                         && selection.context_id_offset > selection.asset_id_offset
@@ -4025,7 +4027,7 @@ fn valid_work_point_construction(
                             .bytes()
                             .all(|byte| byte.is_ascii_digit())
                         && header.is_some_and(|header| {
-                            header.class_tag == selection.class_tag
+                            header.class_tag.as_str() == selection.class_tag
                                 && selection.asset_id_offset > header.byte_offset
                         })
                         && selection.context_id_offset > selection.asset_id_offset
@@ -4190,7 +4192,7 @@ fn valid_vertex_recipe(
         && vertex.class_tag.bytes().all(|byte| byte.is_ascii_digit())
         && header.is_some_and(|header| {
             header.byte_offset == vertex.byte_offset
-                && header.class_tag == vertex.class_tag
+                && header.class_tag.as_str() == vertex.class_tag
                 && vertex.paired_byte_offset > header.byte_offset
         })
         && vertex.paired_class_tag.len() == 3
@@ -4342,7 +4344,8 @@ fn validate_extrude_selection_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         == Some(&group.record_index)
             })
             && header.is_some_and(|header| {
-                header.byte_offset == group.byte_offset && header.class_tag == group.class_tag
+                header.byte_offset == group.byte_offset
+                    && header.class_tag.as_str() == group.class_tag
             })
             && group.member_count_offset == group.byte_offset.saturating_add(32)
             && !group.members.is_empty()
@@ -4458,7 +4461,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         .get(&(native_stream, transform.record_index))
                         .is_some_and(|header| {
                             header.byte_offset == transform.byte_offset
-                                && header.class_tag == transform.class_tag
+                                && header.class_tag.as_str() == transform.class_tag
                         })
                     && crate::records::valid_sketch_transform(&transform.transform)
                     && transform.following_record_index == transform.record_index.saturating_add(1)
@@ -4468,7 +4471,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         .get(&(native_stream, transform.following_record_index))
                         .is_some_and(|header| {
                             header.byte_offset == transform.following_byte_offset
-                                && header.class_tag == transform.following_class_tag
+                                && header.class_tag.as_str() == transform.following_class_tag
                         })
             })
             && frame
@@ -4487,7 +4490,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         .get(&(native_stream, transform.record_index))
                         .is_some_and(|header| {
                             header.byte_offset == transform.byte_offset
-                                && header.class_tag == transform.class_tag
+                                && header.class_tag.as_str() == transform.class_tag
                         })
                     && transform.first_transform_offset == transform.byte_offset.saturating_add(21)
                     && transform.second_transform_offset
@@ -4511,7 +4514,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         .get(&(native_stream, flag.record_index))
                         .is_some_and(|header| {
                             header.byte_offset == flag.byte_offset
-                                && header.class_tag == flag.class_tag
+                                && header.class_tag.as_str() == flag.class_tag
                         })
                     && flag.value_offset == flag.byte_offset.saturating_add(22)
             })
@@ -4531,7 +4534,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         .get(&(native_stream, path.record_index))
                         .is_some_and(|header| {
                             header.byte_offset == path.byte_offset
-                                && header.class_tag == path.class_tag
+                                && header.class_tag.as_str() == path.class_tag
                         })
                     && path.entity_ref_offset == path.byte_offset.saturating_add(22)
                     && path.scope_record_index == group.scope_record_index
@@ -4542,7 +4545,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         .get(&(native_stream, path.following_record_index))
                         .is_some_and(|header| {
                             header.byte_offset == path.following_byte_offset
-                                && header.class_tag == path.following_class_tag
+                                && header.class_tag.as_str() == path.following_class_tag
                         })
                     && match &path.placement {
                         crate::records::topology::DesignConstructionPathPlacement::Transform(
@@ -4874,7 +4877,8 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         })
             })
             && header.is_some_and(|header| {
-                header.byte_offset == group.byte_offset && header.class_tag == group.class_tag
+                header.byte_offset == group.byte_offset
+                    && header.class_tag.as_str() == group.class_tag
             })
             && frame_valid
             && !group.members.is_empty()
@@ -5899,7 +5903,7 @@ fn validate_construction_operand_identities<'a>(
                         .get(&(native_stream, wrapper.record_index))
                         .is_some_and(|header| {
                             header.byte_offset == wrapper.byte_offset
-                                && header.class_tag == wrapper.class_tag
+                                && header.class_tag.as_str() == wrapper.class_tag
                         })
             });
         let transform = group.and_then(|group| group.frame.trailing_transforms.first());
@@ -5927,13 +5931,13 @@ fn validate_construction_operand_identities<'a>(
                     .get(&(native_stream, path.wrapper_record_index))
                     .is_some_and(|header| {
                         header.byte_offset == path.wrapper_byte_offset
-                            && header.class_tag == path.wrapper_class_tag
+                            && header.class_tag.as_str() == path.wrapper_class_tag
                     })
                 && records_by_index
                     .get(&(native_stream, path.carrier_record_index))
                     .is_some_and(|header| {
                         header.byte_offset == path.carrier_byte_offset
-                            && header.class_tag == path.carrier_class_tag
+                            && header.class_tag.as_str() == path.carrier_class_tag
                     })
                 && path.primary_identity_offset == path.carrier_byte_offset.saturating_add(37)
                 && path.selector_offset == path.carrier_byte_offset.saturating_add(57)
@@ -5946,7 +5950,7 @@ fn validate_construction_operand_identities<'a>(
                     .get(&(native_stream, path.following_record_index))
                     .is_some_and(|header| {
                         header.byte_offset == path.following_byte_offset
-                            && header.class_tag == path.following_class_tag
+                            && header.class_tag.as_str() == path.following_class_tag
                     })
         });
         let chain_entry_shape = if let Some(path) = &identity.tracking_path {
@@ -5997,7 +6001,7 @@ fn validate_construction_operand_identities<'a>(
                 .get(&(native_stream, identity.following_record_index))
                 .is_some_and(|header| {
                     header.byte_offset == identity.following_byte_offset
-                        && header.class_tag == identity.following_class_tag
+                        && header.class_tag.as_str() == identity.following_class_tag
                 });
         let persistent_shape = identity
             .persistent_identity
@@ -6140,7 +6144,8 @@ fn validate_edge_identity_operands<'a>(
                         == Some(&operand.record_index)
             })
             && header.is_some_and(|header| {
-                header.byte_offset == operand.byte_offset && header.class_tag == operand.class_tag
+                header.byte_offset == operand.byte_offset
+                    && header.class_tag.as_str() == operand.class_tag
             })
             && local_id_offset_is_valid
             && operand.asset_id_offset == operand.local_id_offset.saturating_add(18)
@@ -6245,7 +6250,8 @@ fn validate_body_recipe_operands<'a>(
             && operand.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && valid_owner
             && header.is_some_and(|header| {
-                header.byte_offset == operand.byte_offset && header.class_tag == operand.class_tag
+                header.byte_offset == operand.byte_offset
+                    && header.class_tag.as_str() == operand.class_tag
             })
             && body_recipe_reference_table_is_admitted(scope.copied(), operand)
             && operand
@@ -6631,7 +6637,8 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     == Some(member.record_index)
             })
             && header.is_some_and(|header| {
-                header.byte_offset == member.byte_offset && header.class_tag == member.class_tag
+                header.byte_offset == member.byte_offset
+                    && header.class_tag.as_str() == member.class_tag
             })
             && member.local_id_offset == member.byte_offset.saturating_add(21)
             && member.asset_id_offset == member.byte_offset.saturating_add(33)
@@ -6705,7 +6712,8 @@ fn validate_entity_selection_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         == Some(&operand.record_index)
             })
             && header.is_some_and(|header| {
-                header.byte_offset == operand.byte_offset && header.class_tag == operand.class_tag
+                header.byte_offset == operand.byte_offset
+                    && header.class_tag.as_str() == operand.class_tag
             })
             && valid_design_guid(&operand.asset_id)
             && valid_design_guid(&operand.context_id)
@@ -6922,7 +6930,8 @@ fn validate_edge_operands<'a>(
                         == Some(&operand.record_index)
             })
             && header.is_some_and(|header| {
-                header.byte_offset == operand.byte_offset && header.class_tag == operand.class_tag
+                header.byte_offset == operand.byte_offset
+                    && header.class_tag.as_str() == operand.class_tag
             })
             && operand.paired_byte_offset > operand.byte_offset
             && operand.recipe_record_index == operand.record_index.saturating_add(3)
@@ -7446,7 +7455,8 @@ fn validate_face_operands<'a>(
                 }
             })
             && header.is_some_and(|header| {
-                header.byte_offset == operand.byte_offset && header.class_tag == operand.class_tag
+                header.byte_offset == operand.byte_offset
+                    && header.class_tag.as_str() == operand.class_tag
             })
             && operand.paired_byte_offset > operand.byte_offset
             && operand.recipe_record_index == operand.record_index.saturating_add(3)
@@ -7580,10 +7590,10 @@ fn validate_face_source_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
         });
         let headers_valid = carrier_header.is_some_and(|header| {
             header.byte_offset == group.carrier_span.start()
-                && header.class_tag == group.carrier_class_tag
+                && header.class_tag.as_str() == group.carrier_class_tag
         }) && paired_header.is_some_and(|header| {
             header.byte_offset == group.carrier_span.end()
-                && header.class_tag == group.paired_class_tag
+                && header.class_tag.as_str() == group.paired_class_tag
         });
         let source_offsets_valid = source_spec.is_some_and(|(_, source_reference_offset, _, _)| {
             let Ok(source_reference_offset) = u64::try_from(source_reference_offset) else {
