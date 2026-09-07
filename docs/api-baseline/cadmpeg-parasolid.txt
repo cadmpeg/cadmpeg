@@ -1,9 +1,8 @@
-# generated at 5526cd5f7
+# generated at 47e46138f
 pub mod cadmpeg_parasolid
 pub struct cadmpeg_parasolid::SchemaToken<'a>
 impl<'a> cadmpeg_parasolid::SchemaToken<'a>
 pub const fn cadmpeg_parasolid::SchemaToken<'a>::end(self) -> usize
-pub const fn cadmpeg_parasolid::SchemaToken<'a>::offset(self) -> usize
 pub const fn cadmpeg_parasolid::SchemaToken<'a>::value(self) -> &'a str
 pub const cadmpeg_parasolid::DECLARED_CARRIER: &str
 pub const cadmpeg_parasolid::DECLARED_SCHEMA: &str
