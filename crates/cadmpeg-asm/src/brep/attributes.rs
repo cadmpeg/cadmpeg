@@ -193,15 +193,12 @@ pub fn decode_transform(
     let [x, y, z, translation] = vectors.as_slice() else {
         return None;
     };
-    Some(
-        cadmpeg_ir::transform::Transform::from_rows([
-            [x[0], y[0], z[0], translation[0] * header_scale * LEN_TO_MM],
-            [x[1], y[1], z[1], translation[1] * header_scale * LEN_TO_MM],
-            [x[2], y[2], z[2], translation[2] * header_scale * LEN_TO_MM],
-            [0.0, 0.0, 0.0, scale],
-        ])
-        .expect("affine transform"),
-    )
+    cadmpeg_ir::transform::Transform::from_rows([
+        [x[0], y[0], z[0], translation[0] * header_scale * LEN_TO_MM],
+        [x[1], y[1], z[1], translation[1] * header_scale * LEN_TO_MM],
+        [x[2], y[2], z[2], translation[2] * header_scale * LEN_TO_MM],
+        [0.0, 0.0, 0.0, scale],
+    ])
 }
 
 /// Storage form and payload-field location of an exact direct-color attribute.
@@ -395,4 +392,39 @@ pub fn attribute_chain_name(entity: &Record, by_index: &HashMap<i64, &Record>) -
 /// reference resolves under validation.
 pub fn unknown_record_id(rec: &Record, format: IdFormat<'_>) -> String {
     format!("{format}:brep:{}#{}", rec.head(), rec.index)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn transform_record(scale: f64, x: [f64; 3]) -> Record {
+        Record {
+            index: 0,
+            name: "transform".into(),
+            tokens: std::sync::Arc::from([
+                Token::Vector3(x),
+                Token::Vector3([0.0, 1.0, 0.0]),
+                Token::Vector3([0.0, 0.0, 1.0]),
+                Token::Position([0.0, 0.0, 0.0]),
+                Token::Double(scale),
+            ]),
+            offset: 0,
+            len: 0,
+        }
+    }
+
+    #[test]
+    fn transform_decode_propagates_affine_constructor_rejection() {
+        let identity = transform_record(1.0, [1.0, 0.0, 0.0]);
+        assert_eq!(
+            decode_transform(&identity, 1.0),
+            Some(cadmpeg_ir::transform::Transform::identity())
+        );
+        for scale in [0.0, 2.0, f64::NAN, f64::INFINITY] {
+            assert!(decode_transform(&transform_record(scale, [1.0, 0.0, 0.0]), 1.0).is_none());
+        }
+        assert!(decode_transform(&transform_record(1.0, [f64::NAN, 0.0, 0.0]), 1.0).is_none());
+        assert!(decode_transform(&identity, f64::INFINITY).is_none());
+    }
 }
