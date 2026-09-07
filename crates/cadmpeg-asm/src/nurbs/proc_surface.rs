@@ -2612,11 +2612,12 @@ fn net_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
         let value = cur.take_vector3()?;
         *direction = Vector3::new(value[0], value[1], value[2]);
     }
-    let formulas = (0..4)
-        .map(|_| law_formula(&mut cur))
-        .collect::<Option<Vec<_>>>()?
-        .try_into()
-        .ok()?;
+    let formulas = [
+        law_formula(&mut cur)?,
+        law_formula(&mut cur)?,
+        law_formula(&mut cur)?,
+        law_formula(&mut cur)?,
+    ];
     let (_, cache_end) = surface_block(span, cur.pos())?;
     cur.set_pos(cache_end);
     let cache_fit_tolerance = Some(cur.take_f64()? * LEN_TO_MM);
