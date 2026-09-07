@@ -8,6 +8,9 @@ use std::ops::Range;
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 
+pub(crate) mod type_code;
+use type_code::LegacyTypeCode;
+
 const PRINCIPAL_UNIT_NAME: &str = "principal_sys_units";
 const MILLIMETER_NEWTON_SECOND: &str = "millimeter Newton Second (mmNs)";
 const INCH_POUND_MASS_SECOND: &str = "Inch lbm Second (Pro/E Default)";
@@ -393,7 +396,7 @@ pub struct AttributeDeclaration {
     /// Attribute name without the leading `@`.
     pub name: String,
     /// Stored numeric type code.
-    pub type_code: u8,
+    pub type_code: LegacyTypeCode,
     /// Byte offset of the declaration line.
     pub offset: usize,
 }
@@ -749,7 +752,7 @@ pub(crate) fn parse_declaration(line: &[u8], offset: usize) -> Option<AttributeD
         return None;
     }
     let id = fields.next()?.parse().ok()?;
-    let type_code = fields.next()?.parse().ok()?;
+    let type_code = LegacyTypeCode::from(fields.next()?.parse::<u8>().ok()?);
     fields.next().is_none().then(|| AttributeDeclaration {
         id,
         name: name.to_string(),
@@ -897,7 +900,7 @@ fn parent_object_offsets(scopes: &[Scope]) -> BTreeMap<usize, usize> {
             }
             if declarations
                 .get(&value.attribute_id)
-                .is_some_and(|declaration| declaration.type_code == 0)
+                .is_some_and(|declaration| matches!(declaration.type_code, LegacyTypeCode::Object))
             {
                 active_objects.insert(value.depth, value.offset);
             }
@@ -933,7 +936,9 @@ fn object_records(
             if value_attributes.get(&parent_offset) == Some(&child.attribute_id)
                 && declarations
                     .get(&child.attribute_id)
-                    .is_some_and(|declaration| declaration.type_code == 0)
+                    .is_some_and(|declaration| {
+                        matches!(declaration.type_code, LegacyTypeCode::Object)
+                    })
             {
                 direct_array_elements
                     .entry(parent_offset)
@@ -944,7 +949,7 @@ fn object_records(
         for value in &scope.values {
             let Some(declaration) = declarations
                 .get(&value.attribute_id)
-                .filter(|declaration| declaration.type_code == 0)
+                .filter(|declaration| matches!(declaration.type_code, LegacyTypeCode::Object))
             else {
                 continue;
             };
@@ -1018,7 +1023,7 @@ fn string_value(bytes: &[u8]) -> StringValue {
 fn scalar_string_records(
     data: &[u8],
     scopes: &[Scope],
-    type_code: u8,
+    type_code: LegacyTypeCode,
     identity_kind: &str,
     null_token: NullToken,
     parents: &BTreeMap<usize, usize>,
@@ -1096,7 +1101,7 @@ fn string_records(
             }
             if declarations
                 .get(&value.attribute_id)
-                .is_some_and(|declaration| declaration.type_code == 10)
+                .is_some_and(|declaration| matches!(declaration.type_code, LegacyTypeCode::String))
                 && array_dimensions(&data[value.payload.clone()]).is_some()
             {
                 active_arrays.insert(value.depth, (value.offset, value.attribute_id));
@@ -1109,7 +1114,7 @@ fn string_records(
             }
             let Some(declaration) = declarations
                 .get(&value.attribute_id)
-                .filter(|declaration| declaration.type_code == 10)
+                .filter(|declaration| matches!(declaration.type_code, LegacyTypeCode::String))
             else {
                 continue;
             };
@@ -1166,7 +1171,7 @@ fn string_records(
 fn numeric_records<T>(
     data: &[u8],
     scopes: &[Scope],
-    type_code: u8,
+    type_code: LegacyTypeCode,
     identity_kind: &str,
     scalar: fn(&[u8]) -> Option<T>,
     parents: &BTreeMap<usize, usize>,
@@ -1389,7 +1394,7 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
     let (type_3_values, unresolved_type_3_value_count) = scalar_string_records(
         data,
         &scopes,
-        3,
+        LegacyTypeCode::NullableString,
         "type_3",
         NullToken::RepresentsNull,
         &parents,
@@ -1397,25 +1402,67 @@ pub(crate) fn scan(data: &[u8], ranges: impl IntoIterator<Item = Range<usize>>) 
     let (type_4_values, unresolved_type_4_value_count) = scalar_string_records(
         data,
         &scopes,
-        4,
+        LegacyTypeCode::ByteString,
         "type_4",
         NullToken::RepresentsBytes,
         &parents,
     );
-    let (real_values, unresolved_real_value_count) =
-        numeric_records(data, &scopes, 2, "real", compact_real, &parents);
-    let (integer_values, unresolved_integer_value_count) =
-        numeric_records(data, &scopes, 1, "integer", signed_integer, &parents);
-    let (type_5_values, unresolved_type_5_value_count) =
-        numeric_records(data, &scopes, 5, "type_5", unsigned_integer, &parents);
-    let (type_6_values, unresolved_type_6_value_count) =
-        numeric_records(data, &scopes, 6, "type_6", compact_real, &parents);
-    let (type_7_values, unresolved_type_7_value_count) =
-        numeric_records(data, &scopes, 7, "type_7", unsigned_integer, &parents);
-    let (type_9_values, unresolved_type_9_value_count) =
-        numeric_records(data, &scopes, 9, "type_9", unsigned_integer, &parents);
-    let (type_11_values, unresolved_type_11_value_count) =
-        numeric_records(data, &scopes, 11, "type_11", unsigned_integer, &parents);
+    let (real_values, unresolved_real_value_count) = numeric_records(
+        data,
+        &scopes,
+        LegacyTypeCode::Real,
+        "real",
+        compact_real,
+        &parents,
+    );
+    let (integer_values, unresolved_integer_value_count) = numeric_records(
+        data,
+        &scopes,
+        LegacyTypeCode::Integer,
+        "integer",
+        signed_integer,
+        &parents,
+    );
+    let (type_5_values, unresolved_type_5_value_count) = numeric_records(
+        data,
+        &scopes,
+        LegacyTypeCode::Unsigned5,
+        "type_5",
+        unsigned_integer,
+        &parents,
+    );
+    let (type_6_values, unresolved_type_6_value_count) = numeric_records(
+        data,
+        &scopes,
+        LegacyTypeCode::Real6,
+        "type_6",
+        compact_real,
+        &parents,
+    );
+    let (type_7_values, unresolved_type_7_value_count) = numeric_records(
+        data,
+        &scopes,
+        LegacyTypeCode::Unsigned7,
+        "type_7",
+        unsigned_integer,
+        &parents,
+    );
+    let (type_9_values, unresolved_type_9_value_count) = numeric_records(
+        data,
+        &scopes,
+        LegacyTypeCode::Unsigned9,
+        "type_9",
+        unsigned_integer,
+        &parents,
+    );
+    let (type_11_values, unresolved_type_11_value_count) = numeric_records(
+        data,
+        &scopes,
+        LegacyTypeCode::Unsigned11,
+        "type_11",
+        unsigned_integer,
+        &parents,
+    );
     Persistence {
         scopes,
         real_values,

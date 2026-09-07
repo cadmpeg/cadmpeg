@@ -13,6 +13,21 @@ use crate::CreoCodec;
 use super::*;
 
 #[test]
+fn unknown_declaration_codes_retain_scope_identity() {
+    let data = b"@future 1 8\n@future 1 12\n0 1 value\n@next 2 255\n0 2 value\n";
+    let persistence = scan(data, std::iter::once(0..data.len()));
+    assert_eq!(persistence.conflicting_declaration_count(), 1);
+    assert_eq!(persistence.unresolved_value_count(), 1);
+    assert_eq!(persistence.scopes[0].values.len(), 1);
+    assert_eq!(persistence.scopes[0].values[0].attribute_id, 2);
+    assert!(matches!(
+        persistence.scopes[0].declarations[1].type_code,
+        LegacyTypeCode::Other(_)
+    ));
+    assert!(parse_declaration(b"@future 1 256", 0).is_none());
+}
+
+#[test]
 fn scan_resolves_declarations_values_and_continuations() {
     let data = b"#P_OBJECT 6\n@root 1 0\n0 1 ->\n@matrix 2 2\n1 2 [2][2]\n\
                      $3FF,0\n$0,3FF\n#END_OF_UGC\n";
@@ -22,7 +37,7 @@ fn scan_resolves_declarations_values_and_continuations() {
 
     assert_eq!(scope.declarations.len(), 2);
     assert_eq!(scope.declarations[1].name, "matrix");
-    assert_eq!(scope.declarations[1].type_code, 2);
+    assert_eq!(scope.declarations[1].type_code, LegacyTypeCode::Real);
     assert_eq!(scope.values.len(), 2);
     assert_eq!(&data[scope.values[0].payload.clone()], b"->");
     assert_eq!(&data[scope.values[1].payload.clone()], b"[2][2]");

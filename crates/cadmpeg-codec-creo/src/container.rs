@@ -38,6 +38,7 @@ use crate::feature::{
 };
 use crate::layout::cmnm_model_name_record as cmnm;
 use crate::legacy;
+use crate::legacy::type_code::LegacyTypeCode;
 use crate::loop_array::{self, LoopArrayFrame, LoopArrayRecord, LoopArrayScan};
 use crate::placement::{self, FeatureSectionTransform};
 use crate::primdata::{self, PrimitiveScalarArray, PrimitiveTriangleStrip};
@@ -706,8 +707,10 @@ fn legacy_toc_sections(data: &[u8], banner_offset: usize) -> Vec<Section> {
     let Some((toc_declaration, after_toc_declaration)) = legacy::line(data, toc_offset) else {
         return Vec::new();
     };
-    let Some(toc_declaration) = legacy::parse_declaration(toc_declaration, toc_offset)
-        .filter(|declaration| declaration.name == "Toc" && declaration.type_code == 0)
+    let Some(toc_declaration) =
+        legacy::parse_declaration(toc_declaration, toc_offset).filter(|declaration| {
+            declaration.name == "Toc" && matches!(declaration.type_code, LegacyTypeCode::Object)
+        })
     else {
         return Vec::new();
     };
@@ -732,7 +735,9 @@ fn legacy_toc_sections(data: &[u8], banner_offset: usize) -> Vec<Section> {
         return Vec::new();
     };
     let Some(entry_declaration) = legacy::parse_declaration(entry_declaration, after_toc_value)
-        .filter(|declaration| declaration.name == "entry" && declaration.type_code == 10)
+        .filter(|declaration| {
+            declaration.name == "entry" && matches!(declaration.type_code, LegacyTypeCode::String)
+        })
     else {
         return Vec::new();
     };
