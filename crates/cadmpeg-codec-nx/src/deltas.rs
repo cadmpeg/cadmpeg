@@ -233,15 +233,29 @@ pub struct Census {
     pub inline_schema_declarations: Vec<InlineSchemaDeclaration>,
     /// Complete schema-bound type-12 BODY states in source order.
     pub inline_body_states: Vec<InlineBodyState>,
-    /// Complete-record counts keyed by Parasolid family name.
-    pub full_counts: BTreeMap<&'static str, usize>,
-    /// Compact tombstone counts keyed by Parasolid family name.
-    pub tombstone_counts: BTreeMap<&'static str, usize>,
     /// Sum of all admitted event bytes.
     pub bytes_decoded: usize,
 }
 
 impl Census {
+    /// Complete-record counts keyed by Parasolid family name.
+    pub fn full_counts(&self) -> BTreeMap<&'static str, usize> {
+        let mut counts = BTreeMap::new();
+        for record in &self.records {
+            *counts.entry(record.family_name()).or_default() += 1;
+        }
+        counts
+    }
+
+    /// Compact tombstone counts keyed by Parasolid family name.
+    pub fn tombstone_counts(&self) -> BTreeMap<&'static str, usize> {
+        let mut counts = BTreeMap::new();
+        for tombstone in &self.tombstones {
+            *counts.entry(tombstone.kind.name()).or_default() += 1;
+        }
+        counts
+    }
+
     /// Return the sorted disjoint union of every admitted event byte span.
     pub(crate) fn covered_spans(&self) -> Vec<(usize, usize)> {
         merged_event_spans(self, true)
@@ -563,7 +577,6 @@ pub fn walk(stream: &[u8]) -> Census {
         .or_else(|| consume_intersection_data(stream, offset, intersection_schema_anchor_seen));
         if let Some(record) = complete_record {
             census.bytes_decoded += record.end - offset;
-            *census.full_counts.entry(record.family_name()).or_default() += 1;
             offset = record.end;
             value_boundary = true;
             census.records.push(record);
@@ -577,7 +590,6 @@ pub fn walk(stream: &[u8]) -> Census {
             value_boundary = false;
             continue;
         };
-        let name = record_kind.name();
         if kind == 12 {
             if let Some(revision) = body_revision_prefix(stream, offset) {
                 census.bytes_decoded += revision.prefix_end - revision.offset;
@@ -615,7 +627,6 @@ pub fn walk(stream: &[u8]) -> Census {
             });
         if let Some(record) = decoded {
             census.bytes_decoded += record.end - record.offset;
-            *census.full_counts.entry(name).or_default() += 1;
             offset = record.end;
             value_boundary = true;
             census.records.push(record);
@@ -626,7 +637,6 @@ pub fn walk(stream: &[u8]) -> Census {
             .flatten()
         {
             if xmt > 1 {
-                *census.tombstone_counts.entry(name).or_default() += 1;
                 census.tombstones.push(Tombstone {
                     kind: record_kind,
                     xmt,

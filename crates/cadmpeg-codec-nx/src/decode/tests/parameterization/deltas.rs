@@ -203,7 +203,7 @@ fn decode_replaces_partition_offset_surface_from_status_framed_deltas() {
     let partition = offset_surface_topology_partition_stream();
     let deltas = deltas_offset_surface_partition_stream();
     let census = crate::deltas::walk(&deltas);
-    assert_eq!(census.full_counts.get("OFFSET_SURF"), Some(&1));
+    assert_eq!(census.full_counts().get("OFFSET_SURF"), Some(&1));
     let merged = crate::deltas::merge_full_records(&partition, &deltas);
     assert_eq!(
         crate::topology::offset_surfaces(&merged)

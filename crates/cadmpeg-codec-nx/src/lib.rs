@@ -265,13 +265,13 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
                         census.inline_schema_declarations.len().to_string(),
                     );
                 }
-                for (family, count) in census.full_counts {
+                for (family, count) in census.full_counts() {
                     attributes.insert(
                         format!("records.delta.full.{}", family.to_ascii_lowercase()),
                         count.to_string(),
                     );
                 }
-                for (family, count) in census.tombstone_counts {
+                for (family, count) in census.tombstone_counts() {
                     attributes.insert(
                         format!("records.delta.tombstone.{}", family.to_ascii_lowercase()),
                         count.to_string(),

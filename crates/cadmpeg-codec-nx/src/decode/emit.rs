@@ -1366,10 +1366,10 @@ pub(crate) fn source_meta(scan: &Scan, dialects: &DialectLayers) -> SourceMeta {
                 census.inline_schema_declarations.len().to_string(),
             );
         }
-        for (name, count) in census.full_counts {
+        for (name, count) in census.full_counts() {
             attributes.insert(format!("deltas.{index}.full.{name}"), count.to_string());
         }
-        for (name, count) in census.tombstone_counts {
+        for (name, count) in census.tombstone_counts() {
             attributes.insert(
                 format!("deltas.{index}.tombstone.{name}"),
                 count.to_string(),
