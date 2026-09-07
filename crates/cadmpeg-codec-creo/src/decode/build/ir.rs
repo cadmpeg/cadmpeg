@@ -406,6 +406,7 @@ fn transfer_datum_plane_surfaces(
     annotations: &mut AnnotationBuilder,
 ) {
     for plane in &scan.planes.datums {
+        let normal = plane.plane.normal();
         let id = SurfaceId::mint(format!("creo:actdatums:surface#{}", plane.id))
             .expect("identity grammar");
         annotate(
@@ -420,15 +421,13 @@ fn transfer_datum_plane_surfaces(
             id,
             geometry: SurfaceGeometry::Plane {
                 origin: Point3::new(
-                    plane.normal[0] * plane.offset,
-                    plane.normal[1] * plane.offset,
-                    plane.normal[2] * plane.offset,
+                    normal[0] * plane.plane.offset,
+                    normal[1] * plane.plane.offset,
+                    normal[2] * plane.plane.offset,
                 ),
-                normal: Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]),
+                normal: Vector3::new(normal[0], normal[1], normal[2]),
                 u_axis: cadmpeg_ir::geometry::derive_reference_direction(Vector3::new(
-                    plane.normal[0],
-                    plane.normal[1],
-                    plane.normal[2],
+                    normal[0], normal[1], normal[2],
                 )),
             },
             source_object: Some(SourceObjectAssociation {

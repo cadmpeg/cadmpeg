@@ -29,7 +29,7 @@ use crate::curve::{
     ExternalRelationSymbols, Fc05Circle, Fc05CylinderCapPair, FcCurveCoordinates, PcurveEndpoints,
     PrototypePcurveEndpoints, TwoChartPcurveSamples,
 };
-use crate::datum::{self, DatumCylinder, DatumPlane};
+use crate::datum::{self, DatumCylinder, DatumPlaneRecord};
 use crate::feature::{
     self, FeatureAffectedIds, FeatureChoice, FeatureChoiceField, FeatureDefinition, FeatureEntity,
     FeatureEntityReference, FeatureEntityTable, FeatureGeometryTable, FeatureLoopHistoryEntry,
@@ -382,7 +382,7 @@ pub struct PlaneScan {
     /// Placed planes derived inside the DEPDB cross-section namespace.
     pub cross_section_outlines: Vec<OutlinePlane>,
     /// Model-space standard datum planes decoded from `ActDatums` outlines.
-    pub datums: Vec<DatumPlane>,
+    pub datums: Vec<DatumPlaneRecord>,
     /// Complete model-space cylinder carriers decoded from active-datum
     /// surface rows.
     pub datum_cylinders: Vec<DatumCylinder>,
@@ -1665,7 +1665,7 @@ fn cross_section_curve_prototypes(data: &[u8], sections: &[Section]) -> Vec<Curv
     records
 }
 
-fn datum_planes(data: &[u8], sections: &[Section]) -> Vec<DatumPlane> {
+fn datum_planes(data: &[u8], sections: &[Section]) -> Vec<DatumPlaneRecord> {
     let mut planes = Vec::new();
     for section in sections
         .iter()

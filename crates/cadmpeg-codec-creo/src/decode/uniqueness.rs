@@ -86,8 +86,8 @@ pub(crate) fn unique_feature_profile_ref(
 }
 
 pub(crate) fn unique_feature_datum_plane(
-    datums: &[crate::datum::DatumPlane],
+    datums: &[crate::datum::DatumPlaneRecord],
     feature_id: u32,
-) -> Option<&crate::datum::DatumPlane> {
+) -> Option<&crate::datum::DatumPlaneRecord> {
     exactly_one(datums.iter().filter(|datum| datum.feature_id == feature_id))
 }

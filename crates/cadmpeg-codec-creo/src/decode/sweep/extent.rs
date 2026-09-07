@@ -574,7 +574,7 @@ fn section_plane_evidence(scan: &ContainerScan, id: u32) -> SectionPlaneEvidence
         return SectionPlaneEvidence::Ambiguous;
     }
     if let [datum] = datums.as_slice() {
-        return normalized_plane(datum.normal, datum.offset).map_or(
+        return normalized_plane(datum.plane.normal(), datum.plane.offset).map_or(
             SectionPlaneEvidence::Ambiguous,
             SectionPlaneEvidence::Resolved,
         );

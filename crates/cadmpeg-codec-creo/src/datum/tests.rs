@@ -35,11 +35,13 @@ fn decodes_constant_outline_coordinate_as_a_model_plane() {
     data.extend(ieee8(-3.0));
     assert_eq!(
         planes(&data),
-        vec![DatumPlane {
+        vec![DatumPlaneRecord {
             id: 4,
             feature_id: 1,
-            normal: [0.0, 1.0, 0.0],
-            offset: 0.0,
+            plane: DatumPlane {
+                axis: Axis::Y,
+                offset: 0.0
+            },
             corners: [
                 [Some(2.0), Some(0.0), Some(3.0)],
                 [Some(-2.0), Some(0.0), Some(-3.0)]
@@ -70,8 +72,8 @@ fn decodes_named_standard_plane_from_zero_slots() {
     let plane = named_plane(data).expect("required invariant");
     assert_eq!(plane.id, 2);
     assert_eq!(plane.feature_id, 1);
-    assert_eq!(plane.normal, [1.0, 0.0, 0.0]);
-    assert_eq!(plane.offset, 0.0);
+    assert_eq!(plane.plane.normal(), [1.0, 0.0, 0.0]);
+    assert_eq!(plane.plane.offset, 0.0);
     assert_eq!(
         plane.corners,
         [
@@ -92,7 +94,7 @@ fn withholds_named_plane_with_competing_standalone_zero_axes() {
 fn named_outline_41_form_occupies_eight_bytes() {
     let data = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03\x18\x41\xba\x13\x99\xa9\xb3\xd8\x74\x41\x94\xad\x7e\x6a\xb0\x34\x5e\x18\x93\x29\x5a\xfc\xd5\x60\x69\x8c\x40\x79\xe9\x12\xa5\x83";
     let plane = named_plane(data).expect("named plane");
-    assert_eq!(plane.normal, [1.0, 0.0, 0.0]);
+    assert_eq!(plane.plane.normal(), [1.0, 0.0, 0.0]);
     assert_eq!(plane.corners[0][0], Some(0.0));
     assert_eq!(plane.corners[1][0], Some(0.0));
 }
@@ -115,8 +117,8 @@ fn positional_outline_decodes_shared_named_coordinate_tokens() {
     data.extend(nine_f);
 
     let positional = &planes(&data)[0];
-    assert_eq!(positional.normal, [0.0, 1.0, 0.0]);
-    assert_eq!(positional.offset, 0.0);
+    assert_eq!(positional.plane.normal(), [0.0, 1.0, 0.0]);
+    assert_eq!(positional.plane.offset, 0.0);
 
     let mut named = b"\xe0\x01geom_id\0\x04\xe0\x01feat_id\0\x03outline\0\xf9\x02\x03".to_vec();
     named.extend(ieee8(3.0));
@@ -145,8 +147,8 @@ fn positional_outline_uses_the_bounded_model_coordinate_lane() {
     data.extend(upper_z);
 
     let positional = &planes(&data)[0];
-    assert_eq!(positional.normal, [0.0, 1.0, 0.0]);
-    assert_eq!(positional.offset, 0.0);
+    assert_eq!(positional.plane.normal(), [0.0, 1.0, 0.0]);
+    assert_eq!(positional.plane.offset, 0.0);
     assert_eq!(
         positional.corners,
         [
@@ -177,8 +179,8 @@ fn positional_outline_retains_unbacked_coordinate_tokens_without_values() {
     data.extend([0x45, 0, 0, 0, 0, 0, 0]);
 
     let plane = &planes(&data)[0];
-    assert_eq!(plane.normal, [0.0, 1.0, 0.0]);
-    assert_eq!(plane.offset, 0.0);
+    assert_eq!(plane.plane.normal(), [0.0, 1.0, 0.0]);
+    assert_eq!(plane.plane.offset, 0.0);
     assert_eq!(
         plane.corners,
         [[None, Some(0.0), None], [None, Some(0.0), None]]
@@ -225,7 +227,7 @@ fn decodes_compact_width_named_datum_identifiers() {
 
     assert_eq!(plane.id, 128);
     assert_eq!(plane.feature_id, 257);
-    assert_eq!(plane.normal, [1.0, 0.0, 0.0]);
+    assert_eq!(plane.plane.normal(), [1.0, 0.0, 0.0]);
 }
 
 #[test]
@@ -298,8 +300,8 @@ fn named_outline_resolves_a_cache_indexed_nonzero_offset() {
     data.extend(ieee8(4.0));
 
     let plane = named_plane(&data).expect("cache-indexed named plane");
-    assert_eq!(plane.normal, [1.0, 0.0, 0.0]);
-    assert_eq!(plane.offset, 2.5);
+    assert_eq!(plane.plane.normal(), [1.0, 0.0, 0.0]);
+    assert_eq!(plane.plane.offset, 2.5);
     assert_eq!(plane.corners[0], [Some(2.5), Some(-3.0), Some(-4.0)]);
     assert_eq!(plane.corners[1], [Some(2.5), Some(3.0), Some(4.0)]);
 }
@@ -315,8 +317,8 @@ fn named_outline_decodes_backed_dictionary_coordinate_forms() {
     data.extend([0x9f, 0, 0, 0, 0, 0, 0]);
 
     let plane = named_plane(&data).expect("named plane");
-    assert_eq!(plane.normal, [1.0, 0.0, 0.0]);
-    assert_eq!(plane.offset, 0.0);
+    assert_eq!(plane.plane.normal(), [1.0, 0.0, 0.0]);
+    assert_eq!(plane.plane.offset, 0.0);
     assert_eq!(
         plane.corners,
         [
@@ -345,8 +347,8 @@ fn named_outline_retains_unbacked_coordinate_tokens_without_values() {
     data.extend([0x5c, 0, 0, 0, 0, 0, 0]);
 
     let plane = named_plane(&data).expect("zero-axis named plane");
-    assert_eq!(plane.normal, [1.0, 0.0, 0.0]);
-    assert_eq!(plane.offset, 0.0);
+    assert_eq!(plane.plane.normal(), [1.0, 0.0, 0.0]);
+    assert_eq!(plane.plane.offset, 0.0);
     assert_eq!(
         plane.corners,
         [[Some(0.0), None, None], [Some(0.0), None, None],]
@@ -369,7 +371,7 @@ fn scan_discovers_model_space_datum_planes() {
     }
     let scan = container::scan_bytes(build_prt("c", &[("ActDatums", datum)]));
     assert_eq!(scan.planes.datums.len(), 1);
-    assert_eq!(scan.planes.datums[0].normal, [0.0, 1.0, 0.0]);
+    assert_eq!(scan.planes.datums[0].plane.normal(), [0.0, 1.0, 0.0]);
 }
 
 #[test]

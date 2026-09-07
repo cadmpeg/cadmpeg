@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Model-space frames resolved from feature-section datum references.
 
-use crate::datum::DatumPlane;
+use crate::datum::DatumPlaneRecord;
 use crate::decode::uniqueness::exactly_one;
 use crate::feature::{
     placement_instructions, AffectedIdKind, BinaryFlag, FeatureAffectedIds, FeatureDefinition,
@@ -48,7 +48,7 @@ pub struct FeatureSectionTransform {
 }
 
 pub(crate) struct PlacementSources<'a> {
-    pub datums: &'a [DatumPlane],
+    pub datums: &'a [DatumPlaneRecord],
     pub surface_rows: &'a [SurfaceRow],
     pub model_planes: &'a [PlaneLocalSystem],
     pub outline_planes: &'a [OutlinePlane],
@@ -463,7 +463,7 @@ fn generated_planar_table_shape(table: &FeatureEntityTable) -> bool {
 
 fn plane_equation(
     id: u32,
-    datums: &[DatumPlane],
+    datums: &[DatumPlaneRecord],
     model_planes: &[PlaneLocalSystem],
     outline_planes: &[OutlinePlane],
 ) -> Option<([f64; 3], f64)> {
@@ -499,7 +499,7 @@ fn plane_equation(
         return None;
     }
     if let [datum] = datums.as_slice() {
-        return Some((datum.normal, datum.offset));
+        return Some((datum.plane.normal(), datum.plane.offset));
     }
     if !datums.is_empty() {
         return None;
@@ -657,7 +657,7 @@ fn generated_datum_plane_equation(
                 .datums
                 .iter()
                 .filter(|datum| datum.feature_id == **other)
-                .map(|datum| (datum.normal, datum.offset))
+                .map(|datum| (datum.plane.normal(), datum.plane.offset))
                 .chain(
                     sources
                         .surface_rows
@@ -911,7 +911,7 @@ fn zero_offset_standard_section_plane_equation(
         .datums
         .iter()
         .filter_map(|datum| {
-            let equation = (datum.normal, datum.offset);
+            let equation = (datum.plane.normal(), datum.plane.offset);
             let cap_alignment = dot(equation.0, cap.0).abs();
             let reference_alignment = dot(equation.0, reference.0).abs();
             ((cap_alignment - 1.0).abs() <= EPS_AXIS_ALIGNMENT

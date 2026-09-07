@@ -105,7 +105,7 @@ pub(super) fn emit_model_features(
             definition: if unique_feature_datum_plane(&scan.planes.datums, datum.feature_id)
                 .is_some()
             {
-                datum_plane_feature_definition(datum)
+                datum_plane_feature_definition(&datum.plane)
             } else {
                 IrFeatureDefinition::DatumPlaneUnresolved
             },

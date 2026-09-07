@@ -11,23 +11,53 @@ const EPS_ACTIVE_CYLINDER_MIN: f64 = 1.0e-12;
 
 const EPS_DATUM_COORDINATE_AGREEMENT: f64 = 1.0e-9;
 
-/// An axis-aligned model-space datum plane.
-///
-/// The plane comes from an `ActDatums` `act_datum_geoms -> srf_array` row. Its
-/// normal is a basis vector and its equation is `x_k = offset` for that axis.
-#[derive(Debug, Clone, PartialEq)]
+/// Coordinate axis normal to a standard datum plane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Axis {
+    X,
+    Y,
+    Z,
+}
+
+impl Axis {
+    fn index(self) -> usize {
+        match self {
+            Self::X => 0,
+            Self::Y => 1,
+            Self::Z => 2,
+        }
+    }
+}
+
+/// An axis-aligned model-space datum plane with equation `x_axis = offset`.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DatumPlane {
-    /// The row's `geom_id`, the datum's identifier in the `ActDatums`
-    /// `srf_array` namespace. `ref_planes` nested `plane_id` fields join
-    /// this identifier ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#81-scalar-and-datum-tokens)).
+    /// Axis normal to the plane.
+    pub axis: Axis,
+    /// Constant coordinate along the normal axis.
+    pub offset: f64,
+}
+
+impl DatumPlane {
+    /// The positive unit basis vector normal to the plane.
+    pub fn normal(self) -> [f64; 3] {
+        match self.axis {
+            Axis::X => [1.0, 0.0, 0.0],
+            Axis::Y => [0.0, 1.0, 0.0],
+            Axis::Z => [0.0, 0.0, 1.0],
+        }
+    }
+}
+
+/// Source identity and outline for one decoded `ActDatums` plane.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DatumPlaneRecord {
+    /// The row's `geom_id`, joined by nested `ref_planes.plane_id` fields.
     pub id: u32,
     /// Modeling feature identifier from the owning `srf_array.feat_id`.
     pub feature_id: u32,
-    /// The plane's unit normal, one of the three standard basis vectors.
-    pub normal: [f64; 3],
-    /// The plane's model-space offset along the axis identified by
-    /// `normal`: the constant coordinate shared by both `outline` corners.
-    pub offset: f64,
+    /// Plane defined by the shared outline coordinate.
+    pub plane: DatumPlane,
     /// The row's two `outline` corner points, in model-space XYZ.
     pub corners: [[Option<f64>; 3]; 2],
     /// Byte offset of the row's `geom_id` field in the original stream.
@@ -57,7 +87,7 @@ pub struct DatumCylinder {
 /// Decode datum rows whose outline corners share one coordinate.
 ///
 /// This promotion applies only to model-space `ActDatums` outlines.
-pub fn planes(payload: &[u8]) -> Vec<DatumPlane> {
+pub fn planes(payload: &[u8]) -> Vec<DatumPlaneRecord> {
     let rows = crate::surface::counted_row_bounds(payload);
     let cache = scalar::ScalarCache::from_section(payload);
     rows.iter()
@@ -268,7 +298,7 @@ fn positional_plane(
     row: &SurfaceRow,
     row_end: usize,
     cache: &scalar::ScalarCache,
-) -> Option<DatumPlane> {
+) -> Option<DatumPlaneRecord> {
     let id_start = row.offset;
     if payload.get(id_start).copied()? > 0xbf {
         return None;
@@ -286,22 +316,22 @@ fn positional_plane(
         slot_equal(&outline[1], &outline[4]),
         slot_equal(&outline[2], &outline[5]),
     ];
-    let held = equal
-        .iter()
-        .enumerate()
-        .filter_map(|(axis, equal)| (*equal == Some(true)).then_some(axis))
+    let held = [Axis::X, Axis::Y, Axis::Z]
+        .into_iter()
+        .zip(equal)
+        .filter_map(|(axis, equal)| (equal == Some(true)).then_some(axis))
         .collect::<Vec<_>>();
     let [axis] = held.as_slice() else {
         return None;
     };
-    let plane_offset = outline[*axis].value?;
-    let mut normal = [0.0; 3];
-    normal[*axis] = 1.0;
-    Some(DatumPlane {
+    let plane_offset = outline[axis.index()].value?;
+    Some(DatumPlaneRecord {
         id: row.id,
         feature_id: row.feature_id,
-        normal,
-        offset: plane_offset,
+        plane: DatumPlane {
+            axis: *axis,
+            offset: plane_offset,
+        },
         corners: [
             [outline[0].value, outline[1].value, outline[2].value],
             [outline[3].value, outline[4].value, outline[5].value],
@@ -311,7 +341,7 @@ fn positional_plane(
 }
 
 /// Decode a named datum from its matching outline coordinates.
-pub fn named_plane(payload: &[u8]) -> Option<DatumPlane> {
+pub fn named_plane(payload: &[u8]) -> Option<DatumPlaneRecord> {
     let marker = b"outline\0\xf9\x02\x03";
     let outline = find(payload, marker, 0)?;
     let id_marker = b"\xe0\x01geom_id\0";
@@ -337,25 +367,26 @@ pub fn named_plane(payload: &[u8]) -> Option<DatumPlane> {
     let cache = scalar::ScalarCache::from_section(payload);
     let slots = named_outline_slots(payload, outline + marker.len(), &cache)?;
     let standalone_zero = |slot: &DatumSlot| matches!(slot.token.as_slice(), [0x18 | 0x0f]);
-    let zero_axes = (0..3)
-        .filter(|axis| standalone_zero(&slots[*axis]) && standalone_zero(&slots[*axis + 3]))
+    let zero_axes = [Axis::X, Axis::Y, Axis::Z]
+        .into_iter()
+        .filter(|axis| {
+            standalone_zero(&slots[axis.index()]) && standalone_zero(&slots[axis.index() + 3])
+        })
         .collect::<Vec<_>>();
-    let held = (0..3)
-        .filter(|axis| slot_equal(&slots[*axis], &slots[*axis + 3]) == Some(true))
+    let held = [Axis::X, Axis::Y, Axis::Z]
+        .into_iter()
+        .filter(|axis| slot_equal(&slots[axis.index()], &slots[axis.index() + 3]) == Some(true))
         .collect::<Vec<_>>();
     let axis = match (zero_axes.as_slice(), held.as_slice()) {
         ([axis], _) => *axis,
         ([], [axis]) => *axis,
         _ => return None,
     };
-    let offset = slots[axis].value?;
-    let mut normal = [0.0; 3];
-    normal[axis] = 1.0;
-    Some(DatumPlane {
+    let offset = slots[axis.index()].value?;
+    Some(DatumPlaneRecord {
         id,
         feature_id,
-        normal,
-        offset,
+        plane: DatumPlane { axis, offset },
         corners: [
             [slots[0].value, slots[1].value, slots[2].value],
             [slots[3].value, slots[4].value, slots[5].value],
