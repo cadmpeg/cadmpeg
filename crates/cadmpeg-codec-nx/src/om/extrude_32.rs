@@ -230,21 +230,21 @@ mod tests {
         assert_eq!(
             frame
                 .atoms()
-                .map(|(_, _, offset)| offset)
+                .map(|(_, (), offset)| offset)
                 .collect::<Vec<_>>(),
             [113]
         );
         assert_eq!(
             frame
                 .first_indices()
-                .map(|(_, _, offset)| offset)
+                .map(|(_, (), offset)| offset)
                 .collect::<Vec<_>>(),
             [119, 120]
         );
         assert_eq!(
             frame
                 .second_indices()
-                .map(|(_, _, offset)| offset)
+                .map(|(_, (), offset)| offset)
                 .collect::<Vec<_>>(),
             [124]
         );
