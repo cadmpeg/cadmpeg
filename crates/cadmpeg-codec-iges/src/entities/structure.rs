@@ -67,12 +67,6 @@ struct SubfigureDefinition {
     members: Vec<u32>,
 }
 
-#[derive(Clone, Copy)]
-struct SubfigureInstance {
-    definition: u32,
-    valid_fields: bool,
-}
-
 #[derive(Clone)]
 struct NetworkDefinition {
     depth: usize,
@@ -84,7 +78,6 @@ struct NetworkDefinition {
 struct NetworkInstance {
     definition: u32,
     connect_points: Vec<Option<u32>>,
-    valid_fields: bool,
 }
 
 fn network_connect_points(
@@ -3024,6 +3017,7 @@ pub(super) fn project(
     }
 
     let mut instances = BTreeMap::new();
+    let mut instance_fields_valid = BTreeSet::new();
     for entry in directory
         .iter()
         .filter(|entry| entry.entity_type == 408 && entry.form == 0)
@@ -3058,13 +3052,10 @@ pub(super) fn project(
             ));
             continue;
         };
-        instances.insert(
-            entry.sequence,
-            SubfigureInstance {
-                definition,
-                valid_fields: translation_valid && scale_valid && transform_valid,
-            },
-        );
+        instances.insert(entry.sequence, definition);
+        if translation_valid && scale_valid && transform_valid {
+            instance_fields_valid.insert(entry.sequence);
+        }
     }
 
     let mut network_definitions = BTreeMap::new();
@@ -3149,6 +3140,7 @@ pub(super) fn project(
     }
 
     let mut network_instances = BTreeMap::new();
+    let mut network_instance_fields_valid = BTreeSet::new();
     for entry in directory
         .iter()
         .filter(|entry| entry.entity_type == 420 && entry.form == 0)
@@ -3212,23 +3204,19 @@ pub(super) fn project(
             NetworkInstance {
                 definition,
                 connect_points,
-                valid_fields: translation_valid
-                    && scales_valid
-                    && type_flag_valid
-                    && designator_valid
-                    && display_valid
-                    && transform_valid,
             },
         );
+        if translation_valid
+            && scales_valid
+            && type_flag_valid
+            && designator_valid
+            && display_valid
+            && transform_valid
+        {
+            network_instance_fields_valid.insert(entry.sequence);
+        }
     }
 
-    let valid_instances = instances
-        .iter()
-        .filter_map(|(sequence, instance)| {
-            (instance.valid_fields && definition_fields_valid.contains(&instance.definition))
-                .then_some(*sequence)
-        })
-        .collect::<BTreeSet<_>>();
     for (sequence, definition) in &definitions {
         let entry = entries[sequence];
         let nesting_valid = definition.members.iter().all(|member| {
@@ -3239,14 +3227,15 @@ pub(super) fn project(
                 return true;
             }
             match member_entry.entity_type {
-                408 => instances.get(member).is_some_and(|instance| {
-                    valid_instances.contains(member)
+                408 => instances.get(member).is_some_and(|definition_sequence| {
+                    instance_fields_valid.contains(member)
+                        && definition_fields_valid.contains(definition_sequence)
                         && definitions
-                            .get(&instance.definition)
+                            .get(definition_sequence)
                             .is_some_and(|child| child.depth < definition.depth)
                 }),
                 420 => network_instances.get(member).is_some_and(|instance| {
-                    instance.valid_fields
+                    network_instance_fields_valid.contains(member)
                         && network_definition_fields_valid.contains(&instance.definition)
                         && network_definitions
                             .get(&instance.definition)
@@ -3264,9 +3253,12 @@ pub(super) fn project(
             ));
         }
     }
-    for (sequence, instance) in &instances {
+    for (sequence, definition_sequence) in &instances {
         let entry = entries[sequence];
-        if valid_instances.contains(sequence) && decoded.contains(&instance.definition) {
+        if instance_fields_valid.contains(sequence)
+            && definition_fields_valid.contains(definition_sequence)
+            && decoded.contains(definition_sequence)
+        {
             decoded.insert(*sequence);
         } else {
             losses.push(entity_loss(
@@ -3282,15 +3274,15 @@ pub(super) fn project(
                 return false;
             };
             match member_entry.entity_type {
-                408 => instances.get(member).is_some_and(|instance| {
-                    instance.valid_fields
-                        && definition_fields_valid.contains(&instance.definition)
+                408 => instances.get(member).is_some_and(|definition_sequence| {
+                    instance_fields_valid.contains(member)
+                        && definition_fields_valid.contains(definition_sequence)
                         && definitions
-                            .get(&instance.definition)
+                            .get(definition_sequence)
                             .is_some_and(|child| child.depth < definition.depth)
                 }),
                 420 => network_instances.get(member).is_some_and(|instance| {
-                    instance.valid_fields
+                    network_instance_fields_valid.contains(member)
                         && network_definition_fields_valid.contains(&instance.definition)
                         && network_definitions
                             .get(&instance.definition)
@@ -3320,7 +3312,10 @@ pub(super) fn project(
                         global.global_table(),
                     )
                 });
-        if instance.valid_fields && definition_valid && decoded.contains(&instance.definition) {
+        if network_instance_fields_valid.contains(sequence)
+            && definition_valid
+            && decoded.contains(&instance.definition)
+        {
             decoded.insert(*sequence);
         } else {
             losses.push(entity_loss(
