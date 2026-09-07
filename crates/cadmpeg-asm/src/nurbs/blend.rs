@@ -236,7 +236,7 @@ pub(crate) fn decode_rolling_ball_surface(
     if kind == "spline" {
         if marker_at(bytes, *position).is_some() {
             let surface = decode_surface_block(bytes, *position, int_width)?;
-            *position = surface.end;
+            *position = surface.end();
             let ranges = decode_surface_ranges(bytes, position)?;
             return Some((SurfaceGeometry::Nurbs(surface.surface), ranges));
         }

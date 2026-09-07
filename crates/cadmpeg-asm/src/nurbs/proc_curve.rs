@@ -1486,7 +1486,7 @@ pub fn rolling_ball_patch_layout(
             if !matches!(support_kind.as_str(), "plane" | "sphere" | "cone" | "torus") {
                 return None;
             }
-            position = decode_surface_block(span, position, int_width)?.end;
+            position = decode_surface_block(span, position, int_width)?.end();
         }
         position = decode_curve_block(span, position, int_width)?.end();
         Some([
@@ -2912,7 +2912,7 @@ fn decode_embedded_surface_fields(
     let kind = take_native_ident(bytes, position)?;
     if kind == "spline" {
         let decoded = decode_surface_block(bytes, *position, int_width)?;
-        *position = decoded.end;
+        *position = decoded.end();
         let ranges = if preserve_ranges {
             decode_surface_ranges(bytes, position)?
         } else {

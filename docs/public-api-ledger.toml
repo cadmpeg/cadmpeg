@@ -6182,3 +6182,17 @@ crate = "cadmpeg-asm"
 kind = "deletion"
 item = "cadmpeg_asm::nurbs::core::CurvePatchLayout::control_value_offsets"
 reason = "ASM-02: curve control component offsets and block end derive from the parsed control origin and decoded curve instead of independent stored fields"
+
+[[change]]
+commit = "205ebd930e3d1e6ac93c143c0a925ec103a0ef25"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::core::SurfacePatchLayout::end"
+reason = "ASM-02: surface control component offsets and block end derive from the parsed control origin and decoded surface instead of independent stored fields"
+
+[[change]]
+commit = "205ebd930e3d1e6ac93c143c0a925ec103a0ef25"
+crate = "cadmpeg-asm"
+kind = "deletion"
+item = "cadmpeg_asm::nurbs::core::SurfacePatchLayout::control_value_offsets"
+reason = "ASM-02: surface control component offsets and block end derive from the parsed control origin and decoded surface instead of independent stored fields"

@@ -696,13 +696,17 @@ impl AsmEditSet {
                 record.index
             ))
         })?;
-        if record_bytes.get(layout.end) != Some(&0x06) {
+        if record_bytes.get(layout.end()) != Some(&0x06) {
             return Err(CodecError::NotImplemented(format!(
                 "spline record {} has no writable fit-tolerance carrier",
                 record.index
             )));
         }
-        Self::patch_f64_payload(bytes, record.offset + layout.end + 1, tolerance / LEN_TO_MM)
+        Self::patch_f64_payload(
+            bytes,
+            record.offset + layout.end() + 1,
+            tolerance / LEN_TO_MM,
+        )
     }
 
     /// Apply the solved procedural-curve fit tolerance.
@@ -1640,30 +1644,23 @@ fn patch_nurbs_surface_record(
     } else {
         3
     };
-    if layout.control_value_offsets.len() != u_count * v_count * components {
-        return Err(CodecError::malformed(format_args!(
-            "spline record {} has an inconsistent NURBS control layout",
-            record.index
-        )));
-    }
     let weights = surface.weights();
-    let mut ordinal = 0usize;
-    for v in 0..v_count {
-        for u in 0..u_count {
+    let values = (0..v_count).flat_map(|v| {
+        (0..u_count).flat_map(move |u| {
             let ir_index = u * v_count + v;
             let point = surface.control_points()[ir_index];
-            let values = [
+            [
                 point.x / LEN_TO_MM,
                 point.y / LEN_TO_MM,
                 point.z / LEN_TO_MM,
                 weights.map_or(0.0, |weights| weights[ir_index]),
-            ];
-            for value in values.into_iter().take(components) {
-                let at = record.offset + layout.control_value_offsets[ordinal];
-                AsmEditSet::patch_f64_payload(bytes, at, value)?;
-                ordinal += 1;
-            }
-        }
+            ]
+            .into_iter()
+            .take(components)
+        })
+    });
+    for (offset, value) in layout.control_value_offsets().zip(values) {
+        AsmEditSet::patch_f64_payload(bytes, record.offset + offset, value)?;
     }
     Ok(())
 }

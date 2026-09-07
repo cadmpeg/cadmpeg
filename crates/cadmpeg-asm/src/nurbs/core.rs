@@ -256,10 +256,7 @@ pub(crate) fn owned_curve_cache_resolving_refs(
 pub struct SurfacePatchLayout {
     /// Decoded surface cache.
     pub surface: NurbsSurface,
-    /// Offset immediately after the final control component.
-    pub end: usize,
-    /// Native v-major tagged-double payload offsets, excluding each tag byte.
-    pub control_value_offsets: Vec<usize>,
+    control_start: usize,
     /// Native payload offsets for U knots.
     pub u_knots: KnotLayout,
     /// Native payload offsets for V knots.
@@ -270,6 +267,24 @@ pub struct SurfacePatchLayout {
     pub degree_value_offsets: [usize; 2],
     /// Payload width of integer and enum fields.
     pub int_width: RefWidth,
+}
+
+impl SurfacePatchLayout {
+    /// Offset immediately after the final control component.
+    pub fn end(&self) -> usize {
+        self.control_start + self.control_value_offsets().len() * 9
+    }
+
+    /// Native v-major tagged-double payload offsets, excluding each tag byte.
+    pub fn control_value_offsets(&self) -> impl ExactSizeIterator<Item = usize> + '_ {
+        let components = if self.surface.weights().is_some() {
+            4
+        } else {
+            3
+        };
+        (0..self.surface.control_points().len() * components)
+            .map(|ordinal| self.control_start + ordinal * 9 + 1)
+    }
 }
 
 pub(crate) fn decode_surface_block(
@@ -317,9 +332,6 @@ pub(crate) fn decode_surface_block(
     // order where index `u * v_count + v` is pole `(u, v)`.
     let control_start = pos;
     let (flat, flat_w) = read_control_points(b, &mut pos, n_poles_u * n_poles_v, cp_dims)?;
-    let control_value_offsets = (0..n_poles_u * n_poles_v * cp_dims)
-        .map(|ordinal| control_start + ordinal * 9 + 1)
-        .collect();
     let pole_count = n_poles_u * n_poles_v;
     let mut control_points =
         alloc_filled(pole_count, Point3::new(0.0, 0.0, 0.0), "asm_nurbs_poles").ok()?;
@@ -354,8 +366,7 @@ pub(crate) fn decode_surface_block(
     .ok()?;
     Some(SurfacePatchLayout {
         surface,
-        end: pos,
-        control_value_offsets,
+        control_start,
         u_knots: u_knot_layout,
         v_knots: v_knot_layout,
         periodic_value_offsets: [enum_value_offsets[0], enum_value_offsets[1]],

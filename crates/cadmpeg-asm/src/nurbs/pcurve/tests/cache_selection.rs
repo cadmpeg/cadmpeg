@@ -137,7 +137,7 @@ fn patch_layout_roles_exclude_nested_construction_caches() {
         assert_eq!(
             final_surface_patch_layout(&surfaces, int_width)
                 .expect("owned surface layout")
-                .end,
+                .end(),
             surface_end
         );
         assert!(surface_patch_layout_at(&surfaces, 1, int_width).is_none());
