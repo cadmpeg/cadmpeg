@@ -106,6 +106,47 @@ fn parameter_pointers_enforce_the_seven_digit_sequence_limit() {
 }
 
 #[test]
+fn semantic_expectation_labels_are_preserved_in_pointer_losses() {
+    let directory = [directory_entry(1, 116)];
+    let resolver = ParameterResolver::new(&directory);
+    assert_eq!(
+        resolver.resolve(
+            1,
+            1,
+            3,
+            ReferenceExpectation::Named(ExpectationLabel::Type124Transformation),
+            |target| target.entity_type == 124,
+        ),
+        None
+    );
+    assert_eq!(
+        resolver.resolve_negative(
+            1,
+            2,
+            -3,
+            ReferenceExpectation::Named(ExpectationLabel::Type310Form0FontDefinition),
+            |target| target.entity_type == 310 && target.form == 0,
+        ),
+        None
+    );
+    let mut graph = BTreeMap::new();
+    resolver.append_to(&mut graph);
+    let source = point_file();
+    let scan = crate::card::scan(&source).unwrap();
+    let messages = super::losses(&graph, &scan, &[])
+        .into_iter()
+        .map(|note| note.message)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        messages,
+        [
+            "IGES Directory Entry D1 Parameter pointer 3 has Dangling resolution; expected type-124-transformation",
+            "IGES Directory Entry D1 Parameter pointer -3 has Dangling resolution; expected type-310-form-0-font-definition",
+        ]
+    );
+}
+
+#[test]
 fn directory_pointers_enforce_the_seven_digit_sequence_limit() {
     let maximum = u32::try_from(MAX_POINTER_SEQUENCE).unwrap();
     let mut source = directory_entry(1, 116);
