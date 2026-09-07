@@ -696,30 +696,36 @@ fn analytic_rolling_ball_surface(
         });
     }
 
-    let ((plane @ SurfaceGeometry::Plane { .. }, cylinder @ SurfaceGeometry::Cylinder { .. })
-    | (cylinder @ SurfaceGeometry::Cylinder { .. }, plane @ SurfaceGeometry::Plane { .. })) =
-        (first, second)
+    let ((
+        SurfaceGeometry::Plane {
+            origin: plane_origin,
+            normal: plane_normal,
+            ..
+        },
+        SurfaceGeometry::Cylinder {
+            origin: cylinder_origin,
+            axis: cylinder_axis,
+            radius: cylinder_radius,
+            ..
+        },
+    )
+    | (
+        SurfaceGeometry::Cylinder {
+            origin: cylinder_origin,
+            axis: cylinder_axis,
+            radius: cylinder_radius,
+            ..
+        },
+        SurfaceGeometry::Plane {
+            origin: plane_origin,
+            normal: plane_normal,
+            ..
+        },
+    )) = (first, second)
     else {
         return None;
     };
     let (center, axis, ref_direction, major_radius) = rational_four_arc_circle(spine)?;
-    let SurfaceGeometry::Plane {
-        origin: plane_origin,
-        normal: plane_normal,
-        ..
-    } = plane
-    else {
-        unreachable!()
-    };
-    let SurfaceGeometry::Cylinder {
-        origin: cylinder_origin,
-        axis: cylinder_axis,
-        radius: cylinder_radius,
-        ..
-    } = cylinder
-    else {
-        unreachable!()
-    };
     let plane_normal = plane_normal.unit()?;
     let cylinder_axis = cylinder_axis.unit()?;
     let scale = major_radius.max(radius).max(cylinder_radius.abs()).max(1.0);
