@@ -358,7 +358,6 @@ mod tests {
 
         for format in Format::all() {
             let targets = build_encoder(format).targets();
-            cadmpeg_core::target::assert_valid_target_catalog(targets);
             let prefix = format!("{}:", format.name());
             for target in targets {
                 assert!(

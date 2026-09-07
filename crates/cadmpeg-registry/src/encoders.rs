@@ -7,7 +7,7 @@
 //! over the completed plan, not an encoder-construction option.
 
 #[cfg(test)]
-use cadmpeg_core::{target::assert_valid_target_catalog, CodecError};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::Encoder;
 #[cfg(test)]
 use cadmpeg_ir::codec::write::TargetRequest;
@@ -40,7 +40,6 @@ mod tests {
         for format in Format::all() {
             let encoder = build_encoder(format);
             let targets = encoder.targets();
-            assert_valid_target_catalog(targets);
             if targets.is_empty() {
                 assert_eq!(
                     encoder.id(),

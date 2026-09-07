@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Encoder target catalogs and typed target-selection refusals.
 
-use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::dialect::DialectId;
@@ -22,6 +21,21 @@ pub struct TargetDescriptor {
 }
 
 impl TargetDescriptor {
+    const fn token_bytes(&self, index: usize) -> &[u8] {
+        match index {
+            0 => self.id.as_str().as_bytes(),
+            1 => {
+                let bytes = self.id.as_str().as_bytes();
+                let mut start = 0;
+                while bytes[start] != b':' {
+                    start += 1;
+                }
+                bytes.split_at(start + 1).1
+            }
+            _ => self.aliases[index - 2].as_bytes(),
+        }
+    }
+
     /// Every token accepted for this target: full id, format-local id, and aliases.
     pub fn accepted_tokens(&self) -> impl Iterator<Item = &str> {
         std::iter::once(self.id.as_str())
@@ -56,7 +70,8 @@ impl TargetCatalog {
 
     /// Builds a nonempty catalog with one namespace and an optional default row.
     ///
-    /// Panics if rows have different namespaces or the default is out of bounds.
+    /// Panics if rows have different namespaces, a spelling selects multiple
+    /// rows, or the default is out of bounds.
     #[must_use]
     pub const fn new(targets: &'static [TargetDescriptor], default: Option<usize>) -> Self {
         let [first, rest @ ..] = targets else {
@@ -78,6 +93,29 @@ impl TargetCatalog {
                 byte += 1;
             }
             row += 1;
+        }
+        let mut left = 0;
+        while left < targets.len() {
+            let mut right = left + 1;
+            while right < targets.len() {
+                let mut left_token = 0;
+                while left_token < targets[left].aliases.len() + 2 {
+                    let mut right_token = 0;
+                    while right_token < targets[right].aliases.len() + 2 {
+                        assert!(
+                            !token_bytes_equal(
+                                targets[left].token_bytes(left_token),
+                                targets[right].token_bytes(right_token),
+                            ),
+                            "target catalog spellings must select one row"
+                        );
+                        right_token += 1;
+                    }
+                    left_token += 1;
+                }
+                right += 1;
+            }
+            left += 1;
         }
         if let Some(index) = default {
             assert!(
@@ -176,25 +214,18 @@ impl Serialize for TargetCatalog {
     }
 }
 
-/// Panics when a static encoder target catalog violates its uniqueness rules.
-///
-/// Every accepted spelling belongs to one row. A row may
-/// repeat its own format-local id as an alias, but no spelling may select two
-/// different rows.
-pub fn assert_valid_target_catalog(catalog: TargetCatalog) {
-    let targets = catalog.targets();
-    let mut tokens = BTreeMap::<&str, usize>::new();
-    for (index, target) in targets.iter().enumerate() {
-        for token in target.accepted_tokens() {
-            if let Some(previous) = tokens.insert(token, index) {
-                assert_eq!(
-                    previous, index,
-                    "target catalog invariant failed: token {token:?} selects both {:?} and {:?}",
-                    targets[previous].id, target.id
-                );
-            }
-        }
+const fn token_bytes_equal(left: &[u8], right: &[u8]) -> bool {
+    if left.len() != right.len() {
+        return false;
     }
+    let mut index = 0;
+    while index < left.len() {
+        if left[index] != right[index] {
+            return false;
+        }
+        index += 1;
+    }
+    true
 }
 
 /// A caller-supplied dialect token requested from an encoder.
@@ -540,43 +571,58 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "token \"test:same\" selects both")]
+    fn a_target_catalog_allows_repeated_spellings_within_one_row() {
+        const TARGETS: &[TargetDescriptor] = &[
+            target("test:first", &["first", "test:first", "one", "one"]),
+            target("test:second", &["second", "two"]),
+        ];
+        const CATALOG: TargetCatalog = TargetCatalog::new(TARGETS, Some(0));
+        for token in ["first", "test:first", "one"] {
+            assert_eq!(CATALOG.find(token).map(|(index, _)| index), Some(0));
+        }
+        for token in ["second", "test:second", "two"] {
+            assert_eq!(CATALOG.find(token).map(|(index, _)| index), Some(1));
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "target catalog spellings must select one row")]
     fn a_target_catalog_rejects_duplicate_ids() {
         const DUPLICATES: &[TargetDescriptor] = &[
             target("test:same", NO_ALIASES),
             target("test:same", NO_ALIASES),
         ];
-        assert_valid_target_catalog(TargetCatalog::new(DUPLICATES, None));
+        let _ = TargetCatalog::new(DUPLICATES, None);
     }
 
     #[test]
-    #[should_panic(expected = "token \"same\" selects both")]
+    #[should_panic(expected = "target catalog spellings must select one row")]
     fn a_target_catalog_rejects_duplicate_aliases() {
         const DUPLICATES: &[TargetDescriptor] = &[
             target("test:first", &["same"]),
             target("test:second", &["same"]),
         ];
-        assert_valid_target_catalog(TargetCatalog::new(DUPLICATES, None));
+        let _ = TargetCatalog::new(DUPLICATES, None);
     }
 
     #[test]
-    #[should_panic(expected = "token \"test:second\" selects both")]
+    #[should_panic(expected = "target catalog spellings must select one row")]
     fn a_target_catalog_rejects_an_alias_that_is_an_id() {
         const DUPLICATES: &[TargetDescriptor] = &[
             target("test:first", &["test:second"]),
             target("test:second", NO_ALIASES),
         ];
-        assert_valid_target_catalog(TargetCatalog::new(DUPLICATES, None));
+        let _ = TargetCatalog::new(DUPLICATES, None);
     }
 
     #[test]
-    #[should_panic(expected = "token \"second\" selects both")]
+    #[should_panic(expected = "target catalog spellings must select one row")]
     fn a_target_catalog_rejects_an_alias_that_is_another_rows_local_id() {
         const DUPLICATES: &[TargetDescriptor] = &[
             target("test:first", &["second"]),
             target("test:second", NO_ALIASES),
         ];
-        assert_valid_target_catalog(TargetCatalog::new(DUPLICATES, None));
+        let _ = TargetCatalog::new(DUPLICATES, None);
     }
 
     #[test]

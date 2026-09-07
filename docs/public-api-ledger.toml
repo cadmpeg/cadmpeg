@@ -6350,3 +6350,10 @@ crate = "cadmpeg-asm"
 kind = "field"
 item = "cadmpeg_asm::brep::records::WireTopology"
 reason = "ASM-13: combine edge-ring and isolated-vertex membership in WireMembers. Preserve flattened edges/free_vertex JSON and reject mixed membership at deserialization. Empty unresolved edge rosters remain representable and are still refused by source-less export."
+
+[[change]]
+commit = "6a2fc3ab60b0aa48be3a2e25bef6117c88254597"
+crate = "cadmpeg-core"
+kind = "deletion"
+item = "cadmpeg_core::target::assert_valid_target_catalog"
+reason = "CORE-05: enforce unique target spellings in the private catalog's const constructor and remove the post-construction assertion API and registry calls. Same-row aliases remain allowed."
