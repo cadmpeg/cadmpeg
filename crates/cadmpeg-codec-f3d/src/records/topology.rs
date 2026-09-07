@@ -292,7 +292,7 @@ pub struct DesignExtrudeSelectionGroup {
     /// Byte offset of the primary indexed-record header.
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII primary class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Byte offset of the counted member-run length.
     pub member_count_offset: u64,
     /// Ordered indexed selection-member records.
@@ -308,7 +308,7 @@ pub struct DesignExtrudeSelectionGroup {
     /// Boolean byte between the two nested-record references.
     pub variant: bool,
     /// Source per-file dynamic three-digit ASCII paired class tag.
-    pub paired_class_tag: String,
+    pub paired_class_tag: DesignClassTag,
     /// Byte offset of the same-index paired header.
     pub paired_byte_offset: u64,
 }
@@ -369,14 +369,14 @@ impl TryFrom<DesignExtrudeSelectionGroupWire> for DesignExtrudeSelectionGroup {
             scope_reference_ordinal: wire.scope_reference_ordinal,
             record_index: wire.record_index,
             byte_offset: wire.byte_offset,
-            class_tag: wire.class_tag,
+            class_tag: wire.class_tag.try_into()?,
             member_count_offset: wire.member_count_offset,
             opaque_index: wire.opaque_index,
             opaque_index_offset: wire.opaque_index_offset,
             opaque_scalar: wire.opaque_scalar,
             opaque_scalar_offset: wire.opaque_scalar_offset,
             variant: wire.variant,
-            paired_class_tag: wire.paired_class_tag,
+            paired_class_tag: wire.paired_class_tag.try_into()?,
             paired_byte_offset: wire.paired_byte_offset,
         })
     }
@@ -397,14 +397,14 @@ impl From<DesignExtrudeSelectionGroup> for DesignExtrudeSelectionGroupWire {
             scope_reference_ordinal: group.scope_reference_ordinal,
             record_index: group.record_index,
             byte_offset: group.byte_offset,
-            class_tag: group.class_tag,
+            class_tag: group.class_tag.into(),
             member_count_offset: group.member_count_offset,
             opaque_index: group.opaque_index,
             opaque_index_offset: group.opaque_index_offset,
             opaque_scalar: group.opaque_scalar,
             opaque_scalar_offset: group.opaque_scalar_offset,
             variant: group.variant,
-            paired_class_tag: group.paired_class_tag,
+            paired_class_tag: group.paired_class_tag.into(),
             paired_byte_offset: group.paired_byte_offset,
         }
     }

@@ -381,7 +381,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         scope_reference_ordinal: 0,
         record_index: 300,
         byte_offset: 700,
-        class_tag: "308".into(),
+        class_tag: crate::records::DesignClassTag::try_from("308".to_owned()).unwrap(),
         member_count_offset: 720,
         members: vec![crate::records::Located {
             value: 301,
@@ -392,7 +392,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         opaque_scalar: 0.0,
         opaque_scalar_offset: 739,
         variant: false,
-        paired_class_tag: "259".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned()).unwrap(),
         paired_byte_offset: 760,
     };
     let mut feature = Feature {

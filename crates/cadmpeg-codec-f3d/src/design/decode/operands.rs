@@ -2891,7 +2891,7 @@ pub(crate) fn parse_extrude_selection_group(
         scope_reference_ordinal,
         record_index: header.record_index,
         byte_offset: header.byte_offset,
-        class_tag: header.class_tag.as_str().to_owned(),
+        class_tag: header.class_tag.clone(),
         member_count_offset: u64::try_from(start + 32).ok()?,
         members,
         opaque_index,
@@ -2899,7 +2899,7 @@ pub(crate) fn parse_extrude_selection_group(
         opaque_scalar,
         opaque_scalar_offset: u64::try_from(position + 4).ok()?,
         variant: bytes[position + 28] != 0,
-        paired_class_tag,
+        paired_class_tag: paired_class_tag.try_into().ok()?,
         paired_byte_offset: u64::try_from(paired_at).ok()?,
     })
 }

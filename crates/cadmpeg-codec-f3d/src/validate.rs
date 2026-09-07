@@ -4254,26 +4254,16 @@ fn validate_extrude_selection_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let native_stream = design_stream(&group.id);
         let scope = scopes_by_index.get(&(native_stream, group.scope_record_index));
         let header = records_by_index.get(&(native_stream, group.record_index));
-        let valid = group.class_tag.len() == 3
-            && group.class_tag.bytes().all(|byte| byte.is_ascii_digit())
-            && group.paired_class_tag.len() == 3
-            && group
-                .paired_class_tag
-                .bytes()
-                .all(|byte| byte.is_ascii_digit())
-            && scope.is_some_and(|scope| {
-                design::design_feature_family(&scope.kind())
-                    == Some(design::DesignFeatureFamily::Extrude)
-                    && usize::try_from(group.scope_reference_ordinal)
-                        .ok()
-                        .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
-                        == Some(&group.record_index)
-            })
-            && header.is_some_and(|header| {
-                header.byte_offset == group.byte_offset
-                    && header.class_tag.as_str() == group.class_tag
-            })
-            && group.member_count_offset == group.byte_offset.saturating_add(32)
+        let valid = scope.is_some_and(|scope| {
+            design::design_feature_family(&scope.kind())
+                == Some(design::DesignFeatureFamily::Extrude)
+                && usize::try_from(group.scope_reference_ordinal)
+                    .ok()
+                    .and_then(|ordinal| scope.reference_members.values().nth(ordinal))
+                    == Some(&group.record_index)
+        }) && header.is_some_and(|header| {
+            header.byte_offset == group.byte_offset && header.class_tag == group.class_tag
+        }) && group.member_count_offset == group.byte_offset.saturating_add(32)
             && !group.members.is_empty()
             && group
                 .members
