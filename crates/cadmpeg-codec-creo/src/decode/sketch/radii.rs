@@ -698,7 +698,6 @@ mod tests {
                     external_id: 10,
                     mode: None,
                     vertices: [1, 2],
-                    center_vertex: None,
                     kind: crate::feature::TrimEntityKind::Line,
                     offset: 1,
                 }],

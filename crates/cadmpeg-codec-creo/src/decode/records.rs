@@ -2355,10 +2355,10 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     external_id: entity.external_id,
                     mode: entity.mode,
                     vertices: entity.vertices,
-                    center_vertex: entity.center_vertex,
+                    center_vertex: entity.center_vertex(),
                     kind: match entity.kind {
                         crate::feature::TrimEntityKind::Line => "line",
-                        crate::feature::TrimEntityKind::Arc => "arc",
+                        crate::feature::TrimEntityKind::Arc { .. } => "arc",
                     },
                     offset: entity.offset,
                 })

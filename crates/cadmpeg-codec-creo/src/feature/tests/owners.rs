@@ -107,7 +107,6 @@ fn pending_trimmed_definition(external_ids: &[u32]) -> FeatureDefinition {
                 kind: TrimEntityKind::Line,
                 mode: Some(0),
                 vertices: [index as u32, index as u32 + 1],
-                center_vertex: None,
                 offset: index,
             })
             .collect(),

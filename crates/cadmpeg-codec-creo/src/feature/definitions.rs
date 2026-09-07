@@ -560,7 +560,10 @@ pub enum TrimEntityKind {
     /// No center vertex: trimmed line.
     Line,
     /// Center vertex present: trimmed circular arc.
-    Arc,
+    Arc {
+        /// Solved center vertex identifier.
+        center_vertex: u32,
+    },
 }
 
 /// One positional `ent_tab` replay row.
@@ -572,12 +575,20 @@ pub struct FeatureTrimEntity {
     pub mode: Option<u32>,
     /// Solved start and end vertex IDs.
     pub vertices: [u32; 2],
-    /// Solved center vertex ID for an arc.
-    pub center_vertex: Option<u32>,
-    /// Line or arc classification derived from center presence.
+    /// Trimmed entity geometry.
     pub kind: TrimEntityKind,
     /// Byte offset of the positional row in the original stream.
     pub offset: usize,
+}
+
+impl FeatureTrimEntity {
+    /// Solved center vertex identifier for an arc.
+    pub fn center_vertex(&self) -> Option<u32> {
+        match self.kind {
+            TrimEntityKind::Line => None,
+            TrimEntityKind::Arc { center_vertex } => Some(center_vertex),
+        }
+    }
 }
 
 /// One stored hash bucket in a native trim table.
@@ -2458,12 +2469,9 @@ fn trim_entity_table(payload: &[u8], start: usize, end: usize) -> Option<Feature
                     external_id,
                     mode,
                     vertices: [start_vertex, end_vertex],
-                    center_vertex,
-                    kind: if center_vertex.is_some() {
-                        TrimEntityKind::Arc
-                    } else {
-                        TrimEntityKind::Line
-                    },
+                    kind: center_vertex.map_or(TrimEntityKind::Line, |center_vertex| {
+                        TrimEntityKind::Arc { center_vertex }
+                    }),
                     offset: row_offset,
                 });
             }
@@ -2959,12 +2967,9 @@ pub(crate) fn positional_trim_entity_table(
                     external_id,
                     mode,
                     vertices: [start_vertex, end_vertex],
-                    center_vertex,
-                    kind: if center_vertex.is_some() {
-                        TrimEntityKind::Arc
-                    } else {
-                        TrimEntityKind::Line
-                    },
+                    kind: center_vertex.map_or(TrimEntityKind::Line, |center_vertex| {
+                        TrimEntityKind::Arc { center_vertex }
+                    }),
                     offset: row_offset,
                 });
             }

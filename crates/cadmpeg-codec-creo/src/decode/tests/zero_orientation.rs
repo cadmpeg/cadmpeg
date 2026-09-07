@@ -98,7 +98,6 @@ fn profile_chain_follows_trim_vertex_incidence() {
                         external_id,
                         mode: None,
                         vertices,
-                        center_vertex: None,
                         kind: crate::feature::TrimEntityKind::Line,
                         offset: external_id as usize,
                     },
@@ -208,8 +207,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
                     external_id,
                     mode: None,
                     vertices,
-                    center_vertex: Some(3),
-                    kind: crate::feature::TrimEntityKind::Arc,
+                    kind: crate::feature::TrimEntityKind::Arc { center_vertex: 3 },
                     offset: external_id as usize,
                 },
             )

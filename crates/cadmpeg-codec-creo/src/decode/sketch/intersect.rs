@@ -707,7 +707,6 @@ mod tests {
                     external_id: 42,
                     mode: None,
                     vertices: [1, 2],
-                    center_vertex: None,
                     kind: crate::feature::TrimEntityKind::Line,
                     offset: 0,
                 }],
@@ -765,7 +764,6 @@ mod tests {
                 external_id: 43,
                 mode: None,
                 vertices: [2, 3],
-                center_vertex: None,
                 kind: crate::feature::TrimEntityKind::Line,
                 offset: 0,
             });
@@ -817,7 +815,6 @@ mod tests {
                     external_id: 10,
                     mode: None,
                     vertices: [3, 4],
-                    center_vertex: None,
                     kind: crate::feature::TrimEntityKind::Line,
                     offset: 1,
                 }],
