@@ -91,8 +91,8 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
         construction_paired_byte_offset,
         construction_byte_offset + 380
     );
-    assert_eq!(selectors[0].axis_paired_class_tag, "261");
-    assert_eq!(selectors[0].selector_paired_class_tag, "261");
+    assert_eq!(selectors[0].axis_paired_class_tag.as_str(), "261");
+    assert_eq!(selectors[0].selector_paired_class_tag.as_str(), "261");
     assert_eq!(selectors[0].occurrence_reference, 10_001);
     assert_eq!(selectors[1].occurrence_reference, 10_002);
     assert_eq!(selectors[0].external_object_reference, 7_001);

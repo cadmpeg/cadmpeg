@@ -2455,21 +2455,21 @@ pub struct DesignAssemblyAxialSelectorIdentity {
     /// Axis record named by the operand construction carrier.
     pub axis_record_index: u32,
     /// Dynamic class of the axis record's primary indexed header.
-    pub axis_class_tag: String,
+    pub axis_class_tag: DesignClassTag,
     /// Byte offset of the axis record's primary indexed header.
     pub axis_byte_offset: u64,
     /// Dynamic class of the axis record's paired indexed header.
-    pub axis_paired_class_tag: String,
+    pub axis_paired_class_tag: DesignClassTag,
     /// Byte offset of the axis record's paired indexed header.
     pub axis_paired_byte_offset: u64,
     /// Selector record three indices after the axis record.
     pub selector_record_index: u32,
     /// Dynamic class of the selector record's primary indexed header.
-    pub selector_class_tag: String,
+    pub selector_class_tag: DesignClassTag,
     /// Byte offset of the selector record's primary indexed header.
     pub selector_byte_offset: u64,
     /// Dynamic class of the selector record's paired indexed header.
-    pub selector_paired_class_tag: String,
+    pub selector_paired_class_tag: DesignClassTag,
     /// Byte offset of the selector record's paired indexed header.
     pub selector_paired_byte_offset: u64,
     /// Nested record named by the selector prefix.
@@ -2509,7 +2509,7 @@ pub struct DesignAssemblyAxialSelectorIdentity {
     /// Embedded record that carries the selected occurrence role.
     pub role_record_index: u32,
     /// Dynamic class of the occurrence-role record.
-    pub role_class_tag: String,
+    pub role_class_tag: DesignClassTag,
     /// Byte offset of the occurrence-role record's indexed header.
     pub role_byte_offset: u64,
     /// Occurrence-role GUID joining this selector to a component insertion.
@@ -2602,14 +2602,14 @@ impl TryFrom<DesignAssemblyAxialSelectorIdentityWire> for DesignAssemblyAxialSel
     fn try_from(wire: DesignAssemblyAxialSelectorIdentityWire) -> Result<Self, Self::Error> {
         Ok(Self {
             axis_record_index: wire.axis_record_index,
-            axis_class_tag: wire.axis_class_tag,
+            axis_class_tag: wire.axis_class_tag.try_into().map_err(|error| format!("axis_class_tag: {error}"))?,
             axis_byte_offset: wire.axis_byte_offset,
-            axis_paired_class_tag: wire.axis_paired_class_tag,
+            axis_paired_class_tag: wire.axis_paired_class_tag.try_into().map_err(|error| format!("axis_paired_class_tag: {error}"))?,
             axis_paired_byte_offset: wire.axis_paired_byte_offset,
             selector_record_index: wire.selector_record_index,
-            selector_class_tag: wire.selector_class_tag,
+            selector_class_tag: wire.selector_class_tag.try_into().map_err(|error| format!("selector_class_tag: {error}"))?,
             selector_byte_offset: wire.selector_byte_offset,
-            selector_paired_class_tag: wire.selector_paired_class_tag,
+            selector_paired_class_tag: wire.selector_paired_class_tag.try_into().map_err(|error| format!("selector_paired_class_tag: {error}"))?,
             selector_paired_byte_offset: wire.selector_paired_byte_offset,
             nested_record_index: wire.nested_record_index,
             nested_record_index_offset: wire.nested_record_index_offset,
@@ -2633,7 +2633,7 @@ impl TryFrom<DesignAssemblyAxialSelectorIdentityWire> for DesignAssemblyAxialSel
                 _ => return Err("external_property_key, external_property_key_offset, external_version_urn and external_version_urn_offset must occur together".into()),
             },
             role_record_index: wire.role_record_index,
-            role_class_tag: wire.role_class_tag,
+            role_class_tag: wire.role_class_tag.try_into().map_err(|error| format!("role_class_tag: {error}"))?,
             role_byte_offset: wire.role_byte_offset,
             occurrence_role: wire.occurrence_role,
             occurrence_role_offset: wire.occurrence_role_offset,
@@ -2645,14 +2645,14 @@ impl From<DesignAssemblyAxialSelectorIdentity> for DesignAssemblyAxialSelectorId
     fn from(record: DesignAssemblyAxialSelectorIdentity) -> Self {
         Self {
             axis_record_index: record.axis_record_index,
-            axis_class_tag: record.axis_class_tag,
+            axis_class_tag: record.axis_class_tag.into(),
             axis_byte_offset: record.axis_byte_offset,
-            axis_paired_class_tag: record.axis_paired_class_tag,
+            axis_paired_class_tag: record.axis_paired_class_tag.into(),
             axis_paired_byte_offset: record.axis_paired_byte_offset,
             selector_record_index: record.selector_record_index,
-            selector_class_tag: record.selector_class_tag,
+            selector_class_tag: record.selector_class_tag.into(),
             selector_byte_offset: record.selector_byte_offset,
-            selector_paired_class_tag: record.selector_paired_class_tag,
+            selector_paired_class_tag: record.selector_paired_class_tag.into(),
             selector_paired_byte_offset: record.selector_paired_byte_offset,
             nested_record_index: record.nested_record_index,
             nested_record_index_offset: record.nested_record_index_offset,
@@ -2687,7 +2687,7 @@ impl From<DesignAssemblyAxialSelectorIdentity> for DesignAssemblyAxialSelectorId
                 .as_ref()
                 .map(|version| version.version_urn.offset),
             role_record_index: record.role_record_index,
-            role_class_tag: record.role_class_tag,
+            role_class_tag: record.role_class_tag.into(),
             role_byte_offset: record.role_byte_offset,
             occurrence_role: record.occurrence_role,
             occurrence_role_offset: record.occurrence_role_offset,

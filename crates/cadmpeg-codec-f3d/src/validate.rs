@@ -406,26 +406,19 @@ fn valid_axial_selector_identity(
                 == 1
         });
 
-    valid_dynamic_class_tag(&selector.axis_class_tag)
-        && valid_dynamic_class_tag(&selector.axis_paired_class_tag)
-        && valid_dynamic_class_tag(&selector.selector_class_tag)
-        && valid_dynamic_class_tag(&selector.selector_paired_class_tag)
-        && valid_dynamic_class_tag(&selector.role_class_tag)
-        && design_header_matches(
-            records_by_index,
-            stream,
-            selector.axis_record_index,
-            &selector.axis_class_tag,
-            selector.axis_byte_offset,
-        )
-        && design_header_matches(
-            records_by_index,
-            stream,
-            selector.selector_record_index,
-            &selector.selector_class_tag,
-            selector.selector_byte_offset,
-        )
-        && selector.axis_record_index.checked_add(3) == Some(selector.selector_record_index)
+    design_header_matches(
+        records_by_index,
+        stream,
+        selector.axis_record_index,
+        selector.axis_class_tag.as_str(),
+        selector.axis_byte_offset,
+    ) && design_header_matches(
+        records_by_index,
+        stream,
+        selector.selector_record_index,
+        selector.selector_class_tag.as_str(),
+        selector.selector_byte_offset,
+    ) && selector.axis_record_index.checked_add(3) == Some(selector.selector_record_index)
         && selector.selector_record_index.checked_add(3) == Some(selector.nested_record_index)
         && selector.selector_record_index.checked_add(5) == Some(selector.role_record_index)
         && selector.axis_byte_offset < selector.axis_paired_byte_offset

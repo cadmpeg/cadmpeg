@@ -510,14 +510,16 @@ mod tests {
     fn selector() -> DesignAssemblyAxialSelectorIdentity {
         DesignAssemblyAxialSelectorIdentity {
             axis_record_index: 10,
-            axis_class_tag: "316".into(),
+            axis_class_tag: crate::records::DesignClassTag::try_from("316".to_owned()).unwrap(),
             axis_byte_offset: 100,
-            axis_paired_class_tag: "261".into(),
+            axis_paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned())
+                .unwrap(),
             axis_paired_byte_offset: 120,
             selector_record_index: 13,
-            selector_class_tag: "277".into(),
+            selector_class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
             selector_byte_offset: 200,
-            selector_paired_class_tag: "261".into(),
+            selector_paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned())
+                .unwrap(),
             selector_paired_byte_offset: 560,
             nested_record_index: 16,
             nested_record_index_offset: 223,
@@ -537,7 +539,7 @@ mod tests {
             external_link_name_offset: 511,
             external_version: None,
             role_record_index: 18,
-            role_class_tag: "298".into(),
+            role_class_tag: crate::records::DesignClassTag::try_from("298".to_owned()).unwrap(),
             role_byte_offset: 600,
             occurrence_role: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa".into(),
             occurrence_role_offset: 629,
