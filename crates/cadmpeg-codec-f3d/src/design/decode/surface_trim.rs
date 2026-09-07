@@ -56,7 +56,7 @@ pub(crate) fn exact_surface_trim_operation(
         chain_records.push(DesignSurfaceTrimChainRecord {
             record_index,
             byte_offset: u64::try_from(chain_start).ok()?,
-            class_tag,
+            class_tag: class_tag.try_into().ok()?,
             frame_length,
         });
         chain_start = frame_end;

@@ -6122,7 +6122,7 @@ pub struct DesignSurfaceTrimChainRecord {
     /// Primary indexed-header byte offset.
     pub byte_offset: u64,
     /// Source per-file dynamic class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Bytes from the primary header to the following indexed header.
     pub frame_length: u64,
 }
