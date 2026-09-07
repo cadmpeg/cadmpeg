@@ -282,7 +282,7 @@ fn finish_decode(
         .object_graphs
         .iter()
         .flat_map(|graph| &graph.records)
-        .filter(|record| record.repeated_reference_suffix.is_some())
+        .filter(|record| record.repeated_reference_suffix().is_some())
         .count();
     let repeated_reference_schema_selection_count = native
         .object_graphs

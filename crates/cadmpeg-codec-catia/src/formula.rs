@@ -453,7 +453,7 @@ pub(crate) fn transfer_parameters(
             let entity = entities.get(entity.as_str())?;
             let object = object_records.get(entity.object_record.as_str())?;
             (entity.formula_relation().is_some()
-                || object.subtype == crate::object_graph::PayloadSubtype::Empty
+                || object.subtype() == crate::object_graph::PayloadSubtype::Empty
                     && object.references.is_empty())
             .then(|| object.id.clone())
         })

@@ -135,9 +135,7 @@ fn object_record(
             size: 1,
             fields: vec![PayloadField::Terminator],
         },
-        repeated_reference_suffix: None,
         repeated_reference_schema_selection: None,
-        subtype: PayloadSubtype::Empty,
         references: Vec::new(),
     }
 }

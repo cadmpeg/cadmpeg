@@ -3080,12 +3080,8 @@ pub struct CatiaObjectRecord {
     pub storage: Option<CatiaObjectStorage>,
     /// Typed nested payload, empty for an inline record.
     pub payload: ObjectPayload,
-    /// Counted reference suffix when the payload repeats its reference prefix exactly.
-    pub repeated_reference_suffix: Option<object_graph::RepeatedReferenceSuffix>,
     /// Repeated-reference preamble selector resolved through the graph catalog.
     pub repeated_reference_schema_selection: Option<CatiaRepeatedReferenceSchemaSelection>,
-    /// Structural payload classification.
-    pub subtype: PayloadSubtype,
     /// Ordered same-graph payload-reference links.
     pub references: Vec<CatiaObjectRecordReference>,
 }
@@ -3101,6 +3097,15 @@ pub enum CatiaObjectOwner {
 }
 
 impl CatiaObjectRecord {
+    /// Structural payload classification.
+    pub fn subtype(&self) -> PayloadSubtype {
+        object_graph::classify(&self.payload.fields)
+    }
+    /// Counted reference suffix of the payload.
+    pub fn repeated_reference_suffix(&self) -> Option<object_graph::RepeatedReferenceSuffix> {
+        object_graph::repeated_reference_suffix(&self.payload)
+    }
+
     pub fn entity_record(&self) -> Option<&str> {
         self.entity.as_ref().map(|entity| entity.record.as_str())
     }
@@ -3196,6 +3201,8 @@ struct CatiaObjectRecordWire {
 
 impl From<CatiaObjectRecord> for CatiaObjectRecordWire {
     fn from(value: CatiaObjectRecord) -> Self {
+        let subtype = value.subtype();
+        let repeated_reference_suffix = value.repeated_reference_suffix();
         let (entity_record, entity_id) = match value.entity {
             Some(entity) => (Some(entity.record), Some(entity.id)),
             None => (None, None),
@@ -3232,9 +3239,9 @@ impl From<CatiaObjectRecord> for CatiaObjectRecordWire {
             storage_record,
             storage_design_object,
             payload: value.payload,
-            repeated_reference_suffix: value.repeated_reference_suffix,
+            repeated_reference_suffix,
             repeated_reference_schema_selection: value.repeated_reference_schema_selection,
-            subtype: value.subtype,
+            subtype,
             references: value.references,
         }
     }
@@ -3244,6 +3251,14 @@ impl TryFrom<CatiaObjectRecordWire> for CatiaObjectRecord {
     type Error = String;
 
     fn try_from(wire: CatiaObjectRecordWire) -> Result<Self, Self::Error> {
+        if wire.subtype != object_graph::classify(&wire.payload.fields) {
+            return Err("subtype disagrees with payload".to_owned());
+        }
+        if wire.repeated_reference_suffix != object_graph::repeated_reference_suffix(&wire.payload)
+        {
+            return Err("repeated_reference_suffix disagrees with payload".to_owned());
+        }
+
         let entity = match (wire.entity_record, wire.entity_id) {
             (None, None) => None,
             (Some(record), Some(id)) => Some(CatiaObjectEntity { record, id }),
@@ -3291,9 +3306,7 @@ impl TryFrom<CatiaObjectRecordWire> for CatiaObjectRecord {
             class,
             storage,
             payload: wire.payload,
-            repeated_reference_suffix: wire.repeated_reference_suffix,
             repeated_reference_schema_selection: wire.repeated_reference_schema_selection,
-            subtype: wire.subtype,
             references: wire.references,
         })
     }
@@ -8883,7 +8896,7 @@ impl CatiaNative {
                         .map(|entry| entry.value.clone());
                 }
                 record.repeated_reference_schema_selection = repeated_reference_schema_selection(
-                    record.repeated_reference_suffix.as_ref(),
+                    record.repeated_reference_suffix().as_ref(),
                     catalog,
                 );
             }
@@ -9329,9 +9342,7 @@ fn native_object_graph(
                     storage_design_object: None,
                 }),
                 payload: record.payload().clone(),
-                repeated_reference_suffix: record.repeated_reference_suffix().cloned(),
                 repeated_reference_schema_selection: None,
-                subtype: record.subtype(),
                 references: Vec::new(),
             }
         })

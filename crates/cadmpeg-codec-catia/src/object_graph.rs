@@ -95,7 +95,22 @@ impl TryFrom<ObjectRecordWire> for ObjectRecord {
 /// Inline or nested body of one `7C09` object record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "ObjectRecordBodyWire", into = "ObjectRecordBodyWire")]
 pub enum ObjectRecordBody {
+    /// Complete alternate inline body when the record has no nested `7C0A`.
+    Inline(Vec<u8>),
+    /// Nested head tokens and `7C0A` payload.
+    Nested {
+        /// Decoded head tokens.
+        head: Vec<HeadToken>,
+        /// Decoded nested payload.
+        payload: ObjectPayload,
+    },
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+enum ObjectRecordBodyWire {
     /// Complete alternate inline body when the record has no nested `7C0A`.
     Inline(Vec<u8>),
     /// Nested head tokens and `7C0A` payload.
@@ -110,6 +125,42 @@ pub enum ObjectRecordBody {
         /// Structural payload classification.
         subtype: PayloadSubtype,
     },
+}
+
+impl From<ObjectRecordBody> for ObjectRecordBodyWire {
+    fn from(body: ObjectRecordBody) -> Self {
+        match body {
+            ObjectRecordBody::Inline(bytes) => Self::Inline(bytes),
+            ObjectRecordBody::Nested { head, payload } => Self::Nested {
+                subtype: classify(&payload.fields),
+                repeated_reference_suffix: repeated_reference_suffix(&payload),
+                head,
+                payload,
+            },
+        }
+    }
+}
+impl TryFrom<ObjectRecordBodyWire> for ObjectRecordBody {
+    type Error = &'static str;
+    fn try_from(wire: ObjectRecordBodyWire) -> Result<Self, Self::Error> {
+        match wire {
+            ObjectRecordBodyWire::Inline(bytes) => Ok(Self::Inline(bytes)),
+            ObjectRecordBodyWire::Nested {
+                head,
+                payload,
+                subtype,
+                repeated_reference_suffix: suffix,
+            } => {
+                if subtype != classify(&payload.fields) {
+                    return Err("subtype disagrees with payload");
+                }
+                if suffix != repeated_reference_suffix(&payload) {
+                    return Err("repeated_reference_suffix disagrees with payload");
+                }
+                Ok(Self::Nested { head, payload })
+            }
+        }
+    }
 }
 
 impl ObjectRecord {
@@ -144,21 +195,8 @@ impl ObjectRecord {
         }
     }
 
-    pub fn repeated_reference_suffix(&self) -> Option<&RepeatedReferenceSuffix> {
-        match &self.body {
-            ObjectRecordBody::Inline(_) => None,
-            ObjectRecordBody::Nested {
-                repeated_reference_suffix,
-                ..
-            } => repeated_reference_suffix.as_ref(),
-        }
-    }
-
     pub fn subtype(&self) -> PayloadSubtype {
-        match &self.body {
-            ObjectRecordBody::Inline(_) => PayloadSubtype::Empty,
-            ObjectRecordBody::Nested { subtype, .. } => *subtype,
-        }
+        classify(&self.payload().fields)
     }
 }
 
@@ -759,17 +797,7 @@ fn parse_candidate(
                 let lead = *head_bytes.first()?;
                 let head = decode_head(head_bytes);
                 let payload = decode_payload(&data[child + 6..record_end])?;
-                let repeated_reference_suffix = repeated_reference_suffix(&payload);
-                let subtype = classify(&payload.fields);
-                (
-                    lead,
-                    ObjectRecordBody::Nested {
-                        head,
-                        payload,
-                        repeated_reference_suffix,
-                        subtype,
-                    },
-                )
+                (lead, ObjectRecordBody::Nested { head, payload })
             }
             None if is_inline_body(body) => {
                 let lead = body[0];
@@ -1553,7 +1581,7 @@ fn blob_declared_end(bytes: &[u8], at: usize) -> Option<usize> {
     at.checked_add(5)?.checked_add(declared_len)
 }
 
-fn classify(fields: &[PayloadField]) -> PayloadSubtype {
+pub(crate) fn classify(fields: &[PayloadField]) -> PayloadSubtype {
     if fields
         .iter()
         .any(|field| matches!(field, PayloadField::BulkTable { .. }))

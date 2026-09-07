@@ -349,8 +349,6 @@ impl CatiaNative {
                     || paired_entity.is_some_and(|entity| entity.object_record != record.id)
                     || (record.storage_record(), record.storage_design_object())
                         != (expected_storage.0.as_deref(), expected_storage.1.as_deref())
-                    || record.repeated_reference_suffix
-                        != object_graph::repeated_reference_suffix(&record.payload)
                     || record.inline_body.as_ref().is_some_and(|body| {
                         (graph_entities.is_empty() && !object_graph::is_inline_body(body))
                             || body.first() != Some(&record.lead)
@@ -360,7 +358,6 @@ impl CatiaNative {
                             || record.storage_ref().is_some()
                             || record.payload.size != 0
                             || !record.payload.fields.is_empty()
-                            || record.subtype != PayloadSubtype::Empty
                     })
                     || record.inline_body.is_none() && record.head.is_empty()
                     || record.references
