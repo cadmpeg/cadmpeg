@@ -1118,13 +1118,13 @@ fn parse_list(
     kind: &'static str,
 ) -> (Vec<ViewRecord>, Vec<LossNote>) {
     let mut losses = Vec::new();
-    let mut reader = match BoundedReader::new(data, record.body.start, record.body.end) {
+    let mut reader = match BoundedReader::new(data, record.body().start, record.body().end) {
         Ok(reader) => reader,
         Err(error) => {
             losses.push(
                 crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
                     "{kind} view list at offset {} could not be framed: {error}",
-                    record.body.start
+                    record.body().start
                 )),
             );
             return (Vec::new(), losses);
@@ -1136,7 +1136,7 @@ fn parse_list(
             losses.push(
                 crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
                     "{kind} view list at offset {} has no readable count: {error}",
-                    record.body.start
+                    record.body().start
                 )),
             );
             return (Vec::new(), losses);
@@ -1146,7 +1146,7 @@ fn parse_list(
         losses.push(
             crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
                 "{kind} view list at offset {} has a negative count {signed_count}",
-                record.body.start
+                record.body().start
             )),
         );
         return (Vec::new(), losses);
@@ -1155,7 +1155,7 @@ fn parse_list(
         losses.push(
             crate::loss::RhinoLossCode::PresentationRecordDropped.note(format!(
                 "{kind} view list at offset {} exceeds the 65536-entry bound",
-                record.body.start
+                record.body().start
             )),
         );
         return (Vec::new(), losses);
@@ -1216,7 +1216,7 @@ fn parse_named_cplanes(
     archive: ArchiveVersion,
     scale: f64,
 ) -> Result<Vec<NamedConstructionPlane>, FramingError> {
-    let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
+    let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
     let count_offset = reader.position();
     let count = usize::try_from(reader.i32()?)
         .ok()
@@ -1520,13 +1520,7 @@ mod tests {
         let view = long_chunk(archive, super::VIEW_RECORD, &[0]);
         let mut body = 1_i32.to_le_bytes().to_vec();
         body.extend(view);
-        let record = Record {
-            typecode: super::NAMED_VIEWS,
-            range: 0..body.len(),
-            body: 0..body.len(),
-            short: false,
-            value: 0,
-        };
+        let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
         let (views, losses) = parse_list(&body, &record, archive, 1.0, "named");
         assert!(views.is_empty());
@@ -1543,13 +1537,7 @@ mod tests {
         let child = crc_chunk(archive, NAMED_CPLANES, &[0]);
         let mut body = 1_i32.to_le_bytes().to_vec();
         body.extend(child);
-        let record = Record {
-            typecode: super::NAMED_VIEWS,
-            range: 0..body.len(),
-            body: 0..body.len(),
-            short: false,
-            value: 0,
-        };
+        let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
         let (views, losses) = parse_list(&body, &record, archive, 1.0, "named");
         assert!(views.is_empty());
@@ -1572,13 +1560,7 @@ mod tests {
         view[crc_offset] ^= 1;
         let mut body = 1_i32.to_le_bytes().to_vec();
         body.extend(view);
-        let record = Record {
-            typecode: super::NAMED_VIEWS,
-            range: 0..body.len(),
-            body: 0..body.len(),
-            short: false,
-            value: 0,
-        };
+        let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
         let (views, losses) = parse_list(&body, &record, archive, 1.0, "named");
         assert_eq!(views.len(), 1);
@@ -1608,13 +1590,7 @@ mod tests {
         );
         let mut body = 1_i32.to_le_bytes().to_vec();
         body.extend(view);
-        let record = Record {
-            typecode: super::NAMED_VIEWS,
-            range: 0..body.len(),
-            body: 0..body.len(),
-            short: false,
-            value: 0,
-        };
+        let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
         let (views, losses) = parse_list(&body, &record, archive, 1.0, "named");
         assert_eq!(views.len(), 1);
@@ -1641,13 +1617,7 @@ mod tests {
         );
         let mut body = 1_i32.to_le_bytes().to_vec();
         body.extend(view);
-        let record = Record {
-            typecode: super::NAMED_VIEWS,
-            range: 0..body.len(),
-            body: 0..body.len(),
-            short: false,
-            value: 0,
-        };
+        let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
         let (views, losses) = parse_list(&body, &record, archive, 1.0, "named");
         assert_eq!(views.len(), 1);
@@ -1779,13 +1749,7 @@ mod tests {
 
         let mut body = 1_i32.to_le_bytes().to_vec();
         body.extend(make_view(&attributes));
-        let record = Record {
-            typecode: super::NAMED_VIEWS,
-            range: 0..body.len(),
-            body: 0..body.len(),
-            short: false,
-            value: 0,
-        };
+        let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
         let (views, losses) = parse_list(&body, &record, archive, 1.0, "named");
         assert_eq!(views.len(), 1);
         assert!(losses.is_empty());
@@ -1795,13 +1759,11 @@ mod tests {
         corrupted_attributes[crc_offset] ^= 1;
         let mut corrupted_body = 1_i32.to_le_bytes().to_vec();
         corrupted_body.extend(make_view(&corrupted_attributes));
-        let record = Record {
-            typecode: super::NAMED_VIEWS,
-            range: 0..corrupted_body.len(),
-            body: 0..corrupted_body.len(),
-            short: false,
-            value: 0,
-        };
+        let record = Record::long(
+            super::NAMED_VIEWS,
+            0..corrupted_body.len(),
+            0..corrupted_body.len(),
+        );
         let (views, losses) = parse_list(&corrupted_body, &record, archive, 1.0, "named");
         assert_eq!(views.len(), 1);
         assert_eq!(losses.len(), 1);
@@ -1862,13 +1824,7 @@ mod tests {
         let parse = |view: Vec<u8>| {
             let mut body = 1_i32.to_le_bytes().to_vec();
             body.extend(view);
-            let record = Record {
-                typecode: super::NAMED_VIEWS,
-                range: 0..body.len(),
-                body: 0..body.len(),
-                short: false,
-                value: 0,
-            };
+            let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
             parse_list(&body, &record, archive, 1.0, "named")
         };
 
@@ -1942,13 +1898,7 @@ mod tests {
 
         let mut body = 1_i32.to_le_bytes().to_vec();
         body.extend(make_view(&viewport_userdata));
-        let record = Record {
-            typecode: super::NAMED_VIEWS,
-            range: 0..body.len(),
-            body: 0..body.len(),
-            short: false,
-            value: 0,
-        };
+        let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
         let (views, losses) = parse_list(&body, &record, archive, 1.0, "named");
         assert_eq!(views.len(), 1);
         assert_eq!(losses.len(), 1);
@@ -1962,13 +1912,11 @@ mod tests {
         corrupted_userdata[crc_offset] ^= 1;
         let mut corrupted_body = 1_i32.to_le_bytes().to_vec();
         corrupted_body.extend(make_view(&corrupted_userdata));
-        let record = Record {
-            typecode: super::NAMED_VIEWS,
-            range: 0..corrupted_body.len(),
-            body: 0..corrupted_body.len(),
-            short: false,
-            value: 0,
-        };
+        let record = Record::long(
+            super::NAMED_VIEWS,
+            0..corrupted_body.len(),
+            0..corrupted_body.len(),
+        );
         let (views, losses) = parse_list(&corrupted_body, &record, archive, 1.0, "named");
         assert_eq!(views.len(), 1);
         assert!(losses.iter().any(|loss| {

@@ -567,7 +567,7 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
     let mut wrapper_warnings = Vec::new();
     let (class_descriptor, userdata) = crate::objects::parse_class_wrapper_with_userdata(
         &data,
-        record.body.clone(),
+        record.body(),
         archive,
         &mut wrapper_warnings,
     )
@@ -735,13 +735,7 @@ fn layer_metadata(
             typecode: 0x1000_0014,
             range: 0..0,
             body: 0..0,
-            records: vec![crate::container::Record {
-                typecode: 0xa000_0026,
-                range: 0..0,
-                body: 0..0,
-                short: true,
-                value,
-            }],
+            records: vec![crate::container::Record::short(0xa000_0026, 0..0, value)],
             record_count: 1,
             object_typecodes: std::collections::BTreeMap::new(),
         });
@@ -1100,13 +1094,8 @@ fn parses_selector_widths_and_skips_direct_suffix() {
     let mut material_data = 42_i32.to_le_bytes().to_vec();
     material_data.extend(3_i32.to_le_bytes());
     material_data.extend([0xaa, 0xbb]);
-    let material_record = crate::container::Record {
-        typecode: 0x2000_8039,
-        range: 0..material_data.len(),
-        body: 0..material_data.len(),
-        short: false,
-        value: material_data.len() as i64,
-    };
+    let material_record =
+        crate::container::Record::long(0x2000_8039, 0..material_data.len(), 0..material_data.len());
     settings::parse_setting(
         &material_data,
         &material_record,
@@ -1120,13 +1109,8 @@ fn parses_selector_widths_and_skips_direct_suffix() {
     let mut color_data = vec![1, 2, 3, 4];
     color_data.extend(2_i32.to_le_bytes());
     color_data.extend([0xcc, 0xdd]);
-    let color_record = crate::container::Record {
-        typecode: 0x2000_803a,
-        range: 0..color_data.len(),
-        body: 0..color_data.len(),
-        short: false,
-        value: color_data.len() as i64,
-    };
+    let color_record =
+        crate::container::Record::long(0x2000_803a, 0..color_data.len(), 0..color_data.len());
     settings::parse_setting(
         &color_data,
         &color_record,
@@ -1143,13 +1127,7 @@ fn parses_selector_widths_and_skips_direct_suffix() {
         (0xa000_0132, 7),
         (0xa000_0133, 9),
     ] {
-        let record = crate::container::Record {
-            typecode,
-            range: 0..0,
-            body: 0..0,
-            short: true,
-            value,
-        };
+        let record = crate::container::Record::short(typecode, 0..0, value);
         settings::parse_setting(&[], &record, &mut settings_value, ArchiveVersion::V8)
             .expect("required invariant");
     }
@@ -1163,13 +1141,7 @@ fn parses_selector_widths_and_skips_direct_suffix() {
 fn current_material_accepts_the_source_reader_i32_range() {
     let mut data = (-2_i32).to_le_bytes().to_vec();
     data.extend(3_i32.to_le_bytes());
-    let record = crate::container::Record {
-        typecode: 0x2000_8039,
-        range: 0..data.len(),
-        body: 0..data.len(),
-        short: false,
-        value: data.len() as i64,
-    };
+    let record = crate::container::Record::long(0x2000_8039, 0..data.len(), 0..data.len());
     let mut settings_value = settings::DocumentSettings::default();
 
     settings::parse_setting(&data, &record, &mut settings_value, ArchiveVersion::V8)
@@ -1186,20 +1158,8 @@ fn duplicate_singleton_settings_use_the_later_valid_record_and_report_it() {
         range: 0..0,
         body: 0..0,
         records: vec![
-            crate::container::Record {
-                typecode: 0xa000_0038,
-                range: 0..0,
-                body: 0..0,
-                short: true,
-                value: 3,
-            },
-            crate::container::Record {
-                typecode: 0xa000_0038,
-                range: 0..0,
-                body: 0..0,
-                short: true,
-                value: 7,
-            },
+            crate::container::Record::short(0xa000_0038, 0..0, 3),
+            crate::container::Record::short(0xa000_0038, 0..0, 7),
         ],
         record_count: 2,
         object_typecodes: std::collections::BTreeMap::new(),

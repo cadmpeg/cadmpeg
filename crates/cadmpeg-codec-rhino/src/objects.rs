@@ -1455,14 +1455,14 @@ pub(crate) fn parse_object_record(
     global_warnings: &mut Vec<String>,
 ) -> Result<ObjectRecord, FramingError> {
     let mut warnings = Vec::new();
-    if record.typecode != 0x2000_8070 || record.short {
+    if record.typecode != 0x2000_8070 || record.is_short() {
         return Err(FramingError::structural(
             record.range.start,
             "object record must be long-framed",
         ));
     }
-    let mut offset = record.body.start;
-    let type_chunk = child(bytes, offset, record.body.end, archive, false)?;
+    let mut offset = record.body().start;
+    let type_chunk = child(bytes, offset, record.body().end, archive, false)?;
     if type_chunk.typecode != OBJECT_RECORD_TYPE || !type_chunk.short() {
         return Err(FramingError::structural(
             type_chunk.header_start,
@@ -1472,7 +1472,7 @@ pub(crate) fn parse_object_record(
     let object_type = u32::try_from(type_chunk.value())
         .map_err(|_| FramingError::structural(type_chunk.header_start, "negative object type"))?;
     offset = type_chunk.next_offset();
-    let class = child(bytes, offset, record.body.end, archive, false)?;
+    let class = child(bytes, offset, record.body().end, archive, false)?;
     require_long(&class, OPENNURBS_CLASS)?;
     offset = class.body().start;
     let uuid_chunk = child(bytes, offset, class.body().end, archive, true)?;
@@ -1525,11 +1525,11 @@ pub(crate) fn parse_object_record(
     let mut unknown_trailer = Vec::new();
     let mut phase = 0_u8;
     let mut object_end_seen = false;
-    while offset < record.body.end {
-        let item = child(bytes, offset, record.body.end, archive, false)?;
+    while offset < record.body().end {
+        let item = child(bytes, offset, record.body().end, archive, false)?;
         if item.typecode == OBJECT_RECORD_END {
             require_short_zero(&item, OBJECT_RECORD_END)?;
-            if item.next_offset() != record.body.end {
+            if item.next_offset() != record.body().end {
                 return Err(FramingError::structural(
                     item.header_start,
                     "object end is not final",
@@ -1578,9 +1578,9 @@ pub(crate) fn parse_object_record(
         }
         offset = item.next_offset();
     }
-    if !object_end_seen || offset != record.body.end {
+    if !object_end_seen || offset != record.body().end {
         return Err(FramingError::structural(
-            record.body.end,
+            record.body().end,
             "object record is missing object end",
         ));
     }

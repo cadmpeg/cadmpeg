@@ -99,12 +99,60 @@ pub(crate) struct Record {
     pub(crate) typecode: u32,
     /// Complete chunk range, including header and checksum.
     pub(crate) range: std::ops::Range<usize>,
-    /// Payload/body range, excluding chunk header and checksum.
-    pub(crate) body: std::ops::Range<usize>,
-    /// Whether the record is a short chunk.
-    pub(crate) short: bool,
-    /// Inline value for a short chunk, or zero for a long chunk.
-    pub(crate) value: i64,
+    form: RecordBody,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum RecordBody {
+    Short(i64),
+    Long(std::ops::Range<usize>),
+}
+
+impl Record {
+    pub(crate) fn short(typecode: u32, range: std::ops::Range<usize>, value: i64) -> Self {
+        Self {
+            typecode,
+            range,
+            form: RecordBody::Short(value),
+        }
+    }
+
+    pub(crate) fn long(
+        typecode: u32,
+        range: std::ops::Range<usize>,
+        body: std::ops::Range<usize>,
+    ) -> Self {
+        Self {
+            typecode,
+            range,
+            form: RecordBody::Long(body),
+        }
+    }
+
+    fn from_chunk(chunk: &crate::chunks::Chunk) -> Self {
+        match chunk.short_value() {
+            Some(value) => Self::short(chunk.typecode, chunk.range(), value),
+            None => Self::long(chunk.typecode, chunk.range(), chunk.body()),
+        }
+    }
+
+    pub(crate) fn body(&self) -> std::ops::Range<usize> {
+        match &self.form {
+            RecordBody::Short(_) => self.range.end..self.range.end,
+            RecordBody::Long(body) => body.clone(),
+        }
+    }
+
+    pub(crate) fn is_short(&self) -> bool {
+        matches!(self.form, RecordBody::Short(_))
+    }
+
+    pub(crate) fn short_value(&self) -> Option<i64> {
+        match self.form {
+            RecordBody::Short(value) => Some(value),
+            RecordBody::Long(_) => None,
+        }
+    }
 }
 
 /// A complete direct table record whose payload has no typed owner.
@@ -674,22 +722,6 @@ fn plugin_list_checksum_children(
     Ok(children)
 }
 
-fn parse_record(
-    data: &[u8],
-    offset: usize,
-    end: usize,
-    archive: ArchiveVersion,
-) -> Result<Record, CodecError> {
-    let chunk = chunk_at(data, offset, end, archive, false).map_err(framing_error)?;
-    Ok(Record {
-        typecode: chunk.typecode,
-        range: offset..chunk.next_offset(),
-        body: chunk.body(),
-        short: chunk.short(),
-        value: chunk.value(),
-    })
-}
-
 fn table_rank(typecode: u32) -> Option<u8> {
     // The obsolete layerset occupies the compatibility slot between layer and
     // group; it is not a second layer table and cannot appear elsewhere.
@@ -823,8 +855,10 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
     let archive = header.archive_version;
     let archive_start = header.start_offset;
     let comment_offset = archive_start + file_header::LEN;
-    let comment = parse_record(data, comment_offset, data.len(), archive)?;
-    if comment.typecode != TCODE_COMMENT || comment.short {
+    let comment = Record::from_chunk(
+        &chunk_at(data, comment_offset, data.len(), archive, false).map_err(framing_error)?,
+    );
+    if comment.typecode != TCODE_COMMENT || comment.is_short() {
         return Err(CodecError::Malformed(
             "first post-header chunk is not a long comment".to_string(),
         ));
@@ -914,10 +948,8 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
                 .rev()
                 .filter(|table| table_base(table.typecode) == TCODE_PROPERTIES)
                 .flat_map(|table| table.records.iter().rev())
-                .find_map(|record| {
-                    (record.typecode == TCODE_WRITER_VERSION && record.short)
-                        .then_some(record.value)
-                })
+                .filter(|record| record.typecode == TCODE_WRITER_VERSION)
+                .find_map(Record::short_value)
         } else {
             None
         };
@@ -951,16 +983,10 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
             table_record_count = table_record_count
                 .checked_add(1)
                 .expect("document record budget bounds table count");
-            let record = Record {
-                typecode: child.typecode,
-                range: child_offset..child.next_offset(),
-                body: child.body(),
-                short: child.short(),
-                value: child.value(),
-            };
+            let record = Record::from_chunk(&child);
             let opaque = table_base(chunk.typecode) == TCODE_USER
-                || !record_is_allowed(chunk.typecode, record.typecode, record.short);
-            if !record_is_allowed(chunk.typecode, record.typecode, record.short) {
+                || !record_is_allowed(chunk.typecode, record.typecode, record.is_short());
+            if !record_is_allowed(chunk.typecode, record.typecode, record.is_short()) {
                 if known_record(record.typecode) {
                     return Err(CodecError::malformed(format_args!(
                         "record typecode {:#x} is invalid or short-framed in table {:#x}",

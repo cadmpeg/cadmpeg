@@ -490,7 +490,7 @@ fn scan_retains_history_record_source_boundaries() {
         .expect("history table descriptor");
     assert_eq!(history.records.len(), 1);
     assert_eq!(history.records[0].typecode, 0x2000_807b);
-    assert_eq!(&scan.data[history.records[0].body.clone()], &[1, 2, 3, 4]);
+    assert_eq!(&scan.data[history.records[0].body()], &[1, 2, 3, 4]);
 }
 
 #[test]

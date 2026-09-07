@@ -1019,12 +1019,8 @@ pub(crate) fn parse_definitions(
     for record in records {
         let parsed = (|| {
             let mut warnings = Vec::new();
-            let (class, userdata) = parse_class_wrapper_with_userdata(
-                data,
-                record.body.clone(),
-                archive,
-                &mut warnings,
-            )?;
+            let (class, userdata) =
+                parse_class_wrapper_with_userdata(data, record.body(), archive, &mut warnings)?;
             if class.class_uuid != INSTANCE_DEFINITION_UUID {
                 return Err(FramingError::Structural {
                     offset: record.range.start,

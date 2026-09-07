@@ -932,17 +932,17 @@ fn finish(reader: &mut BoundedReader<'_>, _label: &str) -> Result<(), FramingErr
 }
 
 fn short_index(record: &Record, label: &str) -> Result<i64, FramingError> {
-    if !record.short || record.value < -1 || record.value > i64::from(i32::MAX) {
-        return Err(FramingError::Structural {
+    record
+        .short_value()
+        .filter(|value| (-1..=i64::from(i32::MAX)).contains(value))
+        .ok_or_else(|| FramingError::Structural {
             offset: record.range.start,
             message: format!("{label} is not a valid short index"),
-        });
-    }
-    Ok(record.value)
+        })
 }
 
 fn parse_revision(data: &[u8], record: &Record) -> Result<RevisionHistory, FramingError> {
-    let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
+    let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
     let version = packed(&mut reader)?;
     if version.0 != 1 {
         return Err(FramingError::structural(
@@ -965,7 +965,7 @@ fn parse_revision(data: &[u8], record: &Record) -> Result<RevisionHistory, Frami
 }
 
 fn parse_notes(data: &[u8], record: &Record) -> Result<Notes, FramingError> {
-    let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
+    let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
     let version = packed(&mut reader)?;
     if version.0 != 1 {
         return Err(FramingError::structural(
@@ -993,7 +993,7 @@ fn parse_notes(data: &[u8], record: &Record) -> Result<Notes, FramingError> {
 }
 
 fn parse_application(data: &[u8], record: &Record) -> Result<Application, FramingError> {
-    let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
+    let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
     packed(&mut reader)?;
     let value = Application {
         source: SourceRange {
@@ -1041,7 +1041,7 @@ pub(crate) fn parse_units(
     data: &[u8],
     record: &Record,
 ) -> Result<UnitsAndTolerances, FramingError> {
-    let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
+    let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
     parse_units_reader(
         &mut reader,
         SourceRange {
@@ -1299,7 +1299,7 @@ pub(crate) fn parse_plugin_list(
     record: &Record,
     archive: ArchiveVersion,
 ) -> Result<PluginList, FramingError> {
-    let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
+    let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
     let version = packed(&mut reader)?;
     if version.0 != 1 {
         return Err(FramingError::structural(
@@ -1525,7 +1525,7 @@ pub(crate) fn parse_settings_attributes(
     record: &Record,
     archive: ArchiveVersion,
 ) -> Result<SettingsAttributes, FramingError> {
-    let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
+    let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
     let version = packed(&mut reader)?;
     if version.0 != 1 {
         return Err(FramingError::structural(
@@ -1625,7 +1625,7 @@ fn parse_mesh_record(
     record: &Record,
     archive: ArchiveVersion,
 ) -> Result<MeshParameters, FramingError> {
-    let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
+    let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
     let value = parse_mesh_parameters(data, &mut reader, archive, true)?;
     finish(&mut reader, "mesh settings")?;
     Ok(value)
@@ -2108,7 +2108,7 @@ fn parse_layer(
     losses: &mut Vec<cadmpeg_ir::report::LossNote>,
 ) -> Result<(LayerRecord, bool), FramingError> {
     let (class, userdata) =
-        parse_class_wrapper_with_userdata(data, record.body.clone(), archive, warnings)?;
+        parse_class_wrapper_with_userdata(data, record.body(), archive, warnings)?;
     if class.class_uuid != ON_LAYER_UUID {
         return Err(FramingError::Structural {
             offset: record.range.start,
@@ -2386,8 +2386,10 @@ pub(crate) fn parse_metadata(
                 };
             let result = if table_type == PROPERTIES {
                 match record.typecode {
-                    WRITER_VERSION if record.short => {
-                        metadata.properties.writer_version = Some(record.value);
+                    WRITER_VERSION => {
+                        if let Some(value) = record.short_value() {
+                            metadata.properties.writer_version = Some(value);
+                        }
                         Ok(())
                     }
                     REVISION_HISTORY => parse_revision(data, record)
@@ -2539,7 +2541,7 @@ fn next_layer_index(used: &BTreeSet<i32>) -> i32 {
 }
 
 fn utf16_record(data: &[u8], record: &Record) -> Result<String, FramingError> {
-    let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
+    let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
     let value = utf16(&mut reader)?;
     finish(&mut reader, "UTF-16 property")?;
     Ok(value)
@@ -2567,43 +2569,45 @@ pub(crate) fn parse_setting(
             Ok(())
         }
         CURRENT_MATERIAL => {
-            if record.short || record.body.len() < 8 {
+            if record.body().len() < 8 {
                 return Err(FramingError::Structural {
                     offset: record.range.start,
                     message: "current material must be a long eight-byte index/source pair"
                         .to_string(),
                 });
             }
-            let material_index = View::i32_le_at(data, record.body.start).expect("length checked");
+            let material_index =
+                View::i32_le_at(data, record.body().start).expect("length checked");
             settings.current_material = Some(material_index);
             settings.current_material_source =
-                Some(View::i32_le_at(data, record.body.start + 4).expect("length checked"));
+                Some(View::i32_le_at(data, record.body().start + 4).expect("length checked"));
             Ok(())
         }
         CURRENT_COLOR => {
-            if record.short || record.body.len() < 8 {
+            if record.body().len() < 8 {
                 return Err(FramingError::Structural {
                     offset: record.range.start,
                     message: "current color must be a long color/source pair".to_string(),
                 });
             }
             settings.current_color = Some(
-                data[record.body.start..record.body.start + 4]
+                data[record.body().start..record.body().start + 4]
                     .try_into()
                     .expect("length checked"),
             );
             settings.current_color_source =
-                Some(View::i32_le_at(data, record.body.start + 4).expect("length checked"));
+                Some(View::i32_le_at(data, record.body().start + 4).expect("length checked"));
             Ok(())
         }
         CURRENT_WIRE_DENSITY => {
-            if !record.short || record.value < -2 || record.value > i64::from(i32::MAX) {
-                return Err(FramingError::Structural {
+            let value = record
+                .short_value()
+                .filter(|value| (-2..=i64::from(i32::MAX)).contains(value))
+                .ok_or_else(|| FramingError::Structural {
                     offset: record.range.start,
                     message: "current wire density is not a valid short value".to_string(),
-                });
-            }
-            settings.current_wire_density = Some(record.value);
+                })?;
+            settings.current_wire_density = Some(value);
             Ok(())
         }
         CURRENT_FONT => {

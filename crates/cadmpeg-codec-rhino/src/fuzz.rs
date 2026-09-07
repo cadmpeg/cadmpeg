@@ -80,13 +80,7 @@ pub fn object_record(data: &[u8]) {
     if data.len() < 2 {
         return;
     }
-    let record = Record {
-        typecode: 0x2000_8070,
-        range: 1..data.len(),
-        body: 1..data.len(),
-        short: false,
-        value: 0,
-    };
+    let record = Record::long(0x2000_8070, 1..data.len(), 1..data.len());
     let mut warnings = Vec::new();
     let _ = crate::objects::parse_object_record(
         data,

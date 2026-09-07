@@ -1358,7 +1358,7 @@ fn class_data(
     archive: ArchiveVersion,
     expected: Uuid,
 ) -> Result<Range<usize>, FramingError> {
-    let class = parse_class_wrapper(data, record.body.clone(), archive, &mut Vec::new())?;
+    let class = parse_class_wrapper(data, record.body(), archive, &mut Vec::new())?;
     if class.class_uuid != expected {
         return Err(FramingError::structural(
             record.range.start,
@@ -1374,7 +1374,7 @@ fn class_data_prefix(
     archive: ArchiveVersion,
     expected: Uuid,
 ) -> Result<Range<usize>, FramingError> {
-    let wrapper = chunk_at(data, record.body.start, record.body.end, archive, false)?;
+    let wrapper = chunk_at(data, record.body().start, record.body().end, archive, false)?;
     let class = parse_class_wrapper(
         data,
         wrapper.header_start..wrapper.next_offset(),
@@ -1399,15 +1399,15 @@ fn parse_light_record_attributes(
 ) -> Result<Option<LightAttributesRecord>, FramingError> {
     let mut warnings = Vec::new();
     let _ = class_data_prefix(data, record, archive, LIGHT)?;
-    let wrapper = chunk_at(data, record.body.start, record.body.end, archive, false)?;
+    let wrapper = chunk_at(data, record.body().start, record.body().end, archive, false)?;
     let mut offset = wrapper.next_offset();
     let mut attributes_chunk = None;
     let mut attributes_body_range = None;
     let mut attributes_userdata_body_range = None;
     let mut phase = 0_u8;
     let mut record_end_seen = false;
-    while offset < record.body.end {
-        let item = chunk_at(data, offset, record.body.end, archive, false)?;
+    while offset < record.body().end {
+        let item = chunk_at(data, offset, record.body().end, archive, false)?;
         if item.typecode == LIGHT_RECORD_END {
             if !item.short() || item.value() != 0 {
                 return Err(FramingError::structural(
@@ -1415,7 +1415,7 @@ fn parse_light_record_attributes(
                     "light record end must be short with value zero",
                 ));
             }
-            if item.next_offset() != record.body.end {
+            if item.next_offset() != record.body().end {
                 return Err(FramingError::structural(
                     item.header_start,
                     "light record end is not final",
@@ -1457,7 +1457,7 @@ fn parse_light_record_attributes(
     }
     if !record_end_seen {
         return Err(FramingError::structural(
-            record.body.end,
+            record.body().end,
             "light record is missing light record end",
         ));
     }
@@ -1557,7 +1557,7 @@ fn class_data_with_userdata(
     expected: Uuid,
 ) -> Result<(Range<usize>, Vec<UserdataDescriptor>), FramingError> {
     let (class, userdata) =
-        parse_class_wrapper_with_userdata(data, record.body.clone(), archive, &mut Vec::new())?;
+        parse_class_wrapper_with_userdata(data, record.body(), archive, &mut Vec::new())?;
     if class.class_uuid != expected {
         return Err(FramingError::structural(
             record.range.start,
@@ -4051,12 +4051,9 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> NativeInstall {
                         images.push(value);
                         parsed = true;
                     }
-                } else if let Ok(class) = parse_class_wrapper(
-                    scan.data,
-                    record.body.clone(),
-                    scan.archive,
-                    &mut Vec::new(),
-                ) {
+                } else if let Ok(class) =
+                    parse_class_wrapper(scan.data, record.body(), scan.archive, &mut Vec::new())
+                {
                     if matches!(class.class_uuid, WINDOWS_BITMAP | WINDOWS_BITMAP_EX) {
                         if let Ok(value) = parse_windows_bitmap(
                             scan.data,
@@ -4746,13 +4743,7 @@ mod tests {
             0x8200_006f,
             0,
         ));
-        let record = Record {
-            typecode: 0x2000_8060,
-            range: 0..body.len(),
-            body: 0..body.len(),
-            short: false,
-            value: 0,
-        };
+        let record = Record::long(0x2000_8060, 0..body.len(), 0..body.len());
 
         let range = class_data_prefix(&body, &record, archive, LIGHT).expect("light class");
         assert_eq!(&body[range], payload);
@@ -4806,13 +4797,7 @@ mod tests {
             LIGHT_RECORD_END,
             0,
         ));
-        let record = Record {
-            typecode: 0x2000_8060,
-            range: 0..body.len(),
-            body: 0..body.len(),
-            short: false,
-            value: 0,
-        };
+        let record = Record::long(0x2000_8060, 0..body.len(), 0..body.len());
         let mut losses = Vec::new();
         let value = parse_light_record_attributes(
             &body,

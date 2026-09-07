@@ -570,16 +570,16 @@ fn parse_record(
     archive: ArchiveVersion,
     warnings: &mut Vec<String>,
 ) -> Result<HistoryRecord, FramingError> {
-    if record.typecode != HISTORY_RECORD || record.short {
+    if record.typecode != HISTORY_RECORD || record.is_short() {
         return Err(FramingError::structural(
             record.range.start,
             "invalid history table record",
         ));
     }
-    let class = parse_class_wrapper(bytes, record.body.clone(), archive, warnings)?;
+    let class = parse_class_wrapper(bytes, record.body(), archive, warnings)?;
     if class.class_uuid != HISTORY_CLASS {
         return Err(FramingError::structural(
-            record.body.start,
+            record.body().start,
             format!("history record has class {}", class.class_uuid),
         ));
     }

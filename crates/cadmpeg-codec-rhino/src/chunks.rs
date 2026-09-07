@@ -501,6 +501,14 @@ impl Chunk {
         matches!(self.form, ChunkBody::Short { .. })
     }
 
+    /// Returns the inline value of a short chunk.
+    pub(crate) fn short_value(&self) -> Option<i64> {
+        match self.form {
+            ChunkBody::Short { value, .. } => Some(value),
+            ChunkBody::Long { .. } => None,
+        }
+    }
+
     /// Returns the short value, or the declared long-body length.
     pub(crate) fn value(&self) -> i64 {
         match &self.form {

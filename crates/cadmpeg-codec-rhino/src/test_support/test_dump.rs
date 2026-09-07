@@ -803,13 +803,7 @@ pub(crate) fn metadata_record(typecode: u32, data: Vec<u8>) -> (Vec<u8>, crate::
     let length = data.len();
     (
         data,
-        crate::container::Record {
-            typecode,
-            range: 0..length,
-            body: 0..length,
-            short: false,
-            value: 0,
-        },
+        crate::container::Record::long(typecode, 0..length, 0..length),
     )
 }
 

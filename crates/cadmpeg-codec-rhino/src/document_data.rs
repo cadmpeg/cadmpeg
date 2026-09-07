@@ -439,11 +439,11 @@ fn render_userdata(
     record: &Record,
     archive: ArchiveVersion,
 ) -> Result<RenderUserdataDescriptor, FramingError> {
-    let mut offset = record.body.start;
+    let mut offset = record.body().start;
     let mut items = Vec::new();
     let mut unknown_chunks = Vec::new();
-    while offset < record.body.end {
-        let chunk = chunk_at(data, offset, record.body.end, archive, false)?;
+    while offset < record.body().end {
+        let chunk = chunk_at(data, offset, record.body().end, archive, false)?;
         match chunk.typecode {
             CLASS_USERDATA => {
                 if chunk.short() {
@@ -472,7 +472,7 @@ fn render_userdata(
                     source: record.range.clone(),
                     items,
                     unknown_chunks,
-                    suffix: chunk.next_offset()..record.body.end,
+                    suffix: chunk.next_offset()..record.body().end,
                 });
             }
             0 => {
@@ -488,7 +488,7 @@ fn render_userdata(
         }
     }
     Err(FramingError::structural(
-        record.body.end,
+        record.body().end,
         "render userdata is missing its class end",
     ))
 }
@@ -592,15 +592,15 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> Vec<OpaqueRecord> {
         }
         for record in &table.records {
             let result = if record.typecode == ANNOTATION_SETTINGS {
-                annotation_settings(scan.data, record.body.clone(), record.range.start, scale)
+                annotation_settings(scan.data, record.body(), record.range.start, scale)
                     .map(|value| annotations.push(value))
             } else if record.typecode == GRID_DEFAULTS {
-                grid_defaults(scan.data, record.body.clone(), record.range.start, scale)
+                grid_defaults(scan.data, record.body(), record.range.start, scale)
                     .map(|value| grids.push(value))
             } else if record.typecode == RENDER_SETTINGS {
                 render_settings(
                     scan.data,
-                    record.body.clone(),
+                    record.body(),
                     record.range.start,
                     scan.archive,
                     scale,
