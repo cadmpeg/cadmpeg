@@ -327,7 +327,7 @@ pub(super) fn continue_fixed_kind_operations(
         id: "f3d:Design/BulkStream.dat:parameter-owner#97".into(),
         byte_offset: 0,
         frame_length: 104,
-        class_tag: "292".into(),
+        class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
         record_index: 97,
         scope_record_index: chamfer_scope.record_index,
         local_ordinal: 0,
@@ -418,7 +418,7 @@ pub(super) fn continue_fixed_kind_operations(
         id: indexed_revolve_scope.id.clone(),
         byte_offset: 0,
         frame_length: 104,
-        class_tag: "372".into(),
+        class_tag: crate::records::DesignClassTag::try_from("372".to_owned()).unwrap(),
         record_index: indexed_angle_record_index,
         scope_record_index: indexed_revolve_scope.record_index,
         local_ordinal: 0,
@@ -533,7 +533,7 @@ pub(super) fn continue_fixed_kind_operations(
         id: legacy_revolve_scope.id.clone(),
         byte_offset: 0,
         frame_length: 104,
-        class_tag: "372".into(),
+        class_tag: crate::records::DesignClassTag::try_from("372".to_owned()).unwrap(),
         record_index: legacy_angle_record_index,
         scope_record_index: legacy_revolve_scope.record_index,
         local_ordinal: 0,
@@ -1617,7 +1617,7 @@ pub(super) fn continue_fixed_kind_operations(
             ),
             byte_offset: 0,
             frame_length: 103,
-            class_tag: "342".into(),
+            class_tag: crate::records::DesignClassTag::try_from("342".to_owned()).unwrap(),
             record_index: owner_pipe_record_indexes[ordinal],
             scope_record_index: scope.record_index,
             local_ordinal: ordinal as u32,
@@ -1660,7 +1660,8 @@ pub(super) fn continue_fixed_kind_operations(
         ))
     );
     let mut wrong_owner_class = owner_pipe_owners.clone();
-    wrong_owner_class[0].class_tag = "341".into();
+    wrong_owner_class[0].class_tag =
+        crate::records::DesignClassTag::try_from("341".to_owned()).unwrap();
     assert_eq!(
         exact_path_feature_construction(
             &bytes,

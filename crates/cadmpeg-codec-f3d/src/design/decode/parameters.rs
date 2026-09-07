@@ -521,9 +521,8 @@ pub fn decode_parameter_owners(
 
 pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner> {
     let (class_tag, after_tag) = lp_ascii_filtered(frame, 0, 0..=2000, u8::is_ascii_graphic)?;
+    let class_tag = crate::records::DesignClassTag::try_from(class_tag).ok()?;
     if after_tag != indexed_header::RECORD_INDEX
-        || class_tag.len() != 3
-        || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
         || frame.get(owner_prefix::ZERO_RUN_8..owner_prefix::ONE_MARKER) != Some(&[0; 8])
         || frame.get(owner_prefix::ONE_MARKER..owner_prefix::SCOPE_MARKER) != Some(&[1, 1, 0, 0, 0])
         || frame.get(owner_prefix::SCOPE_MARKER) != Some(&1)
@@ -676,7 +675,7 @@ pub(crate) fn parse_legacy_parameter_owner_68(
         id: String::new(),
         byte_offset: 0,
         frame_length: u64::try_from(legacy_owner_68::LEN).ok()?,
-        class_tag,
+        class_tag: class_tag.try_into().ok()?,
         record_index,
         scope_record_index: 0,
         local_ordinal: 0,
@@ -739,7 +738,7 @@ pub(crate) fn parse_legacy_parameter_owner_88(
         id: String::new(),
         byte_offset: 0,
         frame_length: u64::try_from(legacy_owner_88::LEN).ok()?,
-        class_tag,
+        class_tag: class_tag.try_into().ok()?,
         record_index,
         scope_record_index,
         local_ordinal: 0,

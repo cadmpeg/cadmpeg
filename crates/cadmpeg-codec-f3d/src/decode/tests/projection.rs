@@ -1712,7 +1712,7 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
         id: format!("{stream}:design-parameter-owner#20"),
         byte_offset: 120,
         frame_length: 104,
-        class_tag: "292".into(),
+        class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
         record_index: 20,
         scope_record_index: 1,
         local_ordinal: 0,

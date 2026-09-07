@@ -7743,14 +7743,18 @@ fn validate_parameter_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
             _ => false,
         };
         let legacy_68_frame = owner.frame_length == 68
-            && design::decode::parameters::is_legacy_parameter_owner_68_class(&owner.class_tag)
+            && design::decode::parameters::is_legacy_parameter_owner_68_class(
+                owner.class_tag.as_str(),
+            )
             && owner.scope_record_index == 0
             && owner.local_ordinal == 0
             && parameter.is_some_and(|parameter| {
                 owner.evaluated_value_offset == parameter.evaluated_value_offset
             });
         let legacy_88_frame = owner.frame_length == 88
-            && design::decode::parameters::is_legacy_parameter_owner_88_class(&owner.class_tag)
+            && design::decode::parameters::is_legacy_parameter_owner_88_class(
+                owner.class_tag.as_str(),
+            )
             && owner.scope_record_index != 0
             && owner.local_ordinal == 0
             && parameter.is_some_and(|parameter| {
@@ -7765,9 +7769,7 @@ fn validate_parameter_owners(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 owner.scope_record_index,
                 owner.local_ordinal,
             ));
-        let valid = owner.class_tag.len() == 3
-            && owner.class_tag.bytes().all(|byte| byte.is_ascii_digit())
-            && owner.evaluated_value.is_finite()
+        let valid = owner.evaluated_value.is_finite()
             && frame_layout
             && (owner_first || parameter_first || companion_first)
             && scope_resolves

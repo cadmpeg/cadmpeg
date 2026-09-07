@@ -1875,7 +1875,7 @@ pub(crate) fn exact_assembly_alignment(
                 });
             if lanes
                 .iter()
-                .any(|owner| owner.class_tag != "282" || owner.frame_length != 103)
+                .any(|owner| owner.class_tag.as_str() != "282" || owner.frame_length != 103)
                 || !owner_reference_order_matches
                 || !scope
                     .reference_members
@@ -1895,7 +1895,7 @@ pub(crate) fn exact_assembly_alignment(
                 });
             if lanes
                 .iter()
-                .any(|owner| owner.class_tag != "284" || owner.frame_length != 103)
+                .any(|owner| owner.class_tag.as_str() != "284" || owner.frame_length != 103)
                 || !owner_reference_order_matches
                 || !scope
                     .reference_members
@@ -1912,7 +1912,7 @@ pub(crate) fn exact_assembly_alignment(
         ) {
             if lanes
                 .iter()
-                .any(|owner| owner.class_tag != "289" || owner.frame_length != 103)
+                .any(|owner| owner.class_tag.as_str() != "289" || owner.frame_length != 103)
                 || (0..scope.reference_members.len())
                     .filter(|&start| {
                         scope
@@ -4940,7 +4940,7 @@ pub(super) fn exact_legacy_mirror_scope_count(
     }
     let frame = bytes.get(*start..*paired)?;
     let owner = crate::design::decode::parameters::parse_parameter_owner(frame)?;
-    if owner.class_tag != "426"
+    if owner.class_tag.as_str() != "426"
         || owner.record_index != count_record_index
         || owner.scope_record_index != scope.record_index
         || owner.local_ordinal != mirror_441_count::LOCAL_ORDINAL_VALUE
@@ -6184,7 +6184,7 @@ fn exact_pipe_owner_lanes(
                     .reference_members
                     .values()
                     .any(|value| value == &owner.record_index)
-                && owner.class_tag == "342"
+                && owner.class_tag.as_str() == "342"
                 && owner.frame_length == 103
                 && owner.evaluated_value.is_finite()
         })

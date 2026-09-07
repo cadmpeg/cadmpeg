@@ -81,10 +81,9 @@ pub(crate) fn exact_legacy_as_built_421_alignment(
     {
         return None;
     }
-    if lanes
-        .iter()
-        .any(|owner| owner.class_tag != generation.owner_class_tag() || owner.frame_length != 103)
-    {
+    if lanes.iter().any(|owner| {
+        owner.class_tag.as_str() != generation.owner_class_tag() || owner.frame_length != 103
+    }) {
         return None;
     }
     let [offset_x, offset_y, offset_z, angle, limit_first, limit_second] = lanes else {

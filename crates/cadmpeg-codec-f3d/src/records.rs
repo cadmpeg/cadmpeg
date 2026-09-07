@@ -986,7 +986,7 @@ pub struct DesignParameterOwner {
     #[serde(default)]
     pub frame_length: u64,
     /// Source per-file dynamic three-digit ASCII class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Source indexed-record identity.
     pub record_index: u32,
     /// Feature or sketch record that scopes this parameter.

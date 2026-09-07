@@ -342,7 +342,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         id: format!("f3d:Design/BulkStream.dat:owner#{record_index}"),
         byte_offset: 0,
         frame_length: 104,
-        class_tag: "292".into(),
+        class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
         record_index,
         scope_record_index,
         local_ordinal: parameter_record_index,

@@ -624,7 +624,7 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
         id: "f3d:Design/BulkStream.dat:design-parameter-owner#300".into(),
         byte_offset: pair.paired_byte_offset + 59,
         frame_length: 104,
-        class_tag: "292".into(),
+        class_tag: crate::records::DesignClassTag::try_from("292".to_owned()).unwrap(),
         record_index: 300,
         scope_record_index: 10,
         local_ordinal: 0,

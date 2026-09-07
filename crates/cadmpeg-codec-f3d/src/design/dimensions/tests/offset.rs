@@ -745,7 +745,7 @@ fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
         id: format!("f3d:{stream}:design-parameter-owner#0"),
         byte_offset: 0,
         frame_length: 104,
-        class_tag: "305".into(),
+        class_tag: crate::records::DesignClassTag::try_from("305".to_owned()).unwrap(),
         record_index: 9,
         scope_record_index: 10,
         local_ordinal: 0,

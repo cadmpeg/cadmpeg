@@ -911,7 +911,7 @@ fn validation_accepts_legacy_owner_frames_and_ownerless_class_287_parameters() {
         id: crate::ids::native_design_parameter_owner_id(DESIGN_STREAM, 1_000),
         byte_offset: 1_000,
         frame_length: 68,
-        class_tag: "268".into(),
+        class_tag: crate::records::DesignClassTag::try_from("268".to_owned()).unwrap(),
         record_index: 100,
         scope_record_index: 0,
         local_ordinal: 0,

@@ -25,7 +25,7 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
             ),
             byte_offset: 0,
             frame_length: 103,
-            class_tag: "289".into(),
+            class_tag: crate::records::DesignClassTag::try_from("289".to_owned()).unwrap(),
             record_index: 100 + local_ordinal,
             scope_record_index,
             local_ordinal,

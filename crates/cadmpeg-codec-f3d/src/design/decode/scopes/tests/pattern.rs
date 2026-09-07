@@ -260,7 +260,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             id: format!("f3d:Design/BulkStream.dat:design-parameter-owner#{record_index}"),
             byte_offset: 0,
             frame_length: 104,
-            class_tag: "457".into(),
+            class_tag: crate::records::DesignClassTag::try_from("457".to_owned()).unwrap(),
             record_index,
             scope_record_index,
             local_ordinal,
