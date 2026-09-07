@@ -4173,18 +4173,11 @@ fn valid_vertex_recipe(
         }
     };
     vertex.record_index == record_index
-        && vertex.class_tag.len() == 3
-        && vertex.class_tag.bytes().all(|byte| byte.is_ascii_digit())
         && header.is_some_and(|header| {
             header.byte_offset == vertex.byte_offset
-                && header.class_tag.as_str() == vertex.class_tag
+                && header.class_tag == vertex.class_tag
                 && vertex.paired_byte_offset > header.byte_offset
         })
-        && vertex.paired_class_tag.len() == 3
-        && vertex
-            .paired_class_tag
-            .bytes()
-            .all(|byte| byte.is_ascii_digit())
         && vertex.recipe_record_index == record_index.saturating_add(3)
         && vertex.next_record_index == record_index.saturating_add(5)
         && vertex.recipe_prefix_offset == vertex.recipe_record_byte_offset.saturating_add(11)
@@ -7029,12 +7022,6 @@ fn validate_edge_treatment_vertex_operands<'a>(
                     == Some(&operand.recipe.record_index)
             })
             && groups.next().is_none()
-            && operand.recipe.class_tag.len() == 3
-            && operand
-                .recipe
-                .class_tag
-                .bytes()
-                .all(|byte| byte.is_ascii_digit())
             && operand.recipe.recipe_record_index == operand.recipe.record_index.saturating_add(3)
             && operand.recipe.next_record_index == operand.recipe.record_index.saturating_add(5)
             && operand.recipe.paired_byte_offset > operand.recipe.byte_offset

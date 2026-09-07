@@ -87,9 +87,9 @@ fn work_point_vertex_recipe_resolves_common_historical_vertex() {
     let recipe = DesignVertexRecipe {
         record_index: 202,
         byte_offset: 0,
-        class_tag: "369".into(),
+        class_tag: crate::records::DesignClassTag::try_from("369".to_owned()).unwrap(),
         paired_byte_offset: 1,
-        paired_class_tag: "261".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         recipe_record_index: 203,
         recipe_record_byte_offset: 2,
         recipe_id: format!("{stream}:construction-recipe#vertex"),

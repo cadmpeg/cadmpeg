@@ -156,9 +156,9 @@ fn dispatcher_projects_three_point_work_plane_vertices() {
     let recipe = |record_index, vertex| DesignVertexRecipe {
         record_index,
         byte_offset: u64::from(record_index),
-        class_tag: "306".into(),
+        class_tag: crate::records::DesignClassTag::try_from("306".to_owned()).unwrap(),
         paired_byte_offset: 1,
-        paired_class_tag: "261".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         recipe_record_index: record_index + 3,
         recipe_record_byte_offset: 2,
         recipe_id: format!("f3d:native:construction-recipe#{record_index}"),
@@ -307,9 +307,9 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
     let recipe = DesignVertexRecipe {
         record_index: 12,
         byte_offset: 0,
-        class_tag: "369".into(),
+        class_tag: crate::records::DesignClassTag::try_from("369".to_owned()).unwrap(),
         paired_byte_offset: 1,
-        paired_class_tag: "261".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
         recipe_record_index: 23,
         recipe_record_byte_offset: 2,
         recipe_id: recipe_id.clone(),

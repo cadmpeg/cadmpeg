@@ -291,9 +291,9 @@ fn corner_recipe_intersects_vertex_sets_across_fragment_unions() {
     let recipe = crate::records::feature::DesignVertexRecipe {
         record_index: 1,
         byte_offset: 0,
-        class_tag: "264".into(),
+        class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
         paired_byte_offset: 11,
-        paired_class_tag: "258".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
         recipe_record_index: 4,
         recipe_record_byte_offset: 44,
         recipe_id: "recipe".into(),

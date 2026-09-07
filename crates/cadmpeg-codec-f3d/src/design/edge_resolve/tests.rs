@@ -398,9 +398,9 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
         recipe: DesignVertexRecipe {
             record_index,
             byte_offset: u64::from(record_index),
-            class_tag: "306".into(),
+            class_tag: crate::records::DesignClassTag::try_from("306".to_owned()).unwrap(),
             paired_byte_offset: 1,
-            paired_class_tag: "261".into(),
+            paired_class_tag: crate::records::DesignClassTag::try_from("261".to_owned()).unwrap(),
             recipe_record_index: record_index + 3,
             recipe_record_byte_offset: 2,
             recipe_id: format!("f3d:test:construction-recipe#{record_index}"),

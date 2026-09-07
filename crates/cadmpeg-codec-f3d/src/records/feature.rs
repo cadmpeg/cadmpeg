@@ -4318,11 +4318,11 @@ pub struct DesignVertexRecipe {
     /// Byte offset of the owning indexed-record header.
     pub byte_offset: u64,
     /// Source per-file dynamic primary class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Byte offset of the same-index paired header.
     pub paired_byte_offset: u64,
     /// Source per-file dynamic paired class tag.
-    pub paired_class_tag: String,
+    pub paired_class_tag: DesignClassTag,
     /// Indexed record containing the vertex recipe.
     pub recipe_record_index: u32,
     /// Byte offset of the vertex-recipe record header.
@@ -4395,9 +4395,9 @@ impl From<DesignVertexRecipe> for DesignVertexRecipeWire {
         Self {
             record_index: value.record_index,
             byte_offset: value.byte_offset,
-            class_tag: value.class_tag,
+            class_tag: value.class_tag.into(),
             paired_byte_offset: value.paired_byte_offset,
-            paired_class_tag: value.paired_class_tag,
+            paired_class_tag: value.paired_class_tag.into(),
             recipe_record_index: value.recipe_record_index,
             recipe_record_byte_offset: value.recipe_record_byte_offset,
             recipe_id: value.recipe_id,
@@ -4433,9 +4433,9 @@ impl TryFrom<DesignVertexRecipeWire> for DesignVertexRecipe {
         Ok(Self {
             record_index: value.record_index,
             byte_offset: value.byte_offset,
-            class_tag: value.class_tag,
+            class_tag: value.class_tag.try_into()?,
             paired_byte_offset: value.paired_byte_offset,
-            paired_class_tag: value.paired_class_tag,
+            paired_class_tag: value.paired_class_tag.try_into()?,
             recipe_record_index: value.recipe_record_index,
             recipe_record_byte_offset: value.recipe_record_byte_offset,
             recipe_id: value.recipe_id,
