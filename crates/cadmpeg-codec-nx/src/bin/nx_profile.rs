@@ -594,7 +594,9 @@ fn neutral_rederivation_evidence(ir: &CadIr) -> (VerificationStatus, Option<Rede
         BodyCensusEvaluation::Unsupported { feature, reason } => (
             VerificationStatus::Missing,
             Some(RederivationBoundary {
-                feature: feature.as_ref().map(|boundary| boundary.id.0.clone()),
+                feature: feature
+                    .as_ref()
+                    .map(|boundary| boundary.id.as_str().to_owned()),
                 feature_name: feature.as_ref().and_then(|boundary| boundary.name.clone()),
                 feature_family: feature
                     .as_ref()
@@ -932,7 +934,7 @@ mod tests {
             visible: None,
         });
         ir.model.features.push(Feature {
-            id: FeatureId("block".to_string()),
+            id: FeatureId::mint("block".to_string()).expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: Some(false),
@@ -962,7 +964,7 @@ mod tests {
 
         let mut ir = CadIr::empty();
         ir.model.features.push(Feature {
-            id: FeatureId("block".to_string()),
+            id: FeatureId::mint("block".to_string()).expect("identity grammar"),
             ordinal: 17,
             name: Some("BLOCK".to_string()),
             suppressed: Some(false),
@@ -1038,7 +1040,7 @@ mod tests {
 
         let mut ir = CadIr::empty();
         ir.model.features.push(Feature {
-            id: FeatureId("feature".to_string()),
+            id: FeatureId::mint("feature".to_string()).expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: None,

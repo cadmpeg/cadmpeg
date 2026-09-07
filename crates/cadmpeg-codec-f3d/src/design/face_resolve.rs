@@ -866,9 +866,9 @@ fn historical_face_selection_with_native(
     }
     let feature = neutral_feature_id(scope);
     let feature_key = feature
-        .0
+        .as_str()
         .split_once('#')
-        .map_or(feature.0.as_str(), |(_, key)| key);
+        .map_or(feature.as_str(), |(_, key)| key);
     Some(FaceSelection::Historical {
         state: feature_input_topology_id(&feature, previous_state_id),
         faces: faces
@@ -2912,9 +2912,9 @@ mod tests {
         let group = loft_group();
         let feature = crate::ids::neutral_feature_id(&scope);
         let feature_key = feature
-            .0
+            .as_str()
             .split_once('#')
-            .map_or(feature.0.as_str(), |(_, key)| key);
+            .map_or(feature.as_str(), |(_, key)| key);
         let expected_state = crate::design::edge_resolve::feature_input_topology_id(&feature, 6);
         let expected_face = crate::ids::history_input_face_id(
             &crate::ids::history_input_prefix(feature_key, 6),

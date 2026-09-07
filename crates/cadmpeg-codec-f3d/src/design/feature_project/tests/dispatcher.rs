@@ -422,7 +422,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
     };
     let feature_key = point
         .id
-        .0
+        .as_str()
         .split_once('#')
         .map_or(point.id.as_str(), |(_, key)| key);
     let prefix = crate::ids::history_input_prefix(feature_key, 4);

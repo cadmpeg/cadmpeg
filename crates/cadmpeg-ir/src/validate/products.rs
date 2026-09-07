@@ -128,7 +128,7 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
         if !operands_valid || !finite || !ordered {
             invalid(
                 findings,
-                &joint.id.0,
+                joint.id.as_str(),
                 "invalid assembly joint operands, frames, or limits",
             );
         }
@@ -163,7 +163,7 @@ mod tests {
     fn joint_operands_allow_document_root_and_reject_two_qualifiers() {
         let mut ir = CadIr::empty();
         ir.model.assembly_joints.push(AssemblyJoint::paired(
-            JointId("test:model:joint#root".into()),
+            JointId::mint("test:model:joint#root").expect("identity grammar"),
             PairedJointKind::Fixed {
                 angle: None,
                 translation_offset: None,

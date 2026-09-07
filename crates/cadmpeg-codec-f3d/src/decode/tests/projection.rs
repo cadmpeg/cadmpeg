@@ -90,7 +90,7 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
     // The feature's owning entity reference is distinct from its scope index.
     scope.reference_members = crate::records::ReferenceRun::Unlocated(vec![221]);
     let mut features = vec![Feature {
-        id: FeatureId("test:model:feature#mesh-import".into()),
+        id: FeatureId::mint("test:model:feature#mesh-import").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
@@ -130,8 +130,8 @@ fn mesh_texture_ids_resolve_through_design_table_order() {
     use cadmpeg_ir::assets::AssetId;
     use cadmpeg_ir::tessellation::TessellationTextureAssignment;
 
-    let first = AssetId("asset:first".into());
-    let second = AssetId("asset:second".into());
+    let first = AssetId::mint("asset:first").expect("identity grammar");
+    let second = AssetId::mint("asset:second").expect("identity grammar");
     let textures = [
         ("resource:first".into(), first.clone()),
         ("resource:second".into(), second.clone()),
@@ -153,7 +153,7 @@ fn mesh_texture_ids_resolve_through_design_table_order() {
             },
             TessellationTextureAssignment {
                 source_id: Some("resource:third".into()),
-                texture: AssetId("asset:first".into()),
+                texture: AssetId::mint("asset:first").expect("identity grammar"),
                 triangles: vec![3],
             },
         ]
@@ -161,7 +161,10 @@ fn mesh_texture_ids_resolve_through_design_table_order() {
     assert!(matches!(
         mesh_texture_assignments(
             Some(&[2]),
-            &[("resource:only".into(), AssetId("asset:only".into()))],
+            &[(
+                "resource:only".into(),
+                AssetId::mint("asset:only").expect("identity grammar")
+            )],
             1,
         ),
         Err(cadmpeg_core::CodecError::Malformed(_))
@@ -217,7 +220,7 @@ fn full_round_fillet_with_automatic_sides_is_complete() {
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(Feature {
-        id: FeatureId("test:model:feature#full-round".into()),
+        id: FeatureId::mint("test:model:feature#full-round").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
@@ -345,7 +348,7 @@ fn face_selection_resolution_accepts_complete_generated_and_partial_members() {
 
     assert!(face_selection_is_resolved(&FaceSelection::Generated {
         faces: vec![GeneratedFaceRef {
-            feature: FeatureId("test:model:feature#source".into()),
+            feature: FeatureId::mint("test:model:feature#source").expect("identity grammar"),
             local_id: "test:model:face#1".into(),
         }],
         native: "native:generated-face".into(),
@@ -823,7 +826,8 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(cadmpeg_ir::features::Feature {
-        id: cadmpeg_ir::features::FeatureId("test:model:feature#coil".into()),
+        id: cadmpeg_ir::features::FeatureId::mint("test:model:feature#coil")
+            .expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
@@ -915,7 +919,7 @@ fn loft_completeness_and_gap_counts_require_resolved_sections_and_paths() {
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(Feature {
-        id: FeatureId("test:model:feature#loft".into()),
+        id: FeatureId::mint("test:model:feature#loft").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
@@ -941,7 +945,7 @@ fn incomplete_feature_families_are_counted_by_source_operation() {
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let feature = |id: &str, source_tag: Option<&str>, kind: &str| Feature {
-        id: FeatureId(id.into()),
+        id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,

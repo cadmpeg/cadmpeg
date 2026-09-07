@@ -73,7 +73,7 @@ pub(crate) fn synchronize_feature_input_names(
 }
 
 pub(crate) fn generated_feature_record_id(feature: &FeatureId) -> String {
-    format!("sldprt:generated:feature#{}", feature.0)
+    format!("sldprt:generated:feature#{}", feature.as_str())
 }
 
 pub(crate) fn generated_feature_source_ids(
@@ -201,7 +201,7 @@ pub fn sync_neutral_features(
                 .find(|candidate| feature.native_ref.as_deref() == Some(candidate.id.as_str()))
                 .and_then(|candidate| candidate.source_id.clone())
                 .or_else(|| generated_sources.get(&feature.id).cloned())
-                .unwrap_or_else(|| feature.id.0.clone());
+                .unwrap_or_else(|| feature.id.as_str().to_owned());
             (feature.id.clone(), source_id)
         })
         .collect::<HashMap<_, _>>();
@@ -513,13 +513,13 @@ pub(crate) fn synchronize_neutral_feature_content(
                     let parameter = parameters.get(id).ok_or_else(|| {
                         CodecError::malformed(format_args!(
                             "SLDPRT feature {} content references missing parameter {}",
-                            feature.id, id.0
+                            feature.id, id.as_str()
                         ))
                     })?;
                     if parameter.owner.as_ref() != Some(&feature.id) {
                         return Err(CodecError::malformed(format_args!(
                             "SLDPRT feature {} content references parameter {} owned by another feature",
-                            feature.id, id.0
+                            feature.id, id.as_str()
                         )));
                     }
                     Ok(FeatureContent::Dimension(parameter.name.clone()))

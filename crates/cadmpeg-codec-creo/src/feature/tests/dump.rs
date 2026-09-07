@@ -199,7 +199,7 @@ fn decode_retains_recipe_proven_revolution_with_unresolved_operands() {
         .model
         .features
         .iter()
-        .find(|feature| feature.id.0 == "creo:model:feature#40")
+        .find(|feature| feature.id.as_str() == "creo:model:feature#40")
         .expect("revolution feature");
 
     assert!(matches!(
@@ -225,7 +225,7 @@ fn decode_retains_recipe_proven_extrusion_with_unresolved_operands() {
         .model
         .features
         .iter()
-        .find(|feature| feature.id.0 == "creo:model:feature#40")
+        .find(|feature| feature.id.as_str() == "creo:model:feature#40")
         .expect("extrusion feature");
 
     assert!(matches!(
@@ -257,7 +257,7 @@ fn decode_recipe_supplies_reference_backed_extrusion_boolean_effect() {
         .model
         .features
         .iter()
-        .find(|feature| feature.id.0 == "creo:model:feature#40")
+        .find(|feature| feature.id.as_str() == "creo:model:feature#40")
         .expect("reference-backed extrusion feature");
 
     assert_eq!(feature.name.as_deref(), Some("Extrude 1 id 40"));

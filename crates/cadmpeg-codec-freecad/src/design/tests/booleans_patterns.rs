@@ -52,7 +52,7 @@ fn transfers_ordered_part_boolean_operands_and_infers_dependencies() {
         feature("Cut")
             .dependencies
             .iter()
-            .map(|id| id.0.as_str())
+            .map(cadmpeg_ir::FeatureId::as_str)
             .collect::<Vec<_>>(),
         ["fcstd:design:feature#A", "fcstd:design:feature#B"]
     );

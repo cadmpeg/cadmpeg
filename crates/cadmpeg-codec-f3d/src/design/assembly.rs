@@ -334,7 +334,7 @@ pub(crate) fn project_assembly_joints(
         let [first_operand, second_operand] = operands;
         let [first_frame, second_frame] =
             std::array::from_fn(|index| neutral_transform(frames[index].transform));
-        joints.entry(id.0.clone()).or_insert_with(|| {
+        joints.entry(id.as_str().to_owned()).or_insert_with(|| {
             let mut joint = AssemblyJoint::paired(
                 id,
                 PairedJointKind::Fixed {
@@ -458,7 +458,7 @@ fn project_joint_origin_operand(
         return None;
     }
     Some(JointOperand::root(
-        crate::ids::neutral_feature_id(target_scope).0,
+        crate::ids::neutral_feature_id(target_scope).as_str(),
         Vec::new(),
     ))
 }
@@ -570,7 +570,8 @@ mod tests {
 
     fn feature(native_ref: &str, definition: FeatureDefinition) -> Feature {
         Feature {
-            id: FeatureId(format!("test:model:feature#{native_ref}")),
+            id: FeatureId::mint(format!("test:model:feature#{native_ref}"))
+                .expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: Some(false),
@@ -932,7 +933,7 @@ mod tests {
         assert_eq!(operands[1].container, cadmpeg_ir::OperandContainer::Root);
         assert_eq!(
             operands[1].object,
-            crate::ids::neutral_feature_id(&origin_scope).0
+            crate::ids::neutral_feature_id(&origin_scope).as_str()
         );
 
         let unlisted_operands = super::project_qualified_operands(

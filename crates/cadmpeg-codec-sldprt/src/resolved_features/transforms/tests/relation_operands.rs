@@ -580,7 +580,7 @@ fn endpoint_incidence_binds_an_existing_profile_line() {
         native_ref: None,
     };
     let feature = Feature {
-        id: FeatureId("feature".into()),
+        id: FeatureId::mint("feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -658,7 +658,7 @@ fn point_marker_materializing_a_circle_binds_its_center() {
         native_ref: None,
     };
     let feature = Feature {
-        id: FeatureId("feature".into()),
+        id: FeatureId::mint("feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -725,7 +725,7 @@ fn point_operand_canonicalizes_shared_endpoint_loci() {
         native_ref: None,
     };
     let feature = Feature {
-        id: FeatureId("feature".into()),
+        id: FeatureId::mint("feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -834,8 +834,8 @@ fn distance_fallback_requires_one_locus_in_the_complete_sketch() {
     let known = point("known", 0.0, 0.0);
     let candidate = point("candidate", 3.0, 4.0);
     let parameter = DesignParameter {
-        id: ParameterId("distance".into()),
-        owner: Some(FeatureId("feature".into())),
+        id: ParameterId::mint("distance").expect("identity grammar"),
+        owner: Some(FeatureId::mint("feature").expect("identity grammar")),
         ordinal: 0,
         name: "D1".into(),
         expression: "5mm".into(),
@@ -1358,8 +1358,8 @@ fn dimension_preserves_structurally_typed_operands_when_geometry_disagrees() {
             .collect(),
     };
     let parameter = DesignParameter {
-        id: ParameterId("distance".into()),
-        owner: Some(FeatureId("feature".into())),
+        id: ParameterId::mint("distance").expect("identity grammar"),
+        owner: Some(FeatureId::mint("feature").expect("identity grammar")),
         ordinal: 0,
         name: "D1".into(),
         expression: "4mm".into(),
@@ -1457,8 +1457,8 @@ fn line_distance_repairs_distinct_operands_collapsed_to_one_marker() {
             .collect(),
     };
     let parameter = DesignParameter {
-        id: ParameterId("distance".into()),
-        owner: Some(FeatureId("feature".into())),
+        id: ParameterId::mint("distance").expect("identity grammar"),
+        owner: Some(FeatureId::mint("feature").expect("identity grammar")),
         ordinal: 0,
         name: "D1".into(),
         expression: "5mm".into(),
@@ -1558,8 +1558,8 @@ fn line_distance_uses_an_addressed_point_to_select_the_missing_line() {
         ],
     };
     let parameter = DesignParameter {
-        id: ParameterId("distance".into()),
-        owner: Some(FeatureId("feature".into())),
+        id: ParameterId::mint("distance").expect("identity grammar"),
+        owner: Some(FeatureId::mint("feature").expect("identity grammar")),
         ordinal: 0,
         name: "D1".into(),
         expression: "5mm".into(),

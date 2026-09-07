@@ -354,7 +354,7 @@ mod tests {
         ir.native.0.insert("test".into(), namespace);
         let model_id = "test:model#0";
         ir.model.parameters.push(crate::features::DesignParameter {
-            id: crate::features::ParameterId(model_id.into()),
+            id: crate::features::ParameterId::mint(model_id).expect("identity grammar"),
             owner: None,
             ordinal: 0,
             name: "p1".into(),
@@ -382,7 +382,8 @@ mod tests {
     #[test]
     fn typed_lookup_indexes_are_lazy_and_preserve_last_duplicate() {
         let mut ir = CadIr::empty();
-        let parameter_id = crate::features::ParameterId("test:parameter#0".into());
+        let parameter_id =
+            crate::features::ParameterId::mint("test:parameter#0").expect("identity grammar");
         for (ordinal, expression) in [(0, "first"), (1, "last")] {
             ir.model.parameters.push(crate::features::DesignParameter {
                 id: parameter_id.clone(),
@@ -404,7 +405,7 @@ mod tests {
         assert!(index.bodies.get().is_none());
         assert_eq!(
             index
-                .parameters(parameter_id.0.as_str())
+                .parameters(parameter_id.as_str())
                 .map(|parameter| parameter.expression.as_str()),
             Some("last")
         );

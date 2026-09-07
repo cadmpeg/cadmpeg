@@ -1881,9 +1881,9 @@ fn project_work_point_construction(
         };
         let feature_id = neutral_feature_id(scope);
         let feature_key = feature_id
-            .0
+            .as_str()
             .split_once('#')
-            .map_or(feature_id.0.as_str(), |(_, key)| key);
+            .map_or(feature_id.as_str(), |(_, key)| key);
         let prefix = ids::history_input_prefix(feature_key, state_id);
         Some(EdgeSelection::Historical {
             state: feature_input_topology_id(&feature_id, state_id),
@@ -1927,9 +1927,9 @@ fn project_work_point_construction(
                     let vertex_slot = resolution.vertex_slot();
                     let feature_id = neutral_feature_id(scope);
                     let feature_key = feature_id
-                        .0
+                        .as_str()
                         .split_once('#')
-                        .map_or(feature_id.0.as_str(), |(_, key)| key);
+                        .map_or(feature_id.as_str(), |(_, key)| key);
                     let prefix = ids::history_input_prefix(feature_key, state_id);
                     VertexSelection::Historical {
                         state: feature_input_topology_id(&feature_id, state_id),
@@ -1990,9 +1990,9 @@ fn project_work_plane(
     };
     let feature_id = neutral_feature_id(scope);
     let feature_key = feature_id
-        .0
+        .as_str()
         .split_once('#')
-        .map_or(feature_id.0.as_str(), |(_, key)| key);
+        .map_or(feature_id.as_str(), |(_, key)| key);
     let prefix = ids::history_input_prefix(feature_key, state_id);
     let points = inputs
         .iter()
@@ -2912,7 +2912,7 @@ fn project_draft(
                     faces: project_draft_face_selection(scope, faces, face_operands, histories),
                     anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
                         plane: cadmpeg_ir::features::FaceSelection::Native(
-                            neutral_feature_id(neutral_plane).0,
+                            neutral_feature_id(neutral_plane).into_string(),
                         ),
                         pull: Some(cadmpeg_ir::features::DraftPull {
                             direction: pull_direction,
@@ -3029,9 +3029,9 @@ fn selected_historical_face_selection(
     }
     let feature = neutral_feature_id(scope);
     let feature_key = feature
-        .0
+        .as_str()
         .split_once('#')
-        .map_or(feature.0.as_str(), |(_, key)| key);
+        .map_or(feature.as_str(), |(_, key)| key);
     let prefix = ids::history_input_prefix(feature_key, previous_state_id);
     Some(cadmpeg_ir::features::FaceSelection::Historical {
         state: feature_input_topology_id(&feature, previous_state_id),
@@ -3196,9 +3196,9 @@ fn resolved_split_face_path(
     let stream = native_stream(&scope.id)?;
     let feature = neutral_feature_id(scope);
     let feature_key = feature
-        .0
+        .as_str()
         .split_once('#')
-        .map_or(feature.0.as_str(), |(_, key)| key);
+        .map_or(feature.as_str(), |(_, key)| key);
     let prefix = ids::history_input_prefix(feature_key, previous_state_id);
     let mut edge_slots = Vec::with_capacity(group.members.len());
     for (ordinal, member) in group.members.iter().map(|member| &member.value).enumerate() {
@@ -4104,9 +4104,9 @@ pub(crate) fn direct_face_selection(
         .collect::<Vec<_>>();
     let feature_id = neutral_feature_id(scope);
     let feature_key = feature_id
-        .0
+        .as_str()
         .split_once('#')
-        .map_or(feature_id.0.as_str(), |(_, key)| key);
+        .map_or(feature_id.as_str(), |(_, key)| key);
     let historical_face = |previous_state_id, slot| {
         ids::history_input_face_id(
             &ids::history_input_prefix(feature_key, previous_state_id),

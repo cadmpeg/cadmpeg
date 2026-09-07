@@ -699,9 +699,9 @@ fn historical_face_profile_selection(
         return None;
     }
     let feature_key = feature_id
-        .0
+        .as_str()
         .split_once('#')
-        .map_or(feature_id.0.as_str(), |(_, key)| key);
+        .map_or(feature_id.as_str(), |(_, key)| key);
     Some(ProfileRef::HistoricalFaces {
         state: feature_input_topology_id(feature_id, previous_state_id),
         faces: selected_faces

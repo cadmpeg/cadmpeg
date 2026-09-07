@@ -1640,7 +1640,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
         .model
         .features
         .iter()
-        .map(|feature| feature.id.0.as_str())
+        .map(|feature| feature.id.as_str())
         .collect::<HashSet<_>>();
     let feature_ordinals = ir
         .model
@@ -1658,8 +1658,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
     let mut parameter_ordinals = HashSet::new();
     for parameter in &ir.model.parameters {
         if let Some(owner) = &parameter.owner {
-            if !features.contains(owner.0.as_str()) {
-                ref_error(findings, &parameter.id.0, "feature", &owner.0);
+            if !features.contains(owner.as_str()) {
+                ref_error(findings, parameter.id.as_str(), "feature", owner.as_str());
             }
         }
         if !parameter_names.insert((&parameter.owner, parameter.name.as_str())) {
@@ -1670,7 +1670,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     "parameter scope {:?} repeats parameter name `{}`",
                     parameter.owner, parameter.name
                 ),
-                entity: Some(parameter.id.0.clone()),
+                entity: Some(parameter.id.as_str().to_owned()),
             });
         }
         if !parameter_ordinals.insert((&parameter.owner, parameter.ordinal)) {
@@ -1681,7 +1681,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     "parameter scope {:?} repeats parameter ordinal {}",
                     parameter.owner, parameter.ordinal
                 ),
-                entity: Some(parameter.id.0.clone()),
+                entity: Some(parameter.id.as_str().to_owned()),
             });
         }
         if parameter
@@ -1689,7 +1689,11 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
             .as_ref()
             .is_some_and(|value| !parameter_value_is_valid(value))
         {
-            geometry_error(findings, &parameter.id.0, "parameter value is invalid");
+            geometry_error(
+                findings,
+                parameter.id.as_str(),
+                "parameter value is invalid",
+            );
         }
         let mut dependencies = HashSet::new();
         for dependency in &parameter.dependencies {
@@ -1699,18 +1703,19 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     severity: Severity::Error,
                     message: format!(
                         "parameter {} repeats dependency `{}`",
-                        parameter.id.0, dependency.0
+                        parameter.id.as_str(),
+                        dependency.as_str()
                     ),
-                    entity: Some(parameter.id.0.clone()),
+                    entity: Some(parameter.id.as_str().to_owned()),
                 });
                 continue;
             }
             let Some((owner, ordinal)) = parameters.get(dependency) else {
                 ref_error(
                     findings,
-                    &parameter.id.0,
+                    parameter.id.as_str(),
                     "parameter dependency",
-                    &dependency.0,
+                    dependency.as_str(),
                 );
                 continue;
             };
@@ -1734,9 +1739,9 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     severity: Severity::Error,
                     message: format!(
                         "parameter dependency `{}` does not precede its consumer",
-                        dependency.0
+                        dependency.as_str()
                     ),
-                    entity: Some(parameter.id.0.clone()),
+                    entity: Some(parameter.id.as_str().to_owned()),
                 });
             }
         }
@@ -1763,7 +1768,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
         .model
         .parameters
         .iter()
-        .map(|parameter| parameter.id.0.as_str())
+        .map(|parameter| parameter.id.as_str())
         .collect::<HashSet<_>>();
     for sketch in &ir.model.sketches {
         for entity_use in sketch.profiles.iter().flatten() {
@@ -1831,7 +1836,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 entities,
                 parameter: Some(parameter),
                 ..
-            } => (entities.clone(), Some(parameter.0.as_str())),
+            } => (entities.clone(), Some(parameter.as_str())),
             Definition::Horizontal { entity }
             | Definition::Vertical { entity }
             | Definition::Fixed { entity }
@@ -1900,7 +1905,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     .iter()
                     .flat_map(|pair| [pair.source.clone(), pair.result.clone()])
                     .collect(),
-                parameter.as_ref().map(|parameter| parameter.id.0.as_str()),
+                parameter.as_ref().map(|parameter| parameter.id.as_str()),
             ),
             Definition::PointOnObject { point, entity } => {
                 (vec![locus_entity(point).clone(), entity.clone()], None)
@@ -1945,7 +1950,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 parameter,
             } => (
                 vec![locus_entity(first).clone(), locus_entity(second).clone()],
-                Some(parameter.0.as_str()),
+                Some(parameter.as_str()),
             ),
             Definition::PolarDistance {
                 first,
@@ -1992,19 +1997,19 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                         [locus_entity(first).clone(), locus_entity(second).clone()]
                     })
                     .collect(),
-                Some(parameter.0.as_str()),
+                Some(parameter.as_str()),
             ),
             Definition::RepeatedLength {
                 entities,
                 parameter,
-            } => (entities.clone(), Some(parameter.0.as_str())),
+            } => (entities.clone(), Some(parameter.as_str())),
             Definition::ParallelLineSetDistance {
                 first,
                 second,
                 parameter,
             } => (
                 first.iter().chain(second).cloned().collect(),
-                Some(parameter.0.as_str()),
+                Some(parameter.as_str()),
             ),
             Definition::Angle {
                 first,
@@ -2012,11 +2017,11 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 parameter,
             } => (
                 vec![first.clone(), second.clone()],
-                Some(parameter.0.as_str()),
+                Some(parameter.as_str()),
             ),
             Definition::AngleToAxis {
                 entity, parameter, ..
-            } => (vec![entity.clone()], Some(parameter.0.as_str())),
+            } => (vec![entity.clone()], Some(parameter.as_str())),
             Definition::RepeatedRadius {
                 entities,
                 parameter,
@@ -2024,11 +2029,11 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
             | Definition::RepeatedDiameter {
                 entities,
                 parameter,
-            } => (entities.clone(), Some(parameter.0.as_str())),
+            } => (entities.clone(), Some(parameter.as_str())),
             Definition::Radius { entity, parameter }
             | Definition::Diameter { entity, parameter }
             | Definition::Weight { entity, parameter } => {
-                (vec![entity.clone()], Some(parameter.0.as_str()))
+                (vec![entity.clone()], Some(parameter.as_str()))
             }
             Definition::SnellsLaw {
                 incident,
@@ -2041,11 +2046,11 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     locus_entity(refracted).clone(),
                     interface.clone(),
                 ],
-                Some(parameter.0.as_str()),
+                Some(parameter.as_str()),
             ),
         };
         let parameter = parameter.or(match &constraint.definition {
-            Definition::Distance { parameter, .. } => Some(parameter.0.as_str()),
+            Definition::Distance { parameter, .. } => Some(parameter.as_str()),
             _ => None,
         });
         if let Definition::Polygon { entities } = &constraint.definition {
@@ -2100,13 +2105,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 .into_iter()
                 .flatten()
             }) {
-                if !parameters.contains(parameter.0.as_str()) {
-                    ref_error(
-                        findings,
-                        &constraint.id.0,
-                        "parameter",
-                        parameter.0.as_str(),
-                    );
+                if !parameters.contains(parameter.as_str()) {
+                    ref_error(findings, &constraint.id.0, "parameter", parameter.as_str());
                 }
             }
         }
@@ -2115,13 +2115,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 .into_iter()
                 .flatten()
             {
-                if !parameters.contains(parameter.0.as_str()) {
-                    ref_error(
-                        findings,
-                        &constraint.id.0,
-                        "parameter",
-                        parameter.0.as_str(),
-                    );
+                if !parameters.contains(parameter.as_str()) {
+                    ref_error(findings, &constraint.id.0, "parameter", parameter.as_str());
                 }
             }
         }
@@ -2142,25 +2137,25 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
         .model
         .parameters
         .iter()
-        .map(|parameter| parameter.id.0.as_str())
+        .map(|parameter| parameter.id.as_str())
         .collect::<HashSet<_>>();
     let asset_ids = ir
         .model
         .assets
         .iter()
-        .map(|asset| asset.id.0.as_str())
+        .map(|asset| asset.id.as_str())
         .collect::<HashSet<_>>();
     let parameter_values = ir
         .model
         .parameters
         .iter()
-        .map(|parameter| (parameter.id.0.as_str(), parameter.value.as_ref()))
+        .map(|parameter| (parameter.id.as_str(), parameter.value.as_ref()))
         .collect::<HashMap<_, _>>();
     let features = ir
         .model
         .features
         .iter()
-        .map(|feature| (feature.id.0.as_str(), feature.ordinal))
+        .map(|feature| (feature.id.as_str(), feature.ordinal))
         .collect::<HashMap<_, _>>();
     for configuration in &ir.model.configurations {
         active_configurations += usize::from(configuration.active);
@@ -2172,7 +2167,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     "design repeats configuration ordinal {}",
                     configuration.ordinal
                 ),
-                entity: Some(configuration.id.0.clone()),
+                entity: Some(configuration.id.as_str().to_owned()),
             });
         }
         if let Some(source_index) = configuration.source_index {
@@ -2181,7 +2176,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     check: Check::Counts,
                     severity: Severity::Error,
                     message: format!("design repeats configuration source index {source_index}"),
-                    entity: Some(configuration.id.0.clone()),
+                    entity: Some(configuration.id.as_str().to_owned()),
                 });
             }
         }
@@ -2190,7 +2185,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             if ids.bodies(body.as_str()).is_none() {
                 ref_error(
                     findings,
-                    &configuration.id.0,
+                    configuration.id.as_str(),
                     "configuration body",
                     body.as_str(),
                 );
@@ -2200,17 +2195,17 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     check: Check::Counts,
                     severity: Severity::Error,
                     message: format!("configuration repeats body `{}`", body.as_str()),
-                    entity: Some(configuration.id.0.clone()),
+                    entity: Some(configuration.id.as_str().to_owned()),
                 });
             }
         }
         for parameter in configuration.parameter_overrides.keys() {
-            if !parameter_ids.contains(parameter.0.as_str()) {
+            if !parameter_ids.contains(parameter.as_str()) {
                 ref_error(
                     findings,
-                    &configuration.id.0,
+                    configuration.id.as_str(),
                     "configuration parameter override",
-                    &parameter.0,
+                    parameter.as_str(),
                 );
             }
         }
@@ -2226,18 +2221,18 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         message:
                             "active configuration suppression disagrees with current feature state"
                                 .into(),
-                        entity: Some(configuration.id.0.clone()),
+                        entity: Some(configuration.id.as_str().to_owned()),
                     });
                 }
             }
         }
         for (parameter, value) in &configuration.parameter_values {
-            match parameter_values.get(parameter.0.as_str()) {
+            match parameter_values.get(parameter.as_str()) {
                 None => ref_error(
                     findings,
-                    &configuration.id.0,
+                    configuration.id.as_str(),
                     "configuration parameter value",
-                    &parameter.0,
+                    parameter.as_str(),
                 ),
                 Some(baseline)
                     if !parameter_value_is_valid(value)
@@ -2247,7 +2242,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 {
                     geometry_error(
                         findings,
-                        &configuration.id.0,
+                        configuration.id.as_str(),
                         "configuration parameter value is invalid",
                     );
                 }
@@ -2255,23 +2250,23 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             }
         }
         for (feature, state) in &configuration.feature_states {
-            let feature_ordinal = features.get(feature.0.as_str()).copied();
+            let feature_ordinal = features.get(feature.as_str()).copied();
             if feature_ordinal.is_none() {
                 ref_error(
                     findings,
-                    &configuration.id.0,
+                    configuration.id.as_str(),
                     "configuration feature state",
-                    &feature.0,
+                    feature.as_str(),
                 );
             }
             let mut dependencies = HashSet::new();
             for dependency in &state.dependencies {
-                match features.get(dependency.0.as_str()) {
+                match features.get(dependency.as_str()) {
                     None => ref_error(
                         findings,
-                        &configuration.id.0,
+                        configuration.id.as_str(),
                         "configuration feature dependency",
-                        &dependency.0,
+                        dependency.as_str(),
                     ),
                     Some(dependency_ordinal)
                         if feature_ordinal.is_some_and(|feature_ordinal| {
@@ -2283,9 +2278,10 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                             severity: Severity::Error,
                             message: format!(
                                 "configuration feature dependency `{}` does not precede `{}`",
-                                dependency.0, feature.0
+                                dependency.as_str(),
+                                feature.as_str()
                             ),
-                            entity: Some(configuration.id.0.clone()),
+                            entity: Some(configuration.id.as_str().to_owned()),
                         });
                     }
                     Some(_) => {}
@@ -2296,19 +2292,19 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         severity: Severity::Error,
                         message: format!(
                             "configuration feature state repeats dependency `{}`",
-                            dependency.0
+                            dependency.as_str()
                         ),
-                        entity: Some(configuration.id.0.clone()),
+                        entity: Some(configuration.id.as_str().to_owned()),
                     });
                 }
             }
             for reference in regeneration_references(&state.definition) {
-                match features.get(reference.0.as_str()) {
+                match features.get(reference.as_str()) {
                     None => ref_error(
                         findings,
-                        &configuration.id.0,
+                        configuration.id.as_str(),
                         "configuration definition feature",
-                        &reference.0,
+                        reference.as_str(),
                     ),
                     Some(reference_ordinal)
                         if feature_ordinal.is_some_and(|feature_ordinal| {
@@ -2320,9 +2316,10 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                             severity: Severity::Error,
                             message: format!(
                                 "configuration definition feature `{}` does not precede `{}`",
-                                reference.0, feature.0
+                                reference.as_str(),
+                                feature.as_str()
                             ),
-                            entity: Some(configuration.id.0.clone()),
+                            entity: Some(configuration.id.as_str().to_owned()),
                         });
                     }
                     Some(_) if !state.dependencies.contains(reference) => {
@@ -2331,9 +2328,9 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                             severity: Severity::Error,
                             message: format!(
                                 "configuration feature state `{}` omits referenced feature `{}` from its dependencies",
-                                feature.0, reference.0
+                                feature.as_str(), reference.as_str()
                             ),
-                            entity: Some(configuration.id.0.clone()),
+                            entity: Some(configuration.id.as_str().to_owned()),
                         });
                     }
                     Some(_) => {}
@@ -2343,7 +2340,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 if !termination_magnitude_is_valid(termination) {
                     geometry_error(
                         findings,
-                        &configuration.id.0,
+                        configuration.id.as_str(),
                         "configuration feature extent magnitude is invalid",
                     );
                 }
@@ -2354,7 +2351,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 ) {
                     geometry_error(
                         findings,
-                        &configuration.id.0,
+                        configuration.id.as_str(),
                         "configuration generated termination vertex is invalid",
                     );
                 }
@@ -2363,7 +2360,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 if !distance.0.is_finite() {
                     geometry_error(
                         findings,
-                        &configuration.id.0,
+                        configuration.id.as_str(),
                         "configuration datum-plane offset is invalid",
                     );
                 }
@@ -2373,7 +2370,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     check: Check::ReferentialIntegrity,
                     severity: Severity::Error,
                     message: "suppressed configuration feature state has output bodies".into(),
-                    entity: Some(configuration.id.0.clone()),
+                    entity: Some(configuration.id.as_str().to_owned()),
                 });
             }
             let mut outputs = HashSet::new();
@@ -2381,7 +2378,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 if ids.bodies(output.as_str()).is_none() {
                     ref_error(
                         findings,
-                        &configuration.id.0,
+                        configuration.id.as_str(),
                         "configuration feature output",
                         output.as_str(),
                     );
@@ -2394,7 +2391,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                             "configuration feature state repeats output body `{}`",
                             output.as_str()
                         ),
-                        entity: Some(configuration.id.0.clone()),
+                        entity: Some(configuration.id.as_str().to_owned()),
                     });
                 }
             }
@@ -2413,7 +2410,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
         .model
         .features
         .iter()
-        .map(|feature| (feature.id.0.as_str(), feature))
+        .map(|feature| (feature.id.as_str(), feature))
         .collect::<HashMap<_, _>>();
     let sketch_entities = ir
         .model
@@ -2431,7 +2428,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
     for feature in &ir.model.features {
         let mut path = Vec::new();
         let mut positions = HashMap::new();
-        let mut cursor = feature.id.0.as_str();
+        let mut cursor = feature.id.as_str();
         loop {
             if let Some(&cycle_start) = positions.get(cursor) {
                 let mut cycle = path[cycle_start..].to_vec();
@@ -2448,7 +2445,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                                 .collect::<Vec<_>>()
                                 .join(", ")
                         ),
-                        entity: Some(feature.id.0.clone()),
+                        entity: Some(feature.id.as_str().to_owned()),
                     });
                 }
                 break;
@@ -2463,7 +2460,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 else {
                     return None;
                 };
-                Some(reference.0.as_str())
+                Some(reference.as_str())
             }) else {
                 break;
             };
@@ -2497,7 +2494,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 check: Check::Counts,
                 severity: Severity::Error,
                 message: "feature has multiple input topology states".into(),
-                entity: Some(state.input_of.0.clone()),
+                entity: Some(state.input_of.as_str().to_owned()),
             });
         }
         for (kind, members) in [
@@ -2562,7 +2559,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 check: Check::Counts,
                 severity: Severity::Error,
                 message: "feature has multiple result topology states".into(),
-                entity: Some(state.output_of.0.clone()),
+                entity: Some(state.output_of.as_str().to_owned()),
             });
         }
         if state.bodies.is_empty()
@@ -2611,7 +2608,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 check: Check::Counts,
                 severity: Severity::Error,
                 message: format!("design repeats feature ordinal {}", feature.ordinal),
-                entity: Some(feature.id.0.clone()),
+                entity: Some(feature.id.as_str().to_owned()),
             });
         }
         let mut dependencies = HashSet::new();
@@ -2620,21 +2617,26 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 findings.push(Finding {
                     check: Check::ReferentialIntegrity,
                     severity: Severity::Error,
-                    message: format!("feature repeats dependency `{}`", dependency.0),
-                    entity: Some(feature.id.0.clone()),
+                    message: format!("feature repeats dependency `{}`", dependency.as_str()),
+                    entity: Some(feature.id.as_str().to_owned()),
                 });
                 continue;
             }
-            match features.get(dependency.0.as_str()) {
-                None => ref_error(findings, &feature.id.0, "dependency feature", &dependency.0),
+            match features.get(dependency.as_str()) {
+                None => ref_error(
+                    findings,
+                    feature.id.as_str(),
+                    "dependency feature",
+                    dependency.as_str(),
+                ),
                 Some(ordinal) if *ordinal >= feature.ordinal => findings.push(Finding {
                     check: Check::ReferentialIntegrity,
                     severity: Severity::Error,
                     message: format!(
                         "dependency feature `{}` does not precede its consumer",
-                        dependency.0
+                        dependency.as_str()
                     ),
-                    entity: Some(feature.id.0.clone()),
+                    entity: Some(feature.id.as_str().to_owned()),
                 }),
                 Some(_) => {}
             }
@@ -2649,22 +2651,30 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         findings.push(Finding {
                             check: Check::Counts,
                             severity: Severity::Error,
-                            message: format!("feature repeats content parameter `{}`", parameter.0),
-                            entity: Some(feature.id.0.clone()),
+                            message: format!(
+                                "feature repeats content parameter `{}`",
+                                parameter.as_str()
+                            ),
+                            entity: Some(feature.id.as_str().to_owned()),
                         });
                     }
                     match parameters_by_id.get(parameter) {
                         None => {
-                            ref_error(findings, &feature.id.0, "content parameter", &parameter.0);
+                            ref_error(
+                                findings,
+                                feature.id.as_str(),
+                                "content parameter",
+                                parameter.as_str(),
+                            );
                         }
                         Some(owner) if *owner != Some(&feature.id) => findings.push(Finding {
                             check: Check::ReferentialIntegrity,
                             severity: Severity::Error,
                             message: format!(
                                 "content parameter `{}` belongs to another feature",
-                                parameter.0
+                                parameter.as_str()
                             ),
-                            entity: Some(feature.id.0.clone()),
+                            entity: Some(feature.id.as_str().to_owned()),
                         }),
                         Some(_) => {}
                     }
@@ -2674,20 +2684,25 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         findings.push(Finding {
                             check: Check::Counts,
                             severity: Severity::Error,
-                            message: format!("feature repeats content child `{}`", child.0),
-                            entity: Some(feature.id.0.clone()),
+                            message: format!("feature repeats content child `{}`", child.as_str()),
+                            entity: Some(feature.id.as_str().to_owned()),
                         });
                     }
-                    match features.get(child.0.as_str()) {
-                        None => ref_error(findings, &feature.id.0, "content child", &child.0),
+                    match features.get(child.as_str()) {
+                        None => ref_error(
+                            findings,
+                            feature.id.as_str(),
+                            "content child",
+                            child.as_str(),
+                        ),
                         Some(ordinal) if *ordinal <= feature.ordinal => findings.push(Finding {
                             check: Check::ReferentialIntegrity,
                             severity: Severity::Error,
                             message: format!(
                                 "content child `{}` does not follow its parent",
-                                child.0
+                                child.as_str()
                             ),
-                            entity: Some(feature.id.0.clone()),
+                            entity: Some(feature.id.as_str().to_owned()),
                         }),
                         Some(_) => {}
                     }
@@ -2696,7 +2711,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
         }
         for body in &feature.outputs {
             if ids.bodies(body.as_str()).is_none() {
-                ref_error(findings, &feature.id.0, "output body", body.as_str());
+                ref_error(findings, feature.id.as_str(), "output body", body.as_str());
             }
         }
 
@@ -2749,8 +2764,13 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 opacity,
                 ..
             } => {
-                if !asset_ids.contains(asset.0.as_str()) {
-                    ref_error(findings, &feature.id.0, "reference-image asset", &asset.0);
+                if !asset_ids.contains(asset.as_str()) {
+                    ref_error(
+                        findings,
+                        feature.id.as_str(),
+                        "reference-image asset",
+                        asset.as_str(),
+                    );
                 }
                 let frame_is_valid = [origin.x, origin.y, origin.z]
                     .into_iter()
@@ -2782,8 +2802,8 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 opacity,
                 ..
             } => {
-                if !asset_ids.contains(asset.0.as_str()) {
-                    ref_error(findings, &feature.id.0, "decal asset", &asset.0);
+                if !asset_ids.contains(asset.as_str()) {
+                    ref_error(findings, feature.id.as_str(), "decal asset", asset.as_str());
                 }
                 if opacity.is_some_and(|value| !value.is_finite() || !(0.0..=1.0).contains(&value))
                 {
@@ -2897,7 +2917,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     if !seen.insert(tessellation) || ids.tessellations(tessellation).is_none() {
                         ref_error(
                             findings,
-                            &feature.id.0,
+                            feature.id.as_str(),
                             "mesh import tessellation",
                             tessellation,
                         );
@@ -2925,7 +2945,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 {
                     ref_error(
                         findings,
-                        &feature.id.0,
+                        feature.id.as_str(),
                         "inserted component occurrence",
                         occurrence.as_str(),
                     );
@@ -2938,13 +2958,18 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     .iter()
                     .any(|candidate| candidate.id == *joint)
                 {
-                    ref_error(findings, &feature.id.0, "assembly joint", &joint.0);
+                    ref_error(
+                        findings,
+                        feature.id.as_str(),
+                        "assembly joint",
+                        joint.as_str(),
+                    );
                 }
             }
             FeatureDefinition::Form { cages } => {
                 check_ids(
                     findings,
-                    &feature.id.0,
+                    feature.id.as_str(),
                     "Form control cage",
                     cages.iter().map(super::super::ids::SubdId::as_str),
                     |identity| ids.subds(identity).is_some(),
@@ -3361,7 +3386,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                             crate::features::LoftPointSection::Vertex(vertex),
                         ) => check_ids(
                             findings,
-                            &feature.id.0,
+                            feature.id.as_str(),
                             "loft section vertex",
                             std::iter::once(vertex.as_str()),
                             |identity| ids.vertices(identity).is_some(),
@@ -3743,7 +3768,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         check: Check::GeometricConsistency,
                         severity: Severity::Error,
                         message: "flex axis is degenerate".into(),
-                        entity: Some(feature.id.0.clone()),
+                        entity: Some(feature.id.as_str().to_owned()),
                     });
                 }
                 let valid = match mode {
@@ -3759,7 +3784,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         check: Check::GeometricConsistency,
                         severity: Severity::Error,
                         message: "flex magnitude is invalid".into(),
-                        entity: Some(feature.id.0.clone()),
+                        entity: Some(feature.id.as_str().to_owned()),
                     });
                 }
             }
@@ -3988,17 +4013,22 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 collect_pattern_paths(pattern, &mut paths);
                 for seed in seeds {
                     match seed {
-                        PatternSeed::Feature(seed) => match features.get(seed.0.as_str()) {
-                            None => ref_error(findings, &feature.id.0, "seed feature", &seed.0),
+                        PatternSeed::Feature(seed) => match features.get(seed.as_str()) {
+                            None => ref_error(
+                                findings,
+                                feature.id.as_str(),
+                                "seed feature",
+                                seed.as_str(),
+                            ),
                             Some(ordinal) if *ordinal >= feature.ordinal => {
                                 findings.push(Finding {
                                     check: Check::ReferentialIntegrity,
                                     severity: Severity::Error,
                                     message: format!(
                                         "seed feature `{}` does not precede its pattern",
-                                        seed.0
+                                        seed.as_str()
                                     ),
-                                    entity: Some(feature.id.0.clone()),
+                                    entity: Some(feature.id.as_str().to_owned()),
                                 });
                             }
                             Some(_) if !feature.dependencies.contains(seed) => {
@@ -4007,9 +4037,9 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                                     severity: Severity::Error,
                                     message: format!(
                                         "pattern omits seed feature `{}` from its dependencies",
-                                        seed.0
+                                        seed.as_str()
                                     ),
-                                    entity: Some(feature.id.0.clone()),
+                                    entity: Some(feature.id.as_str().to_owned()),
                                 });
                             }
                             Some(_) => {}
@@ -4041,7 +4071,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                                 {
                                     ref_error(
                                         findings,
-                                        &feature.id.0,
+                                        feature.id.as_str(),
                                         "seed occurrence",
                                         occurrence.as_str(),
                                     );
@@ -4058,7 +4088,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             FeatureDefinition::Sketch { sketch, .. } => {
                 if let Some(sketch) = sketch.id() {
                     if !ir.model.sketches.iter().any(|value| value.id == *sketch) {
-                        ref_error(findings, &feature.id.0, "owned sketch", &sketch.0);
+                        ref_error(findings, feature.id.as_str(), "owned sketch", &sketch.0);
                     }
                 }
             }
@@ -4070,7 +4100,12 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         .iter()
                         .any(|value| value.id == *sketch)
                     {
-                        ref_error(findings, &feature.id.0, "owned spatial sketch", &sketch.0);
+                        ref_error(
+                            findings,
+                            feature.id.as_str(),
+                            "owned spatial sketch",
+                            &sketch.0,
+                        );
                     }
                 }
             }
@@ -4334,12 +4369,12 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         })
                 {
                     if let crate::features::BinderTarget::Feature { feature: target } = target {
-                        match features.get(target.0.as_str()) {
+                        match features.get(target.as_str()) {
                             None => ref_error(
                                 findings,
-                                &feature.id.0,
+                                feature.id.as_str(),
                                 "binder target feature",
-                                &target.0,
+                                target.as_str(),
                             ),
                             Some(ordinal) if *ordinal >= feature.ordinal => {
                                 findings.push(Finding {
@@ -4347,9 +4382,9 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                                     severity: Severity::Error,
                                     message: format!(
                                         "binder target feature `{}` does not precede its binder",
-                                        target.0
+                                        target.as_str()
                                     ),
-                                    entity: Some(feature.id.0.clone()),
+                                    entity: Some(feature.id.as_str().to_owned()),
                                 });
                             }
                             Some(_) => {}
@@ -4490,12 +4525,14 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         .iter()
                         .find(|candidate| candidate.id == *child);
                     match child_record {
-                        None => ref_error(findings, &feature.id.0, "tree child", &child.0),
+                        None => {
+                            ref_error(findings, feature.id.as_str(), "tree child", child.as_str());
+                        }
                         Some(_) if !seen.insert(child) => findings.push(Finding {
                             check: Check::Counts,
                             severity: Severity::Error,
-                            message: format!("tree node repeats child `{}`", child.0),
-                            entity: Some(feature.id.0.clone()),
+                            message: format!("tree node repeats child `{}`", child.as_str()),
+                            entity: Some(feature.id.as_str().to_owned()),
                         }),
                         Some(_) => {}
                     }
@@ -4507,9 +4544,9 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                             severity: Severity::Error,
                             message: format!(
                                 "active tree child `{}` is not an owned child",
-                                active_child.0
+                                active_child.as_str()
                             ),
-                            entity: Some(feature.id.0.clone()),
+                            entity: Some(feature.id.as_str().to_owned()),
                         });
                     }
                 }
@@ -4627,12 +4664,12 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 for plane in plane_references {
                     match plane {
                         DatumPlaneReference::Feature(reference) => {
-                            match feature_records.get(reference.0.as_str()) {
+                            match feature_records.get(reference.as_str()) {
                                 None => ref_error(
                                     findings,
-                                    &feature.id.0,
+                                    feature.id.as_str(),
                                     "datum-point plane",
-                                    &reference.0,
+                                    reference.as_str(),
                                 ),
                                 Some(record)
                                     if !matches!(
@@ -4662,9 +4699,9 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                                         severity: Severity::Error,
                                         message: format!(
                                             "datum point omits plane feature `{}` from its dependencies",
-                                            reference.0
+                                            reference.as_str()
                                         ),
-                                        entity: Some(feature.id.0.clone()),
+                                        entity: Some(feature.id.as_str().to_owned()),
                                     });
                                 }
                                 Some(_) => {}
@@ -4711,8 +4748,13 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 placement: _,
             } => {
                 if let Some(block) = block {
-                    match features.get(block.0.as_str()) {
-                        None => ref_error(findings, &feature.id.0, "sketch block", &block.0),
+                    match features.get(block.as_str()) {
+                        None => ref_error(
+                            findings,
+                            feature.id.as_str(),
+                            "sketch block",
+                            block.as_str(),
+                        ),
                         Some(ordinal) if *ordinal >= feature.ordinal => feature_geometry_error(
                             findings,
                             feature,
@@ -4739,39 +4781,42 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                                 severity: Severity::Error,
                                 message: format!(
                                     "sketch block instance omits block feature `{}` from its dependencies",
-                                    block.0
+                                    block.as_str()
                                 ),
-                                entity: Some(feature.id.0.clone()),
+                                entity: Some(feature.id.as_str().to_owned()),
                             });
                         }
                         Some(_) => {}
                     }
                 }
             }
-            FeatureDefinition::DerivedGeometry { source } => {
-                match features.get(source.0.as_str()) {
-                    None => ref_error(findings, &feature.id.0, "source feature", &source.0),
-                    Some(ordinal) if *ordinal >= feature.ordinal => findings.push(Finding {
-                        check: Check::ReferentialIntegrity,
-                        severity: Severity::Error,
-                        message: format!(
-                            "source feature `{}` does not precede its derived geometry",
-                            source.0
-                        ),
-                        entity: Some(feature.id.0.clone()),
-                    }),
-                    Some(_) if !feature.dependencies.contains(source) => findings.push(Finding {
-                        check: Check::ReferentialIntegrity,
-                        severity: Severity::Error,
-                        message: format!(
-                            "derived geometry omits source feature `{}` from its dependencies",
-                            source.0
-                        ),
-                        entity: Some(feature.id.0.clone()),
-                    }),
-                    Some(_) => {}
-                }
-            }
+            FeatureDefinition::DerivedGeometry { source } => match features.get(source.as_str()) {
+                None => ref_error(
+                    findings,
+                    feature.id.as_str(),
+                    "source feature",
+                    source.as_str(),
+                ),
+                Some(ordinal) if *ordinal >= feature.ordinal => findings.push(Finding {
+                    check: Check::ReferentialIntegrity,
+                    severity: Severity::Error,
+                    message: format!(
+                        "source feature `{}` does not precede its derived geometry",
+                        source.as_str()
+                    ),
+                    entity: Some(feature.id.as_str().to_owned()),
+                }),
+                Some(_) if !feature.dependencies.contains(source) => findings.push(Finding {
+                    check: Check::ReferentialIntegrity,
+                    severity: Severity::Error,
+                    message: format!(
+                        "derived geometry omits source feature `{}` from its dependencies",
+                        source.as_str()
+                    ),
+                    entity: Some(feature.id.as_str().to_owned()),
+                }),
+                Some(_) => {}
+            },
             FeatureDefinition::ImportedGeometry { path, .. } => {
                 if path.is_empty() || path.contains('\0') {
                     feature_geometry_error(findings, feature, "geometry import path is invalid");
@@ -4789,13 +4834,13 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 if let Some(reference) = reference {
                     match reference {
                         DatumPlaneReference::Feature(reference) => {
-                            match feature_records.get(reference.0.as_str()) {
+                            match feature_records.get(reference.as_str()) {
                                 None => {
                                     ref_error(
                                         findings,
-                                        &feature.id.0,
+                                        feature.id.as_str(),
                                         "reference plane",
-                                        &reference.0,
+                                        reference.as_str(),
                                     );
                                 }
                                 Some(record)
@@ -4819,9 +4864,9 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                                         severity: Severity::Error,
                                         message: format!(
                                             "reference plane `{}` does not precede its offset plane",
-                                            reference.0
+                                            reference.as_str()
                                         ),
-                                        entity: Some(feature.id.0.clone()),
+                                        entity: Some(feature.id.as_str().to_owned()),
                                     });
                                 }
                                 Some(_) if !feature.dependencies.contains(reference) => {
@@ -4830,9 +4875,9 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                                         severity: Severity::Error,
                                         message: format!(
                                             "offset plane omits reference feature `{}` from its dependencies",
-                                            reference.0
+                                            reference.as_str()
                                         ),
-                                        entity: Some(feature.id.0.clone()),
+                                        entity: Some(feature.id.as_str().to_owned()),
                                     });
                                 }
                                 Some(_) => {}
@@ -4873,7 +4918,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             match profile {
                 ProfileRef::Faces(faces) => check_ids(
                     findings,
-                    &feature.id.0,
+                    feature.id.as_str(),
                     "profile face",
                     faces.iter().map(super::super::ids::FaceId::as_str),
                     |identity| ids.faces(identity).is_some(),
@@ -4913,8 +4958,13 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         },
                     );
                 }
-                ProfileRef::Feature(producer) => match features.get(producer.0.as_str()) {
-                    None => ref_error(findings, &feature.id.0, "profile feature", &producer.0),
+                ProfileRef::Feature(producer) => match features.get(producer.as_str()) {
+                    None => ref_error(
+                        findings,
+                        feature.id.as_str(),
+                        "profile feature",
+                        producer.as_str(),
+                    ),
                     Some(ordinal)
                         if *ordinal >= feature.ordinal
                             || !feature.dependencies.contains(producer) =>
@@ -4933,7 +4983,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         || curves.iter().any(|curve| {
                             curve.local_id.trim().is_empty()
                                 || features
-                                    .get(curve.feature.0.as_str())
+                                    .get(curve.feature.as_str())
                                     .is_none_or(|ordinal| *ordinal >= feature.ordinal)
                                 || !feature.dependencies.contains(&curve.feature)
                         }) =>
@@ -4947,28 +4997,28 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             match path {
                 PathRef::Edges(edges) => check_ids(
                     findings,
-                    &feature.id.0,
+                    feature.id.as_str(),
                     "path edge",
                     edges.iter().map(super::super::ids::EdgeId::as_str),
                     |identity| ids.edges(identity).is_some(),
                 ),
                 PathRef::Curves(curves) => check_ids(
                     findings,
-                    &feature.id.0,
+                    feature.id.as_str(),
                     "path curve",
                     curves.iter().map(super::super::ids::CurveId::as_str),
                     |identity| ids.curves(identity).is_some(),
                 ),
                 PathRef::SketchCurves { curves, .. } => check_ids(
                     findings,
-                    &feature.id.0,
+                    feature.id.as_str(),
                     "sketch path curve",
                     curves.iter().map(|id| id.0.as_str()),
                     |identity| sketch_entities.contains(identity),
                 ),
                 PathRef::SpatialSketchCurves { curves, .. } => check_ids(
                     findings,
-                    &feature.id.0,
+                    feature.id.as_str(),
                     "spatial sketch path curve",
                     curves.iter().map(|id| id.0.as_str()),
                     |identity| spatial_sketch_entity_owners.contains_key(identity),
@@ -5008,7 +5058,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     check: Check::GeometricConsistency,
                     severity: Severity::Error,
                     message: "feature extent magnitude is invalid".into(),
-                    entity: Some(feature.id.0.clone()),
+                    entity: Some(feature.id.as_str().to_owned()),
                 });
             }
             if let Some(FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. }) =
@@ -5016,7 +5066,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             {
                 check_ids(
                     findings,
-                    &feature.id.0,
+                    feature.id.as_str(),
                     "termination face",
                     faces.iter().map(super::super::ids::FaceId::as_str),
                     |identity| ids.faces(identity).is_some(),
@@ -5027,7 +5077,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             {
                 check_ids(
                     findings,
-                    &feature.id.0,
+                    feature.id.as_str(),
                     "termination shape face",
                     faces.iter().map(super::super::ids::FaceId::as_str),
                     |identity| ids.faces(identity).is_some(),
@@ -5043,7 +5093,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     if native.trim().is_empty()
                         || vertex.local_id.trim().is_empty()
                         || features
-                            .get(vertex.feature.0.as_str())
+                            .get(vertex.feature.as_str())
                             .is_none_or(|ordinal| *ordinal >= feature.ordinal)
                         || !feature.dependencies.contains(&vertex.feature)
                         || result_topologies_by_feature
@@ -5092,7 +5142,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             match selection {
                 EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => check_ids(
                     findings,
-                    &feature.id.0,
+                    feature.id.as_str(),
                     "selected edge",
                     edges.iter().map(super::super::ids::EdgeId::as_str),
                     |identity| ids.edges(identity).is_some(),
@@ -5135,7 +5185,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                                     check: Check::ReferentialIntegrity,
                                     severity: Severity::Error,
                                     message: "partial historical edge selection has an empty unresolved operand identity".into(),
-                                    entity: Some(feature.id.0.clone()),
+                                    entity: Some(feature.id.as_str().to_owned()),
                                 });
                             } else if !identities.insert(identity) {
                                 findings.push(Finding {
@@ -5144,7 +5194,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                                     message: format!(
                                         "partial historical edge selection repeats unresolved operand `{identity}`"
                                     ),
-                                    entity: Some(feature.id.0.clone()),
+                                    entity: Some(feature.id.as_str().to_owned()),
                                 });
                             }
                         }
@@ -5155,7 +5205,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                                 message:
                                     "partial historical edge selection has no unresolved operands"
                                         .into(),
-                                entity: Some(feature.id.0.clone()),
+                                entity: Some(feature.id.as_str().to_owned()),
                             });
                         }
                     }
@@ -5185,7 +5235,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
             match selection {
                 FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => check_ids(
                     findings,
-                    &feature.id.0,
+                    feature.id.as_str(),
                     "selected face",
                     faces.iter().map(super::super::ids::FaceId::as_str),
                     |identity| ids.faces(identity).is_some(),
@@ -5247,14 +5297,14 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                                 check: Check::ReferentialIntegrity,
                                 severity: Severity::Error,
                                 message: "partial historical face selection has an empty unresolved operand identity".into(),
-                                entity: Some(feature.id.0.clone()),
+                                entity: Some(feature.id.as_str().to_owned()),
                             });
                         } else if !identities.insert(identity) {
                             findings.push(Finding {
                                 check: Check::ReferentialIntegrity,
                                 severity: Severity::Error,
                                 message: format!("partial historical face selection repeats unresolved operand `{identity}`"),
-                                entity: Some(feature.id.0.clone()),
+                                entity: Some(feature.id.as_str().to_owned()),
                             });
                         }
                     }
@@ -5264,7 +5314,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                             severity: Severity::Error,
                             message: "partial historical face selection has no unresolved operands"
                                 .into(),
-                            entity: Some(feature.id.0.clone()),
+                            entity: Some(feature.id.as_str().to_owned()),
                         });
                     }
                 }
@@ -5294,7 +5344,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
                     check_ids(
                         findings,
-                        &feature.id.0,
+                        feature.id.as_str(),
                         "selected body",
                         bodies.iter().map(super::super::ids::BodyId::as_str),
                         |identity| ids.bodies(identity).is_some(),
@@ -5303,7 +5353,7 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 BodySelection::ResolvedSet { bodies, native } => {
                     check_ids(
                         findings,
-                        &feature.id.0,
+                        feature.id.as_str(),
                         "selected body",
                         bodies.iter().map(super::super::ids::BodyId::as_str),
                         |identity| ids.bodies(identity).is_some(),
@@ -5519,7 +5569,7 @@ fn check_historical_selection<'a, I, F>(
             check: Check::ReferentialIntegrity,
             severity: Severity::Error,
             message: format!("historical {kind} selection uses another feature's input topology"),
-            entity: Some(feature.0.clone()),
+            entity: Some(feature.as_str().to_owned()),
         });
     }
     if native.is_empty() {
@@ -5527,7 +5577,7 @@ fn check_historical_selection<'a, I, F>(
             check: Check::ReferentialIntegrity,
             severity: Severity::Error,
             message: format!("historical {kind} selection has an empty native reference"),
-            entity: Some(feature.0.clone()),
+            entity: Some(feature.as_str().to_owned()),
         });
     }
     let available = members(state).into_iter().collect::<HashSet<_>>();
@@ -5537,7 +5587,7 @@ fn check_historical_selection<'a, I, F>(
             check: Check::Counts,
             severity: Severity::Error,
             message: format!("historical {kind} selection is empty"),
-            entity: Some(feature.0.clone()),
+            entity: Some(feature.as_str().to_owned()),
         });
     }
     let mut seen = HashSet::new();
@@ -5547,7 +5597,7 @@ fn check_historical_selection<'a, I, F>(
                 check: Check::Counts,
                 severity: Severity::Error,
                 message: format!("historical {kind} selection repeats `{id}`"),
-                entity: Some(feature.0.clone()),
+                entity: Some(feature.as_str().to_owned()),
             });
         }
         if !available.contains(id) {
@@ -5874,9 +5924,9 @@ fn check_configuration_state_closure(
                         severity: Severity::Error,
                         message: format!(
                             "configuration state closure uses suppressed dependency state `{}`",
-                            dependency.0
+                            dependency.as_str()
                         ),
-                        entity: Some(configuration.id.0.clone()),
+                        entity: Some(configuration.id.as_str().to_owned()),
                     });
                 }
                 Some(_) if closure.insert(dependency.clone()) => pending.push(dependency.clone()),
@@ -5970,7 +6020,7 @@ fn body_selections_overlap(first: &BodySelection, second: &BodySelection) -> boo
 }
 
 fn feature_geometry_error(findings: &mut Vec<Finding>, feature: &Feature, message: &str) {
-    geometry_error(findings, &feature.id.0, message);
+    geometry_error(findings, feature.id.as_str(), message);
 }
 
 fn check_plane_feature_reference(
@@ -5981,7 +6031,12 @@ fn check_plane_feature_reference(
     reference_kind: &str,
 ) {
     match feature_records.get(reference.as_str()) {
-        None => ref_error(findings, &feature.id.0, reference_kind, reference.as_str()),
+        None => ref_error(
+            findings,
+            feature.id.as_str(),
+            reference_kind,
+            reference.as_str(),
+        ),
         Some(record)
             if !matches!(
                 &record.definition,
@@ -6002,18 +6057,18 @@ fn check_plane_feature_reference(
             severity: Severity::Error,
             message: format!(
                 "{reference_kind} `{}` does not precede its consuming feature",
-                reference.0
+                reference.as_str()
             ),
-            entity: Some(feature.id.0.clone()),
+            entity: Some(feature.id.as_str().to_owned()),
         }),
         Some(_) if !feature.dependencies.contains(reference) => findings.push(Finding {
             check: Check::ReferentialIntegrity,
             severity: Severity::Error,
             message: format!(
                 "feature omits {reference_kind} dependency `{}`",
-                reference.0
+                reference.as_str()
             ),
-            entity: Some(feature.id.0.clone()),
+            entity: Some(feature.id.as_str().to_owned()),
         }),
         Some(_) => {}
     }
@@ -6080,14 +6135,14 @@ fn check_feature_sketch_references(
             _ => continue,
         };
         if owners
-            .insert(sketch, (feature.id.0.as_str(), feature.ordinal))
+            .insert(sketch, (feature.id.as_str(), feature.ordinal))
             .is_some()
         {
             findings.push(Finding {
                 check: Check::ReferentialIntegrity,
                 severity: Severity::Error,
                 message: format!("sketch `{sketch}` has multiple owning features"),
-                entity: Some(feature.id.0.clone()),
+                entity: Some(feature.id.as_str().to_owned()),
             });
         }
     }
@@ -6167,7 +6222,7 @@ fn check_feature_sketch_references(
                         message: format!(
                             "sketch owner `{owner}` does not precede its datum-point consumer"
                         ),
-                        entity: Some(feature.id.0.clone()),
+                        entity: Some(feature.id.as_str().to_owned()),
                     });
                 }
             }
@@ -6249,7 +6304,12 @@ fn check_feature_sketch_references(
                     );
                 }
                 if !spatial_sketches.contains(sketch.0.as_str()) {
-                    ref_error(findings, &feature.id.0, "spatial sketch profile", &sketch.0);
+                    ref_error(
+                        findings,
+                        feature.id.as_str(),
+                        "spatial sketch profile",
+                        &sketch.0,
+                    );
                 } else if let Some((owner, ordinal)) = owners.get(sketch.0.as_str()) {
                     if *ordinal >= feature.ordinal {
                         findings.push(Finding {
@@ -6258,7 +6318,7 @@ fn check_feature_sketch_references(
                             message: format!(
                                 "spatial sketch owner `{owner}` does not precede its profile consumer"
                             ),
-                            entity: Some(feature.id.0.clone()),
+                            entity: Some(feature.id.as_str().to_owned()),
                         });
                     }
                 }
@@ -6317,7 +6377,7 @@ fn check_feature_sketch_references(
                 | ProfileRef::Faces(_) => continue,
             };
             if !sketches.contains(sketch.0.as_str()) {
-                ref_error(findings, &feature.id.0, "sketch profile", &sketch.0);
+                ref_error(findings, feature.id.as_str(), "sketch profile", &sketch.0);
             } else if let Some((owner, ordinal)) = owners.get(sketch.0.as_str()) {
                 if *ordinal >= feature.ordinal {
                     findings.push(Finding {
@@ -6326,7 +6386,7 @@ fn check_feature_sketch_references(
                         message: format!(
                             "sketch owner `{owner}` does not precede its profile consumer"
                         ),
-                        entity: Some(feature.id.0.clone()),
+                        entity: Some(feature.id.as_str().to_owned()),
                     });
                 }
             }
@@ -6500,7 +6560,7 @@ fn check_feature_sketch_references(
                 _ => continue,
             };
             if !known_sketches.contains(sketch) {
-                ref_error(findings, &feature.id.0, description, sketch);
+                ref_error(findings, feature.id.as_str(), description, sketch);
             } else if let Some((owner, ordinal)) = owners.get(sketch) {
                 if *ordinal >= feature.ordinal {
                     findings.push(Finding {
@@ -6509,7 +6569,7 @@ fn check_feature_sketch_references(
                         message: format!(
                             "sketch owner `{owner}` does not precede its path consumer"
                         ),
-                        entity: Some(feature.id.0.clone()),
+                        entity: Some(feature.id.as_str().to_owned()),
                     });
                 }
             }

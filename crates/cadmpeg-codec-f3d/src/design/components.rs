@@ -387,7 +387,7 @@ mod tests {
         ));
 
         let mut feature = Feature::new(
-            FeatureId("f3d:model:feature#derived".into()),
+            FeatureId::mint("f3d:model:feature#derived").expect("identity grammar"),
             1,
             FeatureDefinition::Native {
                 kind: "DerivedInstance".into(),

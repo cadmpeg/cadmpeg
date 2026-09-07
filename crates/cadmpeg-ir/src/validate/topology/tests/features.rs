@@ -94,7 +94,7 @@ fn historical_vertex_selection_requires_input_state_membership() {
     use crate::ids::{FeatureInputTopologyId, HistoricalVertexId};
     use crate::schema::EntitySchema;
 
-    let feature_id = FeatureId("test:model:feature#datum-point".into());
+    let feature_id = FeatureId::mint("test:model:feature#datum-point").expect("identity grammar");
     let state_id = FeatureInputTopologyId::mint("test:model:feature-input#datum-point")
         .expect("valid identity");
     let historical_vertex =
@@ -176,7 +176,8 @@ fn three_point_datum_plane_requires_distinct_vertices_from_one_input_topology() 
     };
     use crate::ids::{FeatureInputTopologyId, HistoricalVertexId};
 
-    let feature_id = FeatureId("test:model:feature#three-point-plane".into());
+    let feature_id =
+        FeatureId::mint("test:model:feature#three-point-plane").expect("identity grammar");
     let first_state = FeatureInputTopologyId::mint("test:model:feature-input#three-point-plane-a")
         .expect("valid identity");
     let second_state = FeatureInputTopologyId::mint("test:model:feature-input#three-point-plane-b")
@@ -332,7 +333,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
 
     let mut ir = unit_cube();
     ir.model.features.push(Feature {
-        id: FeatureId("synthetic:test:feature#sketch-ref".into()),
+        id: FeatureId::mint("synthetic:test:feature#sketch-ref").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -367,7 +368,7 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
     use std::collections::BTreeMap;
 
     let mut ir = unit_cube();
-    let feature_id = FeatureId("synthetic:test:feature#invalid".into());
+    let feature_id = FeatureId::mint("synthetic:test:feature#invalid").expect("identity grammar");
     ir.model.features.push(Feature {
         id: feature_id.clone(),
         ordinal: 0,
@@ -378,7 +379,9 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         source_tag: None,
         source_text: None,
         source_content: vec![
-            FeatureSourceContent::Parameter(ParameterId("synthetic:test:parameter#missing".into())),
+            FeatureSourceContent::Parameter(
+                ParameterId::mint("synthetic:test:parameter#missing").expect("identity grammar"),
+            ),
             FeatureSourceContent::Feature(feature_id.clone()),
         ],
         outputs: vec![BodyId::mint("synthetic:test:body#missing").expect("valid identity")],
@@ -410,7 +413,7 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         native_ref: None,
     });
     ir.model.features.push(Feature {
-        id: FeatureId("synthetic:test:feature#duplicate-order".into()),
+        id: FeatureId::mint("synthetic:test:feature#duplicate-order").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -440,7 +443,7 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
     ] {
         assert!(
             report.findings.iter().any(|finding| {
-                finding.entity.as_deref() == Some(feature_id.0.as_str())
+                finding.entity.as_deref() == Some(feature_id.as_str())
                     && finding.message.contains(fragment)
             }),
             "missing finding containing {fragment:?}"
@@ -454,7 +457,7 @@ fn feature_parameters_require_unique_names_and_ordinals() {
     use std::collections::BTreeMap;
 
     let mut ir = unit_cube();
-    let owner = FeatureId("synthetic:test:feature#parameters".into());
+    let owner = FeatureId::mint("synthetic:test:feature#parameters").expect("identity grammar");
     ir.model.features.push(Feature {
         id: owner.clone(),
         ordinal: 0,
@@ -474,7 +477,8 @@ fn feature_parameters_require_unique_names_and_ordinals() {
     });
     for (index, name) in ["Width", "Width"].into_iter().enumerate() {
         ir.model.parameters.push(DesignParameter {
-            id: ParameterId(format!("synthetic:test:parameter#{index}")),
+            id: ParameterId::mint(format!("synthetic:test:parameter#{index}"))
+                .expect("identity grammar"),
             owner: Some(owner.clone()),
             ordinal: 0,
             name: name.into(),
@@ -505,7 +509,8 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
     use std::collections::BTreeMap;
 
     let mut ir = unit_cube();
-    let owner = FeatureId("synthetic:test:feature#dependency-owner".into());
+    let owner =
+        FeatureId::mint("synthetic:test:feature#dependency-owner").expect("identity grammar");
     ir.model.features.push(Feature {
         id: owner.clone(),
         ordinal: 0,
@@ -523,14 +528,14 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
         },
         native_ref: None,
     });
-    let first = ParameterId("synthetic:test:parameter#first".into());
-    let second = ParameterId("synthetic:test:parameter#second".into());
+    let first = ParameterId::mint("synthetic:test:parameter#first").expect("identity grammar");
+    let second = ParameterId::mint("synthetic:test:parameter#second").expect("identity grammar");
     for (id, ordinal, dependencies) in [
         (first.clone(), 0, vec![second.clone()]),
         (
             second,
             1,
-            vec![ParameterId("synthetic:test:parameter#missing".into())],
+            vec![ParameterId::mint("synthetic:test:parameter#missing").expect("identity grammar")],
         ),
     ] {
         ir.model.parameters.push(DesignParameter {
@@ -564,7 +569,7 @@ fn document_parameters_can_feed_feature_parameters() {
     use std::collections::BTreeMap;
 
     let mut ir = unit_cube();
-    let owner = FeatureId("synthetic:test:feature#consumer".into());
+    let owner = FeatureId::mint("synthetic:test:feature#consumer").expect("identity grammar");
     ir.model.features.push(Feature {
         id: owner.clone(),
         ordinal: 0,
@@ -582,7 +587,8 @@ fn document_parameters_can_feed_feature_parameters() {
         },
         native_ref: None,
     });
-    let document = ParameterId("synthetic:test:parameter#document".into());
+    let document =
+        ParameterId::mint("synthetic:test:parameter#document").expect("identity grammar");
     ir.model.parameters.push(DesignParameter {
         id: document.clone(),
         owner: None,
@@ -597,7 +603,7 @@ fn document_parameters_can_feed_feature_parameters() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        id: ParameterId("synthetic:test:parameter#owned".into()),
+        id: ParameterId::mint("synthetic:test:parameter#owned").expect("identity grammar"),
         owner: Some(owner),
         ordinal: 0,
         name: "Distance".into(),
@@ -618,9 +624,9 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
     use crate::features::{DatumPlaneReference, Feature, FeatureDefinition, FeatureId, Length};
 
     let mut ir = unit_cube();
-    let principal = FeatureId("synthetic:test:feature#principal".into());
+    let principal = FeatureId::mint("synthetic:test:feature#principal").expect("identity grammar");
     let feature = |id: &str, ordinal: u64, definition: FeatureDefinition| Feature {
-        id: FeatureId(id.into()),
+        id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
         name: None,
         suppressed: Some(false),
@@ -642,7 +648,7 @@ fn offset_plane_references_form_an_acyclic_graph_independent_of_list_order() {
         },
     ));
     ir.model.features.push(feature(
-        principal.0.as_str(),
+        principal.as_str(),
         1,
         FeatureDefinition::DatumPlane {
             origin: Point3::new(0.0, 0.0, 0.0),
@@ -699,7 +705,7 @@ fn feature_extent_magnitudes_are_validated() {
     ] {
         let mut ir = unit_cube();
         ir.model.features.push(Feature {
-            id: FeatureId("synthetic:test:feature#invalid-extent".into()),
+            id: FeatureId::mint("synthetic:test:feature#invalid-extent").expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: Some(false),
@@ -731,7 +737,7 @@ fn feature_extent_magnitudes_are_validated() {
 
     let mut ir = unit_cube();
     ir.model.features.push(Feature {
-        id: FeatureId("synthetic:test:feature#invalid-angle".into()),
+        id: FeatureId::mint("synthetic:test:feature#invalid-angle").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -801,7 +807,8 @@ fn block_placement_must_be_proper_rigid() {
     ] {
         let mut ir = unit_cube();
         ir.model.features.push(Feature {
-            id: FeatureId("synthetic:test:feature#invalid-block-placement".into()),
+            id: FeatureId::mint("synthetic:test:feature#invalid-block-placement")
+                .expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: Some(false),
@@ -835,7 +842,8 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
     use std::collections::BTreeMap;
 
     let mut ir = unit_cube();
-    let source = FeatureId("synthetic:test:feature#0-vertex-source".into());
+    let source =
+        FeatureId::mint("synthetic:test:feature#0-vertex-source").expect("identity grammar");
     ir.model.features.push(Feature {
         id: source.clone(),
         ordinal: 0,
@@ -854,7 +862,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         native_ref: None,
     });
     ir.model.features.push(Feature {
-        id: FeatureId("synthetic:test:feature#1-extrude".into()),
+        id: FeatureId::mint("synthetic:test:feature#1-extrude").expect("identity grammar"),
         ordinal: 1,
         name: None,
         suppressed: Some(false),
@@ -899,7 +907,7 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         .any(|finding| finding.message == message));
     let extrude = ir.model.features[1].id.clone();
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId("synthetic:test:configuration#vertex".into()),
+        id: ConfigurationId::mint("synthetic:test:configuration#vertex").expect("identity grammar"),
         ordinal: 0,
         active: false,
         source_index: None,
@@ -927,7 +935,8 @@ fn generated_termination_vertices_require_declared_feature_dependencies() {
         .any(|finding| finding.message == message));
     let configuration_message = format!(
         "configuration feature state `{}` omits referenced feature `{}` from its dependencies",
-        extrude.0, source.0
+        extrude.as_str(),
+        source.as_str()
     );
     assert!(validate_neutral(&ir, Vec::new())
         .findings
@@ -990,7 +999,8 @@ fn body_combine_requires_exactly_one_resolved_target() {
     let mut ir = unit_cube();
     let body = ir.model.bodies[0].id.clone();
     ir.model.features.push(Feature {
-        id: FeatureId("synthetic:test:feature#invalid-combine-target".into()),
+        id: FeatureId::mint("synthetic:test:feature#invalid-combine-target")
+            .expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -1077,7 +1087,8 @@ fn feature_operand_roles_must_be_disjoint() {
     .enumerate()
     {
         ir.model.features.push(Feature {
-            id: FeatureId(format!("synthetic:test:feature#overlap-{ordinal}")),
+            id: FeatureId::mint(format!("synthetic:test:feature#overlap-{ordinal}"))
+                .expect("identity grammar"),
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
@@ -1108,7 +1119,7 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
     use crate::features::{Feature, FeatureDefinition, FeatureId, PatternKind, PatternSeed};
 
     let mut ir = unit_cube();
-    let seed = FeatureId("synthetic:test:feature#pattern-seed".into());
+    let seed = FeatureId::mint("synthetic:test:feature#pattern-seed").expect("identity grammar");
     ir.model.features.push(Feature {
         id: seed.clone(),
         ordinal: 0,
@@ -1127,7 +1138,7 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
         native_ref: None,
     });
     ir.model.features.push(Feature {
-        id: FeatureId("synthetic:test:feature#pattern".into()),
+        id: FeatureId::mint("synthetic:test:feature#pattern").expect("identity grammar"),
         ordinal: 1,
         name: None,
         suppressed: Some(false),
@@ -1148,7 +1159,7 @@ fn pattern_feature_seeds_must_be_declared_dependencies() {
     });
     let message = format!(
         "pattern omits seed feature `{}` from its dependencies",
-        seed.0
+        seed.as_str()
     );
     assert!(validate_neutral(&ir, Vec::new())
         .findings
@@ -1173,13 +1184,14 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
     use std::collections::{BTreeMap, HashSet};
 
     let mut ir = unit_cube();
-    let source = FeatureId("synthetic:test:feature#0-source".into());
-    let offset = FeatureId("synthetic:test:feature#1-offset".into());
-    let derived = FeatureId("synthetic:test:feature#2-derived".into());
-    let pattern = FeatureId("synthetic:test:feature#3-pattern".into());
-    let block = FeatureId("synthetic:test:feature#4-block".into());
-    let instance = FeatureId("synthetic:test:feature#5-instance".into());
-    let profile = FeatureId("synthetic:test:feature#6-profile-consumer".into());
+    let source = FeatureId::mint("synthetic:test:feature#0-source").expect("identity grammar");
+    let offset = FeatureId::mint("synthetic:test:feature#1-offset").expect("identity grammar");
+    let derived = FeatureId::mint("synthetic:test:feature#2-derived").expect("identity grammar");
+    let pattern = FeatureId::mint("synthetic:test:feature#3-pattern").expect("identity grammar");
+    let block = FeatureId::mint("synthetic:test:feature#4-block").expect("identity grammar");
+    let instance = FeatureId::mint("synthetic:test:feature#5-instance").expect("identity grammar");
+    let profile =
+        FeatureId::mint("synthetic:test:feature#6-profile-consumer").expect("identity grammar");
     let feature = |id, ordinal, definition| Feature {
         id,
         ordinal,
@@ -1277,7 +1289,8 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
     ir.model.features[3].dependencies.push(source.clone());
     ir.model.features[6].dependencies.push(source.clone());
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId("synthetic:test:configuration#offset-plane".into()),
+        id: ConfigurationId::mint("synthetic:test:configuration#offset-plane")
+            .expect("identity grammar"),
         ordinal: 0,
         active: false,
         source_index: None,
@@ -1317,21 +1330,23 @@ fn definition_references_must_be_declared_dependencies_in_every_configuration() 
         .collect::<HashSet<_>>();
     assert!(findings.contains(&format!(
         "offset plane omits reference feature `{}` from its dependencies",
-        source.0
+        source.as_str()
     )));
     assert!(findings.contains(&format!(
         "sketch block instance omits block feature `{}` from its dependencies",
-        block.0
+        block.as_str()
     )));
     for feature in [&offset, &derived, &pattern, &profile] {
         assert!(findings.contains(&format!(
             "configuration feature state `{}` omits referenced feature `{}` from its dependencies",
-            feature.0, source.0
+            feature.as_str(),
+            source.as_str()
         )));
     }
     assert!(findings.contains(&format!(
         "configuration feature state `{}` omits referenced feature `{}` from its dependencies",
-        instance.0, block.0
+        instance.as_str(),
+        block.as_str()
     )));
 
     ir.model.features[1].dependencies.push(source.clone());
@@ -1405,7 +1420,8 @@ fn resolved_datum_geometry_must_be_finite_and_coherent() {
     let mut ir = unit_cube();
     for (ordinal, definition) in definitions.into_iter().enumerate() {
         ir.model.features.push(Feature {
-            id: FeatureId(format!("synthetic:test:feature#invalid-datum-{ordinal}")),
+            id: FeatureId::mint(format!("synthetic:test:feature#invalid-datum-{ordinal}"))
+                .expect("identity grammar"),
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
@@ -1439,7 +1455,8 @@ fn explicit_extrusion_direction_must_be_nonzero() {
 
     let mut ir = unit_cube();
     ir.model.features.push(Feature {
-        id: FeatureId("synthetic:test:feature#invalid-extrude-direction".into()),
+        id: FeatureId::mint("synthetic:test:feature#invalid-extrude-direction")
+            .expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -1516,7 +1533,7 @@ fn extrusion_side_drafts_are_validated() {
     ] {
         let mut ir = unit_cube();
         ir.model.features.push(Feature {
-            id: FeatureId("synthetic:test:feature#side-draft".into()),
+            id: FeatureId::mint("synthetic:test:feature#side-draft").expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: Some(false),
@@ -1557,7 +1574,7 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
     use crate::ids::FeatureResultTopologyId;
 
     let mut ir = CadIr::empty();
-    let producer = FeatureId("synthetic:test:feature#0-producer".into());
+    let producer = FeatureId::mint("synthetic:test:feature#0-producer").expect("identity grammar");
     ir.model.features.push(Feature {
         id: producer.clone(),
         ordinal: 0,
@@ -1588,7 +1605,7 @@ fn generated_body_selection_must_name_a_declared_producer_result() {
             native_ref: None,
         });
     ir.model.features.push(Feature {
-        id: FeatureId("synthetic:test:feature#1-consumer".into()),
+        id: FeatureId::mint("synthetic:test:feature#1-consumer").expect("identity grammar"),
         ordinal: 1,
         name: None,
         suppressed: Some(false),
@@ -1631,8 +1648,9 @@ fn reference_images_require_valid_assets_and_plane_placements() {
     use crate::features::{Feature, FeatureDefinition, FeatureId};
     use crate::math::Point2;
 
-    let asset_id = AssetId("synthetic:test:asset#reference-image".into());
-    let feature_id = FeatureId("synthetic:test:feature#reference-image".into());
+    let asset_id = AssetId::mint("synthetic:test:asset#reference-image").expect("identity grammar");
+    let feature_id =
+        FeatureId::mint("synthetic:test:feature#reference-image").expect("identity grammar");
     let mut ir = CadIr::empty();
     ir.model.assets.push(Asset {
         id: asset_id.clone(),
@@ -1677,7 +1695,7 @@ fn reference_images_require_valid_assets_and_plane_placements() {
     ir.model.assets.clear();
     let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(feature_id.0.as_str())
+        finding.entity.as_deref() == Some(feature_id.as_str())
             && finding.message.contains("reference-image asset")
     }));
 
@@ -1688,7 +1706,7 @@ fn reference_images_require_valid_assets_and_plane_placements() {
     *v_axis = Vector3::new(1.0, 0.0, 0.0);
     let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(feature_id.0.as_str())
+        finding.entity.as_deref() == Some(feature_id.as_str())
             && finding.message == "reference-image placement is invalid"
     }));
 }
@@ -1698,8 +1716,8 @@ fn decals_require_valid_assets_faces_and_opacity() {
     use crate::assets::{Asset, AssetContent, AssetId};
     use crate::features::{DecalMapping, FaceSelection, Feature, FeatureDefinition, FeatureId};
 
-    let asset_id = AssetId("synthetic:test:asset#decal".into());
-    let feature_id = FeatureId("synthetic:test:feature#decal".into());
+    let asset_id = AssetId::mint("synthetic:test:asset#decal").expect("identity grammar");
+    let feature_id = FeatureId::mint("synthetic:test:feature#decal").expect("identity grammar");
     let mut ir = unit_cube();
     let face_id = ir.model.faces[0].id.clone();
     ir.model.assets.push(Asset {
@@ -1742,7 +1760,7 @@ fn decals_require_valid_assets_faces_and_opacity() {
     *opacity = Some(2.0);
     let report = validate_neutral(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
-        finding.entity.as_deref() == Some(feature_id.0.as_str())
+        finding.entity.as_deref() == Some(feature_id.as_str())
             && finding.message == "decal opacity is invalid"
     }));
 }

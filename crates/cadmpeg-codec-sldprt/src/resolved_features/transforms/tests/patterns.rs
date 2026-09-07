@@ -391,7 +391,7 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         sketch_entities: Vec::new(),
     };
     let model_feature = |id: &str, native_ref: &str, definition| Feature {
-        id: FeatureId(id.into()),
+        id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -903,7 +903,7 @@ fn compact_line_reference_scalar_counts_follow_their_trailers() {
 fn e1_line_distance_indices_address_coordinate_point_pairs() {
     let sketch = SketchId("sketch".into());
     let feature = Feature {
-        id: FeatureId("feature".into()),
+        id: FeatureId::mint("feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -1001,7 +1001,7 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         sketch_entities: markers,
     };
     let parameter = |id: &str, scalar: &str| DesignParameter {
-        id: ParameterId(id.into()),
+        id: ParameterId::mint(id).expect("identity grammar"),
         owner: Some(feature.id.clone()),
         ordinal: 0,
         name: id.into(),
@@ -1087,7 +1087,7 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
 fn roster_point_line_distance_materializes_one_solver_line() {
     let sketch = SketchId("sketch".into());
     let feature = Feature {
-        id: FeatureId("feature".into()),
+        id: FeatureId::mint("feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -1185,7 +1185,7 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         sketch_entities: markers,
     };
     let parameter = DesignParameter {
-        id: ParameterId("parameter".into()),
+        id: ParameterId::mint("parameter").expect("identity grammar"),
         owner: Some(feature.id.clone()),
         ordinal: 0,
         name: "D1".into(),
@@ -1260,7 +1260,7 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         native_ref: None,
     };
     let feature = Feature {
-        id: FeatureId("feature".into()),
+        id: FeatureId::mint("feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -1364,7 +1364,7 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         sketch_entities: markers,
     };
     let parameter = DesignParameter {
-        id: ParameterId("parameter".into()),
+        id: ParameterId::mint("parameter").expect("identity grammar"),
         owner: Some(feature.id.clone()),
         ordinal: 0,
         name: "D1".into(),
@@ -1424,7 +1424,7 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
 fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
     let sketch = SketchId("sketch".into());
     let feature = Feature {
-        id: FeatureId("feature".into()),
+        id: FeatureId::mint("feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -1523,7 +1523,7 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
         sketch_entities: vec![known_a, known_b, missing],
     };
     let parameter = |id: &str, scalar: &str, distance: f64| DesignParameter {
-        id: ParameterId(id.into()),
+        id: ParameterId::mint(id).expect("identity grammar"),
         owner: Some(feature.id.clone()),
         ordinal: 0,
         name: id.into(),

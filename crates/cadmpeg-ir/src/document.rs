@@ -451,7 +451,7 @@ macro_rules! declare_model {
                 })*
                 for parent in self.feature_regeneration_parents.0.values() {
                     visitor(crate::schema::Reference {
-                        target: parent.0.clone(),
+                        target: parent.as_str().to_owned(),
                     });
                 }
             }

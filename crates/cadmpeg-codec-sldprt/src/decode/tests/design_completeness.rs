@@ -18,7 +18,7 @@ use std::collections::BTreeMap;
 fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
     let mut ir = CadIr::empty();
     let feature = |id: &str, ordinal, definition| Feature {
-        id: FeatureId(id.into()),
+        id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
         name: None,
         suppressed: Some(false),
@@ -82,10 +82,10 @@ fn design_completeness_rejects_unresolved_and_unaudited_typed_families() {
 fn design_completeness_audits_direct_body_and_shape_families() {
     let mut ir = CadIr::empty();
     let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
-    let source = FeatureId("base".into());
+    let source = FeatureId::mint("base").expect("identity grammar");
     let mut push = |id: &str, ordinal, dependencies, outputs, definition| {
         ir.model.features.push(Feature {
-            id: FeatureId(id.into()),
+            id: FeatureId::mint(id).expect("identity grammar"),
             ordinal,
             name: None,
             suppressed: Some(false),
@@ -265,7 +265,7 @@ fn design_completeness_audits_typed_construction_families() {
     ];
     for (ordinal, definition) in definitions.into_iter().enumerate() {
         ir.model.features.push(Feature {
-            id: FeatureId(format!("construction-{ordinal}")),
+            id: FeatureId::mint(format!("construction-{ordinal}")).expect("identity grammar"),
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
@@ -292,9 +292,9 @@ fn design_completeness_audits_typed_construction_families() {
 #[test]
 fn binder_completeness_requires_resolved_targets_and_shape_arity() {
     let mut ir = CadIr::empty();
-    let source = FeatureId("source".into());
+    let source = FeatureId::mint("source").expect("identity grammar");
     let feature = |id: &str, ordinal, dependencies, definition| Feature {
-        id: FeatureId(id.into()),
+        id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
         name: None,
         suppressed: Some(false),
@@ -404,7 +404,7 @@ fn post_process_completeness_delegates_to_the_wrapped_operation() {
     .enumerate()
     {
         ir.model.features.push(Feature {
-            id: FeatureId(format!("post-process-{ordinal}")),
+            id: FeatureId::mint(format!("post-process-{ordinal}")).expect("identity grammar"),
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
@@ -431,7 +431,9 @@ fn post_process_completeness_delegates_to_the_wrapped_operation() {
 #[test]
 fn design_completeness_recurses_through_pattern_operands() {
     let mut ir = CadIr::empty();
-    let seed = cadmpeg_ir::features::PatternSeed::Feature(FeatureId("seed".into()));
+    let seed = cadmpeg_ir::features::PatternSeed::Feature(
+        FeatureId::mint("seed").expect("identity grammar"),
+    );
     for (ordinal, pattern) in [
         (
             0,
@@ -480,7 +482,7 @@ fn design_completeness_recurses_through_pattern_operands() {
         ),
     ] {
         ir.model.features.push(Feature {
-            id: FeatureId(format!("pattern-{ordinal}")),
+            id: FeatureId::mint(format!("pattern-{ordinal}")).expect("identity grammar"),
             ordinal,
             name: None,
             suppressed: Some(false),
@@ -564,7 +566,7 @@ fn design_completeness_checks_secondary_sweep_and_loft_paths() {
     ];
     for (ordinal, definition) in definitions.into_iter().enumerate() {
         ir.model.features.push(Feature {
-            id: FeatureId(format!("path-feature-{ordinal}")),
+            id: FeatureId::mint(format!("path-feature-{ordinal}")).expect("identity grammar"),
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
@@ -682,7 +684,7 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
     ];
     for (ordinal, definition) in definitions.into_iter().enumerate() {
         ir.model.features.push(Feature {
-            id: FeatureId(format!("operation-{ordinal}")),
+            id: FeatureId::mint(format!("operation-{ordinal}")).expect("identity grammar"),
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
@@ -710,7 +712,7 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
 fn empty_required_operands_are_incomplete_design_semantics() {
     let mut ir = CadIr::empty();
     let feature = |ordinal, definition| Feature {
-        id: FeatureId(format!("feature-{ordinal}")),
+        id: FeatureId::mint(format!("feature-{ordinal}")).expect("identity grammar"),
         ordinal,
         name: None,
         suppressed: Some(false),
@@ -855,7 +857,7 @@ fn hole_completeness_checks_optional_operands_when_present() {
     .enumerate()
     {
         ir.model.features.push(Feature {
-            id: FeatureId(format!("hole-{ordinal}")),
+            id: FeatureId::mint(format!("hole-{ordinal}")).expect("identity grammar"),
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),
@@ -882,7 +884,7 @@ fn hole_completeness_checks_optional_operands_when_present() {
 #[test]
 fn incomplete_parameter_semantics_are_reported_as_design_losses() {
     let mut ir = CadIr::empty();
-    let owner = FeatureId("owner".into());
+    let owner = FeatureId::mint("owner").expect("identity grammar");
     ir.model.features.push(Feature {
         id: owner.clone(),
         ordinal: 0,
@@ -902,7 +904,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        id: ParameterId("base-parameter".into()),
+        id: ParameterId::mint("base-parameter").expect("identity grammar"),
         owner: Some(owner.clone()),
         ordinal: 0,
         name: "D0".into(),
@@ -915,7 +917,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        id: ParameterId("parameter".into()),
+        id: ParameterId::mint("parameter").expect("identity grammar"),
         owner: Some(owner.clone()),
         ordinal: 1,
         name: "D1".into(),
@@ -928,7 +930,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        id: ParameterId("bare-reference".into()),
+        id: ParameterId::mint("bare-reference").expect("identity grammar"),
         owner: Some(owner.clone()),
         ordinal: 2,
         name: "D2".into(),
@@ -941,7 +943,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        id: ParameterId("malformed-reference".into()),
+        id: ParameterId::mint("malformed-reference").expect("identity grammar"),
         owner: Some(owner.clone()),
         ordinal: 3,
         name: "D3".into(),
@@ -953,9 +955,9 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         pmi: None,
         native_ref: None,
     });
-    let future = ParameterId("future".into());
+    let future = ParameterId::mint("future").expect("identity grammar");
     ir.model.parameters.push(DesignParameter {
-        id: ParameterId("forward-reference".into()),
+        id: ParameterId::mint("forward-reference").expect("identity grammar"),
         owner: Some(owner.clone()),
         ordinal: 4,
         name: "D4".into(),
@@ -981,7 +983,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        id: ParameterId("omitted-dependency".into()),
+        id: ParameterId::mint("omitted-dependency").expect("identity grammar"),
         owner: Some(owner.clone()),
         ordinal: 6,
         name: "D6".into(),
@@ -994,7 +996,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        id: ParameterId("cached-unsupported-expression".into()),
+        id: ParameterId::mint("cached-unsupported-expression").expect("identity grammar"),
         owner: Some(owner.clone()),
         ordinal: 7,
         name: "D7".into(),
@@ -1013,7 +1015,7 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
         ("ordinal", 10, "Unique"),
     ] {
         ir.model.parameters.push(DesignParameter {
-            id: ParameterId(format!("identity:{id}")),
+            id: ParameterId::mint(format!("identity:{id}")).expect("identity grammar"),
             owner: Some(owner.clone()),
             ordinal,
             name: name.into(),
@@ -1043,9 +1045,9 @@ fn incomplete_parameter_semantics_are_reported_as_design_losses() {
 #[test]
 fn incoherent_feature_graph_is_reported_as_design_loss() {
     let mut ir = CadIr::empty();
-    let first = FeatureId("first".into());
-    let second = FeatureId("second".into());
-    let missing = FeatureId("missing".into());
+    let first = FeatureId::mint("first").expect("identity grammar");
+    let second = FeatureId::mint("second").expect("identity grammar");
+    let missing = FeatureId::mint("missing").expect("identity grammar");
     let feature = |id, ordinal, dependencies| Feature {
         id,
         ordinal,
@@ -1068,18 +1070,21 @@ fn incoherent_feature_graph_is_reported_as_design_loss() {
         .features
         .push(feature(first.clone(), 0, vec![second.clone()]));
     ir.model.features.push(feature(second, 1, vec![first]));
-    ir.model
-        .features
-        .push(feature(FeatureId("third".into()), 1, vec![missing]));
+    ir.model.features.push(feature(
+        FeatureId::mint("third").expect("identity grammar"),
+        1,
+        vec![missing],
+    ));
     ir.model.features[0].source_content = vec![
-        FeatureSourceContent::Feature(FeatureId("second".into())),
-        FeatureSourceContent::Feature(FeatureId("second".into())),
+        FeatureSourceContent::Feature(FeatureId::mint("second").expect("identity grammar")),
+        FeatureSourceContent::Feature(FeatureId::mint("second").expect("identity grammar")),
     ];
-    ir.model.features[1].source_content =
-        vec![FeatureSourceContent::Feature(FeatureId("third".into()))];
-    ir.model.features[2].source_content = vec![FeatureSourceContent::Parameter(ParameterId(
-        "missing-parameter".into(),
-    ))];
+    ir.model.features[1].source_content = vec![FeatureSourceContent::Feature(
+        FeatureId::mint("third").expect("identity grammar"),
+    )];
+    ir.model.features[2].source_content = vec![FeatureSourceContent::Parameter(
+        ParameterId::mint("missing-parameter").expect("identity grammar"),
+    )];
     let mut report = super::empty_report(true);
 
     append_design_losses(&ir, &mut report);
@@ -1101,7 +1106,7 @@ fn incoherent_feature_outputs_are_reported_as_design_loss() {
     ir.model.parameters.clear();
     let body = ir.model.bodies[0].id.clone();
     let feature = |id: &str, ordinal: u64, outputs: Vec<BodyId>| Feature {
-        id: FeatureId(id.into()),
+        id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
         name: None,
         suppressed: Some(false),

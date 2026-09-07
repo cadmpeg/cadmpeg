@@ -315,7 +315,8 @@ fn feature_input_topology_projects_historical_vertices() {
     );
     scope.previous_history_state_id = Some(4);
     let feature = Feature {
-        id: cadmpeg_ir::features::FeatureId("f3d:model:feature#work-point".into()),
+        id: cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#work-point")
+            .expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
@@ -988,7 +989,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         shells: std::slice::from_ref(&shell),
     };
     let mut feature = Feature::new(
-        FeatureId("f3d:test:feature#scale".into()),
+        FeatureId::mint("f3d:test:feature#scale").expect("identity grammar"),
         0,
         FeatureDefinition::Scale {
             bodies: BodySelection::Native(group_id.into()),
@@ -1030,7 +1031,7 @@ fn direct_body_recipe_selection_resolves_compact_coil_target() {
         shells: std::slice::from_ref(&shell),
     };
     let mut move_feature = Feature::new(
-        FeatureId("f3d:test:feature#move".into()),
+        FeatureId::mint("f3d:test:feature#move").expect("identity grammar"),
         0,
         FeatureDefinition::MoveBody {
             bodies: BodySelection::Native(group_id.into()),
@@ -1059,7 +1060,7 @@ fn base_feature_body_selection_uses_active_transition_outputs() {
     use cadmpeg_ir::ids::BodyId;
 
     let mut feature = Feature {
-        id: FeatureId("test:model:feature#feature".into()),
+        id: FeatureId::mint("test:model:feature#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
@@ -1235,7 +1236,7 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
         ],
     };
     let mut features = vec![Feature {
-        id: FeatureId("f3d:test:feature#42".into()),
+        id: FeatureId::mint("f3d:test:feature#42").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
@@ -1248,7 +1249,7 @@ fn split_face_targets_bind_from_a_transition_predecessor() {
         definition: FeatureDefinition::SplitFace {
             targets: FaceSelection::Native(group_id.clone()),
             tool: SplitFaceTool::Plane {
-                plane: FeatureId("f3d:test:feature#plane".into()),
+                plane: FeatureId::mint("f3d:test:feature#plane").expect("identity grammar"),
             },
         },
         native_ref: Some(scope_id),
@@ -1615,7 +1616,7 @@ fn unresolved_new_body_sweep_mode_follows_output_body_kind() {
         visible: None,
     };
     let sweep = |id: &str, outputs| Feature {
-        id: FeatureId(id.into()),
+        id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
@@ -1765,7 +1766,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
     };
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    let feature_id = FeatureId("f3d:test:feature#42".into());
+    let feature_id = FeatureId::mint("f3d:test:feature#42").expect("identity grammar");
     let scope_id = "f3d:Design/BulkStream.dat:scope#42";
     let mut scope = DesignParameterScope::empty(
         scope_id,

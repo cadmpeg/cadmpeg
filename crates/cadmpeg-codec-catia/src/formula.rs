@@ -711,7 +711,8 @@ fn collect_legacy_parameters(
             let Some(key) = scalar.id.strip_prefix("catia:legacy:scalar#") else {
                 continue;
             };
-            let id = ParameterId(format!("catia:legacy:parameter#{key}"));
+            let id = ParameterId::mint(format!("catia:legacy:parameter#{key}"))
+                .expect("identity grammar");
             if candidates.contains_key(&id) {
                 continue;
             }
@@ -764,7 +765,8 @@ fn collect_legacy_parameters(
             let Some(key) = string.id.strip_prefix("catia:legacy:string#") else {
                 continue;
             };
-            let id = ParameterId(format!("catia:legacy:parameter#{key}"));
+            let id = ParameterId::mint(format!("catia:legacy:parameter#{key}"))
+                .expect("identity grammar");
             if candidates.contains_key(&id) {
                 continue;
             }
@@ -818,7 +820,8 @@ fn collect_legacy_parameters(
             let Some(key) = integer.id.strip_prefix("catia:legacy:integer#") else {
                 continue;
             };
-            let id = ParameterId(format!("catia:legacy:parameter#{key}"));
+            let id = ParameterId::mint(format!("catia:legacy:parameter#{key}"))
+                .expect("identity grammar");
             if candidates.contains_key(&id) {
                 continue;
             }
@@ -3280,10 +3283,11 @@ fn canonical_parameter_type(source_type: &str) -> Option<FormulaParameterType> {
 }
 
 fn neutral_parameter_id(native_id: &str) -> ParameterId {
-    ParameterId(crate::design_feature::neutral_history_id(
+    ParameterId::mint(crate::design_feature::neutral_history_id(
         native_id,
         "parameter",
     ))
+    .expect("identity grammar")
 }
 
 #[cfg(test)]
@@ -3293,7 +3297,7 @@ mod parser_tests {
     fn unset_candidate(parameter_type: FormulaParameterType) -> FormulaParameterCandidate {
         FormulaParameterCandidate {
             parameter: DesignParameter {
-                id: ParameterId("parameter".to_string()),
+                id: ParameterId::mint("parameter".to_string()).expect("identity grammar"),
                 owner: None,
                 ordinal: 0,
                 name: "Value".to_string(),

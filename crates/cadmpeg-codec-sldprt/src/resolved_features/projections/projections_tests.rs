@@ -149,7 +149,7 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
         tolerance: None,
     };
     let mut features = vec![cadmpeg_ir::features::Feature {
-        id: FeatureId("feature".into()),
+        id: FeatureId::mint("feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -214,7 +214,7 @@ fn generic_native_offset_plane_support_stays_native() {
     };
     let native = "sldprt:feature-input:surface-component-ids:lane:40:200";
     let mut features = vec![cadmpeg_ir::features::Feature {
-        id: FeatureId("feature".into()),
+        id: FeatureId::mint("feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -280,7 +280,7 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         ],
     };
     let neutral_feature = |id: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {
-        id: FeatureId(id.into()),
+        id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -373,12 +373,15 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         face,
         cadmpeg_ir::features::FaceSelection::Generated { faces, native }
             if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef {
-                feature: FeatureId("producer".into()),
+                feature: FeatureId::mint("producer").expect("identity grammar"),
                 local_id: "7".into(),
             }]
                 && native == "sldprt:feature-input:cylinder-reference:lane-a:40,lane-b:60"
     ));
-    assert_eq!(features[1].dependencies, [FeatureId("producer".into())]);
+    assert_eq!(
+        features[1].dependencies,
+        [FeatureId::mint("producer").expect("identity grammar")]
+    );
 
     let surface = Surface {
         id: SurfaceId::mint("test:model:entity#cylinder").expect("identity grammar"),
@@ -454,7 +457,7 @@ fn cosmetic_thread_accepts_repeated_carriers_with_distinct_owner_paths() {
         ],
     };
     let feature = |id: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {
-        id: FeatureId(id.into()),
+        id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -547,7 +550,7 @@ fn cosmetic_thread_accepts_repeated_carriers_with_distinct_owner_paths() {
             face: FaceSelection::Generated { faces, native },
             ..
         } if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef {
-            feature: FeatureId("producer".into()),
+            feature: FeatureId::mint("producer").expect("identity grammar"),
             local_id: "7".into(),
         }] && native == "sldprt:feature-input:surface-component-ids:7,8"
     ));
@@ -558,7 +561,7 @@ fn compact_surface_selection_binds_surface_operation_face_slot() {
     let mut signature = [0; 12];
     signature[4..8].copy_from_slice(&10_u32.to_le_bytes());
     let mut features = vec![cadmpeg_ir::features::Feature {
-        id: FeatureId("operation".into()),
+        id: FeatureId::mint("operation").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -617,7 +620,7 @@ fn compact_surface_selection_binds_surface_operation_face_slot() {
 #[test]
 fn compact_surface_selection_binds_full_round_fillet_face_sets() {
     let feature = |id: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {
-        id: FeatureId(id.into()),
+        id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -705,7 +708,7 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
         &group.center_faces,
         FaceSelection::Generated { faces, .. }
             if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef {
-                feature: FeatureId("producer".into()),
+                feature: FeatureId::mint("producer").expect("identity grammar"),
                 local_id: "2".into(),
             }]
     ));
@@ -723,13 +726,16 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
             ..
         }) if faces[0].local_id == "6"
     ));
-    assert_eq!(features[1].dependencies, [FeatureId("producer".into())]);
+    assert_eq!(
+        features[1].dependencies,
+        [FeatureId::mint("producer").expect("identity grammar")]
+    );
 }
 
 #[test]
 fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
     let feature = |id: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {
-        id: FeatureId(id.into()),
+        id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -835,7 +841,7 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
         targets,
         BodySelection::Generated { bodies, native }
             if bodies.as_slice() == [cadmpeg_ir::features::GeneratedBodyRef {
-                feature: FeatureId("target".into()),
+                feature: FeatureId::mint("target").expect("identity grammar"),
                 local_id: "0,3,2".into(),
             }] && native == "sldprt:feature-input:surface-component-ids:0,3,2"
     ));
@@ -843,21 +849,24 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
         tools,
         FaceSelection::Generated { faces, native }
             if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef {
-                feature: FeatureId("tool".into()),
+                feature: FeatureId::mint("tool").expect("identity grammar"),
                 local_id: "7".into(),
             }] && native == "sldprt:feature-input:surface-component-ids:0,7"
     ));
     assert!(reverse.is_none());
     assert_eq!(
         features[2].dependencies,
-        vec![FeatureId("target".into()), FeatureId("tool".into())]
+        vec![
+            FeatureId::mint("target").expect("identity grammar"),
+            FeatureId::mint("tool").expect("identity grammar")
+        ]
     );
 }
 
 #[test]
 fn planar_surface_keeps_unresolved_definition_and_adds_defining_dependencies() {
     let feature = |id: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {
-        id: FeatureId(id.into()),
+        id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -942,7 +951,10 @@ fn planar_surface_keeps_unresolved_definition_and_adds_defining_dependencies() {
     ));
     assert_eq!(
         features[2].dependencies,
-        vec![FeatureId("first".into()), FeatureId("second".into())]
+        vec![
+            FeatureId::mint("first").expect("identity grammar"),
+            FeatureId::mint("second").expect("identity grammar")
+        ]
     );
 }
 
@@ -977,7 +989,7 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
         ],
     };
     let feature = |id: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {
-        id: FeatureId(id.into()),
+        id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -1064,7 +1076,7 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
         face,
         cadmpeg_ir::features::FaceSelection::Generated { faces, native }
             if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef {
-                feature: FeatureId("producer".into()),
+                feature: FeatureId::mint("producer").expect("identity grammar"),
                 local_id: "7".into(),
             }]
                 && native == "sldprt:feature-input:surface-component-ids:7"
@@ -1128,7 +1140,7 @@ fn split_face_collects_distinct_generated_target_faces() {
         ],
     };
     let neutral_feature = |id: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {
-        id: FeatureId(id.into()),
+        id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -1227,11 +1239,11 @@ fn split_face_collects_distinct_generated_target_faces() {
         FaceSelection::Generated { faces, native }
             if faces == &vec![
                 cadmpeg_ir::features::GeneratedFaceRef {
-                    feature: FeatureId("producer-a".into()),
+                    feature: FeatureId::mint("producer-a").expect("identity grammar"),
                     local_id: "7".into(),
                 },
                 cadmpeg_ir::features::GeneratedFaceRef {
-                    feature: FeatureId("producer-b".into()),
+                    feature: FeatureId::mint("producer-b").expect("identity grammar"),
                     local_id: "9".into(),
                 },
             ] && native == "sldprt:feature-input:surface-selection-vectors:sldprt:feature-input:surface-component-ids:_,7;sldprt:feature-input:surface-component-ids:_,9"
@@ -1239,8 +1251,8 @@ fn split_face_collects_distinct_generated_target_faces() {
     assert_eq!(
         features[2].dependencies,
         vec![
-            FeatureId("producer-a".into()),
-            FeatureId("producer-b".into())
+            FeatureId::mint("producer-a").expect("identity grammar"),
+            FeatureId::mint("producer-b").expect("identity grammar")
         ]
     );
 }

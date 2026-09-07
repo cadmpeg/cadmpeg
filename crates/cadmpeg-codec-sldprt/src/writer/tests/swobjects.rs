@@ -153,7 +153,7 @@ fn encoder_rejects_source_less_unresolved_extrusion_profile() {
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
     ir.model.features.push(Feature {
-        id: FeatureId("synthetic:test:feature#extrude".into()),
+        id: FeatureId::mint("synthetic:test:feature#extrude").expect("identity grammar"),
         ordinal: 0,
         name: Some("Extrude".into()),
         suppressed: Some(false),
@@ -318,7 +318,8 @@ fn encoder_writes_source_less_line_sketches() {
             .collect()],
         native_ref: None,
     });
-    let sketch_feature_id = FeatureId("synthetic:test:feature#profile".into());
+    let sketch_feature_id =
+        FeatureId::mint("synthetic:test:feature#profile").expect("identity grammar");
     ir.model.features.push(Feature {
         id: sketch_feature_id.clone(),
         ordinal: 0,
@@ -403,7 +404,8 @@ fn encoder_writes_source_less_line_sketches() {
     ];
     for (index, definition) in generated.into_iter().enumerate() {
         ir.model.features.push(Feature {
-            id: FeatureId(format!("synthetic:test:feature#profile-op-{index}")),
+            id: FeatureId::mint(format!("synthetic:test:feature#profile-op-{index}"))
+                .expect("identity grammar"),
             ordinal: index as u64 + 2,
             name: Some(format!("Profile op {index}")),
             suppressed: Some(false),
@@ -417,7 +419,8 @@ fn encoder_writes_source_less_line_sketches() {
             native_ref: None,
         });
     }
-    let extrude_feature_id = FeatureId("synthetic:test:feature#extrude".into());
+    let extrude_feature_id =
+        FeatureId::mint("synthetic:test:feature#extrude").expect("identity grammar");
     ir.model.features.push(Feature {
         id: extrude_feature_id.clone(),
         ordinal: 1,
@@ -702,7 +705,7 @@ fn encoder_writes_source_less_spatial_point_and_line_sketches() {
             },
         ));
     ir.model.features.push(Feature {
-        id: FeatureId("synthetic:test:feature#spatial-path".into()),
+        id: FeatureId::mint("synthetic:test:feature#spatial-path").expect("identity grammar"),
         ordinal: 0,
         name: Some("Spatial path".into()),
         suppressed: Some(false),

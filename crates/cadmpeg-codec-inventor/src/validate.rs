@@ -331,7 +331,7 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor neutral parameter does not resolve to its PmDc source record".into(),
-                Some(parameter.id.0.clone()),
+                Some(parameter.id.as_str().to_owned()),
             ));
         }
     }
@@ -924,7 +924,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor neutral feature does not resolve to its PmDc source record".into(),
-                Some(feature.id.0.clone()),
+                Some(feature.id.as_str().to_owned()),
             ));
             continue;
         };
@@ -954,7 +954,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor neutral feature family does not match its PmDc label".into(),
-                Some(feature.id.0.clone()),
+                Some(feature.id.as_str().to_owned()),
             ));
         }
         let expected_collection = raw_feature
@@ -976,7 +976,7 @@ fn validate_features(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>)
             findings.push(finding(
                 Check::NativeLinks,
                 "Inventor neutral feature result does not match its PmDc output slot".into(),
-                Some(feature.id.0.clone()),
+                Some(feature.id.as_str().to_owned()),
             ));
         }
     }

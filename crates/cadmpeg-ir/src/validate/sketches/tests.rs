@@ -583,7 +583,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
         native_ref: None,
     });
     ir.model.features.push(Feature {
-        id: FeatureId("synthetic:test:feature#consumer".into()),
+        id: FeatureId::mint("synthetic:test:feature#consumer").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -616,7 +616,8 @@ fn sketch_feature_ownership_and_order_are_validated() {
     });
     for (ordinal, suffix) in [(1, "owner"), (2, "duplicate-owner")] {
         ir.model.features.push(Feature {
-            id: FeatureId(format!("synthetic:test:feature#{suffix}")),
+            id: FeatureId::mint(format!("synthetic:test:feature#{suffix}"))
+                .expect("identity grammar"),
             ordinal,
             name: None,
             suppressed: Some(false),
@@ -665,7 +666,7 @@ fn sketch_profile_subselections_are_bounds_checked() {
         native_ref: None,
     });
     let feature = |suffix: &str, ordinal, profile| Feature {
-        id: FeatureId(format!("synthetic:test:feature#{suffix}")),
+        id: FeatureId::mint(format!("synthetic:test:feature#{suffix}")).expect("identity grammar"),
         ordinal,
         name: None,
         suppressed: Some(false),
@@ -769,7 +770,7 @@ fn spatial_sketch_feature_owns_spatial_geometry() {
         native_ref: None,
     });
     ir.model.features.push(Feature {
-        id: FeatureId("synthetic:test:feature#spatial-sketch".into()),
+        id: FeatureId::mint("synthetic:test:feature#spatial-sketch").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -787,7 +788,8 @@ fn spatial_sketch_feature_owns_spatial_geometry() {
 
     assert!(validate_neutral(&ir, Vec::new()).findings.is_empty());
     let mut duplicate = ir.model.features.last().expect("spatial owner").clone();
-    duplicate.id = FeatureId("synthetic:test:feature#duplicate-spatial-sketch".into());
+    duplicate.id = FeatureId::mint("synthetic:test:feature#duplicate-spatial-sketch")
+        .expect("identity grammar");
     duplicate.ordinal = 1;
     ir.model.features.push(duplicate);
     assert!(validate_neutral(&ir, Vec::new())

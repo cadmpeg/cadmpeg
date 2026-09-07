@@ -7,7 +7,7 @@ use crate::f3z::merge::{
 
 fn feature(id: &str, ordinal: u64) -> Feature {
     Feature {
-        id: FeatureId(id.into()),
+        id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
         name: None,
         suppressed: None,

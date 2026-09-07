@@ -169,7 +169,7 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
     };
 
     let entity = SketchEntityId("synthetic:test:entity#0".into());
-    let parameter = ParameterId("synthetic:test:parameter#0".into());
+    let parameter = ParameterId::mint("synthetic:test:parameter#0").expect("identity grammar");
     let definitions = vec![
         SketchConstraintDefinition::Disabled,
         SketchConstraintDefinition::CoincidentLoci {
@@ -286,11 +286,11 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
             incident: SketchLocus::Start(entity.clone()),
             refracted: SketchLocus::End(entity.clone()),
             interface: entity.clone(),
-            parameter: ParameterId("synthetic:test:parameter#0".into()),
+            parameter: ParameterId::mint("synthetic:test:parameter#0").expect("identity grammar"),
         },
         SketchConstraintDefinition::Weight {
             entity: entity.clone(),
-            parameter: ParameterId("synthetic:test:parameter#0".into()),
+            parameter: ParameterId::mint("synthetic:test:parameter#0").expect("identity grammar"),
         },
         SketchConstraintDefinition::InternalAlignment {
             helper: entity.clone(),
@@ -612,7 +612,8 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         )
         .with_construction(true),
     );
-    let distance = ParameterId("synthetic:test:parameter#spatial-distance".into());
+    let distance =
+        ParameterId::mint("synthetic:test:parameter#spatial-distance").expect("identity grammar");
     ir.model.parameters.push(DesignParameter {
         id: distance.clone(),
         owner: None,
@@ -626,7 +627,8 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         pmi: None,
         native_ref: None,
     });
-    let line_length = ParameterId("synthetic:test:parameter#spatial-line-length".into());
+    let line_length = ParameterId::mint("synthetic:test:parameter#spatial-line-length")
+        .expect("identity grammar");
     ir.model.parameters.push(DesignParameter {
         id: line_length.clone(),
         owner: None,
@@ -1017,7 +1019,7 @@ fn rectangular_pattern_derives_counts_and_indices_on_the_wire() {
 
     let mut first_direction = pattern_direction([1.0, 0.0]);
     first_direction.distance = Some(SketchPatternDistance::Spacing(
-        crate::features::ParameterId("test:parameter#spacing".into()),
+        crate::features::ParameterId::mint("test:parameter#spacing").expect("identity grammar"),
     ));
     let pattern = SketchRectangularPattern::new(
         [first_direction, pattern_direction([0.0, 1.0])],
@@ -1117,7 +1119,7 @@ fn offset_parameter_keeps_the_paired_factor_wire_shape() {
         }],
         distance: Length(2.0),
         parameter: Some(OffsetParameter {
-            id: ParameterId("test:parameter#offset".into()),
+            id: ParameterId::mint("test:parameter#offset").expect("identity grammar"),
             negated: true,
         }),
     };

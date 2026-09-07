@@ -1155,7 +1155,7 @@ fn decode_types_full_turn_revolution_from_positional_angle_choice() {
         .model
         .features
         .iter()
-        .find(|feature| feature.id.0 == "creo:model:feature#40")
+        .find(|feature| feature.id.as_str() == "creo:model:feature#40")
         .expect("revolution feature");
     assert!(matches!(
         &feature.definition,

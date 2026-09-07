@@ -526,8 +526,8 @@ impl EntitySchema for crate::geometry::ProceduralCurve {
         visit_typed_references(self, visitor);
     }
 }
-impl_entity_schema!(crate::assets::Asset, Asset, id.0; id, name, media_type, content, native_ref);
-impl_entity_schema!(crate::features::Feature, Feature, id.0; id, ordinal, name, suppressed, dependencies, source_properties, source_tag, source_text, source_content, outputs, definition, native_ref);
+impl_entity_schema!(crate::assets::Asset, Asset, id; id, name, media_type, content, native_ref);
+impl_entity_schema!(crate::features::Feature, Feature, id; id, ordinal, name, suppressed, dependencies, source_properties, source_tag, source_text, source_content, outputs, definition, native_ref);
 impl_entity_schema!(
     crate::features::FeatureInputTopology,
     FeatureInputTopology,
@@ -543,11 +543,11 @@ impl_entity_schema!(
 impl_entity_schema!(
     crate::features::DesignConfiguration,
     DesignConfiguration,
-    id.0;
+    id;
     id, ordinal, active, source_index, name, material, properties, parameter_overrides,
     bodies, parameter_values, feature_states, native_ref
 );
-impl_entity_schema!(crate::features::DesignParameter, DesignParameter, id.0; id, owner, ordinal, name, expression, display, value, dependencies, properties, pmi, native_ref);
+impl_entity_schema!(crate::features::DesignParameter, DesignParameter, id; id, owner, ordinal, name, expression, display, value, dependencies, properties, pmi, native_ref);
 impl_entity_schema!(crate::sketches::Sketch, Sketch, id.0; id, name, configuration, visible, placement, profiles, native_ref);
 impl EntitySchema for crate::sketches::SketchEntity {
     const KIND: EntityKind = EntityKind::SketchEntity;
@@ -579,38 +579,38 @@ impl_entity_schema!(
     id.0;
     id, sketch, definition, native_ref
 );
-impl_entity_schema!(crate::spreadsheets::Spreadsheet, Spreadsheet, id.0; id, feature, cells, column_widths, row_heights, merged_ranges, native_ref);
+impl_entity_schema!(crate::spreadsheets::Spreadsheet, Spreadsheet, id; id, feature, cells, column_widths, row_heights, merged_ranges, native_ref);
 impl_entity_schema!(crate::products::ProductDefinition, ProductDefinition, id; id, kind, source_name, label, description, part_number, bom_properties, bodies, native_ref);
 impl_entity_schema!(crate::products::Occurrence, Occurrence, id; id, prototype, parent, ordinal, transform, linked_prototype, scale, name, visible, link, native_ref);
 impl EntitySchema for crate::products::AssemblyJoint {
     const KIND: EntityKind = EntityKind::AssemblyJoint;
 
     fn identity(&self) -> &str {
-        self.id.0.as_str()
+        self.id.as_str()
     }
 
     fn visit_references(&self, visitor: &mut dyn FnMut(Reference)) {
         visit_typed_references(self, visitor);
     }
 }
-impl_entity_schema!(crate::drawings::Drawing, Drawing, id.0; id, object, kind, runtime_type, order, visible, relationships, template, position, scale, direction, rotation_degrees, parameters, assets, native_ref);
+impl_entity_schema!(crate::drawings::Drawing, Drawing, id; id, object, kind, runtime_type, order, visible, relationships, template, position, scale, direction, rotation_degrees, parameters, assets, native_ref);
 impl_entity_schema!(
     crate::semantic_annotations::SemanticAnnotation,
     SemanticAnnotation,
-    id.0;
+    id;
     id, object, kind, runtime_type, order, text, references, value, format, position,
     parameters, assets, native_ref
 );
 impl_entity_schema!(
     crate::presentation::PresentationDocument,
     PresentationDocument,
-    id.0;
+    id;
     id, schema_version, active_view, states, native_ref
 );
 impl_entity_schema!(
     crate::presentation::ViewPresentation,
     ViewPresentation,
-    id.0;
+    id;
     id, object, order, expanded, visible, display_mode, selection_style, line_width,
     point_size, properties, native_ref
 );

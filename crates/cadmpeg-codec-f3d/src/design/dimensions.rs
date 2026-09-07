@@ -2643,7 +2643,7 @@ pub fn project_spatial_dimension_constraints(
         .difference(&retained_parameters)
         .cloned()
         .collect::<Vec<_>>();
-    missing.sort_by(|first, second| first.0.cmp(&second.0));
+    missing.sort_by(|first, second| first.as_str().cmp(second.as_str()));
     projected.extend(missing.into_iter().filter_map(|parameter_id| {
         let parameter = parameters_by_id.get(&parameter_id)?;
         let scope = native_stream(&parameter.id)?;

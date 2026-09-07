@@ -47,7 +47,7 @@ pub(super) fn check_drawings(
                 check: Check::ReferentialIntegrity,
                 severity: Severity::Error,
                 message: "invalid drawing reference, order, or numeric state".into(),
-                entity: Some(drawing.id.0.clone()),
+                entity: Some(drawing.id.as_str().to_owned()),
             });
         }
     }

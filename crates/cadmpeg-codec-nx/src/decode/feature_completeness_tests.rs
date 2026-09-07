@@ -374,7 +374,7 @@ fn nx_extent_completeness_checks_nested_and_face_termination() {
             vertex: VertexSelection::Native("nx:vertex-selection#0".to_string()),
         }
     ));
-    let vertex_feature = FeatureId("test:feature#0".into());
+    let vertex_feature = FeatureId::mint("test:feature#0").expect("identity grammar");
     let generated_vertex = LinearTermination::ToVertex {
         vertex: VertexSelection::Generated {
             vertex: GeneratedVertexRef {
@@ -740,7 +740,7 @@ fn nx_loft_completeness_checks_native_point_sections_and_centerlines() {
         allow_multi_profile_faces: None,
     };
     ir.model.features.push(Feature {
-        id: FeatureId("test:feature#loft".into()),
+        id: FeatureId::mint("test:feature#loft").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -793,7 +793,8 @@ fn nx_loft_completeness_checks_native_point_sections_and_centerlines() {
 fn nx_pattern_completeness_requires_distinct_seeds() {
     use cadmpeg_ir::features::{BodySelection, FaceSelection, PatternSeed};
 
-    let seed_id = cadmpeg_ir::features::FeatureId("test:feature#seed".into());
+    let seed_id =
+        cadmpeg_ir::features::FeatureId::mint("test:feature#seed").expect("identity grammar");
     let seed = cadmpeg_ir::features::PatternSeed::Feature(seed_id.clone());
     let pattern = cadmpeg_ir::features::PatternKind::Mirror {
         plane_origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
@@ -933,7 +934,7 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
         Some(true),
     );
     ir.model.features.push(Feature {
-        id: FeatureId("test:feature#extrude".into()),
+        id: FeatureId::mint("test:feature#extrude").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -1099,7 +1100,7 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
         BooleanOp::NewBody,
         &[],
     ));
-    let source = FeatureId("test:feature#vertex-source".into());
+    let source = FeatureId::mint("test:feature#vertex-source").expect("identity grammar");
     incomplete = complete.clone();
     incomplete.set_extent(Some(RevolveExtent::OneSided {
         termination: AngularTermination::ToVertex {
@@ -1129,7 +1130,7 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
     ));
 
     ir.model.features.push(Feature {
-        id: FeatureId("test:feature#revolve".into()),
+        id: FeatureId::mint("test:feature#revolve").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -1172,7 +1173,7 @@ fn nx_selection_completeness_rejects_repeated_faces_and_edges() {
         face.clone(),
         face
     ]),));
-    let producer = FeatureId("test:feature#profile-producer".into());
+    let producer = FeatureId::mint("test:feature#profile-producer").expect("identity grammar");
     let generated = ProfileRef::Generated {
         curves: vec![GeneratedCurveRef {
             feature: producer.clone(),
@@ -1239,7 +1240,7 @@ fn nx_sketch_completeness_reports_native_geometry_and_constraints() {
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let sketch_id = SketchId("test:sketch#0".into());
     ir.model.features.push(Feature {
-        id: FeatureId("test:feature#sketch".into()),
+        id: FeatureId::mint("test:feature#sketch").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -1364,7 +1365,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
         .map(|body| body.id.clone())
         .collect::<Vec<_>>();
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId("test:configuration#0".into()),
+        id: ConfigurationId::mint("test:configuration#0").expect("identity grammar"),
         ordinal: 0,
         active: true,
         source_index: Some(0),
@@ -1397,7 +1398,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
     ir.model.configurations[0].active = true;
     let output = ir.model.bodies[0].id.clone();
     let feature = Feature {
-        id: FeatureId("test:feature#base".into()),
+        id: FeatureId::mint("test:feature#base").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -1432,7 +1433,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
     assert!(losses.is_empty());
 
     let parameter = DesignParameter {
-        id: ParameterId("test:parameter#length".into()),
+        id: ParameterId::mint("test:parameter#length").expect("identity grammar"),
         owner: Some(feature.id),
         ordinal: 0,
         name: "length".into(),
@@ -1458,7 +1459,7 @@ fn nx_configuration_completeness_requires_one_active_full_body_set() {
     assert!(losses.is_empty());
 
     let suppressed = Feature {
-        id: FeatureId("test:feature#suppressed".into()),
+        id: FeatureId::mint("test:feature#suppressed").expect("identity grammar"),
         ordinal: 1,
         name: None,
         suppressed: Some(true),
@@ -1502,7 +1503,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
 
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(Feature {
-        id: FeatureId("test:feature#block".into()),
+        id: FeatureId::mint("test:feature#block").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -1649,7 +1650,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("datum plane (1)"));
 
-    let datum = FeatureId("test:feature#datum-source".into());
+    let datum = FeatureId::mint("test:feature#datum-source").expect("identity grammar");
     ir.model.features[0].definition = FeatureDefinition::DatumOffsetPlane {
         reference: Some(cadmpeg_ir::features::DatumPlaneReference::Feature(
             datum.clone(),
@@ -1793,7 +1794,7 @@ fn nx_exact_empty_base_feature_is_a_complete_replay_boundary() {
 
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(Feature {
-        id: FeatureId("test:feature#initial-bodies".into()),
+        id: FeatureId::mint("test:feature#initial-bodies").expect("identity grammar"),
         ordinal: 0,
         name: Some("Retained history input".into()),
         suppressed: Some(false),
@@ -1826,7 +1827,7 @@ fn nx_master_snapshot_base_feature_is_an_output_free_replay_boundary() {
 
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(Feature {
-        id: FeatureId("test:feature#snapshot".into()),
+        id: FeatureId::mint("test:feature#snapshot").expect("identity grammar"),
         ordinal: 0,
         name: Some("MASTER SNAPSHOT BODY".into()),
         suppressed: Some(false),
@@ -1863,7 +1864,7 @@ fn nx_sew_completeness_does_not_invent_a_gap_tolerance() {
     let second = second_body.id.clone();
     ir.model.bodies.push(second_body);
     ir.model.features.push(Feature {
-        id: FeatureId("test:feature#sew".into()),
+        id: FeatureId::mint("test:feature#sew").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),

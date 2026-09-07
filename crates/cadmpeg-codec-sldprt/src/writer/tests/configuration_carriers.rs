@@ -61,7 +61,8 @@ fn encoder_writes_source_less_datum_features() {
     ];
     for (ordinal, definition) in definitions.into_iter().enumerate() {
         ir.model.features.push(Feature {
-            id: FeatureId(format!("synthetic:test:feature#datum-{ordinal}")),
+            id: FeatureId::mint(format!("synthetic:test:feature#datum-{ordinal}"))
+                .expect("identity grammar"),
             ordinal: ordinal as u64,
             name: Some(format!("Datum {ordinal}")),
             suppressed: Some(false),
@@ -111,7 +112,8 @@ fn encoder_writes_source_less_neutral_configurations() {
         .iter_mut()
         .for_each(|edge| edge.param_range = None);
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId("sldprt:model:configuration#generated:z".into()),
+        id: ConfigurationId::mint("sldprt:model:configuration#generated:z")
+            .expect("identity grammar"),
         ordinal: 0,
         active: true,
         source_index: None,
@@ -125,7 +127,8 @@ fn encoder_writes_source_less_neutral_configurations() {
         native_ref: None,
     });
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId("sldprt:model:configuration#generated:a".into()),
+        id: ConfigurationId::mint("sldprt:model:configuration#generated:a")
+            .expect("identity grammar"),
         ordinal: 1,
         active: false,
         source_index: None,
@@ -318,7 +321,8 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .iter()
         .enumerate()
         .map(|(index, body)| DesignConfiguration {
-            id: ConfigurationId(format!("synthetic:test:configuration#config-{index}")),
+            id: ConfigurationId::mint(format!("synthetic:test:configuration#config-{index}"))
+                .expect("identity grammar"),
             ordinal: index as u32,
             active: false,
             source_index: None,
@@ -530,7 +534,9 @@ fn semantic_writer_rejects_duplicate_configuration_source_indices() {
         .unwrap();
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
     let mut duplicate = decoded.ir().model.configurations[0].clone();
-    duplicate.id.0.push_str("-duplicate");
+    duplicate.id =
+        cadmpeg_ir::features::ConfigurationId::mint(format!("{}-duplicate", duplicate.id))
+            .expect("identity grammar");
     duplicate.ordinal += 1;
     duplicate
         .name
@@ -578,7 +584,9 @@ fn semantic_writer_rejects_empty_and_duplicate_configuration_names() {
 
     decoded.ir_mut().model.configurations[0].name = "Default".into();
     let mut duplicate = decoded.ir().model.configurations[0].clone();
-    duplicate.id.0.push_str("-duplicate");
+    duplicate.id =
+        cadmpeg_ir::features::ConfigurationId::mint(format!("{}-duplicate", duplicate.id))
+            .expect("identity grammar");
     duplicate.ordinal += 1;
     duplicate.source_index = None;
     duplicate.native_ref = None;
@@ -610,7 +618,8 @@ fn encoder_writes_source_less_neutral_parameters() {
         .edges
         .iter_mut()
         .for_each(|edge| edge.param_range = None);
-    let feature_id = FeatureId("sldprt:model:feature#generated:equation".into());
+    let feature_id =
+        FeatureId::mint("sldprt:model:feature#generated:equation").expect("identity grammar");
     ir.model.features.push(Feature {
         id: feature_id.clone(),
         ordinal: 0,
@@ -629,7 +638,8 @@ fn encoder_writes_source_less_neutral_parameters() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        id: ParameterId("sldprt:model:parameter#generated:equation:0".into()),
+        id: ParameterId::mint("sldprt:model:parameter#generated:equation:0")
+            .expect("identity grammar"),
         owner: Some(feature_id),
         ordinal: 0,
         name: "Pitch".into(),

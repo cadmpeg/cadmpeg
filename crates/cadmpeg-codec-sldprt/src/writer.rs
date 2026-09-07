@@ -356,7 +356,7 @@ fn drop_synthesized_configuration_snapshot(ir: &mut CadIr) {
         return;
     };
     for configuration in &mut ir.model.configurations {
-        if configuration.id.0 == id {
+        if configuration.id.as_str() == id {
             configuration.feature_states.clear();
             configuration.parameter_values.clear();
         }

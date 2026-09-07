@@ -76,7 +76,7 @@ fn dynamic_relation(
 
 fn length_parameter(value: f64) -> DesignParameter {
     DesignParameter {
-        id: ParameterId("parameter".into()),
+        id: ParameterId::mint("parameter").expect("identity grammar"),
         owner: None,
         ordinal: 0,
         name: "D1".into(),
@@ -113,7 +113,7 @@ fn point_operand_requires_one_profile_locus() {
 fn explicit_point_center_binds_one_matching_dimensioned_curve() {
     let sketch = SketchId("sketch".into());
     let parameter = DesignParameter {
-        id: ParameterId("parameter".into()),
+        id: ParameterId::mint("parameter").expect("identity grammar"),
         owner: None,
         ordinal: 0,
         name: "D1".into(),
@@ -227,7 +227,7 @@ fn circle_dimension_ignores_marker_resolved_to_line() {
         }],
     };
     let parameter = DesignParameter {
-        id: ParameterId("parameter".into()),
+        id: ParameterId::mint("parameter").expect("identity grammar"),
         owner: None,
         ordinal: 0,
         name: "D1".into(),
@@ -429,7 +429,7 @@ fn dynamic_point_line_relation_uses_unique_complete_roster_line() {
         Some(SketchConstraintDefinition::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Entity(line.id().clone()),
-            parameter: ParameterId("parameter".into()),
+            parameter: ParameterId::mint("parameter").expect("identity grammar"),
         })
     );
 }
@@ -629,7 +629,7 @@ fn dynamic_line_relation_requires_exact_curve_dimension() {
         ),
         Some(SketchConstraintDefinition::Distance {
             entities: vec![first_line.id().clone(), second_line.id().clone()],
-            parameter: ParameterId("parameter".into()),
+            parameter: ParameterId::mint("parameter").expect("identity grammar"),
         })
     );
     assert_eq!(
@@ -826,7 +826,7 @@ fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
         Some(SketchConstraintDefinition::DistanceLoci {
             first: first_locus.clone(),
             second: second_locus.clone(),
-            parameter: ParameterId("parameter".into()),
+            parameter: ParameterId::mint("parameter").expect("identity grammar"),
         })
     );
 
@@ -846,7 +846,7 @@ fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
         Some(SketchConstraintDefinition::HorizontalDistance {
             first: first_locus.clone(),
             second: second_locus.clone(),
-            parameter: ParameterId("parameter".into()),
+            parameter: ParameterId::mint("parameter").expect("identity grammar"),
         })
     );
 
@@ -866,7 +866,7 @@ fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
         Some(SketchConstraintDefinition::VerticalDistance {
             first: first_locus,
             second: second_locus,
-            parameter: ParameterId("parameter".into()),
+            parameter: ParameterId::mint("parameter").expect("identity grammar"),
         })
     );
 }
@@ -964,7 +964,7 @@ fn dynamic_axis_distance_uses_unique_complete_roster() {
         Some(SketchConstraintDefinition::VerticalDistance {
             first: SketchLocus::Entity(SketchEntityId("vertical-first".into())),
             second: SketchLocus::Entity(SketchEntityId("vertical-second".into())),
-            parameter: ParameterId("parameter".into()),
+            parameter: ParameterId::mint("parameter").expect("identity grammar"),
         })
     );
 }
@@ -1268,7 +1268,7 @@ fn dynamic_point_line_relation_disambiguates_marker_scoped_lines_by_distance() {
         Some(SketchConstraintDefinition::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Entity(alternate_line.id().clone()),
-            parameter: ParameterId("parameter".into()),
+            parameter: ParameterId::mint("parameter").expect("identity grammar"),
         })
     );
 }
@@ -1367,7 +1367,7 @@ fn dynamic_line_distance_disambiguates_two_marker_scoped_line_sets() {
         ),
         Some(SketchConstraintDefinition::Distance {
             entities: vec![first_alternate.id().clone(), second_line.id().clone()],
-            parameter: ParameterId("parameter".into()),
+            parameter: ParameterId::mint("parameter").expect("identity grammar"),
         })
     );
     assert_eq!(
@@ -1417,7 +1417,7 @@ fn dynamic_line_distance_uses_unique_complete_roster() {
         ),
         Some(SketchConstraintDefinition::Distance {
             entities: vec![first.id().clone(), second.id().clone()],
-            parameter: ParameterId("parameter".into()),
+            parameter: ParameterId::mint("parameter").expect("identity grammar"),
         })
     );
 }
@@ -1562,7 +1562,7 @@ fn dynamic_angle_disambiguates_one_marker_scoped_line_by_angle() {
     relation.operands[0].entity_ref = Some("first-marker".into());
     relation.operands[1].entity_ref = Some("second-marker".into());
     let parameter = DesignParameter {
-        id: ParameterId("parameter".into()),
+        id: ParameterId::mint("parameter").expect("identity grammar"),
         owner: None,
         ordinal: 0,
         name: "D1".into(),
@@ -1611,7 +1611,7 @@ fn dynamic_angle_uses_the_unoriented_solver_line_witness() {
     second.geometry_ref = Some("feature:solver-line:1".into());
     let relation = dynamic_relation(FeatureInputRelationFamily::Angle, [0, 1]);
     let parameter = DesignParameter {
-        id: ParameterId("parameter".into()),
+        id: ParameterId::mint("parameter").expect("identity grammar"),
         owner: None,
         ordinal: 0,
         name: "D1".into(),
@@ -1654,7 +1654,7 @@ fn dynamic_angle_uses_unique_complete_roster_when_no_line_resolves() {
     );
     let relation = dynamic_relation(FeatureInputRelationFamily::Angle, [0, 1]);
     let parameter = DesignParameter {
-        id: ParameterId("parameter".into()),
+        id: ParameterId::mint("parameter").expect("identity grammar"),
         owner: None,
         ordinal: 0,
         name: "D1".into(),
@@ -1718,7 +1718,7 @@ fn dynamic_angle_repairs_one_resolved_line_from_the_profile_roster() {
     let mut relation = dynamic_relation(FeatureInputRelationFamily::Angle, [0, 1]);
     relation.operands[0].entity_ref = Some("known-marker".into());
     let parameter = DesignParameter {
-        id: ParameterId("parameter".into()),
+        id: ParameterId::mint("parameter").expect("identity grammar"),
         owner: None,
         ordinal: 0,
         name: "D1".into(),
@@ -1769,7 +1769,7 @@ fn dynamic_angle_uses_solver_lines_for_indirect_operand_references() {
     relation.operands[0].entity_ref = Some("indirect-marker".into());
     relation.operands[1].entity_ref = Some("indirect-point".into());
     let parameter = DesignParameter {
-        id: ParameterId("parameter".into()),
+        id: ParameterId::mint("parameter").expect("identity grammar"),
         owner: None,
         ordinal: 0,
         name: "D1".into(),
@@ -1822,7 +1822,7 @@ fn dynamic_angle_prefers_an_explicit_line_over_a_conflicting_solver_alias() {
     let mut relation = dynamic_relation(FeatureInputRelationFamily::Angle, [0, 1]);
     relation.operands[0].entity_ref = Some("line-marker".into());
     let parameter = DesignParameter {
-        id: ParameterId("parameter".into()),
+        id: ParameterId::mint("parameter").expect("identity grammar"),
         owner: None,
         ordinal: 0,
         name: "D1".into(),

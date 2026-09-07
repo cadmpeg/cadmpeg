@@ -1324,7 +1324,7 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
 #[test]
 fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
     let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
-    let provisional = FeatureId("initial-bodies".into());
+    let provisional = FeatureId::mint("initial-bodies").expect("identity grammar");
     let mut history = BodyWriterHistory::default();
     history.record_writer(None, None, std::slice::from_ref(&body), &provisional);
 
@@ -1343,7 +1343,7 @@ fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
         BooleanOp::NewBody
     );
 
-    let fallback_prior = FeatureId("fallback-prior-feature".into());
+    let fallback_prior = FeatureId::mint("fallback-prior-feature").expect("identity grammar");
     let mut fallback_history = BodyWriterHistory::default();
     fallback_history.record_writer(None, None, std::slice::from_ref(&body), &fallback_prior);
     assert_eq!(
@@ -1361,7 +1361,7 @@ fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
         BooleanOp::Unresolved
     );
 
-    let prior = FeatureId("prior-feature".into());
+    let prior = FeatureId::mint("prior-feature").expect("identity grammar");
     history.record_writer(Some(7), None, std::slice::from_ref(&body), &prior);
     assert_eq!(
         super::new_body_boolean_op(&super::NewBodyEvidence {
@@ -1392,7 +1392,7 @@ fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
         BooleanOp::Unresolved
     );
 
-    let offset_prior = FeatureId("offset-prior-feature".into());
+    let offset_prior = FeatureId::mint("offset-prior-feature").expect("identity grammar");
     let mut offset_history = BodyWriterHistory::default();
     offset_history.record_writer(None, Some("store:block#7"), &[], &offset_prior);
     assert_eq!(

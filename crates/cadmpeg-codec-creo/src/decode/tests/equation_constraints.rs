@@ -352,7 +352,8 @@ fn equation_function_two_emits_radius_dimension_constraint_with_incomplete_segme
         constraints[0].0.definition,
         SketchConstraintDefinition::Radius {
             entity: SketchEntityId("creo:featdefs:sketch_entity#40:13".into()),
-            parameter: ParameterId("creo:featdefs:parameter#40:100".into()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#40:100")
+                .expect("identity grammar"),
         }
     );
 
@@ -1367,7 +1368,8 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
         SketchConstraintDefinition::HorizontalDistance {
             first: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)),
             second: SketchLocus::End(SketchEntityId("creo:featdefs:sketch_entity#40:10".into(),)),
-            parameter: ParameterId("creo:featdefs:parameter#40:27".into()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#40:27")
+                .expect("identity grammar"),
         }
     );
 
@@ -1519,7 +1521,8 @@ fn equation_function_forty_three_emits_parameterized_axis_distance() {
         SketchConstraintDefinition::HorizontalDistance {
             first: SketchLocus::Start(SketchEntityId("creo:featdefs:sketch_entity#40:10".into())),
             second: SketchLocus::End(SketchEntityId("creo:featdefs:sketch_entity#40:10".into())),
-            parameter: ParameterId("creo:featdefs:parameter#40:27".into()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#40:27")
+                .expect("identity grammar"),
         }
     );
 

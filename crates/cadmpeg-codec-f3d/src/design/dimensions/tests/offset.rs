@@ -452,7 +452,7 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
         .chain(&results)
         .map(|entity| ((stream, record_index(entity)), entity))
         .collect::<HashMap<_, _>>();
-    let parameter = ParameterId("synthetic:parameter#offset".into());
+    let parameter = ParameterId::mint("synthetic:parameter#offset").expect("identity grammar");
 
     let definition = spatial_counted_offset_dimension_definition(
         "Linear Dimension-1",

@@ -2427,7 +2427,8 @@ mod tests {
         definition: cadmpeg_ir::features::FeatureDefinition,
     ) -> cadmpeg_ir::features::Feature {
         cadmpeg_ir::features::Feature {
-            id: cadmpeg_ir::features::FeatureId(format!("sldprt:model:feature#{id}")),
+            id: cadmpeg_ir::features::FeatureId::mint(format!("sldprt:model:feature#{id}"))
+                .expect("identity grammar"),
             ordinal,
             name: Some(name.into()),
             suppressed: None,
@@ -2464,7 +2465,7 @@ mod tests {
     fn empty_swift_pattern_uses_one_native_hole_join() {
         use cadmpeg_ir::features::{FeatureDefinition, FeatureId, PatternKind, PatternSeed};
 
-        let seed = FeatureId("sldprt:model:feature#seed".into());
+        let seed = FeatureId::mint("sldprt:model:feature#seed").expect("identity grammar");
         let pattern_definition = FeatureDefinition::Pattern {
             seeds: vec![PatternSeed::Feature(seed.clone())],
             pattern: PatternKind::Unresolved,
@@ -2533,7 +2534,7 @@ mod tests {
             "hole2",
             "Hole6",
             4,
-            vec![FeatureId("sldprt:model:feature#seed".into())],
+            vec![FeatureId::mint("sldprt:model:feature#seed").expect("identity grammar")],
             simple_hole_definition(6.1468),
         ));
         assert!(pattern_hole_nominal_context(&ambiguous).is_empty());
@@ -2543,7 +2544,7 @@ mod tests {
             "hole2",
             "Hole6",
             4,
-            vec![FeatureId("sldprt:model:feature#seed".into())],
+            vec![FeatureId::mint("sldprt:model:feature#seed").expect("identity grammar")],
             simple_hole_definition(6.1468),
         );
         let FeatureDefinition::Hole { diameter, .. } = &mut unresolved_hole.definition else {

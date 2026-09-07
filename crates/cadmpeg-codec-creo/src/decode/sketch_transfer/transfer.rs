@@ -835,7 +835,7 @@ pub(in super::super) fn transfer_sketches(
             let feature_id = sketch_feature_id(&sketch_id);
             annotate(
                 annotations,
-                &feature_id.0,
+                feature_id.as_str(),
                 "FeatDefs",
                 source_offset as u64,
                 "section_sketch_feature",

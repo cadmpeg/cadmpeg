@@ -731,7 +731,8 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
             end: Point2::new(1.0, 1.0),
         },
     );
-    let parameter = cadmpeg_ir::features::ParameterId("f3d:model:parameter#angle".into());
+    let parameter = cadmpeg_ir::features::ParameterId::mint("f3d:model:parameter#angle")
+        .expect("identity grammar");
     assert!(matches!(
         null_locus_dimension_definition(
             &axis_pair,

@@ -573,7 +573,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
         owner_reference: 100,
         owner_reference_offset: 0,
     };
-    let parameter_id = ParameterId("generated:parameter#offset".into());
+    let parameter_id = ParameterId::mint("generated:parameter#offset").expect("identity grammar");
     let projected = HashMap::from([((stream, 10), &source), ((stream, 11), &result)]);
 
     let definition = crate::design::dimensions::annotation_offset_dimension_definition(
@@ -1052,7 +1052,8 @@ fn parallel_group_binds_one_common_axis_angle() {
         std::f64::consts::FRAC_PI_4,
     ))
     .expect("generated angular dimension is canonical");
-    let parameter_id = ParameterId("generated:parameter#axis-angle".into());
+    let parameter_id =
+        ParameterId::mint("generated:parameter#axis-angle").expect("identity grammar");
 
     assert!(matches!(
         crate::design::dimensions::parallel_group_axis_angle_definition(

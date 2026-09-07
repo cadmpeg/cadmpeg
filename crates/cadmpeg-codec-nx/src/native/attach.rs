@@ -293,7 +293,8 @@ pub(crate) fn attach(
     attach_indexed_om_unknowns(ctx, scan, annotations, unknowns)?;
     if !model.om.configurations.is_empty() {
         for (ordinal, configuration) in model.om.configurations.iter().enumerate() {
-            let id = ConfigurationId(format!("nx:arrangements:configuration#{ordinal}"));
+            let id = ConfigurationId::mint(format!("nx:arrangements:configuration#{ordinal}"))
+                .expect("identity grammar");
             let active_attribute_use = model
                 .om
                 .configuration_attribute_uses
@@ -307,17 +308,17 @@ pub(crate) fn attach(
                 ConfigurationBodies::Unresolved
             };
             annotations
-                .note(&id.0, annotation_stream, configuration.source_offset)
+                .note(id.as_str(), annotation_stream, configuration.source_offset)
                 .tag("Arrangement");
-            annotations.derived(&id.0, "ordinal");
+            annotations.derived(id.as_str(), "ordinal");
             if active_attribute_use.is_some() {
-                annotations.derived(&id.0, "active");
+                annotations.derived(id.as_str(), "active");
             }
-            annotations.derived(&id.0, "source_index");
-            annotations.derived(&id.0, "name");
-            annotations.derived(&id.0, "native_ref");
+            annotations.derived(id.as_str(), "source_index");
+            annotations.derived(id.as_str(), "name");
+            annotations.derived(id.as_str(), "native_ref");
             if bodies.resolved().is_some_and(|bodies| !bodies.is_empty()) {
-                annotations.derived(&id.0, "bodies");
+                annotations.derived(id.as_str(), "bodies");
             }
             ir.model.configurations.push(DesignConfiguration {
                 id,
@@ -807,15 +808,15 @@ fn attach_jpeg_preview_assets(
             ));
             continue;
         }
-        let id = AssetId(format!("{native_ref}:asset"));
+        let id = AssetId::mint(format!("{native_ref}:asset")).expect("identity grammar");
         annotations
-            .note(&id.0, stream, source_offset)
+            .note(id.as_str(), stream, source_offset)
             .tag("JPEG_PREVIEW_ASSET");
-        annotations.exactness(&id.0, Exactness::ByteExact);
-        annotations.derived(&id.0, "id");
-        annotations.derived(&id.0, "name");
-        annotations.derived(&id.0, "media_type");
-        annotations.derived(&id.0, "native_ref");
+        annotations.exactness(id.as_str(), Exactness::ByteExact);
+        annotations.derived(id.as_str(), "id");
+        annotations.derived(id.as_str(), "name");
+        annotations.derived(id.as_str(), "media_type");
+        annotations.derived(id.as_str(), "native_ref");
         ir.model.assets.push(Asset {
             id,
             name: Some(if ordinal == 0 {
@@ -864,7 +865,7 @@ fn attach_material_texture_assets(
     let mut assets = Vec::with_capacity(sources.len());
     for (texture, bytes) in sources {
         assets.push(Asset {
-            id: AssetId(format!("{}:asset", texture.id)),
+            id: AssetId::mint(format!("{}:asset", texture.id)).expect("identity grammar"),
             name: Some(texture.name().to_owned()),
             media_type: Some("image/tiff".to_string()),
             content: AssetContent::Embedded {
@@ -1068,7 +1069,8 @@ fn attach_initial_segment_bodies(
         return None;
     }
 
-    let id = FeatureId("nx:feature-history:feature#initial-bodies".to_string());
+    let id = FeatureId::mint("nx:feature-history:feature#initial-bodies".to_string())
+        .expect("identity grammar");
     let outputs = bindings_by_body.keys().cloned().collect::<Vec<_>>();
     let source_properties = bindings_by_body
         .values()
@@ -1840,7 +1842,8 @@ fn attach_feature_operations(
                 .unwrap_or(label.id.as_str());
             (
                 label.id.as_str(),
-                FeatureId(format!("nx:feature-history:feature#{key}")),
+                FeatureId::mint(format!("nx:feature-history:feature#{key}"))
+                    .expect("identity grammar"),
             )
         })
         .collect::<BTreeMap<_, _>>();
@@ -4963,7 +4966,8 @@ fn text_semantic_annotation(
         return None;
     };
     Some(SemanticAnnotation {
-        id: SemanticAnnotationId(format!("{native_ref}:semantic-text")),
+        id: SemanticAnnotationId::mint(format!("{native_ref}:semantic-text"))
+            .expect("identity grammar"),
         object: native_ref.to_string(),
         kind: SemanticAnnotationKind::Text,
         runtime_type: "TEXT".to_string(),
@@ -8722,10 +8726,11 @@ pub(crate) fn attach_expression_parameters(
     for (table_ordinal, (table, expressions, dependency_ordered_expressions)) in
         tables.into_iter().enumerate()
     {
-        let feature_id = FeatureId(table.split_once(":expression-table#").map_or_else(
+        let feature_id = FeatureId::mint(table.split_once(":expression-table#").map_or_else(
             || format!("{table}:feature#equations"),
             |(scope, key)| format!("{scope}:feature#equations-{key}"),
-        ));
+        ))
+        .expect("identity grammar");
         let first_offset = expressions
             .iter()
             .map(|expression| expression.source_offset)
@@ -8777,12 +8782,12 @@ pub(crate) fn attach_expression_parameters(
             let id = expression_parameter_id(&expression.id)
                 .expect("sectioned expressions have parameter identities");
             annotations
-                .note(&id.0, stream, expression.source_offset)
+                .note(id.as_str(), stream, expression.source_offset)
                 .tag("Number");
-            annotations.derived(&id.0, "owner");
-            annotations.derived(&id.0, "ordinal");
-            annotations.derived(&id.0, "value");
-            annotations.derived(&id.0, "native_ref");
+            annotations.derived(id.as_str(), "owner");
+            annotations.derived(id.as_str(), "ordinal");
+            annotations.derived(id.as_str(), "value");
+            annotations.derived(id.as_str(), "native_ref");
             let dependencies = if dependency_ordered_expressions.contains(&expression.id) {
                 let mut seen_dependencies = BTreeSet::new();
                 crate::native::om::expression_parameter_names(&expression.expression)
@@ -8797,7 +8802,7 @@ pub(crate) fn attach_expression_parameters(
                 Vec::new()
             };
             if !dependencies.is_empty() {
-                annotations.derived(&id.0, "dependencies");
+                annotations.derived(id.as_str(), "dependencies");
             }
             let value = expression.value.and_then(|value| match &expression.unit {
                 crate::native::om::ExpressionUnit::Millimeter
@@ -8812,7 +8817,7 @@ pub(crate) fn attach_expression_parameters(
             });
             let mut properties = BTreeMap::new();
             properties.insert("unit".to_string(), expression.unit.property_name());
-            annotations.derived(&id.0, "properties");
+            annotations.derived(id.as_str(), "properties");
             if let Some(declaration) = expression
                 .declaration
                 .as_deref()
@@ -8823,7 +8828,7 @@ pub(crate) fn attach_expression_parameters(
                     "declaration_object_id".to_string(),
                     declaration.object_id.to_string(),
                 );
-                annotations.derived(&id.0, "properties");
+                annotations.derived(id.as_str(), "properties");
             }
             for (consumer_ordinal, parameter_use) in uses_by_expression
                 .get(expression.id.as_str())
@@ -8841,7 +8846,7 @@ pub(crate) fn attach_expression_parameters(
                     format!("parameter_use.{consumer_ordinal}"),
                     parameter_use.id.clone(),
                 );
-                annotations.derived(&id.0, "properties");
+                annotations.derived(id.as_str(), "properties");
             }
             ir.model.parameters.push(DesignParameter {
                 id,
@@ -8963,7 +8968,7 @@ fn attach_block_dimension_parameter_consumers(
 
 fn expression_parameter_id(expression_id: &str) -> Option<ParameterId> {
     let (section, key) = expression_id.split_once(":expression#")?;
-    Some(ParameterId(format!("{section}:parameter#{key}")))
+    Some(ParameterId::mint(format!("{section}:parameter#{key}")).expect("identity grammar"))
 }
 
 #[cfg(test)]

@@ -196,10 +196,11 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                                     Some(property.raw.location()),
                                 )?;
                                 ir.model.assets.push(Asset {
-                                    id: AssetId(format!(
+                                    id: AssetId::mint(format!(
                                         "inventor:document:asset#preview-{}",
                                         ir.model.assets.len()
-                                    )),
+                                    ))
+                                    .expect("identity grammar"),
                                     name: Some("document preview".into()),
                                     media_type: Some(media_type.into()),
                                     content: AssetContent::Embedded { data },

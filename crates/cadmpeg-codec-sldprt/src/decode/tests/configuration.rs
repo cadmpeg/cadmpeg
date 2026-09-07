@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 fn configuration_partitions_require_explicit_source_identity() {
     let mut ir = CadIr::empty();
     let configuration = |id: &str, ordinal, source_index| DesignConfiguration {
-        id: ConfigurationId(id.into()),
+        id: ConfigurationId::mint(id).expect("identity grammar"),
         ordinal,
         active: false,
         source_index,
@@ -66,7 +66,8 @@ fn duplicate_configuration_source_identity_does_not_select_a_partition() {
     let mut ir = CadIr::empty();
     for ordinal in 0..2 {
         ir.model.configurations.push(DesignConfiguration {
-            id: ConfigurationId(format!("configuration:{ordinal}")),
+            id: ConfigurationId::mint(format!("configuration:{ordinal}"))
+                .expect("identity grammar"),
             ordinal,
             active: false,
             source_index: Some(5),
@@ -141,7 +142,7 @@ fn active_configuration_name_binds_partition_without_fabricating_body_membership
         ]),
     ));
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId("configuration".into()),
+        id: ConfigurationId::mint("configuration").expect("identity grammar"),
         ordinal: 0,
         active: false,
         source_index: None,
@@ -176,7 +177,7 @@ fn duplicate_configuration_partition_identities_are_reported() {
     let mut ir = CadIr::empty();
     for id in ["first", "second"] {
         ir.model.configurations.push(DesignConfiguration {
-            id: ConfigurationId(id.into()),
+            id: ConfigurationId::mint(id).expect("identity grammar"),
             ordinal: ir.model.configurations.len() as u32,
             active: false,
             source_index: Some(5),
@@ -207,7 +208,8 @@ fn incomplete_configuration_names_are_reported() {
         .enumerate()
     {
         ir.model.configurations.push(DesignConfiguration {
-            id: ConfigurationId(format!("configuration:{position}")),
+            id: ConfigurationId::mint(format!("configuration:{position}"))
+                .expect("identity grammar"),
             ordinal,
             active: position == 1,
             source_index: Some(position as u32),
@@ -244,7 +246,7 @@ fn active_configuration_partition_disagreement_is_reported() {
         )]),
     ));
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId("configuration".into()),
+        id: ConfigurationId::mint("configuration").expect("identity grammar"),
         ordinal: 0,
         active: true,
         source_index: Some(5),
@@ -272,7 +274,7 @@ fn incoherent_configuration_bodies_are_reported() {
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let body = ir.model.bodies[0].id.clone();
     let configuration = |id: &str, ordinal, bodies| DesignConfiguration {
-        id: ConfigurationId(id.into()),
+        id: ConfigurationId::mint(id).expect("identity grammar"),
         ordinal,
         active: ordinal == 0,
         source_index: Some(ordinal),
@@ -313,7 +315,7 @@ fn incoherent_configuration_bodies_are_reported() {
 #[test]
 fn configuration_values_complete_parameters_without_baseline_values() {
     let mut ir = CadIr::empty();
-    let parameter = ParameterId("configured-parameter".into());
+    let parameter = ParameterId::mint("configured-parameter").expect("identity grammar");
     ir.model.parameters.push(DesignParameter {
         id: parameter.clone(),
         owner: None,
@@ -328,7 +330,7 @@ fn configuration_values_complete_parameters_without_baseline_values() {
         native_ref: None,
     });
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId("configuration".into()),
+        id: ConfigurationId::mint("configuration").expect("identity grammar"),
         ordinal: 0,
         active: true,
         source_index: Some(0),
@@ -355,7 +357,7 @@ fn configuration_values_complete_parameters_without_baseline_values() {
 #[test]
 fn configuration_suppression_and_override_references_are_coherent() {
     let mut ir = CadIr::empty();
-    let feature = FeatureId("feature".into());
+    let feature = FeatureId::mint("feature").expect("identity grammar");
     let definition = FeatureDefinition::TreeNode {
         role: FeatureTreeNodeRole::History,
         children: Vec::new(),
@@ -376,7 +378,7 @@ fn configuration_suppression_and_override_references_are_coherent() {
         native_ref: None,
     });
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId("configuration".into()),
+        id: ConfigurationId::mint("configuration").expect("identity grammar"),
         ordinal: 0,
         active: true,
         source_index: Some(0),
@@ -385,7 +387,10 @@ fn configuration_suppression_and_override_references_are_coherent() {
         properties: BTreeMap::new(),
         bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
         parameter_values: BTreeMap::new(),
-        parameter_overrides: BTreeMap::from([(ParameterId("missing".into()), "1mm".into())]),
+        parameter_overrides: BTreeMap::from([(
+            ParameterId::mint("missing").expect("identity grammar"),
+            "1mm".into(),
+        )]),
         feature_states: BTreeMap::from([(
             feature,
             ConfigurationFeatureState {

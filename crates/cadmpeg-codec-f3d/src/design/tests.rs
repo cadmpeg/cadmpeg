@@ -126,9 +126,9 @@ fn feature_identity_uses_stream_family_ordinal_and_scope_record() {
 
     let localized = neutral_feature_id_parts("Design Name", "Symétrie miroir", 1, 41);
     let literal_escape = neutral_feature_id_parts("Design%20Name", "Symétrie%20miroir", 1, 41);
-    assert!(!localized.0.chars().any(char::is_whitespace));
-    assert!(localized.0.contains("Design%20Name"));
-    assert!(localized.0.contains("Symétrie%20miroir"));
+    assert!(!localized.as_str().chars().any(char::is_whitespace));
+    assert!(localized.as_str().contains("Design%20Name"));
+    assert!(localized.as_str().contains("Symétrie%20miroir"));
     assert_ne!(localized, literal_escape);
     assert!(!feature_input_topology_id(&localized, 2)
         .as_str()
@@ -204,12 +204,13 @@ fn sketch_geometry_identity_uses_owner_and_native_persistent_ids() {
 
 #[test]
 fn governing_dimension_identity_uses_parameter_identity() {
-    let parameter = cadmpeg_ir::features::ParameterId("f3d:model:parameter#Design/A:12".into());
+    let parameter = cadmpeg_ir::features::ParameterId::mint("f3d:model:parameter#Design/A:12")
+        .expect("identity grammar");
     let relocated = neutral_dimension_constraint_id(&parameter, "pair");
     let same = neutral_dimension_constraint_id(&parameter, "pair");
     let other_form = neutral_dimension_constraint_id(&parameter, "null-pair");
     let other_parameter = neutral_dimension_constraint_id(
-        &cadmpeg_ir::features::ParameterId("parameter:Design/A".into()),
+        &cadmpeg_ir::features::ParameterId::mint("parameter:Design/A").expect("identity grammar"),
         "12:pair",
     );
 

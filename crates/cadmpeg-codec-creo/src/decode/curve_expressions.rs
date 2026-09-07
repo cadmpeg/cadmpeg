@@ -264,10 +264,11 @@ pub(crate) fn transfer_curve_expression_features(
     {
         let source_section = source_section(scan, record.offset);
         let ordinal = ordinal_base + expression_ordinal as u64;
-        let feature_id = IrFeatureId(format!(
+        let feature_id = IrFeatureId::mint(format!(
             "creo:depdb:curve_expression_feature#{}-{}",
             record.entity_id, record.offset
-        ));
+        ))
+        .expect("identity grammar");
         let mut assignment_indices_by_name = BTreeMap::<String, Option<usize>>::new();
         for (assignment_ordinal, assignment) in record.assignments.iter().enumerate() {
             if assignment.activation == crate::curve::CurveExpressionActivation::Inactive {
@@ -311,10 +312,11 @@ pub(crate) fn transfer_curve_expression_features(
             let Some(&ordinal) = emitted_ordinals.get(&assignment_ordinal) else {
                 continue;
             };
-            let parameter_id = ParameterId(format!(
+            let parameter_id = ParameterId::mint(format!(
                 "creo:depdb:curve_expression_parameter#{}-{}-{}",
                 record.entity_id, record.offset, assignment_ordinal
-            ));
+            ))
+            .expect("identity grammar");
             let mut dependencies = assignment
                 .dependencies
                 .iter()
@@ -328,10 +330,11 @@ pub(crate) fn transfer_curve_expression_features(
                     seen.insert(dependency).then_some(dependency)
                 })
                 .map(|dependency| {
-                    ParameterId(format!(
+                    ParameterId::mint(format!(
                         "creo:depdb:curve_expression_parameter#{}-{}-{}",
                         record.entity_id, record.offset, dependency
                     ))
+                    .expect("identity grammar")
                 })
                 .collect::<Vec<_>>();
             dependencies.extend(assignment.dependencies.iter().filter_map(|name| {
@@ -449,7 +452,7 @@ pub(crate) fn transfer_curve_expression_features(
             }
             annotate(
                 annotations,
-                &parameter_id.0,
+                parameter_id.as_str(),
                 &source_section,
                 assignment.offset as u64,
                 "curve_expression_assignment",
@@ -487,7 +490,7 @@ pub(crate) fn transfer_curve_expression_features(
         }
         annotate(
             annotations,
-            &feature_id.0,
+            feature_id.as_str(),
             &source_section,
             record.expression_offset as u64,
             "curve_expression_feature",

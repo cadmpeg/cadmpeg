@@ -183,7 +183,7 @@ fn offset_plane_frame_translates_its_reference_frame() {
         content: Vec::new(),
     };
     let neutral = |id: &str, native_ref: &str, definition| NeutralFeature {
-        id: FeatureId(id.into()),
+        id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -209,7 +209,7 @@ fn offset_plane_frame_translates_its_reference_frame() {
             "offset-native",
             FeatureDefinition::DatumOffsetPlane {
                 reference: Some(cadmpeg_ir::features::DatumPlaneReference::Feature(
-                    FeatureId("plane".into()),
+                    FeatureId::mint("plane").expect("identity grammar"),
                 )),
                 distance: Length(3.0),
             },

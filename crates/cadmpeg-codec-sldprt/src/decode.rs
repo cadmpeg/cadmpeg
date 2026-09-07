@@ -3829,7 +3829,7 @@ fn snapshot_active_configuration(ir: &mut CadIr) {
     configuration.feature_states = feature_states;
     // Read-side fabricated snapshot of model-level state; tag the configuration
     // so the write path can distinguish it from feature-input lane state.
-    let id = configuration.id.0.clone();
+    let id = configuration.id.as_str().to_owned();
     if let Some(source) = &mut ir.source {
         source
             .attributes
@@ -4130,9 +4130,10 @@ fn assign_configuration_bodies(
         ir.model
             .configurations
             .push(cadmpeg_ir::features::DesignConfiguration {
-                id: cadmpeg_ir::features::ConfigurationId(format!(
+                id: cadmpeg_ir::features::ConfigurationId::mint(format!(
                     "sldprt:model:configuration#partition:{source_index}"
-                )),
+                ))
+                .expect("identity grammar"),
                 ordinal,
                 active: false,
                 source_index: Some(source_index),

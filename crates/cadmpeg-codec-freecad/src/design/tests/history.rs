@@ -49,7 +49,7 @@ fn distinguishes_stored_base_and_application_owned_features() {
     assert!(matches!(
         &base.definition,
         cadmpeg_ir::features::FeatureDefinition::DerivedGeometry { source }
-            if source.0 == "fcstd:design:feature#Source"
+            if source.as_str() == "fcstd:design:feature#Source"
     ));
     assert_eq!(base.dependencies, std::slice::from_ref(&source.id));
     assert!(result.ir().model.features.iter().all(|feature| {
@@ -87,7 +87,8 @@ fn distinguishes_stored_base_and_application_owned_features() {
         .find(|feature| feature.name.as_deref() == Some("BaseFeature"))
         .expect("derived feature");
     derived.definition = cadmpeg_ir::features::FeatureDefinition::DerivedGeometry {
-        source: cadmpeg_ir::features::FeatureId("fcstd:design:feature#Missing".into()),
+        source: cadmpeg_ir::features::FeatureId::mint("fcstd:design:feature#Missing")
+            .expect("identity grammar"),
     };
     assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
         .findings
@@ -219,7 +220,7 @@ fn transfers_ordered_body_membership_and_active_tip() {
     assert_eq!(
         children
             .iter()
-            .map(|child| child.0.as_str())
+            .map(cadmpeg_ir::FeatureId::as_str)
             .collect::<Vec<_>>(),
         ["fcstd:design:feature#First", "fcstd:design:feature#Second"]
     );
@@ -251,9 +252,10 @@ fn transfers_ordered_body_membership_and_active_tip() {
     else {
         panic!("body tree node");
     };
-    *active_child = Some(cadmpeg_ir::features::FeatureId(
-        "fcstd:design:feature#Outside".into(),
-    ));
+    *active_child = Some(
+        cadmpeg_ir::features::FeatureId::mint("fcstd:design:feature#Outside")
+            .expect("identity grammar"),
+    );
     assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
         .findings
         .iter()
@@ -555,7 +557,7 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
         .expect("height position");
     assert!(width_position < height_position);
     let sheet = result.ir().model.spreadsheets.first().expect("sheet state");
-    assert_eq!(sheet.feature.0, "fcstd:design:feature#Sheet");
+    assert_eq!(sheet.feature.as_str(), "fcstd:design:feature#Sheet");
     assert_eq!(sheet.cells.len(), 2);
     assert_eq!(
         sheet.column_widths,

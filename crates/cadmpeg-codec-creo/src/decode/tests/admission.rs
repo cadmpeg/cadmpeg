@@ -189,7 +189,7 @@ fn decode_projects_orphan_geometry_generator_as_stored_geometry() {
         .model
         .features
         .iter()
-        .find(|feature| feature.id.0 == "creo:model:feature#4")
+        .find(|feature| feature.id.as_str() == "creo:model:feature#4")
         .expect("geometry generator feature");
 
     assert!(matches!(

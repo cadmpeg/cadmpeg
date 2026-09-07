@@ -7,12 +7,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::features::{FeatureId, ParameterId};
 
-/// Stable spreadsheet identity.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(transparent)]
-pub struct SpreadsheetId(
-    #[serde(serialize_with = "crate::schema::serialize_reference_id")] pub String,
+crate::ids::reference_id_type!(
+    /// Stable spreadsheet identity.
+    SpreadsheetId
 );
 
 /// One used spreadsheet cell and its A1 address.

@@ -40,7 +40,7 @@ fn unique_axis_swap_maps_marker_coordinates_to_profile_loci() {
 fn relation_point_materializes_under_one_proven_marker_transform() {
     let sketch = SketchId("sketch".into());
     let feature = Feature {
-        id: FeatureId("feature".into()),
+        id: FeatureId::mint("feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -457,7 +457,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
 fn relation_point_coexists_with_nonpoint_native_carrier() {
     let sketch = SketchId("sketch".into());
     let feature = Feature {
-        id: FeatureId("feature".into()),
+        id: FeatureId::mint("feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -608,7 +608,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
 fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous() {
     let sketch = SketchId("sketch".into());
     let feature = Feature {
-        id: FeatureId("feature".into()),
+        id: FeatureId::mint("feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -826,7 +826,7 @@ fn circular_profile_binds_by_unique_diameter_signature() {
     let sketch_id = SketchId("circle-profile".into());
     let entity_id = SketchEntityId("circle".into());
     let feature = |id: &str, name: &str, sketch| Feature {
-        id: FeatureId(id.into()),
+        id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: Some(name.into()),
         suppressed: Some(false),
@@ -846,8 +846,8 @@ fn circular_profile_binds_by_unique_diameter_signature() {
         feature("second", "Sketch2", Some(sketch_id.clone())),
     ];
     let parameter = |id: &str, owner: &str, diameter: f64| DesignParameter {
-        id: ParameterId(id.into()),
-        owner: Some(FeatureId(owner.into())),
+        id: ParameterId::mint(id).expect("identity grammar"),
+        owner: Some(FeatureId::mint(owner).expect("identity grammar")),
         ordinal: 0,
         name: "D1".into(),
         expression: format!("<MOD-DIAM>{diameter}"),

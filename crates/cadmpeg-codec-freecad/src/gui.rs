@@ -564,7 +564,7 @@ fn transfer_neutral_presentation(
             .filter(|_| camera_states.next().is_none());
         let camera = camera_state.map(camera_state_value).transpose()?;
         plan.presentation_documents.push(PresentationDocument {
-            id: PresentationId("fcstd:presentation:document#0".into()),
+            id: PresentationId::mint("fcstd:presentation:document#0").expect("identity grammar"),
             schema_version: neutral_schema_version,
             active_view: None,
             states: document
@@ -626,11 +626,12 @@ fn transfer_neutral_presentation(
             )));
         }
         plan.view_presentations.push(ViewPresentation {
-            id: PresentationId(crate::native::model_id(
+            id: PresentationId::mint(crate::native::model_id(
                 "presentation-view",
                 &provider.id,
                 "state",
-            )),
+            ))
+            .expect("identity grammar"),
             object: provider.object.clone(),
             order: provider.order as u32,
             expanded: provider.expanded,

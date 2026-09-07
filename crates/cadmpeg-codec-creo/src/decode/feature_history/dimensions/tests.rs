@@ -58,13 +58,17 @@ fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
 
     assert_eq!(
         planned_feature_dimension_parameter_ids(&scan),
-        BTreeSet::from([ParameterId("creo:featdefs:parameter#917:3".to_string())])
+        BTreeSet::from([
+            ParameterId::mint("creo:featdefs:parameter#917:3".to_string())
+                .expect("identity grammar")
+        ])
     );
 
     let mut ir = CadIr::empty();
     for ordinal in 0..2 {
         ir.model.features.push(Feature::new(
-            "creo:model:feature#40".into(),
+            cadmpeg_ir::features::FeatureId::mint("creo:model:feature#40")
+                .expect("identity grammar"),
             ordinal,
             IrFeatureDefinition::Native {
                 kind: "test".into(),

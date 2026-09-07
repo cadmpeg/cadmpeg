@@ -2979,9 +2979,9 @@ fn feature_input_prefix(
     previous_state_id: i64,
 ) -> String {
     let feature_key = feature
-        .0
+        .as_str()
         .split_once('#')
-        .map_or(feature.0.as_str(), |(_, key)| key);
+        .map_or(feature.as_str(), |(_, key)| key);
     crate::ids::history_input_prefix(feature_key, previous_state_id)
 }
 

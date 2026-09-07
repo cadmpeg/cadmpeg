@@ -1499,7 +1499,7 @@ fn coordinate_system_feature_rejects_a_reflected_local_system() {
 #[test]
 fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
     let feature = |definition, outputs| Feature {
-        id: IrFeatureId("creo:model:feature#1".to_string()),
+        id: IrFeatureId::mint("creo:model:feature#1".to_string()).expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),

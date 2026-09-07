@@ -26,10 +26,11 @@ pub(in super::super) fn feature_dimension_parameter_id(
     sketch: &SketchId,
     external_id: u32,
 ) -> ParameterId {
-    ParameterId(format!(
+    ParameterId::mint(format!(
         "creo:featdefs:parameter#{}:{external_id}",
         sketch_identity_scope(sketch),
     ))
+    .expect("identity grammar")
 }
 
 pub(in super::super) fn feature_dimension_parameter_row_id(
@@ -40,11 +41,12 @@ pub(in super::super) fn feature_dimension_parameter_row_id(
     occurrence.map_or_else(
         || feature_dimension_parameter_id(sketch, external_id),
         |occurrence| {
-            ParameterId(format!(
+            ParameterId::mint(format!(
                 "creo:featdefs:parameter#{}:{external_id}:{}",
                 sketch_identity_scope(sketch),
                 occurrence + 1
             ))
+            .expect("identity grammar")
         },
     )
 }
@@ -232,7 +234,7 @@ pub(in super::super) fn transfer_feature_dimensions(
         }
         annotate(
             annotations,
-            &id.0,
+            id.as_str(),
             "FeatDefs",
             dimension.offset as u64,
             "section_dimension",

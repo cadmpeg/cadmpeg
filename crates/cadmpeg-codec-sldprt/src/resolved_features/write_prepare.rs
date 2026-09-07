@@ -513,7 +513,7 @@ fn validate_generated_marker_constraint(
                 cadmpeg_core::CodecError::malformed(format_args!(
                     "source-less SLDPRT dimension {} references missing parameter {}",
                     constraint.id.as_str(),
-                    parameter_id.0
+                    parameter_id.as_str()
                 ))
             })?;
         let compatible = match &constraint.definition {
@@ -1482,7 +1482,7 @@ mod source_less_lane_tests {
 
     fn add_sketch_owner(ir: &mut cadmpeg_ir::CadIr, sketch: &Sketch) {
         ir.model.features.push(cadmpeg_ir::features::Feature {
-            id: cadmpeg_ir::features::FeatureId("sketch-feature".into()),
+            id: cadmpeg_ir::features::FeatureId::mint("sketch-feature").expect("identity grammar"),
             ordinal: 0,
             name: Some("Sketch".into()),
             suppressed: Some(false),

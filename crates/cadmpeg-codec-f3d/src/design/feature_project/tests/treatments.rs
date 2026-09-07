@@ -751,9 +751,9 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
     };
     let feature = crate::ids::neutral_feature_id(&scope);
     let feature_key = feature
-        .0
+        .as_str()
         .split_once('#')
-        .map_or(feature.0.as_str(), |(_, key)| key);
+        .map_or(feature.as_str(), |(_, key)| key);
     let prefix = crate::ids::history_input_prefix(feature_key, 7);
     assert_eq!(
         state,

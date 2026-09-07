@@ -32,7 +32,7 @@ pub(super) fn check_semantic_annotations(
                 check: Check::ReferentialIntegrity,
                 severity: Severity::Error,
                 message: "invalid semantic annotation reference, order, or numeric state".into(),
-                entity: Some(annotation.id.0.clone()),
+                entity: Some(annotation.id.as_str().to_owned()),
             });
         }
     }

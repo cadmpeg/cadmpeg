@@ -206,7 +206,7 @@ mod tests {
     #[test]
     fn configuration_feature_sketch_resolves_against_model_sketches() {
         let mut ir = CadIr::empty();
-        let feature_id = FeatureId("test:model:feature#sketch".into());
+        let feature_id = FeatureId::mint("test:model:feature#sketch").expect("identity grammar");
         let sketch_id = SketchId("test:model:sketch#sketch".into());
         ir.model.features.push(Feature {
             id: feature_id.clone(),
@@ -238,7 +238,8 @@ mod tests {
             native_ref: None,
         });
         ir.model.configurations.push(DesignConfiguration {
-            id: ConfigurationId("test:model:configuration#default".into()),
+            id: ConfigurationId::mint("test:model:configuration#default")
+                .expect("identity grammar"),
             ordinal: 0,
             active: true,
             source_index: None,
@@ -284,9 +285,9 @@ mod tests {
                 definition,
                 native_ref: None,
             };
-        let first = FeatureId("test:model:feature#plane-a".into());
-        let second = FeatureId("test:model:feature#plane-b".into());
-        let split = FeatureId("test:model:feature#split".into());
+        let first = FeatureId::mint("test:model:feature#plane-a").expect("identity grammar");
+        let second = FeatureId::mint("test:model:feature#plane-b").expect("identity grammar");
+        let split = FeatureId::mint("test:model:feature#split").expect("identity grammar");
         let mut ir = CadIr::empty();
         ir.model.features = vec![
             feature(

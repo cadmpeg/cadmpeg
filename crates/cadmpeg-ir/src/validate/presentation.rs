@@ -46,7 +46,7 @@ pub(super) fn check_presentation(
         {
             invalid_state(
                 findings,
-                Some(document.id.0.clone()),
+                Some(document.id.as_str().to_owned()),
                 "invalid document presentation state",
             );
         }
@@ -69,7 +69,7 @@ pub(super) fn check_presentation(
         if !references_valid || !sizes_valid || !orders.insert(view.order) {
             invalid_state(
                 findings,
-                Some(view.id.0.clone()),
+                Some(view.id.as_str().to_owned()),
                 "invalid view presentation reference, order, or size",
             );
         }

@@ -500,10 +500,11 @@ fn native_parameter_id(parameter: &PmDcParameter) -> String {
 }
 
 fn parameter_id(parameter: &PmDcParameter) -> ParameterId {
-    ParameterId(format!(
+    ParameterId::mint(format!(
         "inventor:design:parameter#{}-{}",
         parameter.segment_token, parameter.record_ordinal
     ))
+    .expect("identity grammar")
 }
 
 struct ResolvedUnit {
@@ -1285,7 +1286,7 @@ mod tests {
     #[test]
     fn rejects_parameter_cycles_and_their_dependents() {
         let make = |name: &str, dependencies: Vec<ParameterId>| DesignParameter {
-            id: ParameterId(name.into()),
+            id: ParameterId::mint(name).expect("identity grammar"),
             owner: None,
             ordinal: 0,
             name: name.into(),
@@ -1298,9 +1299,9 @@ mod tests {
             native_ref: None,
         };
         let parameters = vec![
-            make("a", vec![ParameterId("b".into())]),
-            make("b", vec![ParameterId("a".into())]),
-            make("c", vec![ParameterId("a".into())]),
+            make("a", vec![ParameterId::mint("b").expect("identity grammar")]),
+            make("b", vec![ParameterId::mint("a").expect("identity grammar")]),
+            make("c", vec![ParameterId::mint("a").expect("identity grammar")]),
             make("d", Vec::new()),
         ];
         let (closed, rejected) = close_parameter_graph(parameters);
@@ -1308,7 +1309,7 @@ mod tests {
         assert_eq!(
             closed
                 .into_iter()
-                .map(|parameter| parameter.id.0)
+                .map(|parameter| parameter.id.into_string())
                 .collect::<Vec<_>>(),
             ["d"]
         );
