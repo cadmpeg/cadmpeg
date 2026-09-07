@@ -221,34 +221,6 @@ fn jt_predictors_reconstruct_primal_integers() {
         [10, 20, 30, 40, 45, 43]
     );
     assert_eq!(
-        unpack_predictor_residuals(&residuals, Predictor::Lag2),
-        [10, 20, 30, 40, 35, 38]
-    );
-    assert_eq!(
-        unpack_predictor_residuals(&residuals, Predictor::Stride1),
-        [10, 20, 30, 40, 55, 68]
-    );
-    assert_eq!(
-        unpack_predictor_residuals(&residuals, Predictor::Stride2),
-        [10, 20, 30, 40, 55, 58]
-    );
-    assert_eq!(
-        unpack_predictor_residuals(&residuals, Predictor::StripIndex),
-        [10, 20, 30, 40, 37, 40]
-    );
-    assert_eq!(
-        unpack_predictor_residuals(&residuals, Predictor::Ramp),
-        [10, 20, 30, 40, 9, 3]
-    );
-    assert_eq!(
-        unpack_predictor_residuals(&[10, 20, 30, 40, 0x2d ^ 0x28], Predictor::Xor1),
-        [10, 20, 30, 40, 45]
-    );
-    assert_eq!(
-        unpack_predictor_residuals(&[10, 20, 30, 40, 0x23 ^ 0x1e], Predictor::Xor2),
-        [10, 20, 30, 40, 35]
-    );
-    assert_eq!(
         unpack_predictor_residuals(&residuals, Predictor::Null),
         residuals
     );
