@@ -1242,8 +1242,8 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
                 Some(record.id.clone()),
             ));
         }
-        for reference in std::iter::once(record.surface_reference)
-            .chain(std::iter::once(record.parent_reference))
+        for reference in std::iter::once(record.surface.index)
+            .chain(std::iter::once(record.parent.index))
             .chain(
                 record
                     .edge_references
@@ -1264,8 +1264,8 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
                 ));
             }
         }
-        if record.styles_reference != 0 {
-            let target = record.styles_reference - 1;
+        if record.styles.index != 0 {
+            let target = record.styles.index - 1;
             if raw_records.get(&(record.segment_token.as_str(), target))
                 != Some(&"0786eb48d2110c076000f99ac5361ab0")
             {

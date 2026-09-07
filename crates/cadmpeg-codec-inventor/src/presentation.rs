@@ -91,12 +91,9 @@ pub(crate) struct PmGraphicsFace {
     pub(crate) header_value: u32,
     pub(crate) header_id: u16,
     pub(crate) flags: u32,
-    pub(crate) styles_reference: u32,
-    pub(crate) styles_reference_qualified: bool,
-    pub(crate) surface_reference: u32,
-    pub(crate) surface_reference_qualified: bool,
-    pub(crate) parent_reference: u32,
-    pub(crate) parent_reference_qualified: bool,
+    pub(crate) styles: PmDcReference,
+    pub(crate) surface: PmDcReference,
+    pub(crate) parent: PmDcReference,
     pub(crate) state: u32,
     pub(crate) edge_references: ReferenceList,
     pub(crate) visibility_state: u8,
@@ -304,18 +301,18 @@ fn project_face_bindings(
         }
         if matching_faces.len() != 1 {
             projection.unresolved_face_overrides +=
-                usize::from(matching_faces.iter().any(|face| face.styles_reference != 0));
+                usize::from(matching_faces.iter().any(|face| face.styles.index != 0));
             continue;
         }
         let graphics_face = matching_faces[0];
-        if graphics_face.styles_reference == 0 {
+        if graphics_face.styles.index == 0 {
             continue;
         }
         if key_counts.get(key) != Some(&1) {
             projection.unresolved_face_overrides += 1;
             continue;
         }
-        let Some(collection_ordinal) = graphics_face.styles_reference.checked_sub(1) else {
+        let Some(collection_ordinal) = graphics_face.styles.index.checked_sub(1) else {
             projection.unresolved_face_overrides += 1;
             continue;
         };
@@ -593,12 +590,9 @@ fn parse_graphics_face(
         "graphics-face legacy header padding",
     )?;
     let flags = cursor.u32("graphics-face flags")?;
-    let (styles_reference, styles_reference_qualified) =
-        cursor.node_reference("graphics-face styles reference")?;
-    let (surface_reference, surface_reference_qualified) =
-        cursor.node_reference("graphics-face surface reference")?;
-    let (parent_reference, parent_reference_qualified) =
-        cursor.node_reference("graphics-face parent reference")?;
+    let styles = cursor.node_reference("graphics-face styles reference")?;
+    let surface = cursor.node_reference("graphics-face surface reference")?;
+    let parent = cursor.node_reference("graphics-face parent reference")?;
     let state = cursor.u32("graphics-face state")?;
     cursor.skip(
         legacy_block_len(version),
@@ -635,12 +629,9 @@ fn parse_graphics_face(
         header_value,
         header_id,
         flags,
-        styles_reference,
-        styles_reference_qualified,
-        surface_reference,
-        surface_reference_qualified,
-        parent_reference,
-        parent_reference_qualified,
+        styles,
+        surface,
+        parent,
         state,
         edge_references,
         visibility_state,
@@ -866,9 +857,12 @@ impl<'a> Cursor<'a> {
         Ok(value & 0x7fff_ffff)
     }
 
-    fn node_reference(&mut self, field: &str) -> Result<(u32, bool), CodecError> {
+    fn node_reference(&mut self, field: &str) -> Result<PmDcReference, CodecError> {
         let value = self.u32(field)?;
-        Ok((value & 0x7fff_ffff, value & 0x8000_0000 != 0))
+        Ok(PmDcReference {
+            index: value & 0x7fff_ffff,
+            qualified: value & 0x8000_0000 != 0,
+        })
     }
 
     fn reference_list(
@@ -896,12 +890,7 @@ impl<'a> Cursor<'a> {
         ];
         let mut references = Vec::with_capacity(count);
         for index in 0..count {
-            let (reference, qualified) =
-                self.node_reference(&format!("{field} reference {index}"))?;
-            references.push(PmDcReference {
-                index: reference,
-                qualified,
-            });
+            references.push(self.node_reference(&format!("{field} reference {index}"))?);
         }
         Ok(ReferenceList {
             items: Some((metadata, references)),
@@ -1139,12 +1128,12 @@ mod tests {
 
         let face = parse_graphics_face(&ctx, root, 26).expect("graphics face parses");
 
-        assert_eq!(face.styles_reference, 7);
-        assert!(face.styles_reference_qualified);
-        assert_eq!(face.surface_reference, 8);
-        assert!(face.surface_reference_qualified);
-        assert_eq!(face.parent_reference, 9);
-        assert!(face.parent_reference_qualified);
+        assert_eq!(face.styles.index, 7);
+        assert!(face.styles.qualified);
+        assert_eq!(face.surface.index, 8);
+        assert!(face.surface.qualified);
+        assert_eq!(face.parent.index, 9);
+        assert!(face.parent.qualified);
         assert_eq!(
             face.edge_references.references(),
             [
@@ -1227,12 +1216,18 @@ mod tests {
                 header_value: 0,
                 header_id: 0,
                 flags: 0,
-                styles_reference: 5,
-                styles_reference_qualified: true,
-                surface_reference: 0,
-                surface_reference_qualified: false,
-                parent_reference: 0,
-                parent_reference_qualified: false,
+                styles: PmDcReference {
+                    index: 5,
+                    qualified: true,
+                },
+                surface: PmDcReference {
+                    index: 0,
+                    qualified: false,
+                },
+                parent: PmDcReference {
+                    index: 0,
+                    qualified: false,
+                },
                 state: 0,
                 edge_references: ReferenceList::default(),
                 visibility_state: 0,
