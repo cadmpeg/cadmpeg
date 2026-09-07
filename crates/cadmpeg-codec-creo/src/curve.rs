@@ -577,6 +577,39 @@ impl serde::Serialize for FcCurveOpaqueSpan {
     }
 }
 
+/// Direction of stored parameters relative to row-frame polar angles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParameterSense {
+    /// Parameters increase with polar angle.
+    Increasing,
+    /// Parameters decrease with polar angle.
+    Decreasing,
+}
+
+impl ParameterSense {
+    /// Signed parameter multiplier.
+    pub fn as_i8(self) -> i8 {
+        match self {
+            Self::Increasing => 1,
+            Self::Decreasing => -1,
+        }
+    }
+}
+
+/// Relation between stored circle parameters and row-frame polar angles.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Fc05AngleParameterRelation {
+    /// Neither unique parameter sense establishes a reference direction.
+    Inconsistent,
+    /// A unique parameter sense establishes a reference direction.
+    Consistent {
+        /// Direction of increasing stored parameters.
+        sense: ParameterSense,
+        /// Unit radial direction at stored parameter zero.
+        reference_direction_row_frame: [f64; 2],
+    },
+}
+
 /// Circle proven by the decoded points of an `fc 05` curve body.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Fc05Circle {
@@ -588,20 +621,14 @@ pub struct Fc05Circle {
     pub radius_mm: f64,
     /// Unit radial direction from the fitted center to the first stored sample.
     pub sample_direction_row_frame: [f64; 2],
-    /// Unit radial direction at stored curve parameter zero in the row's
-    /// `(x, z)` frame.
-    pub reference_direction_row_frame: Option<[f64; 2]>,
-    /// Signed relation from stored parameter to row-frame polar angle.
-    /// `1` increases polar angle and `-1` decreases it.
-    pub parameter_sign: Option<i8>,
+    /// Stored parameter relation and its reference direction.
+    pub angle_parameter: Fc05AngleParameterRelation,
     /// Constant cap-plane ordinate when present in every point.
     pub cap_ordinate_row_frame: Option<f64>,
     /// Number of points participating in validation.
     pub point_count: usize,
     /// Maximum absolute radial residual.
     pub max_residual: f64,
-    /// Whether stored parameters match angular deltas around the circle.
-    pub angle_parameter_consistent: bool,
     /// Byte offset of the source positional curve row.
     pub offset: usize,
 }
@@ -625,7 +652,7 @@ pub struct Fc05CylinderCapPair {
     /// Unit radial direction at parameter zero in the row's `(x, z)` frame.
     pub reference_direction_row_frame: [f64; 2],
     /// Shared signed parameter-to-polar-angle relation.
-    pub parameter_sign: i8,
+    pub parameter_sense: ParameterSense,
     /// At least two distinct cap ordinates in the owning feature's row frame.
     pub cap_ordinates_row_frame: Vec<f64>,
     /// Byte offset of the first participating curve row.
@@ -6517,17 +6544,21 @@ pub fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circle> {
         };
         let positive = sign_matches(1.0);
         let negative = sign_matches(-1.0);
-        let angle_parameter_consistent = positive ^ negative;
-        let parameter_sign = match (positive, negative) {
-            (true, false) => Some(1),
-            (false, true) => Some(-1),
-            _ => None,
+        let angle_parameter = match (positive, negative, parameter_0) {
+            (true, false, Some(parameter_0)) | (false, true, Some(parameter_0)) => {
+                let sense = if positive {
+                    ParameterSense::Increasing
+                } else {
+                    ParameterSense::Decreasing
+                };
+                let reference_angle = angle_0 - f64::from(sense.as_i8()) * parameter_0;
+                Fc05AngleParameterRelation::Consistent {
+                    sense,
+                    reference_direction_row_frame: [reference_angle.cos(), reference_angle.sin()],
+                }
+            }
+            _ => Fc05AngleParameterRelation::Inconsistent,
         };
-        let reference_direction_row_frame =
-            parameter_sign.zip(parameter_0).map(|(sign, parameter_0)| {
-                let reference_angle = angle_0 - f64::from(sign) * parameter_0;
-                [reference_angle.cos(), reference_angle.sin()]
-            });
         let sample_direction_row_frame =
             [(first.0 - center_x) / radius, (first.1 - center_z) / radius];
         circles.push(Fc05Circle {
@@ -6535,12 +6566,10 @@ pub fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circle> {
             center_row_frame: [center_x, center_z],
             radius_mm: radius,
             sample_direction_row_frame,
-            reference_direction_row_frame,
-            parameter_sign,
+            angle_parameter,
             cap_ordinate_row_frame: Some(ordinate),
             point_count: points.len(),
             max_residual,
-            angle_parameter_consistent,
             offset: record.offset,
         });
     }
@@ -6601,24 +6630,28 @@ pub fn fc05_cylinder_cap_pairs(
     for (surface_id, mut group) in groups {
         group.sort_by_key(|(circle, _)| circle.offset);
         let first = group[0].0;
-        let (Some(reference_direction_row_frame), Some(parameter_sign)) =
-            (first.reference_direction_row_frame, first.parameter_sign)
+        let Fc05AngleParameterRelation::Consistent {
+            sense: parameter_sense,
+            reference_direction_row_frame,
+        } = first.angle_parameter
         else {
             continue;
         };
         let tolerance = EPS_RADIUS_AGREEMENT * first.radius_mm.max(1.0);
         if !group.iter().all(|(circle, _)| {
+            let Fc05AngleParameterRelation::Consistent {
+                sense,
+                reference_direction_row_frame: direction,
+            } = circle.angle_parameter
+            else {
+                return false;
+            };
             (circle.radius_mm - first.radius_mm).abs() <= tolerance
                 && (circle.center_row_frame[0] - first.center_row_frame[0]).abs() <= tolerance
                 && (circle.center_row_frame[1] - first.center_row_frame[1]).abs() <= tolerance
-                && circle.parameter_sign == first.parameter_sign
-                && circle
-                    .reference_direction_row_frame
-                    .is_some_and(|direction| {
-                        (direction[0] - reference_direction_row_frame[0]).abs() <= tolerance
-                            && (direction[1] - reference_direction_row_frame[1]).abs() <= tolerance
-                    })
-                && circle.angle_parameter_consistent
+                && sense == parameter_sense
+                && (direction[0] - reference_direction_row_frame[0]).abs() <= tolerance
+                && (direction[1] - reference_direction_row_frame[1]).abs() <= tolerance
         }) {
             continue;
         }
@@ -6648,7 +6681,7 @@ pub fn fc05_cylinder_cap_pairs(
             center_row_frame: first.center_row_frame,
             radius_mm: first.radius_mm,
             reference_direction_row_frame,
-            parameter_sign,
+            parameter_sense,
             cap_ordinates_row_frame: ordinates,
             offset: first.offset,
         });

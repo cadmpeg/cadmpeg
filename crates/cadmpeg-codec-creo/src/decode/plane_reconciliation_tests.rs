@@ -629,7 +629,7 @@ fn fc05_cap_pair_tangency_selects_one_stored_plane_branch() {
             center_row_frame: [2.0, 3.0],
             radius_mm: 0.5,
             reference_direction_row_frame: [1.0, 0.0],
-            parameter_sign: 1,
+            parameter_sense: crate::curve::ParameterSense::Increasing,
             cap_ordinates_row_frame: vec![0.0, 38.0],
             offset: 40,
         });
@@ -696,7 +696,7 @@ fn fc05_cap_pair_frame_reconstructs_parameter_origin_from_cap_spans() {
         center_row_frame: [2.0, 3.0],
         radius_mm: 0.5,
         reference_direction_row_frame: [1.0, 0.0],
-        parameter_sign: 1,
+        parameter_sense: crate::curve::ParameterSense::Increasing,
         cap_ordinates_row_frame: vec![-87.5368, -49.5368],
         offset: 30,
     };
@@ -762,12 +762,13 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
             center_row_frame: [2.0, 3.0],
             radius_mm: 0.5,
             sample_direction_row_frame: [1.0, 0.0],
-            reference_direction_row_frame: Some([1.0, 0.0]),
-            parameter_sign: Some(1),
+            angle_parameter: crate::curve::Fc05AngleParameterRelation::Consistent {
+                sense: crate::curve::ParameterSense::Increasing,
+                reference_direction_row_frame: [1.0, 0.0],
+            },
             cap_ordinate_row_frame: Some(0.0),
             point_count: 8,
             max_residual: 0.0,
-            angle_parameter_consistent: true,
             offset: 30,
         },
         crate::curve::Fc05Circle {
@@ -775,12 +776,13 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
             center_row_frame: [2.0, 3.0],
             radius_mm: 0.5,
             sample_direction_row_frame: [1.0, 0.0],
-            reference_direction_row_frame: Some([1.0, 0.0]),
-            parameter_sign: Some(1),
+            angle_parameter: crate::curve::Fc05AngleParameterRelation::Consistent {
+                sense: crate::curve::ParameterSense::Increasing,
+                reference_direction_row_frame: [1.0, 0.0],
+            },
             cap_ordinate_row_frame: Some(38.0),
             point_count: 8,
             max_residual: 0.0,
-            angle_parameter_consistent: true,
             offset: 31,
         },
     ]);
@@ -823,7 +825,7 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
             center_row_frame: [2.0, 3.0],
             radius_mm: 0.5,
             reference_direction_row_frame: [1.0, 0.0],
-            parameter_sign: 1,
+            parameter_sense: crate::curve::ParameterSense::Increasing,
             cap_ordinates_row_frame: vec![0.0, 38.0],
             offset: 43,
         });
@@ -910,12 +912,13 @@ fn fc05_model_witness_uses_a_unique_reference_when_tangency_improves() {
         center_row_frame: [0.0, 0.0],
         radius_mm: 1.0,
         sample_direction_row_frame: [1.0, 0.0],
-        reference_direction_row_frame: Some([1.0, 0.0]),
-        parameter_sign: Some(1),
+        angle_parameter: crate::curve::Fc05AngleParameterRelation::Consistent {
+            sense: crate::curve::ParameterSense::Increasing,
+            reference_direction_row_frame: [1.0, 0.0],
+        },
         cap_ordinate_row_frame: Some(0.0),
         point_count: 8,
         max_residual: 0.0,
-        angle_parameter_consistent: true,
         offset: 7,
     });
     scan.references

@@ -353,18 +353,17 @@ pub(super) fn transfer_fc05_cap_circles(
             .iter()
             .find(|pair| pair.surface_id == *cylinder_id)
             .and_then(|pair| fc05_cap_pair_model_frame(scan, pair));
-        let reference = circle
-            .reference_direction_row_frame
-            .unwrap_or(circle.sample_direction_row_frame);
-        let axis_sign = pair_frame.map_or_else(
-            || {
-                circle.parameter_sign.map_or_else(
-                    || cap.normal[axis_index.index()].signum(),
-                    |sign| -f64::from(sign),
-                )
-            },
-            |frame| frame.axis_sign.scale(),
-        );
+        let (reference, circle_axis_sign) = match circle.angle_parameter {
+            crate::curve::Fc05AngleParameterRelation::Inconsistent => (
+                circle.sample_direction_row_frame,
+                cap.normal[axis_index.index()].signum(),
+            ),
+            crate::curve::Fc05AngleParameterRelation::Consistent {
+                sense,
+                reference_direction_row_frame,
+            } => (reference_direction_row_frame, -f64::from(sense.as_i8())),
+        };
+        let axis_sign = pair_frame.map_or(circle_axis_sign, |frame| frame.axis_sign.scale());
         let legacy_frame = fc05_model_frame(
             axis_index,
             cap.origin[axis_index.index()],

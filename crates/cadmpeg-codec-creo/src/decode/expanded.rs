@@ -187,20 +187,29 @@ pub(crate) fn fc05_circle_records(scan: &ContainerScan) -> Vec<CreoFc05CircleRec
     scan.curves
         .fc05_circles
         .iter()
-        .map(|record| CreoFc05CircleRecord {
-            id: format!("creo:curve:fc05_circle#{}", record.curve_id),
-            curve_id: record.curve_id,
-            center_row_frame: record.center_row_frame,
-            radius_mm: record.radius_mm,
-            sample_direction_row_frame: record.sample_direction_row_frame,
-            reference_direction_row_frame: record.reference_direction_row_frame,
-            parameter_sign: record.parameter_sign,
-            cap_ordinate_row_frame: record.cap_ordinate_row_frame,
-            point_count: record.point_count,
-            max_residual: record.max_residual,
-            angle_parameter_consistent: record.angle_parameter_consistent,
-            offset: record.offset,
-            source_section: source_section(scan, record.offset),
+        .map(|record| {
+            let (reference_direction_row_frame, parameter_sign) = match record.angle_parameter {
+                crate::curve::Fc05AngleParameterRelation::Inconsistent => (None, None),
+                crate::curve::Fc05AngleParameterRelation::Consistent {
+                    sense,
+                    reference_direction_row_frame,
+                } => (Some(reference_direction_row_frame), Some(sense.as_i8())),
+            };
+            CreoFc05CircleRecord {
+                id: format!("creo:curve:fc05_circle#{}", record.curve_id),
+                curve_id: record.curve_id,
+                center_row_frame: record.center_row_frame,
+                radius_mm: record.radius_mm,
+                sample_direction_row_frame: record.sample_direction_row_frame,
+                reference_direction_row_frame,
+                parameter_sign,
+                cap_ordinate_row_frame: record.cap_ordinate_row_frame,
+                point_count: record.point_count,
+                max_residual: record.max_residual,
+                angle_parameter_consistent: parameter_sign.is_some(),
+                offset: record.offset,
+                source_section: source_section(scan, record.offset),
+            }
         })
         .collect()
 }
@@ -220,7 +229,7 @@ pub(crate) fn fc05_cylinder_cap_pair_records(
             center_row_frame: record.center_row_frame,
             radius_mm: record.radius_mm,
             reference_direction_row_frame: record.reference_direction_row_frame,
-            parameter_sign: record.parameter_sign,
+            parameter_sign: record.parameter_sense.as_i8(),
             cap_ordinates_row_frame: record.cap_ordinates_row_frame.clone(),
             offset: record.offset,
             source_section: source_section(scan, record.offset),

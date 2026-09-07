@@ -788,16 +788,16 @@ fn fc05_cylinder_branch_witnesses(
         else {
             continue;
         };
-        let (reference, axis_sign) = circle
-            .reference_direction_row_frame
-            .zip(circle.parameter_sign)
-            .map_or(
-                (
-                    circle.sample_direction_row_frame,
-                    cap.normal[axis_index.index()].signum(),
-                ),
-                |(reference, parameter_sign)| (reference, -f64::from(parameter_sign)),
-            );
+        let (reference, axis_sign) = match circle.angle_parameter {
+            crate::curve::Fc05AngleParameterRelation::Inconsistent => (
+                circle.sample_direction_row_frame,
+                cap.normal[axis_index.index()].signum(),
+            ),
+            crate::curve::Fc05AngleParameterRelation::Consistent {
+                sense,
+                reference_direction_row_frame,
+            } => (reference_direction_row_frame, -f64::from(sense.as_i8())),
+        };
         let (origin, axis, ref_direction) = fc05_model_frame(
             axis_index,
             cap.origin[axis_index.index()],

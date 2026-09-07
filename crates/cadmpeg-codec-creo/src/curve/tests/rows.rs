@@ -596,12 +596,13 @@ fn binds_agreeing_fc05_caps_to_one_typed_cylinder() {
         center_row_frame: [3.0, 4.0],
         radius_mm: 2.0,
         sample_direction_row_frame: [1.0, 0.0],
-        reference_direction_row_frame: Some([1.0, 0.0]),
-        parameter_sign: Some(1),
+        angle_parameter: crate::curve::Fc05AngleParameterRelation::Consistent {
+            sense: crate::curve::ParameterSense::Increasing,
+            reference_direction_row_frame: [1.0, 0.0],
+        },
         cap_ordinate_row_frame: Some(ordinate),
         point_count: 8,
         max_residual: 0.0,
-        angle_parameter_consistent: true,
         offset,
     };
     let topology = |curve_id, plane_id, offset| CurveTopologyRow {
@@ -642,7 +643,7 @@ fn binds_agreeing_fc05_caps_to_one_typed_cylinder() {
             center_row_frame: [3.0, 4.0],
             radius_mm: 2.0,
             reference_direction_row_frame: [1.0, 0.0],
-            parameter_sign: 1,
+            parameter_sense: crate::curve::ParameterSense::Increasing,
             cap_ordinates_row_frame: vec![-5.0, 7.0],
             offset: 100,
         }]
@@ -656,12 +657,13 @@ fn fc05_cap_pairs_require_unique_topology_and_surface_identities() {
         center_row_frame: [3.0, 4.0],
         radius_mm: 2.0,
         sample_direction_row_frame: [1.0, 0.0],
-        reference_direction_row_frame: Some([1.0, 0.0]),
-        parameter_sign: Some(1),
+        angle_parameter: crate::curve::Fc05AngleParameterRelation::Consistent {
+            sense: crate::curve::ParameterSense::Increasing,
+            reference_direction_row_frame: [1.0, 0.0],
+        },
         cap_ordinate_row_frame: Some(ordinate),
         point_count: 8,
         max_residual: 0.0,
-        angle_parameter_consistent: true,
         offset,
     };
     let topology = |curve_id, plane_id, offset| CurveTopologyRow {
@@ -741,12 +743,13 @@ fn withholds_fc05_caps_without_distinct_ordinates() {
         center_row_frame: [3.0, 4.0],
         radius_mm: 2.0,
         sample_direction_row_frame: [1.0, 0.0],
-        reference_direction_row_frame: Some([1.0, 0.0]),
-        parameter_sign: Some(1),
+        angle_parameter: crate::curve::Fc05AngleParameterRelation::Consistent {
+            sense: crate::curve::ParameterSense::Increasing,
+            reference_direction_row_frame: [1.0, 0.0],
+        },
         cap_ordinate_row_frame: Some(5.0),
         point_count: 8,
         max_residual: 0.0,
-        angle_parameter_consistent: true,
         offset: 100,
     }];
     assert!(fc05_cylinder_cap_pairs(&circles, &[], &[]).is_empty());

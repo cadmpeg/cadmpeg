@@ -431,11 +431,14 @@ fn scan_validates_fc05_circle_from_record_points() {
     assert_eq!(circle.cap_ordinate_row_frame, Some(2.0));
     assert_eq!(circle.point_count, 4);
     assert_eq!(circle.max_residual, 0.0);
-    assert!(circle.angle_parameter_consistent);
-    assert_eq!(circle.parameter_sign, Some(1));
-    let direction = circle
-        .reference_direction_row_frame
-        .expect("unique parameter-zero direction");
+    let crate::curve::Fc05AngleParameterRelation::Consistent {
+        sense,
+        reference_direction_row_frame: direction,
+    } = circle.angle_parameter
+    else {
+        panic!("unique parameter-zero direction");
+    };
+    assert_eq!(sense, crate::curve::ParameterSense::Increasing);
     assert!((direction[0] - (-2.0_f64).cos()).abs() < 1.0e-12);
     assert!((direction[1] - (-2.0_f64).sin()).abs() < 1.0e-12);
     let mut unknown_parameter = scan.curves.parameters[0].clone();
@@ -446,9 +449,10 @@ fn scan_validates_fc05_circle_from_record_points() {
     };
     assert_eq!(carrier.center_row_frame, [3.0, 3.0]);
     assert_eq!(carrier.radius_mm, 1.0);
-    assert!(!carrier.angle_parameter_consistent);
-    assert_eq!(carrier.parameter_sign, None);
-    assert_eq!(carrier.reference_direction_row_frame, None);
+    assert_eq!(
+        carrier.angle_parameter,
+        crate::curve::Fc05AngleParameterRelation::Inconsistent
+    );
     assert_eq!(carrier.sample_direction_row_frame, [1.0, 0.0]);
     let mut trailing = scan.curves.parameters[0].clone();
     trailing.body.push(0xfe);
