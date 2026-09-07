@@ -320,7 +320,7 @@ fn preceding_incident_angular_dimension_excludes_later_symmetric_geometry() {
         id: format!("{stream}:sketch-curve#{record_index}"),
         record_index,
         owner_reference: Some(100),
-        class_tag: "301".into(),
+        class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         byte_offset,
         geometry_offset: 0,
         entity_genesis: None,

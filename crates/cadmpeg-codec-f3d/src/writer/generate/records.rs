@@ -598,7 +598,7 @@ fn encode_sketch_curve_identity(
     })?;
     let shift = usize::from(curve.entity_genesis.is_some()) * 52;
     let mut record = std::iter::repeat_n(0u8, 133 + shift).collect::<Vec<_>>();
-    encode_sketch_record_header(&mut record, &curve.class_tag, curve.record_index)?;
+    encode_sketch_record_header(&mut record, curve.class_tag.as_str(), curve.record_index)?;
     record[20] = 1;
     record[21..25].copy_from_slice(&(2 + u32::from(curve.entity_genesis.is_some())).to_le_bytes());
     if let Some(entity_genesis) = curve.entity_genesis {

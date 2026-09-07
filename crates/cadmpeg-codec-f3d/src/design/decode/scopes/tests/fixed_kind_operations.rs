@@ -721,7 +721,7 @@ pub(super) fn continue_fixed_kind_operations(
         id: "stream:indexed-axis-curve".into(),
         record_index: 905,
         owner_reference: Some(100),
-        class_tag: "450".into(),
+        class_tag: crate::records::DesignClassTag::try_from("450".to_owned()).unwrap(),
         byte_offset: 0,
         geometry_offset: 0,
         entity_genesis: None,

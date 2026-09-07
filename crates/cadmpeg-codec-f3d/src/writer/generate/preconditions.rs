@@ -444,7 +444,7 @@ pub(crate) fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<()
     for curve in &native.sketch_curve_identities {
         let curve_type = source_less_design_record_type(
             native,
-            &curve.class_tag,
+            curve.class_tag.as_str(),
             curve.record_index,
             "sketch curve",
         )?;

@@ -712,7 +712,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         id: "f3d:Design/BulkStream.dat:sketch-curve#400".into(),
         record_index: 400,
         owner_reference: Some(172),
-        class_tag: "270".into(),
+        class_tag: crate::records::DesignClassTag::try_from("270".to_owned()).unwrap(),
         byte_offset: 4000,
         geometry_offset: 100,
         entity_genesis: None,

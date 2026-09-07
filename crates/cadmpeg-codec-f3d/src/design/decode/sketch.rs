@@ -2714,7 +2714,7 @@ pub(crate) fn decode_sketch_curve_identities_from_stream(
             id: ids::native_sketch_curve_identity_id(stream, frame.start),
             record_index,
             owner_reference: trailing_sketch_owner_reference(payload),
-            class_tag: frame.class_tag.into(),
+            class_tag: frame.class_tag,
             byte_offset: frame.start as u64,
             geometry_offset: geometry_offset as u32,
             entity_genesis,

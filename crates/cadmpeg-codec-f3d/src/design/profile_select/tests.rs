@@ -130,7 +130,7 @@ fn curve(record_index: u32, primary_id: u64, secondary_id: u64) -> SketchCurveId
         id: format!("stream:curve-{record_index}"),
         record_index,
         owner_reference: Some(42),
-        class_tag: "450".into(),
+        class_tag: crate::records::DesignClassTag::try_from("450".to_owned()).unwrap(),
         byte_offset: 0,
         geometry_offset: 0,
         entity_genesis: None,
