@@ -331,51 +331,69 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
 fn mesh_retry_runs_only_after_exact_rejection() {
     use crate::solve::incidence::IncidenceRejection;
     use crate::solve::mesh_quotient::{
-        MeshCandidateAmbiguity, MeshCandidateExhaustion, MeshCandidateRejection,
-        MeshCandidateSolve, MeshEndpointIncidenceRejection,
+        MeshCandidateAmbiguity, MeshCandidateExhaustion, MeshCandidateFailure,
+        MeshCandidateRejection, MeshEndpointIncidenceRejection, MeshSolve,
     };
 
     let called = Cell::new(false);
     let outcome = retry_rejected_mesh_solution(
-        MeshCandidateSolve::Exhausted(MeshCandidateExhaustion::IncidenceEnumeration),
+        MeshSolve::Failed(MeshCandidateFailure::Exhausted(
+            MeshCandidateExhaustion::IncidenceEnumeration,
+        )),
         || {
             called.set(true);
-            MeshCandidateSolve::Rejected(MeshCandidateRejection::EndpointIncidence(
-                MeshEndpointIncidenceRejection::NoAssignment(
-                    IncidenceRejection::ComponentComposition,
+            MeshSolve::Failed(MeshCandidateFailure::Rejected(
+                MeshCandidateRejection::EndpointIncidence(
+                    MeshEndpointIncidenceRejection::NoAssignment(
+                        IncidenceRejection::ComponentComposition,
+                    ),
                 ),
             ))
         },
     );
     assert!(matches!(
         outcome,
-        MeshCandidateSolve::Exhausted(MeshCandidateExhaustion::IncidenceEnumeration)
+        MeshSolve::Failed(MeshCandidateFailure::Exhausted(
+            MeshCandidateExhaustion::IncidenceEnumeration
+        ))
     ));
     assert!(!called.get());
 
     let outcome = retry_rejected_mesh_solution(
-        MeshCandidateSolve::Exhausted(MeshCandidateExhaustion::PreferredSolutionSearch),
+        MeshSolve::Failed(MeshCandidateFailure::Exhausted(
+            MeshCandidateExhaustion::PreferredSolutionSearch,
+        )),
         || {
             called.set(true);
-            MeshCandidateSolve::Rejected(MeshCandidateRejection::InputStructure)
+            MeshSolve::Failed(MeshCandidateFailure::Rejected(
+                MeshCandidateRejection::InputStructure,
+            ))
         },
     );
     assert!(matches!(
         outcome,
-        MeshCandidateSolve::Rejected(MeshCandidateRejection::InputStructure)
+        MeshSolve::Failed(MeshCandidateFailure::Rejected(
+            MeshCandidateRejection::InputStructure
+        ))
     ));
     assert!(called.get());
 
     let outcome = retry_rejected_mesh_solution(
-        MeshCandidateSolve::Rejected(MeshCandidateRejection::InputStructure),
+        MeshSolve::Failed(MeshCandidateFailure::Rejected(
+            MeshCandidateRejection::InputStructure,
+        )),
         || {
             called.set(true);
-            MeshCandidateSolve::Ambiguous(MeshCandidateAmbiguity::EndpointResolution)
+            MeshSolve::Failed(MeshCandidateFailure::Ambiguous(
+                MeshCandidateAmbiguity::EndpointResolution,
+            ))
         },
     );
     assert!(matches!(
         outcome,
-        MeshCandidateSolve::Ambiguous(MeshCandidateAmbiguity::EndpointResolution)
+        MeshSolve::Failed(MeshCandidateFailure::Ambiguous(
+            MeshCandidateAmbiguity::EndpointResolution
+        ))
     ));
     assert!(called.get());
 }

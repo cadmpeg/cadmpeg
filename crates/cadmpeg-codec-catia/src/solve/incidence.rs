@@ -11,10 +11,10 @@ use crate::families::standard::topology::{
 use crate::solve::mesh_quotient::{
     initial_mesh_quotient, mesh_assignment_endpoint_cycle_support_by,
     mesh_assignment_endpoint_cycles_viable_by, mesh_assignment_endpoint_cycles_viable_where,
-    mesh_face_endpoint_configurations, AssignmentOrder, CoordinateRootClosure,
+    mesh_face_endpoint_configurations, AssignmentOrder, MeshCandidateFailure,
     MeshCoordinateRootDomains, MeshEndpointCandidates, MeshEndpointPair,
     MeshEndpointSolutionFilter, MeshFaceEndpointConfigurations, MeshImplicitEdgeCandidates,
-    MeshPartialEndpointConstraint, MeshQuotient, MeshQuotientGaugeState,
+    MeshPartialEndpointConstraint, MeshQuotient, MeshQuotientGaugeState, MeshSolve,
     MAX_FACE_ENDPOINT_CONFIGURATION_WORK, MAX_MESH_CONSTRAINT_OPERATIONS,
 };
 use crate::solve::missing_edge::{
@@ -3826,15 +3826,17 @@ where
                     Some(&closure_budget),
                 );
                 match outcome {
-                    CoordinateRootClosure::Solved(_) => {}
-                    CoordinateRootClosure::Ambiguous
+                    MeshSolve::Solved(_) => {}
+                    MeshSolve::Failed(MeshCandidateFailure::Ambiguous(()))
                         if coordinate_root_policy == CoordinateRootPolicy::DeferToVisitor => {}
-                    CoordinateRootClosure::Ambiguous => {
+                    MeshSolve::Failed(MeshCandidateFailure::Ambiguous(())) => {
                         *ambiguous = true;
                         return Ok(ControlFlow::Continue(()));
                     }
-                    CoordinateRootClosure::Exhausted => return Err(()),
-                    CoordinateRootClosure::Rejected => return Ok(ControlFlow::Continue(())),
+                    MeshSolve::Failed(MeshCandidateFailure::Exhausted(())) => return Err(()),
+                    MeshSolve::Failed(MeshCandidateFailure::Rejected(())) => {
+                        return Ok(ControlFlow::Continue(()))
+                    }
                 }
             }
             *visited = visited.checked_add(1).ok_or(())?;
@@ -4138,18 +4140,18 @@ where
                     Some(&budget),
                 );
                 match outcome {
-                    CoordinateRootClosure::Solved(_) => {}
-                    CoordinateRootClosure::Ambiguous
+                    MeshSolve::Solved(_) => {}
+                    MeshSolve::Failed(MeshCandidateFailure::Ambiguous(()))
                         if coordinate_root_policy == CoordinateRootPolicy::DeferToVisitor => {}
-                    CoordinateRootClosure::Ambiguous => {
+                    MeshSolve::Failed(MeshCandidateFailure::Ambiguous(())) => {
                         ambiguous = true;
                         return Some(());
                     }
-                    CoordinateRootClosure::Exhausted => {
+                    MeshSolve::Failed(MeshCandidateFailure::Exhausted(())) => {
                         exhausted = true;
                         return None;
                     }
-                    CoordinateRootClosure::Rejected => return None,
+                    MeshSolve::Failed(MeshCandidateFailure::Rejected(())) => return None,
                 }
             }
             visited = 1;

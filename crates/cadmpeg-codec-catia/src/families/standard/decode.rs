@@ -2499,9 +2499,11 @@ fn retry_rejected_mesh_solution(
     fallback: impl FnOnce() -> mesh_quotient::MeshCandidateSolve,
 ) -> mesh_quotient::MeshCandidateSolve {
     match preferred {
-        mesh_quotient::MeshCandidateSolve::Rejected(_)
-        | mesh_quotient::MeshCandidateSolve::Exhausted(
-            mesh_quotient::MeshCandidateExhaustion::PreferredSolutionSearch,
+        mesh_quotient::MeshSolve::Failed(
+            mesh_quotient::MeshCandidateFailure::Rejected(_)
+            | mesh_quotient::MeshCandidateFailure::Exhausted(
+                mesh_quotient::MeshCandidateExhaustion::PreferredSolutionSearch,
+            ),
         ) => fallback(),
         outcome => outcome,
     }
@@ -4647,8 +4649,10 @@ fn attach_standard_topology(
                     },
                 );
                 if !solve_budget.charge_by(preferred_budget.consumed()) {
-                    return mesh_quotient::MeshCandidateSolve::Exhausted(
-                        mesh_quotient::MeshCandidateExhaustion::FaceDomainEnumeration,
+                    return mesh_quotient::MeshSolve::Failed(
+                        mesh_quotient::MeshCandidateFailure::Exhausted(
+                            mesh_quotient::MeshCandidateExhaustion::FaceDomainEnumeration,
+                        ),
                     );
                 }
                 let has_circle_preference = selected_circle_constraint_edges
@@ -4685,8 +4689,10 @@ fn attach_standard_topology(
                         },
                     );
                     if !solve_budget.charge_by(fallback_budget.consumed()) {
-                        return mesh_quotient::MeshCandidateSolve::Exhausted(
-                            mesh_quotient::MeshCandidateExhaustion::FaceDomainEnumeration,
+                        return mesh_quotient::MeshSolve::Failed(
+                            mesh_quotient::MeshCandidateFailure::Exhausted(
+                                mesh_quotient::MeshCandidateExhaustion::FaceDomainEnumeration,
+                            ),
                         );
                     }
                     retry_rejected_mesh_solution(preferred, || fallback)
@@ -4729,45 +4735,23 @@ fn attach_standard_topology(
                     )
                 },
             ) {
-                mesh_quotient::MeshFaceDomainCandidateSolve::Solved(
-                    faces,
-                    topology,
-                    assignment,
-                ) => {
+                mesh_quotient::MeshSolve::Solved((faces, topology, assignment)) => {
                     selected_face_assignment = Some(faces);
-                    mesh_quotient::MeshCandidateSolve::Solved(topology, assignment)
+                    mesh_quotient::MeshSolve::Solved((topology, assignment))
                 }
-                mesh_quotient::MeshFaceDomainCandidateSolve::Rejected(rejection) => {
-                    mesh_quotient::MeshCandidateSolve::Rejected(rejection)
-                }
-                mesh_quotient::MeshFaceDomainCandidateSolve::Ambiguous(ambiguity) => {
-                    mesh_quotient::MeshCandidateSolve::Ambiguous(ambiguity)
-                }
-                mesh_quotient::MeshFaceDomainCandidateSolve::Exhausted(exhaustion) => {
-                    mesh_quotient::MeshCandidateSolve::Exhausted(exhaustion)
+                mesh_quotient::MeshSolve::Failed(failure) => {
+                    mesh_quotient::MeshSolve::Failed(failure)
                 }
             }
         } else {
             solve_mesh_candidate(&edge_faces, &supports, &edge_classes, work_budget)
         };
         match outcome {
-            mesh_quotient::MeshCandidateSolve::Solved(topology, assignment) => {
-                Some((topology, assignment))
-            }
-            mesh_quotient::MeshCandidateSolve::Rejected(rejection) => {
-                diagnostics.mesh_failure =
-                    Some(mesh_quotient::MeshCandidateFailure::Rejected(rejection));
-                None
-            }
-            mesh_quotient::MeshCandidateSolve::Ambiguous(ambiguity) => {
-                diagnostics.mesh_failure =
-                    Some(mesh_quotient::MeshCandidateFailure::Ambiguous(ambiguity));
-                None
-            }
-            mesh_quotient::MeshCandidateSolve::Exhausted(exhaustion) => {
-                diagnostics.mesh_failure =
-                    Some(mesh_quotient::MeshCandidateFailure::Exhausted(exhaustion));
-                mesh_search_exhausted = true;
+            mesh_quotient::MeshSolve::Solved(candidate) => Some(candidate),
+            mesh_quotient::MeshSolve::Failed(failure) => {
+                mesh_search_exhausted |=
+                    matches!(failure, mesh_quotient::MeshCandidateFailure::Exhausted(_));
+                diagnostics.mesh_failure = Some(failure);
                 None
             }
         }
