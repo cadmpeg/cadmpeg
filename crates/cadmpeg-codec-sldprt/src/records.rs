@@ -908,7 +908,7 @@ pub enum FeatureInputClassRole {
 ///
 /// Prefer [`SketchInputEntity::new`] for invariant-bearing construction. There
 /// is no public [`Default`]: an empty id is illegal.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SketchInputEntity {
     /// Globally unique deterministic identifier for this native record.
@@ -977,6 +977,8 @@ mod sketch_input_links_wire {
         link_selector: Option<u16>,
     }
 
+    // Serde field adapters borrow the complete optional links field.
+    #[allow(clippy::ref_option)]
     pub(super) fn serialize<S: Serializer>(
         links: &Option<SketchInputLinks>,
         serializer: S,

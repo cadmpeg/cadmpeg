@@ -100,3 +100,26 @@ impl Debug for super::FeatureInputSurfaceSelection {
             .finish()
     }
 }
+
+impl Debug for super::SketchInputEntity {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> Result {
+        formatter
+            .debug_struct("SketchInputEntity")
+            .field("id", &self.id)
+            .field("parent", &self.parent)
+            .field("feature_ref", &self.feature_ref)
+            .field("ordinal", &self.ordinal)
+            .field("offset", &self.offset)
+            .field("object_index", &self.object_index)
+            .field("local_id", &self.local_id)
+            .field("kind", &self.kind)
+            .field("state_value", &self.state_value)
+            .field("coordinates_m", &self.coordinates_m)
+            .field("links", &self.links())
+            .field(
+                "link_selector",
+                &self.links.as_ref().map(|links| links.selector),
+            )
+            .finish()
+    }
+}

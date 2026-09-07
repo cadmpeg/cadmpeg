@@ -347,7 +347,7 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
                     .iter()
                     .copied()
                     .filter(|entity| entity.local_id == Some(u32::from(address)))
-                    .flat_map(|entity| entity.links())
+                    .flat_map(crate::records::SketchInputEntity::links)
                     .filter_map(|link| {
                         entities
                             .iter()
