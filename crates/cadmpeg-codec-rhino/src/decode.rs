@@ -4122,7 +4122,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     let components = face_components(raw);
     let grouping = region_shell_groups(raw, &components)?;
     let free_vertex_indices = brep_free_vertex_indices(raw)?;
-    if !free_vertex_indices.is_empty() && grouping.shell_faces.len() != 1 {
+    if !free_vertex_indices.is_empty() && grouping.shells.len() != 1 {
         return Ok(finish_brep_fallback(
             staged,
             "Brep free vertices have no unique shell membership",
@@ -4267,8 +4267,8 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
     }
     let mut regions = Vec::new();
     let mut region_shell_ids: BTreeMap<i32, Vec<cadmpeg_ir::ids::ShellId>> = BTreeMap::new();
-    for (component, faces) in grouping.shell_faces.iter().enumerate() {
-        let region_label = grouping.region_labels[component];
+    for (component, shell) in grouping.shells.iter().enumerate() {
+        let region_label = shell.region;
         let region_id: cadmpeg_ir::ids::RegionId =
             format!("rhino:object:region#{key}.slot-{region_label}")
                 .try_into()
@@ -4284,7 +4284,11 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<BrepDraft, crate::curves::
         staged.draft.model_mut().shells.push(Shell {
             id: shell_id,
             region: region_id.clone(),
-            faces: faces.iter().map(|index| face_ids[*index].clone()).collect(),
+            faces: shell
+                .faces
+                .iter()
+                .map(|index| face_ids[*index].clone())
+                .collect(),
             wire_edges: Vec::new(),
             free_vertices: if component == 0 {
                 free_vertex_ids.clone()
@@ -4905,9 +4909,13 @@ fn brep_free_vertex_indices(
 
 struct ShellGrouping {
     face_groups: Vec<usize>,
-    region_labels: Vec<i32>,
-    shell_faces: Vec<Vec<usize>>,
+    shells: Vec<ShellGroup>,
     fallback: bool,
+}
+
+struct ShellGroup {
+    region: i32,
+    faces: Vec<usize>,
 }
 
 fn region_shell_groups(
@@ -4919,7 +4927,7 @@ fn region_shell_groups(
         for (face, component) in components.iter().copied().enumerate() {
             groups.entry(component).or_default().push(face);
         }
-        let mut shell_faces = Vec::new();
+        let mut shells = Vec::new();
         let mut face_groups =
             alloc_filled(components.len(), 0usize, "Rhino Brep fallback face groups").map_err(
                 |error| {
@@ -4929,19 +4937,19 @@ fn region_shell_groups(
                     )
                 },
             )?;
-        let mut region_labels = Vec::new();
         for (group, (component, faces)) in groups.into_iter().enumerate() {
             for face in &faces {
                 face_groups[*face] = group;
             }
             let _ = component;
-            shell_faces.push(faces);
-            region_labels.push(group as i32);
+            shells.push(ShellGroup {
+                region: group as i32,
+                faces,
+            });
         }
         return Ok(ShellGrouping {
             face_groups,
-            region_labels,
-            shell_faces,
+            shells,
             fallback: false,
         });
     }
@@ -4976,19 +4984,16 @@ fn region_shell_groups(
             format!("Brep face-group allocation refused: {error}"),
         )
     })?;
-    let mut region_labels = Vec::new();
-    let mut shell_faces = Vec::new();
+    let mut shells = Vec::new();
     for (group, ((region, _component), faces)) in grouped.into_iter().enumerate() {
         for face in &faces {
             face_groups[*face] = group;
         }
-        region_labels.push(region);
-        shell_faces.push(faces);
+        shells.push(ShellGroup { region, faces });
     }
     Ok(ShellGrouping {
         face_groups,
-        region_labels,
-        shell_faces,
+        shells,
         fallback: false,
     })
 }
@@ -5009,19 +5014,19 @@ fn region_shell_groups_without_records(
                 )
             },
         )?;
-    let mut region_labels = Vec::new();
-    let mut shell_faces = Vec::new();
+    let mut shells = Vec::new();
     for (group, (_component, faces)) in groups.into_iter().enumerate() {
         for face in &faces {
             face_groups[*face] = group;
         }
-        region_labels.push(group as i32);
-        shell_faces.push(faces);
+        shells.push(ShellGroup {
+            region: group as i32,
+            faces,
+        });
     }
     Ok(ShellGrouping {
         face_groups,
-        region_labels,
-        shell_faces,
+        shells,
         fallback: true,
     })
 }

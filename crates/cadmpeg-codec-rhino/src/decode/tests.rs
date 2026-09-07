@@ -647,8 +647,22 @@ fn disconnected_incidence_produces_deterministic_shell_groups() {
         region_shell_groups_without_records(&[1, 0, 1, 0]).expect("shell-group allocation");
     assert!(grouping.fallback);
     assert_eq!(grouping.face_groups, vec![1, 0, 1, 0]);
-    assert_eq!(grouping.region_labels, vec![0, 1]);
-    assert_eq!(grouping.shell_faces, vec![vec![1, 3], vec![0, 2]]);
+    assert_eq!(
+        grouping
+            .shells
+            .iter()
+            .map(|shell| shell.region)
+            .collect::<Vec<_>>(),
+        vec![0, 1]
+    );
+    assert_eq!(
+        grouping
+            .shells
+            .iter()
+            .map(|shell| shell.faces.clone())
+            .collect::<Vec<_>>(),
+        vec![vec![1, 3], vec![0, 2]]
+    );
 }
 
 #[test]
@@ -741,8 +755,22 @@ fn representable_region_uses_bounded_membership_and_serialized_direction() {
     let grouping = region_shell_groups(&raw, &[0]).expect("shell-group allocation");
     assert!(!grouping.fallback);
     assert_eq!(grouping.face_groups, vec![0]);
-    assert_eq!(grouping.region_labels, vec![1]);
-    assert_eq!(grouping.shell_faces, vec![vec![0]]);
+    assert_eq!(
+        grouping
+            .shells
+            .iter()
+            .map(|shell| shell.region)
+            .collect::<Vec<_>>(),
+        vec![1]
+    );
+    assert_eq!(
+        grouping
+            .shells
+            .iter()
+            .map(|shell| shell.faces.clone())
+            .collect::<Vec<_>>(),
+        vec![vec![0]]
+    );
 }
 
 #[test]
@@ -768,8 +796,22 @@ fn two_bounded_regions_sharing_one_face_use_deterministic_incidence_fallback() {
     );
     let grouping = region_shell_groups(&raw, &[0]).expect("shell-group allocation");
     assert!(grouping.fallback);
-    assert_eq!(grouping.region_labels, vec![0]);
-    assert_eq!(grouping.shell_faces, vec![vec![0]]);
+    assert_eq!(
+        grouping
+            .shells
+            .iter()
+            .map(|shell| shell.region)
+            .collect::<Vec<_>>(),
+        vec![0]
+    );
+    assert_eq!(
+        grouping
+            .shells
+            .iter()
+            .map(|shell| shell.faces.clone())
+            .collect::<Vec<_>>(),
+        vec![vec![0]]
+    );
 }
 
 #[test]
