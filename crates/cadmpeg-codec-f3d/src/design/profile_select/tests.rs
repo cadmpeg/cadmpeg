@@ -620,7 +620,7 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
         scope_reference_ordinal: 0,
         record_index: 10,
         byte_offset: 0,
-        class_tag: "300".into(),
+        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         asset_id: "asset".into(),
         asset_id_offset: 0,
         entity_id: placement.entity_id.clone(),
@@ -647,7 +647,7 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
             companion_class_tag: "304".into(),
             companion_byte_offset: 0,
         }),
-        paired_class_tag: "301".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("301".to_owned()).unwrap(),
         paired_byte_offset: 0,
     };
     let placements = [placement];
@@ -1035,7 +1035,7 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
         scope_reference_ordinal: 0,
         record_index: 10,
         byte_offset: 0,
-        class_tag: "300".into(),
+        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         asset_id: placement.entity_id.as_str().to_owned(),
         asset_id_offset: 0,
         entity_id: placement.entity_id,
@@ -1058,7 +1058,7 @@ fn planar_profile_regions_resolve_by_persistent_curve_members() {
             companion_class_tag: "302".into(),
             companion_byte_offset: 0,
         }),
-        paired_class_tag: "303".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("303".to_owned()).unwrap(),
         paired_byte_offset: 0,
     };
 

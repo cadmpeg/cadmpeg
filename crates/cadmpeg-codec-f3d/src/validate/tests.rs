@@ -1011,14 +1011,14 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         scope_reference_ordinal: 0,
         record_index: 20,
         byte_offset: 200,
-        class_tag: "300".into(),
+        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         asset_id: "asset".into(),
         asset_id_offset: 230,
         entity_id: crate::records::DesignEntityId::try_from("0_10".to_owned())
             .expect("valid entity identity"),
         entity_reference_offset: 250,
         region_selection: None,
-        paired_class_tag: "260".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("260".to_owned()).unwrap(),
         paired_byte_offset: 300,
     };
     let scope = DesignParameterScope {

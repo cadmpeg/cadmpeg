@@ -5,7 +5,7 @@ use super::feature::DesignAxis;
 use super::{
     ConstructionRecipeKind, DesignRecipeReference, Located, NonEmptyByteSpan, SketchRelationOperand,
 };
-use super::{DesignEntityId, DesignSecondaryIdentity};
+use super::{DesignClassTag, DesignEntityId, DesignSecondaryIdentity};
 use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 #[cfg(feature = "schema")]
@@ -30,7 +30,7 @@ pub struct DesignSketchProfileOperand {
     /// Byte offset of the primary indexed-record header.
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII primary class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Asset UUID qualifying the selected Sketch reference.
     pub asset_id: String,
     /// Byte offset of the asset UUID's UTF-16LE code units.
@@ -43,7 +43,7 @@ pub struct DesignSketchProfileOperand {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub region_selection: Option<DesignSketchProfileRegionSelection>,
     /// Source per-file dynamic three-digit ASCII paired class tag.
-    pub paired_class_tag: String,
+    pub paired_class_tag: DesignClassTag,
     /// Byte offset of the same-index paired header.
     pub paired_byte_offset: u64,
 }
@@ -90,13 +90,13 @@ impl TryFrom<DesignSketchProfileOperandWire> for DesignSketchProfileOperand {
             scope_reference_ordinal: wire.scope_reference_ordinal,
             record_index: wire.record_index,
             byte_offset: wire.byte_offset,
-            class_tag: wire.class_tag,
+            class_tag: wire.class_tag.try_into()?,
             asset_id: wire.asset_id,
             asset_id_offset: wire.asset_id_offset,
             entity_id,
             entity_reference_offset: wire.entity_reference_offset,
             region_selection: wire.region_selection,
-            paired_class_tag: wire.paired_class_tag,
+            paired_class_tag: wire.paired_class_tag.try_into()?,
             paired_byte_offset: wire.paired_byte_offset,
         })
     }
@@ -109,14 +109,14 @@ impl From<DesignSketchProfileOperand> for DesignSketchProfileOperandWire {
             scope_reference_ordinal: value.scope_reference_ordinal,
             record_index: value.record_index,
             byte_offset: value.byte_offset,
-            class_tag: value.class_tag,
+            class_tag: value.class_tag.into(),
             asset_id: value.asset_id,
             asset_id_offset: value.asset_id_offset,
             entity_id: value.entity_id.0,
             entity_suffix,
             entity_reference_offset: value.entity_reference_offset,
             region_selection: value.region_selection,
-            paired_class_tag: value.paired_class_tag,
+            paired_class_tag: value.paired_class_tag.into(),
             paired_byte_offset: value.paired_byte_offset,
         }
     }

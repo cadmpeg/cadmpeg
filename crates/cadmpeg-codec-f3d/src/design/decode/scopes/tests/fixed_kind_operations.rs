@@ -1443,14 +1443,14 @@ pub(super) fn continue_fixed_kind_operations(
             scope_reference_ordinal: 3,
             record_index: 2795,
             byte_offset: 32_000,
-            class_tag: "312".into(),
+            class_tag: crate::records::DesignClassTag::try_from("312".to_owned()).unwrap(),
             asset_id: "asset".into(),
             asset_id_offset: 32_040,
             entity_id: crate::records::DesignEntityId::try_from("0_2718".to_owned())
                 .expect("valid entity identity"),
             entity_reference_offset: 32_080,
             region_selection: None,
-            paired_class_tag: "258".into(),
+            paired_class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
             paired_byte_offset: 32_180,
         });
         if let crate::records::feature::DesignScopePayload::Sweep(slot) = &mut sweep_scope.payload {

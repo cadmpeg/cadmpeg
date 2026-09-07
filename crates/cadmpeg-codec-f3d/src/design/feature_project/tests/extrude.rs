@@ -173,14 +173,15 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 scope_reference_ordinal: 0,
                 record_index: 100,
                 byte_offset: 300,
-                class_tag: "308".into(),
+                class_tag: crate::records::DesignClassTag::try_from("308".to_owned()).unwrap(),
                 asset_id: "e72ed0d8-58b4-4b8e-800d-5eaeea9c0c4b".into(),
                 asset_id_offset: 330,
                 entity_id: crate::records::DesignEntityId::try_from("0_172".to_owned())
                     .expect("valid entity identity"),
                 entity_reference_offset: 420,
                 region_selection: None,
-                paired_class_tag: "259".into(),
+                paired_class_tag: crate::records::DesignClassTag::try_from("259".to_owned())
+                    .unwrap(),
                 paired_byte_offset: 520,
             }),
             ..crate::records::feature::DesignExtrudeScope::default()

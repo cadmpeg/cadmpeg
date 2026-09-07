@@ -1848,7 +1848,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 == Some(&profile.record_index)
                 && header.is_some_and(|header| {
                     header.byte_offset == profile.byte_offset
-                        && header.class_tag.as_str() == profile.class_tag
+                        && header.class_tag == profile.class_tag
                 })
                 && entity.is_some_and(|entity| {
                     entity.in_sketch_module() && entity.entity_id == profile.entity_id
@@ -1860,11 +1860,6 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 && profile.region_selection.as_ref().is_none_or(|selection| {
                     valid_sketch_profile_region_selection(profile, selection)
                 })
-                && profile.paired_class_tag.len() == 3
-                && profile
-                    .paired_class_tag
-                    .bytes()
-                    .all(|byte| byte.is_ascii_digit())
         };
         let extrude_profile_link = scope.extrude_profile().is_none_or(valid_sketch_profile);
         let sweep_profile_link = scope.sweep_profile().is_none_or(valid_sketch_profile);
