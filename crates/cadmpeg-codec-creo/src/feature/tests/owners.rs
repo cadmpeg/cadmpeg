@@ -350,7 +350,7 @@ fn operation(feature_id: u32, recipe: Option<FeatureRecipe>, offset: usize) -> F
         feature_id,
         kind: OperationKind::Stored(String::new()),
         name: OperationName::Derived,
-        recipe: crate::feature::RecipeState::from(recipe),
+        recipe: crate::feature::RecipeResolution::from(recipe),
         display_state_conflict: false,
         depdb: None,
         offset,

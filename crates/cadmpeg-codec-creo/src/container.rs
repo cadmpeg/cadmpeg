@@ -33,8 +33,8 @@ use crate::datum::{self, DatumCylinder, DatumPlaneRecord};
 use crate::feature::{
     self, FeatureAffectedIds, FeatureChoice, FeatureChoiceField, FeatureDefinition, FeatureEntity,
     FeatureEntityReference, FeatureEntityTable, FeatureGeometryTable, FeatureLoopHistoryEntry,
-    FeatureLoopRestoreDirection, FeatureOperation, FeatureRecipe, FeatureReferenceName,
-    FeatureReplayAffectedIds, FeatureRevolutionExtent, FeatureRow,
+    FeatureLoopRestoreDirection, FeatureOperation, FeatureOperationState, FeatureRecipe,
+    FeatureReferenceName, FeatureReplayAffectedIds, FeatureRevolutionExtent, FeatureRow,
 };
 use crate::layout::cmnm_model_name_record as cmnm;
 use crate::legacy;
@@ -482,7 +482,7 @@ pub struct FeatureScan {
     /// Section-to-model frames resolved from perpendicular active datums.
     pub section_transforms: Vec<FeatureSectionTransform>,
     /// Every stored feature-operation state from `MdlStatus`, in byte order.
-    pub operation_states: Vec<FeatureOperation>,
+    pub operation_states: Vec<FeatureOperationState>,
     /// Unambiguous or consensus feature-operation projection for each identifier.
     pub operations: Vec<FeatureOperation>,
     /// Feature names joined to model feature identifiers by reference data.
@@ -2137,7 +2137,7 @@ fn feature_reference_names(data: &[u8], sections: &[Section]) -> Vec<FeatureRefe
         .collect()
 }
 
-fn feature_operation_states(data: &[u8], sections: &[Section]) -> Vec<FeatureOperation> {
+fn feature_operation_states(data: &[u8], sections: &[Section]) -> Vec<FeatureOperationState> {
     let mut records = Vec::new();
     for section in sections
         .iter()
@@ -2958,7 +2958,7 @@ mod feature_row_definition_tests {
                 keyword: crate::feature::IdKeyword::Id,
                 prefix: None,
             },
-            recipe: crate::feature::RecipeState::None,
+            recipe: crate::feature::RecipeResolution::None,
             display_state_conflict: false,
             depdb: None,
             offset: 0,
@@ -3059,7 +3059,7 @@ mod feature_row_definition_tests {
             feature_id,
             kind: crate::feature::OperationKind::Stored(String::new()),
             name: crate::feature::OperationName::Derived,
-            recipe: crate::feature::RecipeState::from(recipe),
+            recipe: crate::feature::RecipeResolution::from(recipe),
             display_state_conflict: false,
             depdb: None,
             offset,

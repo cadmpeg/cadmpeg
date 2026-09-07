@@ -781,7 +781,7 @@ fn decodes_mdlstatus_recipe_discriminators_within_their_records() {
         operations[3].recipe.resolved(),
         Some(FeatureRecipe::CutRevolve)
     );
-    assert_eq!(operations[4].recipe.candidate(), None);
+    assert_eq!(operations[4].recipe, crate::feature::RecipeResolution::None);
     assert_eq!(operations[5].kind.as_str(), "Körper");
     assert_eq!(operations[5].feature_id, 45);
 }
@@ -839,7 +839,10 @@ fn conflicting_inline_recipes_across_display_states_remain_conflicting() {
     assert_eq!(current.kind.as_str(), "Extrude");
     assert!(current.display_state_conflict);
     assert!(current.recipe.is_conflicting());
-    assert_eq!(current.recipe.candidate(), None);
+    assert_eq!(
+        current.recipe,
+        crate::feature::RecipeResolution::Conflicting
+    );
 }
 
 #[test]
@@ -913,7 +916,10 @@ fn preserves_competing_depdb_recipe_bindings() {
     assert_eq!(current.len(), 1);
     assert_eq!(current[0].feature_id, 8053);
     assert_eq!(current[0].kind.as_str(), "Native Feature");
-    assert_eq!(current[0].recipe.candidate(), None);
+    assert_eq!(
+        current[0].recipe,
+        crate::feature::RecipeResolution::Conflicting
+    );
     assert!(current[0].recipe.is_conflicting());
     assert_eq!(
         current[0]
@@ -977,7 +983,10 @@ fn conflicting_bindings_do_not_use_an_inline_recipe_fallback() {
     };
     assert_eq!(current.kind.as_str(), "Extrude");
     assert!(current.display_name_stored());
-    assert_eq!(current.recipe.candidate(), None);
+    assert_eq!(
+        current.recipe,
+        crate::feature::RecipeResolution::Conflicting
+    );
     assert!(current.recipe.is_conflicting());
 }
 

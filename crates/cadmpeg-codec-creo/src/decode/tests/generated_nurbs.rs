@@ -1269,7 +1269,7 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
             keyword: crate::feature::IdKeyword::Id,
             prefix: None,
         },
-        recipe: crate::feature::RecipeState::Resolved(
+        recipe: crate::feature::RecipeResolution::Resolved(
             crate::feature::FeatureRecipe::ProtrudeExtrude,
         ),
         display_state_conflict: false,
@@ -1292,7 +1292,7 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
     );
     let mut conflicting_recipe = operation.clone();
     conflicting_recipe.recipe =
-        crate::feature::RecipeState::Resolved(crate::feature::FeatureRecipe::ProtrudeRevolve);
+        crate::feature::RecipeResolution::Resolved(crate::feature::FeatureRecipe::ProtrudeRevolve);
     assert_eq!(
         current_feature_recipe(&[operation.clone(), conflicting_recipe], 6),
         None
@@ -1509,7 +1509,7 @@ fn unresolved_material_join_does_not_hide_exact_base_body_candidate() {
             feature_id,
             kind: crate::feature::OperationKind::Stored("Sweep".to_string()),
             name: crate::feature::OperationName::Derived,
-            recipe: crate::feature::RecipeState::from(recipe),
+            recipe: crate::feature::RecipeResolution::from(recipe),
             display_state_conflict: false,
             depdb: root_schema_class.map(|schema: u32| crate::feature::DepdbPrefix {
                 schema: crate::feature::schema::SchemaClass::from(schema),

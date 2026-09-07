@@ -30,7 +30,7 @@ pub(in super::super) fn feature_section_sweep_semantics_conflict(
     current_feature_operation(&scan.features.operations, feature_id).is_some_and(|operation| {
         operation.recipe.is_conflicting()
             || (operation.display_state_conflict
-                && matches!(operation.recipe, crate::feature::RecipeState::None)
+                && matches!(operation.recipe, crate::feature::RecipeResolution::None)
                 && operation.kind == crate::feature::OperationKind::Native)
     })
 }
