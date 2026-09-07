@@ -58,14 +58,17 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         solve_carriers(&[x_axis_cylinder, y_axis_cylinder, tangent_plane]),
         Some([0.0, 0.0, 1.0])
     );
-    let cone = CarrierEquation::Cone(ConeEquation {
-        origin: [0.0, 0.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
-        ref_direction: [1.0, 0.0, 0.0],
-        radius: 1.0,
-        ratio: 1.0,
-        half_angle: std::f64::consts::FRAC_PI_4,
-    });
+    let cone = CarrierEquation::Cone(
+        ConeEquation::new(
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+            1.0,
+            1.0,
+            std::f64::consts::FRAC_PI_4,
+        )
+        .expect("valid test cone"),
+    );
     let offset_plane = CarrierEquation::Plane(PlaneEquation {
         origin: [0.0, 1.0, 0.0],
         normal: [0.0, 1.0, 0.0],
@@ -340,27 +343,33 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         None
     );
 
-    let cone = CarrierEquation::Cone(ConeEquation {
-        origin: [0.0, 0.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
-        ref_direction: [1.0, 0.0, 0.0],
-        radius: 2.0,
-        ratio: 1.0,
-        half_angle: std::f64::consts::FRAC_PI_4,
-    });
+    let cone = CarrierEquation::Cone(
+        ConeEquation::new(
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+            2.0,
+            1.0,
+            std::f64::consts::FRAC_PI_4,
+        )
+        .expect("valid test cone"),
+    );
     assert!(matches!(
         carrier_intersection_curve(cap, cone),
         Some((CurveGeometry::Circle { center, radius, .. }, "plane_cone_circle"))
             if center == Point3::new(0.0, 0.0, 3.0) && (radius - 5.0).abs() < 1.0e-12
     ));
-    let elliptical_cone = CarrierEquation::Cone(ConeEquation {
-        origin: [0.0, 0.0, 0.0],
-        axis: [0.0, 0.0, 1.0],
-        ref_direction: [1.0, 0.0, 0.0],
-        radius: 2.0,
-        ratio: 0.5,
-        half_angle: std::f64::consts::FRAC_PI_4,
-    });
+    let elliptical_cone = CarrierEquation::Cone(
+        ConeEquation::new(
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+            2.0,
+            0.5,
+            std::f64::consts::FRAC_PI_4,
+        )
+        .expect("valid test cone"),
+    );
     assert!(matches!(
         carrier_intersection_curve(cap, elliptical_cone),
         Some((

@@ -140,13 +140,16 @@ fn numbered_intersect_name_identifies_section_shape_feature() {
 
 #[test]
 fn equal_distance_chamfer_setback_uses_nearest_forward_parallel_support() {
-    let cone = |origin, axis| ConeEquation {
-        origin,
-        axis,
-        ref_direction: [0.0, 0.0, 1.0],
-        radius: 0.0,
-        ratio: 1.0,
-        half_angle: std::f64::consts::FRAC_PI_4,
+    let cone = |origin, axis| {
+        ConeEquation::new(
+            origin,
+            axis,
+            [0.0, 0.0, 1.0],
+            0.0,
+            1.0,
+            std::f64::consts::FRAC_PI_4,
+        )
+        .expect("valid test cone")
     };
     let cones = [
         cone([10.5, 0.0, 0.0], [-1.0, 0.0, 0.0]),
@@ -170,7 +173,17 @@ fn equal_distance_chamfer_setback_uses_nearest_forward_parallel_support() {
     assert_eq!(equal_distance_chamfer_setback(&cones, &supports), Some(0.5));
 
     let mut non_equal = cones;
-    non_equal[1].origin[0] = -10.25;
+    let mut origin = non_equal[1].origin();
+    origin[0] = -10.25;
+    non_equal[1] = ConeEquation::new(
+        origin,
+        non_equal[1].axis(),
+        non_equal[1].ref_direction(),
+        non_equal[1].radius(),
+        non_equal[1].ratio(),
+        non_equal[1].half_angle(),
+    )
+    .expect("valid test cone");
     assert_eq!(equal_distance_chamfer_setback(&non_equal, &supports), None);
 }
 

@@ -463,14 +463,14 @@ fn surface_carrier(geometry: &SurfaceGeometry) -> Option<CarrierEquation> {
             radius,
             ratio,
             half_angle,
-        } if ratio.is_finite() && *ratio > 0.0 => Some(CarrierEquation::Cone(ConeEquation {
-            origin: [origin.x, origin.y, origin.z],
-            axis: [axis.x, axis.y, axis.z],
-            ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
-            radius: *radius,
-            ratio: *ratio,
-            half_angle: *half_angle,
-        })),
+        } => Some(CarrierEquation::Cone(ConeEquation::new(
+            [origin.x, origin.y, origin.z],
+            [axis.x, axis.y, axis.z],
+            [ref_direction.x, ref_direction.y, ref_direction.z],
+            *radius,
+            *ratio,
+            *half_angle,
+        )?)),
         SurfaceGeometry::Torus {
             center,
             axis,

@@ -939,10 +939,10 @@ pub(in super::super) fn equal_distance_chamfer_setback(
     let setbacks = cones
         .iter()
         .map(|cone| {
-            let axis = normalized(cone.axis)?;
+            let axis = normalized(cone.axis())?;
             (circular_cone(*cone)
-                && cone.radius.abs() <= EPS_RADIUS_NONZERO
-                && (cone.half_angle - std::f64::consts::FRAC_PI_4).abs() <= EPS_CONE_ANGLE)
+                && cone.radius().abs() <= EPS_RADIUS_NONZERO
+                && (cone.half_angle() - std::f64::consts::FRAC_PI_4).abs() <= EPS_CONE_ANGLE)
                 .then_some(())?;
             support_planes
                 .iter()
@@ -951,9 +951,9 @@ pub(in super::super) fn equal_distance_chamfer_setback(
                     let denominator = dot(axis, normal);
                     (denominator.abs() >= 1.0 - EPS_DENOMINATOR_ALIGNMENT).then_some(())?;
                     let displacement = [
-                        plane.origin[0] - cone.origin[0],
-                        plane.origin[1] - cone.origin[1],
-                        plane.origin[2] - cone.origin[2],
+                        plane.origin[0] - cone.origin()[0],
+                        plane.origin[1] - cone.origin()[1],
+                        plane.origin[2] - cone.origin()[2],
                     ];
                     let setback = dot(displacement, normal) / denominator;
                     (setback.is_finite() && setback > EPS_SETBACK_NONZERO).then_some(setback)
@@ -982,14 +982,14 @@ fn chamfer_cone_equation(
         .first()
         .and_then(|record| record.positional_cone_frame())
     {
-        return Some(ConeEquation {
-            origin: frame.apex,
-            axis: frame.axis,
-            ref_direction: frame.ref_direction,
-            radius: 0.0,
-            ratio: 1.0,
-            half_angle: frame.half_angle,
-        });
+        return ConeEquation::new(
+            frame.apex,
+            frame.axis,
+            frame.ref_direction,
+            0.0,
+            1.0,
+            frame.half_angle,
+        );
     }
     let id =
         SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id)).expect("identity grammar");
@@ -1005,14 +1005,14 @@ fn chamfer_cone_equation(
     else {
         return None;
     };
-    Some(ConeEquation {
-        origin: [origin.x, origin.y, origin.z],
-        axis: [axis.x, axis.y, axis.z],
-        ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
-        radius: *radius,
-        ratio: *ratio,
-        half_angle: *half_angle,
-    })
+    ConeEquation::new(
+        [origin.x, origin.y, origin.z],
+        [axis.x, axis.y, axis.z],
+        [ref_direction.x, ref_direction.y, ref_direction.z],
+        *radius,
+        *ratio,
+        *half_angle,
+    )
 }
 
 pub(in super::super) fn chamfer_constant_distance(

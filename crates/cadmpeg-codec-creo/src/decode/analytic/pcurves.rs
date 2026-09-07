@@ -1989,14 +1989,17 @@ mod tests {
         let carriers = BTreeMap::from([
             (
                 1,
-                CarrierEquation::Cone(super::super::equations::ConeEquation {
-                    origin: [-1.0, 0.0, 0.0],
-                    axis: [1.0, 0.0, 0.0],
-                    ref_direction: [0.0, 0.0, -1.0],
-                    radius: 0.0,
-                    ratio: 1.0,
-                    half_angle: std::f64::consts::FRAC_PI_4,
-                }),
+                CarrierEquation::Cone(
+                    super::super::equations::ConeEquation::new(
+                        [-1.0, 0.0, 0.0],
+                        [1.0, 0.0, 0.0],
+                        [0.0, 0.0, -1.0],
+                        0.0,
+                        1.0,
+                        std::f64::consts::FRAC_PI_4,
+                    )
+                    .expect("valid test cone"),
+                ),
             ),
             (
                 2,

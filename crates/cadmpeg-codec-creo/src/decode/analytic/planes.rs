@@ -53,19 +53,19 @@ pub fn point_on_carrier(point: [f64; 3], carrier: CarrierEquation) -> bool {
         }
         CarrierEquation::Cone(cone) => {
             let (Some(axis), Some(x_axis)) =
-                (normalized(cone.axis), normalized(cone.ref_direction))
+                (normalized(cone.axis()), normalized(cone.ref_direction()))
             else {
                 return false;
             };
-            if cone.ratio <= 0.0 || !cone.ratio.is_finite() || dot(axis, x_axis).abs() > EPS_ORTHO {
+            if dot(axis, x_axis).abs() > EPS_ORTHO {
                 return false;
             }
             let y_axis = cross(axis, x_axis);
-            let relative = std::array::from_fn(|index| point[index] - cone.origin[index]);
+            let relative = std::array::from_fn(|index| point[index] - cone.origin()[index]);
             let axial = dot(relative, axis);
-            let radius = cone.radius + axial * cone.half_angle.tan();
+            let radius = cone.radius() + axial * cone.half_angle().tan();
             let radial_x = dot(relative, x_axis);
-            let radial_y = dot(relative, y_axis) / cone.ratio;
+            let radial_y = dot(relative, y_axis) / cone.ratio();
             (radial_x.hypot(radial_y) - radius.abs()).abs()
                 <= EPS_ON_CARRIER * radius.abs().max(1.0)
         }
