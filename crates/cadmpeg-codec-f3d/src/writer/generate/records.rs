@@ -189,21 +189,17 @@ pub(crate) fn encode_design_bulkstream(
 
     let mut out = parameter_bytes;
     let mut primary_records = Vec::new();
-    if !registry.body_map.is_empty() {
-        let class_tag = registry.body_map_class_tag.as_deref().ok_or_else(|| {
-            CodecError::Malformed("generated F3D body map has no registered type".into())
-        })?;
-        let record_index = registry.body_map_record_index.ok_or_else(|| {
-            CodecError::Malformed("generated F3D body map has no record identity".into())
-        })?;
+    if let Some(body_map) = &registry.body_map {
+        let class_tag = &body_map.class_tag;
+        let record_index = body_map.record_index;
         primary_records.push(primary_record(record_index, out.len())?);
         native_lp_ascii(&mut out, class_tag)?;
         out.extend_from_slice(&record_index.to_le_bytes());
         out.extend_from_slice(&[0; crate::design::body::GENERATED_BODY_MAP_ZERO_PREFIX_LEN]);
-        let count = u32::try_from(registry.body_map.len())
+        let count = u32::try_from(body_map.entries.len())
             .map_err(|_| CodecError::Malformed("Design body map exceeds u32::MAX".into()))?;
         out.extend_from_slice(&count.to_le_bytes());
-        for (&body_key, &entity_suffix) in &registry.body_map {
+        for (&body_key, &entity_suffix) in &body_map.entries {
             out.extend_from_slice(&body_key.to_le_bytes());
             out.extend_from_slice(&entity_suffix.to_le_bytes());
         }
@@ -1002,13 +998,11 @@ fn encode_browser_nodes(
     primary_records: &mut Vec<crate::metastream::RecordIndexEntry>,
     registry: &GeneratedDesignRegistry,
 ) -> Result<(), CodecError> {
-    if registry.browser_nodes.is_empty() {
+    let Some(browser_nodes) = &registry.browser_nodes else {
         return Ok(());
-    }
-    let node_class_tag = registry.browser_node_class_tag.as_deref().ok_or_else(|| {
-        CodecError::Malformed("generated F3D browser nodes have no registered type".into())
-    })?;
-    for node in &registry.browser_nodes {
+    };
+    let node_class_tag = &browser_nodes.class_tag;
+    for node in &browser_nodes.nodes {
         primary_records.push(primary_record(node.record_index, out.len())?);
         native_lp_ascii(out, node_class_tag)?;
         out.extend_from_slice(&node.record_index.to_le_bytes());
