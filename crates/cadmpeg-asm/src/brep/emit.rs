@@ -2209,8 +2209,10 @@ fn emit_revision_g2_blend_surface(
     construction: Box<EmbeddedRevisionG2Blend>,
     format: IdFormat<'_>,
 ) -> ProceduralSurfaceDefinition {
-    let mut sides = Vec::with_capacity(2);
-    for (side_index, side) in construction.sides.into_iter().enumerate() {
+    let mut next_side_index = 0;
+    let sides = (*construction.sides).map(|side| {
+        let side_index = next_side_index;
+        next_side_index += 1;
         let prefix = format!("{format}:brep:procedural_surface#{i}:g2_side{side_index}");
         let surface = side.surface.map(|geometry| {
             let id = SurfaceId::mint(format!("{prefix}:surface")).expect("identity grammar");
@@ -2230,7 +2232,7 @@ fn emit_revision_g2_blend_surface(
             });
             id
         });
-        sides.push(RollingBallSide {
+        RollingBallSide {
             support_kind: side.support_kind,
             surface,
             surface_ranges: side.surface_ranges,
@@ -2245,11 +2247,8 @@ fn emit_revision_g2_blend_surface(
             tertiary_pcurve: side
                 .tertiary_pcurve
                 .map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
-        });
-    }
-    let [first, second]: [RollingBallSide; 2] = sides
-        .try_into()
-        .expect("invariant: revision g2 blend has two sides");
+        }
+    });
     let center_id = CurveId::mint(format!("{format}:brep:procedural_surface#{i}:g2_center"))
         .expect("identity grammar");
     out.curves.push(Curve {
@@ -2261,7 +2260,7 @@ fn emit_revision_g2_blend_surface(
         construction: Box::new(cadmpeg_ir::geometry::RevisionG2BlendConstruction {
             revision: construction.revision,
             leading_parameters: construction.leading_parameters,
-            sides: Box::new([first, second]),
+            sides: Box::new(sides),
             center: center_id,
             center_range: construction.center_range,
             radii: construction.radii,
