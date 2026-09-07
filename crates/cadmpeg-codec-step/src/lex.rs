@@ -14,7 +14,6 @@ pub struct Token {
 
 /// Part 21 token categories.
 #[derive(Debug, Clone, PartialEq)]
-#[non_exhaustive]
 pub enum TokenKind {
     /// Standard keyword or entity name.
     Name(String),

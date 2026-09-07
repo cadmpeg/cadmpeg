@@ -22,10 +22,6 @@ impl ImplementationLevel {
         }
     }
 
-    pub(crate) fn for_declaration(declaration: &str) -> Self {
-        Self::known(declaration).unwrap_or(Self::Edition3Class3)
-    }
-
     pub(crate) fn is_edition3(self) -> bool {
         matches!(
             self,
@@ -52,5 +48,37 @@ impl ImplementationLevel {
             }
             Self::Edition3Class3 => None,
         }
+    }
+}
+
+/// An implementation-level declaration and its admitted grammar.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct DeclaredImplementationLevel {
+    text: String,
+    known: Option<ImplementationLevel>,
+}
+
+impl DeclaredImplementationLevel {
+    /// A declaration with its grammar resolved from the text.
+    pub(super) fn new(text: String) -> Self {
+        Self {
+            known: ImplementationLevel::known(&text),
+            text,
+        }
+    }
+
+    /// The verbatim declaration text.
+    pub(super) fn text(&self) -> &str {
+        &self.text
+    }
+
+    /// The grammar applied to the declaration.
+    pub(super) fn level(&self) -> ImplementationLevel {
+        self.known.unwrap_or(ImplementationLevel::Edition3Class3)
+    }
+
+    /// Whether the declaration has no known grammar.
+    pub(super) fn is_unverified(&self) -> bool {
+        self.known.is_none()
     }
 }

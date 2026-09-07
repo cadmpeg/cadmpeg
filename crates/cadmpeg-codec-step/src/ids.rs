@@ -23,20 +23,9 @@ impl StepIdentity {
     }
 
     /// DATA-section geometry or opaque kind: `step:data:{kind}#{key}`.
-    ///
-    /// Empty `kind` (malformed zero-partial records) uses [`Self::opaque`].
     #[must_use]
     pub fn data(kind: &str, key: impl Display) -> String {
-        if kind.is_empty() {
-            return Self::opaque(key);
-        }
         Self::mint("data", kind, key)
-    }
-
-    /// Named opaque DATA record: `step:data:opaque#{key}`.
-    #[must_use]
-    pub fn opaque(key: impl Display) -> String {
-        Self::mint("data", "opaque", key)
     }
 
     /// Product structure identity: `step:product:{kind}#{key}`.

@@ -22,30 +22,29 @@ use crate::FORMAT;
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecError> {
     match classify(bytes) {
-        Some(StreamKind::AsmBinary) => decode_asm_binary(ctx, bytes),
+        Some(StreamKind::AsmBinary(header)) => decode_asm_binary(ctx, bytes, &header),
         Some(StreamKind::Text) => decode_text(ctx, bytes),
-        Some(StreamKind::AcisBinary) => decode_acis_binary(ctx, bytes),
+        Some(StreamKind::AcisBinary(header)) => decode_acis_binary(ctx, bytes, &header),
         None => Err(CodecError::WrongFormat(
             "not an ASM stream: no binary magic and no text header lines".to_string(),
         )),
     }
 }
 
-pub(crate) fn decode_asm_binary(
+fn decode_asm_binary(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
+    header: &KernelHeader,
 ) -> Result<Decoded, CodecError> {
-    let header =
-        asm_header::parse(bytes).expect("StreamKind::AsmBinary guarantees the ASM header magic");
     if let Some(count) = header.entity_count {
         ctx.charge_entities(count, "admit SAT header entities")?;
     }
     let width = header.width;
-    let start = asm_header::record_stream_start_with_header(bytes, &header).ok_or_else(|| {
+    let start = asm_header::record_stream_start_with_header(bytes, header).ok_or_else(|| {
         unsupported_unframed(
             &StreamEvidence::Binary {
                 family: Family::Asm,
-                header: &header,
+                header,
                 framed: false,
             },
             "ASM binary header has no record stream",
@@ -53,7 +52,7 @@ pub(crate) fn decode_asm_binary(
     })?;
     // A history-bearing stream ends its solved partition at the delta-state
     // boundary; a history-less stream ends at EOF without a terminator tag.
-    let framed = match asm_header::solved_record_limit_with_header(bytes, &header) {
+    let framed = match asm_header::solved_record_limit_with_header(bytes, header) {
         Some(limit) => sab::frame(bytes, start, limit, width),
         None => sab::frame_history(bytes, start, bytes.len(), width),
     };
@@ -68,36 +67,35 @@ pub(crate) fn decode_asm_binary(
         DecodePurpose::Model,
     );
     let mut attributes = BTreeMap::new();
-    header_attributes(&header, Family::Asm, &mut attributes);
+    header_attributes(header, Family::Asm, &mut attributes);
     let evidence = StreamEvidence::Binary {
         family: Family::Asm,
-        header: &header,
+        header,
         framed: true,
     };
     let (matched, kernel) = layers(&evidence);
-    build_result(ctx, brep, attributes, &header, None, matched, &kernel)
+    build_result(ctx, brep, attributes, header, None, matched, &kernel)
 }
 
-pub(crate) fn decode_acis_binary(
+fn decode_acis_binary(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
+    header: &KernelHeader,
 ) -> Result<Decoded, CodecError> {
-    let header =
-        acis_header::parse(bytes).expect("StreamKind::AcisBinary guarantees the ACIS header magic");
     if let Some(count) = header.entity_count {
         ctx.charge_entities(count, "admit SAT header entities")?;
     }
-    let start = acis_header::record_stream_start_with_header(bytes, &header).ok_or_else(|| {
+    let start = acis_header::record_stream_start_with_header(bytes, header).ok_or_else(|| {
         unsupported_unframed(
             &StreamEvidence::Binary {
                 family: Family::Acis,
-                header: &header,
+                header,
                 framed: false,
             },
             "ACIS binary header has no record stream",
         )
     })?;
-    let framed = match acis_header::solved_record_limit_with_header(bytes, &header) {
+    let framed = match acis_header::solved_record_limit_with_header(bytes, header) {
         Some(limit) => sab::frame(
             bytes,
             start,
@@ -122,17 +120,17 @@ pub(crate) fn decode_acis_binary(
         DecodePurpose::Model,
     );
     let mut attributes = BTreeMap::new();
-    header_attributes(&header, Family::Acis, &mut attributes);
+    header_attributes(header, Family::Acis, &mut attributes);
     // Every band frames and decodes the same way. Classification states
     // whether the grammar applied is the one the framed stream declares; it
     // gates nothing. Build the admitted evidence only after framing succeeds.
     let evidence = StreamEvidence::Binary {
         family: Family::Acis,
-        header: &header,
+        header,
         framed: true,
     };
     let (matched, kernel) = layers(&evidence);
-    build_result(ctx, brep, attributes, &header, None, matched, &kernel)
+    build_result(ctx, brep, attributes, header, None, matched, &kernel)
 }
 
 fn decode_text(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Decoded, CodecError> {

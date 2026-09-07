@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
-use self::implementation_level::ImplementationLevel;
+use self::implementation_level::{DeclaredImplementationLevel, ImplementationLevel};
 
 pub(crate) mod implementation_level;
 
@@ -28,7 +28,6 @@ pub(crate) mod schema_identifier;
 
 /// One parsed Part 21 parameter value.
 #[derive(Debug, Clone, PartialEq)]
-#[non_exhaustive]
 #[allow(clippy::enum_variant_names)] // STEP names mirror the EXPRESS value kinds.
 pub enum Value {
     /// Reference to a DATA entity instance.
@@ -147,7 +146,6 @@ pub struct DataSection {
 
 /// One edition-3 ANCHOR binding.
 #[derive(Debug, Clone, PartialEq)]
-#[non_exhaustive]
 pub struct AnchorEntry {
     /// Local resource name.
     pub name: String,
@@ -159,7 +157,6 @@ pub struct AnchorEntry {
 
 /// One edition-3 metadata tag attached to an ANCHOR binding.
 #[derive(Debug, Clone, PartialEq)]
-#[non_exhaustive]
 pub struct AnchorTag {
     /// Tag name, preserving source case.
     pub name: String,
@@ -192,7 +189,7 @@ pub struct Exchange {
     /// DATA instances indexed across every DATA section.
     pub records: BTreeMap<u64, RawRecord>,
     schema_identifiers: Vec<AdmittedSchemaIdentifier>,
-    implementation_level: String,
+    implementation_level: DeclaredImplementationLevel,
     entity_ids: EntityIndex,
 }
 
@@ -256,17 +253,14 @@ impl Exchange {
 
     /// Verbatim `FILE_DESCRIPTION` implementation-level declaration.
     pub(crate) fn implementation_level(&self) -> &str {
-        &self.implementation_level
+        self.implementation_level.text()
     }
 
     pub(crate) fn decode_string(
         &self,
         bytes: &[u8],
     ) -> Result<String, crate::strings::StringError> {
-        crate::strings::decode_with_level(
-            bytes,
-            ImplementationLevel::for_declaration(&self.implementation_level),
-        )
+        crate::strings::decode_with_level(bytes, self.implementation_level.level())
     }
 
     /// Release semantic source structures before retained opaque bytes are copied.
@@ -397,7 +391,6 @@ pub enum ParseError {
 
 /// A recoverable deviation from canonical Part 21 source syntax.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
 pub enum ParseDiagnosticKind {
     /// Complex-entity partials are not in their canonical alphabetical order.
     ComplexPartialsNotAlphabetical,
@@ -473,7 +466,7 @@ struct Parser<'input, 'ctx, 'arena> {
 }
 
 struct HeaderAdmission {
-    implementation_level: String,
+    implementation_level: DeclaredImplementationLevel,
     schema_identifiers: Vec<AdmittedSchemaIdentifier>,
 }
 
@@ -633,8 +626,7 @@ impl Parser<'_, '_, '_> {
             Ok(admitted) => admitted,
             Err(message) => return self.err(message),
         };
-        let implementation_level =
-            ImplementationLevel::for_declaration(&header_admission.implementation_level);
+        let implementation_level = header_admission.implementation_level.level();
         self.diagnostics.extend(header_diagnostic);
         self.diagnostics
             .extend(schema_object_identifier_diagnostics(
@@ -1402,30 +1394,24 @@ fn validate_header(
     {
         return Err("FILE_DESCRIPTION has invalid parameters");
     }
-    let (implementation_level, implementation_level_text, implementation_diagnostic) =
-        match description.get(1) {
-            Some(Value::String(value)) => {
-                let Ok(level) = crate::strings::decode(value) else {
-                    return Err("FILE_DESCRIPTION has an unsupported implementation level");
-                };
-                let known = ImplementationLevel::known(&level);
-                match known {
-                    Some(known) => (known, level, None),
-                    None => (
-                        ImplementationLevel::Edition3Class3,
-                        level.clone(),
-                        Some(ParseDiagnostic {
-                            offset: header[0].offset,
-                            kind: ParseDiagnosticKind::ImplementationLevelUnverified,
-                            message: format!(
-                                "FILE_DESCRIPTION implementation level {level:?} has no implemented grammar; parsed with the 4;3 grammar"
-                            ),
-                        }),
-                    ),
-                }
-            }
-            _ => return Err("FILE_DESCRIPTION has invalid parameters"),
-        };
+    let declaration = match description.get(1) {
+        Some(Value::String(value)) => {
+            let Ok(text) = crate::strings::decode(value) else {
+                return Err("FILE_DESCRIPTION has an unsupported implementation level");
+            };
+            DeclaredImplementationLevel::new(text)
+        }
+        _ => return Err("FILE_DESCRIPTION has invalid parameters"),
+    };
+    let implementation_diagnostic = declaration.is_unverified().then(|| ParseDiagnostic {
+        offset: header[0].offset,
+        kind: ParseDiagnosticKind::ImplementationLevelUnverified,
+        message: format!(
+            "FILE_DESCRIPTION implementation level {:?} has no implemented grammar; parsed with the 4;3 grammar",
+            declaration.text()
+        ),
+    });
+    let implementation_level = declaration.level();
     if !is_decodable_string_list(description.first(), implementation_level)
         || !is_decodable_string(
             description.get(1).expect("FILE_DESCRIPTION has two values"),
@@ -1543,7 +1529,7 @@ fn validate_header(
     }
     Ok((
         HeaderAdmission {
-            implementation_level: implementation_level_text,
+            implementation_level: declaration,
             schema_identifiers: admitted,
         },
         implementation_diagnostic,

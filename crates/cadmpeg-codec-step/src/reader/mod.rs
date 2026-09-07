@@ -44,6 +44,12 @@ pub(crate) enum Packaging {
     },
 }
 
+#[derive(Clone, Copy)]
+enum DecodeMode {
+    Decode(Packaging),
+    Inspect,
+}
+
 impl Packaging {
     fn add_source_attributes(self, attributes: &mut BTreeMap<String, String>) {
         let Self::Zip {
@@ -108,7 +114,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         exchange: &Exchange,
         diagnostics: &[ParseDiagnostic],
         ctx: &'ctx DecodeContext<'arena>,
-        packaging: Packaging,
+        mode: &DecodeMode,
     ) -> Self {
         let mut attributes = BTreeMap::new();
         attributes.insert("schema".into(), schema_name(exchange));
@@ -117,7 +123,9 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
             "entity_instances".into(),
             exchange.records.len().to_string(),
         );
-        packaging.add_source_attributes(&mut attributes);
+        if let DecodeMode::Decode(packaging) = mode {
+            packaging.add_source_attributes(&mut attributes);
+        }
         // The `schema` attribute above stays: it is the joined identifier list,
         // and retiring the ad-hoc attribute keys is a later phase.
         let primary = StepDialect::classify(exchange);
@@ -249,8 +257,14 @@ pub(super) fn decode_exchange(
     ctx: &DecodeContext<'_>,
     packaging: Packaging,
 ) -> Result<Decoded, CodecError> {
-    decode_exchange_mode(input, &mut exchange, diagnostics, true, ctx, packaging)
-        .map(|result| result.decoded)
+    decode_exchange_mode(
+        input,
+        &mut exchange,
+        diagnostics,
+        DecodeMode::Decode(packaging),
+        ctx,
+    )
+    .map(|result| result.decoded)
 }
 
 /// Deep semantic analysis used by STEP `inspect`.
@@ -264,18 +278,17 @@ pub(super) fn analyze_exchange(
     diagnostics: &[ParseDiagnostic],
     ctx: &DecodeContext<'_>,
 ) -> Result<AnalyzedExchange, CodecError> {
-    decode_exchange_mode(input, exchange, diagnostics, false, ctx, Packaging::Bare)
+    decode_exchange_mode(input, exchange, diagnostics, DecodeMode::Inspect, ctx)
 }
 
 fn decode_exchange_mode(
     input: &[u8],
     exchange: &mut Exchange,
     diagnostics: &[ParseDiagnostic],
-    retain_opaque: bool,
+    mode: DecodeMode,
     ctx: &DecodeContext<'_>,
-    packaging: Packaging,
 ) -> Result<AnalyzedExchange, CodecError> {
-    let mut session = StepDecodeSession::new(exchange, diagnostics, ctx, packaging);
+    let mut session = StepDecodeSession::new(exchange, diagnostics, ctx, &mode);
     if ctx.container_only() {
         return Ok(session.into_result(SourceFidelity::default(), BTreeSet::new()));
     }
@@ -414,22 +427,21 @@ fn decode_exchange_mode(
     session.absorb_warnings(post_decode_warnings);
 
     session.charge_stage("step_opaque_record_retention")?;
-    let opaque_offsets = if retain_opaque {
-        BTreeSet::new()
-    } else {
-        exchange
+    let opaque_offsets = match mode {
+        DecodeMode::Decode(_) => BTreeSet::new(),
+        DecodeMode::Inspect => exchange
             .records
             .iter()
             .filter(|(id, _)| !session.typed_records.contains(id))
             .map(|(_, record)| record.span.start)
-            .collect()
+            .collect(),
     };
     let mut counts = BTreeMap::<String, usize>::new();
     let mut opaque_ids = BTreeMap::new();
     let mut source_targets = BTreeMap::new();
     let mut opaque_sources = Vec::new();
     let mut source_fidelity = SourceFidelity::default();
-    if retain_opaque {
+    if matches!(mode, DecodeMode::Decode(_)) {
         opaque_ids = exchange
             .records
             .iter()
@@ -498,7 +510,7 @@ fn decode_exchange_mode(
                 .reserve_scoped(input.len() as u64, "step_byte_accounting", None)?;
         byte_accounting(input, exchange, &session.typed_records, session.ctx)?
     };
-    if retain_opaque {
+    if matches!(mode, DecodeMode::Decode(_)) {
         let signature_spans = std::mem::take(&mut exchange.signatures);
         exchange.release_source_graph();
         let mut opaque = Vec::with_capacity(opaque_sources.len() + signature_spans.len());
