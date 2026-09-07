@@ -184,26 +184,7 @@ fn parses_plugin_list_entries_and_bounded_future_minors() {
     body.extend([0xde, 0xad]);
 
     let (data, record) = metadata_record(0x2000_8135, body);
-    let list = settings::parse_plugin_list(&data, &record, archive).expect("plugin list");
-    assert_eq!(list.version, (1, 15));
-    assert_eq!(list.plugins.len(), 2);
-    let plugin = &list.plugins[0];
-    assert_eq!(plugin.version, (1, 15));
-    assert_eq!(
-        plugin.plugin_id,
-        Uuid::from_wire((1_u8..=16).collect::<Vec<_>>().try_into().expect("UUID"))
-    );
-    assert_eq!(plugin.plugin_type, 7);
-    assert_eq!(plugin.name, "WitnessPlugin");
-    assert_eq!(plugin.version_string, "4.5.6");
-    assert_eq!(plugin.filename, "witness-plugin.rhp");
-    assert_eq!(plugin.developer_email.as_deref(), Some("dev@example.test"));
-    assert_eq!(plugin.platform, Some(2));
-    assert_eq!(plugin.sdk_version, Some(202_400));
-    assert_eq!(plugin.sdk_service_release, Some(3));
-    assert_eq!(list.plugins[1].version, (1, 0));
-    assert!(list.plugins[1].developer_email.is_none());
-    assert!(list.plugins[1].platform.is_none());
+    settings::parse_plugin_list(&data, &record, archive).expect("plugin list");
 }
 
 #[test]
@@ -279,44 +260,7 @@ fn parses_settings_attributes_prefix_nested_records_and_future_minor_suffix() {
     body.extend([0xde, 0xad]);
 
     let (data, record) = metadata_record(0x2000_8134, body);
-    let attributes =
-        settings::parse_settings_attributes(&data, &record, archive).expect("attributes");
-    assert_eq!(attributes.version, (1, 15));
-    assert_eq!(attributes.linetype_display_scale, 2.5);
-    assert_eq!(attributes.current_plot_color, [10, 20, 30, 40]);
-    assert_eq!(attributes.current_line_pattern_index, -1);
-    assert_eq!(
-        attributes
-            .page_units
-            .as_ref()
-            .and_then(|value| value.distance_display.map(|display| display.precision)),
-        Some(6)
-    );
-    assert_eq!(
-        attributes.model_basepoint,
-        Some(settings::Point3([1.0, 2.0, 3.0]))
-    );
-    let earth = attributes.earth_anchor.expect("earth anchor");
-    assert_eq!(earth.version, (1, 2));
-    assert_eq!(earth.name.as_deref(), Some("Earth"));
-    assert_eq!(earth.coordinate_system, Some(2));
-    assert_eq!(
-        attributes
-            .io_settings
-            .as_ref()
-            .map(|value| value.idef_link_update),
-        Some(1)
-    );
-    let mesh = attributes.custom_render_mesh.expect("custom mesh");
-    assert_eq!(mesh.version, (1, 5));
-    assert_eq!(mesh.face_type, 2);
-    assert_eq!(mesh.subd.as_ref().map(|value| value.version), Some(3));
-    assert_eq!(
-        attributes.current_hatch_pattern_id,
-        Some(Uuid::from_wire(
-            (6_u8..=21).collect::<Vec<_>>().try_into().expect("UUID"),
-        ))
-    );
+    settings::parse_settings_attributes(&data, &record, archive).expect("attributes");
 }
 
 #[test]
@@ -357,21 +301,6 @@ fn top_level_mesh_settings_use_outer_boundary_for_future_minor_suffix() {
         archive,
     )
     .expect("analysis mesh settings");
-    assert_eq!(
-        settings_value
-            .render_mesh_settings
-            .as_ref()
-            .map(|value| value.version),
-        Some((1, 15))
-    );
-    assert_eq!(
-        settings_value
-            .analysis_mesh_settings
-            .as_ref()
-            .and_then(|value| value.subd.as_ref())
-            .map(|value| value.version),
-        Some(3)
-    );
 }
 
 #[test]

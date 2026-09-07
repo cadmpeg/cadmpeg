@@ -364,102 +364,6 @@ impl UnitsAndTolerances {
     }
 }
 
-/// One plugin reference stored in the settings plugin list.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct PluginReference {
-    /// Complete anonymous-chunk source range.
-    pub(crate) source: SourceRange,
-    /// Anonymous chunk version.
-    pub(crate) version: (i32, i32),
-    /// Plugin identity.
-    pub(crate) plugin_id: Uuid,
-    /// Rhino plugin-type enum ordinal.
-    pub(crate) plugin_type: i32,
-    /// Plugin display name.
-    pub(crate) name: String,
-    /// Plugin version string.
-    pub(crate) version_string: String,
-    /// Plugin executable filename.
-    pub(crate) filename: String,
-    /// Developer organization.
-    pub(crate) developer_organization: Option<String>,
-    /// Developer address.
-    pub(crate) developer_address: Option<String>,
-    /// Developer country.
-    pub(crate) developer_country: Option<String>,
-    /// Developer phone.
-    pub(crate) developer_phone: Option<String>,
-    /// Developer email.
-    pub(crate) developer_email: Option<String>,
-    /// Developer website.
-    pub(crate) developer_website: Option<String>,
-    /// Developer update URL.
-    pub(crate) developer_update_url: Option<String>,
-    /// Developer fax.
-    pub(crate) developer_fax: Option<String>,
-    /// Plugin platform: 0 unknown, 1 C++, 2 .NET.
-    pub(crate) platform: Option<i32>,
-    /// Plugin SDK version component.
-    pub(crate) sdk_version: Option<i32>,
-    /// Plugin SDK service-release component.
-    pub(crate) sdk_service_release: Option<i32>,
-}
-
-/// The settings plugin list and its bounded entries.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct PluginList {
-    /// Complete source range.
-    pub(crate) source: SourceRange,
-    /// Packed list version.
-    pub(crate) version: (u8, u8),
-    /// Plugin references.
-    pub(crate) plugins: Vec<PluginReference>,
-}
-
-/// Earth-location anchor nested in the settings-attributes record.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct EarthAnchorPoint {
-    /// Anonymous chunk version.
-    pub(crate) version: (i32, i32),
-    /// Earth latitude in degrees.
-    pub(crate) earth_latitude: f64,
-    /// Earth longitude in degrees.
-    pub(crate) earth_longitude: f64,
-    /// Earth elevation in meters.
-    pub(crate) earth_elevation_meters: f64,
-    /// Model point corresponding to the earth location.
-    pub(crate) model_point: Point3,
-    /// Model north vector.
-    pub(crate) model_north: Vector3,
-    /// Model east vector.
-    pub(crate) model_east: Vector3,
-    /// Legacy elevation-reference enum stored by versions 1.1 and later.
-    pub(crate) legacy_coordinate_system: Option<i32>,
-    /// Earth-anchor UUID.
-    pub(crate) id: Option<Uuid>,
-    /// Earth-anchor name.
-    pub(crate) name: Option<String>,
-    /// Earth-anchor description.
-    pub(crate) description: Option<String>,
-    /// Earth-anchor URL.
-    pub(crate) url: Option<String>,
-    /// Earth-anchor URL tag.
-    pub(crate) url_tag: Option<String>,
-    /// Current earth-coordinate-system enum stored by version 1.2 and later.
-    pub(crate) coordinate_system: Option<u32>,
-}
-
-/// The nested settings record controlling linked definitions and textures.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct IoSettings {
-    /// Anonymous chunk version.
-    pub(crate) version: (i32, i32),
-    /// Whether texture bitmaps are saved in the file.
-    pub(crate) save_texture_bitmaps_in_file: bool,
-    /// Linked-instance-definition update policy.
-    pub(crate) idef_link_update: i32,
-}
-
 /// `SubD` display fields nested in mesh parameters version 1.5.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct SubDDisplayParameters {
@@ -528,51 +432,6 @@ pub(crate) struct MeshParameters {
     pub(crate) subd: Option<SubDDisplayParameters>,
 }
 
-/// Typed settings-attributes record.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct SettingsAttributes {
-    /// Complete source range.
-    pub(crate) source: SourceRange,
-    /// Packed record version.
-    pub(crate) version: (u8, u8),
-    /// World scale applied to non-solid linetypes for model display.
-    pub(crate) linetype_display_scale: f64,
-    /// Current plot color bytes.
-    pub(crate) current_plot_color: [u8; 4],
-    /// Current plot-color source enum.
-    pub(crate) current_plot_color_source: i32,
-    /// V5 current line-pattern index, or -1 when unset.
-    pub(crate) current_line_pattern_index: i32,
-    /// Current linetype source enum.
-    pub(crate) current_linetype_source: i32,
-    /// Page-space units and tolerances, introduced at minor 1.
-    pub(crate) page_units: Option<UnitsAndTolerances>,
-    /// Active view UUID, introduced at minor 2.
-    pub(crate) active_view_id: Option<Uuid>,
-    /// Model basepoint, introduced at minor 3.
-    pub(crate) model_basepoint: Option<Point3>,
-    /// Earth anchor, introduced at minor 3.
-    pub(crate) earth_anchor: Option<EarthAnchorPoint>,
-    /// Texture-save flag, introduced at minor 4.
-    pub(crate) save_texture_bitmaps_in_file: Option<bool>,
-    /// IO settings, introduced at minor 5.
-    pub(crate) io_settings: Option<IoSettings>,
-    /// Custom render mesh settings, introduced at minor 6.
-    pub(crate) custom_render_mesh: Option<MeshParameters>,
-    /// Current layer UUID, introduced at minor 7.
-    pub(crate) current_layer_id: Option<Uuid>,
-    /// Current render-material UUID, introduced at minor 7.
-    pub(crate) current_render_material_id: Option<Uuid>,
-    /// Current line-pattern UUID, introduced at minor 7.
-    pub(crate) current_line_pattern_id: Option<Uuid>,
-    /// Current text-style UUID, introduced at minor 7.
-    pub(crate) current_text_style_id: Option<Uuid>,
-    /// Current dimension-style UUID, introduced at minor 7.
-    pub(crate) current_dimension_style_id: Option<Uuid>,
-    /// Current hatch-pattern UUID, introduced at minor 7.
-    pub(crate) current_hatch_pattern_id: Option<Uuid>,
-}
-
 /// A bounded unsupported setting payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SettingDescriptor {
@@ -608,14 +467,6 @@ pub(crate) struct DocumentSettings {
     pub(crate) model_url: Option<String>,
     /// Units and tolerances.
     pub(crate) units: Option<UnitsAndTolerances>,
-    /// Plugins that may have saved userdata in the file.
-    pub(crate) plugin_list: Option<PluginList>,
-    /// Settings attributes.
-    pub(crate) attributes: Option<SettingsAttributes>,
-    /// Render-mesh settings.
-    pub(crate) render_mesh_settings: Option<MeshParameters>,
-    /// Analysis-mesh settings.
-    pub(crate) analysis_mesh_settings: Option<MeshParameters>,
     /// Unsupported known settings.
     pub(crate) unsupported: Vec<SettingDescriptor>,
 }
@@ -1287,90 +1138,32 @@ fn parse_plugin_reference<'a>(
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
-) -> Result<PluginReference, FramingError> {
-    let (mut payload, range) = anonymous_payload(data, reader, archive, "plugin reference")?;
+) -> Result<(), FramingError> {
+    let (mut payload, _) = anonymous_payload(data, reader, archive, "plugin reference")?;
     let version = anonymous_version(&mut payload, "plugin reference")?;
-    let plugin_id = uuid(&mut payload)?;
-    let plugin_type = payload.i32()?;
-    let name = utf16(&mut payload)?;
-    let version_string = utf16(&mut payload)?;
-    let filename = utf16(&mut payload)?;
-    let (
-        developer_organization,
-        developer_address,
-        developer_country,
-        developer_phone,
-        developer_email,
-        developer_website,
-        developer_update_url,
-        developer_fax,
-        platform,
-        sdk_version,
-        sdk_service_release,
-    ) = if version.1 >= 1 {
-        let developer_organization = utf16(&mut payload)?;
-        let developer_address = utf16(&mut payload)?;
-        let developer_country = utf16(&mut payload)?;
-        let developer_phone = utf16(&mut payload)?;
-        let developer_email = utf16(&mut payload)?;
-        let developer_website = utf16(&mut payload)?;
-        let developer_update_url = utf16(&mut payload)?;
-        let developer_fax = utf16(&mut payload)?;
-        let (platform, sdk_version, sdk_service_release) = if version.1 >= 2 {
-            (
-                Some(payload.i32()?),
-                Some(payload.i32()?),
-                Some(payload.i32()?),
-            )
-        } else {
-            (None, None, None)
-        };
-        (
-            Some(developer_organization),
-            Some(developer_address),
-            Some(developer_country),
-            Some(developer_phone),
-            Some(developer_email),
-            Some(developer_website),
-            Some(developer_update_url),
-            Some(developer_fax),
-            platform,
-            sdk_version,
-            sdk_service_release,
-        )
-    } else {
-        (
-            None, None, None, None, None, None, None, None, None, None, None,
-        )
-    };
-    finish(&mut payload, "plugin reference")?;
-    Ok(PluginReference {
-        source: SourceRange { range },
-        version,
-        plugin_id,
-        plugin_type,
-        name,
-        version_string,
-        filename,
-        developer_organization,
-        developer_address,
-        developer_country,
-        developer_phone,
-        developer_email,
-        developer_website,
-        developer_update_url,
-        developer_fax,
-        platform,
-        sdk_version,
-        sdk_service_release,
-    })
+    uuid(&mut payload)?;
+    payload.i32()?;
+    for _ in 0..3 {
+        utf16(&mut payload)?;
+    }
+    if version.1 >= 1 {
+        for _ in 0..8 {
+            utf16(&mut payload)?;
+        }
+        if version.1 >= 2 {
+            for _ in 0..3 {
+                payload.i32()?;
+            }
+        }
+    }
+    finish(&mut payload, "plugin reference")
 }
 
 pub(crate) fn parse_plugin_list(
     data: &[u8],
     record: &Record,
     archive: ArchiveVersion,
-) -> Result<PluginList, FramingError> {
+) -> Result<(), FramingError> {
     let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
     let version = packed(&mut reader)?;
     if version.0 != 1 {
@@ -1388,95 +1181,48 @@ pub(crate) fn parse_plugin_list(
         MAX_ARRAY_ITEMS,
         count_offset,
     )?;
-    let mut plugins = Vec::with_capacity(count);
     for _ in 0..count {
-        plugins.push(parse_plugin_reference(data, &mut reader, archive)?);
+        parse_plugin_reference(data, &mut reader, archive)?;
     }
-    finish(&mut reader, "plugin list")?;
-    Ok(PluginList {
-        source: SourceRange {
-            range: record.range.clone(),
-        },
-        version,
-        plugins,
-    })
+    finish(&mut reader, "plugin list")
 }
 
 fn parse_earth_anchor<'a>(
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
-) -> Result<EarthAnchorPoint, FramingError> {
+) -> Result<(), FramingError> {
     let (mut payload, _) = anonymous_payload(data, reader, archive, "earth anchor")?;
     let version = anonymous_version(&mut payload, "earth anchor")?;
-    let earth_latitude = payload.f64()?;
-    let earth_longitude = payload.f64()?;
-    let earth_elevation_meters = payload.f64()?;
-    let model_point = point(&mut payload)?;
-    let model_north = vector(&mut payload)?;
-    let model_east = vector(&mut payload)?;
-    let (legacy_coordinate_system, id, name, description, url, url_tag, coordinate_system) =
-        if version.1 >= 1 {
-            let legacy = payload.i32()?;
-            let id = uuid(&mut payload)?;
-            let name = utf16(&mut payload)?;
-            let description = utf16(&mut payload)?;
-            let url = utf16(&mut payload)?;
-            let url_tag = utf16(&mut payload)?;
-            let coordinate_system = if version.1 >= 2 {
-                Some(payload.i32()? as u32)
-            } else {
-                None
-            };
-            (
-                Some(legacy),
-                Some(id),
-                Some(name),
-                Some(description),
-                Some(url),
-                Some(url_tag),
-                coordinate_system,
-            )
-        } else {
-            (None, None, None, None, None, None, None)
-        };
-    finish(&mut payload, "earth anchor")?;
-    Ok(EarthAnchorPoint {
-        version,
-        earth_latitude,
-        earth_longitude,
-        earth_elevation_meters,
-        model_point,
-        model_north,
-        model_east,
-        legacy_coordinate_system,
-        id,
-        name,
-        description,
-        url,
-        url_tag,
-        coordinate_system,
-    })
+    for _ in 0..3 {
+        payload.f64()?;
+    }
+    point(&mut payload)?;
+    vector(&mut payload)?;
+    vector(&mut payload)?;
+    if version.1 >= 1 {
+        payload.i32()?;
+        uuid(&mut payload)?;
+        for _ in 0..4 {
+            utf16(&mut payload)?;
+        }
+        if version.1 >= 2 {
+            payload.i32()?;
+        }
+    }
+    finish(&mut payload, "earth anchor")
 }
 
 fn parse_io_settings<'a>(
     data: &'a [u8],
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
-) -> Result<IoSettings, FramingError> {
+) -> Result<(), FramingError> {
     let (mut payload, _) = anonymous_payload(data, reader, archive, "IO settings")?;
-    let version = anonymous_version(&mut payload, "IO settings")?;
-    let save_texture_bitmaps_in_file = payload.bool()?;
-    let mut idef_link_update = payload.i32()?;
-    if idef_link_update == 0 && archive.value() >= 5 {
-        idef_link_update = 1;
-    }
-    finish(&mut payload, "IO settings")?;
-    Ok(IoSettings {
-        version,
-        save_texture_bitmaps_in_file,
-        idef_link_update,
-    })
+    anonymous_version(&mut payload, "IO settings")?;
+    payload.bool()?;
+    payload.i32()?;
+    finish(&mut payload, "IO settings")
 }
 
 fn parse_subd_display_parameters<'a>(
@@ -1596,7 +1342,7 @@ pub(crate) fn parse_settings_attributes(
     data: &[u8],
     record: &Record,
     archive: ArchiveVersion,
-) -> Result<SettingsAttributes, FramingError> {
+) -> Result<(), FramingError> {
     let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
     let version = packed(&mut reader)?;
     if version.0 != 1 {
@@ -1605,102 +1351,49 @@ pub(crate) fn parse_settings_attributes(
             "unsupported settings-attributes version",
         ));
     }
-    let linetype_display_scale = finite_f64(&mut reader, "linetype display scale")?;
-    let current_plot_color = color(&mut reader)?;
-    let current_plot_color_source = reader.i32()?;
-    let current_line_pattern_index = reader.i32()?;
-    let current_linetype_source = reader.i32()?;
-    let page_units = if version.1 >= 1 {
-        let (mut payload, _page_range) =
+    finite_f64(&mut reader, "linetype display scale")?;
+    color(&mut reader)?;
+    for _ in 0..3 {
+        reader.i32()?;
+    }
+    if version.1 >= 1 {
+        let (mut payload, _) =
             anonymous_payload(data, &mut reader, archive, "settings-attributes page units")?;
         anonymous_version(&mut payload, "settings-attributes page-units wrapper")?;
-        let value = parse_units_reader(&mut payload)?;
-        Some(value)
-    } else {
-        None
-    };
-    let active_view_id = if version.1 >= 2 {
-        Some(uuid(&mut reader)?)
-    } else {
-        None
-    };
-    let (model_basepoint, earth_anchor) = if version.1 >= 3 {
-        let model_basepoint = point(&mut reader)?;
-        let earth_anchor = parse_earth_anchor(data, &mut reader, archive)?;
-        (Some(model_basepoint), Some(earth_anchor))
-    } else {
-        (None, None)
-    };
-    let save_texture_bitmaps_in_file = if version.1 >= 4 {
-        Some(reader.bool()?)
-    } else {
-        None
-    };
-    let io_settings = if version.1 >= 5 {
-        Some(parse_io_settings(data, &mut reader, archive)?)
-    } else {
-        None
-    };
-    let custom_render_mesh = if version.1 >= 6 {
-        Some(parse_mesh_parameters(data, &mut reader, archive, false)?)
-    } else {
-        None
-    };
-    let (
-        current_layer_id,
-        current_render_material_id,
-        current_line_pattern_id,
-        current_text_style_id,
-        current_dimension_style_id,
-        current_hatch_pattern_id,
-    ) = if version.1 >= 7 {
-        (
-            Some(uuid(&mut reader)?),
-            Some(uuid(&mut reader)?),
-            Some(uuid(&mut reader)?),
-            Some(uuid(&mut reader)?),
-            Some(uuid(&mut reader)?),
-            Some(uuid(&mut reader)?),
-        )
-    } else {
-        (None, None, None, None, None, None)
-    };
-    finish(&mut reader, "settings attributes")?;
-    Ok(SettingsAttributes {
-        source: SourceRange {
-            range: record.range.clone(),
-        },
-        version,
-        linetype_display_scale,
-        current_plot_color,
-        current_plot_color_source,
-        current_line_pattern_index,
-        current_linetype_source,
-        page_units,
-        active_view_id,
-        model_basepoint,
-        earth_anchor,
-        save_texture_bitmaps_in_file,
-        io_settings,
-        custom_render_mesh,
-        current_layer_id,
-        current_render_material_id,
-        current_line_pattern_id,
-        current_text_style_id,
-        current_dimension_style_id,
-        current_hatch_pattern_id,
-    })
+        parse_units_reader(&mut payload)?;
+    }
+    if version.1 >= 2 {
+        uuid(&mut reader)?;
+    }
+    if version.1 >= 3 {
+        point(&mut reader)?;
+        parse_earth_anchor(data, &mut reader, archive)?;
+    }
+    if version.1 >= 4 {
+        reader.bool()?;
+    }
+    if version.1 >= 5 {
+        parse_io_settings(data, &mut reader, archive)?;
+    }
+    if version.1 >= 6 {
+        parse_mesh_parameters(data, &mut reader, archive, false)?;
+    }
+    if version.1 >= 7 {
+        for _ in 0..6 {
+            uuid(&mut reader)?;
+        }
+    }
+    finish(&mut reader, "settings attributes")
 }
 
 fn parse_mesh_record(
     data: &[u8],
     record: &Record,
     archive: ArchiveVersion,
-) -> Result<MeshParameters, FramingError> {
+) -> Result<(), FramingError> {
     let mut reader = BoundedReader::new(data, record.body().start, record.body().end)?;
-    let value = parse_mesh_parameters(data, &mut reader, archive, true)?;
-    finish(&mut reader, "mesh settings")?;
-    Ok(value)
+    parse_mesh_parameters(data, &mut reader, archive, true)?;
+    finish(&mut reader, "mesh settings")
 }
 
 #[derive(Clone, Copy)]
@@ -2626,16 +2319,10 @@ pub(crate) fn parse_setting(
     archive: ArchiveVersion,
 ) -> Result<(), FramingError> {
     match record.typecode {
-        PLUGIN_LIST => {
-            parse_plugin_list(data, record, archive).map(|value| settings.plugin_list = Some(value))
-        }
+        PLUGIN_LIST => parse_plugin_list(data, record, archive),
         UNITS => parse_units(data, record).map(|value| settings.units = Some(value)),
-        RENDER_MESH => parse_mesh_record(data, record, archive)
-            .map(|value| settings.render_mesh_settings = Some(value)),
-        ANALYSIS_MESH => parse_mesh_record(data, record, archive)
-            .map(|value| settings.analysis_mesh_settings = Some(value)),
-        ATTRIBUTES => parse_settings_attributes(data, record, archive)
-            .map(|value| settings.attributes = Some(value)),
+        RENDER_MESH | ANALYSIS_MESH => parse_mesh_record(data, record, archive),
+        ATTRIBUTES => parse_settings_attributes(data, record, archive),
         CURRENT_LAYER => {
             settings.current_layer = Some(short_index(record, "current layer")?);
             Ok(())
