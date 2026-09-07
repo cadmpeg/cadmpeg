@@ -1496,3 +1496,79 @@ fn object_record_wire_checks_derived_roles() {
     wire["owner_ref"] = serde_json::json!(2);
     assert!(serde_json::from_value::<super::ObjectRecord>(wire).is_err());
 }
+
+fn suffix_bearing_record() -> ObjectRecord {
+    use crate::object_graph::{ObjectPayload, ObjectRecordBody, PayloadField};
+
+    let atom = |value, offset| PayloadField::Atom { value, offset };
+    let reference = |value, offset| PayloadField::Reference { value, offset };
+    ObjectRecord {
+        pos: 0,
+        total_len: 89,
+        lead: 0,
+        body: ObjectRecordBody::Nested {
+            head: Vec::new(),
+            payload: ObjectPayload {
+                size: 83,
+                fields: vec![
+                    atom(44, 0),
+                    PayloadField::Blob {
+                        bytes: vec![0; 59],
+                        offset: 1,
+                    },
+                    atom(5, 65),
+                    atom(46, 66),
+                    atom(19, 67),
+                    atom(48, 68),
+                    atom(3, 69),
+                    reference(60, 70),
+                    reference(62, 72),
+                    reference(49, 74),
+                    atom(3, 76),
+                    reference(60, 77),
+                    reference(62, 79),
+                    atom(129, 81),
+                    PayloadField::Terminator,
+                ],
+            },
+        },
+    }
+}
+
+#[test]
+fn object_record_body_wire_rejects_a_subtype_disagreeing_with_the_payload() {
+    let record = suffix_bearing_record();
+    let mut wire = serde_json::to_value(&record).unwrap();
+    assert_eq!(wire["body"]["Nested"]["subtype"], serde_json::json!("Blob"));
+    assert_eq!(
+        serde_json::from_value::<ObjectRecord>(wire.clone()).unwrap(),
+        record
+    );
+
+    wire["body"]["Nested"]["subtype"] = serde_json::json!("Empty");
+    let error = serde_json::from_value::<ObjectRecord>(wire)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("subtype"), "{error}");
+}
+
+#[test]
+fn object_record_body_wire_rejects_a_repeated_suffix_disagreeing_with_the_payload() {
+    let record = suffix_bearing_record();
+    let mut wire = serde_json::to_value(&record).unwrap();
+    assert_eq!(
+        wire["body"]["Nested"]["repeated_reference_suffix"]["terminal_reference"],
+        serde_json::json!(49)
+    );
+    assert_eq!(
+        serde_json::from_value::<ObjectRecord>(wire.clone()).unwrap(),
+        record
+    );
+
+    wire["body"]["Nested"]["repeated_reference_suffix"]["terminal_reference"] =
+        serde_json::json!(50);
+    let error = serde_json::from_value::<ObjectRecord>(wire)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("repeated_reference_suffix"), "{error}");
+}
