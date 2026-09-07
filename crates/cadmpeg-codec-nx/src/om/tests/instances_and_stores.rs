@@ -1070,7 +1070,7 @@ fn om_operation_body_scalar_clauses_preserve_body_order_and_branch() {
             .scalars
             .atoms()
             .each_ref()
-            .map(|scalar| scalar.raw()),
+            .map(crate::om::scalar::PayloadScalarAtom::raw),
         [&bytes[6..7], &bytes[7..11], &bytes[11..19]]
     );
     assert_eq!(triples[1].body_reference_ordinal, 1);
@@ -1287,63 +1287,63 @@ fn om_extrude_body_32_branch_decodes_counted_lanes() {
     assert_eq!(
         branch
             .atoms()
-            .map(|(token, _, _)| token.raw())
+            .map(|(token, (), _)| token.raw())
             .collect::<Vec<_>>(),
         [0x3d82_5600, 0x3d82_5700]
     );
     assert_eq!(
         branch
             .atoms()
-            .map(|(_, _, offset)| offset)
+            .map(|(_, (), offset)| offset)
             .collect::<Vec<_>>(),
         [118, 122]
     );
     assert_eq!(
         branch
             .atoms()
-            .map(|(token, _, _)| token.value())
+            .map(|(token, (), _)| token.value())
             .collect::<Vec<_>>(),
         [598, 599]
     );
     assert_eq!(
         branch
             .first_indices()
-            .map(|(token, _, _)| token.value())
+            .map(|(token, (), _)| token.value())
             .collect::<Vec<_>>(),
         [43, 45, 44]
     );
     assert_eq!(
         branch
             .first_indices()
-            .map(|(token, _, _)| token.raw().to_vec())
+            .map(|(token, (), _)| token.raw().to_vec())
             .collect::<Vec<_>>(),
         [vec![0x80, 0x2b], vec![0x80, 0x2d], vec![0x80, 0x2c]]
     );
     assert_eq!(
         branch
             .first_indices()
-            .map(|(_, _, offset)| offset)
+            .map(|(_, (), offset)| offset)
             .collect::<Vec<_>>(),
         [128, 130, 132]
     );
     assert_eq!(
         branch
             .second_indices()
-            .map(|(token, _, _)| token.value())
+            .map(|(token, (), _)| token.value())
             .collect::<Vec<_>>(),
         [46, 119]
     );
     assert_eq!(
         branch
             .second_indices()
-            .map(|(token, _, _)| token.raw().to_vec())
+            .map(|(token, (), _)| token.raw().to_vec())
             .collect::<Vec<_>>(),
         [vec![0x80, 0x2e], vec![0x80, 0x77]]
     );
     assert_eq!(
         branch
             .second_indices()
-            .map(|(_, _, offset)| offset)
+            .map(|(_, (), offset)| offset)
             .collect::<Vec<_>>(),
         [136, 138]
     );
