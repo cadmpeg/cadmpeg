@@ -637,9 +637,9 @@ fn native_namespace_retains_surface_alias_core() {
         panic!("one alias row")
     };
     assert_eq!(row.byte_offset, 4);
-    assert_eq!(row.tag, 0x0012_3456);
+    assert_eq!(row.tag(), 0x0012_3456);
     assert_eq!(row.tag_raw, 0xab12_3456);
-    assert_eq!(row.entity_record_ordinal, 7);
+    assert_eq!(row.entity_record_ordinal(), 7);
     assert!(row.design_object.is_none());
     assert_eq!((row.f2, row.f3), (0x1122_3344, 0x5566_7788));
     assert!(row.group.is_none());

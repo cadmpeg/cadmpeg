@@ -1485,25 +1485,20 @@ pub struct CatiaPreviewImage {
 /// One exact outer `01 00 04 00` alias-row core.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(try_from = "CatiaAliasRowWire", into = "CatiaAliasRowWire")]
 pub struct CatiaAliasRow {
     /// Globally unique alias-row identity.
     pub id: String,
     /// Byte offset of the four-byte alias marker.
     pub byte_offset: u64,
-    /// Classification of the preceding four-byte word.
-    pub lead: AliasLead,
     /// Complete preceding four-byte word.
     pub lead_raw: u32,
-    /// Low 24 bits of the stored tag word.
-    pub tag: u32,
     /// Complete stored tag word.
     pub tag_raw: u32,
     /// Single-byte row flag.
     pub flag: u8,
     /// Complete three-byte F1 field.
     pub f1: [u8; 3],
-    /// One-based object-graph record ordinal carried by F1.
-    pub entity_record_ordinal: u8,
     /// Primary object graph selected by the valid F1 ordinal.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub object_graph: Option<String>,
@@ -1523,6 +1518,100 @@ pub struct CatiaAliasRow {
     /// Canonical persistent surface-roster tag selected by this alias row.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub canonical_surface_tag: Option<u32>,
+}
+
+impl CatiaAliasRow {
+    /// Classification of the stored alias lead word.
+    pub fn lead(&self) -> AliasLead {
+        AliasLead::from_raw(self.lead_raw)
+    }
+    /// Low 24 bits of the stored tag word.
+    pub fn tag(&self) -> u32 {
+        self.tag_raw & 0x00ff_ffff
+    }
+    /// Entity-table ordinal from the F1 field.
+    pub fn entity_record_ordinal(&self) -> u8 {
+        self.f1[2]
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct CatiaAliasRowWire {
+    id: String,
+    byte_offset: u64,
+    lead: AliasLead,
+    lead_raw: u32,
+    tag: u32,
+    tag_raw: u32,
+    flag: u8,
+    f1: [u8; 3],
+    entity_record_ordinal: u8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    object_graph: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    object_record: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    design_object: Option<String>,
+    f2: u32,
+    f3: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    group: Option<AliasGroupMembership>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    canonical_surface_tag: Option<u32>,
+}
+
+impl From<CatiaAliasRow> for CatiaAliasRowWire {
+    fn from(value: CatiaAliasRow) -> Self {
+        Self {
+            lead: value.lead(),
+            tag: value.tag(),
+            entity_record_ordinal: value.entity_record_ordinal(),
+            id: value.id,
+            byte_offset: value.byte_offset,
+            lead_raw: value.lead_raw,
+            tag_raw: value.tag_raw,
+            flag: value.flag,
+            f1: value.f1,
+            object_graph: value.object_graph,
+            object_record: value.object_record,
+            design_object: value.design_object,
+            f2: value.f2,
+            f3: value.f3,
+            group: value.group,
+            canonical_surface_tag: value.canonical_surface_tag,
+        }
+    }
+}
+
+impl TryFrom<CatiaAliasRowWire> for CatiaAliasRow {
+    type Error = &'static str;
+    fn try_from(wire: CatiaAliasRowWire) -> Result<Self, Self::Error> {
+        if wire.lead != AliasLead::from_raw(wire.lead_raw) {
+            return Err("lead disagrees with source bytes");
+        }
+        if wire.tag != wire.tag_raw & 0x00ff_ffff {
+            return Err("tag disagrees with source bytes");
+        }
+        if wire.entity_record_ordinal != wire.f1[2] {
+            return Err("entity_record_ordinal disagrees with source bytes");
+        }
+        Ok(Self {
+            id: wire.id,
+            byte_offset: wire.byte_offset,
+            lead_raw: wire.lead_raw,
+            tag_raw: wire.tag_raw,
+            flag: wire.flag,
+            f1: wire.f1,
+            object_graph: wire.object_graph,
+            object_record: wire.object_record,
+            design_object: wire.design_object,
+            f2: wire.f2,
+            f3: wire.f3,
+            group: wire.group,
+            canonical_surface_tag: wire.canonical_surface_tag,
+        })
+    }
 }
 
 /// One exact `7C0B` value block adjacent to its source-schema catalog.
@@ -8676,17 +8765,17 @@ fn resolve_alias_surface_tags(rows: &mut [CatiaAliasRow]) {
         let Some(group) = row.group.as_ref() else {
             continue;
         };
-        if row.lead != AliasLead::SurfaceSupportStorage {
+        if row.lead() != AliasLead::SurfaceSupportStorage {
             continue;
         }
         stored_by_group
             .entry((group.prototype, group.group_id))
             .and_modify(|stored| *stored = None)
-            .or_insert(Some(row.tag));
+            .or_insert(Some(row.tag()));
     }
     for row in rows {
-        row.canonical_surface_tag = match row.lead {
-            AliasLead::SurfaceSupportStorage => Some(row.tag),
+        row.canonical_surface_tag = match row.lead() {
+            AliasLead::SurfaceSupportStorage => Some(row.tag()),
             AliasLead::NonSurfaceAlias => row.group.as_ref().and_then(|group| {
                 stored_by_group
                     .get(&(group.prototype, group.group_id))
@@ -8705,7 +8794,7 @@ fn resolve_owner_chart_support_aliases(
     let mut unique_by_tag = HashMap::<u32, Option<&CatiaAliasRow>>::new();
     for alias in aliases {
         unique_by_tag
-            .entry(alias.tag)
+            .entry(alias.tag())
             .and_modify(|unique| *unique = None)
             .or_insert(Some(alias));
     }
@@ -9013,7 +9102,7 @@ impl CatiaNative {
         };
         if let Some(graph) = part_graph {
             for row in &mut alias_rows {
-                let Some(index) = usize::from(row.entity_record_ordinal).checked_sub(1) else {
+                let Some(index) = usize::from(row.entity_record_ordinal()).checked_sub(1) else {
                     continue;
                 };
                 let Some(record) = graph.records.get(index) else {
@@ -9267,13 +9356,10 @@ impl From<object_graph::SurfaceAlias> for CatiaAliasRow {
         Self {
             id: format!("catia:outer:alias-row#{:010}", row.pos),
             byte_offset: row.pos as u64,
-            lead: row.lead,
             lead_raw: row.lead_raw,
-            tag: row.tag,
             tag_raw: row.tag_raw,
             flag: row.flag,
             f1: row.f1,
-            entity_record_ordinal: row.entity_record_ordinal,
             object_graph: None,
             object_record: None,
             design_object: None,

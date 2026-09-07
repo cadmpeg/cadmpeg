@@ -1343,10 +1343,10 @@ fn outer_surface_alias_parser_reads_fixed_core() {
 
     let rows = crate::object_graph::surface_aliases(&surface_alias_stream());
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].lead, AliasLead::SurfaceSupportStorage);
-    assert_eq!(rows[0].tag, 0x0012_3456);
+    assert_eq!(rows[0].lead(), AliasLead::SurfaceSupportStorage);
+    assert_eq!(rows[0].tag(), 0x0012_3456);
     assert_eq!(rows[0].tag_raw, 0xab12_3456);
-    assert_eq!(rows[0].entity_record_ordinal, 7);
+    assert_eq!(rows[0].entity_record_ordinal(), 7);
     assert_eq!((rows[0].f2, rows[0].f3), (0x1122_3344, 0x5566_7788));
 }
 
@@ -1363,8 +1363,8 @@ fn outer_alias_parser_classifies_both_ordinal_linked_storage_leads() {
         let [row] = crate::object_graph::surface_aliases(&bytes)
             .try_into()
             .expect("one ordinal-linked alias row");
-        assert_eq!(row.lead, expected);
-        assert_eq!(row.entity_record_ordinal, 7);
+        assert_eq!(row.lead(), expected);
+        assert_eq!(row.entity_record_ordinal(), 7);
     }
 }
 
@@ -1377,8 +1377,8 @@ fn outer_alias_parser_retains_exact_unclassified_0133_lead() {
     let [row] = crate::object_graph::surface_aliases(&bytes)
         .try_into()
         .expect("one unclassified alias row");
-    assert_eq!(row.lead, AliasLead::Unclassified(0x0000_0133));
-    assert_eq!(row.entity_record_ordinal, 7);
+    assert_eq!(row.lead(), AliasLead::Unclassified(0x0000_0133));
+    assert_eq!(row.entity_record_ordinal(), 7);
 }
 
 #[test]
@@ -1403,12 +1403,12 @@ fn outer_alias_parser_closes_group_header_and_overlapping_target_slot() {
     let [row] = crate::object_graph::surface_aliases(&bytes)
         .try_into()
         .expect("one grouped alias row");
-    let group = row.group.expect("exact group header");
+    let group = row.group.as_ref().expect("exact group header");
     assert_eq!(group.prototype, 0xaf);
     assert_eq!(group.group_id, 0x148);
     assert_eq!(group.target_slot, 0x17b);
     assert_eq!(group.storage_prefix, [0x01, 0x00, 0x00, 0x00]);
-    assert_eq!(row.entity_record_ordinal, 0x7b);
+    assert_eq!(row.entity_record_ordinal(), 0x7b);
 
     bytes[10] = 1;
     let [row] = crate::object_graph::surface_aliases(&bytes)
@@ -1451,9 +1451,9 @@ fn outer_surface_alias_parser_retains_zero_low_tag_bits() {
 
     let rows = crate::object_graph::surface_aliases(&bytes);
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].tag, 0);
+    assert_eq!(rows[0].tag(), 0);
     assert_eq!(rows[0].tag_raw, 0xab00_0000);
-    assert_eq!(rows[0].entity_record_ordinal, 7);
+    assert_eq!(rows[0].entity_record_ordinal(), 7);
     assert_eq!((rows[0].f2, rows[0].f3), (0x1122_3344, 0x5566_7788));
 }
 

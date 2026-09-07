@@ -509,7 +509,7 @@ pub(super) fn validate_native_links(
                 alias.id
             )));
         }
-        let expected = usize::from(alias.entity_record_ordinal)
+        let expected = usize::from(alias.entity_record_ordinal())
             .checked_sub(1)
             .and_then(|index| {
                 let graph = primary_graph?;

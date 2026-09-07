@@ -407,6 +407,22 @@ pub enum AliasLead {
     Unclassified(u32),
 }
 
+impl AliasLead {
+    /// Classification of a stored alias lead word.
+    pub fn from_raw(raw: u32) -> Self {
+        if raw & 0xff == 1 {
+            Self::SurfaceSupportStorage
+        } else {
+            match raw {
+                0x8e => Self::E5LinkedSurfaceStorage,
+                0x8f => Self::OrdinalLinkedStorage8f,
+                0 => Self::NonSurfaceAlias,
+                _ => Self::Unclassified(raw),
+            }
+        }
+    }
+}
+
 /// Group-allocation header attached to an outer surface-alias row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -428,26 +444,36 @@ pub struct AliasGroupMembership {
 pub struct SurfaceAlias {
     /// Marker byte offset.
     pub pos: usize,
-    /// Classified preceding word.
-    pub lead: AliasLead,
     /// Complete preceding word.
     pub lead_raw: u32,
-    /// Low 24 bits of the stored carrier tag.
-    pub tag: u32,
     /// Complete stored tag word.
     pub tag_raw: u32,
     /// Single-byte row flag.
     pub flag: u8,
     /// Three-byte F1 field.
     pub f1: [u8; 3],
-    /// `7C08` entity-table record ordinal in F1's third byte.
-    pub entity_record_ordinal: u8,
     /// First trailing fixed-width field.
     pub f2: u32,
     /// Second trailing fixed-width field.
     pub f3: u32,
     /// Group-allocation header immediately preceding this alias core.
     pub group: Option<AliasGroupMembership>,
+}
+
+impl SurfaceAlias {
+    /// Classification of the stored alias lead word.
+    pub fn lead(&self) -> AliasLead {
+        AliasLead::from_raw(self.lead_raw)
+    }
+    /// Low 24 bits of the stored tag word.
+    pub fn tag(&self) -> u32 {
+        self.tag_raw & 0x00ff_ffff
+    }
+    /// Entity-table ordinal from the F1 field.
+    #[cfg(test)]
+    pub fn entity_record_ordinal(&self) -> u8 {
+        self.f1[2]
+    }
 }
 
 /// Literal unresolved `7C D9` marker occurrence and bounded source context.
@@ -490,27 +516,17 @@ pub fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
         .filter_map(|(pos, _)| {
             let row = pos.checked_sub(alias_row::MARKER)?;
             let tag_raw = View::u32_le_at(data, row + alias_row::TAG)?;
-            let tag = tag_raw & 0x00ff_ffff;
             if row + alias_row::LEN > data.len() {
                 return None;
             }
             let lead_raw = View::u32_le_at(data, row + alias_row::LEAD)?;
             let group = alias_group_membership(data, pos);
-            let lead = if lead_raw & 0xff == 1 {
-                AliasLead::SurfaceSupportStorage
-            } else if lead_raw == 0x8e {
-                AliasLead::E5LinkedSurfaceStorage
-            } else if lead_raw == 0x8f {
-                AliasLead::OrdinalLinkedStorage8f
-            } else if lead_raw == 0x0000_0133 {
-                AliasLead::Unclassified(lead_raw)
-            } else if group.is_none() {
+            if lead_raw & 0xff != 1
+                && !matches!(lead_raw, 0x8e | 0x8f | 0x0000_0133)
+                && group.is_none()
+            {
                 return None;
-            } else if lead_raw == 0 {
-                AliasLead::NonSurfaceAlias
-            } else {
-                AliasLead::Unclassified(lead_raw)
-            };
+            }
             let f1 = [
                 data[row + alias_row::F1],
                 data[row + alias_row::F1 + 1],
@@ -518,13 +534,10 @@ pub fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
             ];
             Some(SurfaceAlias {
                 pos,
-                lead,
                 lead_raw,
-                tag,
                 tag_raw,
                 flag: data[row + alias_row::FLAG],
                 f1,
-                entity_record_ordinal: f1[2],
                 f2: View::u32_le_at(data, row + alias_row::F2)?,
                 f3: View::u32_le_at(data, row + alias_row::F3)?,
                 group,
@@ -590,19 +603,19 @@ pub(crate) fn surface_alias_tag_map(data: &[u8]) -> HashMap<u32, Option<u32>> {
         let Some(group) = row.group.as_ref() else {
             continue;
         };
-        if row.lead != AliasLead::SurfaceSupportStorage {
+        if row.lead() != AliasLead::SurfaceSupportStorage {
             continue;
         }
         stored_by_group
             .entry((group.prototype, group.group_id))
             .and_modify(|stored| *stored = None)
-            .or_insert(Some(row.tag));
+            .or_insert(Some(row.tag()));
     }
 
     let mut tags = HashMap::<u32, Option<u32>>::new();
     for row in rows {
-        let canonical = match row.lead {
-            AliasLead::SurfaceSupportStorage => Some(row.tag),
+        let canonical = match row.lead() {
+            AliasLead::SurfaceSupportStorage => Some(row.tag()),
             AliasLead::NonSurfaceAlias => row.group.as_ref().and_then(|group| {
                 stored_by_group
                     .get(&(group.prototype, group.group_id))
@@ -611,7 +624,7 @@ pub(crate) fn surface_alias_tag_map(data: &[u8]) -> HashMap<u32, Option<u32>> {
             }),
             _ => None,
         };
-        tags.entry(row.tag)
+        tags.entry(row.tag())
             .and_modify(|stored| *stored = None)
             .or_insert(canonical);
     }
