@@ -815,14 +815,13 @@ fn try_shape(prims: &[Prim], k: f64, slots: &[Slot]) -> Option<Vec<Token>> {
 // Construction grammars (subtype scopes)
 // ---------------------------------------------------------------------------
 
-/// B-spline block dimensionality per pole.
+/// Coordinate domain of one B-spline curve block.
 #[derive(Clone, Copy)]
-struct BsKind {
-    /// Model-space coordinates per pole (converted); a BS2 pole's UV
-    /// coordinates are parameters and are not converted.
-    coords: usize,
-    /// Whether pole coordinates are model-space lengths.
-    scaled: bool,
+enum BsKind {
+    /// Two unscaled surface parameters per pole.
+    Parameter,
+    /// Three model-space lengths per pole.
+    Model,
 }
 
 /// A `nubs`/`nurbs` curve block ([`asm.md` §6.5]): marker, degree, closure,
@@ -854,11 +853,15 @@ fn bs_curve_block(cur: &mut Cur<'_>, kind: BsKind, out: &mut Vec<Token>) -> Opti
     let poles = usize::try_from(mult_sum - (degree - 1))
         .ok()
         .filter(|count| *count >= 2)?;
-    let per_pole = kind.coords + usize::from(rational);
+    let coords = match kind {
+        BsKind::Parameter => 2,
+        BsKind::Model => 3,
+    };
+    let per_pole = coords + usize::from(rational);
     for _ in 0..poles {
         for coordinate in 0..per_pole {
             let value = cur.num()?;
-            let scaled = kind.scaled && coordinate < kind.coords;
+            let scaled = matches!(kind, BsKind::Model) && coordinate < coords;
             out.push(Token::Double(if scaled { value * cur.k } else { value }));
         }
     }
@@ -934,14 +937,7 @@ fn exact_int_cur_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
         }
     }
     cur.enum_word(CACHE_FORM, out)?;
-    bs_curve_block(
-        cur,
-        BsKind {
-            coords: 3,
-            scaled: true,
-        },
-        out,
-    )?;
+    bs_curve_block(cur, BsKind::Model, out)?;
     let tolerance = cur.num()?;
     out.push(Token::Double(tolerance * cur.k));
     for _ in 0..2 {
@@ -973,14 +969,7 @@ fn exact_int_cur_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
 /// the inline BS2 block, its parameter-space fit tolerance, the support
 /// surface scope, and four trailing booleans.
 fn exp_par_cur_tail(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
-    bs_curve_block(
-        cur,
-        BsKind {
-            coords: 2,
-            scaled: false,
-        },
-        out,
-    )?;
+    bs_curve_block(cur, BsKind::Parameter, out)?;
     let tolerance = cur.num()?;
     out.push(Token::Double(tolerance));
     cur.word_is("spline")?;
@@ -1123,14 +1112,7 @@ fn nullable_bs2(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<()> {
         out.push(Token::Ident("nullbs".to_string()));
         return Some(());
     }
-    bs_curve_block(
-        cur,
-        BsKind {
-            coords: 2,
-            scaled: false,
-        },
-        out,
-    )
+    bs_curve_block(cur, BsKind::Parameter, out)
 }
 
 /// The shared cache-first intcurve context ([`asm.md` §6.3]): serializer
@@ -1143,14 +1125,7 @@ fn cache_first_curve_context(cur: &mut Cur<'_>, out: &mut Vec<Token>) -> Option<
     out.push(Token::Long(stamp));
     cur.word_is("full")?;
     out.push(Token::Enum(0));
-    bs_curve_block(
-        cur,
-        BsKind {
-            coords: 3,
-            scaled: true,
-        },
-        out,
-    )?;
+    bs_curve_block(cur, BsKind::Model, out)?;
     let tolerance = cur.num()?;
     out.push(Token::Double(tolerance * cur.k));
     nullable_surface(cur, out)?;
