@@ -13,7 +13,6 @@ fn line_extrusion_parameter_record(
         value: Some(value),
         raw: vec![0x18],
         offset,
-        length: 1,
     };
     let direction_slots = direction
         .into_iter()
@@ -38,7 +37,6 @@ fn line_extrusion_parameter_record(
         opaque_spans: vec![SurfaceParameterOpaqueSpan {
             raw: vec![0x00, 0x0c, 0x9a],
             offset: 3,
-            length: 3,
         }],
         scalar_frames: vec![
             SurfaceParameterScalarFrame {
@@ -800,7 +798,6 @@ fn split_cylinder_outline_requires_the_exact_terminal_layout() {
         value: Some(value),
         raw,
         offset,
-        length: 1,
     })
     .collect::<Vec<_>>();
     assert_eq!(

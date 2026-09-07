@@ -127,7 +127,7 @@ fn scan_bounds_surface_parameter_bodies_and_decodes_scalars() {
         scan.surfaces.parameters[1]
             .scalar_tokens
             .iter()
-            .map(|token| (token.offset, token.length))
+            .map(|token| (token.offset, token.raw.len()))
             .collect::<Vec<_>>(),
         [(0, 8)]
     );
@@ -164,7 +164,7 @@ fn torus_family_does_not_shorten_unframed_negative_world_scalar() {
 
     assert_eq!(scan.surfaces.parameters.len(), 1);
     assert_eq!(scan.surfaces.parameters[0].body, scalar);
-    assert_eq!(scan.surfaces.parameters[0].scalar_tokens[0].length, 8);
+    assert_eq!(scan.surfaces.parameters[0].scalar_tokens[0].raw.len(), 8);
     assert_eq!(
         scan.surfaces.parameters[0].boundary,
         crate::surface::SurfaceBodyBoundary::NamedRecord

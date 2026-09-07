@@ -994,7 +994,7 @@ fn perpendicular_round_edge_radius(envelope: Type24RoundEdgeEnvelope) -> Option<
 }
 
 /// One contiguous positional scalar frame with no intervening bytes.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct SurfaceParameterScalarFrame {
     /// Byte offset relative to the start of the parameter body.
     pub offset: usize,
@@ -1009,8 +1009,17 @@ pub struct SurfaceParameterOpaqueSpan {
     pub raw: Vec<u8>,
     /// Byte offset relative to the start of the parameter body.
     pub offset: usize,
-    /// Number of source bytes in the span.
-    pub length: usize,
+}
+
+impl serde::Serialize for SurfaceParameterOpaqueSpan {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut wire = serializer.serialize_struct("SurfaceParameterOpaqueSpan", 3)?;
+        wire.serialize_field("raw", &self.raw)?;
+        wire.serialize_field("offset", &self.offset)?;
+        wire.serialize_field("length", &self.raw.len())?;
+        wire.end()
+    }
 }
 
 /// One scalar token located within a positional surface parameter body.
@@ -1023,8 +1032,18 @@ pub struct SurfaceParameterScalar {
     pub raw: Vec<u8>,
     /// Byte offset relative to the start of the parameter body.
     pub offset: usize,
-    /// Number of source bytes occupied by the token.
-    pub length: usize,
+}
+
+impl serde::Serialize for SurfaceParameterScalar {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut wire = serializer.serialize_struct("SurfaceParameterScalar", 4)?;
+        wire.serialize_field("value", &self.value)?;
+        wire.serialize_field("raw", &self.raw)?;
+        wire.serialize_field("offset", &self.offset)?;
+        wire.serialize_field("length", &self.raw.len())?;
+        wire.end()
+    }
 }
 
 /// Complete positional construction for a line-generated extrusion surface.
@@ -1267,7 +1286,7 @@ impl SurfaceParameterRecord {
         let frame = self.terminal_scalar_frame.as_ref()?;
         let slot = frame.slots.last()?;
         let value = slot.value?;
-        (slot.offset.checked_add(slot.length) == Some(self.body.len())
+        (slot.offset.checked_add(slot.raw.len()) == Some(self.body.len())
             && value.to_bits() == prototype_minor_radius.to_bits())
         .then_some(value)
     }
@@ -1294,7 +1313,7 @@ impl SurfaceParameterRecord {
         let mut cursor = *after_selector;
         for slot in &slots {
             (slot.offset == cursor).then_some(())?;
-            cursor = cursor.checked_add(slot.length)?;
+            cursor = cursor.checked_add(slot.raw.len())?;
         }
         (cursor == self.body.len()).then_some(())?;
         let values = [
@@ -1321,7 +1340,7 @@ impl SurfaceParameterRecord {
                 let end = frame
                     .slots
                     .last()
-                    .and_then(|slot| slot.offset.checked_add(slot.length));
+                    .and_then(|slot| slot.offset.checked_add(slot.raw.len()));
                 if frame.slots.len() == 5 && end == Some(frame_end) {
                     let [coordinate0, coordinate1, coordinate2, coordinate3, coordinate4] =
                         frame.slots.as_slice()
@@ -1347,11 +1366,11 @@ impl SurfaceParameterRecord {
                 let first_end = first
                     .slots
                     .last()
-                    .and_then(|slot| slot.offset.checked_add(slot.length))?;
+                    .and_then(|slot| slot.offset.checked_add(slot.raw.len()))?;
                 let second_end = second
                     .slots
                     .last()
-                    .and_then(|slot| slot.offset.checked_add(slot.length))?;
+                    .and_then(|slot| slot.offset.checked_add(slot.raw.len()))?;
                 if first.slots.len() >= 3
                     && second.slots.len() == 2
                     && first_end < second.offset
@@ -1406,7 +1425,7 @@ impl SurfaceParameterRecord {
         let mut cursor = frame.offset;
         for slot in &frame.slots {
             (slot.offset == cursor).then_some(())?;
-            cursor = cursor.checked_add(slot.length)?;
+            cursor = cursor.checked_add(slot.raw.len())?;
         }
         (cursor == frame_end).then_some(())?;
         let values = [a1.value?, a2.value?, b0.value?, b1.value?, b2.value?];
@@ -1496,8 +1515,8 @@ impl SurfaceParameterRecord {
             .strip_suffix(&[0xf7, 0x17])
             .map_or(self.body.len(), <[u8]>::len);
         let terminal = self.scalar_tokens.last()?;
-        (terminal.offset.checked_add(terminal.length)? == terminal_end).then_some(())?;
-        (terminal.length == 7
+        (terminal.offset.checked_add(terminal.raw.len())? == terminal_end).then_some(())?;
+        (terminal.raw.len() == 7
             && terminal
                 .raw
                 .first()
@@ -1527,7 +1546,7 @@ impl SurfaceParameterRecord {
                 .slots
                 .iter()
                 .try_fold(terminal.offset, |cursor, slot| {
-                    (slot.offset == cursor).then(|| cursor + slot.length)
+                    (slot.offset == cursor).then(|| cursor + slot.raw.len())
                 })?;
             (self.body.get(terminal_end..) == Some(&[0xf7, 0x17][..])).then_some(())?;
         }
@@ -1647,7 +1666,7 @@ impl SurfaceParameterRecord {
             .slots
             .iter()
             .try_fold(terminal.offset, |cursor, slot| {
-                (slot.offset == cursor).then(|| cursor + slot.length)
+                (slot.offset == cursor).then(|| cursor + slot.raw.len())
             })?;
         if terminal_end == self.body.len() {
             return Some(());
@@ -1720,7 +1739,7 @@ impl SurfaceParameterRecord {
                     .slots
                     .iter()
                     .try_fold(leading.offset, |cursor, slot| {
-                        (slot.offset == cursor).then(|| cursor + slot.length)
+                        (slot.offset == cursor).then(|| cursor + slot.raw.len())
                     })?;
                 let control_length = terminal.offset.checked_sub(leading_end)?;
                 matches!(
@@ -1832,7 +1851,7 @@ impl SurfaceParameterRecord {
     fn type24_held_coordinate_round_frame(&self) -> Option<PositionalCylinderFrame> {
         let contiguous_end = |frame: &SurfaceParameterScalarFrame| {
             frame.slots.iter().try_fold(frame.offset, |cursor, slot| {
-                (slot.offset == cursor).then(|| cursor + slot.length)
+                (slot.offset == cursor).then(|| cursor + slot.raw.len())
             })
         };
         let [leading, controls, terminal] = self.scalar_frames.as_slice() else {
@@ -1912,7 +1931,7 @@ impl SurfaceParameterRecord {
     fn type24_split_coordinate_round_layout(&self) -> Option<Type24RoundEnvelope> {
         let contiguous_end = |frame: &SurfaceParameterScalarFrame| {
             frame.slots.iter().try_fold(frame.offset, |cursor, slot| {
-                (slot.offset == cursor).then(|| cursor + slot.length)
+                (slot.offset == cursor).then(|| cursor + slot.raw.len())
             })
         };
         let [leading, middle, terminal] = self.scalar_frames.as_slice() else {
@@ -2065,7 +2084,7 @@ impl SurfaceParameterRecord {
             let mut values = Vec::with_capacity(frame.slots.len());
             for slot in &frame.slots {
                 (slot.offset == cursor).then_some(())?;
-                cursor = cursor.checked_add(slot.length)?;
+                cursor = cursor.checked_add(slot.raw.len())?;
                 values.push(slot.value?);
             }
             values.iter().all(|value| value.is_finite()).then_some(())?;
@@ -2168,7 +2187,7 @@ impl SurfaceParameterRecord {
             + direction
                 .slots
                 .iter()
-                .map(|slot| slot.length)
+                .map(|slot| slot.raw.len())
                 .sum::<usize>();
         let separator = self.opaque_spans.first()?;
         if separator.offset != direction_end || !separator.raw.starts_with(&[0x00, 0x0c, 0x9a]) {
@@ -2217,10 +2236,10 @@ impl SurfaceParameterRecord {
                     + direction
                         .slots
                         .iter()
-                        .map(|slot| slot.length)
+                        .map(|slot| slot.raw.len())
                         .sum::<usize>()
                 || first_gap.raw != [0x00, 0x0c, 0x9a]
-                || directrix.offset != first_gap.offset + first_gap.length
+                || directrix.offset != first_gap.offset + first_gap.raw.len()
             {
                 return None;
             }
@@ -2232,7 +2251,7 @@ impl SurfaceParameterRecord {
                     + directrix
                         .slots
                         .iter()
-                        .map(|slot| slot.length)
+                        .map(|slot| slot.raw.len())
                         .sum::<usize>();
                 if reference.offset != directrix_end || reference.raw.first() != Some(&0xf7) {
                     return None;
@@ -2511,12 +2530,12 @@ pub fn positional_frame_planes(
             let [_, corners @ ..] = terminal.slots.as_slice() else {
                 return None;
             };
-            let leading_end = leading_slot.offset.checked_add(leading_slot.length)?;
+            let leading_end = leading_slot.offset.checked_add(leading_slot.raw.len())?;
             let terminal_end = terminal
                 .slots
                 .iter()
                 .try_fold(terminal.offset, |cursor, slot| {
-                    (slot.offset == cursor).then(|| cursor + slot.length)
+                    (slot.offset == cursor).then(|| cursor + slot.raw.len())
                 })?;
             (leading.offset == 3
                 && leading_end == 10
@@ -2525,19 +2544,18 @@ pub fn positional_frame_planes(
                 && terminal_end == record.body.len()
                 && record.opaque_spans.len() == 2
                 && record.opaque_spans[0].offset == 0
-                && record.opaque_spans[0].length == 3
+                && record.opaque_spans[0].raw.len() == 3
                 && record.opaque_spans[1].offset == 10
-                && record.opaque_spans[1].length == 8)
+                && record.opaque_spans[1].raw.len() == 8)
                 .then(|| (corners[0].offset, corners))
         })();
         let suffixed_auxiliary_frame = (|| {
             let frame_end = record.body.len().checked_sub(2)?;
             let mut frames = record.scalar_frames.iter().filter(|frame| {
                 (7..=10).contains(&frame.slots.len())
-                    && frame
-                        .slots
-                        .last()
-                        .is_some_and(|slot| slot.offset.checked_add(slot.length) == Some(frame_end))
+                    && frame.slots.last().is_some_and(|slot| {
+                        slot.offset.checked_add(slot.raw.len()) == Some(frame_end)
+                    })
             });
             let terminal = frames.next()?;
             frames.next().is_none().then_some(())?;
@@ -2552,10 +2570,9 @@ pub fn positional_frame_planes(
                 return None;
             };
             ((6..=10).contains(&terminal.slots.len())
-                && terminal
-                    .slots
-                    .last()
-                    .is_some_and(|slot| slot.offset.checked_add(slot.length) == Some(frame_end)))
+                && terminal.slots.last().is_some_and(|slot| {
+                    slot.offset.checked_add(slot.raw.len()) == Some(frame_end)
+                }))
             .then_some(())?;
             let corners = &terminal.slots[terminal.slots.len() - 6..];
             Some((corners[0].offset, corners))
@@ -2571,23 +2588,23 @@ pub fn positional_frame_planes(
                 .slots
                 .iter()
                 .try_fold(leading.offset, |cursor, slot| {
-                    (slot.offset == cursor).then(|| cursor + slot.length)
+                    (slot.offset == cursor).then(|| cursor + slot.raw.len())
                 })?;
             let terminal_end = terminal
                 .slots
                 .iter()
                 .try_fold(terminal.offset, |cursor, slot| {
-                    (slot.offset == cursor).then(|| cursor + slot.length)
+                    (slot.offset == cursor).then(|| cursor + slot.raw.len())
                 })?;
             let [prefix, controls, trailer] = record.opaque_spans.as_slice() else {
                 return None;
             };
             (prefix.offset == 0
-                && prefix.length == leading.offset
+                && prefix.raw.len() == leading.offset
                 && controls.offset == leading_end
-                && controls.length == terminal.offset.checked_sub(leading_end)?
+                && controls.raw.len() == terminal.offset.checked_sub(leading_end)?
                 && trailer.offset == frame_end
-                && trailer.length == 2
+                && trailer.raw.len() == 2
                 && terminal_end == frame_end)
                 .then_some(())?;
             let corners = &terminal.slots[2..];
@@ -3563,7 +3580,7 @@ fn scalar_tokens(
             .find(|token| token.offset == cursor)
         {
             tokens.push(token.clone());
-            cursor += token.length;
+            cursor += token.raw.len();
             continue;
         }
         if let Some((_, end, _)) = outline_markers
@@ -3589,7 +3606,6 @@ fn scalar_tokens(
                     value: Some(layout.value),
                     raw: body[layout.start..layout.end].to_vec(),
                     offset: layout.start,
-                    length: layout.end - layout.start,
                 });
                 cursor = layout.end;
                 continue;
@@ -3624,7 +3640,6 @@ fn scalar_tokens(
                 value: Some(value),
                 raw: body[cursor..next].to_vec(),
                 offset: cursor,
-                length: next - cursor,
             });
             cursor = next;
         } else {
@@ -3667,7 +3682,6 @@ fn first_coordinate_plane_corner_tokens(
             value: Some(value),
             raw: body[offset..end].to_vec(),
             offset,
-            length: end - offset,
         };
         Some(vec![
             slot(-stored_first_x, start, first_end),
@@ -3690,16 +3704,14 @@ fn opaque_spans(body: &[u8], tokens: &[SurfaceParameterScalar]) -> Vec<SurfacePa
             spans.push(SurfaceParameterOpaqueSpan {
                 raw: body[cursor..token.offset].to_vec(),
                 offset: cursor,
-                length: token.offset - cursor,
             });
         }
-        cursor = token.offset + token.length;
+        cursor = token.offset + token.raw.len();
     }
     if cursor < body.len() {
         spans.push(SurfaceParameterOpaqueSpan {
             raw: body[cursor..].to_vec(),
             offset: cursor,
-            length: body.len() - cursor,
         });
     }
     spans
@@ -3711,7 +3723,7 @@ fn scalar_frames(tokens: &[SurfaceParameterScalar]) -> Vec<SurfaceParameterScala
     while start < tokens.len() {
         let mut end = start + 1;
         while end < tokens.len()
-            && tokens[end - 1].offset + tokens[end - 1].length == tokens[end].offset
+            && tokens[end - 1].offset + tokens[end - 1].raw.len() == tokens[end].offset
         {
             end += 1;
         }
@@ -3730,7 +3742,7 @@ fn terminal_scalar_frame(
 ) -> Option<SurfaceParameterScalarFrame> {
     let frame = frames.last()?;
     let last = frame.slots.last()?;
-    (last.offset + last.length == body.len()).then(|| frame.clone())
+    (last.offset + last.raw.len() == body.len()).then(|| frame.clone())
 }
 
 fn split_cylinder_outline_bounds(
@@ -3742,15 +3754,15 @@ fn split_cylinder_outline_bounds(
     else {
         return None;
     };
-    (first_u.offset + first_u.length == first_v.offset
-        && body.get(first_v.offset + first_v.length..second_u.offset)
+    (first_u.offset + first_u.raw.len() == first_v.offset
+        && body.get(first_v.offset + first_v.raw.len()..second_u.offset)
             == Some(&[0x00, 0x0c, 0x98][..])
-        && second_u.offset + second_u.length == second_v.offset
-        && second_v.offset + second_v.length == orientation.offset
+        && second_u.offset + second_u.raw.len() == second_v.offset
+        && second_v.offset + second_v.raw.len() == orientation.offset
         && orientation.raw == [0x0d]
         && orientation.value == Some(-1.0)
         && matches!(
-            body.get(orientation.offset + orientation.length..),
+            body.get(orientation.offset + orientation.raw.len()..),
             Some([] | [0xf7, 0x17])
         ))
     .then_some(())?;

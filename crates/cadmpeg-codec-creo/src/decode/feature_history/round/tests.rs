@@ -560,7 +560,6 @@ fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
             value: Some(0.5),
             raw: vec![0x53, 0, 0, 0, 0, 0, 0],
             offset: 0,
-            length: 7,
         };
         scan.surfaces
             .parameters
@@ -645,7 +644,6 @@ fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
             value: Some(0.5),
             raw: vec![0],
             offset: 0,
-            length: 1,
         };
         crate::surface::SurfaceParameterRecord {
             surface_id,

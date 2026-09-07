@@ -450,21 +450,6 @@ pub(crate) struct CreoHalfEdgeRef {
 }
 
 #[derive(Serialize)]
-pub(crate) struct CreoFcCurveCoordinateToken {
-    pub(crate) value_mm: f64,
-    pub(crate) raw: Vec<u8>,
-    pub(crate) offset: usize,
-    pub(crate) length: usize,
-}
-
-#[derive(Serialize)]
-pub(crate) struct CreoFcCurveOpaqueSpan {
-    pub(crate) raw: Vec<u8>,
-    pub(crate) offset: usize,
-    pub(crate) length: usize,
-}
-
-#[derive(Serialize)]
 pub(crate) struct CreoFc05CircleRecord {
     pub(crate) id: String,
     pub(crate) curve_id: u32,
@@ -592,27 +577,6 @@ pub(crate) struct CreoCurveParameterReference {
 
 #[derive(Serialize)]
 pub(crate) struct CreoCurveParameterOpaqueSpan {
-    pub(crate) raw: Vec<u8>,
-    pub(crate) offset: usize,
-    pub(crate) length: usize,
-}
-
-#[derive(Serialize)]
-pub(crate) struct CreoSurfaceParameterScalarFrame {
-    pub(crate) offset: usize,
-    pub(crate) slots: Vec<CreoSurfaceParameterSlot>,
-}
-
-#[derive(Serialize)]
-pub(crate) struct CreoSurfaceParameterOpaqueSpan {
-    pub(crate) raw: Vec<u8>,
-    pub(crate) offset: usize,
-    pub(crate) length: usize,
-}
-
-#[derive(Serialize)]
-pub(crate) struct CreoSurfaceParameterSlot {
-    pub(crate) value: Option<f64>,
     pub(crate) raw: Vec<u8>,
     pub(crate) offset: usize,
     pub(crate) length: usize,

@@ -56,9 +56,8 @@ pub(super) fn synchronize_segment_count(definition: &mut crate::feature::Feature
 pub(super) fn parameter_slot(value: f64) -> crate::surface::SurfaceParameterScalar {
     crate::surface::SurfaceParameterScalar {
         value: Some(value),
-        raw: vec![],
+        raw: vec![0],
         offset: 0,
-        length: 1,
     }
 }
 

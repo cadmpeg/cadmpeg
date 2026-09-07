@@ -805,52 +805,44 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
         if let Some(radius) = parameter {
             let first = crate::surface::SurfaceParameterScalar {
                 value: Some(1.0),
-                raw: Vec::new(),
+                raw: vec![0],
                 offset: 1,
-                length: 1,
             };
             let second = crate::surface::SurfaceParameterScalar {
                 value: Some(1.0 + 2.0 * radius),
-                raw: Vec::new(),
+                raw: vec![0],
                 offset: 3,
-                length: 1,
             };
             let extent = [
                 crate::surface::SurfaceParameterScalar {
                     value: Some(0.0),
-                    raw: Vec::new(),
+                    raw: vec![0],
                     offset: 4,
-                    length: 1,
                 },
                 crate::surface::SurfaceParameterScalar {
                     value: Some(0.0),
-                    raw: Vec::new(),
+                    raw: vec![0],
                     offset: 5,
-                    length: 1,
                 },
                 crate::surface::SurfaceParameterScalar {
                     value: Some(0.0),
-                    raw: Vec::new(),
+                    raw: vec![0],
                     offset: 6,
-                    length: 1,
                 },
                 crate::surface::SurfaceParameterScalar {
                     value: Some(2.0 * radius),
-                    raw: Vec::new(),
+                    raw: vec![0],
                     offset: 7,
-                    length: 1,
                 },
                 crate::surface::SurfaceParameterScalar {
                     value: Some(0.0),
-                    raw: Vec::new(),
+                    raw: vec![0],
                     offset: 8,
-                    length: 1,
                 },
                 crate::surface::SurfaceParameterScalar {
                     value: Some(0.0),
-                    raw: Vec::new(),
+                    raw: vec![0],
                     offset: 9,
-                    length: 1,
                 },
             ];
             scan.surfaces

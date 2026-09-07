@@ -38,7 +38,6 @@ fn derives_plane_from_unique_six_scalar_positional_frame() {
         value: Some(value),
         raw: vec![offset as u8],
         offset,
-        length: 1,
     };
     let record = SurfaceParameterRecord {
         surface_id: 41,
@@ -97,7 +96,6 @@ fn derives_plane_from_auxiliary_corner_frame() {
         value: Some(value),
         raw: vec![0; length],
         offset,
-        length,
     };
     let record = SurfaceParameterRecord {
         surface_id: 41,
@@ -107,12 +105,10 @@ fn derives_plane_from_auxiliary_corner_frame() {
             SurfaceParameterOpaqueSpan {
                 raw: vec![0; 3],
                 offset: 0,
-                length: 3,
             },
             SurfaceParameterOpaqueSpan {
                 raw: vec![0; 8],
                 offset: 10,
-                length: 8,
             },
         ],
         scalar_frames: vec![
@@ -169,22 +165,18 @@ fn derives_plane_from_auxiliary_corner_frame() {
         SurfaceParameterOpaqueSpan {
             raw: vec![0],
             offset: 0,
-            length: 1,
         },
         SurfaceParameterOpaqueSpan {
             raw: vec![0; 4],
             offset: 11,
-            length: 4,
         },
         SurfaceParameterOpaqueSpan {
             raw: vec![0; 2],
             offset: 16,
-            length: 2,
         },
         SurfaceParameterOpaqueSpan {
             raw: vec![0xf7, 0x0c],
             offset: 63,
-            length: 2,
         },
     ];
     trailed.scalar_frames = vec![
@@ -262,7 +254,7 @@ fn derives_plane_from_auxiliary_corner_frame() {
     );
 
     let mut incomplete = record;
-    incomplete.opaque_spans[1].length = 7;
+    incomplete.opaque_spans[1].raw.truncate(7);
     assert!(positional_frame_planes(&[incomplete.clone()], std::slice::from_ref(&row)).is_empty());
 
     let mut short = incomplete;
@@ -388,7 +380,7 @@ fn derives_plane_from_split_terminal_corner_frame() {
     );
 
     let mut incomplete_controls = record.clone();
-    incomplete_controls.opaque_spans[1].length -= 1;
+    incomplete_controls.opaque_spans[1].raw.pop();
     assert!(positional_frame_planes(&[incomplete_controls], std::slice::from_ref(&row)).is_empty());
 
     let mut ambiguous = record;

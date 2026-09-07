@@ -582,7 +582,6 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         value_mm: 1.0,
         raw: vec![0x2d, 0, 0, 0, 0, 0, 0, 0],
         offset: 3,
-        length: 8,
     };
     let held_coordinates = crate::curve::FcCurveCoordinates {
         curve_id: 77,
@@ -591,7 +590,7 @@ fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         values_mm: vec![1.0; 4],
         tokens: (0..4)
             .map(|index| crate::curve::FcCurveCoordinateToken {
-                offset: held_token.offset + index * held_token.length,
+                offset: held_token.offset + index * held_token.raw.len(),
                 ..held_token.clone()
             })
             .collect(),

@@ -530,8 +530,18 @@ pub struct FcCurveCoordinateToken {
     pub raw: Vec<u8>,
     /// Token offset relative to the complete curve parameter body.
     pub offset: usize,
-    /// Number of source bytes occupied by the token.
-    pub length: usize,
+}
+
+impl serde::Serialize for FcCurveCoordinateToken {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut wire = serializer.serialize_struct("FcCurveCoordinateToken", 4)?;
+        wire.serialize_field("value_mm", &self.value_mm)?;
+        wire.serialize_field("raw", &self.raw)?;
+        wire.serialize_field("offset", &self.offset)?;
+        wire.serialize_field("length", &self.raw.len())?;
+        wire.end()
+    }
 }
 
 /// One maximal unclaimed span in an `fc <subtype>` body.
@@ -541,8 +551,17 @@ pub struct FcCurveOpaqueSpan {
     pub raw: Vec<u8>,
     /// Span offset relative to the complete curve parameter body.
     pub offset: usize,
-    /// Number of source bytes in the span.
-    pub length: usize,
+}
+
+impl serde::Serialize for FcCurveOpaqueSpan {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut wire = serializer.serialize_struct("FcCurveOpaqueSpan", 3)?;
+        wire.serialize_field("raw", &self.raw)?;
+        wire.serialize_field("offset", &self.offset)?;
+        wire.serialize_field("length", &self.raw.len())?;
+        wire.end()
+    }
 }
 
 /// Circle proven by the decoded points of an `fc 05` curve body.
@@ -6315,7 +6334,6 @@ pub fn fc_coordinates(parameters: &[CurveParameterRecord]) -> Vec<FcCurveCoordin
                         value_mm: value,
                         raw: lane[cursor..next].to_vec(),
                         offset: cursor + 2,
-                        length: next - cursor,
                     });
                     cursor = next;
                     continue;
@@ -6331,16 +6349,14 @@ pub fn fc_coordinates(parameters: &[CurveParameterRecord]) -> Vec<FcCurveCoordin
                     opaque_spans.push(FcCurveOpaqueSpan {
                         raw: record.body[unclaimed..token.offset].to_vec(),
                         offset: unclaimed,
-                        length: token.offset - unclaimed,
                     });
                 }
-                unclaimed = token.offset + token.length;
+                unclaimed = token.offset + token.raw.len();
             }
             if unclaimed < record.body.len() {
                 opaque_spans.push(FcCurveOpaqueSpan {
                     raw: record.body[unclaimed..].to_vec(),
                     offset: unclaimed,
-                    length: record.body.len() - unclaimed,
                 });
             }
             result.push(FcCurveCoordinates {

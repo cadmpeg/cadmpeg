@@ -1583,7 +1583,6 @@ fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
         opaque_spans: vec![crate::surface::SurfaceParameterOpaqueSpan {
             raw: vec![0x00, 0x0c, 0x9a],
             offset: 3,
-            length: 3,
         }],
         scalar_frames: vec![
             crate::surface::SurfaceParameterScalarFrame {
@@ -1794,7 +1793,6 @@ fn zero_offset_2d_tabulated_frame_retains_the_stored_span() {
         opaque_spans: vec![crate::surface::SurfaceParameterOpaqueSpan {
             raw: vec![0, 0x0c, 0x9a],
             offset: 3,
-            length: 3,
         }],
         scalar_frames: vec![crate::surface::SurfaceParameterScalarFrame {
             offset: 0,

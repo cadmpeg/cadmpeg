@@ -318,7 +318,7 @@ fn signed_surface_dict_scalar_owns_its_tail() {
         ]))
     );
     assert_eq!(tokens[0].offset, 0);
-    assert_eq!(tokens[0].length, 7);
+    assert_eq!(tokens[0].raw.len(), 7);
     assert_eq!(tokens[0].raw, body);
 }
 

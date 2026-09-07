@@ -7,6 +7,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_ir::hash::sha256_hex;
 use serde::Serialize;
 
+use crate::curve::{FcCurveCoordinateToken, FcCurveOpaqueSpan};
+use crate::surface::{
+    SurfaceParameterOpaqueSpan, SurfaceParameterScalar, SurfaceParameterScalarFrame,
+};
+
 pub(super) mod double_xar;
 
 use crate::container::ContainerScan;
@@ -22,19 +27,17 @@ use super::native_records::{
     CreoConeHalfAngleOverride, CreoCurveExpressionAssignment, CreoCurveExpressionEquation,
     CreoCurveExpressionLine, CreoCurveExpressionLocalSystem, CreoCurveExpressionSolveBlock,
     CreoCurveParameterOpaqueSpan, CreoCurveParameterReference, CreoCurveParameterScalar,
-    CreoFcCurveCoordinateToken, CreoFcCurveOpaqueSpan, CreoFeatureFieldValue,
-    CreoFeatureOperationState, CreoFeatureOutline, CreoFeatureParameterFrame, CreoHalfEdgeRef,
-    CreoPlaneEnvelope, CreoPositionalConeFrame, CreoPositionalCylinderFrame,
-    CreoPositionalTorusFrame, CreoSketchBoundedCurveSegment, CreoSketchCenteredLineSegment,
-    CreoSketchCircleSegment, CreoSketchConicSegment, CreoSketchDimension,
-    CreoSketchDimensionReference, CreoSketchDimensionReferenceTable, CreoSketchEquation,
-    CreoSketchOpaqueSegment, CreoSketchOrderRow, CreoSketchPointSegment,
+    CreoFeatureFieldValue, CreoFeatureOperationState, CreoFeatureOutline,
+    CreoFeatureParameterFrame, CreoHalfEdgeRef, CreoPlaneEnvelope, CreoPositionalConeFrame,
+    CreoPositionalCylinderFrame, CreoPositionalTorusFrame, CreoSketchBoundedCurveSegment,
+    CreoSketchCenteredLineSegment, CreoSketchCircleSegment, CreoSketchConicSegment,
+    CreoSketchDimension, CreoSketchDimensionReference, CreoSketchDimensionReferenceTable,
+    CreoSketchEquation, CreoSketchOpaqueSegment, CreoSketchOrderRow, CreoSketchPointSegment,
     CreoSketchReferenceLineSegment, CreoSketchReferencePlane, CreoSketchRelation,
     CreoSketchRelationTriple, CreoSketchSavedEntity, CreoSketchSection3d,
     CreoSketchSectionOrientation, CreoSketchSectionPoint, CreoSketchSegment, CreoSketchSkamp,
     CreoSketchSkampItem, CreoSketchTableHeader, CreoSketchTrimEntity, CreoSketchTrimVertex,
-    CreoSketchVariable, CreoSurfaceParameterOpaqueSpan, CreoSurfaceParameterScalarFrame,
-    CreoSurfaceParameterSlot, CreoTabulatedCylinderFrame, CreoTorusOutlineFrame,
+    CreoSketchVariable, CreoTabulatedCylinderFrame, CreoTorusOutlineFrame,
     CreoTorusRadiusOverrides, CreoType26FiveCoordinateEnvelope, CreoType26SplitCoordinateEnvelope,
 };
 use super::sketch::{
@@ -546,8 +549,8 @@ pub(super) struct CreoFcCurveCoordinateRecord {
     pub(super) subtype: u8,
     pub(super) body: Vec<u8>,
     pub(super) values_mm: Vec<f64>,
-    pub(super) tokens: Vec<CreoFcCurveCoordinateToken>,
-    pub(super) opaque_spans: Vec<CreoFcCurveOpaqueSpan>,
+    pub(super) tokens: Vec<FcCurveCoordinateToken>,
+    pub(super) opaque_spans: Vec<FcCurveOpaqueSpan>,
     pub(super) offset: usize,
     pub(super) source_section: String,
 }
@@ -1149,25 +1152,8 @@ pub(super) fn fc_curve_coordinate_records(
             subtype: record.subtype,
             body: record.body.clone(),
             values_mm: record.values_mm.clone(),
-            tokens: record
-                .tokens
-                .iter()
-                .map(|token| CreoFcCurveCoordinateToken {
-                    value_mm: token.value_mm,
-                    raw: token.raw.clone(),
-                    offset: token.offset,
-                    length: token.length,
-                })
-                .collect(),
-            opaque_spans: record
-                .opaque_spans
-                .iter()
-                .map(|span| CreoFcCurveOpaqueSpan {
-                    raw: span.raw.clone(),
-                    offset: span.offset,
-                    length: span.length,
-                })
-                .collect(),
+            tokens: record.tokens.clone(),
+            opaque_spans: record.opaque_spans.clone(),
             offset: record.offset,
             source_section: source_section(scan, record.offset),
         })
@@ -1416,10 +1402,10 @@ pub(super) struct CreoSurfaceParameterRecord {
     pub(super) surface_family: &'static str,
     pub(super) boundary: &'static str,
     pub(super) body: Vec<u8>,
-    pub(super) slots: Vec<CreoSurfaceParameterSlot>,
-    pub(super) opaque_spans: Vec<CreoSurfaceParameterOpaqueSpan>,
-    pub(super) scalar_frames: Vec<CreoSurfaceParameterScalarFrame>,
-    pub(super) terminal_scalar_frame: Option<CreoSurfaceParameterScalarFrame>,
+    pub(super) slots: Vec<SurfaceParameterScalar>,
+    pub(super) opaque_spans: Vec<SurfaceParameterOpaqueSpan>,
+    pub(super) scalar_frames: Vec<SurfaceParameterScalarFrame>,
+    pub(super) terminal_scalar_frame: Option<SurfaceParameterScalarFrame>,
     pub(super) tabulated_cylinder_frame: Option<CreoTabulatedCylinderFrame>,
     pub(super) positional_cylinder_frame: Option<CreoPositionalCylinderFrame>,
     pub(super) split_cylinder_outline_bounds: Option<[[f64; 2]; 2]>,
@@ -1857,57 +1843,10 @@ pub(super) fn surface_parameter_records(
                 surface_family,
                 boundary,
                 body: record.body.clone(),
-                slots: record
-                    .scalar_tokens
-                    .iter()
-                    .map(|slot| CreoSurfaceParameterSlot {
-                        value: slot.value,
-                        raw: slot.raw.clone(),
-                        offset: slot.offset,
-                        length: slot.length,
-                    })
-                    .collect(),
-                opaque_spans: record
-                    .opaque_spans
-                    .iter()
-                    .map(|span| CreoSurfaceParameterOpaqueSpan {
-                        raw: span.raw.clone(),
-                        offset: span.offset,
-                        length: span.length,
-                    })
-                    .collect(),
-                scalar_frames: record
-                    .scalar_frames
-                    .iter()
-                    .map(|frame| CreoSurfaceParameterScalarFrame {
-                        offset: frame.offset,
-                        slots: frame
-                            .slots
-                            .iter()
-                            .map(|slot| CreoSurfaceParameterSlot {
-                                value: slot.value,
-                                raw: slot.raw.clone(),
-                                offset: slot.offset,
-                                length: slot.length,
-                            })
-                            .collect(),
-                    })
-                    .collect(),
-                terminal_scalar_frame: record.terminal_scalar_frame.as_ref().map(|frame| {
-                    CreoSurfaceParameterScalarFrame {
-                        offset: frame.offset,
-                        slots: frame
-                            .slots
-                            .iter()
-                            .map(|slot| CreoSurfaceParameterSlot {
-                                value: slot.value,
-                                raw: slot.raw.clone(),
-                                offset: slot.offset,
-                                length: slot.length,
-                            })
-                            .collect(),
-                    }
-                }),
+                slots: record.scalar_tokens.clone(),
+                opaque_spans: record.opaque_spans.clone(),
+                scalar_frames: record.scalar_frames.clone(),
+                terminal_scalar_frame: record.terminal_scalar_frame.clone(),
                 tabulated_cylinder_frame: record.tabulated_cylinder_frame().map(|frame| {
                     CreoTabulatedCylinderFrame {
                         values: frame.values,

@@ -376,7 +376,7 @@ fn scan_decodes_fc_curve_world_coordinate_lane() {
     assert_eq!(coordinates.body, scan.curves.parameters[0].body);
     assert_eq!(coordinates.values_mm, vec![3.0, -3.0, 2.0, -2.0]);
     assert_eq!(coordinates.tokens[0].offset, 2);
-    assert_eq!(coordinates.tokens[0].length, 8);
+    assert_eq!(coordinates.tokens[0].raw.len(), 8);
     assert_eq!(coordinates.tokens[0].raw, [0x46, 0x08, 0, 0, 0, 0, 0, 0]);
     assert_eq!(coordinates.tokens[1].offset, 10);
     assert_eq!(coordinates.opaque_spans[0].offset, 0);
