@@ -333,10 +333,14 @@ struct HatchPatternRecord {
     fill_type: i32,
     description: String,
     lines: Vec<HatchLineRecord>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pattern_unit_system: Option<u8>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    always_model_distances: Option<bool>,
+    #[serde(flatten)]
+    distance_settings: Option<HatchPatternDistanceSettings>,
+}
+
+#[derive(Debug, Copy, Clone, Serialize)]
+struct HatchPatternDistanceSettings {
+    pattern_unit_system: u8,
+    always_model_distances: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -2423,8 +2427,7 @@ fn parse_hatch_pattern(
     source_offset: usize,
 ) -> Result<HatchPatternRecord, FramingError> {
     let modern = data.get(range.start).copied() == Some(0);
-    let mut pattern_unit_system = None;
-    let mut always_model_distances = None;
+    let mut distance_settings = None;
     let (component, fill_type, description, lines) = if modern {
         let (mut reader, version) = anonymous(data, range, archive)?;
         if version.0 != 1 || version.1 < 0 {
@@ -2472,8 +2475,10 @@ fn parse_hatch_pattern(
         line_reader.skip_remaining()?;
         reader.skip(chunk.next_offset() - reader.position())?;
         if archive.value() >= 90 {
-            pattern_unit_system = Some(reader.u8()?);
-            always_model_distances = Some(reader.bool()?);
+            distance_settings = Some(HatchPatternDistanceSettings {
+                pattern_unit_system: reader.u8()?,
+                always_model_distances: reader.bool()?,
+            });
         }
         reader.skip_remaining()?;
         (component, fill_type, description, lines)
@@ -2535,8 +2540,7 @@ fn parse_hatch_pattern(
         fill_type,
         description,
         lines,
-        pattern_unit_system,
-        always_model_distances,
+        distance_settings,
     })
 }
 
@@ -6143,8 +6147,18 @@ mod tests {
         assert_eq!(value.lines[0].base_millimeters, [12.5, -25.0]);
         assert_eq!(value.lines[0].offset_millimeters, [35.0, 47.5]);
         assert_eq!(value.lines[0].dashes_millimeters, [12.5, -7.5, 5.0]);
-        assert_eq!(value.pattern_unit_system, None);
-        assert_eq!(value.always_model_distances, None);
+        assert_eq!(
+            value
+                .distance_settings
+                .map(|settings| settings.pattern_unit_system),
+            None
+        );
+        assert_eq!(
+            value
+                .distance_settings
+                .map(|settings| settings.always_model_distances),
+            None
+        );
 
         let mut v9_body = body;
         v9_body.extend([2, 1]);
@@ -6152,7 +6166,15 @@ mod tests {
         let v9_bytes = anonymous(0, &v9_body);
         let v9 = parse_hatch_pattern(&v9_bytes, 0..v9_bytes.len(), ArchiveVersion::V9, 10.0, 321)
             .expect("archive-90 hatch pattern");
-        assert_eq!(v9.pattern_unit_system, Some(2));
-        assert_eq!(v9.always_model_distances, Some(true));
+        assert_eq!(
+            v9.distance_settings
+                .map(|settings| settings.pattern_unit_system),
+            Some(2)
+        );
+        assert_eq!(
+            v9.distance_settings
+                .map(|settings| settings.always_model_distances),
+            Some(true)
+        );
     }
 }
