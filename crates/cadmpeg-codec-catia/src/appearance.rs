@@ -22,7 +22,7 @@ pub(crate) struct TransferResult {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Packet {
-    AllFaces([u8; 4]),
+    AllFaces([u8; 3]),
     Body([u8; 4]),
 }
 
@@ -35,7 +35,8 @@ struct SourcedPacket {
 impl SourcedPacket {
     fn rgba(&self) -> [u8; 4] {
         match self.packet {
-            Packet::AllFaces(rgba) | Packet::Body(rgba) => rgba,
+            Packet::AllFaces([r, g, b]) => [r, g, b, 0xff],
+            Packet::Body(rgba) => rgba,
         }
     }
 
@@ -98,7 +99,7 @@ pub(crate) fn transfer(
     let all_faces = packets
         .iter()
         .filter_map(|packet| match packet.packet {
-            Packet::AllFaces(rgba) => Some(rgba),
+            Packet::AllFaces(_) => Some(packet.rgba()),
             Packet::Body(_) => None,
         })
         .collect::<Vec<_>>();
@@ -204,7 +205,7 @@ fn packet(field: &ValueField) -> Option<Packet> {
         return None;
     };
     match bytes.as_slice() {
-        [0x01, r, g, b] => Some(Packet::AllFaces([*r, *g, *b, 0xff])),
+        [0x01, r, g, b] => Some(Packet::AllFaces([*r, *g, *b])),
         [0x03, r, g, b, a] => Some(Packet::Body([*r, *g, *b, *a])),
         _ => None,
     }
@@ -393,7 +394,7 @@ mod tests {
         };
         assert_eq!(
             packet(&inline(vec![1, 0xd1, 0x1a, 0x1f])),
-            Some(Packet::AllFaces([0xd1, 0x1a, 0x1f, 0xff]))
+            Some(Packet::AllFaces([0xd1, 0x1a, 0x1f]))
         );
         assert_eq!(
             packet(&inline(vec![3, 0xd1, 0x1a, 0x1f, 0x99])),
