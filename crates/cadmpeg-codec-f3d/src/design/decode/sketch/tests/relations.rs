@@ -239,14 +239,16 @@ fn genesis_relation_parses_text_path_glyph_run() {
         [237]
     );
     assert_eq!(
-        parsed
-            .text_glyph_transforms
-            .as_ref()
-            .map(|transforms| transforms
-                .iter()
-                .map(|transform| transform.rows())
-                .collect::<Vec<_>>())
-            .as_deref(),
+        match &parsed.class_members {
+            super::super::RelationClassMembers::TextPath { glyph_transforms } =>
+                Some(glyph_transforms),
+            _ => None,
+        }
+        .map(|transforms| transforms
+            .iter()
+            .map(|transform| transform.rows())
+            .collect::<Vec<_>>())
+        .as_deref(),
         Some(&glyphs[..])
     );
     assert_eq!(
@@ -361,7 +363,13 @@ fn genesis_relation_parses_rectangular_pattern_auxiliary_run() {
             .collect::<Vec<_>>(),
         [464, 470, 467, 473]
     );
-    assert_eq!(parsed.rectangular_reference_count, Some(0));
+    assert!(matches!(
+        parsed.class_members,
+        super::super::RelationClassMembers::Rectangular {
+            reference_count: 0,
+            ..
+        }
+    ));
     assert_eq!(parsed.state, 0x2000_0000);
     let Some(crate::records::SketchPatternDefinition::Rectangular { directions }) =
         decode_pattern_definition(&record, &parsed)

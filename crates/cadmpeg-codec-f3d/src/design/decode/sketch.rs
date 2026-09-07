@@ -1253,6 +1253,12 @@ pub fn decode_sketch_relations(
             else {
                 continue;
             };
+            let rectangular_counted_reference_count = match &parsed.class_members {
+                RelationClassMembers::Rectangular {
+                    reference_count, ..
+                } => Some(*reference_count),
+                _ => None,
+            };
             let members = crate::records::SketchRelationMembers::from_indices(
                 parsed.members.into_iter().map(|member| {
                     (
@@ -1287,7 +1293,7 @@ pub fn decode_sketch_relations(
                         })
                         .collect(),
                 ),
-                rectangular_counted_reference_count: parsed.rectangular_reference_count,
+                rectangular_counted_reference_count,
                 members,
                 definition,
                 entity_genesis: parsed.entity_genesis,
@@ -1317,98 +1323,109 @@ pub(crate) fn decode_pattern_definition(
     use crate::records::{SketchPatternDefinition, SketchPatternDirection};
     let f64_at = |at: usize| View::f64_le_at(payload, at).filter(|value| value.is_finite());
     let reference_end = |ordinal: usize| Some(parsed.auxiliary_references.get(ordinal)?.offset + 4);
-    if parsed.state == 0x1000_0000 && parsed.auxiliary_references.len() == 2 {
-        let angle_at = reference_end(1)? + 6;
-        let evaluated_angle = f64_at(angle_at)?;
-        let evaluated_count = View::u32_le_at(payload, angle_at + 8)?;
-        if !(1..=100_000).contains(&evaluated_count) {
-            return None;
-        }
-        return Some(SketchPatternDefinition::Circular {
-            angle_parameter: parsed.auxiliary_references[0].value,
-            count_parameter: parsed.auxiliary_references[1].value,
-            evaluated_angle,
-            evaluated_count,
-        });
-    }
-    if parsed.state == 0x2000_0000 {
-        // Each direction clause writes its evaluated count directly before its
-        // count-parameter reference, so the count is five bytes before that
-        // reference's target. The clauses follow the class members that precede
-        // them. The rectangular class parser records their exact position only
-        // when all four parameter references are present.
-        let clause_ordinal = parsed.rectangular_clause_ordinal?;
-        if parsed.auxiliary_references.len() < clause_ordinal + 4 {
-            return None;
-        }
-        let mut directions = Vec::with_capacity(2);
-        let clauses = [
-            (
-                parsed.auxiliary_references[clause_ordinal]
-                    .offset
-                    .checked_sub(5)?,
-                clause_ordinal,
-                clause_ordinal + 1,
-            ),
-            (
-                parsed.auxiliary_references[clause_ordinal + 2]
-                    .offset
-                    .checked_sub(5)?,
-                clause_ordinal + 2,
-                clause_ordinal + 3,
-            ),
-        ];
-        for (count_at, count_ordinal, distance_ordinal) in clauses {
-            let evaluated_count = View::u32_le_at(payload, count_at)?;
+    match &parsed.class_members {
+        RelationClassMembers::CircularPattern => {
+            if parsed.state != 0x1000_0000 || parsed.auxiliary_references.len() != 2 {
+                return None;
+            }
+            let angle_at = reference_end(1)? + 6;
+            let evaluated_angle = f64_at(angle_at)?;
+            let evaluated_count = View::u32_le_at(payload, angle_at + 8)?;
             if !(1..=100_000).contains(&evaluated_count) {
                 return None;
             }
-            let direction_at = reference_end(count_ordinal)? + 6;
-            let direction = [
-                f64_at(direction_at)?,
-                f64_at(direction_at + 8)?,
-                f64_at(direction_at + 16)?,
-            ];
-            let length = direction.iter().map(|axis| axis * axis).sum::<f64>();
-            if (length - 1.0).abs() > EPS_SKETCH_DECODE_PATTERN_DEFINITION_E6 {
+            return Some(SketchPatternDefinition::Circular {
+                angle_parameter: parsed.auxiliary_references[0].value,
+                count_parameter: parsed.auxiliary_references[1].value,
+                evaluated_angle,
+                evaluated_count,
+            });
+        }
+        RelationClassMembers::Rectangular { clause_ordinal, .. } => {
+            if parsed.state != 0x2000_0000 {
                 return None;
             }
-            directions.push(SketchPatternDirection {
-                evaluated_count,
-                count_parameter: parsed.auxiliary_references[count_ordinal].value,
-                direction,
-                evaluated_distance: f64_at(direction_at + 24)?,
-                distance_parameter: parsed.auxiliary_references[distance_ordinal].value,
+            // Each direction clause writes its evaluated count directly before its
+            // count-parameter reference, so the count is five bytes before that
+            // reference's target. The clauses follow the class members that precede
+            // them. The rectangular class parser records their exact position only
+            // when all four parameter references are present.
+            let clause_ordinal = (*clause_ordinal)?;
+            if parsed.auxiliary_references.len() < clause_ordinal + 4 {
+                return None;
+            }
+            let mut directions = Vec::with_capacity(2);
+            let clauses = [
+                (
+                    parsed.auxiliary_references[clause_ordinal]
+                        .offset
+                        .checked_sub(5)?,
+                    clause_ordinal,
+                    clause_ordinal + 1,
+                ),
+                (
+                    parsed.auxiliary_references[clause_ordinal + 2]
+                        .offset
+                        .checked_sub(5)?,
+                    clause_ordinal + 2,
+                    clause_ordinal + 3,
+                ),
+            ];
+            for (count_at, count_ordinal, distance_ordinal) in clauses {
+                let evaluated_count = View::u32_le_at(payload, count_at)?;
+                if !(1..=100_000).contains(&evaluated_count) {
+                    return None;
+                }
+                let direction_at = reference_end(count_ordinal)? + 6;
+                let direction = [
+                    f64_at(direction_at)?,
+                    f64_at(direction_at + 8)?,
+                    f64_at(direction_at + 16)?,
+                ];
+                let length = direction.iter().map(|axis| axis * axis).sum::<f64>();
+                if (length - 1.0).abs() > EPS_SKETCH_DECODE_PATTERN_DEFINITION_E6 {
+                    return None;
+                }
+                directions.push(SketchPatternDirection {
+                    evaluated_count,
+                    count_parameter: parsed.auxiliary_references[count_ordinal].value,
+                    direction,
+                    evaluated_distance: f64_at(direction_at + 24)?,
+                    distance_parameter: parsed.auxiliary_references[distance_ordinal].value,
+                });
+            }
+            return Some(SketchPatternDefinition::Rectangular {
+                directions: directions.try_into().ok()?,
             });
         }
-        return Some(SketchPatternDefinition::Rectangular {
-            directions: directions.try_into().ok()?,
-        });
-    }
-    if parsed.state == 0x100_0000_0000
-        && parsed.auxiliary_references.len() == 1
-        && parsed
-            .members
-            .iter()
-            .any(|member| member.reference.value == parsed.auxiliary_references[0].value)
-    {
-        return Some(SketchPatternDefinition::TextFrame {
-            text_reference: parsed.auxiliary_references[0].value,
-        });
-    }
-    if parsed.state == 0x200_0000_0000
-        && parsed.auxiliary_references.len() == 1
-        && parsed
-            .members
-            .iter()
-            .any(|member| member.reference.value == parsed.auxiliary_references[0].value)
-    {
-        if let Some(glyph_transforms) = parsed.text_glyph_transforms.clone() {
-            return Some(SketchPatternDefinition::TextPath {
-                text_reference: parsed.auxiliary_references[0].value,
-                glyph_transforms,
-            });
+        RelationClassMembers::TextFrame => {
+            if parsed.state == 0x100_0000_0000
+                && parsed.auxiliary_references.len() == 1
+                && parsed
+                    .members
+                    .iter()
+                    .any(|member| member.reference.value == parsed.auxiliary_references[0].value)
+            {
+                return Some(SketchPatternDefinition::TextFrame {
+                    text_reference: parsed.auxiliary_references[0].value,
+                });
+            }
         }
+        RelationClassMembers::TextPath { glyph_transforms } => {
+            if parsed.state == 0x200_0000_0000
+                && parsed.auxiliary_references.len() == 1
+                && parsed
+                    .members
+                    .iter()
+                    .any(|member| member.reference.value == parsed.auxiliary_references[0].value)
+            {
+                return Some(SketchPatternDefinition::TextPath {
+                    text_reference: parsed.auxiliary_references[0].value,
+                    glyph_transforms: glyph_transforms.clone(),
+                });
+            }
+        }
+        RelationClassMembers::Plain | RelationClassMembers::Tangent => {}
     }
     None
 }
@@ -3514,15 +3531,7 @@ pub(crate) struct ParsedSketchRelation {
     pub(crate) state: u64,
     pub(crate) state_offset: usize,
     pub(crate) entity_genesis: Option<u64>,
-    pub(crate) text_glyph_transforms: Option<Vec<SketchGlyphTransform>>,
-    /// Serialized cardinality of the rectangular class's counted reference
-    /// run. `None` for every other relation class.
-    pub(crate) rectangular_reference_count: Option<u32>,
-    /// Position within `auxiliary_references` of the first direction clause's
-    /// count-parameter reference on a rectangular pattern whose four clause
-    /// references are all present. `None` for every other relation class and
-    /// when a rectangular clause reference is absent.
-    pub(crate) rectangular_clause_ordinal: Option<usize>,
+    class_members: RelationClassMembers,
     pub(crate) return_members: Vec<crate::records::Located<u32, usize>>,
     pub(crate) parsed_end: usize,
 }
@@ -3699,10 +3708,18 @@ fn skip_pattern_tables(payload: &[u8], cursor: &mut usize) -> Option<()> {
 }
 
 /// What a sketch-relation subclass leaves behind after its own members.
-struct RelationClassMembers {
-    rectangular_reference_count: Option<u32>,
-    rectangular_clause_ordinal: Option<usize>,
-    text_glyph_transforms: Option<Vec<SketchGlyphTransform>>,
+enum RelationClassMembers {
+    Plain,
+    Tangent,
+    CircularPattern,
+    Rectangular {
+        reference_count: u32,
+        clause_ordinal: Option<usize>,
+    },
+    TextFrame,
+    TextPath {
+        glyph_transforms: Vec<SketchGlyphTransform>,
+    },
 }
 
 /// Consume the members `class` writes between the property block and the base
@@ -3715,18 +3732,13 @@ fn parse_relation_class_members(
     class: SketchRelationClass,
     auxiliary_references: &mut Vec<crate::records::Located<u32, usize>>,
 ) -> Option<RelationClassMembers> {
-    let mut members = RelationClassMembers {
-        rectangular_reference_count: None,
-        rectangular_clause_ordinal: None,
-        text_glyph_transforms: None,
-    };
     macro_rules! take {
         () => {
             take_auxiliary_relation_reference(payload, cursor, auxiliary_references)
         };
     }
-    match class {
-        SketchRelationClass::Plain => {}
+    Some(match class {
+        SketchRelationClass::Plain => RelationClassMembers::Plain,
         SketchRelationClass::Tangent => {
             for _ in 0..3 {
                 // A flag outside `{0, 1}` is a misparse, not a third state.
@@ -3735,10 +3747,12 @@ fn parse_relation_class_members(
                 }
                 *cursor += 1;
             }
+            RelationClassMembers::Tangent
         }
         SketchRelationClass::TextFrame => {
             take!()?;
             take!()?;
+            RelationClassMembers::TextFrame
         }
         SketchRelationClass::CircularPattern => {
             take!()?;
@@ -3750,6 +3764,7 @@ fn parse_relation_class_members(
                 return None;
             }
             *cursor += 1;
+            RelationClassMembers::CircularPattern
         }
         SketchRelationClass::RectangularPattern => {
             // The three flags are not checked the way the tangency class's are:
@@ -3765,7 +3780,6 @@ fn parse_relation_class_members(
             for _ in 0..references {
                 take!()?;
             }
-            members.rectangular_reference_count = Some(reference_count);
             skip_pattern_tables(payload, cursor)?;
             let clause_ordinal = auxiliary_references.len();
             let mut complete = true;
@@ -3778,7 +3792,10 @@ fn parse_relation_class_members(
                 *cursor += 32;
                 complete &= take!()?;
             }
-            members.rectangular_clause_ordinal = complete.then_some(clause_ordinal);
+            RelationClassMembers::Rectangular {
+                reference_count,
+                clause_ordinal: complete.then_some(clause_ordinal),
+            }
         }
         SketchRelationClass::TextPath { leading_flag } => {
             if leading_flag {
@@ -3792,11 +3809,12 @@ fn parse_relation_class_members(
                 value: text_reference,
                 offset: *cursor + 1,
             });
-            members.text_glyph_transforms = Some(transforms);
             *cursor = end;
+            RelationClassMembers::TextPath {
+                glyph_transforms: transforms,
+            }
         }
-    }
-    Some(members)
+    })
 }
 
 /// Parse one sketch-relation record body whose class is known
@@ -3846,9 +3864,6 @@ pub(crate) fn parse_classed_sketch_relation(
     let mut auxiliary_references = Vec::new();
     let class_members =
         parse_relation_class_members(payload, &mut cursor, class, &mut auxiliary_references)?;
-    let rectangular_reference_count = class_members.rectangular_reference_count;
-    let rectangular_clause_ordinal = class_members.rectangular_clause_ordinal;
-    let text_glyph_transforms = class_members.text_glyph_transforms;
     let owner = take_relation_reference(payload, &mut cursor)?;
     let state_offset = cursor;
     // The constraint mask follows `ParentNode` directly. It is a u64 in the
@@ -3881,9 +3896,7 @@ pub(crate) fn parse_classed_sketch_relation(
         state,
         state_offset,
         entity_genesis,
-        text_glyph_transforms,
-        rectangular_reference_count,
-        rectangular_clause_ordinal,
+        class_members,
         return_members,
         parsed_end,
     })
