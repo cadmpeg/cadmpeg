@@ -142,7 +142,7 @@ struct MaterialRecord {
     reflectivity: f64,
     shine: f64,
     transparency: f64,
-    texture_count: usize,
+    #[serde(flatten, serialize_with = "serialize_material_textures")]
     textures: Vec<TextureRecord>,
     shareable: bool,
     disable_lighting: bool,
@@ -154,6 +154,18 @@ struct MaterialRecord {
     diffuse_texture_alpha_transparency: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     physically_based: Option<PhysicallyBasedMaterialRecord>,
+}
+
+fn serialize_material_textures<S: serde::Serializer>(
+    textures: &[TextureRecord],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+
+    let mut fields = serializer.serialize_map(Some(2))?;
+    fields.serialize_entry("texture_count", &textures.len())?;
+    fields.serialize_entry("textures", textures)?;
+    fields.end()
 }
 
 #[derive(Debug, Serialize)]
@@ -1838,7 +1850,6 @@ fn parse_v2_v3_material(
         reflectivity: 0.0,
         shine,
         transparency,
-        texture_count: textures.len(),
         textures,
         shareable: false,
         disable_lighting: false,
@@ -1933,7 +1944,6 @@ fn parse_material(
     let shine = read_finite(&mut reader, "shine")?;
     let transparency = read_finite(&mut reader, "transparency")?;
     let textures = texture_array(data, &mut reader, archive)?;
-    let texture_count = textures.len();
     if !modern && minor >= 1 {
         let _obsolete_library = utf16(&mut reader)?;
     }
@@ -2011,7 +2021,6 @@ fn parse_material(
         reflectivity,
         shine,
         transparency,
-        texture_count,
         textures,
         shareable,
         disable_lighting,
@@ -5640,7 +5649,7 @@ mod tests {
                 material.source_uuid,
                 Some(Uuid::from_wire([0x55; 16]).to_string())
             );
-            assert_eq!(material.texture_count, 3);
+            assert_eq!(material.textures.len(), 3);
             assert_eq!(material.textures[0].legacy_file_path, "bitmap.png");
             assert_eq!(material.textures[0].texture_type, 1);
             assert_eq!(material.textures[0].mode, 2);
