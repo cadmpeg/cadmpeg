@@ -598,10 +598,11 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                 },
             }],
             body_group_record_index: 501,
-            body_group_class_tag: "264".into(),
+            body_group_class_tag: crate::records::DesignClassTag::try_from("264".to_owned())
+                .unwrap(),
             body_group_byte_offset: 0,
             relation_record_index: 503,
-            relation_class_tag: "264".into(),
+            relation_class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
             relation_byte_offset: 0,
         });
     }

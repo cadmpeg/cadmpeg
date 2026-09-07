@@ -5580,10 +5580,10 @@ pub(crate) fn exact_copy_paste_bodies_operation(
     Some(DesignCopyPasteBodiesOperation {
         bodies,
         body_group_record_index,
-        body_group_class_tag,
+        body_group_class_tag: body_group_class_tag.try_into().ok()?,
         body_group_byte_offset: u64::try_from(body_group_at).ok()?,
         relation_record_index,
-        relation_class_tag,
+        relation_class_tag: relation_class_tag.try_into().ok()?,
         relation_byte_offset: u64::try_from(relation_at).ok()?,
     })
 }

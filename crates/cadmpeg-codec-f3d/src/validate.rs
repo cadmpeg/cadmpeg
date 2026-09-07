@@ -2035,11 +2035,11 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         == body_count.saturating_mul(2)
                     && group_header.is_some_and(|header| {
                         header.byte_offset == operation.body_group_byte_offset
-                            && header.class_tag.as_str() == operation.body_group_class_tag
+                            && header.class_tag == operation.body_group_class_tag
                     })
                     && relation_header.is_some_and(|header| {
                         header.byte_offset == operation.relation_byte_offset
-                            && header.class_tag.as_str() == operation.relation_class_tag
+                            && header.class_tag == operation.relation_class_tag
                     })
                     && operation
                         .bodies
