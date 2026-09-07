@@ -846,10 +846,10 @@ fn project_dimension(
         })
         .or_else(|| {
             implicit_dimension_nominal(root, entity, feature_index, rendered, pattern_hole_nominals)
-        })?;
+        });
     let tolerance = match (
-        deviation(entity, Some(nominal), "LowerLimit", "MinusTolerance"),
-        deviation(entity, Some(nominal), "UpperLimit", "PlusTolerance"),
+        deviation(entity, nominal, "LowerLimit", "MinusTolerance"),
+        deviation(entity, nominal, "UpperLimit", "PlusTolerance"),
     ) {
         (Some(lower), Some(upper)) => Some(DimensionTolerance::PlusMinus {
             lower: pmi_value(lower, quantity),
@@ -864,7 +864,7 @@ fn project_dimension(
         targets: targets(entity, feature_index, topology),
         definition: PmiDefinition::Dimension {
             dimension,
-            nominal: Some(pmi_value(nominal, quantity)),
+            nominal: nominal.map(|value| pmi_value(value, quantity)),
             tolerance,
         },
     })
@@ -2305,6 +2305,18 @@ fn pmi_value(value: f64, quantity: PmiQuantity) -> PmiValue {
 mod tests {
     use super::*;
 
+    fn dimension_nominal(annotations: &[PmiAnnotation], id: &str) -> Option<PmiValue> {
+        let PmiDefinition::Dimension { nominal, .. } = &annotations
+            .iter()
+            .find(|annotation| annotation.id == pmi_id(id))
+            .expect("dimension annotation")
+            .definition
+        else {
+            panic!("dimension definition");
+        };
+        *nominal
+    }
+
     fn reference(id: &str, class: &str) -> Reference {
         Reference {
             id: id.into(),
@@ -2899,9 +2911,8 @@ mod tests {
     fn parses_and_projects_semantic_graph() {
         let parsed = parse_unique_root(&encoded_root()).expect("synthetic SWIFT root");
         let annotations = project(&parsed);
-        // Datum A, its ordered reference system, position, and angle are admitted.
-        // The zero diameter has no geometric or rendered nominal witness.
-        assert_eq!(annotations.len(), 4);
+        assert_eq!(annotations.len(), 5);
+        assert_eq!(dimension_nominal(&annotations, "A30"), None);
 
         let position = annotations
             .iter()
@@ -2949,9 +2960,7 @@ mod tests {
         assert_eq!(datum_reference.precedence.get(), 1);
         assert_eq!(datum_reference.modifiers, ["least_material_requirement"]);
 
-        assert!(!annotations
-            .iter()
-            .any(|annotation| annotation.name.as_deref() == Some("Diameter 1")));
+        assert_eq!(dimension_nominal(&annotations, "A30"), None);
 
         let angle = annotations
             .iter()
@@ -3304,9 +3313,7 @@ mod tests {
             }],
             &mut annotations,
         );
-        assert!(!annotations
-            .iter()
-            .any(|annotation| annotation.name.as_deref() == Some("Diameter 1")));
+        assert_eq!(dimension_nominal(&annotations, "A30"), None);
     }
 
     #[test]
@@ -3371,9 +3378,7 @@ mod tests {
             }],
             &mut annotations,
         );
-        assert!(!annotations
-            .iter()
-            .any(|annotation| annotation.id == pmi_id("A30")));
+        assert_eq!(dimension_nominal(&annotations, "A30"), None);
     }
 
     #[test]
@@ -3448,9 +3453,7 @@ mod tests {
 
         let mut annotations = project(&root);
         enrich_implicit_nominals(&root, &[], &mut annotations);
-        assert!(!annotations
-            .iter()
-            .any(|annotation| annotation.id == pmi_id("A30")));
+        assert_eq!(dimension_nominal(&annotations, "A30"), None);
     }
 
     #[test]
@@ -3571,9 +3574,7 @@ mod tests {
             plane_at([8.0, 9.0, 25.0], [1.0, 0.0, 0.0]);
         let mut annotations = project(&root);
         enrich_implicit_nominals(&root, &[], &mut annotations);
-        assert!(!annotations
-            .iter()
-            .any(|annotation| annotation.id == pmi_id("A50")));
+        assert_eq!(dimension_nominal(&annotations, "A50"), None);
     }
 
     #[test]
@@ -3706,9 +3707,7 @@ mod tests {
             .insert("Width".into(), 7.0);
         let mut annotations = project(&root);
         enrich_implicit_nominals(&root, &[], &mut annotations);
-        assert!(!annotations
-            .iter()
-            .any(|annotation| annotation.id == pmi_id("A50")));
+        assert_eq!(dimension_nominal(&annotations, "A50"), None);
     }
 
     #[test]
@@ -3875,9 +3874,7 @@ mod tests {
             .insert("Z".into(), 1.0);
         let mut annotations = project(&root);
         enrich_implicit_nominals(&root, &[], &mut annotations);
-        assert!(!annotations
-            .iter()
-            .any(|annotation| annotation.id == pmi_id("AD")));
+        assert_eq!(dimension_nominal(&annotations, "AD"), None);
     }
 
     #[test]
@@ -4106,9 +4103,7 @@ mod tests {
             .insert("Width".into(), 6.35);
         let mut annotations = project(&root);
         enrich_implicit_nominals(&root, &[], &mut annotations);
-        assert!(!annotations
-            .iter()
-            .any(|annotation| annotation.id == pmi_id("A50")));
+        assert_eq!(dimension_nominal(&annotations, "A50"), None);
     }
 
     #[test]
@@ -4195,9 +4190,7 @@ mod tests {
             .class = "PrizMetrik.GdtAnalysis.GdtSphere,gdtanalysis.net".into();
         let mut annotations = project(&root);
         enrich_implicit_nominals(&root, &[], &mut annotations);
-        assert!(!annotations
-            .iter()
-            .any(|annotation| annotation.id == pmi_id("A50")));
+        assert_eq!(dimension_nominal(&annotations, "A50"), None);
     }
 
     #[test]
@@ -4245,5 +4238,63 @@ mod tests {
                 },
             ]
         );
+    }
+    fn zero_nominal_angle_root() -> Entity {
+        let mut angle = entity("GdtAngleBetween");
+        angle.strings.insert("ObjectName".into(), "Angle 1".into());
+        angle.integers.insert("Dimension".into(), 0);
+        angle.doubles.insert("Nominal".into(), 0.0);
+        angle.doubles.insert("MinusTolerance".into(), -0.5);
+        angle.doubles.insert("PlusTolerance".into(), 0.5);
+
+        let mut root = Entity {
+            class: ROOT_CLASS.into(),
+            ..Entity::default()
+        };
+        root.annotations.references = vec![reference("A60", "GdtAngleBetween")];
+        root.annotations.entities = vec![angle];
+        root
+    }
+
+    #[test]
+    fn zero_nominal_dimension_keeps_the_annotation_without_a_nominal() {
+        let root = zero_nominal_angle_root();
+        let annotations = project(&root);
+        let annotation = annotations
+            .iter()
+            .find(|annotation| annotation.id == pmi_id("A60"))
+            .expect("zero nominal angle");
+        let PmiDefinition::Dimension {
+            dimension,
+            nominal,
+            tolerance,
+        } = &annotation.definition
+        else {
+            panic!("dimension definition");
+        };
+        assert_eq!(*dimension, DimensionKind::Angular);
+        assert_eq!(*nominal, None);
+        assert_eq!(
+            *tolerance,
+            Some(DimensionTolerance::PlusMinus {
+                lower: pmi_value(-0.5, PmiQuantity::Angle),
+                upper: pmi_value(0.5, PmiQuantity::Angle),
+            })
+        );
+    }
+
+    #[test]
+    fn dimension_without_a_nominal_key_is_skipped() {
+        let mut root = zero_nominal_angle_root();
+        root.annotations
+            .entities
+            .get_mut(0)
+            .expect("angle")
+            .doubles
+            .remove("Nominal");
+        let annotations = project(&root);
+        assert!(!annotations
+            .iter()
+            .any(|annotation| annotation.id == pmi_id("A60")));
     }
 }
