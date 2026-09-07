@@ -2128,8 +2128,16 @@ pub(super) fn curve_expression_records(scan: &ContainerScan) -> Vec<CreoCurveExp
                             offset: assignment.offset,
                         })
                         .collect(),
-                    variables: block.variables.clone(),
-                    solutions: block.solutions.clone(),
+                    variables: block
+                        .unknowns
+                        .iter()
+                        .map(|unknown| unknown.name.clone())
+                        .collect(),
+                    solutions: block
+                        .unknowns
+                        .iter()
+                        .map(|unknown| unknown.solution.clone())
+                        .collect(),
                     offset: block.offset,
                     for_offset: block.for_offset,
                 })

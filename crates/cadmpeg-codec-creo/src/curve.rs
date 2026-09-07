@@ -122,14 +122,20 @@ pub struct CurveExpressionSolveBlock {
     /// Ordered one-way relations in the block that do not involve an unknown.
     pub assignments: Vec<CurveExpressionAssignment>,
     /// Ordered unknowns declared by the terminating `FOR` line.
-    pub variables: Vec<String>,
-    /// Solved scalar values aligned with `variables`; absent entries remain
-    /// nonlinear, underdetermined, inconsistent, or dependency-unresolved.
-    pub solutions: Vec<Option<CurveExpressionValue>>,
+    pub unknowns: Vec<SolveUnknown>,
     /// Byte offset of the `SOLVE` line.
     pub offset: usize,
     /// Byte offset of the terminating `FOR` line.
     pub for_offset: usize,
+}
+
+/// One declared solve unknown and its optional solution.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SolveUnknown {
+    /// Declared variable name.
+    pub name: String,
+    /// Solved value, absent when the unknown remains unresolved.
+    pub solution: Option<CurveExpressionValue>,
 }
 
 /// One equation in a simultaneous-equation block.
@@ -929,13 +935,11 @@ pub(crate) fn expression_records_with_model_name(
                 }
                 evaluation.solve_solutions.clear();
             }
-            if !synchronize_solve_blocks(
+            synchronize_solve_blocks(
                 &mut solve_program.blocks,
                 &evaluation.assignments,
                 &evaluation.solve_solutions,
-            ) {
-                continue;
-            }
+            );
             records.push(CurveExpressionRecord {
                 entity_id,
                 backup,
@@ -967,15 +971,11 @@ pub(crate) fn reevaluate_expression_records(
             }
             evaluation.solve_solutions.clear();
         }
-        if !synchronize_solve_blocks(
+        synchronize_solve_blocks(
             &mut record.solve_blocks,
             &evaluation.assignments,
             &evaluation.solve_solutions,
-        ) {
-            for block in &mut record.solve_blocks {
-                block.solutions.clear();
-            }
-        }
+        );
         record.assignments = evaluation.assignments;
     }
 }
@@ -984,7 +984,7 @@ fn synchronize_solve_blocks(
     blocks: &mut [CurveExpressionSolveBlock],
     assignments: &[CurveExpressionAssignment],
     solutions: &BTreeMap<usize, Vec<CurveExpressionValue>>,
-) -> bool {
+) {
     for block in blocks {
         for assignment in &mut block.assignments {
             if let Some(evaluated) = assignments
@@ -994,30 +994,11 @@ fn synchronize_solve_blocks(
                 *assignment = evaluated.clone();
             }
         }
-        let Ok(empty_solutions) = alloc_filled(
-            block.variables.len(),
-            None,
-            "creo curve-expression solve solutions",
-        ) else {
-            return false;
-        };
-        block.solutions = solutions
-            .get(&block.offset)
-            .map_or(empty_solutions, |values| {
-                values.iter().cloned().map(Some).collect()
-            });
-        if block.solutions.len() != block.variables.len() {
-            let Ok(empty_solutions) = alloc_filled(
-                block.variables.len(),
-                None,
-                "creo curve-expression solve solutions",
-            ) else {
-                return false;
-            };
-            block.solutions = empty_solutions;
+        let values = solutions.get(&block.offset);
+        for (index, unknown) in block.unknowns.iter_mut().enumerate() {
+            unknown.solution = values.and_then(|values| values.get(index)).cloned();
         }
     }
-    true
 }
 
 fn curve_equation_prohibited_constructs(lines: &[CurveExpressionLine]) -> Vec<String> {
@@ -1287,18 +1268,18 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
             continue;
         }
         if starts_relation_keyword(source, "for") {
-            let variables = conditional_keyword_expression(source, "for")
-                .and_then(curve_expression_solve_variables);
+            let unknowns = conditional_keyword_expression(source, "for")
+                .and_then(curve_expression_solve_unknowns);
             let mut block = pending.take().expect("pending solve block");
             let mut equations = Vec::new();
             let mut assignments = Vec::new();
             let mut assignment_line_indices = Vec::new();
-            if let Some(variables) = &variables {
+            if let Some(unknowns) = &unknowns {
                 for statement in block.statements {
                     if statement.equation.dependencies.iter().any(|dependency| {
-                        variables
+                        unknowns
                             .iter()
-                            .any(|variable| variable.eq_ignore_ascii_case(dependency))
+                            .any(|unknown| unknown.name.eq_ignore_ascii_case(dependency))
                     }) {
                         equations.push(statement.equation);
                     } else if let Some(assignment) = statement.assignment {
@@ -1309,23 +1290,14 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
                     }
                 }
             }
-            if let Some(variables) = variables.filter(|_| block.valid && !equations.is_empty()) {
+            if let Some(unknowns) = unknowns.filter(|_| block.valid && !equations.is_empty()) {
                 program
                     .executable_line_indices
                     .extend(assignment_line_indices);
-                let Ok(solutions) = alloc_filled(
-                    variables.len(),
-                    None,
-                    "creo curve-expression solve solutions",
-                ) else {
-                    program.unresolved_control = true;
-                    continue;
-                };
                 program.blocks.push(CurveExpressionSolveBlock {
                     equations,
                     assignments,
-                    solutions,
-                    variables,
+                    unknowns,
                     offset: block.offset,
                     for_offset: line.offset,
                 });
@@ -1377,22 +1349,25 @@ fn curve_expression_solve_program(lines: &[CurveExpressionLine]) -> CurveExpress
     program
 }
 
-fn curve_expression_solve_variables(source: &str) -> Option<Vec<String>> {
-    let variables = source
+fn curve_expression_solve_unknowns(source: &str) -> Option<Vec<SolveUnknown>> {
+    let unknowns = source
         .split(|character: char| character == ',' || character.is_ascii_whitespace())
         .filter(|variable| !variable.is_empty())
-        .map(str::to_owned)
+        .map(|name| SolveUnknown {
+            name: name.to_owned(),
+            solution: None,
+        })
         .collect::<Vec<_>>();
-    let keys = variables
+    let keys = unknowns
         .iter()
-        .map(|variable| expression_identifier_key(variable))
+        .map(|variable| expression_identifier_key(&variable.name))
         .collect::<BTreeSet<_>>();
-    (!variables.is_empty()
-        && keys.len() == variables.len()
-        && variables
+    (!unknowns.is_empty()
+        && keys.len() == unknowns.len()
+        && unknowns
             .iter()
-            .all(|variable| valid_scoped_expression_identifier(variable)))
-    .then_some(variables)
+            .all(|variable| valid_scoped_expression_identifier(&variable.name)))
+    .then_some(unknowns)
 }
 
 fn expression_assignment_target(source: &str) -> Option<CurveExpressionTarget> {
@@ -1697,8 +1672,8 @@ fn evaluate_expression_program_details(
         solve_program
             .blocks
             .iter()
-            .flat_map(|block| &block.variables)
-            .map(|variable| expression_identifier_key(variable)),
+            .flat_map(|block| &block.unknowns)
+            .map(|unknown| expression_identifier_key(&unknown.name)),
     );
     let context = RelationEvaluationContext {
         model_name,
@@ -1727,8 +1702,9 @@ fn evaluate_expression_program_details(
             .find(|block| block.offset == line.offset)
         {
             let dimensions = block
-                .variables
+                .unknowns
                 .iter()
+                .map(|unknown| &unknown.name)
                 .map(|variable| {
                     values
                         .get(&expression_identifier_key(variable))
@@ -1740,13 +1716,14 @@ fn evaluate_expression_program_details(
             solve_block_initial_values.insert(
                 block.offset,
                 block
-                    .variables
+                    .unknowns
                     .iter()
+                    .map(|unknown| &unknown.name)
                     .map(|variable| values.get(&expression_identifier_key(variable)).cloned())
                     .collect::<Vec<_>>(),
             );
-            for variable in &block.variables {
-                let key = expression_identifier_key(variable);
+            for unknown in &block.unknowns {
+                let key = expression_identifier_key(&unknown.name);
                 values.remove(&key);
                 defined_symbols.insert(key.clone());
                 for assignment in &mut assignments {
@@ -1784,7 +1761,12 @@ fn evaluate_expression_program_details(
                     )
                 })
             {
-                for (variable, value) in block.variables.iter().zip(&solution) {
+                for (variable, value) in block
+                    .unknowns
+                    .iter()
+                    .map(|unknown| &unknown.name)
+                    .zip(&solution)
+                {
                     let key = expression_identifier_key(variable);
                     values.insert(key.clone(), value.clone());
                     for assignment in &mut assignments {
@@ -4834,10 +4816,11 @@ fn infer_solve_variable_dimensions(
     known_dimensions: &[Option<RelationDimension>],
     context: RelationEvaluationContext<'_>,
 ) -> Option<Vec<RelationDimension>> {
-    (known_dimensions.len() == block.variables.len()).then_some(())?;
+    (known_dimensions.len() == block.unknowns.len()).then_some(())?;
     let variable_keys = block
-        .variables
+        .unknowns
         .iter()
+        .map(|unknown| &unknown.name)
         .map(|variable| expression_identifier_key(variable))
         .collect::<Vec<_>>();
     let unique_keys = variable_keys.iter().collect::<BTreeSet<_>>();
@@ -5026,10 +5009,11 @@ fn solve_affine_expression_block(
     variable_dimensions: &[RelationDimension],
     context: RelationEvaluationContext<'_>,
 ) -> Option<Vec<CurveExpressionValue>> {
-    (variable_dimensions.len() == block.variables.len()).then_some(())?;
+    (variable_dimensions.len() == block.unknowns.len()).then_some(())?;
     let variable_keys = block
-        .variables
+        .unknowns
         .iter()
+        .map(|unknown| &unknown.name)
         .map(|variable| expression_identifier_key(variable))
         .collect::<Vec<_>>();
     let mut affine_values = values
@@ -5112,7 +5096,7 @@ fn solve_nonlinear_expression_block(
     nonlinear_equations_are_smooth(block).then_some(())?;
     let variable_dimensions =
         infer_solve_variable_dimensions(block, values, known_dimensions, context)?;
-    let variable_count = block.variables.len();
+    let variable_count = block.unknowns.len();
     (variable_count > 0
         && variable_count <= MAX_NONLINEAR_SOLVE_VARIABLES
         && block.equations.len() >= variable_count)
@@ -5377,11 +5361,15 @@ fn evaluate_nonlinear_residuals(
     point: &[f64],
     context: RelationEvaluationContext<'_>,
 ) -> Option<Vec<SolveResidual>> {
-    (variable_dimensions.len() == block.variables.len()
-        && point.len() == variable_dimensions.len())
-    .then_some(())?;
+    (variable_dimensions.len() == block.unknowns.len() && point.len() == variable_dimensions.len())
+        .then_some(())?;
     let mut evaluation_values = values.clone();
-    for ((variable, dimension), value) in block.variables.iter().zip(variable_dimensions).zip(point)
+    for ((variable, dimension), value) in block
+        .unknowns
+        .iter()
+        .map(|unknown| &unknown.name)
+        .zip(variable_dimensions)
+        .zip(point)
     {
         value.is_finite().then_some(())?;
         evaluation_values.insert(

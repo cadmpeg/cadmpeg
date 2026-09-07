@@ -102,7 +102,14 @@ fn retains_simultaneous_equations_without_sequential_assignments() {
     let [block] = program.blocks.as_slice() else {
         panic!("one solve block");
     };
-    assert_eq!(block.variables, ["width", "height"]);
+    assert_eq!(
+        block
+            .unknowns
+            .iter()
+            .map(|unknown| unknown.name.as_str())
+            .collect::<Vec<_>>(),
+        ["width", "height"]
+    );
     assert_eq!(block.offset, 3);
     assert_eq!(block.for_offset, 7);
     assert_eq!(block.equations.len(), 2);
@@ -805,8 +812,10 @@ fn infers_integral_dimensions_through_sqrt_for_untyped_variables() {
             offset: 0,
         }],
         assignments: Vec::new(),
-        variables: vec!["area".to_owned()],
-        solutions: vec![None],
+        unknowns: vec![SolveUnknown {
+            name: "area".to_owned(),
+            solution: None,
+        }],
         offset: 0,
         for_offset: 1,
     };
