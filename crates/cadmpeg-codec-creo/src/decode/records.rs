@@ -1905,13 +1905,13 @@ pub(super) fn surface_parameter_records(
                             .collect(),
                     }
                 }),
-                tabulated_cylinder_frame: record.tabulated_cylinder_frame.map(|frame| {
+                tabulated_cylinder_frame: record.tabulated_cylinder_frame().map(|frame| {
                     CreoTabulatedCylinderFrame {
                         values: frame.values,
                         prefixes: frame.prefixes,
                     }
                 }),
-                positional_cylinder_frame: record.positional_cylinder_frame.map(|frame| {
+                positional_cylinder_frame: record.positional_cylinder_frame().map(|frame| {
                     CreoPositionalCylinderFrame {
                         origin: frame.origin,
                         axis: frame.axis,
@@ -1920,8 +1920,8 @@ pub(super) fn surface_parameter_records(
                         length: frame.length,
                     }
                 }),
-                split_cylinder_outline_bounds: record.split_cylinder_outline_bounds,
-                positional_cone_frame: record.positional_cone_frame.map(|frame| {
+                split_cylinder_outline_bounds: record.split_cylinder_outline_bounds(),
+                positional_cone_frame: record.positional_cone_frame().map(|frame| {
                     CreoPositionalConeFrame {
                         apex: frame.apex,
                         axis: frame.axis,
@@ -1929,7 +1929,7 @@ pub(super) fn surface_parameter_records(
                         half_angle: frame.half_angle,
                     }
                 }),
-                positional_torus_frame: record.positional_torus_frame.map(|frame| {
+                positional_torus_frame: record.positional_torus_frame().map(|frame| {
                     CreoPositionalTorusFrame {
                         center: frame.center,
                         axis: frame.axis,
@@ -1938,26 +1938,26 @@ pub(super) fn surface_parameter_records(
                         minor_radius: frame.minor_radius,
                     }
                 }),
-                torus_outline_frame: record.torus_outline_frame(row.kind).map(|frame| {
+                torus_outline_frame: record.torus_outline_frame().map(|frame| {
                     CreoTorusOutlineFrame {
                         values: frame.values,
                         selector: frame.selector,
                         offset: frame.offset,
                     }
                 }),
-                type26_five_coordinate_envelope: record
-                    .type26_five_coordinate_envelope(row.kind)
-                    .map(|envelope| CreoType26FiveCoordinateEnvelope {
+                type26_five_coordinate_envelope: record.type26_five_coordinate_envelope().map(
+                    |envelope| CreoType26FiveCoordinateEnvelope {
                         values: envelope.values,
                         offset: envelope.offset,
-                    }),
-                type26_split_coordinate_envelope: record
-                    .type26_split_coordinate_envelope(row.kind)
-                    .map(|envelope| CreoType26SplitCoordinateEnvelope {
+                    },
+                ),
+                type26_split_coordinate_envelope: record.type26_split_coordinate_envelope().map(
+                    |envelope| CreoType26SplitCoordinateEnvelope {
                         values: envelope.values,
                         offset: envelope.offset,
-                    }),
-                torus_radius_overrides: record.torus_radius_overrides(row.kind).map(|overrides| {
+                    },
+                ),
+                torus_radius_overrides: record.torus_radius_overrides().map(|overrides| {
                     CreoTorusRadiusOverrides {
                         radius1: overrides.radius1,
                         radius2: overrides.radius2,
@@ -1971,13 +1971,13 @@ pub(super) fn surface_parameter_records(
                     }
                 }),
                 replayed_torus_minor_radius: replayed_torus_minor_radius(scan, row, record),
-                cone_half_angle_override: record.cone_half_angle_override(row.kind).map(
-                    |half_angle| CreoConeHalfAngleOverride {
+                cone_half_angle_override: record.cone_half_angle_override().map(|half_angle| {
+                    CreoConeHalfAngleOverride {
                         radians: half_angle.radians,
                         offset: half_angle.offset,
-                    },
-                ),
-                extrusion_direction: record.extrusion_direction(row.kind),
+                    }
+                }),
+                extrusion_direction: record.extrusion_direction(),
                 row_offset: record.offset,
                 body_offset: record.body_offset,
                 source_section,

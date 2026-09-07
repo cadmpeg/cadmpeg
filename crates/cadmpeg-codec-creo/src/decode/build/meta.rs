@@ -319,8 +319,8 @@ pub(in super::super) fn source_meta(
             .parameters
             .iter()
             .filter(|record| {
-                crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id)
-                    .is_some_and(|row| record.extrusion_direction(row.kind).is_some())
+                crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id).is_some()
+                    && record.extrusion_direction().is_some()
             })
             .count(),
     );

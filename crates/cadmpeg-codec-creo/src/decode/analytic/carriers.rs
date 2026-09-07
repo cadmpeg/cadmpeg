@@ -390,10 +390,8 @@ fn positional_cylinder_carrier(
     (row.kind == crate::surface::SurfaceKind::Cylinder).then_some(())?;
     let record = crate::surface::unique_surface_parameter(parameters, row.id)?;
     let inline = record.has_inline_non_plane_envelope()
-        || record.has_inline_non_plane_local_system_suffix(row.kind)
-        || record
-            .selector_corner_interval_cylinder_frame(row.kind)
-            .is_some();
+        || record.has_inline_non_plane_local_system_suffix()
+        || record.selector_corner_interval_cylinder_frame().is_some();
     if crate::decode::sketch_transfer::feature_schema_class(scan, row.feature_id) == Some(913)
         && !inline
     {
@@ -415,7 +413,7 @@ fn positional_cylinder_carrier(
             }
         }
     }
-    let frame = record.positional_cylinder_frame?;
+    let frame = record.positional_cylinder_frame()?;
     frame
         .is_valid()
         .then_some(CarrierEquation::Cylinder(CylinderEquation {

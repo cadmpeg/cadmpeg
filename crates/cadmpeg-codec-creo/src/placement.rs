@@ -113,7 +113,7 @@ fn generated_cylinder_section_transform(
         let [parameters] = parameters.as_slice() else {
             continue;
         };
-        let Some(frame) = parameters.positional_cylinder_frame else {
+        let Some(frame) = parameters.positional_cylinder_frame() else {
             continue;
         };
         correspondences.push(([u, v], frame.origin, frame.axis, parameters.offset));

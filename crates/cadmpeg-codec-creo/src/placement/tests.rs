@@ -980,22 +980,22 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
     let parameters = |surface_id, origin, offset| SurfaceParameterRecord {
         surface_id,
         body: Vec::new(),
-        scalar_values: Vec::new(),
         scalar_tokens: Vec::new(),
         opaque_spans: Vec::new(),
         scalar_frames: Vec::new(),
         terminal_scalar_frame: None,
-        tabulated_cylinder_frame: None,
-        positional_cylinder_frame: Some(PositionalCylinderFrame {
-            origin,
-            axis: [0.0, 1.0, 0.0],
-            ref_direction: [1.0, 0.0, 0.0],
-            radius: 0.75,
-            length: Some(34.0),
-        }),
-        split_cylinder_outline_bounds: None,
-        positional_cone_frame: None,
-        positional_torus_frame: None,
+        carrier: crate::surface::SurfaceParameterCarrier::Resolved(
+            crate::surface::InlineSurfaceCarrier::Cylinder {
+                frame: PositionalCylinderFrame {
+                    origin,
+                    axis: [0.0, 1.0, 0.0],
+                    ref_direction: [1.0, 0.0, 0.0],
+                    radius: 0.75,
+                    length: Some(34.0),
+                },
+                split_bounds: None,
+            },
+        ),
         boundary: SurfaceBodyBoundary::CompoundClose,
         offset,
         body_offset: offset + 1,
@@ -1046,17 +1046,21 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
 
     let mut far_divergent = parameters.clone();
     for record in &mut far_divergent {
-        record
-            .positional_cylinder_frame
-            .as_mut()
-            .expect("cylinder frame")
-            .origin[0] += 1.0e12;
+        let crate::surface::SurfaceParameterCarrier::Resolved(
+            crate::surface::InlineSurfaceCarrier::Cylinder { frame, .. },
+        ) = &mut record.carrier
+        else {
+            panic!("cylinder frame");
+        };
+        frame.origin[0] += 1.0e12;
     }
-    far_divergent[1]
-        .positional_cylinder_frame
-        .as_mut()
-        .expect("second cylinder frame")
-        .axis = [0.1, 0.99_f64.sqrt(), 0.0];
+    let crate::surface::SurfaceParameterCarrier::Resolved(
+        crate::surface::InlineSurfaceCarrier::Cylinder { frame, .. },
+    ) = &mut far_divergent[1].carrier
+    else {
+        panic!("second cylinder frame");
+    };
+    frame.axis = [0.1, 0.99_f64.sqrt(), 0.0];
     let divergent_sources = PlacementSources {
         surface_parameters: &far_divergent,
         ..sources

@@ -41,22 +41,19 @@ fn unresolved_round_type26_frames_are_not_admitted_as_constant_tori() {
     let parameter = |surface_id, minor_radius| crate::surface::SurfaceParameterRecord {
         surface_id,
         body: Vec::new(),
-        scalar_values: Vec::new(),
         scalar_tokens: Vec::new(),
         opaque_spans: Vec::new(),
         scalar_frames: Vec::new(),
         terminal_scalar_frame: None,
-        tabulated_cylinder_frame: None,
-        positional_cylinder_frame: None,
-        split_cylinder_outline_bounds: None,
-        positional_cone_frame: None,
-        positional_torus_frame: Some(crate::surface::PositionalTorusFrame {
-            center: [0.0, 0.0, 0.0],
-            axis: [0.0, 0.0, 1.0],
-            ref_direction: [1.0, 0.0, 0.0],
-            major_radius: 5.0,
-            minor_radius,
-        }),
+        carrier: crate::surface::SurfaceParameterCarrier::Resolved(
+            crate::surface::InlineSurfaceCarrier::Torus(crate::surface::PositionalTorusFrame {
+                center: [0.0, 0.0, 0.0],
+                axis: [0.0, 0.0, 1.0],
+                ref_direction: [1.0, 0.0, 0.0],
+                major_radius: 5.0,
+                minor_radius,
+            }),
+        ),
         boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
         offset: surface_id as usize,
         body_offset: surface_id as usize,
@@ -86,14 +83,15 @@ fn transfers_an_exact_zero_major_inline_frame_as_a_sphere() {
         crate::container::scan_bytes(build_prt("inline-sphere", &[("ND:0:VisibGeom:0", payload)]));
     assert_eq!(scan.surfaces.rows.len(), 1);
     assert_eq!(scan.surfaces.parameters.len(), 1);
-    scan.surfaces.parameters[0].positional_torus_frame =
-        Some(crate::surface::PositionalTorusFrame {
+    scan.surfaces.parameters[0].carrier = crate::surface::SurfaceParameterCarrier::Resolved(
+        crate::surface::InlineSurfaceCarrier::Torus(crate::surface::PositionalTorusFrame {
             center: [2.0, 2.0, 4.0],
             axis: [0.0, 0.0, 1.0],
             ref_direction: [-1.0, 0.0, 0.0],
             major_radius: 0.0,
             minor_radius: 2.0,
-        });
+        }),
+    );
     let mut ir = cadmpeg_ir::document::CadIr::empty();
 
     assert_eq!(

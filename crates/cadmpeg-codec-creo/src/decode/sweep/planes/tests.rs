@@ -258,16 +258,16 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
         .push(crate::surface::SurfaceParameterRecord {
             surface_id: 33,
             body: Vec::new(),
-            scalar_values: Vec::new(),
             scalar_tokens: Vec::new(),
             opaque_spans: Vec::new(),
             scalar_frames: Vec::new(),
             terminal_scalar_frame: None,
-            tabulated_cylinder_frame: None,
-            positional_cylinder_frame: Some(frame),
-            split_cylinder_outline_bounds: None,
-            positional_cone_frame: None,
-            positional_torus_frame: None,
+            carrier: crate::surface::SurfaceParameterCarrier::Resolved(
+                crate::surface::InlineSurfaceCarrier::Cylinder {
+                    frame,
+                    split_bounds: None,
+                },
+            ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 0,
             body_offset: 0,

@@ -84,7 +84,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
             continue;
         };
         let envelopes = [first_row, second_row].map(|row| {
-            unique_surface_parameter_record(scan, row)?.type26_five_coordinate_envelope(row.kind)
+            unique_surface_parameter_record(scan, row)?.type26_five_coordinate_envelope()
         });
         let [Some(first_envelope), Some(second_envelope)] = envelopes else {
             continue;
@@ -170,7 +170,7 @@ pub(in super::super) fn transfer_positional_tori(
         // generated round family. A positional torus frame is a neutral
         // carrier only after the complete family proves one constant radius.
         let inline_non_plane = record.has_inline_non_plane_envelope()
-            || record.has_inline_non_plane_local_system_suffix(row.kind);
+            || record.has_inline_non_plane_local_system_suffix();
         if row.kind == crate::surface::SurfaceKind::TorusOrSphere
             && feature_schema_class(scan, row.feature_id) == Some(913)
             && !constant_round_feature_ids.contains(&row.feature_id)
@@ -178,7 +178,7 @@ pub(in super::super) fn transfer_positional_tori(
         {
             continue;
         }
-        let Some(frame) = record.positional_torus_frame else {
+        let Some(frame) = record.positional_torus_frame() else {
             continue;
         };
         let id = SurfaceId::mint(format!("creo:visibgeom:surface#{}", row.id))
@@ -263,11 +263,10 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
         {
             continue;
         }
-        let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id)
-        else {
+        if crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id).is_none() {
             continue;
-        };
-        let Some(frame) = record.line_extrusion_frame(row.kind) else {
+        }
+        let Some(frame) = record.line_extrusion_frame() else {
             continue;
         };
         let directrix =

@@ -672,16 +672,13 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
         .push(crate::surface::SurfaceParameterRecord {
             surface_id: 12,
             body: vec![0],
-            scalar_values: vec![0.5],
             scalar_tokens: replay_frame.slots.clone(),
             opaque_spans: Vec::new(),
             scalar_frames: vec![replay_frame.clone()],
             terminal_scalar_frame: Some(replay_frame),
-            tabulated_cylinder_frame: None,
-            positional_cylinder_frame: None,
-            split_cylinder_outline_bounds: None,
-            positional_cone_frame: None,
-            positional_torus_frame: None,
+            carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
+                crate::surface::SurfaceKind::TorusOrSphere,
+            ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 200,
             body_offset: 201,
@@ -861,7 +858,6 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
                 .push(crate::surface::SurfaceParameterRecord {
                     surface_id: id,
                     body: vec![0x11, 0x00, 0x11, 0, 0, 0, 0, 0, 0, 0],
-                    scalar_values: Vec::new(),
                     scalar_tokens: Vec::new(),
                     opaque_spans: Vec::new(),
                     scalar_frames: vec![
@@ -875,11 +871,9 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
                         },
                     ],
                     terminal_scalar_frame: None,
-                    tabulated_cylinder_frame: None,
-                    positional_cylinder_frame: None,
-                    split_cylinder_outline_bounds: None,
-                    positional_cone_frame: None,
-                    positional_torus_frame: None,
+                    carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
+                        crate::surface::SurfaceKind::Cylinder,
+                    ),
                     boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
                     offset: id as usize,
                     body_offset: id as usize + 1,
@@ -1339,22 +1333,31 @@ fn generated_cylinder_extent_uses_unique_available_parameter_frames() {
         length: Some(5.0),
     };
     let parameter =
-        |surface_id, positional_cylinder_frame| crate::surface::SurfaceParameterRecord {
-            surface_id,
-            body: Vec::new(),
-            scalar_values: Vec::new(),
-            scalar_tokens: Vec::new(),
-            opaque_spans: Vec::new(),
-            scalar_frames: Vec::new(),
-            terminal_scalar_frame: None,
-            tabulated_cylinder_frame: None,
-            positional_cylinder_frame,
-            split_cylinder_outline_bounds: None,
-            positional_cone_frame: None,
-            positional_torus_frame: None,
-            boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
-            offset: 0,
-            body_offset: 0,
+        |surface_id, positional_cylinder_frame: Option<crate::surface::PositionalCylinderFrame>| {
+            crate::surface::SurfaceParameterRecord {
+                surface_id,
+                body: Vec::new(),
+                scalar_tokens: Vec::new(),
+                opaque_spans: Vec::new(),
+                scalar_frames: Vec::new(),
+                terminal_scalar_frame: None,
+                carrier: positional_cylinder_frame.map_or(
+                    crate::surface::SurfaceParameterCarrier::Unresolved(
+                        crate::surface::SurfaceKind::Cylinder,
+                    ),
+                    |frame| {
+                        crate::surface::SurfaceParameterCarrier::Resolved(
+                            crate::surface::InlineSurfaceCarrier::Cylinder {
+                                frame,
+                                split_bounds: None,
+                            },
+                        )
+                    },
+                ),
+                boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+                offset: 0,
+                body_offset: 0,
+            }
         };
     let surface_ids = BTreeSet::from([1, 2, 3]);
     let parameters = [parameter(1, Some(frame)), parameter(2, None)];
@@ -1389,22 +1392,22 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
     let parameter = crate::surface::SurfaceParameterRecord {
         surface_id: 33,
         body: Vec::new(),
-        scalar_values: Vec::new(),
         scalar_tokens: Vec::new(),
         opaque_spans: Vec::new(),
         scalar_frames: Vec::new(),
         terminal_scalar_frame: None,
-        tabulated_cylinder_frame: None,
-        positional_cylinder_frame: Some(crate::surface::PositionalCylinderFrame {
-            origin: [2.0, 4.0, 0.0],
-            axis: [0.0, -1.0, 0.0],
-            ref_direction: [1.0, 0.0, 0.0],
-            radius: 1.0,
-            length: Some(8.0),
-        }),
-        split_cylinder_outline_bounds: None,
-        positional_cone_frame: None,
-        positional_torus_frame: None,
+        carrier: crate::surface::SurfaceParameterCarrier::Resolved(
+            crate::surface::InlineSurfaceCarrier::Cylinder {
+                frame: crate::surface::PositionalCylinderFrame {
+                    origin: [2.0, 4.0, 0.0],
+                    axis: [0.0, -1.0, 0.0],
+                    ref_direction: [1.0, 0.0, 0.0],
+                    radius: 1.0,
+                    length: Some(8.0),
+                },
+                split_bounds: None,
+            },
+        ),
         boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
         offset: 33,
         body_offset: 34,
@@ -1504,11 +1507,13 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         generated_bounded_cylinder_extent(&scan, &ir, 7, None)
     );
 
-    scan.surfaces.parameters[0]
-        .positional_cylinder_frame
-        .as_mut()
-        .expect("cylinder frame")
-        .length = None;
+    let crate::surface::SurfaceParameterCarrier::Resolved(
+        crate::surface::InlineSurfaceCarrier::Cylinder { frame, .. },
+    ) = &mut scan.surfaces.parameters[0].carrier
+    else {
+        panic!("cylinder frame");
+    };
+    frame.length = None;
     assert_eq!(
         generated_bounded_cylinder_extent(&scan, &ir, 7, None),
         Some((
@@ -1525,7 +1530,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
     );
     assert!(generated_bounded_cylinder_extent(&scan, &untransferred_caps, 7, None).is_none());
     let lengthless = scan.surfaces.parameters[0]
-        .positional_cylinder_frame
+        .positional_cylinder_frame()
         .expect("cylinder frame");
     assert!(bounded_cylinder_span(
         lengthless,
@@ -1542,11 +1547,13 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
     assert!(
         bounded_cylinder_span(invalid_length, &[([0.0, -4.0, 0.0], [0.0, 1.0, 0.0])]).is_none()
     );
-    scan.surfaces.parameters[0]
-        .positional_cylinder_frame
-        .as_mut()
-        .expect("cylinder frame")
-        .length = Some(8.0);
+    let crate::surface::SurfaceParameterCarrier::Resolved(
+        crate::surface::InlineSurfaceCarrier::Cylinder { frame, .. },
+    ) = &mut scan.surfaces.parameters[0].carrier
+    else {
+        panic!("cylinder frame");
+    };
+    frame.length = Some(8.0);
 
     let transform = crate::placement::FeatureSectionTransform {
         definition_id: 7,
@@ -1625,17 +1632,21 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
     *normal = Vector3::new(0.0, 1.0, 1.0);
     assert!(generated_bounded_cylinder_extent(&scan, &oblique, 7, None).is_none());
 
-    scan.surfaces.parameters[0]
-        .positional_cylinder_frame
-        .as_mut()
-        .expect("cylinder frame")
-        .length = Some(7.0);
+    let crate::surface::SurfaceParameterCarrier::Resolved(
+        crate::surface::InlineSurfaceCarrier::Cylinder { frame, .. },
+    ) = &mut scan.surfaces.parameters[0].carrier
+    else {
+        panic!("cylinder frame");
+    };
+    frame.length = Some(7.0);
     assert!(generated_bounded_cylinder_extent(&scan, &ir, 7, None).is_none());
-    scan.surfaces.parameters[0]
-        .positional_cylinder_frame
-        .as_mut()
-        .expect("cylinder frame")
-        .length = Some(8.0);
+    let crate::surface::SurfaceParameterCarrier::Resolved(
+        crate::surface::InlineSurfaceCarrier::Cylinder { frame, .. },
+    ) = &mut scan.surfaces.parameters[0].carrier
+    else {
+        panic!("cylinder frame");
+    };
+    frame.length = Some(8.0);
 
     scan.surfaces.rows.push(scan.surfaces.rows[0].clone());
     assert!(generated_bounded_cylinder_extent(&scan, &ir, 7, None).is_none());

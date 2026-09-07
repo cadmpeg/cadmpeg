@@ -295,7 +295,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 let radii =
                     crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)
                         .filter(|parameter| parameter.offset == row.offset)
-                        .and_then(|parameter| parameter.torus_radius_overrides(row.kind))
+                        .and_then(|parameter| parameter.torus_radius_overrides())
                         .map(|overrides| [overrides.radius1, overrides.radius2])
                         .or(prototype_radii);
                 let Some([radius1, radius2]) = radii else {

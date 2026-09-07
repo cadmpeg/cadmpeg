@@ -442,8 +442,6 @@ pub struct SurfaceParameterRecord {
     pub surface_id: u32,
     /// Exact bytes after `next_geom_ptr` and before the structural boundary.
     pub body: Vec<u8>,
-    /// Context-independent scalar values decoded from the body in byte order.
-    pub scalar_values: Vec<f64>,
     /// Decoded scalar tokens with byte spans relative to `body`.
     pub scalar_tokens: Vec<SurfaceParameterScalar>,
     /// Exact byte spans not owned by a recognized scalar token.
@@ -452,23 +450,21 @@ pub struct SurfaceParameterRecord {
     pub scalar_frames: Vec<SurfaceParameterScalarFrame>,
     /// Maximal scalar-token frame ending at the body boundary.
     pub terminal_scalar_frame: Option<SurfaceParameterScalarFrame>,
-    /// Replay-bound tabulated-cylinder envelope frame decoded with the
-    /// containing section's scalar cache.
-    pub tabulated_cylinder_frame: Option<TabulatedCylinderFrame>,
-    /// Complete analytic carrier decoded from a positional cylinder row.
-    pub positional_cylinder_frame: Option<PositionalCylinderFrame>,
-    /// Axis-normal rectangle corners from a split cylinder patch suffix.
-    pub split_cylinder_outline_bounds: Option<[[f64; 2]; 2]>,
-    /// Complete analytic carrier decoded from a positional cone row.
-    pub positional_cone_frame: Option<PositionalConeFrame>,
-    /// Complete analytic carrier decoded from a positional torus row.
-    pub positional_torus_frame: Option<PositionalTorusFrame>,
+    /// Row kind and its decoded carrier, when available.
+    pub carrier: SurfaceParameterCarrier,
     /// Structural form that bounded the body.
     pub boundary: SurfaceBodyBoundary,
     /// Byte offset of the positional surface row in the original stream.
     pub offset: usize,
     /// Byte offset of the first parameter-body byte in the original stream.
     pub body_offset: usize,
+}
+
+/// Decoded carrier or the declared kind of an unresolved parameter body.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SurfaceParameterCarrier {
+    Unresolved(SurfaceKind),
+    Resolved(InlineSurfaceCarrier),
 }
 
 /// Complete interpolation data replayed by a later positional spline row.
@@ -1106,6 +1102,75 @@ pub struct TabulatedCylinderCurveReplay {
 }
 
 impl SurfaceParameterRecord {
+    /// Declared surface family, retained even when no carrier is decoded.
+    pub fn kind(&self) -> SurfaceKind {
+        match self.carrier {
+            SurfaceParameterCarrier::Unresolved(kind) => kind,
+            SurfaceParameterCarrier::Resolved(carrier) => match carrier {
+                InlineSurfaceCarrier::Cylinder { .. } | InlineSurfaceCarrier::CylinderBounds(_) => {
+                    SurfaceKind::Cylinder
+                }
+                InlineSurfaceCarrier::Cone(_) => SurfaceKind::Cone,
+                InlineSurfaceCarrier::Torus(_) => SurfaceKind::TorusOrSphere,
+                InlineSurfaceCarrier::Tabulated { variant, .. } => SurfaceKind::Extrusion(variant),
+            },
+        }
+    }
+
+    /// Context-independent scalar values in body order.
+    #[cfg(test)]
+    pub fn scalar_values(&self) -> Vec<f64> {
+        self.scalar_tokens
+            .iter()
+            .filter_map(|token| token.value)
+            .collect()
+    }
+
+    pub fn positional_cylinder_frame(&self) -> Option<PositionalCylinderFrame> {
+        match self.carrier {
+            SurfaceParameterCarrier::Resolved(InlineSurfaceCarrier::Cylinder { frame, .. }) => {
+                Some(frame)
+            }
+            _ => None,
+        }
+    }
+
+    pub fn split_cylinder_outline_bounds(&self) -> Option<[[f64; 2]; 2]> {
+        match self.carrier {
+            SurfaceParameterCarrier::Resolved(InlineSurfaceCarrier::Cylinder {
+                split_bounds,
+                ..
+            }) => split_bounds,
+            SurfaceParameterCarrier::Resolved(InlineSurfaceCarrier::CylinderBounds(bounds)) => {
+                Some(bounds)
+            }
+            _ => None,
+        }
+    }
+
+    pub fn positional_cone_frame(&self) -> Option<PositionalConeFrame> {
+        match self.carrier {
+            SurfaceParameterCarrier::Resolved(InlineSurfaceCarrier::Cone(frame)) => Some(frame),
+            _ => None,
+        }
+    }
+
+    pub fn positional_torus_frame(&self) -> Option<PositionalTorusFrame> {
+        match self.carrier {
+            SurfaceParameterCarrier::Resolved(InlineSurfaceCarrier::Torus(frame)) => Some(frame),
+            _ => None,
+        }
+    }
+
+    pub fn tabulated_cylinder_frame(&self) -> Option<TabulatedCylinderFrame> {
+        match self.carrier {
+            SurfaceParameterCarrier::Resolved(InlineSurfaceCarrier::Tabulated {
+                frame, ..
+            }) => Some(frame),
+            _ => None,
+        }
+    }
+
     /// Whether the bounded body has the inline non-plane envelope delimiter.
     ///
     /// The terminal local-system close is excluded from `body`; the single
@@ -1127,7 +1192,8 @@ impl SurfaceParameterRecord {
 
     /// Whether the bounded body ends with a complete inline non-plane local
     /// system and its family suffix.
-    pub(crate) fn has_inline_non_plane_local_system_suffix(&self, kind: SurfaceKind) -> bool {
+    pub(crate) fn has_inline_non_plane_local_system_suffix(&self) -> bool {
+        let kind = self.kind();
         if !matches!(
             kind,
             SurfaceKind::Cylinder | SurfaceKind::Cone | SurfaceKind::TorusOrSphere
@@ -1166,7 +1232,8 @@ impl SurfaceParameterRecord {
 
     /// Decode the terminal positive-DICT half-angle of a positional cone body.
     #[must_use]
-    pub fn cone_half_angle_override(&self, kind: SurfaceKind) -> Option<ConeHalfAngleOverride> {
+    pub fn cone_half_angle_override(&self) -> Option<ConeHalfAngleOverride> {
+        let kind = self.kind();
         if kind != SurfaceKind::Cone {
             return None;
         }
@@ -1179,7 +1246,8 @@ impl SurfaceParameterRecord {
 
     /// Decode the tagged radius trailer of a positional torus-or-sphere body.
     #[must_use]
-    pub fn torus_radius_overrides(&self, kind: SurfaceKind) -> Option<TorusRadiusOverrides> {
+    pub fn torus_radius_overrides(&self) -> Option<TorusRadiusOverrides> {
+        let kind = self.kind();
         if kind != SurfaceKind::TorusOrSphere {
             return None;
         }
@@ -1189,13 +1257,10 @@ impl SurfaceParameterRecord {
     /// Decode a type-26 row's terminal replay of its section prototype's
     /// minor radius.
     #[must_use]
-    pub fn type26_replayed_minor_radius(
-        &self,
-        kind: SurfaceKind,
-        prototype_minor_radius: f64,
-    ) -> Option<f64> {
+    pub fn type26_replayed_minor_radius(&self, prototype_minor_radius: f64) -> Option<f64> {
+        let kind = self.kind();
         (kind == SurfaceKind::TorusOrSphere
-            && self.torus_radius_overrides(kind).is_none()
+            && self.torus_radius_overrides().is_none()
             && prototype_minor_radius.is_finite()
             && prototype_minor_radius > 0.0)
             .then_some(())?;
@@ -1209,7 +1274,8 @@ impl SurfaceParameterRecord {
 
     /// Decode the terminal outline frame of a positional torus-or-sphere body.
     #[must_use]
-    pub fn torus_outline_frame(&self, kind: SurfaceKind) -> Option<TorusOutlineFrame> {
+    pub fn torus_outline_frame(&self) -> Option<TorusOutlineFrame> {
+        let kind = self.kind();
         if kind != SurfaceKind::TorusOrSphere {
             return None;
         }
@@ -1246,10 +1312,8 @@ impl SurfaceParameterRecord {
 
     /// Decode the bounded untagged five-coordinate type-26 envelope.
     #[must_use]
-    pub fn type26_five_coordinate_envelope(
-        &self,
-        kind: SurfaceKind,
-    ) -> Option<Type26FiveCoordinateEnvelope> {
+    pub fn type26_five_coordinate_envelope(&self) -> Option<Type26FiveCoordinateEnvelope> {
+        let kind = self.kind();
         (kind == SurfaceKind::TorusOrSphere).then_some(())?;
         if self.body.ends_with(&[0xf7, 0x1c]) {
             let frame_end = self.body.len().checked_sub(2)?;
@@ -1358,10 +1422,8 @@ impl SurfaceParameterRecord {
     /// Decode the type-26 envelope whose final coordinate pair follows a
     /// six-byte body-local control payload.
     #[must_use]
-    pub fn type26_split_coordinate_envelope(
-        &self,
-        kind: SurfaceKind,
-    ) -> Option<Type26SplitCoordinateEnvelope> {
+    pub fn type26_split_coordinate_envelope(&self) -> Option<Type26SplitCoordinateEnvelope> {
+        let kind = self.kind();
         (kind == SurfaceKind::TorusOrSphere
             && self.body.get(8..19)
                 == Some(&[
@@ -1388,7 +1450,8 @@ impl SurfaceParameterRecord {
 
     /// Decode the rolling radius repeated by a bounded type-24 round envelope.
     #[must_use]
-    pub fn type24_round_radius(&self, kind: SurfaceKind) -> Option<f64> {
+    pub fn type24_round_radius(&self) -> Option<f64> {
+        let kind = self.kind();
         (kind == SurfaceKind::Cylinder).then_some(())?;
         self.type24_scalar_frame_round_layout()
             .or_else(|| self.type24_split_coordinate_round_layout())
@@ -1397,7 +1460,7 @@ impl SurfaceParameterRecord {
                 (self.is_type24_first_coordinate_round_body()
                     || self.is_type24_segmented_first_coordinate_round_body())
                 .then_some(())?;
-                self.positional_cylinder_frame.map(|frame| frame.radius)
+                self.positional_cylinder_frame().map(|frame| frame.radius)
             })
             .or_else(|| {
                 self.type24_held_coordinate_round_frame()
@@ -1408,9 +1471,10 @@ impl SurfaceParameterRecord {
 
     /// Decode a type-24 radius in a class-913 generated-round context.
     #[must_use]
-    pub fn type24_generated_round_radius(&self, kind: SurfaceKind) -> Option<f64> {
+    pub fn type24_generated_round_radius(&self) -> Option<f64> {
+        let kind = self.kind();
         (kind == SurfaceKind::Cylinder).then_some(())?;
-        let axial_candidates = self.type24_axial_interval_corner_candidates(kind);
+        let axial_candidates = self.type24_axial_interval_corner_candidates();
         if let Some(first) = axial_candidates.first() {
             return axial_candidates
                 .iter()
@@ -1420,10 +1484,10 @@ impl SurfaceParameterRecord {
                 })
                 .then_some(first.radius);
         }
-        if let Some(envelope) = self.type24_round_edge_envelope(kind) {
+        if let Some(envelope) = self.type24_round_edge_envelope() {
             return perpendicular_round_edge_radius(envelope);
         }
-        self.type24_round_radius(kind)
+        self.type24_round_radius()
     }
 
     fn type24_terminal_round_radius(&self) -> Option<f64> {
@@ -1445,17 +1509,16 @@ impl SurfaceParameterRecord {
 
     /// Decode the diameter and extent envelope of a scalar-frame type-24 row.
     #[must_use]
-    pub fn type24_scalar_frame_round_envelope(
-        &self,
-        kind: SurfaceKind,
-    ) -> Option<Type24RoundEnvelope> {
+    pub fn type24_scalar_frame_round_envelope(&self) -> Option<Type24RoundEnvelope> {
+        let kind = self.kind();
         (kind == SurfaceKind::Cylinder).then_some(())?;
         self.type24_scalar_frame_round_layout()
     }
 
     /// Decode the final two three-coordinate corners of a type-24 patch.
     #[must_use]
-    pub fn type24_terminal_corner_envelope(&self, kind: SurfaceKind) -> Option<[[f64; 3]; 2]> {
+    pub fn type24_terminal_corner_envelope(&self) -> Option<[[f64; 3]; 2]> {
+        let kind = self.kind();
         (kind == SurfaceKind::Cylinder && self.boundary == SurfaceBodyBoundary::CompoundClose)
             .then_some(())?;
         let terminal = self.scalar_frames.last()?;
@@ -1481,16 +1544,14 @@ impl SurfaceParameterRecord {
 
     /// Decode a source-bound selector-corner interval cylinder.
     #[must_use]
-    pub fn selector_corner_interval_cylinder_frame(
-        &self,
-        kind: SurfaceKind,
-    ) -> Option<PositionalCylinderFrame> {
+    pub fn selector_corner_interval_cylinder_frame(&self) -> Option<PositionalCylinderFrame> {
+        let kind = self.kind();
         (kind == SurfaceKind::Cylinder).then_some(())?;
         let frame = decode_selector_corner_interval_cylinder_frame(
             &self.body,
             &scalar::ScalarCache::default(),
         )?;
-        self.positional_cylinder_frame
+        self.positional_cylinder_frame()
             .is_some_and(|stored| positional_cylinder_frames_agree(stored, frame))
             .then_some(frame)
     }
@@ -1498,10 +1559,8 @@ impl SurfaceParameterRecord {
     /// Decode every cylinder placement allowed by a type-24 axial-interval
     /// corner envelope whose control shell does not select a radial quadrant.
     #[must_use]
-    pub fn type24_axial_interval_corner_candidates(
-        &self,
-        kind: SurfaceKind,
-    ) -> Vec<PositionalCylinderFrame> {
+    pub fn type24_axial_interval_corner_candidates(&self) -> Vec<PositionalCylinderFrame> {
+        let kind = self.kind();
         if kind != SurfaceKind::Cylinder {
             return Vec::new();
         }
@@ -1517,7 +1576,8 @@ impl SurfaceParameterRecord {
     /// coordinates. A compound close may follow the optional generated-entity
     /// reference when the row continues with another bounded body.
     #[must_use]
-    pub fn type24_round_edge_envelope(&self, kind: SurfaceKind) -> Option<Type24RoundEdgeEnvelope> {
+    pub fn type24_round_edge_envelope(&self) -> Option<Type24RoundEdgeEnvelope> {
+        let kind = self.kind();
         (kind == SurfaceKind::Cylinder).then_some(())?;
         let cache = scalar::ScalarCache::default();
         let start = type24_round_edge_shell_end(&self.body, &cache)?;
@@ -1562,11 +1622,8 @@ impl SurfaceParameterRecord {
         })
     }
 
-    fn type24_round_frame(
-        &self,
-        kind: SurfaceKind,
-        cache: &scalar::ScalarCache,
-    ) -> Option<PositionalCylinderFrame> {
+    fn type24_round_frame(&self, cache: &scalar::ScalarCache) -> Option<PositionalCylinderFrame> {
+        let kind = self.kind();
         (kind == SurfaceKind::Cylinder).then_some(())?;
         self.repeated_diameter_type24_round_frame(cache)
             .or_else(|| self.type24_held_coordinate_round_frame())
@@ -2098,7 +2155,8 @@ impl SurfaceParameterRecord {
     /// Decode the common model-space sweep-direction prefix of a positional
     /// `surface_of_extrusion` body.
     #[must_use]
-    pub fn extrusion_direction(&self, kind: SurfaceKind) -> Option<[f64; 3]> {
+    pub fn extrusion_direction(&self) -> Option<[f64; 3]> {
+        let kind = self.kind();
         if kind != SurfaceKind::Extrusion(ExtrusionVariant::TabulatedCylinder) {
             return None;
         }
@@ -2131,11 +2189,11 @@ impl SurfaceParameterRecord {
     /// coordinate form; callers must exclude rows owned by a cubic replay
     /// before using this result.
     #[must_use]
-    pub fn line_extrusion_frame(&self, kind: SurfaceKind) -> Option<LineExtrusionFrame> {
+    pub fn line_extrusion_frame(&self) -> Option<LineExtrusionFrame> {
         if self.boundary != SurfaceBodyBoundary::CompoundClose {
             return None;
         }
-        let direction_values = self.extrusion_direction(kind)?;
+        let direction_values = self.extrusion_direction()?;
         if let [direction, directrix] = self.scalar_frames.as_slice() {
             let [start_x, start_y, start_z, end_x, end_y, end_z] = directrix.slots.as_slice()
             else {
@@ -2191,7 +2249,7 @@ impl SurfaceParameterRecord {
             .filter(LineExtrusionFrame::is_valid);
         }
 
-        let frame = self.tabulated_cylinder_frame?;
+        let frame = self.tabulated_cylinder_frame()?;
         let [start_x, start_y, start_z, end_x, end_y, end_z] = frame.values;
         Some(LineExtrusionFrame {
             direction: direction_values,
@@ -3761,11 +3819,19 @@ struct InlineSurfaceEnvelope {
     close: usize,
 }
 
-#[derive(Debug, Clone, Copy)]
-enum InlineSurfaceCarrier {
-    Cylinder(PositionalCylinderFrame),
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum InlineSurfaceCarrier {
+    Cylinder {
+        frame: PositionalCylinderFrame,
+        split_bounds: Option<[[f64; 2]; 2]>,
+    },
+    CylinderBounds([[f64; 2]; 2]),
     Cone(PositionalConeFrame),
     Torus(PositionalTorusFrame),
+    Tabulated {
+        variant: ExtrusionVariant,
+        frame: TabulatedCylinderFrame,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -3850,14 +3916,10 @@ fn inline_surface_body(
         if !structurally_complete || geometric_interpretation_count == 0 {
             continue;
         }
-        let carrier = (!carriers.is_empty())
-            .then(|| carriers.first().copied())
-            .flatten()
-            .filter(|first| {
-                carriers
-                    .iter()
-                    .all(|candidate| inline_carriers_agree(*candidate, *first))
-            });
+        let carrier = carriers
+            .first()
+            .copied()
+            .filter(|first| carriers.iter().all(|candidate| candidate == first));
         layouts.push(InlineSurfaceBody {
             terminal_close,
             carrier,
@@ -3953,11 +4015,7 @@ fn inline_surface_suffix_body(
             let carrier = (carriers.len() == geometric_interpretation_count)
                 .then(|| carriers.first().copied())
                 .flatten()
-                .filter(|first| {
-                    carriers
-                        .iter()
-                        .all(|candidate| inline_carriers_agree(*candidate, *first))
-                });
+                .filter(|first| carriers.iter().all(|candidate| candidate == first));
             let carrier = inline_suffix_witness(kind, body, local_start, cache)
                 .filter(|witness| {
                     inline_suffix_witness_agrees(
@@ -3994,7 +4052,10 @@ fn inline_suffix_witness(
     match kind {
         SurfaceKind::Cylinder => decode_11_10_13_cylinder_witness(prefix, cache)
             .or_else(|| decode_held_axis_cylinder_frame(prefix, cache))
-            .map(InlineSurfaceCarrier::Cylinder),
+            .map(|frame| InlineSurfaceCarrier::Cylinder {
+                frame,
+                split_bounds: None,
+            }),
         SurfaceKind::Cone => {
             decode_planar_envelope_cone_frame(prefix, cache).map(InlineSurfaceCarrier::Cone)
         }
@@ -4061,11 +4122,14 @@ fn inline_suffix_witness_agrees(
         return false;
     }
     match witness {
-        InlineSurfaceCarrier::Cylinder(witness) => {
+        InlineSurfaceCarrier::Cylinder { frame: witness, .. } => {
             let matching = candidates
                 .iter()
                 .filter(|candidate| {
-                    let InlineSurfaceCarrier::Cylinder(candidate) = **candidate else {
+                    let InlineSurfaceCarrier::Cylinder {
+                        frame: candidate, ..
+                    } = **candidate
+                    else {
                         return false;
                     };
                     let axis_dot = witness
@@ -4098,7 +4162,9 @@ fn inline_suffix_witness_agrees(
             inline_close(witness.half_angle, candidate.half_angle)
                 && axis_dot.abs() >= 1.0 - EPS_INLINE_FRAME
         }),
-        InlineSurfaceCarrier::Torus(_) => false,
+        InlineSurfaceCarrier::Torus(_)
+        | InlineSurfaceCarrier::CylinderBounds(_)
+        | InlineSurfaceCarrier::Tabulated { .. } => false,
     }
 }
 
@@ -4335,13 +4401,16 @@ fn inline_surface_carrier(
                     )?;
                 }
             }
-            Some(InlineSurfaceCarrier::Cylinder(PositionalCylinderFrame {
-                origin,
-                axis,
-                ref_direction: reference_direction,
-                radius,
-                length: Some((envelope.axial[1] - envelope.axial[0]).abs()),
-            }))
+            Some(InlineSurfaceCarrier::Cylinder {
+                frame: PositionalCylinderFrame {
+                    origin,
+                    axis,
+                    ref_direction: reference_direction,
+                    radius,
+                    length: Some((envelope.axial[1] - envelope.axial[0]).abs()),
+                },
+                split_bounds: None,
+            })
         }
         SurfaceKind::Cone => {
             let half_angle = suffix[0];
@@ -4441,13 +4510,16 @@ fn inline_surface_suffix_carrier(
         SurfaceKind::Cylinder => {
             let radius = suffix[0];
             (radius.is_finite() && radius > 0.0).then_some(())?;
-            Some(InlineSurfaceCarrier::Cylinder(PositionalCylinderFrame {
-                origin,
-                axis,
-                ref_direction,
-                radius,
-                length: None,
-            }))
+            Some(InlineSurfaceCarrier::Cylinder {
+                frame: PositionalCylinderFrame {
+                    origin,
+                    axis,
+                    ref_direction,
+                    radius,
+                    length: None,
+                },
+                split_bounds: None,
+            })
         }
         SurfaceKind::Cone => {
             let half_angle = suffix[0];
@@ -4725,22 +4797,10 @@ fn inline_close(first: f64, second: f64) -> bool {
 
 fn inline_carrier_is_valid(carrier: InlineSurfaceCarrier) -> bool {
     match carrier {
-        InlineSurfaceCarrier::Cylinder(frame) => frame.is_valid(),
+        InlineSurfaceCarrier::Cylinder { frame, .. } => frame.is_valid(),
         InlineSurfaceCarrier::Cone(frame) => frame.is_valid(),
         InlineSurfaceCarrier::Torus(frame) => frame.is_valid(),
-    }
-}
-
-fn inline_carriers_agree(first: InlineSurfaceCarrier, second: InlineSurfaceCarrier) -> bool {
-    match (first, second) {
-        (InlineSurfaceCarrier::Cylinder(first), InlineSurfaceCarrier::Cylinder(second)) => {
-            first == second
-        }
-        (InlineSurfaceCarrier::Cone(first), InlineSurfaceCarrier::Cone(second)) => first == second,
-        (InlineSurfaceCarrier::Torus(first), InlineSurfaceCarrier::Torus(second)) => {
-            first == second
-        }
-        _ => false,
+        InlineSurfaceCarrier::CylinderBounds(_) | InlineSurfaceCarrier::Tabulated { .. } => false,
     }
 }
 
@@ -4805,55 +4865,57 @@ fn parameter_records_for_rows(payload: &[u8], rows: &[SurfaceRow]) -> Vec<Surfac
         let opaque_spans = opaque_spans(&body, &scalar_tokens);
         let scalar_frames = scalar_frames(&scalar_tokens);
         let terminal_scalar_frame = terminal_scalar_frame(&body, &scalar_frames);
-        let tabulated_cylinder_frame = matches!(row.kind, SurfaceKind::Extrusion(_))
-            .then(|| decode_tabulated_cylinder_frame(&body, &cache))
-            .flatten()
-            .map(|(frame, _)| frame);
-        let mut positional_cylinder_frame = (row.kind == SurfaceKind::Cylinder)
-            .then(|| decode_positional_cylinder_frame(&body, &cache))
-            .flatten();
-        let split_cylinder_outline_bounds = (row.kind == SurfaceKind::Cylinder)
-            .then(|| split_cylinder_outline_bounds(&body, &scalar_tokens))
-            .flatten();
-        let mut positional_cone_frame = (row.kind == SurfaceKind::Cone)
-            .then(|| decode_positional_cone_frame(&body, &cache))
-            .flatten();
-        let mut positional_torus_frame = (row.kind == SurfaceKind::TorusOrSphere)
-            .then(|| decode_positional_torus_frame(&body, &cache))
-            .flatten();
-        if let Some(layout) = inline {
-            if let Some(carrier) = layout.carrier {
-                match carrier {
-                    InlineSurfaceCarrier::Cylinder(frame) => {
-                        positional_cylinder_frame = Some(frame);
-                    }
-                    InlineSurfaceCarrier::Cone(frame) => positional_cone_frame = Some(frame),
-                    InlineSurfaceCarrier::Torus(frame) => positional_torus_frame = Some(frame),
-                }
-            }
-        }
         let mut record = SurfaceParameterRecord {
             surface_id: row.id,
-            scalar_values: scalar_tokens
-                .iter()
-                .filter_map(|token| token.value)
-                .collect(),
             scalar_tokens,
             opaque_spans,
             scalar_frames,
             terminal_scalar_frame,
-            tabulated_cylinder_frame,
-            positional_cylinder_frame,
-            split_cylinder_outline_bounds,
-            positional_cone_frame,
-            positional_torus_frame,
+            carrier: SurfaceParameterCarrier::Unresolved(row.kind),
             body,
             boundary,
             offset: row.offset,
             body_offset: *body_start,
         };
-        if row.kind == SurfaceKind::Cylinder && record.positional_cylinder_frame.is_none() {
-            record.positional_cylinder_frame = record.type24_round_frame(row.kind, &cache);
+        let inline_carrier = inline.and_then(|layout| layout.carrier);
+        let carrier = match row.kind {
+            SurfaceKind::Cylinder => {
+                let frame = match inline_carrier {
+                    Some(InlineSurfaceCarrier::Cylinder { frame, .. }) => Some(frame),
+                    _ => decode_positional_cylinder_frame(&record.body, &cache)
+                        .or_else(|| record.type24_round_frame(&cache)),
+                };
+                let split_bounds =
+                    split_cylinder_outline_bounds(&record.body, &record.scalar_tokens);
+                match (frame, split_bounds) {
+                    (Some(frame), split_bounds) => Some(InlineSurfaceCarrier::Cylinder {
+                        frame,
+                        split_bounds,
+                    }),
+                    (None, Some(bounds)) => Some(InlineSurfaceCarrier::CylinderBounds(bounds)),
+                    (None, None) => None,
+                }
+            }
+            SurfaceKind::Cone => match inline_carrier {
+                Some(InlineSurfaceCarrier::Cone(frame)) => Some(InlineSurfaceCarrier::Cone(frame)),
+                _ => decode_positional_cone_frame(&record.body, &cache)
+                    .map(InlineSurfaceCarrier::Cone),
+            },
+            SurfaceKind::TorusOrSphere => match inline_carrier {
+                Some(InlineSurfaceCarrier::Torus(frame)) => {
+                    Some(InlineSurfaceCarrier::Torus(frame))
+                }
+                _ => decode_positional_torus_frame(&record.body, &cache)
+                    .map(InlineSurfaceCarrier::Torus),
+            },
+            SurfaceKind::Extrusion(variant) => {
+                decode_tabulated_cylinder_frame(&record.body, &cache)
+                    .map(|(frame, _)| InlineSurfaceCarrier::Tabulated { variant, frame })
+            }
+            SurfaceKind::Plane | SurfaceKind::Spline | SurfaceKind::Fillet => None,
+        };
+        if let Some(carrier) = carrier {
+            record.carrier = SurfaceParameterCarrier::Resolved(carrier);
         }
         records.push(record);
     }

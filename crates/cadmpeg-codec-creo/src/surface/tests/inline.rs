@@ -97,7 +97,7 @@ fn referenced_inline_compact_x_cylinder_accepts_oblique_trim_containment() {
     }
     body.extend_from_slice(&[0xe4, 0xe3]);
 
-    let InlineSurfaceCarrier::Cylinder(frame) = inline_surface_body(
+    let InlineSurfaceCarrier::Cylinder { frame, .. } = inline_surface_body(
         SurfaceKind::Cylinder,
         &body,
         &scalar::ScalarCache::default(),
@@ -218,7 +218,7 @@ fn decodes_inline_non_plane_analytic_carriers_from_witnessed_bodies() {
         &[0x2f, 0x00, 0x00],
     );
     let cylinder_frame = cylinder
-        .positional_cylinder_frame
+        .positional_cylinder_frame()
         .expect("witnessed inline cylinder");
     assert_eq!(cylinder_frame.origin, [2.0, 2.0, 4.0]);
     assert_eq!(cylinder_frame.axis, [0.0, 0.0, 1.0]);
@@ -238,7 +238,7 @@ fn decodes_inline_non_plane_analytic_carriers_from_witnessed_bodies() {
         .concat(),
         &[0x74, 0x21, 0xfb, 0x54, 0x44, 0x2d, 0x18],
     );
-    let cone_frame = cone.positional_cone_frame.expect("witnessed inline cone");
+    let cone_frame = cone.positional_cone_frame().expect("witnessed inline cone");
     assert_eq!(cone_frame.apex, [4.0, 4.0, 4.0]);
     assert_eq!(cone_frame.axis, [0.0, 0.0, 1.0]);
     assert_eq!(cone_frame.ref_direction, [-1.0, 0.0, 0.0]);
@@ -256,7 +256,7 @@ fn decodes_inline_non_plane_analytic_carriers_from_witnessed_bodies() {
         &[0x2f, 0x10, 0x00, 0xe4],
     );
     let torus_frame = torus
-        .positional_torus_frame
+        .positional_torus_frame()
         .expect("witnessed inline torus");
     assert_eq!(torus_frame.center, [5.0, 5.0, 4.0]);
     assert_eq!(torus_frame.major_radius, 4.0);
@@ -274,7 +274,7 @@ fn decodes_inline_non_plane_analytic_carriers_from_witnessed_bodies() {
         &[0x18, 0x2f, 0x00, 0x00],
     );
     let sphere_frame = sphere
-        .positional_torus_frame
+        .positional_torus_frame()
         .expect("witnessed inline sphere");
     assert_eq!(sphere_frame.center, [2.0, 2.0, 4.0]);
     assert_eq!(sphere_frame.major_radius, 0.0);
@@ -296,7 +296,7 @@ fn compact_y_image_uses_the_unique_envelope_axis_witness() {
     );
 
     let frame = cylinder
-        .positional_cylinder_frame
+        .positional_cylinder_frame()
         .expect("envelope-witnessed compact Y cylinder");
     assert_eq!(frame.origin, [2.0, 0.0, 5.0]);
     assert_eq!(frame.axis, [0.0, 1.0, 0.0]);
@@ -331,7 +331,7 @@ fn selector_envelope_places_a_compact_y_cylinder() {
         inline_surface_body(SurfaceKind::Cylinder, body, &scalar::ScalarCache::default())
             .and_then(|body| body.carrier)
             .and_then(|carrier| match carrier {
-                InlineSurfaceCarrier::Cylinder(frame) => Some(frame),
+                InlineSurfaceCarrier::Cylinder { frame, .. } => Some(frame),
                 _ => None,
             })
     };
@@ -370,7 +370,7 @@ fn selector_envelope_decodes_bare_zero_and_oblique_outline() {
     }
     body.extend_from_slice(&[0x2f, 0x00, 0x00, 0xe3]);
 
-    let InlineSurfaceCarrier::Cylinder(frame) = inline_surface_body(
+    let InlineSurfaceCarrier::Cylinder { frame, .. } = inline_surface_body(
         SurfaceKind::Cylinder,
         &body,
         &scalar::ScalarCache::default(),
@@ -403,7 +403,7 @@ fn selector_placeholder_resolves_from_one_radial_extreme() {
     }
     body.extend_from_slice(&[0x2f, 0x00, 0x00, 0xe3]);
 
-    let InlineSurfaceCarrier::Cylinder(frame) = inline_surface_body(
+    let InlineSurfaceCarrier::Cylinder { frame, .. } = inline_surface_body(
         SurfaceKind::Cylinder,
         &body,
         &scalar::ScalarCache::default(),
@@ -433,7 +433,7 @@ fn compact_axis_image_selects_equal_spans_and_stored_axis_branch() {
     );
 
     let frame = cylinder
-        .positional_cylinder_frame
+        .positional_cylinder_frame()
         .expect("compact image selects the Z span and stored axis branch");
     assert_eq!(frame.origin, [2.0, 2.0, 3.0]);
     assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
@@ -460,7 +460,7 @@ fn four_bound_inline_envelope_accepts_oblique_axial_containment() {
     payload.extend_from_slice(&[0x0f, 0xe3]);
 
     let body = &payload[6..];
-    let InlineSurfaceCarrier::Cylinder(frame) =
+    let InlineSurfaceCarrier::Cylinder { frame, .. } =
         inline_surface_body(SurfaceKind::Cylinder, body, &scalar::ScalarCache::default())
             .and_then(|body| body.carrier)
             .expect("contained four-bound envelope resolves one carrier")
@@ -494,7 +494,7 @@ fn four_bound_inline_envelope_accepts_an_endpoint_anchored_oblique_trim() {
     payload.extend_from_slice(&[0x0f, 0xe3]);
 
     let body = &payload[6..];
-    let InlineSurfaceCarrier::Cylinder(frame) =
+    let InlineSurfaceCarrier::Cylinder { frame, .. } =
         inline_surface_body(SurfaceKind::Cylinder, body, &scalar::ScalarCache::default())
             .and_then(|body| body.carrier)
             .expect("four-bound envelope and compact frame resolve one carrier")
@@ -539,7 +539,7 @@ fn four_bound_inline_envelope_decodes_directrix_dict_outline() {
     }
     body.extend_from_slice(&[0x0f, 0xe3]);
 
-    let InlineSurfaceCarrier::Cylinder(frame) = inline_surface_body(
+    let InlineSurfaceCarrier::Cylinder { frame, .. } = inline_surface_body(
         SurfaceKind::Cylinder,
         &body,
         &scalar::ScalarCache::default(),
@@ -573,7 +573,7 @@ fn inline_envelope_rejects_lane_aliases_by_geometry() {
     payload.extend_from_slice(&[0xe4, 0xe3]);
 
     let body = &payload[6..];
-    let InlineSurfaceCarrier::Cylinder(frame) =
+    let InlineSurfaceCarrier::Cylinder { frame, .. } =
         inline_surface_body(SurfaceKind::Cylinder, body, &scalar::ScalarCache::default())
             .and_then(|body| body.carrier)
             .expect("outline containment rejects the alternate scalar lane")
@@ -606,16 +606,14 @@ fn decodes_local_system_suffix_frames_without_an_axial_envelope() {
     ))
     .remove(0);
     let torus_frame = torus
-        .positional_torus_frame
+        .positional_torus_frame()
         .expect("explicit local-system suffix torus");
     assert_eq!(torus_frame.center, [-7.0, 8.0, 5.0]);
     assert_eq!(torus_frame.axis, [0.0, 0.0, 1.0]);
     assert_eq!(torus_frame.ref_direction, [0.8, 0.6, 0.0]);
     assert_eq!(torus_frame.major_radius, 3.0);
     assert_eq!(torus_frame.minor_radius, 1.0);
-    assert!(
-        torus.has_inline_non_plane_local_system_suffix(crate::surface::SurfaceKind::TorusOrSphere)
-    );
+    assert!(torus.has_inline_non_plane_local_system_suffix());
     assert_eq!(torus.boundary, SurfaceBodyBoundary::CompoundClose);
 
     let compact = [
@@ -624,23 +622,21 @@ fn decodes_local_system_suffix_frames_without_an_axial_envelope() {
     ];
     let cylinder = parameter_records(&local_system_suffix_row(0x24, &compact, &[0x0f])).remove(0);
     let cylinder_frame = cylinder
-        .positional_cylinder_frame
+        .positional_cylinder_frame()
         .expect("compact local-system suffix cylinder");
     assert_eq!(cylinder_frame.origin, [2.0, 3.0, 4.0]);
     assert_eq!(cylinder_frame.axis, [0.0, 1.0, 0.0]);
     assert_eq!(cylinder_frame.ref_direction, [0.0, 0.0, 1.0]);
     assert_eq!(cylinder_frame.radius, 1.0);
     assert_eq!(cylinder_frame.length, None);
-    assert!(
-        cylinder.has_inline_non_plane_local_system_suffix(crate::surface::SurfaceKind::Cylinder)
-    );
+    assert!(cylinder.has_inline_non_plane_local_system_suffix());
 }
 
 #[test]
 fn cylinder_inline_suffix_uses_the_11_10_13_placement_witness() {
     let record = parameter_records(&inline_11_10_13_cylinder_row(-3.0, -4.0, -5.0)).remove(0);
     let frame = record
-        .positional_cylinder_frame
+        .positional_cylinder_frame()
         .expect("placement-witnessed inline cylinder");
     assert_eq!(frame.origin, [-4.0, 0.0, -4.0]);
     assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
@@ -656,11 +652,11 @@ fn cylinder_inline_suffix_uses_the_11_10_13_placement_witness() {
     alternate_replay[replay_offset + 1] = 0x40;
     assert!(parameter_records(&alternate_replay)
         .remove(0)
-        .positional_cylinder_frame
+        .positional_cylinder_frame()
         .is_some());
 
     let inconsistent = parameter_records(&inline_11_10_13_cylinder_row(-2.0, -4.0, -5.0)).remove(0);
-    assert!(inconsistent.positional_cylinder_frame.is_none());
+    assert!(inconsistent.positional_cylinder_frame().is_none());
 }
 
 #[test]
@@ -683,7 +679,7 @@ fn cylinder_inline_suffix_uses_the_held_axis_placement_witness() {
 
     let record = parameter_records(&payload).remove(0);
     let frame = record
-        .positional_cylinder_frame
+        .positional_cylinder_frame()
         .expect("held-axis-witnessed inline cylinder");
     assert_eq!(frame.origin, [-4.0, 0.0, -2.0]);
     assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
@@ -706,7 +702,7 @@ fn decodes_compact_y_axis_cone_with_a_nonzero_origin() {
     .remove(0);
 
     let frame = record
-        .positional_cone_frame
+        .positional_cone_frame()
         .expect("compact Y-axis cone carrier");
     assert_eq!(frame.apex, [1.0, 8.0, 0.0]);
     assert_eq!(frame.axis, [0.0, 1.0, 0.0]);
@@ -732,7 +728,7 @@ fn inline_cone_accepts_a_complete_support_apex_operand_after_its_envelope() {
     );
 
     let frame = record
-        .positional_cone_frame
+        .positional_cone_frame()
         .expect("envelope-delimited support-apex cone");
     assert_eq!(frame.apex, [-4.0, 0.0, 0.0]);
     assert_eq!(frame.axis, [1.0, 0.0, 0.0]);
@@ -766,7 +762,7 @@ fn legacy_planar_cone_envelope_witness_resolves_inline_suffix_origin() {
     .remove(0);
 
     let frame = record
-        .positional_cone_frame
+        .positional_cone_frame()
         .expect("legacy cone witness carrier");
     assert_eq!(frame.apex, [0.0, -2.0, 0.0]);
     assert_eq!(frame.axis, [0.0, 1.0, 0.0]);
@@ -788,7 +784,7 @@ fn retains_a_structurally_complete_inline_row_when_center_sign_is_ambiguous() {
         &[0x2f, 0x14, 0x00],
     );
 
-    assert!(record.positional_cylinder_frame.is_none());
+    assert!(record.positional_cylinder_frame().is_none());
     assert!(record
         .body
         .windows(INLINE_TEST_LOCAL_SYSTEM_Z.len())

@@ -1037,7 +1037,7 @@ fn native_positional_cylinder_carriers(scan: &ContainerScan) -> BTreeMap<u32, Ca
         .filter_map(|row| {
             let frame =
                 crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)?
-                    .positional_cylinder_frame?;
+                    .positional_cylinder_frame()?;
             Some((
                 row.id,
                 CarrierEquation::Cylinder(super::equations::CylinderEquation {
@@ -1349,7 +1349,7 @@ fn round_edge_envelopes_for_plane(
             }
             let record =
                 crate::surface::unique_surface_parameter(&scan.surfaces.parameters, cylinder_id)?;
-            record.type24_round_edge_envelope(crate::surface::SurfaceKind::Cylinder)
+            record.type24_round_edge_envelope()
         })
         .collect()
 }

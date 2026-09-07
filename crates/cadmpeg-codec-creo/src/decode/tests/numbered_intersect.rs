@@ -322,21 +322,18 @@ fn chamfer_requires_every_affected_support_plane_to_be_placed() {
         .push(crate::surface::SurfaceParameterRecord {
             surface_id: 10,
             body: Vec::new(),
-            scalar_values: Vec::new(),
             scalar_tokens: Vec::new(),
             opaque_spans: Vec::new(),
             scalar_frames: Vec::new(),
             terminal_scalar_frame: None,
-            tabulated_cylinder_frame: None,
-            positional_cylinder_frame: None,
-            split_cylinder_outline_bounds: None,
-            positional_cone_frame: Some(crate::surface::PositionalConeFrame {
-                apex: [0.5, 0.0, 0.0],
-                axis: [-1.0, 0.0, 0.0],
-                ref_direction: [0.0, 1.0, 0.0],
-                half_angle: std::f64::consts::FRAC_PI_4,
-            }),
-            positional_torus_frame: None,
+            carrier: crate::surface::SurfaceParameterCarrier::Resolved(
+                crate::surface::InlineSurfaceCarrier::Cone(crate::surface::PositionalConeFrame {
+                    apex: [0.5, 0.0, 0.0],
+                    axis: [-1.0, 0.0, 0.0],
+                    ref_direction: [0.0, 1.0, 0.0],
+                    half_angle: std::f64::consts::FRAC_PI_4,
+                }),
+            ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 10,
             body_offset: 11,
@@ -1582,7 +1579,6 @@ fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
     let parameters = crate::surface::SurfaceParameterRecord {
         surface_id: 7,
         body: vec![],
-        scalar_values: vec![],
         scalar_tokens: vec![],
         opaque_spans: vec![crate::surface::SurfaceParameterOpaqueSpan {
             raw: vec![0x00, 0x0c, 0x9a],
@@ -1603,11 +1599,11 @@ fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
             },
         ],
         terminal_scalar_frame: None,
-        tabulated_cylinder_frame: None,
-        positional_cylinder_frame: None,
-        split_cylinder_outline_bounds: None,
-        positional_cone_frame: None,
-        positional_torus_frame: None,
+        carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
+            crate::surface::SurfaceKind::Extrusion(
+                crate::surface::ExtrusionVariant::TabulatedCylinder,
+            ),
+        ),
         boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
         offset: 0,
         body_offset: 0,
@@ -1621,10 +1617,15 @@ fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
 
     let mut broad_signed_frame = parameters;
     broad_signed_frame.scalar_frames.truncate(1);
-    broad_signed_frame.tabulated_cylinder_frame = Some(crate::surface::TabulatedCylinderFrame {
-        values: [1.0, 2.0, 5.0, 4.0, 4.0, 10.0],
-        prefixes: [0xa2, 0x42, 0x88, 0xa3, 0x18, 0x8a],
-    });
+    broad_signed_frame.carrier = crate::surface::SurfaceParameterCarrier::Resolved(
+        crate::surface::InlineSurfaceCarrier::Tabulated {
+            variant: crate::surface::ExtrusionVariant::TabulatedCylinder,
+            frame: crate::surface::TabulatedCylinderFrame {
+                values: [1.0, 2.0, 5.0, 4.0, 4.0, 10.0],
+                prefixes: [0xa2, 0x42, 0x88, 0xa3, 0x18, 0x8a],
+            },
+        },
+    );
     let (curve, sweep) = placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, None)
         .expect("broad signed-DICT placement");
     assert_eq!(curve.control_points()[0], Point3::new(1.0, 2.0, 5.0));
@@ -1638,16 +1639,26 @@ fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
     assert_eq!(curve.control_points()[3], Point3::new(4.0, 4.0, 5.0));
     assert_eq!(sweep, [0.0, 0.0, 5.0]);
 
-    broad_signed_frame.tabulated_cylinder_frame = Some(crate::surface::TabulatedCylinderFrame {
-        values: [1.0, 1.0, 2.0, 4.0, 4.0, 4.0],
-        prefixes: [0xa2, 0x42, 0x88, 0xa3, 0x18, 0x8a],
-    });
+    broad_signed_frame.carrier = crate::surface::SurfaceParameterCarrier::Resolved(
+        crate::surface::InlineSurfaceCarrier::Tabulated {
+            variant: crate::surface::ExtrusionVariant::TabulatedCylinder,
+            frame: crate::surface::TabulatedCylinderFrame {
+                values: [1.0, 1.0, 2.0, 4.0, 4.0, 4.0],
+                prefixes: [0xa2, 0x42, 0x88, 0xa3, 0x18, 0x8a],
+            },
+        },
+    );
     assert!(placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, None).is_none());
 
-    broad_signed_frame.tabulated_cylinder_frame = Some(crate::surface::TabulatedCylinderFrame {
-        values: [29.0, 5.0, 2.0, -26.0, 10.0, 4.0],
-        prefixes: [0x4a, 0x46, 0x2f, 0x46, 0x46, 0x2e],
-    });
+    broad_signed_frame.carrier = crate::surface::SurfaceParameterCarrier::Resolved(
+        crate::surface::InlineSurfaceCarrier::Tabulated {
+            variant: crate::surface::ExtrusionVariant::TabulatedCylinder,
+            frame: crate::surface::TabulatedCylinderFrame {
+                values: [29.0, 5.0, 2.0, -26.0, 10.0, 4.0],
+                prefixes: [0x4a, 0x46, 0x2f, 0x46, 0x46, 0x2e],
+            },
+        },
+    );
     replay.control_points[1] = Some([10.0, -5.0]);
     assert!(
         placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, None).is_none(),
@@ -1661,10 +1672,15 @@ fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
     assert_eq!(curve.control_points()[3], Point3::new(-26.0, 5.0, 4.0));
     assert_eq!(sweep, [0.0, 5.0, 0.0]);
 
-    broad_signed_frame.tabulated_cylinder_frame = Some(crate::surface::TabulatedCylinderFrame {
-        values: [1.0, 2.0, 5.0, 4.0, 4.0, 10.0],
-        prefixes: [0xdd, 0xa1, 0x9e, 0xd8, 0xa2, 0x9e],
-    });
+    broad_signed_frame.carrier = crate::surface::SurfaceParameterCarrier::Resolved(
+        crate::surface::InlineSurfaceCarrier::Tabulated {
+            variant: crate::surface::ExtrusionVariant::TabulatedCylinder,
+            frame: crate::surface::TabulatedCylinderFrame {
+                values: [1.0, 2.0, 5.0, 4.0, 4.0, 10.0],
+                prefixes: [0xdd, 0xa1, 0x9e, 0xd8, 0xa2, 0x9e],
+            },
+        },
+    );
     replay.control_points[1] = Some([2.0, 2.5]);
     let (curve, sweep) = placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, None)
         .expect("scalar encodings do not change the coordinate chart");
@@ -1672,10 +1688,15 @@ fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
     assert_eq!(curve.control_points()[3], Point3::new(4.0, 4.0, 5.0));
     assert_eq!(sweep, [0.0, 0.0, 5.0]);
 
-    broad_signed_frame.tabulated_cylinder_frame = Some(crate::surface::TabulatedCylinderFrame {
-        values: [1.0, 1.0, 2.0, 4.0, 4.0, 4.0],
-        prefixes: [0xdd, 0xa1, 0x9e, 0xd8, 0xa2, 0x9e],
-    });
+    broad_signed_frame.carrier = crate::surface::SurfaceParameterCarrier::Resolved(
+        crate::surface::InlineSurfaceCarrier::Tabulated {
+            variant: crate::surface::ExtrusionVariant::TabulatedCylinder,
+            frame: crate::surface::TabulatedCylinderFrame {
+                values: [1.0, 1.0, 2.0, 4.0, 4.0, 4.0],
+                prefixes: [0xdd, 0xa1, 0x9e, 0xd8, 0xa2, 0x9e],
+            },
+        },
+    );
     assert!(placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, None).is_none());
 
     replay.control_points = [
@@ -1684,10 +1705,15 @@ fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
         Some([3.0, 3.5]),
         Some([4.0, 4.0]),
     ];
-    broad_signed_frame.tabulated_cylinder_frame = Some(crate::surface::TabulatedCylinderFrame {
-        values: [-11.25, 2.0, 5.0, -8.25, 4.0, 10.0],
-        prefixes: [0x46, 0x46, 0x2f, 0x46, 0x46, 0x2e],
-    });
+    broad_signed_frame.carrier = crate::surface::SurfaceParameterCarrier::Resolved(
+        crate::surface::InlineSurfaceCarrier::Tabulated {
+            variant: crate::surface::ExtrusionVariant::TabulatedCylinder,
+            frame: crate::surface::TabulatedCylinderFrame {
+                values: [-11.25, 2.0, 5.0, -8.25, 4.0, 10.0],
+                prefixes: [0x46, 0x46, 0x2f, 0x46, 0x46, 0x2e],
+            },
+        },
+    );
     let (curve, sweep) =
         placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, Some([-12.25, 0.0, 0.0]))
             .expect("prototype chart origin supplies an arbitrary intercept");
@@ -1764,7 +1790,6 @@ fn zero_offset_2d_tabulated_frame_retains_the_stored_span() {
     let parameters = crate::surface::SurfaceParameterRecord {
         surface_id: 815,
         body,
-        scalar_values: Vec::new(),
         scalar_tokens: Vec::new(),
         opaque_spans: vec![crate::surface::SurfaceParameterOpaqueSpan {
             raw: vec![0, 0x0c, 0x9a],
@@ -1780,11 +1805,21 @@ fn zero_offset_2d_tabulated_frame_retains_the_stored_span() {
             ],
         }],
         terminal_scalar_frame: None,
-        tabulated_cylinder_frame,
-        positional_cylinder_frame: None,
-        split_cylinder_outline_bounds: None,
-        positional_cone_frame: None,
-        positional_torus_frame: None,
+        carrier: tabulated_cylinder_frame.map_or(
+            crate::surface::SurfaceParameterCarrier::Unresolved(
+                crate::surface::SurfaceKind::Extrusion(
+                    crate::surface::ExtrusionVariant::TabulatedCylinder,
+                ),
+            ),
+            |frame| {
+                crate::surface::SurfaceParameterCarrier::Resolved(
+                    crate::surface::InlineSurfaceCarrier::Tabulated {
+                        variant: crate::surface::ExtrusionVariant::TabulatedCylinder,
+                        frame,
+                    },
+                )
+            },
+        ),
         boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
         offset: 0,
         body_offset: 0,

@@ -346,9 +346,7 @@ pub fn simple_drilled_hole_corner_envelopes(
                 .filter(|row| row.feature_id == feature_id)
                 .filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
         })
-        .map(|row| {
-            unique_surface_parameter_record(scan, row)?.type24_terminal_corner_envelope(row.kind)
-        })
+        .map(|row| unique_surface_parameter_record(scan, row)?.type24_terminal_corner_envelope())
         .collect::<Option<Vec<_>>>()?;
     let [first, second] = envelopes.as_slice() else {
         return None;

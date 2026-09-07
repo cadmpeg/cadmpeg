@@ -366,7 +366,7 @@ pub(in super::super) fn unique_available_positional_cylinder_frame_records(
         if matching.next().is_some() {
             return None;
         }
-        if let Some(frame) = first.and_then(|record| record.positional_cylinder_frame) {
+        if let Some(frame) = first.and_then(|record| record.positional_cylinder_frame()) {
             frames.push((*surface_id, frame));
         }
     }

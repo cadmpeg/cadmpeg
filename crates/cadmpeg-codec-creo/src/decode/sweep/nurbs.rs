@@ -544,7 +544,7 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
         .copied()
         .collect::<Option<Vec<_>>>()?;
     let (values, layout) = parameters
-        .tabulated_cylinder_frame
+        .tabulated_cylinder_frame()
         .map(|frame| {
             let values = frame.values.to_vec();
             let heads = frame.prefixes;

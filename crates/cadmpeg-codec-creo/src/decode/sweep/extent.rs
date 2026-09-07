@@ -249,7 +249,7 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
                             &scan.surfaces.parameters,
                             row.id,
                         )?;
-                        let frame = parameters.positional_cylinder_frame?;
+                        let frame = parameters.positional_cylinder_frame()?;
                         let transferred_origin = [origin.x, origin.y, origin.z];
                         let transferred_axis = normalized([axis.x, axis.y, axis.z])?;
                         let frame_axis = normalized(frame.axis)?;

@@ -218,7 +218,7 @@ pub fn compact_simple_hole_geometry(
         &scan.surfaces.rows,
     )?;
     let frame = crate::surface::unique_surface_parameter(&scan.surfaces.parameters, cylinder_id)?
-        .positional_cylinder_frame?;
+        .positional_cylinder_frame()?;
     let length = frame.length?;
     Some(SimpleHoleGeometry {
         entry_surface_id: None,

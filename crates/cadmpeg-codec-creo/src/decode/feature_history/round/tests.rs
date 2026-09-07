@@ -37,7 +37,7 @@ fn chamfer_does_not_use_a_cone_prototype_as_model_space_placement() {
         .parameters
         .iter()
         .find(|record| record.surface_id == 7)
-        .is_some_and(|record| record.positional_cone_frame.is_none()));
+        .is_some_and(|record| record.positional_cone_frame().is_none()));
 
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
         id: 31,
@@ -100,21 +100,18 @@ fn chamfer_uses_transferred_model_plane_carrier() {
         .push(crate::surface::SurfaceParameterRecord {
             surface_id: 10,
             body: Vec::new(),
-            scalar_values: Vec::new(),
             scalar_tokens: Vec::new(),
             opaque_spans: Vec::new(),
             scalar_frames: Vec::new(),
             terminal_scalar_frame: None,
-            tabulated_cylinder_frame: None,
-            positional_cylinder_frame: None,
-            split_cylinder_outline_bounds: None,
-            positional_cone_frame: Some(crate::surface::PositionalConeFrame {
-                apex: [0.5, 0.0, 0.0],
-                axis: [-1.0, 0.0, 0.0],
-                ref_direction: [0.0, 1.0, 0.0],
-                half_angle: std::f64::consts::FRAC_PI_4,
-            }),
-            positional_torus_frame: None,
+            carrier: crate::surface::SurfaceParameterCarrier::Resolved(
+                crate::surface::InlineSurfaceCarrier::Cone(crate::surface::PositionalConeFrame {
+                    apex: [0.5, 0.0, 0.0],
+                    axis: [-1.0, 0.0, 0.0],
+                    ref_direction: [0.0, 1.0, 0.0],
+                    half_angle: std::f64::consts::FRAC_PI_4,
+                }),
+            ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 10,
             body_offset: 11,
@@ -240,16 +237,13 @@ fn chamfer_uses_transferred_model_cone_when_row_parameters_are_opaque() {
         .push(crate::surface::SurfaceParameterRecord {
             surface_id: 10,
             body: Vec::new(),
-            scalar_values: Vec::new(),
             scalar_tokens: Vec::new(),
             opaque_spans: Vec::new(),
             scalar_frames: Vec::new(),
             terminal_scalar_frame: None,
-            tabulated_cylinder_frame: None,
-            positional_cylinder_frame: None,
-            split_cylinder_outline_bounds: None,
-            positional_cone_frame: None,
-            positional_torus_frame: None,
+            carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
+                crate::surface::SurfaceKind::Cone,
+            ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 10,
             body_offset: 11,
@@ -573,16 +567,13 @@ fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
             .push(crate::surface::SurfaceParameterRecord {
                 surface_id: id,
                 body: vec![0; 7],
-                scalar_values: vec![0.5],
                 scalar_tokens: vec![token.clone()],
                 opaque_spans: Vec::new(),
                 scalar_frames: Vec::new(),
                 terminal_scalar_frame: None,
-                tabulated_cylinder_frame: None,
-                positional_cylinder_frame: None,
-                split_cylinder_outline_bounds: None,
-                positional_cone_frame: None,
-                positional_torus_frame: None,
+                carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
+                    crate::surface::SurfaceKind::Cylinder,
+                ),
                 boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
                 offset: id as usize,
                 body_offset: id as usize + 1,
@@ -659,7 +650,6 @@ fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
         crate::surface::SurfaceParameterRecord {
             surface_id,
             body: vec![0],
-            scalar_values: vec![0.5],
             scalar_tokens: vec![token.clone()],
             opaque_spans: Vec::new(),
             scalar_frames: vec![crate::surface::SurfaceParameterScalarFrame {
@@ -670,11 +660,9 @@ fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
                 offset: 0,
                 slots: vec![token],
             }),
-            tabulated_cylinder_frame: None,
-            positional_cylinder_frame: None,
-            split_cylinder_outline_bounds: None,
-            positional_cone_frame: None,
-            positional_torus_frame: None,
+            carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
+                crate::surface::SurfaceKind::TorusOrSphere,
+            ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset,
             body_offset: offset + 1,

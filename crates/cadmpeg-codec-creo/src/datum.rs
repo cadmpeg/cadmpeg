@@ -96,7 +96,7 @@ pub fn cylinders(payload: &[u8]) -> Vec<DatumCylinder> {
                 feature_id: row.feature_id,
                 reversed: row.reversed,
                 frame: parameter
-                    .positional_cylinder_frame
+                    .positional_cylinder_frame()
                     .or_else(|| active_cylinder_frame(row, parameter))?,
                 offset_in_payload: row.offset,
             })

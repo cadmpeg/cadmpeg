@@ -43,7 +43,6 @@ fn derives_plane_from_unique_six_scalar_positional_frame() {
     let record = SurfaceParameterRecord {
         surface_id: 41,
         body: vec![0x00, 0x0c, 0x9a],
-        scalar_values: Vec::new(),
         scalar_tokens: Vec::new(),
         opaque_spans: Vec::new(),
         scalar_frames: vec![SurfaceParameterScalarFrame {
@@ -55,11 +54,9 @@ fn derives_plane_from_unique_six_scalar_positional_frame() {
                 .collect(),
         }],
         terminal_scalar_frame: None,
-        tabulated_cylinder_frame: None,
-        positional_cylinder_frame: None,
-        positional_torus_frame: None,
-        split_cylinder_outline_bounds: None,
-        positional_cone_frame: None,
+        carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
+            crate::surface::SurfaceKind::Plane,
+        ),
         boundary: SurfaceBodyBoundary::CompoundClose,
         offset: 3,
         body_offset: 11,
@@ -105,7 +102,6 @@ fn derives_plane_from_auxiliary_corner_frame() {
     let record = SurfaceParameterRecord {
         surface_id: 41,
         body: vec![0; 49],
-        scalar_values: Vec::new(),
         scalar_tokens: Vec::new(),
         opaque_spans: vec![
             SurfaceParameterOpaqueSpan {
@@ -138,11 +134,9 @@ fn derives_plane_from_auxiliary_corner_frame() {
             },
         ],
         terminal_scalar_frame: None,
-        tabulated_cylinder_frame: None,
-        positional_cylinder_frame: None,
-        positional_torus_frame: None,
-        split_cylinder_outline_bounds: None,
-        positional_cone_frame: None,
+        carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
+            crate::surface::SurfaceKind::Plane,
+        ),
         boundary: SurfaceBodyBoundary::CompoundClose,
         offset: 3,
         body_offset: 11,
@@ -414,16 +408,13 @@ fn derives_plane_from_marker_bounded_corner_frames() {
     let frames = scalar_frames(&tokens);
     let record = SurfaceParameterRecord {
         surface_id: 41,
-        scalar_values: tokens.iter().filter_map(|token| token.value).collect(),
         opaque_spans: opaque_spans(&body, &tokens),
         terminal_scalar_frame: terminal_scalar_frame(&body, &frames),
         scalar_tokens: tokens,
         scalar_frames: frames,
-        tabulated_cylinder_frame: None,
-        positional_cylinder_frame: None,
-        split_cylinder_outline_bounds: None,
-        positional_cone_frame: None,
-        positional_torus_frame: None,
+        carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
+            crate::surface::SurfaceKind::Plane,
+        ),
         body,
         boundary: SurfaceBodyBoundary::CompoundClose,
         offset: 3,

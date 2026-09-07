@@ -222,14 +222,14 @@ pub(super) fn transfer_and_record_scanned_geometry(
         .parameters
         .iter()
         .filter_map(|record| {
-            let row = crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id)
+            crate::surface::unique_surface_row(&scan.surfaces.rows, record.surface_id)
                 .filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder)?;
             (crate::surface::unique_surface_parameter(
                 &scan.surfaces.parameters,
                 record.surface_id,
             ) == Some(record))
             .then_some(())?;
-            record.type24_round_edge_envelope(row.kind)
+            record.type24_round_edge_envelope()
         })
         .count();
     let curve_coverage = curve_transfer_coverage(&scan.curves.topology_rows, &ir.model.curves);

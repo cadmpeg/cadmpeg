@@ -497,7 +497,10 @@ fn visible_geometry_namespace_excludes_invisible_and_depdb_rows() {
     assert_eq!(scan.curves.prototypes.len(), 1);
     assert_eq!(scan.surfaces.nonvisible_parameters.len(), 1);
     assert_eq!(scan.surfaces.nonvisible_parameters[0].surface_id, 8);
-    assert_eq!(scan.surfaces.nonvisible_parameters[0].scalar_values, [1.0]);
+    assert_eq!(
+        scan.surfaces.nonvisible_parameters[0].scalar_values(),
+        [1.0]
+    );
     assert_eq!(scan.surfaces.nonvisible_prototype_records.len(), 1);
     assert_eq!(
         scan.surfaces.nonvisible_prototype_records[0].family.name(),

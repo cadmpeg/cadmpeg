@@ -116,13 +116,13 @@ fn scan_bounds_surface_parameter_bodies_and_decodes_scalars() {
     assert_eq!(scan.surfaces.parameters.len(), 2);
     assert_eq!(scan.surfaces.parameters[0].surface_id, 7);
     assert_eq!(scan.surfaces.parameters[0].body, vec![0x0f, 0xe4]);
-    assert_eq!(scan.surfaces.parameters[0].scalar_values, vec![0.0, 1.0]);
+    assert_eq!(scan.surfaces.parameters[0].scalar_values(), vec![0.0, 1.0]);
     assert_eq!(
         scan.surfaces.parameters[0].boundary,
         crate::surface::SurfaceBodyBoundary::CompoundClose
     );
     assert_eq!(scan.surfaces.parameters[1].surface_id, 8);
-    assert_eq!(scan.surfaces.parameters[1].scalar_values, vec![3.0]);
+    assert_eq!(scan.surfaces.parameters[1].scalar_values(), vec![3.0]);
     assert_eq!(
         scan.surfaces.parameters[1]
             .scalar_tokens
@@ -149,7 +149,7 @@ fn scan_withholds_type24_carrier_when_eight_slot_forms_collide() {
 
     assert_eq!(scan.surfaces.parameters.len(), 1);
     assert!(scan.surfaces.parameters[0]
-        .positional_cylinder_frame
+        .positional_cylinder_frame()
         .is_none());
 }
 
@@ -184,7 +184,7 @@ fn torus_parameter_trailer_retains_typed_outline_frame() {
     let scan = container::scan_bytes(data.clone());
 
     let frame = scan.surfaces.parameters[0]
-        .torus_outline_frame(crate::surface::SurfaceKind::TorusOrSphere)
+        .torus_outline_frame()
         .expect("typed torus outline frame");
     assert_eq!(
         frame.values,
@@ -192,9 +192,14 @@ fn torus_parameter_trailer_retains_typed_outline_frame() {
     );
     assert_eq!(frame.selector, 80);
     assert_eq!(frame.offset, 0);
-    assert!(scan.surfaces.parameters[0]
-        .torus_outline_frame(crate::surface::SurfaceKind::Cylinder)
-        .is_none());
+    assert!(crate::surface::SurfaceParameterRecord {
+        carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
+            crate::surface::SurfaceKind::Cylinder
+        ),
+        ..scan.surfaces.parameters[0].clone()
+    }
+    .torus_outline_frame()
+    .is_none());
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
@@ -233,19 +238,24 @@ fn torus_parameter_trailer_retains_tagged_radius_overrides() {
         let scan = container::scan_bytes(data.clone());
 
         let overrides = scan.surfaces.parameters[0]
-            .torus_radius_overrides(crate::surface::SurfaceKind::TorusOrSphere)
+            .torus_radius_overrides()
             .expect("tagged torus radius overrides");
         assert_eq!(overrides.radius1, 0.499_999_999_999_999_94);
         assert_eq!(overrides.radius2, expected_radius2);
         assert_eq!(overrides.radius2_encoding, expected_encoding);
         assert_eq!(overrides.offset, 0);
         assert_eq!(
-            scan.surfaces.parameters[0].scalar_values,
+            scan.surfaces.parameters[0].scalar_values(),
             [stored_radial_scalar, 0.499_999_999_999_999_94]
         );
-        assert!(scan.surfaces.parameters[0]
-            .torus_radius_overrides(crate::surface::SurfaceKind::Cylinder)
-            .is_none());
+        assert!(crate::surface::SurfaceParameterRecord {
+            carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
+                crate::surface::SurfaceKind::Cylinder
+            ),
+            ..scan.surfaces.parameters[0].clone()
+        }
+        .torus_radius_overrides()
+        .is_none());
 
         let result = CreoCodec
             .decode(&mut Cursor::new(data), &DecodeOptions::default())
@@ -308,7 +318,7 @@ fn cone_terminal_half_angle_bounds_the_parameter_body() {
         [&[0xe3, 0x18, 0xe4][..], &half_angle[..]].concat()
     );
     assert_eq!(
-        scan.surfaces.parameters[0].scalar_values,
+        scan.surfaces.parameters[0].scalar_values(),
         [0.0, 1.0, expected]
     );
     assert_eq!(
@@ -316,13 +326,18 @@ fn cone_terminal_half_angle_bounds_the_parameter_body() {
         crate::surface::SurfaceBodyBoundary::CompoundClose
     );
     let override_value = scan.surfaces.parameters[0]
-        .cone_half_angle_override(crate::surface::SurfaceKind::Cone)
+        .cone_half_angle_override()
         .expect("terminal cone half-angle");
     assert_eq!(override_value.radians, expected);
     assert_eq!(override_value.offset, 3);
-    assert!(scan.surfaces.parameters[0]
-        .cone_half_angle_override(crate::surface::SurfaceKind::TorusOrSphere)
-        .is_none());
+    assert!(crate::surface::SurfaceParameterRecord {
+        carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
+            crate::surface::SurfaceKind::TorusOrSphere
+        ),
+        ..scan.surfaces.parameters[0].clone()
+    }
+    .cone_half_angle_override()
+    .is_none());
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
@@ -347,7 +362,7 @@ fn surface_parameter_body_ignores_compound_close_inside_scalar() {
     assert_eq!(scan.surfaces.parameters.len(), 1);
     assert_eq!(scan.surfaces.parameters[0].body, scalar);
     assert_eq!(
-        scan.surfaces.parameters[0].scalar_values,
+        scan.surfaces.parameters[0].scalar_values(),
         [f64::from_be_bytes([0x40, 0x08, 0xe3, 0, 0, 0, 0, 0])]
     );
     assert_eq!(
@@ -387,7 +402,7 @@ fn surface_parameter_body_ignores_valid_looking_header_inside_scalar() {
     assert_eq!(scan.surfaces.parameters.len(), 1);
     assert_eq!(scan.surfaces.parameters[0].body, scalar);
     assert_eq!(
-        scan.surfaces.parameters[0].scalar_values,
+        scan.surfaces.parameters[0].scalar_values(),
         [f64::from_be_bytes([0x3f, 0xe0, 0x01, b'x', 0, 0, 0, 0])]
     );
     assert_eq!(
@@ -450,7 +465,7 @@ fn scan_resolves_section_scalar_cache_in_surface_rows() {
 
     assert_eq!(scan.surfaces.parameters.len(), 1);
     assert_eq!(scan.surfaces.parameters[0].surface_id, 7);
-    assert_eq!(scan.surfaces.parameters[0].scalar_values, vec![3.0]);
+    assert_eq!(scan.surfaces.parameters[0].scalar_values(), vec![3.0]);
 }
 
 #[test]

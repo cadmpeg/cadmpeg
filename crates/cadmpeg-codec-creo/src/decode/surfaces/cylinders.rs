@@ -437,8 +437,8 @@ pub(in super::super) fn transfer_split_outline_cylinders(
             continue;
         };
         let Some(bounds) = first
-            .split_cylinder_outline_bounds
-            .zip(second.split_cylinder_outline_bounds)
+            .split_cylinder_outline_bounds()
+            .zip(second.split_cylinder_outline_bounds())
             .map(|(first, second)| [first, second])
         else {
             continue;
@@ -898,24 +898,22 @@ pub(in super::super) fn transfer_positional_cylinders(
         };
         let feature_class = feature_schema_class(scan, row.feature_id);
         let inline_non_plane = record.has_inline_non_plane_envelope()
-            || record.has_inline_non_plane_local_system_suffix(row.kind);
-        let selector_corner_interval = record
-            .selector_corner_interval_cylinder_frame(row.kind)
-            .is_some();
+            || record.has_inline_non_plane_local_system_suffix();
+        let selector_corner_interval = record.selector_corner_interval_cylinder_frame().is_some();
         let axial_interval_corner_candidates =
             if feature_class == Some(913) && !inline_non_plane && !selector_corner_interval {
-                record.type24_axial_interval_corner_candidates(row.kind)
+                record.type24_axial_interval_corner_candidates()
             } else {
                 Vec::new()
             };
         let round_edge_envelope = (feature_class == Some(913) && !selector_corner_interval)
-            .then(|| record.type24_round_edge_envelope(row.kind))
+            .then(|| record.type24_round_edge_envelope())
             .flatten();
         if round_edge_envelope.is_some() {
             summary.round_edge_complete_envelopes += 1;
         }
         let round_support_frame = (feature_class == Some(913))
-            .then(|| record.type24_scalar_frame_round_envelope(row.kind))
+            .then(|| record.type24_scalar_frame_round_envelope())
             .flatten()
             .and_then(|envelope| {
                 round_support_envelope_cylinder(scan, ir, row.feature_id, envelope)
@@ -923,7 +921,7 @@ pub(in super::super) fn transfer_positional_cylinders(
         let support_planes = round_edge_support_planes.get(&row.id);
         let support_tangent_frame = (!selector_corner_interval)
             .then(|| {
-                let stored = record.positional_cylinder_frame?;
+                let stored = record.positional_cylinder_frame()?;
                 let support_planes = support_planes?;
                 unique_support_tangent_cylinder_frame(stored, support_planes)
             })
@@ -1042,12 +1040,12 @@ pub(in super::super) fn transfer_positional_cylinders(
                     return Some((frame, "reference_circle_pair_cylinder_frame"));
                 }
             }
-            let envelope = record.type24_scalar_frame_round_envelope(row.kind)?;
+            let envelope = record.type24_scalar_frame_round_envelope()?;
             reference_cap_bound_round_frame(envelope, &circles)
                 .map(|frame| (frame, "round_reference_cap_cylinder_frame"))
         };
         let (frame, mechanism) = if selector_corner_interval {
-            let Some(frame) = record.positional_cylinder_frame else {
+            let Some(frame) = record.positional_cylinder_frame() else {
                 continue;
             };
             (frame, "selector_corner_interval_cylinder")
@@ -1056,7 +1054,7 @@ pub(in super::super) fn transfer_positional_cylinders(
         } else if let Some(frame) = support_tangent_frame {
             (frame, "support_tangent_cylinder")
         } else if inline_non_plane {
-            let Some(frame) = record.positional_cylinder_frame else {
+            let Some(frame) = record.positional_cylinder_frame() else {
                 continue;
             };
             (frame, "inline_positional_surface_row")
@@ -1064,7 +1062,7 @@ pub(in super::super) fn transfer_positional_cylinders(
             (frame, "round_support_envelope_cylinder")
         } else if let Some(frame) = axial_interval_corner_frame {
             (frame, "axial_interval_corner_cylinder")
-        } else if let Some(frame) = record.positional_cylinder_frame {
+        } else if let Some(frame) = record.positional_cylinder_frame() {
             (frame, "positional_cylinder_frame")
         } else {
             let Some(frame) = reference_bound_frame() else {
@@ -1073,7 +1071,7 @@ pub(in super::super) fn transfer_positional_cylinders(
             frame
         };
         let stored_frame_agrees = record
-            .positional_cylinder_frame
+            .positional_cylinder_frame()
             .is_some_and(|stored| crate::surface::positional_cylinder_frames_agree(stored, frame));
         let witnessed_frame_replaces_stored = matches!(
             mechanism,
@@ -1314,7 +1312,7 @@ pub(in super::super) fn transfer_positional_cones(
 ) -> usize {
     let mut transferred = 0;
     for record in &scan.surfaces.parameters {
-        let Some(frame) = record.positional_cone_frame else {
+        let Some(frame) = record.positional_cone_frame() else {
             continue;
         };
         if crate::surface::unique_surface_parameter(&scan.surfaces.parameters, record.surface_id)
