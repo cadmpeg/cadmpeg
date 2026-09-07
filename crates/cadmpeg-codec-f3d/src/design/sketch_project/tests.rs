@@ -954,7 +954,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         id: "f3d:Design/BulkStream.dat:surface#109".into(),
         record_index: 109,
         owner_reference: Some(42),
-        class_tag: "306".into(),
+        class_tag: crate::records::DesignClassTag::try_from("306".to_owned()).unwrap(),
         byte_offset: 109,
         entity_genesis: None,
         persistent_id: 8,

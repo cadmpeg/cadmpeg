@@ -7352,7 +7352,7 @@ pub struct SketchSurface {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner_reference: Option<u32>,
     /// Source per-file dynamic three-digit ASCII class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Byte offset of this record within its Design `BulkStream`.
     pub byte_offset: u64,
     /// Optional `EntityGenesis` origin bitfield carried ahead of the surface identity.

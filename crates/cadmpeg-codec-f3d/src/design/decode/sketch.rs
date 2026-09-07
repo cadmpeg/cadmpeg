@@ -2860,7 +2860,7 @@ pub fn decode_sketch_surfaces(scan: &ContainerScan) -> Result<Vec<SketchSurface>
                 id: ids::native_sketch_surface_id(&entry.name, record_at),
                 record_index,
                 owner_reference: None,
-                class_tag,
+                class_tag: class_tag.try_into().map_err(CodecError::Malformed)?,
                 byte_offset: record_at as u64,
                 entity_genesis: surface.entity_genesis,
                 persistent_id: surface.persistent_id,
