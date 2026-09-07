@@ -7,6 +7,7 @@ use super::super::analytic::{
 use super::super::holes::blind_extrude_side;
 use super::super::sketch::normalized;
 use crate::container::ContainerScan;
+use crate::surface::SurfaceParameterRecord;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, Length, LinearTermination};
 use cadmpeg_ir::geometry::SurfaceGeometry;
@@ -369,7 +370,7 @@ pub(in super::super) fn unique_available_positional_cylinder_frame_records(
         if matching.next().is_some() {
             return None;
         }
-        if let Some(frame) = first.and_then(|record| record.positional_cylinder_frame()) {
+        if let Some(frame) = first.and_then(SurfaceParameterRecord::positional_cylinder_frame) {
             frames.push((*surface_id, frame));
         }
     }

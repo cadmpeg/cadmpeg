@@ -11,6 +11,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 
 use crate::container::ContainerScan;
 use crate::legacy_geometry::LegacySurfaceNamespace;
+use crate::surface::SurfaceParameterRecord;
 
 use super::super::analytic::{cross, dot};
 use super::super::native::annotate;
@@ -295,7 +296,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
                 let radii =
                     crate::surface::unique_surface_parameter(&scan.surfaces.parameters, row.id)
                         .filter(|parameter| parameter.offset == row.offset)
-                        .and_then(|parameter| parameter.torus_radius_overrides())
+                        .and_then(SurfaceParameterRecord::torus_radius_overrides)
                         .map(|overrides| [overrides.radius1, overrides.radius2])
                         .or(prototype_radii);
                 let Some([radius1, radius2]) = radii else {

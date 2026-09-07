@@ -11,7 +11,7 @@ use super::super::uniqueness::exactly_one;
 use super::agreed_feature_geometry_ids;
 use crate::container::ContainerScan;
 use crate::legacy_feature::LegacyRoundRadius;
-use crate::surface::Type24RoundEnvelope;
+use crate::surface::{SurfaceParameterRecord, Type24RoundEnvelope};
 use cadmpeg_core::decode::alloc_filled;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::SurfaceGeometry;
@@ -533,7 +533,7 @@ fn complete_direct_placed_cylinder_radius_agreement(
         .iter()
         .map(|row| {
             unique_surface_parameter_record(scan, row)
-                .and_then(|record| record.type24_generated_round_radius())
+                .and_then(SurfaceParameterRecord::type24_generated_round_radius)
         })
         .collect::<Option<Vec<_>>>()?;
     let placed_radii = cylinder_rows
@@ -616,7 +616,7 @@ pub(in super::super) fn round_cylinder_radius(
     row: &crate::surface::SurfaceRow,
 ) -> Option<f64> {
     unique_surface_parameter_record(scan, row)
-        .and_then(|record| record.type24_generated_round_radius())
+        .and_then(SurfaceParameterRecord::type24_generated_round_radius)
         .or_else(|| round_placed_cylinder_radius(ir, row))
 }
 
