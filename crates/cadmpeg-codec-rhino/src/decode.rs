@@ -4006,14 +4006,14 @@ fn stage_brep_carriers(input: BrepCarrierInput<'_>) -> BrepCarrierDraft {
         ("analysis", &raw.analysis_meshes),
     ] {
         for (index, slot) in slots.iter().enumerate() {
-            let Some(child) = slot.mesh.as_ref() else {
+            let Some(slot) = slot.as_ref() else {
                 continue;
             };
             let id = format!("rhino:object:tessellation#{key}.{kind}-{index}");
             match crate::mesh::decode(
                 expand,
                 data,
-                child.class_data_range.clone(),
+                slot.mesh.class_data_range.clone(),
                 archive,
                 crate::mesh::MeshDecodeOptions {
                     writer_version,

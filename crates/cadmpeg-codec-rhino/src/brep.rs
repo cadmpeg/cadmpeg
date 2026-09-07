@@ -204,11 +204,11 @@ pub(crate) struct RawBrepFace {
     pub(crate) source_range: Range<usize>,
 }
 
-/// A render or analysis mesh cache slot.
+/// A present render or analysis mesh cache entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct RawBrepMeshSlot {
-    /// Present mesh child, if it passed class validation.
-    pub(crate) mesh: Option<RawBrepChild>,
+pub(crate) struct RawBrepMesh {
+    /// Mesh child that passed class validation.
+    pub(crate) mesh: RawBrepChild,
     /// Class-userdata descriptors attached to the mesh object wrapper.
     pub(crate) userdata: Vec<UserdataDescriptor>,
 }
@@ -269,9 +269,9 @@ pub(crate) struct RawBrep {
     /// Brep bounds.
     pub(crate) bounds: BoundingBox,
     /// Render mesh cache slots.
-    pub(crate) render_meshes: Vec<RawBrepMeshSlot>,
+    pub(crate) render_meshes: Vec<Option<RawBrepMesh>>,
     /// Analysis mesh cache slots.
-    pub(crate) analysis_meshes: Vec<RawBrepMeshSlot>,
+    pub(crate) analysis_meshes: Vec<Option<RawBrepMesh>>,
     /// Raw solid state, normalized only by validation.
     pub(crate) is_solid: Option<i32>,
     /// Region face sides.
@@ -1442,7 +1442,7 @@ fn read_legacy_mesh_sides(
     archive: ArchiveVersion,
     face_count: usize,
     warnings: &mut Vec<String>,
-) -> Result<(Vec<RawBrepMeshSlot>, Range<usize>), GeometryError> {
+) -> Result<(Vec<Option<RawBrepMesh>>, Range<usize>), GeometryError> {
     let start = reader.position();
     let mut slots = Vec::with_capacity(face_count);
     for _ in 0..face_count {
@@ -1454,7 +1454,7 @@ fn read_legacy_mesh_sides(
                 return Ok((empty_mesh_slots(face_count), start..reader.position()));
             }
         };
-        let (mesh, userdata) = if present {
+        let mesh = if present {
             let object_start = reader.position();
             let object = match chunk_at(bytes, object_start, reader.end(), archive, false) {
                 Ok(object) => object,
@@ -1475,39 +1475,36 @@ fn read_legacy_mesh_sides(
                 archive,
                 warnings,
             ) {
-                Ok((class, userdata)) if supported_mesh(class.class_uuid) => (
-                    Some(RawBrepChild {
+                Ok((class, userdata)) if supported_mesh(class.class_uuid) => Some(RawBrepMesh {
+                    mesh: RawBrepChild {
                         class_uuid: class.class_uuid,
                         class_data_range: class.class_data_range,
                         source_range: object_start..object.next_offset(),
                         base_type: RawBrepBaseType::Other,
-                    }),
+                    },
                     userdata,
-                ),
+                }),
                 Ok(_) => {
                     warnings.push("legacy Brep mesh cache slot has wrong class".to_string());
-                    (None, Vec::new())
+                    None
                 }
                 Err(error) => {
                     warnings.push(format!("legacy Brep mesh cache slot degraded: {error}"));
-                    (None, Vec::new())
+                    None
                 }
             }
         } else {
-            (None, Vec::new())
+            None
         };
-        slots.push(RawBrepMeshSlot { mesh, userdata });
+        slots.push(mesh);
     }
     Ok((slots, start..reader.position()))
 }
 
-fn empty_mesh_slots(count: usize) -> Vec<RawBrepMeshSlot> {
+fn empty_mesh_slots(count: usize) -> Vec<Option<RawBrepMesh>> {
     let mut slots = Vec::with_capacity(count);
     for _ in 0..count {
-        slots.push(RawBrepMeshSlot {
-            mesh: None,
-            userdata: Vec::new(),
-        });
+        slots.push(None);
     }
     slots
 }
@@ -1860,10 +1857,10 @@ fn read_mesh_sides(
     archive: ArchiveVersion,
     face_count: usize,
     warnings: &mut Vec<String>,
-) -> Result<(Vec<RawBrepMeshSlot>, Range<usize>), GeometryError> {
+) -> Result<(Vec<Option<RawBrepMesh>>, Range<usize>), GeometryError> {
     let chunk = anonymous_chunk(bytes, reader, archive)?;
     let mut child = body_reader(bytes, &chunk)?;
-    let parsed: Result<(Vec<RawBrepMeshSlot>, Range<usize>), GeometryError> = (|| {
+    let parsed: Result<(Vec<Option<RawBrepMesh>>, Range<usize>), GeometryError> = (|| {
         let mut result = Vec::with_capacity(face_count);
         let mut children = Vec::new();
         for _ in 0..face_count {
@@ -1881,16 +1878,15 @@ fn read_mesh_sides(
                 child.skip(object.next_offset() - start)?;
                 match class {
                     Ok((class, userdata)) if supported_mesh(class.class_uuid) => {
-                        result.push(RawBrepMeshSlot {
-                            mesh: Some(RawBrepChild {
+                        Some(RawBrepMesh {
+                            mesh: RawBrepChild {
                                 class_uuid: class.class_uuid,
                                 class_data_range: class.class_data_range,
                                 source_range: start..object.next_offset(),
                                 base_type: RawBrepBaseType::Other,
-                            }),
+                            },
                             userdata,
-                        });
-                        continue;
+                        })
                     }
                     Ok(_) => {
                         warnings.push("Brep mesh cache slot has wrong class".to_string());
@@ -1904,10 +1900,7 @@ fn read_mesh_sides(
             } else {
                 None
             };
-            result.push(RawBrepMeshSlot {
-                mesh,
-                userdata: Vec::new(),
-            });
+            result.push(mesh);
         }
         finish_anonymous_children(bytes, reader, &chunk, child, &children, warnings)?;
         Ok((result, chunk.range()))
@@ -1918,20 +1911,14 @@ fn read_mesh_sides(
             reader.skip(chunk.next_offset() - reader.position())?;
             warnings.push(format!("Brep mesh cache degraded: {error}"));
             Ok((
-                alloc_filled(
-                    face_count,
-                    RawBrepMeshSlot {
-                        mesh: None,
-                        userdata: Vec::new(),
+                alloc_filled(face_count, None, "Rhino Brep degraded mesh slots").map_err(
+                    |allocation| {
+                        GeometryError::malformed(
+                            chunk.range().start,
+                            format!("Brep degraded mesh allocation refused: {allocation}"),
+                        )
                     },
-                    "Rhino Brep degraded mesh slots",
-                )
-                .map_err(|allocation| {
-                    GeometryError::malformed(
-                        chunk.range().start,
-                        format!("Brep degraded mesh allocation refused: {allocation}"),
-                    )
-                })?,
+                )?,
                 chunk.range(),
             ))
         }
@@ -3268,7 +3255,7 @@ mod tests {
         let mut warnings = Vec::new();
         let (slots, _) = read_mesh_sides(&bytes, &mut reader, ArchiveVersion::V5, 1, &mut warnings)
             .expect("degraded cache");
-        assert!(slots[0].mesh.is_none());
+        assert!(slots[0].is_none());
         assert!(!warnings.is_empty());
         assert_eq!(reader.remaining(), 0);
     }
@@ -3283,7 +3270,7 @@ mod tests {
                 .expect("legacy cache degradation");
         assert_eq!(range, 0..bytes.len());
         assert_eq!(slots.len(), 1);
-        assert!(slots[0].mesh.is_none());
+        assert!(slots[0].is_none());
         assert!(!warnings.is_empty());
         assert_eq!(reader.remaining(), 0);
     }
@@ -3296,7 +3283,7 @@ mod tests {
         let (slots, _) = read_mesh_sides(&bytes, &mut reader, ArchiveVersion::V5, 1, &mut warnings)
             .expect("empty cache slot");
         assert_eq!(slots.len(), 1);
-        assert!(slots[0].mesh.is_none());
+        assert!(slots[0].is_none());
         assert!(warnings.is_empty());
         assert_eq!(reader.remaining(), 0);
     }
@@ -3311,10 +3298,13 @@ mod tests {
         let (slots, _) = read_mesh_sides(&bytes, &mut reader, ArchiveVersion::V5, 1, &mut warnings)
             .expect("mesh cache with userdata");
         assert_eq!(slots.len(), 1);
-        assert!(slots[0].mesh.is_some(), "warnings: {warnings:?}");
-        assert_eq!(slots[0].userdata.len(), 1);
+        assert!(slots[0].is_some(), "warnings: {warnings:?}");
+        assert_eq!(slots[0].as_ref().unwrap().userdata.len(), 1);
         assert_eq!(
-            slots[0].userdata[0].known().unwrap().item_uuid,
+            slots[0].as_ref().unwrap().userdata[0]
+                .known()
+                .unwrap()
+                .item_uuid,
             crate::mesh::V5_MESH_DOUBLE_VERTICES
         );
         assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");
