@@ -57,11 +57,7 @@ struct ViewRecord {
     show_construction_axes: bool,
     show_world_axes: bool,
     legacy_display_mode: Option<i64>,
-    view_type: Option<i32>,
-    page_width_mm: Option<f64>,
-    page_height_mm: Option<f64>,
-    display_mode_uuid: Option<String>,
-    attributes_version: Option<[u8; 2]>,
+    #[serde(flatten, serialize_with = "serialize_view_attributes")]
     attributes: Option<ViewAttributes>,
     construction_plane: Option<ConstructionPlane>,
     viewport: Option<Viewport>,
@@ -69,6 +65,39 @@ struct ViewRecord {
     wallpaper: Option<Wallpaper>,
     children: Vec<ViewChild>,
     parse_warnings: Vec<String>,
+}
+
+fn serialize_view_attributes<S: serde::Serializer>(
+    attributes: &Option<ViewAttributes>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+
+    let mut map = serializer.serialize_map(Some(6))?;
+    map.serialize_entry(
+        "view_type",
+        &attributes.as_ref().map(|value| value.view_type),
+    )?;
+    map.serialize_entry(
+        "page_width_mm",
+        &attributes.as_ref().map(|value| value.width),
+    )?;
+    map.serialize_entry(
+        "page_height_mm",
+        &attributes.as_ref().map(|value| value.height),
+    )?;
+    map.serialize_entry(
+        "display_mode_uuid",
+        &attributes
+            .as_ref()
+            .and_then(|value| value.display.as_deref()),
+    )?;
+    map.serialize_entry(
+        "attributes_version",
+        &attributes.as_ref().map(|value| value.version),
+    )?;
+    map.serialize_entry("attributes", attributes)?;
+    map.end()
 }
 
 struct ViewportUserdataScan {
@@ -886,11 +915,6 @@ fn parse_view(
     let mut show_axes = true;
     let mut show_world_axes = true;
     let mut legacy_display_mode = None;
-    let mut view_type = None;
-    let mut page_width = None;
-    let mut page_height = None;
-    let mut display_mode_uuid = None;
-    let mut attributes_version = None;
     let mut attributes_detail = None;
     let mut construction_plane = None;
     let mut viewport = None;
@@ -999,11 +1023,6 @@ fn parse_view(
                     checksum_warnings
                         .push(crate::loss::RhinoLossCode::IntegrityFailure.note(warning));
                 }
-                view_type = Some(attributes.view_type);
-                page_width = Some(attributes.width);
-                page_height = Some(attributes.height);
-                display_mode_uuid.clone_from(&attributes.display);
-                attributes_version = Some(attributes.version);
                 attributes_detail = Some(attributes);
             }
             VIEW_VIEWPORT_USERDATA => {
@@ -1093,11 +1112,6 @@ fn parse_view(
             show_construction_axes: show_axes,
             show_world_axes,
             legacy_display_mode,
-            view_type,
-            page_width_mm: page_width,
-            page_height_mm: page_height,
-            display_mode_uuid,
-            attributes_version,
             attributes: attributes_detail,
             construction_plane,
             viewport,
