@@ -1045,7 +1045,7 @@ pub struct SketchInputLink {
 }
 
 /// Kind of sketch entity referenced by a native feature-input marker.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(from = "SketchInputKindWire", into = "SketchInputKindWire")]
 pub enum SketchInputKind {

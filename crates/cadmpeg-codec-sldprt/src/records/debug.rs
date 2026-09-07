@@ -123,3 +123,19 @@ impl Debug for super::SketchInputEntity {
             .finish()
     }
 }
+
+impl Debug for super::SketchInputKind {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> Result {
+        match self {
+            Self::Point => formatter.write_str("Point"),
+            Self::LineOrCircle => formatter.write_str("LineOrCircle"),
+            Self::Arc => formatter.write_str("Arc"),
+            Self::ConstrainedPoint => formatter.write_str("ConstrainedPoint"),
+            Self::Relation(relation) => formatter.debug_tuple("Relation").field(relation).finish(),
+            Self::Native(_) | Self::NativeHandle(_) => formatter
+                .debug_tuple("Native")
+                .field(&self.native_code())
+                .finish(),
+        }
+    }
+}
