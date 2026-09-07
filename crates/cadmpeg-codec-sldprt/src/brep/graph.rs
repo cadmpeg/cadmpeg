@@ -1247,11 +1247,7 @@ fn decode_graph(
                 };
                 let next_attr = ring[(i + 1) % k];
                 let start_vuse = ce.refs[4];
-                let next_vuse = t
-                    .coedges
-                    .get(&next_attr)
-                    .map(|next| next.refs[4])
-                    .unwrap_or(0);
+                let next_vuse = t.coedges.get(&next_attr).map_or(0, |next| next.refs[4]);
                 let edge_attr = ce.refs[6];
                 if edge_attr != 0 {
                     edge_incidence
@@ -1284,8 +1280,7 @@ fn decode_graph(
         let curve_attr = t
             .edge_uses
             .get(&edge_attr)
-            .map(|edge_use| edge_use.references.curve())
-            .unwrap_or(0);
+            .map_or(0, |edge_use| edge_use.references.curve());
         edge_ends.insert(edge_attr, (*start_vuse, end_vuse, curve_attr));
         for vuse in [*start_vuse, end_vuse] {
             if vuse == 0 {
