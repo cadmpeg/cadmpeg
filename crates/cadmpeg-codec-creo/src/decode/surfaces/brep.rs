@@ -189,8 +189,7 @@ impl FaceAdmissionDetail {
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(in super::super) struct FaceAdmissionEvidence {
     pub(in super::super) count: usize,
-    pub(in super::super) sample_ids: Vec<u32>,
-    pub(in super::super) sample_details: Vec<FaceAdmissionDetail>,
+    pub(in super::super) samples: Vec<FaceAdmissionDetail>,
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -229,11 +228,8 @@ impl BrepTransferDiagnostics {
             });
         let evidence = self.rejected_faces.entry(reason).or_default();
         evidence.count += 1;
-        if evidence.sample_ids.len() < FACE_REJECTION_SAMPLE_LIMIT {
-            evidence.sample_ids.push(detail.face_id);
-        }
-        if evidence.sample_details.len() < FACE_REJECTION_SAMPLE_LIMIT {
-            evidence.sample_details.push(detail);
+        if evidence.samples.len() < FACE_REJECTION_SAMPLE_LIMIT {
+            evidence.samples.push(detail);
         }
     }
 

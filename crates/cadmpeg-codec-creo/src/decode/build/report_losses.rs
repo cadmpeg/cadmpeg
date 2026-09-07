@@ -144,7 +144,7 @@ pub(super) fn push_brep_transfer_note(
         .filter_map(|reason| {
             let evidence = diagnostics.rejected_faces.get(&reason)?;
             let samples = evidence
-                .sample_details
+                .samples
                 .iter()
                 .map(|detail| {
                     let half_edges = detail
@@ -170,16 +170,6 @@ pub(super) fn push_brep_transfer_note(
                 })
                 .collect::<Vec<_>>()
                 .join(",");
-            let samples = if samples.is_empty() {
-                evidence
-                    .sample_ids
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join(",")
-            } else {
-                samples
-            };
             Some(if samples.is_empty() {
                 format!("{}={}", reason.label(), evidence.count)
             } else {
