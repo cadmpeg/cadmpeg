@@ -748,45 +748,28 @@ impl<'a> DecodeContext<'a> {
         }
     }
 
-    /// Resolves foreign object UUIDs to the native identities of their records.
-    ///
-    /// The result is positional: index `i` holds the identity for `ids[i]`, or
-    /// `None` when that UUID is nil, names no record, or names several. Every
-    /// non-nil UUID that does not resolve is charged against `role`.
-    fn resolve_object_records(
+    /// Resolves a foreign object UUID to its native record identity.
+    /// Non-nil UUIDs that do not resolve are charged against `role`.
+    fn resolve_object_record(
         &mut self,
         source_order: usize,
         role: &str,
-        ids: &[crate::wire::Uuid],
-    ) -> Vec<Option<String>> {
-        let mut resolved = Vec::new();
-        let mut charges = Vec::new();
-        for id in ids {
-            if id.is_nil() {
-                resolved.push(None);
-                continue;
-            }
-            match self.resolve_object(*id) {
-                ObjectReference::Resolved(order) => {
-                    resolved.push(Some(Self::mint_unknown_id(order).to_string()));
-                }
-                ObjectReference::Missing => {
-                    resolved.push(None);
-                    charges.push((RhinoLossCode::ReferenceMemberUnresolved, *id));
-                }
-                ObjectReference::Ambiguous => {
-                    resolved.push(None);
-                    charges.push((RhinoLossCode::ReferenceMemberAmbiguous, *id));
-                }
-            }
+        id: crate::wire::Uuid,
+    ) -> Option<String> {
+        if id.is_nil() {
+            return None;
         }
-        for (code, id) in charges {
-            let note = code.note(format!(
-                "{role} in object record {source_order} references object {id}"
-            ));
-            self.report.typed_losses.push(note);
-        }
-        resolved
+        let code = match self.resolve_object(id) {
+            ObjectReference::Resolved(order) => {
+                return Some(Self::mint_unknown_id(order).to_string());
+            }
+            ObjectReference::Missing => RhinoLossCode::ReferenceMemberUnresolved,
+            ObjectReference::Ambiguous => RhinoLossCode::ReferenceMemberAmbiguous,
+        };
+        self.report.typed_losses.push(code.note(format!(
+            "{role} in object record {source_order} references object {id}"
+        )));
+        None
     }
 
     /// Decode and atomically commit supported simple geometry.
@@ -1348,17 +1331,17 @@ impl<'a> DecodeContext<'a> {
         };
         let key = self.object_key(identity, source_order);
         let id = FeatureId(format!("rhino:polyedge:feature#{key}"));
-        let segment_objects = polyedge
+        let parameters = polyedge
             .segments
             .iter()
-            .map(|segment| segment.reference.object_id)
-            .collect::<Vec<_>>();
-        let parameters = self
-            .resolve_object_records(source_order, "polyedge segment", &segment_objects)
-            .into_iter()
             .enumerate()
-            .filter_map(|(index, resolved)| {
-                resolved.map(|record| (format!("segment_{index}_object"), record))
+            .filter_map(|(index, segment)| {
+                self.resolve_object_record(
+                    source_order,
+                    "polyedge segment",
+                    segment.reference.object_id,
+                )
+                .map(|record| (format!("segment_{index}_object"), record))
             })
             .collect::<BTreeMap<_, _>>();
         let name = (!identity.name.is_empty()).then(|| identity.name.clone());
@@ -1655,14 +1638,12 @@ impl<'a> DecodeContext<'a> {
             }
         };
         let key = self.object_key(identity, source_order);
-        let captives =
-            self.resolve_object_records(source_order, "morph captive", &morph.captive_ids);
         let feature = crate::morph::project(
             &morph,
             &key,
             (!identity.name.is_empty()).then(|| identity.name.clone()),
             self.unknowns[source_order].id().to_string(),
-            &captives,
+            |id| self.resolve_object_record(source_order, "morph captive", id),
         );
         let feature_id = feature.id.to_string();
         match self

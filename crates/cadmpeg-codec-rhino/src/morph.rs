@@ -559,16 +559,14 @@ fn cage_properties(
 
 /// Projects one decoded morph control into a native feature.
 ///
-/// `captives` is positional over `morph.captive_ids`: index `i` holds the native
-/// identity of the record that owns `captive_ids[i]`, or `None` when that UUID is
-/// nil or does not resolve to exactly one record. Unresolved captives are
-/// charged by the caller; the raw UUIDs stay in `captive_ids`.
+/// `resolve_captive` maps each captive UUID to its native record identity.
+/// It charges unresolved references as needed; raw UUIDs stay in `captive_ids`.
 pub(crate) fn project(
     morph: &Morph,
     key: &str,
     name: Option<String>,
     native_ref: String,
-    captives: &[Option<String>],
+    mut resolve_captive: impl FnMut(Uuid) -> Option<String>,
 ) -> cadmpeg_ir::features::Feature {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
     use std::collections::BTreeMap;
@@ -646,11 +644,12 @@ pub(crate) fn project(
                         morph.preserve_structure.to_string(),
                     ),
                 ]);
-                parameters.extend(captives.iter().enumerate().filter_map(|(index, record)| {
-                    record
-                        .as_ref()
-                        .map(|record| (format!("captive_{index}_object"), record.clone()))
-                }));
+                parameters.extend(morph.captive_ids.iter().enumerate().filter_map(
+                    |(index, id)| {
+                        resolve_captive(*id)
+                            .map(|record| (format!("captive_{index}_object"), record))
+                    },
+                ));
                 parameters
             },
         },
@@ -750,7 +749,7 @@ mod tests {
         assert_eq!(end.control_points[7][0], 70.0);
         // One nil captive: no resolved identity and no charge.
         assert_eq!(morph.captive_ids.len(), 1);
-        let feature = project(&morph, "test", None, "native".to_string(), &[None]);
+        let feature = project(&morph, "test", None, "native".to_string(), |_| None);
         assert_eq!(feature.source_tag.as_deref(), Some("RhinoMorphControl"));
         let cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } =
             &feature.definition
@@ -758,13 +757,9 @@ mod tests {
             panic!("expected a native morph definition");
         };
         assert!(!parameters.contains_key("captive_0_object"));
-        let resolved = project(
-            &morph,
-            "test",
-            None,
-            "native".to_string(),
-            &[Some("rhino:object:record#000007".to_string())],
-        );
+        let resolved = project(&morph, "test", None, "native".to_string(), |_| {
+            Some("rhino:object:record#000007".to_string())
+        });
         let cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } =
             &resolved.definition
         else {
