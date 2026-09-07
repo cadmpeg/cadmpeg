@@ -10,7 +10,7 @@ use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{AppearanceId, BodyId, FaceId};
 use cadmpeg_ir::topology::Color;
 
-use crate::pmdc::{type_id_string, PmDcReference};
+use crate::pmdc::{type_id_string, PmDcReference, PmDcReferenceList};
 use crate::record_identity::Located;
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
@@ -57,7 +57,7 @@ pub(crate) struct PmGraphicsPrimaryColorStyle {
 #[derive(Debug)]
 pub(crate) struct PmGraphicsStyleCollection {
     pub(crate) segment_version_major: u8,
-    pub(crate) style_references: ReferenceList,
+    pub(crate) style_references: PmDcReferenceList<[u32; 2], ()>,
 }
 
 #[derive(Debug)]
@@ -70,7 +70,7 @@ pub(crate) struct PmGraphicsFace {
     pub(crate) surface: PmDcReference,
     pub(crate) parent: PmDcReference,
     pub(crate) state: u32,
-    pub(crate) edge_references: ReferenceList,
+    pub(crate) edge_references: PmDcReferenceList<[u32; 2], ()>,
     pub(crate) visibility_state: u8,
     pub(crate) bounds: [f64; 6],
     pub(crate) key: u32,
@@ -420,7 +420,7 @@ pub(crate) fn inventory<'a>(
                             type_id_string(record.type_id),
                             token,
                             ordinal,
-                        ))
+                        ));
                     })
                 }
                 RENDERING_STYLE_TYPE => {
@@ -430,7 +430,7 @@ pub(crate) fn inventory<'a>(
                             type_id_string(record.type_id),
                             token,
                             ordinal,
-                        ))
+                        ));
                     })
                 }
                 GRAPHICS_FACE_TYPE if segment.kind == SegmentKind::PmGraphics => {
@@ -440,7 +440,7 @@ pub(crate) fn inventory<'a>(
                             type_id_string(record.type_id),
                             token,
                             ordinal,
-                        ))
+                        ));
                     })
                 }
                 GRAPHICS_STYLE_COLLECTION_TYPE if segment.kind == SegmentKind::PmGraphics => {
@@ -799,29 +799,6 @@ struct Cursor<'a> {
     source: View<'a>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub(crate) struct ReferenceList {
-    items: Option<([u32; 2], Vec<PmDcReference>)>,
-}
-
-impl ReferenceList {
-    pub(crate) fn new(metadata: Option<[u32; 2]>, references: Vec<PmDcReference>) -> Option<Self> {
-        Some(Self {
-            items: crate::pmdc::paired_items(metadata, references)?,
-        })
-    }
-
-    pub(crate) fn references(&self) -> &[PmDcReference] {
-        self.items
-            .as_ref()
-            .map_or(&[], |(_, references)| references.as_slice())
-    }
-
-    pub(crate) fn metadata(&self) -> Option<[u32; 2]> {
-        self.items.as_ref().map(|(metadata, _)| *metadata)
-    }
-}
-
 impl<'a> Cursor<'a> {
     const fn new(source: View<'a>) -> Self {
         Self { source }
@@ -886,7 +863,7 @@ impl<'a> Cursor<'a> {
         &mut self,
         ctx: &DecodeContext<'_>,
         field: &str,
-    ) -> Result<ReferenceList, CodecError> {
+    ) -> Result<PmDcReferenceList<[u32; 2], ()>, CodecError> {
         let marker = [
             self.u16(&format!("{field} marker 0"))?,
             self.u16(&format!("{field} marker 1"))?,
@@ -899,7 +876,7 @@ impl<'a> Cursor<'a> {
         let count = self.u32(&format!("{field} count"))? as usize;
         ctx.charge_collection_items(count as u64, "admit Inventor PmGraphics references")?;
         if count == 0 {
-            return Ok(ReferenceList::default());
+            return Ok(PmDcReferenceList::default());
         }
         let metadata = [
             self.u32(&format!("{field} metadata 0"))?,
@@ -909,8 +886,10 @@ impl<'a> Cursor<'a> {
         for index in 0..count {
             references.push(self.node_reference(&format!("{field} reference {index}"))?);
         }
-        Ok(ReferenceList {
-            items: Some((metadata, references)),
+        PmDcReferenceList::new((), Some(metadata), references).ok_or_else(|| {
+            CodecError::Malformed(
+                "Inventor graphics reference list metadata disagrees with length".into(),
+            )
         })
     }
 
@@ -1166,7 +1145,7 @@ mod tests {
                 }
             ]
         );
-        assert_eq!(face.edge_references.metadata(), Some([11, 12]));
+        assert_eq!(face.edge_references.metadata().copied(), Some([11, 12]));
         assert_eq!(face.bounds, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
         assert_eq!(face.key, 15);
         assert_eq!(face.values, [16, 17]);
@@ -1202,7 +1181,7 @@ mod tests {
                 }
             ]
         );
-        assert_eq!(styles.style_references.metadata(), Some([21, 22]));
+        assert_eq!(styles.style_references.metadata().copied(), Some([21, 22]));
     }
 
     #[test]
@@ -1246,7 +1225,7 @@ mod tests {
                     qualified: false,
                 },
                 state: 0,
-                edge_references: ReferenceList::default(),
+                edge_references: PmDcReferenceList::default(),
                 visibility_state: 0,
                 bounds: [0.0; 6],
                 key: 42,
@@ -1259,7 +1238,8 @@ mod tests {
         let collection = Located::new(
             PmGraphicsStyleCollection {
                 segment_version_major: 26,
-                style_references: ReferenceList::new(
+                style_references: PmDcReferenceList::new(
+                    (),
                     Some([1, 2]),
                     vec![PmDcReference {
                         index: 7,

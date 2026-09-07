@@ -8,7 +8,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Angle, DesignParameter, Length, ParameterId, ParameterValue};
 use serde::{Deserialize, Serialize};
 
-use crate::pmdc::{type_id_string, Cursor, PmDcContentHeader, PmDcReference};
+use crate::pmdc::{type_id_string, Cursor, PmDcContentHeader, PmDcReference, PmDcReferenceList};
 use crate::record_identity::{Located, RecordPayload};
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
@@ -139,8 +139,8 @@ pub(crate) struct PmDcUnitPayload {
 #[serde(try_from = "PmDcUnitKindWire", into = "PmDcUnitKindWire")]
 pub(crate) enum PmDcUnitKind {
     Definition {
-        numerators: ReferenceArray,
-        denominators: ReferenceArray,
+        numerators: PmDcReferenceList<[u16; 2], ()>,
+        denominators: PmDcReferenceList<[u16; 2], ()>,
         visible: bool,
         derived: PmDcReference,
     },
@@ -182,8 +182,8 @@ impl From<PmDcUnitKind> for PmDcUnitKindWire {
                 visible,
                 derived,
             } => Self::Definition {
-                numerator_metadata: numerators.metadata(),
-                denominator_metadata: denominators.metadata(),
+                numerator_metadata: numerators.metadata().copied(),
+                denominator_metadata: denominators.metadata().copied(),
                 numerators: numerators.into_references(),
                 denominators: denominators.into_references(),
                 visible,
@@ -217,9 +217,9 @@ impl TryFrom<PmDcUnitKindWire> for PmDcUnitKind {
                 visible,
                 derived,
             } => Self::Definition {
-                numerators: ReferenceArray::new(numerator_metadata, numerators)
+                numerators: PmDcReferenceList::new((), numerator_metadata, numerators)
                     .ok_or("unit numerator metadata disagrees with length")?,
-                denominators: ReferenceArray::new(denominator_metadata, denominators)
+                denominators: PmDcReferenceList::new((), denominator_metadata, denominators)
                     .ok_or("unit denominator metadata disagrees with length")?,
                 visible,
                 derived,
@@ -881,41 +881,12 @@ fn unique_by_ordinal<'a, T>(
         .collect()
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ReferenceArray {
-    items: Option<([u16; 2], Vec<PmDcReference>)>,
-}
-
-impl ReferenceArray {
-    fn new(metadata: Option<[u16; 2]>, references: Vec<PmDcReference>) -> Option<Self> {
-        Some(Self {
-            items: crate::pmdc::paired_items(metadata, references)?,
-        })
-    }
-
-    fn metadata(&self) -> Option<[u16; 2]> {
-        self.items.as_ref().map(|(metadata, _)| *metadata)
-    }
-
-    fn into_references(self) -> Vec<PmDcReference> {
-        self.items
-            .map(|(_, references)| references)
-            .unwrap_or_default()
-    }
-
-    pub(crate) fn references(&self) -> &[PmDcReference] {
-        self.items
-            .as_ref()
-            .map_or(&[] as &[_], |(_, references)| references.as_slice())
-    }
-}
-
 impl Cursor<'_> {
     fn reference_array(
         &mut self,
         ctx: &DecodeContext<'_>,
         field: &str,
-    ) -> Result<ReferenceArray, CodecError> {
+    ) -> Result<PmDcReferenceList<[u16; 2], ()>, CodecError> {
         let marker = [
             self.u16(&format!("{field} marker 0"))?,
             self.u16(&format!("{field} marker 1"))?,
@@ -939,7 +910,7 @@ impl Cursor<'_> {
         for index in 0..count {
             references.push(self.reference(&format!("{field} reference {index}"))?);
         }
-        ReferenceArray::new(metadata, references).ok_or_else(|| {
+        PmDcReferenceList::new((), metadata, references).ok_or_else(|| {
             CodecError::Malformed(
                 "Inventor PmDc unit reference list metadata disagrees with length".into(),
             )
@@ -977,9 +948,9 @@ mod tests {
     #[test]
     fn unit_definition_rejects_detached_reference_metadata() {
         let unit = PmDcUnitKind::Definition {
-            numerators: ReferenceArray::new(Some([3, 7]), vec![reference(1, false)])
+            numerators: PmDcReferenceList::new((), Some([3, 7]), vec![reference(1, false)])
                 .expect("valid test fixture"),
-            denominators: ReferenceArray::new(None, Vec::new()).expect("valid test fixture"),
+            denominators: PmDcReferenceList::new((), None, Vec::new()).expect("valid test fixture"),
             visible: true,
             derived: reference(0, false),
         };
@@ -1163,9 +1134,9 @@ mod tests {
                 header_value: 0,
                 header_id: 0,
                 kind: PmDcUnitKind::Definition {
-                    numerators: ReferenceArray::new(Some([0, 0]), vec![reference(1, false)])
+                    numerators: PmDcReferenceList::new((), Some([0, 0]), vec![reference(1, false)])
                         .expect("valid test fixture"),
-                    denominators: ReferenceArray::new(None, Vec::new())
+                    denominators: PmDcReferenceList::new((), None, Vec::new())
                         .expect("valid test fixture"),
                     visible: true,
                     derived: reference(0, false),

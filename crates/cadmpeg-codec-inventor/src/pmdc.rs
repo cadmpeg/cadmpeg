@@ -52,24 +52,24 @@ pub(crate) struct PmDcContentHeader {
     pub(crate) source_index: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "PmDcReferenceListWire", into = "PmDcReferenceListWire")]
-pub(crate) struct PmDcReferenceList {
-    pub(crate) marker: u16,
-    items: Option<(PmDcListMetadata, Vec<PmDcReference>)>,
+/// A reference list with metadata and a marker selected by its format.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PmDcReferenceList<M = PmDcListMetadata, Marker = u16> {
+    pub(crate) marker: Marker,
+    items: Option<(M, Vec<PmDcReference>)>,
 }
 
-#[derive(Serialize, Deserialize)]
-struct PmDcReferenceListWire {
+#[derive(Deserialize)]
+struct PmDcReferenceListWire<M> {
     marker: u16,
-    metadata: Option<PmDcListMetadata>,
+    metadata: Option<M>,
     references: Vec<PmDcReference>,
 }
 
-impl PmDcReferenceList {
+impl<M, Marker> PmDcReferenceList<M, Marker> {
     pub(crate) fn new(
-        marker: u16,
-        metadata: Option<PmDcListMetadata>,
+        marker: Marker,
+        metadata: Option<M>,
         references: Vec<PmDcReference>,
     ) -> Option<Self> {
         Some(Self {
@@ -78,41 +78,49 @@ impl PmDcReferenceList {
         })
     }
 
-    #[cfg(test)]
-    pub(crate) fn metadata(&self) -> Option<&PmDcListMetadata> {
+    pub(crate) fn metadata(&self) -> Option<&M> {
         self.items.as_ref().map(|(metadata, _)| metadata)
     }
 
     pub(crate) fn references(&self) -> &[PmDcReference] {
         self.items
             .as_ref()
-            .map_or(&[] as &[_], |(_, references)| references.as_slice())
+            .map_or(&[], |(_, references)| references.as_slice())
+    }
+
+    pub(crate) fn into_references(self) -> Vec<PmDcReference> {
+        self.items
+            .map(|(_, references)| references)
+            .unwrap_or_default()
     }
 }
 
-impl From<PmDcReferenceList> for PmDcReferenceListWire {
-    fn from(value: PmDcReferenceList) -> Self {
-        match value.items {
-            None => Self {
-                marker: value.marker,
-                metadata: None,
-                references: Vec::new(),
-            },
-            Some((metadata, references)) => Self {
-                marker: value.marker,
-                metadata: Some(metadata),
-                references,
-            },
+impl<M> Default for PmDcReferenceList<M, ()> {
+    fn default() -> Self {
+        Self {
+            marker: (),
+            items: None,
         }
     }
 }
 
-impl TryFrom<PmDcReferenceListWire> for PmDcReferenceList {
-    type Error = String;
+impl<M: Serialize> Serialize for PmDcReferenceList<M, u16> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut wire = serializer.serialize_struct("PmDcReferenceListWire", 3)?;
+        wire.serialize_field("marker", &self.marker)?;
+        wire.serialize_field("metadata", &self.metadata())?;
+        wire.serialize_field("references", self.references())?;
+        wire.end()
+    }
+}
 
-    fn try_from(wire: PmDcReferenceListWire) -> Result<Self, Self::Error> {
-        Self::new(wire.marker, wire.metadata, wire.references)
-            .ok_or_else(|| "PmDc reference list metadata disagrees with length".to_owned())
+impl<'de, M: Deserialize<'de>> Deserialize<'de> for PmDcReferenceList<M, u16> {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = PmDcReferenceListWire::<M>::deserialize(deserializer)?;
+        Self::new(wire.marker, wire.metadata, wire.references).ok_or_else(|| {
+            serde::de::Error::custom("PmDc reference list metadata disagrees with length")
+        })
     }
 }
 

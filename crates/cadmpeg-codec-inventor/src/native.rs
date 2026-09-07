@@ -7,8 +7,8 @@ pub(crate) mod ufrx;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 
-use crate::pmdc::PmDcReference;
-use crate::presentation::{ReferenceList, RenderingStyleExtension};
+use crate::pmdc::{PmDcReference, PmDcReferenceList};
+use crate::presentation::RenderingStyleExtension;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct VersionTupleRecord {
@@ -552,7 +552,7 @@ pub(crate) struct PmGraphicsFaceRecord {
     pub(crate) surface: PmDcReference,
     pub(crate) parent: PmDcReference,
     pub(crate) state: u32,
-    pub(crate) edge_references: ReferenceList,
+    pub(crate) edge_references: PmDcReferenceList<[u32; 2], ()>,
     pub(crate) visibility_state: u8,
     pub(crate) bounds: [f64; 6],
     pub(crate) key: u32,
@@ -605,7 +605,7 @@ impl From<PmGraphicsFaceRecord> for PmGraphicsFaceRecordWire {
             state: value.state,
             edge_references,
             edge_reference_qualifiers,
-            edge_list_metadata: value.edge_references.metadata(),
+            edge_list_metadata: value.edge_references.metadata().copied(),
             visibility_state: value.visibility_state,
             bounds: value.bounds,
             key: value.key,
@@ -639,7 +639,8 @@ impl TryFrom<PmGraphicsFaceRecordWire> for PmGraphicsFaceRecord {
                 qualified: wire.parent_reference_qualified,
             },
             state: wire.state,
-            edge_references: ReferenceList::new(
+            edge_references: PmDcReferenceList::new(
+                (),
                 wire.edge_list_metadata,
                 PmDcReference::zip(wire.edge_references, wire.edge_reference_qualifiers)?,
             )
@@ -662,7 +663,7 @@ pub(crate) struct PmGraphicsStyleCollectionRecord {
     pub(crate) segment_token: String,
     pub(crate) record_ordinal: u32,
     pub(crate) segment_version_major: u8,
-    pub(crate) style_references: ReferenceList,
+    pub(crate) style_references: PmDcReferenceList<[u32; 2], ()>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -687,7 +688,7 @@ impl From<PmGraphicsStyleCollectionRecord> for PmGraphicsStyleCollectionRecordWi
             segment_version_major: value.segment_version_major,
             style_references,
             style_reference_qualifiers,
-            list_metadata: value.style_references.metadata(),
+            list_metadata: value.style_references.metadata().copied(),
         }
     }
 }
@@ -701,7 +702,8 @@ impl TryFrom<PmGraphicsStyleCollectionRecordWire> for PmGraphicsStyleCollectionR
             segment_token: wire.segment_token,
             record_ordinal: wire.record_ordinal,
             segment_version_major: wire.segment_version_major,
-            style_references: ReferenceList::new(
+            style_references: PmDcReferenceList::new(
+                (),
                 wire.list_metadata,
                 PmDcReference::zip(wire.style_references, wire.style_reference_qualifiers)?,
             )
