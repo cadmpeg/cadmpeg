@@ -67,7 +67,6 @@ fn variable_blend_eval_fixture(
         extension: None,
     };
     let radius = VariableBlendValue {
-        name: "two_ends".into(),
         modern_flag: false,
         discriminator: 0,
         calibrated: 0,
@@ -169,7 +168,6 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
     );
 
     let zero_radius = VariableBlendValue {
-        name: "two_ends".into(),
         modern_flag: false,
         discriminator: 0,
         calibrated: 0,
@@ -192,7 +190,6 @@ fn cacheless_zero_radius_rounded_chamfer_is_ruled_between_contact_tracks() {
         Some(Point3::new(4.0, 4.375, 2.125))
     );
     assert!(variable_blend_is_zero_radius(&VariableBlendValue {
-        name: "constant".into(),
         modern_flag: false,
         discriminator: 0,
         calibrated: 0,
@@ -591,7 +588,6 @@ fn rolling_ball_partials_follow_a_changing_section_angle() {
 #[test]
 fn variable_blend_two_ends_radius_extrapolates_its_calibration_line() {
     let value = VariableBlendValue {
-        name: "two_ends".into(),
         modern_flag: false,
         discriminator: 0,
         calibrated: 0,
@@ -608,7 +604,6 @@ fn variable_blend_two_ends_radius_extrapolates_its_calibration_line() {
 #[test]
 fn variable_blend_function_uses_its_first_coordinate_as_radius() {
     let value = VariableBlendValue {
-        name: "functional".into(),
         modern_flag: false,
         discriminator: 0,
         calibrated: 0,

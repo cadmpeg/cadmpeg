@@ -4588,19 +4588,57 @@ mod variable_blend_tangents_wire {
 }
 
 /// Complete recursive native `getBlendValues` payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "VariableBlendValueWire"))]
 pub struct VariableBlendValue {
-    /// Native blend-value type name.
-    pub name: String,
     /// Native Boolean following the calibrated enum.
     pub modern_flag: bool,
     /// Native sub-discriminator preceding the calibrated enum.
     pub discriminator: i64,
     /// Native calibrated enum.
     pub calibrated: i64,
-    /// Type-specific payload.
+    /// Type-specific payload; its variant determines the native type name.
     pub payload: VariableBlendValuePayload,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+struct VariableBlendValueWire {
+    name: String,
+    modern_flag: bool,
+    discriminator: i64,
+    calibrated: i64,
+    payload: VariableBlendValuePayload,
+}
+
+impl Serialize for VariableBlendValue {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut wire = serializer.serialize_struct("VariableBlendValue", 5)?;
+        wire.serialize_field("name", self.payload.native_name())?;
+        wire.serialize_field("modern_flag", &self.modern_flag)?;
+        wire.serialize_field("discriminator", &self.discriminator)?;
+        wire.serialize_field("calibrated", &self.calibrated)?;
+        wire.serialize_field("payload", &self.payload)?;
+        wire.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for VariableBlendValue {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = VariableBlendValueWire::deserialize(deserializer)?;
+        if wire.name != wire.payload.native_name() {
+            return Err(serde::de::Error::custom(
+                "variable-blend name must match payload",
+            ));
+        }
+        Ok(Self {
+            modern_flag: wire.modern_flag,
+            discriminator: wire.discriminator,
+            calibrated: wire.calibrated,
+            payload: wire.payload,
+        })
+    }
 }
 
 /// Type-specific payload of a variable blend value.
@@ -4673,6 +4711,20 @@ pub enum VariableBlendValuePayload {
         /// radius, two derivative scalars, a position, and a vector.
         points: Vec<VariableBlendInterpolationPoint>,
     },
+}
+
+impl VariableBlendValuePayload {
+    /// Native type name introducing this payload.
+    pub const fn native_name(&self) -> &'static str {
+        match self {
+            Self::TwoEnds { .. } => "two_ends",
+            Self::FixedWidth { .. } => "fixed_width",
+            Self::EdgeOffset { .. } => "edge_offset",
+            Self::Functional { .. } => "functional",
+            Self::Constant { .. } => "const",
+            Self::Interpolated { .. } => "interp",
+        }
+    }
 }
 
 /// Radius-law payloads of a variable blend.

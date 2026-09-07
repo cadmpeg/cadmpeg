@@ -203,11 +203,10 @@ struct VariableBlendShapeWireTest {
     v_lower: Option<f64>,
 }
 
-fn variable_blend_value(name: &str) -> crate::geometry::VariableBlendValue {
+fn variable_blend_value(discriminator: i64) -> crate::geometry::VariableBlendValue {
     crate::geometry::VariableBlendValue {
-        name: name.into(),
         modern_flag: false,
-        discriminator: 0,
+        discriminator,
         calibrated: 0,
         payload: crate::geometry::VariableBlendValuePayload::TwoEnds {
             parameters: [0.0, 1.0],
@@ -220,16 +219,18 @@ fn variable_blend_value(name: &str) -> crate::geometry::VariableBlendValue {
 fn variable_blend_shape_keeps_the_flat_wire_fields() {
     let value = VariableBlendShapeWireTest {
         radii: crate::geometry::VariableBlendRadii::Two {
-            first: variable_blend_value("first"),
-            second: variable_blend_value("second"),
+            first: variable_blend_value(0),
+            second: variable_blend_value(1),
         },
         u_range: [-1.0, 2.0],
         v_lower: Some(-0.5),
     };
     let wire = serde_json::to_value(&value).unwrap();
     assert_eq!(wire["radius_kind"], "two_radii");
-    assert_eq!(wire["first_value"]["name"], "first");
-    assert_eq!(wire["second_value"]["name"], "second");
+    assert_eq!(wire["first_value"]["name"], "two_ends");
+    assert_eq!(wire["first_value"]["discriminator"], 0);
+    assert_eq!(wire["second_value"]["name"], "two_ends");
+    assert_eq!(wire["second_value"]["discriminator"], 1);
     assert_eq!(wire["u_range"], serde_json::json!([-1.0, 2.0]));
     assert_eq!(wire["v_range"], serde_json::json!([-0.5, null]));
     assert_eq!(
@@ -242,18 +243,18 @@ fn variable_blend_shape_keeps_the_flat_wire_fields() {
 fn variable_blend_shape_rejects_inconsistent_wire_fields() {
     let mut wire = serde_json::to_value(VariableBlendShapeWireTest {
         radii: crate::geometry::VariableBlendRadii::Single {
-            value: variable_blend_value("first"),
+            value: variable_blend_value(0),
         },
         u_range: [-1.0, 2.0],
         v_lower: None,
     })
     .unwrap();
-    wire["second_value"] = serde_json::to_value(variable_blend_value("second")).unwrap();
+    wire["second_value"] = serde_json::to_value(variable_blend_value(1)).unwrap();
     assert!(serde_json::from_value::<VariableBlendShapeWireTest>(wire).is_err());
 
     let mut wire = serde_json::to_value(VariableBlendShapeWireTest {
         radii: crate::geometry::VariableBlendRadii::Single {
-            value: variable_blend_value("first"),
+            value: variable_blend_value(0),
         },
         u_range: [-1.0, 2.0],
         v_lower: None,
@@ -734,3 +735,5 @@ mod rolling_ball_jet;
 mod rolling_ball_side;
 
 mod variable_blend_secondary_curve;
+
+mod variable_blend_value;

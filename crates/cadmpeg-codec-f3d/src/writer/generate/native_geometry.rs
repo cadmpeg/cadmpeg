@@ -3287,7 +3287,7 @@ fn native_variable_blend_value(
             "variable blend-value recursion exceeds 32 levels".into(),
         ));
     }
-    native_string(bytes, &value.name)?;
+    native_string(bytes, value.payload.native_name())?;
     if value.discriminator != 1 {
         native_i64(bytes, value.discriminator);
     }

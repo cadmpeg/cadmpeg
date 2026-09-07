@@ -760,7 +760,6 @@ fn variable_blend_value(
         _ => return None,
     };
     Some(VariableBlendValue {
-        name,
         modern_flag,
         discriminator,
         calibrated,
