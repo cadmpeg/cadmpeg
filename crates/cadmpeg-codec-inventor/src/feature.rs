@@ -1421,6 +1421,7 @@ fn project_hole(
                 profile: None,
                 profile_filter: None,
                 face: None,
+                direction: None,
                 placements: Some(vec![HolePlacement::Directed {
                     position: Point3::new(
                         transform.matrix[0][3] * 10.0,

@@ -2450,6 +2450,7 @@ mod tests {
             profile: None,
             profile_filter: None,
             face: None,
+            direction: None,
             placements: None,
             construction: cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
             exit_kind: None,

@@ -6179,6 +6179,7 @@ fn non_boolean_feature_definition_with_parameters(
                 profile: None,
                 profile_filter: None,
                 face: None,
+                direction: None,
                 placements: Some(hole.placements).filter(|placements| !placements.is_empty()),
                 construction: cadmpeg_ir::features::HoleConstruction::Form {
                     kind: match (measured_chamfer, hole_template) {
@@ -6220,6 +6221,7 @@ fn non_boolean_feature_definition_with_parameters(
             profile: None,
             profile_filter: None,
             face: None,
+            direction: None,
             placements: Some(hole.placements).filter(|placements| !placements.is_empty()),
             construction: cadmpeg_ir::features::HoleConstruction::Form {
                 kind: if hole.grouped_simple_through {

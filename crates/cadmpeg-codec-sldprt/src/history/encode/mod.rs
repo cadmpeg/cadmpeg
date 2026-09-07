@@ -304,6 +304,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 profile,
                 profile_filter,
                 face,
+                direction: _,
                 placements,
                 construction,
                 exit_kind,

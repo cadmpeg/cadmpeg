@@ -1019,6 +1019,7 @@ fn encoder_writes_source_less_native_features() {
             profile: None,
             profile_filter: None,
             face: Some(FaceSelection::Native("face-g".into())),
+            direction: None,
             placements: Some(vec![cadmpeg_ir::features::HolePlacement::Directed {
                 position: Point3::new(3.0, 4.0, 5.0),
                 direction: Vector3::new(0.0, 0.0, -1.0),

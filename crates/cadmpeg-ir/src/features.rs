@@ -2235,6 +2235,9 @@ pub enum FeatureDefinition {
         /// Face the hole is placed on, when known.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         face: Option<FaceSelection>,
+        /// Drilling direction carried independently of complete placements.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        direction: Option<Vector3>,
         /// Complete one-or-many hole placements, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         placements: Option<Vec<HolePlacement>>,

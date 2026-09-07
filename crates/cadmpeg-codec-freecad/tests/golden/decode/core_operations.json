@@ -20782,6 +20782,11 @@
               },
               "definition": "hole",
               "diameter": 6.0,
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
               "extent": {
                 "kind": "blind",
                 "length": 7.0

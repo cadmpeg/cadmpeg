@@ -801,6 +801,7 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
             profile: None,
             profile_filter: None,
             face: None,
+            direction: None,
             placements: Some(vec![HolePlacement::Axis {
                 origin: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
                 axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -825,6 +826,7 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
         profile: None,
         profile_filter: None,
         face: None,
+        direction: None,
         placements: None,
         construction: cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
         exit_kind: None,
@@ -854,6 +856,7 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
         profile: None,
         profile_filter: None,
         face: None,
+        direction: None,
         placements: Some(vec![HolePlacement::Axis {
             origin: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
             axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
@@ -875,6 +878,7 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
         profile: None,
         profile_filter: None,
         face: None,
+        direction: None,
         placements: Some(vec![placement.clone()]),
         construction: cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
         exit_kind: None,
@@ -929,6 +933,7 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
         profile: None,
         profile_filter: None,
         face: None,
+        direction: None,
         placements: Some(vec![cadmpeg_ir::features::HolePlacement::Axis {
             origin: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
             axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -950,6 +955,7 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
         profile: None,
         profile_filter: None,
         face: None,
+        direction: None,
         placements: None,
         construction: cadmpeg_ir::features::HoleConstruction::form(HoleKind::Simple),
         exit_kind: None,

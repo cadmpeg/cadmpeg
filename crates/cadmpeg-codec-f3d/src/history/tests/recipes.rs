@@ -1827,6 +1827,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
             profile: None,
             profile_filter: None,
             face: Some(FaceSelection::Native(scope_id.into())),
+            direction: None,
             placements: Some(vec![cadmpeg_ir::features::HolePlacement::Directed {
                 position: Point3::new(0.0, 0.0, 0.0),
                 direction: Vector3::new(0.0, 0.0, 1.0),

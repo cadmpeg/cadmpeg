@@ -349,6 +349,7 @@ pub(crate) fn project_hole(
             .get("Face")
             .cloned()
             .map(FaceSelection::Native),
+        direction: None,
         placements: feature
             .properties
             .get("Position")

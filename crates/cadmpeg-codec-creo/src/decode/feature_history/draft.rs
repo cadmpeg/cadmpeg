@@ -369,6 +369,7 @@ pub(in super::super) fn schema_feature_definition(
             profile: None,
             profile_filter: None,
             face,
+            direction: None,
             placements: (!placements.is_empty()).then_some(placements),
             construction: cadmpeg_ir::features::HoleConstruction::Form {
                 kind: match (

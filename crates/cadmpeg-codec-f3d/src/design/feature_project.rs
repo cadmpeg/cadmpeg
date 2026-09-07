@@ -7278,6 +7278,7 @@ fn project_hole(
         profile: None,
         profile_filter: None,
         face: Some(face),
+        direction: None,
         placements,
         construction: cadmpeg_ir::features::HoleConstruction::Form {
             kind,

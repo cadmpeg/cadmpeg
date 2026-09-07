@@ -250,11 +250,17 @@ pub(crate) fn transfer(
                 parameters: native_parameters(&owned),
             })
         } else if is_hole(&object.type_name) {
-            hole_definition(&object.id, &owned, &sketch_ids, program_version).unwrap_or_else(|| {
-                FeatureDefinition::Native {
-                    kind: object.type_name.clone().into(),
-                    parameters: native_parameters(&owned),
-                }
+            hole_definition(
+                &object.id,
+                &owned,
+                &sketch_ids,
+                objects,
+                &properties_by_owner,
+                program_version,
+            )
+            .unwrap_or_else(|| FeatureDefinition::Native {
+                kind: object.type_name.clone().into(),
+                parameters: native_parameters(&owned),
             })
         } else if is_extrusion(&object.type_name) {
             let profile = match profile_ref(&object.id, &owned, &sketch_ids) {
@@ -4885,6 +4891,8 @@ fn hole_definition(
     owner: &str,
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
+    objects: &[ObjectRecord],
+    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
     program_version: Option<&str>,
 ) -> Option<FeatureDefinition> {
     let profile = profile_ref(owner, properties, sketches);
@@ -5019,10 +5027,13 @@ fn hole_definition(
             }
         }))
     };
+    let direction = axis_reference(properties, "Profile", objects, properties_by_owner)
+        .map(|(_, direction)| direction);
     Some(FeatureDefinition::Hole {
         profile: Some(profile),
         profile_filter: Some(profile_filter),
         face: None,
+        direction,
         placements: None,
         construction: HoleConstruction::Form {
             kind,

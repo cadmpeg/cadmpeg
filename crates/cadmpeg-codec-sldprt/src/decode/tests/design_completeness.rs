@@ -831,6 +831,7 @@ fn hole_completeness_checks_optional_operands_when_present() {
         profile,
         profile_filter: None,
         face: None,
+        direction: None,
         placements: Some(vec![cadmpeg_ir::features::HolePlacement::Directed {
             position: Point3::new(0.0, 0.0, 0.0),
             direction: Vector3::new(0.0, 0.0, 1.0),

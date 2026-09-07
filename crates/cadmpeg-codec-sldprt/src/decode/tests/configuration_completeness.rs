@@ -251,6 +251,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
             profile: None,
             profile_filter: None,
             face: None,
+            direction: None,
             placements: Some(vec![HolePlacement::Axis {
                 origin: Point3::new(1.0, 2.0, 3.0),
                 axis: Vector3::new(0.0, 0.0, 1.0),
@@ -301,6 +302,7 @@ fn active_configuration_inherits_late_feature_resolutions() {
                         profile: None,
                         profile_filter: None,
                         face: None,
+                        direction: None,
                         placements: None,
                         construction: cadmpeg_ir::features::HoleConstruction::form(
                             HoleKind::Simple,

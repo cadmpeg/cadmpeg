@@ -1166,6 +1166,7 @@ mod tests {
                 profile: None,
                 profile_filter: None,
                 face: None,
+                direction: None,
                 placements: Some(vec![HolePlacement::Directed {
                     position: Point3::new(0.0, 0.0, 0.0),
                     direction: Vector3::new(0.0, 0.0, 1.0),

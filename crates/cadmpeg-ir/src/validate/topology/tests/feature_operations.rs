@@ -64,6 +64,7 @@ fn feature_operation_geometry_is_validated() {
             profile: None,
             profile_filter: None,
             face: Some(FaceSelection::Unresolved),
+            direction: None,
             construction: crate::features::HoleConstruction::Form {
                 kind: HoleKind::Simple,
                 specification: None,
@@ -80,6 +81,7 @@ fn feature_operation_geometry_is_validated() {
             profile: None,
             profile_filter: None,
             face: None,
+            direction: None,
             construction: crate::features::HoleConstruction::Form {
                 kind: HoleKind::Simple,
                 specification: None,
