@@ -57,7 +57,7 @@ fn form33_without_unique_body_proof_remains_unresolved() {
         },
         record_index: 1,
         byte_offset: 0,
-        class_tag: "365".into(),
+        class_tag: crate::records::DesignClassTag::try_from("365".to_owned()).unwrap(),
         asset_id: "asset".into(),
         asset_id_offset: 0,
         context_id: "context".into(),

@@ -170,7 +170,7 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
         },
         record_index: 120,
         byte_offset: 0,
-        class_tag: "300".into(),
+        class_tag: crate::records::DesignClassTag::try_from("300".to_owned()).unwrap(),
         asset_id: String::new(),
         asset_id_offset: 0,
         context_id: String::new(),

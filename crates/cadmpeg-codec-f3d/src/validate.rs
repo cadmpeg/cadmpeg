@@ -6134,12 +6134,9 @@ fn validate_body_recipe_operands<'a>(
                         == Some(&operand.record_index)
             }
         });
-        let valid = operand.class_tag.len() == 3
-            && operand.class_tag.bytes().all(|byte| byte.is_ascii_digit())
-            && valid_owner
+        let valid = valid_owner
             && header.is_some_and(|header| {
-                header.byte_offset == operand.byte_offset
-                    && header.class_tag.as_str() == operand.class_tag
+                header.byte_offset == operand.byte_offset && header.class_tag == operand.class_tag
             })
             && body_recipe_reference_table_is_admitted(scope.copied(), operand)
             && operand

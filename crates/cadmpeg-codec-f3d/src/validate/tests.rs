@@ -374,7 +374,7 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
             },
             record_index: operand_record_index,
             byte_offset,
-            class_tag: "365".into(),
+            class_tag: crate::records::DesignClassTag::try_from("365".to_owned()).unwrap(),
             asset_id: "11111111-1111-4111-8111-111111111111".into(),
             asset_id_offset: byte_offset + if empty_legacy_tool { 44 } else { 56 },
             context_id: "22222222-2222-4222-8222-222222222222".into(),

@@ -487,7 +487,7 @@ fn combine_recipe_family_proves_unordered_generated_tools() {
                 },
                 record_index,
                 byte_offset: 0,
-                class_tag: "389".into(),
+                class_tag: crate::records::DesignClassTag::try_from("389".to_owned()).unwrap(),
                 asset_id: "asset".into(),
                 asset_id_offset: 0,
                 context_id: "context".into(),

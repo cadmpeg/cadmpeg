@@ -746,7 +746,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         },
         record_index: 201,
         byte_offset: 0,
-        class_tag: "295".into(),
+        class_tag: crate::records::DesignClassTag::try_from("295".to_owned()).unwrap(),
         asset_id: "asset".into(),
         asset_id_offset: 0,
         context_id: "context".into(),

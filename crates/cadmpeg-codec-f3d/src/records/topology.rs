@@ -1962,7 +1962,7 @@ pub struct DesignBodyRecipeOperand {
     /// Primary indexed-header byte offset.
     pub byte_offset: u64,
     /// Source per-file dynamic primary class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Asset UUID qualifying the persistent selection namespace.
     pub asset_id: String,
     /// Byte offset of the asset UUID's UTF-16LE code units.
@@ -2071,7 +2071,7 @@ impl TryFrom<DesignBodyRecipeOperandWire> for DesignBodyRecipeOperand {
             owner: wire.owner,
             record_index: wire.record_index,
             byte_offset: wire.byte_offset,
-            class_tag: wire.class_tag,
+            class_tag: wire.class_tag.try_into()?,
             asset_id: wire.asset_id,
             asset_id_offset: wire.asset_id_offset,
             context_id: wire.context_id,
@@ -2103,7 +2103,7 @@ impl From<DesignBodyRecipeOperand> for DesignBodyRecipeOperandWire {
             owner: record.owner,
             record_index: record.record_index,
             byte_offset: record.byte_offset,
-            class_tag: record.class_tag,
+            class_tag: record.class_tag.into(),
             asset_id: record.asset_id,
             asset_id_offset: record.asset_id_offset,
             context_id: record.context_id,
