@@ -402,7 +402,9 @@ mod tests {
             .map(|identified| (identified.format(), identified.confidence()))
             .collect::<Vec<_>>();
 
-        assert!(cli_candidates.iter().any(|(format, _)| *format == "nx"));
+        assert!(cli_candidates
+            .iter()
+            .any(|(format, _)| *format == cadmpeg_ir::codec::FormatId::new("nx")));
         assert_eq!(library_candidates, cli_candidates);
     }
 

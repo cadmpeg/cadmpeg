@@ -13,7 +13,7 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{Catalog, EncodeInput, EncoderBackend, ExportBody, ResolvedWrite};
-use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::ContainerSummary;
 
 pub(crate) mod annotations;
@@ -136,7 +136,7 @@ impl RhinoArchiveVersion {
 }
 
 impl CodecBackend for RhinoCodec {
-    const FORMAT: &'static str = dialect::FORMAT;
+    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
     fn detect_impl(&self, prefix: &[u8]) -> Confidence {
         if prefix.windows(MAGIC.len()).any(|window| window == MAGIC) {
@@ -160,7 +160,7 @@ impl CodecBackend for RhinoCodec {
 }
 
 impl EncoderBackend for RhinoCodec {
-    const FORMAT: &'static str = dialect::FORMAT;
+    const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(RhinoArchiveVersion::TARGETS, Some(3));
 

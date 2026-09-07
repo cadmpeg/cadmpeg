@@ -33,14 +33,14 @@ include!("dialect/registry_ids.rs");
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::ContainerSummary;
 
 /// Bare ASM stream codec.
 pub struct SatCodec;
 
 impl CodecBackend for SatCodec {
-    const FORMAT: &'static str = FORMAT;
+    const FORMAT: FormatId = FormatId::new(FORMAT);
 
     fn detect_impl(&self, prefix: &[u8]) -> Confidence {
         detect::confidence(prefix)

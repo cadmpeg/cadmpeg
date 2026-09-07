@@ -79,7 +79,7 @@ mod tests {
         validators.sort_unstable();
         let mut inputs = InputCatalog::with_builtins()
             .descriptors()
-            .map(cadmpeg_registry::InputDescriptor::format_id)
+            .map(|descriptor| descriptor.format_id().as_str())
             .filter(|id| VALIDATED_FORMATS.contains(id))
             .collect::<Vec<_>>();
         inputs.sort_unstable();

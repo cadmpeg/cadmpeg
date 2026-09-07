@@ -9,6 +9,7 @@ use cadmpeg_core::target::{
 };
 use cadmpeg_core::CodecError;
 
+use crate::codec::FormatId;
 use crate::examples::{directed_subd_sum, unit_cube};
 use crate::report::FidelityResolution;
 use crate::source_fidelity::SourceFidelity;
@@ -46,7 +47,7 @@ fn cadir_encoder_census_matches_validation_counts() {
 struct NeutralEncoder;
 
 impl EncoderBackend for NeutralEncoder {
-    const FORMAT: &'static str = "cadir";
+    const FORMAT: FormatId = FormatId::new("cadir");
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
@@ -87,7 +88,7 @@ fn a_dialect_free_encoder_refuses_an_explicit_target() {
 struct CatalogEncoder;
 
 impl EncoderBackend for CatalogEncoder {
-    const FORMAT: &'static str = "test";
+    const FORMAT: FormatId = FormatId::new("test");
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(CATALOG_WRITE_TARGETS, Some(1));
 

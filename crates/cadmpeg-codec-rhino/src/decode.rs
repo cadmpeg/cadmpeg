@@ -5478,13 +5478,13 @@ pub(crate) fn seal_for_test(
     decoded: Decoded,
     container_only: bool,
 ) -> cadmpeg_ir::codec::DecodeResult {
-    use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions};
+    use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, DecodeOptions, FormatId};
 
     #[derive(Clone)]
     struct TestBackend(Decoded);
 
     impl CodecBackend for TestBackend {
-        const FORMAT: &'static str = crate::dialect::FORMAT;
+        const FORMAT: FormatId = FormatId::new(crate::dialect::FORMAT);
 
         fn detect_impl(&self, _prefix: &[u8]) -> Confidence {
             Confidence::High

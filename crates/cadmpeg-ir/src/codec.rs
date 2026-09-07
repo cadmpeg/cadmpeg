@@ -29,6 +29,30 @@ use cadmpeg_core::{CodecError, ReadSeek};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+/// The stable registry format namespace of one codec, as a typed value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FormatId(&'static str);
+
+impl FormatId {
+    /// Builds the format id for a registry namespace word.
+    #[must_use]
+    pub const fn new(namespace: &'static str) -> Self {
+        Self(namespace)
+    }
+
+    /// The registry namespace word.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        self.0
+    }
+}
+
+impl fmt::Display for FormatId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.pad(self.0)
+    }
+}
+
 /// How confident a codec is that it can handle a given byte prefix.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -194,7 +218,7 @@ impl DecodeResult {
     /// A document without source metadata yields an unclassified report for
     /// `format`, the codec's registry format.
     #[must_use]
-    pub(crate) fn new(decoded: Decoded, format: &str, container_only: bool) -> Self {
+    pub(crate) fn new(decoded: Decoded, format: FormatId, container_only: bool) -> Self {
         let Decoded {
             mut ir,
             body,
@@ -202,7 +226,7 @@ impl DecodeResult {
         } = decoded;
         let classification = match ir.source.as_ref() {
             Some(source) => source.classification().clone(),
-            None => FormatIdentity::unclassified(format),
+            None => FormatIdentity::unclassified(format.as_str()),
         };
         ir.finalize();
         source_fidelity.finalize();
@@ -240,7 +264,7 @@ pub trait CodecBackend {
     ///
     /// The sealed wrapper reports it as [`Codec::id`] and refuses any result
     /// whose primary format names another namespace.
-    const FORMAT: &'static str;
+    const FORMAT: FormatId;
 
     /// Judge, from a leading byte prefix, whether this codec applies.
     fn detect_impl(&self, prefix: &[u8]) -> Confidence;
@@ -276,7 +300,7 @@ mod sealed {
 ///
 /// ```compile_fail
 /// use cadmpeg_ir::codec::{
-///     Codec, CodecBackend, Confidence, DecodeOptions, DecodeResult, Decoded,
+///     Codec, CodecBackend, Confidence, DecodeOptions, DecodeResult, Decoded, FormatId,
 /// };
 /// use cadmpeg_core::{CodecError, ReadSeek};
 /// use cadmpeg_core::decode::{DecodeContext, View};
@@ -285,7 +309,7 @@ mod sealed {
 ///
 /// struct Rogue;
 /// impl CodecBackend for Rogue {
-///     const FORMAT: &'static str = "rogue";
+///     const FORMAT: FormatId = FormatId::new("rogue");
 ///     fn detect_impl(&self, _: &[u8]) -> Confidence { Confidence::No }
 ///     fn inspect_impl(&self, _: &DecodeContext<'_>, _: View<'_>)
 ///         -> Result<ContainerSummary, CodecError> { panic!("never runs") }
@@ -293,7 +317,7 @@ mod sealed {
 ///         -> Result<Decoded, CodecError> { panic!("never runs") }
 /// }
 /// impl Codec for Rogue {
-///     fn id(&self) -> &'static str { "rogue" }
+///     fn id(&self) -> FormatId { FormatId::new("rogue") }
 ///     fn detect(&self, _: &[u8]) -> Confidence { Confidence::No }
 ///     fn inspect(&self, _: &mut dyn ReadSeek, _: &InspectOptions)
 ///         -> Result<ContainerSummary, CodecError> { panic!("never runs") }
@@ -305,7 +329,7 @@ mod sealed {
 /// ```
 pub trait Codec: sealed::Sealed {
     /// Registry format namespace, [`CodecBackend::FORMAT`].
-    fn id(&self) -> &'static str;
+    fn id(&self) -> FormatId;
 
     /// Judge, from a leading byte prefix, whether this codec applies.
     fn detect(&self, prefix: &[u8]) -> Confidence;
@@ -336,7 +360,7 @@ pub trait Codec: sealed::Sealed {
 }
 
 impl<C: CodecBackend + ?Sized> Codec for C {
-    fn id(&self) -> &'static str {
+    fn id(&self) -> FormatId {
         C::FORMAT
     }
 
@@ -358,10 +382,10 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         let result = self.inspect_impl(&ctx, root);
         ctx.finish_session()?;
         let result = result?;
-        if result.format() != C::FORMAT {
+        if result.format() != C::FORMAT.as_str() {
             return Err(CodecError::WrongFormat(format!(
                 "codec {:?} inspected a {:?} container",
-                C::FORMAT,
+                C::FORMAT.as_str(),
                 result.format()
             )));
         }
@@ -379,10 +403,10 @@ impl<C: CodecBackend + ?Sized> Codec for C {
         let decoded = self.decode_impl(&ctx, root);
         ctx.finish_session()?;
         let result = DecodeResult::new(decoded?, C::FORMAT, options.container_only);
-        if result.report().format() != C::FORMAT {
+        if result.report().format() != C::FORMAT.as_str() {
             return Err(CodecError::WrongFormat(format!(
                 "codec {:?} decoded a {:?} document",
-                C::FORMAT,
+                C::FORMAT.as_str(),
                 result.report().format()
             ))
             .into());

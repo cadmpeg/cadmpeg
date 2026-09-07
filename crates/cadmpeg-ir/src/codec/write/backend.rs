@@ -9,6 +9,7 @@
 
 use std::io::Write;
 
+use crate::codec::FormatId;
 use crate::document::CadIr;
 use crate::report::{
     CensusBasis, EntityCensus, ExportReport, FidelityResolution, LossNote,
@@ -62,7 +63,7 @@ pub trait TargetDomain: domain_sealed::Sealed {
     type Resolved<'a>: TargetResolution;
 
     /// The static catalog of output flavors this domain lists.
-    fn targets(&self, format: &'static str) -> TargetCatalog;
+    fn targets(&self, format: FormatId) -> TargetCatalog;
 
     /// Resolves one request against this domain.
     #[doc(hidden)]
@@ -70,7 +71,7 @@ pub trait TargetDomain: domain_sealed::Sealed {
         &self,
         ir: &'a CadIr,
         request: TargetRequest<'a>,
-        format: &'static str,
+        format: FormatId,
     ) -> Result<Self::Resolved<'a>, CodecError>;
 }
 
@@ -84,21 +85,23 @@ pub struct DialectFree;
 impl TargetDomain for DialectFree {
     type Resolved<'a> = ();
 
-    fn targets(&self, format: &'static str) -> TargetCatalog {
-        TargetCatalog::empty(format)
+    fn targets(&self, format: FormatId) -> TargetCatalog {
+        TargetCatalog::empty(format.as_str())
     }
 
     fn resolve<'a>(
         &self,
         _ir: &'a CadIr,
         request: TargetRequest<'a>,
-        format: &'static str,
+        format: FormatId,
     ) -> Result<(), CodecError> {
         match request {
             TargetRequest::Inherit => Ok(()),
-            TargetRequest::Explicit(id) => {
-                Err(TargetRefusal::unknown_explicit(id, TargetCatalog::empty(format)).into())
-            }
+            TargetRequest::Explicit(id) => Err(TargetRefusal::unknown_explicit(
+                id,
+                TargetCatalog::empty(format.as_str()),
+            )
+            .into()),
         }
     }
 }
@@ -122,7 +125,7 @@ impl Catalog {
 impl TargetDomain for Catalog {
     type Resolved<'a> = ResolvedWrite<'a>;
 
-    fn targets(&self, _format: &'static str) -> TargetCatalog {
+    fn targets(&self, _format: FormatId) -> TargetCatalog {
         self.0
     }
 
@@ -130,7 +133,7 @@ impl TargetDomain for Catalog {
         &self,
         ir: &'a CadIr,
         request: TargetRequest<'a>,
-        _format: &'static str,
+        _format: FormatId,
     ) -> Result<ResolvedWrite<'a>, CodecError> {
         resolve_write_request(ir, request, self.0)
     }
@@ -141,8 +144,8 @@ impl TargetDomain for Catalog {
 /// Backends declare one target domain and receive only a request already
 /// resolved through that domain. Callers use the sealed [`Encoder`] wrapper.
 pub trait EncoderBackend {
-    /// Stable output format id.
-    const FORMAT: &'static str;
+    /// Stable output format id, taken from the codec that reads the format.
+    const FORMAT: FormatId;
 
     /// The domain this backend's targets come from.
     type Target: TargetDomain;
@@ -167,7 +170,7 @@ mod encoder_sealed {
 /// Public planning interface for an output format.
 pub trait Encoder: encoder_sealed::Sealed {
     /// Stable output format id.
-    fn id(&self) -> &'static str;
+    fn id(&self) -> FormatId;
 
     /// The static catalog of output flavors this encoder can produce.
     ///
@@ -188,7 +191,7 @@ pub trait Encoder: encoder_sealed::Sealed {
 }
 
 impl<E: EncoderBackend> Encoder for E {
-    fn id(&self) -> &'static str {
+    fn id(&self) -> FormatId {
         E::FORMAT
     }
 
@@ -391,7 +394,7 @@ impl ExportPlan {
 pub struct CadirEncoder;
 
 impl EncoderBackend for CadirEncoder {
-    const FORMAT: &'static str = "cadir";
+    const FORMAT: FormatId = FormatId::new("cadir");
 
     /// CADIR is the neutral document, not a native format: its version is
     /// data about cadmpeg, never a dialect, and `ExportReport::target` is

@@ -121,7 +121,7 @@ use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{Catalog, EncodeInput, EncoderBackend, ExportBody, ResolvedWrite};
-use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
 use cadmpeg_ir::ContainerSummary;
@@ -171,7 +171,7 @@ impl F3dCodec {
 }
 
 impl CodecBackend for F3dCodec {
-    const FORMAT: &'static str = dialect::FORMAT;
+    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
     fn detect_impl(&self, prefix: &[u8]) -> Confidence {
         if !prefix.starts_with(ZIP_MAGIC) {
@@ -211,7 +211,7 @@ impl CodecBackend for F3dCodec {
 }
 
 impl EncoderBackend for F3dCodec {
-    const FORMAT: &'static str = dialect::FORMAT;
+    const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(dialect::TARGETS, Some(0));
 

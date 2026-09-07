@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Writable formats and registry-owned CLI format words.
 
+use cadmpeg_ir::codec::FormatId;
+
 /// An output format this build can write.
 ///
 /// Not a `ValueEnum`: `--to` takes `FORMAT[:DIALECT]`, and clap cannot parse
@@ -67,13 +69,16 @@ impl Format {
     #[must_use]
     pub fn from_name(name: &str) -> Option<Self> {
         let canonical = crate::registry::canonical_format_name(name)?;
-        Self::all().find(|format| format.name() == canonical)
+        Self::all().find(|format| format.name().as_str() == canonical)
     }
 
     /// The output-format words this build accepts, for a refusal message.
     #[must_use]
     pub fn vocabulary() -> String {
-        Self::all().map(Self::name).collect::<Vec<_>>().join(", ")
+        Self::all()
+            .map(|format| format.name().as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 
     /// The format a filename extension names, case-insensitively.
@@ -91,7 +96,7 @@ impl Format {
 
     /// The stable format id, which is also its canonical `--to` spelling.
     #[must_use]
-    pub fn name(self) -> &'static str {
+    pub fn name(self) -> FormatId {
         self.descriptor().0.id()
     }
 

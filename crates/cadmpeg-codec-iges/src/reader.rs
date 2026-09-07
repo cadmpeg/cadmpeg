@@ -589,7 +589,7 @@ pub(crate) fn decode_with_test_occurrence_limits(
     output_limit: usize,
     depth_limit: usize,
 ) -> Result<cadmpeg_ir::codec::DecodeResult, cadmpeg_ir::codec::DecodeFailure> {
-    use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence};
+    use cadmpeg_ir::codec::{Codec, CodecBackend, Confidence, FormatId};
 
     struct OccurrenceLimitCodec {
         output_limit: usize,
@@ -597,7 +597,7 @@ pub(crate) fn decode_with_test_occurrence_limits(
     }
 
     impl CodecBackend for OccurrenceLimitCodec {
-        const FORMAT: &'static str = crate::dialect::FORMAT;
+        const FORMAT: FormatId = FormatId::new(crate::dialect::FORMAT);
 
         fn detect_impl(&self, _prefix: &[u8]) -> Confidence {
             Confidence::High

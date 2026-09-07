@@ -138,7 +138,7 @@ use cadmpeg_ir::codec::write::{
     Catalog, Consumption, EncodeInput, EncoderBackend, ExportBody, PatchConsumption, ResolvedWrite,
     WritePath,
 };
-use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE;
 use cadmpeg_ir::ids::UnknownId;
@@ -354,7 +354,7 @@ impl Written {
 }
 
 impl CodecBackend for SldprtCodec {
-    const FORMAT: &'static str = dialect::FORMAT;
+    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
     fn detect_impl(&self, prefix: &[u8]) -> Confidence {
         if container::looks_like_sldprt(prefix) {
@@ -382,7 +382,7 @@ impl CodecBackend for SldprtCodec {
 }
 
 impl EncoderBackend for SldprtCodec {
-    const FORMAT: &'static str = dialect::FORMAT;
+    const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(dialect::TARGETS, Some(0));
 

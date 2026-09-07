@@ -6,7 +6,7 @@ use std::io::SeekFrom;
 use cadmpeg_container::compound::read_detection_prefix;
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_core::{CodecError, ReadSeek};
-use cadmpeg_ir::codec::Confidence;
+use cadmpeg_ir::codec::{Confidence, FormatId};
 use cadmpeg_ir::ContainerSummary;
 
 use crate::{
@@ -46,7 +46,7 @@ pub enum Identification {
     /// Native prefix evidence and its container inspection outcome.
     Native {
         /// Stable format id of the candidate codec.
-        format: &'static str,
+        format: FormatId,
         /// Confidence of prefix detection.
         confidence: Confidence,
         /// The inspection outcome.
@@ -57,10 +57,10 @@ pub enum Identification {
 impl Identification {
     /// Returns the candidate format id.
     #[must_use]
-    pub const fn format(&self) -> &'static str {
+    pub const fn format(&self) -> FormatId {
         match self {
-            Self::Cadir => "cadir",
-            Self::Native { format, .. } => format,
+            Self::Cadir => FormatId::new("cadir"),
+            Self::Native { format, .. } => *format,
         }
     }
 
@@ -88,7 +88,7 @@ impl Identification {
 #[derive(Debug)]
 pub struct Inspected {
     /// Stable format id of the selected codec.
-    pub format: &'static str,
+    pub format: FormatId,
     /// How the codec was chosen.
     pub selection: Selection,
     /// The codec's complete container summary.
@@ -114,7 +114,7 @@ pub enum InspectError {
     #[error("{format} inspection failed: {error}")]
     Codec {
         /// Stable format id of the selected codec.
-        format: &'static str,
+        format: FormatId,
         /// How the codec was chosen.
         selection: Selection,
         /// The codec's typed failure.
@@ -279,7 +279,9 @@ mod tests {
 
         let found = identify(&mut reader, &options).expect("the cap bounds CFB detection");
 
-        assert!(found.iter().any(|candidate| candidate.format() == "nx"));
+        assert!(found
+            .iter()
+            .any(|candidate| candidate.format() == FormatId::new("nx")));
     }
 
     #[cfg(feature = "nx")]
@@ -465,7 +467,7 @@ mod tests {
                 let winner = found
                     .first()
                     .unwrap_or_else(|| panic!("{}: no candidate at all", case.format));
-                assert_eq!(winner.format(), case.format, "{found:?}");
+                assert_eq!(winner.format().as_str(), case.format, "{found:?}");
                 let catalog = InputCatalog::with_builtins();
                 let resolved = catalog
                     .resolve_source(case.bytes, None)
@@ -521,7 +523,7 @@ mod tests {
         }
         let formats = found
             .iter()
-            .map(super::Identification::format)
+            .map(|identification| identification.format().as_str())
             .collect::<Vec<_>>();
         assert!(
             formats.contains(&"fcstd") && formats.contains(&"f3d"),
@@ -551,7 +553,7 @@ mod tests {
 
         let found = run(bytes, &starved);
         let winner = found.first().expect("the prefix still names rhino");
-        assert_eq!(winner.format(), "rhino");
+        assert_eq!(winner.format(), FormatId::new("rhino"));
         assert_eq!(winner.confidence(), Confidence::High);
         let Some(Inspection::Failed(error)) = winner.inspection() else {
             panic!("expected a typed inspection failure: {winner:?}");
@@ -568,7 +570,7 @@ mod tests {
         else {
             panic!("resolved inspection must retain the selected codec failure");
         };
-        assert_eq!(format, "rhino");
+        assert_eq!(format, FormatId::new("rhino"));
         assert_eq!(
             selection,
             Selection::Detected {
@@ -593,7 +595,7 @@ mod tests {
         ] {
             let found = run(bytes, &inspection());
             assert_eq!(found.len(), 1);
-            assert_eq!(found[0].format(), "cadir");
+            assert_eq!(found[0].format(), FormatId::new("cadir"));
             assert_eq!(found[0].confidence(), Confidence::High);
             assert!(matches!(found[0], Identification::Cadir));
         }

@@ -89,7 +89,7 @@ pub mod fuzz;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::ContainerSummary;
 
 /// Codec for Creo Parametric and Pro/ENGINEER PSB `.prt` files.
@@ -97,7 +97,7 @@ use cadmpeg_ir::ContainerSummary;
 pub struct CreoCodec;
 
 impl CodecBackend for CreoCodec {
-    const FORMAT: &'static str = dialect::FORMAT;
+    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
     fn detect_impl(&self, prefix: &[u8]) -> Confidence {
         // The `#UGC:2` ASCII magic is unique to the Creo/Pro-E PSB container and

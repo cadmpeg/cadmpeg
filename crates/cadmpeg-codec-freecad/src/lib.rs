@@ -43,7 +43,7 @@ use cadmpeg_core::bytes::contains;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{Catalog, EncodeInput, EncoderBackend, ExportBody, ResolvedWrite};
-use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeBody, Decoded};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeBody, Decoded, FormatId};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::LossNote;
@@ -901,7 +901,7 @@ fn validate_logical_chain(
 }
 
 impl CodecBackend for FcstdCodec {
-    const FORMAT: &'static str = dialect::FORMAT;
+    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
     fn detect_impl(&self, prefix: &[u8]) -> Confidence {
         if !prefix.starts_with(b"PK\x03\x04") {
@@ -1260,7 +1260,7 @@ impl CodecBackend for FcstdCodec {
 }
 
 impl EncoderBackend for FcstdCodec {
-    const FORMAT: &'static str = dialect::FORMAT;
+    const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(dialect::TARGETS, None);
 

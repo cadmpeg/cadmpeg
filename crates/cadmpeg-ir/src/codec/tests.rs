@@ -22,7 +22,7 @@ fn decoded(ir: CadIr) -> Decoded {
 }
 
 fn decode_result(ir: CadIr) -> DecodeResult {
-    DecodeResult::new(decoded(ir), "test", false)
+    DecodeResult::new(decoded(ir), FormatId::new("test"), false)
 }
 
 struct RejectFloorCodec;
@@ -32,7 +32,7 @@ fn reject_floor_kind() -> LossKind {
 }
 
 impl CodecBackend for RejectFloorCodec {
-    const FORMAT: &'static str = "test";
+    const FORMAT: FormatId = FormatId::new("test");
 
     fn detect_impl(&self, _prefix: &[u8]) -> Confidence {
         Confidence::No
@@ -63,7 +63,7 @@ impl CodecBackend for RejectFloorCodec {
 struct ForeignIdentityCodec;
 
 impl CodecBackend for ForeignIdentityCodec {
-    const FORMAT: &'static str = "selected";
+    const FORMAT: FormatId = FormatId::new("selected");
 
     fn detect_impl(&self, _prefix: &[u8]) -> Confidence {
         Confidence::No
@@ -99,7 +99,7 @@ impl CodecBackend for ForeignIdentityCodec {
 
 #[test]
 fn the_sealed_wrapper_reports_the_backend_format() {
-    assert_eq!(Codec::id(&ForeignIdentityCodec), "selected");
+    assert_eq!(Codec::id(&ForeignIdentityCodec), FormatId::new("selected"));
     assert_eq!(ForeignIdentityCodec.detect(&[]), Confidence::No);
 }
 
@@ -232,7 +232,7 @@ fn a_decode_result_without_source_metadata_reports_the_codec_format() {
     let mut ir = unit_cube();
     ir.source = None;
 
-    let result = DecodeResult::new(decoded(ir), "test", false);
+    let result = DecodeResult::new(decoded(ir), FormatId::new("test"), false);
 
     assert_eq!(result.report().format(), "test");
     assert!(result.report().dialects().is_none());
@@ -250,7 +250,7 @@ fn a_decode_result_keeps_the_body_it_was_given() {
             body,
             source_fidelity: SourceFidelity::default(),
         },
-        "test",
+        FormatId::new("test"),
         true,
     );
 

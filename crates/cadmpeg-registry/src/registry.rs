@@ -250,7 +250,7 @@ pub(crate) fn format_words(format: &str) -> impl Iterator<Item = &'static str> {
 #[must_use]
 pub fn dialects(format: &str) -> Vec<&'static DialectEntry> {
     let canonical = Format::from_name(format)
-        .map(Format::name)
+        .map(|format| format.name().as_str())
         .or_else(|| canonical_format_name(format))
         .unwrap_or(format);
     registries().rows_of(canonical).collect()

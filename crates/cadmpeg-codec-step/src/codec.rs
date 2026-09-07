@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::codec::write::{Catalog, EncodeInput, EncoderBackend, ExportBody, ResolvedWrite};
-use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::ContainerSummary;
 
@@ -26,7 +26,7 @@ pub struct StepCodec {
 }
 
 impl EncoderBackend for StepCodec {
-    const FORMAT: &'static str = crate::dialect::FORMAT;
+    const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(StepSchema::TARGETS, Some(2));
 
@@ -42,7 +42,7 @@ impl EncoderBackend for StepCodec {
 }
 
 impl CodecBackend for StepCodec {
-    const FORMAT: &'static str = crate::dialect::FORMAT;
+    const FORMAT: FormatId = FormatId::new(crate::dialect::FORMAT);
 
     fn detect_impl(&self, prefix: &[u8]) -> Confidence {
         if starts_with_step_magic(prefix) {

@@ -3,6 +3,7 @@
 
 use cadmpeg_core::dialect::{DialectId, DialectLayers};
 use cadmpeg_core::target::TargetCatalog;
+use cadmpeg_ir::codec::FormatId;
 
 use crate::disposition::ReadDisposition;
 use crate::registry::{canonical_format_name, catalog_of, registries, support, DialectEntry};
@@ -41,7 +42,7 @@ pub fn dialect_provenance(dialects: &DialectLayers) -> DialectProvenance {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FormatRow {
     /// The format id.
-    pub id: &'static str,
+    pub id: FormatId,
     /// The extensions the detector accepts for it.
     pub extensions: &'static [&'static str],
 }
@@ -50,7 +51,7 @@ impl FormatRow {
     /// Whether this build writes the row's format.
     #[must_use]
     pub fn write(&self) -> bool {
-        Format::from_name(self.id).is_some()
+        Format::from_name(self.id.as_str()).is_some()
     }
 }
 
@@ -105,7 +106,7 @@ pub fn dialect_table(format: Option<&str>) -> Result<Vec<FormatDialects>, Unknow
         None => registries.formats.clone(),
         Some(name) => {
             let name = Format::from_name(name)
-                .map(Format::name)
+                .map(|format| format.name().as_str())
                 .or_else(|| canonical_format_name(name))
                 .unwrap_or(name)
                 .to_owned();

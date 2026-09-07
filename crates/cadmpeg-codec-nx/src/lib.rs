@@ -25,7 +25,7 @@
 //! use std::fs::File;
 //!
 //! use cadmpeg_codec_nx::NxCodec;
-//! use cadmpeg_ir::codec::{CodecBackend, Codec, DecodeOptions};
+//! use cadmpeg_ir::codec::{Codec, CodecBackend, DecodeOptions};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut input = File::open("part.prt")?;
@@ -113,7 +113,7 @@ use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
-use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::ContainerSummary;
 
 /// Decoder and inspector for Siemens NX `.prt` files.
@@ -121,7 +121,7 @@ use cadmpeg_ir::ContainerSummary;
 pub struct NxCodec;
 
 impl CodecBackend for NxCodec {
-    const FORMAT: &'static str = dialect::FORMAT;
+    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
     fn detect_impl(&self, prefix: &[u8]) -> Confidence {
         if container::looks_like_nx(prefix) || container::looks_like_legacy_nx(prefix) {

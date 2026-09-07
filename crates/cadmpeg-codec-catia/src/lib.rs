@@ -86,7 +86,7 @@ pub(crate) fn nurbs_surface_control_count(u_count: usize, v_count: usize) -> Opt
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::ContainerSummary;
 
 /// The CATIA V5 `.CATPart` codec.
@@ -94,7 +94,7 @@ use cadmpeg_ir::ContainerSummary;
 pub struct CatiaCodec;
 
 impl CodecBackend for CatiaCodec {
-    const FORMAT: &'static str = dialect::FORMAT;
+    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
     fn detect_impl(&self, prefix: &[u8]) -> Confidence {
         if container::looks_like_catia(prefix) {

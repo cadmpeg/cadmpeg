@@ -39,7 +39,7 @@ mod validate;
 use cadmpeg_container::compound::CompoundPrefixProbe;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded};
+use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{CadIr, Finding};
 
@@ -56,7 +56,7 @@ pub(crate) fn issue_detail(error: CodecError) -> Result<String, CodecError> {
 pub struct InventorCodec;
 
 impl CodecBackend for InventorCodec {
-    const FORMAT: &'static str = dialect::FORMAT;
+    const FORMAT: FormatId = FormatId::new(dialect::FORMAT);
 
     fn detect_impl(&self, prefix: &[u8]) -> Confidence {
         let CompoundPrefixProbe::DirectoryEvidence(paths) = CompoundPrefixProbe::inspect(prefix)

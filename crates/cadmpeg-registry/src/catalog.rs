@@ -7,7 +7,7 @@
 //! format at once — and it settles nothing about a dialect. [`crate::identify`]
 //! is the stage that opens the container.
 
-use cadmpeg_ir::codec::{Codec, Confidence};
+use cadmpeg_ir::codec::{Codec, Confidence, FormatId};
 
 /// Explicit input selection that bypasses content detection.
 #[derive(Debug, Clone, Copy)]
@@ -49,7 +49,7 @@ pub struct InputDescriptor {
 impl InputDescriptor {
     /// Stable format identifier derived from the native codec or neutral
     /// descriptor.
-    pub fn format_id(&self) -> &'static str {
+    pub fn format_id(&self) -> FormatId {
         match &self.kind {
             InputKind::Neutral { descriptor } => descriptor.id(),
             InputKind::Native { codec, .. } => codec.id(),
@@ -93,7 +93,7 @@ pub enum DetectionOutcome<'a> {
         /// Shared strongest confidence.
         confidence: Confidence,
         /// Candidate format ids in catalog order.
-        candidates: Vec<&'static str>,
+        candidates: Vec<FormatId>,
     },
 }
 
@@ -142,12 +142,15 @@ pub enum ResolvedSource<'a> {
 #[derive(Debug, thiserror::Error)]
 pub enum ResolveSourceError {
     /// Multiple codecs tied at the strongest confidence.
-    #[error("ambiguous {confidence}-confidence input format: {names}", names = .candidates.join(", "))]
+    #[error(
+        "ambiguous {confidence}-confidence input format: {names}",
+        names = .candidates.iter().map(|id| id.as_str()).collect::<Vec<_>>().join(", "),
+    )]
     Ambiguous {
         /// Shared strongest confidence.
         confidence: Confidence,
         /// Candidate format ids in detection order.
-        candidates: Vec<&'static str>,
+        candidates: Vec<FormatId>,
     },
 }
 
@@ -229,14 +232,14 @@ impl InputCatalog {
         self.descriptors.iter()
     }
 
-    /// Returns the descriptor with the stable format identifier.
+    /// Returns the descriptor whose format id is spelled `id`.
     pub fn descriptor(&self, id: &str) -> Option<&InputDescriptor> {
         self.descriptors
             .iter()
-            .find(|descriptor| descriptor.format_id() == id)
+            .find(|descriptor| descriptor.format_id().as_str() == id)
     }
 
-    /// Returns the decoder with the stable format identifier.
+    /// Returns the decoder whose format id is spelled `id`.
     pub fn by_id(&self, id: &str) -> Option<&dyn Codec> {
         self.descriptor(id)?.codec()
     }
@@ -311,7 +314,7 @@ mod tests {
         assert!(rows.iter().all(|row| !row.extensions.is_empty()));
         for row in rows {
             let input = catalog
-                .descriptor(row.id)
+                .descriptor(row.id.as_str())
                 .expect("each format row comes from an input descriptor");
             assert_eq!(row.extensions, input.extensions());
         }
@@ -334,7 +337,10 @@ mod tests {
         } else {
             vec!["fcstd", "f3d"]
         };
-        assert_eq!(candidates, expected);
+        assert_eq!(
+            candidates.iter().map(|id| id.as_str()).collect::<Vec<_>>(),
+            expected
+        );
     }
 
     #[cfg(feature = "step")]
@@ -352,7 +358,7 @@ mod tests {
             .expect("Inventor descriptor exists");
         assert_eq!(descriptor.extensions(), ["ipt", "iam"]);
         assert!(descriptor.codec().is_some());
-        assert_eq!(descriptor.format_id(), "inventor");
+        assert_eq!(descriptor.format_id(), FormatId::new("inventor"));
     }
 
     #[cfg(feature = "iges")]
@@ -381,7 +387,7 @@ mod tests {
             else {
                 panic!("forced step must resolve to native");
             };
-            assert_eq!(codec.id(), "step");
+            assert_eq!(codec.id(), FormatId::new("step"));
             assert_eq!(selection, Selection::Forced);
         }
     }

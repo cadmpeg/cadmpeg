@@ -12,6 +12,9 @@ use cadmpeg_ir::codec::write::Encoder;
 #[cfg(test)]
 use cadmpeg_ir::codec::write::TargetRequest;
 
+#[cfg(test)]
+use cadmpeg_ir::codec::FormatId;
+
 use crate::Format;
 
 /// Builds the encoder for an export format.
@@ -43,7 +46,7 @@ mod tests {
             if targets.is_empty() {
                 assert_eq!(
                     encoder.id(),
-                    "cadir",
+                    FormatId::new("cadir"),
                     "{}: only the neutral encoder may have no synthesis catalog",
                     encoder.id()
                 );
@@ -85,7 +88,7 @@ mod tests {
             let CodecError::UnsupportedTarget(refusal) = &error else {
                 panic!("{}: expected a target refusal, got {error}", encoder.id());
             };
-            assert_eq!(refusal.format(), encoder.id());
+            assert_eq!(refusal.format(), encoder.id().as_str());
             assert_eq!(refusal.requested(), Some(requested.as_str()));
             for target in encoder.targets() {
                 assert!(

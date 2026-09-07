@@ -175,7 +175,8 @@ fn step_export_losses_remain_on_the_plan_without_rejection() {
 struct NotImplementedEncoder;
 
 impl cadmpeg_ir::codec::write::EncoderBackend for NotImplementedEncoder {
-    const FORMAT: &'static str = "not-implemented-test";
+    const FORMAT: cadmpeg_ir::codec::FormatId =
+        cadmpeg_ir::codec::FormatId::new("not-implemented-test");
     type Target = cadmpeg_ir::codec::write::DialectFree;
     const TARGET: Self::Target = cadmpeg_ir::codec::write::DialectFree;
 

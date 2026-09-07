@@ -94,7 +94,7 @@ impl ApplicationError {
     #[must_use]
     pub fn from_decode_failure(
         path: &Path,
-        format_id: &'static str,
+        format_id: cadmpeg_ir::codec::FormatId,
         failure: DecodeFailure,
     ) -> Self {
         match failure {
@@ -578,7 +578,11 @@ mod tests {
     }
 
     fn classify(failure: DecodeFailure) -> ApplicationError {
-        ApplicationError::from_decode_failure(&PathBuf::from("part.step"), "step", failure)
+        ApplicationError::from_decode_failure(
+            &PathBuf::from("part.step"),
+            cadmpeg_ir::codec::FormatId::new("step"),
+            failure,
+        )
     }
 
     #[test]
