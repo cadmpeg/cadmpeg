@@ -1554,8 +1554,8 @@ pub(crate) struct NativeEntity {
     status: SourceStatus,
     line_weight: i64,
     color: i64,
-    reserved: Vec<Vec<u8>>,
-    label: Vec<u8>,
+    reserved: [[u8; 8]; 2],
+    label: [u8; 8],
     subscript: i64,
     #[serde(flatten, serialize_with = "serialize_parameter_lines")]
     parameter_lines: Option<std::ops::Range<u32>>,
@@ -2095,8 +2095,8 @@ pub(crate) fn store(
                 status: entry.status,
                 line_weight: entry.line_weight,
                 color: entry.color,
-                reserved: entry.reserved.iter().map(|value| value.to_vec()).collect(),
-                label: entry.label.to_vec(),
+                reserved: entry.reserved,
+                label: entry.label,
                 subscript: entry.subscript,
                 parameter_lines: parameters.map(|record| record.line_range.clone()),
                 parameter_bytes: parameters
