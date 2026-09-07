@@ -141,14 +141,10 @@ fn saved_line_joins_through_order_table() {
         declared_count: 1,
         has_elided_prototype: false,
         entity_ref: None,
-        rows: vec![segment.clone()],
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
+        rows: (vec![segment.clone()])
+            .into_iter()
+            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+            .collect(),
         offset: 38,
     });
     assert_eq!(
@@ -252,14 +248,7 @@ fn saved_line_joins_through_order_table() {
         declared_count: 0,
         has_elided_prototype: false,
         entity_ref: None,
-        rows: Vec::new(),
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
+        rows: Default::default(),
         offset: 0,
     });
     constrained.dimensions = Some(crate::feature::FeatureDimensionTable {
@@ -797,20 +786,22 @@ fn saved_line_joins_through_order_table() {
         .segments
         .as_mut()
         .expect("segments")
-        .opaque_rows
-        .push(crate::feature::FeatureOpaqueSegment {
-            kind: 25,
-            directions: [None; 3],
-            point_ids: [None; 2],
-            center_id: None,
-            arc_orientation: None,
-            vertical_horizontal: None,
-            radius_ref: None,
-            radius2_ref: None,
-            external_id: 101,
-            body: Vec::new(),
-            offset: 35,
-        });
+        .rows
+        .insert(crate::feature::segment_rows::SegmentRow::Opaque(
+            crate::feature::FeatureOpaqueSegment {
+                kind: 25,
+                directions: [None; 3],
+                point_ids: [None; 2],
+                center_id: None,
+                arc_orientation: None,
+                vertical_horizontal: None,
+                radius_ref: None,
+                radius2_ref: None,
+                external_id: 101,
+                body: Vec::new(),
+                offset: 35,
+            },
+        ));
     let disabled_circular_relations = disabled_circular_family
         .relations
         .as_mut()
@@ -945,14 +936,10 @@ fn saved_line_joins_through_order_table() {
         declared_count: 1,
         has_elided_prototype: false,
         entity_ref: None,
-        rows: vec![segment.clone()],
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
+        rows: (vec![segment.clone()])
+            .into_iter()
+            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+            .collect(),
         offset: 4,
     });
     completed.trim_entities = Some(crate::feature::FeatureTrimEntityTable {
@@ -1056,7 +1043,9 @@ fn saved_line_joins_through_order_table() {
         .as_mut()
         .expect("segment table")
         .rows
-        .push(omitted_segment.clone());
+        .insert(crate::feature::segment_rows::SegmentRow::Ordinary(
+            omitted_segment.clone(),
+        ));
     missing_line
         .trim_entities
         .as_mut()
@@ -1083,7 +1072,12 @@ fn saved_line_joins_through_order_table() {
     );
 
     omitted_segment.vertical_horizontal = Some(1);
-    missing_line.segments.as_mut().expect("segment table").rows[1] = omitted_segment.clone();
+    missing_line
+        .segments
+        .as_mut()
+        .expect("segment table")
+        .rows
+        .edit_ordinary(|rows| rows[1] = omitted_segment.clone());
     assert_eq!(
         saved_section_missing_line_geometry(&missing_line),
         Some((
@@ -1103,12 +1097,24 @@ fn saved_line_joins_through_order_table() {
     );
 
     omitted_segment.vertical_horizontal = Some(0);
-    missing_line.segments.as_mut().expect("segment table").rows[1] = omitted_segment;
+    missing_line
+        .segments
+        .as_mut()
+        .expect("segment table")
+        .rows
+        .edit_ordinary(|rows| rows[1] = omitted_segment);
     assert!(saved_section_missing_line_geometry(&missing_line).is_none());
     assert!(resolved_section_segment_geometry(
         &missing_line,
         &BTreeMap::new(),
-        &missing_line.segments.as_ref().expect("segment table").rows[1],
+        &missing_line
+            .segments
+            .as_ref()
+            .expect("segment table")
+            .rows
+            .ordinary()
+            .cloned()
+            .collect::<Vec<_>>()[1],
     )
     .is_none());
 
@@ -1118,7 +1124,7 @@ fn saved_line_joins_through_order_table() {
         .as_mut()
         .expect("segment table")
         .rows
-        .push(segment);
+        .insert(crate::feature::segment_rows::SegmentRow::Ordinary(segment));
     assert_eq!(trim_segment_id(&duplicate_segment, &trim), None);
     let mut duplicate_trim = completed;
     duplicate_trim
@@ -1185,14 +1191,10 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
             declared_count: 2,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: Vec::new(),
-            circle_rows: vec![circle.clone()],
-            point_rows: Vec::new(),
-            centered_line_rows: Vec::new(),
-            reference_line_rows: Vec::new(),
-            bounded_curve_rows: Vec::new(),
-            conic_rows: Vec::new(),
-            opaque_rows: Vec::new(),
+            rows: (vec![circle.clone()])
+                .into_iter()
+                .map(crate::feature::segment_rows::SegmentRow::Circle)
+                .collect(),
             offset: 31,
         }),
         trim_entities: None,
@@ -1417,14 +1419,10 @@ fn saved_arc_joins_through_order_table() {
         declared_count: 1,
         has_elided_prototype: false,
         entity_ref: None,
-        rows: vec![segment.clone()],
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
+        rows: (vec![segment.clone()])
+            .into_iter()
+            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+            .collect(),
         offset: 38,
     });
     assert_eq!(
@@ -1481,14 +1479,10 @@ fn saved_arc_joins_through_order_table() {
         declared_count: 2,
         has_elided_prototype: true,
         entity_ref: None,
-        rows: vec![segment.clone()],
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
+        rows: (vec![segment.clone()])
+            .into_iter()
+            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+            .collect(),
         offset: 38,
     };
     let mut elided_prototype = definition.clone();
@@ -1568,14 +1562,10 @@ fn saved_arc_joins_through_order_table() {
         declared_count: 1,
         has_elided_prototype: false,
         entity_ref: None,
-        rows: vec![segment],
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
+        rows: (vec![segment])
+            .into_iter()
+            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+            .collect(),
         offset: 38,
     });
     trimmed.trim_entities = Some(crate::feature::FeatureTrimEntityTable {
@@ -1637,7 +1627,10 @@ fn saved_arc_joins_through_order_table() {
         .segments
         .as_ref()
         .expect("test definition has a segment table")
-        .rows[0];
+        .rows
+        .ordinary()
+        .cloned()
+        .collect::<Vec<_>>()[0];
     assert_eq!(
         saved_section_arc_carrier(&trimmed, segment),
         Some(([0.0, 0.0], 2.0))
@@ -1677,7 +1670,10 @@ fn saved_arc_joins_through_order_table() {
         .segments
         .as_ref()
         .expect("test definition has a segment table")
-        .rows[0];
+        .rows
+        .ordinary()
+        .cloned()
+        .collect::<Vec<_>>()[0];
     assert!(saved_section_arc_geometry(&trimmed, segment).is_none());
     assert_eq!(
         section_segment_intersection_carrier(
@@ -1758,14 +1754,10 @@ fn trimmed_line_reconciles_carrier_and_solver_orientation() {
             declared_count: 2,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: vec![anchor, segment.clone()],
-            circle_rows: Vec::new(),
-            point_rows: Vec::new(),
-            centered_line_rows: Vec::new(),
-            reference_line_rows: Vec::new(),
-            bounded_curve_rows: Vec::new(),
-            conic_rows: Vec::new(),
-            opaque_rows: Vec::new(),
+            rows: (vec![anchor, segment.clone()])
+                .into_iter()
+                .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+                .collect(),
             offset: 20,
         }),
         trim_entities: Some(crate::feature::FeatureTrimEntityTable {
@@ -1997,14 +1989,10 @@ fn arc_carriers_use_trim_vertices() {
         declared_count: 1,
         has_elided_prototype: false,
         entity_ref: None,
-        rows: vec![var_segment.clone()],
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
+        rows: (vec![var_segment.clone()])
+            .into_iter()
+            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+            .collect(),
         offset: 6,
     });
     var_arc.order_table = None;

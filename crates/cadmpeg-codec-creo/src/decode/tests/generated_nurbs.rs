@@ -871,14 +871,10 @@ fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
             declared_count: 1,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: vec![line(10, [1, 2])],
-            circle_rows: Vec::new(),
-            point_rows: Vec::new(),
-            centered_line_rows: Vec::new(),
-            reference_line_rows: Vec::new(),
-            bounded_curve_rows: Vec::new(),
-            conic_rows: Vec::new(),
-            opaque_rows: Vec::new(),
+            rows: (vec![line(10, [1, 2])])
+                .into_iter()
+                .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+                .collect(),
             offset: 0,
         }),
         trim_entities: None,
@@ -1240,14 +1236,10 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
         declared_count: 1,
         has_elided_prototype: false,
         entity_ref: None,
-        rows: vec![selector_segment.clone()],
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
+        rows: (vec![selector_segment.clone()])
+            .into_iter()
+            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+            .collect(),
         offset: 0,
     });
     assert_eq!(

@@ -2219,7 +2219,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
             segments: definition
                 .segments
                 .iter()
-                .flat_map(|table| &table.rows)
+                .flat_map(|table| table.rows.ordinary())
                 .map(|segment| CreoSketchSegment {
                     external_id: segment.external_id,
                     kind: match segment.kind {
@@ -2241,7 +2241,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
             circle_segments: definition
                 .segments
                 .iter()
-                .flat_map(|table| &table.circle_rows)
+                .flat_map(|table| table.rows.circles())
                 .map(|segment| CreoSketchCircleSegment {
                     external_id: segment.external_id,
                     center_id: segment.center_id,
@@ -2252,7 +2252,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
             point_segments: definition
                 .segments
                 .iter()
-                .flat_map(|table| &table.point_rows)
+                .flat_map(|table| table.rows.points())
                 .map(|segment| CreoSketchPointSegment {
                     external_id: segment.external_id,
                     point_id: segment.point_id,
@@ -2262,7 +2262,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
             centered_line_segments: definition
                 .segments
                 .iter()
-                .flat_map(|table| &table.centered_line_rows)
+                .flat_map(|table| table.rows.centered_lines())
                 .map(|segment| CreoSketchCenteredLineSegment {
                     external_id: segment.external_id,
                     center_id: segment.center_id,
@@ -2272,7 +2272,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
             reference_line_segments: definition
                 .segments
                 .iter()
-                .flat_map(|table| &table.reference_line_rows)
+                .flat_map(|table| table.rows.reference_lines())
                 .map(|segment| CreoSketchReferenceLineSegment {
                     external_id: segment.external_id,
                     point_ids: segment.point_ids,
@@ -2284,7 +2284,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
             bounded_curve_segments: definition
                 .segments
                 .iter()
-                .flat_map(|table| &table.bounded_curve_rows)
+                .flat_map(|table| table.rows.bounded_curves())
                 .map(|segment| CreoSketchBoundedCurveSegment {
                     external_id: segment.external_id,
                     point_ids: segment.point_ids,
@@ -2300,7 +2300,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
             conic_segments: definition
                 .segments
                 .iter()
-                .flat_map(|table| &table.conic_rows)
+                .flat_map(|table| table.rows.conics())
                 .map(|segment| CreoSketchConicSegment {
                     external_id: segment.external_id,
                     center_id: segment.center_id,
@@ -2312,7 +2312,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
             opaque_segments: definition
                 .segments
                 .iter()
-                .flat_map(|table| &table.opaque_rows)
+                .flat_map(|table| table.rows.opaque())
                 .map(|segment| CreoSketchOpaqueSegment {
                     external_id: segment.external_id,
                     kind: segment.kind,

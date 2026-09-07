@@ -1184,17 +1184,13 @@ fn trim_vertex_uses_unique_shared_point_for_mixed_curves() {
         declared_count: 2,
         has_elided_prototype: false,
         entity_ref: None,
-        rows: vec![
+        rows: (vec![
             segment(FeatureSegmentKind::Line([1, 2]), 9),
             segment(FeatureSegmentKind::Arc([2, 3]), 10),
-        ],
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
+        ])
+        .into_iter()
+        .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+        .collect(),
         offset: 0,
     };
     let variables = with_points(
@@ -1222,7 +1218,7 @@ fn trim_vertex_uses_unique_shared_point_for_mixed_curves() {
     assert!(incomplete_segments.segment(9).is_none());
     assert_eq!(
         incomplete_segments.unique_segment(9),
-        Some(&segments.rows[0])
+        Some(&segments.rows.ordinary().cloned().collect::<Vec<_>>()[0])
     );
     assert_eq!(
         entity_intersection(&[9, 10], Some(&incomplete_segments), Some(&variables)),
@@ -1230,7 +1226,11 @@ fn trim_vertex_uses_unique_shared_point_for_mixed_curves() {
     );
 
     let mut duplicate_segments = segments.clone();
-    duplicate_segments.rows.push(segments.rows[0].clone());
+    duplicate_segments
+        .rows
+        .insert(crate::feature::segment_rows::SegmentRow::Ordinary(
+            segments.rows.ordinary().cloned().collect::<Vec<_>>()[0].clone(),
+        ));
     assert!(duplicate_segments.segment(9).is_none());
     assert!(entity_intersection(&[9, 10], Some(&duplicate_segments), Some(&variables)).is_none());
 
@@ -1288,14 +1288,10 @@ fn trim_vertex_intersection_resolves_settled_carrier_pairs() {
         declared_count: rows.len() as u32,
         has_elided_prototype: false,
         entity_ref: None,
-        rows,
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
+        rows: (rows)
+            .into_iter()
+            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+            .collect(),
         offset: 0,
     };
     let point = |point_id, u, v| FeatureSectionPoint {
@@ -1454,14 +1450,10 @@ fn trim_vertex_intersection_requires_complete_pairwise_junctions() {
         declared_count: 3,
         has_elided_prototype: false,
         entity_ref: None,
-        rows: vec![segment([1, 2], 9), segment([3, 4], 10), segment([5, 6], 11)],
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
+        rows: (vec![segment([1, 2], 9), segment([3, 4], 10), segment([5, 6], 11)])
+            .into_iter()
+            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+            .collect(),
         offset: 0,
     };
     let variables = with_points(

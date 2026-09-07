@@ -88,13 +88,13 @@ pub(in super::super) fn transfer_sketches(
             .as_ref()
             .is_some_and(crate::feature::FeatureSegmentTable::is_complete);
         if let Some(table) = &definition.segments {
-            let decoded_rows = table.retained_row_count();
+            let decoded_rows = table.rows.len();
             let expected_rows = usize::try_from(table.declared_count)
                 .expect("u32 segment count fits usize")
                 .saturating_sub(usize::from(table.has_elided_prototype));
             coverage.decoded_rows += decoded_rows;
             coverage.missing_rows += expected_rows.saturating_sub(decoded_rows);
-            for segment in &table.rows {
+            for segment in table.rows.ordinary() {
                 let family = match segment.kind {
                     crate::feature::FeatureSegmentKind::Line(_) => SketchSegmentFamily::Line,
                     crate::feature::FeatureSegmentKind::Arc(_) => SketchSegmentFamily::Arc,
@@ -103,22 +103,22 @@ pub(in super::super) fn transfer_sketches(
                 coverage.family_mut(family).0 += 1;
             }
             for (family, count) in [
-                (SketchSegmentFamily::Circle, table.circle_rows.len()),
-                (SketchSegmentFamily::Point, table.point_rows.len()),
+                (SketchSegmentFamily::Circle, table.rows.circles().count()),
+                (SketchSegmentFamily::Point, table.rows.points().count()),
                 (
                     SketchSegmentFamily::CenteredLine,
-                    table.centered_line_rows.len(),
+                    table.rows.centered_lines().count(),
                 ),
                 (
                     SketchSegmentFamily::ReferenceLine,
-                    table.reference_line_rows.len(),
+                    table.rows.reference_lines().count(),
                 ),
                 (
                     SketchSegmentFamily::BoundedCurve,
-                    table.bounded_curve_rows.len(),
+                    table.rows.bounded_curves().count(),
                 ),
-                (SketchSegmentFamily::Conic, table.conic_rows.len()),
-                (SketchSegmentFamily::Opaque, table.opaque_rows.len()),
+                (SketchSegmentFamily::Conic, table.rows.conics().count()),
+                (SketchSegmentFamily::Opaque, table.rows.opaque().count()),
             ] {
                 coverage.family_mut(family).0 += count;
             }
@@ -195,7 +195,7 @@ pub(in super::super) fn transfer_sketches(
         let circle_geometries = definition
             .segments
             .iter()
-            .flat_map(|table| &table.circle_rows)
+            .flat_map(|table| table.rows.circles())
             .filter_map(|segment| {
                 Some((
                     segment.offset,
@@ -206,7 +206,7 @@ pub(in super::super) fn transfer_sketches(
         let point_geometries = definition
             .segments
             .iter()
-            .flat_map(|table| &table.point_rows)
+            .flat_map(|table| table.rows.points())
             .filter_map(|segment| {
                 Some((
                     segment.offset,
@@ -217,7 +217,7 @@ pub(in super::super) fn transfer_sketches(
         let centered_line_geometries = definition
             .segments
             .iter()
-            .flat_map(|table| &table.centered_line_rows)
+            .flat_map(|table| table.rows.centered_lines())
             .filter_map(|segment| {
                 Some((
                     segment.offset,
@@ -228,7 +228,7 @@ pub(in super::super) fn transfer_sketches(
         let reference_line_geometries = definition
             .segments
             .iter()
-            .flat_map(|table| &table.reference_line_rows)
+            .flat_map(|table| table.rows.reference_lines())
             .filter_map(|segment| {
                 Some((
                     segment.offset,
@@ -253,7 +253,7 @@ pub(in super::super) fn transfer_sketches(
             definition
                 .segments
                 .iter()
-                .flat_map(|table| &table.circle_rows)
+                .flat_map(|table| table.rows.circles())
                 .filter(|segment| {
                     unique_segment_ids.contains(&segment.external_id)
                         && circle_geometries.contains_key(&segment.offset)
@@ -286,7 +286,7 @@ pub(in super::super) fn transfer_sketches(
         let resolved_circles = definition
             .segments
             .iter()
-            .flat_map(|table| &table.circle_rows)
+            .flat_map(|table| table.rows.circles())
             .filter(|segment| {
                 circle_geometries.contains_key(&segment.offset)
                     || (unique_segment_ids.contains(&segment.external_id)
@@ -298,7 +298,7 @@ pub(in super::super) fn transfer_sketches(
         let resolved_points = definition
             .segments
             .iter()
-            .flat_map(|table| &table.point_rows)
+            .flat_map(|table| table.rows.points())
             .filter(|segment| {
                 point_geometries.contains_key(&segment.offset)
                     || (unique_segment_ids.contains(&segment.external_id)
@@ -310,7 +310,7 @@ pub(in super::super) fn transfer_sketches(
         let resolved_centered_lines = definition
             .segments
             .iter()
-            .flat_map(|table| &table.centered_line_rows)
+            .flat_map(|table| table.rows.centered_lines())
             .filter(|segment| {
                 centered_line_geometries.contains_key(&segment.offset)
                     || (unique_segment_ids.contains(&segment.external_id)
@@ -322,7 +322,7 @@ pub(in super::super) fn transfer_sketches(
         let resolved_reference_lines = definition
             .segments
             .iter()
-            .flat_map(|table| &table.reference_line_rows)
+            .flat_map(|table| table.rows.reference_lines())
             .filter(|segment| reference_line_geometries.contains_key(&segment.offset))
             .count();
         coverage.resolved_geometry += resolved_reference_lines;
@@ -330,7 +330,7 @@ pub(in super::super) fn transfer_sketches(
         let resolved_bounded_curves = definition
             .segments
             .iter()
-            .flat_map(|table| &table.bounded_curve_rows)
+            .flat_map(|table| table.rows.bounded_curves())
             .filter(|segment| {
                 unique_segment_ids.contains(&segment.external_id)
                     && materialized_saved_section_external_ids.contains(&segment.external_id)
@@ -341,7 +341,7 @@ pub(in super::super) fn transfer_sketches(
         let resolved_conics = definition
             .segments
             .iter()
-            .flat_map(|table| &table.conic_rows)
+            .flat_map(|table| table.rows.conics())
             .filter(|segment| {
                 unique_segment_ids.contains(&segment.external_id)
                     && materialized_saved_section_external_ids.contains(&segment.external_id)
@@ -352,7 +352,7 @@ pub(in super::super) fn transfer_sketches(
         let resolved_opaque = definition
             .segments
             .iter()
-            .flat_map(|table| &table.opaque_rows)
+            .flat_map(|table| table.rows.opaque())
             .filter(|segment| {
                 unique_segment_ids.contains(&segment.external_id)
                     && materialized_saved_section_external_ids.contains(&segment.external_id)
@@ -384,7 +384,7 @@ pub(in super::super) fn transfer_sketches(
                 definition
                     .segments
                     .iter()
-                    .flat_map(|table| &table.circle_rows)
+                    .flat_map(|table| table.rows.circles())
                     .filter(|segment| unique_segment_ids.contains(&segment.external_id))
                     .filter_map(|segment| {
                         let geometry = circle_geometries.get(&segment.offset)?.clone();
@@ -422,7 +422,7 @@ pub(in super::super) fn transfer_sketches(
             definition,
             transform,
             &sketch_id,
-            segments,
+            &segments,
             &unique_segment_ids,
             &unique_saved_ids,
             &ambiguous_segment_ids,
@@ -497,7 +497,7 @@ pub(in super::super) fn transfer_sketches(
                 definition
                     .segments
                     .iter()
-                    .flat_map(|table| &table.centered_line_rows)
+                    .flat_map(|table| table.rows.centered_lines())
                     .map(|segment| {
                         let suffix = if unique_segment_ids.contains(&segment.external_id) {
                             segment.external_id.to_string()
@@ -521,7 +521,7 @@ pub(in super::super) fn transfer_sketches(
                 definition
                     .segments
                     .iter()
-                    .flat_map(|table| &table.bounded_curve_rows)
+                    .flat_map(|table| table.rows.bounded_curves())
                     .filter_map(|segment| {
                         let verhor = segment.vertical_horizontal?;
                         let suffix = if unique_segment_ids.contains(&segment.external_id) {
@@ -546,7 +546,7 @@ pub(in super::super) fn transfer_sketches(
                 definition
                     .segments
                     .iter()
-                    .flat_map(|table| &table.reference_line_rows)
+                    .flat_map(|table| table.rows.reference_lines())
                     .filter_map(|segment| {
                         let verhor = segment.vertical_horizontal?;
                         let suffix = if unique_segment_ids.contains(&segment.external_id) {
@@ -571,7 +571,7 @@ pub(in super::super) fn transfer_sketches(
                 definition
                     .segments
                     .iter()
-                    .flat_map(|table| &table.opaque_rows)
+                    .flat_map(|table| table.rows.opaque())
                     .filter_map(|segment| {
                         let verhor = segment.vertical_horizontal?;
                         let suffix =

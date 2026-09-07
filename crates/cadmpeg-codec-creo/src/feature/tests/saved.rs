@@ -561,7 +561,7 @@ fn saved_arc_replay_uses_order_table_row_boundaries() {
         declared_count: 1,
         has_elided_prototype: false,
         entity_ref: None,
-        rows: vec![FeatureSegment {
+        rows: (vec![FeatureSegment {
             kind: FeatureSegmentKind::Arc([1, 2]),
             directions: [None; 3],
             center_id: Some(3),
@@ -572,14 +572,10 @@ fn saved_arc_replay_uses_order_table_row_boundaries() {
             external_id: 42,
             body: Vec::new(),
             offset: 0,
-        }],
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
+        }])
+        .into_iter()
+        .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+        .collect(),
         offset: 0,
     };
 
@@ -667,7 +663,7 @@ fn saved_arc_replay_retains_a_structurally_terminated_scalar_prefix() {
         declared_count: 1,
         has_elided_prototype: false,
         entity_ref: None,
-        rows: vec![FeatureSegment {
+        rows: (vec![FeatureSegment {
             kind: FeatureSegmentKind::Arc([1, 2]),
             directions: [None; 3],
             center_id: Some(3),
@@ -678,14 +674,10 @@ fn saved_arc_replay_retains_a_structurally_terminated_scalar_prefix() {
             external_id: 42,
             body: Vec::new(),
             offset: 0,
-        }],
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
+        }])
+        .into_iter()
+        .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+        .collect(),
         offset: 0,
     };
 
@@ -728,7 +720,7 @@ fn saved_generated_line_requires_its_orientation_invariant() {
         declared_count: 1,
         has_elided_prototype: false,
         entity_ref: None,
-        rows: vec![FeatureSegment {
+        rows: (vec![FeatureSegment {
             kind: FeatureSegmentKind::Line([1, 2]),
             directions: [None; 3],
             center_id: None,
@@ -739,14 +731,10 @@ fn saved_generated_line_requires_its_orientation_invariant() {
             external_id: 43,
             body: Vec::new(),
             offset: 0,
-        }],
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
+        }])
+        .into_iter()
+        .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+        .collect(),
         offset: 0,
     };
 

@@ -43,7 +43,7 @@ pub(crate) fn resolved_section_radii(
     for segment in definition
         .segments
         .iter()
-        .flat_map(|table| &table.circle_rows)
+        .flat_map(|table| table.rows.circles())
     {
         if let Some((_, radius)) = saved_section_circle_values(definition, segment) {
             candidates
@@ -150,7 +150,7 @@ pub(crate) fn resolved_section_radii(
         for circle in definition
             .segments
             .iter()
-            .flat_map(|segments| &segments.circle_rows)
+            .flat_map(|segments| segments.rows.circles())
             .filter(|segment| {
                 unique_circle_segment(definition, segment.external_id)
                     .is_some_and(|candidate| candidate == *segment)
@@ -182,7 +182,7 @@ pub(crate) fn resolved_section_radii(
     for segment in definition
         .segments
         .iter()
-        .flat_map(|table| &table.rows)
+        .flat_map(|table| table.rows.ordinary())
         .filter(|segment| matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_)))
     {
         if unique_decoded_section_segment(definition, segment.external_id) != Some(segment) {
@@ -407,7 +407,7 @@ fn unique_section_radius_arc(
 ) -> Option<&crate::feature::FeatureSegment> {
     let unique_entities = unique_section_segment_external_ids(definition);
     let matching = section_segment_rows(definition)
-        .iter()
+        .into_iter()
         .filter(|segment| {
             matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_))
                 && segment.radius_ref == Some(dimension_id)
@@ -614,25 +614,17 @@ pub(crate) fn trim_segment_id(
     let Some(segment_table) = &definition.segments else {
         return Some(row.external_id);
     };
-    let segments = &segment_table.rows;
+    let segments = segment_table.rows.ordinary().collect::<Vec<_>>();
     let trim_rows = &trim_table.rows;
-    let matching_ordinary_segment_count = segments
-        .iter()
-        .filter(|segment| segment.external_id == row.external_id)
-        .count();
-    let matching_segment_count = segment_table.external_id_count(row.external_id);
     let matching_trim_count = trim_rows
         .iter()
         .filter(|trim| trim.external_id == row.external_id)
         .count();
-    if matching_ordinary_segment_count == 1
-        && matching_segment_count == 1
-        && matching_trim_count == 1
-    {
+    if segment_table.unique_segment(row.external_id).is_some() && matching_trim_count == 1 {
         return Some(row.external_id);
     }
     segment_table.is_complete().then_some(())?;
-    if matching_segment_count != 0 || matching_trim_count != 1 {
+    if segment_table.rows.contains_id(row.external_id) || matching_trim_count != 1 {
         return None;
     }
     let unmatched_segments = segments
@@ -694,14 +686,10 @@ mod tests {
                 declared_count: 2,
                 has_elided_prototype: false,
                 entity_ref: None,
-                rows: vec![line.clone()],
-                circle_rows: Vec::new(),
-                point_rows: Vec::new(),
-                centered_line_rows: Vec::new(),
-                reference_line_rows: Vec::new(),
-                bounded_curve_rows: Vec::new(),
-                conic_rows: Vec::new(),
-                opaque_rows: Vec::new(),
+                rows: (vec![line.clone()])
+                    .into_iter()
+                    .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+                    .collect(),
                 offset: 0,
             }),
             trim_entities: Some(crate::feature::FeatureTrimEntityTable {
@@ -749,16 +737,23 @@ mod tests {
         );
 
         let mut duplicate = definition;
-        duplicate
-            .segments
-            .as_mut()
-            .expect("segments")
-            .rows
-            .push(crate::feature::FeatureSegment { offset: 2, ..line });
+        duplicate.segments.as_mut().expect("segments").rows.insert(
+            crate::feature::segment_rows::SegmentRow::Ordinary(crate::feature::FeatureSegment {
+                offset: 2,
+                ..line
+            }),
+        );
         assert!(section_proven_axis_line_carrier(
             &duplicate,
             &variable_points,
-            &duplicate.segments.as_ref().expect("segments").rows[0],
+            &duplicate
+                .segments
+                .as_ref()
+                .expect("segments")
+                .rows
+                .ordinary()
+                .cloned()
+                .collect::<Vec<_>>()[0],
         )
         .is_none());
         assert_eq!(
@@ -813,7 +808,7 @@ mod tests {
                 declared_count: 2,
                 has_elided_prototype: false,
                 entity_ref: None,
-                rows: vec![crate::feature::FeatureSegment {
+                rows: (vec![crate::feature::FeatureSegment {
                     kind: crate::feature::FeatureSegmentKind::Arc([2, 3]),
                     directions: [None; 3],
                     center_id: Some(1),
@@ -824,14 +819,10 @@ mod tests {
                     external_id: 10,
                     body: Vec::new(),
                     offset: 0,
-                }],
-                circle_rows: Vec::new(),
-                point_rows: Vec::new(),
-                centered_line_rows: Vec::new(),
-                reference_line_rows: Vec::new(),
-                bounded_curve_rows: Vec::new(),
-                conic_rows: Vec::new(),
-                opaque_rows: Vec::new(),
+                }])
+                .into_iter()
+                .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+                .collect(),
                 offset: 0,
             }),
             trim_entities: None,

@@ -88,7 +88,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 .iter()
                 .filter(|sketch| sketch.id == sketch_id),
         ) {
-            let segments = complete_section_segment_rows(definition).to_vec();
+            let segments = complete_section_segment_rows(definition);
             generating_ids.extend(profile_segment_ids(
                 definition.identity.id(),
                 &segments,

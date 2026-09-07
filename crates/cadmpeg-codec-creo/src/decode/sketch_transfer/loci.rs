@@ -14,6 +14,7 @@ use super::{
     unique_section_incidence_curve_family, unique_section_segment_external_ids,
     SectionEntityIncidenceFamily,
 };
+use crate::feature::segment_rows::SegmentRow;
 use cadmpeg_ir::sketches::{
     SketchCoordinateAxis, SketchEntityId, SketchGeometry, SketchId, SketchLocus,
 };
@@ -33,7 +34,7 @@ pub(in super::super) fn section_point_locus(
     let segments = definition.segments.as_ref()?;
     let mut candidates = segments
         .rows
-        .iter()
+        .ordinary()
         .filter(|segment| unique_entities.contains(&segment.external_id))
         .filter_map(|segment| {
             let entity = sketch_entity_id(sketch, segment.external_id);
@@ -61,7 +62,7 @@ pub(in super::super) fn section_point_locus(
     candidates.extend(
         segments
             .rows
-            .iter()
+            .ordinary()
             .filter(|segment| {
                 unique_entities.contains(&segment.external_id)
                     && matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_))
@@ -76,8 +77,8 @@ pub(in super::super) fn section_point_locus(
     );
     candidates.extend(
         segments
-            .circle_rows
-            .iter()
+            .rows
+            .circles()
             .filter(|segment| {
                 unique_entities.contains(&segment.external_id) && segment.center_id == point_id
             })
@@ -90,10 +91,10 @@ pub(in super::super) fn section_point_locus(
     );
     candidates.extend(
         segments
-            .point_rows
-            .iter()
+            .rows
+            .points()
             .filter(|segment| {
-                segment.point_id == point_id && segments.external_id_count(segment.external_id) == 1
+                segment.point_id == point_id && segments.rows.get(segment.external_id).is_some()
             })
             .map(|segment| {
                 (
@@ -104,8 +105,8 @@ pub(in super::super) fn section_point_locus(
     );
     candidates.extend(
         segments
-            .centered_line_rows
-            .iter()
+            .rows
+            .centered_lines()
             .filter(|segment| unique_entities.contains(&segment.external_id))
             .flat_map(|segment| {
                 let entity = sketch_entity_id(sketch, segment.external_id);
@@ -121,8 +122,8 @@ pub(in super::super) fn section_point_locus(
     );
     candidates.extend(
         segments
-            .reference_line_rows
-            .iter()
+            .rows
+            .reference_lines()
             .filter(|segment| unique_entities.contains(&segment.external_id))
             .flat_map(|segment| {
                 let entity = sketch_entity_id(sketch, segment.external_id);
@@ -138,8 +139,8 @@ pub(in super::super) fn section_point_locus(
     );
     candidates.extend(
         segments
-            .bounded_curve_rows
-            .iter()
+            .rows
+            .bounded_curves()
             .filter(|segment| unique_entities.contains(&segment.external_id))
             .flat_map(|segment| {
                 let entity = sketch_entity_id(sketch, segment.external_id);
@@ -163,60 +164,50 @@ pub(in super::super) fn unique_circle_segment(
     definition: &crate::feature::FeatureDefinition,
     external_id: u32,
 ) -> Option<&crate::feature::FeatureCircleSegment> {
-    let segments = definition.segments.as_ref()?;
-    let segment = segments
-        .circle_rows
-        .iter()
-        .find(|segment| segment.external_id == external_id)?;
-    (segments.external_id_count(external_id) == 1).then_some(segment)
+    match definition.segments.as_ref()?.rows.get(external_id)? {
+        SegmentRow::Circle(row) => Some(row),
+        _ => None,
+    }
 }
 
 pub(in super::super) fn unique_point_segment(
     definition: &crate::feature::FeatureDefinition,
     external_id: u32,
 ) -> Option<&crate::feature::FeaturePointSegment> {
-    let segments = definition.segments.as_ref()?;
-    let segment = segments
-        .point_rows
-        .iter()
-        .find(|segment| segment.external_id == external_id)?;
-    (segments.external_id_count(external_id) == 1).then_some(segment)
+    match definition.segments.as_ref()?.rows.get(external_id)? {
+        SegmentRow::Point(row) => Some(row),
+        _ => None,
+    }
 }
 
 pub(in super::super) fn unique_centered_line_segment(
     definition: &crate::feature::FeatureDefinition,
     external_id: u32,
 ) -> Option<&crate::feature::FeatureCenteredLineSegment> {
-    let segments = definition.segments.as_ref()?;
-    let segment = segments
-        .centered_line_rows
-        .iter()
-        .find(|segment| segment.external_id == external_id)?;
-    (segments.external_id_count(external_id) == 1).then_some(segment)
+    match definition.segments.as_ref()?.rows.get(external_id)? {
+        SegmentRow::CenteredLine(row) => Some(row),
+        _ => None,
+    }
 }
 
 pub(in super::super) fn unique_reference_line_segment(
     definition: &crate::feature::FeatureDefinition,
     external_id: u32,
 ) -> Option<&crate::feature::FeatureReferenceLineSegment> {
-    let segments = definition.segments.as_ref()?;
-    let segment = segments
-        .reference_line_rows
-        .iter()
-        .find(|segment| segment.external_id == external_id)?;
-    (segments.external_id_count(external_id) == 1).then_some(segment)
+    match definition.segments.as_ref()?.rows.get(external_id)? {
+        SegmentRow::ReferenceLine(row) => Some(row),
+        _ => None,
+    }
 }
 
 pub(in super::super) fn unique_bounded_curve_segment(
     definition: &crate::feature::FeatureDefinition,
     external_id: u32,
 ) -> Option<&crate::feature::FeatureBoundedCurveSegment> {
-    let segments = definition.segments.as_ref()?;
-    let segment = segments
-        .bounded_curve_rows
-        .iter()
-        .find(|segment| segment.external_id == external_id)?;
-    (segments.external_id_count(external_id) == 1).then_some(segment)
+    match definition.segments.as_ref()?.rows.get(external_id)? {
+        SegmentRow::BoundedCurve(row) => Some(row),
+        _ => None,
+    }
 }
 
 pub(in super::super) fn section_skamp_locus(
@@ -276,56 +267,8 @@ pub(in super::super) fn section_skamp_locus(
     }
     if definition
         .segments
-        .iter()
-        .flat_map(|segments| {
-            segments
-                .rows
-                .iter()
-                .map(|segment| segment.external_id)
-                .chain(
-                    segments
-                        .circle_rows
-                        .iter()
-                        .map(|segment| segment.external_id),
-                )
-                .chain(
-                    segments
-                        .point_rows
-                        .iter()
-                        .map(|segment| segment.external_id),
-                )
-                .chain(
-                    segments
-                        .centered_line_rows
-                        .iter()
-                        .map(|segment| segment.external_id),
-                )
-                .chain(
-                    segments
-                        .reference_line_rows
-                        .iter()
-                        .map(|segment| segment.external_id),
-                )
-                .chain(
-                    segments
-                        .bounded_curve_rows
-                        .iter()
-                        .map(|segment| segment.external_id),
-                )
-                .chain(
-                    segments
-                        .conic_rows
-                        .iter()
-                        .map(|segment| segment.external_id),
-                )
-                .chain(
-                    segments
-                        .opaque_rows
-                        .iter()
-                        .map(|segment| segment.external_id),
-                )
-        })
-        .any(|external_id| external_id == item.entity_id)
+        .as_ref()
+        .is_some_and(|segments| segments.rows.contains_id(item.entity_id))
     {
         return section_incidence_curve_locus(definition, entity, item);
     }
@@ -1118,18 +1061,14 @@ mod tests {
                 declared_count: 1,
                 has_elided_prototype: false,
                 entity_ref: None,
-                rows: Vec::new(),
-                circle_rows: Vec::new(),
-                point_rows: vec![crate::feature::FeaturePointSegment {
+                rows: (vec![crate::feature::FeaturePointSegment {
                     point_id: 7,
                     external_id: 12,
                     offset: 20,
-                }],
-                centered_line_rows: Vec::new(),
-                reference_line_rows: Vec::new(),
-                bounded_curve_rows: Vec::new(),
-                conic_rows: Vec::new(),
-                opaque_rows: Vec::new(),
+                }])
+                .into_iter()
+                .map(crate::feature::segment_rows::SegmentRow::Point)
+                .collect(),
                 offset: 10,
             }),
             trim_entities: None,
@@ -1169,34 +1108,40 @@ mod tests {
                 declared_count: 3,
                 has_elided_prototype: false,
                 entity_ref: None,
-                rows: Vec::new(),
-                circle_rows: Vec::new(),
-                point_rows: Vec::new(),
-                centered_line_rows: vec![crate::feature::FeatureCenteredLineSegment {
+                rows: (vec![crate::feature::FeatureCenteredLineSegment {
                     center_id: 20,
                     external_id: 30,
                     offset: 30,
-                }],
-                reference_line_rows: vec![crate::feature::FeatureReferenceLineSegment {
-                    directions: [None; 3],
-                    point_ids: [Some(7), Some(8)],
-                    vertical_horizontal: None,
-                    external_id: 31,
-                    offset: 10,
-                }],
-                bounded_curve_rows: vec![crate::feature::FeatureBoundedCurveSegment {
-                    directions: [None; 3],
-                    point_ids: [9, 10],
-                    center_id: None,
-                    arc_orientation: None,
-                    vertical_horizontal: None,
-                    radius_ref: None,
-                    radius2_ref: None,
-                    external_id: 32,
-                    offset: 20,
-                }],
-                conic_rows: Vec::new(),
-                opaque_rows: Vec::new(),
+                }])
+                .into_iter()
+                .map(crate::feature::segment_rows::SegmentRow::CenteredLine)
+                .chain(
+                    (vec![crate::feature::FeatureReferenceLineSegment {
+                        directions: [None; 3],
+                        point_ids: [Some(7), Some(8)],
+                        vertical_horizontal: None,
+                        external_id: 31,
+                        offset: 10,
+                    }])
+                    .into_iter()
+                    .map(crate::feature::segment_rows::SegmentRow::ReferenceLine),
+                )
+                .chain(
+                    (vec![crate::feature::FeatureBoundedCurveSegment {
+                        directions: [None; 3],
+                        point_ids: [9, 10],
+                        center_id: None,
+                        arc_orientation: None,
+                        vertical_horizontal: None,
+                        radius_ref: None,
+                        radius2_ref: None,
+                        external_id: 32,
+                        offset: 20,
+                    }])
+                    .into_iter()
+                    .map(crate::feature::segment_rows::SegmentRow::BoundedCurve),
+                )
+                .collect(),
                 offset: 0,
             }),
             trim_entities: None,
@@ -1247,30 +1192,26 @@ mod tests {
         );
 
         let mut ambiguous = definition;
-        ambiguous
-            .segments
-            .as_mut()
-            .expect("segments")
-            .reference_line_rows
-            .push(crate::feature::FeatureReferenceLineSegment {
-                directions: [None; 3],
-                point_ids: [Some(7), Some(8)],
-                vertical_horizontal: None,
-                external_id: 31,
-                offset: 40,
-            });
+        ambiguous.segments.as_mut().expect("segments").rows.insert(
+            crate::feature::segment_rows::SegmentRow::ReferenceLine(
+                crate::feature::FeatureReferenceLineSegment {
+                    directions: [None; 3],
+                    point_ids: [Some(7), Some(8)],
+                    vertical_horizontal: None,
+                    external_id: 31,
+                    offset: 40,
+                },
+            ),
+        );
         assert_eq!(section_point_locus(&ambiguous, &sketch, 7), None);
 
-        ambiguous
-            .segments
-            .as_mut()
-            .expect("segments")
-            .point_rows
-            .push(crate::feature::FeaturePointSegment {
+        ambiguous.segments.as_mut().expect("segments").rows.insert(
+            crate::feature::segment_rows::SegmentRow::Point(crate::feature::FeaturePointSegment {
                 point_id: 0,
                 external_id: 33,
                 offset: 50,
-            });
+            }),
+        );
         assert_eq!(section_point_locus(&ambiguous, &sketch, 0), None);
     }
 
@@ -1289,7 +1230,7 @@ mod tests {
                 declared_count: 1,
                 has_elided_prototype: false,
                 entity_ref: None,
-                rows: vec![crate::feature::FeatureSegment {
+                rows: (vec![crate::feature::FeatureSegment {
                     kind: crate::feature::FeatureSegmentKind::Arc([1, 2]),
                     directions: [None; 3],
                     center_id: Some(3),
@@ -1300,14 +1241,10 @@ mod tests {
                     external_id: 30,
                     body: Vec::new(),
                     offset: 10,
-                }],
-                circle_rows: Vec::new(),
-                point_rows: Vec::new(),
-                centered_line_rows: Vec::new(),
-                reference_line_rows: Vec::new(),
-                bounded_curve_rows: Vec::new(),
-                conic_rows: Vec::new(),
-                opaque_rows: Vec::new(),
+                }])
+                .into_iter()
+                .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+                .collect(),
                 offset: 0,
             }),
             trim_entities: None,
@@ -1364,14 +1301,10 @@ mod tests {
                 declared_count: 3,
                 has_elided_prototype: false,
                 entity_ref: None,
-                rows: Vec::new(),
-                circle_rows: Vec::new(),
-                point_rows: Vec::new(),
-                centered_line_rows: Vec::new(),
-                reference_line_rows: Vec::new(),
-                bounded_curve_rows: Vec::new(),
-                conic_rows: Vec::new(),
-                opaque_rows: vec![opaque(101), opaque(102), opaque(103)],
+                rows: (vec![opaque(101), opaque(102), opaque(103)])
+                    .into_iter()
+                    .map(crate::feature::segment_rows::SegmentRow::Opaque)
+                    .collect(),
                 offset: 0,
             }),
             trim_entities: None,
@@ -1502,20 +1435,25 @@ mod tests {
         );
 
         let mut decoded_arc = definition.clone();
-        decoded_arc.segments.as_mut().expect("segments").rows.push(
-            crate::feature::FeatureSegment {
-                kind: crate::feature::FeatureSegmentKind::Arc([1, 2]),
-                directions: [None; 3],
-                center_id: Some(3),
-                arc_orientation: Some(0),
-                vertical_horizontal: None,
-                radius_ref: None,
-                radius2_ref: None,
-                external_id: 104,
-                body: Vec::new(),
-                offset: 104,
-            },
-        );
+        decoded_arc
+            .segments
+            .as_mut()
+            .expect("segments")
+            .rows
+            .insert(crate::feature::segment_rows::SegmentRow::Ordinary(
+                crate::feature::FeatureSegment {
+                    kind: crate::feature::FeatureSegmentKind::Arc([1, 2]),
+                    directions: [None; 3],
+                    center_id: Some(3),
+                    arc_orientation: Some(0),
+                    vertical_horizontal: None,
+                    radius_ref: None,
+                    radius2_ref: None,
+                    external_id: 104,
+                    body: Vec::new(),
+                    offset: 104,
+                },
+            ));
         let relations = decoded_arc.relations.as_mut().expect("relations");
         crate::decode::tests::declared_solver_rows(&mut relations.skamps).push(
             crate::feature::FeatureSkamp {
@@ -1583,7 +1521,7 @@ mod tests {
                 declared_count: 2,
                 has_elided_prototype: false,
                 entity_ref: None,
-                rows: vec![crate::feature::FeatureSegment {
+                rows: (vec![crate::feature::FeatureSegment {
                     kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
                     directions: [None; 3],
                     center_id: None,
@@ -1594,14 +1532,15 @@ mod tests {
                     external_id: 12,
                     body: Vec::new(),
                     offset: 12,
-                }],
-                circle_rows: Vec::new(),
-                point_rows: Vec::new(),
-                centered_line_rows: Vec::new(),
-                reference_line_rows: Vec::new(),
-                bounded_curve_rows: Vec::new(),
-                conic_rows: Vec::new(),
-                opaque_rows: vec![opaque],
+                }])
+                .into_iter()
+                .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+                .chain(
+                    (vec![opaque])
+                        .into_iter()
+                        .map(crate::feature::segment_rows::SegmentRow::Opaque),
+                )
+                .collect(),
                 offset: 0,
             }),
             trim_entities: None,
@@ -1684,14 +1623,10 @@ mod tests {
                 declared_count: 3,
                 has_elided_prototype: false,
                 entity_ref: None,
-                rows: vec![line(10, [1, 2]), line(11, [1, 3])],
-                circle_rows: Vec::new(),
-                point_rows: Vec::new(),
-                centered_line_rows: Vec::new(),
-                reference_line_rows: Vec::new(),
-                bounded_curve_rows: Vec::new(),
-                conic_rows: Vec::new(),
-                opaque_rows: Vec::new(),
+                rows: (vec![line(10, [1, 2]), line(11, [1, 3])])
+                    .into_iter()
+                    .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+                    .collect(),
                 offset: 0,
             }),
             trim_entities: None,
@@ -1767,7 +1702,7 @@ mod tests {
                 declared_count: 4,
                 has_elided_prototype: false,
                 entity_ref: None,
-                rows: vec![
+                rows: (vec![
                     segment(
                         crate::feature::FeatureSegmentKind::Line([1, 2]),
                         10,
@@ -1786,14 +1721,10 @@ mod tests {
                         Some(7),
                         Some(0),
                     ),
-                ],
-                circle_rows: Vec::new(),
-                point_rows: Vec::new(),
-                centered_line_rows: Vec::new(),
-                reference_line_rows: Vec::new(),
-                bounded_curve_rows: Vec::new(),
-                conic_rows: Vec::new(),
-                opaque_rows: Vec::new(),
+                ])
+                .into_iter()
+                .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+                .collect(),
                 offset: 0,
             }),
             trim_entities: None,
@@ -1882,17 +1813,14 @@ mod tests {
         assert!(midpoint[0] < 0.0 && midpoint[1] < 0.0);
 
         let mut duplicate = definition.clone();
-        duplicate
-            .segments
-            .as_mut()
-            .expect("segments")
-            .rows
-            .push(segment(
+        duplicate.segments.as_mut().expect("segments").rows.insert(
+            crate::feature::segment_rows::SegmentRow::Ordinary(segment(
                 crate::feature::FeatureSegmentKind::Line([8, 9]),
                 20,
                 None,
                 None,
-            ));
+            )),
+        );
         assert!(section_skamp_same_coordinate_sources(&duplicate, &same_coordinate).is_none());
         assert!(section_skamp_line_midpoint_sources(&duplicate, &line_midpoint).is_none());
         assert!(
@@ -1904,12 +1832,14 @@ mod tests {
             .segments
             .as_mut()
             .expect("segments")
-            .point_rows
-            .push(crate::feature::FeaturePointSegment {
-                point_id: 99,
-                external_id: 20,
-                offset: 99,
-            });
+            .rows
+            .insert(crate::feature::segment_rows::SegmentRow::Point(
+                crate::feature::FeaturePointSegment {
+                    point_id: 99,
+                    external_id: 20,
+                    offset: 99,
+                },
+            ));
         assert!(section_skamp_same_coordinate_sources(&cross_family, &same_coordinate).is_none());
     }
 
@@ -1928,23 +1858,24 @@ mod tests {
                 declared_count: 2,
                 has_elided_prototype: false,
                 entity_ref: None,
-                rows: Vec::new(),
-                circle_rows: vec![crate::feature::FeatureCircleSegment {
+                rows: (vec![crate::feature::FeatureCircleSegment {
                     center_id: 1,
                     radius_ref: 2,
                     external_id: 10,
                     offset: 10,
-                }],
-                point_rows: vec![crate::feature::FeaturePointSegment {
-                    point_id: 7,
-                    external_id: 20,
-                    offset: 20,
-                }],
-                centered_line_rows: Vec::new(),
-                reference_line_rows: Vec::new(),
-                bounded_curve_rows: Vec::new(),
-                conic_rows: Vec::new(),
-                opaque_rows: Vec::new(),
+                }])
+                .into_iter()
+                .map(crate::feature::segment_rows::SegmentRow::Circle)
+                .chain(
+                    (vec![crate::feature::FeaturePointSegment {
+                        point_id: 7,
+                        external_id: 20,
+                        offset: 20,
+                    }])
+                    .into_iter()
+                    .map(crate::feature::segment_rows::SegmentRow::Point),
+                )
+                .collect(),
                 offset: 0,
             }),
             trim_entities: None,

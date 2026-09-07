@@ -346,19 +346,12 @@
                 },
             ])),
         segments: Some(crate::feature::FeatureSegmentTable {
-            declared_count: 5,
-            has_elided_prototype: false,
-            entity_ref: None,
-            rows: vec![segment, arc, point, other_line, other_arc],
-            circle_rows: Vec::new(),
-            point_rows: Vec::new(),
-            centered_line_rows: Vec::new(),
-            reference_line_rows: Vec::new(),
-            bounded_curve_rows: Vec::new(),
-            conic_rows: Vec::new(),
-            opaque_rows: Vec::new(),
-            offset: 30,
-        }),
+declared_count: 5,
+has_elided_prototype: false,
+entity_ref: None,
+rows: (vec![segment, arc, point, other_line, other_arc]).into_iter().map(crate::feature::segment_rows::SegmentRow::Ordinary).collect(),
+offset: 30,
+}),
         trim_entities: None,
         trim_vertices: None,
         order_table: None,
@@ -407,7 +400,7 @@
             },
         ]));
     let segments = point_row_symmetry.segments.as_mut().expect("segments");
-    segments.point_rows = vec![
+    segments.rows.edit_points(|rows| *rows =  vec![
         crate::feature::FeaturePointSegment {
             point_id: 4,
             external_id: 18,
@@ -423,7 +416,7 @@
             external_id: 20,
             offset: 93,
         },
-    ];
+    ]);
     segments.declared_count = 8;
     let relations = point_row_symmetry.relations.as_mut().expect("relations");
     *declared_solver_rows(&mut relations.skamps) = vec![crate::feature::FeatureSkamp {
@@ -465,12 +458,12 @@
             v: Some(0.0),
         }]);
     let segments = circle_center_symmetry.segments.as_mut().expect("segments");
-    segments.circle_rows = vec![crate::feature::FeatureCircleSegment {
+    segments.rows.edit_circles(|rows| *rows =  vec![crate::feature::FeatureCircleSegment {
         center_id: 8,
         radius_ref: 101,
         external_id: 21,
         offset: 95,
-    }];
+    }]);
     segments.declared_count = 9;
     circle_center_symmetry
         .relations
@@ -685,7 +678,7 @@
         .segments
         .as_mut()
         .expect("segments")
-        .bounded_curve_rows = vec![crate::feature::FeatureBoundedCurveSegment {
+        .rows.edit_bounded_curves(|rows| *rows =  vec![crate::feature::FeatureBoundedCurveSegment {
         directions: [None; 3],
         point_ids: [1, 2],
         center_id: None,
@@ -695,7 +688,7 @@
         radius2_ref: None,
         external_id: 18,
         offset: 86,
-    }];
+    }]);
     type_33_bounded_curve
         .segments
         .as_mut()
@@ -796,8 +789,7 @@
         .segments
         .as_mut()
         .expect("segments")
-        .bounded_curve_rows
-        .clear();
+        .rows.edit_bounded_curves(|rows| rows.clear());
     assert!(matches!(
         section_skamp_constraints(
             &missing_bounded_curve,
@@ -1899,20 +1891,20 @@
         .segments
         .as_mut()
         .expect("segments")
-        .rows
+        .rows.edit_ordinary(|rows| rows
         .iter_mut()
         .find(|segment| segment.external_id == 13)
         .expect("arc")
-        .arc_orientation = Some(0);
+        .arc_orientation = Some(0));
     arc_midpoint_definition
         .segments
         .as_mut()
         .expect("segments")
-        .rows
+        .rows.edit_ordinary(|rows| rows
         .iter_mut()
         .find(|segment| segment.external_id == 14)
         .expect("point")
-        .kind = crate::feature::FeatureSegmentKind::Point(8);
+        .kind = crate::feature::FeatureSegmentKind::Point(8));
     let midpoint_skamps = &mut arc_midpoint_definition
         .relations
         .as_mut()
@@ -2143,13 +2135,10 @@
         }
     );
     let mut equal_radius_definition = definition.clone();
-    let equal_radius_segments = &mut equal_radius_definition
-        .segments
-        .as_mut()
-        .expect("segments")
-        .rows;
-    equal_radius_segments[1].radius_ref = Some(101);
-    equal_radius_segments[4].radius_ref = Some(102);
+    equal_radius_definition.segments.as_mut().expect("segments").rows.edit_ordinary(|rows| {
+        rows[1].radius_ref = Some(101);
+        rows[4].radius_ref = Some(102);
+    });
     equal_radius_definition.variables = Some(with_points(crate::feature::FeatureVariableTable {
         declared_count: 0,
         entity_ref: None,
@@ -2215,8 +2204,8 @@
         .segments
         .as_mut()
         .expect("segments")
-        .rows[1]
-        .radius_ref = Some(101);
+        .rows.edit_ordinary(|rows| rows[1]
+        .radius_ref =  Some(101));
     saved_radius_definition.order_table = Some(crate::feature::FeatureOrderTable {
         declared_count: 1,
         has_prototype: false,
@@ -2459,14 +2448,13 @@
         } if native_kind == "creo:skamp:1"
     ));
     let mut duplicate_entity = definition.clone();
-    let mut duplicate_line = duplicate_entity.segments.as_ref().expect("segments").rows[0].clone();
+    let mut duplicate_line = duplicate_entity.segments.as_ref().expect("segments").rows.ordinary().cloned().collect::<Vec<_>>()[0].clone();
     duplicate_line.offset = 500;
     duplicate_entity
         .segments
         .as_mut()
         .expect("segments")
-        .rows
-        .push(duplicate_line);
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(duplicate_line));
     let unique_ids = unique_section_segment_external_ids(&duplicate_entity);
     assert!(!unique_ids.contains(&12));
     assert_eq!(
@@ -2476,7 +2464,7 @@
                 .segments
                 .as_ref()
                 .expect("segments")
-                .rows
+                .rows.ordinary().cloned().collect::<Vec<_>>()
                 .last()
                 .expect("duplicate segment")
         ),
@@ -2509,8 +2497,7 @@
         .segments
         .as_mut()
         .expect("segments")
-        .opaque_rows
-        .push(opaque_segment.clone());
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Opaque(opaque_segment.clone()));
     assert!(unique_section_segment_external_ids(&opaque_entity).contains(&99));
     assert!(section_entity_external_ids(&opaque_entity).contains(&99));
 
@@ -2524,12 +2511,11 @@
         .segments
         .as_mut()
         .expect("segments")
-        .point_rows
-        .push(crate::feature::FeaturePointSegment {
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Point(crate::feature::FeaturePointSegment {
             point_id: 1,
             external_id: 99,
             offset: 601,
-        });
+        }));
     let opaque_point_item = crate::feature::FeatureSkampItem {
         entity_id: 99,
         sense: 0,
@@ -2537,7 +2523,7 @@
     assert_eq!(
         section_point_row_geometry(
             &resolved_section_points(&opaque_point),
-            &opaque_point.segments.as_ref().expect("segments").point_rows[0],
+            &opaque_point.segments.as_ref().expect("segments").rows.points().cloned().collect::<Vec<_>>()[0],
         ),
         Some(SketchGeometry::Point {
             position: Point2::new(0.0, 2.0),
@@ -2648,8 +2634,7 @@
         .expect("segment table");
     reference_segments.declared_count += 1;
     reference_segments
-        .reference_line_rows
-        .push(axis_reference_line.clone());
+        .rows.insert(crate::feature::segment_rows::SegmentRow::ReferenceLine(axis_reference_line.clone()));
     assert!(section_skamp_is_line(
         &reference_definition,
         &crate::feature::FeatureSkampItem {
@@ -2695,15 +2680,13 @@
         .expect("segment table");
     endpoint_segments.declared_count += 2;
     endpoint_segments
-        .reference_line_rows
-        .push(crate::feature::FeatureReferenceLineSegment {
+        .rows.insert(crate::feature::segment_rows::SegmentRow::ReferenceLine(crate::feature::FeatureReferenceLineSegment {
             point_ids: [Some(1), Some(5)],
             external_id: 101,
             ..reference_line.clone()
-        });
+        }));
     endpoint_segments
-        .bounded_curve_rows
-        .push(crate::feature::FeatureBoundedCurveSegment {
+        .rows.insert(crate::feature::segment_rows::SegmentRow::BoundedCurve(crate::feature::FeatureBoundedCurveSegment {
             point_ids: [1, 5],
             external_id: 102,
             directions: [None; 3],
@@ -2713,7 +2696,7 @@
             radius_ref: None,
             radius2_ref: None,
             offset: 604,
-        });
+        }));
     assert_eq!(
         section_skamp_selected_point_id(
             &endpoint_families,
@@ -2764,8 +2747,7 @@
         .segments
         .as_mut()
         .expect("segments")
-        .centered_line_rows
-        .push(centered_line);
+        .rows.insert(crate::feature::segment_rows::SegmentRow::CenteredLine(centered_line));
     let opaque_line_item = crate::feature::FeatureSkampItem {
         entity_id: 100,
         sense: 0,
@@ -3017,8 +2999,7 @@
         .segments
         .as_mut()
         .expect("segments")
-        .opaque_rows
-        .push(colliding_row);
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Opaque(colliding_row));
     assert!(!section_skamp_is_point(
         &opaque_family_collision,
         &opaque_point_item,
@@ -3029,11 +3010,10 @@
         .segments
         .as_mut()
         .expect("segments")
-        .opaque_rows
-        .push(crate::feature::FeatureOpaqueSegment {
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Opaque(crate::feature::FeatureOpaqueSegment {
             external_id: 12,
             ..opaque_segment
-        });
+        }));
     assert!(!unique_section_segment_external_ids(&opaque_collision).contains(&12));
     assert!(ambiguous_section_segment_external_ids(&opaque_collision).contains(&12));
     assert!(!section_entity_external_ids(&opaque_collision).contains(&12));
@@ -3264,8 +3244,7 @@
         .segments
         .as_ref()
         .expect("segments")
-        .rows
-        .iter()
+        .rows.ordinary()
         .find(|segment| segment.external_id == 13)
         .expect("arc")
         .clone();
@@ -3275,8 +3254,7 @@
         .segments
         .as_mut()
         .expect("segments")
-        .rows
-        .push(second_arc);
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(second_arc));
     concentric.relations.as_mut().expect("relations").skamps.as_mut().expect("skamp table").rows_mut()[4].items = vec![
         crate::feature::FeatureSkampItem {
             entity_id: 13,
@@ -3584,7 +3562,7 @@
         .as_mut()
         .expect("segments");
     point_segment.declared_count = 6;
-    point_segment.rows.push(crate::feature::FeatureSegment {
+    point_segment.rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(crate::feature::FeatureSegment {
         kind: crate::feature::FeatureSegmentKind::Point(6),
         directions: [None; 3],
         center_id: None,
@@ -3595,7 +3573,7 @@
         external_id: 17,
         body: Vec::new(),
         offset: 45,
-    });
+    }));
     point_coincidence_definition
         .relations
         .as_mut()
@@ -3616,12 +3594,9 @@
         Some(&[1.0, 2.0])
     );
     let mut distance_definition = definition.clone();
-    let distance_segment = &mut distance_definition
-        .segments
-        .as_mut()
-        .expect("segments")
-        .rows[0];
-    distance_segment.vertical_horizontal = Some(0);
+    distance_definition.segments.as_mut().expect("segments").rows.edit_ordinary(|rows| {
+        rows[0].vertical_horizontal = Some(0);
+    });
     let distance_relation = &mut distance_definition
         .relations
         .as_mut()
@@ -3901,8 +3876,7 @@
         .segments
         .as_mut()
         .expect("segments")
-        .rows
-        .retain(|segment| !segment.point_ids().contains(&5));
+        .rows.edit_ordinary(|rows| rows.retain(|segment| !segment.point_ids().contains(&5)));
     synchronize_segment_count(&mut separate_point_distance);
     assert!(matches!(
         section_dimension_constraints(
@@ -3918,8 +3892,8 @@
         .segments
         .as_mut()
         .expect("segments")
-        .rows[0]
-        .vertical_horizontal = None;
+        .rows.edit_ordinary(|rows| rows[0]
+        .vertical_horizontal =  None);
     declared_solver_rows(&mut incidence_oriented_distance
         .relations
         .as_mut()
@@ -4065,14 +4039,13 @@
     conflicting_relation.sign = 0xf6;
     assert!(!resolved_section_points(&equivalent_relation).contains_key(&2));
     let mut duplicate_identity = solver_definition.clone();
-    let mut duplicate = duplicate_identity.segments.as_ref().expect("segments").rows[0].clone();
+    let mut duplicate = duplicate_identity.segments.as_ref().expect("segments").rows.ordinary().cloned().collect::<Vec<_>>()[0].clone();
     duplicate.offset = 500;
     duplicate_identity
         .segments
         .as_mut()
         .expect("segments")
-        .rows
-        .push(duplicate);
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(duplicate));
     synchronize_segment_count(&mut duplicate_identity);
     assert!(!resolved_section_points(&duplicate_identity).contains_key(&2));
     let mut duplicate_endpoint_segment = solver_definition;
@@ -4080,7 +4053,7 @@
         .segments
         .as_ref()
         .expect("segments")
-        .rows[0]
+        .rows.ordinary().cloned().collect::<Vec<_>>()[0]
         .clone();
     duplicate.external_id = 99;
     duplicate.offset = 501;
@@ -4088,8 +4061,7 @@
         .segments
         .as_mut()
         .expect("segments")
-        .rows
-        .push(duplicate);
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(duplicate));
     synchronize_segment_count(&mut duplicate_endpoint_segment);
     assert!(!resolved_section_points(&duplicate_endpoint_segment).contains_key(&2));
     let mut shared_vertex_definition = distance_definition.clone();
@@ -4097,7 +4069,7 @@
         .segments
         .as_ref()
         .expect("segments")
-        .rows[1]
+        .rows.ordinary().cloned().collect::<Vec<_>>()[1]
         .clone();
     incident.external_id = 2;
     incident.kind = crate::feature::FeatureSegmentKind::Arc([9, 1]);
@@ -4105,8 +4077,7 @@
         .segments
         .as_mut()
         .expect("segments")
-        .rows
-        .push(incident);
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(incident));
     synchronize_segment_count(&mut shared_vertex_definition);
     assert_eq!(
         section_dimension_constraints(
@@ -4177,14 +4148,13 @@
         .segments
         .as_ref()
         .expect("segments")
-        .rows[0]
+        .rows.ordinary().cloned().collect::<Vec<_>>()[0]
         .clone();
     duplicate_measured_segment
         .segments
         .as_mut()
         .expect("segments")
-        .rows
-        .push(duplicate);
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(duplicate));
     synchronize_segment_count(&mut duplicate_measured_segment);
     assert!(matches!(
         section_dimension_constraints(
@@ -4202,10 +4172,10 @@
         .segments
         .as_mut()
         .expect("segments")
-        .rows
+        .rows.edit_ordinary(|rows| rows
         .last_mut()
         .expect("duplicate")
-        .kind = crate::feature::FeatureSegmentKind::Line([8, 9]);
+        .kind = crate::feature::FeatureSegmentKind::Line([8, 9]));
     assert!(matches!(
         section_dimension_constraints(
             &duplicate_measured_segment,
@@ -4264,14 +4234,11 @@
             && operands.iter().any(|operand| operand.native_field.as_deref() == Some("c[3]"))
     ));
     let mut legacy_radius_definition = definition.clone();
-    let legacy_arc = &mut legacy_radius_definition
-        .segments
-        .as_mut()
-        .expect("segments")
-        .rows[1];
-    legacy_arc.radius_ref = Some(0);
-    let [first_point, second_point] = legacy_arc.point_ids();
-    let center = legacy_arc.center_id.expect("arc center");
+    let ([first_point, second_point], center) = legacy_radius_definition.segments.as_mut().expect("segments").rows.edit_ordinary(|rows| {
+        let legacy_arc = &mut rows[1];
+        legacy_arc.radius_ref = Some(0);
+        (legacy_arc.point_ids(), legacy_arc.center_id.expect("arc center"))
+    });
     let legacy_radius_relation = &mut legacy_radius_definition
         .relations
         .as_mut()
@@ -4377,14 +4344,11 @@
     ));
 
     let mut type6_radius_definition = definition.clone();
-    let type6_arc = &mut type6_radius_definition
-        .segments
-        .as_mut()
-        .expect("segments")
-        .rows[1];
-    type6_arc.radius_ref = Some(0);
-    let [type6_first_point, type6_second_point] = type6_arc.point_ids();
-    let type6_center = type6_arc.center_id.expect("arc center");
+    let ([type6_first_point, type6_second_point], type6_center) = type6_radius_definition.segments.as_mut().expect("segments").rows.edit_ordinary(|rows| {
+        let type6_arc = &mut rows[1];
+        type6_arc.radius_ref = Some(0);
+        (type6_arc.point_ids(), type6_arc.center_id.expect("arc center"))
+    });
     let type6_relation = &mut type6_radius_definition
         .relations
         .as_mut()
@@ -4507,15 +4471,14 @@
         .segments
         .as_ref()
         .expect("segments")
-        .rows[1]
+        .rows.ordinary().cloned().collect::<Vec<_>>()[1]
         .clone();
     duplicate_type6_arc.offset = 500;
     ambiguous_type6
         .segments
         .as_mut()
         .expect("segments")
-        .rows
-        .push(duplicate_type6_arc);
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(duplicate_type6_arc));
     assert!(matches!(
         section_dimension_constraints(
             &ambiguous_type6,
@@ -4536,7 +4499,7 @@
         .expect("dimensions")
         .rows[0]
         .dimension_type = 3;
-    radius_definition.segments.as_mut().expect("segments").rows[1].radius_ref = Some(101);
+    radius_definition.segments.as_mut().expect("segments").rows.edit_ordinary(|rows| rows[1].radius_ref =  Some(101));
     let radius_relation = &mut radius_definition
         .relations
         .as_mut()
@@ -4592,15 +4555,14 @@
         .segments
         .as_mut()
         .expect("segments");
-    let arc = segments.rows.remove(1);
+    let arc = segments.rows.edit_ordinary(|rows| rows.remove(1));
     segments
-        .circle_rows
-        .push(crate::feature::FeatureCircleSegment {
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Circle(crate::feature::FeatureCircleSegment {
             center_id: arc.center_id.expect("arc center"),
             radius_ref: arc.radius_ref.expect("arc radius"),
             external_id: arc.external_id,
             offset: arc.offset,
-        });
+        }));
     assert_eq!(
         section_dimension_constraints(
             &opaque_circle_definition,
@@ -4658,8 +4620,8 @@
         .segments
         .as_mut()
         .expect("segments")
-        .rows[0]
-        .vertical_horizontal = Some(1);
+        .rows.edit_ordinary(|rows| rows[0]
+        .vertical_horizontal =  Some(1));
     relation.triples = Some(crate::feature::definitions::SolverSubtable::Declared { header: crate::feature::definitions::FeatureSolverTableHeader {
         declared_count: 1,
         entity_ref: 2,
@@ -4723,13 +4685,12 @@
         .expect("dimensions")
         .rows[0]
         .dimension_type = 2;
-    let duplicate = radius_definition.segments.as_ref().expect("segments").rows[1].clone();
+    let duplicate = radius_definition.segments.as_ref().expect("segments").rows.ordinary().cloned().collect::<Vec<_>>()[1].clone();
     radius_definition
         .segments
         .as_mut()
         .expect("segments")
-        .rows
-        .push(duplicate);
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(duplicate));
     synchronize_segment_count(&mut radius_definition);
     assert!(matches!(
         section_dimension_constraints(&radius_definition, &SketchId("creo:model:sketch#917".into()))[0]
@@ -4744,8 +4705,7 @@
         .segments
         .as_mut()
         .expect("segments")
-        .rows
-        .pop();
+        .rows.edit_ordinary(|rows| rows.pop());
     synchronize_segment_count(&mut radius_definition);
     radius_definition
         .dimensions
@@ -4968,10 +4928,12 @@
         }
     );
     let mut angular_dimension = definition.clone();
-    let second_angular_line = &mut angular_dimension.segments.as_mut().expect("segments").rows[1];
-    second_angular_line.kind = crate::feature::FeatureSegmentKind::Line(second_angular_line.point_ids());
-    second_angular_line.center_id = None;
-    second_angular_line.radius_ref = None;
+    angular_dimension.segments.as_mut().expect("segments").rows.edit_ordinary(|rows| {
+        let second_angular_line = &mut rows[1];
+        second_angular_line.kind = crate::feature::FeatureSegmentKind::Line(second_angular_line.point_ids());
+        second_angular_line.center_id = None;
+        second_angular_line.radius_ref = None;
+    });
     let angle_dimension = &mut angular_dimension
         .dimensions
         .as_mut()
@@ -5128,18 +5090,18 @@
         .segments
         .as_mut()
         .expect("segments");
-    special_segments.rows.clear();
-    special_segments.circle_rows.clear();
-    special_segments.point_rows.clear();
-    special_segments.centered_line_rows.clear();
-    special_segments.reference_line_rows = vec![crate::feature::FeatureReferenceLineSegment {
+    special_segments.rows.edit_ordinary(|rows| rows.clear());
+    special_segments.rows.edit_circles(|rows| rows.clear());
+    special_segments.rows.edit_points(|rows| rows.clear());
+    special_segments.rows.edit_centered_lines(|rows| rows.clear());
+    special_segments.rows.edit_reference_lines(|rows| *rows =  vec![crate::feature::FeatureReferenceLineSegment {
         directions: [None; 3],
         point_ids: [Some(1), Some(4)],
         vertical_horizontal: None,
         external_id: 101,
         offset: 91,
-    }];
-    special_segments.bounded_curve_rows = vec![crate::feature::FeatureBoundedCurveSegment {
+    }]);
+    special_segments.rows.edit_bounded_curves(|rows| *rows =  vec![crate::feature::FeatureBoundedCurveSegment {
         directions: [None; 3],
         point_ids: [5, 6],
         center_id: None,
@@ -5149,9 +5111,9 @@
         radius2_ref: None,
         external_id: 102,
         offset: 92,
-    }];
-    special_segments.conic_rows.clear();
-    special_segments.opaque_rows.clear();
+    }]);
+    special_segments.rows.edit_conics(|rows| rows.clear());
+    special_segments.rows.edit_opaque(|rows| rows.clear());
     special_segments.declared_count = 2;
     let special_relation = &mut special_endpoint_dimension
         .relations
@@ -5197,8 +5159,7 @@
         .segments
         .as_mut()
         .expect("segments")
-        .rows
-        .push(crate::feature::FeatureSegment {
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(crate::feature::FeatureSegment {
             kind: crate::feature::FeatureSegmentKind::Line([7, 8]),
             directions: [None; 3],
             center_id: None,
@@ -5209,7 +5170,7 @@
             external_id: 17,
             body: Vec::new(),
             offset: 87,
-        });
+        }));
     synchronize_segment_count(&mut coincident_definition);
     coincident_definition.variables = Some(with_points(crate::feature::FeatureVariableTable {
         declared_count: 0,
@@ -5434,18 +5395,17 @@
         .segments
         .as_mut()
         .expect("segments")
-        .rows[0]
-        .vertical_horizontal = Some(1);
+        .rows.edit_ordinary(|rows| rows[0]
+        .vertical_horizontal =  Some(1));
     point_row_type_nine
         .segments
         .as_mut()
         .expect("segments")
-        .point_rows
-        .push(crate::feature::FeaturePointSegment {
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Point(crate::feature::FeaturePointSegment {
             point_id: 7,
             external_id: 17,
             offset: 90,
-        });
+        }));
     append_points(point_row_type_nine.variables.as_mut().expect("variables"), vec![crate::feature::FeatureSectionPoint {
             point_id: 7,
             u: Some(4.0),
@@ -5655,12 +5615,11 @@
         .segments
         .as_mut()
         .expect("segments")
-        .point_rows
-        .push(crate::feature::FeaturePointSegment {
+        .rows.insert(crate::feature::segment_rows::SegmentRow::Point(crate::feature::FeaturePointSegment {
             point_id: 7,
             external_id: 17,
             offset: 94,
-        });
+        }));
     append_points(saved_point_row_type_nine.variables.as_mut().expect("variables"), vec![crate::feature::FeatureSectionPoint {
             point_id: 7,
             u: Some(3.0),

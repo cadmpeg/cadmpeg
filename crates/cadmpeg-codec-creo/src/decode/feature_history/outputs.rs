@@ -541,7 +541,7 @@ pub(in super::super) fn feature_parameters(
             definition
                 .segments
                 .as_ref()
-                .map_or(0, |segments| segments.rows.len())
+                .map_or(0, |segments| segments.rows.ordinary().count())
                 .to_string(),
         );
         parameters.insert(

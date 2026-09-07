@@ -45,8 +45,8 @@ pub(crate) fn saved_section_coordinate_witnesses(
         .flat_map(|table| {
             table
                 .rows
-                .iter()
-                .filter(|segment| table.external_id_count(segment.external_id) == 1)
+                .ordinary()
+                .filter(|segment| table.rows.get(segment.external_id).is_some())
         })
         .filter(|segment| {
             segment
@@ -61,7 +61,7 @@ pub(crate) fn saved_section_coordinate_witnesses(
         definition
             .segments
             .iter()
-            .flat_map(|table| &table.circle_rows)
+            .flat_map(|table| table.rows.circles())
             .filter_map(|segment| {
                 (!ambiguous_point_ids.contains(&segment.center_id)).then_some(())?;
                 let (center, _) = saved_section_circle_values(definition, segment)?;
@@ -232,14 +232,18 @@ pub(crate) fn resolved_section_coordinates(
         None => (BTreeMap::new(), BTreeSet::new()),
     };
     let mut segment_counts = BTreeMap::new();
-    for segment in definition.segments.iter().flat_map(|table| &table.rows) {
+    for segment in definition
+        .segments
+        .iter()
+        .flat_map(|table| table.rows.ordinary())
+    {
         *segment_counts.entry(segment.external_id).or_insert(0usize) += 1;
     }
     let saved_segment_points = saved_section_coordinate_witnesses(definition, &ambiguous_point_ids);
     let segments = definition
         .segments
         .iter()
-        .flat_map(|table| &table.rows)
+        .flat_map(|table| table.rows.ordinary())
         .filter(|segment| matches!(segment.kind, crate::feature::FeatureSegmentKind::Line(_)))
         .filter(|segment| segment_counts[&segment.external_id] == 1)
         .filter(|segment| {
@@ -734,29 +738,28 @@ pub(crate) fn section_linear_distance_coordinate(
     // is a section endpoint. Opaque rows retain native identity but do not
     // prove an endpoint role.
     let has_unique_incident_entity = |point_id| {
-        table.rows.iter().any(|segment| {
-            segment.point_ids().contains(&point_id)
-                && table.external_id_count(segment.external_id) == 1
-        }) || table.point_rows.iter().any(|segment| {
-            segment.point_id == point_id && table.external_id_count(segment.external_id) == 1
-        }) || table.rows.iter().any(|segment| {
+        table.rows.ordinary().any(|segment| {
+            segment.point_ids().contains(&point_id) && table.rows.get(segment.external_id).is_some()
+        }) || table.rows.points().any(|segment| {
+            segment.point_id == point_id && table.rows.get(segment.external_id).is_some()
+        }) || table.rows.ordinary().any(|segment| {
             matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_))
                 && segment.center_id == Some(point_id)
-                && table.external_id_count(segment.external_id) == 1
-        }) || table.circle_rows.iter().any(|segment| {
-            segment.center_id == point_id && table.external_id_count(segment.external_id) == 1
+                && table.rows.get(segment.external_id).is_some()
+        }) || table.rows.circles().any(|segment| {
+            segment.center_id == point_id && table.rows.get(segment.external_id).is_some()
         }) || (matches!(point_id, 0 | 1)
             && table
-                .centered_line_rows
-                .iter()
-                .any(|segment| table.external_id_count(segment.external_id) == 1))
-            || table.reference_line_rows.iter().any(|segment| {
+                .rows
+                .centered_lines()
+                .any(|segment| table.rows.get(segment.external_id).is_some()))
+            || table.rows.reference_lines().any(|segment| {
                 segment.point_ids.contains(&Some(point_id))
-                    && table.external_id_count(segment.external_id) == 1
+                    && table.rows.get(segment.external_id).is_some()
             })
-            || table.bounded_curve_rows.iter().any(|segment| {
+            || table.rows.bounded_curves().any(|segment| {
                 segment.point_ids.contains(&point_id)
-                    && table.external_id_count(segment.external_id) == 1
+                    && table.rows.get(segment.external_id).is_some()
             })
     };
     has_unique_incident_entity(first).then_some(())?;
@@ -834,7 +837,7 @@ mod tests {
                 declared_count: 3,
                 has_elided_prototype: false,
                 entity_ref: None,
-                rows: vec![FeatureSegment {
+                rows: (vec![FeatureSegment {
                     kind: FeatureSegmentKind::Line([1, 2]),
                     directions: [None; 3],
                     center_id: None,
@@ -845,18 +848,19 @@ mod tests {
                     external_id: 7,
                     body: Vec::new(),
                     offset: 0,
-                }],
-                circle_rows: Vec::new(),
-                point_rows: vec![FeaturePointSegment {
-                    point_id: 2,
-                    external_id: 8,
-                    offset: 1,
-                }],
-                centered_line_rows: Vec::new(),
-                reference_line_rows: Vec::new(),
-                bounded_curve_rows: Vec::new(),
-                conic_rows: Vec::new(),
-                opaque_rows: Vec::new(),
+                }])
+                .into_iter()
+                .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+                .chain(
+                    (vec![FeaturePointSegment {
+                        point_id: 2,
+                        external_id: 8,
+                        offset: 1,
+                    }])
+                    .into_iter()
+                    .map(crate::feature::segment_rows::SegmentRow::Point),
+                )
+                .collect(),
                 offset: 0,
             }),
             trim_entities: None,
@@ -928,16 +932,26 @@ mod tests {
         );
 
         let mut duplicate_ordinary = definition.clone();
-        let duplicate = duplicate_ordinary.segments.as_ref().expect("segments").rows[0].clone();
+        let duplicate = duplicate_ordinary
+            .segments
+            .as_ref()
+            .expect("segments")
+            .rows
+            .ordinary()
+            .cloned()
+            .collect::<Vec<_>>()[0]
+            .clone();
         duplicate_ordinary
             .segments
             .as_mut()
             .expect("segments")
             .rows
-            .push(FeatureSegment {
-                offset: 2,
-                ..duplicate
-            });
+            .insert(crate::feature::segment_rows::SegmentRow::Ordinary(
+                FeatureSegment {
+                    offset: 2,
+                    ..duplicate
+                },
+            ));
         assert!(!resolved_section_points(&duplicate_ordinary).contains_key(&2));
 
         let mut duplicate_family = definition;
@@ -945,25 +959,32 @@ mod tests {
             .segments
             .as_mut()
             .expect("segments")
-            .point_rows
-            .push(FeaturePointSegment {
-                point_id: 1,
-                external_id: 7,
-                offset: 2,
-            });
+            .rows
+            .insert(crate::feature::segment_rows::SegmentRow::Point(
+                FeaturePointSegment {
+                    point_id: 1,
+                    external_id: 7,
+                    offset: 2,
+                },
+            ));
         assert!(!resolved_section_points(&duplicate_family).contains_key(&2));
     }
 
     #[test]
     fn incomplete_unique_spanning_line_selector_supplies_distance_axis() {
         let mut definition = incomplete_segment_definition();
-        definition.segments.as_mut().expect("segments").rows[0].vertical_horizontal = Some(0);
+        definition
+            .segments
+            .as_mut()
+            .expect("segments")
+            .rows
+            .edit_ordinary(|rows| rows[0].vertical_horizontal = Some(0));
         let segments = definition
             .segments
             .as_ref()
             .expect("segments")
             .rows
-            .iter()
+            .ordinary()
             .collect::<Vec<_>>();
         assert_eq!(
             super::section_linear_distance_coordinate(
@@ -979,22 +1000,27 @@ mod tests {
         );
 
         let mut duplicate = definition;
-        let duplicate_row = duplicate.segments.as_ref().expect("segments").rows[0].clone();
-        duplicate
+        let duplicate_row = duplicate
             .segments
-            .as_mut()
+            .as_ref()
             .expect("segments")
             .rows
-            .push(FeatureSegment {
+            .ordinary()
+            .cloned()
+            .collect::<Vec<_>>()[0]
+            .clone();
+        duplicate.segments.as_mut().expect("segments").rows.insert(
+            crate::feature::segment_rows::SegmentRow::Ordinary(FeatureSegment {
                 offset: 2,
                 ..duplicate_row
-            });
+            }),
+        );
         let duplicate_segments = duplicate
             .segments
             .as_ref()
             .expect("segments")
             .rows
-            .iter()
+            .ordinary()
             .collect::<Vec<_>>();
         assert_eq!(
             super::section_linear_distance_coordinate(
@@ -1015,27 +1041,27 @@ mod tests {
         let mut definition = incomplete_segment_definition();
         {
             let table = definition.segments.as_mut().expect("segments");
-            let mut arc = table.rows[0].clone();
+            let mut arc = table.rows.ordinary().cloned().collect::<Vec<_>>()[0].clone();
             arc.kind = FeatureSegmentKind::Arc([10, 11]);
             arc.center_id = Some(3);
             arc.external_id = 7;
             arc.vertical_horizontal = None;
-            let mut line = table.rows[0].clone();
+            let mut line = table.rows.ordinary().cloned().collect::<Vec<_>>()[0].clone();
             line.kind = FeatureSegmentKind::Line([4, 5]);
             line.center_id = None;
             line.external_id = 8;
             line.vertical_horizontal = None;
-            table.rows = vec![arc, line];
-            table.circle_rows.clear();
-            table.point_rows.clear();
-            table.centered_line_rows.clear();
-            table.reference_line_rows.clear();
-            table.bounded_curve_rows.clear();
-            table.conic_rows.clear();
-            table.opaque_rows.clear();
+            table.rows.edit_ordinary(|rows| *rows = vec![arc, line]);
+            table.rows.edit_circles(|rows| rows.clear());
+            table.rows.edit_points(|rows| rows.clear());
+            table.rows.edit_centered_lines(|rows| rows.clear());
+            table.rows.edit_reference_lines(|rows| rows.clear());
+            table.rows.edit_bounded_curves(|rows| rows.clear());
+            table.rows.edit_conics(|rows| rows.clear());
+            table.rows.edit_opaque(|rows| rows.clear());
         }
         let table = definition.segments.as_ref().expect("segments");
-        let segments = table.rows.iter().collect::<Vec<_>>();
+        let segments = table.rows.ordinary().collect::<Vec<_>>();
         let coordinates =
             BTreeMap::from([(3, [Some(1.0), Some(4.0)]), (4, [Some(1.0), Some(9.0)])]);
 
@@ -1055,17 +1081,19 @@ mod tests {
         let mut circle_definition = definition;
         {
             let table = circle_definition.segments.as_mut().expect("segments");
-            let line = table.rows[1].clone();
-            table.rows = vec![line];
-            table.circle_rows = vec![FeatureCircleSegment {
-                center_id: 3,
-                radius_ref: 0,
-                external_id: 9,
-                offset: 2,
-            }];
+            let line = table.rows.ordinary().cloned().collect::<Vec<_>>()[1].clone();
+            table.rows.edit_ordinary(|rows| *rows = vec![line]);
+            table.rows.edit_circles(|rows| {
+                *rows = vec![FeatureCircleSegment {
+                    center_id: 3,
+                    radius_ref: 0,
+                    external_id: 9,
+                    offset: 2,
+                }]
+            });
         }
         let table = circle_definition.segments.as_ref().expect("segments");
-        let segments = table.rows.iter().collect::<Vec<_>>();
+        let segments = table.rows.ordinary().collect::<Vec<_>>();
         assert_eq!(
             super::section_linear_distance_coordinate(
                 &circle_definition,

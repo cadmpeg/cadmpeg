@@ -37,7 +37,7 @@ pub(super) fn transfer_section_entities(
     definition: &crate::feature::FeatureDefinition,
     transform: Option<&crate::placement::FeatureSectionTransform>,
     sketch_id: &SketchId,
-    segments: &[crate::feature::FeatureSegment],
+    segments: &[&crate::feature::FeatureSegment],
     unique_segment_ids: &BTreeSet<u32>,
     unique_saved_ids: &BTreeSet<u32>,
     ambiguous_segment_ids: &BTreeSet<u32>,
@@ -175,7 +175,7 @@ pub(super) fn transfer_section_entities(
     for segment in definition
         .segments
         .iter()
-        .flat_map(|table| &table.circle_rows)
+        .flat_map(|table| table.rows.circles())
     {
         let unique_external_id = unique_segment_ids.contains(&segment.external_id);
         if unique_external_id
@@ -224,7 +224,7 @@ pub(super) fn transfer_section_entities(
     for segment in definition
         .segments
         .iter()
-        .flat_map(|table| &table.point_rows)
+        .flat_map(|table| table.rows.points())
     {
         let unique_external_id = unique_segment_ids.contains(&segment.external_id);
         if unique_external_id
@@ -272,7 +272,7 @@ pub(super) fn transfer_section_entities(
     for segment in definition
         .segments
         .iter()
-        .flat_map(|table| &table.centered_line_rows)
+        .flat_map(|table| table.rows.centered_lines())
     {
         let unique_external_id = unique_segment_ids.contains(&segment.external_id);
         if unique_external_id
@@ -325,7 +325,7 @@ pub(super) fn transfer_section_entities(
     for segment in definition
         .segments
         .iter()
-        .flat_map(|table| &table.reference_line_rows)
+        .flat_map(|table| table.rows.reference_lines())
     {
         let unique_external_id = unique_segment_ids.contains(&segment.external_id);
         if unique_external_id
@@ -380,7 +380,7 @@ pub(super) fn transfer_section_entities(
     for segment in definition
         .segments
         .iter()
-        .flat_map(|table| &table.bounded_curve_rows)
+        .flat_map(|table| table.rows.bounded_curves())
     {
         let unique_external_id = unique_segment_ids.contains(&segment.external_id);
         if unique_external_id
@@ -424,7 +424,7 @@ pub(super) fn transfer_section_entities(
     for segment in definition
         .segments
         .iter()
-        .flat_map(|table| &table.conic_rows)
+        .flat_map(|table| table.rows.conics())
     {
         let unique_external_id = unique_segment_ids.contains(&segment.external_id);
         if unique_external_id
@@ -461,7 +461,7 @@ pub(super) fn transfer_section_entities(
     for segment in definition
         .segments
         .iter()
-        .flat_map(|table| &table.opaque_rows)
+        .flat_map(|table| table.rows.opaque())
     {
         let unique_external_id = unique_segment_ids.contains(&segment.external_id);
         if unique_external_id
@@ -737,7 +737,7 @@ pub(super) fn transfer_section_entities(
         for segment in definition
             .segments
             .iter()
-            .flat_map(|segments| &segments.circle_rows)
+            .flat_map(|segments| segments.rows.circles())
         {
             let Some(section_geometry) = circle_geometries.get(&segment.offset).cloned() else {
                 continue;
@@ -783,7 +783,7 @@ pub(super) fn transfer_section_entities(
         for segment in definition
             .segments
             .iter()
-            .flat_map(|segments| &segments.centered_line_rows)
+            .flat_map(|segments| segments.rows.centered_lines())
         {
             let Some(section_geometry) = centered_line_geometries.get(&segment.offset).cloned()
             else {

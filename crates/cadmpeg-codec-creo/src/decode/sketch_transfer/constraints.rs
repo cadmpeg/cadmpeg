@@ -429,7 +429,7 @@ pub(in super::super) fn relation_incidence_loci(
 pub(in super::super) fn section_angular_entities(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
-    segments: &[crate::feature::FeatureSegment],
+    segments: &[&crate::feature::FeatureSegment],
     vectors: [[Option<u32>; 4]; 3],
     known_entities: &BTreeSet<u32>,
 ) -> Option<[SketchEntityId; 2]> {
@@ -511,7 +511,7 @@ fn section_segment_radius_bindings(
     let Some(segments) = definition.segments.as_ref() else {
         return bindings;
     };
-    for segment in &segments.rows {
+    for segment in segments.rows.ordinary() {
         let suffix = section_segment_identity_suffix(&unique_segment_ids, segment);
         for (field, ordinal) in [
             ("radius", segment.radius_ref),
@@ -530,7 +530,7 @@ fn section_segment_radius_bindings(
             });
         }
     }
-    for segment in &segments.circle_rows {
+    for segment in segments.rows.circles() {
         let suffix = if unique_segment_ids.contains(&segment.external_id) {
             segment.external_id.to_string()
         } else {
@@ -559,7 +559,7 @@ fn section_segment_radius_bindings(
             typed_circle,
         });
     }
-    for segment in &segments.opaque_rows {
+    for segment in segments.rows.opaque() {
         let suffix = opaque_section_segment_identity_suffix(&unique_segment_ids, segment);
         for (field, ordinal) in [
             ("radius", segment.radius_ref),
@@ -699,7 +699,7 @@ pub(in super::super) fn section_equation_radius_dimension_constraints(
     };
     let unique_segment_ids = unique_section_segment_external_ids(definition);
     let mut entities_by_radius = BTreeMap::<u32, Vec<u32>>::new();
-    for segment in segments.rows.iter().filter(|segment| {
+    for segment in segments.rows.ordinary().filter(|segment| {
         matches!(segment.kind, crate::feature::FeatureSegmentKind::Arc(_))
             && unique_segment_ids.contains(&segment.external_id)
     }) {
@@ -711,8 +711,8 @@ pub(in super::super) fn section_equation_radius_dimension_constraints(
         }
     }
     for segment in segments
-        .circle_rows
-        .iter()
+        .rows
+        .circles()
         .filter(|segment| unique_segment_ids.contains(&segment.external_id))
     {
         entities_by_radius
@@ -1372,7 +1372,7 @@ pub(in super::super) fn section_equation_point_on_line_constraints(
                     definition
                         .segments
                         .iter()
-                        .flat_map(|table| &table.reference_line_rows)
+                        .flat_map(|table| table.rows.reference_lines())
                         .filter(|segment| {
                             unique_segment_ids.contains(&segment.external_id)
                                 && (segment.point_ids
@@ -1386,7 +1386,7 @@ pub(in super::super) fn section_equation_point_on_line_constraints(
                     definition
                         .segments
                         .iter()
-                        .flat_map(|table| &table.centered_line_rows)
+                        .flat_map(|table| table.rows.centered_lines())
                         .filter(|segment| {
                             unique_segment_ids.contains(&segment.external_id)
                                 && matches!([equation.first, equation.second], [0, 1] | [1, 0])
@@ -1706,7 +1706,7 @@ pub(in super::super) fn section_dimension_constraints(
         return Vec::new();
     };
     let segments = section_segment_rows(definition);
-    let segment_refs = segments.iter().collect::<Vec<_>>();
+
     let known_entities = section_entity_external_ids(definition);
     let ambiguous_point_ids = definition
         .variables
@@ -1750,7 +1750,7 @@ pub(in super::super) fn section_dimension_constraints(
                     let [first, second] = section_angular_entities(
                         definition,
                         sketch,
-                        segments,
+                        &segments,
                         relation.operand_vectors?,
                         &known_entities,
                     )?;
@@ -1832,7 +1832,7 @@ pub(in super::super) fn section_dimension_constraints(
                             definition
                                 .segments
                                 .iter()
-                                .flat_map(|table| &table.circle_rows)
+                                .flat_map(|table| table.rows.circles())
                                 .map(|segment| (segment.external_id, Some(segment.radius_ref))),
                         )
                         .filter(|(_, radius_ref)| *radius_ref == Some(radius_id))
@@ -1855,7 +1855,7 @@ pub(in super::super) fn section_dimension_constraints(
                         if let [Some(first_id), Some(second_id), _, _] = vectors[0] {
                             let coordinate = section_linear_distance_coordinate(
                                 definition,
-                                &segment_refs,
+                                &segments,
                                 first_id,
                                 second_id,
                                 &resolved_coordinates,

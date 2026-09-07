@@ -216,7 +216,7 @@ pub(crate) fn saved_section_line_geometry(
         .or_else(|| {
             let segment_table = definition.segments.as_ref()?;
             segment_table.is_complete().then_some(())?;
-            let segments = &segment_table.rows;
+            let segments = segment_table.rows.ordinary().collect::<Vec<_>>();
             let position = segments
                 .iter()
                 .position(|candidate| candidate.external_id == segment.external_id)?;
@@ -256,9 +256,7 @@ pub(crate) fn saved_section_line_geometry(
                 .iter()
                 .map(|row| row.internal_id)
                 .collect::<BTreeSet<_>>();
-            let segment_ids = segment_table
-                .rows
-                .iter()
+            let segment_ids = segment_table.rows.ordinary()
                 .filter(|candidate| {
                     matches!(candidate.kind, crate::feature::FeatureSegmentKind::Line(_))
                         && trimmed_external_ids.contains(&candidate.external_id)
@@ -457,7 +455,7 @@ pub(crate) fn saved_section_circle_values(
     segment: &crate::feature::FeatureCircleSegment,
 ) -> Option<([f64; 2], f64)> {
     let segments = definition.segments.as_ref()?;
-    (segments.external_id_count(segment.external_id) == 1).then_some(())?;
+    segments.rows.get(segment.external_id)?;
     let entity = section_saved_entity(definition, segment.external_id)?;
     let (_, geometry, _) = saved_section_entity_geometry(entity)?;
     let SketchGeometry::Circle { center, radius } = geometry else {
@@ -685,7 +683,7 @@ pub(crate) fn saved_section_missing_line_geometry(
         .collect::<BTreeSet<_>>();
     let missing = segments
         .rows
-        .iter()
+        .ordinary()
         .filter(|candidate| {
             matches!(candidate.kind, crate::feature::FeatureSegmentKind::Line(_))
                 && order.internal_id(candidate.external_id).is_none()

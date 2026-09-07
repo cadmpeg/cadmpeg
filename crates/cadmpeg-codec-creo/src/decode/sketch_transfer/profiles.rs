@@ -11,6 +11,7 @@ use super::{
     unique_centered_line_segment, unique_circle_segment, unique_point_segment,
     unique_reference_line_segment,
 };
+use crate::feature::segment_rows::SegmentRow;
 use cadmpeg_ir::sketches::{SketchEntityUse, SketchId};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -153,7 +154,7 @@ pub(in super::super) fn resolved_segment_profile_chains(
     };
     let rows = table
         .rows
-        .iter()
+        .ordinary()
         .filter(|segment| {
             emitted.contains(&segment.external_id)
                 && matches!(
@@ -249,34 +250,7 @@ pub(in super::super) fn solver_only_section_entities(
     let declared_segment_ids = definition
         .segments
         .iter()
-        .flat_map(|table| {
-            table
-                .rows
-                .iter()
-                .map(|segment| segment.external_id)
-                .chain(table.circle_rows.iter().map(|segment| segment.external_id))
-                .chain(table.point_rows.iter().map(|segment| segment.external_id))
-                .chain(
-                    table
-                        .centered_line_rows
-                        .iter()
-                        .map(|segment| segment.external_id),
-                )
-                .chain(
-                    table
-                        .reference_line_rows
-                        .iter()
-                        .map(|segment| segment.external_id),
-                )
-                .chain(
-                    table
-                        .bounded_curve_rows
-                        .iter()
-                        .map(|segment| segment.external_id),
-                )
-                .chain(table.conic_rows.iter().map(|segment| segment.external_id))
-                .chain(table.opaque_rows.iter().map(|segment| segment.external_id))
-        })
+        .flat_map(|table| table.rows.ids())
         .collect::<BTreeSet<_>>();
     definition
         .relations
@@ -487,13 +461,10 @@ fn unique_opaque_section_entity(
     definition: &crate::feature::FeatureDefinition,
     entity_id: u32,
 ) -> bool {
-    definition.segments.as_ref().is_some_and(|segments| {
-        segments
-            .opaque_rows
-            .iter()
-            .any(|segment| segment.external_id == entity_id)
-            && segments.external_id_count(entity_id) == 1
-    })
+    definition
+        .segments
+        .as_ref()
+        .is_some_and(|segments| matches!(segments.rows.get(entity_id), Some(SegmentRow::Opaque(_))))
 }
 
 pub(in super::super) fn unique_section_incidence_curve_family(
@@ -657,14 +628,15 @@ mod tests {
                     .expect("segment count"),
                 has_elided_prototype: false,
                 entity_ref: None,
-                rows: Vec::new(),
-                circle_rows: Vec::new(),
-                point_rows,
-                centered_line_rows: Vec::new(),
-                reference_line_rows: Vec::new(),
-                bounded_curve_rows: Vec::new(),
-                conic_rows: Vec::new(),
-                opaque_rows,
+                rows: (point_rows)
+                    .into_iter()
+                    .map(crate::feature::segment_rows::SegmentRow::Point)
+                    .chain(
+                        (opaque_rows)
+                            .into_iter()
+                            .map(crate::feature::segment_rows::SegmentRow::Opaque),
+                    )
+                    .collect(),
                 offset: 0,
             }),
             trim_entities: None,
@@ -715,7 +687,11 @@ mod tests {
     fn type35_line_family_requires_unique_native_target() {
         let mut definition = definition(101, true);
         let segments = definition.segments.as_mut().expect("segments");
-        segments.opaque_rows.push(opaque(101));
+        segments
+            .rows
+            .insert(crate::feature::segment_rows::SegmentRow::Opaque(opaque(
+                101,
+            )));
         segments.declared_count = 2;
         assert_eq!(
             unique_section_incidence_curve_family(&definition, 101),
@@ -764,7 +740,11 @@ mod tests {
     fn type_zero_point_family_requires_unique_native_target() {
         let mut definition = definition(101, true);
         let segments = definition.segments.as_mut().expect("segments");
-        segments.opaque_rows.push(opaque(101));
+        segments
+            .rows
+            .insert(crate::feature::segment_rows::SegmentRow::Opaque(opaque(
+                101,
+            )));
         segments.declared_count += 1;
         definition
             .relations
@@ -784,17 +764,16 @@ mod tests {
     #[test]
     fn center_role_normalizes_bounded_curve_solver_family_to_arc() {
         let mut definition = definition(201, false);
-        definition
-            .segments
-            .as_mut()
-            .expect("segments")
-            .circle_rows
-            .push(crate::feature::FeatureCircleSegment {
-                center_id: 0,
-                radius_ref: 1,
-                external_id: 22,
-                offset: 22,
-            });
+        definition.segments.as_mut().expect("segments").rows.insert(
+            crate::feature::segment_rows::SegmentRow::Circle(
+                crate::feature::FeatureCircleSegment {
+                    center_id: 0,
+                    radius_ref: 1,
+                    external_id: 22,
+                    offset: 22,
+                },
+            ),
+        );
         definition
             .segments
             .as_mut()

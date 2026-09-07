@@ -786,7 +786,7 @@ pub(in super::super) fn source_meta(
             .definitions
             .iter()
             .filter_map(|definition| definition.segments.as_ref())
-            .map(|segments| segments.circle_rows.len())
+            .map(|segments| segments.rows.circles().count())
             .sum::<usize>(),
     );
     coverage.record(
@@ -795,7 +795,7 @@ pub(in super::super) fn source_meta(
             .definitions
             .iter()
             .filter_map(|definition| definition.segments.as_ref())
-            .map(|segments| segments.point_rows.len())
+            .map(|segments| segments.rows.points().count())
             .sum::<usize>(),
     );
     coverage.record(
@@ -804,7 +804,7 @@ pub(in super::super) fn source_meta(
             .definitions
             .iter()
             .filter_map(|definition| definition.segments.as_ref())
-            .map(|segments| segments.centered_line_rows.len())
+            .map(|segments| segments.rows.centered_lines().count())
             .sum::<usize>(),
     );
     coverage.record(
@@ -813,7 +813,7 @@ pub(in super::super) fn source_meta(
             .definitions
             .iter()
             .filter_map(|definition| definition.segments.as_ref())
-            .map(|segments| segments.reference_line_rows.len())
+            .map(|segments| segments.rows.reference_lines().count())
             .sum::<usize>(),
     );
     coverage.record(
@@ -822,7 +822,7 @@ pub(in super::super) fn source_meta(
             .definitions
             .iter()
             .filter_map(|definition| definition.segments.as_ref())
-            .map(|segments| segments.bounded_curve_rows.len())
+            .map(|segments| segments.rows.bounded_curves().count())
             .sum::<usize>(),
     );
     coverage.record(
@@ -831,7 +831,7 @@ pub(in super::super) fn source_meta(
             .definitions
             .iter()
             .filter_map(|definition| definition.segments.as_ref())
-            .map(|segments| segments.conic_rows.len())
+            .map(|segments| segments.rows.conics().count())
             .sum::<usize>(),
     );
     coverage.record(
@@ -840,7 +840,7 @@ pub(in super::super) fn source_meta(
             .definitions
             .iter()
             .filter_map(|definition| definition.segments.as_ref())
-            .map(|segments| segments.opaque_rows.len())
+            .map(|segments| segments.rows.opaque().count())
             .sum::<usize>(),
     );
     coverage.record(

@@ -184,14 +184,10 @@ fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() 
             declared_count: 3,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: vec![point(10, 1), point(11, 2), point(12, 3)],
-            circle_rows: Vec::new(),
-            point_rows: Vec::new(),
-            centered_line_rows: Vec::new(),
-            reference_line_rows: Vec::new(),
-            bounded_curve_rows: Vec::new(),
-            conic_rows: Vec::new(),
-            opaque_rows: Vec::new(),
+            rows: (vec![point(10, 1), point(11, 2), point(12, 3)])
+                .into_iter()
+                .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+                .collect(),
             offset: 0,
         }),
         trim_entities: None,
@@ -308,19 +304,15 @@ fn equation_function_two_emits_radius_dimension_constraint_with_incomplete_segme
             declared_count: 2,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: Vec::new(),
-            circle_rows: vec![crate::feature::FeatureCircleSegment {
+            rows: (vec![crate::feature::FeatureCircleSegment {
                 center_id: 11,
                 radius_ref: 42,
                 external_id: 13,
                 offset: 13,
-            }],
-            point_rows: Vec::new(),
-            centered_line_rows: Vec::new(),
-            reference_line_rows: Vec::new(),
-            bounded_curve_rows: Vec::new(),
-            conic_rows: Vec::new(),
-            opaque_rows: Vec::new(),
+            }])
+            .into_iter()
+            .map(crate::feature::segment_rows::SegmentRow::Circle)
+            .collect(),
             offset: 0,
         }),
         trim_entities: None,
@@ -460,14 +452,10 @@ fn equation_function_zero_emits_polar_distance_constraint() {
             declared_count: 2,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: vec![line(10, [1, 3]), line(11, [2, 4])],
-            circle_rows: Vec::new(),
-            point_rows: Vec::new(),
-            centered_line_rows: Vec::new(),
-            reference_line_rows: Vec::new(),
-            bounded_curve_rows: Vec::new(),
-            conic_rows: Vec::new(),
-            opaque_rows: Vec::new(),
+            rows: (vec![line(10, [1, 3]), line(11, [2, 4])])
+                .into_iter()
+                .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+                .collect(),
             offset: 0,
         }),
         trim_entities: None,
@@ -630,14 +618,10 @@ fn equation_function_six_emits_fixed_distance_constraint() {
             declared_count: 2,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: vec![line(10, [10, 12]), line(11, [11, 13])],
-            circle_rows: Vec::new(),
-            point_rows: Vec::new(),
-            centered_line_rows: Vec::new(),
-            reference_line_rows: Vec::new(),
-            bounded_curve_rows: Vec::new(),
-            conic_rows: Vec::new(),
-            opaque_rows: Vec::new(),
+            rows: (vec![line(10, [10, 12]), line(11, [11, 13])])
+                .into_iter()
+                .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+                .collect(),
             offset: 0,
         }),
         trim_entities: None,
@@ -789,14 +773,10 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
             declared_count: 2,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: vec![line(30, [10, 12]), line(31, [11, 13])],
-            circle_rows: Vec::new(),
-            point_rows: Vec::new(),
-            centered_line_rows: Vec::new(),
-            reference_line_rows: Vec::new(),
-            bounded_curve_rows: Vec::new(),
-            conic_rows: Vec::new(),
-            opaque_rows: Vec::new(),
+            rows: (vec![line(30, [10, 12]), line(31, [11, 13])])
+                .into_iter()
+                .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+                .collect(),
             offset: 0,
         }),
         trim_entities: None,
@@ -906,14 +886,10 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
             declared_count: 1,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: vec![line(30, [10, 12])],
-            circle_rows: Vec::new(),
-            point_rows: Vec::new(),
-            centered_line_rows: Vec::new(),
-            reference_line_rows: Vec::new(),
-            bounded_curve_rows: Vec::new(),
-            conic_rows: Vec::new(),
-            opaque_rows: Vec::new(),
+            rows: (vec![line(30, [10, 12])])
+                .into_iter()
+                .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+                .collect(),
             offset: 0,
         }),
         trim_entities: None,
@@ -1052,14 +1028,10 @@ fn equation_function_thirty_three_emits_equal_distance_pairs() {
             declared_count: 2,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: vec![line(10, [1, 2]), line(11, [3, 4])],
-            circle_rows: Vec::new(),
-            point_rows: Vec::new(),
-            centered_line_rows: Vec::new(),
-            reference_line_rows: Vec::new(),
-            bounded_curve_rows: Vec::new(),
-            conic_rows: Vec::new(),
-            opaque_rows: Vec::new(),
+            rows: (vec![line(10, [1, 2]), line(11, [3, 4])])
+                .into_iter()
+                .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+                .collect(),
             offset: 0,
         }),
         trim_entities: None,
@@ -1200,17 +1172,13 @@ fn equation_function_thirty_five_emits_point_on_line() {
             declared_count: 2,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: vec![
+            rows: (vec![
                 segment(crate::feature::FeatureSegmentKind::Line([1, 2]), 10),
                 segment(crate::feature::FeatureSegmentKind::Point(3), 12),
-            ],
-            circle_rows: Vec::new(),
-            point_rows: Vec::new(),
-            centered_line_rows: Vec::new(),
-            reference_line_rows: Vec::new(),
-            bounded_curve_rows: Vec::new(),
-            conic_rows: Vec::new(),
-            opaque_rows: Vec::new(),
+            ])
+            .into_iter()
+            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+            .collect(),
             offset: 0,
         }),
         trim_entities: None,
@@ -1243,16 +1211,18 @@ fn equation_function_thirty_five_emits_point_on_line() {
         .segments
         .as_mut()
         .expect("segments");
-    segments
-        .rows
-        .retain(|segment| matches!(segment.kind, crate::feature::FeatureSegmentKind::Point(_)));
-    segments.reference_line_rows = vec![crate::feature::FeatureReferenceLineSegment {
-        directions: [None; 3],
-        point_ids: [Some(1), Some(2)],
-        vertical_horizontal: None,
-        external_id: 10,
-        offset: 10,
-    }];
+    segments.rows.edit_ordinary(|rows| {
+        rows.retain(|segment| matches!(segment.kind, crate::feature::FeatureSegmentKind::Point(_)))
+    });
+    segments.rows.edit_reference_lines(|rows| {
+        *rows = vec![crate::feature::FeatureReferenceLineSegment {
+            directions: [None; 3],
+            point_ids: [Some(1), Some(2)],
+            vertical_horizontal: None,
+            external_id: 10,
+            offset: 10,
+        }]
+    });
     let reference_line_constraints =
         section_equation_point_on_line_constraints(&reference_line_definition, &sketch);
     assert_eq!(reference_line_constraints.len(), 1);
@@ -1353,7 +1323,7 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
             declared_count: 1,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: vec![crate::feature::FeatureSegment {
+            rows: (vec![crate::feature::FeatureSegment {
                 kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
                 directions: [None; 3],
                 center_id: None,
@@ -1364,14 +1334,10 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
                 external_id: 10,
                 body: Vec::new(),
                 offset: 10,
-            }],
-            circle_rows: Vec::new(),
-            point_rows: Vec::new(),
-            centered_line_rows: Vec::new(),
-            reference_line_rows: Vec::new(),
-            bounded_curve_rows: Vec::new(),
-            conic_rows: Vec::new(),
-            opaque_rows: Vec::new(),
+            }])
+            .into_iter()
+            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+            .collect(),
             offset: 0,
         }),
         trim_entities: None,
@@ -1502,7 +1468,7 @@ fn equation_function_forty_three_emits_parameterized_axis_distance() {
             declared_count: 1,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: vec![crate::feature::FeatureSegment {
+            rows: (vec![crate::feature::FeatureSegment {
                 kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
                 directions: [None; 3],
                 center_id: None,
@@ -1513,14 +1479,10 @@ fn equation_function_forty_three_emits_parameterized_axis_distance() {
                 external_id: 10,
                 body: Vec::new(),
                 offset: 10,
-            }],
-            circle_rows: Vec::new(),
-            point_rows: Vec::new(),
-            centered_line_rows: Vec::new(),
-            reference_line_rows: Vec::new(),
-            bounded_curve_rows: Vec::new(),
-            conic_rows: Vec::new(),
-            opaque_rows: Vec::new(),
+            }])
+            .into_iter()
+            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+            .collect(),
             offset: 0,
         }),
         trim_entities: None,

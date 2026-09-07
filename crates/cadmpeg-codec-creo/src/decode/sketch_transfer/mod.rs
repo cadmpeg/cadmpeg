@@ -75,9 +75,9 @@ pub(super) use identity::{
     saved_section_entity_identity, saved_section_entity_is_elided_prototype,
     saved_section_external_id, saved_section_line_witness_allowed,
     saved_section_ordinary_geometry_allowed, section_entity_external_ids,
-    section_segment_external_id_counts, section_segment_identity_suffix,
-    semantic_saved_section_entities, unique_saved_section_internal_ids,
-    unique_section_segment_external_ids, unresolved_saved_section_entity, SavedSectionEntityKind,
+    section_segment_identity_suffix, semantic_saved_section_entities,
+    unique_saved_section_internal_ids, unique_section_segment_external_ids,
+    unresolved_saved_section_entity, SavedSectionEntityKind,
 };
 
 #[allow(unused_imports)]

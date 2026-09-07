@@ -160,7 +160,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
         declared_count: 4,
         has_elided_prototype: false,
         entity_ref: None,
-        rows: [(10, [1, 2]), (11, [2, 3]), (12, [3, 4]), (13, [4, 1])]
+        rows: ([(10, [1, 2]), (11, [2, 3]), (12, [3, 4]), (13, [4, 1])]
             .into_iter()
             .map(|(external_id, point_ids)| crate::feature::FeatureSegment {
                 kind: crate::feature::FeatureSegmentKind::Line(point_ids),
@@ -174,14 +174,10 @@ fn profile_chain_follows_trim_vertex_incidence() {
                 body: Vec::new(),
                 offset: external_id as usize,
             })
-            .collect(),
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
+            .collect::<Vec<_>>())
+        .into_iter()
+        .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+        .collect(),
         offset: 2,
     });
     incomplete_trim_graph
@@ -224,7 +220,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
         declared_count: 2,
         has_elided_prototype: false,
         entity_ref: None,
-        rows: [10, 11]
+        rows: ([10, 11]
             .into_iter()
             .map(|external_id| crate::feature::FeatureSegment {
                 kind: crate::feature::FeatureSegmentKind::Arc([1, 2]),
@@ -238,14 +234,10 @@ fn profile_chain_follows_trim_vertex_incidence() {
                 body: Vec::new(),
                 offset: external_id as usize,
             })
-            .collect(),
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
+            .collect::<Vec<_>>())
+        .into_iter()
+        .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+        .collect(),
         offset: 4,
     });
     let arc_profile = resolved_profile_chains(
@@ -262,7 +254,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
         declared_count: 5,
         has_elided_prototype: false,
         entity_ref: None,
-        rows: [
+        rows: ([
             (10, [1, 2]),
             (11, [3, 2]),
             (12, [3, 4]),
@@ -282,14 +274,10 @@ fn profile_chain_follows_trim_vertex_incidence() {
             body: Vec::new(),
             offset: external_id as usize,
         })
+        .collect::<Vec<_>>())
+        .into_iter()
+        .map(crate::feature::segment_rows::SegmentRow::Ordinary)
         .collect(),
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
         offset: 4,
     });
     let segment_profile = resolved_profile_chains(
@@ -363,7 +351,7 @@ fn revolution_axis_uses_the_unique_complete_section_centerline() {
             declared_count: 1,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: vec![crate::feature::FeatureSegment {
+            rows: (vec![crate::feature::FeatureSegment {
                 kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
                 directions: [None; 3],
                 center_id: None,
@@ -374,14 +362,10 @@ fn revolution_axis_uses_the_unique_complete_section_centerline() {
                 external_id: 1,
                 body: Vec::new(),
                 offset: 2,
-            }],
-            circle_rows: Vec::new(),
-            point_rows: Vec::new(),
-            centered_line_rows: Vec::new(),
-            reference_line_rows: Vec::new(),
-            bounded_curve_rows: Vec::new(),
-            conic_rows: Vec::new(),
-            opaque_rows: Vec::new(),
+            }])
+            .into_iter()
+            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+            .collect(),
             offset: 2,
         }),
         trim_entities: None,
@@ -576,7 +560,7 @@ fn named_revolve_transfers_profile_axis() {
             declared_count: 1,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: vec![crate::feature::FeatureSegment {
+            rows: (vec![crate::feature::FeatureSegment {
                 kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
                 directions: [None; 3],
                 center_id: None,
@@ -587,14 +571,10 @@ fn named_revolve_transfers_profile_axis() {
                 external_id: 1,
                 body: Vec::new(),
                 offset: 0,
-            }],
-            circle_rows: Vec::new(),
-            point_rows: Vec::new(),
-            centered_line_rows: Vec::new(),
-            reference_line_rows: Vec::new(),
-            bounded_curve_rows: Vec::new(),
-            conic_rows: Vec::new(),
-            opaque_rows: Vec::new(),
+            }])
+            .into_iter()
+            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+            .collect(),
             offset: 0,
         }),
         trim_entities: None,
@@ -854,14 +834,7 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
             declared_count: 1,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: Vec::new(),
-            circle_rows: Vec::new(),
-            point_rows: Vec::new(),
-            centered_line_rows: Vec::new(),
-            reference_line_rows: Vec::new(),
-            bounded_curve_rows: Vec::new(),
-            conic_rows: Vec::new(),
-            opaque_rows: vec![crate::feature::FeatureOpaqueSegment {
+            rows: (vec![crate::feature::FeatureOpaqueSegment {
                 kind: 25,
                 directions: [None; 3],
                 point_ids: [Some(1), Some(2)],
@@ -873,7 +846,10 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
                 external_id: 42,
                 body: Vec::new(),
                 offset: 20,
-            }],
+            }])
+            .into_iter()
+            .map(crate::feature::segment_rows::SegmentRow::Opaque)
+            .collect(),
             offset: 20,
         }),
         trim_entities: None,
@@ -923,14 +899,19 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         .segments
         .as_ref()
         .expect("segments")
-        .opaque_rows[0]
+        .rows
+        .opaque()
+        .cloned()
+        .collect::<Vec<_>>()[0]
         .clone();
     ambiguous_external_id
         .segments
         .as_mut()
         .expect("segments")
-        .opaque_rows
-        .push(duplicate_opaque);
+        .rows
+        .insert(crate::feature::segment_rows::SegmentRow::Opaque(
+            duplicate_opaque,
+        ));
     ambiguous_external_id
         .segments
         .as_mut()
@@ -943,8 +924,8 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
         .segments
         .as_mut()
         .expect("segments")
-        .opaque_rows
-        .pop();
+        .rows
+        .edit_opaque(|rows| rows.pop());
     assert_eq!(
         materialized_saved_section_external_ids(&incomplete_segment_table),
         BTreeSet::from([42])

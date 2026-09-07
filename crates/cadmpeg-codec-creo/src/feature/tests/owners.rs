@@ -603,12 +603,24 @@ fn positional_saved_section_replays_its_segment_table() {
     assert_eq!(segments.declared_count, 3);
     assert!(segments.has_elided_prototype);
     assert_eq!(segments.entity_ref, Some(1));
-    assert_eq!(segments.rows.len(), 2);
+    assert_eq!(segments.rows.ordinary().count(), 2);
     assert!(segments.is_complete());
-    assert_eq!(segments.rows[0].point_ids(), [7, 8]);
-    assert!(matches!(segments.rows[1].kind, FeatureSegmentKind::Arc(_)));
-    assert_eq!(segments.rows[1].center_id, Some(10));
-    assert_eq!(segments.rows[1].external_id, 43);
+    assert_eq!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[0].point_ids(),
+        [7, 8]
+    );
+    assert!(matches!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[1].kind,
+        FeatureSegmentKind::Arc(_)
+    ));
+    assert_eq!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[1].center_id,
+        Some(10)
+    );
+    assert_eq!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[1].external_id,
+        43
+    );
 }
 
 #[test]
@@ -624,11 +636,20 @@ fn positional_segment_table_stops_at_the_next_s2d_record() {
 
     assert_eq!(segments.declared_count, 3);
     assert!(segments.has_elided_prototype);
-    assert_eq!(segments.rows.len(), 2);
+    assert_eq!(segments.rows.ordinary().count(), 2);
     assert!(segments.is_complete());
-    assert_eq!(segments.segment(42), Some(&segments.rows[0]));
-    assert_eq!(segments.rows[0].external_id, 42);
-    assert_eq!(segments.rows[1].external_id, 43);
+    assert_eq!(
+        segments.segment(42),
+        Some(&segments.rows.ordinary().cloned().collect::<Vec<_>>()[0])
+    );
+    assert_eq!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[0].external_id,
+        42
+    );
+    assert_eq!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[1].external_id,
+        43
+    );
 }
 
 #[test]
@@ -640,8 +661,11 @@ fn positional_segment_extent_excludes_rows_after_the_declared_extent() {
     let segments = positional_segment_table(&payload, 0, payload.len()).expect("positional segtab");
 
     assert!(segments.has_elided_prototype);
-    assert_eq!(segments.rows.len(), 1);
-    assert_eq!(segments.rows[0].external_id, 42);
+    assert_eq!(segments.rows.ordinary().count(), 1);
+    assert_eq!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[0].external_id,
+        42
+    );
     assert!(segments.is_complete());
 }
 
@@ -655,9 +679,15 @@ fn positional_segment_rows_follow_variable_structural_trailers() {
     let segments = positional_segment_table(&payload, 0, payload.len()).expect("positional segtab");
 
     assert!(segments.is_complete());
-    assert_eq!(segments.rows.len(), 2);
-    assert!(matches!(segments.rows[1].kind, FeatureSegmentKind::Arc(_)));
-    assert_eq!(segments.rows[1].external_id, 43);
+    assert_eq!(segments.rows.ordinary().count(), 2);
+    assert!(matches!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[1].kind,
+        FeatureSegmentKind::Arc(_)
+    ));
+    assert_eq!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[1].external_id,
+        43
+    );
 }
 
 #[test]
@@ -666,7 +696,7 @@ fn segment_tables_retain_extents_without_decoded_rows() {
     let segments = segment_table(named, 0, named.len()).expect("named segtab header");
     assert_eq!(segments.declared_count, 2);
     assert_eq!(segments.entity_ref, Some(1));
-    assert!(segments.rows.is_empty());
+    assert!(segments.rows.ordinary().next().is_none());
     assert!(!segments.is_complete());
 
     let positional = b"\xf8\x02\xf7\x01\xfb\xe2\xf2\xf7\x01\xe2";
@@ -674,7 +704,7 @@ fn segment_tables_retain_extents_without_decoded_rows() {
         .expect("positional segtab header");
     assert_eq!(segments.declared_count, 2);
     assert_eq!(segments.entity_ref, Some(1));
-    assert!(segments.rows.is_empty());
+    assert!(segments.rows.ordinary().next().is_none());
     assert!(!segments.is_complete());
 }
 
@@ -698,12 +728,19 @@ fn segment_tables_type_section_reference_lines() {
     let segments = segment_table(&payload, 0, payload.len()).expect("segment table");
 
     assert!(segments.is_complete());
-    assert!(segments.rows.is_empty());
-    assert_eq!(segments.point_rows.len(), 1);
-    assert_eq!(segments.point_rows[0].point_id, 0);
-    assert_eq!(segments.point_rows[0].external_id, 4);
-    assert!(segments.opaque_rows.is_empty());
-    let [reference] = segments.reference_line_rows.as_slice() else {
+    assert!(segments.rows.ordinary().next().is_none());
+    assert_eq!(segments.rows.points().count(), 1);
+    assert_eq!(
+        segments.rows.points().cloned().collect::<Vec<_>>()[0].point_id,
+        0
+    );
+    assert_eq!(
+        segments.rows.points().cloned().collect::<Vec<_>>()[0].external_id,
+        4
+    );
+    assert!(segments.rows.opaque().next().is_none());
+    let references = segments.rows.reference_lines().collect::<Vec<_>>();
+    let [reference] = references.as_slice() else {
         panic!("one reference line");
     };
     assert_eq!(reference.directions, [Some(0), Some(1), Some(0)]);
@@ -718,8 +755,8 @@ fn segment_tables_type_section_reference_lines() {
     let segments = segment_table_body(&malformed_known, 0, 0, malformed_known.len(), false)
         .expect("malformed known segment table");
     assert!(!segments.is_complete());
-    assert!(segments.rows.is_empty());
-    assert!(segments.opaque_rows.is_empty());
+    assert!(segments.rows.ordinary().next().is_none());
+    assert!(segments.rows.opaque().next().is_none());
 }
 
 #[test]
@@ -733,9 +770,9 @@ fn segment_tables_type_bounded_section_curves() {
         .expect("bounded curve segment table");
 
     assert!(segments.is_complete());
-    assert!(segments.opaque_rows.is_empty());
+    assert!(segments.rows.opaque().next().is_none());
     assert_eq!(
-        segments.bounded_curve_rows,
+        segments.rows.bounded_curves().cloned().collect::<Vec<_>>(),
         vec![FeatureBoundedCurveSegment {
             directions: [Some(0); 3],
             point_ids: [2, 3],
@@ -754,9 +791,12 @@ fn segment_tables_type_bounded_section_curves() {
     let segments = segment_table_body(&missing_endpoint, 0, 0, missing_endpoint.len(), false)
         .expect("incomplete bounded curve segment table");
     assert!(segments.is_complete());
-    assert!(segments.bounded_curve_rows.is_empty());
-    assert_eq!(segments.opaque_rows.len(), 1);
-    assert_eq!(segments.opaque_rows[0].kind, 12);
+    assert!(segments.rows.bounded_curves().next().is_none());
+    assert_eq!(segments.rows.opaque().count(), 1);
+    assert_eq!(
+        segments.rows.opaque().cloned().collect::<Vec<_>>()[0].kind,
+        12
+    );
 }
 
 #[test]
@@ -770,10 +810,10 @@ fn segment_tables_type_complete_circle_rows() {
         segment_table_body(&payload, 0, 0, payload.len(), false).expect("circle segment table");
 
     assert!(segments.is_complete());
-    assert!(segments.rows.is_empty());
-    assert!(segments.opaque_rows.is_empty());
+    assert!(segments.rows.ordinary().next().is_none());
+    assert!(segments.rows.opaque().next().is_none());
     assert_eq!(
-        segments.circle_rows,
+        segments.rows.circles().cloned().collect::<Vec<_>>(),
         vec![FeatureCircleSegment {
             center_id: 2,
             radius_ref: 1,
@@ -787,9 +827,12 @@ fn segment_tables_type_complete_circle_rows() {
     let segments = segment_table_body(&malformed, 0, 0, malformed.len(), false)
         .expect("noncanonical circle segment table");
     assert!(segments.is_complete());
-    assert!(segments.circle_rows.is_empty());
-    assert_eq!(segments.opaque_rows.len(), 1);
-    assert_eq!(segments.opaque_rows[0].kind, 10);
+    assert!(segments.rows.circles().next().is_none());
+    assert_eq!(segments.rows.opaque().count(), 1);
+    assert_eq!(
+        segments.rows.opaque().cloned().collect::<Vec<_>>()[0].kind,
+        10
+    );
 }
 
 #[test]
@@ -803,9 +846,9 @@ fn segment_tables_type_saved_conic_rows() {
         segment_table_body(&payload, 0, 0, payload.len(), false).expect("conic segment table");
 
     assert!(segments.is_complete());
-    assert!(segments.opaque_rows.is_empty());
+    assert!(segments.rows.opaque().next().is_none());
     assert_eq!(
-        segments.conic_rows,
+        segments.rows.conics().cloned().collect::<Vec<_>>(),
         vec![FeatureConicSegment {
             center_id: 4,
             first_coefficient_ref: 0,
@@ -820,9 +863,12 @@ fn segment_tables_type_saved_conic_rows() {
     let segments = segment_table_body(&malformed, 0, 0, malformed.len(), false)
         .expect("noncanonical conic segment table");
     assert!(segments.is_complete());
-    assert!(segments.conic_rows.is_empty());
-    assert_eq!(segments.opaque_rows.len(), 1);
-    assert_eq!(segments.opaque_rows[0].kind, 58);
+    assert!(segments.rows.conics().next().is_none());
+    assert_eq!(segments.rows.opaque().count(), 1);
+    assert_eq!(
+        segments.rows.opaque().cloned().collect::<Vec<_>>()[0].kind,
+        58
+    );
 }
 
 #[test]
@@ -836,10 +882,10 @@ fn segment_tables_type_complete_point_rows() {
         segment_table_body(&payload, 0, 0, payload.len(), false).expect("point segment table");
 
     assert!(segments.is_complete());
-    assert!(segments.rows.is_empty());
-    assert!(segments.opaque_rows.is_empty());
+    assert!(segments.rows.ordinary().next().is_none());
+    assert!(segments.rows.opaque().next().is_none());
     assert_eq!(
-        segments.point_rows,
+        segments.rows.points().cloned().collect::<Vec<_>>(),
         vec![FeaturePointSegment {
             point_id: 2,
             external_id: 22,
@@ -852,9 +898,12 @@ fn segment_tables_type_complete_point_rows() {
     let segments = segment_table_body(&malformed, 0, 0, malformed.len(), false)
         .expect("noncanonical point segment table");
     assert!(segments.is_complete());
-    assert!(segments.point_rows.is_empty());
-    assert_eq!(segments.opaque_rows.len(), 1);
-    assert_eq!(segments.opaque_rows[0].kind, 1);
+    assert!(segments.rows.points().next().is_none());
+    assert_eq!(segments.rows.opaque().count(), 1);
+    assert_eq!(
+        segments.rows.opaque().cloned().collect::<Vec<_>>()[0].kind,
+        1
+    );
 }
 
 #[test]
@@ -868,10 +917,10 @@ fn segment_tables_type_complete_centered_line_rows() {
         .expect("centered line segment table");
 
     assert!(segments.is_complete());
-    assert!(segments.rows.is_empty());
-    assert!(segments.opaque_rows.is_empty());
+    assert!(segments.rows.ordinary().next().is_none());
+    assert!(segments.rows.opaque().next().is_none());
     assert_eq!(
-        segments.centered_line_rows,
+        segments.rows.centered_lines().cloned().collect::<Vec<_>>(),
         vec![FeatureCenteredLineSegment {
             center_id: 2,
             external_id: 22,
@@ -885,14 +934,14 @@ fn segment_tables_type_complete_centered_line_rows() {
         .expect("other type-47 segment table");
     assert!(segments.is_complete());
     assert_eq!(
-        segments.centered_line_rows,
+        segments.rows.centered_lines().cloned().collect::<Vec<_>>(),
         vec![FeatureCenteredLineSegment {
             center_id: 0,
             external_id: 22,
             offset: 10,
         }]
     );
-    assert!(segments.opaque_rows.is_empty());
+    assert!(segments.rows.opaque().next().is_none());
 
     let mut missing_construction_ref = payload;
     missing_construction_ref[19] = 0xf6;
@@ -905,10 +954,16 @@ fn segment_tables_type_complete_centered_line_rows() {
     )
     .expect("incomplete centered-line segment table");
     assert!(segments.is_complete());
-    assert!(segments.centered_line_rows.is_empty());
-    assert_eq!(segments.opaque_rows.len(), 1);
-    assert_eq!(segments.opaque_rows[0].kind, 47);
-    assert_eq!(segments.opaque_rows[0].body, missing_construction_ref[10..]);
+    assert!(segments.rows.centered_lines().next().is_none());
+    assert_eq!(segments.rows.opaque().count(), 1);
+    assert_eq!(
+        segments.rows.opaque().cloned().collect::<Vec<_>>()[0].kind,
+        47
+    );
+    assert_eq!(
+        segments.rows.opaque().cloned().collect::<Vec<_>>()[0].body,
+        missing_construction_ref[10..]
+    );
 }
 
 #[test]
@@ -921,13 +976,25 @@ fn segment_rows_expand_compact_slots_and_accept_the_c1_type_wrapper() {
     let segments = segment_table_body(&payload, 0, 0, payload.len(), false).expect("segment table");
 
     assert!(segments.is_complete());
-    assert_eq!(segments.rows.len(), 1);
-    assert!(matches!(segments.rows[0].kind, FeatureSegmentKind::Line(_)));
-    assert_eq!(segments.rows[0].directions, [Some(0), Some(0), Some(1)]);
-    assert_eq!(segments.rows[0].point_ids(), [9, 11]);
-    assert_eq!(segments.rows[0].external_id, 0);
+    assert_eq!(segments.rows.ordinary().count(), 1);
+    assert!(matches!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[0].kind,
+        FeatureSegmentKind::Line(_)
+    ));
     assert_eq!(
-        segments.rows[0].body,
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[0].directions,
+        [Some(0), Some(0), Some(1)]
+    );
+    assert_eq!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[0].point_ids(),
+        [9, 11]
+    );
+    assert_eq!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[0].external_id,
+        0
+    );
+    assert_eq!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[0].body,
         payload[10..],
         "the retained body includes the optional type wrapper and row close"
     );

@@ -69,7 +69,7 @@ pub(crate) fn sketch_table_headers(
             table.entity_ref,
             None,
             Vec::new(),
-            table.retained_row_count(),
+            table.rows.len(),
             table.offset,
         );
     }

@@ -349,32 +349,59 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
         .as_ref()
         .expect("segtab");
     assert_eq!(segments.declared_count, 5);
-    assert_eq!(segments.rows.len(), 5);
+    assert_eq!(segments.rows.ordinary().count(), 5);
     assert!(matches!(
-        segments.rows[0].kind,
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[0].kind,
         crate::feature::FeatureSegmentKind::Line(_)
     ));
-    assert_eq!(segments.rows[0].point_ids(), [7, 8]);
-    assert_eq!(segments.rows[0].center_id, None);
-    assert_eq!(segments.rows[0].external_id, 42);
     assert_eq!(
-        segments.rows[0].body,
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[0].point_ids(),
+        [7, 8]
+    );
+    assert_eq!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[0].center_id,
+        None
+    );
+    assert_eq!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[0].external_id,
+        42
+    );
+    assert_eq!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[0].body,
         [2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2]
     );
     assert!(matches!(
-        segments.rows[1].kind,
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[1].kind,
         crate::feature::FeatureSegmentKind::Arc(_)
     ));
-    assert_eq!(segments.rows[1].center_id, Some(10));
-    assert_eq!(segments.rows[2].external_id, 227);
-    assert_eq!(segments.rows[3].point_ids(), [11, 12]);
-    assert_eq!(segments.rows[3].external_id, 0);
+    assert_eq!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[1].center_id,
+        Some(10)
+    );
+    assert_eq!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[2].external_id,
+        227
+    );
+    assert_eq!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[3].point_ids(),
+        [11, 12]
+    );
+    assert_eq!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[3].external_id,
+        0
+    );
     assert!(matches!(
-        segments.rows[4].kind,
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[4].kind,
         crate::feature::FeatureSegmentKind::Point(_)
     ));
-    assert_eq!(segments.rows[4].point_ids(), [13, 13]);
-    assert_eq!(segments.rows[4].external_id, 4);
+    assert_eq!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[4].point_ids(),
+        [13, 13]
+    );
+    assert_eq!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[4].external_id,
+        4
+    );
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
@@ -487,19 +514,19 @@ fn scan_retains_typed_special_segment_rows_in_native_sketch_records() {
         .expect("segtab");
 
     assert!(segments.is_complete());
-    assert_eq!(segments.circle_rows.len(), 1);
-    assert_eq!(segments.point_rows.len(), 1);
+    assert_eq!(segments.rows.circles().count(), 1);
+    assert_eq!(segments.rows.points().count(), 1);
     assert_eq!(
         segments
-            .centered_line_rows
-            .iter()
+            .rows
+            .centered_lines()
             .map(|row| (row.external_id, row.center_id))
             .collect::<Vec<_>>(),
         vec![(22, 2), (23, 0)]
     );
-    assert_eq!(segments.reference_line_rows.len(), 1);
-    assert_eq!(segments.bounded_curve_rows.len(), 1);
-    assert!(segments.opaque_rows.is_empty());
+    assert_eq!(segments.rows.reference_lines().count(), 1);
+    assert_eq!(segments.rows.bounded_curves().count(), 1);
+    assert!(segments.rows.opaque().next().is_none());
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
@@ -597,10 +624,19 @@ fn scan_includes_named_segtab_prototype_as_data() {
         .as_ref()
         .expect("segtab");
 
-    assert_eq!(segments.rows.len(), 1);
-    assert_eq!(segments.rows[0].external_id, 4);
-    assert_eq!(segments.rows[0].point_ids(), [0, 1]);
-    assert_eq!(segments.rows[0].vertical_horizontal, Some(1));
+    assert_eq!(segments.rows.ordinary().count(), 1);
+    assert_eq!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[0].external_id,
+        4
+    );
+    assert_eq!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[0].point_ids(),
+        [0, 1]
+    );
+    assert_eq!(
+        segments.rows.ordinary().cloned().collect::<Vec<_>>()[0].vertical_horizontal,
+        Some(1)
+    );
 }
 
 #[test]

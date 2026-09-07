@@ -12,6 +12,7 @@ mod helpers;
 mod operations;
 mod rows;
 pub(crate) mod schema;
+pub(crate) mod segment_rows;
 
 #[cfg(test)]
 mod tests;

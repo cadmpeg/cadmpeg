@@ -40,7 +40,7 @@ fn saved_spline_definition() -> crate::feature::FeatureDefinition {
             declared_count: 1,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: vec![crate::feature::FeatureSegment {
+            rows: (vec![crate::feature::FeatureSegment {
                 kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
                 directions: [None; 3],
                 center_id: None,
@@ -51,14 +51,10 @@ fn saved_spline_definition() -> crate::feature::FeatureDefinition {
                 external_id: 99,
                 body: Vec::new(),
                 offset: 0,
-            }],
-            circle_rows: Vec::new(),
-            point_rows: Vec::new(),
-            centered_line_rows: Vec::new(),
-            reference_line_rows: Vec::new(),
-            bounded_curve_rows: Vec::new(),
-            conic_rows: Vec::new(),
-            opaque_rows: Vec::new(),
+            }])
+            .into_iter()
+            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+            .collect(),
             offset: 0,
         }),
         trim_entities: None,

@@ -268,19 +268,15 @@ fn dimension_identity_includes_its_feature_definition() {
         declared_count: 1,
         has_elided_prototype: false,
         entity_ref: None,
-        rows: Vec::new(),
-        circle_rows: vec![crate::feature::FeatureCircleSegment {
+        rows: (vec![crate::feature::FeatureCircleSegment {
             center_id: 7,
             radius_ref: 0,
             external_id: 42,
             offset: 20,
-        }],
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
+        }])
+        .into_iter()
+        .map(crate::feature::segment_rows::SegmentRow::Circle)
+        .collect(),
         offset: 19,
     });
     definition
@@ -365,13 +361,15 @@ fn dimension_identity_includes_its_feature_definition() {
         .segments
         .as_mut()
         .expect("segment table")
-        .circle_rows
-        .push(crate::feature::FeatureCircleSegment {
-            center_id: 8,
-            radius_ref: 0,
-            external_id: 42,
-            offset: 21,
-        });
+        .rows
+        .insert(crate::feature::segment_rows::SegmentRow::Circle(
+            crate::feature::FeatureCircleSegment {
+                center_id: 8,
+                radius_ref: 0,
+                external_id: 42,
+                offset: 21,
+            },
+        ));
     let duplicate_constraints =
         section_segment_radius_constraints(&duplicate_circle_id, &sketch_917);
     assert_eq!(duplicate_constraints.len(), 2);
@@ -415,22 +413,24 @@ fn dimension_identity_includes_its_feature_definition() {
         SketchConstraintDefinition::Native { .. }
     ));
     let segments = definition.segments.as_mut().expect("segment table");
-    let circle = segments.circle_rows.remove(0);
+    let circle = segments.rows.edit_circles(|rows| rows.remove(0));
     segments
-        .opaque_rows
-        .push(crate::feature::FeatureOpaqueSegment {
-            kind: 10,
-            directions: [None; 3],
-            point_ids: [None, Some(1)],
-            center_id: Some(circle.center_id),
-            arc_orientation: Some(0),
-            vertical_horizontal: Some(0),
-            radius_ref: Some(circle.radius_ref),
-            radius2_ref: Some(7),
-            external_id: circle.external_id,
-            body: Vec::new(),
-            offset: circle.offset,
-        });
+        .rows
+        .insert(crate::feature::segment_rows::SegmentRow::Opaque(
+            crate::feature::FeatureOpaqueSegment {
+                kind: 10,
+                directions: [None; 3],
+                point_ids: [None, Some(1)],
+                center_id: Some(circle.center_id),
+                arc_orientation: Some(0),
+                vertical_horizontal: Some(0),
+                radius_ref: Some(circle.radius_ref),
+                radius2_ref: Some(7),
+                external_id: circle.external_id,
+                body: Vec::new(),
+                offset: circle.offset,
+            },
+        ));
     let retained_slots = section_segment_radius_constraints(&definition, &sketch_917);
     assert_eq!(retained_slots.len(), 2);
     let secondary = retained_slots
@@ -463,25 +463,27 @@ fn dimension_identity_includes_its_feature_definition() {
         .segments
         .as_mut()
         .expect("segment table")
-        .opaque_rows[0]
-        .radius2_ref = None;
+        .rows
+        .edit_opaque(|rows| rows[0].radius2_ref = None);
     definition
         .segments
         .as_mut()
         .expect("segment table")
         .rows
-        .push(crate::feature::FeatureSegment {
-            kind: crate::feature::FeatureSegmentKind::Arc([1, 2]),
-            directions: [None; 3],
-            center_id: Some(7),
-            arc_orientation: Some(0),
-            vertical_horizontal: None,
-            radius_ref: Some(8),
-            radius2_ref: Some(9),
-            external_id: 43,
-            body: Vec::new(),
-            offset: 21,
-        });
+        .insert(crate::feature::segment_rows::SegmentRow::Ordinary(
+            crate::feature::FeatureSegment {
+                kind: crate::feature::FeatureSegmentKind::Arc([1, 2]),
+                directions: [None; 3],
+                center_id: Some(7),
+                arc_orientation: Some(0),
+                vertical_horizontal: None,
+                radius_ref: Some(8),
+                radius2_ref: Some(9),
+                external_id: 43,
+                body: Vec::new(),
+                offset: 21,
+            },
+        ));
     let typed_slots = section_segment_radius_constraints(&definition, &sketch_917);
     assert!(typed_slots.iter().any(|(constraint, _)| {
         constraint.id.as_str().ends_with("segtab-radius:43")
@@ -508,10 +510,12 @@ fn dimension_identity_includes_its_feature_definition() {
         .as_mut()
         .expect("segment table")
         .rows
-        .clear();
+        .edit_ordinary(|rows| rows.clear());
     let segments = definition.segments.as_mut().expect("segment table");
-    segments.opaque_rows.clear();
-    segments.circle_rows.push(circle);
+    segments.rows.edit_opaque(|rows| rows.clear());
+    segments
+        .rows
+        .insert(crate::feature::segment_rows::SegmentRow::Circle(circle));
     definition
         .dimensions
         .as_mut()
@@ -522,7 +526,14 @@ fn dimension_identity_includes_its_feature_definition() {
         section_circle_geometry(
             &BTreeMap::from([(7, [1.0, 2.0])]),
             &resolved_section_radii(&definition),
-            &definition.segments.as_ref().expect("segments").circle_rows[0],
+            &definition
+                .segments
+                .as_ref()
+                .expect("segments")
+                .rows
+                .circles()
+                .cloned()
+                .collect::<Vec<_>>()[0],
         ),
         Some(SketchGeometry::Circle {
             center: Point2::new(1.0, 2.0),

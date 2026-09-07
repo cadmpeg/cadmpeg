@@ -62,7 +62,8 @@ pub(super) fn declared_solver_rows<T>(
 
 pub(super) fn synchronize_segment_count(definition: &mut crate::feature::FeatureDefinition) {
     let segments = definition.segments.as_mut().expect("segments");
-    segments.declared_count = u32::try_from(segments.rows.len()).expect("segment count");
+    segments.declared_count =
+        u32::try_from(segments.rows.ordinary().count()).expect("segment count");
 }
 
 pub(super) fn parameter_slot(value: f64) -> crate::surface::SurfaceParameterScalar {

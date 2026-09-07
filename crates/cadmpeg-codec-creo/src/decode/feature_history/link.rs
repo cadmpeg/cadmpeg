@@ -328,7 +328,7 @@ pub(in super::super) fn ordered_family_surface_bindings_for_feature(
 
 pub(in super::super) fn profile_segment_ids(
     definition_id: u32,
-    segments: &[crate::feature::FeatureSegment],
+    segments: &[&crate::feature::FeatureSegment],
     profiles: &[Vec<SketchEntityUse>],
 ) -> BTreeSet<u32> {
     segments

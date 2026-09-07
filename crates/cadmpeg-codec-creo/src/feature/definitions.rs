@@ -13,6 +13,7 @@ use super::entity::{generated_class_200_source_entity_ids, FeatureEntityTable};
 use super::helpers::find_bytes;
 use super::operations::{FeatureOperation, FeatureRecipeKind};
 use super::rows::{FeatureGeometryTable, FeatureRevolutionExtent};
+use super::segment_rows::{SegmentRow, SegmentRows};
 
 const EPS_PARAMETER_AGREEMENT: f64 = 1.0e-9;
 
@@ -525,68 +526,25 @@ pub struct FeatureSegmentTable {
     pub has_elided_prototype: bool,
     /// Entity-table reference following the opener.
     pub entity_ref: Option<u32>,
-    /// Fully aligned line and arc rows.
-    pub rows: Vec<FeatureSegment>,
-    /// Fully aligned circular rows.
-    pub circle_rows: Vec<FeatureCircleSegment>,
-    /// Fully aligned type-1 point rows.
-    pub point_rows: Vec<FeaturePointSegment>,
-    /// Fully aligned centered construction-line rows.
-    pub centered_line_rows: Vec<FeatureCenteredLineSegment>,
-    /// Fully aligned type-25 section-reference lines.
-    pub reference_line_rows: Vec<FeatureReferenceLineSegment>,
-    /// Fully aligned type-12 bounded section curves.
-    pub bounded_curve_rows: Vec<FeatureBoundedCurveSegment>,
-    /// Fully aligned type-58 saved-conic rows.
-    pub conic_rows: Vec<FeatureConicSegment>,
-    /// Fully aligned rows with unsupported segment-family discriminators.
-    pub opaque_rows: Vec<FeatureOpaqueSegment>,
+    /// Source rows admitted by external identity across all segment families.
+    pub(crate) rows: SegmentRows,
     /// Byte offset of the `segtab_ptr` label in the original stream.
     pub offset: usize,
 }
 
 impl FeatureSegmentTable {
-    /// Number of decoded rows retained across all segment families.
-    pub(crate) fn retained_row_count(&self) -> usize {
-        self.rows.len()
-            + self.circle_rows.len()
-            + self.point_rows.len()
-            + self.centered_line_rows.len()
-            + self.reference_line_rows.len()
-            + self.bounded_curve_rows.len()
-            + self.conic_rows.len()
-            + self.opaque_rows.len()
-    }
-
     /// Whether every row declared by the table decoded.
     pub fn is_complete(&self) -> bool {
         usize::try_from(self.declared_count).ok()
-            == Some(usize::from(self.has_elided_prototype) + self.retained_row_count())
-    }
-
-    /// Number of decoded rows carrying one external identifier.
-    pub(crate) fn external_id_count(&self, external_id: u32) -> usize {
-        self.rows
-            .iter()
-            .map(|row| row.external_id)
-            .chain(self.circle_rows.iter().map(|row| row.external_id))
-            .chain(self.point_rows.iter().map(|row| row.external_id))
-            .chain(self.centered_line_rows.iter().map(|row| row.external_id))
-            .chain(self.reference_line_rows.iter().map(|row| row.external_id))
-            .chain(self.bounded_curve_rows.iter().map(|row| row.external_id))
-            .chain(self.conic_rows.iter().map(|row| row.external_id))
-            .chain(self.opaque_rows.iter().map(|row| row.external_id))
-            .filter(|candidate| *candidate == external_id)
-            .count()
+            == Some(usize::from(self.has_elided_prototype) + self.rows.len())
     }
 
     /// Resolve a unique ordinary row without requiring whole-table completeness.
     pub(crate) fn unique_segment(&self, external_id: u32) -> Option<&FeatureSegment> {
-        let segment = self
-            .rows
-            .iter()
-            .find(|segment| segment.external_id == external_id)?;
-        (self.external_id_count(external_id) == 1).then_some(segment)
+        match self.rows.get(external_id)? {
+            SegmentRow::Ordinary(row) => Some(row),
+            _ => None,
+        }
     }
 
     /// Resolve a uniquely identified defining-sketch segment from a complete table.
@@ -2225,28 +2183,15 @@ pub(crate) fn segment_table_body(
     .filter_map(|label| find_bytes(payload, label, cursor, end))
     .min()
     .unwrap_or(end);
-    let mut segments = FeatureSegmentTable {
-        declared_count,
-        has_elided_prototype,
-        entity_ref,
-        rows: Vec::new(),
-        circle_rows: Vec::new(),
-        point_rows: Vec::new(),
-        centered_line_rows: Vec::new(),
-        reference_line_rows: Vec::new(),
-        bounded_curve_rows: Vec::new(),
-        conic_rows: Vec::new(),
-        opaque_rows: Vec::new(),
-        offset: table,
-    };
-    if let Some(row) = named_row {
-        retain_segment_row(row, &mut segments);
-    }
+    let mut rows = named_row
+        .and_then(typed_segment_row)
+        .into_iter()
+        .collect::<Vec<_>>();
     let first_row = cursor;
     let row_limit = usize::try_from(declared_count)
         .unwrap_or(usize::MAX)
         .saturating_sub(usize::from(has_elided_prototype));
-    while cursor < region_end && segments.retained_row_count() < row_limit {
+    while cursor < region_end && rows.len() < row_limit {
         let row_start = cursor;
         let kind_offset = if matches!(
             payload.get(cursor..cursor + 2),
@@ -2310,31 +2255,36 @@ pub(crate) fn segment_table_body(
             continue;
         };
         if payload.get(p) == Some(&0xe2) {
-            retain_segment_row(
-                FeatureOpaqueSegment {
-                    kind,
-                    directions,
-                    point_ids: [point0, point1],
-                    center_id,
-                    arc_orientation,
-                    vertical_horizontal,
-                    radius_ref,
-                    radius2_ref,
-                    external_id,
-                    body: payload[row_start..=p].to_vec(),
-                    offset: row_start,
-                },
-                &mut segments,
-            );
+            if let Some(row) = typed_segment_row(FeatureOpaqueSegment {
+                kind,
+                directions,
+                point_ids: [point0, point1],
+                center_id,
+                arc_orientation,
+                vertical_horizontal,
+                radius_ref,
+                radius2_ref,
+                external_id,
+                body: payload[row_start..=p].to_vec(),
+                offset: row_start,
+            }) {
+                rows.push(row);
+            }
             cursor = p + 1;
         } else {
             cursor += 1;
         }
     }
-    Some(segments)
+    Some(FeatureSegmentTable {
+        declared_count,
+        has_elided_prototype,
+        entity_ref,
+        rows: rows.into_iter().collect(),
+        offset: table,
+    })
 }
 
-fn retain_segment_row(row: FeatureOpaqueSegment, segments: &mut FeatureSegmentTable) {
+fn typed_segment_row(row: FeatureOpaqueSegment) -> Option<SegmentRow> {
     if row.kind == 10
         && row.directions == [Some(0); 3]
         && row.point_ids == [None, Some(1)]
@@ -2343,13 +2293,12 @@ fn retain_segment_row(row: FeatureOpaqueSegment, segments: &mut FeatureSegmentTa
         && row.radius2_ref.is_none()
     {
         if let (Some(center_id), Some(radius_ref)) = (row.center_id, row.radius_ref) {
-            segments.circle_rows.push(FeatureCircleSegment {
+            return Some(SegmentRow::Circle(FeatureCircleSegment {
                 center_id,
                 radius_ref,
                 external_id: row.external_id,
                 offset: row.offset,
-            });
-            return;
+            }));
         }
     }
     if row.kind == 1
@@ -2361,12 +2310,11 @@ fn retain_segment_row(row: FeatureOpaqueSegment, segments: &mut FeatureSegmentTa
         && row.radius2_ref.is_none()
     {
         if let Some(point_id) = row.center_id {
-            segments.point_rows.push(FeaturePointSegment {
+            return Some(SegmentRow::Point(FeaturePointSegment {
                 point_id,
                 external_id: row.external_id,
                 offset: row.offset,
-            });
-            return;
+            }));
         }
     }
     if row.kind == 47
@@ -2378,14 +2326,11 @@ fn retain_segment_row(row: FeatureOpaqueSegment, segments: &mut FeatureSegmentTa
         && row.radius2_ref.is_none()
     {
         if let Some(center_id) = row.center_id {
-            segments
-                .centered_line_rows
-                .push(FeatureCenteredLineSegment {
-                    center_id,
-                    external_id: row.external_id,
-                    offset: row.offset,
-                });
-            return;
+            return Some(SegmentRow::CenteredLine(FeatureCenteredLineSegment {
+                center_id,
+                external_id: row.external_id,
+                offset: row.offset,
+            }));
         }
     }
     if row.kind == 25
@@ -2394,33 +2339,27 @@ fn retain_segment_row(row: FeatureOpaqueSegment, segments: &mut FeatureSegmentTa
         && row.radius_ref.is_none()
         && row.radius2_ref.is_none()
     {
-        segments
-            .reference_line_rows
-            .push(FeatureReferenceLineSegment {
-                directions: row.directions,
-                point_ids: row.point_ids,
-                vertical_horizontal: row.vertical_horizontal,
-                external_id: row.external_id,
-                offset: row.offset,
-            });
-        return;
+        return Some(SegmentRow::ReferenceLine(FeatureReferenceLineSegment {
+            directions: row.directions,
+            point_ids: row.point_ids,
+            vertical_horizontal: row.vertical_horizontal,
+            external_id: row.external_id,
+            offset: row.offset,
+        }));
     }
     if row.kind == 12 {
         if let [Some(first), Some(second)] = row.point_ids {
-            segments
-                .bounded_curve_rows
-                .push(FeatureBoundedCurveSegment {
-                    directions: row.directions,
-                    point_ids: [first, second],
-                    center_id: row.center_id,
-                    arc_orientation: row.arc_orientation,
-                    vertical_horizontal: row.vertical_horizontal,
-                    radius_ref: row.radius_ref,
-                    radius2_ref: row.radius2_ref,
-                    external_id: row.external_id,
-                    offset: row.offset,
-                });
-            return;
+            return Some(SegmentRow::BoundedCurve(FeatureBoundedCurveSegment {
+                directions: row.directions,
+                point_ids: [first, second],
+                center_id: row.center_id,
+                arc_orientation: row.arc_orientation,
+                vertical_horizontal: row.vertical_horizontal,
+                radius_ref: row.radius_ref,
+                radius2_ref: row.radius2_ref,
+                external_id: row.external_id,
+                offset: row.offset,
+            }));
         }
     }
     if row.kind == 58
@@ -2432,36 +2371,30 @@ fn retain_segment_row(row: FeatureOpaqueSegment, segments: &mut FeatureSegmentTa
         if let (Some(center_id), Some(first_coefficient_ref), Some(second_coefficient_ref)) =
             (row.center_id, row.radius_ref, row.radius2_ref)
         {
-            segments.conic_rows.push(FeatureConicSegment {
+            return Some(SegmentRow::Conic(FeatureConicSegment {
                 center_id,
                 first_coefficient_ref,
                 second_coefficient_ref,
                 external_id: row.external_id,
                 offset: row.offset,
-            });
-            return;
+            }));
         }
     }
     if !matches!(row.kind, 2 | 3 | 5) {
-        segments.opaque_rows.push(row);
-        return;
+        return Some(SegmentRow::Opaque(row));
     }
-    let Some(point0) = row.point_ids[0] else {
-        return;
-    };
+    let point0 = row.point_ids[0]?;
     let kind = if row.kind == 5 {
         FeatureSegmentKind::Point(point0)
     } else {
-        let Some(point1) = row.point_ids[1] else {
-            return;
-        };
+        let point1 = row.point_ids[1]?;
         if row.kind == 2 {
             FeatureSegmentKind::Line([point0, point1])
         } else {
             FeatureSegmentKind::Arc([point0, point1])
         }
     };
-    segments.rows.push(FeatureSegment {
+    Some(SegmentRow::Ordinary(FeatureSegment {
         kind,
         directions: row.directions,
         center_id: row.center_id,
@@ -2472,7 +2405,7 @@ fn retain_segment_row(row: FeatureOpaqueSegment, segments: &mut FeatureSegmentTa
         external_id: row.external_id,
         body: row.body,
         offset: row.offset,
-    });
+    }))
 }
 
 fn trim_entity_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureTrimEntityTable> {

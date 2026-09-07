@@ -285,7 +285,7 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
             declared_count: 1,
             has_elided_prototype: false,
             entity_ref: None,
-            rows: vec![crate::feature::FeatureSegment {
+            rows: (vec![crate::feature::FeatureSegment {
                 kind: crate::feature::FeatureSegmentKind::Arc([1, 2]),
                 directions: [None; 3],
                 center_id: Some(3),
@@ -296,14 +296,10 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
                 external_id: 11,
                 body: Vec::new(),
                 offset: 0,
-            }],
-            circle_rows: Vec::new(),
-            point_rows: Vec::new(),
-            centered_line_rows: Vec::new(),
-            reference_line_rows: Vec::new(),
-            bounded_curve_rows: Vec::new(),
-            conic_rows: Vec::new(),
-            opaque_rows: Vec::new(),
+            }])
+            .into_iter()
+            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+            .collect(),
             offset: 0,
         }),
         trim_entities: None,

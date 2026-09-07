@@ -30,7 +30,7 @@ pub(in super::super) fn resolved_revolution_axis(
     let points = resolved_section_points(definition);
     let candidates = segments
         .rows
-        .iter()
+        .ordinary()
         .filter(|segment| matches!(segment.kind, crate::feature::FeatureSegmentKind::Line(_)))
         .filter_map(|segment| {
             let start = points.get(&segment.point_ids()[0])?;
