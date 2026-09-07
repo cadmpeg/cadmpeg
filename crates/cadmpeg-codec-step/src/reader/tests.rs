@@ -24,9 +24,15 @@ fn byte_accounting_reports_an_unrecognized_suffix() {
         extended.len()
     );
 
-    let result = decode_exchange_mode(&extended, &mut exchange, &[], true, &ctx, Packaging::Bare)
-        .expect("synthesized unknown record conversion")
-        .decoded;
+    let result = decode_exchange_mode(
+        &extended,
+        &mut exchange,
+        &[],
+        super::DecodeMode::Decode(Packaging::Bare),
+        &ctx,
+    )
+    .expect("synthesized unknown record conversion")
+    .decoded;
     assert!(result.body.losses.iter().any(|loss| {
         loss.code == StepLossCode::ByteAccountingUnclassified.kind()
             && loss.severity == cadmpeg_ir::Severity::Error
