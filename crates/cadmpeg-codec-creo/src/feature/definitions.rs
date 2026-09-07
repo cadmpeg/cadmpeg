@@ -6196,6 +6196,7 @@ pub fn definition_revolution_extents(
             operation.feature_id == feature_id
                 && operation
                     .recipe
+                    .resolved()
                     .is_some_and(|recipe| recipe.kind() == FeatureRecipeKind::Revolve)
         });
         if !recipe_matches {
@@ -6990,9 +6991,9 @@ pub fn bind_section_owners(
                 .windows(2)
                 .filter(|pair| {
                     pair[0].feature_id == owner_id
-                        && pair[0].recipe.is_some()
+                        && pair[0].recipe.resolved().is_some()
                         && pair[1].feature_id == datum_id
-                        && pair[1].recipe.is_none()
+                        && pair[1].recipe.resolved().is_none()
                 })
                 .count();
             if matches != 1 {

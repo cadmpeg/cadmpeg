@@ -1984,8 +1984,11 @@ pub(super) fn feature_operation_state_records(
                 stored_name_prefix: state
                     .stored_name_prefix()
                     .map(|prefix| char::from(prefix).to_string()),
-                recipe: state.recipe.map(crate::feature::FeatureRecipe::name),
-                recipe_conflict: state.recipe_conflict.then_some(true),
+                recipe: state
+                    .recipe
+                    .candidate()
+                    .map(crate::feature::FeatureRecipe::name),
+                recipe_conflict: state.recipe.is_conflicting().then_some(true),
                 display_state_conflict: state.display_state_conflict.then_some(true),
                 root_schema_class: state.root_schema_class().map(SchemaClass::code),
                 parent_feature_id: state.parent_feature_id(),

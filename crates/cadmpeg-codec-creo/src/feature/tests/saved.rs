@@ -765,11 +765,23 @@ fn decodes_mdlstatus_recipe_discriminators_within_their_records() {
             icon\0cutrevolve\0Cut id 43\0\xe2\xe3Datum Plane id 44\0\xe3K\xc3\xb6rper ID 45\0";
     let operations = operations(payload);
     assert_eq!(operations.len(), 6);
-    assert_eq!(operations[0].recipe, Some(FeatureRecipe::ProtrudeExtrude));
-    assert_eq!(operations[1].recipe, Some(FeatureRecipe::ProtrudeRevolve));
-    assert_eq!(operations[2].recipe, Some(FeatureRecipe::CutExtrude));
-    assert_eq!(operations[3].recipe, Some(FeatureRecipe::CutRevolve));
-    assert_eq!(operations[4].recipe, None);
+    assert_eq!(
+        operations[0].recipe.candidate(),
+        Some(FeatureRecipe::ProtrudeExtrude)
+    );
+    assert_eq!(
+        operations[1].recipe.candidate(),
+        Some(FeatureRecipe::ProtrudeRevolve)
+    );
+    assert_eq!(
+        operations[2].recipe.candidate(),
+        Some(FeatureRecipe::CutExtrude)
+    );
+    assert_eq!(
+        operations[3].recipe.candidate(),
+        Some(FeatureRecipe::CutRevolve)
+    );
+    assert_eq!(operations[4].recipe.candidate(), None);
     assert_eq!(operations[5].kind.as_str(), "Körper");
     assert_eq!(operations[5].feature_id, 45);
 }
@@ -814,8 +826,14 @@ fn conflicting_inline_recipes_across_display_states_remain_conflicting() {
 
     let states = operation_states(payload);
     assert_eq!(states.len(), 2);
-    assert_eq!(states[0].recipe, Some(FeatureRecipe::ProtrudeExtrude));
-    assert_eq!(states[1].recipe, Some(FeatureRecipe::CutExtrude));
+    assert_eq!(
+        states[0].recipe.candidate(),
+        Some(FeatureRecipe::ProtrudeExtrude)
+    );
+    assert_eq!(
+        states[1].recipe.candidate(),
+        Some(FeatureRecipe::CutExtrude)
+    );
 
     let current_operations = operations(payload);
     let [current] = current_operations.as_slice() else {
@@ -823,8 +841,8 @@ fn conflicting_inline_recipes_across_display_states_remain_conflicting() {
     };
     assert_eq!(current.kind.as_str(), "Extrude");
     assert!(current.display_state_conflict);
-    assert!(current.recipe_conflict);
-    assert_eq!(current.recipe, None);
+    assert!(current.recipe.is_conflicting());
+    assert_eq!(current.recipe.candidate(), None);
 }
 
 #[test]
@@ -837,7 +855,10 @@ fn binds_depdb_recipe_records_to_compact_feature_ids() {
     let operations = operations(payload);
     assert_eq!(operations.len(), 2);
     assert_eq!(operations[0].feature_id, 247);
-    assert_eq!(operations[0].recipe, Some(FeatureRecipe::ProtrudeRevolve));
+    assert_eq!(
+        operations[0].recipe.candidate(),
+        Some(FeatureRecipe::ProtrudeRevolve)
+    );
     assert_eq!(
         operations[0]
             .root_schema_class()
@@ -846,7 +867,10 @@ fn binds_depdb_recipe_records_to_compact_feature_ids() {
     );
     assert_eq!(operations[0].parent_feature_id(), Some(32));
     assert_eq!(operations[1].feature_id, 8053);
-    assert_eq!(operations[1].recipe, Some(FeatureRecipe::ProtrudeExtrude));
+    assert_eq!(
+        operations[1].recipe.candidate(),
+        Some(FeatureRecipe::ProtrudeExtrude)
+    );
     assert_eq!(
         operations[1]
             .root_schema_class()
@@ -864,8 +888,11 @@ fn preserves_competing_depdb_recipe_bindings() {
     let states = operation_states(payload);
     assert_eq!(states.len(), 2);
     assert_eq!(states[0].feature_id, 8053);
-    assert_eq!(states[0].recipe, Some(FeatureRecipe::ProtrudeExtrude));
-    assert!(states[0].recipe_conflict);
+    assert_eq!(
+        states[0].recipe.candidate(),
+        Some(FeatureRecipe::ProtrudeExtrude)
+    );
+    assert!(states[0].recipe.is_conflicting());
     assert_eq!(
         states[0]
             .root_schema_class()
@@ -873,8 +900,11 @@ fn preserves_competing_depdb_recipe_bindings() {
         Some(917)
     );
     assert_eq!(states[1].feature_id, 8053);
-    assert_eq!(states[1].recipe, Some(FeatureRecipe::CutExtrude));
-    assert!(states[1].recipe_conflict);
+    assert_eq!(
+        states[1].recipe.candidate(),
+        Some(FeatureRecipe::CutExtrude)
+    );
+    assert!(states[1].recipe.is_conflicting());
     assert_eq!(
         states[1]
             .root_schema_class()
@@ -886,8 +916,8 @@ fn preserves_competing_depdb_recipe_bindings() {
     assert_eq!(current.len(), 1);
     assert_eq!(current[0].feature_id, 8053);
     assert_eq!(current[0].kind.as_str(), "Native Feature");
-    assert_eq!(current[0].recipe, None);
-    assert!(current[0].recipe_conflict);
+    assert_eq!(current[0].recipe.candidate(), None);
+    assert!(current[0].recipe.is_conflicting());
     assert_eq!(
         current[0]
             .root_schema_class()
@@ -900,13 +930,16 @@ fn preserves_competing_depdb_recipe_bindings() {
             \xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 2\0\xf6\0protextrude\0";
     let repeated_states = operation_states(repeated);
     assert_eq!(repeated_states.len(), 2);
-    assert_eq!(repeated_states[0].recipe, repeated_states[1].recipe);
+    assert_eq!(
+        repeated_states[0].recipe.candidate(),
+        repeated_states[1].recipe.candidate()
+    );
     assert_ne!(repeated_states[0].offset, repeated_states[1].offset);
     let repeated_current = operations(repeated);
     assert_eq!(repeated_current.len(), 1);
     assert_eq!(repeated_current[0].kind.as_str(), "Extrude");
     assert_eq!(
-        repeated_current[0].recipe,
+        repeated_current[0].recipe.candidate(),
         Some(FeatureRecipe::ProtrudeExtrude)
     );
     assert_eq!(
@@ -930,8 +963,8 @@ fn conflicting_bindings_do_not_use_an_inline_recipe_fallback() {
         .find(|state| state.display_name_stored())
         .expect("stored display state");
     assert_eq!(display.kind.as_str(), "Extrude");
-    assert_eq!(display.recipe, None);
-    assert!(display.recipe_conflict);
+    assert_eq!(display.recipe.candidate(), None);
+    assert!(display.recipe.is_conflicting());
     assert_eq!(
         display
             .root_schema_class()
@@ -946,8 +979,8 @@ fn conflicting_bindings_do_not_use_an_inline_recipe_fallback() {
     };
     assert_eq!(current.kind.as_str(), "Extrude");
     assert!(current.display_name_stored());
-    assert_eq!(current.recipe, None);
-    assert!(current.recipe_conflict);
+    assert_eq!(current.recipe.candidate(), None);
+    assert!(current.recipe.is_conflicting());
 }
 
 #[test]
@@ -960,8 +993,8 @@ fn leaves_inline_recipe_conflicts_unresolved() {
     };
     assert_eq!(state.feature_id, 9);
     assert_eq!(state.kind.as_str(), "Extrude");
-    assert_eq!(state.recipe, None);
-    assert!(state.recipe_conflict);
+    assert_eq!(state.recipe.candidate(), None);
+    assert!(state.recipe.is_conflicting());
     assert_eq!(
         state
             .root_schema_class()
@@ -980,7 +1013,10 @@ fn promotes_depdb_recipe_without_operation_display_name() {
     assert_eq!(operations.len(), 1);
     assert_eq!(operations[0].feature_id, 8053);
     assert_eq!(operations[0].kind.as_str(), "Extrude");
-    assert_eq!(operations[0].recipe, Some(FeatureRecipe::ProtrudeExtrude));
+    assert_eq!(
+        operations[0].recipe.candidate(),
+        Some(FeatureRecipe::ProtrudeExtrude)
+    );
     assert_eq!(
         operations[0]
             .root_schema_class()

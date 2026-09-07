@@ -28,9 +28,9 @@ pub(in super::super) fn feature_section_sweep_semantics_conflict(
     feature_id: u32,
 ) -> bool {
     current_feature_operation(&scan.features.operations, feature_id).is_some_and(|operation| {
-        operation.recipe_conflict
+        operation.recipe.is_conflicting()
             || (operation.display_state_conflict
-                && operation.recipe.is_none()
+                && matches!(operation.recipe, crate::feature::RecipeState::None)
                 && operation.kind == crate::feature::OperationKind::Native)
     })
 }
@@ -79,7 +79,7 @@ pub(in super::super) fn feature_is_first_material_operation(
         else {
             continue;
         };
-        let recipe_is_material = operation.recipe.is_some_and(|recipe| {
+        let recipe_is_material = operation.recipe.resolved().is_some_and(|recipe| {
             matches!(
                 recipe.effect(),
                 crate::feature::FeatureRecipeEffect::Protrude
@@ -117,7 +117,9 @@ pub(in super::super) fn current_feature_recipe(
     operations: &[crate::feature::FeatureOperation],
     feature_id: u32,
 ) -> Option<crate::feature::FeatureRecipe> {
-    current_feature_operation(operations, feature_id)?.recipe
+    current_feature_operation(operations, feature_id)?
+        .recipe
+        .resolved()
 }
 
 pub(in super::super) fn current_feature_recipe_parent(
@@ -125,7 +127,7 @@ pub(in super::super) fn current_feature_recipe_parent(
     feature_id: u32,
 ) -> Option<u32> {
     let operation = current_feature_operation(operations, feature_id)?;
-    operation.recipe?;
+    operation.recipe.resolved()?;
     operation.parent_feature_id()
 }
 

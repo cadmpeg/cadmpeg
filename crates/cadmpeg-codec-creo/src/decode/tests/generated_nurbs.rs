@@ -1269,8 +1269,9 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
             keyword: crate::feature::IdKeyword::Id,
             prefix: None,
         },
-        recipe: Some(crate::feature::FeatureRecipe::ProtrudeExtrude),
-        recipe_conflict: false,
+        recipe: crate::feature::RecipeState::Resolved(
+            crate::feature::FeatureRecipe::ProtrudeExtrude,
+        ),
         display_state_conflict: false,
         depdb: Some(crate::feature::DepdbPrefix {
             schema: crate::feature::schema::SchemaClass::Protrusion,
@@ -1290,7 +1291,8 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
         Some(crate::feature::FeatureRecipe::ProtrudeExtrude)
     );
     let mut conflicting_recipe = operation.clone();
-    conflicting_recipe.recipe = Some(crate::feature::FeatureRecipe::ProtrudeRevolve);
+    conflicting_recipe.recipe =
+        crate::feature::RecipeState::Resolved(crate::feature::FeatureRecipe::ProtrudeRevolve);
     assert_eq!(
         current_feature_recipe(&[operation.clone(), conflicting_recipe], 6),
         None
@@ -1507,8 +1509,7 @@ fn unresolved_material_join_does_not_hide_exact_base_body_candidate() {
             feature_id,
             kind: crate::feature::OperationKind::Stored("Sweep".to_string()),
             name: crate::feature::OperationName::Derived,
-            recipe,
-            recipe_conflict: false,
+            recipe: crate::feature::RecipeState::from(recipe),
             display_state_conflict: false,
             depdb: root_schema_class.map(|schema: u32| crate::feature::DepdbPrefix {
                 schema: crate::feature::schema::SchemaClass::from(schema),

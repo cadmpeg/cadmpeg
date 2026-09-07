@@ -49,7 +49,7 @@ pub use entity::{
 pub use operations::{
     operation_states, operations, reference_names, DepdbPrefix, FeatureOperation, FeatureRecipe,
     FeatureRecipeEffect, FeatureRecipeKind, FeatureReferenceName, IdKeyword, OperationKind,
-    OperationName,
+    OperationName, RecipeState,
 };
 pub use rows::{
     affected_ids, choice_fields, choices, geometry_tables, loop_history_entries,

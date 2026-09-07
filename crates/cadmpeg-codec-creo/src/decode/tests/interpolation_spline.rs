@@ -389,8 +389,7 @@ fn unresolved_display_state_family_blocks_schema_sweep_fallback() {
             feature_id: 917,
             kind: crate::feature::OperationKind::Native,
             name: crate::feature::OperationName::Derived,
-            recipe: None,
-            recipe_conflict: false,
+            recipe: crate::feature::RecipeState::None,
             display_state_conflict: true,
             depdb: Some(crate::feature::DepdbPrefix {
                 schema: crate::feature::schema::SchemaClass::Protrusion,
@@ -418,8 +417,7 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
                 keyword: crate::feature::IdKeyword::Id,
                 prefix: None,
             },
-            recipe: None,
-            recipe_conflict: false,
+            recipe: crate::feature::RecipeState::None,
             display_state_conflict: false,
             depdb: Some(crate::feature::DepdbPrefix {
                 schema: crate::feature::schema::SchemaClass::Surface,
@@ -494,8 +492,7 @@ fn class_942_schema_state_precedes_surface_body_tree_fallback() {
                 keyword: crate::feature::IdKeyword::Id,
                 prefix: None,
             },
-            recipe: None,
-            recipe_conflict: false,
+            recipe: crate::feature::RecipeState::None,
             display_state_conflict: false,
             depdb: Some(crate::feature::DepdbPrefix {
                 schema: crate::feature::schema::SchemaClass::Surface,
@@ -524,8 +521,7 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
                 keyword: crate::feature::IdKeyword::Id,
                 prefix: None,
             },
-            recipe: None,
-            recipe_conflict: false,
+            recipe: crate::feature::RecipeState::None,
             display_state_conflict: false,
             depdb: Some(crate::feature::DepdbPrefix {
                 schema: crate::feature::schema::SchemaClass::Surface,
@@ -1576,8 +1572,7 @@ fn current_feature_state_controls_recipe_and_parent_projection() {
         feature_id: 6,
         kind: crate::feature::OperationKind::Stored("Sweep".to_string()),
         name: crate::feature::OperationName::Derived,
-        recipe: Some(recipe),
-        recipe_conflict: false,
+        recipe: crate::feature::RecipeState::Resolved(recipe),
         display_state_conflict: false,
         depdb: Some(crate::feature::DepdbPrefix {
             schema: crate::feature::schema::SchemaClass::Protrusion,
@@ -1589,7 +1584,7 @@ fn current_feature_state_controls_recipe_and_parent_projection() {
     let historical = operation(crate::feature::FeatureRecipe::ProtrudeExtrude, 4, 10);
     let current = operation(crate::feature::FeatureRecipe::ProtrudeRevolve, 5, 20);
     let states = [historical, current.clone()];
-    assert_ne!(states[0].recipe, states[1].recipe);
+    assert_ne!(states[0].recipe.candidate(), states[1].recipe.candidate());
     assert_ne!(states[0].parent_feature_id(), states[1].parent_feature_id());
     assert_eq!(
         current_feature_recipe(std::slice::from_ref(&current), 6),
@@ -1604,7 +1599,7 @@ fn current_feature_state_controls_recipe_and_parent_projection() {
         Some(crate::feature::FeatureRecipeKind::Revolve)
     );
     let mut cut = current;
-    cut.recipe = Some(crate::feature::FeatureRecipe::CutRevolve);
+    cut.recipe = crate::feature::RecipeState::Resolved(crate::feature::FeatureRecipe::CutRevolve);
     assert_eq!(
         current_additive_feature_recipe(std::slice::from_ref(&cut), 6),
         None

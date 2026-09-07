@@ -187,6 +187,50 @@ pub struct DepdbPrefix {
     pub parent: u32,
 }
 
+/// Resolution of a feature's procedural recipe.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecipeState {
+    /// No recipe is stored.
+    None,
+    /// One recipe is resolved.
+    Resolved(FeatureRecipe),
+    /// Competing recipes prevent resolution.
+    Conflicting {
+        /// Candidate retained by this source state.
+        candidate: Option<FeatureRecipe>,
+    },
+}
+
+impl RecipeState {
+    /// Resolved recipe available to geometry consumers.
+    pub fn resolved(self) -> Option<FeatureRecipe> {
+        match self {
+            Self::Resolved(recipe) => Some(recipe),
+            Self::None | Self::Conflicting { .. } => None,
+        }
+    }
+
+    /// Stored recipe candidate retained for source records.
+    pub fn candidate(self) -> Option<FeatureRecipe> {
+        match self {
+            Self::Resolved(recipe) => Some(recipe),
+            Self::Conflicting { candidate } => candidate,
+            Self::None => None,
+        }
+    }
+
+    /// Whether competing recipes prevent resolution.
+    pub fn is_conflicting(self) -> bool {
+        matches!(self, Self::Conflicting { .. })
+    }
+}
+
+impl From<Option<FeatureRecipe>> for RecipeState {
+    fn from(recipe: Option<FeatureRecipe>) -> Self {
+        recipe.map_or(Self::None, Self::Resolved)
+    }
+}
+
 /// Feature-operation family named by a feature-state record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureOperation {
@@ -196,10 +240,8 @@ pub struct FeatureOperation {
     pub kind: OperationKind,
     /// Display-name source.
     pub name: OperationName,
-    /// Procedural recipe name stored in the same current-state record.
-    pub recipe: Option<FeatureRecipe>,
-    /// Multiple complete recipe candidates prevent a unique feature projection.
-    pub recipe_conflict: bool,
+    /// Procedural recipe resolution for this state.
+    pub recipe: RecipeState,
     /// Multiple stored display states prevent a unique current-state selection.
     pub display_state_conflict: bool,
     /// DEPDB recipe prefix, when present.
@@ -380,17 +422,17 @@ fn agreeing_recipe_binding(bindings: &[FeatureRecipeBinding]) -> Option<FeatureR
         .then_some(first)
 }
 
-fn inline_recipe_resolution(record: &[u8]) -> (Option<FeatureRecipe>, bool) {
+fn inline_recipe_resolution(record: &[u8]) -> RecipeState {
     let mut found = None;
     for (name, recipe) in FEATURE_RECIPES {
         for _ in record.windows(name.len()).filter(|window| *window == *name) {
             if found.is_some() {
-                return (None, true);
+                return RecipeState::Conflicting { candidate: None };
             }
             found = Some(*recipe);
         }
     }
-    (found, false)
+    found.into()
 }
 
 fn conflicting_recipe_features(bindings: &[(u32, FeatureRecipeBinding)]) -> BTreeSet<u32> {
@@ -479,13 +521,12 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
             .map(|(_, binding)| *binding)
             .collect::<Vec<_>>();
         let bound_recipe = agreeing_recipe_binding(&matching_recipes);
-        let (recipe, recipe_conflict) = if matching_recipes.is_empty() {
+        let recipe = if matching_recipes.is_empty() {
             inline_recipe_resolution(record)
         } else {
-            (
-                bound_recipe.map(|binding| binding.recipe),
-                bound_recipe.is_none(),
-            )
+            bound_recipe.map_or(RecipeState::Conflicting { candidate: None }, |binding| {
+                RecipeState::Resolved(binding.recipe)
+            })
         };
         result.push(FeatureOperation {
             feature_id,
@@ -497,7 +538,6 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
                 prefix: stored_name_prefix,
             },
             recipe,
-            recipe_conflict,
             display_state_conflict: false,
             depdb: bound_recipe.map(|binding| DepdbPrefix {
                 schema: binding.root_schema_class,
@@ -511,7 +551,7 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
         if recipe_binding_counts.get(&feature_id) == Some(&1)
             && result.iter().any(|operation| {
                 operation.feature_id == feature_id
-                    && operation.recipe == Some(binding.recipe)
+                    && operation.recipe == RecipeState::Resolved(binding.recipe)
                     && operation.root_schema_class() == Some(binding.root_schema_class)
                     && operation.parent_feature_id() == Some(binding.parent_feature_id)
             })
@@ -522,8 +562,13 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
             feature_id,
             kind: OperationKind::from_recipe(binding.recipe),
             name: OperationName::Derived,
-            recipe: Some(binding.recipe),
-            recipe_conflict: conflicting_features.contains(&feature_id),
+            recipe: if conflicting_features.contains(&feature_id) {
+                RecipeState::Conflicting {
+                    candidate: Some(binding.recipe),
+                }
+            } else {
+                RecipeState::Resolved(binding.recipe)
+            },
             display_state_conflict: false,
             depdb: Some(DepdbPrefix {
                 schema: binding.root_schema_class,
@@ -574,26 +619,20 @@ pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
                 [display] => Some((*display).clone()),
                 displays => {
                     let mut projection = (*displays.last()?).clone();
-                    let first_recipe = displays.first()?.recipe;
                     projection.offset = displays.first()?.offset;
                     projection.state_offset = displays.first()?.state_offset;
-                    projection.recipe_conflict = displays.iter().any(|state| state.recipe_conflict)
-                        || displays
-                            .iter()
-                            .skip(1)
-                            .any(|state| state.recipe != first_recipe);
                     projection.display_state_conflict = true;
                     projection.kind =
                         agreeing_value(displays.iter().map(|state| state.kind.clone()))
                             .or_else(|| {
-                                agreeing_value(displays.iter().map(|state| state.recipe))
+                                agreeing_value(displays.iter().map(|state| state.recipe.resolved()))
                                     .flatten()
                                     .map(OperationKind::from_recipe)
                             })
                             .unwrap_or(OperationKind::Native);
                     projection.name = OperationName::Derived;
-                    projection.recipe =
-                        agreeing_value(displays.iter().map(|state| state.recipe)).flatten();
+                    projection.recipe = agreeing_value(displays.iter().map(|state| state.recipe))
+                        .unwrap_or(RecipeState::Conflicting { candidate: None });
                     projection.depdb = match (
                         agreeing_value(displays.iter().map(|state| state.root_schema_class()))
                             .flatten(),
@@ -612,8 +651,7 @@ pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
         if !conflicting_features.contains(&operation.feature_id) {
             continue;
         }
-        operation.recipe = None;
-        operation.recipe_conflict = true;
+        operation.recipe = RecipeState::Conflicting { candidate: None };
         operation.depdb = None;
         if !operation.display_name_stored() {
             operation.kind = OperationKind::Native;

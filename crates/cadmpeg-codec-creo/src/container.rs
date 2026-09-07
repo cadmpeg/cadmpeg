@@ -1769,10 +1769,13 @@ fn stored_operation_schema_class(
             "Section" => Some(SchemaClass::Section),
             "Draft" | "Schräge" => Some(SchemaClass::Draft),
             "Surface Merge" => Some(SchemaClass::SurfaceMerge),
-            _ => operation.recipe.map(|recipe| match recipe.effect() {
-                feature::FeatureRecipeEffect::Cut => SchemaClass::Cut,
-                feature::FeatureRecipeEffect::Protrude => SchemaClass::Protrusion,
-            }),
+            _ => operation
+                .recipe
+                .resolved()
+                .map(|recipe| match recipe.effect() {
+                    feature::FeatureRecipeEffect::Cut => SchemaClass::Cut,
+                    feature::FeatureRecipeEffect::Protrude => SchemaClass::Protrusion,
+                }),
         })
 }
 
@@ -2014,7 +2017,7 @@ fn feature_definitions(data: &[u8], sections: &[Section]) -> Vec<FeatureDefiniti
         if section.name == "DEPDB_DATA" {
             let recipe_operations = feature::operations(payload)
                 .into_iter()
-                .filter(|operation| operation.recipe.is_some())
+                .filter(|operation| operation.recipe.resolved().is_some())
                 .collect::<Vec<_>>();
             if let [operation] = recipe_operations.as_slice() {
                 if let Some(mut definition) =
@@ -2175,16 +2178,17 @@ fn depdb_recipe_rows(data: &[u8], sections: &[Section]) -> Vec<FeatureRow> {
         let payload = &data[section.offset..end];
         let mut recipe_operations = feature::operation_states(payload)
             .into_iter()
-            .filter(|operation| operation.recipe.is_some())
+            .filter_map(|operation| {
+                operation
+                    .recipe
+                    .candidate()
+                    .map(|recipe| (operation, recipe))
+            })
             .collect::<Vec<_>>();
-        recipe_operations.sort_by_key(|operation| operation.offset);
+        recipe_operations.sort_by_key(|(operation, _)| operation.offset);
         let mut body_start = 0;
-        for operation in &recipe_operations {
-            let Some(body_end) = recipe_end(
-                payload,
-                operation.offset,
-                operation.recipe.expect("filtered recipe operation"),
-            ) else {
+        for (operation, recipe) in &recipe_operations {
+            let Some(body_end) = recipe_end(payload, operation.offset, *recipe) else {
                 continue;
             };
             if body_start >= body_end {
@@ -2954,8 +2958,7 @@ mod feature_row_definition_tests {
                 keyword: crate::feature::IdKeyword::Id,
                 prefix: None,
             },
-            recipe: None,
-            recipe_conflict: false,
+            recipe: crate::feature::RecipeState::None,
             display_state_conflict: false,
             depdb: None,
             offset: 0,
@@ -3056,8 +3059,7 @@ mod feature_row_definition_tests {
             feature_id,
             kind: crate::feature::OperationKind::Stored(String::new()),
             name: crate::feature::OperationName::Derived,
-            recipe,
-            recipe_conflict: false,
+            recipe: crate::feature::RecipeState::from(recipe),
             display_state_conflict: false,
             depdb: None,
             offset,
