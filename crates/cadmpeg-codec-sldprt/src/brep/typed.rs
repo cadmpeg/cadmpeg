@@ -79,22 +79,6 @@ pub struct ShellNode {
     pub end: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RegionKind {
-    Solid,
-    Void,
-}
-
-impl RegionKind {
-    fn read(byte: u8) -> Option<Self> {
-        match byte {
-            b'S' => Some(Self::Solid),
-            b'V' => Some(Self::Void),
-            _ => None,
-        }
-    }
-}
-
 /// A typed REGION node.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RegionNode {
@@ -104,8 +88,6 @@ pub struct RegionNode {
     pub node_id: u32,
     /// `[attribute_chain, body, next, previous, shell_head]`.
     pub refs: [u32; 5],
-    /// `S` for solid and `V` for void.
-    pub kind: RegionKind,
     /// Byte offset of the node tag.
     pub offset: usize,
     /// First byte after the complete node.
@@ -716,12 +698,12 @@ fn parse_region_fields(bytes: &[u8], offset: usize, payload: usize) -> Option<Re
     // A schema edit may retain one additional reference before the semantic
     // kind byte.  It is not part of the ownership tuple, but it must be
     // consumed so the node boundary remains correct.
-    let kind = if let Some(kind) = bytes.get(at).and_then(|byte| RegionKind::read(*byte)) {
-        kind
-    } else {
+    if !matches!(bytes.get(at), Some(b'S' | b'V')) {
         read_ref(bytes, &mut at)?;
-        RegionKind::read(*bytes.get(at)?)?
-    };
+        if !matches!(bytes.get(at), Some(b'S' | b'V')) {
+            return None;
+        }
+    }
     if refs[1] <= 1 {
         return None;
     }
@@ -729,7 +711,6 @@ fn parse_region_fields(bytes: &[u8], offset: usize, payload: usize) -> Option<Re
         attr,
         node_id,
         refs,
-        kind,
         offset,
         end: at + 1,
     })
@@ -1149,7 +1130,6 @@ mod tests {
         assert_eq!(facts.bodies[0].topology_refs, [7, 1, 8, 9, 10, 1, 1]);
         assert_eq!(facts.regions.len(), 1);
         assert_eq!(facts.regions[0].refs, [1, 3, 1, 1, 7]);
-        assert_eq!(facts.regions[0].kind, RegionKind::Void);
     }
 
     #[test]
@@ -1166,7 +1146,6 @@ mod tests {
         assert_eq!(facts.regions.len(), 1);
         assert_eq!(facts.regions[0].attr, 11);
         assert_eq!(facts.regions[0].refs, [1, 3, 45, 1, 51]);
-        assert_eq!(facts.regions[0].kind, RegionKind::Void);
     }
 
     #[test]
@@ -1239,7 +1218,6 @@ mod tests {
                 attr: 41,
                 node_id: 52,
                 refs: [1, 3, 1, 1, 8],
-                kind: RegionKind::Solid,
                 offset: 7,
                 end: 8,
             }],
@@ -1296,7 +1274,6 @@ mod tests {
                 attr: 41,
                 node_id: 52,
                 refs: [1, 3, 1, 1, 8],
-                kind: RegionKind::Solid,
                 offset: 7,
                 end: 8,
             }],
@@ -1334,7 +1311,6 @@ mod tests {
                 attr: 41,
                 node_id: 52,
                 refs: [1, 3, 1, 1, 8],
-                kind: RegionKind::Solid,
                 offset: 5,
                 end: 6,
             }],
@@ -1395,7 +1371,6 @@ mod tests {
                 attr: 41,
                 node_id: 52,
                 refs: [1, 3, 1, 1, 8],
-                kind: RegionKind::Solid,
                 offset: 7,
                 end: 8,
             }],
@@ -1439,7 +1414,6 @@ mod tests {
                 attr: 41,
                 node_id: 52,
                 refs: [1, 3, 1, 1, 8],
-                kind: RegionKind::Solid,
                 offset: 5,
                 end: 6,
             }],
@@ -1467,7 +1441,6 @@ mod tests {
                 attr: 35,
                 node_id: 52,
                 refs: [1, 3, 1, 10, 7],
-                kind: RegionKind::Solid,
                 offset: 3,
                 end: 4,
             },
