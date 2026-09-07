@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests: zero orientation.
 
+use crate::decode::sweep::pcurves::RevolutionBoundary;
+
 use super::with_decode_ctx;
 use crate::decode::analytic::{
     ordered_face_loops, ordered_planar_face_loops, point_on_carrier, solve_carriers,
@@ -1092,7 +1094,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         &SurfaceGeometry::Nurbs(surface.clone()),
         &axis,
         segment.2,
-        true,
+        RevolutionBoundary::Start,
     )
     .expect("start boundary pcurve");
     let end_pcurve = revolution_profile_boundary_pcurve(
@@ -1101,7 +1103,7 @@ fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense
         &SurfaceGeometry::Nurbs(surface.clone()),
         &axis,
         segment.3,
-        false,
+        RevolutionBoundary::End,
     )
     .expect("end boundary pcurve");
     for (pcurve, expected_u) in [(start_pcurve, 2.0), (end_pcurve, 5.0)] {

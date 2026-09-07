@@ -5,7 +5,7 @@ mod circular;
 mod extent;
 mod extrusion_brep;
 mod nurbs;
-mod pcurves;
+pub(super) mod pcurves;
 mod planes;
 mod profiles;
 mod revolution_brep;

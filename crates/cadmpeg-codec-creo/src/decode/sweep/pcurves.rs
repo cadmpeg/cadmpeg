@@ -202,18 +202,46 @@ pub(in super::super) fn revolved_brep_surface(
     revolved_section_surface(transform, geometry, axis)
 }
 
+/// An endpoint boundary of a revolved profile segment.
+#[derive(Clone, Copy)]
+pub(in super::super) enum RevolutionBoundary {
+    Start,
+    End,
+}
+
+impl RevolutionBoundary {
+    /// The boundary key used in native identities.
+    pub(super) const fn key(self) -> &'static str {
+        match self {
+            Self::Start => "start",
+            Self::End => "end",
+        }
+    }
+
+    /// The other endpoint boundary.
+    pub(super) const fn opposite(self) -> Self {
+        match self {
+            Self::Start => Self::End,
+            Self::End => Self::Start,
+        }
+    }
+}
+
 pub(in super::super) fn revolution_profile_boundary_pcurve(
     transform: &crate::placement::FeatureSectionTransform,
     segment: &(SketchGeometry, bool, [f64; 2], [f64; 2]),
     surface: &SurfaceGeometry,
     axis: &RevolutionAxis,
     section_point: [f64; 2],
-    at_start: bool,
+    boundary: RevolutionBoundary,
 ) -> Option<PcurveGeometry> {
     if matches!(segment.0, SketchGeometry::Nurbs { .. }) {
         let nurbs = oriented_sketch_nurbs_curve(&segment.0, segment.1)?;
         let [lower, upper] = nurbs_intrinsic_parameter_range(&nurbs)?;
-        let parameter = if at_start { lower } else { upper };
+        let parameter = match boundary {
+            RevolutionBoundary::Start => lower,
+            RevolutionBoundary::End => upper,
+        };
         return Some(line_pcurve(
             [parameter, 0.0],
             [parameter, std::f64::consts::TAU],
