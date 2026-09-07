@@ -31,9 +31,10 @@ use crate::sab::{Record, Token};
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, LoftPathCurve,
-    NurbsCurve, Pcurve, PcurveGeometry, PcurveInlineForm, PcurveMetadata, ProceduralCurve,
-    ProceduralSurface, ProceduralSurfaceDefinition, RollingBallConstruction,
-    RollingBallRadiusSelector, RollingBallSide, RollingBallThirdSide, Surface, SurfaceGeometry,
+    NurbsCurve, Pcurve, PcurveGeometry, PcurveInlineForm, PcurveMetadata, PcurveNurbs,
+    ProceduralCurve, ProceduralSurface, ProceduralSurfaceDefinition, RollingBallConstruction,
+    RollingBallRadiusSelector, RollingBallSide, RollingBallSideExtension, RollingBallSupportCurve,
+    RollingBallSupportSurface, RollingBallThirdSide, Surface, SurfaceGeometry,
     VariableBlendConstruction, VertexBlendBoundary, VertexBlendBoundaryGeometry,
     VertexBlendConstruction,
 };
@@ -1964,6 +1965,53 @@ fn emit_g2_blend_surface(
     }
 }
 
+fn emit_rolling_ball_side(
+    out: &mut AsmBrep,
+    prefix: &str,
+    side: RollingBallSide<SurfaceGeometry, CurveGeometry, PcurveNurbs>,
+) -> RollingBallSide {
+    let surface = side.surface.map(|support| {
+        let id = SurfaceId::mint(format!("{prefix}:surface")).expect("identity grammar");
+        out.surfaces.push(Surface {
+            id: id.clone(),
+            geometry: support.surface,
+            source_object: None,
+        });
+        RollingBallSupportSurface {
+            surface: id,
+            parameter_ranges: support.parameter_ranges,
+        }
+    });
+    let curve = side.curve.map(|support| {
+        let id = CurveId::mint(format!("{prefix}:curve")).expect("identity grammar");
+        out.curves.push(Curve {
+            id: id.clone(),
+            geometry: support.curve,
+            source_object: None,
+        });
+        RollingBallSupportCurve {
+            curve: id,
+            parameter_range: support.parameter_range,
+        }
+    });
+    RollingBallSide {
+        support_kind: side.support_kind,
+        surface,
+        curve,
+        pcurve: side.pcurve.map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
+        location: side.location,
+        secondary_pcurve: side
+            .secondary_pcurve
+            .map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
+        extension: side.extension.map(|extension| RollingBallSideExtension {
+            value: extension.value,
+            pcurve: extension
+                .pcurve
+                .map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
+        }),
+    }
+}
+
 fn emit_variable_blend_surface(
     out: &mut AsmBrep,
     i: i64,
@@ -1975,40 +2023,7 @@ fn emit_variable_blend_surface(
         let side_index = next_side_index;
         next_side_index += 1;
         let prefix = format!("{format}:brep:procedural_surface#{i}:variable_side{side_index}");
-        let surface = side.surface.map(|geometry| {
-            let id = SurfaceId::mint(format!("{prefix}:surface")).expect("identity grammar");
-            out.surfaces.push(Surface {
-                id: id.clone(),
-                geometry,
-                source_object: None,
-            });
-            id
-        });
-        let curve = side.curve.map(|geometry| {
-            let id = CurveId::mint(format!("{prefix}:curve")).expect("identity grammar");
-            out.curves.push(Curve {
-                id: id.clone(),
-                geometry,
-                source_object: None,
-            });
-            id
-        });
-        RollingBallSide {
-            support_kind: side.support_kind,
-            surface,
-            surface_ranges: side.surface_ranges,
-            curve,
-            curve_range: side.curve_range,
-            pcurve: side.pcurve.map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
-            location: side.location,
-            secondary_pcurve: side
-                .secondary_pcurve
-                .map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
-            extension: side.extension,
-            tertiary_pcurve: side
-                .tertiary_pcurve
-                .map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
-        }
+        emit_rolling_ball_side(out, &prefix, side)
     });
     let mut add_curve = |suffix: &str, geometry: CurveGeometry| {
         let id = CurveId::mint(format!(
@@ -2209,40 +2224,7 @@ fn emit_revision_g2_blend_surface(
         let side_index = next_side_index;
         next_side_index += 1;
         let prefix = format!("{format}:brep:procedural_surface#{i}:g2_side{side_index}");
-        let surface = side.surface.map(|geometry| {
-            let id = SurfaceId::mint(format!("{prefix}:surface")).expect("identity grammar");
-            out.surfaces.push(Surface {
-                id: id.clone(),
-                geometry,
-                source_object: None,
-            });
-            id
-        });
-        let curve = side.curve.map(|geometry| {
-            let id = CurveId::mint(format!("{prefix}:curve")).expect("identity grammar");
-            out.curves.push(Curve {
-                id: id.clone(),
-                geometry,
-                source_object: None,
-            });
-            id
-        });
-        RollingBallSide {
-            support_kind: side.support_kind,
-            surface,
-            surface_ranges: side.surface_ranges,
-            curve,
-            curve_range: side.curve_range,
-            pcurve: side.pcurve.map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
-            location: side.location,
-            secondary_pcurve: side
-                .secondary_pcurve
-                .map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
-            extension: side.extension,
-            tertiary_pcurve: side
-                .tertiary_pcurve
-                .map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
-        }
+        emit_rolling_ball_side(out, &prefix, side)
     });
     let center_id = CurveId::mint(format!("{format}:brep:procedural_surface#{i}:g2_center"))
         .expect("identity grammar");
@@ -2414,46 +2396,14 @@ fn emit_blend_surface(
             let side_index = next_side_index;
             next_side_index += 1;
             let prefix = format!("{format}:brep:procedural_surface#{i}:native_side{side_index}");
-            let surface = side.surface.map(|geometry| {
-                let id = SurfaceId::mint(format!("{prefix}:surface")).expect("identity grammar");
-                out.surfaces.push(Surface {
-                    id: id.clone(),
-                    geometry,
-                    source_object: None,
+            let side = emit_rolling_ball_side(out, &prefix, side);
+            if resolved_supports[side_index].is_none() {
+                resolved_supports[side_index] = side.surface.as_ref().map(|support| BlendSupport {
+                    surface: support.surface.clone(),
+                    reversed: false,
                 });
-                if resolved_supports[side_index].is_none() {
-                    resolved_supports[side_index] = Some(BlendSupport {
-                        surface: id.clone(),
-                        reversed: false,
-                    });
-                }
-                id
-            });
-            let curve = side.curve.map(|geometry| {
-                let id = CurveId::mint(format!("{prefix}:curve")).expect("identity grammar");
-                out.curves.push(Curve {
-                    id: id.clone(),
-                    geometry,
-                    source_object: None,
-                });
-                id
-            });
-            RollingBallSide {
-                support_kind: side.support_kind,
-                surface,
-                surface_ranges: side.surface_ranges,
-                curve,
-                curve_range: side.curve_range,
-                pcurve: side.pcurve.map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
-                location: side.location,
-                secondary_pcurve: side
-                    .secondary_pcurve
-                    .map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
-                extension: side.extension,
-                tertiary_pcurve: side
-                    .tertiary_pcurve
-                    .map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
             }
+            side
         });
         let slice = CurveId::mint(format!("{format}:brep:procedural_surface#{i}:native_slice"))
             .expect("identity grammar");

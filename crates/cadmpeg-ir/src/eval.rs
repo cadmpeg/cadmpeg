@@ -5722,7 +5722,7 @@ fn variable_blend_contact_track_differential(
     side: &crate::geometry::RollingBallSide,
     parameter: f64,
 ) -> Option<ContactTrackDifferential> {
-    let surface = side.surface.as_ref()?;
+    let surface = &side.surface.as_ref()?.surface;
     let pcurve = side.pcurve.as_ref()?;
     let uv = pcurve_uv(pcurve, parameter)?;
     let uv_tangent = pcurve_tangent(pcurve, parameter)?;
@@ -6135,7 +6135,7 @@ fn cacheless_constant_rolling_ball_section(
         if support.as_ref().is_some_and(|support| {
             side.surface
                 .as_ref()
-                .is_some_and(|surface| *surface != support.surface)
+                .is_some_and(|surface| surface.surface != support.surface)
         }) {
             return None;
         }

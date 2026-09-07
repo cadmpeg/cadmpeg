@@ -3939,7 +3939,8 @@ fn native_rolling_ball_side(
             VariableBlendSupportKind::ZeroCurve => "blend_support_zero_curve",
         },
     )?;
-    if let Some(id) = &side.surface {
+    if let Some(support) = &side.surface {
+        let id = &support.surface;
         let surface = target
             .model
             .surfaces
@@ -3958,7 +3959,7 @@ fn native_rolling_ball_side(
         ) {
             bytes.truncate(bytes.len() - 4);
         }
-        for range in side.surface_ranges {
+        for range in support.parameter_ranges {
             for endpoint in range {
                 bytes.push(native_bool(endpoint.is_some()));
                 if let Some(value) = endpoint {
@@ -3969,7 +3970,8 @@ fn native_rolling_ball_side(
     } else {
         native_ident(bytes, "null_surface")?;
     }
-    if let Some(id) = &side.curve {
+    if let Some(support) = &side.curve {
+        let id = &support.curve;
         let curve = target
             .model
             .curves
@@ -3980,13 +3982,13 @@ fn native_rolling_ball_side(
             })?;
         let curve = native_spline_field_curve(
             &curve.geometry,
-            match side.curve_range {
+            match support.parameter_range {
                 [Some(lower), Some(upper)] => Some([lower, upper]),
                 _ => native_pcurve_knot_domain(side.pcurve.as_ref())?,
             },
         )?;
         native_nurbs_curve(bytes, &curve)?;
-        for endpoint in side.curve_range {
+        for endpoint in support.parameter_range {
             bytes.push(native_bool(endpoint.is_some()));
             if let Some(value) = endpoint {
                 native_f64(bytes, value);
@@ -4005,13 +4007,9 @@ fn native_rolling_ball_side(
         ],
     );
     native_optional_pcurve(bytes, side.secondary_pcurve.as_ref())?;
-    if let Some(extension) = side.extension {
-        native_i64(bytes, extension);
-        native_optional_pcurve(bytes, side.tertiary_pcurve.as_ref())?;
-    } else if side.tertiary_pcurve.is_some() {
-        return Err(CodecError::Malformed(
-            "rolling-ball tertiary pcurve requires an extension integer".into(),
-        ));
+    if let Some(extension) = &side.extension {
+        native_i64(bytes, extension.value);
+        native_optional_pcurve(bytes, extension.pcurve.as_ref())?;
     }
     Ok(())
 }

@@ -1890,8 +1890,12 @@ pub fn decode_par_int_cur_isoline(
     take_range_value(scope, &mut position)?;
     take_tagged_int(scope, &mut position, 0x15, int_width)?;
     let supports = [
-        decode_optional_rolling_ball_surface(scope, &mut position, int_width, reference_context)?.0,
-        decode_optional_rolling_ball_surface(scope, &mut position, int_width, reference_context)?.0,
+        decode_optional_rolling_ball_surface(scope, &mut position, int_width, reference_context)?
+            .value()
+            .map(|support| support.surface),
+        decode_optional_rolling_ball_surface(scope, &mut position, int_width, reference_context)?
+            .value()
+            .map(|support| support.surface),
     ];
     let pcurves = [
         decode_nullable_embedded_pcurve(scope, &mut position, int_width)?.value(),
@@ -1928,8 +1932,12 @@ pub(crate) fn par_int_cur_isoline(
     cur.take_range_value()?;
     cur.take_enum()?;
     let supports = [
-        optional_rolling_ball_surface(&mut cur, reference_context)?.0,
-        optional_rolling_ball_surface(&mut cur, reference_context)?.0,
+        optional_rolling_ball_surface(&mut cur, reference_context)?
+            .value()
+            .map(|support| support.surface),
+        optional_rolling_ball_surface(&mut cur, reference_context)?
+            .value()
+            .map(|support| support.surface),
     ];
     let pcurves = [
         nullable_embedded_pcurve(&mut cur)?.value(),

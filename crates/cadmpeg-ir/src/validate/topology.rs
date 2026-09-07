@@ -904,18 +904,23 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
             ProceduralSurfaceDefinition::VariableBlend { construction } => {
                 for side in construction.sides.iter() {
                     if let Some(surface) = &side.surface {
-                        if ids.surfaces(surface.as_str()).is_none() {
+                        if ids.surfaces(surface.surface.as_str()).is_none() {
                             ref_error(
                                 findings,
                                 procedural.id.as_str(),
                                 "surface",
-                                surface.as_str(),
+                                surface.surface.as_str(),
                             );
                         }
                     }
                     if let Some(curve) = &side.curve {
-                        if ids.curves(curve.as_str()).is_none() {
-                            ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
+                        if ids.curves(curve.curve.as_str()).is_none() {
+                            ref_error(
+                                findings,
+                                procedural.id.as_str(),
+                                "curve",
+                                curve.curve.as_str(),
+                            );
                         }
                     }
                 }
@@ -979,18 +984,23 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
             ProceduralSurfaceDefinition::RevisionG2Blend { construction } => {
                 for side in construction.sides.iter() {
                     if let Some(surface) = &side.surface {
-                        if ids.surfaces(surface.as_str()).is_none() {
+                        if ids.surfaces(surface.surface.as_str()).is_none() {
                             ref_error(
                                 findings,
                                 procedural.id.as_str(),
                                 "surface",
-                                surface.as_str(),
+                                surface.surface.as_str(),
                             );
                         }
                     }
                     if let Some(curve) = &side.curve {
-                        if ids.curves(curve.as_str()).is_none() {
-                            ref_error(findings, procedural.id.as_str(), "curve", curve.as_str());
+                        if ids.curves(curve.curve.as_str()).is_none() {
+                            ref_error(
+                                findings,
+                                procedural.id.as_str(),
+                                "curve",
+                                curve.curve.as_str(),
+                            );
                         }
                     }
                 }
@@ -1223,10 +1233,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     check_curve(&native.slice, findings);
                     for side in native.sides.iter() {
                         if let Some(curve) = &side.curve {
-                            check_curve(curve, findings);
+                            check_curve(&curve.curve, findings);
                         }
                         if let Some(surface) = &side.surface {
-                            check_surface(surface, findings);
+                            check_surface(&surface.surface, findings);
                         }
                     }
                     if let Some(side) = &native.third {

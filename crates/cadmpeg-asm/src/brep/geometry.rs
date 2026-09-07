@@ -634,9 +634,14 @@ fn analytic_rolling_ball_surface(
         return None;
     }
     let support = |index: usize| {
-        supports[index]
-            .as_ref()
-            .or_else(|| native.and_then(|native| native.sides[index].surface.as_ref()))
+        supports[index].as_ref().or_else(|| {
+            native.and_then(|native| {
+                native.sides[index]
+                    .surface
+                    .as_ref()
+                    .map(|support| &support.surface)
+            })
+        })
     };
     let first = support(0)?;
     let second = support(1)?;

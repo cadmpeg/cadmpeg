@@ -56,15 +56,15 @@ fn variable_blend_eval_fixture(
     ]);
     let side = |surface, origin: Point2, direction: Point2| RollingBallSide {
         support_kind: VariableBlendSupportKind::Surface,
-        surface: Some(surface),
-        surface_ranges: [[None, None], [None, None]],
+        surface: Some(crate::geometry::RollingBallSupportSurface {
+            surface,
+            parameter_ranges: [[None, None], [None, None]],
+        }),
         curve: None,
-        curve_range: [None, None],
         pcurve: Some(PcurveGeometry::Line { origin, direction }),
         location: Point3::new(0.0, 0.0, 0.0),
         secondary_pcurve: None,
         extension: None,
-        tertiary_pcurve: None,
     };
     let radius = VariableBlendValue {
         name: "two_ends".into(),
@@ -366,7 +366,7 @@ fn cacheless_constant_rolling_ball_uses_its_spine_as_section_center() {
     let slice = construction.slice.clone();
     let supports = sides.each_ref().map(|side| {
         side.surface.as_ref().map(|surface| BlendSupport {
-            surface: surface.clone(),
+            surface: surface.surface.clone(),
             reversed: false,
         })
     });

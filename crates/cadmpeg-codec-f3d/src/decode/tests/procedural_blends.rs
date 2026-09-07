@@ -188,8 +188,20 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
         );
         assert!(native.sides.iter().all(|side| side.surface.is_some()));
         assert!(native.sides.iter().all(|side| side.pcurve.is_some()));
-        assert_eq!(native.sides[0].extension, Some(3));
-        assert_eq!(native.sides[1].extension, Some(4));
+        assert_eq!(
+            native.sides[0]
+                .extension
+                .as_ref()
+                .map(|extension| extension.value),
+            Some(3)
+        );
+        assert_eq!(
+            native.sides[1]
+                .extension
+                .as_ref()
+                .map(|extension| extension.value),
+            Some(4)
+        );
         assert_eq!(native.offsets, [-3.0, -6.0]);
         assert_eq!(native.radius_selector, RollingBallRadiusSelector::None);
         assert_eq!(native.u_range, [Some(-1.0), Some(2.0)]);
@@ -217,7 +229,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
         let side_curves = native
             .sides
             .iter()
-            .map(|side| side.curve.clone())
+            .map(|side| side.curve.as_ref().map(|support| support.curve.clone()))
             .collect::<Vec<_>>();
         let third_curve = native.third.as_ref().map(|third| third.curve.clone());
         let slice_curve = native.slice.clone();
@@ -281,7 +293,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
                     .model
                     .curves
                     .iter()
-                    .find(|curve| Some(&curve.id) == side.curve.as_ref())
+                    .find(|curve| Some(&curve.id) == side.curve.as_ref().map(|support| &support.curve))
                     .map(|curve| &curve.geometry),
                 Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
             if curve.degree() == 1 && curve.knots() == [0.0, 0.0, 1.0, 1.0]
@@ -725,8 +737,20 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
             construction.sides[1].support_kind,
             cadmpeg_ir::geometry::VariableBlendSupportKind::Curve
         );
-        assert_eq!(construction.sides[0].extension, Some(0));
-        assert_eq!(construction.sides[1].extension, Some(5));
+        assert_eq!(
+            construction.sides[0]
+                .extension
+                .as_ref()
+                .map(|extension| extension.value),
+            Some(0)
+        );
+        assert_eq!(
+            construction.sides[1]
+                .extension
+                .as_ref()
+                .map(|extension| extension.value),
+            Some(5)
+        );
         assert_eq!(
             construction.sides[0].location,
             cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0)
@@ -783,7 +807,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         let side_curves = construction
             .sides
             .iter()
-            .map(|side| side.curve.clone().expect("side curve"))
+            .map(|side| side.curve.as_ref().expect("side curve").curve.clone())
             .collect::<Vec<_>>();
         let (mut source_less, _, _) = result.into_parts();
         source_less.source = None;
@@ -853,7 +877,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
                     .model
                     .curves
                     .iter()
-                    .find(|curve| Some(&curve.id) == side.curve.as_ref())
+                    .find(|curve| Some(&curve.id) == side.curve.as_ref().map(|support| &support.curve))
                     .map(|curve| &curve.geometry),
                 Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
             if curve.degree() == 1 && curve.knots() == [0.0, 0.0, 1.0, 1.0]

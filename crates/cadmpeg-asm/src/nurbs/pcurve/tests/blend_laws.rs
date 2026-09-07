@@ -40,12 +40,19 @@ fn variable_blend_side_integer_extension_decodes_at_both_integer_widths() {
                     });
                 assert_eq!(position, bytes.len() - 1);
                 assert_eq!(side.support_kind, kind);
-                assert_eq!(side.extension, expected);
+                assert_eq!(
+                    side.extension.as_ref().map(|extension| extension.value),
+                    expected
+                );
                 assert_eq!(side.location, Point3::new(10.0, 20.0, 30.0));
                 assert!(side.surface.is_none());
                 assert!(side.curve.is_none());
                 assert!(side.secondary_pcurve.is_none());
-                assert!(side.tertiary_pcurve.is_none());
+                assert!(side
+                    .extension
+                    .as_ref()
+                    .and_then(|extension| extension.pcurve.as_ref())
+                    .is_none());
             }
         }
     }
@@ -323,8 +330,8 @@ fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
         let mut position = 0;
         assert!(matches!(
             decode_rolling_ball_curve(&straight, &mut position, int_width, None),
-            Some(DecodedRollingBallCurve {
-                geometry: CurveGeometry::Line { origin, direction },
+            Some(RollingBallSupportCurve {
+                curve: CurveGeometry::Line { origin, direction },
                 parameter_range: [Some(-2.0), Some(3.0)],
             })
                 if origin == Point3::new(10.0, 20.0, 30.0)
@@ -343,8 +350,8 @@ fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
         let mut position = 0;
         assert!(matches!(
             decode_rolling_ball_curve(&intcurve, &mut position, int_width, None),
-            Some(DecodedRollingBallCurve {
-                geometry: CurveGeometry::Nurbs(curve),
+            Some(RollingBallSupportCurve {
+                curve: CurveGeometry::Nurbs(curve),
                 parameter_range: [None, None],
         }) if curve.degree() == 1
         ));
@@ -376,8 +383,8 @@ fn rolling_ball_curves_decode_analytic_and_nested_intcurve_forms() {
                 int_width,
                 Some((&active, &tables)),
             ),
-            Some(DecodedRollingBallCurve {
-                geometry: CurveGeometry::Nurbs(curve),
+            Some(RollingBallSupportCurve {
+                curve: CurveGeometry::Nurbs(curve),
                 parameter_range: [None, None],
         }) if curve.degree() == 1
         ));

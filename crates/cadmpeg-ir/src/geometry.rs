@@ -4188,38 +4188,156 @@ pub struct G2BlendConstruction {
     pub discontinuities: [Vec<f64>; 3],
 }
 
-/// One complete native rolling-ball support side.
+/// A present rolling-ball support surface and its native UV bounds.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct RollingBallSide {
+pub struct RollingBallSupportSurface<S = SurfaceId> {
+    /// Support surface or embedded geometry.
+    pub surface: S,
+    /// Optional native U and V endpoints.
+    pub parameter_ranges: [[Option<f64>; 2]; 2],
+}
+
+/// A present rolling-ball side curve and its native parameter bounds.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct RollingBallSupportCurve<C = CurveId> {
+    /// Side curve or embedded geometry.
+    pub curve: C,
+    /// Optional native parameter endpoints.
+    pub parameter_range: [Option<f64>; 2],
+}
+
+/// The optional rolling-ball extension clause.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct RollingBallSideExtension<P = PcurveGeometry> {
+    /// Native integer introducing the clause.
+    pub value: i64,
+    /// Tertiary BS2 pcurve, absent for `nullbs`.
+    pub pcurve: Option<P>,
+}
+
+/// One complete native rolling-ball support side.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[cfg_attr(feature = "schema", schemars(with = "RollingBallSideWire<S, C, P>"))]
+pub struct RollingBallSide<S = SurfaceId, C = CurveId, P = PcurveGeometry> {
     /// Geometry role selected by the support-side discriminator.
     pub support_kind: VariableBlendSupportKind,
-    /// Primary support surface, absent for `null_surface`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub surface: Option<SurfaceId>,
-    /// Optional native support-surface U and V endpoints.
-    #[serde(default)]
-    pub surface_ranges: [[Option<f64>; 2]; 2],
-    /// Side curve, absent for `null_curve`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub curve: Option<CurveId>,
-    /// Optional native side-curve parameter endpoints.
-    #[serde(default)]
-    pub curve_range: [Option<f64>; 2],
+    /// Primary support surface and bounds, absent for `null_surface`.
+    pub surface: Option<RollingBallSupportSurface<S>>,
+    /// Side curve and bounds, absent for `null_curve`.
+    pub curve: Option<RollingBallSupportCurve<C>>,
     /// Primary BS2 pcurve, absent for `nullbs`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pcurve: Option<PcurveGeometry>,
+    pub pcurve: Option<P>,
     /// Native model-space side location.
     pub location: Point3,
     /// ASM secondary BS2 pcurve, absent for `nullbs`.
+    pub secondary_pcurve: Option<P>,
+    /// Native extension integer and nullable tertiary pcurve.
+    pub extension: Option<RollingBallSideExtension<P>>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(bound(deserialize = "S: Deserialize<'de>, C: Deserialize<'de>, P: Deserialize<'de>"))]
+struct RollingBallSideWire<S, C, P> {
+    support_kind: VariableBlendSupportKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub secondary_pcurve: Option<PcurveGeometry>,
-    /// Native extension integer between the secondary and tertiary pcurves.
+    surface: Option<S>,
+    #[serde(default)]
+    surface_ranges: [[Option<f64>; 2]; 2],
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extension: Option<i64>,
-    /// ASM tertiary BS2 pcurve, absent for `nullbs`.
+    curve: Option<C>,
+    #[serde(default)]
+    curve_range: [Option<f64>; 2],
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tertiary_pcurve: Option<PcurveGeometry>,
+    pcurve: Option<P>,
+    location: Point3,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    secondary_pcurve: Option<P>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    extension: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tertiary_pcurve: Option<P>,
+}
+
+impl<S: Serialize, C: Serialize, P: Serialize> Serialize for RollingBallSide<S, C, P> {
+    fn serialize<W: serde::Serializer>(&self, serializer: W) -> Result<W::Ok, W::Error> {
+        RollingBallSideWire {
+            support_kind: self.support_kind,
+            surface: self.surface.as_ref().map(|support| &support.surface),
+            surface_ranges: self
+                .surface
+                .as_ref()
+                .map_or([[None; 2]; 2], |support| support.parameter_ranges),
+            curve: self.curve.as_ref().map(|support| &support.curve),
+            curve_range: self
+                .curve
+                .as_ref()
+                .map_or([None; 2], |support| support.parameter_range),
+            pcurve: self.pcurve.as_ref(),
+            location: self.location,
+            secondary_pcurve: self.secondary_pcurve.as_ref(),
+            extension: self.extension.as_ref().map(|extension| extension.value),
+            tertiary_pcurve: self
+                .extension
+                .as_ref()
+                .and_then(|extension| extension.pcurve.as_ref()),
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de, S: Deserialize<'de>, C: Deserialize<'de>, P: Deserialize<'de>> Deserialize<'de>
+    for RollingBallSide<S, C, P>
+{
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let wire = RollingBallSideWire::<S, C, P>::deserialize(deserializer)?;
+        let surface = match wire.surface {
+            Some(surface) => Some(RollingBallSupportSurface {
+                surface,
+                parameter_ranges: wire.surface_ranges,
+            }),
+            None if wire.surface_ranges.iter().flatten().any(Option::is_some) => {
+                return Err(serde::de::Error::custom(
+                    "rolling-ball surface_ranges require surface",
+                ))
+            }
+            None => None,
+        };
+        let curve = match wire.curve {
+            Some(curve) => Some(RollingBallSupportCurve {
+                curve,
+                parameter_range: wire.curve_range,
+            }),
+            None if wire.curve_range.iter().any(Option::is_some) => {
+                return Err(serde::de::Error::custom(
+                    "rolling-ball curve_range requires curve",
+                ))
+            }
+            None => None,
+        };
+        let extension = match (wire.extension, wire.tertiary_pcurve) {
+            (Some(value), pcurve) => Some(RollingBallSideExtension { value, pcurve }),
+            (None, Some(_)) => {
+                return Err(serde::de::Error::custom(
+                    "rolling-ball tertiary_pcurve requires extension",
+                ))
+            }
+            (None, None) => None,
+        };
+        Ok(Self {
+            support_kind: wire.support_kind,
+            surface,
+            curve,
+            pcurve: wire.pcurve,
+            location: wire.location,
+            secondary_pcurve: wire.secondary_pcurve,
+            extension,
+        })
+    }
 }
 
 /// Third support graph appended by `sss_blend_spl_sur`.

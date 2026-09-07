@@ -363,10 +363,10 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             ProceduralSurfaceDefinition::VariableBlend { construction } => {
                 for side in construction.sides.iter() {
                     if let Some(surface) = &side.surface {
-                        surfaces.insert(surface.as_str());
+                        surfaces.insert(surface.surface.as_str());
                     }
                     if let Some(curve) = &side.curve {
-                        curves.insert(curve.as_str());
+                        curves.insert(curve.curve.as_str());
                     }
                 }
                 curves.insert(construction.slice.as_str());
@@ -421,10 +421,10 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             ProceduralSurfaceDefinition::RevisionG2Blend { construction } => {
                 for side in construction.sides.iter() {
                     if let Some(surface) = &side.surface {
-                        surfaces.insert(surface.as_str());
+                        surfaces.insert(surface.surface.as_str());
                     }
                     if let Some(curve) = &side.curve {
-                        curves.insert(curve.as_str());
+                        curves.insert(curve.curve.as_str());
                     }
                 }
                 curves.insert(construction.center.as_str());
@@ -550,10 +550,10 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     curves.insert(native.slice.as_str());
                     for side in native.sides.iter() {
                         if let Some(curve) = &side.curve {
-                            curves.insert(curve.as_str());
+                            curves.insert(curve.curve.as_str());
                         }
                         if let Some(surface) = &side.surface {
-                            surfaces.insert(surface.as_str());
+                            surfaces.insert(surface.surface.as_str());
                         }
                     }
                     if let Some(side) = &native.third {

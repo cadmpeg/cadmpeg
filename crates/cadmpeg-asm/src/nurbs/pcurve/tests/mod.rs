@@ -4,7 +4,6 @@ use super::{decode_pcurve_cache, final_pcurve_patch_layout, pcurve_fit_tolerance
 use crate::kernel_header::RefWidth;
 use crate::nurbs::blend::{
     decode_rolling_ball_curve, decode_rolling_ball_side, decode_rolling_ball_surface,
-    DecodedRollingBallCurve,
 };
 use crate::nurbs::core::{
     curve_cache, decode_curve_cache, decode_surface_cache, final_curve_patch_layout,
@@ -21,6 +20,7 @@ use crate::nurbs::proc_surface::{DecodedProceduralSurfaceDefinition, EmbeddedLaw
 use crate::nurbs::reader::NUBS_MARKER;
 use crate::nurbs::subtypes::SubtypeTables;
 use crate::nurbs::toks::{lex_test_span, test_table};
+use cadmpeg_ir::geometry::RollingBallSupportCurve;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 

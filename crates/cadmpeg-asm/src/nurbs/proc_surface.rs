@@ -18,7 +18,8 @@ use crate::sab::Token;
 use cadmpeg_core::decode::bounded_len;
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, NurbsCurve, NurbsSurface, PcurveNurbs,
-    RevisionCacheForm, RevisionSurfaceParameterization, SurfaceGeometry, VariableBlendCache,
+    RevisionCacheForm, RevisionSurfaceParameterization, RollingBallSide, SurfaceGeometry,
+    VariableBlendCache,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::num::NonZeroI64;
@@ -172,30 +173,6 @@ pub enum DecodedProceduralSurfaceDefinition {
     VertexBlend(Box<EmbeddedVertexBlend>),
 }
 
-/// One embedded support side of a rolling-ball or variable blend.
-pub struct EmbeddedRollingBallSide {
-    /// The support kind the side's leading identifier selects.
-    pub support_kind: cadmpeg_ir::geometry::VariableBlendSupportKind,
-    /// The embedded support surface.
-    pub surface: Option<SurfaceGeometry>,
-    /// Optional UV bounds of the support surface; `None` marks an unbounded end.
-    pub surface_ranges: [[Option<f64>; 2]; 2],
-    /// The embedded support curve.
-    pub curve: Option<CurveGeometry>,
-    /// Optional parameter bounds of the support curve.
-    pub curve_range: [Option<f64>; 2],
-    /// The embedded NURBS parameter curve on the support surface.
-    pub pcurve: Option<PcurveNurbs>,
-    /// The support location point.
-    pub location: Point3,
-    /// A second embedded parameter curve, when serialized.
-    pub secondary_pcurve: Option<PcurveNurbs>,
-    /// The extension integer serialized after the secondary pcurve.
-    pub extension: Option<i64>,
-    /// A third embedded parameter curve, when serialized.
-    pub tertiary_pcurve: Option<PcurveNurbs>,
-}
-
 /// Embedded revision-gated G2 blend before stable IR ids are assigned.
 pub struct EmbeddedRevisionG2Blend {
     /// The revision integer that gates the layout.
@@ -203,7 +180,7 @@ pub struct EmbeddedRevisionG2Blend {
     /// Two leading parameters serialized before the sides.
     pub leading_parameters: [f64; 2],
     /// Two ordered embedded support sides.
-    pub sides: Box<[EmbeddedRollingBallSide; 2]>,
+    pub sides: Box<[RollingBallSide<SurfaceGeometry, CurveGeometry, PcurveNurbs>; 2]>,
     /// The embedded center curve.
     pub center: CurveGeometry,
     /// Optional parameter bounds of the center curve.
@@ -266,7 +243,7 @@ pub struct EmbeddedVariableBlend {
     /// The revision integer that gates the layout.
     pub revision: i64,
     /// Two ordered embedded support sides.
-    pub sides: Box<[EmbeddedRollingBallSide; 2]>,
+    pub sides: Box<[RollingBallSide<SurfaceGeometry, CurveGeometry, PcurveNurbs>; 2]>,
     /// The embedded slice curve.
     pub slice: CurveGeometry,
     /// Optional parameter bounds of the slice curve.
@@ -394,7 +371,7 @@ pub struct EmbeddedRollingBall {
     /// The subtype-table index of the record's own definition.
     pub definition_index: i64,
     /// Two ordered embedded support sides.
-    pub sides: Box<[EmbeddedRollingBallSide; 2]>,
+    pub sides: Box<[RollingBallSide<SurfaceGeometry, CurveGeometry, PcurveNurbs>; 2]>,
     /// The embedded slice curve.
     pub slice: CurveGeometry,
     /// Optional parameter bounds of the slice curve.

@@ -17,20 +17,20 @@ use crate::nurbs::proc_curve::{
 use crate::nurbs::proc_surface::{
     decode_nullable_embedded_pcurve, nullable_embedded_pcurve, revision_surface_tail,
     DecodedProceduralSurface, DecodedProceduralSurfaceDefinition, EmbeddedRollingBall,
-    EmbeddedRollingBallSide, EmbeddedRollingBallThirdSide, EmbeddedVariableBlend,
-    EmbeddedVertexBlend, EmbeddedVertexBlendBoundary, EmbeddedVertexBlendBoundaryGeometry,
-    RevisionSurfaceTail,
+    EmbeddedRollingBallThirdSide, EmbeddedVariableBlend, EmbeddedVertexBlend,
+    EmbeddedVertexBlendBoundary, EmbeddedVertexBlendBoundaryGeometry, RevisionSurfaceTail,
 };
 use crate::nurbs::reader::{
     marker_at, take_bool, take_f64, take_native_ident, take_native_string, take_native_vec3,
-    take_optional_range_value, take_tagged_int, unit_vector, LEN_TO_MM,
+    take_optional_range_value, take_tagged_int, unit_vector, Nullable, LEN_TO_MM,
 };
 use crate::nurbs::subtypes::{subtype_span, SubtypeTables};
 use crate::nurbs::toks::{self, Cur, SubtypeTable};
 use crate::sab::Token;
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, PcurveGeometry, PcurveNurbs,
-    RevisionCacheForm, SurfaceGeometry, VariableBlendCache,
+    RevisionCacheForm, RollingBallSide, RollingBallSideExtension, RollingBallSupportCurve,
+    RollingBallSupportSurface, SurfaceGeometry, VariableBlendCache,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -149,7 +149,7 @@ pub(crate) fn decode_rolling_ball_side(
     position: &mut usize,
     int_width: RefWidth,
     reference_context: Option<(&[u8], &SubtypeTables)>,
-) -> Option<EmbeddedRollingBallSide> {
+) -> Option<RollingBallSide<SurfaceGeometry, CurveGeometry, PcurveNurbs>> {
     use cadmpeg_ir::geometry::VariableBlendSupportKind;
     let support_kind = match take_native_string(bytes, position, int_width)?.as_str() {
         "blend_support_cos_curve" | "blendsupcos" => VariableBlendSupportKind::CosineCurve,
@@ -159,17 +159,21 @@ pub(crate) fn decode_rolling_ball_side(
         "blend_support_zero_curve" | "blendsupzro" => VariableBlendSupportKind::ZeroCurve,
         _ => return None,
     };
-    let (surface, surface_ranges) =
-        decode_optional_rolling_ball_surface(bytes, position, int_width, reference_context)?;
+    let surface =
+        decode_optional_rolling_ball_surface(bytes, position, int_width, reference_context)?
+            .value();
     let saved = *position;
-    let (curve, curve_range) =
-        if take_native_ident(bytes, position).as_deref() == Some("null_curve") {
-            (None, [None, None])
-        } else {
-            *position = saved;
-            let curve = decode_rolling_ball_curve(bytes, position, int_width, reference_context)?;
-            (Some(curve.geometry), curve.parameter_range)
-        };
+    let curve = if take_native_ident(bytes, position).as_deref() == Some("null_curve") {
+        None
+    } else {
+        *position = saved;
+        Some(decode_rolling_ball_curve(
+            bytes,
+            position,
+            int_width,
+            reference_context,
+        )?)
+    };
     let pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?.value();
     let location = take_native_vec3(bytes, position, 0x13)?;
     let secondary_pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?.value();
@@ -177,21 +181,22 @@ pub(crate) fn decode_rolling_ball_side(
     let extension_fields = (|| {
         let extension = take_tagged_int(bytes, position, 0x04, int_width)?;
         let tertiary = decode_nullable_embedded_pcurve(bytes, position, int_width)?.value();
-        Some((extension, tertiary))
+        Some(RollingBallSideExtension {
+            value: extension,
+            pcurve: tertiary,
+        })
     })();
-    let (extension, tertiary_pcurve) = match extension_fields {
-        Some((extension, tertiary)) => (Some(extension), tertiary),
+    let extension = match extension_fields {
+        Some(extension) => Some(extension),
         None => {
             *position = extension_start;
-            (None, None)
+            None
         }
     };
-    Some(EmbeddedRollingBallSide {
+    Some(RollingBallSide {
         support_kind,
         surface,
-        surface_ranges,
         curve,
-        curve_range,
         pcurve,
         location: Point3::new(
             location[0] * LEN_TO_MM,
@@ -200,13 +205,8 @@ pub(crate) fn decode_rolling_ball_side(
         ),
         secondary_pcurve,
         extension,
-        tertiary_pcurve,
     })
 }
-
-/// A decoded support-surface slot: the surface, absent when the slot holds
-/// `null_surface`, and its `[[u0, u1], [v0, v1]]` parameter bounds.
-pub(crate) type OptionalSupportSurface = (Option<SurfaceGeometry>, [[Option<f64>; 2]; 2]);
 
 /// A support-surface slot: the `null_surface` ident, or an embedded surface and
 /// its parameter bounds.
@@ -215,14 +215,20 @@ pub(crate) fn decode_optional_rolling_ball_surface(
     position: &mut usize,
     int_width: RefWidth,
     reference_context: Option<(&[u8], &SubtypeTables)>,
-) -> Option<OptionalSupportSurface> {
+) -> Option<Nullable<RollingBallSupportSurface<SurfaceGeometry>>> {
     let saved = *position;
     if take_native_ident(bytes, position).as_deref() == Some("null_surface") {
-        return Some((None, [[None, None], [None, None]]));
+        return Some(Nullable::Null);
     }
     *position = saved;
-    decode_rolling_ball_surface(bytes, position, int_width, reference_context)
-        .map(|(surface, ranges)| (Some(surface), ranges))
+    decode_rolling_ball_surface(bytes, position, int_width, reference_context).map(
+        |(surface, parameter_ranges)| {
+            Nullable::Value(RollingBallSupportSurface {
+                surface,
+                parameter_ranges,
+            })
+        },
+    )
 }
 
 pub(crate) fn decode_rolling_ball_surface(
@@ -271,17 +277,12 @@ pub(crate) fn decode_surface_ranges(
     ])
 }
 
-pub(crate) struct DecodedRollingBallCurve {
-    pub(crate) geometry: CurveGeometry,
-    pub(crate) parameter_range: [Option<f64>; 2],
-}
-
 pub(crate) fn decode_rolling_ball_curve(
     bytes: &[u8],
     position: &mut usize,
     int_width: RefWidth,
     reference_context: Option<(&[u8], &SubtypeTables)>,
-) -> Option<DecodedRollingBallCurve> {
+) -> Option<RollingBallSupportCurve<CurveGeometry>> {
     if marker_at(bytes, *position).is_some() {
         let curve = decode_curve_block(bytes, *position, int_width)?;
         *position = curve.end();
@@ -289,8 +290,8 @@ pub(crate) fn decode_rolling_ball_curve(
             take_optional_range_value(bytes, position)?.value(),
             take_optional_range_value(bytes, position)?.value(),
         ];
-        return Some(DecodedRollingBallCurve {
-            geometry: CurveGeometry::Nurbs(curve.curve),
+        return Some(RollingBallSupportCurve {
+            curve: CurveGeometry::Nurbs(curve.curve),
             parameter_range,
         });
     }
@@ -309,8 +310,8 @@ pub(crate) fn decode_rolling_ball_curve(
             take_optional_range_value(bytes, position)?.value(),
             take_optional_range_value(bytes, position)?.value(),
         ];
-        return Some(DecodedRollingBallCurve {
-            geometry: CurveGeometry::Nurbs(curve),
+        return Some(RollingBallSupportCurve {
+            curve: CurveGeometry::Nurbs(curve),
             parameter_range,
         });
     }
@@ -375,8 +376,8 @@ pub(crate) fn decode_rolling_ball_curve(
         take_optional_range_value(bytes, position)?.value(),
         take_optional_range_value(bytes, position)?.value(),
     ];
-    Some(DecodedRollingBallCurve {
-        geometry,
+    Some(RollingBallSupportCurve {
+        curve: geometry,
         parameter_range,
     })
 }
@@ -386,7 +387,7 @@ pub(crate) fn decode_rolling_ball_curve(
 pub(crate) fn rolling_ball_side(
     cur: &mut Cur<'_>,
     reference_context: Option<&SubtypeTable>,
-) -> Option<EmbeddedRollingBallSide> {
+) -> Option<RollingBallSide<SurfaceGeometry, CurveGeometry, PcurveNurbs>> {
     use cadmpeg_ir::geometry::VariableBlendSupportKind;
     let support_kind = match cur.take_str()? {
         "blend_support_cos_curve" | "blendsupcos" => VariableBlendSupportKind::CosineCurve,
@@ -396,14 +397,13 @@ pub(crate) fn rolling_ball_side(
         "blend_support_zero_curve" | "blendsupzro" => VariableBlendSupportKind::ZeroCurve,
         _ => return None,
     };
-    let (surface, surface_ranges) = optional_rolling_ball_surface(cur, reference_context)?;
+    let surface = optional_rolling_ball_surface(cur, reference_context)?.value();
     let saved = cur.pos();
-    let (curve, curve_range) = if cur.take_ident() == Some("null_curve") {
-        (None, [None, None])
+    let curve = if cur.take_ident() == Some("null_curve") {
+        None
     } else {
         cur.set_pos(saved);
-        let curve = rolling_ball_curve(cur, reference_context)?;
-        (Some(curve.geometry), curve.parameter_range)
+        Some(rolling_ball_curve(cur, reference_context)?)
     };
     let pcurve = nullable_embedded_pcurve(cur)?.value();
     let location = cur.take_position()?;
@@ -412,21 +412,22 @@ pub(crate) fn rolling_ball_side(
     let extension_fields = (|| {
         let extension = cur.take_long()?;
         let tertiary = nullable_embedded_pcurve(cur)?.value();
-        Some((extension, tertiary))
+        Some(RollingBallSideExtension {
+            value: extension,
+            pcurve: tertiary,
+        })
     })();
-    let (extension, tertiary_pcurve) = match extension_fields {
-        Some((extension, tertiary)) => (Some(extension), tertiary),
+    let extension = match extension_fields {
+        Some(extension) => Some(extension),
         None => {
             cur.set_pos(extension_start);
-            (None, None)
+            None
         }
     };
-    Some(EmbeddedRollingBallSide {
+    Some(RollingBallSide {
         support_kind,
         surface,
-        surface_ranges,
         curve,
-        curve_range,
         pcurve,
         location: Point3::new(
             location[0] * LEN_TO_MM,
@@ -435,7 +436,6 @@ pub(crate) fn rolling_ball_side(
         ),
         secondary_pcurve,
         extension,
-        tertiary_pcurve,
     })
 }
 
@@ -445,13 +445,18 @@ pub(crate) fn rolling_ball_side(
 pub(crate) fn optional_rolling_ball_surface(
     cur: &mut Cur<'_>,
     reference_context: Option<&SubtypeTable>,
-) -> Option<OptionalSupportSurface> {
+) -> Option<Nullable<RollingBallSupportSurface<SurfaceGeometry>>> {
     let saved = cur.pos();
     if cur.take_ident() == Some("null_surface") {
-        return Some((None, [[None, None], [None, None]]));
+        return Some(Nullable::Null);
     }
     cur.set_pos(saved);
-    rolling_ball_surface(cur, reference_context).map(|(surface, ranges)| (Some(surface), ranges))
+    rolling_ball_surface(cur, reference_context).map(|(surface, parameter_ranges)| {
+        Nullable::Value(RollingBallSupportSurface {
+            surface,
+            parameter_ranges,
+        })
+    })
 }
 
 /// Decode one rolling-ball support surface. Token-space counterpart of
@@ -503,7 +508,7 @@ pub(crate) fn surface_ranges(cur: &mut Cur<'_>) -> Option<[[Option<f64>; 2]; 2]>
 pub(crate) fn rolling_ball_curve(
     cur: &mut Cur<'_>,
     reference_context: Option<&SubtypeTable>,
-) -> Option<DecodedRollingBallCurve> {
+) -> Option<RollingBallSupportCurve<CurveGeometry>> {
     let toks = cur.toks();
     if toks::marker_at(toks, cur.pos()).is_some() {
         let (curve, curve_end) = curve_block(toks, cur.pos())?;
@@ -512,8 +517,8 @@ pub(crate) fn rolling_ball_curve(
             cur.take_optional_range_value()?.value(),
             cur.take_optional_range_value()?.value(),
         ];
-        return Some(DecodedRollingBallCurve {
-            geometry: CurveGeometry::Nurbs(curve),
+        return Some(RollingBallSupportCurve {
+            curve: CurveGeometry::Nurbs(curve),
             parameter_range,
         });
     }
@@ -530,8 +535,8 @@ pub(crate) fn rolling_ball_curve(
             cur.take_optional_range_value()?.value(),
             cur.take_optional_range_value()?.value(),
         ];
-        return Some(DecodedRollingBallCurve {
-            geometry: CurveGeometry::Nurbs(curve),
+        return Some(RollingBallSupportCurve {
+            curve: CurveGeometry::Nurbs(curve),
             parameter_range,
         });
     }
@@ -596,8 +601,8 @@ pub(crate) fn rolling_ball_curve(
         cur.take_optional_range_value()?.value(),
         cur.take_optional_range_value()?.value(),
     ];
-    Some(DecodedRollingBallCurve {
-        geometry,
+    Some(RollingBallSupportCurve {
+        curve: geometry,
         parameter_range,
     })
 }
@@ -1105,7 +1110,7 @@ pub(crate) fn var_blend_spl_sur(
     } else {
         cur.set_pos(saved);
         let secondary = rolling_ball_curve(&mut cur, reference_context)?;
-        (Some(secondary.geometry), secondary.parameter_range)
+        (Some(secondary.curve), secondary.parameter_range)
     };
     let convexity = if cur.take_bool()? {
         cadmpeg_ir::geometry::VariableBlendConvexity::Convex
@@ -1138,7 +1143,7 @@ pub(crate) fn var_blend_spl_sur(
                 subtype,
                 revision,
                 sides,
-                slice: slice.geometry,
+                slice: slice.curve,
                 slice_range: slice.parameter_range,
                 offsets,
                 radii,
@@ -1499,7 +1504,7 @@ pub(crate) fn full_rb_blend_spl_sur(
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Blend {
             supports: Box::new([None, None]),
-            spine: match &slice.geometry {
+            spine: match &slice.curve {
                 CurveGeometry::Nurbs(curve) => Some(curve.clone()),
                 _ => None,
             },
@@ -1508,7 +1513,7 @@ pub(crate) fn full_rb_blend_spl_sur(
             native: Some(Box::new(EmbeddedRollingBall {
                 definition_index,
                 sides,
-                slice: slice.geometry,
+                slice: slice.curve,
                 slice_range: slice.parameter_range,
                 offsets,
                 radius_selector,
