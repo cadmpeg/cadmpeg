@@ -203,14 +203,14 @@ fn valid_class_307_joint_origin_qualifier(
         return false;
     };
     frame.reference_record_index == *scope_record_index
-        && class_tag == "307"
-        && paired_class_tag == "264"
+        && class_tag.as_str() == "307"
+        && paired_class_tag.as_str() == "264"
         && byte_offset.checked_add(class_307_joint_origin::LEN as u64) == Some(*paired_byte_offset)
         && design_header_matches(
             records_by_index,
             stream,
             *scope_record_index,
-            class_tag,
+            class_tag.as_str(),
             *byte_offset,
         )
         && native
@@ -221,9 +221,9 @@ fn valid_class_307_joint_origin_qualifier(
                     && target_scope.kind()
                         == crate::records::feature::DesignFeatureKind::JointOrigin
                     && target_scope.record_index == *scope_record_index
-                    && target_scope.class_tag == *class_tag
+                    && target_scope.class_tag == class_tag.as_str()
                     && target_scope.byte_offset == *byte_offset
-                    && target_scope.paired_class_tag == *paired_class_tag
+                    && target_scope.paired_class_tag == paired_class_tag.as_str()
                     && target_scope.paired_byte_offset == *paired_byte_offset
                     && target_scope.frame_length == class_307_joint_origin::LEN as u64
                     && target_scope.joint_origin_transform() == Some(frame.transform)

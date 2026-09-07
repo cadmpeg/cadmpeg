@@ -159,9 +159,9 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
     };
     let joint_origin = crate::records::feature::DesignAssemblyOperandQualifier::JointOrigin {
         scope_record_index: 60,
-        class_tag: "307".into(),
+        class_tag: crate::records::DesignClassTag::try_from("307".to_owned()).unwrap(),
         byte_offset: 600,
-        paired_class_tag: "264".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("264".to_owned()).unwrap(),
         paired_byte_offset: 700,
     };
     let axial = crate::records::feature::DesignAssemblyOperandQualifier::AxialTarget {

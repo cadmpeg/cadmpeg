@@ -227,9 +227,9 @@ fn exact_class_307_joint_origin(
     }
     Some(DesignAssemblyOperandQualifier::JointOrigin {
         scope_record_index: frame.reference_record_index,
-        class_tag: "307".into(),
+        class_tag: "307".to_owned().try_into().ok()?,
         byte_offset: u64::try_from(start).ok()?,
-        paired_class_tag: "264".into(),
+        paired_class_tag: "264".to_owned().try_into().ok()?,
         paired_byte_offset: u64::try_from(paired_at).ok()?,
     })
 }

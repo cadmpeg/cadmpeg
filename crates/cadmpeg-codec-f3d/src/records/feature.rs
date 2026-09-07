@@ -2870,11 +2870,11 @@ pub enum DesignAssemblyOperandQualifier {
         /// Referenced `JointOrigin` feature scope.
         scope_record_index: u32,
         /// Dynamic class of the scope's primary indexed header.
-        class_tag: String,
+        class_tag: DesignClassTag,
         /// Byte offset of the primary indexed header.
         byte_offset: u64,
         /// Dynamic class of the paired indexed header.
-        paired_class_tag: String,
+        paired_class_tag: DesignClassTag,
         /// Byte offset of the paired indexed header.
         paired_byte_offset: u64,
     },
