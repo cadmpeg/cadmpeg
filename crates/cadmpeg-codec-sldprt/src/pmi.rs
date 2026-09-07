@@ -216,15 +216,15 @@ pub(crate) fn patch_payload(
         if record.item_count != 1 {
             continue;
         }
-        let mut parameters = ir.model.parameters.iter().filter(|parameter| {
-            parameter.pmi.as_ref().is_some_and(|pmi| {
-                pmi.native_ref == record.id
-                    || records_by_id
-                        .get(pmi.native_ref.as_str())
-                        .is_some_and(|bound| equivalent_dimensions(record, bound))
-            })
+        let mut parameters = ir.model.parameters.iter().filter_map(|parameter| {
+            let semantic = parameter.pmi.as_ref()?;
+            (semantic.native_ref == record.id
+                || records_by_id
+                    .get(semantic.native_ref.as_str())
+                    .is_some_and(|bound| equivalent_dimensions(record, bound)))
+            .then_some((parameter, semantic))
         });
-        let Some(parameter) = parameters.next() else {
+        let Some((parameter, semantic)) = parameters.next() else {
             continue;
         };
         if parameters.next().is_some() {
@@ -233,7 +233,6 @@ pub(crate) fn patch_payload(
                 record.id
             )));
         }
-        let semantic = parameter.pmi.as_ref().expect("filtered above");
         let empty_subtype_is_count = semantic.subtype == PmiDimensionSubtype::Count;
         let subtype = dimension_subtype(record, empty_subtype_is_count);
         if semantic.subtype != subtype {
