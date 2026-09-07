@@ -10,7 +10,7 @@ use crate::entities::annotation::{
     classify, parameterized_curve_type, section_boundary_type, AnnotationKind,
 };
 use crate::global::GlobalTable;
-use crate::graph::expectation::ReferenceExpectation;
+use crate::graph::expectation::{ExpectationLabel, ReferenceExpectation};
 use crate::graph::ParameterResolver;
 use crate::parameter::ParameterRecord;
 use serde::Serialize;
@@ -261,7 +261,10 @@ impl Subject<'_> {
                         self.sequence,
                         start + 3,
                         value,
-                        ReferenceExpectation::Type310Form0,
+                        ReferenceExpectation::Type {
+                            entity_type: 310,
+                            forms: vec![0],
+                        },
                         |target| target.entity_type == 310 && target.form == 0,
                     )
                 })
@@ -296,7 +299,7 @@ impl Subject<'_> {
                     self.sequence,
                     index,
                     sequence,
-                    ReferenceExpectation::Type214Form1Through12,
+                    ReferenceExpectation::Named(ExpectationLabel::Type214Form1Through12),
                     |target| target.entity_type == 214 && matches!(target.form, 1..=12),
                 )
             })
@@ -332,7 +335,7 @@ impl Subject<'_> {
                     self.sequence,
                     index,
                     sequence,
-                    ReferenceExpectation::ParameterizedCurve,
+                    ReferenceExpectation::Named(ExpectationLabel::ParameterizedCurve),
                     |target| {
                         parameterized_curve_type(target)
                             && target.status.is_physically_dependent()
@@ -351,7 +354,7 @@ impl Subject<'_> {
                     self.sequence,
                     index,
                     sequence,
-                    ReferenceExpectation::Type106Form40OrLeader,
+                    ReferenceExpectation::Named(ExpectationLabel::Type106Form40OrLeader),
                     |target| {
                         (target.entity_type == 106 && target.form == 40)
                             || (target.entity_type == 214 && matches!(target.form, 1..=12))
@@ -377,7 +380,7 @@ impl Subject<'_> {
                     self.sequence,
                     index,
                     sequence,
-                    ReferenceExpectation::PointDimensionEnclosure,
+                    ReferenceExpectation::Named(ExpectationLabel::PointDimensionEnclosure),
                     |target| {
                         matches!(
                             (target.entity_type, target.form),
@@ -398,7 +401,7 @@ impl Subject<'_> {
                     self.sequence,
                     index,
                     sequence,
-                    ReferenceExpectation::SubordinateAnnotationGeometry,
+                    ReferenceExpectation::Named(ExpectationLabel::SubordinateAnnotationGeometry),
                     |target| {
                         target.status.is_physically_dependent()
                             && target.status.use_flag() == Some(UseFlag::Annotation)
@@ -416,7 +419,7 @@ impl Subject<'_> {
                     self.sequence,
                     index,
                     sequence,
-                    ReferenceExpectation::SectionBoundaryEntity,
+                    ReferenceExpectation::Named(ExpectationLabel::SectionBoundaryEntity),
                     section_boundary_type,
                 )
             })

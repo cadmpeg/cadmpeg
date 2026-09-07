@@ -2,7 +2,7 @@
 //! Entity index, Directory Entry references, cycles, and validation states.
 
 pub(crate) mod expectation;
-use expectation::ReferenceExpectation;
+use expectation::{ExpectationLabel, ReferenceExpectation};
 
 use crate::card::{CardScan, Section};
 use crate::directory::DirectoryEntry;
@@ -255,7 +255,7 @@ impl<'a> ParameterResolver<'a> {
             source,
             parameter_index,
             raw_pointer,
-            ReferenceExpectation::ExistingDirectoryEntry,
+            ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
             |_| true,
         )
     }
@@ -333,19 +333,45 @@ fn candidates(entry: &DirectoryEntry) -> Vec<Candidate> {
 fn expected(kind: ReferenceKind, source: &DirectoryEntry) -> ReferenceExpectation {
     match kind {
         ReferenceKind::Structure => match source.entity_type {
-            422 if matches!(source.form, 0..=1) => ReferenceExpectation::Type322Form0,
-            402 if matches!(source.form, 5001..=9999) => ReferenceExpectation::Type302MatchingForm,
-            entity_type if crate::profile::macro_instance_type(entity_type) => {
-                ReferenceExpectation::Type306OrType416
+            422 if matches!(source.form, 0..=1) => ReferenceExpectation::Type {
+                entity_type: 322,
+                forms: vec![0],
+            },
+            402 if matches!(source.form, 5001..=9999) => {
+                ReferenceExpectation::Named(ExpectationLabel::Type302MatchingForm)
             }
-            _ => ReferenceExpectation::StructureNotPermitted,
+            entity_type if crate::profile::macro_instance_type(entity_type) => {
+                ReferenceExpectation::AnyOf {
+                    first: 306,
+                    second: 416,
+                    rest: vec![],
+                }
+            }
+            _ => ReferenceExpectation::Named(ExpectationLabel::StructureNotPermitted),
         },
-        ReferenceKind::LineFont => ReferenceExpectation::Type304,
-        ReferenceKind::Level => ReferenceExpectation::Type406Form1,
-        ReferenceKind::View => ReferenceExpectation::Type410OrType402Form3419,
-        ReferenceKind::Transform => ReferenceExpectation::Type124,
-        ReferenceKind::LabelDisplay => ReferenceExpectation::Type402Form5,
-        ReferenceKind::Color => ReferenceExpectation::Type314,
+        ReferenceKind::LineFont => ReferenceExpectation::Type {
+            entity_type: 304,
+            forms: vec![],
+        },
+        ReferenceKind::Level => ReferenceExpectation::Type {
+            entity_type: 406,
+            forms: vec![1],
+        },
+        ReferenceKind::View => {
+            ReferenceExpectation::Named(ExpectationLabel::Type410OrType402Form3419)
+        }
+        ReferenceKind::Transform => ReferenceExpectation::Type {
+            entity_type: 124,
+            forms: vec![],
+        },
+        ReferenceKind::LabelDisplay => ReferenceExpectation::Type {
+            entity_type: 402,
+            forms: vec![5],
+        },
+        ReferenceKind::Color => ReferenceExpectation::Type {
+            entity_type: 314,
+            forms: vec![],
+        },
     }
 }
 

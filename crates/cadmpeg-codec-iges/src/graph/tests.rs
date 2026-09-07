@@ -3,7 +3,7 @@
 
 use super::ReferenceOrigin;
 use crate::directory::{DirectoryEntry, SourceStatus};
-use crate::graph::expectation::ReferenceExpectation;
+use crate::graph::expectation::{ExpectationLabel, ReferenceExpectation};
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
@@ -51,7 +51,7 @@ fn parameter_pointers_enforce_the_seven_digit_sequence_limit() {
             1,
             0,
             i64::from(maximum),
-            ReferenceExpectation::ExistingDirectoryEntry,
+            ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
             |_| true
         ),
         Some(maximum)
@@ -61,7 +61,7 @@ fn parameter_pointers_enforce_the_seven_digit_sequence_limit() {
             1,
             1,
             i64::from(maximum) + 1,
-            ReferenceExpectation::ExistingDirectoryEntry,
+            ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
             |_| true
         ),
         None
@@ -71,7 +71,7 @@ fn parameter_pointers_enforce_the_seven_digit_sequence_limit() {
             2,
             0,
             -i64::from(maximum),
-            ReferenceExpectation::ExistingDirectoryEntry,
+            ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
             |_| true
         ),
         Some(maximum)
@@ -81,7 +81,7 @@ fn parameter_pointers_enforce_the_seven_digit_sequence_limit() {
             2,
             1,
             -i64::from(maximum) - 1,
-            ReferenceExpectation::ExistingDirectoryEntry,
+            ReferenceExpectation::Named(ExpectationLabel::ExistingDirectoryEntry),
             |_| true
         ),
         None
@@ -141,7 +141,10 @@ fn transform_cycle_detection_does_not_rewalk_a_long_acyclic_prefix() {
                     raw_pointer: i64::from(target),
                     target: Some(format!("iges:entity:directory#{target}")),
                     resolution: Resolution::Resolved,
-                    expected: ReferenceExpectation::Type124,
+                    expected: ReferenceExpectation::Type {
+                        entity_type: 124,
+                        forms: vec![],
+                    },
                 }],
             )
         })
