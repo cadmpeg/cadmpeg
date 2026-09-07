@@ -66,7 +66,7 @@ fn joint_wire_rejects_fields_outside_its_kinematic_family() {
             frame: Transform::identity(),
             detached: false,
         };
-        let id = JointId("test:model:joint#0".into());
+        let id = JointId::mint("test:model:joint#0").expect("identity grammar");
         let joint = if kind == JointKind::Grounded {
             AssemblyJoint::grounded(id, connector(), None)
         } else {

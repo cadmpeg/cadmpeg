@@ -166,8 +166,8 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
         ],
     };
     let parameter = DesignParameter {
-        id: ParameterId("distance".into()),
-        owner: Some(FeatureId("feature".into())),
+        id: ParameterId::mint("distance").expect("identity grammar"),
+        owner: Some(FeatureId::mint("feature").expect("identity grammar")),
         ordinal: 0,
         name: "D1".into(),
         expression: "5mm".into(),
@@ -308,7 +308,7 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
 #[test]
 fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     let feature = Feature {
-        id: FeatureId("feature".into()),
+        id: FeatureId::mint("feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -324,7 +324,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         native_ref: Some("native-feature".into()),
     };
     let parameter = DesignParameter {
-        id: ParameterId("parameter".into()),
+        id: ParameterId::mint("parameter").expect("identity grammar"),
         owner: Some(feature.id.clone()),
         name: "D1".into(),
         ordinal: 0,
@@ -460,7 +460,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         .expect("nested display-only relation parameter");
     assert_eq!(
         nested.id,
-        ParameterId("sldprt:model:parameter#reference:lane:10".into())
+        ParameterId::mint("sldprt:model:parameter#reference:lane:10").expect("identity grammar")
     );
     assert_eq!(
         owned_relation_parameters(
@@ -534,7 +534,7 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         ..relation.clone()
     };
     let driving_parameter = DesignParameter {
-        id: ParameterId("driving-by-name-parameter".into()),
+        id: ParameterId::mint("driving-by-name-parameter").expect("identity grammar"),
         name: "D".into(),
         native_ref: None,
         ..parameter.clone()
@@ -738,7 +738,7 @@ fn rotated_sketch_frame_projects_native_plane_coordinates() {
 fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
     let sketch = SketchId("sketch".into());
     let feature = Feature {
-        id: FeatureId("feature".into()),
+        id: FeatureId::mint("feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -823,8 +823,8 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
         sketch_entities: vec![horizontal, vertical, center],
     };
     let parameter = DesignParameter {
-        id: ParameterId("diameter".into()),
-        owner: Some(FeatureId("feature".into())),
+        id: ParameterId::mint("diameter").expect("identity grammar"),
+        owner: Some(FeatureId::mint("feature").expect("identity grammar")),
         name: "D1".into(),
         ordinal: 0,
         expression: String::new(),
@@ -1168,7 +1168,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         features: vec![native_feature],
     };
     let mut features = vec![Feature {
-        id: FeatureId("feature".into()),
+        id: FeatureId::mint("feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -1184,7 +1184,7 @@ fn declared_entity_handle_circular_carrier_replaces_nested_support_geometry() {
         native_ref: Some("feature-native".into()),
     }];
     let parameter = DesignParameter {
-        id: ParameterId("diameter".into()),
+        id: ParameterId::mint("diameter").expect("identity grammar"),
         owner: Some(features[0].id.clone()),
         ordinal: 0,
         name: "diameter".into(),

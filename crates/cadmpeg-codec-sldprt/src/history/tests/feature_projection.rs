@@ -28,7 +28,7 @@ fn configuration_dependencies_participate_in_the_shared_regeneration_order() {
     ir.model
         .configurations
         .push(cadmpeg_ir::features::DesignConfiguration {
-            id: cadmpeg_ir::features::ConfigurationId("configuration".into()),
+            id: cadmpeg_ir::features::ConfigurationId::mint("configuration").expect("identity grammar"),
             ordinal: 0,
             active: true,
             source_index: None,
@@ -239,9 +239,7 @@ fn repeated_dimension_content_projects_one_owned_parameter() {
     assert_eq!(projected_parameter_names(&feature), vec!["D1"]);
     assert_eq!(
         project_feature_content(&feature, &HashMap::new()),
-        vec![FeatureSourceContent::Parameter(ParameterId(
-            "sldprt:model:parameter#1:2:0".into()
-        ))]
+        vec![FeatureSourceContent::Parameter(ParameterId::mint("sldprt:model:parameter#1:2:0").expect("identity grammar"))]
     );
 }
 
@@ -1688,7 +1686,7 @@ fn profile_consumers_require_a_regeneration_profile() {
     assert!(!bind_definition_sketch(
         &mut definition,
         "sketch-native",
-        &FeatureId("sketch-feature".into()),
+        &FeatureId::mint("sketch-feature").expect("identity grammar"),
         &sketch,
         false,
     ));
@@ -1702,7 +1700,7 @@ fn profile_consumers_require_a_regeneration_profile() {
     assert!(bind_definition_sketch(
         &mut definition,
         "sketch-native",
-        &FeatureId("sketch-feature".into()),
+        &FeatureId::mint("sketch-feature").expect("identity grammar"),
         &sketch,
         true,
     ));

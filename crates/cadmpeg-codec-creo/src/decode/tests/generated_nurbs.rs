@@ -1061,7 +1061,7 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
     let mut distance = SketchConstraintDefinition::DistanceLoci {
         first: SketchLocus::Start(first.clone()),
         second: SketchLocus::Center(second.clone()),
-        parameter: ParameterId("distance".to_string()),
+        parameter: ParameterId::mint("distance".to_string()).expect("identity grammar"),
     };
     assert!(!reconcile_constraint_entity_references(
         &mut distance,
@@ -1086,7 +1086,7 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
             if entities == vec![first]
     ));
 
-    let parameter = ParameterId("distance".to_string());
+    let parameter = ParameterId::mint("distance".to_string()).expect("identity grammar");
     let parameters = BTreeSet::from([parameter.clone()]);
     let mut radius = SketchConstraintDefinition::Radius {
         entity: SketchEntityId("first".to_string()),
@@ -1098,7 +1098,7 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
     ));
     let mut missing_distance = SketchConstraintDefinition::Distance {
         entities: Vec::new(),
-        parameter: ParameterId("missing".to_string()),
+        parameter: ParameterId::mint("missing".to_string()).expect("identity grammar"),
     };
     assert!(!reconcile_constraint_parameter_reference(
         &mut missing_distance,
@@ -1107,7 +1107,7 @@ fn sketch_constraints_require_every_neutral_reference_to_be_emitted() {
     let mut native_parameter = SketchConstraintDefinition::Native {
         native_kind: "creo:test".to_string(),
         entities: Vec::new(),
-        parameter: Some(ParameterId("missing".to_string())),
+        parameter: Some(ParameterId::mint("missing".to_string()).expect("identity grammar")),
         operands: Vec::new(),
         native_state: None,
         native_flags: None,

@@ -189,7 +189,7 @@ fn dimension_identity_includes_its_feature_definition() {
         feature_dimension_parameter_id(&sketch_1104, 3)
     );
     assert_eq!(
-        feature_dimension_parameter_id(&sketch_917, 3).0,
+        feature_dimension_parameter_id(&sketch_917, 3).as_str(),
         "creo:featdefs:parameter#917:3"
     );
     assert_eq!(
@@ -261,7 +261,7 @@ fn dimension_identity_includes_its_feature_definition() {
         ),
         Some((
             &dimension,
-            ParameterId("creo:featdefs:parameter#917:3".to_string())
+            ParameterId::mint("creo:featdefs:parameter#917:3".to_string()).expect("identity grammar")
         ))
     );
     definition.segments = Some(crate::feature::FeatureSegmentTable {
@@ -295,7 +295,7 @@ fn dimension_identity_includes_its_feature_definition() {
         radius[0].0.definition,
         SketchConstraintDefinition::Radius {
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:42".to_string()),
-            parameter: ParameterId("creo:featdefs:parameter#917:3".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:3".to_string()).expect("identity grammar"),
         }
     );
     let retained_without_circle = section_segment_radius_constraints_for_emitted(
@@ -353,7 +353,7 @@ fn dimension_identity_includes_its_feature_definition() {
         diameter[0].0.definition,
         SketchConstraintDefinition::Diameter {
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:42".to_string()),
-            parameter: ParameterId("creo:featdefs:parameter#917:3".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:3".to_string()).expect("identity grammar"),
         }
     );
     let mut duplicate_circle_id = definition.clone();
@@ -392,7 +392,7 @@ fn dimension_identity_includes_its_feature_definition() {
             .definition,
         SketchConstraintDefinition::Diameter {
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:42".to_string()),
-            parameter: ParameterId("creo:featdefs:parameter#917:3".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:3".to_string()).expect("identity grammar"),
         }
     );
     definition
@@ -554,7 +554,7 @@ fn dimension_identity_includes_its_feature_definition() {
         resolved_feature_dimension_parameter(&sketch_917, &unresolved_table, 0),
         Some((
             &unresolved_dimension,
-            ParameterId("creo:featdefs:parameter#917:4".to_string())
+            ParameterId::mint("creo:featdefs:parameter#917:4".to_string()).expect("identity grammar")
         ))
     );
     let incomplete_table = crate::feature::FeatureDimensionTable {

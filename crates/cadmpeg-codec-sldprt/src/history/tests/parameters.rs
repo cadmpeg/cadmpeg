@@ -72,11 +72,11 @@ fn project_parameters_preserves_composite_txd_text_without_hiding_bad_equations(
 
 #[test]
 fn layered_parameter_aliases_match_materialized_precedence() {
-    let global_owner = FeatureId("global".into());
-    let local_owner = FeatureId("local".into());
+    let global_owner = FeatureId::mint("global").expect("identity grammar");
+    let local_owner = FeatureId::mint("local").expect("identity grammar");
     let parameters = [
         DesignParameter {
-            id: ParameterId("global-id".into()),
+            id: ParameterId::mint("global-id").expect("identity grammar"),
             owner: Some(global_owner.clone()),
             ordinal: 0,
             name: "Width".into(),
@@ -89,7 +89,7 @@ fn layered_parameter_aliases_match_materialized_precedence() {
             native_ref: None,
         },
         DesignParameter {
-            id: ParameterId("local-id".into()),
+            id: ParameterId::mint("local-id").expect("identity grammar"),
             owner: Some(local_owner.clone()),
             ordinal: 0,
             name: "Width".into(),
@@ -105,7 +105,7 @@ fn layered_parameter_aliases_match_materialized_precedence() {
     let aliases =
         ParameterAliases::new(&parameters, &HashMap::new(), &HashSet::from([global_owner]));
 
-    for owner in [Some(local_owner), Some(FeatureId("unrelated".into())), None] {
+    for owner in [Some(local_owner), Some(FeatureId::mint("unrelated").expect("identity grammar")), None] {
         let materialized = aliases.materialize(owner.as_ref());
         let layered = aliases.for_owner(owner.as_ref());
         for alias in ["Width", "global-id", "local-id", "missing"] {
@@ -212,7 +212,7 @@ fn unqualified_aliases_are_local_to_the_expression_owner() {
         &parameters,
         &HashMap::new(),
         &HashSet::new(),
-        Some(&FeatureId("unrelated".into())),
+        Some(&FeatureId::mint("unrelated").expect("identity grammar")),
     );
 
     assert_eq!(

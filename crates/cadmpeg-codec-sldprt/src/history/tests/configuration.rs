@@ -243,7 +243,7 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
         configurations: Vec::new(),
         features: vec![native_feature],
     };
-    let feature_id = cadmpeg_ir::features::FeatureId("sketch".into());
+    let feature_id = cadmpeg_ir::features::FeatureId::mint("sketch").expect("identity grammar");
     let unresolved = FeatureDefinition::Sketch {
         sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
     };
@@ -262,7 +262,7 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
         definition: unresolved.clone(),
         native_ref: Some("sketch-native".into()),
     });
-    let spatial_feature_id = cadmpeg_ir::features::FeatureId("sldprt:model:feature#spatial".into());
+    let spatial_feature_id = cadmpeg_ir::features::FeatureId::mint("sldprt:model:feature#spatial").expect("identity grammar");
     let spatial_sketch_id = SpatialSketchId("sldprt:model:spatial-sketch#spatial".into());
     ir.model.features.push(NeutralFeature {
         id: spatial_feature_id.clone(),
@@ -314,7 +314,7 @@ fn configuration_sketch_state_reuses_projected_neutral_sketch() {
         native_ref: Some("lane".into()),
     });
     ir.model.configurations.push(DesignConfiguration {
-        id: cadmpeg_ir::features::ConfigurationId("configuration".into()),
+        id: cadmpeg_ir::features::ConfigurationId::mint("configuration").expect("identity grammar"),
         ordinal: 0,
         active: true,
         source_index: Some(0),
@@ -439,7 +439,7 @@ fn dissected_sketch_alias_inherits_an_omitted_class_without_solved_geometry() {
         features: vec![owner, alias],
     };
     let neutral = |id: &str, name: &str, native_ref: &str, ordinal| NeutralFeature {
-        id: cadmpeg_ir::features::FeatureId(id.into()),
+        id: cadmpeg_ir::features::FeatureId::mint(id).expect("identity grammar"),
         ordinal,
         name: Some(name.into()),
         suppressed: Some(false),
@@ -491,9 +491,9 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
     };
     use cadmpeg_ir::sketches::{SpatialSketch, SpatialSketchId};
 
-    let feature_id = FeatureId("sldprt:model:feature#spatial".into());
+    let feature_id = FeatureId::mint("sldprt:model:feature#spatial").expect("identity grammar");
     let sketch_id = SpatialSketchId("sldprt:model:spatial-sketch#spatial".into());
-    let planar_state_id = FeatureId("sldprt:model:feature#planar-state".into());
+    let planar_state_id = FeatureId::mint("sldprt:model:feature#planar-state").expect("identity grammar");
     let planar_sketch_id = SpatialSketchId("sldprt:model:spatial-sketch#planar-state".into());
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(NeutralFeature {
@@ -546,7 +546,7 @@ fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
     });
     for ordinal in 0..2 {
         ir.model.configurations.push(DesignConfiguration {
-            id: cadmpeg_ir::features::ConfigurationId(format!("configuration-{ordinal}")),
+            id: cadmpeg_ir::features::ConfigurationId::mint(format!("configuration-{ordinal}")).expect("identity grammar"),
             ordinal,
             active: ordinal == 0,
             source_index: Some(ordinal),
@@ -610,7 +610,7 @@ fn configuration_sketch_state_reuses_scoped_spatial_sketch() {
     };
     use cadmpeg_ir::sketches::{SpatialSketch, SpatialSketchId};
 
-    let feature_id = FeatureId("sldprt:model:feature#scoped-spatial".into());
+    let feature_id = FeatureId::mint("sldprt:model:feature#scoped-spatial").expect("identity grammar");
     let sketch_id = SpatialSketchId("sldprt:model:spatial-sketch#scoped-spatial".into());
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(NeutralFeature {
@@ -669,8 +669,8 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
         Feature as NeutralFeature, FeatureDefinition, FeatureId, Length,
     };
 
-    let producer_id = FeatureId("producer".into());
-    let consumer_id = FeatureId("consumer".into());
+    let producer_id = FeatureId::mint("producer").expect("identity grammar");
+    let consumer_id = FeatureId::mint("consumer").expect("identity grammar");
     let unresolved = FeatureDefinition::Chamfer {
         groups: vec![ChamferGroup {
             edges: EdgeSelection::Unresolved,
@@ -710,7 +710,7 @@ fn supplemental_edge_paths_project_into_matching_configuration_state() {
         ),
     ];
     ir.model.configurations.push(DesignConfiguration {
-        id: cadmpeg_ir::features::ConfigurationId("configuration".into()),
+        id: cadmpeg_ir::features::ConfigurationId::mint("configuration").expect("identity grammar"),
         ordinal: 0,
         active: true,
         source_index: Some(1),
@@ -781,7 +781,7 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
         FeatureDefinition, FeatureId, HoleKind, HolePlacement, Length, LinearTermination,
     };
 
-    let id = FeatureId("test:model:feature#hole".into());
+    let id = FeatureId::mint("test:model:feature#hole").expect("identity grammar");
     let base = cadmpeg_ir::features::Feature {
         id: id.clone(),
         ordinal: 0,
@@ -920,7 +920,7 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
         HoleKind, Length, LinearTermination,
     };
 
-    let id = FeatureId("test:model:feature#hole-lane".into());
+    let id = FeatureId::mint("test:model:feature#hole-lane").expect("identity grammar");
     let base_definition = FeatureDefinition::Hole {
         profile: None,
         profile_filter: None,
@@ -1075,8 +1075,8 @@ fn scoped_offset_plane_inherits_only_a_frame_matching_reference() {
     };
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    let plane_id = FeatureId("test:model:feature#plane".into());
-    let offset_id = FeatureId("test:model:feature#offset".into());
+    let plane_id = FeatureId::mint("test:model:feature#plane").expect("identity grammar");
+    let offset_id = FeatureId::mint("test:model:feature#offset").expect("identity grammar");
     let neutral_feature = |id: FeatureId, ordinal, definition| NeutralFeature {
         id,
         ordinal,
@@ -1168,8 +1168,8 @@ fn scoped_offset_plane_inherits_an_omitted_resolved_reference() {
     };
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    let plane_id = FeatureId("test:model:feature#plane".into());
-    let offset_id = FeatureId("test:model:feature#offset".into());
+    let plane_id = FeatureId::mint("test:model:feature#plane").expect("identity grammar");
+    let offset_id = FeatureId::mint("test:model:feature#offset").expect("identity grammar");
     let neutral_feature = |id: FeatureId, definition| NeutralFeature {
         id,
         ordinal: 0,
@@ -1218,7 +1218,7 @@ fn scoped_offset_plane_inherits_an_omitted_resolved_reference() {
         FeatureDefinition::DatumOffsetPlane {
             reference: Some(DatumPlaneReference::Feature(reference)),
             distance: Length(6.0),
-        } if reference == FeatureId("test:model:feature#plane".into())
+        } if reference == FeatureId::mint("test:model:feature#plane").expect("identity grammar")
     ));
 
     let unresolved_base = neutral_feature(
@@ -1254,7 +1254,7 @@ fn scoped_offset_plane_does_not_merge_a_resolved_plane_with_a_face() {
     };
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    let id = FeatureId("test:model:feature#face-offset".into());
+    let id = FeatureId::mint("test:model:feature#face-offset").expect("identity grammar");
     let neutral_feature = |definition| NeutralFeature {
         id: id.clone(),
         ordinal: 0,
@@ -1309,11 +1309,11 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
     };
 
     let mut ir = cadmpeg_ir::CadIr::empty();
-    let parameter_id = ParameterId("test:model:parameter#depth".into());
-    let count_id = ParameterId("test:model:parameter#count".into());
+    let parameter_id = ParameterId::mint("test:model:parameter#depth").expect("identity grammar");
+    let count_id = ParameterId::mint("test:model:parameter#count").expect("identity grammar");
     ir.model.parameters.push(DesignParameter {
         id: parameter_id.clone(),
-        owner: Some(FeatureId("test:model:feature#extrude".into())),
+        owner: Some(FeatureId::mint("test:model:feature#extrude").expect("identity grammar")),
         ordinal: 0,
         name: "Depth".into(),
         expression: "7mm".into(),
@@ -1326,7 +1326,7 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
     });
     ir.model.parameters.push(DesignParameter {
         id: count_id.clone(),
-        owner: Some(FeatureId("test:model:feature#pattern".into())),
+        owner: Some(FeatureId::mint("test:model:feature#pattern").expect("identity grammar")),
         ordinal: 0,
         name: "Count".into(),
         expression: "7".into(),
@@ -1338,7 +1338,7 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
         native_ref: None,
     });
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId("test:model:configuration#default".into()),
+        id: ConfigurationId::mint("test:model:configuration#default").expect("identity grammar"),
         ordinal: 0,
         active: true,
         source_index: Some(0),
@@ -1401,7 +1401,7 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
     use cadmpeg_ir::ids::{FaceId, LoopId, ShellId, SurfaceId};
     use cadmpeg_ir::topology::{Face, Sense};
 
-    let feature_id = FeatureId("test:model:feature#offset".into());
+    let feature_id = FeatureId::mint("test:model:feature#offset").expect("identity grammar");
     let feature_ref = "test:history:feature#offset";
     let mut type_signature = [0_u8; 12];
     type_signature[4..8].copy_from_slice(&7_u32.to_le_bytes());
@@ -1509,7 +1509,7 @@ fn configuration_frame_alias_binds_without_body_membership() {
     use cadmpeg_ir::ids::{FaceId, LoopId, ShellId, SurfaceId};
     use cadmpeg_ir::topology::{Face, Sense};
 
-    let feature_id = FeatureId("test:model:feature#offset".into());
+    let feature_id = FeatureId::mint("test:model:feature#offset").expect("identity grammar");
     let definition = || FeatureDefinition::DatumOffsetPlane {
         reference: Some(DatumPlaneReference::ResolvedPlane {
             origin: Point3::new(0.0, 0.0, 5.0),

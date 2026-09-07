@@ -493,7 +493,7 @@ pub(in super::super) fn feature_result_topology(
             "creo:model:feature-result-topology#{feature_id}"
         ))
         .expect("identity grammar"),
-        output_of: IrFeatureId(format!("creo:model:feature#{feature_id}")),
+        output_of: IrFeatureId::mint(format!("creo:model:feature#{feature_id}")).expect("identity grammar"),
         bodies: Vec::new(),
         faces,
         edges,
@@ -512,7 +512,7 @@ pub(in super::super) fn generated_surface_face_refs(
         .iter()
         .map(|surface_id| {
             let row = crate::surface::unique_surface_row(rows, *surface_id)?;
-            let feature = IrFeatureId(format!("creo:model:feature#{}", row.feature_id));
+            let feature = IrFeatureId::mint(format!("creo:model:feature#{}", row.feature_id)).expect("identity grammar");
             (available_features.contains(&feature)
                 && result_surface_ids
                     .get(&row.feature_id)

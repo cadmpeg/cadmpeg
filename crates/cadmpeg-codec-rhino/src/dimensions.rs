@@ -1657,7 +1657,7 @@ pub(crate) fn project(
     );
 
     let annotation = SemanticAnnotation {
-        id: SemanticAnnotationId(format!("rhino:dimension:annotation#{key}")),
+        id: SemanticAnnotationId::mint(format!("rhino:dimension:annotation#{key}")).expect("identity grammar"),
         object: object.to_string(),
         kind: SemanticAnnotationKind::Dimension,
         runtime_type: runtime_type.to_string(),

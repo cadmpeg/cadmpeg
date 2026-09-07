@@ -246,7 +246,7 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
         1200,
     );
     let mut feature = cadmpeg_ir::features::Feature::new(
-        cadmpeg_ir::features::FeatureId::from("f3d:test:feature#1200"),
+        cadmpeg_ir::features::FeatureId::mint("f3d:test:feature#1200").expect("identity grammar"),
         0,
         FeatureDefinition::TrimSurface {
             faces: FaceSelection::Unresolved,

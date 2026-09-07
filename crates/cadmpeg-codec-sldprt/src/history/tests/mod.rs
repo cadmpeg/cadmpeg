@@ -50,7 +50,7 @@ fn design_configuration(
     native_ref: Option<&str>,
 ) -> DesignConfiguration {
     DesignConfiguration {
-        id: ConfigurationId(id.into()),
+        id: ConfigurationId::mint(id).expect("identity grammar"),
         ordinal,
         active: false,
         source_index,

@@ -892,10 +892,10 @@ fn append_spreadsheet(
                 retained.insert(attribute.into(), value.to_owned());
             }
         }
-        let id = ParameterId(format!(
+        let id = ParameterId::mint(format!(
             "fcstd:design:parameter#{}:cell:{address}",
             object.name
-        ));
+        )).expect("identity grammar");
         let cell_address = CellAddress::parse(address).ok_or_else(|| {
             CodecError::malformed(format_args!("{} cell has invalid address", property.id))
         })?;
@@ -928,7 +928,7 @@ fn append_spreadsheet(
         });
     }
     Ok(Spreadsheet {
-        id: SpreadsheetId(format!("fcstd:design:spreadsheet#{}", object.name)),
+        id: SpreadsheetId::mint(format!("fcstd:design:spreadsheet#{}", object.name)).expect("identity grammar"),
         feature: feature_id(object),
         cells: cell_ids,
         column_widths: spreadsheet_dimensions(
@@ -1141,10 +1141,10 @@ fn append_operation_parameters(
             retained.insert("expression_native_ref".into(), native_ref.clone());
         }
         parameters.push(DesignParameter {
-            id: ParameterId(format!(
+            id: ParameterId::mint(format!(
                 "fcstd:design:parameter#{}:{}",
                 object.name, property.name
-            )),
+            )).expect("identity grammar"),
             owner: Some(feature_id(object)),
             ordinal: property.order as u32,
             name: property.name.clone(),
@@ -2078,11 +2078,11 @@ fn parse_constraints(
             node.attribute("Value")
                 .and_then(|value| value.parse::<f64>().ok())
                 .map(|value| {
-                    let id = ParameterId(format!(
+                    let id = ParameterId::mint(format!(
                         "fcstd:design:parameter#{}:constraint:{}",
                         object.name,
                         index + 1
-                    ));
+                    )).expect("identity grammar");
                     let value = match type_code {
                         Some(9) => ParameterValue::Angle(cadmpeg_ir::features::Angle(value)),
                         Some(16 | 19) => ParameterValue::Real(value),
@@ -5893,7 +5893,7 @@ fn operation_boolean(kind: &str) -> BooleanOp {
 }
 
 fn feature_id(object: &ObjectRecord) -> FeatureId {
-    FeatureId(format!("fcstd:design:feature#{}", object.name))
+    FeatureId::mint(format!("fcstd:design:feature#{}", object.name)).expect("identity grammar")
 }
 
 fn feature_base_definition(
@@ -6175,7 +6175,7 @@ pub(crate) fn census(
                 id: crate::native::native_child_id("design-census", &object.id, "projection"),
                 object: object.id.clone(),
                 type_name: object.type_name.clone(),
-                feature: feature.id.0.clone(),
+                feature: feature.id.as_str().to_owned(),
                 neutral: !matches!(definition, FeatureDefinition::Native { .. }),
                 semantic_kind,
                 post_processed,

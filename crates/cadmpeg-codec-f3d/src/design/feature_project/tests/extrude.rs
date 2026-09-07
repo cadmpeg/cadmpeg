@@ -395,7 +395,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         paired_byte_offset: 760,
     };
     let mut feature = Feature {
-        id: FeatureId("f3d:model:feature#extrude".into()),
+        id: FeatureId::mint("f3d:model:feature#extrude").expect("identity grammar"),
         ordinal: 0,
         name: Some("Extrude".into()),
         suppressed: Some(false),
@@ -820,9 +820,9 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     .expect("resolved target-shape Extrude");
     let feature = crate::ids::neutral_feature_id(&scope);
     let feature_key = feature
-        .0
+        .as_str()
         .split_once('#')
-        .map_or(feature.0.as_str(), |(_, key)| key);
+        .map_or(feature.as_str(), |(_, key)| key);
     let prefix = crate::ids::history_input_prefix(feature_key, 7);
     assert!(matches!(
         target_shape,
@@ -1471,7 +1471,7 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
     use cadmpeg_ir::sketches::SpatialSketchId;
 
     let feature = |id: &str, ordinal, definition| Feature {
-        id: FeatureId(id.into()),
+        id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
         name: None,
         suppressed: None,

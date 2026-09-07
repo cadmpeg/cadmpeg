@@ -296,7 +296,7 @@ fn exact_hole_package_owns_common_internal_simple_holes() {
 #[test]
 fn active_configuration_retains_complete_evaluated_parameter_state() {
     let parameter = |id: &str, ordinal, value, dependencies: Vec<ParameterId>| DesignParameter {
-        id: ParameterId(id.into()),
+        id: ParameterId::mint(id).expect("identity grammar"),
         owner: None,
         ordinal,
         name: id.into(),
@@ -320,11 +320,11 @@ fn active_configuration_retains_complete_evaluated_parameter_state() {
             "angle",
             1,
             Some(ParameterValue::Angle(Angle(std::f64::consts::FRAC_PI_2))),
-            vec![ParameterId("length".into())],
+            vec![ParameterId::mint("length").expect("identity grammar")],
         ),
     ];
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId("active".into()),
+        id: ConfigurationId::mint("active").expect("identity grammar"),
         ordinal: 0,
         active: true,
         source_index: Some(0),
@@ -345,11 +345,11 @@ fn active_configuration_retains_complete_evaluated_parameter_state() {
         ir.model.configurations[0].parameter_values,
         BTreeMap::from([
             (
-                ParameterId("angle".into()),
+                ParameterId::mint("angle").expect("identity grammar"),
                 ParameterValue::Angle(Angle(std::f64::consts::FRAC_PI_2))
             ),
             (
-                ParameterId("length".into()),
+                ParameterId::mint("length").expect("identity grammar"),
                 ParameterValue::Length(Length(25.4))
             ),
         ])
@@ -359,7 +359,7 @@ fn active_configuration_retains_complete_evaluated_parameter_state() {
 #[test]
 fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
     let parameter = |id: &str, value, dependencies: Vec<ParameterId>| DesignParameter {
-        id: ParameterId(id.into()),
+        id: ParameterId::mint(id).expect("identity grammar"),
         owner: None,
         ordinal: 0,
         name: id.into(),
@@ -372,7 +372,7 @@ fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
         native_ref: None,
     };
     let configuration = || DesignConfiguration {
-        id: ConfigurationId("active".into()),
+        id: ConfigurationId::mint("active").expect("identity grammar"),
         ordinal: 0,
         active: true,
         source_index: Some(0),
@@ -390,7 +390,7 @@ fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
         vec![parameter(
             "p1",
             Some(ParameterValue::Real(1.0)),
-            vec![ParameterId("missing".into())],
+            vec![ParameterId::mint("missing").expect("identity grammar")],
         )],
         vec![
             parameter("p1", Some(ParameterValue::Real(1.0)), Vec::new()),
@@ -401,7 +401,7 @@ fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
             parameter(
                 "p2",
                 Some(ParameterValue::Real(2.0)),
-                vec![ParameterId("p1".into())],
+                vec![ParameterId::mint("p1").expect("identity grammar")],
             ),
         ],
     ];
@@ -421,7 +421,7 @@ fn active_configuration_parameter_state_rejects_incomplete_sets_atomically() {
 fn active_configuration_body_writers_close_false_suppression_through_dependencies() {
     let feature =
         |id: &str, dependencies: Vec<FeatureId>, outputs: Vec<BodyId>, suppressed| Feature {
-            id: FeatureId(id.into()),
+            id: FeatureId::mint(id).expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed,
@@ -439,7 +439,7 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
             native_ref: None,
         };
     let configuration = |active, bodies| DesignConfiguration {
-        id: ConfigurationId("configuration".into()),
+        id: ConfigurationId::mint("configuration").expect("identity grammar"),
         ordinal: 0,
         active,
         source_index: Some(0),
@@ -458,7 +458,7 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
         feature("dependency", Vec::new(), Vec::new(), None),
         feature(
             "writer",
-            vec![FeatureId("dependency".into())],
+            vec![FeatureId::mint("dependency").expect("identity grammar")],
             vec![body.clone()],
             None,
         ),
@@ -481,14 +481,14 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
     let states = &ir.model.configurations[0].feature_states;
     assert_eq!(
         states.keys().cloned().collect::<Vec<_>>(),
-        [FeatureId("dependency".into()), FeatureId("writer".into())]
+        [FeatureId::mint("dependency").expect("identity grammar"), FeatureId::mint("writer").expect("identity grammar")]
     );
     assert_eq!(
-        states[&FeatureId("writer".into())].dependencies,
-        [FeatureId("dependency".into())]
+        states[&FeatureId::mint("writer").expect("identity grammar")].dependencies,
+        [FeatureId::mint("dependency").expect("identity grammar")]
     );
     assert_eq!(
-        states[&FeatureId("writer".into())].outputs,
+        states[&FeatureId::mint("writer").expect("identity grammar")].outputs,
         [BodyId::mint("test:model:entity#body").expect("identity grammar")]
     );
 }
@@ -497,7 +497,7 @@ fn active_configuration_body_writers_close_false_suppression_through_dependencie
 fn current_body_writers_close_false_suppression_without_a_configuration() {
     let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
     let feature = |id: &str, ordinal, dependencies, outputs| Feature {
-        id: FeatureId(id.into()),
+        id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
         name: None,
         suppressed: None,
@@ -523,7 +523,7 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
         feature(
             "writer",
             2,
-            vec![FeatureId("dependency".into())],
+            vec![FeatureId::mint("dependency").expect("identity grammar")],
             vec![body],
         ),
         feature("unrelated", 3, Vec::new(), Vec::new()),
@@ -543,13 +543,13 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
     )
     .is_err());
     ir.model.features[0].ordinal = 1;
-    ir.model.features[2].id = FeatureId("writer".into());
+    ir.model.features[2].id = FeatureId::mint("writer").expect("identity grammar");
     assert!(super::active_feature_closure(
         &ir,
         &[BodyId::mint("test:model:entity#body").expect("identity grammar")]
     )
     .is_err());
-    ir.model.features[2].id = FeatureId("unrelated".into());
+    ir.model.features[2].id = FeatureId::mint("unrelated").expect("identity grammar");
     ir.model.features[1].suppressed = Some(true);
     assert!(super::active_feature_closure(
         &ir,
@@ -561,11 +561,11 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
 #[test]
 fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_atomically() {
     let producer = |dependency: &str| Feature {
-        id: FeatureId("writer".into()),
+        id: FeatureId::mint("writer").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: vec![FeatureId(dependency.into())],
+        dependencies: vec![FeatureId::mint(dependency).expect("identity grammar")],
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
@@ -579,7 +579,7 @@ fn active_configuration_feature_states_reject_incomplete_or_ambiguous_graphs_ato
         native_ref: None,
     };
     let configuration = |id: &str, active, bodies| DesignConfiguration {
-        id: ConfigurationId(id.into()),
+        id: ConfigurationId::mint(id).expect("identity grammar"),
         ordinal: 0,
         active,
         source_index: Some(0),
@@ -1173,7 +1173,7 @@ fn extrusion_is_new_body_only_for_one_first_written_surface_or_solid_output() {
         BooleanOp::Unresolved
     );
 
-    let prior = super::FeatureId("prior-offset-writer".into());
+    let prior = super::FeatureId::mint("prior-offset-writer").expect("identity grammar");
     let offset_body = "store:block#7";
     let mut offset_history = super::BodyWriterHistory::default();
     offset_history.record_writer(None, Some(offset_body), &[], &prior);
@@ -1638,7 +1638,7 @@ fn segment_bound_bodies_form_the_exact_retained_history_input() {
 
     assert_eq!(
         id,
-        FeatureId("nx:feature-history:feature#initial-bodies".into())
+        FeatureId::mint("nx:feature-history:feature#initial-bodies").expect("identity grammar")
     );
     assert_eq!(ir.model.features[0].outputs, std::slice::from_ref(&bound));
     assert_eq!(
@@ -1723,7 +1723,7 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
         }
     );
     let feature = Feature {
-        id: FeatureId("feature".to_string()),
+        id: FeatureId::mint("feature".to_string()).expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -1815,8 +1815,8 @@ fn nx_boolean_writers_follow_selected_identity_namespace() {
         panic!("Boolean definition");
     };
 
-    let native_prior = FeatureId("native-prior".to_string());
-    let offset_prior = FeatureId("offset-prior".to_string());
+    let native_prior = FeatureId::mint("native-prior".to_string()).expect("identity grammar");
+    let offset_prior = FeatureId::mint("offset-prior".to_string()).expect("identity grammar");
     let mut history = super::BodyWriterHistory::default();
     history.record_writer(Some(401), None, &[], &native_prior);
     history.record_writer(None, Some(&blocks[&401]), &[], &offset_prior);

@@ -154,7 +154,7 @@ pub(super) fn check_native_links(
                     check: Check::NativeLinks,
                     severity: Severity::Error,
                     message: format!("native_ref `{target}` does not resolve"),
-                    entity: Some(feature.id.0.clone()),
+                    entity: Some(feature.id.as_str().to_owned()),
                 });
             }
         }
@@ -168,7 +168,7 @@ pub(super) fn check_native_links(
                     check: Check::NativeLinks,
                     severity: Severity::Error,
                     message: format!("helix axis native_ref `{target}` does not resolve"),
-                    entity: Some(feature.id.0.clone()),
+                    entity: Some(feature.id.as_str().to_owned()),
                 });
             }
         }
@@ -180,7 +180,7 @@ pub(super) fn check_native_links(
                     check: Check::NativeLinks,
                     severity: Severity::Error,
                     message: format!("native_ref `{target}` does not resolve"),
-                    entity: Some(parameter.id.0.clone()),
+                    entity: Some(parameter.id.as_str().to_owned()),
                 });
             }
         }
@@ -190,7 +190,7 @@ pub(super) fn check_native_links(
                     check: Check::NativeLinks,
                     severity: Severity::Error,
                     message: format!("PMI native_ref `{}` does not resolve", semantic.native_ref),
-                    entity: Some(parameter.id.0.clone()),
+                    entity: Some(parameter.id.as_str().to_owned()),
                 });
             }
         }
@@ -202,7 +202,7 @@ pub(super) fn check_native_links(
                     check: Check::NativeLinks,
                     severity: Severity::Error,
                     message: format!("native_ref `{target}` does not resolve"),
-                    entity: Some(configuration.id.0.clone()),
+                    entity: Some(configuration.id.as_str().to_owned()),
                 });
             }
         }

@@ -86,9 +86,9 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
         assert_eq!(parameters.len(), 1);
         assert_eq!(
             parameters[0].owner,
-            Some(cadmpeg_ir::features::FeatureId(format!(
+            Some(cadmpeg_ir::features::FeatureId::mint(format!(
                 "creo:model:sketch_feature#{identity_scope}"
-            )))
+            )).expect("identity grammar"))
         );
         assert!(parameters[0]
             .id

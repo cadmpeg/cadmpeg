@@ -59,7 +59,7 @@ fn native_planar_and_spatial_sketch_geometry_is_reported() {
 fn only_sketch_owned_relation_records_without_constraints_are_counted() {
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
-        id: FeatureId("sketch-feature".into()),
+        id: FeatureId::mint("sketch-feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -362,7 +362,7 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
 #[test]
 fn native_dimension_subtypes_are_reported() {
     let mut ir = CadIr::empty();
-    let owner = FeatureId("owner".into());
+    let owner = FeatureId::mint("owner").expect("identity grammar");
     ir.model.features.push(Feature {
         id: owner.clone(),
         ordinal: 0,
@@ -382,7 +382,7 @@ fn native_dimension_subtypes_are_reported() {
         native_ref: None,
     });
     ir.model.parameters.push(DesignParameter {
-        id: ParameterId("parameter".into()),
+        id: ParameterId::mint("parameter").expect("identity grammar"),
         owner: Some(owner),
         ordinal: 0,
         name: "D1".into(),

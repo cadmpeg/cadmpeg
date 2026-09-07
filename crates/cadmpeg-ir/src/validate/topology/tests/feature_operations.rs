@@ -344,7 +344,7 @@ fn feature_operation_geometry_is_validated() {
     let mut ir = unit_cube();
     for (ordinal, definition) in definitions.into_iter().enumerate() {
         ir.model.features.push(Feature {
-            id: FeatureId(format!("synthetic:test:feature#invalid-{ordinal}")),
+            id: FeatureId::mint(format!("synthetic:test:feature#invalid-{ordinal}")).expect("identity grammar"),
             ordinal: ordinal as u64,
             name: None,
             suppressed: Some(false),

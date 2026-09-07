@@ -111,9 +111,9 @@ pub(crate) fn resolved_surface_patch_edge_group(
         return fallback();
     };
     let feature_key = feature_id
-        .0
+        .as_str()
         .split_once('#')
-        .map_or(feature_id.0.as_str(), |(_, key)| key);
+        .map_or(feature_id.as_str(), |(_, key)| key);
     cadmpeg_ir::features::EdgeSelection::Historical {
         state: feature_input_topology_id(feature_id, state_id),
         edges: edge_slots
@@ -247,9 +247,9 @@ pub(crate) fn resolved_edge_flange_group(
         return selection;
     }
     let feature_key = feature_id
-        .0
+        .as_str()
         .split_once('#')
-        .map_or(feature_id.0.as_str(), |(_, key)| key);
+        .map_or(feature_id.as_str(), |(_, key)| key);
     let state = feature_input_topology_id(feature_id, previous_state_id);
     EdgeSelection::Historical {
         state,
@@ -475,9 +475,9 @@ fn resolved_edge_group_with_transition_chain(
     };
 
     let feature_key = feature_id
-        .0
+        .as_str()
         .split_once('#')
-        .map_or(feature_id.0.as_str(), |(_, key)| key);
+        .map_or(feature_id.as_str(), |(_, key)| key);
     let unmatched_selection = |state_id: Option<i64>| {
         if group.lost_edge_references.is_empty() {
             EdgeSelection::Native(group.id.clone())
@@ -1090,9 +1090,9 @@ pub(crate) fn resolved_hem_edge_group(
         return selection;
     };
     let feature_key = feature_id
-        .0
+        .as_str()
         .split_once('#')
-        .map_or(feature_id.0.as_str(), |(_, key)| key);
+        .map_or(feature_id.as_str(), |(_, key)| key);
     EdgeSelection::Historical {
         state: feature_input_topology_id(feature_id, previous_state_id),
         edges: vec![ids::history_input_edge_id(
@@ -1306,9 +1306,9 @@ pub(crate) fn feature_input_topology_id(
     previous_state_id: i64,
 ) -> cadmpeg_ir::ids::FeatureInputTopologyId {
     let feature_key = feature_id
-        .0
+        .as_str()
         .split_once('#')
-        .map_or(feature_id.0.as_str(), |(_, key)| key);
+        .map_or(feature_id.as_str(), |(_, key)| key);
     ids::history_input_state_id(&ids::history_input_prefix(feature_key, previous_state_id))
 }
 

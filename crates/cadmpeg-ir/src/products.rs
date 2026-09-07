@@ -10,11 +10,10 @@ use std::collections::{HashMap, HashSet};
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
 use crate::transform::Transform;
 
-/// Stable assembly-joint identity.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(transparent)]
-pub struct JointId(#[serde(serialize_with = "crate::schema::serialize_reference_id")] pub String);
+crate::ids::reference_id_type!(
+    /// Stable assembly-joint identity.
+    JointId
+);
 
 /// Role of a component definition in the product tree.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

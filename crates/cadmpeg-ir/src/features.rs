@@ -142,45 +142,15 @@ mod draft_anchor_wire {
     }
 }
 
-/// Identifies a neutral construction feature.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(transparent)]
-pub struct FeatureId(#[serde(serialize_with = "crate::schema::serialize_reference_id")] pub String);
-
-impl FeatureId {
-    /// Borrow the underlying id string.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl std::fmt::Display for FeatureId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl<S: Into<String>> From<S> for FeatureId {
-    fn from(value: S) -> Self {
-        Self(value.into())
-    }
-}
-
-/// Identifies a neutral design configuration.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(transparent)]
-pub struct ConfigurationId(
-    #[serde(serialize_with = "crate::schema::serialize_reference_id")] pub String,
+crate::ids::reference_id_type!(
+    /// Identifies a neutral construction feature.
+    FeatureId
 );
 
-impl ConfigurationId {
-    /// Borrow the underlying id string.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
+crate::ids::reference_id_type!(
+    /// Identifies a neutral design configuration.
+    ConfigurationId
+);
 
 /// Resolution state of a configuration's source display name.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -518,20 +488,10 @@ pub struct ConfigurationFeatureState {
     pub definition: FeatureDefinition,
 }
 
-/// Identifies a neutral design parameter.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(transparent)]
-pub struct ParameterId(
-    #[serde(serialize_with = "crate::schema::serialize_reference_id")] pub String,
+crate::ids::reference_id_type!(
+    /// Identifies a neutral design parameter.
+    ParameterId
 );
-
-impl ParameterId {
-    /// Borrow the underlying id string.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
 
 /// A named design expression, optionally owned by a construction feature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

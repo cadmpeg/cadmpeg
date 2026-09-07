@@ -41,7 +41,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         ),
     ];
     let feature = Feature {
-        id: FeatureId("feature".into()),
+        id: FeatureId::mint("feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -438,8 +438,8 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
             .collect(),
     };
     let parameter = |id: &str, display| DesignParameter {
-        id: ParameterId(id.into()),
-        owner: Some(FeatureId("feature".into())),
+        id: ParameterId::mint(id).expect("identity grammar"),
+        owner: Some(FeatureId::mint("feature").expect("identity grammar")),
         ordinal: 0,
         name: id.into(),
         expression: String::new(),
@@ -464,7 +464,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         Some(cadmpeg_ir::sketches::SketchConstraintDefinition::DistanceLoci {
             parameter,
             ..
-        }) if parameter.0 == "distance"
+        }) if parameter.as_str() == "distance"
     ));
     let same_locus_relation = FeatureInputRelationInstance {
         operands: relation
@@ -511,7 +511,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
             &joins,
         ),
         Some(SketchConstraintDefinition::Radius { parameter, .. })
-            if parameter.0 == "circle"
+            if parameter.as_str() == "circle"
     ));
     let diameter = parameter("circle", Some(DimensionDisplay::Diameter));
     assert!(matches!(
@@ -524,7 +524,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
             &joins,
         ),
         Some(SketchConstraintDefinition::Diameter { parameter, .. })
-            if parameter.0 == "circle"
+            if parameter.as_str() == "circle"
     ));
     let undisplayed = parameter("circle", None);
     assert_eq!(
@@ -618,7 +618,7 @@ fn line_handle_interior_points_identify_profile_entities() {
         ),
     ];
     let feature = Feature {
-        id: FeatureId("feature".into()),
+        id: FeatureId::mint("feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -805,7 +805,7 @@ fn symmetry_invariant_marker_identifies_profile_entity() {
         .with_construction(true)
     });
     let feature = Feature {
-        id: FeatureId("feature".into()),
+        id: FeatureId::mint("feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),

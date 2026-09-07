@@ -26,7 +26,7 @@ pub(in super::super) fn link_feature_sketch_history(scan: &ContainerScan, ir: &m
             .is_some()
         })
         .filter_map(|transform| {
-            let owner = IrFeatureId(format!("creo:model:feature#{}", transform.feature_id?));
+            let owner = IrFeatureId::mint(format!("creo:model:feature#{}", transform.feature_id?)).expect("identity grammar");
             let definition =
                 unique_feature_definition_for_transform(&scan.features.definitions, transform)?;
             let sketch = model_sketch_id(scan, definition);

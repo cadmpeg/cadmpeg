@@ -160,12 +160,12 @@ pub(crate) fn neutral_assembly_joint_id(
     scope: &crate::records::feature::DesignParameterScope,
 ) -> cadmpeg_ir::products::JointId {
     let stream = identity_key_component(native_stream(&scope.id).unwrap_or(DEFAULT_STREAM));
-    cadmpeg_ir::products::JointId(format!(
+    cadmpeg_ir::products::JointId::mint(format!(
         "f3d:model:joint#{}:{}{}",
         stream.len(),
         stream,
         scope.record_index
-    ))
+    )).expect("identity grammar")
 }
 
 /// The Design configuration record key for the archive entry `entry_name`.
@@ -197,13 +197,13 @@ pub(crate) fn neutral_configuration_id(
 ) -> cadmpeg_ir::features::ConfigurationId {
     let entry_name = identity_key_component(entry_name);
     let variant_name = identity_key_component(variant_name);
-    cadmpeg_ir::features::ConfigurationId(format!(
+    cadmpeg_ir::features::ConfigurationId::mint(format!(
         "f3d:configuration:variant#{}:{}{}:{}",
         entry_name.len(),
         entry_name,
         variant_name.len(),
         variant_name,
-    ))
+    )).expect("identity grammar")
 }
 
 /// The neutral feature key for a parameter `scope`.
@@ -226,7 +226,7 @@ pub(crate) fn neutral_feature_id_parts(
 ) -> cadmpeg_ir::features::FeatureId {
     let stream = identity_key_component(stream);
     let kind = identity_key_component(kind);
-    cadmpeg_ir::features::FeatureId(format!(
+    cadmpeg_ir::features::FeatureId::mint(format!(
         "f3d:model:feature#{}:{}{}:{}{}:{}",
         stream.len(),
         stream,
@@ -234,7 +234,7 @@ pub(crate) fn neutral_feature_id_parts(
         kind,
         feature_ordinal,
         scope_record_index,
-    ))
+    )).expect("identity grammar")
 }
 
 /// Feature-input-local body key for one complete external `Combine` selector path.
@@ -345,7 +345,7 @@ pub(crate) fn neutral_assembly_legacy_object_id(
 /// The neutral embedded-asset key for one exact archive entry.
 pub(crate) fn neutral_asset_id(entry_name: &str) -> cadmpeg_ir::assets::AssetId {
     let entry_name = identity_key_component(entry_name);
-    cadmpeg_ir::assets::AssetId(format!("f3d:model:asset#{}:{entry_name}", entry_name.len()))
+    cadmpeg_ir::assets::AssetId::mint(format!("f3d:model:asset#{}:{entry_name}", entry_name.len())).expect("identity grammar")
 }
 
 /// The neutral parameter key for a design `parameter`.
@@ -365,12 +365,12 @@ pub(crate) fn neutral_parameter_id_parts(
     record_index: u32,
 ) -> cadmpeg_ir::features::ParameterId {
     let stream = identity_key_component(stream);
-    cadmpeg_ir::features::ParameterId(format!(
+    cadmpeg_ir::features::ParameterId::mint(format!(
         "f3d:model:parameter#{}:{}{}",
         stream.len(),
         stream,
         record_index,
-    ))
+    )).expect("identity grammar")
 }
 
 /// The neutral planar-sketch key for a sketch `placement`.
@@ -552,9 +552,9 @@ pub(crate) fn neutral_dimension_constraint_id(
     form: &str,
 ) -> cadmpeg_ir::sketches::SketchConstraintId {
     let parameter_key = parameter
-        .0
+        .as_str()
         .split_once('#')
-        .map_or(parameter.0.as_str(), |(_, key)| key);
+        .map_or(parameter.as_str(), |(_, key)| key);
     let form = identity_key_component(form);
     cadmpeg_ir::sketches::SketchConstraintId(format!(
         "f3d:model:sketch-constraint#dimension:{}:{}{}:{}",

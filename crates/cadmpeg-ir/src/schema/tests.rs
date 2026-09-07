@@ -52,7 +52,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
     use crate::ids::{FeatureInputTopologyId, HistoricalEdgeId};
     use crate::schema::EntitySchema;
 
-    let feature_id = FeatureId("test:model:feature#owner".into());
+    let feature_id = FeatureId::mint("test:model:feature#owner").expect("identity grammar");
     let state_id =
         FeatureInputTopologyId::mint("test:model:feature-input#owner").expect("valid identity");
     let historical_edge =
@@ -95,7 +95,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
 
     let mut state_references = Vec::new();
     state.visit_references(&mut |reference| state_references.push(reference.target));
-    assert_eq!(state_references, vec![feature_id.0.clone()]);
+    assert_eq!(state_references, vec![feature_id.as_str().to_owned()]);
 
     let mut feature_references = Vec::new();
     feature.visit_references(&mut |reference| feature_references.push(reference.target));

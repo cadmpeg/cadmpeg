@@ -828,7 +828,7 @@ mod tests {
             }),
         };
         let parameter = NeutralParameter {
-            id: ParameterId("f3d:model:parameter#width".into()),
+            id: ParameterId::mint("f3d:model:parameter#width").expect("identity grammar"),
             owner: None,
             ordinal: 0,
             name: "width".into(),
@@ -850,7 +850,7 @@ mod tests {
         );
 
         let duplicate = NeutralParameter {
-            id: ParameterId("f3d:model:parameter#other-width".into()),
+            id: ParameterId::mint("f3d:model:parameter#other-width").expect("identity grammar"),
             ..parameter.clone()
         };
         let mut ambiguous = project_configurations(&[DesignConfiguration {
@@ -883,7 +883,7 @@ mod tests {
             }),
         };
         let feature = Feature {
-            id: FeatureId("f3d:model:feature#fillet-1".into()),
+            id: FeatureId::mint("f3d:model:feature#fillet-1").expect("identity grammar"),
             ordinal: 0,
             name: Some("Fillet 1".into()),
             suppressed: Some(false),
@@ -912,7 +912,7 @@ mod tests {
         );
 
         let duplicate = Feature {
-            id: FeatureId("f3d:model:feature#other-fillet-1".into()),
+            id: FeatureId::mint("f3d:model:feature#other-fillet-1").expect("identity grammar"),
             ..feature.clone()
         };
         let mut ambiguous = project_configurations(&[DesignConfiguration {

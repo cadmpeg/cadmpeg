@@ -6,18 +6,10 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(transparent)]
-/// Stable identity of one neutral drawing entity.
-pub struct DrawingId(#[serde(serialize_with = "crate::schema::serialize_reference_id")] pub String);
-
-impl DrawingId {
-    /// Borrow the underlying id string.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
+crate::ids::reference_id_type!(
+    /// Stable identity of one neutral drawing entity.
+    DrawingId
+);
 
 /// Semantic role of a drawing entity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

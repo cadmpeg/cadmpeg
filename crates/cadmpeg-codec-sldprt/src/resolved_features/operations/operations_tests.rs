@@ -516,7 +516,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         op,
     };
     let feature = |id: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {
-        id: id.into(),
+        id: cadmpeg_ir::features::FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),

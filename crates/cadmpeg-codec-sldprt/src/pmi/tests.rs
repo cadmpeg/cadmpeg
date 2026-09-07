@@ -40,7 +40,7 @@ fn dimension(subtype: &str, value: f64) -> PmiDimension {
 
 fn named_feature(id: &str, name: &str) -> Feature {
     Feature {
-        id: FeatureId(id.into()),
+        id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: Some(name.into()),
         suppressed: None,
@@ -76,7 +76,7 @@ fn linear_pattern_primary_and_secondary_counts_are_count_parameters() {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, Length, PatternKind};
 
     let feature = Feature {
-        id: FeatureId("pattern".into()),
+        id: FeatureId::mint("pattern").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
@@ -105,10 +105,10 @@ fn linear_pattern_primary_and_secondary_counts_are_count_parameters() {
 
 #[test]
 fn explicit_keywords_dimension_precedes_pmi_value() {
-    let owner = FeatureId("feature".into());
+    let owner = FeatureId::mint("feature").expect("identity grammar");
     let feature = named_feature("feature", "Pattern1");
     let mut parameters = vec![DesignParameter {
-        id: ParameterId("keywords-parameter".into()),
+        id: ParameterId::mint("keywords-parameter").expect("identity grammar"),
         owner: Some(owner),
         ordinal: 0,
         name: "D1".into(),

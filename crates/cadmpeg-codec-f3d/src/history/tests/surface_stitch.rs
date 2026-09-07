@@ -140,7 +140,7 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
             state(1, None),
         ],
     };
-    let feature_id = FeatureId("f3d:model:feature#42".into());
+    let feature_id = FeatureId::mint("f3d:model:feature#42").expect("identity grammar");
     let mut feature = Feature::new(
         feature_id.clone(),
         0,

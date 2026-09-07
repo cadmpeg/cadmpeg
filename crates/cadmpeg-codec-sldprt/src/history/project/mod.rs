@@ -208,9 +208,9 @@ pub fn project_semantic_notes(
                 .strip_prefix("sldprt:history:feature#")
                 .unwrap_or(&feature.id);
             cadmpeg_ir::semantic_annotations::SemanticAnnotation {
-                id: cadmpeg_ir::semantic_annotations::SemanticAnnotationId(format!(
+                id: cadmpeg_ir::semantic_annotations::SemanticAnnotationId::mint(format!(
                     "sldprt:semantic-annotation:note#{key}"
-                )),
+                )).expect("identity grammar"),
                 object: feature.id.clone(),
                 kind: cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text,
                 runtime_type: feature.kind.clone(),
@@ -388,7 +388,7 @@ pub(crate) fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features:
         })
         .collect::<HashMap<_, _>>();
     let canonical_plane_id = |id: &str| {
-        let mut current = FeatureId(id.to_owned());
+        let mut current = FeatureId::mint(id.to_owned()).expect("identity grammar");
         let mut visited = HashSet::new();
         while visited.insert(current.clone()) {
             let Some(parent) = zero_offset_parents.get(&current).cloned() else {
@@ -879,13 +879,13 @@ pub fn project_configurations(histories: &[FeatureHistory]) -> Vec<DesignConfigu
         .iter()
         .flat_map(|history| &history.configurations)
         .map(|configuration| DesignConfiguration {
-            id: ConfigurationId(format!(
+            id: ConfigurationId::mint(format!(
                 "sldprt:model:configuration#{}",
                 configuration
                     .id
                     .strip_prefix("sldprt:history:configuration#")
                     .unwrap_or(&configuration.id)
-            )),
+            )).expect("identity grammar"),
             ordinal: configuration.ordinal,
             active: false,
             source_index: configuration.source_index,
@@ -1093,7 +1093,7 @@ pub(crate) fn neutral_parameter_id(feature: &Feature, ordinal: usize) -> Paramet
         .id
         .strip_prefix("sldprt:history:feature#")
         .unwrap_or(&feature.id);
-    ParameterId(format!("sldprt:model:parameter#{key}:{ordinal}"))
+    ParameterId::mint(format!("sldprt:model:parameter#{key}:{ordinal}")).expect("identity grammar")
 }
 
 pub(crate) fn native_definition(feature: &Feature) -> FeatureDefinition {
@@ -1107,5 +1107,5 @@ pub(crate) fn neutral_feature_id(native_id: &str) -> FeatureId {
     let key = native_id
         .strip_prefix("sldprt:history:feature#")
         .unwrap_or(native_id);
-    FeatureId(format!("sldprt:model:feature#{key}"))
+    FeatureId::mint(format!("sldprt:model:feature#{key}")).expect("identity grammar")
 }

@@ -288,7 +288,7 @@ fn draft_neutral_plane_is_resolved(
     face_selection_is_resolved(selection)
         || match selection {
             cadmpeg_ir::features::FaceSelection::Native(native) => {
-                pull_plane.is_some_and(|plane| plane.0 == *native)
+                pull_plane.is_some_and(|plane| plane.as_str() == *native)
                     && pull_direction.is_some_and(|direction| direction.unit().is_some())
             }
             _ => false,
@@ -802,7 +802,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 || *mode == cadmpeg_ir::features::BodyRetentionMode::Unresolved
         }
         FeatureDefinition::InsertComponent { .. } => false,
-        FeatureDefinition::AssemblyJoint { joint } => joint.0.is_empty(),
+        FeatureDefinition::AssemblyJoint { joint } => joint.as_str().is_empty(),
         FeatureDefinition::Shell {
             bodies,
             removed_faces,

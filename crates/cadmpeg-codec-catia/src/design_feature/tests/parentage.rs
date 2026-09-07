@@ -22,9 +22,9 @@ fn assigns_parent_from_an_exact_transferred_owner_chain() {
         feature_ids: HashMap::from([
             (
                 "parent-object".to_string(),
-                FeatureId::from("parent-feature"),
+                FeatureId::mint("parent-feature").expect("identity grammar"),
             ),
-            ("child-object".to_string(), FeatureId::from("child-feature")),
+            ("child-object".to_string(), FeatureId::mint("child-feature").expect("identity grammar")),
         ]),
         ..DesignFeatureTransfer::default()
     };
@@ -34,7 +34,7 @@ fn assigns_parent_from_an_exact_transferred_owner_chain() {
     assert!(ir.model.feature_parent(&ir.model.features[0].id).is_none());
     assert_eq!(
         ir.model.feature_parent(&ir.model.features[1].id),
-        Some(&FeatureId::from("parent-feature"))
+        Some(&FeatureId::mint("parent-feature").expect("identity grammar"))
     );
 }
 
@@ -59,9 +59,9 @@ fn assigns_parent_from_the_nearest_transferred_ancestor() {
         feature_ids: HashMap::from([
             (
                 "parent-object".to_string(),
-                FeatureId::from("parent-feature"),
+                FeatureId::mint("parent-feature").expect("identity grammar"),
             ),
-            ("child-object".to_string(), FeatureId::from("child-feature")),
+            ("child-object".to_string(), FeatureId::mint("child-feature").expect("identity grammar")),
         ]),
         ..DesignFeatureTransfer::default()
     };
@@ -70,7 +70,7 @@ fn assigns_parent_from_the_nearest_transferred_ancestor() {
 
     assert_eq!(
         ir.model.feature_parent(&ir.model.features[1].id),
-        Some(&FeatureId::from("parent-feature"))
+        Some(&FeatureId::mint("parent-feature").expect("identity grammar"))
     );
 }
 
@@ -94,9 +94,9 @@ fn rejects_a_parent_that_does_not_precede_its_child() {
         feature_ids: HashMap::from([
             (
                 "parent-object".to_string(),
-                FeatureId::from("parent-feature"),
+                FeatureId::mint("parent-feature").expect("identity grammar"),
             ),
-            ("child-object".to_string(), FeatureId::from("child-feature")),
+            ("child-object".to_string(), FeatureId::mint("child-feature").expect("identity grammar")),
         ]),
         ..DesignFeatureTransfer::default()
     };
@@ -119,7 +119,7 @@ fn does_not_assign_a_self_parent() {
     let mut ir = CadIr::empty();
     ir.model.features.push(feature("feature", "feature-object"));
     let transfer = DesignFeatureTransfer {
-        feature_ids: HashMap::from([("feature-object".to_string(), FeatureId::from("feature"))]),
+        feature_ids: HashMap::from([("feature-object".to_string(), FeatureId::mint("feature").expect("identity grammar"))]),
         ..DesignFeatureTransfer::default()
     };
 
@@ -146,10 +146,10 @@ fn omits_all_parents_in_an_owner_cycle() {
         .push(feature("second-feature", "second-object"));
     let transfer = DesignFeatureTransfer {
         feature_ids: HashMap::from([
-            ("first-object".to_string(), FeatureId::from("first-feature")),
+            ("first-object".to_string(), FeatureId::mint("first-feature").expect("identity grammar")),
             (
                 "second-object".to_string(),
-                FeatureId::from("second-feature"),
+                FeatureId::mint("second-feature").expect("identity grammar"),
             ),
         ]),
         ..DesignFeatureTransfer::default()

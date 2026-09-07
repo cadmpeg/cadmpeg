@@ -449,8 +449,8 @@ fn distance_pair_fallback_requires_one_pair_in_the_complete_sketch() {
         )
     };
     let parameter = DesignParameter {
-        id: ParameterId("distance".into()),
-        owner: Some(FeatureId("feature".into())),
+        id: ParameterId::mint("distance").expect("identity grammar"),
+        owner: Some(FeatureId::mint("feature").expect("identity grammar")),
         ordinal: 0,
         name: "D1".into(),
         expression: "5mm".into(),
@@ -509,8 +509,8 @@ fn axis_distance_fallback_requires_one_pair_in_the_complete_sketch() {
     let second = point("second", 5.0, 20.0);
     let unrelated = point("unrelated", 100.0, 100.0);
     let parameter = DesignParameter {
-        id: ParameterId("distance".into()),
-        owner: Some(FeatureId("feature".into())),
+        id: ParameterId::mint("distance").expect("identity grammar"),
+        owner: Some(FeatureId::mint("feature").expect("identity grammar")),
         ordinal: 0,
         name: "D1".into(),
         expression: "5mm".into(),
@@ -563,8 +563,8 @@ fn line_distance_fallback_requires_one_parallel_pair_in_the_complete_sketch() {
         Point2::new(21.0, 21.0),
     );
     let parameter = DesignParameter {
-        id: ParameterId("distance".into()),
-        owner: Some(FeatureId("feature".into())),
+        id: ParameterId::mint("distance").expect("identity grammar"),
+        owner: Some(FeatureId::mint("feature").expect("identity grammar")),
         ordinal: 0,
         name: "D1".into(),
         expression: "5mm".into(),
@@ -669,8 +669,8 @@ fn line_angle_fallback_requires_one_pair_in_the_complete_sketch() {
     let vertical = line("vertical", Point2::new(0.0, 0.0), Point2::new(0.0, 10.0));
     let diagonal = line("diagonal", Point2::new(20.0, 20.0), Point2::new(21.0, 21.0));
     let parameter = DesignParameter {
-        id: ParameterId("angle".into()),
-        owner: Some(FeatureId("feature".into())),
+        id: ParameterId::mint("angle").expect("identity grammar"),
+        owner: Some(FeatureId::mint("feature").expect("identity grammar")),
         ordinal: 0,
         name: "D1".into(),
         expression: "90deg".into(),
@@ -788,8 +788,8 @@ fn point_line_fallback_requires_one_pair_in_the_complete_sketch() {
         Point2::new(100.0, 30.0),
     );
     let parameter = DesignParameter {
-        id: ParameterId("distance".into()),
-        owner: Some(FeatureId("feature".into())),
+        id: ParameterId::mint("distance").expect("identity grammar"),
+        owner: Some(FeatureId::mint("feature").expect("identity grammar")),
         ordinal: 0,
         name: "D1".into(),
         expression: "5mm".into(),

@@ -205,7 +205,7 @@ pub(super) fn decode(
         drawings.insert(
             id,
             Drawing {
-                id: DrawingId(identity.clone()),
+                id: DrawingId::mint(identity.clone()).expect("identity grammar"),
                 object: identity.clone(),
                 kind: drawing_kind(name),
                 runtime_type: name.into(),

@@ -100,8 +100,8 @@ fn current_json_without_configurations_defaults_to_empty() {
 fn feature_parent_wire_is_derived_from_its_single_owner() {
     use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureTreeNodeRole};
 
-    let parent_id = FeatureId("test:model:feature#parent".into());
-    let child_id = FeatureId("test:model:feature#child".into());
+    let parent_id = FeatureId::mint("test:model:feature#parent").expect("identity grammar");
+    let child_id = FeatureId::mint("test:model:feature#child").expect("identity grammar");
     let parent = Feature::new(
         parent_id.clone(),
         0,
@@ -118,10 +118,10 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
     };
 
     let value = serde_json::to_value(&model).unwrap();
-    assert_eq!(value["features"][1]["parent"], parent_id.0);
+    assert_eq!(value["features"][1]["parent"], parent_id.as_str());
     assert_eq!(
         value["features"][0]["definition"]["children"][0],
-        child_id.0
+        child_id.as_str()
     );
     assert_eq!(serde_json::from_value::<Model>(value).unwrap(), model);
 
@@ -136,7 +136,7 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
         .set_feature_regeneration_parent(child_id, parent_id.clone())
         .unwrap();
     let value = serde_json::to_value(&regeneration).unwrap();
-    assert_eq!(value["features"][1]["parent"], parent_id.0);
+    assert_eq!(value["features"][1]["parent"], parent_id.as_str());
     assert_eq!(
         serde_json::from_value::<Model>(value).unwrap(),
         regeneration
@@ -147,9 +147,9 @@ fn feature_parent_wire_is_derived_from_its_single_owner() {
 fn feature_parent_wire_rejects_disagreement_with_tree_children() {
     use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureTreeNodeRole};
 
-    let first_id = FeatureId("test:model:feature#first".into());
-    let second_id = FeatureId("test:model:feature#second".into());
-    let child_id = FeatureId("test:model:feature#child".into());
+    let first_id = FeatureId::mint("test:model:feature#first").expect("identity grammar");
+    let second_id = FeatureId::mint("test:model:feature#second").expect("identity grammar");
+    let child_id = FeatureId::mint("test:model:feature#child").expect("identity grammar");
     let model = Model {
         features: vec![
             Feature::new(
@@ -167,7 +167,7 @@ fn feature_parent_wire_rejects_disagreement_with_tree_children() {
         ..Model::default()
     };
     let mut value = serde_json::to_value(model).unwrap();
-    value["features"][2]["parent"] = serde_json::Value::String(second_id.0);
+    value["features"][2]["parent"] = serde_json::Value::String(second_id.into_string());
 
     assert!(serde_json::from_value::<Model>(value).is_err());
 }
@@ -457,8 +457,8 @@ fn current_source_metadata_schema_requires_dialects_and_omits_legacy_dialect() {
 fn parent_only_wire_preserves_regeneration_without_tree_membership() {
     use crate::features::{Feature, FeatureDefinition, FeatureId, FeatureTreeNodeRole};
 
-    let parent_id = FeatureId("test:model:feature#parent".into());
-    let child_id = FeatureId("test:model:feature#child".into());
+    let parent_id = FeatureId::mint("test:model:feature#parent").expect("identity grammar");
+    let child_id = FeatureId::mint("test:model:feature#child").expect("identity grammar");
     let mut model = Model {
         features: vec![
             Feature::new(
@@ -481,6 +481,6 @@ fn parent_only_wire_preserves_regeneration_without_tree_membership() {
     assert_eq!(model.feature_parent(&child_id), Some(&parent_id));
     let wire = serde_json::to_value(&model).unwrap();
     assert!(wire["features"][0]["definition"].get("children").is_none());
-    assert_eq!(wire["features"][1]["parent"], parent_id.0);
+    assert_eq!(wire["features"][1]["parent"], parent_id.as_str());
     assert_eq!(serde_json::from_value::<Model>(wire).unwrap(), model);
 }

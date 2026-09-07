@@ -1189,13 +1189,13 @@ fn nx_construction_dependency_requires_a_preceding_projected_operation() {
 
     let positions = BTreeMap::from([("csys", 1), ("consumer", 2), ("later", 3)]);
     let features = BTreeMap::from([
-        ("csys", FeatureId("nx:test:feature#csys".into())),
-        ("consumer", FeatureId("nx:test:feature#consumer".into())),
+        ("csys", FeatureId::mint("nx:test:feature#csys").expect("identity grammar")),
+        ("consumer", FeatureId::mint("nx:test:feature#consumer").expect("identity grammar")),
     ]);
 
     assert_eq!(
         super::preceding_operation_dependency("csys", 2, &positions, &features),
-        Some(FeatureId("nx:test:feature#csys".into()))
+        Some(FeatureId::mint("nx:test:feature#csys").expect("identity grammar"))
     );
     assert_eq!(
         super::preceding_operation_dependency("consumer", 2, &positions, &features),

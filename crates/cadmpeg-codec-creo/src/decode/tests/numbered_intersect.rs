@@ -636,10 +636,10 @@ fn normalization_rejects_overflowed_finite_vectors() {
 
 #[test]
 fn dependency_reconciliation_preserves_typed_history_edges() {
-    let owner = IrFeatureId("creo:model:feature#40".to_string());
-    let sketch = IrFeatureId("creo:model:sketch_feature#917".to_string());
-    let parent = IrFeatureId("creo:model:feature#3".to_string());
-    let missing = IrFeatureId("creo:model:feature#999".to_string());
+    let owner = IrFeatureId::mint("creo:model:feature#40".to_string()).expect("identity grammar");
+    let sketch = IrFeatureId::mint("creo:model:sketch_feature#917".to_string()).expect("identity grammar");
+    let parent = IrFeatureId::mint("creo:model:feature#3".to_string()).expect("identity grammar");
+    let missing = IrFeatureId::mint("creo:model:feature#999".to_string()).expect("identity grammar");
     let emitted = [owner.clone(), sketch.clone(), parent.clone()]
         .into_iter()
         .collect();
@@ -936,8 +936,8 @@ fn generated_surface_faces_require_unique_rows_and_materialized_producers() {
     };
     let rows = [row(98, 97), row(145, 144)];
     let producers = BTreeSet::from([
-        IrFeatureId("creo:model:feature#97".to_string()),
-        IrFeatureId("creo:model:feature#144".to_string()),
+        IrFeatureId::mint("creo:model:feature#97".to_string()).expect("identity grammar"),
+        IrFeatureId::mint("creo:model:feature#144".to_string()).expect("identity grammar"),
     ]);
     let result_surface_ids = BTreeMap::from([(97, vec![98]), (144, vec![145])]);
 
@@ -945,11 +945,11 @@ fn generated_surface_faces_require_unique_rows_and_materialized_producers() {
         generated_surface_face_refs(&[98, 145], &rows, &result_surface_ids, &producers),
         Some(vec![
             GeneratedFaceRef {
-                feature: IrFeatureId("creo:model:feature#97".to_string()),
+                feature: IrFeatureId::mint("creo:model:feature#97".to_string()).expect("identity grammar"),
                 local_id: "surface#98".to_string(),
             },
             GeneratedFaceRef {
-                feature: IrFeatureId("creo:model:feature#144".to_string()),
+                feature: IrFeatureId::mint("creo:model:feature#144".to_string()).expect("identity grammar"),
                 local_id: "surface#145".to_string(),
             },
         ])
@@ -1056,7 +1056,7 @@ fn feature_result_faces_require_unique_owned_materialized_table_surfaces() {
 
 #[test]
 fn generated_face_dependencies_follow_the_producer_feature() {
-    let producer = IrFeatureId("creo:model:feature#97".to_string());
+    let producer = IrFeatureId::mint("creo:model:feature#97".to_string()).expect("identity grammar");
     let definition = IrFeatureDefinition::Thicken {
         faces: FaceSelection::Generated {
             faces: vec![GeneratedFaceRef {
@@ -1073,7 +1073,7 @@ fn generated_face_dependencies_follow_the_producer_feature() {
 
 #[test]
 fn generated_edge_dependencies_follow_the_producer_feature() {
-    let producer = IrFeatureId("creo:model:feature#97".to_string());
+    let producer = IrFeatureId::mint("creo:model:feature#97".to_string()).expect("identity grammar");
     let generated_edges = EdgeSelection::Generated {
         edges: vec![GeneratedEdgeRef {
             feature: producer.clone(),
@@ -1191,8 +1191,8 @@ fn generated_curve_edges_require_unique_rows_and_materialized_producers() {
     };
     let rows = [row(45, 12, 100), row(46, 18, 200)];
     let producers = BTreeSet::from([
-        IrFeatureId("creo:model:feature#12".to_string()),
-        IrFeatureId("creo:model:feature#18".to_string()),
+        IrFeatureId::mint("creo:model:feature#12".to_string()).expect("identity grammar"),
+        IrFeatureId::mint("creo:model:feature#18".to_string()).expect("identity grammar"),
     ]);
     let result_edge_ids = BTreeMap::from([(12, vec![45]), (18, vec![46])]);
 
@@ -1200,11 +1200,11 @@ fn generated_curve_edges_require_unique_rows_and_materialized_producers() {
         generated_curve_edge_refs(&[45, 46], &rows, &producers, &result_edge_ids),
         Some(vec![
             GeneratedEdgeRef {
-                feature: IrFeatureId("creo:model:feature#12".to_string()),
+                feature: IrFeatureId::mint("creo:model:feature#12".to_string()).expect("identity grammar"),
                 local_id: "curve#45".to_string(),
             },
             GeneratedEdgeRef {
-                feature: IrFeatureId("creo:model:feature#18".to_string()),
+                feature: IrFeatureId::mint("creo:model:feature#18".to_string()).expect("identity grammar"),
                 local_id: "curve#46".to_string(),
             },
         ])
@@ -1261,7 +1261,7 @@ fn mixed_current_and_generated_edges_remain_native() {
     ]);
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
-        id: IrFeatureId("creo:model:feature#97".to_string()),
+        id: IrFeatureId::mint("creo:model:feature#97".to_string()).expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
@@ -1434,7 +1434,7 @@ fn model_feature_ids_include_row_backed_generated_producers() {
     let available_features = model_feature_ids(&scan);
     assert_eq!(
         available_features,
-        BTreeSet::from([IrFeatureId("creo:model:feature#50".to_string())])
+        BTreeSet::from([IrFeatureId::mint("creo:model:feature#50".to_string()).expect("identity grammar")])
     );
     assert_eq!(
         generated_surface_face_refs(
@@ -1444,7 +1444,7 @@ fn model_feature_ids_include_row_backed_generated_producers() {
             &available_features,
         ),
         Some(vec![GeneratedFaceRef {
-            feature: IrFeatureId("creo:model:feature#50".to_string()),
+            feature: IrFeatureId::mint("creo:model:feature#50".to_string()).expect("identity grammar"),
             local_id: "surface#61".to_string(),
         }])
     );
@@ -1456,7 +1456,7 @@ fn model_feature_ids_include_row_backed_generated_producers() {
             &BTreeMap::from([(50, vec![59])]),
         ),
         Some(vec![GeneratedEdgeRef {
-            feature: IrFeatureId("creo:model:feature#50".to_string()),
+            feature: IrFeatureId::mint("creo:model:feature#50".to_string()).expect("identity grammar"),
             local_id: "curve#59".to_string(),
         }])
     );
@@ -1472,7 +1472,7 @@ fn model_feature_ids_include_row_backed_generated_producers() {
         feature_edge_selection(&scan, &CadIr::empty(), 10),
         Some(EdgeSelection::Generated {
             edges: vec![GeneratedEdgeRef {
-                feature: IrFeatureId("creo:model:feature#50".to_string()),
+                feature: IrFeatureId::mint("creo:model:feature#50".to_string()).expect("identity grammar"),
                 local_id: "curve#59".to_string(),
             }],
             native: "creo:allfeatur:edgs_affected#10:59".to_string(),

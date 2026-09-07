@@ -3689,7 +3689,7 @@ offset: 30,
             second: SketchLocus::End(SketchEntityId(
                 "creo:featdefs:sketch_entity#917:12".to_string()
             )),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     let mut conflicting_spanning_distance = distance_definition.clone();
@@ -3933,7 +3933,7 @@ offset: 30,
             second: SketchLocus::End(SketchEntityId(
                 "creo:featdefs:sketch_entity#917:12".to_string()
             )),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     let mut incomplete_skamps = incidence_oriented_distance.clone();
@@ -4093,7 +4093,7 @@ offset: 30,
             second: SketchLocus::End(SketchEntityId(
                 "creo:featdefs:sketch_entity#917:12".to_string()
             )),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     let mut duplicate_relation_id = distance_definition.clone();
@@ -4267,7 +4267,7 @@ offset: 30,
         .definition,
         SketchConstraintDefinition::Radius {
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     assert_eq!(
@@ -4289,7 +4289,7 @@ offset: 30,
         .definition,
         SketchConstraintDefinition::Diameter {
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     assert_eq!(
@@ -4312,7 +4312,7 @@ offset: 30,
             .definition,
             SketchConstraintDefinition::Radius {
                 entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
-                parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+                parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
             }
         );
         assert_eq!(
@@ -4382,7 +4382,7 @@ offset: 30,
         .definition,
         SketchConstraintDefinition::Radius {
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     assert_eq!(
@@ -4413,7 +4413,7 @@ offset: 30,
         .definition,
         SketchConstraintDefinition::Radius {
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     type6_radius_definition
@@ -4431,7 +4431,7 @@ offset: 30,
         .definition,
         SketchConstraintDefinition::Diameter {
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     assert_eq!(
@@ -4522,7 +4522,7 @@ offset: 30,
         .definition,
         SketchConstraintDefinition::Radius {
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     let mut noncircular_dimension = radius_definition.clone();
@@ -4542,7 +4542,7 @@ offset: 30,
             .definition,
             SketchConstraintDefinition::Radius {
                 entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
-                parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+                parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
             }
         );
         assert_eq!(
@@ -4572,7 +4572,7 @@ offset: 30,
         .definition,
         SketchConstraintDefinition::Radius {
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     let mut incomplete_radius_segments = radius_definition.clone();
@@ -4590,7 +4590,7 @@ offset: 30,
         .definition,
         SketchConstraintDefinition::Radius {
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     let mut relation_orientation = definition.clone();
@@ -4676,7 +4676,7 @@ offset: 30,
         .definition,
         SketchConstraintDefinition::Diameter {
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     radius_definition
@@ -4773,7 +4773,7 @@ offset: 30,
             second: SketchLocus::Entity(SketchEntityId(
                 "creo:featdefs:sketch_entity#917:13".to_string(),
             )),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     assert_eq!(
@@ -4835,7 +4835,7 @@ offset: 30,
                     SketchEntityId(format!("creo:featdefs:sketch_entity#917:{entity_id}"))
                 })
                 .to_vec(),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     let mut incomplete_triples = incidence_distance.clone();
@@ -4899,7 +4899,7 @@ offset: 30,
             second: SketchLocus::Entity(SketchEntityId(
                 "creo:featdefs:sketch_entity#917:13".to_string(),
             )),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     let mut solver_only_incidence = incidence_distance.clone();
@@ -4924,7 +4924,7 @@ offset: 30,
             second: SketchLocus::Entity(SketchEntityId(
                 "creo:featdefs:sketch_entity#917:999".to_string(),
             )),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     let mut angular_dimension = definition.clone();
@@ -4981,7 +4981,7 @@ offset: 30,
         SketchConstraintDefinition::Angle {
             first: SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
             second: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     let mut incomplete_angle_order = angular_dimension.clone();
@@ -5036,7 +5036,7 @@ offset: 30,
                 ("sign".to_string(), "1".to_string()),
             ]),
             entities: Vec::new(),
-            parameter: Some(ParameterId("creo:featdefs:parameter#917:42".to_string(),)),
+            parameter: Some(ParameterId::mint("creo:featdefs:parameter#917:42".to_string(),).expect("identity grammar")),
             operands: vec![SketchNativeOperand {
                 native_kind: "relat_ptr".to_string(),
                 native_field: None,
@@ -5140,7 +5140,7 @@ offset: 30,
             second: SketchLocus::Start(SketchEntityId(
                 "creo:featdefs:sketch_entity#917:102".to_string(),
             )),
-            parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            parameter: ParameterId::mint("creo:featdefs:parameter#917:42".to_string()).expect("identity grammar"),
         }
     );
     vector_native.relations.as_mut().expect("relations").rows[0].used = 34;

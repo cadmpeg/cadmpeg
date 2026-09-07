@@ -70,7 +70,7 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
         .model
         .features
         .iter()
-        .find(|feature| feature.id.0 == "creo:model:feature#4")
+        .find(|feature| feature.id.as_str() == "creo:model:feature#4")
         .expect("feature 4");
     assert!(matches!(
         feature.definition,

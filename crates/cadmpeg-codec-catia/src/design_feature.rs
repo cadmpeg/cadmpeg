@@ -586,7 +586,7 @@ fn transfer_principal_plane(
     candidate: PrincipalPlaneCandidate<'_>,
 ) {
     let object = candidate.object;
-    let feature_id = FeatureId(neutral_history_id(&object.id, "feature"));
+    let feature_id = FeatureId::mint(neutral_history_id(&object.id, "feature")).expect("identity grammar");
     ir.model.features.push(Feature {
         id: feature_id.clone(),
         ordinal: object.first_field_byte_offset,
@@ -618,7 +618,7 @@ fn transfer_reference_plane(
     candidate: &ReferencePlaneCandidate<'_>,
 ) {
     let object = candidate.object;
-    let feature_id = FeatureId(neutral_history_id(&object.id, "feature"));
+    let feature_id = FeatureId::mint(neutral_history_id(&object.id, "feature")).expect("identity grammar");
     ir.model.features.push(Feature {
         id: feature_id.clone(),
         ordinal: object.first_field_byte_offset,
@@ -646,7 +646,7 @@ fn transfer_sketch(
     owner_record: &CatiaObjectRecord,
 ) {
     let sketch_id = SketchId(neutral_history_id(&object.id, "sketch"));
-    let feature_id = FeatureId(neutral_history_id(&object.id, "feature"));
+    let feature_id = FeatureId::mint(neutral_history_id(&object.id, "feature")).expect("identity grammar");
     ir.model.sketches.push(Sketch {
         id: sketch_id.clone(),
         name: None,
@@ -777,7 +777,7 @@ fn transfer_native_operation(
     );
     let (definition, source_properties) =
         native_operation_definition(&kind, &object.id, properties);
-    let feature_id = FeatureId(neutral_history_id(&object.id, "feature"));
+    let feature_id = FeatureId::mint(neutral_history_id(&object.id, "feature")).expect("identity grammar");
     ir.model.features.push(Feature {
         id: feature_id.clone(),
         ordinal: object.first_field_byte_offset,

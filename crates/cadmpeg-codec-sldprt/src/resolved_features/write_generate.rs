@@ -460,7 +460,7 @@ pub(super) fn append_generated_sketch_markers(
             .ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed(format_args!(
                     "source-less SLDPRT dimension references missing parameter {}",
-                    parameter.0
+                    parameter.as_str()
                 ))
             })?;
         let value = match (&parameter.value, class) {

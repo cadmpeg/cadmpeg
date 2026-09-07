@@ -42,7 +42,7 @@ fn body_pattern_adds_one_copy_per_non_original_occurrence() {
 fn output_free_unresolved_pattern_is_body_census_neutral() {
     let mut ir = complete_block_ir();
     ir.model.features.push(Feature {
-        id: FeatureId("pattern".to_string()),
+        id: FeatureId::mint("pattern".to_string()).expect("identity grammar"),
         ordinal: 1,
         name: None,
         suppressed: None,
@@ -87,7 +87,7 @@ fn body_pattern_requires_exact_copy_cardinality_and_new_identities() {
         evaluate_saved_body_census(&ir),
         BodyCensusEvaluation::Unsupported {
             feature: Some(FeatureBoundary {
-                id: FeatureId("pattern".to_string()),
+                id: FeatureId::mint("pattern".to_string()).expect("identity grammar"),
                 name: None,
                 family: Some("pattern".to_string()),
                 ordinal: 1
@@ -121,7 +121,7 @@ fn feature_seed_pattern_remains_an_explicit_body_effect_boundary() {
         evaluate_saved_body_census(&ir),
         BodyCensusEvaluation::Unsupported {
             feature: Some(FeatureBoundary {
-                id: FeatureId("pattern".to_string()),
+                id: FeatureId::mint("pattern".to_string()).expect("identity grammar"),
                 name: None,
                 family: Some("pattern".to_string()),
                 ordinal: 1

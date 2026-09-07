@@ -613,7 +613,7 @@ pub(crate) fn project(
         }
     }
     Feature {
-        id: FeatureId(format!("rhino:morph:feature#{key}")),
+        id: FeatureId::mint(format!("rhino:morph:feature#{key}")).expect("identity grammar"),
         ordinal: u64::try_from(morph.source_range.start).expect("source offset fits u64"),
         name,
         suppressed: Some(false),

@@ -34,8 +34,8 @@ fn configuration_body_membership_round_trips_and_validates() {
     use std::collections::BTreeMap;
 
     let mut ir = unit_cube();
-    let configuration_id = ConfigurationId("synthetic:test:configuration#0".into());
-    let parameter_id = ParameterId("synthetic:test:parameter#width".into());
+    let configuration_id = ConfigurationId::mint("synthetic:test:configuration#0").expect("identity grammar");
+    let parameter_id = ParameterId::mint("synthetic:test:parameter#width").expect("identity grammar");
     let body = ir.model.bodies[0].id.clone();
     ir.model.parameters.push(DesignParameter {
         id: parameter_id.clone(),
@@ -77,7 +77,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     );
 
     ir.model.configurations[0].parameter_overrides = BTreeMap::from([(
-        ParameterId("synthetic:test:parameter#missing".into()),
+        ParameterId::mint("synthetic:test:parameter#missing").expect("identity grammar"),
         "30 mm".into(),
     )]);
     let report = validate_neutral(&ir, Vec::new());
@@ -88,16 +88,14 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.model.configurations[0].parameter_overrides.clear();
 
     ir.model.configurations[0].parameter_values = BTreeMap::from([(
-        ParameterId("synthetic:test:parameter#missing-value".into()),
+        ParameterId::mint("synthetic:test:parameter#missing-value").expect("identity grammar"),
         ParameterValue::Real(1.0),
     )]);
     ir.model.configurations[0].feature_states = BTreeMap::from([(
-        FeatureId("synthetic:test:feature#missing-state".into()),
+        FeatureId::mint("synthetic:test:feature#missing-state").expect("identity grammar"),
         ConfigurationFeatureState {
             suppressed: false,
-            dependencies: vec![FeatureId(
-                "synthetic:test:feature#missing-dependency".into(),
-            )],
+            dependencies: vec![FeatureId::mint("synthetic:test:feature#missing-dependency").expect("identity grammar")],
             outputs: vec![
                 BodyId::mint("synthetic:test:body#missing-output").expect("valid identity")
             ],
@@ -140,8 +138,8 @@ fn configuration_body_membership_round_trips_and_validates() {
     }));
     ir.model.parameters[0].value = None;
 
-    let first_feature = FeatureId("synthetic:test:feature#configuration-first".into());
-    let later_feature = FeatureId("synthetic:test:feature#configuration-later".into());
+    let first_feature = FeatureId::mint("synthetic:test:feature#configuration-first").expect("identity grammar");
+    let later_feature = FeatureId::mint("synthetic:test:feature#configuration-later").expect("identity grammar");
     for (ordinal, feature) in [first_feature.clone(), later_feature.clone()]
         .into_iter()
         .enumerate()
@@ -278,7 +276,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     }));
 
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId("synthetic:test:configuration#1".into()),
+        id: ConfigurationId::mint("synthetic:test:configuration#1").expect("identity grammar"),
         ordinal: 0,
         active: false,
         source_index: Some(7),
@@ -338,7 +336,7 @@ fn configuration_suppression_is_derived_and_legacy_lists_migrate_at_the_model_bo
 
     let mut ir = unit_cube();
     let feature = Feature::new(
-        FeatureId("synthetic:test:feature#suppressed".into()),
+        FeatureId::mint("synthetic:test:feature#suppressed").expect("identity grammar"),
         0,
         FeatureDefinition::DatumPoint {
             position: Point3::new(0.0, 0.0, 0.0),
@@ -347,7 +345,7 @@ fn configuration_suppression_is_derived_and_legacy_lists_migrate_at_the_model_bo
     );
     ir.model.features.push(feature.clone());
     ir.model.configurations.push(DesignConfiguration {
-        id: ConfigurationId("synthetic:test:configuration#suppressed".into()),
+        id: ConfigurationId::mint("synthetic:test:configuration#suppressed").expect("identity grammar"),
         ordinal: 0,
         active: false,
         source_index: None,
@@ -396,9 +394,7 @@ fn configuration_suppression_is_derived_and_legacy_lists_migrate_at_the_model_bo
 
 #[test]
 fn datum_plane_reference_preserves_legacy_feature_ids_and_face_selections() {
-    let feature = crate::features::DatumPlaneReference::Feature(crate::features::FeatureId(
-        "test:model:feature#feature".into(),
-    ));
+    let feature = crate::features::DatumPlaneReference::Feature(crate::features::FeatureId::mint("test:model:feature#feature").expect("identity grammar"));
     assert_eq!(
         serde_json::to_value(&feature).unwrap(),
         serde_json::json!("test:model:feature#feature")
@@ -637,7 +633,7 @@ fn generated_sweep_sections_round_trip_and_validate() {
     let validate_definition = |definition| {
         let mut ir = unit_cube();
         ir.model.features.push(Feature {
-            id: FeatureId("synthetic:test:feature#generated-sweep".into()),
+            id: FeatureId::mint("synthetic:test:feature#generated-sweep").expect("identity grammar"),
             ordinal: 0,
             name: None,
             suppressed: Some(false),
@@ -707,7 +703,7 @@ fn full_round_fillet_keeps_automatic_side_semantics() {
         definition
     );
     ir.model.features.push(Feature {
-        id: FeatureId("synthetic:test:feature#full-round".into()),
+        id: FeatureId::mint("synthetic:test:feature#full-round").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -762,7 +758,7 @@ fn flex_modes_round_trip_and_validate() {
 
     let mut ir = unit_cube();
     ir.model.features.push(Feature {
-        id: FeatureId("synthetic:test:feature#flex".into()),
+        id: FeatureId::mint("synthetic:test:feature#flex").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: Some(false),
@@ -1175,7 +1171,7 @@ fn feature_result_topology_round_trips_without_current_model_bodies() {
     let state = FeatureResultTopology {
         id: FeatureResultTopologyId::mint("synthetic:history-result:state#0")
             .expect("valid identity"),
-        output_of: FeatureId("synthetic:model:feature#0".into()),
+        output_of: FeatureId::mint("synthetic:model:feature#0").expect("identity grammar"),
         bodies: vec!["body:17".into()],
         faces: vec!["face:3".into()],
         edges: vec!["edge:5".into()],

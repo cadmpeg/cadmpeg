@@ -54,7 +54,7 @@ fn section_scan() -> crate::container::ContainerScan<'static> {
 
 fn feature(id: &str) -> Feature {
     Feature::new(
-        id.into(),
+        cadmpeg_ir::features::FeatureId::mint(id).expect("identity grammar"),
         0,
         IrFeatureDefinition::Native {
             kind: "test".into(),

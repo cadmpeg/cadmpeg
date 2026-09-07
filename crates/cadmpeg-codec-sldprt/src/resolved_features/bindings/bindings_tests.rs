@@ -194,7 +194,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         sketch_entities: Vec::new(),
     };
     let mut feature = Feature {
-        id: FeatureId("mirror".into()),
+        id: FeatureId::mint("mirror").expect("identity grammar"),
         ordinal: 0,
         name: None,
         suppressed: None,
@@ -458,7 +458,7 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
     };
     let mut features = vec![
         Feature {
-            id: FeatureId("pattern".into()),
+            id: FeatureId::mint("pattern").expect("identity grammar"),
             ordinal: 0,
             name: Some("CirPattern1".into()),
             suppressed: Some(false),
@@ -475,7 +475,7 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
             native_ref: Some("pattern-native".into()),
         },
         Feature {
-            id: FeatureId("seed".into()),
+            id: FeatureId::mint("seed").expect("identity grammar"),
             ordinal: 1,
             name: Some("HoleWizard1".into()),
             suppressed: Some(false),
@@ -499,11 +499,11 @@ fn circular_pattern_seed_binds_from_generated_identity_path() {
         std::slice::from_mut(&mut lane),
     );
 
-    assert_eq!(features[0].dependencies, vec![FeatureId("seed".into())]);
+    assert_eq!(features[0].dependencies, vec![FeatureId::mint("seed").expect("identity grammar")]);
     assert!(matches!(
         &features[0].definition,
         FeatureDefinition::Pattern { seeds, pattern: PatternKind::UnresolvedCircular }
-            if seeds == &[PatternSeed::Feature(FeatureId("seed".into()))]
+            if seeds == &[PatternSeed::Feature(FeatureId::mint("seed").expect("identity grammar"))]
     ));
 }
 
@@ -591,18 +591,18 @@ fn circular_pattern_axis_binds_from_unique_temporary_axis() {
         sketch_entities: Vec::new(),
     };
     let mut features = vec![Feature {
-        id: FeatureId("pattern".into()),
+        id: FeatureId::mint("pattern").expect("identity grammar"),
         ordinal: 0,
         name: Some("CirPattern1".into()),
         suppressed: Some(false),
-        dependencies: vec![FeatureId("seed".into())],
+        dependencies: vec![FeatureId::mint("seed").expect("identity grammar")],
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Pattern {
-            seeds: vec![PatternSeed::Feature(FeatureId("seed".into()))],
+            seeds: vec![PatternSeed::Feature(FeatureId::mint("seed").expect("identity grammar"))],
             pattern: PatternKind::UnresolvedCircular,
         },
         native_ref: Some("pattern-native".into()),

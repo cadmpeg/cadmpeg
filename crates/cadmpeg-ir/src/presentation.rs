@@ -6,12 +6,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-/// Stable presentation-document identity.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(transparent)]
-pub struct PresentationId(
-    #[serde(serialize_with = "crate::schema::serialize_reference_id")] pub String,
+crate::ids::reference_id_type!(
+    /// Stable presentation-document identity.
+    PresentationId
 );
 
 /// Persisted camera pose.

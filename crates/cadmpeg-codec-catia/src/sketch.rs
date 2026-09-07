@@ -1181,7 +1181,7 @@ mod tests {
         let feature_transfer = DesignFeatureTransfer {
             feature_ids: HashMap::from([(
                 "sketch-object".to_string(),
-                cadmpeg_ir::features::FeatureId("synthetic:test:feature#0".to_string()),
+                cadmpeg_ir::features::FeatureId::mint("synthetic:test:feature#0".to_string()).expect("identity grammar"),
             )]),
             ..DesignFeatureTransfer::default()
         };
@@ -1286,7 +1286,7 @@ mod tests {
         let feature_transfer = DesignFeatureTransfer {
             feature_ids: HashMap::from([(
                 "sketch-object".to_string(),
-                cadmpeg_ir::features::FeatureId("synthetic:test:feature#0".to_string()),
+                cadmpeg_ir::features::FeatureId::mint("synthetic:test:feature#0".to_string()).expect("identity grammar"),
             )]),
             sketch_owner_records: HashSet::from(["sketch-owner-record".to_string()]),
             ..DesignFeatureTransfer::default()
@@ -1823,7 +1823,7 @@ mod tests {
         let (mut ir, native, mut transfer, graph_scope) = fixture(false);
         transfer.feature_ids.insert(
             "source-object".to_string(),
-            cadmpeg_ir::features::FeatureId("source-object:feature".to_string()),
+            cadmpeg_ir::features::FeatureId::mint("source-object:feature".to_string()).expect("identity grammar"),
         );
 
         assert_eq!(

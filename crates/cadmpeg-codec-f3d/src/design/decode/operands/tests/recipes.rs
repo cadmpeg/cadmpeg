@@ -752,7 +752,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         std::slice::from_ref(&proven_operand),
         &[],
         Some(8),
-        &cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into()),
+        &cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet").expect("identity grammar"),
     );
     assert!(matches!(
         recovered,
@@ -788,7 +788,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         &[terminal_resolved, terminal_unresolved.clone()],
         &[],
         None,
-        &cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into()),
+        &cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet").expect("identity grammar"),
     );
     assert!(
         matches!(terminal, cadmpeg_ir::features::EdgeSelection::Native(_)),
@@ -826,7 +826,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         &[recipe_unresolved.clone(), terminal_unresolved.clone()],
         &[identity(100, 0, Some(17)), identity(104, 1, None)],
         Some(8),
-        &cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into()),
+        &cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet").expect("identity grammar"),
     );
     assert!(matches!(
         merged,
@@ -838,7 +838,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         &[recipe_unresolved.clone(), terminal_unresolved],
         &[identity(100, 0, Some(17)), identity(104, 1, Some(18))],
         Some(8),
-        &cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into()),
+        &cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet").expect("identity grammar"),
     );
     assert!(matches!(
         complete,
@@ -854,7 +854,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         &[recipe_unresolved.clone()],
         &[first_rule, second_rule],
         Some(8),
-        &cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into()),
+        &cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet").expect("identity grammar"),
     );
     assert!(matches!(
         face_rules,
@@ -880,7 +880,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         &[chain_recipe],
         &[chain_identity],
         Some(8),
-        &cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into()),
+        &cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#fillet").expect("identity grammar"),
         None,
     );
     assert!(matches!(
@@ -1220,7 +1220,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         std::slice::from_ref(&surface_patch_operand),
         &[],
         Some(8),
-        &cadmpeg_ir::features::FeatureId("f3d:model:feature#surface-patch".into()),
+        &cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#surface-patch").expect("identity grammar"),
     );
     assert!(matches!(
         surface_selection,
@@ -1235,7 +1235,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             std::slice::from_ref(&surface_patch_operand),
             &[],
             Some(8),
-            &cadmpeg_ir::features::FeatureId("f3d:model:feature#surface-patch".into()),
+            &cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#surface-patch").expect("identity grammar"),
         ),
         cadmpeg_ir::features::EdgeSelection::Native(_)
     ));

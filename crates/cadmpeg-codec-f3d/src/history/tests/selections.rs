@@ -1557,9 +1557,9 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
     .expect("resolved root profile");
     let feature = crate::ids::neutral_feature_id(&scope);
     let feature_key = feature
-        .0
+        .as_str()
         .split_once('#')
-        .map_or(feature.0.as_str(), |(_, key)| key);
+        .map_or(feature.as_str(), |(_, key)| key);
     let prefix = crate::ids::history_input_prefix(feature_key, 1);
     assert!(matches!(
         profile,

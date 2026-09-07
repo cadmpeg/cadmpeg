@@ -1860,7 +1860,7 @@ pub(crate) fn project_sketch_block_profiles(
                     }
                     block_sketches.insert(source.to_string(), sketch_id.clone());
                     block_feature_ids
-                        .insert(source.to_string(), features[definition_index].id.0.clone());
+                        .insert(source.to_string(), features[definition_index].id.as_str().to_owned());
                 }
                 if !definitions_complete || block_sketches.len() != children.len() {
                     continue;
@@ -1898,13 +1898,13 @@ pub(crate) fn project_sketch_block_profiles(
                         break;
                     };
                     if !block_sketches.contains_key(&block_source)
-                        || block_feature_ids.get(&block_source) != Some(&block.0)
+                        || block_feature_ids.get(&block_source).map(String::as_str) != Some(block.as_str())
                     {
                         instances_complete = false;
                         break;
                     }
                     instances.push(SketchBlockInstancePlacement {
-                        feature_id: features[instance_index].id.0.clone(),
+                        feature_id: features[instance_index].id.as_str().to_owned(),
                         block_source,
                         transform: *transform,
                     });
@@ -2922,7 +2922,7 @@ mod detached_legacy_sketch_tests {
         };
         let expected_sketch = SketchId("sldprt:model:sketch#markers:1:30".into());
         let mut neutral_feature = cadmpeg_ir::features::Feature::new(
-            cadmpeg_ir::features::FeatureId("neutral".into()),
+            cadmpeg_ir::features::FeatureId::mint("neutral").expect("identity grammar"),
             30,
             FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
@@ -2998,7 +2998,7 @@ mod detached_legacy_sketch_tests {
             sketch_entities: vec![unbound],
         };
         let mut neutral_feature = cadmpeg_ir::features::Feature::new(
-            cadmpeg_ir::features::FeatureId("neutral".into()),
+            cadmpeg_ir::features::FeatureId::mint("neutral").expect("identity grammar"),
             30,
             FeatureDefinition::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
