@@ -607,10 +607,18 @@ pub struct Descriptor {
     pub name: String,
     /// Offset of the descriptor header within the directory region.
     pub desc_offset: usize,
-    /// Logical stream length (equals the sum of extent `log_len`s).
-    pub logical_length: u32,
     /// Physical extents, in `log_off` order.
     pub extents: Vec<Extent>,
+}
+
+impl Descriptor {
+    /// Logical stream length from the physical extents.
+    pub fn logical_length(&self) -> u64 {
+        self.extents
+            .iter()
+            .map(|extent| u64::from(extent.phys_len))
+            .sum()
+    }
 }
 
 /// A parsed stream directory. `inner` is the physical storage base: zero for
@@ -886,7 +894,6 @@ fn parse_directory_region(
                         descriptors.push(Descriptor {
                             name: descriptor_name(dirbuf, ds),
                             desc_offset: ds,
-                            logical_length,
                             extents,
                         });
                     }
@@ -1019,9 +1026,6 @@ pub fn reconstruct_logical_stream(data: &[u8], descriptor: &Descriptor, inner: u
     else {
         return Vec::new();
     };
-    if logical_length != descriptor.logical_length as usize {
-        return Vec::new();
-    }
     let mut out = Vec::with_capacity(logical_length);
     for extent in &descriptor.extents {
         let start = inner + extent.phys_off as usize;
@@ -1213,11 +1217,12 @@ fn unique_largest_descriptor<'a>(
     let mut selected_length = 0;
     let mut equal_count = 0;
     for descriptor in descriptors {
-        if selected.is_none() || descriptor.logical_length > selected_length {
+        let logical_length = descriptor.logical_length();
+        if selected.is_none() || logical_length > selected_length {
             selected = Some(descriptor);
-            selected_length = descriptor.logical_length;
+            selected_length = logical_length;
             equal_count = 1;
-        } else if descriptor.logical_length == selected_length {
+        } else if logical_length == selected_length {
             equal_count += 1;
         }
     }
@@ -1407,7 +1412,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
                     );
                 }
             }
-            let phys: u64 = d.extents.iter().map(|e| e.phys_len as u64).sum();
+            let phys = d.logical_length();
             entries.push(ContainerEntry {
                 name: if d.name.is_empty() {
                     format!("{directory}-stream@{}", d.desc_offset)
@@ -1417,7 +1422,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
                 role: ContainerRole::Stream,
                 compression: EntryCompression::None,
                 compressed_size: phys,
-                uncompressed_size: d.logical_length as u64,
+                uncompressed_size: phys,
                 attributes,
             });
         }
