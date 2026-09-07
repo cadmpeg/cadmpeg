@@ -1881,7 +1881,7 @@ pub struct DesignAssemblySolvedFrame {
     /// Byte offset of the frame-carrier indexed header.
     pub record_byte_offset: u64,
     /// Dynamic class of the frame-carrier indexed record.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Row-major solved connector frame.
     pub transform: [[f64; 4]; 4],
     /// Byte offset of the first matrix scalar.

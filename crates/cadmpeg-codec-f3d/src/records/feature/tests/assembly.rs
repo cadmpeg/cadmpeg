@@ -186,7 +186,7 @@ fn assembly_forms_preserve_partial_and_mixed_qualifier_wire() {
                     reference_record_index: 30,
                     reference_offset: 33,
                     record_byte_offset: 300,
-                    class_tag: "258".into(),
+                    class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
                     transform: frame.transform,
                     transform_offset: 325,
                 },
@@ -323,7 +323,7 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
         reference_record_index: 30,
         reference_offset: 33,
         record_byte_offset: 300,
-        class_tag: "258".into(),
+        class_tag: crate::records::DesignClassTag::try_from("258".to_owned()).unwrap(),
         transform: identity,
         transform_offset: 325,
     };

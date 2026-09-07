@@ -2362,7 +2362,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && scope.reference_members.offsets().nth(8).copied()
                             == Some(frame.reference_offset)
                         && header.class_tag.as_str() == generation.frame_class_tag()
-                        && frame.class_tag == header.class_tag.as_str()
+                        && frame.class_tag == header.class_tag
                         && frame.record_byte_offset == header.byte_offset
                         && frame.transform_offset
                             == frame.record_byte_offset

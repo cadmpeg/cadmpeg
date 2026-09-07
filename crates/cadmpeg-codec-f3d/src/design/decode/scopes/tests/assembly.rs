@@ -1212,7 +1212,7 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
         assert_eq!(solved_frame.reference_record_index, 200);
         assert_eq!(solved_frame.reference_offset, 190 + 8 * 11);
         assert_eq!(solved_frame.record_byte_offset, frame_start as u64);
-        assert_eq!(solved_frame.class_tag, frame_class_tag);
+        assert_eq!(solved_frame.class_tag.as_str(), frame_class_tag);
         assert!((solved_frame.transform[0][3] - 9.0).abs() <= EPS_EXACT_FIXTURE);
         assert_eq!(
             solved_frame.transform_offset,

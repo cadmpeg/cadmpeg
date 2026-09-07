@@ -223,7 +223,7 @@ pub(crate) fn exact_legacy_as_built_421_solved_frame(
         reference_record_index: frame_record_index,
         reference_offset: frame_reference.offset,
         record_byte_offset: u64::try_from(frame_start).ok()?,
-        class_tag: expected_class_tag.into(),
+        class_tag: expected_class_tag.to_owned().try_into().ok()?,
         transform: rigid_transform_at(bytes, transform_at)?,
         transform_offset: u64::try_from(transform_at).ok()?,
     })
