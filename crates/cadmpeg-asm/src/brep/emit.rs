@@ -75,10 +75,7 @@ use super::geometry::{
 use super::topology::{
     loop_chain, region_chain, ring_coedges, shell_chain, shell_faces, subshell_ancestor_shells,
 };
-use super::{
-    embedded_pcurve_geometry, id, inherited_attribute_target, AsmBrep, Carriers, Reachable,
-    WireShellTopology,
-};
+use super::{id, inherited_attribute_target, AsmBrep, Carriers, Reachable, WireShellTopology};
 const EPS_EMIT_EMIT_EDGES_E9: f64 = 1.0e-9;
 
 /// Emit a kept surface carrier and, when present, its procedural-surface
@@ -549,7 +546,7 @@ fn emit_classic_loft_data(
         data.type_code,
         cadmpeg_ir::geometry::ClassicLoftProfileData {
             surface,
-            pcurve: data.pcurve.map(embedded_pcurve_geometry),
+            pcurve: data.pcurve.map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
             first_flag: data.first_flag,
             asm_extension: data.asm_extension,
             subdata: data.subdata,
@@ -600,7 +597,7 @@ fn emit_loft_member_form(
                 type_code: type_code.get(),
                 surface,
                 support_bounds,
-                pcurve: pcurve.map(embedded_pcurve_geometry),
+                pcurve: pcurve.map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
                 first_flag,
                 asm_extension,
                 subdata,
@@ -614,8 +611,8 @@ fn emit_loft_member_form(
             subdata,
             direction,
         } => cadmpeg_ir::geometry::LoftMemberForm::PcurvePair {
-            pcurve: pcurve.map(embedded_pcurve_geometry),
-            secondary_pcurve: secondary_pcurve.map(embedded_pcurve_geometry),
+            pcurve: pcurve.map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
+            secondary_pcurve: secondary_pcurve.map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
             asm_extension,
             subdata,
             direction,
@@ -2020,11 +2017,15 @@ fn emit_variable_blend_surface(
             surface_ranges: side.surface_ranges,
             curve,
             curve_range: side.curve_range,
-            pcurve: side.pcurve.map(embedded_pcurve_geometry),
+            pcurve: side.pcurve.map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
             location: side.location,
-            secondary_pcurve: side.secondary_pcurve.map(embedded_pcurve_geometry),
+            secondary_pcurve: side
+                .secondary_pcurve
+                .map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
             extension: side.extension,
-            tertiary_pcurve: side.tertiary_pcurve.map(embedded_pcurve_geometry),
+            tertiary_pcurve: side
+                .tertiary_pcurve
+                .map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
         });
     }
     let [first, second]: [RollingBallSide; 2] = sides
@@ -2074,7 +2075,9 @@ fn emit_variable_blend_surface(
             render_mode: construction.render_mode,
             post_range: construction.post_range,
             post_curve,
-            post_pcurve: construction.post_pcurve.map(embedded_pcurve_geometry),
+            post_pcurve: construction
+                .post_pcurve
+                .map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
         }),
     }
 }
@@ -2249,11 +2252,15 @@ fn emit_revision_g2_blend_surface(
             surface_ranges: side.surface_ranges,
             curve,
             curve_range: side.curve_range,
-            pcurve: side.pcurve.map(embedded_pcurve_geometry),
+            pcurve: side.pcurve.map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
             location: side.location,
-            secondary_pcurve: side.secondary_pcurve.map(embedded_pcurve_geometry),
+            secondary_pcurve: side
+                .secondary_pcurve
+                .map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
             extension: side.extension,
-            tertiary_pcurve: side.tertiary_pcurve.map(embedded_pcurve_geometry),
+            tertiary_pcurve: side
+                .tertiary_pcurve
+                .map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
         });
     }
     let [first, second]: [RollingBallSide; 2] = sides
@@ -2340,7 +2347,7 @@ fn emit_vertex_blend_surface(
                 VertexBlendBoundaryGeometry::Pcurve {
                     surface: id,
                     support_bounds,
-                    pcurve: pcurve.map(embedded_pcurve_geometry),
+                    pcurve: pcurve.map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
                     sense,
                     fit_tolerance,
                 }
@@ -2457,11 +2464,15 @@ fn emit_blend_surface(
                 surface_ranges: side.surface_ranges,
                 curve,
                 curve_range: side.curve_range,
-                pcurve: side.pcurve.map(embedded_pcurve_geometry),
+                pcurve: side.pcurve.map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
                 location: side.location,
-                secondary_pcurve: side.secondary_pcurve.map(embedded_pcurve_geometry),
+                secondary_pcurve: side
+                    .secondary_pcurve
+                    .map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
                 extension: side.extension,
-                tertiary_pcurve: side.tertiary_pcurve.map(embedded_pcurve_geometry),
+                tertiary_pcurve: side
+                    .tertiary_pcurve
+                    .map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
             });
         }
         let [first, second]: [RollingBallSide; 2] = resolved_sides
@@ -2492,11 +2503,15 @@ fn emit_blend_surface(
                 label: side.label,
                 surface,
                 curve,
-                pcurve: side.pcurve.map(embedded_pcurve_geometry),
+                pcurve: side.pcurve.map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
                 direction: side.direction,
-                secondary_pcurve: side.secondary_pcurve.map(embedded_pcurve_geometry),
+                secondary_pcurve: side
+                    .secondary_pcurve
+                    .map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
                 extension: side.extension,
-                tertiary_pcurve: side.tertiary_pcurve.map(embedded_pcurve_geometry),
+                tertiary_pcurve: side
+                    .tertiary_pcurve
+                    .map(|nurbs| PcurveGeometry::Nurbs { nurbs }),
                 flag: side.flag,
             })
         });
