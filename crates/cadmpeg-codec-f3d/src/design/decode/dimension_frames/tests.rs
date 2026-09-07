@@ -608,7 +608,7 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
     assert_eq!(pair.first_role, 0);
     assert_eq!(pair.second_geometry_record_index, 194);
     assert_eq!(pair.second_role, 1);
-    assert_eq!(pair.paired_class_tag, "273");
+    assert_eq!(pair.paired_class_tag.as_str(), "273");
     let mut parameter = parse_design_parameter(&parameter_record(
         Some(300),
         "40 mm",

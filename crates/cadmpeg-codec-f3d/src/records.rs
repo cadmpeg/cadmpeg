@@ -1138,7 +1138,7 @@ pub struct DesignDimensionLocusPair {
     /// Byte offset of the primary indexed record header.
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII primary class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Shared logical record identity.
     pub record_index: u32,
     /// Byte length from the primary header to the paired header.
@@ -1164,7 +1164,7 @@ pub struct DesignDimensionLocusPair {
     /// Byte offset of `second_role`.
     pub second_role_offset: u64,
     /// Per-file dynamic class tag of the paired header.
-    pub paired_class_tag: String,
+    pub paired_class_tag: DesignClassTag,
     /// Byte offset of the paired indexed record header.
     pub paired_byte_offset: u64,
 }

@@ -761,7 +761,7 @@ fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
         companion_record_index: 12,
         governing_companion_record_index: 12,
         byte_offset: 0,
-        class_tag: "277".into(),
+        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
         record_index: 13,
         frame_length: 100,
         opaque_index: 0,
@@ -774,7 +774,7 @@ fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
         second_geometry_reference_offset: 55,
         second_role: 0,
         second_role_offset: 65,
-        paired_class_tag: "273".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("273".to_owned()).unwrap(),
         paired_byte_offset: 100,
     };
     let point = |stream: &str, record_index| SketchPoint {

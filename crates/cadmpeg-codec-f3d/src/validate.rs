@@ -8019,14 +8019,7 @@ fn validate_dimension_locus_pairs<'a>(
                 &native.design_parameter_owners,
                 &native.design_parameters,
             ) == Some(pair.governing_companion_record_index);
-        let valid = pair.class_tag.len() == 3
-            && pair.class_tag.bytes().all(|byte| byte.is_ascii_digit())
-            && pair.paired_class_tag.len() == 3
-            && pair
-                .paired_class_tag
-                .bytes()
-                .all(|byte| byte.is_ascii_digit())
-            && companion_contains_frame
+        let valid = companion_contains_frame
             && dimension_companion
             && governs_following_dimension
             && pair.frame_length > 69

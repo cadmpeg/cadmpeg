@@ -783,7 +783,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         companion_record_index: 99,
         governing_companion_record_index: 22,
         byte_offset: 30,
-        class_tag: "277".into(),
+        class_tag: crate::records::DesignClassTag::try_from("277".to_owned()).unwrap(),
         record_index: 30,
         frame_length: 100,
         opaque_index: 0,
@@ -796,7 +796,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         second_geometry_reference_offset: 85,
         second_role: 8,
         second_role_offset: 95,
-        paired_class_tag: "273".into(),
+        paired_class_tag: crate::records::DesignClassTag::try_from("273".to_owned()).unwrap(),
         paired_byte_offset: 130,
     };
     let group = DesignDimensionLocusGroup {
