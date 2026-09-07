@@ -1542,7 +1542,7 @@ pub(crate) fn decode_sketch_points_from_stream(
             id: ids::native_sketch_point_id(stream, frame.start),
             record_index,
             owner_reference: decoded.owner_reference,
-            class_tag: frame.class_tag.to_string(),
+            class_tag: frame.class_tag.as_str().to_owned(),
             byte_offset: frame.start as u64,
             coordinate_offset: decoded.coordinate_offset,
             record_form: decoded.record_form,
@@ -1635,7 +1635,7 @@ pub(crate) fn decode_sketch_texts_from_stream(
         }
         let record_index = u32::try_from(frame.entity_id)
             .map_err(|_| CodecError::Malformed("F3D sketch-text entity ID exceeds u32".into()))?;
-        let class_tag = frame.class_tag.to_string();
+        let class_tag = frame.class_tag.into();
         let payload = &bytes[frame.start..frame.end];
         if let Some(text) = decode_sketch_text_record(
             payload,
@@ -2743,7 +2743,7 @@ pub(crate) fn decode_sketch_curve_identities_from_stream(
             id: ids::native_sketch_curve_identity_id(stream, frame.start),
             record_index,
             owner_reference: trailing_sketch_owner_reference(payload),
-            class_tag: frame.class_tag.to_string(),
+            class_tag: frame.class_tag.into(),
             byte_offset: frame.start as u64,
             geometry_offset: geometry_offset as u32,
             entity_genesis,
