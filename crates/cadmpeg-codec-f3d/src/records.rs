@@ -1017,7 +1017,7 @@ pub struct DesignParameterCompanion {
     /// Byte offset of the indexed record header in its Design `BulkStream`.
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Source indexed-record identity.
     pub record_index: u32,
     /// Indexed parameter-owner record referenced by this prefix.

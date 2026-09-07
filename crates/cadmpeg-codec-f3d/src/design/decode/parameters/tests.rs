@@ -977,7 +977,7 @@ fn parameter_companion_orders_recipes_by_payload_byte_offset() {
     let mut companion = DesignParameterCompanion {
         id: format!("{stream}:design-parameter-companion#22"),
         byte_offset: 10,
-        class_tag: "408".into(),
+        class_tag: crate::records::DesignClassTag::try_from("408".to_owned()).unwrap(),
         record_index: 22,
         owner_record_index: 21,
         timestamp_micros: std::num::NonZeroU64::new(1).unwrap(),

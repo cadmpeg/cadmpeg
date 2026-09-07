@@ -7827,12 +7827,7 @@ fn validate_parameter_companions(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let unique_index = companion_indices.insert((native_stream, companion.record_index));
         let unique_owner = companion_owners.insert((native_stream, companion.owner_record_index));
         let owner = owners_by_index.get(&(native_stream, companion.owner_record_index));
-        let valid = companion.class_tag.len() == 3
-            && companion
-                .class_tag
-                .bytes()
-                .all(|byte| byte.is_ascii_digit())
-            && companion.timestamp_micros_offset == companion.byte_offset.saturating_add(42)
+        let valid = companion.timestamp_micros_offset == companion.byte_offset.saturating_add(42)
             && companion.payload_byte_offset == companion.byte_offset.saturating_add(58)
             && payload_end.is_some()
             && companion

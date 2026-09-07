@@ -800,10 +800,9 @@ pub fn decode_parameter_companions(
 
 pub(crate) fn parse_parameter_companion(prefix: &[u8]) -> Option<DesignParameterCompanion> {
     let (class_tag, after_tag) = lp_ascii_filtered(prefix, 0, 0..=2000, u8::is_ascii_graphic)?;
+    let class_tag = crate::records::DesignClassTag::try_from(class_tag).ok()?;
     if prefix.len() != companion_prefix::LEN
         || after_tag != indexed_header::RECORD_INDEX
-        || class_tag.len() != 3
-        || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
         || prefix.get(companion_prefix::ZERO_RUN_20..companion_prefix::OWNER_MARKER)
             != Some(&[0; 20])
         || prefix.get(companion_prefix::OWNER_MARKER) != Some(&1)

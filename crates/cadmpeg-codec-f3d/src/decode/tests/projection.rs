@@ -1728,7 +1728,7 @@ fn payload_bearing_dimension_companion_uses_the_governing_dimension_frame() {
         .push(DesignParameterCompanion {
             id: format!("{stream}:design-parameter-companion#30"),
             byte_offset: 220,
-            class_tag: "408".into(),
+            class_tag: crate::records::DesignClassTag::try_from("408".to_owned()).unwrap(),
             record_index: 30,
             owner_record_index: 20,
             timestamp_micros: std::num::NonZeroU64::new(1).unwrap(),
