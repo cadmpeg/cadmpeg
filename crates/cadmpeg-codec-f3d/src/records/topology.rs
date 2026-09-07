@@ -754,7 +754,7 @@ pub struct DesignConstructionOperandFlag {
     /// Flag-record header byte offset.
     pub byte_offset: u64,
     /// Per-file dynamic flag-record class tag.
-    pub class_tag: String,
+    pub class_tag: DesignClassTag,
     /// Stored boolean value.
     pub value: bool,
     /// Byte offset of the stored boolean.

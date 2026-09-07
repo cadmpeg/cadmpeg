@@ -2335,7 +2335,7 @@ pub(crate) fn parse_construction_operand_flag(
     Some(crate::records::topology::DesignConstructionOperandFlag {
         record_index: header.record_index,
         byte_offset: header.byte_offset,
-        class_tag: header.class_tag.as_str().to_owned(),
+        class_tag: header.class_tag.clone(),
         value,
         value_offset: u64::try_from(start + 22).ok()?,
     })

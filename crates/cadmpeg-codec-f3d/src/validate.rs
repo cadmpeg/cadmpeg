@@ -4430,7 +4430,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         .get(&(native_stream, flag.record_index))
                         .is_some_and(|header| {
                             header.byte_offset == flag.byte_offset
-                                && header.class_tag.as_str() == flag.class_tag
+                                && header.class_tag == flag.class_tag
                         })
                     && flag.value_offset == flag.byte_offset.saturating_add(22)
             })
