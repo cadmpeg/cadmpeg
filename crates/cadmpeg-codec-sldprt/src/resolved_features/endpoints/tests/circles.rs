@@ -471,7 +471,7 @@ fn compact_legacy_repeated_radial_records_define_full_circles() {
     let entities = [
         entity("center", 0, SketchInputKind::Point, Some([0.0, 0.0])),
         entity("radial", 100, SketchInputKind::Point, Some([0.0, 12.0])),
-        entity("handle", 200, SketchInputKind::Native(1), None),
+        entity("handle", 200, SketchInputKind::from_handle_code(1), None),
         entity(
             "terminal-radial",
             300,

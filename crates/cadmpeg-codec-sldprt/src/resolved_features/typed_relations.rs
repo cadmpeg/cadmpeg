@@ -101,7 +101,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
     };
     let kind = match marker.kind {
         SketchInputKind::Relation(kind) => Some(kind),
-        SketchInputKind::Native(_) => None,
+        SketchInputKind::Native(_) | SketchInputKind::NativeHandle(_) => None,
         _ => return None,
     };
     if !marker_owns_constraint(marker, markers_by_id) {
@@ -149,7 +149,9 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 SketchInputKind::Relation(kind) => {
                     format!("sldprt:marker-relation:{}", kind.native_code())
                 }
-                SketchInputKind::Native(code) => format!("sldprt:marker-relation:{code}"),
+                kind @ (SketchInputKind::Native(_) | SketchInputKind::NativeHandle(_)) => {
+                    format!("sldprt:marker-relation:{}", kind.native_code())
+                }
                 _ => unreachable!("non-relation markers were rejected"),
             },
             native_state: None,
@@ -1837,9 +1839,10 @@ fn coordinate_profile_line_endpoints<'a>(
                 }
             }
             SketchInputKind::Relation(_) => {}
-            SketchInputKind::LineOrCircle | SketchInputKind::Arc | SketchInputKind::Native(_) => {
-                return None
-            }
+            SketchInputKind::LineOrCircle
+            | SketchInputKind::Arc
+            | SketchInputKind::Native(_)
+            | SketchInputKind::NativeHandle(_) => return None,
         }
     }
     let point = point?;

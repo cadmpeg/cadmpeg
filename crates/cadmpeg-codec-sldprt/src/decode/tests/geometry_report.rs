@@ -168,7 +168,7 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
                     1,
                     SketchInputKind::Relation(SketchRelationKind::Distance),
                 ),
-                marker("geometry-marker", 2, SketchInputKind::Native(99)),
+                marker("geometry-marker", 2, SketchInputKind::from_native_code(99)),
                 marker(
                     "operandless-relation-marker",
                     3,
@@ -250,7 +250,7 @@ fn native_relation_records_have_at_most_one_neutral_owner() {
                     offset: 1,
                     object_index: None,
                     local_id: Some(1),
-                    kind: SketchInputKind::Native(99),
+                    kind: SketchInputKind::from_native_code(99),
                     state_value: None,
                     coordinates_m: None,
                     links: None,

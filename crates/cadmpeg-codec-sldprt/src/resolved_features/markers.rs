@@ -751,7 +751,7 @@ pub(super) fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchI
                 .or_else(|| inline_arc.map(|[center, _, _]| center))
                 .or_else(|| marker_coordinates(payload, offset));
             let kind = if slot_curve_and_center_indices(payload, offset).is_some() {
-                SketchInputKind::Native(code)
+                SketchInputKind::from_handle_code(code)
             } else if inline_arc.is_some() {
                 SketchInputKind::Arc
             } else if marker_spatial_coordinates(payload, offset).is_some()

@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub(crate) mod relation_scalars;
+pub(crate) mod sketch_code;
 
 /// One semantic product-manufacturing dimension from `PMISemanticDataDB`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -983,12 +984,11 @@ pub struct SketchInputLink {
 /// Kind of sketch entity referenced by a native feature-input marker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
+#[serde(from = "SketchInputKindWire", into = "SketchInputKindWire")]
 pub enum SketchInputKind {
     /// A sketch point.
     Point,
     /// A sketch line or circle from the shared native family.
-    #[serde(alias = "curve")]
     LineOrCircle,
     /// A sketch arc.
     Arc,
@@ -996,34 +996,83 @@ pub enum SketchInputKind {
     ConstrainedPoint,
     /// A sketch relation handle.
     Relation(SketchRelationKind),
-    /// A native code not in the known vocabulary, preserved verbatim.
+    /// A native extension code in the unclassified marker namespace.
+    Native(sketch_code::NativeSketchCode),
+    /// A low code retained under a native handle layout, such as a slot handle.
+    NativeHandle(sketch_code::LowMarkerCode),
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+enum SketchInputKindWire {
+    Point,
+    #[serde(alias = "curve")]
+    LineOrCircle,
+    Arc,
+    ConstrainedPoint,
+    Relation(SketchRelationKind),
     Native(u32),
 }
 
+impl From<SketchInputKindWire> for SketchInputKind {
+    fn from(wire: SketchInputKindWire) -> Self {
+        match wire {
+            SketchInputKindWire::Point => Self::Point,
+            SketchInputKindWire::LineOrCircle => Self::LineOrCircle,
+            SketchInputKindWire::Arc => Self::Arc,
+            SketchInputKindWire::ConstrainedPoint => Self::ConstrainedPoint,
+            SketchInputKindWire::Relation(kind) => Self::Relation(kind),
+            SketchInputKindWire::Native(code) => Self::from_handle_code(code),
+        }
+    }
+}
+
+impl From<SketchInputKind> for SketchInputKindWire {
+    fn from(kind: SketchInputKind) -> Self {
+        match kind {
+            SketchInputKind::Point => Self::Point,
+            SketchInputKind::LineOrCircle => Self::LineOrCircle,
+            SketchInputKind::Arc => Self::Arc,
+            SketchInputKind::ConstrainedPoint => Self::ConstrainedPoint,
+            SketchInputKind::Relation(kind) => Self::Relation(kind),
+            SketchInputKind::Native(code) => Self::Native(code.value()),
+            SketchInputKind::NativeHandle(code) => Self::Native(code.value()),
+        }
+    }
+}
+
 impl SketchInputKind {
-    /// Maps a native sketch-entity type code to its typed kind, falling back to
-    /// [`SketchInputKind::Native`] for unrecognized codes.
+    /// Maps a code in the geometry-marker namespace.
     pub fn from_native_code(code: u32) -> Self {
-        match code {
-            0 => Self::Point,
-            1 => Self::LineOrCircle,
-            2 => Self::Arc,
-            3 => Self::ConstrainedPoint,
-            value => Self::Native(value),
+        use sketch_code::{LowMarkerCode, NativeSketchCode};
+        match NativeSketchCode::try_from(code) {
+            Ok(code) => Self::Native(code),
+            Err(LowMarkerCode::Zero) => Self::Point,
+            Err(LowMarkerCode::One) => Self::LineOrCircle,
+            Err(LowMarkerCode::Two) => Self::Arc,
+            Err(LowMarkerCode::Three) => Self::ConstrainedPoint,
         }
     }
 
-    /// Maps a marker code using the marker layout to separate geometry handles
-    /// from relation handles that reuse codes `1..3`.
+    /// Retains a code whose handle layout does not assign geometry semantics.
+    pub fn from_handle_code(code: u32) -> Self {
+        match sketch_code::NativeSketchCode::try_from(code) {
+            Ok(code) => Self::Native(code),
+            Err(code) => Self::NativeHandle(code),
+        }
+    }
+
+    /// Maps a marker code using its layout to separate geometry and relation handles.
     pub fn from_native_code_and_layout(code: u32, coordinate_bearing: bool) -> Self {
         if code == 0 || (coordinate_bearing && code <= 3) {
             return Self::from_native_code(code);
         }
-        SketchRelationKind::from_native_code(code).map_or(Self::Native(code), Self::Relation)
+        SketchRelationKind::from_native_code(code)
+            .map_or_else(|| Self::from_native_code(code), Self::Relation)
     }
 
-    /// Returns the native sketch-entity type code for this kind, the inverse of
-    /// [`SketchInputKind::from_native_code`].
+    /// Returns the stored code; the marker layout selects its namespace.
     pub fn native_code(self) -> u32 {
         match self {
             Self::Point => 0,
@@ -1031,7 +1080,8 @@ impl SketchInputKind {
             Self::Arc => 2,
             Self::ConstrainedPoint => 3,
             Self::Relation(relation) => relation.native_code(),
-            Self::Native(value) => value,
+            Self::Native(value) => value.value(),
+            Self::NativeHandle(value) => value.value(),
         }
     }
 
@@ -1046,7 +1096,7 @@ impl SketchInputKind {
                 | SketchRelationKind::Radius
                 | SketchRelationKind::Diameter,
             ) => false,
-            Self::Relation(_) | Self::Native(_) => true,
+            Self::Relation(_) | Self::Native(_) | Self::NativeHandle(_) => true,
             Self::Point | Self::LineOrCircle | Self::Arc | Self::ConstrainedPoint => false,
         }
     }
@@ -1526,6 +1576,23 @@ mod tests {
     use super::{SketchInputKind, SketchRelationKind};
 
     #[test]
+    fn low_native_handles_keep_their_layout_namespace_and_wire() {
+        for code in 0..=3 {
+            let geometry = SketchInputKind::from_native_code(code);
+            let handle = SketchInputKind::from_handle_code(code);
+            assert_ne!(geometry, handle);
+            assert!(matches!(handle, SketchInputKind::NativeHandle(_)));
+            assert_eq!(handle.native_code(), code);
+            let wire = serde_json::json!({"native": code});
+            assert_eq!(serde_json::to_value(handle).unwrap(), wire);
+            assert_eq!(
+                serde_json::from_value::<SketchInputKind>(wire).unwrap(),
+                handle
+            );
+        }
+    }
+
+    #[test]
     fn marker_layout_disambiguates_geometry_and_relation_codes() {
         assert_eq!(
             SketchInputKind::from_native_code_and_layout(1, true),
@@ -1557,7 +1624,7 @@ mod tests {
         );
         assert_eq!(
             SketchInputKind::from_native_code_and_layout(86, false),
-            SketchInputKind::Native(86)
+            SketchInputKind::from_native_code(86)
         );
         for code in 1..=85 {
             let relation = SketchRelationKind::from_native_code(code).expect("required invariant");
@@ -1576,7 +1643,7 @@ mod tests {
             assert!(!SketchInputKind::Relation(relation).owns_constraint());
         }
         assert!(SketchInputKind::Relation(SketchRelationKind::Horizontal).owns_constraint());
-        assert!(SketchInputKind::Native(86).owns_constraint());
+        assert!(SketchInputKind::from_native_code(86).owns_constraint());
         assert!(!SketchInputKind::Point.owns_constraint());
     }
 }

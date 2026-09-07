@@ -1332,5 +1332,5 @@ fn packed_slot_descriptor_run_is_not_independent_geometry() {
     assert_eq!(entities.len(), 2);
     assert!(entities
         .iter()
-        .all(|entity| entity.kind == SketchInputKind::Native(0)));
+        .all(|entity| entity.kind == SketchInputKind::from_handle_code(0)));
 }

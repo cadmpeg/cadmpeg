@@ -741,7 +741,7 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
             marker(
                 "slot",
                 slot_offset as u64,
-                SketchInputKind::Native(1),
+                SketchInputKind::from_handle_code(1),
                 Some(1),
                 Some(1),
                 None,

@@ -1701,7 +1701,10 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
     let marker = lane.sketch_entities.iter().find(|marker| {
         marker.id == entity_ref
             && marker.feature_ref.as_deref() == Some(feature)
-            && matches!(marker.kind, SketchInputKind::Native(_))
+            && matches!(
+                marker.kind,
+                SketchInputKind::Native(_) | SketchInputKind::NativeHandle(_)
+            )
     })?;
     let marker_offset = usize::try_from(marker.offset).ok()?;
     let (_, center_indices) = slot_curve_and_center_indices(&lane.native_payload, marker_offset)?;

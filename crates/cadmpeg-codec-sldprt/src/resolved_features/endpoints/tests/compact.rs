@@ -403,7 +403,7 @@ fn compact_legacy_90_geometry_line_uses_feature_marker_roster() {
         offset: 200,
         object_index: None,
         local_id: None,
-        kind: SketchInputKind::Native(7),
+        kind: SketchInputKind::from_native_code(7),
         state_value: None,
         coordinates_m: None,
         links: None,

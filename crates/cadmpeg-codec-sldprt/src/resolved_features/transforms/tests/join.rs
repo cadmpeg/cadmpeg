@@ -157,7 +157,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
             if native_kind == "sldprt:marker-relation:25"
     ));
     let mut nested_native = nested_reference.clone();
-    nested_native.kind = SketchInputKind::Native(28);
+    nested_native.kind = SketchInputKind::from_native_code(28);
     assert_eq!(
         typed_marker_relation_definition(&nested_native, &markers, &joins),
         Some(SketchConstraintDefinition::Native {

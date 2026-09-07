@@ -4070,7 +4070,8 @@ pub(super) fn marker_accepts_locus(kind: SketchInputKind, geometry: &SketchGeome
         SketchInputKind::Point
         | SketchInputKind::ConstrainedPoint
         | SketchInputKind::Relation(_)
-        | SketchInputKind::Native(_) => true,
+        | SketchInputKind::Native(_)
+        | SketchInputKind::NativeHandle(_) => true,
     }
 }
 

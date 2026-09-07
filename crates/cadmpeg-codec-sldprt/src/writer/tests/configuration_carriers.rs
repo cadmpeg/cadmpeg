@@ -1436,7 +1436,7 @@ fn semantic_writer_derives_resolved_feature_section_names() {
     decoded.source_fidelity_mut().annotations = cadmpeg_ir::Annotations::default();
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].sketch_entities[0].kind =
-            crate::records::SketchInputKind::Native(9);
+            crate::records::SketchInputKind::from_native_code(9);
     });
 
     let mut written = Vec::new();

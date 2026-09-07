@@ -1471,7 +1471,9 @@ pub(crate) fn project_marker_backed_sketches(
                                 })
                             }
                         }
-                        SketchInputKind::Relation(_) | SketchInputKind::Native(_) => return None,
+                        SketchInputKind::Relation(_)
+                        | SketchInputKind::Native(_)
+                        | SketchInputKind::NativeHandle(_) => return None,
                     };
                     let endpoint_refs = if matches!(
                         marker.kind,

@@ -1431,7 +1431,7 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
             .iter_mut()
             .find(|entity| entity.ordinal == 1)
             .unwrap();
-        entity.kind = SketchInputKind::Native(5);
+        entity.kind = SketchInputKind::from_native_code(5);
         entity.state_value = Some(12.5);
     });
 
