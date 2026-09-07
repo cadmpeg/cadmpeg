@@ -15,8 +15,8 @@ use crate::graph::expectation::{ExpectationLabel, ReferenceExpectation};
 use crate::graph::{ParameterResolver, ReferenceEdge, ReferenceKind};
 use crate::parameter::{
     connect_node_layout, signal_string_layout, text_node_layout, DefaultTailCount,
-    OverdeclaredCount, ParameterRecord, QuarantinedParameterRecord, Token, TokenValue,
-    TrailingPointerAnalysis,
+    OverdeclaredCount, ParameterRecord, QuarantinedParameterRecord, TextNodeLayout, Token,
+    TokenValue, TrailingPointerAnalysis,
 };
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -3586,7 +3586,7 @@ pub(crate) fn store(
                     }
                     10 => {
                         let layout = record.and_then(text_node_layout);
-                        let description_start = layout.as_ref().map(|layout| layout.description_start());
+                        let description_start = layout.as_ref().map(TextNodeLayout::description_start);
                         let font_characteristic = description_start.and_then(|index| {
                             record.and_then(|record| record.integer_or(index + 2, 1))
                         });
@@ -3611,7 +3611,7 @@ pub(crate) fn store(
                             declared_geometry_count: record.and_then(|record| record.integer(1)),
                             declared_text_description_count: record
                                 .and_then(|record| record.integer(2)),
-                            geometry: layout.iter().flat_map(|layout| layout.geometry())
+                            geometry: layout.iter().flat_map(TextNodeLayout::geometry)
                                 .map(|index| {
                                     record
                                         .and_then(|record| record.integer(index))

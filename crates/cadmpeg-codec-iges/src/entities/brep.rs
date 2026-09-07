@@ -536,12 +536,11 @@ pub(super) fn project(
                 continue;
             }
         };
-        let Some((first, rest)) = pointer(record, 4).and_then(|first| {
+        let Some((first, rest)) = pointer(record, 4).zip(
             (1..count)
                 .map(|index| pointer(record, 4 + index))
-                .collect::<Option<Vec<_>>>()
-                .map(|rest| (first, rest))
-        }) else {
+                .collect::<Option<Vec<_>>>(),
+        ) else {
             losses.push(entity_loss(entry, "face loop pointer is invalid"));
             continue;
         };
