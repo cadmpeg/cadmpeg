@@ -119,10 +119,6 @@ impl PcurvePatchLayout {
 
 /// Locate the final valid 2D pcurve block at the stream's known integer width.
 pub fn final_pcurve_patch_layout(record: &[u8], int_width: RefWidth) -> Option<PcurvePatchLayout> {
-    final_pcurve_patch_layout_at(record, int_width)
-}
-
-fn final_pcurve_patch_layout_at(record: &[u8], int_width: RefWidth) -> Option<PcurvePatchLayout> {
     construction_marker_positions(record, int_width)
         .into_iter()
         .filter_map(|marker_pos| {
