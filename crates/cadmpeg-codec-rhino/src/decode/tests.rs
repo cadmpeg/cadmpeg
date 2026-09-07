@@ -603,8 +603,9 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
 
 #[test]
 fn failed_trim_pcurve_does_not_discard_brep_topology() {
-    let (data, mut raw) = source_shaped_plane_brep();
-    raw.c2.slots[1].as_mut().expect("C2 slot").class_uuid = class_uuid([0; 16]);
+    let (mut data, raw) = source_shaped_plane_brep();
+    let pcurve = raw.c2.slots[1].as_ref().expect("C2 slot");
+    data[pcurve.class_data_range.start] = 0;
     let brep = crate::brep::ValidatedRawBrep::try_new(raw).expect("validate source-shaped Brep");
     let association = SourceObjectAssociation {
         format: cadmpeg_ir::CodecFormat::Rhino,
