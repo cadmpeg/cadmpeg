@@ -20,198 +20,94 @@
 
 use cadmpeg_ir::report::{LossKind, LossNote, LossTaxonomy, Severity};
 
-/// A stable, machine-readable identifier for one NX `.prt` transfer loss.
-///
-/// Variants are grouped by the record family whose transfer degraded. The
-/// string form (via [`NxLossCode::code`]) is the stable contract.
-#[non_exhaustive]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum NxLossCode {
+macro_rules! loss_codes {
+    ($( $(#[$meta:meta])* $variant:ident => ($code:literal, $severity:ident, $taxonomy:ident), )*) => {
+        /// Stable NX transfer-loss identifier.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        pub enum NxLossCode {
+            $( $(#[$meta])* $variant, )*
+        }
+
+        impl NxLossCode {
+            /// Every code in declaration order.
+            pub const ALL: &'static [Self] = &[$(Self::$variant),*];
+
+            /// Stable loss code string.
+            #[must_use]
+            pub const fn code(self) -> &'static str {
+                match self { $(Self::$variant => $code),* }
+            }
+
+            /// Loss severity.
+            #[must_use]
+            pub const fn severity(self) -> Severity {
+                match self { $(Self::$variant => Severity::$severity),* }
+            }
+
+            const fn shared_taxonomy(self) -> LossTaxonomy {
+                match self { $(Self::$variant => LossTaxonomy::$taxonomy),* }
+            }
+        }
+    };
+}
+
+loss_codes! {
     /// An embedded kernel dialect had no declared grammar and was recovered as residual.
-    KernelDialectUnverified,
+    KernelDialectUnverified => ("source.kernel-dialect-unverified", Warning, SourceDialectUnverified),
     /// Two embedded kernel carriers resolved to one dialect-layer identity.
-    DialectLayerCollision,
+    DialectLayerCollision => ("source.dialect-layer-collision", Warning, DecodeDiagnostic),
     /// Census of decoded Parasolid POINT and analytic curve/surface carriers.
-    CarrierAnalyticCensus,
+    CarrierAnalyticCensus => ("carrier.analytic-census", Info, CarrierSummary),
     /// Census of decoded embedded JT display tessellations.
-    CarrierTessellationCensus,
+    CarrierTessellationCensus => ("carrier.tessellation-census", Info, CarrierSummary),
     /// B-rep topology graph was not reconstructed from surviving typed records.
-    TopologyGraphNotReconstructed,
+    TopologyGraphNotReconstructed => ("topology.graph-not-reconstructed", Blocking, TopologyNotTransferred),
     /// Surface-intersection records lack a validated chart and term-endpoint witness.
-    IntersectionRecordsOpaque,
+    IntersectionRecordsOpaque => ("intersection.records-opaque", Warning, ObjectRecordsUntransferred),
     /// Geometric completion reached a declared work bound before all
     /// intersection pcurve lanes were complete.
-    IntersectionPcurveCompletionBounded,
+    IntersectionPcurveCompletionBounded => ("intersection.pcurve-completion-bounded", Warning, ObjectRecordsUntransferred),
     /// Adaptive geometry certification reached its model-wide work bound.
-    GeometryAdaptiveWorkBounded,
+    GeometryAdaptiveWorkBounded => ("geometry.adaptive-work-bounded", Warning, ObjectRecordsUntransferred),
     /// Parasolid deltas applied; every terminal tombstone resolved to a key.
-    DeltasApplied,
+    DeltasApplied => ("deltas.applied", Info, DecodeDiagnostic),
     /// Parasolid deltas applied; one or more terminal tombstones remain unmatched.
-    DeltasUnmatchedTombstones,
+    DeltasUnmatchedTombstones => ("deltas.unmatched-tombstones", Warning, DecodeDiagnostic),
     /// Sub-body partitions remain; Boolean history does not resolve every image.
-    SubBodyCompositionUnresolved,
+    SubBodyCompositionUnresolved => ("history.sub-body-composition-unresolved", Warning, FeatureHistoryRetained),
     /// A referenced Parasolid attribute value relation did not resolve.
-    AttributeValueUnresolved,
+    AttributeValueUnresolved => ("attribute.value-unresolved", Warning, AttributesNotTransferred),
     /// Feature-history suppression state remains unresolved.
-    FeatureSuppressionUnresolved,
+    FeatureSuppressionUnresolved => ("feature.suppression-unresolved", Warning, FeatureHistoryRetained),
     /// Configuration activation, body membership, or evaluated state is incomplete.
-    ConfigurationStateUnresolved,
+    ConfigurationStateUnresolved => ("configuration.state-unresolved", Warning, FeatureHistoryRetained),
     /// Expression parameter evaluation or dependency semantics are incomplete.
-    ExpressionParameterIncomplete,
+    ExpressionParameterIncomplete => ("expression.parameter-incomplete", Warning, FeatureHistoryRetained),
     /// Feature-history operations remain native-only without neutral semantics.
-    FeatureNativeKindRetained,
+    FeatureNativeKindRetained => ("feature.native-kind-retained", Warning, FeatureHistoryRetained),
     /// Feature family identities transferred; construction semantics unresolved.
-    FeatureFamilyConstructionUnresolved,
+    FeatureFamilyConstructionUnresolved => ("feature.family-construction-unresolved", Warning, FeatureHistoryRetained),
     /// Typed feature output lineage is missing, duplicated, or unresolved.
-    FeatureOutputLineageIncomplete,
+    FeatureOutputLineageIncomplete => ("feature.output-lineage-incomplete", Warning, FeatureHistoryRetained),
     /// Typed feature operations have incomplete neutral construction fields.
-    FeatureConstructionIncomplete,
+    FeatureConstructionIncomplete => ("feature.construction-incomplete", Warning, FeatureHistoryRetained),
     /// Sketch history features have no neutral sketch graph.
-    SketchGraphUnresolved,
+    SketchGraphUnresolved => ("sketch.graph-unresolved", Warning, FeatureHistoryRetained),
     /// Sketch geometry or constraint records remain native-only.
-    SketchNativeSemantics,
+    SketchNativeSemantics => ("sketch.native-semantics", Warning, FeatureHistoryRetained),
     /// Bounded offset-store control blocks have no admitted complete grammar.
-    OffsetStoreControlUntyped,
+    OffsetStoreControlUntyped => ("container.offset-store-control-untyped", Warning, RecordNotTyped),
     /// A named container stream is retained byte-exact without typed fields.
-    ContainerStreamOpaque,
+    ContainerStreamOpaque => ("container.stream-opaque", Info, RecordNotTyped),
     /// A classified non-Parasolid stream was not transferred.
-    NonParasolidStreamOmitted,
+    NonParasolidStreamOmitted => ("stream.non-parasolid-omitted", Info, PassthroughRecordOmitted),
     /// Assembly `.prt` has no inline geometry; children live in external parts.
-    AssemblyComponentsExternal,
+    AssemblyComponentsExternal => ("assembly.components-external", Blocking, AssemblyComponentsExternal),
     /// No gate-passing analytic carrier was found in the Parasolid streams.
-    GeometryNotTransferred,
+    GeometryNotTransferred => ("geometry.not-transferred", Blocking, GeometryNotTransferred),
 }
 
 impl NxLossCode {
-    /// Every code, in declaration order.
-    pub const ALL: &'static [NxLossCode] = &[
-        Self::KernelDialectUnverified,
-        Self::DialectLayerCollision,
-        Self::CarrierAnalyticCensus,
-        Self::CarrierTessellationCensus,
-        Self::TopologyGraphNotReconstructed,
-        Self::IntersectionRecordsOpaque,
-        Self::IntersectionPcurveCompletionBounded,
-        Self::GeometryAdaptiveWorkBounded,
-        Self::DeltasApplied,
-        Self::DeltasUnmatchedTombstones,
-        Self::SubBodyCompositionUnresolved,
-        Self::AttributeValueUnresolved,
-        Self::FeatureSuppressionUnresolved,
-        Self::ConfigurationStateUnresolved,
-        Self::ExpressionParameterIncomplete,
-        Self::FeatureNativeKindRetained,
-        Self::FeatureFamilyConstructionUnresolved,
-        Self::FeatureOutputLineageIncomplete,
-        Self::FeatureConstructionIncomplete,
-        Self::SketchGraphUnresolved,
-        Self::SketchNativeSemantics,
-        Self::OffsetStoreControlUntyped,
-        Self::ContainerStreamOpaque,
-        Self::NonParasolidStreamOmitted,
-        Self::AssemblyComponentsExternal,
-        Self::GeometryNotTransferred,
-    ];
-
-    /// The stable string identifier. This is the gating contract.
-    #[must_use]
-    pub const fn code(self) -> &'static str {
-        match self {
-            Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
-            Self::DialectLayerCollision => "source.dialect-layer-collision",
-            Self::CarrierAnalyticCensus => "carrier.analytic-census",
-            Self::CarrierTessellationCensus => "carrier.tessellation-census",
-            Self::TopologyGraphNotReconstructed => "topology.graph-not-reconstructed",
-            Self::IntersectionRecordsOpaque => "intersection.records-opaque",
-            Self::IntersectionPcurveCompletionBounded => "intersection.pcurve-completion-bounded",
-            Self::GeometryAdaptiveWorkBounded => "geometry.adaptive-work-bounded",
-            Self::DeltasApplied => "deltas.applied",
-            Self::DeltasUnmatchedTombstones => "deltas.unmatched-tombstones",
-            Self::SubBodyCompositionUnresolved => "history.sub-body-composition-unresolved",
-            Self::AttributeValueUnresolved => "attribute.value-unresolved",
-            Self::FeatureSuppressionUnresolved => "feature.suppression-unresolved",
-            Self::ConfigurationStateUnresolved => "configuration.state-unresolved",
-            Self::ExpressionParameterIncomplete => "expression.parameter-incomplete",
-            Self::FeatureNativeKindRetained => "feature.native-kind-retained",
-            Self::FeatureFamilyConstructionUnresolved => "feature.family-construction-unresolved",
-            Self::FeatureOutputLineageIncomplete => "feature.output-lineage-incomplete",
-            Self::FeatureConstructionIncomplete => "feature.construction-incomplete",
-            Self::SketchGraphUnresolved => "sketch.graph-unresolved",
-            Self::SketchNativeSemantics => "sketch.native-semantics",
-            Self::OffsetStoreControlUntyped => "container.offset-store-control-untyped",
-            Self::ContainerStreamOpaque => "container.stream-opaque",
-            Self::NonParasolidStreamOmitted => "stream.non-parasolid-omitted",
-            Self::AssemblyComponentsExternal => "assembly.components-external",
-            Self::GeometryNotTransferred => "geometry.not-transferred",
-        }
-    }
-
-    /// The severity of this loss.
-    #[must_use]
-    pub const fn severity(self) -> Severity {
-        match self {
-            Self::CarrierAnalyticCensus
-            | Self::CarrierTessellationCensus
-            | Self::DeltasApplied
-            | Self::ContainerStreamOpaque
-            | Self::NonParasolidStreamOmitted => Severity::Info,
-            Self::TopologyGraphNotReconstructed
-            | Self::AssemblyComponentsExternal
-            | Self::GeometryNotTransferred => Severity::Blocking,
-            Self::KernelDialectUnverified
-            | Self::DialectLayerCollision
-            | Self::IntersectionRecordsOpaque
-            | Self::IntersectionPcurveCompletionBounded
-            | Self::GeometryAdaptiveWorkBounded
-            | Self::DeltasUnmatchedTombstones
-            | Self::SubBodyCompositionUnresolved
-            | Self::AttributeValueUnresolved
-            | Self::FeatureSuppressionUnresolved
-            | Self::ConfigurationStateUnresolved
-            | Self::ExpressionParameterIncomplete
-            | Self::FeatureNativeKindRetained
-            | Self::FeatureFamilyConstructionUnresolved
-            | Self::FeatureOutputLineageIncomplete
-            | Self::FeatureConstructionIncomplete
-            | Self::SketchGraphUnresolved
-            | Self::SketchNativeSemantics
-            | Self::OffsetStoreControlUntyped => Severity::Warning,
-        }
-    }
-
-    /// The shared cross-codec category this loss reports under.
-    const fn shared_taxonomy(self) -> LossTaxonomy {
-        match self {
-            Self::KernelDialectUnverified => LossTaxonomy::SourceDialectUnverified,
-            Self::DialectLayerCollision => LossTaxonomy::DecodeDiagnostic,
-            Self::CarrierAnalyticCensus | Self::CarrierTessellationCensus => {
-                LossTaxonomy::CarrierSummary
-            }
-            Self::TopologyGraphNotReconstructed => LossTaxonomy::TopologyNotTransferred,
-            Self::IntersectionRecordsOpaque
-            | Self::IntersectionPcurveCompletionBounded
-            | Self::GeometryAdaptiveWorkBounded => LossTaxonomy::ObjectRecordsUntransferred,
-            Self::DeltasApplied | Self::DeltasUnmatchedTombstones => LossTaxonomy::DecodeDiagnostic,
-            Self::SubBodyCompositionUnresolved
-            | Self::FeatureSuppressionUnresolved
-            | Self::ConfigurationStateUnresolved
-            | Self::ExpressionParameterIncomplete
-            | Self::FeatureNativeKindRetained
-            | Self::FeatureFamilyConstructionUnresolved
-            | Self::FeatureOutputLineageIncomplete
-            | Self::FeatureConstructionIncomplete
-            | Self::SketchGraphUnresolved
-            | Self::SketchNativeSemantics => LossTaxonomy::FeatureHistoryRetained,
-            Self::AttributeValueUnresolved => LossTaxonomy::AttributesNotTransferred,
-            Self::OffsetStoreControlUntyped | Self::ContainerStreamOpaque => {
-                LossTaxonomy::RecordNotTyped
-            }
-            Self::NonParasolidStreamOmitted => LossTaxonomy::PassthroughRecordOmitted,
-            Self::AssemblyComponentsExternal => LossTaxonomy::AssemblyComponentsExternal,
-            Self::GeometryNotTransferred => LossTaxonomy::GeometryNotTransferred,
-        }
-    }
-
     /// Namespaced [`LossKind`] for this local code, classified by taxonomy.
     #[must_use]
     pub fn kind(self) -> LossKind {
