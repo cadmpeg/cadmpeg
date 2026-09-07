@@ -606,7 +606,7 @@ pub(crate) fn try_decode_geometry(
                     let mut support_uv = validate_serialized_support_uv_with_index(
                         &model_index,
                         &surfaces_by_xmt,
-                        charted.supports,
+                        [Some(charted.primary_support), charted.secondary_support],
                         charted.samples.points(),
                         charted.fit_tolerance,
                         &charted.support_uv,
@@ -615,7 +615,7 @@ pub(crate) fn try_decode_geometry(
                     if let Some(ext_support_uv) = assign_ext11_support_uv_with_index(
                         &model_index,
                         &surfaces_by_xmt,
-                        charted.supports,
+                        [Some(charted.primary_support), charted.secondary_support],
                         charted.samples.points(),
                         charted.fit_tolerance,
                         &charted.ext_support_uv,
@@ -730,7 +730,7 @@ pub(crate) fn try_decode_geometry(
                 let first = intersection_side(
                     &ir,
                     &surfaces_by_xmt,
-                    charted.supports[0],
+                    Some(charted.primary_support),
                     support_uv[0]
                         .as_deref()
                         .filter(|uv| uv.len() == charted.samples.parameters().len())
@@ -739,7 +739,7 @@ pub(crate) fn try_decode_geometry(
                 let second = intersection_side(
                     &ir,
                     &surfaces_by_xmt,
-                    charted.supports[1],
+                    charted.secondary_support,
                     support_uv[1]
                         .as_deref()
                         .filter(|uv| uv.len() == charted.samples.parameters().len())

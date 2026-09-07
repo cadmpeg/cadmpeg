@@ -2193,10 +2193,10 @@ pub(crate) fn point_distance(first: Point3, second: Point3) -> f64 {
 pub(crate) fn intersection_side(
     ir: &CadIr,
     surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
-    surface_xmt: u32,
+    surface_xmt: Option<crate::framing::xmt_reference::NonNullXmt>,
     uv: Option<(&[[f64; 2]], &[f64])>,
 ) -> IntcurveSupportSide {
-    let surface = surfaces_by_xmt.get(&surface_xmt).cloned();
+    let surface = surface_xmt.and_then(|xmt| surfaces_by_xmt.get(&u32::from(xmt)).cloned());
     let pcurve = surface.as_ref().and_then(|surface_id| {
         let geometry = ir
             .model

@@ -590,5 +590,6 @@ fn intersection_support_order_follows_type_38_values_marker() {
     let [curve] = scan.curves.as_slice() else {
         panic!("one charted intersection");
     };
-    assert_eq!(curve.supports, [13, 6]);
+    assert_eq!(u32::from(curve.primary_support), 13);
+    assert_eq!(curve.secondary_support.map(u32::from), Some(6));
 }

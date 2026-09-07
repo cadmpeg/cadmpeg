@@ -29,6 +29,7 @@ use super::pcurves::{
     surface_parameters_for_fit_with_index_and_budget, EndpointWitnesses,
 };
 use super::MISSING_TOLERANCE;
+use crate::framing::xmt_reference::NonNullXmt;
 use crate::topology::Graph;
 use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::annotations::StreamHandle;
@@ -119,13 +120,13 @@ pub(crate) fn linear_knots(parameters: &[f64]) -> Vec<f64> {
 pub(crate) fn assign_ext11_support_uv_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
-    supports: [u32; 2],
+    supports: [Option<NonNullXmt>; 2],
     points: &[Point3],
     fit_tolerance: f64,
     lanes: &[Option<Vec<[f64; 2]>>; 2],
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Option<[Option<Vec<[f64; 2]>>; 2]> {
-    let surface_ids = supports.map(|support| surfaces_by_xmt.get(&support).cloned());
+    let surface_ids = supports.map(|support| surfaces_by_xmt.get(&u32::from(support?)).cloned());
     let [Some(first_surface), Some(second_surface)] = surface_ids else {
         return None;
     };
@@ -145,14 +146,14 @@ pub(crate) fn assign_ext11_support_uv_with_index(
 pub(crate) fn validate_serialized_support_uv_with_index(
     index: &cadmpeg_ir::index::ModelIndex<'_>,
     surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
-    supports: [u32; 2],
+    supports: [Option<NonNullXmt>; 2],
     points: &[Point3],
     fit_tolerance: f64,
     lanes: &[Option<Vec<[f64; 2]>>; 2],
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> [Option<Vec<[f64; 2]>>; 2] {
     std::array::from_fn(|side| {
-        let surface = surfaces_by_xmt.get(&supports[side])?;
+        let surface = surfaces_by_xmt.get(&u32::from(supports[side]?))?;
         let values = lanes[side].as_deref()?;
         let tolerance = blend_spine_cache_fit_tolerance_with_index(index, surface, fit_tolerance);
         support_uv_lane_matches_surface_with_budget(

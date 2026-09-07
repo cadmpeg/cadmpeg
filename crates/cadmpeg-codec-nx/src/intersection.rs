@@ -20,6 +20,7 @@ use support_uv_values::{SupportUvPacking, SupportUvValues};
 use chart_samples::{ChartPreamble, ChartSamples, SourceChartData, MISSING_PARAMETER};
 
 use crate::framing::read_xmt_width as read_xmt;
+use crate::framing::xmt_reference::NonNullXmt;
 use crate::layout::chart_s_preamble as chart_preamble;
 use crate::topology::{self, CompositeCurve};
 
@@ -168,8 +169,10 @@ pub struct IntersectionCurve {
     pub xmt: u32,
     /// Six ordered construction references.
     pub references: [u32; 6],
-    /// Resolved primary and secondary support-surface references.
-    pub supports: [u32; 2],
+    /// Resolved primary support-surface reference.
+    pub primary_support: NonNullXmt,
+    /// Resolved secondary support-surface reference.
+    pub secondary_support: Option<NonNullXmt>,
     /// Type-tag offset of the construction record.
     pub pos: usize,
     /// Paired chart points in millimetres and native parameters.
@@ -415,8 +418,11 @@ fn scan_with_auxiliaries(
                 result.constructions.push(construction);
                 if matches!(rejection, Rejection::MissingChart) {
                     if let (Some(supports), Some(witness)) = (
-                        construction_supports(construction, uv, bridges, graph)
-                            .filter(|supports| supports[1] > 1),
+                        construction_supports(construction, uv, bridges, graph).and_then(
+                            |(primary, secondary)| {
+                                Some([u32::from(primary), u32::from(secondary?)])
+                            },
+                        ),
                         graph
                             .unique_curve_edge_witness(construction.xmt)
                             .filter(|witness| {
@@ -498,7 +504,7 @@ fn enrich(
             });
         }
     }
-    let supports =
+    let (primary_support, secondary_support) =
         construction_supports(construction, uv, bridges, graph).ok_or(Rejection::MissingSupport)?;
     let support_uv = uv
         .get(&construction.references[5])
@@ -506,7 +512,8 @@ fn enrich(
     Ok(IntersectionCurve {
         xmt: construction.xmt,
         references: construction.references,
-        supports,
+        primary_support,
+        secondary_support,
         pos: construction.pos,
         samples: chart.samples.clone(),
         fit_tolerance: chart.fit_tolerance,
@@ -520,7 +527,7 @@ fn construction_supports(
     uv: &BTreeMap<u32, SupportUvValues>,
     bridges: &BTreeMap<u32, u32>,
     graph: &topology::Graph,
-) -> Option<[u32; 2]> {
+) -> Option<(NonNullXmt, Option<NonNullXmt>)> {
     let (primary, bridge) = if construction.delta_twin {
         (construction.references[0], construction.references[1])
     } else {
@@ -545,8 +552,8 @@ fn construction_supports(
         .copied()
         .or_else(|| is_surface(graph, bridge).then_some(bridge))
         .filter(|secondary| *secondary != primary)
-        .unwrap_or(1);
-    (primary > 1).then_some([primary, secondary])
+        .and_then(|secondary| NonNullXmt::try_from(secondary).ok());
+    Some((NonNullXmt::try_from(primary).ok()?, secondary))
 }
 
 fn construction_has_endpoint_witnesses(
