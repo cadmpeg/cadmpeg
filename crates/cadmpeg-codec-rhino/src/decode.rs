@@ -29,23 +29,21 @@ use std::num::NonZeroUsize;
 use crate::chunks::ArchiveVersion;
 use crate::container::{OpaqueRecord, Scan};
 use crate::loss::RhinoLossCode;
-use crate::objects::ObjectDescriptor;
-use crate::objects::UserdataDescriptor;
+use crate::objects::{ObjectDescriptor, ObjectRecord, UserdataDescriptor};
 
 /// Maximum bytes retained for one Rhino object record.
 pub(crate) const RETAINED_RECORD_CAP: usize = 16 * 1024 * 1024;
 /// Maximum bytes retained across all Rhino object records in one document.
 pub(crate) const RETAINED_DOCUMENT_CAP: usize = 256 * 1024 * 1024;
 
-#[derive(Debug, Clone, Default)]
-struct ClassOutcome {
+#[derive(Debug)]
+struct ClassOutcome<'a> {
     decoded: usize,
     retained: usize,
     native: Option<(RhinoLossCode, NonZeroUsize)>,
     attribute_degraded: usize,
     failed_framed: usize,
-    first_offset: u64,
-    first_object_type: u32,
+    first_object: &'a ObjectRecord,
 }
 
 /// Outcome of resolving one foreign object UUID against the object table.
@@ -60,9 +58,8 @@ enum ObjectReference {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum GeometryStatus {
-    Retained,
-    NativeRetained,
+enum GeometryOutcome {
+    NativeRetained(RhinoLossCode),
     Decoded,
     Failed,
 }
@@ -470,8 +467,7 @@ pub(crate) struct DecodeContext<'a> {
     annotations: cadmpeg_ir::Annotations,
     unknowns: Vec<UnknownRecord>,
     opaque_records: Vec<UnknownRecord>,
-    statuses: Vec<GeometryStatus>,
-    outcomes: BTreeMap<String, ClassOutcome>,
+    statuses: Vec<Option<GeometryOutcome>>,
     retained_bytes: usize,
     retention_limits: [usize; 2],
     mesh_budget: crate::mesh::MeshBudget,
@@ -508,7 +504,6 @@ impl<'a> DecodeContext<'a> {
             unknowns: Vec::with_capacity(scan.objects.len()),
             opaque_records: Vec::new(),
             statuses: Vec::with_capacity(scan.objects.len()),
-            outcomes: BTreeMap::new(),
             retained_bytes: 0,
             retention_limits: [RETAINED_RECORD_CAP, RETAINED_DOCUMENT_CAP],
             mesh_budget: crate::mesh::MeshBudget::from_session(expand.ctx()),
@@ -546,7 +541,6 @@ impl<'a> DecodeContext<'a> {
         self.unknowns.clear();
         self.opaque_records.clear();
         self.statuses.clear();
-        self.outcomes.clear();
         self.retained_bytes = 0;
         self.retain_object_records();
         self.retain_opaque_records();
@@ -726,32 +720,19 @@ impl<'a> DecodeContext<'a> {
 
     /// Marks one retained object as successfully decoded.
     pub(crate) fn mark_decoded(&mut self, source_order: usize) -> bool {
-        self.transition(source_order, GeometryStatus::Decoded)
+        self.transition(source_order, GeometryOutcome::Decoded)
     }
 
     /// Marks one framed object as failed after a skippable payload error.
     pub(crate) fn mark_failed(&mut self, source_order: usize) -> bool {
-        self.transition(source_order, GeometryStatus::Failed)
+        self.transition(source_order, GeometryOutcome::Failed)
     }
 
     /// Marks one object as read but retained as native passthrough.
     ///
-    /// Record the native-retention loss code once per Rhino class.
+    /// Class totals are derived from the object outcomes when building the report.
     fn mark_native_retained(&mut self, source_order: usize, code: RhinoLossCode) -> bool {
-        if !self.transition(source_order, GeometryStatus::NativeRetained) {
-            return false;
-        }
-        let class = report_class(&self.scan.objects[source_order]);
-        let outcome = self.outcomes.get_mut(&class).expect("status class exists");
-        let count = outcome
-            .native
-            .as_ref()
-            .map_or(1, |(_, count)| count.get().saturating_add(1));
-        outcome.native = Some((
-            code,
-            NonZeroUsize::new(count).expect("native retained count is nonzero"),
-        ));
-        true
+        self.transition(source_order, GeometryOutcome::NativeRetained(code))
     }
 
     /// Resolves one foreign object UUID to the single record that owns it.
@@ -1910,7 +1891,6 @@ impl<'a> DecodeContext<'a> {
             .map(|record| record.links().to_vec())
             .collect::<Vec<_>>();
         let original_statuses = self.statuses.clone();
-        let original_outcomes = self.outcomes.clone();
         let original_geometry_transferred = self.geometry_transferred;
         let report_checkpoint = self.report.checkpoint();
         let original_selection = self.selected_object;
@@ -1964,7 +1944,6 @@ impl<'a> DecodeContext<'a> {
             *record.links_mut() = links;
         }
         self.statuses = original_statuses;
-        self.outcomes = original_outcomes;
         self.geometry_transferred = original_geometry_transferred;
         self.report.rollback(report_checkpoint);
         self.selected_object = original_selection;
@@ -2435,8 +2414,8 @@ impl<'a> DecodeContext<'a> {
         }
         self.ir.finalize();
         let mut losses: Vec<LossNote> = Vec::new();
-        let decoded = self
-            .outcomes
+        let outcomes = self.class_outcomes();
+        let decoded = outcomes
             .values()
             .map(|outcome| outcome.decoded)
             .sum::<usize>();
@@ -2446,7 +2425,7 @@ impl<'a> DecodeContext<'a> {
                 .note(format!("decoded {decoded}/{total} Rhino object records")),
         );
         let mut omissions: Vec<LossNote> = Vec::new();
-        for (class, outcome) in &self.outcomes {
+        for (class, outcome) in &outcomes {
             if outcome.retained > 0 {
                 omissions.push(
                     RhinoLossCode::ObjectFamilyNotTransferred
@@ -2615,33 +2594,10 @@ impl<'a> DecodeContext<'a> {
         for source_order in 0..self.scan.objects.len() {
             let object = &self.scan.objects[source_order];
             let id = Self::mint_unknown_id(source_order);
-            let class = report_class(object);
-            let object_type = object.framed().map_or(0, |object| object.object_type);
-            let framing_degraded = object.is_degraded();
-            let attributes_degraded = object
-                .framed()
-                .is_some_and(|object| object.attributes_degraded);
             let record = self.source_record(id, object.range());
-            let outcome = self.outcomes.entry(class.clone()).or_default();
-            if outcome.retained == 0 {
-                outcome.first_offset =
-                    u64::try_from(object.range().start).expect("Rhino record offset fits u64");
-                outcome.first_object_type = object_type;
-            }
-            outcome.retained += 1;
-            if framing_degraded {
-                outcome.retained -= 1;
-                outcome.failed_framed += 1;
-            }
-            if attributes_degraded {
-                outcome.attribute_degraded += 1;
-            }
             self.unknowns.push(record);
-            self.statuses.push(if framing_degraded {
-                GeometryStatus::Failed
-            } else {
-                GeometryStatus::Retained
-            });
+            self.statuses
+                .push(object.is_degraded().then_some(GeometryOutcome::Failed));
         }
     }
 
@@ -2690,15 +2646,6 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn scan_warnings_for_class(&mut self, class: &str, message: &str) {
-        let outcome = self.outcomes.entry(class.to_string()).or_default();
-        if outcome.first_offset == 0 {
-            outcome.first_offset = self
-                .scan
-                .objects
-                .iter()
-                .find(|object| report_class(object) == class)
-                .map_or(0, |object| object.range().start as u64);
-        }
         self.report
             .phase_warnings
             .push(format!("{class}: {message}"));
@@ -3478,35 +3425,51 @@ impl<'a> DecodeContext<'a> {
         }
     }
 
-    fn transition(&mut self, source_order: usize, next: GeometryStatus) -> bool {
-        let Some(current) = self.statuses.get(source_order).copied() else {
+    fn transition(&mut self, source_order: usize, next: GeometryOutcome) -> bool {
+        let Some(status @ None) = self.statuses.get_mut(source_order) else {
             return false;
         };
-        if current == next
-            || matches!(
-                current,
-                GeometryStatus::Decoded | GeometryStatus::Failed | GeometryStatus::NativeRetained
-            )
-        {
-            return false;
-        }
-        let object = &self.scan.objects[source_order];
-        let class = report_class(object);
-        let outcome = self.outcomes.get_mut(&class).expect("status class exists");
-        match current {
-            GeometryStatus::Retained => outcome.retained -= 1,
-            GeometryStatus::Decoded | GeometryStatus::Failed | GeometryStatus::NativeRetained => {
-                unreachable!()
+        *status = Some(next);
+        true
+    }
+
+    fn class_outcomes(&self) -> BTreeMap<String, ClassOutcome<'a>> {
+        let mut outcomes = BTreeMap::new();
+        for (object, status) in self.scan.objects.iter().zip(&self.statuses) {
+            let outcome = outcomes
+                .entry(report_class(object))
+                .or_insert_with(|| ClassOutcome {
+                    decoded: 0,
+                    retained: 0,
+                    native: None,
+                    attribute_degraded: 0,
+                    failed_framed: 0,
+                    first_object: object,
+                });
+            // Keep the first framed source, or the last degraded source if none was framed.
+            if outcome.first_object.is_degraded() {
+                outcome.first_object = object;
+            }
+            if object
+                .framed()
+                .is_some_and(|object| object.attributes_degraded)
+            {
+                outcome.attribute_degraded += 1;
+            }
+            match status {
+                None => outcome.retained += 1,
+                Some(GeometryOutcome::Decoded) => outcome.decoded += 1,
+                Some(GeometryOutcome::Failed) => outcome.failed_framed += 1,
+                Some(GeometryOutcome::NativeRetained(code)) => {
+                    let count = outcome
+                        .native
+                        .as_ref()
+                        .map_or(NonZeroUsize::MIN, |(_, count)| count.saturating_add(1));
+                    outcome.native = Some((*code, count));
+                }
             }
         }
-        match next {
-            GeometryStatus::Retained => outcome.retained += 1,
-            GeometryStatus::NativeRetained => {}
-            GeometryStatus::Decoded => outcome.decoded += 1,
-            GeometryStatus::Failed => outcome.failed_framed += 1,
-        }
-        self.statuses[source_order] = next;
-        true
+        outcomes
     }
 }
 
@@ -5571,10 +5534,13 @@ fn body(
     }
 }
 
-fn loss_provenance(class: &str, outcome: &ClassOutcome) -> SourceProvenance {
-    SourceProvenance::root("rhino", outcome.first_offset).with_tag(format!(
+fn loss_provenance(class: &str, outcome: &ClassOutcome<'_>) -> SourceProvenance {
+    SourceProvenance::root("rhino", outcome.first_object.range().start as u64).with_tag(format!(
         "OBJECT_RECORD/class={class}/type=0x{:08x}",
-        outcome.first_object_type
+        outcome
+            .first_object
+            .framed()
+            .map_or(0, |object| object.object_type)
     ))
 }
 

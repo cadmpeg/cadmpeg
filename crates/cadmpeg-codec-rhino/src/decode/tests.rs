@@ -1215,3 +1215,86 @@ fn missing_stamp_carries_brep_typed_loss_codes() {
         stamped.report().losses
     );
 }
+
+#[test]
+fn class_report_counts_terminal_outcomes_once() {
+    let archive = ArchiveVersion::V5;
+    let class = crate::hatch::CLASS;
+    let objects = (0..5)
+        .map(|_| object_record(archive, 1, class.to_wire()))
+        .collect::<Vec<_>>();
+    let bytes = minimal_document(
+        "50",
+        &[
+            table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0015, &[]),
+            table(archive, 0x1000_0013, &objects),
+        ],
+    );
+    let scan = crate::container::scan_owned(bytes).expect("object table");
+    with_expand(&scan, |expand| {
+        let mut context = DecodeContext::new(&scan, expand);
+        assert!(context.mark_native_retained(3, RhinoLossCode::HatchFillNotTransferred));
+        assert!(context.mark_native_retained(1, RhinoLossCode::HatchFillNotTransferred));
+        assert!(!context.mark_native_retained(3, RhinoLossCode::HatchFillNotTransferred));
+        assert!(context.mark_decoded(0));
+        assert!(context.mark_failed(2));
+        assert!(!context.mark_decoded(2));
+        let result = seal_for_test(context.commit(), false);
+        for (code, message) in [
+            (RhinoLossCode::ObjectRecordCensus, "decoded 1/5 Rhino object records".to_string()),
+            (RhinoLossCode::HatchFillNotTransferred, format!("framed and read 2 object record(s) for class {class}; construction state is retained as native passthrough")),
+            (RhinoLossCode::ObjectFamilyNotTransferred, format!("retained 1 object record(s) for class {class}; geometry is not decoded")),
+            (RhinoLossCode::ObjectFramingUndecodable, format!("1 framed object record(s) for class {class} could not be decoded")),
+        ] {
+            let losses = result.report().losses.iter().filter(|loss| loss.code == code.kind()).collect::<Vec<_>>();
+            assert_eq!(losses.len(), 1);
+            assert_eq!(losses[0].message, message);
+        }
+    });
+}
+
+#[test]
+fn class_report_preserves_nil_class_source_selection() {
+    let archive = ArchiveVersion::V5;
+    let objects = (0..3)
+        .map(|_| object_record(archive, 1, [0; 16]))
+        .collect::<Vec<_>>();
+    let bytes = minimal_document(
+        "50",
+        &[
+            table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0015, &[]),
+            table(archive, 0x1000_0013, &objects),
+        ],
+    );
+    let mut scan = crate::container::scan_owned(bytes).expect("object table");
+    for order in [0, 2] {
+        scan.objects[order] = ObjectRecord::Degraded {
+            range: scan.objects[order].range(),
+            warning: "degraded test object".to_string(),
+        };
+    }
+    for expected_source in [1, 2] {
+        if expected_source == 2 {
+            scan.objects[1] = ObjectRecord::Degraded {
+                range: scan.objects[1].range(),
+                warning: "degraded test object".to_string(),
+            };
+        }
+        with_expand(&scan, |expand| {
+            let context = DecodeContext::new(&scan, expand);
+            let result = seal_for_test(context.commit(), false);
+            let loss = result
+                .report()
+                .losses
+                .iter()
+                .find(|loss| loss.code == RhinoLossCode::ObjectFramingUndecodable.kind())
+                .expect("framing loss");
+            assert_eq!(
+                loss.provenance.as_ref().expect("source location").offset,
+                scan.objects[expected_source].range().start as u64
+            );
+        });
+    }
+}
