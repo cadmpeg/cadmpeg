@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 
 use crate::container::ContainerScan;
+use crate::feature::definitions::{ScalarLane, VariableType};
 
 use super::super::expanded::feature_surface_replay_associations;
 use super::super::sketch::{
@@ -663,11 +664,15 @@ pub(in super::super) fn source_meta(
         .iter()
         .filter_map(|definition| definition.variables.as_ref())
         .flat_map(|variables| &variables.rows)
-        .filter(|row| row.dimension_driven)
+        .filter(|row| row.value == ScalarLane::DimensionDriven)
         .fold((0usize, 0usize), |(all, coordinates), row| {
             (
                 all + 1,
-                coordinates + usize::from(matches!(row.variable_type, 1 | 2)),
+                coordinates
+                    + usize::from(matches!(
+                        row.variable_type,
+                        VariableType::U | VariableType::V
+                    )),
             )
         });
     let decoded_dimension_driven_guess_count = scan
@@ -676,7 +681,7 @@ pub(in super::super) fn source_meta(
         .iter()
         .filter_map(|definition| definition.variables.as_ref())
         .flat_map(|variables| &variables.rows)
-        .filter(|row| row.guess_dimension_driven)
+        .filter(|row| row.guess == ScalarLane::DimensionDriven)
         .count();
     let (
         resolved_dimension_driven_variable_count,
@@ -694,26 +699,30 @@ pub(in super::super) fn source_meta(
                 .variables
                 .iter()
                 .flat_map(|variables| &variables.rows)
-                .filter(|row| row.dimension_driven)
+                .filter(|row| row.value == ScalarLane::DimensionDriven)
                 .fold(
                     (0usize, 0usize, 0usize),
                     |(all, coordinates, other), row| {
                         let resolved = match row.variable_type {
-                            1 | 2 => resolved_coordinates
-                                .get(&row.key)
-                                .and_then(|point| point[usize::from(row.variable_type == 2)]),
-                            3 => resolved_radii.get(&row.key).copied(),
+                            VariableType::U | VariableType::V => {
+                                resolved_coordinates.get(&row.key).and_then(|point| {
+                                    point[usize::from(row.variable_type == VariableType::V)]
+                                })
+                            }
+                            VariableType::Radius => resolved_radii.get(&row.key).copied(),
                             _ => resolved_scalars.get(&(row.variable_type, row.key)).copied(),
                         };
                         (
                             all + usize::from(resolved.is_some()),
                             coordinates
                                 + usize::from(
-                                    matches!(row.variable_type, 1 | 2) && resolved.is_some(),
+                                    matches!(row.variable_type, VariableType::U | VariableType::V)
+                                        && resolved.is_some(),
                                 ),
                             other
                                 + usize::from(
-                                    !matches!(row.variable_type, 1 | 2) && resolved.is_some(),
+                                    !matches!(row.variable_type, VariableType::U | VariableType::V)
+                                        && resolved.is_some(),
                                 ),
                         )
                     },

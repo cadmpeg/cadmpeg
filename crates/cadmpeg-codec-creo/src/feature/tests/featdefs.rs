@@ -247,22 +247,28 @@ fn scan_decodes_featdefs_var_arr_section_points() {
     assert_eq!(variables.declared_count, 2);
     assert_eq!(variables.entity_ref, Some(1));
     assert_eq!(variables.rows.len(), 2);
-    assert_eq!(variables.rows[0].value, Some(1.0));
+    assert_eq!(
+        variables.rows[0].value,
+        crate::feature::definitions::ScalarLane::Value(1.0)
+    );
     assert_eq!(variables.rows[0].value_body, [0xe4]);
     assert_eq!(variables.rows[0].guess_body, [0x0f]);
     assert_eq!(variables.rows[0].known, Some(1));
     assert_eq!(variables.rows[0].homogeneity, Some(0));
     assert_eq!(variables.rows[0].uvar_id, Some(3));
-    assert_eq!(variables.rows[1].value, Some(3.0));
+    assert_eq!(
+        variables.rows[1].value,
+        crate::feature::definitions::ScalarLane::Value(3.0)
+    );
     assert_eq!(variables.rows[1].value_body, [0x46, 0x08, 0, 0, 0, 0, 0, 0]);
     assert_eq!(variables.rows[1].guess_body, [0x0f]);
     assert_eq!(variables.rows[1].known, Some(1));
     assert_eq!(variables.rows[1].homogeneity, Some(0));
     assert_eq!(variables.rows[1].uvar_id, Some(4));
-    assert_eq!(variables.points.len(), 1);
-    assert_eq!(variables.points[0].point_id, 7);
-    assert_eq!(variables.points[0].u, Some(1.0));
-    assert_eq!(variables.points[0].v, Some(3.0));
+    assert_eq!(variables.points().len(), 1);
+    assert_eq!(variables.points()[0].point_id, 7);
+    assert_eq!(variables.points()[0].u, Some(1.0));
+    assert_eq!(variables.points()[0].v, Some(3.0));
 }
 
 #[test]
@@ -279,11 +285,20 @@ fn scan_decodes_featdefs_var_arr_named_prototype_row() {
         .as_ref()
         .expect("var_arr");
     assert_eq!(variables.rows.len(), 1);
-    assert_eq!(variables.rows[0].variable_type, 1);
+    assert_eq!(
+        variables.rows[0].variable_type,
+        crate::feature::definitions::VariableType::U
+    );
     assert_eq!(variables.rows[0].key, 7);
-    assert_eq!(variables.rows[0].value, Some(1.0));
+    assert_eq!(
+        variables.rows[0].value,
+        crate::feature::definitions::ScalarLane::Value(1.0)
+    );
     assert_eq!(variables.rows[0].value_body, [0xe4]);
-    assert_eq!(variables.rows[0].guess, Some(0.0));
+    assert_eq!(
+        variables.rows[0].guess,
+        crate::feature::definitions::ScalarLane::Value(0.0)
+    );
     assert_eq!(variables.rows[0].guess_body, [0x0f]);
     assert_eq!(variables.rows[0].known, Some(1));
     assert_eq!(variables.rows[0].homogeneity, Some(2));
@@ -311,7 +326,10 @@ fn scan_classifies_named_var_arr_guess_sentinel() {
         row.guess_body,
         [0xed, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18]
     );
-    assert!(row.guess_dimension_driven);
+    assert_eq!(
+        row.guess,
+        crate::feature::definitions::ScalarLane::DimensionDriven
+    );
 }
 
 #[test]

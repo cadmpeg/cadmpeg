@@ -108,37 +108,100 @@ fn outline_scalars(payload: &[u8], cache: &scalar::ScalarCache) -> [DecodedField
     })
 }
 
+/// Stored state of a solver scalar token.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ScalarLane {
+    Value(f64),
+    DimensionDriven,
+    Undefined,
+}
+
+impl ScalarLane {
+    pub fn value(self) -> Option<f64> {
+        match self {
+            Self::Value(value) => Some(value),
+            Self::DimensionDriven | Self::Undefined => None,
+        }
+    }
+}
+
+/// Solver-variable class carried by a compact integer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum VariableType {
+    Dimension,
+    U,
+    V,
+    Radius,
+    Parameter,
+    Selector,
+    Result,
+    Auxiliary,
+    Unknown(UnknownVariableType),
+}
+
+/// Unclassified code, constructed only by normalizing the encoded integer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct UnknownVariableType(u32);
+
+impl From<u32> for VariableType {
+    fn from(code: u32) -> Self {
+        match code {
+            0 => Self::Dimension,
+            1 => Self::U,
+            2 => Self::V,
+            3 => Self::Radius,
+            4 => Self::Parameter,
+            5 => Self::Selector,
+            6 => Self::Result,
+            7 => Self::Auxiliary,
+            _ => Self::Unknown(UnknownVariableType(code)),
+        }
+    }
+}
+
+impl VariableType {
+    pub fn code(self) -> u32 {
+        match self {
+            Self::Dimension => 0,
+            Self::U => 1,
+            Self::V => 2,
+            Self::Radius => 3,
+            Self::Parameter => 4,
+            Self::Selector => 5,
+            Self::Result => 6,
+            Self::Auxiliary => 7,
+            Self::Unknown(UnknownVariableType(code)) => code,
+        }
+    }
+}
+
 /// One positional solver-variable row from `var_arr`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FeatureVariableRow {
     /// Variable class: `1` is section `u`, `2` is section `v`, `3` is radius.
-    pub variable_type: u32,
+    pub variable_type: VariableType,
     /// Point or solver-variable key.
     pub key: u32,
     /// Solved value when the scalar token is defined inline.
-    pub value: Option<f64>,
+    pub value: ScalarLane,
     /// Exact encoded scalar body of the stored value.
     pub value_body: Vec<u8>,
     /// Pre-solve estimate when defined inline.
-    pub guess: Option<f64>,
+    pub guess: ScalarLane,
     /// Exact encoded scalar body of the pre-solve estimate.
     pub guess_body: Vec<u8>,
-    /// Whether the pre-solve estimate used the nine-byte dimension-driven
-    /// sentinel.
-    pub guess_dimension_driven: bool,
     /// Stored solver-known flag.
     pub known: Option<u32>,
     /// Stored solver homogeneity class.
     pub homogeneity: Option<u32>,
     /// Solver unknown identifier from the third trailing compact field.
     pub uvar_id: Option<u32>,
-    /// Whether the value used the nine-byte dimension-driven sentinel.
-    pub dimension_driven: bool,
     /// Byte offset of the row in the original stream.
     pub offset: usize,
 }
 
 /// One section-frame point joined from `var_arr` type-1/type-2 rows.
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct FeatureSectionPoint {
     /// Shared variable-row key.
@@ -158,8 +221,6 @@ pub struct FeatureVariableTable {
     pub entity_ref: Option<u32>,
     /// Positional variable rows in stored order.
     pub rows: Vec<FeatureVariableRow>,
-    /// Section points joined by row key.
-    pub points: Vec<FeatureSectionPoint>,
     /// Byte offset of the `var_arr` label in the original stream.
     pub offset: usize,
 }
@@ -170,17 +231,49 @@ impl FeatureVariableTable {
         usize::try_from(self.declared_count).ok() == Some(self.rows.len())
     }
 
+    /// Join unique coordinate rows by point identity.
+    #[cfg(test)]
+    pub fn points(&self) -> Vec<FeatureSectionPoint> {
+        let mut coordinates = BTreeMap::<u32, (Option<f64>, Option<f64>)>::new();
+        for row in self
+            .rows
+            .iter()
+            .filter(|row| matches!(row.variable_type, VariableType::U | VariableType::V))
+        {
+            coordinates.entry(row.key).or_insert((None, None));
+        }
+        for (&point_id, point) in &mut coordinates {
+            let mut u_rows = self
+                .rows
+                .iter()
+                .filter(|row| row.key == point_id && row.variable_type == VariableType::U);
+            let u = u_rows.next();
+            if u_rows.next().is_none() {
+                point.0 = u.and_then(|row| row.value.value());
+            }
+            let mut v_rows = self
+                .rows
+                .iter()
+                .filter(|row| row.key == point_id && row.variable_type == VariableType::V);
+            let v = v_rows.next();
+            if v_rows.next().is_none() {
+                point.1 = v.and_then(|row| row.value.value());
+            }
+        }
+        coordinates
+            .into_iter()
+            .map(|(point_id, (u, v))| FeatureSectionPoint { point_id, u, v })
+            .collect()
+    }
+
     /// Reconcile repeated and complementary section-point rows by identity.
     pub fn reconciled_points(&self) -> (BTreeMap<u32, [Option<f64>; 2]>, BTreeSet<u32>) {
         let point_ids = self
-            .points
+            .rows
             .iter()
-            .map(|point| point.point_id)
-            .chain(
-                self.rows
-                    .iter()
-                    .filter_map(|row| matches!(row.variable_type, 1 | 2).then_some(row.key)),
-            )
+            .filter_map(|row| {
+                matches!(row.variable_type, VariableType::U | VariableType::V).then_some(row.key)
+            })
             .collect::<BTreeSet<_>>();
         let mut points = BTreeMap::new();
         let mut ambiguous = BTreeSet::new();
@@ -188,24 +281,13 @@ impl FeatureVariableTable {
             let mut point = [None; 2];
             let mut conflict = false;
             for coordinate in 0..2 {
-                let variable_type = coordinate as u32 + 1;
-                let raw_rows = self
+                let variable_type = [VariableType::U, VariableType::V][coordinate];
+                let values = self
                     .rows
                     .iter()
                     .filter(|row| row.key == point_id && row.variable_type == variable_type)
+                    .filter_map(|row| row.value.value())
                     .collect::<Vec<_>>();
-                let values = if raw_rows.is_empty() {
-                    self.points
-                        .iter()
-                        .filter(|point| point.point_id == point_id)
-                        .filter_map(|point| [point.u, point.v][coordinate])
-                        .collect::<Vec<_>>()
-                } else {
-                    raw_rows
-                        .into_iter()
-                        .filter_map(|row| row.value)
-                        .collect::<Vec<_>>()
-                };
                 let Some(first) = values.first().copied() else {
                     continue;
                 };
@@ -1351,9 +1433,9 @@ pub(crate) fn decode_variable_scalar(
     offset: usize,
     end: usize,
     cache: &scalar::ScalarCache,
-) -> (Option<f64>, usize, bool) {
+) -> (ScalarLane, usize) {
     let Some(&prefix) = payload.get(offset).filter(|_| offset < end) else {
-        return (None, offset, false);
+        return (ScalarLane::Undefined, offset);
     };
     if matches!(prefix, 0x90 | 0xd7) && offset + 7 <= end {
         let mut raw = [0; 8];
@@ -1363,31 +1445,31 @@ pub(crate) fn decode_variable_scalar(
             &[0xc0, 0x05]
         });
         raw[2..].copy_from_slice(&payload[offset + 1..offset + 7]);
-        return (Some(f64::from_be_bytes(raw)), offset + 7, false);
+        return (ScalarLane::Value(f64::from_be_bytes(raw)), offset + 7);
     }
     if prefix == 0xd5 && offset + 7 <= end {
         let mut raw = [0; 8];
         raw[0] = 0xbf;
         raw[1..7].copy_from_slice(&payload[offset + 1..offset + 7]);
-        return (Some(f64::from_be_bytes(raw)), offset + 7, false);
+        return (ScalarLane::Value(f64::from_be_bytes(raw)), offset + 7);
     }
     if prefix == 0x4f && offset + 7 <= end {
         let mut raw = [0; 8];
         raw[0] = 0x3f;
         raw[1..7].copy_from_slice(&payload[offset + 1..offset + 7]);
-        return (Some(f64::from_be_bytes(raw)), offset + 7, false);
+        return (ScalarLane::Value(f64::from_be_bytes(raw)), offset + 7);
     }
     if matches!(prefix, 0x19 | 0x28 | 0x32 | 0x37 | 0x41) && offset + 8 <= end {
         let mut raw = [0; 8];
         raw[0] = 0x3f;
         raw[1..].copy_from_slice(&payload[offset + 1..offset + 8]);
-        return (Some(f64::from_be_bytes(raw)), offset + 8, false);
+        return (ScalarLane::Value(f64::from_be_bytes(raw)), offset + 8);
     }
     if prefix == 0x31 && offset + 7 <= end {
         let mut raw = [0; 8];
         raw[0] = 0x40;
         raw[1..7].copy_from_slice(&payload[offset + 1..offset + 7]);
-        return (Some(f64::from_be_bytes(raw)), offset + 7, false);
+        return (ScalarLane::Value(f64::from_be_bytes(raw)), offset + 7);
     }
     let variable_dict = match prefix {
         0x51 => Some([0x3f, 0xc6]),
@@ -1411,24 +1493,24 @@ pub(crate) fn decode_variable_scalar(
         let mut raw = [0; 8];
         raw[..2].copy_from_slice(&head);
         raw[2..].copy_from_slice(tail);
-        return (Some(f64::from_be_bytes(raw)), offset + 7, false);
+        return (ScalarLane::Value(f64::from_be_bytes(raw)), offset + 7);
     }
     if prefix == 0x18
         && payload
             .get(offset + 1)
             .is_some_and(|next| matches!(next, 0x18 | 0xe0 | 0xe2 | 0xe3 | 0x10 | 0xe4 | 0xe6))
     {
-        return (Some(0.0), offset + 1, false);
+        return (ScalarLane::Value(0.0), offset + 1);
     }
     if prefix == 0x18 && unresolved_variable_guess_end(payload, offset + 1, end).is_some() {
-        return (Some(0.0), offset + 1, false);
+        return (ScalarLane::Value(0.0), offset + 1);
     }
     if prefix == 0xed && offset + 9 <= end {
-        return (None, offset + 9, true);
+        return (ScalarLane::DimensionDriven, offset + 9);
     }
     decode_parameter_scalar(payload, offset, end, cache)
-        .map_or((None, offset + 1, false), |(value, next)| {
-            (Some(value), next, false)
+        .map_or((ScalarLane::Undefined, offset + 1), |(value, next)| {
+            (ScalarLane::Value(value), next)
         })
 }
 
@@ -1437,17 +1519,17 @@ pub(crate) fn decode_section_coordinate_scalar(
     offset: usize,
     end: usize,
     cache: &scalar::ScalarCache,
-) -> (Option<f64>, usize, bool) {
+) -> (ScalarLane, usize) {
     match payload.get(offset) {
-        Some(0x00 | 0x34) if offset + 3 <= end => return (None, offset + 3, false),
-        Some(0x01) if offset + 4 <= end => return (None, offset + 4, false),
+        Some(0x00 | 0x34) if offset + 3 <= end => return (ScalarLane::Undefined, offset + 3),
+        Some(0x01) if offset + 4 <= end => return (ScalarLane::Undefined, offset + 4),
         _ => {}
     }
     if payload.get(offset) == Some(&0x2d) && offset + 8 <= end {
         let mut raw = [0; 8];
         raw[0] = 0x40;
         raw[1..].copy_from_slice(&payload[offset + 1..offset + 8]);
-        return (Some(f64::from_be_bytes(raw)), offset + 8, false);
+        return (ScalarLane::Value(f64::from_be_bytes(raw)), offset + 8);
     }
     decode_variable_scalar(payload, offset, end, cache)
 }
@@ -1457,7 +1539,7 @@ fn decode_variable_guess(
     offset: usize,
     end: usize,
     cache: &scalar::ScalarCache,
-) -> (Option<f64>, usize, bool) {
+) -> (ScalarLane, usize) {
     if payload.get(offset) == Some(&0x18) {
         let mut trailing = offset + 1;
         let complete_suffix = (0..3).all(|_| {
@@ -1477,13 +1559,13 @@ fn decode_variable_guess(
                     .get(trailing)
                     .is_some_and(|byte| matches!(byte, 0xe0..=0xe3 | 0xf1..=0xf3)))
         {
-            return (Some(0.0), offset + 1, false);
+            return (ScalarLane::Value(0.0), offset + 1);
         }
     }
     let decoded = decode_section_coordinate_scalar(payload, offset, end, cache);
-    if decoded.0.is_none() && !decoded.2 {
+    if decoded.0 == ScalarLane::Undefined {
         if let Some(next) = unresolved_variable_guess_end(payload, offset, end) {
-            return (None, next, false);
+            return (ScalarLane::Undefined, next);
         }
     }
     decoded
@@ -1513,23 +1595,21 @@ pub(crate) fn variable_table(
         let variable_type = named_compact_int(payload, b"type\0", cursor, close)?;
         let key = named_compact_int(payload, b"key\0", cursor, close)?;
         let value_label = find_bytes(payload, b"value\0", cursor, close)? + b"value\0".len();
-        let (value, value_end, dimension_driven) =
+        let (value, value_end) =
             decode_section_coordinate_scalar(payload, value_label, close, cache);
         let guess_label = find_bytes(payload, b"guess\0", cursor, close)? + b"guess\0".len();
-        let (guess, guess_end, guess_dimension_driven) =
+        let (guess, guess_end) =
             decode_section_coordinate_scalar(payload, guess_label, close, cache);
         Some(FeatureVariableRow {
-            variable_type,
+            variable_type: variable_type.into(),
             key,
             value,
             value_body: payload[value_label..value_end].to_vec(),
             guess,
             guess_body: payload[guess_label..guess_end].to_vec(),
-            guess_dimension_driven,
             known: named_compact_int(payload, b"known\0", cursor, close),
             homogeneity: named_compact_int(payload, b"homogeneity\0", cursor, close),
             uvar_id: named_compact_int(payload, b"uvar_id\0", cursor, close),
-            dimension_driven,
             offset: type_label.saturating_sub(2),
         })
     })();
@@ -1559,13 +1639,11 @@ pub(crate) fn variable_table(
         let (key, next) = psb::compact_int(payload, cursor);
         cursor = next;
         let value_start = cursor;
-        let (value, next, dimension_driven) =
-            decode_section_coordinate_scalar(payload, cursor, end, cache);
+        let (value, next) = decode_section_coordinate_scalar(payload, cursor, end, cache);
         cursor = next;
         let value_body = payload[value_start..cursor].to_vec();
         let guess_start = cursor;
-        let (guess, next, guess_dimension_driven) =
-            decode_variable_guess(payload, cursor, end, cache);
+        let (guess, next) = decode_variable_guess(payload, cursor, end, cache);
         cursor = next;
         let guess_body = payload[guess_start..cursor].to_vec();
         let mut trailing = Vec::new();
@@ -1581,17 +1659,15 @@ pub(crate) fn variable_table(
             cursor = next;
         }
         let row = FeatureVariableRow {
-            variable_type,
+            variable_type: variable_type.into(),
             key,
             value,
             value_body,
             guess,
             guess_body,
-            guess_dimension_driven,
             known: trailing.first().copied(),
             homogeneity: trailing.get(1).copied(),
             uvar_id: trailing.get(2).copied(),
-            dimension_driven,
             offset: row_offset,
         };
         let Some(delimiter) = payload[cursor..end].iter().position(|&byte| byte == 0xe2) else {
@@ -1600,50 +1676,12 @@ pub(crate) fn variable_table(
         cursor += delimiter + 1;
         rows.push(row);
     }
-    Some(variable_table_from_rows(
+    Some(FeatureVariableTable {
         declared_count,
         entity_ref,
         rows,
-        table,
-    ))
-}
-
-pub(crate) fn variable_table_from_rows(
-    declared_count: u32,
-    entity_ref: Option<u32>,
-    rows: Vec<FeatureVariableRow>,
-    offset: usize,
-) -> FeatureVariableTable {
-    let mut coordinates = BTreeMap::<u32, (Option<f64>, Option<f64>)>::new();
-    for row in rows.iter().filter(|row| matches!(row.variable_type, 1 | 2)) {
-        coordinates.entry(row.key).or_insert((None, None));
-    }
-    for (&point_id, point) in &mut coordinates {
-        let mut u_rows = rows
-            .iter()
-            .filter(|row| row.key == point_id && row.variable_type == 1);
-        let u = u_rows.next();
-        if u_rows.next().is_none() {
-            point.0 = u.and_then(|row| row.value);
-        }
-        let mut v_rows = rows
-            .iter()
-            .filter(|row| row.key == point_id && row.variable_type == 2);
-        let v = v_rows.next();
-        if v_rows.next().is_none() {
-            point.1 = v.and_then(|row| row.value);
-        }
-    }
-    FeatureVariableTable {
-        declared_count,
-        entity_ref,
-        rows,
-        points: coordinates
-            .into_iter()
-            .map(|(point_id, (u, v))| FeatureSectionPoint { point_id, u, v })
-            .collect(),
-        offset,
-    }
+        offset: table,
+    })
 }
 
 pub(crate) fn positional_variable_table(
@@ -1693,13 +1731,11 @@ pub(crate) fn positional_variable_table(
         let (key, next) = psb::compact_int(payload, cursor);
         cursor = next;
         let value_start = cursor;
-        let (value, next, dimension_driven) =
-            decode_section_coordinate_scalar(payload, cursor, end, cache);
+        let (value, next) = decode_section_coordinate_scalar(payload, cursor, end, cache);
         cursor = next;
         let value_body = payload[value_start..cursor].to_vec();
         let guess_start = cursor;
-        let (guess, next, guess_dimension_driven) =
-            decode_variable_guess(payload, cursor, end, cache);
+        let (guess, next) = decode_variable_guess(payload, cursor, end, cache);
         cursor = next;
         let guess_body = payload[guess_start..cursor].to_vec();
         let mut trailing = Vec::with_capacity(3);
@@ -1715,17 +1751,15 @@ pub(crate) fn positional_variable_table(
             cursor = next;
         }
         let row = FeatureVariableRow {
-            variable_type,
+            variable_type: variable_type.into(),
             key,
             value,
             value_body,
             guess,
             guess_body,
-            guess_dimension_driven,
             known: trailing.first().copied(),
             homogeneity: trailing.get(1).copied(),
             uvar_id: trailing.get(2).copied(),
-            dimension_driven,
             offset: row_offset,
         };
         if rows.len() + 1 < row_limit {
@@ -1745,12 +1779,12 @@ pub(crate) fn positional_variable_table(
         }
         rows.push(row);
     }
-    Some(variable_table_from_rows(
+    Some(FeatureVariableTable {
         declared_count,
-        Some(table_class),
+        entity_ref: Some(table_class),
         rows,
-        table,
-    ))
+        offset: table,
+    })
 }
 
 fn segment_int(payload: &[u8], offset: usize) -> (Option<u32>, usize) {
@@ -3211,14 +3245,14 @@ fn trim_vertex_intersection(
 
 fn resolved_trim_scalar(
     variables: &FeatureVariableTable,
-    variable_type: u32,
+    variable_type: VariableType,
     key: u32,
 ) -> Result<Option<f64>, ()> {
     let values = variables
         .rows
         .iter()
         .filter(|row| row.variable_type == variable_type && row.key == key)
-        .map(|row| row.value)
+        .map(|row| row.value.value())
         .collect::<Vec<_>>();
     if values.is_empty() || values.iter().all(Option::is_none) {
         return Ok(None);
@@ -3280,7 +3314,7 @@ fn trim_radius(
     points: &BTreeMap<u32, [Option<f64>; 2]>,
     variables: &FeatureVariableTable,
 ) -> Option<f64> {
-    let stored = resolved_trim_scalar(variables, 3, segment.radius_ref?).ok()?;
+    let stored = resolved_trim_scalar(variables, VariableType::Radius, segment.radius_ref?).ok()?;
     let endpoint = trim_endpoint_radius(segment, center, points).ok()?;
     let radius = match (stored, endpoint) {
         (Some(stored), Some(endpoint)) => {
@@ -4137,14 +4171,14 @@ fn labeled_dimension(
     let dimension_type = dimension_type?;
     let value_label = find_bytes(payload, b"value\0", after_type, end)?;
     let value_start = value_label + b"value\0".len();
-    let (value, after_value, _) = decode_variable_scalar(payload, value_start, end, cache);
+    let (value, after_value) = decode_variable_scalar(payload, value_start, end, cache);
     let value_body = payload.get(value_start..after_value)?.to_vec();
-    let value = DimensionValue::decoded(value, &value_body);
+    let value = DimensionValue::decoded(value.value(), &value_body);
     let direction_label = find_bytes(payload, b"direct\0", after_value, end)?;
     let direction_byte = *payload.get(direction_label + b"direct\0".len())?;
     let auxiliary_label = find_bytes(payload, b"aux_value\0", direction_label, end)?;
     let auxiliary_start = auxiliary_label + b"aux_value\0".len();
-    let (auxiliary_value, after_auxiliary, _) =
+    let (auxiliary_value, after_auxiliary) =
         decode_variable_scalar(payload, auxiliary_start, end, cache);
     let auxiliary_body = payload.get(auxiliary_start..after_auxiliary)?.to_vec();
     let external_label = find_bytes(payload, b"ext_id\0", after_auxiliary, end)?;
@@ -4155,7 +4189,7 @@ fn labeled_dimension(
         value,
         value_body,
         direction_byte,
-        auxiliary_value,
+        auxiliary_value: auxiliary_value.value(),
         auxiliary_body,
         external_id: external_id?,
         references,
@@ -4172,22 +4206,22 @@ pub(crate) fn positional_dimension(
     let (dimension_type, cursor) = segment_int(payload, start);
     let dimension_type = dimension_type?;
     let value_start = cursor;
-    let (value, cursor, _) = match payload.get(cursor) {
-        Some(0x00) if cursor + 3 <= end => (None, cursor + 3, true),
-        Some(0x01) if cursor + 4 <= end => (None, cursor + 4, true),
-        Some(0x0e) => (Some(-0.5), cursor + 1, false),
-        Some(0x18) => (Some(0.0), cursor + 1, false),
+    let (value, cursor) = match payload.get(cursor) {
+        Some(0x00) if cursor + 3 <= end => (ScalarLane::Undefined, cursor + 3),
+        Some(0x01) if cursor + 4 <= end => (ScalarLane::Undefined, cursor + 4),
+        Some(0x0e) => (ScalarLane::Value(-0.5), cursor + 1),
+        Some(0x18) => (ScalarLane::Value(0.0), cursor + 1),
         _ => decode_variable_scalar(payload, cursor, end, cache),
     };
     let value_body = payload.get(value_start..cursor)?.to_vec();
-    let value = DimensionValue::decoded(value, &value_body);
+    let value = DimensionValue::decoded(value.value(), &value_body);
     let direction_byte = *payload.get(cursor).filter(|_| cursor < end)?;
     let auxiliary_start = cursor + 1;
     let (auxiliary_value, cursor) = if payload.get(auxiliary_start) == Some(&0x18) {
         (Some(0.0), auxiliary_start + 1)
     } else {
-        let (value, next, _) = decode_variable_scalar(payload, auxiliary_start, end, cache);
-        (value, next)
+        let (value, next) = decode_variable_scalar(payload, auxiliary_start, end, cache);
+        (value.value(), next)
     };
     let auxiliary_body = payload.get(auxiliary_start..cursor)?.to_vec();
     let (external_id, _) = segment_int(payload, cursor);
@@ -7029,4 +7063,34 @@ pub fn bind_section_owners(
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+pub(crate) mod test_support;
+
+#[cfg(test)]
+mod tests {
+    use super::VariableType;
+
+    #[test]
+    fn variable_classes_normalize_known_codes_and_preserve_unknown_codes() {
+        for (code, class) in [
+            (0, VariableType::Dimension),
+            (1, VariableType::U),
+            (2, VariableType::V),
+            (3, VariableType::Radius),
+            (4, VariableType::Parameter),
+            (5, VariableType::Selector),
+            (6, VariableType::Result),
+            (7, VariableType::Auxiliary),
+        ] {
+            assert_eq!(VariableType::from(code), class);
+            assert_eq!(class.code(), code);
+        }
+        for code in [8, 255, u32::MAX] {
+            let class = VariableType::from(code);
+            assert!(matches!(class, VariableType::Unknown(_)));
+            assert_eq!(class.code(), code);
+        }
+    }
 }

@@ -1,4 +1,6 @@
 {
+    use crate::feature::definitions::test_support::{with_points, append_points, replace_points};
+    use crate::feature::definitions::{VariableType, ScalarLane};
     let segment = crate::feature::FeatureSegment {
         kind: crate::feature::FeatureSegmentKind::Line([1, 2]),
         directions: [None; 3],
@@ -326,11 +328,12 @@
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
+        variables: Some(with_points(crate::feature::FeatureVariableTable {
             declared_count: 0,
             entity_ref: None,
             rows: Vec::new(),
-            points: vec![
+            offset: 89,
+        }, vec![
                 crate::feature::FeatureSectionPoint {
                     point_id: 1,
                     u: Some(0.0),
@@ -341,9 +344,7 @@
                     u: Some(3.0),
                     v: Some(2.0),
                 },
-            ],
-            offset: 89,
-        }),
+            ])),
         segments: Some(crate::feature::FeatureSegmentTable {
             declared_count: 5,
             has_elided_prototype: false,
@@ -383,11 +384,12 @@
         offset: 0,
     };
     let mut point_row_symmetry = definition.clone();
-    point_row_symmetry.variables = Some(crate::feature::FeatureVariableTable {
+    point_row_symmetry.variables = Some(with_points(crate::feature::FeatureVariableTable {
         declared_count: 0,
         entity_ref: None,
         rows: Vec::new(),
-        points: vec![
+        offset: 90,
+    }, vec![
             crate::feature::FeatureSectionPoint {
                 point_id: 4,
                 u: Some(1.0),
@@ -403,9 +405,7 @@
                 u: None,
                 v: None,
             },
-        ],
-        offset: 90,
-    });
+        ]));
     let segments = point_row_symmetry.segments.as_mut().expect("segments");
     segments.point_rows = vec![
         crate::feature::FeaturePointSegment {
@@ -459,16 +459,11 @@
         Some(&[2.0, 2.0])
     );
     let mut circle_center_symmetry = point_row_symmetry.clone();
-    circle_center_symmetry
-        .variables
-        .as_mut()
-        .expect("variables")
-        .points
-        .push(crate::feature::FeatureSectionPoint {
+    append_points(circle_center_symmetry.variables.as_mut().expect("variables"), vec![crate::feature::FeatureSectionPoint {
             point_id: 8,
             u: Some(0.0),
             v: Some(0.0),
-        });
+        }]);
     let segments = circle_center_symmetry.segments.as_mut().expect("segments");
     segments.circle_rows = vec![crate::feature::FeatureCircleSegment {
         center_id: 8,
@@ -1809,11 +1804,10 @@
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
         }
     );
-    midpoint_definition
+    replace_points(midpoint_definition
         .variables
         .as_mut()
-        .expect("variables")
-        .points = vec![
+        .expect("variables"), vec![
         crate::feature::FeatureSectionPoint {
             point_id: 1,
             u: Some(0.0),
@@ -1829,7 +1823,7 @@
             u: None,
             v: None,
         },
-    ];
+    ]);
     assert_eq!(
         resolved_section_points(&midpoint_definition),
         BTreeMap::from([(1, [0.0, 0.0]), (2, [4.0, 2.0]), (4, [2.0, 1.0])])
@@ -1876,11 +1870,10 @@
         Some(&[2.0, 1.0])
     );
     let mut arc_midpoint_definition = midpoint_definition.clone();
-    arc_midpoint_definition
+    replace_points(arc_midpoint_definition
         .variables
         .as_mut()
-        .expect("variables")
-        .points = vec![
+        .expect("variables"), vec![
         crate::feature::FeatureSectionPoint {
             point_id: 2,
             u: Some(1.0),
@@ -1901,7 +1894,7 @@
             u: None,
             v: None,
         },
-    ];
+    ]);
     arc_midpoint_definition
         .segments
         .as_mut()
@@ -1943,11 +1936,10 @@
         }));
     for (kind, expected_coordinate) in [(12, 1), (13, 0)] {
         let mut arc_alignment_definition = midpoint_definition.clone();
-        arc_alignment_definition
+        replace_points(arc_alignment_definition
             .variables
             .as_mut()
-            .expect("variables")
-            .points = vec![
+            .expect("variables"), vec![
             crate::feature::FeatureSectionPoint {
                 point_id: 2,
                 u: Some(1.0),
@@ -1966,7 +1958,7 @@
                     Some(3.0)
                 },
             },
-        ];
+        ]);
         {
             let alignment_skamps = &mut arc_alignment_definition
                 .relations
@@ -2005,10 +1997,11 @@
         .variables
         .as_mut()
         .expect("variables")
-        .points
-        .last_mut()
+        .rows
+        .iter_mut()
+        .find(|row| row.key == 4 && row.variable_type == VariableType::U)
         .expect("midpoint point")
-        .u = Some(3.0);
+        .value = ScalarLane::Value(3.0);
     assert_eq!(
         resolved_section_coordinates(&midpoint_definition).get(&4),
         Some(&[Some(3.0), Some(1.0)])
@@ -2157,11 +2150,12 @@
         .rows;
     equal_radius_segments[1].radius_ref = Some(101);
     equal_radius_segments[4].radius_ref = Some(102);
-    equal_radius_definition.variables = Some(crate::feature::FeatureVariableTable {
+    equal_radius_definition.variables = Some(with_points(crate::feature::FeatureVariableTable {
         declared_count: 0,
         entity_ref: None,
         rows: Vec::new(),
-        points: vec![
+        offset: 89,
+    }, vec![
             crate::feature::FeatureSectionPoint {
                 point_id: 2,
                 u: Some(3.0),
@@ -2172,9 +2166,7 @@
                 u: Some(0.0),
                 v: Some(0.0),
             },
-        ],
-        offset: 89,
-    });
+        ]));
     assert_eq!(
         resolved_section_radii(&equal_radius_definition),
         BTreeMap::from([(101, 3.0), (102, 3.0)])
@@ -2199,24 +2191,24 @@
         .expect("variables")
         .rows
         .push(crate::feature::FeatureVariableRow {
-            variable_type: 3,
+            variable_type: crate::feature::definitions::VariableType::Radius,
             key: 102,
-            value: Some(4.0),
+            value: crate::feature::definitions::ScalarLane::Value(4.0),
             value_body: Vec::new(),
-            guess: None,
+            guess: crate::feature::definitions::ScalarLane::Undefined,
             guess_body: Vec::new(),
-            guess_dimension_driven: false,
+
             known: None,
             homogeneity: None,
             uvar_id: None,
-            dimension_driven: false,
+
             offset: 91,
         });
     equal_radius_definition
         .variables
         .as_mut()
         .expect("variables")
-        .declared_count = 1;
+        .declared_count += 1;
     assert!(resolved_section_radii(&equal_radius_definition).is_empty());
     let mut saved_radius_definition = definition.clone();
     saved_radius_definition
@@ -2366,16 +2358,11 @@
             ],
             offset: 96,
         }];
-    point_symmetry
-        .variables
-        .as_mut()
-        .expect("variables")
-        .points
-        .push(crate::feature::FeatureSectionPoint {
+    append_points(point_symmetry.variables.as_mut().expect("variables"), vec![crate::feature::FeatureSectionPoint {
             point_id: 4,
             u: Some(2.0),
             v: Some(3.0),
-        });
+        }]);
     synchronize_skamp_count(&mut point_symmetry);
     assert_eq!(
         section_skamp_constraints(&point_symmetry, &SketchId("creo:model:sketch#917".into()))[0]
@@ -3322,18 +3309,14 @@
         .skamps) = vec![center_relation];
     synchronize_skamp_count(&mut center_coincidence);
     let variables = center_coincidence.variables.as_mut().expect("variables");
-    let first_point = variables
-        .points
-        .iter_mut()
-        .find(|point| point.point_id == 1)
-        .expect("line start");
-    first_point.u = None;
-    first_point.v = None;
-    variables.points.push(crate::feature::FeatureSectionPoint {
+    for row in variables.rows.iter_mut().filter(|row| row.key == 1 && matches!(row.variable_type, VariableType::U | VariableType::V)) {
+        row.value = ScalarLane::Undefined;
+    }
+    append_points(variables, vec![crate::feature::FeatureSectionPoint {
         point_id: 4,
         u: Some(8.0),
         v: Some(9.0),
-    });
+    }]);
     assert_eq!(resolved_section_points(&center_coincidence)[&1], [8.0, 9.0]);
     assert_eq!(
         constraints[5].0.definition,
@@ -3494,22 +3477,17 @@
         .variables
         .as_mut()
         .expect("variables")
-        .points
+        .rows
         .iter_mut()
-        .find(|point| point.point_id == 5)
+        .find(|row| row.key == 5 && row.variable_type == VariableType::V)
         .expect("second same-coordinate point")
-        .v = None;
+        .value = ScalarLane::Undefined;
     assert_eq!(
         resolved_section_points(&propagated_same_coordinate).get(&5),
         Some(&[3.0, 2.0])
     );
     let mut unsolved_same_coordinate = definition.clone();
-    unsolved_same_coordinate
-        .variables
-        .as_mut()
-        .expect("variables")
-        .points
-        .clear();
+    replace_points(unsolved_same_coordinate.variables.as_mut().expect("variables"), Vec::new());
     assert_eq!(
         section_skamp_constraints(
             &unsolved_same_coordinate,
@@ -3586,11 +3564,10 @@
         SketchConstraintDefinition::Native { .. }
     ));
     let mut point_coincidence_definition = definition.clone();
-    point_coincidence_definition
+    replace_points(point_coincidence_definition
         .variables
         .as_mut()
-        .expect("variables")
-        .points = vec![
+        .expect("variables"), vec![
         crate::feature::FeatureSectionPoint {
             point_id: 4,
             u: Some(1.0),
@@ -3601,7 +3578,7 @@
             u: None,
             v: Some(2.0),
         },
-    ];
+    ]);
     let point_segment = point_coincidence_definition
         .segments
         .as_mut()
@@ -3663,11 +3640,11 @@
         .variables
         .as_mut()
         .expect("variables")
-        .points
+        .rows
         .iter_mut()
-        .find(|point| point.point_id == 5)
+        .find(|row| row.key == 5 && row.variable_type == VariableType::U)
         .expect("point 5")
-        .u = None;
+        .value = ScalarLane::Undefined;
     unspanned_distance
         .relations
         .as_mut()
@@ -3741,16 +3718,11 @@
         }
     );
     let mut conflicting_spanning_distance = distance_definition.clone();
-    conflicting_spanning_distance
-        .variables
-        .as_mut()
-        .expect("variables")
-        .points
-        .push(crate::feature::FeatureSectionPoint {
+    append_points(conflicting_spanning_distance.variables.as_mut().expect("variables"), vec![crate::feature::FeatureSectionPoint {
             point_id: 2,
             u: Some(4.0),
             v: Some(3.0),
-        });
+        }]);
     assert!(matches!(
         section_dimension_constraints(
             &conflicting_spanning_distance,
@@ -3911,11 +3883,11 @@
         .variables
         .as_mut()
         .expect("variables")
-        .points
+        .rows
         .iter_mut()
-        .find(|point| point.point_id == 5)
+        .find(|row| row.key == 5 && row.variable_type == VariableType::U)
         .expect("point 5")
-        .u = Some(0.0);
+        .value = ScalarLane::Value(0.0);
     assert!(matches!(
         section_dimension_constraints(
             &coincident_point_keys,
@@ -5239,11 +5211,12 @@
             offset: 87,
         });
     synchronize_segment_count(&mut coincident_definition);
-    coincident_definition.variables = Some(crate::feature::FeatureVariableTable {
+    coincident_definition.variables = Some(with_points(crate::feature::FeatureVariableTable {
         declared_count: 0,
         entity_ref: None,
         rows: Vec::new(),
-        points: vec![
+        offset: 0,
+    }, vec![
             crate::feature::FeatureSectionPoint {
                 point_id: 2,
                 u: Some(3.0),
@@ -5274,9 +5247,7 @@
                 u: None,
                 v: None,
             },
-        ],
-        offset: 0,
-    });
+        ]));
     *declared_solver_rows(&mut coincident_definition
         .relations
         .as_mut()
@@ -5422,15 +5393,9 @@
     let duplicate = ambiguous_definition
         .variables
         .as_ref()
-        .and_then(|table| table.points.iter().find(|point| point.point_id == 5))
-        .cloned()
+        .and_then(|table| table.points().into_iter().find(|point| point.point_id == 5))
         .expect("point 5");
-    ambiguous_definition
-        .variables
-        .as_mut()
-        .expect("variables")
-        .points
-        .push(duplicate);
+    append_points(ambiguous_definition.variables.as_mut().expect("variables"), vec![duplicate]);
     assert_eq!(
         resolved_section_points(&ambiguous_definition).get(&5),
         Some(&[3.0, 4.0])
@@ -5439,10 +5404,12 @@
         .variables
         .as_mut()
         .expect("variables")
-        .points
-        .last_mut()
+        .rows
+        .iter_mut()
+        .rev()
+        .find(|row| row.key == 5 && row.variable_type == VariableType::U)
         .expect("duplicate point");
-    complementary.u = Some(3.0);
+    complementary.value = ScalarLane::Value(3.0);
     assert_eq!(
         resolved_section_points(&ambiguous_definition).get(&5),
         Some(&[3.0, 4.0])
@@ -5451,16 +5418,10 @@
     let mut conflicting = conflicting_definition
         .variables
         .as_ref()
-        .and_then(|table| table.points.iter().find(|point| point.point_id == 2))
-        .cloned()
+        .and_then(|table| table.points().into_iter().find(|point| point.point_id == 2))
         .expect("point 2");
     conflicting.u = Some(30.0);
-    conflicting_definition
-        .variables
-        .as_mut()
-        .expect("variables")
-        .points
-        .push(conflicting);
+    append_points(conflicting_definition.variables.as_mut().expect("variables"), vec![conflicting]);
     assert!(!resolved_section_points(&conflicting_definition).contains_key(&2));
     let conflicting_record = sketch_section_point_records(&conflicting_definition)
         .into_iter()
@@ -5485,16 +5446,11 @@
             external_id: 17,
             offset: 90,
         });
-    point_row_type_nine
-        .variables
-        .as_mut()
-        .expect("variables")
-        .points
-        .push(crate::feature::FeatureSectionPoint {
+    append_points(point_row_type_nine.variables.as_mut().expect("variables"), vec![crate::feature::FeatureSectionPoint {
             point_id: 7,
             u: Some(4.0),
             v: None,
-        });
+        }]);
     *declared_solver_rows(&mut point_row_type_nine
         .relations
         .as_mut()
@@ -5663,16 +5619,11 @@
         section_line_fixed_coordinate(&saved_definition, segment),
         Some(1)
     );
-    saved_definition
-        .variables
-        .as_mut()
-        .expect("variables")
-        .points
-        .push(crate::feature::FeatureSectionPoint {
+    append_points(saved_definition.variables.as_mut().expect("variables"), vec![crate::feature::FeatureSectionPoint {
             point_id: 4,
             u: Some(3.0),
             v: None,
-        });
+        }]);
     *declared_solver_rows(&mut saved_definition
         .relations
         .as_mut()
@@ -5710,16 +5661,11 @@
             external_id: 17,
             offset: 94,
         });
-    saved_point_row_type_nine
-        .variables
-        .as_mut()
-        .expect("variables")
-        .points
-        .push(crate::feature::FeatureSectionPoint {
+    append_points(saved_point_row_type_nine.variables.as_mut().expect("variables"), vec![crate::feature::FeatureSectionPoint {
             point_id: 7,
             u: Some(3.0),
             v: None,
-        });
+        }]);
     saved_point_row_type_nine
         .relations
         .as_mut()
@@ -5751,15 +5697,9 @@
         Some(&[Some(3.0), Some(1.0)])
     );
     let mut saved_coincident = saved_definition.clone();
-    for point in &mut saved_coincident
-        .variables
-        .as_mut()
-        .expect("variables")
-        .points
-    {
-        if matches!(point.point_id, 4 | 5) {
-            point.u = None;
-            point.v = None;
+    for row in &mut saved_coincident.variables.as_mut().expect("variables").rows {
+        if matches!(row.key, 4 | 5) && matches!(row.variable_type, VariableType::U | VariableType::V) {
+            row.value = ScalarLane::Undefined;
         }
     }
     *declared_solver_rows(&mut saved_coincident
@@ -5813,16 +5753,9 @@
         BTreeMap::from([(4, [1.0, 1.0]), (5, [0.0, 1.0])])
     );
     let mut saved_symmetric = saved_definition.clone();
-    let point = saved_symmetric
-        .variables
-        .as_mut()
-        .expect("variables")
-        .points
-        .iter_mut()
-        .find(|point| point.point_id == 5)
-        .expect("point 5");
-    point.u = None;
-    point.v = None;
+    for row in saved_symmetric.variables.as_mut().expect("variables").rows.iter_mut().filter(|row| row.key == 5 && matches!(row.variable_type, VariableType::U | VariableType::V)) {
+        row.value = ScalarLane::Undefined;
+    }
     *declared_solver_rows(&mut saved_symmetric
         .relations
         .as_mut()
@@ -5857,11 +5790,11 @@
         .variables
         .as_mut()
         .expect("variables")
-        .points
+        .rows
         .iter_mut()
-        .find(|point| point.point_id == 5)
+        .find(|row| row.key == 5 && row.variable_type == VariableType::V)
         .expect("point 5")
-        .v = None;
+        .value = ScalarLane::Undefined;
     *declared_solver_rows(&mut saved_definition
         .relations
         .as_mut()

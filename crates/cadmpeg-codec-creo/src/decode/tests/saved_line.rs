@@ -22,6 +22,7 @@ use crate::decode::sketch_transfer::{
     unique_saved_section_internal_ids, unique_section_incidence_curve_family,
     unresolved_saved_section_entity, SectionEntityIncidenceFamily,
 };
+use crate::feature::definitions::ScalarLane;
 use cadmpeg_ir::features::{Angle, Length};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -116,11 +117,14 @@ fn saved_line_joins_through_order_table() {
         BTreeSet::from([42])
     );
     let mut coordinate_definition = definition.clone();
-    coordinate_definition.variables = Some(crate::feature::FeatureVariableTable {
-        declared_count: 0,
-        entity_ref: None,
-        rows: Vec::new(),
-        points: vec![
+    coordinate_definition.variables = Some(crate::feature::definitions::test_support::with_points(
+        crate::feature::FeatureVariableTable {
+            declared_count: 0,
+            entity_ref: None,
+            rows: Vec::new(),
+            offset: 30,
+        },
+        vec![
             crate::feature::FeatureSectionPoint {
                 point_id: 7,
                 u: None,
@@ -132,8 +136,7 @@ fn saved_line_joins_through_order_table() {
                 v: None,
             },
         ],
-        offset: 30,
-    });
+    ));
     coordinate_definition.segments = Some(crate::feature::FeatureSegmentTable {
         declared_count: 1,
         has_elided_prototype: false,
@@ -156,8 +159,8 @@ fn saved_line_joins_through_order_table() {
         .variables
         .as_mut()
         .expect("variables")
-        .points[0]
-        .u = Some(7.0);
+        .rows[0]
+        .value = ScalarLane::Value(7.0);
     assert_eq!(
         resolved_section_coordinates(&coordinate_definition),
         BTreeMap::from([(7, [Some(7.0), Some(-0.85)]), (9, [Some(8.0), Some(-0.85)]),])
@@ -1165,17 +1168,19 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
-            declared_count: 0,
-            entity_ref: None,
-            rows: Vec::new(),
-            points: vec![crate::feature::FeatureSectionPoint {
+        variables: Some(crate::feature::definitions::test_support::with_points(
+            crate::feature::FeatureVariableTable {
+                declared_count: 0,
+                entity_ref: None,
+                rows: Vec::new(),
+                offset: 30,
+            },
+            vec![crate::feature::FeatureSectionPoint {
                 point_id: 11,
                 u: None,
                 v: None,
             }],
-            offset: 30,
-        }),
+        )),
         segments: Some(crate::feature::FeatureSegmentTable {
             declared_count: 2,
             has_elided_prototype: false,
@@ -1227,38 +1232,33 @@ fn saved_circle_defines_full_section_geometry_with_incomplete_segment_table() {
     );
     let mut conflicting_radius = definition.clone();
     let variables = conflicting_radius.variables.as_mut().expect("variables");
-    variables.declared_count = 1;
+    variables.declared_count += 1;
     variables.rows.push(crate::feature::FeatureVariableRow {
-        variable_type: 3,
+        variable_type: crate::feature::definitions::VariableType::Radius,
         key: 12,
-        value: Some(5.0),
+        value: crate::feature::definitions::ScalarLane::Value(5.0),
         value_body: Vec::new(),
-        guess: None,
+        guess: crate::feature::definitions::ScalarLane::Undefined,
         guess_body: Vec::new(),
-        guess_dimension_driven: false,
+
         known: None,
         homogeneity: None,
         uvar_id: None,
-        dimension_driven: false,
+
         offset: 33,
     });
     assert!(resolved_section_radii(&conflicting_radius).is_empty());
     let mut conflicting = definition;
-    conflicting.variables.as_mut().expect("variables").points[0].u = Some(3.0);
+    conflicting.variables.as_mut().expect("variables").rows[0].value = ScalarLane::Value(3.0);
     assert_eq!(
         resolved_section_coordinates(&conflicting),
         BTreeMap::from([(11, [Some(3.0), Some(-3.0)])])
     );
-    conflicting
-        .variables
-        .as_mut()
-        .expect("variables")
-        .points
-        .push(crate::feature::FeatureSectionPoint {
-            point_id: 11,
-            u: Some(4.0),
-            v: None,
-        });
+    let variables = conflicting.variables.as_mut().expect("variables");
+    let mut duplicate = variables.rows[0].clone();
+    duplicate.value = ScalarLane::Value(4.0);
+    variables.rows.push(duplicate);
+    variables.declared_count += 1;
     assert!(resolved_section_coordinates(&conflicting).is_empty());
 }
 
@@ -1398,19 +1398,21 @@ fn saved_arc_joins_through_order_table() {
         Some(vec![(7, [0.0, -2.0]), (9, [-2.0, 0.0]), (8, [0.0, 0.0]),])
     );
     let mut coordinate_definition = definition.clone();
-    coordinate_definition.variables = Some(crate::feature::FeatureVariableTable {
-        declared_count: 0,
-        entity_ref: None,
-        rows: Vec::new(),
-        points: [7, 8, 9]
+    coordinate_definition.variables = Some(crate::feature::definitions::test_support::with_points(
+        crate::feature::FeatureVariableTable {
+            declared_count: 0,
+            entity_ref: None,
+            rows: Vec::new(),
+            offset: 30,
+        },
+        [7, 8, 9]
             .map(|point_id| crate::feature::FeatureSectionPoint {
                 point_id,
                 u: None,
                 v: None,
             })
             .to_vec(),
-        offset: 30,
-    });
+    ));
     coordinate_definition.segments = Some(crate::feature::FeatureSegmentTable {
         declared_count: 1,
         has_elided_prototype: false,
@@ -1966,11 +1968,14 @@ fn arc_carriers_use_trim_vertices() {
     let mut var_segment = segment.clone();
     var_segment.radius_ref = Some(10);
     let mut var_arc = definition;
-    var_arc.variables = Some(crate::feature::FeatureVariableTable {
-        declared_count: 0,
-        entity_ref: None,
-        rows: Vec::new(),
-        points: vec![
+    var_arc.variables = Some(crate::feature::definitions::test_support::with_points(
+        crate::feature::FeatureVariableTable {
+            declared_count: 0,
+            entity_ref: None,
+            rows: Vec::new(),
+            offset: 5,
+        },
+        vec![
             crate::feature::FeatureSectionPoint {
                 point_id: 7,
                 u: Some(2.0),
@@ -1987,8 +1992,7 @@ fn arc_carriers_use_trim_vertices() {
                 v: Some(2.0),
             },
         ],
-        offset: 5,
-    });
+    ));
     var_arc.segments = Some(crate::feature::FeatureSegmentTable {
         declared_count: 1,
         has_elided_prototype: false,

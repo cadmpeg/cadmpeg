@@ -15,6 +15,7 @@ use crate::surface::{
 pub(super) mod double_xar;
 
 use crate::container::ContainerScan;
+use crate::feature::definitions::{ScalarLane, VariableType};
 
 use super::coverage::{
     source_section, surface_family, surface_named_parameter_record, surface_prototype_family_name,
@@ -2173,25 +2174,25 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     .iter()
                     .flat_map(|table| &table.rows)
                     .map(|row| CreoSketchVariable {
-                        variable_type: row.variable_type,
+                        variable_type: row.variable_type.code(),
                         key: row.key,
-                        value: row.value,
+                        value: row.value.value(),
                         value_body: row.value_body.clone(),
-                        guess: row.guess,
+                        guess: row.guess.value(),
                         guess_body: row.guess_body.clone(),
-                        guess_dimension_driven: row.guess_dimension_driven,
+                        guess_dimension_driven: row.guess == ScalarLane::DimensionDriven,
                         known: row.known,
                         homogeneity: row.homogeneity,
                         uvar_id: row.uvar_id,
-                        dimension_driven: row.dimension_driven,
+                        dimension_driven: row.value == ScalarLane::DimensionDriven,
                         resolved_value: match row.variable_type {
-                            1 => resolved_coordinates
+                            VariableType::U => resolved_coordinates
                                 .get(&row.key)
                                 .and_then(|point| point[0]),
-                            2 => resolved_coordinates
+                            VariableType::V => resolved_coordinates
                                 .get(&row.key)
                                 .and_then(|point| point[1]),
-                            3 => resolved_radii.get(&row.key).copied(),
+                            VariableType::Radius => resolved_radii.get(&row.key).copied(),
                             _ => resolved_scalars.get(&(row.variable_type, row.key)).copied(),
                         },
                         offset: row.offset,

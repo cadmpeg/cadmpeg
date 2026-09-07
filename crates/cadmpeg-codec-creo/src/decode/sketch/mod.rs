@@ -3,7 +3,7 @@
 
 mod coordinates;
 mod equations_coordinate;
-mod equations_scalar;
+pub(super) mod equations_scalar;
 mod geometry;
 mod intersect;
 mod radii;

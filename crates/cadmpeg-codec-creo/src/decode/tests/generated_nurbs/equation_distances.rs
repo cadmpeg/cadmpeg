@@ -1,21 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::feature::definitions::ScalarLane;
 
 #[test]
 fn equation_function_six_derives_positive_point_distance() {
-    let row = |variable_type, key, value| crate::feature::FeatureVariableRow {
-        variable_type,
+    let row = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
+        variable_type: crate::feature::definitions::VariableType::from(variable_type),
         key,
-        value,
+        value: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
         value_body: Vec::new(),
-        guess: value,
+        guess: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
         guess_body: Vec::new(),
-        guess_dimension_driven: value.is_none(),
+
         known: Some(0),
         homogeneity: Some(1),
         uvar_id: None,
-        dimension_driven: value.is_none(),
+
         offset: 0,
     };
     let definition = |radius| crate::feature::FeatureDefinition {
@@ -39,7 +40,6 @@ fn equation_function_six_derives_positive_point_distance() {
                 row(2, 11, Some(4.0)),
                 row(3, 20, radius),
             ],
-            points: Vec::new(),
             offset: 0,
         }),
         segments: None,
@@ -54,14 +54,16 @@ fn equation_function_six_derives_positive_point_distance() {
     };
 
     assert_eq!(
-        resolved_section_scalar_values(&definition(None)).get(&(3, 20)),
+        resolved_section_scalar_values(&definition(None))
+            .get(&(crate::feature::definitions::VariableType::Radius, 20)),
         Some(&5.0)
     );
     assert_eq!(
         resolved_section_radii(&definition(None)).get(&20),
         Some(&5.0)
     );
-    assert!(!resolved_section_scalar_values(&definition(Some(6.0))).contains_key(&(3, 20)));
+    assert!(!resolved_section_scalar_values(&definition(Some(6.0)))
+        .contains_key(&(crate::feature::definitions::VariableType::Radius, 20)));
     assert_eq!(
         resolved_section_radii(&definition(Some(6.0))).get(&20),
         Some(&6.0)
@@ -74,26 +76,27 @@ fn equation_function_six_derives_positive_point_distance() {
         .expect("variables")
         .rows[..4]
     {
-        row.value = None;
-        row.guess = None;
+        row.value = crate::feature::definitions::ScalarLane::Undefined;
+        row.guess = crate::feature::definitions::ScalarLane::Undefined;
     }
-    assert!(!resolved_section_scalar_values(&stored_without_coordinates).contains_key(&(3, 20)));
+    assert!(!resolved_section_scalar_values(&stored_without_coordinates)
+        .contains_key(&(crate::feature::definitions::VariableType::Radius, 20)));
 }
 
 #[test]
 fn equation_function_forty_three_derives_unique_axis_distance_scalar() {
-    let row = |variable_type, key, value| crate::feature::FeatureVariableRow {
-        variable_type,
+    let row = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
+        variable_type: crate::feature::definitions::VariableType::from(variable_type),
         key,
-        value,
+        value: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
         value_body: Vec::new(),
-        guess: value,
+        guess: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
         guess_body: Vec::new(),
-        guess_dimension_driven: value.is_none(),
+
         known: Some(0),
         homogeneity: Some(1),
         uvar_id: None,
-        dimension_driven: value.is_none(),
+
         offset: 0,
     };
     let definition =
@@ -121,7 +124,6 @@ fn equation_function_forty_three_derives_unique_axis_distance_scalar() {
                     row(0, 20, distance),
                     row(5, 1, Some(0.0)),
                 ],
-                points: Vec::new(),
                 offset: 0,
             }),
             segments: None,
@@ -136,25 +138,26 @@ fn equation_function_forty_three_derives_unique_axis_distance_scalar() {
         };
 
     assert_eq!(
-        resolved_section_scalar_values(&definition([0.0, 0.0], [3.0, 0.0], None)).get(&(0, 20)),
+        resolved_section_scalar_values(&definition([0.0, 0.0], [3.0, 0.0], None))
+            .get(&(crate::feature::definitions::VariableType::Dimension, 20)),
         Some(&3.0)
     );
     assert_eq!(
         resolved_section_scalar_values(&definition([0.0, 0.0], [3.0, 4.0], Some(4.0)))
-            .get(&(0, 20)),
+            .get(&(crate::feature::definitions::VariableType::Dimension, 20)),
         Some(&4.0)
     );
     assert!(
         !resolved_section_scalar_values(&definition([0.0, 0.0], [3.0, 4.0], None))
-            .contains_key(&(0, 20))
+            .contains_key(&(crate::feature::definitions::VariableType::Dimension, 20))
     );
     assert!(
         !resolved_section_scalar_values(&definition([0.0, 0.0], [3.0, 4.0], Some(5.0)))
-            .contains_key(&(0, 20))
+            .contains_key(&(crate::feature::definitions::VariableType::Dimension, 20))
     );
     assert!(
         !resolved_section_scalar_values(&definition([0.0, 0.0], [3.0, 3.0], Some(3.0)))
-            .contains_key(&(0, 20))
+            .contains_key(&(crate::feature::definitions::VariableType::Dimension, 20))
     );
 
     let mut invalid_auxiliary = definition([0.0, 0.0], [3.0, 0.0], None);
@@ -163,27 +166,25 @@ fn equation_function_forty_three_derives_unique_axis_distance_scalar() {
         .as_mut()
         .expect("variables")
         .rows[5]
-        .value = Some(1.0);
-    assert!(!resolved_section_scalar_values(&invalid_auxiliary).contains_key(&(0, 20)));
+        .value = crate::feature::definitions::ScalarLane::Value(1.0);
+    assert!(!resolved_section_scalar_values(&invalid_auxiliary)
+        .contains_key(&(crate::feature::definitions::VariableType::Dimension, 20)));
 }
 
 #[test]
 fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
-    let variable =
-        |variable_type, key, value, dimension_driven| crate::feature::FeatureVariableRow {
-            variable_type,
-            key,
-            value,
-            value_body: Vec::new(),
-            guess: value,
-            guess_body: Vec::new(),
-            guess_dimension_driven: dimension_driven,
-            known: Some(0),
-            homogeneity: Some(1),
-            uvar_id: None,
-            dimension_driven,
-            offset: 0,
-        };
+    let variable = |variable_type, key, value| crate::feature::FeatureVariableRow {
+        variable_type: crate::feature::definitions::VariableType::from(variable_type),
+        key,
+        value,
+        value_body: Vec::new(),
+        guess: value,
+        guess_body: Vec::new(),
+        known: Some(0),
+        homogeneity: Some(1),
+        uvar_id: None,
+        offset: 0,
+    };
     let dimension = |value| crate::feature::FeatureDimension {
         dimension_type: 1,
         value: crate::feature::definitions::DimensionValue::Resolved(value),
@@ -211,13 +212,12 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
             declared_count: 5,
             entity_ref: None,
             rows: vec![
-                variable(1, 1, Some(0.0), false),
-                variable(1, 2, None, true),
-                variable(1, 3, Some(10.0), false),
-                variable(0, 0, Some(5.0), false),
-                variable(0, 1, Some(5.0), false),
+                variable(1, 1, ScalarLane::Value(0.0)),
+                variable(1, 2, ScalarLane::DimensionDriven),
+                variable(1, 3, ScalarLane::Value(10.0)),
+                variable(0, 0, ScalarLane::Value(5.0)),
+                variable(0, 1, ScalarLane::Value(5.0)),
             ],
-            points: Vec::new(),
             offset: 0,
         }),
         segments: None,
@@ -243,24 +243,24 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
 
     let mut dimension_driven = definition.clone();
     let dimension_scalar = &mut dimension_driven.variables.as_mut().expect("variables").rows[3];
-    dimension_scalar.value = None;
-    dimension_scalar.guess = None;
-    dimension_scalar.guess_dimension_driven = true;
-    dimension_scalar.dimension_driven = true;
+    dimension_scalar.value = ScalarLane::DimensionDriven;
+    dimension_scalar.guess = ScalarLane::DimensionDriven;
     assert_eq!(
         resolved_section_coordinates(&dimension_driven).get(&2),
         Some(&[Some(5.0), None])
     );
     assert_eq!(
-        resolved_section_scalar_values(&dimension_driven).get(&(0, 0)),
+        resolved_section_scalar_values(&dimension_driven)
+            .get(&(crate::feature::definitions::VariableType::Dimension, 0)),
         Some(&5.0)
     );
 
     let mut missing_inline = definition.clone();
     let missing_scalar = &mut missing_inline.variables.as_mut().expect("variables").rows[3];
-    missing_scalar.value = None;
-    missing_scalar.guess = None;
-    assert!(!resolved_section_scalar_values(&missing_inline).contains_key(&(0, 0)));
+    missing_scalar.value = ScalarLane::Undefined;
+    missing_scalar.guess = ScalarLane::Undefined;
+    assert!(!resolved_section_scalar_values(&missing_inline)
+        .contains_key(&(crate::feature::definitions::VariableType::Dimension, 0)));
 
     let equation_id = crate::feature::equation_table(&definition.body, 0, definition.body.len())
         .expect("equation table")
@@ -318,18 +318,18 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
 
 #[test]
 fn equation_function_thirty_three_solves_unique_equal_line_length_coordinate() {
-    let row = |variable_type, key, value| crate::feature::FeatureVariableRow {
-        variable_type,
+    let row = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
+        variable_type: crate::feature::definitions::VariableType::from(variable_type),
         key,
-        value,
+        value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
         value_body: Vec::new(),
-        guess: value,
+        guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
         guess_body: Vec::new(),
-        guess_dimension_driven: false,
+
         known: Some(0),
         homogeneity: Some(1),
         uvar_id: None,
-        dimension_driven: false,
+
         offset: 0,
     };
     let definition = crate::feature::FeatureDefinition {
@@ -357,7 +357,6 @@ fn equation_function_thirty_three_solves_unique_equal_line_length_coordinate() {
                 row(2, 4, Some(4.0)),
                 row(7, 5, Some(0.0)),
             ],
-            points: Vec::new(),
             offset: 0,
         }),
         segments: None,
@@ -377,7 +376,8 @@ fn equation_function_thirty_three_solves_unique_equal_line_length_coordinate() {
     );
 
     let mut ambiguous = definition.clone();
-    ambiguous.variables.as_mut().expect("variables").rows[7].value = Some(0.0);
+    ambiguous.variables.as_mut().expect("variables").rows[7].value =
+        crate::feature::definitions::ScalarLane::Value(0.0);
     assert_eq!(
         resolved_section_coordinates(&ambiguous).get(&4),
         Some(&[None, Some(0.0)])
@@ -389,7 +389,7 @@ fn equation_function_thirty_three_solves_unique_equal_line_length_coordinate() {
         .as_mut()
         .expect("variables")
         .rows[8]
-        .value = Some(1.0);
+        .value = crate::feature::definitions::ScalarLane::Value(1.0);
     assert_eq!(
         resolved_section_coordinates(&nonzero_auxiliary).get(&4),
         Some(&[None, Some(4.0)])

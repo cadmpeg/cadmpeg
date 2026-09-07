@@ -10,6 +10,7 @@ use crate::decode::sketch_transfer::{
     section_equation_polar_distance_constraints, section_equation_radius_dimension_constraints,
     section_equation_same_coordinate_constraints, section_equation_unsigned_distance_constraints,
 };
+use crate::feature::definitions::ScalarLane;
 use cadmpeg_ir::features::{Angle, Length, ParameterId};
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinition, SketchCoordinateAxis, SketchDistancePair, SketchEntityId,
@@ -128,18 +129,18 @@ fn equation_native_fallback_retains_untyped_row_slots_and_activity() {
 
 #[test]
 fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() {
-    let row = |variable_type, key, value| crate::feature::FeatureVariableRow {
-        variable_type,
+    let row = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
+        variable_type: crate::feature::definitions::VariableType::from(variable_type),
         key,
-        value,
+        value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
         value_body: Vec::new(),
-        guess: value,
+        guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
         guess_body: Vec::new(),
-        guess_dimension_driven: false,
+
         known: Some(0),
         homogeneity: Some(1),
         uvar_id: None,
-        dimension_driven: false,
+
         offset: 0,
     };
     let point = |external_id, point_id| crate::feature::FeatureSegment {
@@ -177,7 +178,6 @@ fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() 
                 row(2, 2, Some(2.0)),
                 row(7, 1, Some(0.0)),
             ],
-            points: Vec::new(),
             offset: 0,
         }),
         segments: Some(crate::feature::FeatureSegmentTable {
@@ -224,27 +224,32 @@ fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() 
         Some([Some(1.0), Some(2.0)])
     );
 
-    definition.variables.as_mut().expect("variables").rows[3].value = Some(0.25);
+    definition.variables.as_mut().expect("variables").rows[3].value =
+        crate::feature::definitions::ScalarLane::Value(0.25);
     assert!(section_equation_same_coordinate_constraints(&definition, &sketch).is_empty());
     assert_eq!(
         section_equation_native_constraints(&definition, &sketch, &BTreeSet::new()).len(),
         1
     );
 
-    definition.variables.as_mut().expect("variables").rows[3].value = Some(0.0);
-    definition.variables.as_mut().expect("variables").rows[2].value = None;
+    definition.variables.as_mut().expect("variables").rows[3].value =
+        crate::feature::definitions::ScalarLane::Value(0.0);
+    definition.variables.as_mut().expect("variables").rows[2].value =
+        crate::feature::definitions::ScalarLane::Undefined;
     assert!(section_equation_same_coordinate_constraints(&definition, &sketch).is_empty());
-    definition.variables.as_mut().expect("variables").rows[2].value = Some(1.0);
-    definition.variables.as_mut().expect("variables").rows[1].value = Some(0.0);
+    definition.variables.as_mut().expect("variables").rows[2].value =
+        crate::feature::definitions::ScalarLane::Value(1.0);
+    definition.variables.as_mut().expect("variables").rows[1].value =
+        crate::feature::definitions::ScalarLane::Value(0.0);
     assert!(section_equation_same_coordinate_constraints(&definition, &sketch).is_empty());
 
     let rows = &mut definition.variables.as_mut().expect("variables").rows;
-    rows[0].variable_type = 2;
-    rows[1].variable_type = 2;
-    rows[1].value = Some(5.0);
-    rows[2].variable_type = 2;
-    rows[4].variable_type = 1;
-    rows[5].variable_type = 1;
+    rows[0].variable_type = crate::feature::definitions::VariableType::V;
+    rows[1].variable_type = crate::feature::definitions::VariableType::V;
+    rows[1].value = crate::feature::definitions::ScalarLane::Value(5.0);
+    rows[2].variable_type = crate::feature::definitions::VariableType::V;
+    rows[4].variable_type = crate::feature::definitions::VariableType::U;
+    rows[5].variable_type = crate::feature::definitions::VariableType::U;
     let constraints = section_equation_same_coordinate_constraints(&definition, &sketch);
     assert_eq!(constraints.len(), 1);
     assert_eq!(
@@ -267,21 +272,18 @@ fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() 
 
 #[test]
 fn equation_function_two_emits_radius_dimension_constraint_with_incomplete_segment_table() {
-    let variable =
-        |variable_type, key, value, dimension_driven| crate::feature::FeatureVariableRow {
-            variable_type,
-            key,
-            value,
-            value_body: Vec::new(),
-            guess: value,
-            guess_body: Vec::new(),
-            guess_dimension_driven: dimension_driven,
-            known: Some(0),
-            homogeneity: Some(1),
-            uvar_id: None,
-            dimension_driven,
-            offset: 0,
-        };
+    let variable = |variable_type, key, value| crate::feature::FeatureVariableRow {
+        variable_type: crate::feature::definitions::VariableType::from(variable_type),
+        key,
+        value,
+        value_body: Vec::new(),
+        guess: value,
+        guess_body: Vec::new(),
+        known: Some(0),
+        homogeneity: Some(1),
+        uvar_id: None,
+        offset: 0,
+    };
     let definition = crate::feature::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
             schema_id: std::num::NonZeroU32::new(40),
@@ -297,10 +299,9 @@ fn equation_function_two_emits_radius_dimension_constraint_with_incomplete_segme
             declared_count: 2,
             entity_ref: None,
             rows: vec![
-                variable(3, 42, None, true),
-                variable(0, 0, Some(5.0), false),
+                variable(3, 42, ScalarLane::DimensionDriven),
+                variable(0, 0, ScalarLane::Value(5.0)),
             ],
-            points: Vec::new(),
             offset: 0,
         }),
         segments: Some(crate::feature::FeatureSegmentTable {
@@ -405,18 +406,18 @@ fn equation_function_two_emits_radius_dimension_constraint_with_incomplete_segme
 
 #[test]
 fn equation_function_zero_emits_polar_distance_constraint() {
-    let variable = |variable_type, key, value| crate::feature::FeatureVariableRow {
-        variable_type,
+    let variable = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
+        variable_type: crate::feature::definitions::VariableType::from(variable_type),
         key,
-        value,
+        value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
         value_body: Vec::new(),
-        guess: value,
+        guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
         guess_body: Vec::new(),
-        guess_dimension_driven: false,
+
         known: Some(0),
         homogeneity: Some(1),
         uvar_id: None,
-        dimension_driven: false,
+
         offset: 0,
     };
     let line = |external_id, point_ids| crate::feature::FeatureSegment {
@@ -453,7 +454,6 @@ fn equation_function_zero_emits_polar_distance_constraint() {
                 variable(3, 9, Some(2.0)),
                 variable(6, 10, Some(std::f64::consts::FRAC_PI_2)),
             ],
-            points: Vec::new(),
             offset: 0,
         }),
         segments: Some(crate::feature::FeatureSegmentTable {
@@ -503,9 +503,9 @@ fn equation_function_zero_emits_polar_distance_constraint() {
         .to_vec();
     let variables = propagated_polar.variables.as_mut().expect("variables");
     variables.declared_count = 8;
-    variables.rows[2].value = None;
-    variables.rows[3].value = None;
-    variables.rows[5].value = None;
+    variables.rows[2].value = crate::feature::definitions::ScalarLane::Undefined;
+    variables.rows[3].value = crate::feature::definitions::ScalarLane::Undefined;
+    variables.rows[5].value = crate::feature::definitions::ScalarLane::Undefined;
     variables
         .rows
         .push(variable(6, 11, Some(std::f64::consts::FRAC_PI_2)));
@@ -529,7 +529,7 @@ fn equation_function_zero_emits_polar_distance_constraint() {
         .as_mut()
         .expect("variables")
         .rows[5]
-        .value = Some(0.0);
+        .value = crate::feature::definitions::ScalarLane::Value(0.0);
     assert!(
         section_equation_polar_distance_constraints(&conflicting_equality_polar, &sketch)
             .is_empty()
@@ -577,18 +577,18 @@ fn equation_function_zero_emits_polar_distance_constraint() {
 
 #[test]
 fn equation_function_six_emits_fixed_distance_constraint() {
-    let variable = |variable_type, key, value| crate::feature::FeatureVariableRow {
-        variable_type,
+    let variable = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
+        variable_type: crate::feature::definitions::VariableType::from(variable_type),
         key,
-        value,
+        value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
         value_body: Vec::new(),
-        guess: value,
+        guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
         guess_body: Vec::new(),
-        guess_dimension_driven: false,
+
         known: Some(0),
         homogeneity: Some(1),
         uvar_id: None,
-        dimension_driven: false,
+
         offset: 0,
     };
     let line = |external_id, point_ids| crate::feature::FeatureSegment {
@@ -624,7 +624,6 @@ fn equation_function_six_emits_fixed_distance_constraint() {
                 variable(2, 11, Some(4.0)),
                 variable(3, 20, Some(5.0)),
             ],
-            points: Vec::new(),
             offset: 0,
         }),
         segments: Some(crate::feature::FeatureSegmentTable {
@@ -674,10 +673,10 @@ fn equation_function_six_emits_fixed_distance_constraint() {
     let variables = propagated_distance.variables.as_mut().expect("variables");
     variables.declared_count = 6;
     for row in &mut variables.rows[..4] {
-        row.value = None;
-        row.guess = None;
+        row.value = crate::feature::definitions::ScalarLane::Undefined;
+        row.guess = crate::feature::definitions::ScalarLane::Undefined;
     }
-    variables.rows[4].value = None;
+    variables.rows[4].value = crate::feature::definitions::ScalarLane::Undefined;
     variables.rows.push(variable(3, 21, Some(5.0)));
     let propagated_constraints =
         section_equation_function_six_distance_constraints(&propagated_distance, &sketch);
@@ -688,7 +687,7 @@ fn equation_function_six_emits_fixed_distance_constraint() {
         .as_mut()
         .expect("variables")
         .rows[4]
-        .value = Some(4.0);
+        .value = crate::feature::definitions::ScalarLane::Value(4.0);
     assert!(section_equation_function_six_distance_constraints(
         &conflicting_equality_distance,
         &sketch,
@@ -738,18 +737,18 @@ fn equation_function_six_emits_fixed_distance_constraint() {
 
 #[test]
 fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
-    let variable = |variable_type, key, value| crate::feature::FeatureVariableRow {
-        variable_type,
+    let variable = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
+        variable_type: crate::feature::definitions::VariableType::from(variable_type),
         key,
-        value,
+        value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
         value_body: Vec::new(),
-        guess: value,
+        guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
         guess_body: Vec::new(),
-        guess_dimension_driven: false,
+
         known: Some(0),
         homogeneity: Some(1),
         uvar_id: None,
-        dimension_driven: false,
+
         offset: 0,
     };
     let line = |external_id, point_ids| crate::feature::FeatureSegment {
@@ -784,7 +783,6 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
                 variable(1, 11, Some(4.0)),
                 variable(6, 20, Some(2.0)),
             ],
-            points: Vec::new(),
             offset: 0,
         }),
         segments: Some(crate::feature::FeatureSegmentTable {
@@ -835,7 +833,7 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
         .to_vec();
     let variables = propagated_midpoint.variables.as_mut().expect("variables");
     variables.declared_count = 5;
-    variables.rows[2].value = None;
+    variables.rows[2].value = crate::feature::definitions::ScalarLane::Undefined;
     variables.rows.push(variable(6, 21, Some(2.0)));
     variables.rows.push(variable(5, 0, Some(0.0)));
     let propagated_constraints =
@@ -858,8 +856,8 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
         .variables
         .as_mut()
         .expect("variables");
-    variables.rows[2].value = Some(2.0);
-    variables.rows[3].value = Some(3.0);
+    variables.rows[2].value = crate::feature::definitions::ScalarLane::Value(2.0);
+    variables.rows[3].value = crate::feature::definitions::ScalarLane::Value(3.0);
     assert!(
         section_equation_function_forty_two_midpoint_coordinate_constraints(
             &conflicting_equality_midpoint,
@@ -873,7 +871,7 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
         .as_mut()
         .expect("variables")
         .rows[2]
-        .value = Some(3.0);
+        .value = crate::feature::definitions::ScalarLane::Value(3.0);
     assert!(
         section_equation_function_forty_two_midpoint_coordinate_constraints(
             &conflicting_midpoint,
@@ -902,7 +900,6 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
                 variable(6, 20, Some(2.0)),
                 variable(6, 21, Some(1.0)),
             ],
-            points: Vec::new(),
             offset: 0,
         }),
         segments: Some(crate::feature::FeatureSegmentTable {
@@ -951,7 +948,7 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
         .to_vec();
     let variables = propagated_point.variables.as_mut().expect("variables");
     variables.declared_count = 6;
-    variables.rows[2].value = None;
+    variables.rows[2].value = crate::feature::definitions::ScalarLane::Undefined;
     variables.rows.push(variable(6, 22, Some(2.0)));
     variables.rows.push(variable(5, 0, Some(0.0)));
     let propagated_constraints = section_equation_function_thirty_one_point_coordinate_constraints(
@@ -971,8 +968,8 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
         .variables
         .as_mut()
         .expect("variables");
-    variables.rows[2].value = Some(2.0);
-    variables.rows[4].value = Some(3.0);
+    variables.rows[2].value = crate::feature::definitions::ScalarLane::Value(2.0);
+    variables.rows[4].value = crate::feature::definitions::ScalarLane::Value(3.0);
     assert!(
         section_equation_function_thirty_one_point_coordinate_constraints(
             &conflicting_equality_point,
@@ -986,7 +983,7 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
         .as_mut()
         .expect("variables")
         .rows[0]
-        .value = Some(3.0);
+        .value = crate::feature::definitions::ScalarLane::Value(3.0);
     assert!(
         section_equation_function_thirty_one_point_coordinate_constraints(
             &conflicting_point,
@@ -999,17 +996,17 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
 #[test]
 fn equation_function_thirty_three_emits_equal_distance_pairs() {
     let row = |variable_type, key| crate::feature::FeatureVariableRow {
-        variable_type,
+        variable_type: crate::feature::definitions::VariableType::from(variable_type),
         key,
-        value: Some(0.0),
+        value: ScalarLane::Value(0.0),
         value_body: Vec::new(),
-        guess: Some(0.0),
+        guess: ScalarLane::Value(0.0),
         guess_body: Vec::new(),
-        guess_dimension_driven: false,
+
         known: Some(0),
         homogeneity: Some(1),
         uvar_id: None,
-        dimension_driven: false,
+
         offset: 0,
     };
     let line = |external_id, point_ids| crate::feature::FeatureSegment {
@@ -1049,7 +1046,6 @@ fn equation_function_thirty_three_emits_equal_distance_pairs() {
                 row(2, 4),
                 row(7, 0),
             ],
-            points: Vec::new(),
             offset: 0,
         }),
         segments: Some(crate::feature::FeatureSegmentTable {
@@ -1147,18 +1143,18 @@ fn equation_function_thirty_three_emits_equal_distance_pairs() {
 
 #[test]
 fn equation_function_thirty_five_emits_point_on_line() {
-    let row = |variable_type, key, value| crate::feature::FeatureVariableRow {
-        variable_type,
+    let row = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
+        variable_type: crate::feature::definitions::VariableType::from(variable_type),
         key,
-        value,
+        value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
         value_body: Vec::new(),
-        guess: value,
+        guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
         guess_body: Vec::new(),
-        guess_dimension_driven: false,
+
         known: Some(0),
         homogeneity: Some(1),
         uvar_id: None,
-        dimension_driven: false,
+
         offset: 0,
     };
     let segment = |kind, external_id| crate::feature::FeatureSegment {
@@ -1198,7 +1194,6 @@ fn equation_function_thirty_five_emits_point_on_line() {
                 row(5, 0, Some(0.0)),
                 row(5, 1, Some(0.0)),
             ],
-            points: Vec::new(),
             offset: 0,
         }),
         segments: Some(crate::feature::FeatureSegmentTable {
@@ -1308,18 +1303,18 @@ fn equation_function_thirty_five_emits_point_on_line() {
 
 #[test]
 fn equation_function_three_emits_parameterized_coordinate_distance() {
-    let variable = |variable_type, key, value| crate::feature::FeatureVariableRow {
-        variable_type,
+    let variable = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
+        variable_type: crate::feature::definitions::VariableType::from(variable_type),
         key,
-        value,
+        value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
         value_body: Vec::new(),
-        guess: value,
+        guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
         guess_body: Vec::new(),
-        guess_dimension_driven: false,
+
         known: Some(0),
         homogeneity: Some(1),
         uvar_id: None,
-        dimension_driven: false,
+
         offset: 0,
     };
     let dimension = crate::feature::FeatureDimension {
@@ -1352,7 +1347,6 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
                 variable(1, 2, Some(10.0)),
                 variable(0, 0, Some(10.0)),
             ],
-            points: Vec::new(),
             offset: 0,
         }),
         segments: Some(crate::feature::FeatureSegmentTable {
@@ -1413,8 +1407,8 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
 
     let mut vertical = definition.clone();
     let variables = vertical.variables.as_mut().expect("variables");
-    variables.rows[0].variable_type = 2;
-    variables.rows[1].variable_type = 2;
+    variables.rows[0].variable_type = crate::feature::definitions::VariableType::V;
+    variables.rows[1].variable_type = crate::feature::definitions::VariableType::V;
     assert!(matches!(
         section_equation_unsigned_distance_constraints(&vertical, &sketch)[0]
             .0
@@ -1464,18 +1458,18 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
 
 #[test]
 fn equation_function_forty_three_emits_parameterized_axis_distance() {
-    let variable = |variable_type, key, value| crate::feature::FeatureVariableRow {
-        variable_type,
+    let variable = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
+        variable_type: crate::feature::definitions::VariableType::from(variable_type),
         key,
-        value,
+        value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
         value_body: Vec::new(),
-        guess: value,
+        guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
         guess_body: Vec::new(),
-        guess_dimension_driven: false,
+
         known: Some(0),
         homogeneity: Some(1),
         uvar_id: None,
-        dimension_driven: false,
+
         offset: 0,
     };
     let definition = |second: [f64; 2], dimension_value| crate::feature::FeatureDefinition {
@@ -1502,7 +1496,6 @@ fn equation_function_forty_three_emits_parameterized_axis_distance() {
                 variable(0, 0, Some(10.0)),
                 variable(5, 1, Some(0.0)),
             ],
-            points: Vec::new(),
             offset: 0,
         }),
         segments: Some(crate::feature::FeatureSegmentTable {
@@ -1577,10 +1570,8 @@ fn equation_function_forty_three_emits_parameterized_axis_distance() {
 
     let mut missing = definition([10.0, 0.0], 10.0);
     let distance = &mut missing.variables.as_mut().expect("variables").rows[6];
-    distance.value = None;
-    distance.guess = None;
-    distance.guess_dimension_driven = true;
-    distance.dimension_driven = true;
+    distance.value = ScalarLane::DimensionDriven;
+    distance.guess = ScalarLane::DimensionDriven;
     assert_eq!(
         section_equation_axis_distance_constraints(&missing, &sketch).len(),
         1

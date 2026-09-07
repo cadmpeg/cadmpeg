@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resolved section radii and intersection carriers.
 
+use crate::feature::definitions::VariableType;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::features::{Angle, Length};
@@ -57,8 +58,12 @@ pub(crate) fn resolved_section_radii(
         .filter(|table| table.is_complete())
         .flat_map(|table| &table.rows)
     {
-        if row.variable_type == 3 {
-            if let Some(value) = row.value.filter(|value| value.is_finite() && *value > 0.0) {
+        if row.variable_type == VariableType::Radius {
+            if let Some(value) = row
+                .value
+                .value()
+                .filter(|value| value.is_finite() && *value > 0.0)
+            {
                 candidates.entry(row.key).or_default().push(value);
             }
         }
@@ -71,7 +76,7 @@ pub(crate) fn resolved_section_radii(
     for constraint in
         section_equation_radial_constraints(definition, &radial_coordinates, &ambiguous_point_ids)
     {
-        if constraint.radius.0 == 3 {
+        if constraint.radius.0 == VariableType::Radius {
             if let Some(value) = constraint
                 .radius_value
                 .filter(|value| value.is_finite() && *value > 0.0)
@@ -88,7 +93,7 @@ pub(crate) fn resolved_section_radii(
         &radial_coordinates,
         &ambiguous_point_ids,
     ) {
-        if variable.0 == 3 && value.is_finite() && value > 0.0 {
+        if variable.0 == VariableType::Radius && value.is_finite() && value > 0.0 {
             candidates.entry(variable.1).or_default().push(value);
         }
     }
@@ -220,7 +225,9 @@ pub(crate) fn resolved_section_radii(
         for component in section_equation_scalar_equality_components(definition) {
             let radius_ids = component
                 .iter()
-                .filter_map(|&(variable_type, radius_id)| (variable_type == 3).then_some(radius_id))
+                .filter_map(|&(variable_type, radius_id)| {
+                    (variable_type == VariableType::Radius).then_some(radius_id)
+                })
                 .collect::<Vec<_>>();
             if radius_ids.len() != component.len() {
                 continue;
@@ -231,6 +238,7 @@ pub(crate) fn resolved_section_radii(
                         && row.key == radius_id
                         && row
                             .value
+                            .value()
                             .is_some_and(|value| !value.is_finite() || value <= 0.0)
                 })
             });
@@ -776,11 +784,14 @@ mod tests {
             body: Vec::new(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
-            variables: Some(crate::feature::FeatureVariableTable {
-                declared_count: 0,
-                entity_ref: None,
-                rows: Vec::new(),
-                points: vec![
+            variables: Some(crate::feature::definitions::test_support::with_points(
+                crate::feature::FeatureVariableTable {
+                    declared_count: 0,
+                    entity_ref: None,
+                    rows: Vec::new(),
+                    offset: 0,
+                },
+                vec![
                     crate::feature::FeatureSectionPoint {
                         point_id: 1,
                         u: Some(0.0),
@@ -797,8 +808,7 @@ mod tests {
                         v: Some(3.0),
                     },
                 ],
-                offset: 0,
-            }),
+            )),
             segments: Some(crate::feature::FeatureSegmentTable {
                 declared_count: 2,
                 has_elided_prototype: false,

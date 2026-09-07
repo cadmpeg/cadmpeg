@@ -321,7 +321,6 @@ fn incomplete_section_tables_keep_saved_endpoint_witnesses() {
             declared_count: 1,
             entity_ref: None,
             rows: Vec::new(),
-            points: Vec::new(),
             offset: 0,
         }),
         segments: Some(crate::feature::FeatureSegmentTable {
@@ -494,24 +493,27 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
-            declared_count: 1,
-            entity_ref: None,
-            rows: vec![crate::feature::FeatureVariableRow {
-                variable_type: 3,
-                key: 6,
-                value: None,
-                value_body: Vec::new(),
-                guess: None,
-                guess_body: Vec::new(),
-                guess_dimension_driven: false,
-                known: None,
-                homogeneity: None,
-                uvar_id: None,
-                dimension_driven: true,
+        variables: Some(crate::feature::definitions::test_support::with_points(
+            crate::feature::FeatureVariableTable {
+                declared_count: 1,
+                entity_ref: None,
+                rows: vec![crate::feature::FeatureVariableRow {
+                    variable_type: crate::feature::definitions::VariableType::Radius,
+                    key: 6,
+                    value: crate::feature::definitions::ScalarLane::DimensionDriven,
+                    value_body: Vec::new(),
+                    guess: crate::feature::definitions::ScalarLane::Undefined,
+                    guess_body: Vec::new(),
+
+                    known: None,
+                    homogeneity: None,
+                    uvar_id: None,
+
+                    offset: 0,
+                }],
                 offset: 0,
-            }],
-            points: vec![
+            },
+            vec![
                 crate::feature::FeatureSectionPoint {
                     point_id: 1,
                     u: Some(2.0),
@@ -558,8 +560,7 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
                     v: Some(40.0),
                 },
             ],
-            offset: 0,
-        }),
+        )),
         segments: Some(crate::feature::FeatureSegmentTable {
             declared_count: 5,
             has_elided_prototype: false,
@@ -763,12 +764,13 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
     );
 
     let mut saved_endpoint_definition = definition.clone();
-    saved_endpoint_definition
+    let variables = saved_endpoint_definition
         .variables
         .as_mut()
-        .expect("variables")
-        .points
-        .extend([
+        .expect("variables");
+    crate::feature::definitions::test_support::append_points(
+        variables,
+        vec![
             crate::feature::FeatureSectionPoint {
                 point_id: 10,
                 u: None,
@@ -779,7 +781,8 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
                 u: None,
                 v: Some(3.0),
             },
-        ]);
+        ],
+    );
     let segments = saved_endpoint_definition
         .segments
         .as_mut()

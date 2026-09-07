@@ -543,11 +543,14 @@ fn resolves_oblique_reference_from_an_earlier_extruded_line() {
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(FeatureVariableTable {
-            declared_count: 0,
-            entity_ref: None,
-            rows: Vec::new(),
-            points: vec![
+        variables: Some(crate::feature::definitions::test_support::with_points(
+            FeatureVariableTable {
+                declared_count: 0,
+                entity_ref: None,
+                rows: Vec::new(),
+                offset: 10,
+            },
+            vec![
                 FeatureSectionPoint {
                     point_id: 8,
                     u: Some(0.0),
@@ -559,8 +562,7 @@ fn resolves_oblique_reference_from_an_earlier_extruded_line() {
                     v: Some(0.0),
                 },
             ],
-            offset: 10,
-        }),
+        )),
         segments: Some(FeatureSegmentTable {
             declared_count: 1,
             has_elided_prototype: false,
@@ -933,11 +935,14 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(FeatureVariableTable {
-            declared_count: 0,
-            entity_ref: None,
-            rows: Vec::new(),
-            points: vec![
+        variables: Some(crate::feature::definitions::test_support::with_points(
+            FeatureVariableTable {
+                declared_count: 0,
+                entity_ref: None,
+                rows: Vec::new(),
+                offset: 100,
+            },
+            vec![
                 FeatureSectionPoint {
                     point_id: 1,
                     u: Some(-12.5),
@@ -949,8 +954,7 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
                     v: Some(0.0),
                 },
             ],
-            offset: 100,
-        }),
+        )),
         segments: Some(FeatureSegmentTable {
             declared_count: 2,
             has_elided_prototype: false,
@@ -1122,11 +1126,14 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(FeatureVariableTable {
-            declared_count: 0,
-            entity_ref: None,
-            rows: Vec::new(),
-            points: vec![
+        variables: Some(crate::feature::definitions::test_support::with_points(
+            FeatureVariableTable {
+                declared_count: 0,
+                entity_ref: None,
+                rows: Vec::new(),
+                offset: 100,
+            },
+            vec![
                 FeatureSectionPoint {
                     point_id: 1,
                     u: Some(-20.0),
@@ -1148,8 +1155,7 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
                     v: Some(6.0),
                 },
             ],
-            offset: 100,
-        }),
+        )),
         segments: Some(FeatureSegmentTable {
             declared_count: 4,
             has_elided_prototype: false,

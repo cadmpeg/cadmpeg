@@ -810,11 +810,14 @@ mod tests {
             body: Vec::new(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
-            variables: Some(FeatureVariableTable {
-                declared_count: 0,
-                entity_ref: None,
-                rows: Vec::new(),
-                points: vec![
+            variables: Some(crate::feature::definitions::test_support::with_points(
+                FeatureVariableTable {
+                    declared_count: 0,
+                    entity_ref: None,
+                    rows: Vec::new(),
+                    offset: 0,
+                },
+                vec![
                     FeatureSectionPoint {
                         point_id: 1,
                         u: Some(2.0),
@@ -826,8 +829,7 @@ mod tests {
                         v: None,
                     },
                 ],
-                offset: 0,
-            }),
+            )),
             segments: Some(FeatureSegmentTable {
                 declared_count: 3,
                 has_elided_prototype: false,
@@ -1080,18 +1082,22 @@ mod tests {
 
     #[test]
     fn point_on_line_retries_after_auxiliary_reference_coordinates_resolve() {
-        let row = |variable_type, key, value| FeatureVariableRow {
-            variable_type,
+        let row = |variable_type, key, value: Option<f64>| FeatureVariableRow {
+            variable_type: crate::feature::definitions::VariableType::from(variable_type),
             key,
-            value,
+            value: value.map_or(
+                crate::feature::definitions::ScalarLane::Undefined,
+                crate::feature::definitions::ScalarLane::Value,
+            ),
             value_body: Vec::new(),
-            guess: value,
+            guess: value.map_or(
+                crate::feature::definitions::ScalarLane::Undefined,
+                crate::feature::definitions::ScalarLane::Value,
+            ),
             guess_body: Vec::new(),
-            guess_dimension_driven: false,
             known: Some(0),
             homogeneity: Some(1),
             uvar_id: None,
-            dimension_driven: false,
             offset: 0,
         };
         let mut body = b"eqtn_arr\0\xf2\xf8\x04\xf7\x80\x9f\xfb\xe2\
@@ -1126,7 +1132,6 @@ mod tests {
                     row(6, 102, Some(10.0)),
                     row(6, 103, Some(10.0)),
                 ],
-                points: Vec::new(),
                 offset: 0,
             }),
             segments: None,
@@ -1148,18 +1153,22 @@ mod tests {
 
     #[test]
     fn equal_length_retries_after_derived_auxiliary_reference_coordinates_resolve() {
-        let row = |variable_type, key, value| FeatureVariableRow {
-            variable_type,
+        let row = |variable_type, key, value: Option<f64>| FeatureVariableRow {
+            variable_type: crate::feature::definitions::VariableType::from(variable_type),
             key,
-            value,
+            value: value.map_or(
+                crate::feature::definitions::ScalarLane::Undefined,
+                crate::feature::definitions::ScalarLane::Value,
+            ),
             value_body: Vec::new(),
-            guess: value,
+            guess: value.map_or(
+                crate::feature::definitions::ScalarLane::Undefined,
+                crate::feature::definitions::ScalarLane::Value,
+            ),
             guess_body: Vec::new(),
-            guess_dimension_driven: false,
             known: Some(0),
             homogeneity: Some(1),
             uvar_id: None,
-            dimension_driven: false,
             offset: 0,
         };
         let mut body = b"eqtn_arr\0\xf2\xf8\x08\xf7\x80\x9f\xfb\xe2\
@@ -1211,7 +1220,6 @@ mod tests {
                     row(2, 23, Some(6.0)),
                     row(6, 103, None),
                 ],
-                points: Vec::new(),
                 offset: 0,
             }),
             segments: None,
@@ -1233,18 +1241,22 @@ mod tests {
 
     #[test]
     fn derived_auxiliary_values_retry_after_point_on_line_resolution() {
-        let row = |variable_type, key, value| FeatureVariableRow {
-            variable_type,
+        let row = |variable_type, key, value: Option<f64>| FeatureVariableRow {
+            variable_type: crate::feature::definitions::VariableType::from(variable_type),
             key,
-            value,
+            value: value.map_or(
+                crate::feature::definitions::ScalarLane::Undefined,
+                crate::feature::definitions::ScalarLane::Value,
+            ),
             value_body: Vec::new(),
-            guess: value,
+            guess: value.map_or(
+                crate::feature::definitions::ScalarLane::Undefined,
+                crate::feature::definitions::ScalarLane::Value,
+            ),
             guess_body: Vec::new(),
-            guess_dimension_driven: false,
             known: Some(0),
             homogeneity: Some(1),
             uvar_id: None,
-            dimension_driven: false,
             offset: 0,
         };
         let mut body = b"eqtn_arr\0\xf2\xf8\x07\xf7\x80\x9f\xfb\xe2\
@@ -1297,7 +1309,6 @@ mod tests {
                     row(6, 104, None),
                     row(6, 105, Some(0.0)),
                 ],
-                points: Vec::new(),
                 offset: 0,
             }),
             segments: None,
@@ -1319,18 +1330,22 @@ mod tests {
 
     #[test]
     fn derived_auxiliary_values_cross_scalar_equalities() {
-        let row = |variable_type, key, value| FeatureVariableRow {
-            variable_type,
+        let row = |variable_type, key, value: Option<f64>| FeatureVariableRow {
+            variable_type: crate::feature::definitions::VariableType::from(variable_type),
             key,
-            value,
+            value: value.map_or(
+                crate::feature::definitions::ScalarLane::Undefined,
+                crate::feature::definitions::ScalarLane::Value,
+            ),
             value_body: Vec::new(),
-            guess: value,
+            guess: value.map_or(
+                crate::feature::definitions::ScalarLane::Undefined,
+                crate::feature::definitions::ScalarLane::Value,
+            ),
             guess_body: Vec::new(),
-            guess_dimension_driven: false,
             known: Some(0),
             homogeneity: Some(1),
             uvar_id: None,
-            dimension_driven: false,
             offset: 0,
         };
         let mut body = b"eqtn_arr\0\xf2\xf8\x04\xf7\x80\x9f\xfb\xe2\
@@ -1364,7 +1379,6 @@ mod tests {
                     row(1, 30, None),
                     row(2, 30, None),
                 ],
-                points: Vec::new(),
                 offset: 0,
             }),
             segments: None,
@@ -1386,18 +1400,22 @@ mod tests {
 
     #[test]
     fn derived_axis_distance_feeds_equal_radius_polar_constraint() {
-        let row = |variable_type, key, value| FeatureVariableRow {
-            variable_type,
+        let row = |variable_type, key, value: Option<f64>| FeatureVariableRow {
+            variable_type: crate::feature::definitions::VariableType::from(variable_type),
             key,
-            value,
+            value: value.map_or(
+                crate::feature::definitions::ScalarLane::Undefined,
+                crate::feature::definitions::ScalarLane::Value,
+            ),
             value_body: Vec::new(),
-            guess: value,
+            guess: value.map_or(
+                crate::feature::definitions::ScalarLane::Undefined,
+                crate::feature::definitions::ScalarLane::Value,
+            ),
             guess_body: Vec::new(),
-            guess_dimension_driven: false,
             known: Some(0),
             homogeneity: Some(1),
             uvar_id: None,
-            dimension_driven: false,
             offset: 0,
         };
         let mut body = b"eqtn_arr\0\xf2\xf8\x04\xf7\x80\x9f\xfb\xe2\
@@ -1438,7 +1456,6 @@ mod tests {
                     row(2, 40, None),
                     row(4, 3, Some(0.0)),
                 ],
-                points: Vec::new(),
                 offset: 0,
             }),
             segments: None,
@@ -1460,18 +1477,22 @@ mod tests {
 
     #[test]
     fn dimension_driven_radius_feeds_polar_constraint() {
-        let row = |variable_type, key, value| FeatureVariableRow {
-            variable_type,
+        let row = |variable_type, key, value: Option<f64>| FeatureVariableRow {
+            variable_type: crate::feature::definitions::VariableType::from(variable_type),
             key,
-            value,
+            value: value.map_or(
+                crate::feature::definitions::ScalarLane::Undefined,
+                crate::feature::definitions::ScalarLane::Value,
+            ),
             value_body: Vec::new(),
-            guess: value,
+            guess: value.map_or(
+                crate::feature::definitions::ScalarLane::Undefined,
+                crate::feature::definitions::ScalarLane::Value,
+            ),
             guess_body: Vec::new(),
-            guess_dimension_driven: false,
             known: Some(0),
             homogeneity: Some(1),
             uvar_id: None,
-            dimension_driven: false,
             offset: 0,
         };
         let mut body = b"eqtn_arr\0\xf2\xf8\x03\xf7\x80\x9f\xfb\xe2\
@@ -1504,7 +1525,6 @@ mod tests {
                     row(2, 40, None),
                     row(4, 3, Some(0.0)),
                 ],
-                points: Vec::new(),
                 offset: 0,
             }),
             segments: None,
@@ -1533,7 +1553,8 @@ mod tests {
             offset: 0,
         };
 
-        definition.variables.as_mut().expect("variables").rows[1].dimension_driven = true;
+        definition.variables.as_mut().expect("variables").rows[1].value =
+            crate::feature::definitions::ScalarLane::DimensionDriven;
 
         assert_eq!(
             resolved_section_points(&definition).get(&40),
@@ -1543,18 +1564,22 @@ mod tests {
 
     #[test]
     fn relation_dimension_radius_feeds_polar_constraint() {
-        let row = |variable_type, key, value| FeatureVariableRow {
-            variable_type,
+        let row = |variable_type, key, value: Option<f64>| FeatureVariableRow {
+            variable_type: crate::feature::definitions::VariableType::from(variable_type),
             key,
-            value,
+            value: value.map_or(
+                crate::feature::definitions::ScalarLane::Undefined,
+                crate::feature::definitions::ScalarLane::Value,
+            ),
             value_body: Vec::new(),
-            guess: value,
+            guess: value.map_or(
+                crate::feature::definitions::ScalarLane::Undefined,
+                crate::feature::definitions::ScalarLane::Value,
+            ),
             guess_body: Vec::new(),
-            guess_dimension_driven: false,
             known: Some(0),
             homogeneity: Some(1),
             uvar_id: None,
-            dimension_driven: false,
             offset: 0,
         };
         let mut body = b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
@@ -1580,7 +1605,6 @@ mod tests {
                     row(2, 40, None),
                     row(4, 3, Some(0.0)),
                 ],
-                points: Vec::new(),
                 offset: 0,
             }),
             segments: None,
@@ -1635,7 +1659,8 @@ mod tests {
             Some(&[3.0, 1.0])
         );
         assert_eq!(
-            resolved_section_scalar_values(&definition).get(&(3, 42)),
+            resolved_section_scalar_values(&definition)
+                .get(&(crate::feature::definitions::VariableType::Radius, 42)),
             Some(&2.0)
         );
     }

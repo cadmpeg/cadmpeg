@@ -16,11 +16,14 @@ fn saved_spline_definition() -> crate::feature::FeatureDefinition {
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
-            declared_count: 0,
-            entity_ref: None,
-            rows: Vec::new(),
-            points: vec![
+        variables: Some(crate::feature::definitions::test_support::with_points(
+            crate::feature::FeatureVariableTable {
+                declared_count: 0,
+                entity_ref: None,
+                rows: Vec::new(),
+                offset: 0,
+            },
+            vec![
                 crate::feature::FeatureSectionPoint {
                     point_id: 1,
                     u: Some(0.0),
@@ -32,8 +35,7 @@ fn saved_spline_definition() -> crate::feature::FeatureDefinition {
                     v: Some(1.0),
                 },
             ],
-            offset: 0,
-        }),
+        )),
         segments: Some(crate::feature::FeatureSegmentTable {
             declared_count: 1,
             has_elided_prototype: false,

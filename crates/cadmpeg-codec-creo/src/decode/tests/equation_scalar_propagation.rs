@@ -12,21 +12,22 @@ use crate::decode::sketch::{
     section_equation_scalar_seed_values, section_equation_scalar_values_from_coordinates,
     section_equation_unsigned_coordinate_distance_rows,
 };
+use crate::feature::definitions::ScalarLane;
 use std::collections::{BTreeMap, BTreeSet};
 
 fn row(variable_type: u32, key: u32, value: Option<f64>) -> crate::feature::FeatureVariableRow {
     crate::feature::FeatureVariableRow {
-        variable_type,
+        variable_type: crate::feature::definitions::VariableType::from(variable_type),
         key,
-        value,
+        value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
         value_body: Vec::new(),
-        guess: value,
+        guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
         guess_body: Vec::new(),
-        guess_dimension_driven: false,
+
         known: Some(0),
         homogeneity: Some(1),
         uvar_id: None,
-        dimension_driven: false,
+
         offset: 0,
     }
 }
@@ -47,7 +48,6 @@ fn definition(
             declared_count: u32::try_from(rows.len()).expect("variable count"),
             entity_ref: None,
             rows,
-            points: Vec::new(),
             offset: 0,
         }),
         segments: None,
@@ -79,7 +79,9 @@ fn equation_body(rows: &[(u8, u8, &[u8])]) -> Vec<u8> {
     body
 }
 
-fn axis_distance_values(definition: &crate::feature::FeatureDefinition) -> Vec<((u32, u32), f64)> {
+fn axis_distance_values(
+    definition: &crate::feature::FeatureDefinition,
+) -> Vec<((crate::feature::definitions::VariableType, u32), f64)> {
     let ambiguous_point_ids = definition
         .variables
         .as_ref()
@@ -111,10 +113,17 @@ fn function_forty_three_reconciles_scalar_equality_consumers() {
         row(0, 21, Some(4.0)),
     ];
     let propagated = definition(body, rows);
-    assert_eq!(axis_distance_values(&propagated), vec![((0, 20), 4.0)]);
+    assert_eq!(
+        axis_distance_values(&propagated),
+        vec![(
+            (crate::feature::definitions::VariableType::Dimension, 20),
+            4.0
+        )]
+    );
 
     let mut conflicting = propagated.clone();
-    conflicting.variables.as_mut().expect("variables").rows[6].value = Some(5.0);
+    conflicting.variables.as_mut().expect("variables").rows[6].value =
+        crate::feature::definitions::ScalarLane::Value(5.0);
     assert!(axis_distance_values(&conflicting).is_empty());
 
     let invalid_auxiliary_body = b"eqtn_arr\0\xf2\xf8\x04\xf7\x80\x9f\xfb\xe2\
@@ -162,7 +171,10 @@ fn coordinate_derived_axis_distance_propagates_through_scalar_equality() {
     );
     let coordinates = BTreeMap::from([(10, [Some(0.0), Some(0.0)]), (11, [Some(4.0), Some(0.0)])]);
     let derived = section_equation_scalar_values_from_coordinates(&definition, &coordinates);
-    assert_eq!(derived.get(&(0, 20)), Some(&4.0));
+    assert_eq!(
+        derived.get(&(crate::feature::definitions::VariableType::Dimension, 20)),
+        Some(&4.0)
+    );
 
     let mut values = section_equation_scalar_seed_values(&definition);
     for (variable, value) in derived {
@@ -172,7 +184,10 @@ fn coordinate_derived_axis_distance_propagates_through_scalar_equality() {
         &definition,
         &mut values,
     ));
-    assert_eq!(values.get(&(0, 21)), Some(&Some(4.0)));
+    assert_eq!(
+        values.get(&(crate::feature::definitions::VariableType::Dimension, 21)),
+        Some(&Some(4.0))
+    );
 }
 
 #[test]
@@ -198,22 +213,27 @@ fn function_sixteen_reconciles_scalar_equality_consumers() {
         ],
     );
     assert_eq!(
-        section_equation_scalar_seed_values(&propagated).get(&(0, 20)),
+        section_equation_scalar_seed_values(&propagated)
+            .get(&(crate::feature::definitions::VariableType::Dimension, 20)),
         Some(&Some(1.5))
     );
     assert_eq!(
         section_equation_function_sixteen_angle_difference_values(&propagated),
-        vec![((0, 20), 1.5)]
+        vec![(
+            (crate::feature::definitions::VariableType::Dimension, 20),
+            1.5
+        )]
     );
 
     let mut conflicting = propagated.clone();
     let variables = conflicting.variables.as_mut().expect("variables");
-    variables.rows[0].value = Some(2.5);
-    variables.rows[4].value = Some(3.0);
+    variables.rows[0].value = crate::feature::definitions::ScalarLane::Value(2.5);
+    variables.rows[4].value = crate::feature::definitions::ScalarLane::Value(3.0);
     assert!(section_equation_function_sixteen_angle_difference_values(&conflicting).is_empty());
 
     let mut invalid_selector = propagated;
-    invalid_selector.variables.as_mut().expect("variables").rows[7].value = Some(1.0);
+    invalid_selector.variables.as_mut().expect("variables").rows[7].value =
+        crate::feature::definitions::ScalarLane::Value(1.0);
     assert!(
         section_equation_function_sixteen_angle_difference_values(&invalid_selector).is_empty()
     );
@@ -241,7 +261,7 @@ fn zero_sentinel_equations_reconcile_scalar_equalities() {
         .as_mut()
         .expect("variables")
         .rows[2]
-        .value = Some(1.0);
+        .value = crate::feature::definitions::ScalarLane::Value(1.0);
     assert!(
         section_equation_coordinate_equality_rows(&conflicting_thirteen, &BTreeSet::new())
             .is_empty()
@@ -274,7 +294,7 @@ fn zero_sentinel_equations_reconcile_scalar_equalities() {
         .as_mut()
         .expect("variables")
         .rows[8]
-        .value = Some(1.0);
+        .value = crate::feature::definitions::ScalarLane::Value(1.0);
     assert!(section_equation_equal_length_constraint_rows(
         &conflicting_thirty_three,
         &BTreeSet::new()
@@ -312,7 +332,7 @@ fn zero_sentinel_equations_reconcile_scalar_equalities() {
         .as_mut()
         .expect("variables")
         .rows[7]
-        .value = Some(1.0);
+        .value = crate::feature::definitions::ScalarLane::Value(1.0);
     assert!(section_equation_point_on_line_constraint_rows(
         &conflicting_thirty_five,
         &BTreeSet::new()
@@ -332,11 +352,16 @@ fn function_five_accepts_a_zero_selector_proved_by_scalar_equality() {
         ],
     );
     let components = section_equation_scalar_equality_components(&definition);
-    assert!(components
-        .iter()
-        .any(|component| { component == &BTreeSet::from([(6, 10), (6, 11)]) }));
+    assert!(components.iter().any(|component| {
+        component
+            == &BTreeSet::from([
+                (crate::feature::definitions::VariableType::Result, 10),
+                (crate::feature::definitions::VariableType::Result, 11),
+            ])
+    }));
     assert_eq!(
-        section_equation_scalar_equalities(&definition).get(&(6, 10)),
+        section_equation_scalar_equalities(&definition)
+            .get(&(crate::feature::definitions::VariableType::Result, 10)),
         Some(&2.0)
     );
 
@@ -346,8 +371,9 @@ fn function_five_accepts_a_zero_selector_proved_by_scalar_equality() {
         .as_mut()
         .expect("variables")
         .rows[2]
-        .value = Some(1.0);
-    assert!(!section_equation_scalar_equalities(&conflicting_selector).contains_key(&(6, 10)));
+        .value = crate::feature::definitions::ScalarLane::Value(1.0);
+    assert!(!section_equation_scalar_equalities(&conflicting_selector)
+        .contains_key(&(crate::feature::definitions::VariableType::Result, 10)));
 }
 
 #[test]
@@ -357,15 +383,27 @@ fn scalar_equality_propagation_preserves_a_conflicting_source() {
         vec![row(6, 10, Some(f64::NAN)), row(6, 11, Some(2.0))],
     );
     let mut values = section_equation_scalar_seed_values(&definition);
-    assert_eq!(values.get(&(6, 10)), Some(&None));
-    assert_eq!(values.get(&(6, 11)), Some(&Some(2.0)));
+    assert_eq!(
+        values.get(&(crate::feature::definitions::VariableType::Result, 10)),
+        Some(&None)
+    );
+    assert_eq!(
+        values.get(&(crate::feature::definitions::VariableType::Result, 11)),
+        Some(&Some(2.0))
+    );
 
     assert!(propagate_section_equation_scalar_equality_values(
         &definition,
         &mut values,
     ));
-    assert_eq!(values.get(&(6, 10)), Some(&None));
-    assert_eq!(values.get(&(6, 11)), Some(&None));
+    assert_eq!(
+        values.get(&(crate::feature::definitions::VariableType::Result, 10)),
+        Some(&None)
+    );
+    assert_eq!(
+        values.get(&(crate::feature::definitions::VariableType::Result, 11)),
+        Some(&None)
+    );
     assert!(section_equation_scalar_equalities(&definition).is_empty());
 }
 
@@ -380,13 +418,22 @@ fn scalar_equality_propagation_rejects_derived_value_after_finite_row_conflict()
             row(6, 21, Some(3.0)),
         ],
     );
-    let mut values = BTreeMap::from([((6, 20), Some(5.0))]);
+    let mut values = BTreeMap::from([(
+        (crate::feature::definitions::VariableType::Result, 20),
+        Some(5.0),
+    )]);
     assert!(propagate_section_equation_scalar_equality_values(
         &definition,
         &mut values,
     ));
-    assert_eq!(values.get(&(6, 20)), Some(&None));
-    assert_eq!(values.get(&(6, 21)), Some(&None));
+    assert_eq!(
+        values.get(&(crate::feature::definitions::VariableType::Result, 20)),
+        Some(&None)
+    );
+    assert_eq!(
+        values.get(&(crate::feature::definitions::VariableType::Result, 21)),
+        Some(&None)
+    );
     assert!(resolved_section_scalar_values(&definition).is_empty());
 }
 
@@ -439,16 +486,17 @@ fn dimension_equations_accept_scalar_values_proved_by_equality() {
     let mut dimension_driven = coordinate_definition.clone();
     let variables = dimension_driven.variables.as_mut().expect("variables");
     for row in &mut variables.rows[2..] {
-        row.value = None;
-        row.dimension_driven = true;
+        row.value = ScalarLane::DimensionDriven;
     }
     assert_eq!(
-        section_equation_scalar_seed_values(&dimension_driven).get(&(0, 0)),
+        section_equation_scalar_seed_values(&dimension_driven)
+            .get(&(crate::feature::definitions::VariableType::Dimension, 0)),
         Some(&Some(5.0))
     );
 
     let mut conflicting = coordinate_definition;
-    conflicting.variables.as_mut().expect("variables").rows[2].value = Some(4.0);
+    conflicting.variables.as_mut().expect("variables").rows[2].value =
+        crate::feature::definitions::ScalarLane::Value(4.0);
     assert!(
         section_equation_unsigned_coordinate_distance_rows(&conflicting, &BTreeSet::new(),)
             .is_empty()
@@ -496,27 +544,34 @@ fn radius_dimensions_accept_radius_values_proved_by_equality() {
         .expect("variables")
         .rows
         .iter_mut()
-        .for_each(|row| row.dimension_driven = true);
+        .for_each(|row| row.value = ScalarLane::DimensionDriven);
     dimension_driven.dimensions = radius_definition.dimensions.clone();
     let dimensions = section_equation_radius_dimensions(&dimension_driven);
     assert_eq!(dimensions.len(), 1);
     let seeds = section_equation_scalar_seed_values(&dimension_driven);
-    assert_eq!(seeds.get(&(3, 42)), Some(&Some(5.0)));
-    assert_eq!(seeds.get(&(0, 0)), Some(&Some(5.0)));
+    assert_eq!(
+        seeds.get(&(crate::feature::definitions::VariableType::Radius, 42)),
+        Some(&Some(5.0))
+    );
+    assert_eq!(
+        seeds.get(&(crate::feature::definitions::VariableType::Dimension, 0)),
+        Some(&Some(5.0))
+    );
     assert_eq!(
         resolved_section_scalar_values(&dimension_driven)
-            .get(&(3, 42))
+            .get(&(crate::feature::definitions::VariableType::Radius, 42))
             .copied(),
         Some(5.0)
     );
     assert_eq!(
         resolved_section_scalar_values(&dimension_driven)
-            .get(&(0, 0))
+            .get(&(crate::feature::definitions::VariableType::Dimension, 0))
             .copied(),
         Some(5.0)
     );
 
     let mut conflicting = radius_definition;
-    conflicting.variables.as_mut().expect("variables").rows[2].value = Some(6.0);
+    conflicting.variables.as_mut().expect("variables").rows[2].value =
+        crate::feature::definitions::ScalarLane::Value(6.0);
     assert!(section_equation_radius_dimensions(&conflicting).is_empty());
 }

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Section constraint reconciliation, incidence, and dimension emission.
 
+use crate::decode::sketch::equations_scalar::SectionScalarVariable;
+
 use super::super::feature_history::{
     feature_relation_table_complete, resolved_feature_dimension_parameter,
 };
@@ -830,8 +832,9 @@ pub(in super::super) fn section_equation_equal_distance_constraints(
 fn section_equation_radius_dimension_parameters(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
-) -> BTreeMap<(u32, u32), Option<(ParameterId, f64)>> {
-    let mut dimension_parameters = BTreeMap::<(u32, u32), Option<(ParameterId, f64)>>::new();
+) -> BTreeMap<SectionScalarVariable, Option<(ParameterId, f64)>> {
+    let mut dimension_parameters =
+        BTreeMap::<SectionScalarVariable, Option<(ParameterId, f64)>>::new();
     let Some(dimensions) = definition.dimensions.as_ref() else {
         return dimension_parameters;
     };
@@ -868,8 +871,8 @@ fn section_equation_radius_dimension_parameters(
 }
 
 fn section_equation_dimension_parameter(
-    parameters: &BTreeMap<(u32, u32), Option<(ParameterId, f64)>>,
-    variable: (u32, u32),
+    parameters: &BTreeMap<SectionScalarVariable, Option<(ParameterId, f64)>>,
+    variable: SectionScalarVariable,
     value: f64,
 ) -> Option<ParameterId> {
     let Some(Some((parameter, dimension_value))) = parameters.get(&variable) else {
@@ -2024,18 +2027,24 @@ mod tests {
 
     #[test]
     fn direct_angle_difference_transfers_solver_scalar_operands() {
-        let row = |variable_type, key, value| crate::feature::FeatureVariableRow {
-            variable_type,
+        let row = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
+            variable_type: crate::feature::definitions::VariableType::from(variable_type),
             key,
-            value,
+            value: value.map_or(
+                crate::feature::definitions::ScalarLane::DimensionDriven,
+                crate::feature::definitions::ScalarLane::Value,
+            ),
             value_body: Vec::new(),
-            guess: value,
+            guess: value.map_or(
+                crate::feature::definitions::ScalarLane::DimensionDriven,
+                crate::feature::definitions::ScalarLane::Value,
+            ),
             guess_body: Vec::new(),
-            guess_dimension_driven: value.is_none(),
+
             known: Some(0),
             homogeneity: Some(1),
             uvar_id: None,
-            dimension_driven: value.is_none(),
+
             offset: 0,
         };
         let definition = crate::feature::FeatureDefinition {
@@ -2058,7 +2067,6 @@ mod tests {
                     row(0, 20, Some(1.5)),
                     row(5, 0, Some(0.0)),
                 ],
-                points: Vec::new(),
                 offset: 0,
             }),
             segments: None,
@@ -2090,18 +2098,24 @@ mod tests {
 
     #[test]
     fn direct_scalar_equality_transfers_solver_scalar_operands() {
-        let row = |variable_type, key, value| crate::feature::FeatureVariableRow {
-            variable_type,
+        let row = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
+            variable_type: crate::feature::definitions::VariableType::from(variable_type),
             key,
-            value,
+            value: value.map_or(
+                crate::feature::definitions::ScalarLane::DimensionDriven,
+                crate::feature::definitions::ScalarLane::Value,
+            ),
             value_body: Vec::new(),
-            guess: value,
+            guess: value.map_or(
+                crate::feature::definitions::ScalarLane::DimensionDriven,
+                crate::feature::definitions::ScalarLane::Value,
+            ),
             guess_body: Vec::new(),
-            guess_dimension_driven: value.is_none(),
+
             known: Some(0),
             homogeneity: Some(1),
             uvar_id: None,
-            dimension_driven: value.is_none(),
+
             offset: 0,
         };
         let definition = crate::feature::FeatureDefinition {
@@ -2123,7 +2137,6 @@ mod tests {
                     row(6, 11, Some(2.5)),
                     row(5, 20, Some(0.0)),
                 ],
-                points: Vec::new(),
                 offset: 0,
             }),
             segments: None,
@@ -2150,7 +2163,8 @@ mod tests {
         );
 
         let mut conflicting = definition.clone();
-        conflicting.variables.as_mut().expect("variables").rows[1].value = Some(3.5);
+        conflicting.variables.as_mut().expect("variables").rows[1].value =
+            crate::feature::definitions::ScalarLane::Value(3.5);
         assert!(
             section_equation_function_five_scalar_equality_constraints(&conflicting, &sketch,)
                 .is_empty()

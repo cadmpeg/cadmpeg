@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Section-equation coordinate constraints and linear solvers.
 
+use crate::feature::definitions::VariableType;
 use cadmpeg_core::decode::alloc_filled;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -92,14 +93,14 @@ pub(crate) fn section_equation_function_six_distance_rows(
             ) else {
                 return None;
             };
-            if first_u.variable_type != 1
-                || first_v.variable_type != 2
+            if first_u.variable_type != VariableType::U
+                || first_v.variable_type != VariableType::V
                 || first_u.key != first_v.key
-                || second_u.variable_type != 1
-                || second_v.variable_type != 2
+                || second_u.variable_type != VariableType::U
+                || second_v.variable_type != VariableType::V
                 || second_u.key != second_v.key
                 || first_u.key == second_u.key
-                || radius.variable_type != 3
+                || radius.variable_type != VariableType::Radius
                 || ambiguous_point_ids.contains(&first_u.key)
                 || ambiguous_point_ids.contains(&second_u.key)
             {
@@ -110,7 +111,8 @@ pub(crate) fn section_equation_function_six_distance_rows(
                 .copied()
                 .unwrap_or(Ok(None))
                 .ok()?;
-            let radius_value = reconcile_equation_value(radius.value, radius_equality).ok()?;
+            let radius_value =
+                reconcile_equation_value(radius.value.value(), radius_equality).ok()?;
             let stored_distance = radius_value.filter(|value| value.is_finite() && *value > 0.0);
             if radius_value.is_some() && stored_distance.is_none() {
                 return None;
@@ -194,12 +196,14 @@ pub(crate) fn section_equation_dimension_scalar_value(
     if !valid(dimension_value) {
         return None;
     }
-    let scalar_value = reconcile_equation_value(scalar.value, equality_value).ok()?;
+    let scalar_value = reconcile_equation_value(scalar.value.value(), equality_value).ok()?;
     match scalar_value {
         Some(value) if valid(value) && approximately_equal(value, dimension_value) => {
             Some(dimension_value)
         }
-        None if scalar.dimension_driven => Some(dimension_value),
+        None if scalar.value == crate::feature::definitions::ScalarLane::DimensionDriven => {
+            Some(dimension_value)
+        }
         _ => None,
     }
 }
@@ -256,8 +260,8 @@ pub(crate) fn section_equation_unsigned_coordinate_distance_rows(
             let second = variables.rows.get(usize::try_from(*second).ok()?)?;
             let dimension = variables.rows.get(usize::try_from(*dimension).ok()?)?;
             if first.variable_type != second.variable_type
-                || !matches!(first.variable_type, 1 | 2)
-                || dimension.variable_type != 0
+                || !matches!(first.variable_type, VariableType::U | VariableType::V)
+                || dimension.variable_type != VariableType::Dimension
                 || ambiguous_point_ids.contains(&first.key)
                 || ambiguous_point_ids.contains(&second.key)
                 || first.key == second.key
@@ -282,7 +286,7 @@ pub(crate) fn section_equation_unsigned_coordinate_distance_rows(
             Some(SectionUnsignedCoordinateDistance {
                 first: first.key,
                 second: second.key,
-                coordinate: usize::from(first.variable_type == 2),
+                coordinate: usize::from(first.variable_type == VariableType::V),
                 scalar: (dimension.variable_type, dimension.key),
                 value,
                 equation_id: equation.equation_id,
@@ -333,8 +337,8 @@ pub(crate) fn section_equation_radius_dimensions(
             let first = variables.rows.get(usize::try_from(*first).ok()?)?;
             let second = variables.rows.get(usize::try_from(*second).ok()?)?;
             let (radius, scalar) = match (first.variable_type, second.variable_type) {
-                (3, 0) => (first, second),
-                (0, 3) => (second, first),
+                (VariableType::Radius, VariableType::Dimension) => (first, second),
+                (VariableType::Dimension, VariableType::Radius) => (second, first),
                 _ => return None,
             };
             let dimension = dimensions.rows.get(usize::try_from(scalar.key).ok()?)?;
@@ -344,7 +348,8 @@ pub(crate) fn section_equation_radius_dimensions(
                 .copied()
                 .unwrap_or(Ok(None))
                 .ok()?;
-            let radius_value = reconcile_equation_value(radius.value, radius_equality).ok()?;
+            let radius_value =
+                reconcile_equation_value(radius.value.value(), radius_equality).ok()?;
             if dimension.dimension_type != 3
                 || radius_value.is_some_and(|value| {
                     !value.is_finite()
@@ -454,21 +459,21 @@ pub(crate) fn section_equation_point_on_line_constraint_rows(
                 .get(usize::try_from(*line_parameter).ok()?)?;
             let first_zero = variables.rows.get(usize::try_from(*first_zero).ok()?)?;
             let second_zero = variables.rows.get(usize::try_from(*second_zero).ok()?)?;
-            if target_u.variable_type != 1
-                || target_v.variable_type != 2
-                || first_u.variable_type != 1
-                || first_v.variable_type != 2
-                || second_u.variable_type != 1
-                || second_v.variable_type != 2
+            if target_u.variable_type != VariableType::U
+                || target_v.variable_type != VariableType::V
+                || first_u.variable_type != VariableType::U
+                || first_v.variable_type != VariableType::V
+                || second_u.variable_type != VariableType::U
+                || second_v.variable_type != VariableType::V
                 || target_u.key != target_v.key
                 || first_u.key != first_v.key
                 || second_u.key != second_v.key
                 || target_u.key == first_u.key
                 || target_u.key == second_u.key
                 || first_u.key == second_u.key
-                || line_parameter.variable_type != 4
-                || first_zero.variable_type != 5
-                || second_zero.variable_type != 5
+                || line_parameter.variable_type != VariableType::Parameter
+                || first_zero.variable_type != VariableType::Selector
+                || second_zero.variable_type != VariableType::Selector
                 || ambiguous_point_ids.contains(&target_u.key)
                 || ambiguous_point_ids.contains(&first_u.key)
                 || ambiguous_point_ids.contains(&second_u.key)
@@ -481,7 +486,7 @@ pub(crate) fn section_equation_point_on_line_constraint_rows(
                     .copied()
                     .unwrap_or(Ok(None))
                     .ok()?;
-                reconcile_equation_value(row.value, equality_value).ok()?
+                reconcile_equation_value(row.value.value(), equality_value).ok()?
             };
             if zero_value(first_zero) != Some(0.0) || zero_value(second_zero) != Some(0.0) {
                 return None;
@@ -554,15 +559,15 @@ pub(crate) fn section_equation_equal_length_constraint_rows(
             else {
                 return None;
             };
-            if first_u.variable_type != 1
-                || first_v.variable_type != 2
-                || second_u.variable_type != 1
-                || second_v.variable_type != 2
-                || third_u.variable_type != 1
-                || third_v.variable_type != 2
-                || fourth_u.variable_type != 1
-                || fourth_v.variable_type != 2
-                || auxiliary.variable_type != 7
+            if first_u.variable_type != VariableType::U
+                || first_v.variable_type != VariableType::V
+                || second_u.variable_type != VariableType::U
+                || second_v.variable_type != VariableType::V
+                || third_u.variable_type != VariableType::U
+                || third_v.variable_type != VariableType::V
+                || fourth_u.variable_type != VariableType::U
+                || fourth_v.variable_type != VariableType::V
+                || auxiliary.variable_type != VariableType::Auxiliary
                 || first_u.key != first_v.key
                 || second_u.key != second_v.key
                 || third_u.key != third_v.key
@@ -580,7 +585,7 @@ pub(crate) fn section_equation_equal_length_constraint_rows(
                 .copied()
                 .unwrap_or(Ok(None))
                 .ok()?;
-            let auxiliary_value = reconcile_equation_value(auxiliary.value, equality_value).ok()?;
+            let auxiliary_value = reconcile_equation_value(auxiliary.value.value(), equality_value).ok()?;
             if auxiliary_value != Some(0.0) {
                 return None;
             }

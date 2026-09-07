@@ -23,6 +23,7 @@ use crate::decode::sweep::{generated_nurbs_translation_extent, nurbs_translation
 use crate::decode::uniqueness::{
     unique_feature_section_transform, unique_owned_feature_definition,
 };
+use crate::feature::definitions::ScalarLane;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     Angle, ExtrudeExtent, ExtrudeSide, Length, LinearTermination, ParameterId,
@@ -177,35 +178,30 @@ fn equation_function_two_joins_coordinate_rows_by_position() {
             entity_ref: None,
             rows: vec![
                 crate::feature::FeatureVariableRow {
-                    variable_type: 1,
+                    variable_type: crate::feature::definitions::VariableType::U,
                     key: 7,
-                    value: Some(4.0),
+                    value: ScalarLane::Value(4.0),
                     value_body: Vec::new(),
-                    guess: Some(4.0),
+                    guess: ScalarLane::Value(4.0),
                     guess_body: Vec::new(),
-                    guess_dimension_driven: false,
                     known: Some(0),
                     homogeneity: Some(1),
                     uvar_id: Some(10),
-                    dimension_driven: false,
                     offset: 0,
                 },
                 crate::feature::FeatureVariableRow {
-                    variable_type: 1,
+                    variable_type: crate::feature::definitions::VariableType::U,
                     key: 8,
-                    value: None,
+                    value: ScalarLane::DimensionDriven,
                     value_body: Vec::new(),
-                    guess: None,
+                    guess: ScalarLane::DimensionDriven,
                     guess_body: Vec::new(),
-                    guess_dimension_driven: true,
                     known: Some(0),
                     homogeneity: Some(1),
                     uvar_id: Some(20),
-                    dimension_driven: true,
                     offset: 0,
                 },
             ],
-            points: Vec::new(),
             offset: 0,
         }),
         segments: None,
@@ -227,89 +223,28 @@ fn equation_function_two_joins_coordinate_rows_by_position() {
 
 #[test]
 fn equation_function_two_propagates_non_coordinate_scalar_components() {
-    let row = |key, value, dimension_driven| crate::feature::FeatureVariableRow {
-        variable_type: 6,
+    let row = |key, value| crate::feature::FeatureVariableRow {
+        variable_type: crate::feature::definitions::VariableType::Result,
         key,
         value,
         value_body: Vec::new(),
         guess: value,
         guess_body: Vec::new(),
-        guess_dimension_driven: dimension_driven,
         known: Some(0),
         homogeneity: Some(0),
         uvar_id: None,
-        dimension_driven,
-        offset: 0,
-    };
-    let definition = |middle_value, last_value| crate::feature::FeatureDefinition {
-        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
-            schema_id: std::num::NonZeroU32::new(40),
-            owner_feature_id: None,
-        },
-        body: b"eqtn_arr\0\xf2\xf8\x03\xf7\x80\x9f\xfb\xe2\
-                \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
-                \x01\x02\xf8\x02\x00\x01\xf6\xe2\
-                \x02\x02\xf8\x02\x01\x02\xf6\xe2"
-            .to_vec(),
-        parameter_frames: Vec::new(),
-        outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
-            declared_count: 3,
-            entity_ref: None,
-            rows: vec![
-                row(10, None, true),
-                row(11, middle_value, middle_value.is_none()),
-                row(12, last_value, last_value.is_none()),
-            ],
-            points: Vec::new(),
-            offset: 0,
-        }),
-        segments: None,
-        trim_entities: None,
-        trim_vertices: None,
-        order_table: None,
-        section_3d: None,
-        dimensions: None,
-        relations: None,
-        saved_section: None,
-        offset: 0,
-    };
-
-    let resolved = resolved_section_scalar_values(&definition(None, Some(2.5)));
-    assert_eq!(resolved.get(&(6, 10)), Some(&2.5));
-    assert_eq!(resolved.get(&(6, 11)), Some(&2.5));
-    assert_eq!(resolved.get(&(6, 12)), Some(&2.5));
-
-    let conflicting = resolved_section_scalar_values(&definition(Some(2.5), Some(3.5)));
-    assert!(!conflicting.contains_key(&(6, 10)));
-    assert!(!conflicting.contains_key(&(6, 11)));
-}
-
-#[test]
-fn equation_function_five_propagates_direct_type_six_equality() {
-    let row = |variable_type, key, value, dimension_driven| crate::feature::FeatureVariableRow {
-        variable_type,
-        key,
-        value,
-        value_body: Vec::new(),
-        guess: value,
-        guess_body: Vec::new(),
-        guess_dimension_driven: dimension_driven,
-        known: Some(0),
-        homogeneity: Some(0),
-        uvar_id: None,
-        dimension_driven,
         offset: 0,
     };
     let definition =
-        |first_value, second_value, selector_value| crate::feature::FeatureDefinition {
+        |middle_value: Option<f64>, last_value: Option<f64>| crate::feature::FeatureDefinition {
             identity: crate::feature::definitions::DefinitionIdentity::Parsed {
                 schema_id: std::num::NonZeroU32::new(40),
                 owner_feature_id: None,
             },
-            body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
-                    \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
-                    \x01\x05\xf8\x03\x00\x01\x02\xf6\xe2"
+            body: b"eqtn_arr\0\xf2\xf8\x03\xf7\x80\x9f\xfb\xe2\
+                \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
+                \x01\x02\xf8\x02\x00\x01\xf6\xe2\
+                \x02\x02\xf8\x02\x01\x02\xf6\xe2"
                 .to_vec(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
@@ -317,11 +252,16 @@ fn equation_function_five_propagates_direct_type_six_equality() {
                 declared_count: 3,
                 entity_ref: None,
                 rows: vec![
-                    row(6, 10, first_value, first_value.is_none()),
-                    row(6, 11, second_value, second_value.is_none()),
-                    row(5, 0, selector_value, false),
+                    row(10, ScalarLane::DimensionDriven),
+                    row(
+                        11,
+                        middle_value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
+                    ),
+                    row(
+                        12,
+                        last_value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
+                    ),
                 ],
-                points: Vec::new(),
                 offset: 0,
             }),
             segments: None,
@@ -335,36 +275,121 @@ fn equation_function_five_propagates_direct_type_six_equality() {
             offset: 0,
         };
 
-    let resolved = resolved_section_scalar_values(&definition(None, Some(2.5), Some(0.0)));
-    assert_eq!(resolved.get(&(6, 10)), Some(&2.5));
-    assert_eq!(resolved.get(&(6, 11)), Some(&2.5));
+    let resolved = resolved_section_scalar_values(&definition(None, Some(2.5)));
+    assert_eq!(
+        resolved.get(&(crate::feature::definitions::VariableType::Result, 10)),
+        Some(&2.5)
+    );
+    assert_eq!(
+        resolved.get(&(crate::feature::definitions::VariableType::Result, 11)),
+        Some(&2.5)
+    );
+    assert_eq!(
+        resolved.get(&(crate::feature::definitions::VariableType::Result, 12)),
+        Some(&2.5)
+    );
 
-    let conflicting = resolved_section_scalar_values(&definition(Some(2.5), Some(3.5), Some(0.0)));
-    assert!(!conflicting.contains_key(&(6, 10)));
-    assert!(!conflicting.contains_key(&(6, 11)));
-    assert!(
-        !resolved_section_scalar_values(&definition(None, Some(2.5), None)).contains_key(&(6, 10))
-    );
-    assert!(
-        !resolved_section_scalar_values(&definition(None, Some(2.5), Some(1.0)))
-            .contains_key(&(6, 10))
-    );
+    let conflicting = resolved_section_scalar_values(&definition(Some(2.5), Some(3.5)));
+    assert!(!conflicting.contains_key(&(crate::feature::definitions::VariableType::Result, 10)));
+    assert!(!conflicting.contains_key(&(crate::feature::definitions::VariableType::Result, 11)));
 }
 
 #[test]
-fn equation_function_two_propagates_radius_components() {
-    let row = |key, value| crate::feature::FeatureVariableRow {
-        variable_type: 3,
+fn equation_function_five_propagates_direct_type_six_equality() {
+    let row = |variable_type, key, value| crate::feature::FeatureVariableRow {
+        variable_type: crate::feature::definitions::VariableType::from(variable_type),
         key,
         value,
         value_body: Vec::new(),
         guess: value,
         guess_body: Vec::new(),
-        guess_dimension_driven: value.is_none(),
+        known: Some(0),
+        homogeneity: Some(0),
+        uvar_id: None,
+        offset: 0,
+    };
+    let definition =
+        |first_value: Option<f64>, second_value: Option<f64>, selector_value: Option<f64>| {
+            crate::feature::FeatureDefinition {
+                identity: crate::feature::definitions::DefinitionIdentity::Parsed {
+                    schema_id: std::num::NonZeroU32::new(40),
+                    owner_feature_id: None,
+                },
+                body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
+                    \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
+                    \x01\x05\xf8\x03\x00\x01\x02\xf6\xe2"
+                    .to_vec(),
+                parameter_frames: Vec::new(),
+                outlines: Vec::new(),
+                variables: Some(crate::feature::FeatureVariableTable {
+                    declared_count: 3,
+                    entity_ref: None,
+                    rows: vec![
+                        row(
+                            6,
+                            10,
+                            first_value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
+                        ),
+                        row(
+                            6,
+                            11,
+                            second_value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
+                        ),
+                        row(
+                            5,
+                            0,
+                            selector_value.map_or(ScalarLane::Undefined, ScalarLane::Value),
+                        ),
+                    ],
+                    offset: 0,
+                }),
+                segments: None,
+                trim_entities: None,
+                trim_vertices: None,
+                order_table: None,
+                section_3d: None,
+                dimensions: None,
+                relations: None,
+                saved_section: None,
+                offset: 0,
+            }
+        };
+
+    let resolved = resolved_section_scalar_values(&definition(None, Some(2.5), Some(0.0)));
+    assert_eq!(
+        resolved.get(&(crate::feature::definitions::VariableType::Result, 10)),
+        Some(&2.5)
+    );
+    assert_eq!(
+        resolved.get(&(crate::feature::definitions::VariableType::Result, 11)),
+        Some(&2.5)
+    );
+
+    let conflicting = resolved_section_scalar_values(&definition(Some(2.5), Some(3.5), Some(0.0)));
+    assert!(!conflicting.contains_key(&(crate::feature::definitions::VariableType::Result, 10)));
+    assert!(!conflicting.contains_key(&(crate::feature::definitions::VariableType::Result, 11)));
+    assert!(
+        !resolved_section_scalar_values(&definition(None, Some(2.5), None))
+            .contains_key(&(crate::feature::definitions::VariableType::Result, 10))
+    );
+    assert!(
+        !resolved_section_scalar_values(&definition(None, Some(2.5), Some(1.0)))
+            .contains_key(&(crate::feature::definitions::VariableType::Result, 10))
+    );
+}
+
+#[test]
+fn equation_function_two_propagates_radius_components() {
+    let row = |key, value: Option<f64>| crate::feature::FeatureVariableRow {
+        variable_type: crate::feature::definitions::VariableType::Radius,
+        key,
+        value: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
+        value_body: Vec::new(),
+        guess: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
+        guess_body: Vec::new(),
         known: Some(0),
         homogeneity: Some(1),
         uvar_id: None,
-        dimension_driven: value.is_none(),
         offset: 0,
     };
     let definition = |first_value, second_value| crate::feature::FeatureDefinition {
@@ -382,7 +407,6 @@ fn equation_function_two_propagates_radius_components() {
             declared_count: 2,
             entity_ref: None,
             rows: vec![row(42, first_value), row(43, second_value)],
-            points: Vec::new(),
             offset: 0,
         }),
         segments: None,
@@ -422,35 +446,30 @@ fn equation_function_two_binds_radius_row_to_dimension_row() {
             entity_ref: None,
             rows: vec![
                 crate::feature::FeatureVariableRow {
-                    variable_type: 3,
+                    variable_type: crate::feature::definitions::VariableType::Radius,
                     key: 42,
-                    value: None,
+                    value: ScalarLane::DimensionDriven,
                     value_body: Vec::new(),
-                    guess: None,
+                    guess: ScalarLane::DimensionDriven,
                     guess_body: Vec::new(),
-                    guess_dimension_driven: true,
                     known: Some(0),
                     homogeneity: Some(1),
                     uvar_id: Some(7),
-                    dimension_driven: true,
                     offset: 0,
                 },
                 crate::feature::FeatureVariableRow {
-                    variable_type: 0,
+                    variable_type: crate::feature::definitions::VariableType::Dimension,
                     key: 0,
-                    value: Some(5.0),
+                    value: ScalarLane::Value(5.0),
                     value_body: Vec::new(),
-                    guess: Some(5.0),
+                    guess: ScalarLane::Value(5.0),
                     guess_body: Vec::new(),
-                    guess_dimension_driven: false,
                     known: Some(0),
                     homogeneity: Some(0),
                     uvar_id: None,
-                    dimension_driven: false,
                     offset: 0,
                 },
             ],
-            points: Vec::new(),
             offset: 0,
         }),
         segments: None,
@@ -486,23 +505,22 @@ fn equation_function_two_binds_radius_row_to_dimension_row() {
 
     let mut dimension_driven = definition.clone();
     let dimension_scalar = &mut dimension_driven.variables.as_mut().expect("variables").rows[1];
-    dimension_scalar.value = None;
-    dimension_scalar.guess = None;
-    dimension_scalar.guess_dimension_driven = true;
-    dimension_scalar.dimension_driven = true;
+    dimension_scalar.value = ScalarLane::DimensionDriven;
+    dimension_scalar.guess = ScalarLane::DimensionDriven;
     assert_eq!(
         resolved_section_radii(&dimension_driven),
         BTreeMap::from([(42, 5.0)])
     );
     assert_eq!(
-        resolved_section_scalar_values(&dimension_driven).get(&(0, 0)),
+        resolved_section_scalar_values(&dimension_driven)
+            .get(&(crate::feature::definitions::VariableType::Dimension, 0)),
         Some(&5.0)
     );
 
     let mut missing_inline = definition.clone();
     let missing_scalar = &mut missing_inline.variables.as_mut().expect("variables").rows[1];
-    missing_scalar.value = None;
-    missing_scalar.guess = None;
+    missing_scalar.value = ScalarLane::Undefined;
+    missing_scalar.guess = ScalarLane::Undefined;
     assert!(resolved_section_radii(&missing_inline).is_empty());
 
     let mut mismatched = definition;
@@ -517,18 +535,16 @@ fn equation_function_two_binds_radius_row_to_dimension_row() {
 
 #[test]
 fn equation_function_forty_two_transfers_midpoint_coordinates_and_scalar() {
-    let row = |variable_type, key, value| crate::feature::FeatureVariableRow {
-        variable_type,
+    let row = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
+        variable_type: crate::feature::definitions::VariableType::from(variable_type),
         key,
-        value,
+        value: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
         value_body: Vec::new(),
-        guess: value,
+        guess: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
         guess_body: Vec::new(),
-        guess_dimension_driven: value.is_none(),
         known: Some(0),
         homogeneity: Some(1),
         uvar_id: None,
-        dimension_driven: value.is_none(),
         offset: 0,
     };
     let definition = |first, second, midpoint| crate::feature::FeatureDefinition {
@@ -546,7 +562,6 @@ fn equation_function_forty_two_transfers_midpoint_coordinates_and_scalar() {
             declared_count: 3,
             entity_ref: None,
             rows: vec![row(1, 10, first), row(1, 11, second), row(6, 20, midpoint)],
-            points: Vec::new(),
             offset: 0,
         }),
         segments: None,
@@ -565,28 +580,28 @@ fn equation_function_forty_two_transfers_midpoint_coordinates_and_scalar() {
         Some(&[Some(8.0), None])
     );
     assert_eq!(
-        resolved_section_scalar_values(&definition(Some(2.0), Some(8.0), None)).get(&(6, 20)),
+        resolved_section_scalar_values(&definition(Some(2.0), Some(8.0), None))
+            .get(&(crate::feature::definitions::VariableType::Result, 20)),
         Some(&5.0)
     );
 
     let conflicting = definition(Some(2.0), Some(9.0), Some(5.0));
-    assert!(!resolved_section_scalar_values(&conflicting).contains_key(&(6, 20)));
+    assert!(!resolved_section_scalar_values(&conflicting)
+        .contains_key(&(crate::feature::definitions::VariableType::Result, 20)));
 }
 
 #[test]
 fn equation_function_thirty_one_transfers_point_coordinates_and_scalars() {
-    let row = |variable_type, key, value| crate::feature::FeatureVariableRow {
-        variable_type,
+    let row = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
+        variable_type: crate::feature::definitions::VariableType::from(variable_type),
         key,
-        value,
+        value: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
         value_body: Vec::new(),
-        guess: value,
+        guess: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
         guess_body: Vec::new(),
-        guess_dimension_driven: value.is_none(),
         known: Some(0),
         homogeneity: Some(1),
         uvar_id: None,
-        dimension_driven: value.is_none(),
         offset: 0,
     };
     let definition = |u, v, first, second| crate::feature::FeatureDefinition {
@@ -609,7 +624,6 @@ fn equation_function_thirty_one_transfers_point_coordinates_and_scalars() {
                 row(6, 20, first),
                 row(6, 21, second),
             ],
-            points: Vec::new(),
             offset: 0,
         }),
         segments: None,
@@ -633,28 +647,33 @@ fn equation_function_thirty_one_transfers_point_coordinates_and_scalars() {
         Some(&[Some(3.0), Some(4.0)])
     );
     assert_eq!(
-        resolved_section_scalar_values(&partial).get(&(6, 21)),
+        resolved_section_scalar_values(&partial)
+            .get(&(crate::feature::definitions::VariableType::Result, 21)),
         Some(&4.0)
     );
     let resolved = resolved_section_scalar_values(&definition(Some(3.0), Some(4.0), None, None));
-    assert_eq!(resolved.get(&(6, 20)), Some(&3.0));
-    assert_eq!(resolved.get(&(6, 21)), Some(&4.0));
+    assert_eq!(
+        resolved.get(&(crate::feature::definitions::VariableType::Result, 20)),
+        Some(&3.0)
+    );
+    assert_eq!(
+        resolved.get(&(crate::feature::definitions::VariableType::Result, 21)),
+        Some(&4.0)
+    );
 }
 
 #[test]
 fn equation_function_sixteen_derives_direct_angle_difference() {
-    let row = |variable_type, key, value| crate::feature::FeatureVariableRow {
-        variable_type,
+    let row = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
+        variable_type: crate::feature::definitions::VariableType::from(variable_type),
         key,
-        value,
+        value: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
         value_body: Vec::new(),
-        guess: value,
+        guess: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
         guess_body: Vec::new(),
-        guess_dimension_driven: value.is_none(),
         known: Some(0),
         homogeneity: Some(1),
         uvar_id: None,
-        dimension_driven: value.is_none(),
         offset: 0,
     };
     let definition = |first, second, difference, selector| crate::feature::FeatureDefinition {
@@ -677,7 +696,6 @@ fn equation_function_sixteen_derives_direct_angle_difference() {
                 row(0, 20, difference),
                 row(5, 0, selector),
             ],
-            points: Vec::new(),
             offset: 0,
         }),
         segments: None,
@@ -693,12 +711,12 @@ fn equation_function_sixteen_derives_direct_angle_difference() {
 
     assert_eq!(
         resolved_section_scalar_values(&definition(Some(2.5), Some(1.0), None, Some(0.0)))
-            .get(&(0, 20)),
+            .get(&(crate::feature::definitions::VariableType::Dimension, 20)),
         Some(&1.5)
     );
     assert_eq!(
         resolved_section_scalar_values(&definition(Some(2.5), Some(1.0), Some(1.5), Some(0.0),))
-            .get(&(0, 20)),
+            .get(&(crate::feature::definitions::VariableType::Dimension, 20)),
         Some(&1.5)
     );
     assert!(!resolved_section_scalar_values(&definition(
@@ -707,35 +725,33 @@ fn equation_function_sixteen_derives_direct_angle_difference() {
         Some(1.0),
         Some(0.0),
     ))
-    .contains_key(&(0, 20)));
+    .contains_key(&(crate::feature::definitions::VariableType::Dimension, 20)));
     assert!(
         !resolved_section_scalar_values(&definition(Some(2.5), Some(1.0), None, Some(1.0)))
-            .contains_key(&(0, 20))
+            .contains_key(&(crate::feature::definitions::VariableType::Dimension, 20))
     );
     assert!(
         !resolved_section_scalar_values(&definition(Some(1.0), Some(2.5), None, Some(0.0)))
-            .contains_key(&(0, 20))
+            .contains_key(&(crate::feature::definitions::VariableType::Dimension, 20))
     );
     assert!(
         !resolved_section_scalar_values(&definition(Some(4.0), Some(0.0), None, Some(0.0)))
-            .contains_key(&(0, 20))
+            .contains_key(&(crate::feature::definitions::VariableType::Dimension, 20))
     );
 }
 
 #[test]
 fn equation_function_zero_solves_radial_endpoint_and_opaque_scalars() {
-    let variable = |variable_type, key, value| crate::feature::FeatureVariableRow {
-        variable_type,
+    let variable = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
+        variable_type: crate::feature::definitions::VariableType::from(variable_type),
         key,
-        value,
+        value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
         value_body: Vec::new(),
-        guess: value,
+        guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
         guess_body: Vec::new(),
-        guess_dimension_driven: false,
         known: Some(0),
         homogeneity: Some(1),
         uvar_id: None,
-        dimension_driven: false,
         offset: 0,
     };
     let definition = |second: [Option<f64>; 2], radius: Option<f64>, angle: Option<f64>| {
@@ -761,7 +777,6 @@ fn equation_function_zero_solves_radial_endpoint_and_opaque_scalars() {
                     variable(3, 9, radius),
                     variable(6, 10, angle),
                 ],
-                points: Vec::new(),
                 offset: 0,
             }),
             segments: None,
@@ -784,17 +799,20 @@ fn equation_function_zero_solves_radial_endpoint_and_opaque_scalars() {
     assert!(solved_point[0].abs() <= 1.0e-12);
     assert!((solved_point[1] - 2.0).abs() <= 1.0e-12);
     assert_eq!(
-        resolved_section_scalar_values(&solved).get(&(3, 9)),
+        resolved_section_scalar_values(&solved)
+            .get(&(crate::feature::definitions::VariableType::Radius, 9)),
         Some(&2.0)
     );
     assert_eq!(
-        resolved_section_scalar_values(&solved).get(&(6, 10)),
+        resolved_section_scalar_values(&solved)
+            .get(&(crate::feature::definitions::VariableType::Result, 10)),
         Some(&std::f64::consts::FRAC_PI_2)
     );
 
     let derived_angle = definition([Some(0.0), Some(2.0)], Some(2.0), None);
     assert_eq!(
-        resolved_section_scalar_values(&derived_angle).get(&(6, 10)),
+        resolved_section_scalar_values(&derived_angle)
+            .get(&(crate::feature::definitions::VariableType::Result, 10)),
         Some(&std::f64::consts::FRAC_PI_2)
     );
 
@@ -808,18 +826,16 @@ fn equation_function_zero_solves_radial_endpoint_and_opaque_scalars() {
 
 #[test]
 fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
-    let row = |variable_type, key, value| crate::feature::FeatureVariableRow {
-        variable_type,
+    let row = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
+        variable_type: crate::feature::definitions::VariableType::from(variable_type),
         key,
-        value,
+        value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
         value_body: Vec::new(),
-        guess: value,
+        guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
         guess_body: Vec::new(),
-        guess_dimension_driven: false,
         known: Some(0),
         homogeneity: Some(1),
         uvar_id: None,
-        dimension_driven: false,
         offset: 0,
     };
     let line = |external_id, point_ids| crate::feature::FeatureSegment {
@@ -849,7 +865,6 @@ fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
             declared_count: 3,
             entity_ref: None,
             rows: vec![row(2, 1, Some(4.5)), row(2, 2, None), row(7, 3, Some(0.0))],
-            points: Vec::new(),
             offset: 0,
         }),
         segments: Some(crate::feature::FeatureSegmentTable {
@@ -929,7 +944,7 @@ fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
         .as_mut()
         .expect("variables")
         .rows[2]
-        .value = Some(1.0);
+        .value = crate::feature::definitions::ScalarLane::Value(1.0);
     assert_eq!(
         resolved_section_coordinates(&nonzero_auxiliary).get(&2),
         None
@@ -938,18 +953,16 @@ fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
 
 #[test]
 fn equation_function_thirty_five_solves_point_on_reference_line() {
-    let row = |variable_type, key, value| crate::feature::FeatureVariableRow {
-        variable_type,
+    let row = |variable_type, key, value: Option<f64>| crate::feature::FeatureVariableRow {
+        variable_type: crate::feature::definitions::VariableType::from(variable_type),
         key,
-        value,
+        value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
         value_body: Vec::new(),
-        guess: value,
+        guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
         guess_body: Vec::new(),
-        guess_dimension_driven: false,
         known: Some(0),
         homogeneity: Some(1),
         uvar_id: None,
-        dimension_driven: false,
         offset: 0,
     };
     let definition = crate::feature::FeatureDefinition {
@@ -977,7 +990,6 @@ fn equation_function_thirty_five_solves_point_on_reference_line() {
                 row(5, 0, Some(0.0)),
                 row(5, 1, Some(0.0)),
             ],
-            points: Vec::new(),
             offset: 0,
         }),
         segments: None,
@@ -1164,11 +1176,14 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
-            declared_count: 0,
-            entity_ref: None,
-            rows: Vec::new(),
-            points: vec![
+        variables: Some(crate::feature::definitions::test_support::with_points(
+            crate::feature::FeatureVariableTable {
+                declared_count: 0,
+                entity_ref: None,
+                rows: Vec::new(),
+                offset: 0,
+            },
+            vec![
                 crate::feature::FeatureSectionPoint {
                     point_id: 7,
                     u: Some(2.0),
@@ -1180,8 +1195,7 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
                     v: Some(8.0),
                 },
             ],
-            offset: 0,
-        }),
+        )),
         segments: None,
         trim_entities: None,
         trim_vertices: None,

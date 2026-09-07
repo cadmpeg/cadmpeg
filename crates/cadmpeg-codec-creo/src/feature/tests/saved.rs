@@ -31,34 +31,30 @@ fn decodes_var_arr_dictionary_sign_pairs() {
         ),
     ];
     for (bytes, expected) in cases {
-        let (value, next, dimension_driven) =
-            decode_variable_scalar(&bytes, 0, bytes.len(), &cache);
-        assert_eq!(value, Some(expected));
+        let (value, next) = decode_variable_scalar(&bytes, 0, bytes.len(), &cache);
+        assert_eq!(value, ScalarLane::Value(expected));
         assert_eq!(next, bytes.len());
-        assert!(!dimension_driven);
     }
 }
 
 #[test]
 fn decodes_var_arr_negative_subunit_form() {
     let bytes = [0xd5, 0xd9, 0x52, 0xa4, 0x85, 0x40, 0x39];
-    let (value, next, dimension_driven) =
+    let (value, next) =
         decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default());
 
-    assert_eq!(value, Some(-0.395_669_107_559_015_74));
+    assert_eq!(value, ScalarLane::Value(-0.395_669_107_559_015_74));
     assert_eq!(next, bytes.len());
-    assert!(!dimension_driven);
 }
 
 #[test]
 fn decodes_var_arr_positive_subunit_form() {
     let bytes = [0x4f, 0xdf, 0x46, 0xa2, 0x52, 0x96, 0xd1];
-    let (value, next, dimension_driven) =
+    let (value, next) =
         decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default());
 
-    assert_eq!(value, Some(0.488_686_161_664_432_46));
+    assert_eq!(value, ScalarLane::Value(0.488_686_161_664_432_46));
     assert_eq!(next, bytes.len());
-    assert!(!dimension_driven);
 }
 
 #[test]
@@ -72,11 +68,14 @@ fn variable_row_bounds_an_unresolved_guess_from_its_fixed_suffix() {
     };
 
     assert!(variables.is_complete());
-    assert_eq!(row.variable_type, 0);
+    assert_eq!(
+        row.variable_type,
+        crate::feature::definitions::VariableType::Dimension
+    );
     assert_eq!(row.key, 65);
-    assert_eq!(row.value, Some(0.0));
+    assert_eq!(row.value, ScalarLane::Value(0.0));
     assert_eq!(row.value_body, [0x18]);
-    assert_eq!(row.guess, None);
+    assert_eq!(row.guess, ScalarLane::Undefined);
     assert_eq!(row.guess_body, [0x20, 0x96, 0x61]);
     assert_eq!(row.known, Some(1));
     assert_eq!(row.homogeneity, Some(1));
@@ -99,12 +98,12 @@ fn variable_row_classifies_value_and_guess_sentinels_independently() {
         row.value_body,
         [0xed, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]
     );
-    assert!(row.dimension_driven);
+    assert_eq!(row.value, ScalarLane::DimensionDriven);
     assert_eq!(
         row.guess_body,
         [0xed, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18]
     );
-    assert!(row.guess_dimension_driven);
+    assert_eq!(row.guess, ScalarLane::DimensionDriven);
     assert_eq!(row.known, Some(1));
     assert_eq!(row.homogeneity, Some(1));
     assert_eq!(row.uvar_id, Some(9));
@@ -113,15 +112,14 @@ fn variable_row_classifies_value_and_guess_sentinels_independently() {
 #[test]
 fn var_arr_world_coordinate_2d_is_positive() {
     let bytes = [0x2d, 0x34, 0x43, 0xf5, 0x12, 0xe8, 0x00, 0x45];
-    let (value, next, dimension_driven) =
+    let (value, next) =
         decode_section_coordinate_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default());
 
-    assert_eq!(value, Some(20.265_458_280_220_873));
+    assert_eq!(value, ScalarLane::Value(20.265_458_280_220_873));
     assert_eq!(next, bytes.len());
-    assert!(!dimension_driven);
     assert_eq!(
         decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default()).0,
-        Some(-20.265_458_280_220_873)
+        ScalarLane::Value(-20.265_458_280_220_873)
     );
 }
 
@@ -165,24 +163,22 @@ fn decodes_var_arr_positional_dict_lattice() {
         ([0xd8, 1, 2, 3, 4, 5, 6], [0xc0, 0x06]),
         ([0xda, 1, 2, 3, 4, 5, 6], [0xc0, 0x08]),
     ] {
-        let (value, next, dimension_driven) =
+        let (value, next) =
             decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default());
         assert_eq!(
             value,
-            Some(f64::from_be_bytes([
+            ScalarLane::Value(f64::from_be_bytes([
                 head[0], head[1], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6],
             ]))
         );
         assert_eq!(next, bytes.len());
-        assert!(!dimension_driven);
     }
     let bytes = [0x28, 1, 2, 3, 4, 5, 6, 7];
     assert_eq!(
         decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default()),
         (
-            Some(f64::from_be_bytes([0x3f, 1, 2, 3, 4, 5, 6, 7])),
+            ScalarLane::Value(f64::from_be_bytes([0x3f, 1, 2, 3, 4, 5, 6, 7])),
             bytes.len(),
-            false,
         )
     );
     for prefix in [0x19, 0x32, 0x37, 0x41] {
@@ -190,9 +186,8 @@ fn decodes_var_arr_positional_dict_lattice() {
         assert_eq!(
             decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default()),
             (
-                Some(f64::from_be_bytes([0x3f, 1, 2, 3, 4, 5, 6, 7])),
+                ScalarLane::Value(f64::from_be_bytes([0x3f, 1, 2, 3, 4, 5, 6, 7])),
                 bytes.len(),
-                false,
             )
         );
     }
@@ -203,7 +198,7 @@ fn decodes_var_arr_positional_dict_lattice() {
             3,
             &scalar::ScalarCache::default()
         ),
-        (None, 3, false)
+        (ScalarLane::Undefined, 3)
     );
     assert_eq!(
         decode_section_coordinate_scalar(
@@ -212,7 +207,7 @@ fn decodes_var_arr_positional_dict_lattice() {
             3,
             &scalar::ScalarCache::default()
         ),
-        (None, 3, false)
+        (ScalarLane::Undefined, 3)
     );
     assert_eq!(
         decode_section_coordinate_scalar(
@@ -221,7 +216,7 @@ fn decodes_var_arr_positional_dict_lattice() {
             4,
             &scalar::ScalarCache::default()
         ),
-        (None, 4, false)
+        (ScalarLane::Undefined, 4)
     );
 }
 

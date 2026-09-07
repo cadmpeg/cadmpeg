@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use super::super::definitions::test_support::with_points;
 use super::super::definitions::*;
 use crate::psb;
 use crate::scalar;
@@ -275,18 +276,24 @@ fn positional_variable_table_joins_coordinate_rows() {
     assert!(variables.is_complete());
     assert_eq!(variables.rows[0].value_body, [0x18]);
     assert_eq!(variables.rows[0].guess_body, [0x18]);
-    assert_eq!(variables.rows[0].guess, Some(0.0));
+    assert_eq!(
+        variables.rows[0].guess,
+        crate::feature::definitions::ScalarLane::Value(0.0)
+    );
     assert_eq!(variables.rows[0].known, Some(1));
     assert_eq!(variables.rows[0].homogeneity, Some(0));
     assert_eq!(variables.rows[0].uvar_id, Some(9));
-    assert_eq!(variables.rows[1].guess, Some(0.0));
+    assert_eq!(
+        variables.rows[1].guess,
+        crate::feature::definitions::ScalarLane::Value(0.0)
+    );
     assert_eq!(variables.rows[1].known, Some(1));
     assert_eq!(variables.rows[1].homogeneity, Some(0));
     assert_eq!(variables.rows[1].uvar_id, Some(10));
-    assert_eq!(variables.points.len(), 1);
-    assert_eq!(variables.points[0].point_id, 7);
-    assert_eq!(variables.points[0].u, Some(0.0));
-    assert_eq!(variables.points[0].v, Some(0.0));
+    assert_eq!(variables.points().len(), 1);
+    assert_eq!(variables.points()[0].point_id, 7);
+    assert_eq!(variables.points()[0].u, Some(0.0));
+    assert_eq!(variables.points()[0].v, Some(0.0));
 }
 
 #[test]
@@ -314,11 +321,17 @@ fn positional_variable_guess_zero_preserves_compact_trailing_fields_at_table_bou
 
     assert!(variables.is_complete());
     assert_eq!(variables.rows.len(), 2);
-    assert_eq!(variables.rows[0].guess, Some(0.0));
+    assert_eq!(
+        variables.rows[0].guess,
+        crate::feature::definitions::ScalarLane::Value(0.0)
+    );
     assert_eq!(variables.rows[0].known, Some(1));
     assert_eq!(variables.rows[0].homogeneity, Some(1));
     assert_eq!(variables.rows[0].uvar_id, Some(15));
-    assert_eq!(variables.rows[1].guess, Some(0.0));
+    assert_eq!(
+        variables.rows[1].guess,
+        crate::feature::definitions::ScalarLane::Value(0.0)
+    );
     assert_eq!(variables.rows[1].known, Some(0));
     assert_eq!(variables.rows[1].homogeneity, Some(1));
     assert_eq!(variables.rows[1].uvar_id, Some(7));
@@ -332,7 +345,7 @@ fn variable_tables_retain_extents_without_decoded_rows() {
     assert_eq!(variables.declared_count, 2);
     assert_eq!(variables.entity_ref, Some(119));
     assert!(variables.rows.is_empty());
-    assert!(variables.points.is_empty());
+    assert!(variables.points().is_empty());
     assert!(!variables.is_complete());
 
     let positional = b"\xf8\x02\xf7\x77\xfb\xe2\xf7\x78";
@@ -342,65 +355,61 @@ fn variable_tables_retain_extents_without_decoded_rows() {
     assert_eq!(variables.declared_count, 2);
     assert_eq!(variables.entity_ref, Some(119));
     assert!(variables.rows.is_empty());
-    assert!(variables.points.is_empty());
+    assert!(variables.points().is_empty());
     assert!(!variables.is_complete());
 }
 
 #[test]
 fn variable_table_withholds_duplicate_coordinate_identities() {
     let row = |variable_type, value, offset| FeatureVariableRow {
-        variable_type,
+        variable_type: crate::feature::definitions::VariableType::from(variable_type),
         key: 7,
-        value: Some(value),
+        value: ScalarLane::Value(value),
         value_body: Vec::new(),
-        guess: None,
+        guess: ScalarLane::Undefined,
         guess_body: Vec::new(),
-        guess_dimension_driven: false,
         known: None,
         homogeneity: None,
         uvar_id: None,
-        dimension_driven: false,
         offset,
     };
-    let table = variable_table_from_rows(
-        3,
-        Some(119),
-        vec![row(1, 2.0, 10), row(1, 2.0, 20), row(2, 3.0, 30)],
-        5,
-    );
+    let table = FeatureVariableTable {
+        declared_count: 3,
+        entity_ref: Some(119),
+        rows: vec![row(1, 2.0, 10), row(1, 2.0, 20), row(2, 3.0, 30)],
+        offset: 5,
+    };
 
     assert_eq!(table.rows.len(), 3);
-    assert_eq!(table.points.len(), 1);
-    assert_eq!(table.points[0].point_id, 7);
-    assert_eq!(table.points[0].u, None);
-    assert_eq!(table.points[0].v, Some(3.0));
+    assert_eq!(table.points().len(), 1);
+    assert_eq!(table.points()[0].point_id, 7);
+    assert_eq!(table.points()[0].u, None);
+    assert_eq!(table.points()[0].v, Some(3.0));
 }
 
 #[test]
 fn radius_variables_do_not_create_section_points() {
     let row = |variable_type, key, value, offset| FeatureVariableRow {
-        variable_type,
+        variable_type: crate::feature::definitions::VariableType::from(variable_type),
         key,
-        value: Some(value),
+        value: ScalarLane::Value(value),
         value_body: Vec::new(),
-        guess: None,
+        guess: ScalarLane::Undefined,
         guess_body: Vec::new(),
-        guess_dimension_driven: false,
         known: None,
         homogeneity: None,
         uvar_id: None,
-        dimension_driven: false,
         offset,
     };
-    let table = variable_table_from_rows(
-        3,
-        Some(119),
-        vec![row(1, 7, 2.0, 10), row(2, 7, 3.0, 20), row(3, 99, 4.0, 30)],
-        5,
-    );
+    let table = FeatureVariableTable {
+        declared_count: 3,
+        entity_ref: Some(119),
+        rows: vec![row(1, 7, 2.0, 10), row(2, 7, 3.0, 20), row(3, 99, 4.0, 30)],
+        offset: 5,
+    };
 
-    assert_eq!(table.points.len(), 1);
-    assert_eq!(table.points[0].point_id, 7);
+    assert_eq!(table.points().len(), 1);
+    assert_eq!(table.points()[0].point_id, 7);
     let (points, ambiguous) = table.reconciled_points();
     assert_eq!(points.get(&7), Some(&[Some(2.0), Some(3.0)]));
     assert!(!points.contains_key(&99));
@@ -416,21 +425,19 @@ fn variable_coordinate_7e_and_c6_are_the_f3_dict_sign_pair() {
     assert_eq!(
         decode_variable_scalar(&positive, 0, positive.len(), &cache),
         (
-            Some(f64::from_be_bytes([
+            ScalarLane::Value(f64::from_be_bytes([
                 0x3f, 0xf3, 0x6b, 0x37, 0x21, 0xad, 0xb3, 0xb7
             ])),
-            7,
-            false
+            7
         )
     );
     assert_eq!(
         decode_variable_scalar(&negative, 0, negative.len(), &cache),
         (
-            Some(f64::from_be_bytes([
+            ScalarLane::Value(f64::from_be_bytes([
                 0xbf, 0xf3, 0x6b, 0x37, 0x21, 0xad, 0xb3, 0xb7
             ])),
-            7,
-            false
+            7
         )
     );
 }
@@ -1187,17 +1194,19 @@ fn trim_vertex_uses_unique_shared_point_for_mixed_curves() {
         opaque_rows: Vec::new(),
         offset: 0,
     };
-    let variables = FeatureVariableTable {
-        declared_count: 0,
-        entity_ref: None,
-        rows: Vec::new(),
-        points: vec![FeatureSectionPoint {
+    let variables = with_points(
+        FeatureVariableTable {
+            declared_count: 0,
+            entity_ref: None,
+            rows: Vec::new(),
+            offset: 0,
+        },
+        vec![FeatureSectionPoint {
             point_id: 2,
             u: Some(3.0),
             v: Some(4.0),
         }],
-        offset: 0,
-    };
+    );
 
     assert_eq!(
         entity_intersection(&[9, 10], Some(&segments), Some(&variables)),
@@ -1223,7 +1232,8 @@ fn trim_vertex_uses_unique_shared_point_for_mixed_curves() {
     assert!(entity_intersection(&[9, 10], Some(&duplicate_segments), Some(&variables)).is_none());
 
     let mut duplicate_points = variables.clone();
-    duplicate_points.points.push(variables.points[0].clone());
+    duplicate_points.rows.extend(variables.rows.clone());
+    duplicate_points.declared_count += variables.declared_count;
     assert_eq!(
         duplicate_points.reconciled_points().0.get(&2),
         Some(&[Some(3.0), Some(4.0)])
@@ -1232,35 +1242,28 @@ fn trim_vertex_uses_unique_shared_point_for_mixed_curves() {
         entity_intersection(&[9, 10], Some(&segments), Some(&duplicate_points)),
         Some([3.0, 4.0])
     );
-    duplicate_points.points[1].u = Some(5.0);
+    duplicate_points.rows[2].value = ScalarLane::Value(5.0);
     assert!(duplicate_points.reconciled_points().1.contains(&2));
     assert!(entity_intersection(&[9, 10], Some(&segments), Some(&duplicate_points)).is_none());
     let row = |variable_type, value, offset| FeatureVariableRow {
-        variable_type,
+        variable_type: crate::feature::definitions::VariableType::from(variable_type),
         key: 2,
-        value: Some(value),
+        value: ScalarLane::Value(value),
         value_body: Vec::new(),
-        guess: None,
+        guess: ScalarLane::Undefined,
         guess_body: Vec::new(),
-        guess_dimension_driven: false,
         known: None,
         homogeneity: None,
         uvar_id: None,
-        dimension_driven: false,
         offset,
     };
     let mut repeated_raw = variables.clone();
-    repeated_raw.points[0] = FeatureSectionPoint {
-        point_id: 2,
-        u: None,
-        v: None,
-    };
     repeated_raw.rows = vec![row(1, 3.0, 30), row(1, 3.0, 31), row(2, 4.0, 32)];
     assert_eq!(
         repeated_raw.reconciled_points().0.get(&2),
         Some(&[Some(3.0), Some(4.0)])
     );
-    repeated_raw.rows[1].value = Some(5.0);
+    repeated_raw.rows[1].value = ScalarLane::Value(5.0);
     assert!(repeated_raw.reconciled_points().1.contains(&2));
 }
 
@@ -1298,27 +1301,28 @@ fn trim_vertex_intersection_resolves_settled_carrier_pairs() {
         v: Some(v),
     };
     let radius = |key, value| FeatureVariableRow {
-        variable_type: 3,
+        variable_type: crate::feature::definitions::VariableType::Radius,
         key,
-        value: Some(value),
+        value: ScalarLane::Value(value),
         value_body: Vec::new(),
-        guess: None,
+        guess: ScalarLane::Undefined,
         guess_body: Vec::new(),
-        guess_dimension_driven: false,
         known: None,
         homogeneity: None,
         uvar_id: None,
-        dimension_driven: false,
         offset: 0,
     };
-    let variables =
-        |points: Vec<FeatureSectionPoint>, rows: Vec<FeatureVariableRow>| FeatureVariableTable {
-            declared_count: rows.len() as u32,
-            entity_ref: None,
-            rows,
+    let variables = |points: Vec<FeatureSectionPoint>, rows: Vec<FeatureVariableRow>| {
+        with_points(
+            FeatureVariableTable {
+                declared_count: rows.len() as u32,
+                entity_ref: None,
+                rows,
+                offset: 0,
+            },
             points,
-            offset: 0,
-        };
+        )
+    };
 
     let bounded_unique = segment_table(vec![
         segment(FeatureSegmentKind::Line([1, 2]), None, None, 9),
@@ -1353,16 +1357,15 @@ fn trim_vertex_intersection_resolves_settled_carrier_pairs() {
         Some([1.0, 0.0])
     );
     let mut derived_radius = bounded_unique_variables.clone();
-    derived_radius.rows.clear();
-    derived_radius.declared_count = 0;
+    derived_radius
+        .rows
+        .retain(|row| row.variable_type != VariableType::Radius);
+    derived_radius.declared_count = derived_radius.rows.len() as u32;
     assert_eq!(
         entity_intersection(&[9, 10], Some(&bounded_unique), Some(&derived_radius)),
         Some([1.0, 0.0])
     );
-    let conflicting_radius = variables(
-        bounded_unique_variables.points.clone(),
-        vec![radius(6, 2.0)],
-    );
+    let conflicting_radius = variables(bounded_unique_variables.points(), vec![radius(6, 2.0)]);
     assert!(
         entity_intersection(&[9, 10], Some(&bounded_unique), Some(&conflicting_radius),).is_none()
     );
@@ -1458,11 +1461,14 @@ fn trim_vertex_intersection_requires_complete_pairwise_junctions() {
         opaque_rows: Vec::new(),
         offset: 0,
     };
-    let variables = FeatureVariableTable {
-        declared_count: 0,
-        entity_ref: None,
-        rows: Vec::new(),
-        points: vec![
+    let variables = with_points(
+        FeatureVariableTable {
+            declared_count: 0,
+            entity_ref: None,
+            rows: Vec::new(),
+            offset: 0,
+        },
+        vec![
             FeatureSectionPoint {
                 point_id: 1,
                 u: Some(-1.0),
@@ -1494,8 +1500,7 @@ fn trim_vertex_intersection_requires_complete_pairwise_junctions() {
                 v: Some(2.0),
             },
         ],
-        offset: 0,
-    };
+    );
     assert_eq!(
         entity_intersection(&[9, 10, 11], Some(&segments), Some(&variables)),
         Some([0.0, 0.0])

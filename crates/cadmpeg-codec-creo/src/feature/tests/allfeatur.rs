@@ -743,10 +743,10 @@ fn scan_binds_standalone_depdb_section_to_its_recipe_owner() {
     assert_eq!(definition.identity.id(), 2);
     assert_eq!(definition.identity.owner_feature_id(), Some(17));
     let variables = definition.variables.as_ref().expect("var_arr");
-    assert_eq!(variables.points.len(), 1);
-    assert_eq!(variables.points[0].point_id, 7);
-    assert_eq!(variables.points[0].u, Some(1.0));
-    assert_eq!(variables.points[0].v, Some(3.0));
+    assert_eq!(variables.points().len(), 1);
+    assert_eq!(variables.points()[0].point_id, 7);
+    assert_eq!(variables.points()[0].u, Some(1.0));
+    assert_eq!(variables.points()[0].v, Some(3.0));
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())

@@ -339,11 +339,14 @@ fn revolution_axis_uses_the_unique_complete_section_centerline() {
         body: Vec::new(),
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
-        variables: Some(crate::feature::FeatureVariableTable {
-            declared_count: 0,
-            entity_ref: None,
-            rows: Vec::new(),
-            points: vec![
+        variables: Some(crate::feature::definitions::test_support::with_points(
+            crate::feature::FeatureVariableTable {
+                declared_count: 0,
+                entity_ref: None,
+                rows: Vec::new(),
+                offset: 1,
+            },
+            vec![
                 crate::feature::FeatureSectionPoint {
                     point_id: 1,
                     u: Some(0.0),
@@ -355,8 +358,7 @@ fn revolution_axis_uses_the_unique_complete_section_centerline() {
                     v: Some(3.0),
                 },
             ],
-            offset: 1,
-        }),
+        )),
         segments: Some(crate::feature::FeatureSegmentTable {
             declared_count: 1,
             has_elided_prototype: false,
@@ -551,22 +553,23 @@ fn named_revolve_transfers_profile_axis() {
                 .into_iter()
                 .map(
                     |(variable_type, key, value)| crate::feature::FeatureVariableRow {
-                        variable_type,
+                        variable_type: crate::feature::definitions::VariableType::from(
+                            variable_type,
+                        ),
                         key,
-                        value: Some(value),
+                        value: crate::feature::definitions::ScalarLane::Value(value),
                         value_body: Vec::new(),
-                        guess: Some(value),
+                        guess: crate::feature::definitions::ScalarLane::Value(value),
                         guess_body: Vec::new(),
-                        guess_dimension_driven: false,
+
                         known: Some(0),
                         homogeneity: Some(1),
                         uvar_id: None,
-                        dimension_driven: false,
+
                         offset: 0,
                     },
                 )
                 .collect(),
-            points: Vec::new(),
             offset: 0,
         }),
         segments: Some(crate::feature::FeatureSegmentTable {
