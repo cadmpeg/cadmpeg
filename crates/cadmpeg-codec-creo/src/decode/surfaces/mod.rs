@@ -11,6 +11,7 @@ mod positional;
 mod prototypes;
 mod transfer_curves;
 
+use crate::decode::axis::Axis;
 #[allow(clippy::wildcard_imports)]
 pub(super) use brep::*;
 #[allow(clippy::wildcard_imports)]
@@ -178,7 +179,7 @@ pub(super) fn transfer_part_product(
 }
 
 pub(super) fn fc05_model_frame(
-    axis_index: usize,
+    axis_index: Axis,
     axis_ordinate: f64,
     center_row_frame: [f64; 2],
     reference_row_frame: [f64; 2],
@@ -187,22 +188,21 @@ pub(super) fn fc05_model_frame(
     let [first, second] = center_row_frame;
     let [reference_x, reference_z] = reference_row_frame;
     match axis_index {
-        0 => (
+        Axis::X => (
             [axis_ordinate, second, first],
             [axis_sign, 0.0, 0.0],
             [0.0, reference_z, reference_x],
         ),
-        1 => (
+        Axis::Y => (
             [first, axis_ordinate, second],
             [0.0, axis_sign, 0.0],
             [reference_x, 0.0, reference_z],
         ),
-        2 => (
+        Axis::Z => (
             [second, first, axis_ordinate],
             [0.0, 0.0, axis_sign],
             [reference_z, reference_x, 0.0],
         ),
-        _ => unreachable!("model-space axis index is bounded by XYZ"),
     }
 }
 
@@ -214,7 +214,7 @@ pub(super) struct Fc05CapPairFrame {
     pub(super) origin: [f64; 3],
     pub(super) axis: [f64; 3],
     pub(super) ref_direction: [f64; 3],
-    pub(super) axis_index: usize,
+    pub(super) axis_index: Axis,
     pub(super) axis_sign: f64,
 }
 
@@ -238,8 +238,9 @@ pub(super) fn fc05_cap_pair_model_frame(
         .collect::<Vec<_>>();
     (placed_caps.len() == pair.cap_plane_ids.len() && placed_caps.len() >= 2).then_some(())?;
     let (first_cap, first_ordinate) = placed_caps.first().copied()?;
-    let axis_index =
-        (0..3).find(|axis| first_cap.normal[*axis].abs() > 1.0 - EPS_FC05_CAP_FRAME)?;
+    let axis_index = Axis::ALL
+        .into_iter()
+        .find(|axis| first_cap.normal[axis.index()].abs() > 1.0 - EPS_FC05_CAP_FRAME)?;
     if placed_caps
         .iter()
         .any(|(plane, _)| plane.normal != first_cap.normal)
@@ -248,7 +249,7 @@ pub(super) fn fc05_cap_pair_model_frame(
     }
     let (last_cap, last_ordinate) = placed_caps.last().copied()?;
     let row_span = last_ordinate - first_ordinate;
-    let model_span = last_cap.origin[axis_index] - first_cap.origin[axis_index];
+    let model_span = last_cap.origin[axis_index.index()] - first_cap.origin[axis_index.index()];
     let span_scale = row_span.abs().max(model_span.abs()).max(1.0);
     if !row_span.is_finite()
         || !model_span.is_finite()
@@ -260,7 +261,7 @@ pub(super) fn fc05_cap_pair_model_frame(
     let axis_sign = (model_span / row_span).signum();
     let parameter_origins = placed_caps
         .iter()
-        .map(|(plane, ordinate)| plane.origin[axis_index] - axis_sign * ordinate)
+        .map(|(plane, ordinate)| plane.origin[axis_index.index()] - axis_sign * ordinate)
         .collect::<Vec<_>>();
     if parameter_origins
         .iter()
@@ -328,8 +329,9 @@ pub(super) fn transfer_fc05_cap_circles(
         ) else {
             continue;
         };
-        let Some(axis_index) =
-            (0..3).find(|axis| cap.normal[*axis].abs() > 1.0 - EPS_FC05_CAP_FRAME)
+        let Some(axis_index) = Axis::ALL
+            .into_iter()
+            .find(|axis| cap.normal[axis.index()].abs() > 1.0 - EPS_FC05_CAP_FRAME)
         else {
             continue;
         };
@@ -345,15 +347,16 @@ pub(super) fn transfer_fc05_cap_circles(
             .unwrap_or(circle.sample_direction_row_frame);
         let axis_sign = pair_frame.map_or_else(
             || {
-                circle
-                    .parameter_sign
-                    .map_or_else(|| cap.normal[axis_index].signum(), |sign| -f64::from(sign))
+                circle.parameter_sign.map_or_else(
+                    || cap.normal[axis_index.index()].signum(),
+                    |sign| -f64::from(sign),
+                )
             },
             |frame| frame.axis_sign,
         );
         let legacy_frame = fc05_model_frame(
             axis_index,
-            cap.origin[axis_index],
+            cap.origin[axis_index.index()],
             [first, second],
             reference,
             axis_sign,
@@ -370,7 +373,7 @@ pub(super) fn transfer_fc05_cap_circles(
         );
         let mut surface_origin = witness.origin;
         if let Some(frame) = pair_frame {
-            surface_origin[axis_index] = frame.origin[axis_index];
+            surface_origin[axis_index.index()] = frame.origin[axis_index.index()];
         }
         let (center, axis, ref_direction) = (witness.origin, witness.axis, witness.ref_direction);
         let id = CurveId::mint(format!("creo:visibgeom:curve#{}", circle.curve_id))

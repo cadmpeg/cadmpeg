@@ -1890,15 +1890,15 @@ fn fc05_row_frame_maps_cyclically_onto_each_model_axis() {
     let center = [11.0, 13.0];
     let reference = [0.6, 0.8];
     assert_eq!(
-        fc05_model_frame(0, 17.0, center, reference, -1.0),
+        fc05_model_frame(crate::decode::axis::Axis::X, 17.0, center, reference, -1.0),
         ([17.0, 13.0, 11.0], [-1.0, 0.0, 0.0], [0.0, 0.8, 0.6])
     );
     assert_eq!(
-        fc05_model_frame(1, 17.0, center, reference, -1.0),
+        fc05_model_frame(crate::decode::axis::Axis::Y, 17.0, center, reference, -1.0),
         ([11.0, 17.0, 13.0], [0.0, -1.0, 0.0], [0.6, 0.0, 0.8])
     );
     assert_eq!(
-        fc05_model_frame(2, 17.0, center, reference, -1.0),
+        fc05_model_frame(crate::decode::axis::Axis::Z, 17.0, center, reference, -1.0),
         ([13.0, 11.0, 17.0], [0.0, 0.0, -1.0], [0.8, 0.6, 0.0])
     );
 }

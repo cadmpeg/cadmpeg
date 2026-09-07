@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Carrier point tests, plane reconciliation, and placed planes.
 
+use crate::decode::axis::Axis;
 use crate::feature::schema::SchemaClass;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -781,8 +782,9 @@ fn fc05_cylinder_branch_witnesses(
         let ([(_, cap)], [cylinder_id]) = (planes.as_slice(), cylinders.as_slice()) else {
             continue;
         };
-        let Some(axis_index) =
-            (0..3).find(|axis| cap.normal[*axis].abs() > 1.0 - EPS_FC05_CAP_AXIS)
+        let Some(axis_index) = Axis::ALL
+            .into_iter()
+            .find(|axis| cap.normal[axis.index()].abs() > 1.0 - EPS_FC05_CAP_AXIS)
         else {
             continue;
         };
@@ -792,13 +794,13 @@ fn fc05_cylinder_branch_witnesses(
             .map_or(
                 (
                     circle.sample_direction_row_frame,
-                    cap.normal[axis_index].signum(),
+                    cap.normal[axis_index.index()].signum(),
                 ),
                 |(reference, parameter_sign)| (reference, -f64::from(parameter_sign)),
             );
         let (origin, axis, ref_direction) = fc05_model_frame(
             axis_index,
-            cap.origin[axis_index],
+            cap.origin[axis_index.index()],
             circle.center_row_frame,
             reference,
             axis_sign,

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Counterbore dimensions, axis placement, and source cylinder geometry.
 
+use crate::decode::axis::Axis;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
@@ -562,8 +563,7 @@ pub fn counterbore_directed_placement(
 
 #[derive(Debug, Clone, Copy)]
 pub struct CounterboreEnvelopeLayout {
-    pub axis: usize,
-    pub radial: [usize; 2],
+    pub axis: Axis,
     pub center: [f64; 3],
     pub axial_interval: [f64; 2],
 }
@@ -593,21 +593,22 @@ pub fn counterbore_source_envelope_layout(
             ]
         })
     });
-    let shared = |axis: usize| {
-        close(intervals[0][axis][0], intervals[1][axis][0])
-            && close(intervals[0][axis][1], intervals[1][axis][1])
+    let shared = |axis: Axis| {
+        close(intervals[0][axis.index()][0], intervals[1][axis.index()][0])
+            && close(intervals[0][axis.index()][1], intervals[1][axis.index()][1])
     };
-    let adjacent = |axis: usize| {
-        close(intervals[0][axis][1], intervals[1][axis][0])
-            || close(intervals[1][axis][1], intervals[0][axis][0])
+    let adjacent = |axis: Axis| {
+        close(intervals[0][axis.index()][1], intervals[1][axis.index()][0])
+            || close(intervals[1][axis.index()][1], intervals[0][axis.index()][0])
     };
-    let union = |axis: usize| {
+    let union = |axis: Axis| {
         [
-            intervals[0][axis][0].min(intervals[1][axis][0]),
-            intervals[0][axis][1].max(intervals[1][axis][1]),
+            intervals[0][axis.index()][0].min(intervals[1][axis.index()][0]),
+            intervals[0][axis.index()][1].max(intervals[1][axis.index()][1]),
         ]
     };
-    let diameter_axes = (0..3)
+    let diameter_axes = Axis::ALL
+        .into_iter()
         .filter(|axis| {
             let union = union(*axis);
             (shared(*axis) || adjacent(*axis)) && close(union[1] - union[0], diameter)
@@ -616,19 +617,20 @@ pub fn counterbore_source_envelope_layout(
     let [first_radial, second_radial] = diameter_axes.as_slice() else {
         return None;
     };
-    let axis = (0..3).find(|axis| axis != first_radial && axis != second_radial)?;
+    let axis = Axis::ALL
+        .into_iter()
+        .find(|axis| axis != first_radial && axis != second_radial)?;
     shared(axis).then_some(())?;
-    let axial_interval = intervals[0][axis];
+    let axial_interval = intervals[0][axis.index()];
     let axial_span = axial_interval[1] - axial_interval[0];
     (axial_span > 0.0 && axial_depth.is_none_or(|depth| close(axial_span, depth))).then_some(())?;
     let mut center = [0.0; 3];
     for radial_axis in [*first_radial, *second_radial] {
         let bounds = union(radial_axis);
-        center[radial_axis] = f64::midpoint(bounds[0], bounds[1]);
+        center[radial_axis.index()] = f64::midpoint(bounds[0], bounds[1]);
     }
     Some(CounterboreEnvelopeLayout {
         axis,
-        radial: [*first_radial, *second_radial],
         center,
         axial_interval,
     })
@@ -716,10 +718,11 @@ fn counterbore_corner_assignment(
     let [(bore_source, bore, counterbore)] = assignments.as_slice() else {
         return None;
     };
-    (bore.axis == counterbore.axis && bore.radial == counterbore.radial).then_some(())?;
-    bore.radial
+    (bore.axis == counterbore.axis).then_some(())?;
+    bore.axis
+        .complement()
         .iter()
-        .all(|axis| close(bore.center[*axis], counterbore.center[*axis]))
+        .all(|axis| close(bore.center[axis.index()], counterbore.center[axis.index()]))
         .then_some(())?;
     let (entry, direction_sign, length) =
         if close(counterbore.axial_interval[1], bore.axial_interval[0]) {
@@ -739,9 +742,9 @@ fn counterbore_corner_assignment(
         };
     (length > counterbore_depth && length.is_finite()).then_some(())?;
     let mut position = counterbore.center;
-    position[counterbore.axis] = entry;
+    position[counterbore.axis.index()] = entry;
     let mut direction = [0.0; 3];
-    direction[counterbore.axis] = direction_sign;
+    direction[counterbore.axis.index()] = direction_sign;
     Some(CounterboreCornerAssignment {
         bore_source: *bore_source,
         bore: *bore,
@@ -985,7 +988,7 @@ pub fn counterbore_source_corner_patch_geometries(
         counterbore_depth,
     )?;
     let mut ref_direction = [0.0; 3];
-    ref_direction[assignment.bore.radial[0]] = 1.0;
+    ref_direction[assignment.bore.axis.complement()[0].index()] = 1.0;
     let geometry = |radius| SurfaceGeometry::Cylinder {
         origin: assignment.position,
         axis: assignment.direction,

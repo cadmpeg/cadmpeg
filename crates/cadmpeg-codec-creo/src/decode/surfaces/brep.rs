@@ -2069,8 +2069,8 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
             let cap_offset =
                 crate::surface::unique_outline_plane(&scan.planes.outlines, *cap_plane_id)
                     .map_or_else(
-                        || frame.origin[frame.axis_index] + frame.axis_sign * ordinate,
-                        |plane| plane.origin[frame.axis_index],
+                        || frame.origin[frame.axis_index.index()] + frame.axis_sign * ordinate,
+                        |plane| plane.origin[frame.axis_index.index()],
                     );
             let (center, _, _) = fc05_model_frame(
                 frame.axis_index,
