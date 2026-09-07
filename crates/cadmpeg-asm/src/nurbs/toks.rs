@@ -8,7 +8,7 @@
 //! depending on serialized byte offsets.
 
 use crate::kernel_header::RefWidth;
-use crate::nurbs::reader::{checked_knot_layout, Nullable};
+use crate::nurbs::reader::{checked_knot_layout, BsplineMarker, Nullable};
 use crate::sab::Token;
 
 /// A cursor over one record's payload tokens.
@@ -232,31 +232,6 @@ pub(crate) fn take_knot_table(
         }
     }
     Some((expanded, expansion.n_poles))
-}
-
-/// A B-spline block marker: `nubs` introduces a non-rational block, `nurbs` a
-/// rational one whose poles carry a fourth weight component.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum BsplineMarker {
-    /// Non-rational: three doubles per pole.
-    Nubs,
-    /// Rational: four doubles per pole, the fourth a homogeneous weight.
-    Nurbs,
-}
-
-impl BsplineMarker {
-    /// Doubles per control point.
-    pub(crate) fn cp_dims(self) -> usize {
-        match self {
-            Self::Nubs => 3,
-            Self::Nurbs => 4,
-        }
-    }
-
-    /// Whether poles carry homogeneous weights.
-    pub(crate) fn rational(self) -> bool {
-        self == Self::Nurbs
-    }
 }
 
 /// The B-spline marker at token `pos`, if any.

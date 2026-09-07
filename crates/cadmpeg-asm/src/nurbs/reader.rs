@@ -18,6 +18,38 @@ pub(crate) const NUBS_MARKER: &[u8] = b"\x0d\x04nubs";
 
 const NURBS_MARKER: &[u8] = b"\x0d\x05nurbs";
 
+/// B-spline marker selecting whether each pole carries a weight component.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum BsplineMarker {
+    /// Non-rational block.
+    Nubs,
+    /// Rational block with a homogeneous weight after each pole's coordinates.
+    Nurbs,
+}
+
+impl BsplineMarker {
+    /// Encoded identifier length, including its tag and length byte.
+    pub(crate) fn byte_len(self) -> usize {
+        match self {
+            Self::Nubs => NUBS_MARKER.len(),
+            Self::Nurbs => NURBS_MARKER.len(),
+        }
+    }
+
+    /// Doubles per model-space control point.
+    pub(crate) fn cp_dims(self) -> usize {
+        match self {
+            Self::Nubs => 3,
+            Self::Nurbs => 4,
+        }
+    }
+
+    /// Whether poles carry homogeneous weights.
+    pub(crate) fn rational(self) -> bool {
+        self == Self::Nurbs
+    }
+}
+
 /// Integer/ref payload widths to probe, `BinaryFile8` first. A wrong-width
 /// parse cannot yield a false positive: in-range integers (degrees ≤ 20, knot
 /// counts ≤ 1000) store zero high bytes, so an 8-byte read on a 4-byte stream
@@ -42,13 +74,12 @@ pub(crate) fn take_tagged_int(
     Some(v)
 }
 
-/// The B-spline marker at `pos`, if any: `(control-point dimension, byte length
-/// of the marker, rational?)`.
-pub(crate) fn marker_at(b: &[u8], pos: usize) -> Option<(usize, usize, bool)> {
+/// The B-spline marker at byte `pos`, if any.
+pub(crate) fn marker_at(b: &[u8], pos: usize) -> Option<BsplineMarker> {
     if b[pos..].starts_with(NUBS_MARKER) {
-        Some((3, NUBS_MARKER.len(), false))
+        Some(BsplineMarker::Nubs)
     } else if b[pos..].starts_with(NURBS_MARKER) {
-        Some((4, NURBS_MARKER.len(), true))
+        Some(BsplineMarker::Nurbs)
     } else {
         None
     }
@@ -212,23 +243,23 @@ pub(crate) fn read_knots(
     Some((expanded, expansion.n_poles, KnotLayout { value_offsets }))
 }
 
-/// Read `count` control points of `cp_dims` doubles each at `*pos`. Returns the
+/// Read `count` control points in the marker-selected form at `*pos`. Returns the
 /// scaled `(x, y, z)` positions and, for rational blocks, the weights.
 pub(crate) fn read_control_points(
     b: &[u8],
     pos: &mut usize,
     count: usize,
-    cp_dims: usize,
+    marker: BsplineMarker,
 ) -> Option<(Vec<Point3>, Option<Vec<f64>>)> {
     let mut points = Vec::with_capacity(count);
-    let mut weights = if cp_dims == 4 {
+    let mut weights = if marker.rational() {
         Some(Vec::with_capacity(count))
     } else {
         None
     };
     for _ in 0..count {
         let mut comps = [0.0f64; 4];
-        for comp in comps.iter_mut().take(cp_dims) {
+        for comp in comps.iter_mut().take(marker.cp_dims()) {
             if *b.get(*pos)? != 0x06 {
                 return None;
             }

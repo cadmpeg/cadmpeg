@@ -2482,7 +2482,7 @@ pub(crate) fn law_spl_sur(toks: &[Token]) -> Option<DecodedProceduralSurface> {
         .map(|_| law_formula(&mut cur))
         .collect::<Option<Vec<_>>>()?;
     let selector = if parameter_ranges.is_some()
-        && toks::marker_at(span, cur.pos()) == Some(toks::BsplineMarker::Nubs)
+        && toks::marker_at(span, cur.pos()) == Some(crate::nurbs::reader::BsplineMarker::Nubs)
     {
         0
     } else {

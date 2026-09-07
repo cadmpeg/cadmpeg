@@ -67,8 +67,9 @@ pub fn final_pcurve_patch_layout(record: &[u8], int_width: RefWidth) -> Option<P
     construction_marker_positions(record, int_width)
         .into_iter()
         .filter_map(|marker_pos| {
-            let (_cp_dims, marker_len, rational) = marker_at(record, marker_pos)?;
-            let mut pos = marker_pos + marker_len;
+            let marker = marker_at(record, marker_pos)?;
+            let rational = marker.rational();
+            let mut pos = marker_pos + marker.byte_len();
             let degree_value_offset = pos + 1;
             let degree = take_tagged_int(record, &mut pos, 0x04, int_width)?;
             if !(1..=20).contains(&degree) {
@@ -112,8 +113,9 @@ pub(crate) fn decode_pcurve_block_with_end(
     marker_pos: usize,
     int_width: RefWidth,
 ) -> Option<(PcurveNurbs, usize)> {
-    let (_cp_dims, marker_len, rational) = marker_at(b, marker_pos)?;
-    let mut pos = marker_pos + marker_len;
+    let marker = marker_at(b, marker_pos)?;
+    let rational = marker.rational();
+    let mut pos = marker_pos + marker.byte_len();
     let degree = take_tagged_int(b, &mut pos, 0x04, int_width)?;
     if !(1..=20).contains(&degree) {
         return None;
