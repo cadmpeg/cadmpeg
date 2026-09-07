@@ -280,7 +280,8 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
     };
     let carriers = crate::records::feature::DesignAssemblyLegacyOperands {
         point: crate::records::feature::DesignAssemblyLegacyOperand {
-            construction_class_tag: "256".into(),
+            construction_class_tag: crate::records::DesignClassTag::try_from("256".to_owned())
+                .unwrap(),
             reference_offset: 11,
             construction: Box::new(crate::records::feature::DesignWorkPointConstruction {
                 point_record_index: 10,
@@ -299,7 +300,8 @@ fn legacy_assembly_wire_derives_carrier_frames_and_checks_repeated_fields() {
             selection: selection(40),
         },
         hole: crate::records::feature::DesignAssemblyLegacyOperand {
-            construction_class_tag: "257".into(),
+            construction_class_tag: crate::records::DesignClassTag::try_from("257".to_owned())
+                .unwrap(),
             reference_offset: 22,
             construction: Box::new(crate::records::feature::DesignHoleConstruction {
                 point_record_index: 20,

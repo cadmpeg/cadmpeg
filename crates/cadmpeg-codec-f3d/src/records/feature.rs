@@ -1891,7 +1891,7 @@ pub struct DesignAssemblySolvedFrame {
 /// A construction and its face selection in a legacy assembly operand.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DesignAssemblyLegacyOperand<C> {
-    pub construction_class_tag: String,
+    pub construction_class_tag: DesignClassTag,
     pub construction: C,
     pub selection: DesignAssemblyLegacySelection,
     pub reference_offset: u64,
@@ -1974,13 +1974,19 @@ impl DesignAssemblyLegacyOperands {
         }
         let carriers = Self {
             point: DesignAssemblyLegacyOperand {
-                construction_class_tag: point.construction_class_tag,
+                construction_class_tag: point
+                    .construction_class_tag
+                    .try_into()
+                    .map_err(|error| format!("construction_class_tag: {error}"))?,
                 construction: point_construction,
                 selection: point.selection,
                 reference_offset: point.frame.reference_offset,
             },
             hole: DesignAssemblyLegacyOperand {
-                construction_class_tag: hole.construction_class_tag,
+                construction_class_tag: hole
+                    .construction_class_tag
+                    .try_into()
+                    .map_err(|error| format!("construction_class_tag: {error}"))?,
                 construction: hole_construction,
                 selection: hole.selection,
                 reference_offset: hole.frame.reference_offset,
@@ -2000,7 +2006,7 @@ impl DesignAssemblyLegacyOperands {
             DesignAssemblyLegacyOperandWire {
                 construction_record_index: self.point.construction.point_record_index,
                 construction_byte_offset: self.point.construction.point_record_byte_offset,
-                construction_class_tag: self.point.construction_class_tag,
+                construction_class_tag: self.point.construction_class_tag.into(),
                 construction: DesignAssemblyLegacyConstruction::Point(self.point.construction),
                 selection: self.point.selection,
                 frame: point_frame,
@@ -2008,7 +2014,7 @@ impl DesignAssemblyLegacyOperands {
             DesignAssemblyLegacyOperandWire {
                 construction_record_index: self.hole.construction.point_record_index,
                 construction_byte_offset: self.hole.construction.point_record_byte_offset,
-                construction_class_tag: self.hole.construction_class_tag,
+                construction_class_tag: self.hole.construction_class_tag.into(),
                 construction: DesignAssemblyLegacyConstruction::Hole(self.hole.construction),
                 selection: self.hole.selection,
                 frame: hole_frame,
