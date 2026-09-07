@@ -1086,36 +1086,31 @@ fn materialize_record(
     identity: EntityIdentityCandidate,
 ) -> Option<EntityRecord> {
     let record_end = candidate.pos.checked_add(candidate.total_len)?;
-    if matches!(candidate.layout, EntityRecordLayout::Inline) {
-        return Some(EntityRecord {
-            pos: candidate.pos,
-            lead: candidate.lead,
-            entity_id: identity.entity_id,
-            body: EntityBody::Inline(data.get(candidate.pos + 6..record_end)?.to_vec()),
-        });
-    }
-    let EntityRecordLayout::Nested {
-        definition_end,
-        value_end,
-        ..
-    } = candidate.layout
-    else {
-        unreachable!("inline entity returned before nested materialization")
+    let body = match candidate.layout {
+        EntityRecordLayout::Inline => {
+            EntityBody::Inline(data.get(candidate.pos + 6..record_end)?.to_vec())
+        }
+        EntityRecordLayout::Nested {
+            definition_end,
+            value_end,
+        } => {
+            let definition_start = candidate.pos.checked_add(13)?;
+            let identity_end = identity.delimiter.checked_add(5)?;
+            let value_payload = data.get(definition_end + 6..value_end)?;
+            let prefix = data.get(definition_start..identity.delimiter)?;
+            EntityBody::Nested {
+                prefix: prefix.to_vec(),
+                suffix: data.get(identity_end..definition_end)?.to_vec(),
+                value_payload: value_payload.to_vec(),
+                record_suffix: data.get(value_end..record_end)?.to_vec(),
+            }
+        }
     };
-    let definition_start = candidate.pos.checked_add(13)?;
-    let identity_end = identity.delimiter.checked_add(5)?;
-    let value_payload = data.get(definition_end + 6..value_end)?;
-    let prefix = data.get(definition_start..identity.delimiter)?;
     Some(EntityRecord {
         pos: candidate.pos,
         lead: candidate.lead,
         entity_id: identity.entity_id,
-        body: EntityBody::Nested {
-            prefix: prefix.to_vec(),
-            suffix: data.get(identity_end..definition_end)?.to_vec(),
-            value_payload: value_payload.to_vec(),
-            record_suffix: data.get(value_end..record_end)?.to_vec(),
-        },
+        body,
     })
 }
 
