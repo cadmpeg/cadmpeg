@@ -42,10 +42,36 @@ fn is_integer(token: Option<&Token>) -> bool {
 }
 
 #[derive(Clone, Copy)]
-struct AttributeBase {
-    next: usize,
-    owner: Option<usize>,
-    payload: usize,
+enum AttributeBase {
+    Current,
+    Legacy,
+    Compact,
+}
+
+impl AttributeBase {
+    fn next(self) -> usize {
+        match self {
+            Self::Current => 2,
+            Self::Legacy => 1,
+            Self::Compact => 0,
+        }
+    }
+
+    fn owner(self) -> Option<usize> {
+        match self {
+            Self::Current => Some(4),
+            Self::Legacy => Some(3),
+            Self::Compact => None,
+        }
+    }
+
+    fn payload(self) -> usize {
+        match self {
+            Self::Current => 5,
+            Self::Legacy => 4,
+            Self::Compact => 1,
+        }
+    }
 }
 
 fn attribute_base(record: &Record) -> Option<AttributeBase> {
@@ -64,11 +90,7 @@ fn attribute_base(record: &Record) -> Option<AttributeBase> {
         )
     ) && is_integer(record.chunk(1));
     if current {
-        return Some(AttributeBase {
-            next: 2,
-            owner: Some(4),
-            payload: 5,
-        });
+        return Some(AttributeBase::Current);
     }
     let legacy = matches!(
         (
@@ -85,17 +107,9 @@ fn attribute_base(record: &Record) -> Option<AttributeBase> {
         )
     );
     if legacy {
-        return Some(AttributeBase {
-            next: 1,
-            owner: Some(3),
-            payload: 4,
-        });
+        return Some(AttributeBase::Legacy);
     }
-    matches!(record.chunk(0), Some(Token::Ref(_))).then_some(AttributeBase {
-        next: 0,
-        owner: None,
-        payload: 1,
-    })
+    matches!(record.chunk(0), Some(Token::Ref(_))).then_some(AttributeBase::Compact)
 }
 
 /// The next record in an attribute chain.
@@ -105,12 +119,12 @@ fn attribute_base(record: &Record) -> Option<AttributeBase> {
 /// older cadmpeg versions used a compact record whose first field was `next`;
 /// retain read compatibility with all three forms.
 pub(crate) fn attribute_next(record: &Record) -> Option<i64> {
-    record.ref_at(attribute_base(record)?.next)
+    record.ref_at(attribute_base(record)?.next())
 }
 
 /// The topology or parent-attribute owner of a current or legacy attribute.
 pub(crate) fn attribute_owner(record: &Record) -> Option<i64> {
-    record.ref_at(attribute_base(record)?.owner?)
+    record.ref_at(attribute_base(record)?.owner()?)
 }
 
 /// The numeric record-index key of an attribute id
@@ -245,16 +259,12 @@ fn packed_rgb(packed: u32) -> Color {
     }
 }
 
-fn direct_payload_start(record: &Record) -> Option<usize> {
-    attribute_base(record).map(|base| base.payload)
-}
-
 /// Decode one well-formed exact direct-color attribute.
 ///
 /// Palette, material-library, inherited truecolor, and malformed records do
 /// not define a neutral RGB color.
 pub(crate) fn direct_attribute_color(record: &Record) -> Option<DirectAttributeColor> {
-    let payload = direct_payload_start(record)?;
+    let payload = attribute_base(record)?.payload();
     match record.name.as_str() {
         "rgb_color-st-attrib" => {
             let channels = record
