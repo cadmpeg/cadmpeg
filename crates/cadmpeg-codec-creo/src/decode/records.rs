@@ -781,22 +781,22 @@ pub(super) fn feature_loop_history_entry_records(
             owner_feature_id: entry.feature_id,
             ordinal: entry.ordinal,
             loop_id: entry.loop_id,
-            field_bytes: entry.field_bytes.clone(),
-            boundary: match entry.boundary {
+            field_bytes: entry.fields().map(<[u8]>::to_vec).collect(),
+            boundary: match &entry.boundary {
                 crate::feature::FeatureLoopHistoryBoundary::CompoundClose => "compound_close",
                 crate::feature::FeatureLoopHistoryBoundary::ReferenceContinue(_) => {
                     "reference_continue"
                 }
                 crate::feature::FeatureLoopHistoryBoundary::ReferenceFinal(_) => "reference_final",
-                crate::feature::FeatureLoopHistoryBoundary::NamedRecord => "named_record",
+                crate::feature::FeatureLoopHistoryBoundary::NamedRecord { .. } => "named_record",
             },
-            boundary_reference: match entry.boundary {
+            boundary_reference: match &entry.boundary {
                 crate::feature::FeatureLoopHistoryBoundary::ReferenceContinue(reference)
                 | crate::feature::FeatureLoopHistoryBoundary::ReferenceFinal(reference) => {
-                    Some(reference)
+                    Some(*reference)
                 }
                 crate::feature::FeatureLoopHistoryBoundary::CompoundClose
-                | crate::feature::FeatureLoopHistoryBoundary::NamedRecord => None,
+                | crate::feature::FeatureLoopHistoryBoundary::NamedRecord { .. } => None,
             },
             offset: entry.offset,
             end_offset: entry.end_offset,

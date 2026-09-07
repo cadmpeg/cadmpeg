@@ -262,8 +262,8 @@ pub struct FeatureLoopHistoryEntry {
     pub ordinal: u32,
     /// Feature-local loop identifier.
     pub loop_id: u32,
-    /// Four required row fields and the optional final field, in stored order.
-    pub field_bytes: Vec<Vec<u8>>,
+    /// Four required row fields, in stored order.
+    pub field_bytes: [Vec<u8>; 4],
     /// Stored row boundary form.
     pub boundary: FeatureLoopHistoryBoundary,
     /// Byte offset of the loop identifier in the original stream.
@@ -272,8 +272,19 @@ pub struct FeatureLoopHistoryEntry {
     pub end_offset: usize,
 }
 
+impl FeatureLoopHistoryEntry {
+    /// Required fields followed by the optional named-boundary field.
+    pub fn fields(&self) -> impl Iterator<Item = &[u8]> {
+        let trailing = match &self.boundary {
+            FeatureLoopHistoryBoundary::NamedRecord { trailing } => trailing.as_ref(),
+            _ => None,
+        };
+        self.field_bytes.iter().chain(trailing).map(Vec::as_slice)
+    }
+}
+
 /// Boundary form terminating one `lo_hist` row.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FeatureLoopHistoryBoundary {
     /// Bare `e3` terminator.
     CompoundClose,
@@ -282,7 +293,7 @@ pub enum FeatureLoopHistoryBoundary {
     /// `f2 f7 <reference> e3` terminator.
     ReferenceFinal(u32),
     /// The next named-record header bounds the final row.
-    NamedRecord,
+    NamedRecord { trailing: Option<Vec<u8>> },
 }
 
 /// One resolved rotational extent from an `AllFeatur` feature row.
@@ -1398,7 +1409,6 @@ pub(crate) fn loop_history_roster(
     mut cursor: usize,
     count: usize,
 ) -> Option<Vec<ParsedLoopHistoryEntry>> {
-    const FIELD_COUNT: usize = 4;
     (count > 0 && count <= body.len().saturating_sub(cursor) / 2).then_some(())?;
     let mut entries = Vec::with_capacity(count);
     for index in 0..count {
@@ -1406,18 +1416,17 @@ pub(crate) fn loop_history_roster(
         let (loop_id, after_id) = psb::compact_int(body, cursor);
         (after_id > cursor && body[cursor] <= 0xbf).then_some(())?;
         cursor = after_id;
-        let mut field_bytes = Vec::with_capacity(FIELD_COUNT + 1);
-        for _ in 0..FIELD_COUNT {
+        let mut field_bytes = std::array::from_fn(|_| Vec::new());
+        for field in &mut field_bytes {
             let token = psb::token_at(body, cursor)?;
             (!matches!(
                 token.kind,
                 psb::TokenKind::CompoundClose | psb::TokenKind::Truncated(_)
             ))
             .then_some(())?;
-            field_bytes.push(
-                body.get(cursor..cursor.checked_add(token.length)?)?
-                    .to_vec(),
-            );
+            *field = body
+                .get(cursor..cursor.checked_add(token.length)?)?
+                .to_vec();
             cursor = cursor.checked_add(token.length)?;
         }
         let boundary = if body.get(cursor) == Some(&0xe3) {
@@ -1440,24 +1449,26 @@ pub(crate) fn loop_history_roster(
         } else {
             (index + 1 == count).then_some(())?;
             let token = psb::token_at(body, cursor)?;
-            if token.kind != psb::TokenKind::NamedRecord {
+            let trailing = if token.kind != psb::TokenKind::NamedRecord {
                 (!matches!(
                     token.kind,
                     psb::TokenKind::CompoundClose | psb::TokenKind::Truncated(_)
                 ))
                 .then_some(())?;
-                field_bytes.push(
-                    body.get(cursor..cursor.checked_add(token.length)?)?
-                        .to_vec(),
-                );
+                let bytes = body
+                    .get(cursor..cursor.checked_add(token.length)?)?
+                    .to_vec();
                 cursor = cursor.checked_add(token.length)?;
                 matches!(
                     psb::token_at(body, cursor).map(|token| token.kind),
                     Some(psb::TokenKind::NamedRecord)
                 )
                 .then_some(())?;
-            }
-            FeatureLoopHistoryBoundary::NamedRecord
+                Some(bytes)
+            } else {
+                None
+            };
+            FeatureLoopHistoryBoundary::NamedRecord { trailing }
         };
         entries.push(ParsedLoopHistoryEntry {
             loop_id,
@@ -1472,7 +1483,7 @@ pub(crate) fn loop_history_roster(
 
 pub(crate) struct ParsedLoopHistoryEntry {
     pub(crate) loop_id: u32,
-    pub(crate) field_bytes: Vec<Vec<u8>>,
+    pub(crate) field_bytes: [Vec<u8>; 4],
     pub(crate) boundary: FeatureLoopHistoryBoundary,
     pub(crate) offset: usize,
     pub(crate) end_offset: usize,

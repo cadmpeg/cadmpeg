@@ -395,7 +395,7 @@ fn loop_history_roster_uses_declared_loop_count_and_stored_order() {
     );
     assert_eq!(
         entries[0].field_bytes,
-        vec![vec![1], vec![0xf6], vec![0xe5], vec![2]]
+        [vec![1], vec![0xf6], vec![0xe5], vec![2]]
     );
     assert_eq!(
         entries[0].boundary,
@@ -405,8 +405,13 @@ fn loop_history_roster_uses_declared_loop_count_and_stored_order() {
         entries[1].boundary,
         FeatureLoopHistoryBoundary::CompoundClose
     );
-    assert_eq!(entries[2].field_bytes.len(), 5);
-    assert_eq!(entries[2].boundary, FeatureLoopHistoryBoundary::NamedRecord);
+    assert_eq!(entries[2].fields().count(), 5);
+    assert_eq!(
+        entries[2].boundary,
+        FeatureLoopHistoryBoundary::NamedRecord {
+            trailing: Some(vec![7])
+        }
+    );
 }
 
 #[test]
@@ -421,7 +426,7 @@ fn loop_history_roster_rejects_incomplete_and_early_boundaries() {
     assert_eq!(direct_named[0].end_offset, 5);
     assert_eq!(
         direct_named[0].boundary,
-        FeatureLoopHistoryBoundary::NamedRecord
+        FeatureLoopHistoryBoundary::NamedRecord { trailing: None }
     );
 
     let body = b"\xe0\x00lo_id_tab_ptr\0\xf8\x01\xf7\x60\xfb\xe3\
