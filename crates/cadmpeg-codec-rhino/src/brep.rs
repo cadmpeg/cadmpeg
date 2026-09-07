@@ -1047,26 +1047,17 @@ fn parse_legacy_major2(
     })?;
     let mut endpoint_parent = (0..endpoint_count).collect::<Vec<_>>();
     for loop_record in &loops {
-        for pair in loop_record.trims.windows(2) {
+        for (last, first) in loop_record
+            .trims
+            .iter()
+            .zip(loop_record.trims.iter().cycle().skip(1))
+        {
             legacy_union(
                 &mut endpoint_parent,
-                legacy_trim_endpoint(pair[0], 1),
-                legacy_trim_endpoint(pair[1], 0),
+                legacy_trim_endpoint(*last, 1),
+                legacy_trim_endpoint(*first, 0),
             );
         }
-        let first = *loop_record
-            .trims
-            .first()
-            .expect("legacy loops have at least one trim");
-        let last = *loop_record
-            .trims
-            .last()
-            .expect("legacy loops have at least one trim");
-        legacy_union(
-            &mut endpoint_parent,
-            legacy_trim_endpoint(last, 1),
-            legacy_trim_endpoint(first, 0),
-        );
     }
     for (trim_index, trim) in trims.iter().enumerate() {
         if trim.edge < 0 {
@@ -1209,7 +1200,6 @@ fn parse_legacy_major2(
         });
     }
     for trim in &mut trims {
-        let trim_index = trim.index as usize;
         let start_root = legacy_find(&mut endpoint_parent, legacy_trim_endpoint(trim.index, 0));
         let end_root = legacy_find(&mut endpoint_parent, legacy_trim_endpoint(trim.index, 1));
         trim.vertices = [
@@ -1220,7 +1210,6 @@ fn parse_legacy_major2(
                 .get(&end_root)
                 .expect("legacy trim end root has a vertex"),
         ];
-        debug_assert_eq!(trim.index as usize, trim_index);
     }
     for edge in &edges {
         for vertex in edge.vertices {
@@ -1330,37 +1319,45 @@ fn legacy_curve_shape(
     let crate::curves::DecodedGeometry::Curve { curve } = decoded else {
         return Err(error(offset, "legacy Brep polycurve is not a curve"));
     };
-    let parameters = curve
-        .compound_parameters()
-        .filter(|parameters| parameters.len() >= 2)
-        .ok_or_else(|| error(offset, "legacy Brep polycurve has no parameter range"))?;
+    let domain = match curve {
+        crate::curves::DecodedCurve::Compound {
+            children,
+            end_parameter,
+            ..
+        } => {
+            let first = children
+                .first()
+                .ok_or_else(|| error(offset, "legacy Brep polycurve has no parameter range"))?;
+            Interval([first.0, *end_parameter])
+        }
+        crate::curves::DecodedCurve::Leaf { .. } => {
+            return Err(error(offset, "legacy Brep polycurve has no parameter range"));
+        }
+    };
     let endpoints = legacy_decoded_curve_endpoints(curve, offset)?;
-    Ok((
-        Interval([
-            parameters[0],
-            *parameters.last().expect("range has two values"),
-        ]),
-        endpoints,
-    ))
+    Ok((domain, endpoints))
 }
 
 fn legacy_decoded_curve_endpoints(
     curve: &crate::curves::DecodedCurve,
     offset: usize,
 ) -> Result<[Point3; 2], GeometryError> {
-    if let crate::curves::DecodedCurve::Compound { children, .. } = curve {
-        let first = children
-            .first()
-            .ok_or_else(|| error(offset, "legacy Brep polycurve has no first segment"))?;
-        let last = children
-            .last()
-            .ok_or_else(|| error(offset, "legacy Brep polycurve has no last segment"))?;
-        return Ok([
-            legacy_decoded_curve_endpoints(&first.1, offset)?[0],
-            legacy_decoded_curve_endpoints(&last.1, offset)?[1],
-        ]);
-    }
-    match curve.leaf_geometry().expect("leaf curve") {
+    let geometry = match curve {
+        crate::curves::DecodedCurve::Compound { children, .. } => {
+            let first = children
+                .first()
+                .ok_or_else(|| error(offset, "legacy Brep polycurve has no first segment"))?;
+            let last = children
+                .last()
+                .ok_or_else(|| error(offset, "legacy Brep polycurve has no last segment"))?;
+            return Ok([
+                legacy_decoded_curve_endpoints(&first.1, offset)?[0],
+                legacy_decoded_curve_endpoints(&last.1, offset)?[1],
+            ]);
+        }
+        crate::curves::DecodedCurve::Leaf { geometry, .. } => geometry,
+    };
+    match geometry {
         CurveGeometry::Nurbs(nurbs) => {
             let first = nurbs
                 .control_points()
