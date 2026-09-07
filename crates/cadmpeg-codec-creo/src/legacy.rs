@@ -2,6 +2,7 @@
 //! Structural grammar for legacy ASCII persistence records.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroUsize;
 use std::ops::Range;
 
 use serde::{Serialize, Serializer};
@@ -303,10 +304,17 @@ pub struct AttributeValue {
     pub offset: usize,
     /// Byte range of the payload after the second field separator.
     pub payload: Range<usize>,
-    /// Contiguous source range containing immediately following `$` rows.
-    pub continuation_rows: Option<Range<usize>>,
-    /// Number of immediately following `$` rows.
-    pub continuation_count: usize,
+    /// Immediately following `$` rows, when present.
+    pub continuation: Option<Continuation>,
+}
+
+/// A nonempty sequence of continuation rows following one value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Continuation {
+    /// Contiguous source range containing the rows.
+    pub rows: Range<usize>,
+    /// Number of rows in the source range.
+    pub count: NonZeroUsize,
 }
 
 /// Declarations and values owned by one outer object or named ASCII section.
@@ -469,7 +477,12 @@ impl Persistence {
         self.scopes
             .iter()
             .flat_map(|scope| &scope.values)
-            .map(|value| value.continuation_count)
+            .map(|value| {
+                value
+                    .continuation
+                    .as_ref()
+                    .map_or(0, |continuation| continuation.count.get())
+            })
             .sum()
     }
 
@@ -926,7 +939,9 @@ fn scalar_string_records(
             else {
                 continue;
             };
-            let Some(bytes) = (value.continuation_count == 0)
+            let Some(bytes) = value
+                .continuation
+                .is_none()
                 .then(|| data.get(value.payload.clone()))
                 .flatten()
             else {
@@ -1017,7 +1032,7 @@ fn string_records(
                     .iter()
                     .filter_map(|offset| values_by_offset.get(offset).copied())
                 {
-                    if child.continuation_count == 0 {
+                    if child.continuation.is_none() {
                         values.push(string_value(&data[child.payload.clone()]));
                     } else {
                         unresolved += 1;
@@ -1026,10 +1041,10 @@ fn string_records(
                 let expected = dimensions
                     .first()
                     .and_then(|dimension| usize::try_from(*dimension).ok());
-                let complete = value.continuation_count == 0
+                let complete = value.continuation.is_none()
                     && expected.is_some_and(|count| count == children.len())
                     && values.len() == children.len();
-                unresolved += usize::from(value.continuation_count != 0);
+                unresolved += usize::from(value.continuation.is_some());
                 incomplete_arrays += usize::from(!complete);
                 StringPayload::Array {
                     dimensions,
@@ -1037,7 +1052,7 @@ fn string_records(
                     complete,
                 }
             } else {
-                if value.continuation_count != 0 {
+                if value.continuation.is_some() {
                     unresolved += 1;
                     continue;
                 }
@@ -1094,8 +1109,8 @@ fn numeric_records<T>(
             };
             let (payload, next_index) = if let Some(dimensions) = array_dimensions(payload_bytes) {
                 let mut next_index = index + 1;
-                let runs = if let Some(range) = &value.continuation_rows {
-                    let Some(bytes) = data.get(range.clone()) else {
+                let runs = if let Some(continuation) = &value.continuation {
+                    let Some(bytes) = data.get(continuation.rows.clone()) else {
                         unresolved += 1;
                         index += 1;
                         continue;
@@ -1115,7 +1130,9 @@ fn numeric_records<T>(
                         let Some(bytes) = data.get(child.payload.clone()) else {
                             break;
                         };
-                        let Some(run) = (child.continuation_count == 0)
+                        let Some(run) = child
+                            .continuation
+                            .is_none()
                             .then(|| numeric_run(bytes, scalar))
                             .flatten()
                         else {
@@ -1141,7 +1158,9 @@ fn numeric_records<T>(
                 }
                 (NumericPayload::Array { dimensions, runs }, next_index)
             } else {
-                let Some(scalar_value) = (value.continuation_count == 0)
+                let Some(scalar_value) = value
+                    .continuation
+                    .is_none()
                     .then(|| scalar(payload_bytes))
                     .flatten()
                 else {
@@ -1193,8 +1212,7 @@ fn value(line: &[u8], line_offset: usize) -> Option<AttributeValue> {
         attribute_id,
         offset: line_offset,
         payload: line_offset + payload_start..line_offset + line.len(),
-        continuation_rows: None,
-        continuation_count: 0,
+        continuation: None,
     })
 }
 
@@ -1220,11 +1238,18 @@ fn scan_scope(data: &[u8], range: Range<usize>) -> Scope {
         if current.starts_with(b"$") {
             if let Some(owner) = continuation_owner {
                 let value = &mut candidates[owner];
-                value
-                    .continuation_rows
-                    .get_or_insert(line_offset..line_offset + current.len())
-                    .end = line_offset + current.len();
-                value.continuation_count += 1;
+                match &mut value.continuation {
+                    Some(continuation) => {
+                        continuation.rows.end = line_offset + current.len();
+                        continuation.count = continuation.count.saturating_add(1);
+                    }
+                    None => {
+                        value.continuation = Some(Continuation {
+                            rows: line_offset..line_offset + current.len(),
+                            count: NonZeroUsize::MIN,
+                        });
+                    }
+                }
             }
             continue;
         }

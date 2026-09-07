@@ -26,12 +26,12 @@ fn scan_resolves_declarations_values_and_continuations() {
     assert_eq!(scope.values.len(), 2);
     assert_eq!(&data[scope.values[0].payload.clone()], b"->");
     assert_eq!(&data[scope.values[1].payload.clone()], b"[2][2]");
-    assert_eq!(scope.values[1].continuation_count, 2);
     let continuation = scope.values[1]
-        .continuation_rows
-        .clone()
+        .continuation
+        .as_ref()
         .expect("continuations");
-    assert_eq!(&data[continuation], b"$3FF,0\n$0,3FF");
+    assert_eq!(continuation.count.get(), 2);
+    assert_eq!(&data[continuation.rows.clone()], b"$3FF,0\n$0,3FF");
     assert_eq!(persistence.unresolved_value_count(), 0);
     assert_eq!(persistence.conflicting_declaration_count(), 0);
 }
