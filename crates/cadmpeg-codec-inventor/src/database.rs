@@ -82,8 +82,8 @@ pub(crate) struct SegmentRegistry {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum RevisionPayload {
     None,
-    Short { enabled: bool, value: [u8; 8] },
-    Long { enabled: bool, value: [u8; 16] },
+    Short([u8; 8]),
+    Long([u8; 16]),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -296,15 +296,9 @@ pub(crate) fn parse_revisions(
         let payload = if kind == u16::MAX {
             let enabled = cursor.u8("revision payload selector")? != 0;
             if enabled {
-                RevisionPayload::Short {
-                    enabled,
-                    value: cursor.array("short revision payload")?,
-                }
+                RevisionPayload::Short(cursor.array("short revision payload")?)
             } else {
-                RevisionPayload::Long {
-                    enabled,
-                    value: cursor.array("long revision payload")?,
-                }
+                RevisionPayload::Long(cursor.array("long revision payload")?)
             }
         } else {
             RevisionPayload::None
@@ -570,7 +564,7 @@ mod tests {
             assert_eq!(table.entries.len(), 2);
             assert!(matches!(
                 table.entries[1].payload,
-                RevisionPayload::Short { .. }
+                RevisionPayload::Short(..)
             ));
         });
     }

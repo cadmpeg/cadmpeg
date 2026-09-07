@@ -549,8 +549,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
                 kind: entry.kind,
                 payload_form: match entry.payload {
                     RevisionPayload::None => RevisionPayloadForm::None,
-                    RevisionPayload::Short { .. } => RevisionPayloadForm::Short,
-                    RevisionPayload::Long { .. } => RevisionPayloadForm::Long,
+                    RevisionPayload::Short(..) => RevisionPayloadForm::Short,
+                    RevisionPayload::Long(..) => RevisionPayloadForm::Long,
                 },
             })
             .collect(),
