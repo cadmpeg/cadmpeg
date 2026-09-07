@@ -3431,10 +3431,9 @@ impl<'a> DecodeContext<'a> {
             if outcome.first_object.is_degraded() {
                 outcome.first_object = object;
             }
-            if object
-                .framed()
-                .is_some_and(|object| object.attributes_degraded)
-            {
+            if object.framed().is_some_and(|object| {
+                matches!(object.attributes, crate::objects::AttributeState::Degraded)
+            }) {
                 outcome.attribute_degraded += 1;
             }
             match status {

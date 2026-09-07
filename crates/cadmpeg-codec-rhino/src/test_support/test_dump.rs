@@ -151,8 +151,7 @@ pub(crate) fn descriptor(
         object_type: 0,
         class_uuid: Uuid::nil(),
         class_data_range: offset..offset,
-        attributes: Some(attributes),
-        attributes_degraded: false,
+        attributes: crate::objects::AttributeState::Parsed(Box::new(attributes)),
         attributes_userdata: Vec::new(),
         identity: None,
         userdata: Vec::new(),
@@ -995,7 +994,6 @@ pub(crate) fn set_identity(
         effective_color: color,
         effective_visible: visible,
         object_mode: 0,
-        definition_member: false,
         object_frame: None,
         source: settings::SourceRange {
             range: object.range.clone(),

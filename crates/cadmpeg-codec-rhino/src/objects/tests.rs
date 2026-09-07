@@ -4,7 +4,7 @@
 use cadmpeg_ir::report::Severity;
 
 use crate::chunks::{ArchiveVersion, BoundedReader};
-use crate::objects::ObjectRecord;
+use crate::objects::{AttributeState, ObjectRecord, IDEF_OBJECT_MODE};
 use crate::settings;
 use crate::test_support::test_dump::*;
 use crate::wire::Uuid;
@@ -560,7 +560,9 @@ pub(crate) fn identity_resolution_defers_material_and_parent_colors() {
         parent[0]
             .identity()
             .expect("required invariant")
-            .definition_member
+            .object_mode
+            & 0x0f
+            == IDEF_OBJECT_MODE
     );
 }
 
@@ -688,7 +690,7 @@ fn obsolete_custom_mesh_userdata_transfers_to_object_attributes() {
         );
         let mesh = object
             .attributes
-            .as_ref()
+            .parsed()
             .and_then(|attributes| attributes.custom_render_mesh.as_ref())
             .expect("converted custom mesh settings");
         assert_eq!(mesh.version, (1, 5));
@@ -734,10 +736,10 @@ fn malformed_obsolete_custom_mesh_userdata_keeps_object_attributes() {
     );
     let scan = crate::container::scan_owned(bytes).expect("malformed custom mesh record");
     let object = scan.objects[0].framed().expect("test object is framed");
-    assert!(object.attributes.is_some());
+    assert!(object.attributes.parsed().is_some());
     assert!(object
         .attributes
-        .as_ref()
+        .parsed()
         .expect("object attributes")
         .custom_render_mesh
         .is_none());
@@ -799,7 +801,7 @@ fn per_object_mesh_userdata_transfers_nested_parameters_to_object_attributes() {
         );
         let mesh = object
             .attributes
-            .as_ref()
+            .parsed()
             .and_then(|attributes| attributes.custom_render_mesh.as_ref())
             .expect("nested custom mesh settings");
         assert_eq!(mesh.version, (1, 5));
@@ -848,10 +850,10 @@ fn malformed_per_object_mesh_userdata_keeps_object_attributes() {
     );
     let scan = crate::container::scan_owned(bytes).expect("malformed per-object mesh record");
     let object = scan.objects[0].framed().expect("test object is framed");
-    assert!(object.attributes.is_some());
+    assert!(object.attributes.parsed().is_some());
     assert!(object
         .attributes
-        .as_ref()
+        .parsed()
         .expect("object attributes")
         .custom_render_mesh
         .is_none());
@@ -1039,7 +1041,7 @@ fn geometry_decode_does_not_clear_attribute_degradation() {
     scan.objects[0]
         .framed_mut()
         .expect("test object is framed")
-        .attributes_degraded = true;
+        .attributes = AttributeState::Degraded;
     crate::decode::with_expand(&scan, |expand| {
         let mut context = crate::decode::DecodeContext::new(&scan, expand);
         assert!(context.mark_decoded(0));

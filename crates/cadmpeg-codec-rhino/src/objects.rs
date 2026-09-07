@@ -236,8 +236,6 @@ pub(crate) struct SourceIdentity {
     pub(crate) effective_visible: bool,
     /// Raw object mode.
     pub(crate) object_mode: u8,
-    /// Whether the object-mode marks a definition member.
-    pub(crate) definition_member: bool,
     /// Object frame transform.
     pub(crate) object_frame: Option<Xform>,
     /// Complete source range.
@@ -271,6 +269,23 @@ pub(crate) struct HistoryDescriptor {
     pub(crate) data_range: Option<Range<usize>>,
 }
 
+/// Attribute payload admission state for a framed object.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum AttributeState {
+    Missing,
+    Degraded,
+    Parsed(Box<ObjectAttributes>),
+}
+
+impl AttributeState {
+    pub(crate) fn parsed(&self) -> Option<&ObjectAttributes> {
+        match self {
+            Self::Parsed(value) => Some(value),
+            Self::Missing | Self::Degraded => None,
+        }
+    }
+}
+
 /// A fully framed Rhino object record.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ObjectDescriptor {
@@ -282,10 +297,8 @@ pub(crate) struct ObjectDescriptor {
     pub(crate) class_uuid: Uuid,
     /// Class-data payload range.
     pub(crate) class_data_range: Range<usize>,
-    /// Parsed object attributes, if valid.
-    pub(crate) attributes: Option<ObjectAttributes>,
-    /// Whether the framed attributes payload degraded during parsing.
-    pub(crate) attributes_degraded: bool,
+    /// Attribute payload admission state.
+    pub(crate) attributes: AttributeState,
     /// Attribute-userdata descriptors.
     pub(crate) attributes_userdata: Vec<AttributeUserdataDescriptor>,
     /// Resolved source identity.
@@ -1373,7 +1386,7 @@ fn resolve_identity(
     index: usize,
     seen_ids: &mut HashSet<Uuid>,
 ) {
-    let attributes = descriptor.attributes.as_ref();
+    let attributes = descriptor.attributes.parsed();
     let object_id = attributes.map_or(Uuid::nil(), |value| value.object_id);
     let layer_index = attributes.map_or(-1, |value| value.layer_index);
     let layer = layers.get(&layer_index).copied();
@@ -1438,7 +1451,6 @@ fn resolve_identity(
         effective_color: color,
         effective_visible: visible,
         object_mode,
-        definition_member,
         object_frame: attributes.and_then(|value| value.object_frame),
         source: SourceRange {
             range: descriptor.range.clone(),
@@ -1584,30 +1596,30 @@ pub(crate) fn parse_object_record(
             "object record is missing object end",
         ));
     }
-    let mut attributes_degraded = false;
-    let mut attributes = attributes_chunk.as_ref().and_then(|chunk| {
-        match parse_attributes(
-            bytes,
-            chunk.body(),
-            chunk.range(),
-            archive,
-            writer_version,
-            &mut warnings,
-        ) {
-            Ok(value) => Some(value),
-            Err(error) => {
-                attributes_degraded = true;
-                warnings.push(format!(
-                    "object attributes at {} degraded: {error}",
-                    chunk.body().start
-                ));
-                None
+    let mut attributes = attributes_chunk
+        .as_ref()
+        .map_or(AttributeState::Missing, |chunk| {
+            match parse_attributes(
+                bytes,
+                chunk.body(),
+                chunk.range(),
+                archive,
+                writer_version,
+                &mut warnings,
+            ) {
+                Ok(value) => AttributeState::Parsed(Box::new(value)),
+                Err(error) => {
+                    warnings.push(format!(
+                        "object attributes at {} degraded: {error}",
+                        chunk.body().start
+                    ));
+                    AttributeState::Degraded
+                }
             }
-        }
-    });
+        });
     if let Some(item) = attributes_chunk.as_ref() {
         let children = attributes
-            .as_ref()
+            .parsed()
             .and_then(|value| value.rendering_range.clone())
             .into_iter()
             .collect::<Vec<_>>();
@@ -1619,7 +1631,7 @@ pub(crate) fn parse_object_record(
         .as_ref()
         .map(|range| parse_attribute_userdata(bytes, range.clone(), archive, &mut warnings))
         .unwrap_or_default();
-    if let Some(attributes) = attributes.as_mut() {
+    if let AttributeState::Parsed(attributes) = &mut attributes {
         apply_attribute_userdata(
             bytes,
             attributes,
@@ -1634,7 +1646,6 @@ pub(crate) fn parse_object_record(
         class_uuid,
         class_data_range,
         attributes,
-        attributes_degraded,
         attributes_userdata,
         identity: None,
         userdata,

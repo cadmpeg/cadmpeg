@@ -4123,7 +4123,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> NativeInstall {
         let Some(object) = object.framed() else {
             continue;
         };
-        if let Some(attributes) = &object.attributes {
+        if let Some(attributes) = object.attributes.parsed() {
             for group in &attributes.groups {
                 group_members
                     .entry(*group)
@@ -4147,7 +4147,7 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) -> NativeInstall {
                 ))),
             }
         }
-        if let (Some(identity), Some(attributes)) = (&object.identity, &object.attributes) {
+        if let (Some(identity), Some(attributes)) = (&object.identity, object.attributes.parsed()) {
             let key = if identity.object_id.is_nil()
                 || object_id_counts.get(&identity.object_id).copied() != Some(1)
             {
