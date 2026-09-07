@@ -1738,7 +1738,12 @@ mod tests {
         )
     }
 
-    fn test_label(owner_ordinal: u32, index: u32, class_id: &str) -> PmDcFeatureLabel {
+    fn test_label(
+        owner_ordinal: u32,
+        index: u32,
+        class_id: &str,
+        participants: &[u32],
+    ) -> PmDcFeatureLabel {
         Located::new(
             PmDcFeatureLabelPayload {
                 save_version_major: 16,
@@ -1751,7 +1756,7 @@ mod tests {
                     next: reference(0),
                 },
                 index,
-                participants: reference_list(&[]),
+                participants: reference_list(participants),
                 name: format!("Feature {index}"),
                 class_id: class_id.into(),
             },
@@ -2073,7 +2078,7 @@ mod tests {
             ),
         ];
         let fillet = test_feature(100, 16, &[(0, 2), (11, 1), (15, 8)]);
-        let label = test_label(100, 7, FILLET_CLASS_ID);
+        let label = test_label(100, 7, FILLET_CLASS_ID, &[]);
         let index = test_projection_index(
             &fillet_properties,
             std::slice::from_ref(&raw_radius),
@@ -2147,7 +2152,7 @@ mod tests {
             ),
         ];
         let chamfer = test_feature(101, 12, &[(0, 31), (2, 40), (4, 32), (5, 34), (11, 35)]);
-        let label = test_label(101, 8, CHAMFER_CLASS_ID);
+        let label = test_label(101, 8, CHAMFER_CLASS_ID, &[]);
         let index = test_projection_index(
             &chamfer_properties,
             std::slice::from_ref(&raw_distance),
@@ -2314,8 +2319,7 @@ mod tests {
                 (26, 7),
             ],
         );
-        let mut label = test_label(100, 5, EXTRUSION_CLASS_ID);
-        label.participants = reference_list(&[51]);
+        let label = test_label(100, 5, EXTRUSION_CLASS_ID, &[51]);
         let raw_parameters = vec![raw_length, raw_taper];
         let index = test_projection_index(
             &properties,
@@ -2462,7 +2466,7 @@ mod tests {
                 (24, 5),
             ],
         );
-        let label = test_label(100, 9, HOLE_CLASS_ID);
+        let label = test_label(100, 9, HOLE_CLASS_ID, &[]);
         let index = test_projection_index(
             &properties,
             &raw_parameters,

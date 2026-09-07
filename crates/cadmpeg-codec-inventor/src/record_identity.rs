@@ -26,7 +26,7 @@ pub(crate) trait RecordPayload {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Located<T> {
     pub(crate) identity: RecordIdentity,
-    pub(crate) payload: T,
+    payload: T,
 }
 
 impl<T> Located<T> {
@@ -93,11 +93,5 @@ impl<'de, T: RecordPayload + Deserialize<'de>> Deserialize<'de> for Located<T> {
             ));
         }
         Ok(value)
-    }
-}
-
-impl<T> std::ops::DerefMut for Located<T> {
-    fn deref_mut(&mut self) -> &mut T {
-        &mut self.payload
     }
 }

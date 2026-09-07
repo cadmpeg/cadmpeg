@@ -2060,7 +2060,7 @@ mod tests {
 
     #[test]
     fn projects_generated_closed_square_and_resolved_plane() {
-        let transform = parse(
+        let mut transform = parse(
             &{
                 let mut bytes = content(0);
                 bytes.extend_from_slice(&0x8421u16.to_le_bytes());
@@ -2120,10 +2120,11 @@ mod tests {
             *direction = [end[0] - start[0], end[1] - start[1]];
             entities.push(line);
         }
-        let mut transform = Located::new(transform, type_id_string(TRANSFORM_TYPE), "segment", 0);
         transform.header.source_index = 0;
+        let transform = Located::new(transform, type_id_string(TRANSFORM_TYPE), "segment", 0);
         let direction = Located::new(direction, type_id_string(DIRECTION_TYPE), "segment", 1);
-        let sketch = Located::new(sketch, type_id_string(SKETCH_TYPE), "segment", 2);
+        let located_sketch =
+            Located::new(sketch.clone(), type_id_string(SKETCH_TYPE), "segment", 2);
         let entities = entities
             .into_iter()
             .enumerate()
@@ -2133,7 +2134,7 @@ mod tests {
             })
             .collect();
         let mut inventory = SketchInventory {
-            sketches: vec![sketch],
+            sketches: vec![located_sketch],
             entities,
             transforms: vec![transform],
             directions: vec![direction],
@@ -2171,7 +2172,8 @@ mod tests {
             "segment",
             11,
         ));
-        let entities = &mut inventory.sketches[0].entities;
+        let mut sketch = sketch;
+        let entities = &mut sketch.entities;
         let mut references = entities.references().to_vec();
         references.push(PmDcReference {
             index: 12,
@@ -2180,6 +2182,7 @@ mod tests {
         *entities =
             PmDcReferenceList::new(entities.marker, entities.metadata().cloned(), references)
                 .expect("extended entity list");
+        inventory.sketches[0] = Located::new(sketch, type_id_string(SKETCH_TYPE), "segment", 2);
         let incomplete = project(&inventory, &[]);
         assert_eq!(incomplete.unresolved_sketches, 1);
         assert_eq!(incomplete.unresolved_constraints, 1);
