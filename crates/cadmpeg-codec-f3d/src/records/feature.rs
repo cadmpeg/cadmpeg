@@ -2732,7 +2732,7 @@ pub struct DesignAssemblyOperandPathLink {
     /// Locator-record index named by the assembly scope.
     pub locator_record_index: u32,
     /// Dynamic indexed-record class carrying the locator.
-    pub locator_class_tag: String,
+    pub locator_class_tag: DesignClassTag,
     /// Byte offset of the locator's indexed header.
     pub locator_byte_offset: u64,
     /// Byte offset of the assembly-scope backlink in the locator.
@@ -2742,7 +2742,7 @@ pub struct DesignAssemblyOperandPathLink {
     /// Byte offset of the wrapper-record index in the locator.
     pub wrapper_reference_offset: u64,
     /// Dynamic indexed-record class carrying the wrapper.
-    pub wrapper_class_tag: String,
+    pub wrapper_class_tag: DesignClassTag,
     /// Byte offset of the wrapper's indexed header.
     pub wrapper_byte_offset: u64,
     /// Byte offset of the path-record index in the wrapper.

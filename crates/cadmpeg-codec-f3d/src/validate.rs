@@ -138,11 +138,7 @@ fn valid_assembly_operand_path_link(
     let Some(path_reference_offset) = link.wrapper_byte_offset.checked_add(27) else {
         return false;
     };
-    let class_tags_are_dynamic = [&link.locator_class_tag, &link.wrapper_class_tag]
-        .into_iter()
-        .all(|tag| tag.len() == 3 && tag.bytes().all(|byte| byte.is_ascii_digit()));
-    class_tags_are_dynamic
-        && link.locator_reference_offset == locator_reference_offset
+    link.locator_reference_offset == locator_reference_offset
         && link.locator_record_index.checked_add(1) == Some(path.record_index)
         && if variable_reference {
             link.locator_record_index
@@ -165,8 +161,8 @@ fn valid_class_363_operand_path_link(
     path: &records::feature::DesignAssemblyOperandPath,
 ) -> bool {
     let link = &path.link;
-    link.locator_class_tag == "363"
-        && link.wrapper_class_tag == "388"
+    link.locator_class_tag.as_str() == "363"
+        && link.wrapper_class_tag.as_str() == "388"
         && path.class_tag == "386"
         && link.locator_record_index == frame.reference_record_index
         && link.locator_reference_offset == frame.reference_offset
@@ -2370,7 +2366,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
 
                             let class_363_carriers = paths
                                 .iter()
-                                .all(|path| path.link.locator_class_tag == "363");
+                                .all(|path| path.link.locator_class_tag.as_str() == "363");
                             if class_363_carriers {
                                 !axial_frames
                                     && paths[0].link.locator_record_index

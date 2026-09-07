@@ -807,10 +807,10 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     .and_then(|alignment| alignment.operand_paths())
     .expect("legacy class-388 occurrence paths");
     assert_eq!(paths[0].link.locator_record_index, 5_001);
-    assert_eq!(paths[0].link.locator_class_tag, "451");
+    assert_eq!(paths[0].link.locator_class_tag.as_str(), "451");
     assert_eq!(paths[0].link.locator_byte_offset, first_locator_at as u64);
     assert_eq!(paths[0].link.wrapper_record_index, 5_004);
-    assert_eq!(paths[0].link.wrapper_class_tag, "369");
+    assert_eq!(paths[0].link.wrapper_class_tag.as_str(), "369");
     assert_eq!(paths[0].link.wrapper_byte_offset, first_wrapper_at as u64);
     assert_eq!(paths[0].record_index, 5_003);
     assert_eq!(paths[0].class_tag, "412");
