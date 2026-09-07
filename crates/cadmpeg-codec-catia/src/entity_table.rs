@@ -193,12 +193,10 @@ pub enum ReferenceSignatureInstruction {
 #[serde(try_from = "ReferenceSignatureWire", into = "ReferenceSignatureWire")]
 pub struct ReferenceSignature {
     references: ConsecutiveReferences,
-    /// Variable compact atom preceding the nested signature frame.
-    pub prefix: ReferenceSignaturePrefix,
+    prefix: ReferenceSignaturePrefix,
     tokens: Vec<ReferenceSignatureToken>,
     signature_offset: usize,
-    /// Byte offset of the second reference marker within the value payload.
-    pub second_reference_offset: usize,
+    second_reference_offset: usize,
 }
 
 /// Consecutive fixed-width reference identities.
@@ -303,10 +301,18 @@ impl ReferenceSignature {
             .map(ReferenceSignatureToken::text)
             .collect()
     }
+    /// Variable compact atom preceding the nested signature frame.
+    pub fn prefix(&self) -> ReferenceSignaturePrefix {
+        self.prefix
+    }
     /// Offset of the first signature byte.
     #[cfg(test)]
     pub fn signature_offset(&self) -> usize {
         self.signature_offset
+    }
+    /// Byte offset of the second reference marker within the value payload.
+    pub fn second_reference_offset(&self) -> usize {
+        self.second_reference_offset
     }
     /// Source-ordered signature instructions.
     pub fn signature_program(&self) -> Vec<ReferenceSignatureInstruction> {
@@ -350,11 +356,11 @@ impl From<ReferenceSignature> for ReferenceSignatureWire {
         Self {
             first_reference: value.first_reference(),
             second_reference: value.second_reference(),
-            prefix: value.prefix,
+            prefix: value.prefix(),
             signature: value.signature(),
             signature_program: value.signature_program(),
             signature_offset: value.signature_offset,
-            second_reference_offset: value.second_reference_offset,
+            second_reference_offset: value.second_reference_offset(),
         }
     }
 }
@@ -1790,7 +1796,7 @@ mod tests {
         assert_eq!(
             parse_reference_signature(&alternate_prefix)
                 .expect("alternate reference-signature prefix")
-                .prefix,
+                .prefix(),
             ReferenceSignaturePrefix::Atom35
         );
     }

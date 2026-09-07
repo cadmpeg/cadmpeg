@@ -660,7 +660,7 @@ fn finish_decode(
         .iter()
         .filter_map(|record| record.reference_signature.as_ref())
         .filter(|signature| {
-            signature.production.prefix == entity_table::ReferenceSignaturePrefix::Atom2
+            signature.production.prefix() == entity_table::ReferenceSignaturePrefix::Atom2
         })
         .count();
     let reference_signature_prefix_atom_35_count =

@@ -274,7 +274,7 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
     assert_eq!(signature.second_entity.entity_id(), 4);
     assert!(signature.second_entity.entity().is_none());
     assert!(signature.second_entity.is_null());
-    assert_eq!(signature.production.second_reference_offset, 17);
+    assert_eq!(signature.production.second_reference_offset(), 17);
     assert_eq!(signature.production.signature(), "2(E)");
     assert_eq!(signature.production.signature_offset(), 12);
     let [cohort] = native.reference_signature_cohorts.as_slice() else {
