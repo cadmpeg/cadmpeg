@@ -6,16 +6,16 @@
 //! emission order; `phase` splits semantic islands for [`super::attach`].
 //! Stream choice (`nx:container` vs `nx:s{ordinal}`) lives in the `note` fn.
 
-use crate::native::om::roll_forward::OmRollForwardStateGroup;
-use crate::native::om::state_slot_lane::OmOperationStateSlotLane;
-use crate::native::om::state_status::OmOperationStateStatus;
-use crate::native::om::journal_group::OmOperationStateJournalGroup;
 use super::features::operation_record::FeatureOperationRecord;
 use super::features::unlabeled_record::FeatureUnlabeledOperationRecord;
 use crate::native::features::object_frame::DataBlockObjectFrame;
 use crate::native::om::compact_lane::DataBlockAbrReferenceLane;
+use crate::native::om::journal_group::OmOperationStateJournalGroup;
 use crate::native::om::material_texture::MaterialTextureAsset;
 use crate::native::om::object_uuid::ObjectUuidValue;
+use crate::native::om::roll_forward::OmRollForwardStateGroup;
+use crate::native::om::state_slot_lane::OmOperationStateSlotLane;
+use crate::native::om::state_status::OmOperationStateStatus;
 use std::collections::BTreeMap;
 
 use serde::Serialize;

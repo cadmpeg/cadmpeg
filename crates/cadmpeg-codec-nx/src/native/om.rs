@@ -8,11 +8,11 @@ use crate::om::reference_value::{DirectReference, RecordReference};
 use crate::om::state_message::StateMessage;
 use crate::om::state_table::StateTableEntry;
 use crate::printable_string::PrintableString;
+pub(crate) mod journal_group;
 pub(crate) mod material_texture;
 pub(crate) mod object_uuid;
 mod reference_wire;
 mod state_index_wire;
-pub(crate) mod journal_group;
 use journal_group::OmOperationStateJournalGroup;
 use material_texture::MaterialTextureAsset;
 
@@ -33,8 +33,8 @@ use column_index::ColumnIndexRows;
 use crate::native::segments::segment_om_links;
 use crate::om::parameter_name::ParameterName;
 pub(crate) mod roll_forward;
-use roll_forward::OmRollForwardStateGroup;
 use crate::om::IndexedStore;
+use roll_forward::OmRollForwardStateGroup;
 pub(crate) mod state_slot_lane;
 use state_slot_lane::OmOperationStateSlotLane;
 pub(crate) mod state_status;
@@ -446,7 +446,9 @@ pub fn operation_state_statuses(container: &Container) -> Vec<OmOperationStateSt
                 .filter_map(move |(ordinal, (offset, row))| {
                     let ordinal = u32::try_from(ordinal).ok()?;
                     OmOperationStateStatus::new(
-                        format!("nx:feature-history:operation-state-status#{section_key}-{ordinal:010}"),
+                        format!(
+                            "nx:feature-history:operation-state-status#{section_key}-{ordinal:010}"
+                        ),
                         link.id.clone(),
                         ordinal,
                         row.into_owned(),
