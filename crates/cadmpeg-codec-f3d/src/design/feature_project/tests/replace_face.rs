@@ -265,9 +265,10 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
         chain_records: Vec::new(),
         cell_table_record_index: 3,
         cell_table_byte_offset: 0,
-        cell_table_class_tag: "325".into(),
+        cell_table_class_tag: crate::records::DesignClassTag::try_from("325".to_owned()).unwrap(),
         cell_table_frame_length: 0,
-        cell_table_paired_class_tag: "257".into(),
+        cell_table_paired_class_tag: crate::records::DesignClassTag::try_from("257".to_owned())
+            .unwrap(),
         cell_table_paired_byte_offset: 0,
         cell_count: 2,
         cell_count_offset: 0,

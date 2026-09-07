@@ -6164,11 +6164,11 @@ pub struct DesignSurfaceTrimOperation {
     /// Byte offset of the cell-table primary header.
     pub cell_table_byte_offset: u64,
     /// Dynamic class tag of the cell-table primary frame.
-    pub cell_table_class_tag: String,
+    pub cell_table_class_tag: DesignClassTag,
     /// Bytes from the cell-table primary header to its paired header.
     pub cell_table_frame_length: u64,
     /// Dynamic class tag of the cell-table paired frame.
-    pub cell_table_paired_class_tag: String,
+    pub cell_table_paired_class_tag: DesignClassTag,
     /// Byte offset of the cell-table paired header.
     pub cell_table_paired_byte_offset: u64,
     /// Count of entries in the cell table.
