@@ -407,14 +407,6 @@ impl<'a> Cursor<'a> {
         Self { source }
     }
 
-    #[allow(dead_code)] // Retained for framed RSe walks that still use the helper.
-    fn take(&mut self, len: usize, field: &'static str) -> Result<&'a [u8], CodecError> {
-        Ok(self
-            .source
-            .req_take(len)
-            .map_err(|error| error.during(field))?)
-    }
-
     fn u8(&mut self, field: &'static str) -> Result<u8, CodecError> {
         Ok(self.source.req_u8().map_err(|error| error.during(field))?)
     }

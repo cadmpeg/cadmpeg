@@ -2,8 +2,6 @@
 #![deny(clippy::disallowed_methods)]
 //! Fusion ASM construction-history record shapes.
 
-#[cfg(feature = "schema")]
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -16,8 +14,6 @@ pub(crate) struct AsmPreamble {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "AsmHistorySerde"))]
 #[serde(try_from = "AsmHistorySerde", into = "AsmHistorySerde")]
 pub(crate) struct AsmHistory {
     pub id: String,
@@ -44,7 +40,6 @@ impl AsmHistory {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct AsmHistorySerde {
     id: String,
     byte_offset: u64,
@@ -104,9 +99,7 @@ impl From<AsmHistory> for AsmHistorySerde {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "AsmDeltaStateWire", into = "AsmDeltaStateWire")]
-#[cfg_attr(feature = "schema", schemars(with = "AsmDeltaStateWire"))]
 pub(crate) struct AsmDeltaState {
     pub id: String,
     pub parent: String,
@@ -172,7 +165,6 @@ impl AsmDeltaState {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct AsmDeltaStateWire {
     id: String,
     parent: String,
@@ -274,7 +266,6 @@ impl From<AsmDeltaState> for AsmDeltaStateWire {
 
 /// Record revision occupying one stable entity slot at an ASM history state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub(crate) struct AsmEntityVersion {
     pub entity_ref: i64,
     pub record_ref: i64,
@@ -282,7 +273,6 @@ pub(crate) struct AsmEntityVersion {
 
 /// Stable entity-slot membership of one re-derived historical B-rep.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub(crate) struct AsmHistoricalTopology {
     pub bodies: Vec<i64>,
     pub regions: Vec<i64>,
@@ -347,7 +337,6 @@ pub(crate) struct AsmHistoricalTopology {
 
 /// One persistent tag group attached to a historical face or edge revision.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub(crate) struct AsmHistoricalPersistentSubentityTag {
     pub entity_kind: crate::records::topology::AsmHistoricalEntityKind,
     pub entity_ref: i64,
@@ -359,7 +348,6 @@ pub(crate) struct AsmHistoricalPersistentSubentityTag {
 
 /// Stable axis-bearing curve carrier value in one historical B-rep state.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub(crate) struct AsmHistoricalCurveAxis {
     pub curve: i64,
     pub origin: Point3,
@@ -368,7 +356,6 @@ pub(crate) struct AsmHistoricalCurveAxis {
 
 /// Stable axis line of one cylinder, cone, or torus carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub(crate) struct AsmHistoricalSurfaceAxis {
     pub surface: i64,
     pub origin: Point3,
@@ -376,7 +363,6 @@ pub(crate) struct AsmHistoricalSurfaceAxis {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub(crate) struct AsmHistoricalSurfaceRadius {
     pub surface: i64,
     pub radius: f64,
@@ -384,7 +370,6 @@ pub(crate) struct AsmHistoricalSurfaceRadius {
 
 /// Stable geometry of one right-circular cylinder carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub(crate) struct AsmHistoricalCylinder {
     pub surface: i64,
     pub origin: Point3,
@@ -394,7 +379,6 @@ pub(crate) struct AsmHistoricalCylinder {
 
 /// Stable geometry of one plane carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub(crate) struct AsmHistoricalPlane {
     pub surface: i64,
     pub origin: Point3,
@@ -403,7 +387,6 @@ pub(crate) struct AsmHistoricalPlane {
 
 /// Stable point-carrier value in one historical B-rep state.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub(crate) struct AsmHistoricalPoint {
     pub point: i64,
     pub position: Point3,
@@ -411,7 +394,6 @@ pub(crate) struct AsmHistoricalPoint {
 
 /// Ordered stable entity-slot relation in a historical B-rep.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub(crate) struct AsmHistoricalRelation {
     pub owner_ref: i64,
     pub member_refs: Vec<i64>,
@@ -419,7 +401,6 @@ pub(crate) struct AsmHistoricalRelation {
 
 /// Stable topology links of one historical coedge.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub(crate) struct AsmHistoricalCoedge {
     pub coedge: i64,
     pub owner_loop: i64,
@@ -431,7 +412,6 @@ pub(crate) struct AsmHistoricalCoedge {
 
 /// Ordered endpoint links of one historical edge.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub(crate) struct AsmHistoricalEdge {
     pub edge: i64,
     pub start_vertex: i64,
@@ -440,7 +420,6 @@ pub(crate) struct AsmHistoricalEdge {
 
 /// Stable binding from a topology entity to its required geometry carrier.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub(crate) struct AsmHistoricalCarrierBinding {
     pub entity: i64,
     pub carrier: i64,
@@ -448,7 +427,6 @@ pub(crate) struct AsmHistoricalCarrierBinding {
 
 /// Stable binding from a topology entity to its optional geometry carrier.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub(crate) struct AsmHistoricalOptionalCarrierBinding {
     pub entity: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -457,7 +435,6 @@ pub(crate) struct AsmHistoricalOptionalCarrierBinding {
 
 /// Forward stable-slot changes from an older ASM state to a newer state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub(crate) struct AsmHistoricalTransition {
     /// Older state identity; absent only at the end of the reverse-history chain.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -470,7 +447,6 @@ pub(crate) struct AsmHistoricalTransition {
 
 /// Stable entity slots inserted, deleted, or assigned a different record revision.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub(crate) struct AsmHistoricalEntityDelta {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub inserted: Vec<i64>,
@@ -482,7 +458,6 @@ pub(crate) struct AsmHistoricalEntityDelta {
 
 /// Per-family topology changes between two complete historical states.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub(crate) struct AsmHistoricalTopologyDelta {
     pub bodies: AsmHistoricalEntityDelta,
     pub regions: AsmHistoricalEntityDelta,
@@ -499,8 +474,6 @@ pub(crate) struct AsmHistoricalTopologyDelta {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "AsmHistoryRecordWire"))]
 #[serde(try_from = "AsmHistoryRecordWire", into = "AsmHistoryRecordWire")]
 pub(crate) struct AsmHistoryRecord {
     pub id: String,
@@ -540,7 +513,6 @@ impl AsmHistoryRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct AsmHistoryRecordWire {
     id: String,
     parent: String,
@@ -562,7 +534,6 @@ struct AsmHistoryRecordWire {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     entity_references: Vec<i64>,
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     raw_bytes: Vec<u8>,
 }
 
@@ -624,7 +595,6 @@ impl From<AsmHistoryRecord> for AsmHistoryRecordWire {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub(crate) struct AsmBulletinBoard {
     pub id: String,
     pub parent: String,
@@ -635,8 +605,6 @@ pub(crate) struct AsmBulletinBoard {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "AsmEntityChangeSerde"))]
 #[serde(try_from = "AsmEntityChangeSerde", into = "AsmEntityChangeSerde")]
 pub(crate) struct AsmEntityChange {
     pub id: String,
@@ -673,7 +641,6 @@ impl AsmEntityChange {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct AsmEntityChangeSerde {
     id: String,
     parent: String,
@@ -686,7 +653,6 @@ struct AsmEntityChangeSerde {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 enum AsmEntityChangeKindWire {
     Insert,

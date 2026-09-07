@@ -161,8 +161,6 @@ impl KernelFraming {
 pub struct BrepFacts {
     /// Entry name.
     pub name: String,
-    /// Whether the archive entry has the `.smbh` extension.
-    pub is_smbh: bool,
     /// Uncompressed byte length.
     pub uncompressed_len: u64,
     /// Parsed ASM or ACIS framing, when either header matched.
@@ -419,7 +417,6 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
 
             breps.push(BrepFacts {
                 name: name.clone(),
-                is_smbh: role == ContainerRole::BrepSmbh,
                 uncompressed_len: uncompressed_size,
                 kernel,
                 solved_record_limit,
@@ -629,24 +626,6 @@ pub fn text_brep_names<'s>(scan: &'s ContainerScan<'_>) -> Vec<&'s str> {
         })
         .map(|entry| entry.name.as_str())
         .collect()
-}
-
-/// Return the complete BREP set for the legacy `Design1` segment layout.
-///
-/// That layout predates body-to-blob bindings: its model is distributed across
-/// the archive's BREP entries, in archive order. Both design streams must be
-/// present so an unrelated path component named `Design1` cannot select this
-/// fallback.
-pub fn legacy_design_model_breps<'s>(scan: &'s ContainerScan<'_>) -> Option<Vec<&'s BrepFacts>> {
-    let has = |leaf: &str| {
-        scan.design_asset_folder().is_some_and(|folder| {
-            scan.entries
-                .iter()
-                .any(|entry| entry.name == format!("{folder}/Design1/{leaf}"))
-        })
-    };
-    let breps = design_breps(scan).collect::<Vec<_>>();
-    (has("BulkStream.dat") && has("MetaStream.dat") && !breps.is_empty()).then_some(breps)
 }
 
 fn asm_magic_label(bytes: &[u8]) -> String {

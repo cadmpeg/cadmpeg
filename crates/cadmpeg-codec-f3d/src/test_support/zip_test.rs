@@ -457,27 +457,6 @@ pub(crate) fn synthetic_f3d(include_smbh: bool) -> Vec<u8> {
     cursor.into_inner()
 }
 
-pub(crate) fn synthetic_legacy_multi_brep_f3d() -> Vec<u8> {
-    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    let folder = "FusionAssetName[Active]";
-    write_synthetic_manifests(&mut zip, stored);
-    for name in ["first", "second"] {
-        let mut smb = synthetic_smbh();
-        smb[39..47].copy_from_slice(&2u64.to_le_bytes());
-        smb.truncate(60);
-        zip.start_file(format!("{folder}/Breps.BlobParts/BREP.{name}.smb"), stored)
-            .unwrap();
-        zip.write_all(&smb).unwrap();
-    }
-    for stream in ["BulkStream.dat", "MetaStream.dat"] {
-        zip.start_file(format!("{folder}/Design1/{stream}"), stored)
-            .unwrap();
-        zip.write_all(b"legacy-design").unwrap();
-    }
-    zip.finish().unwrap().into_inner()
-}
-
 pub(crate) fn synthetic_multi_asset_f3d(include_design_brep: bool) -> Vec<u8> {
     const DESIGN_GUID: &str = "10000000-0000-4000-8000-000000000001";
     const SIBLING_GUID: &str = "20000000-0000-4000-8000-000000000002";

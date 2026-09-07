@@ -9,8 +9,6 @@ use super::{
     IDENTITY_MATRIX,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
-#[cfg(feature = "schema")]
-use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Deserializer;
 use serde::Serialize;
@@ -19,7 +17,6 @@ use std::num::NonZeroU32;
 
 /// Boolean result operation stored by an Extrude parameter scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum DesignExtrudeOperation {
     /// Union the swept volume with the selected bodies.
@@ -34,7 +31,6 @@ pub enum DesignExtrudeOperation {
 
 /// Decoded Extrude travel form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum DesignExtrudeExtent {
     /// Travel a signed fixed distance on the first side of the profile.
@@ -59,7 +55,6 @@ pub enum DesignExtrudeExtent {
 
 /// Starting support selected by the fixed Extrude prologue enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum DesignExtrudeStart {
     /// Start on the selected sketch's plane.
@@ -72,7 +67,6 @@ pub enum DesignExtrudeStart {
 
 /// Indexed-record prefix preceding a reference-aware Extrude prologue.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "DesignExtrudePrologueReferenceWire",
     into = "DesignExtrudePrologueReferenceWire"
@@ -89,7 +83,6 @@ pub struct DesignExtrudePrologueReference {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignExtrudePrologueReferenceWire {
     /// Referenced Design record.
     record_index: u32,
@@ -135,7 +128,6 @@ impl From<DesignExtrudePrologueReference> for DesignExtrudePrologueReferenceWire
 
 /// Scope-reference ordinal repeated before a whole-body Extrude target extent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignExtrudeTargetOrdinal {
     /// Zero-based ordinal in the enclosing scope reference table.
     pub scope_reference_ordinal: u32,
@@ -145,7 +137,6 @@ pub struct DesignExtrudeTargetOrdinal {
 
 /// Fixed fields preceding an Extrude parameter scope's reference table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "DesignExtrudePrologueWire",
     into = "DesignExtrudePrologueWire"
@@ -281,7 +272,6 @@ pub enum DesignExtrudePrologue {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", tag = "layout")]
 enum DesignExtrudePrologueWire {
     /// Early distance-only layout with a nullable prefix field.
@@ -645,7 +635,6 @@ impl DesignExtrudePrologue {
 
 /// Driving-dimension mode stored by a Coil parameter scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum DesignCoilExtent {
     /// Revolution count and total height are independent.
@@ -660,7 +649,6 @@ pub enum DesignCoilExtent {
 
 /// Generated section family stored by a Coil parameter scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum DesignCoilSection {
     /// Circular section.
@@ -675,7 +663,6 @@ pub enum DesignCoilSection {
 
 /// Radial section placement stored by a Coil parameter scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum DesignCoilSectionPlacement {
     /// Section inside the reference trajectory.
@@ -688,8 +675,6 @@ pub enum DesignCoilSectionPlacement {
 
 /// Construction-recipe families admitted by a face selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "ConstructionRecipeKind"))]
 #[serde(try_from = "ConstructionRecipeKind", into = "ConstructionRecipeKind")]
 pub enum DesignFaceRecipeKind {
     Face,
@@ -754,7 +739,6 @@ fn deserialize_coil_recipe_design<'de, D: Deserializer<'de>>(
 
 /// Selection carrier used by a compact Coil placement.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum DesignCoilSelection {
     /// Nested entity-selection frame with one or two persistent identities.
@@ -793,7 +777,6 @@ pub enum DesignCoilSelection {
 
 /// Exact placement construction carried by a compact Coil scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "DesignCoilPlacementWire", into = "DesignCoilPlacementWire")]
 pub struct DesignCoilPlacement {
     /// First ordered placement-construction reference.
@@ -826,7 +809,6 @@ impl DesignCoilPlacement {
 
 /// Exact placement construction carried by a compact Coil scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignCoilPlacementWire {
     /// First ordered placement-construction reference.
     selection_record_index: u32,
@@ -903,7 +885,6 @@ impl From<DesignCoilPlacement> for DesignCoilPlacementWire {
 
 /// Direct rigid placement carried by the long ten-reference Coil form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignCoilTransform {
     /// Row-major local-to-model rigid transform. Translation is in source
     /// centimetres.
@@ -914,7 +895,6 @@ pub struct DesignCoilTransform {
 
 /// Exact construction data of a solid primitive scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", tag = "primitive")]
 pub enum DesignSolidPrimitive {
     /// Axis-aligned box defined by five owned dimensions and offsets.
@@ -929,7 +909,6 @@ pub enum DesignSolidPrimitive {
 
 /// Exact `Box` primitive construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignBoxPrimitive {
     /// Length along the source x-axis in source centimetres.
     pub length: f64,
@@ -969,7 +948,6 @@ pub struct DesignBoxPrimitive {
 
 /// Exact `Cylinder` primitive construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "DesignCylinderPrimitiveWire",
     into = "DesignCylinderPrimitiveWire"
@@ -997,7 +975,6 @@ pub struct DesignCylinderPrimitive {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignCylinderPrimitiveWire {
     /// Axial height in source centimetres.
     height: f64,
@@ -1059,7 +1036,6 @@ impl TryFrom<DesignCylinderPrimitiveWire> for DesignCylinderPrimitive {
 
 /// Exact `Sphere` primitive construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignSpherePrimitive {
     /// Row-major local-to-model placement frame.
     pub transform: [[f64; 4]; 4],
@@ -1079,7 +1055,6 @@ pub struct DesignSpherePrimitive {
 
 /// Exact `Torus` primitive construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignTorusPrimitive {
     /// Row-major local-to-model placement frame.
     pub transform: [[f64; 4]; 4],
@@ -1116,7 +1091,6 @@ impl From<DesignSolidPrimitive> for DesignScopePayload {
 
 /// Exact fixed-form construction data of a direct-face feature scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", tag = "operation")]
 pub enum DesignDirectFaceOperation {
     /// Signed normal offset applied to selected faces.
@@ -1129,7 +1103,6 @@ pub enum DesignDirectFaceOperation {
 
 /// Exact `OffsetFaces` construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignOffsetFacesOperation {
     /// Signed distance in source centimetres.
     pub distance: f64,
@@ -1141,7 +1114,6 @@ pub struct DesignOffsetFacesOperation {
 
 /// Exact `Shell` construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignShellOperation {
     /// Positive wall thickness in source centimetres.
     pub thickness: f64,
@@ -1157,7 +1129,6 @@ pub struct DesignShellOperation {
 
 /// Exact `Thicken` construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignThickenOperation {
     /// Signed thickness in source centimetres.
     pub signed_thickness: f64,
@@ -1169,7 +1140,6 @@ pub struct DesignThickenOperation {
 
 /// Exact rigid transform carried by a Move feature scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignMoveOperation {
     /// Row-major model-space rigid transform in source centimetres.
     pub transform: [[f64; 4]; 4],
@@ -1185,7 +1155,6 @@ pub struct DesignMoveOperation {
 
 /// Source Move transform-form code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "u32", into = "u32")]
 pub enum DesignMoveForm {
     /// Source form 1.
@@ -1216,7 +1185,6 @@ impl From<DesignMoveForm> for u32 {
 
 /// One exact scalar carrier used by an Extrude scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignFixedExtrudeScalar {
     /// Scalar value in source centimetres for a distance or radians for an angle.
     pub value: f64,
@@ -1228,7 +1196,6 @@ pub struct DesignFixedExtrudeScalar {
 
 /// Exact carrier of an Extrude's one-sided distance.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "carrier", content = "scalar", rename_all = "snake_case")]
 pub enum DesignFixedExtrudeDistance {
     /// Signed distance in an owner-local scalar lane.
@@ -1239,7 +1206,6 @@ pub enum DesignFixedExtrudeDistance {
 
 /// Exact fixed scalar lanes carried by an Extrude scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignFixedExtrudeParameters {
     /// One-sided distance carrier in source centimetres.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1251,7 +1217,6 @@ pub struct DesignFixedExtrudeParameters {
 
 /// Exact fixed scalar lanes carried by a Fillet scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignFixedFilletParameters {
     /// Radius laws in scalar-lane order.
     pub groups: Vec<DesignFixedFilletGroup>,
@@ -1259,8 +1224,6 @@ pub struct DesignFixedFilletParameters {
 
 /// One fillet radius law and its optional tangency weight.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "DesignFixedFilletGroupWire"))]
 #[serde(
     try_from = "DesignFixedFilletGroupWire",
     into = "DesignFixedFilletGroupWire"
@@ -1311,7 +1274,6 @@ impl DesignFixedFilletLaw {
 
 /// One Fillet radius law carried by fixed scalar lanes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignFixedFilletGroupWire {
     /// Optional explicit dimensionless tangency-weight lane.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1445,7 +1407,6 @@ impl From<DesignFixedFilletGroup> for DesignFixedFilletGroupWire {
 
 /// One fixed fillet scalar and its source record and value location.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignFixedFilletScalar {
     /// Radius, normalized position, or tangency weight.
     pub value: f64,
@@ -1457,7 +1418,6 @@ pub struct DesignFixedFilletScalar {
 
 /// Exact construction carried by a fixed circular-pattern scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignCircularPatternConstruction {
     /// Positive total instance count, including the seed.
     pub count: u32,
@@ -1495,12 +1455,10 @@ pub struct DesignPlane {
 
 /// Axis construction carried by a fixed circular-pattern scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "DesignCircularPatternAxisWire",
     into = "DesignCircularPatternAxisWire"
 )]
-#[cfg_attr(feature = "schema", schemars(with = "DesignCircularPatternAxisWire"))]
 pub enum DesignCircularPatternAxis {
     /// Axis coordinates stored directly in the Design record.
     Inline {
@@ -1533,7 +1491,6 @@ pub struct DesignPatternAxisWrapper {
 
 /// Axis construction carried by a fixed circular-pattern scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum DesignCircularPatternAxisWire {
     /// Axis coordinates stored directly in the Design record.
@@ -1658,7 +1615,6 @@ impl From<DesignCircularPatternAxis> for DesignCircularPatternAxisWire {
 
 /// Ordered scalar lanes carried by a rectangular-pattern scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignRectangularPatternConstruction {
     /// Positive U-direction instance count, including the seed.
     pub u_count: u32,
@@ -1679,11 +1635,6 @@ pub struct DesignRectangularPatternConstruction {
 
 /// Serialized placements of one linearized rectangular-pattern instance run.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(
-    feature = "schema",
-    schemars(with = "DesignRectangularPatternInstancesWire")
-)]
 #[serde(
     try_from = "DesignRectangularPatternInstancesWire",
     into = "DesignRectangularPatternInstancesWire"
@@ -1737,7 +1688,6 @@ impl DesignRectangularPatternInstances {
 
 /// Serialized placements of one linearized rectangular-pattern instance run.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignRectangularPatternInstancesWire {
     /// Seed record followed by the generated-instance records in pattern order.
     record_indices: Vec<u32>,
@@ -1752,7 +1702,6 @@ struct DesignRectangularPatternInstancesWire {
 
 /// Component seed and generated occurrences carried by a rectangular pattern.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignComponentPatternOccurrencesWire {
     /// Reusable local component definition shared by every occurrence.
     component_guid: String,
@@ -1843,7 +1792,6 @@ impl From<DesignRectangularPatternInstances> for DesignRectangularPatternInstanc
 
 /// Domain of the two scalar limits carried by a legacy As-built scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum DesignAssemblyLimitKind {
     /// Limits on the joint's angular degree of freedom.
@@ -1855,7 +1803,6 @@ pub enum DesignAssemblyLimitKind {
 
 /// Ordered lower and upper limits carried by a legacy As-built assembly scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignAssemblyLimits {
     /// Degree-of-freedom domain of the limits.
     #[serde(default)]
@@ -1872,7 +1819,6 @@ pub struct DesignAssemblyLimits {
 
 /// Exact solved frame carried by a legacy 421-byte `As-built` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignAssemblySolvedFrame {
     /// Frame-carrier record named by reference-table entry eight.
     pub reference_record_index: u32,
@@ -2020,7 +1966,6 @@ impl DesignAssemblyLegacyOperands {
 /// Exact construction and face-selection pair carried by a legacy 421-byte
 /// `As-built` operand.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignAssemblyLegacyOperandWire {
     /// Primary construction record named by the scope reference table.
     construction_record_index: u32,
@@ -2039,7 +1984,6 @@ struct DesignAssemblyLegacyOperandWire {
 
 /// Construction carrier family used by a legacy 421-byte `As-built` operand.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 enum DesignAssemblyLegacyConstruction {
     /// Point-only connector construction.
@@ -2050,7 +1994,6 @@ enum DesignAssemblyLegacyConstruction {
 
 /// Exact face-recipe selection paired with a legacy 421-byte construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignAssemblyLegacySelection {
     /// Indexed selection record.
     pub record_index: u32,
@@ -2082,8 +2025,6 @@ pub struct DesignAssemblyLegacySelection {
 
 /// Alignment scalars carried by an assembly-operation scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "DesignAssemblyAlignmentSerde"))]
 #[serde(
     try_from = "DesignAssemblyAlignmentSerde",
     into = "DesignAssemblyAlignmentSerde"
@@ -2234,7 +2175,6 @@ impl DesignAssemblyAlignment {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignAssemblyAlignmentSerde {
     angle: f64,
     offset: [f64; 3],
@@ -2407,7 +2347,6 @@ impl From<DesignAssemblyAlignment> for DesignAssemblyAlignmentSerde {
     }
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum DesignAssemblyAxialOperandTarget {
     /// Connector object selected inside a placed `Component Insert` occurrence.
@@ -2440,7 +2379,6 @@ pub enum DesignAssemblyAxialOperandTarget {
 
 /// Persistent connector identity carried by one axial assembly selector.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "DesignAssemblyAxialSelectorIdentityWire",
     into = "DesignAssemblyAxialSelectorIdentityWire"
@@ -2513,7 +2451,6 @@ pub struct DesignAssemblyAxialSelectorIdentity {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignAssemblyAxialSelectorIdentityWire {
     /// Axis record named by the operand construction carrier.
     axis_record_index: u32,
@@ -2719,7 +2656,6 @@ impl DesignAssemblyAxialSelectorIdentity {
 
 /// Exact reference chain from an assembly scope to one occurrence-path record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignAssemblyOperandPathLink {
     /// Byte offset of the locator-record index in the assembly scope.
     pub locator_reference_offset: u64,
@@ -2745,8 +2681,6 @@ pub struct DesignAssemblyOperandPathLink {
 
 /// Counted occurrence path qualifying one assembly operand construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "DesignAssemblyOperandPathWire"))]
 #[serde(
     try_from = "DesignAssemblyOperandPathWire",
     into = "DesignAssemblyOperandPathWire"
@@ -2764,7 +2698,6 @@ pub struct DesignAssemblyOperandPath {
 
 /// Counted occurrence path qualifying one assembly operand construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignAssemblyOperandPathWire {
     /// Exact ordered scope-to-locator-to-wrapper reference chain.
     link: DesignAssemblyOperandPathLink,
@@ -2846,7 +2779,6 @@ impl From<DesignAssemblyOperandPath> for DesignAssemblyOperandPathWire {
 
 /// One exact native qualifier for an assembly operand construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum DesignAssemblyOperandQualifier {
     /// Ordered occurrence path carried by a locator graph.
@@ -2886,7 +2818,6 @@ impl DesignAssemblyOperandQualifier {
 
 /// One operand frame embedded by an assembly-operation scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignAssemblyOperandFrame {
     /// Construction record referenced by the operand.
     pub reference_record_index: u32,
@@ -2900,7 +2831,6 @@ pub struct DesignAssemblyOperandFrame {
 
 /// External occurrence and placement joined through a `Component Insert` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "DesignComponentInsertConstructionWire",
     into = "DesignComponentInsertConstructionWire"
@@ -2952,7 +2882,6 @@ impl DesignComponentInsertConstruction {
 
 /// External occurrence and placement joined through a `Component Insert` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignComponentInsertConstructionWire {
     /// Scope-owned relation record.
     relation_record_index: u32,
@@ -3035,7 +2964,6 @@ impl From<DesignComponentInsertConstruction> for DesignComponentInsertConstructi
 
 /// Local component occurrence joined through a `DerivedInstance` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignDerivedInstanceConstruction {
     /// Scope prologue record referenced by the fixed field at scope offset 22.
     pub reference_record_index: u32,
@@ -3055,7 +2983,6 @@ pub struct DesignDerivedInstanceConstruction {
 
 /// One exact local component-occurrence carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "DesignComponentOccurrenceWire",
     into = "DesignComponentOccurrenceWire"
@@ -3114,7 +3041,6 @@ impl DesignComponentOccurrence {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignComponentOccurrenceWire {
     /// Stable native record identity.
     id: String,
@@ -3194,7 +3120,6 @@ impl TryFrom<DesignComponentOccurrenceWire> for DesignComponentOccurrence {
 
 /// Legacy component copy/paste construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignCopyPasteComponentOperation {
     /// Scope-owned relation record.
     pub relation_record_index: u32,
@@ -3220,12 +3145,10 @@ pub struct DesignCopyPasteComponentOperation {
 
 /// Exact construction carried by a Mirror scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "DesignMirrorConstructionWire",
     into = "DesignMirrorConstructionWire"
 )]
-#[cfg_attr(feature = "schema", schemars(with = "DesignMirrorConstructionWire"))]
 pub struct DesignMirrorConstruction {
     /// Parameter-owner record carrying the fixed count two.
     pub count_record_index: u32,
@@ -3262,7 +3185,6 @@ pub enum DesignMirrorToleranceSource {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignMirrorConstructionWire {
     /// Fixed instance count, including the seed.
     count: u32,
@@ -3376,7 +3298,6 @@ impl From<DesignMirrorConstruction> for DesignMirrorConstructionWire {
 
 /// Exact inline carrier for a legacy Mirror stitch tolerance.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "DesignMirrorScopeToleranceWire",
     into = "DesignMirrorScopeToleranceWire"
@@ -3442,7 +3363,6 @@ impl TryFrom<(u32, Option<u64>)> for DesignMirrorToleranceMarker {
 
 /// Exact inline carrier for a legacy Mirror stitch tolerance.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignMirrorScopeToleranceWire {
     /// Fixed scalar-lane marker preceding the tolerance value.
     marker: u32,
@@ -3495,7 +3415,6 @@ impl From<DesignMirrorScopeTolerance> for DesignMirrorScopeToleranceWire {
 
 /// Exact fixed scalar lanes carried by a Chamfer scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum DesignFixedChamferParameters {
     /// One equal setback distance applies to both incident faces.
@@ -3514,7 +3433,6 @@ pub enum DesignFixedChamferParameters {
 
 /// One fixed Chamfer distance lane and its source provenance.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignFixedChamferDistance {
     /// Positive distance in source centimetres.
     pub value: f64,
@@ -3526,7 +3444,6 @@ pub struct DesignFixedChamferDistance {
 
 /// Exact construction carried by a Revolve, Loft, or Sweep scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum DesignPathFeatureConstruction {
     /// One-sided fixed-angle revolution result operation.
@@ -3541,7 +3458,6 @@ pub enum DesignPathFeatureConstruction {
 
 /// Fixed construction of a `Revolve` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "DesignRevolveConstructionWire",
     into = "DesignRevolveConstructionWire"
@@ -3563,7 +3479,6 @@ pub struct DesignRevolveConstruction {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignRevolveConstructionWire {
     /// Boolean result operation.
     operation: DesignExtrudeOperation,
@@ -3625,7 +3540,6 @@ impl TryFrom<DesignRevolveConstructionWire> for DesignRevolveConstruction {
 
 /// Fixed construction of a `Loft` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignLoftConstruction {
     /// Boolean result operation.
     pub operation: DesignExtrudeOperation,
@@ -3635,7 +3549,6 @@ pub struct DesignLoftConstruction {
 
 /// Fixed construction of a `Sweep` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignSweepConstruction {
     /// Boolean result operation.
     pub operation: DesignExtrudeOperation,
@@ -3652,7 +3565,6 @@ pub struct DesignSweepConstruction {
 
 /// Fixed construction of a `Pipe` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignPipeConstruction {
     /// Boolean result operation.
     pub operation: DesignExtrudeOperation,
@@ -3677,7 +3589,6 @@ pub struct DesignPipeConstruction {
 
 /// Serialized prologue form of a `Combine` scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum DesignCombineForm {
     /// Nine zero bytes followed by the operation at offset 20.
@@ -3690,7 +3601,6 @@ pub enum DesignCombineForm {
 
 /// Version identity carried by a cross-document reference.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignExternalVersion {
     pub property_key: Located<String>,
     pub version_urn: Located<String>,
@@ -3698,7 +3608,6 @@ pub struct DesignExternalVersion {
 
 /// Cross-document persistent body identity carried by a `Combine` tool selector.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "DesignCombineExternalBodyIdentityWire",
     into = "DesignCombineExternalBodyIdentityWire"
@@ -3743,7 +3652,6 @@ pub struct DesignCombineExternalBodyIdentity {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignCombineExternalBodyIdentityWire {
     /// Asset GUID of the enclosing body selector.
     selector_asset_id: String,
@@ -3863,7 +3771,6 @@ impl From<DesignCombineExternalBodyIdentity> for DesignCombineExternalBodyIdenti
 
 /// One target or tool body selector owned by a `Combine` operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignCombineBodySelection {
     /// Body-selection record index.
     pub record_index: u32,
@@ -3874,7 +3781,6 @@ pub struct DesignCombineBodySelection {
 
 /// Exact Boolean construction carried by a `Combine` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "DesignCombineOperationWire",
     into = "DesignCombineOperationWire"
@@ -3911,7 +3817,6 @@ impl DesignCombineTools {
 
 /// Exact Boolean construction carried by a `Combine` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignCombineOperationWire {
     /// Serialized scope-prologue form.
     form: DesignCombineForm,
@@ -3996,9 +3901,7 @@ pub enum DesignThreadForm {
 
 /// Exact form and size construction carried by a `Thread` scope.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "DesignThreadConstructionWire")]
-#[cfg_attr(feature = "schema", schemars(with = "DesignThreadConstructionWire"))]
 pub struct DesignThreadConstruction {
     /// Standard, compact, or class-specific legacy construction form.
     pub form: DesignThreadForm,
@@ -4041,6 +3944,7 @@ impl TryFrom<String> for DesignThreadNominalSize {
 
 impl DesignThreadNominalSize {
     #[must_use]
+    #[cfg(test)]
     pub fn text(&self) -> &str {
         &self.0
     }
@@ -4059,7 +3963,6 @@ impl Serialize for DesignThreadConstruction {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 enum DesignThreadFormWire {
     /// Standard prefix, construction marker, and trailer layout.
@@ -4073,7 +3976,6 @@ enum DesignThreadFormWire {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignThreadConstructionWire {
     /// Standard, compact, or class-specific legacy construction form.
     form: DesignThreadFormWire,
@@ -4189,7 +4091,6 @@ impl TryFrom<DesignThreadConstructionWire> for DesignThreadConstruction {
 
 /// Exact signed-angle lanes carried by a `Draft` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignDraftOperation {
     /// Signed draft angle in radians.
     pub angle: f64,
@@ -4205,7 +4106,6 @@ pub struct DesignDraftOperation {
 
 /// Source form for an exact solved `WorkAxis` construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum DesignWorkAxisSource {
     /// The axis carrier and two endpoint point carriers are cross-checked.
     TwoPoint {
@@ -4226,7 +4126,6 @@ pub enum DesignWorkAxisSource {
 
 /// Exact solved construction carried by a `WorkAxis` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignWorkAxisConstruction {
     /// First construction point in model centimetres.
     pub origin: [f64; 3],
@@ -4243,7 +4142,6 @@ pub struct DesignWorkAxisConstruction {
 
 /// One source-record reference used by a `WorkPoint` construction rule.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignWorkPointInput {
     /// Referenced Design record index.
     pub record_index: u32,
@@ -4256,7 +4154,6 @@ pub struct DesignWorkPointInput {
 
 /// Exact source carrier selected by one `WorkPoint` construction input.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum DesignWorkPointInputCarrier {
     /// Persistent edge recipe retained in the native edge-operand arena.
@@ -4304,7 +4201,6 @@ impl DesignVertexResolution {
 
 /// Exact persistent `vertex_recipe_data` envelope.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "DesignVertexRecipeWire", into = "DesignVertexRecipeWire")]
 pub struct DesignVertexRecipe {
     /// Indexed record that owns the vertex-recipe envelope.
@@ -4342,7 +4238,6 @@ pub struct DesignVertexRecipe {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignVertexRecipeWire {
     /// Indexed record that owns the vertex-recipe envelope.
     record_index: u32,
@@ -4364,7 +4259,6 @@ struct DesignVertexRecipeWire {
     recipe_prefix_offset: u64,
     /// Complete prefix before the length-prefixed recipe-family name.
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     recipe_prefix_bytes: Vec<u8>,
     /// Persistent selector/reference entries decoded from the prefix.
     recipe_references: Vec<DesignRecipeReference>,
@@ -4447,7 +4341,6 @@ impl TryFrom<DesignVertexRecipeWire> for DesignVertexRecipe {
 
 /// Corner-vertex recipe carried as one member of an edge-treatment group.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignEdgeTreatmentVertexOperand {
     /// Globally unique deterministic identifier for this group member.
     pub id: String,
@@ -4465,7 +4358,6 @@ pub struct DesignEdgeTreatmentVertexOperand {
 
 /// Plane through three persistent B-rep vertices.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     from = "DesignWorkPlaneConstructionWire",
     into = "DesignWorkPlaneConstructionWire"
@@ -4478,7 +4370,6 @@ pub struct DesignWorkPlaneConstruction {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum DesignWorkPlaneConstructionWire {
     ThreePoint {
@@ -4511,7 +4402,6 @@ impl From<DesignWorkPlaneConstructionWire> for DesignWorkPlaneConstruction {
 
 /// Exact persistent entity selection naming one `WorkPlane` scope.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignWorkPointPlaneSelection {
     /// Source per-file dynamic primary class tag.
     pub class_tag: String,
@@ -4541,7 +4431,6 @@ pub struct DesignWorkPointPlaneSelection {
 
 /// Exact persistent entity selection naming one sketch point.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignWorkPointSketchPointSelection {
     /// Source per-file dynamic primary class tag.
     pub class_tag: String,
@@ -4575,7 +4464,6 @@ pub struct DesignWorkPointSketchPointSelection {
 
 /// Construction rule whose input arity and decoded carrier roles agree.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "DesignWorkPointRuleForm", into = "DesignWorkPointRuleForm")]
 pub struct DesignWorkPointRule {
     form: DesignWorkPointRuleForm,
@@ -4695,7 +4583,6 @@ impl TryFrom<DesignWorkPointRuleForm> for DesignWorkPointRule {
 
 /// Construction rule and exact input arity carried by a `WorkPoint` point-data record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum DesignWorkPointRuleForm {
     /// Center of one selected circular edge.
@@ -4777,7 +4664,6 @@ impl DesignWorkPointRuleForm {
 
 /// Exact solved construction carried by a `WorkPoint` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignWorkPointConstruction {
     /// Point-data record selected by the scope.
     pub point_record_index: u32,
@@ -4795,7 +4681,6 @@ pub struct DesignWorkPointConstruction {
 
 /// Tangent-point payload of a version-four Hole point carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignHoleTangentPoint {
     pub prefix: u8,
     pub data: Located<[f64; 3]>,
@@ -4808,7 +4693,6 @@ pub struct DesignHoleTangentPoint {
 /// the carrier's base-level evidence so later Hole forms can bind their input
 /// records without reparsing the byte stream.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "DesignHoleConstructionWire",
     into = "DesignHoleConstructionWire"
@@ -4844,7 +4728,6 @@ pub struct DesignHoleConstruction {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignHoleConstructionWire {
     /// Point-data record selected by the Hole scope.
     point_record_index: u32,
@@ -4960,8 +4843,6 @@ impl From<DesignHoleConstruction> for DesignHoleConstructionWire {
 /// members. Their envelope is the same persistent entity-selection grammar
 /// used by grouped operands, but the scope owns the selection directly.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "DesignHoleFaceSelectionWire"))]
 #[serde(
     try_from = "DesignHoleFaceSelectionWire",
     into = "DesignHoleFaceSelectionWire"
@@ -5001,7 +4882,6 @@ pub struct DesignHoleFaceSelection {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignHoleFaceSelectionWire {
     /// Indexed record carrying the persistent selection envelope.
     record_index: u32,
@@ -5120,8 +5000,6 @@ macro_rules! design_feature_kinds {
      names { $($unit:ident => $unit_lit:literal),+ $(,)? }) => {
         /// Source feature-family name stored on a parameter scope.
         #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-        #[cfg_attr(feature = "schema", derive(JsonSchema))]
-        #[cfg_attr(feature = "schema", schemars(with = "String"))]
         #[serde(try_from = "String", into = "String")]
         pub enum DesignFeatureKind {
             $($variant,)+
@@ -5301,8 +5179,6 @@ impl std::error::Error for DesignParameterScopePayloadError {}
 
 /// Indexed sketch or construction-operation record that scopes parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "DesignParameterScopeSerde"))]
 #[serde(
     try_from = "DesignParameterScopeSerde",
     into = "DesignParameterScopeSerde"
@@ -5350,7 +5226,6 @@ pub struct DesignParameterScope {
 
 /// Wire form of [`DesignParameterScope`] with the historical flat field set.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignParameterScopeSerde {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -5727,7 +5602,6 @@ fn path_feature_scope_is_absent(path_feature: &Option<DesignPathFeatureWire>) ->
 
 /// BaseFlange-specific records carried by a `BaseFlange` parameter scope.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignBaseFlangeScope {
     /// Exact profile and thickness records carried by a `BaseFlange` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -5739,7 +5613,6 @@ pub struct DesignBaseFlangeScope {
 
 /// Extrude-specific records carried by an Extrude parameter scope.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignExtrudeScope {
     /// Extrude fixed prologue.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -5754,7 +5627,6 @@ pub struct DesignExtrudeScope {
 
 /// Sweep construction and its independently decoded profile operand.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignSweepScope {
     pub construction: Option<DesignSweepConstruction>,
     pub sweep_profile: Option<DesignSketchProfileOperand>,
@@ -5776,7 +5648,6 @@ impl From<DesignPathFeatureConstruction> for DesignScopePayload {
 
 /// Flat wire fields for path construction and the Sweep profile.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignPathFeatureWire {
     /// Exact fixed construction carried by a Loft, Sweep, Revolve, or Pipe scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -5788,7 +5659,6 @@ struct DesignPathFeatureWire {
 
 /// Coil-specific records carried by a Coil parameter scope.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "DesignCoilScopeWire", into = "DesignCoilScopeWire")]
 // Field names are the native record serialized keys.
 #[allow(clippy::struct_field_names)]
@@ -5804,7 +5674,6 @@ pub struct DesignCoilScope {
 
 /// Coil-specific records carried by a Coil parameter scope.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 // Field names are the native record serialized keys.
 #[allow(clippy::struct_field_names)]
 struct DesignCoilScopeWire {
@@ -5904,12 +5773,10 @@ impl From<DesignCoilScope> for DesignCoilScopeWire {
 
 /// Sketch-module entity named by a sketch parameter scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "DesignSketchEntityBindingWire",
     into = "DesignSketchEntityBindingWire"
 )]
-#[cfg_attr(feature = "schema", schemars(with = "DesignSketchEntityBindingWire"))]
 pub struct DesignSketchEntityBinding {
     /// Full Design entity id of a sketch scope.
     pub entity_id: DesignEntityId,
@@ -5918,7 +5785,6 @@ pub struct DesignSketchEntityBinding {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 // Field names are the native record serialized keys.
 #[allow(clippy::struct_field_names)]
 struct DesignSketchEntityBindingWire {
@@ -5958,7 +5824,6 @@ impl From<DesignSketchEntityBinding> for DesignSketchEntityBindingWire {
 
 /// Explicit 16-f64 frame carried by a `WorkPlane` scope.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignWorkPlaneTransform {
     /// Exact row-major local-to-model frame.
     pub work_plane_transform: [[f64; 4]; 4],
@@ -5975,7 +5840,6 @@ pub struct DesignWorkPlaneTransform {
 
 /// Construction record named by a `WorkPlane` frame.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignWorkPlaneReference {
     /// Construction record referenced by the `WorkPlane` frame.
     pub work_plane_reference: u32,
@@ -5985,7 +5849,6 @@ pub struct DesignWorkPlaneReference {
 
 /// Explicit 16-f64 frame carried by a `JointOrigin` scope.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignJointOriginTransform {
     /// Exact row-major local-to-model frame.
     pub joint_origin_transform: [[f64; 4]; 4],
@@ -5999,7 +5862,6 @@ pub struct DesignJointOriginTransform {
 
 /// Construction record named by a `JointOrigin` frame.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignJointOriginReference {
     /// Construction record referenced by the `JointOrigin` frame.
     pub joint_origin_reference: u32,
@@ -6009,7 +5871,6 @@ pub struct DesignJointOriginReference {
 
 /// Fixed operation records named by a `SurfaceStitch` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignSurfaceStitchOperation {
     /// Positive maximum stitched-boundary gap in centimetres.
     pub gap_tolerance: f64,
@@ -6023,7 +5884,6 @@ pub struct DesignSurfaceStitchOperation {
 
 /// Geometric continuation law encoded by a `SurfaceExtend` operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum DesignSurfaceExtendMethod {
     /// Continue the source surface parameterization.
@@ -6036,7 +5896,6 @@ pub enum DesignSurfaceExtendMethod {
 
 /// Fixed construction records named by a `SurfaceExtend` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignSurfaceExtendOperation {
     /// Extension distance in source centimetres.
     pub distance: f64,
@@ -6064,7 +5923,6 @@ pub struct DesignSurfaceExtendOperation {
 
 /// Source selection form named by a `SurfaceOffset` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum DesignSurfaceOffsetSupport {
     /// A boundary carrier followed by edge recipes.
@@ -6095,7 +5953,6 @@ pub enum DesignSurfaceOffsetSupport {
 
 /// Fixed construction records named by a `SurfaceOffset` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignSurfaceOffsetOperation {
     /// Signed offset distance in source centimetres.
     pub distance: f64,
@@ -6109,7 +5966,6 @@ pub struct DesignSurfaceOffsetOperation {
 
 /// One indexed record in the auxiliary chain preceding a `SurfaceTrim` cell table.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignSurfaceTrimChainRecord {
     /// Indexed record identity.
     pub record_index: u32,
@@ -6123,7 +5979,6 @@ pub struct DesignSurfaceTrimChainRecord {
 
 /// One source `BRep` cell entry in a `SurfaceTrim` cell table.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignSurfaceTrimCellEntry {
     /// Indexed cell-record identity.
     pub record_index: u32,
@@ -6137,7 +5992,6 @@ pub struct DesignSurfaceTrimCellEntry {
 
 /// Exact auxiliary carrier of a `SurfaceTrim` operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignSurfaceTrimOperation {
     /// Globally unique deterministic identifier for this native carrier.
     pub id: String,
@@ -6181,7 +6035,6 @@ pub struct DesignSurfaceTrimOperation {
 
 /// Direction law encoded by a `SurfaceRuled` operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum DesignRuledSurfaceMethod {
     /// Generate ruled strips tangent to the support faces.
@@ -6194,7 +6047,6 @@ pub enum DesignRuledSurfaceMethod {
 
 /// Corner law encoded by a `SurfaceRuled` operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum DesignRuledSurfaceCorner {
     /// Round adjacent ruled strips through a common corner.
@@ -6205,7 +6057,6 @@ pub enum DesignRuledSurfaceCorner {
 
 /// Fixed construction carried by a `SurfaceRuled` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignRuledSurfaceOperation {
     /// Direction law.
     pub method: DesignRuledSurfaceMethod,
@@ -6234,7 +6085,6 @@ pub struct DesignRuledSurfaceOperation {
 /// Boundary condition a `SurfacePatch` component imposes against its adjacent
 /// face.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum DesignPatchContinuity {
     /// Positional continuity only.
@@ -6258,22 +6108,10 @@ impl DesignPatchContinuity {
             code => Self::Unknown(code),
         }
     }
-
-    /// Return the serialized ordinal.
-    #[must_use]
-    pub fn code(self) -> u32 {
-        match self {
-            Self::Connected => 0,
-            Self::Tangent => 1,
-            Self::Curvature => 2,
-            Self::Unknown(code) => code,
-        }
-    }
 }
 
 /// Pipe generated-section shape selector.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(from = "u8", into = "u8")]
 pub enum DesignPipeSectionShape {
     Circular,
@@ -6312,7 +6150,6 @@ impl From<DesignPipeSectionShape> for u8 {
 
 /// Settings a `SurfacePatch` scope carries for one boundary component.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignSurfacePatchBoundary {
     /// Position of the settings record in the scope's ordered reference table.
     pub scope_reference_ordinal: u32,
@@ -6333,7 +6170,6 @@ pub struct DesignSurfacePatchBoundary {
 
 /// Fixed construction carried by a planar sheet-metal `BaseFlange` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignBaseFlangeOperation {
     /// Positive sheet thickness in centimetres.
     pub thickness: f64,
@@ -6356,7 +6192,6 @@ pub struct DesignBaseFlangeOperation {
 /// starts it at the boundary, and `TangentToSide` makes it tangent to the side
 /// reference plane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum DesignBendPosition {
     /// The bend lies outside the selected edge.
@@ -6383,23 +6218,10 @@ impl DesignBendPosition {
             code => Self::Unknown(code),
         }
     }
-
-    /// Return the serialized discriminator.
-    #[must_use]
-    pub fn code(self) -> u32 {
-        match self {
-            Self::Outside => 1,
-            Self::Inside => 2,
-            Self::Adjacent => 3,
-            Self::TangentToSide => 4,
-            Self::Unknown(code) => code,
-        }
-    }
 }
 
 /// Face pair an `EdgeFlange` height is measured from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum DesignSheetMetalHeightDatum {
     /// The height is measured from the inner faces of the sheet.
@@ -6420,16 +6242,6 @@ impl DesignSheetMetalHeightDatum {
             code => Self::Unknown(code),
         }
     }
-
-    /// Return the serialized discriminator.
-    #[must_use]
-    pub fn code(self) -> u32 {
-        match self {
-            Self::InnerFaces => 1,
-            Self::OuterFaces => 2,
-            Self::Unknown(code) => code,
-        }
-    }
 }
 
 /// Extent of an `EdgeFlange` along its selected edge.
@@ -6438,7 +6250,6 @@ impl DesignSheetMetalHeightDatum {
 /// owners in the ordered reference table. Classed forms can carry a distinct
 /// explicit mode when that count has per-edge meaning.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum DesignEdgeWidthMode {
     /// The flange spans the complete selected edge and adds no width owner.
@@ -6594,7 +6405,6 @@ impl DesignEdgeFlangeShape {
 
 /// Parameter source used by a typed `EdgeFlange` width law.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum DesignEdgeFlangeWidthParameterSource {
     /// Width parameters use the ordinary positive `EdgeWidth` source kinds.
@@ -7313,6 +7123,7 @@ impl DesignParameterScope {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn extrude_mut(&mut self) -> Option<&mut DesignExtrudeScope> {
         match &mut self.payload {
             DesignScopePayload::Extrude(value)
@@ -7358,6 +7169,7 @@ impl DesignParameterScope {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn joint_origin_frame_mut(&mut self) -> Option<&mut DesignJointOriginTransform> {
         match &mut self.payload {
             DesignScopePayload::JointOrigin(value) => value.as_mut(),
@@ -7459,6 +7271,7 @@ impl DesignParameterScope {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn combine_operation_mut(&mut self) -> Option<&mut DesignCombineOperation> {
         match &mut self.payload {
             DesignScopePayload::Combine(value) => value.as_mut(),
@@ -7649,6 +7462,7 @@ impl DesignParameterScope {
         self.extrude().and_then(|extrude| extrude.extrude_prologue)
     }
 
+    #[cfg(test)]
     pub(crate) fn extrude_prologue_mut(&mut self) -> Option<&mut DesignExtrudePrologue> {
         self.extrude_mut()
             .and_then(|extrude| extrude.extrude_prologue.as_mut())
@@ -7659,6 +7473,7 @@ impl DesignParameterScope {
             .and_then(|extrude| extrude.extrude_profile.as_ref())
     }
 
+    #[cfg(test)]
     pub(crate) fn extrude_profile_mut(&mut self) -> Option<&mut DesignSketchProfileOperand> {
         self.extrude_mut()
             .and_then(|extrude| extrude.extrude_profile.as_mut())
@@ -7709,21 +7524,25 @@ impl DesignParameterScope {
             .and_then(|coil| coil.coil_clockwise.map(|field| field.value))
     }
 
+    #[cfg(test)]
     pub(crate) fn coil_extent_offset(&self) -> Option<u64> {
         self.coil()
             .and_then(|coil| coil.coil_extent.and_then(|field| field.offset))
     }
 
+    #[cfg(test)]
     pub(crate) fn coil_section_offset(&self) -> Option<u64> {
         self.coil()
             .and_then(|coil| coil.coil_section.and_then(|field| field.offset))
     }
 
+    #[cfg(test)]
     pub(crate) fn coil_section_placement_offset(&self) -> Option<u64> {
         self.coil()
             .and_then(|coil| coil.coil_section_placement.and_then(|field| field.offset))
     }
 
+    #[cfg(test)]
     pub(crate) fn coil_clockwise_offset(&self) -> Option<u64> {
         self.coil()
             .and_then(|coil| coil.coil_clockwise.and_then(|field| field.offset))
@@ -7790,6 +7609,7 @@ impl DesignParameterScope {
             .map(|frame| frame.joint_origin_transform_offset)
     }
 
+    #[cfg(test)]
     pub(crate) fn joint_origin_reference(&self) -> Option<u32> {
         self.joint_origin_frame().and_then(|frame| {
             frame
@@ -7799,6 +7619,7 @@ impl DesignParameterScope {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn joint_origin_reference_offset(&self) -> Option<u64> {
         self.joint_origin_frame().and_then(|frame| {
             frame
@@ -7863,7 +7684,6 @@ impl DesignParameterScope {
 
 /// Height extent law carried by a sheet-metal `EdgeFlange` scope.
 #[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum DesignEdgeFlangeHeightExtent {
     /// The flange height is a direct distance from the selected sheet datum.
@@ -7942,8 +7762,6 @@ impl DesignBendRadius {
 
 /// Fixed construction carried by a sheet-metal `EdgeFlange` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "DesignEdgeFlangeOperationSerde"))]
 #[serde(
     try_from = "DesignEdgeFlangeOperationSerde",
     into = "DesignEdgeFlangeOperationSerde"
@@ -7974,7 +7792,6 @@ pub struct DesignEdgeFlangeOperation {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignEdgeFlangeOperationSerde {
     edge_wrapper_record_indices: Vec<u32>,
     edge_group_record_indices: Vec<u32>,
@@ -8091,7 +7908,6 @@ impl From<DesignEdgeFlangeOperation> for DesignEdgeFlangeOperationSerde {
 
 /// Parameter-owner layout carried by a sheet-metal `Hem` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum DesignHemParameterOwners {
     /// Flat and open forms own a gap and a length.
@@ -8122,8 +7938,6 @@ pub enum DesignHemParameterOwners {
 /// Fixed operation section and parameter-owner layout carried by a sheet-metal
 /// `Hem` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "DesignHemOperationWire"))]
 #[serde(try_from = "DesignHemOperationWire", into = "DesignHemOperationWire")]
 pub struct DesignHemOperation {
     /// Selection-wrapper record for the hem edge.
@@ -8147,7 +7961,6 @@ pub struct DesignHemOperation {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignHemOperationWire {
     /// Selection-wrapper record for the hem edge.
     edge_wrapper_record_index: u32,
@@ -8226,7 +8039,6 @@ impl From<DesignHemOperation> for DesignHemOperationWire {
 
 /// Fixed construction carried by a uniform body-scale scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "DesignScaleOperationWire",
     into = "DesignScaleOperationWire"
@@ -8246,7 +8058,6 @@ pub struct DesignScaleOperation {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignScaleOperationWire {
     /// Counted construction group selecting the transformed bodies.
     body_group_record_index: u32,
@@ -8297,11 +8108,6 @@ impl TryFrom<DesignScaleOperationWire> for DesignScaleOperation {
 
 /// Source and copied Design body identities carried by `CopyPasteBodies`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(
-    feature = "schema",
-    schemars(with = "DesignCopyPasteBodiesOperationWire")
-)]
 #[serde(
     try_from = "DesignCopyPasteBodiesOperationWire",
     into = "DesignCopyPasteBodiesOperationWire"
@@ -8323,7 +8129,6 @@ pub struct DesignCopyPasteBodiesOperation {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignCopiedBody {
     pub operand: Located<u32>,
     pub source: Located<u32>,
@@ -8332,7 +8137,6 @@ pub struct DesignCopiedBody {
 
 /// Source and copied Design body identities carried by `CopyPasteBodies`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignCopyPasteBodiesOperationWire {
     /// Counted body-selection group named by the scope prefix and reference table.
     body_group_record_index: u32,
@@ -8475,7 +8279,6 @@ impl From<DesignCopyPasteBodiesOperation> for DesignCopyPasteBodiesOperationWire
 
 /// Encoded compact Base Feature mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[repr(u8)]
 pub enum DesignBaseFeatureCompactMode {
     Zero = 0,
@@ -8496,7 +8299,6 @@ impl TryFrom<u8> for DesignBaseFeatureCompactMode {
 
 /// Layout of the legacy class-452/class-262 Base Feature envelope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum DesignBaseFeatureBodyReferenceForm {
     /// One output body with an encoded compact mode.
     CompactOneBody {
@@ -8511,7 +8313,6 @@ pub enum DesignBaseFeatureBodyReferenceForm {
 
 /// One body in a legacy Base Feature envelope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignLegacyBaseFeatureBody {
     pub entity: DesignBaseFeatureEntry<u32>,
     pub parameter_body: Located<u64>,
@@ -8529,7 +8330,6 @@ impl DesignBaseFeatureBodyReferenceForm {
 
 /// Typed construction data carried by a Fusion direct-modeling Base Feature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "DesignBaseFeatureConstructionWire",
     into = "DesignBaseFeatureConstructionWire"
@@ -8602,7 +8402,6 @@ pub enum DesignBaseFeatureConstruction {
 
 /// One aligned body, passive reference, and result record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignBaseFeatureResultBody {
     pub entity: DesignBaseFeatureEntry<u64>,
     pub reference: DesignBaseFeatureEntry<u32>,
@@ -8611,7 +8410,6 @@ pub struct DesignBaseFeatureResultBody {
 
 /// Result-body runs with either no repeated fields or one field per body.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum DesignBaseFeatureResults {
     WithoutRepeatedFields(Vec<DesignBaseFeatureResultBody>),
     WithRepeatedFields {
@@ -8636,7 +8434,6 @@ impl DesignBaseFeatureResults {
 
 /// One Base Feature reference value, its location, and its six-byte field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignBaseFeatureEntry<T> {
     pub value: T,
     pub offset: u64,
@@ -8646,7 +8443,6 @@ pub struct DesignBaseFeatureEntry<T> {
 /// Wire form of the legacy class-452/class-262 Base Feature body-reference
 /// envelope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 enum DesignBaseFeatureBodyReferenceFormWire {
     /// One output body with 64-bit references in the legacy compact lanes.
@@ -8657,7 +8453,6 @@ enum DesignBaseFeatureBodyReferenceFormWire {
 
 /// Typed construction data carried by a Fusion direct-modeling Base Feature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 // Untagged: required field sets are disjoint across variants.
 #[serde(untagged)]
 enum DesignBaseFeatureConstructionWire {

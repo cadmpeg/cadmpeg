@@ -14,9 +14,6 @@ keywords = ["cad", "inventor", "ipt", "iam", "parser"]
 categories = ["encoding", "parser-implementations", "graphics"]
 exclude = ["tests/golden/**"]
 
-[features]
-schema = ["dep:schemars", "cadmpeg-core/schema", "cadmpeg-ir/schema"]
-
 [dependencies]
 cadmpeg-asm.workspace = true
 cadmpeg-container.workspace = true
@@ -24,7 +21,6 @@ cadmpeg-core.workspace = true
 cadmpeg-ir.workspace = true
 cadmpeg-protein.workspace = true
 encoding_rs.workspace = true
-schemars = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 

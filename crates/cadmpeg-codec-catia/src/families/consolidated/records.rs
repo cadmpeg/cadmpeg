@@ -8,8 +8,6 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::eval::nurbs_surface_partials;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
-#[cfg(feature = "schema")]
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
@@ -133,7 +131,6 @@ pub(crate) struct ConsolidatedOwnerBoundaryCycle {
 
 /// Class of a consolidated edge-definition frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "u8", into = "u8")]
 pub enum ConsolidatedEdgeDefinitionClass {
     Class23,
@@ -182,7 +179,6 @@ impl ConsolidatedEdgeDefinition {
 
 /// Closed payload grammar of a consolidated edge-definition frame.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum ConsolidatedEdgeDefinitionData {
     /// Compact class-`0x24` payload `81 <operand> 0f 87`.

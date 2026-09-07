@@ -184,7 +184,6 @@ pub(crate) fn parse_consolidated_pcurve(
 
 /// Header-token width of a length-closed A/B-family frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(try_from = "u8", into = "u8")]
 pub enum ConsolidatedFrameWidth {
     /// One-byte header token.
@@ -226,7 +225,6 @@ impl TryFrom<u8> for ConsolidatedFrameWidth {
 
 /// Independent framing flag of a length-closed A/B-family frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(try_from = "u8", into = "u8")]
 pub enum ConsolidatedFrameFlag {
     /// Flag `0x03`.
@@ -268,7 +266,6 @@ impl TryFrom<u8> for ConsolidatedFrameFlag {
 
 /// Length-closed A/B-family frame shared by edge-definition and descriptor records.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 pub struct ConsolidatedRawFrame<Offset = usize> {
     /// Record byte offset.
     #[serde(rename = "byte_offset")]

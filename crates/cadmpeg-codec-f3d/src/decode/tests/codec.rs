@@ -592,26 +592,12 @@ fn decode_yields_metadata_and_honest_report() {
 fn smb_only_is_an_explicit_geometry_fallback_without_history() {
     let f3d = synthetic_f3d(false);
     with_scan(&f3d, |scan| {
-        let fallback = container::select_fallback_brep(scan).unwrap();
-        assert!(!fallback.is_smbh);
+        container::select_fallback_brep(scan).unwrap();
         assert!(container::select_history_brep(scan).is_none());
-        assert!(container::legacy_design_model_breps(scan).is_none());
         let notes = container::summary_notes(scan, container::SummaryScope::FullDecode);
         assert!(notes
             .iter()
             .any(|note| note.contains("no BREP header declares a history partition")));
-    });
-}
-
-#[test]
-fn legacy_design_segment_selects_its_complete_brep_set() {
-    let f3d = synthetic_legacy_multi_brep_f3d();
-    with_scan(&f3d, |scan| {
-        assert!(container::select_fallback_brep(scan).is_none());
-        let selected = container::legacy_design_model_breps(scan).unwrap();
-        assert_eq!(selected.len(), 2);
-        assert!(selected[0].name.ends_with("BREP.first.smb"));
-        assert!(selected[1].name.ends_with("BREP.second.smb"));
     });
 }
 

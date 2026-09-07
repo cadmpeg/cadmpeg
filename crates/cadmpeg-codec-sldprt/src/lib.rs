@@ -98,12 +98,9 @@
 
 mod annotations;
 mod appearance;
-#[allow(dead_code)] // Internal parser surface is retained for fuzz and crate tests.
 pub(crate) mod brep;
 mod classification;
-#[allow(dead_code)] // Internal parser surface is retained for fuzz and crate tests.
 pub(crate) mod container;
-#[allow(dead_code)] // Internal parser surface is retained for fuzz and crate tests.
 pub(crate) mod decode;
 mod dialect;
 mod feature_schema;
@@ -116,10 +113,8 @@ pub(crate) mod layout;
 pub(crate) mod loss;
 mod metadata;
 mod native;
-#[allow(dead_code)] // Internal parser surface is retained for fuzz and crate tests.
 pub(crate) mod parasolid;
 mod pmi;
-#[allow(dead_code)] // Internal record surface is retained for fuzz and crate tests.
 pub(crate) mod records;
 mod resolved_features;
 mod swift;

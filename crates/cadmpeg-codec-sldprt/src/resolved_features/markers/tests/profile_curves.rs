@@ -1,5 +1,4 @@
 //! Inline profile-curve marker tests.
-#![allow(unused_imports)]
 
 use super::super::super::LEGACY_SKETCH_MARKER;
 use super::super::*;

@@ -2,8 +2,6 @@
 //! Outer `7C08` feature and object-ownership graph decoder.
 
 use cadmpeg_core::decode::View;
-#[cfg(feature = "schema")]
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -12,7 +10,6 @@ use crate::{catalog, entity_table, value_block};
 
 /// One decoded outer object graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ObjectGraph {
     /// Offset of the selected `7C08` root.
     pub pos: usize,
@@ -26,7 +23,6 @@ pub struct ObjectGraph {
 
 /// One `7C09` object record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "ObjectRecordWire", into = "ObjectRecordWire")]
 pub struct ObjectRecord {
     /// Record byte offset.
@@ -41,7 +37,6 @@ pub struct ObjectRecord {
 
 // Serialized role fields are retained for wire compatibility and checked once on input.
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct ObjectRecordWire {
     pos: usize,
     total_len: usize,
@@ -104,7 +99,6 @@ impl TryFrom<ObjectRecordWire> for ObjectRecord {
 
 /// Inline or nested body of one `7C09` object record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "ObjectRecordBodyWire", into = "ObjectRecordBodyWire")]
 pub enum ObjectRecordBody {
     /// Complete alternate inline body when the record has no nested `7C0A`.
@@ -119,7 +113,6 @@ pub enum ObjectRecordBody {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 enum ObjectRecordBodyWire {
     /// Complete alternate inline body when the record has no nested `7C0A`.
     Inline(Vec<u8>),
@@ -213,7 +206,6 @@ impl ObjectRecord {
 
 /// Token in a `7C09` record head.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum HeadToken {
     /// Initial head lead.
     Lead(u8),
@@ -229,7 +221,6 @@ pub enum HeadToken {
 
 /// Decoded `7C0A` tagged-atom payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ObjectPayload {
     /// Payload size in bytes.
     pub size: usize,
@@ -239,7 +230,6 @@ pub struct ObjectPayload {
 
 /// One counted reference suffix whose reference prefix is serialized twice.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct RepeatedReferenceSuffix {
     /// Schema-selection production in the payload prefix before this suffix.
     pub schema_preamble: Option<ReferenceSchemaPreamble>,
@@ -255,7 +245,6 @@ pub struct RepeatedReferenceSuffix {
 
 /// Schema reference carried by a repeated-reference payload preamble.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum ReferenceSchemaPreamble {
     /// `<59-byte blob> <5:atom> <46:atom> <schema-ref:atom>`.
     BlobThenSchema {
@@ -275,7 +264,6 @@ pub enum ReferenceSchemaPreamble {
 
 /// Item within a count-prefixed `0x3b` list.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum ListItem {
     /// Referenced object ordinal.
     Reference {
@@ -295,7 +283,6 @@ pub enum ListItem {
 
 /// One allocation row in a `0x3c` bulk table.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct BulkTableRow {
     /// Row identity encoded by the compact, paged, or escaped atom form.
     pub row_id: u32,
@@ -307,7 +294,6 @@ pub struct BulkTableRow {
 
 /// One schema-free field in a `7C0A` payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "PayloadFieldWire", into = "PayloadFieldWire")]
 pub enum PayloadField {
     /// Untagged atom.
@@ -337,7 +323,6 @@ pub enum PayloadField {
     Blob {
         /// Complete blob bytes.
         #[serde(with = "cadmpeg_ir::bytes")]
-        #[cfg_attr(feature = "schema", schemars(with = "String"))]
         bytes: Vec<u8>,
         /// Byte offset within the payload.
         offset: usize,
@@ -370,7 +355,6 @@ pub enum PayloadField {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 enum PayloadFieldWire {
     Atom {
         value: u32,
@@ -388,7 +372,6 @@ enum PayloadFieldWire {
     Blob {
         declared_len: usize,
         #[serde(with = "cadmpeg_ir::bytes")]
-        #[cfg_attr(feature = "schema", schemars(with = "String"))]
         bytes: Vec<u8>,
         offset: usize,
     },
@@ -495,7 +478,6 @@ impl TryFrom<PayloadFieldWire> for PayloadField {
 
 /// Structural role of a decoded payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum PayloadSubtype {
     /// Contains a sane bulk-table header.
     BulkTable,
@@ -515,7 +497,6 @@ pub enum PayloadSubtype {
 
 /// Classification of the four-byte word preceding a surface-alias marker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum AliasLead {
     /// Low byte `0x01`: ordinary surface-support storage.
     SurfaceSupportStorage,
@@ -547,7 +528,6 @@ impl AliasLead {
 
 /// Group-allocation header attached to an outer surface-alias row.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct AliasGroupMembership {
     /// `ObjectModeler` node prototype.
     pub prototype: u32,
@@ -557,7 +537,6 @@ pub struct AliasGroupMembership {
     pub target_slot: u32,
     /// Complete bounded storage prefix between the group header and alias marker.
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub storage_prefix: Vec<u8>,
 }
 

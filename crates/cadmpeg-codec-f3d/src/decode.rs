@@ -2074,7 +2074,6 @@ fn try_decode_text_model(
         parts.push((
             BrepFacts {
                 name: name.clone(),
-                is_smbh: false,
                 uncompressed_len: bytes.len() as u64,
                 kernel: Some(crate::container::KernelFraming::Asm(header)),
                 solved_record_limit: None,

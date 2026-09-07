@@ -2,8 +2,6 @@
 #![deny(clippy::disallowed_methods)]
 //! Fusion parametric-design records and links to the solved B-rep.
 
-#[cfg(feature = "schema")]
-use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeMap;
 use std::num::{NonZeroU32, NonZeroU64};
@@ -20,7 +18,6 @@ const IDENTITY_MATRIX: [[f64; 4]; 4] = [
 
 /// A secondary selection identity and its optional curve identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignSecondaryIdentity<Id> {
     #[serde(rename = "secondary_identity")]
     pub identity: Id,
@@ -83,7 +80,6 @@ impl DesignEntityId {
 
 /// ACT root-component registry flag.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "u32", into = "u32")]
 pub enum ActRegistryFlag {
     Off,
@@ -127,8 +123,6 @@ const DESIGN_DECAL_FIT_TO_FACES_CODE: u8 = 0x60;
 
 /// A Decal mapping byte other than the fit-to-faces code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "u8"))]
 pub struct UnrecognizedDecalMappingMode(u8);
 impl TryFrom<u8> for UnrecognizedDecalMappingMode {
     type Error = String;
@@ -143,7 +137,6 @@ impl TryFrom<u8> for UnrecognizedDecalMappingMode {
 
 /// Decal image mapping-mode byte.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(from = "u8", into = "u8")]
 pub enum DesignDecalMappingMode {
     FitToFaces,
@@ -182,7 +175,6 @@ impl From<DesignDecalMappingMode> for u8 {
 
 /// A source value and the byte offset of its encoding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct Located<T, O = u64> {
     pub value: T,
     pub offset: O,
@@ -349,7 +341,6 @@ impl NonEmptyByteSpan {
 
 /// A value with an optional source encoding location.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct RecordedValue<T> {
     pub value: T,
     pub offset: Option<u64>,
@@ -407,7 +398,6 @@ pub(crate) fn sketch_link_sense_is_unconstrained(sense: i64) -> bool {
 
 /// Provenance link from a solved B-rep entity to its source sketch curve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SketchCurveLink {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -432,8 +422,6 @@ pub struct SketchCurveLink {
 
 /// Persistent Fusion design identifier attached to a solved B-rep entity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "PersistentDesignLinkWire"))]
 #[serde(
     try_from = "PersistentDesignLinkWire",
     into = "PersistentDesignLinkWire"
@@ -455,7 +443,6 @@ pub struct PersistentDesignLink {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct PersistentDesignLinkWire {
     /// Globally unique deterministic identifier for this native record.
     id: String,
@@ -507,7 +494,6 @@ impl From<PersistentDesignLink> for PersistentDesignLinkWire {
 
 /// Native face/edge tag group linking a solved subentity to design records.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PersistentSubentityTag {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -525,7 +511,6 @@ pub struct PersistentSubentityTag {
 
 /// Component-local Design naming space bound to a context UUID.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignComponentNamingSpace {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -541,7 +526,6 @@ pub struct DesignComponentNamingSpace {
 
 /// Original authoring time attached to a solved ASM entity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct CreationTimestamp {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -555,7 +539,6 @@ pub struct CreationTimestamp {
 
 /// Design `BulkStream` regeneration-recipe family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ConstructionRecipeKind {
     /// Recipe regenerates a whole body.
@@ -572,7 +555,6 @@ pub enum ConstructionRecipeKind {
 
 /// A recipe Design id and its optional following selector.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ConstructionRecipeDesign<Id> {
     #[serde(rename = "design_id")]
     pub id: Id,
@@ -582,8 +564,6 @@ pub struct ConstructionRecipeDesign<Id> {
 
 /// One source-framed parametric regeneration recipe.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "ConstructionRecipeWire"))]
 #[serde(try_from = "ConstructionRecipeWire", into = "ConstructionRecipeWire")]
 pub struct ConstructionRecipe {
     /// Globally unique deterministic identifier for this native record.
@@ -605,7 +585,6 @@ pub struct ConstructionRecipe {
 
 /// One source-framed parametric regeneration recipe.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct ConstructionRecipeWire {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -677,7 +656,6 @@ impl From<ConstructionRecipe> for ConstructionRecipeWire {
 
 /// Serialized Design selector carried by a construction recipe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ConstructionRecipeSelector {
     /// Selector value.
     pub value: u32,
@@ -687,7 +665,6 @@ pub struct ConstructionRecipeSelector {
 
 /// Semantic family of one Design parameter record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum DesignParameterKind {
     /// A document-level named user parameter.
@@ -793,8 +770,6 @@ impl DesignParameterSource {
 
 /// One indexed Design parameter or expression record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "DesignParameterSerde"))]
 #[serde(try_from = "DesignParameterSerde", into = "DesignParameterSerde")]
 pub struct DesignParameter {
     /// Globally unique deterministic identifier for this native record.
@@ -869,7 +844,6 @@ fn design_parameter_kind_from_source(source_kind: &str) -> DesignParameterKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignParameterSerde {
     id: String,
     byte_offset: u64,
@@ -976,7 +950,6 @@ impl From<DesignParameter> for DesignParameterSerde {
 
 /// Indexed record that owns one Design parameter.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignParameterOwner {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -1010,7 +983,6 @@ pub struct DesignParameterOwner {
 
 /// Fixed prefix of the indexed record paired with a Design parameter owner.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignParameterCompanion {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -1052,7 +1024,6 @@ fn deserialize_companion_timestamp<'de, D: Deserializer<'de>>(
 /// Indexed record that directly contains one construction recipe owned by a
 /// dimensional parameter companion.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignDimensionRecipeRecord {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -1078,7 +1049,6 @@ pub struct DesignDimensionRecipeRecord {
     pub prefix_offset: u64,
     /// Complete recipe-specific prefix before the length-prefixed family name.
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub prefix_bytes: Vec<u8>,
     /// Persistent Design selector/reference tails decoded from the prefix.
     pub references: Vec<DesignRecipeReference>,
@@ -1094,7 +1064,6 @@ pub struct DesignDimensionRecipeRecord {
 
 /// One persistent Design selector/reference tail in a dimension recipe.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignRecipeReference {
     /// Native persistent-subentity selector.
     pub selector: i64,
@@ -1126,7 +1095,6 @@ pub struct DesignRecipeReference {
 
 /// Paired-locus frame nested under a dimensional parameter companion.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignDimensionLocusPair {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -1171,7 +1139,6 @@ pub struct DesignDimensionLocusPair {
 
 /// Dimension frame with one null locus and one typed sketch-geometry locus.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignDimensionNullLocusPair {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -1210,11 +1177,9 @@ pub struct DesignDimensionNullLocusPair {
 
 /// One nullable typed operand in an annotated dimension frame.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignDimensionAnnotationOperand {
     /// Indexed sketch geometry record, absent for the null locus.
     #[serde(with = "annotation_geometry_index")]
-    #[cfg_attr(feature = "schema", schemars(with = "u32"))]
     pub geometry_record_index: Option<NonZeroU32>,
     /// Byte offset of `geometry_record_index`.
     pub geometry_reference_offset: u64,
@@ -1251,7 +1216,6 @@ mod annotation_geometry_index {
 
 /// One required geometry operand in a dimension presentation frame.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignDimensionPresentationOperand {
     /// Indexed sketch geometry record.
     #[serde(deserialize_with = "deserialize_presentation_geometry_index")]
@@ -1273,11 +1237,6 @@ fn deserialize_presentation_geometry_index<'de, D: Deserializer<'de>>(
 
 /// Paired `EntityGenesis` dimension frame carrying annotation geometry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(
-    feature = "schema",
-    schemars(with = "DesignDimensionAnnotationFrameWire")
-)]
 #[serde(
     try_from = "DesignDimensionAnnotationFrameWire",
     into = "DesignDimensionAnnotationFrameWire"
@@ -1324,7 +1283,6 @@ pub struct DesignDimensionAnnotationFrame {
 
 /// Paired `EntityGenesis` dimension frame carrying annotation geometry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignDimensionAnnotationFrameWire {
     /// Globally unique deterministic identifier for this native record.
     id: String,
@@ -1438,7 +1396,6 @@ impl From<DesignDimensionAnnotationFrame> for DesignDimensionAnnotationFrameWire
 /// Paired Fusion presentation frame that directly identifies a dimension's
 /// measured sketch geometry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignDimensionPresentationFrame {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -1475,7 +1432,6 @@ pub struct DesignDimensionPresentationFrame {
 
 /// One typed geometry locus and its dimension-role code.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignDimensionLocus {
     /// Return reference at the same position in the return run.
     pub returned: Located<u32>,
@@ -1491,8 +1447,6 @@ pub struct DesignDimensionLocus {
 
 /// Counted-locus frame nested under a dimensional parameter companion.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "DesignDimensionLocusGroupWire"))]
 #[serde(
     try_from = "DesignDimensionLocusGroupWire",
     into = "DesignDimensionLocusGroupWire"
@@ -1534,7 +1488,6 @@ pub struct DesignDimensionLocusGroup {
 
 /// One typed geometry locus and its dimension-role code.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignDimensionLocusWire {
     /// Indexed sketch-point or sketch-curve record.
     geometry_record_index: u32,
@@ -1548,7 +1501,6 @@ struct DesignDimensionLocusWire {
 
 /// Counted-locus frame nested under a dimensional parameter companion.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignDimensionLocusGroupWire {
     /// Globally unique deterministic identifier for this native record.
     id: String,
@@ -1702,12 +1654,10 @@ impl From<DesignDimensionLocusGroup> for DesignDimensionLocusGroupWire {
 
 /// Typed sketch-container visibility bound to a Design sketch entity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "DesignSketchVisibilityWire",
     into = "DesignSketchVisibilityWire"
 )]
-#[cfg_attr(feature = "schema", schemars(with = "DesignSketchVisibilityWire"))]
 pub struct DesignSketchVisibility {
     /// One-based ordinal among sketch Geometry members in the Design stream.
     pub stream_ordinal: NonZeroU32,
@@ -1742,7 +1692,6 @@ impl DesignSketchVisibility {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignSketchVisibilityWire {
     stream_ordinal: u32,
     stream_ordinal_offset: u64,
@@ -1779,12 +1728,10 @@ impl From<DesignSketchVisibility> for DesignSketchVisibilityWire {
 
 /// Local-to-model placement frame referenced by a Design sketch scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "DesignSketchPlacementWire",
     into = "DesignSketchPlacementWire"
 )]
-#[cfg_attr(feature = "schema", schemars(with = "DesignSketchPlacementWire"))]
 pub struct DesignSketchPlacement {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -1963,7 +1910,6 @@ impl DesignSketchPlacement {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignSketchPlacementWire {
     /// Globally unique deterministic identifier for this native record.
     id: String,
@@ -2088,7 +2034,6 @@ impl From<DesignSketchPlacement> for DesignSketchPlacementWire {
 
 /// Persistent-reference channel in the Design construction stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum PersistentReferenceKind {
     /// Reference identifies a persistent point.
@@ -2101,7 +2046,6 @@ pub enum PersistentReferenceKind {
 
 /// One byte-stored persistent point or curve identifier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PersistentReference {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -2117,9 +2061,7 @@ pub struct PersistentReference {
 
 /// A per-file dynamic class tag encoded as three ASCII digits.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "String", into = "String")]
-#[cfg_attr(feature = "schema", schemars(with = "String"))]
 pub struct DesignClassTag(String);
 
 impl TryFrom<String> for DesignClassTag {
@@ -2148,9 +2090,7 @@ impl DesignClassTag {
 
 /// A construction-history edge selection that Fusion could not re-resolve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "LostEdgeReferenceWire", into = "LostEdgeReferenceWire")]
-#[cfg_attr(feature = "schema", schemars(with = "LostEdgeReferenceWire"))]
 pub struct LostEdgeReference {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -2207,7 +2147,6 @@ impl LostEdgeReference {
 
 /// A construction-history edge selection that Fusion could not re-resolve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct LostEdgeReferenceWire {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -2282,12 +2221,10 @@ impl From<LostEdgeReference> for LostEdgeReferenceWire {
 
 /// One Design `BulkStream` material assignment joining a design entity to visual assets.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     try_from = "DesignMaterialAssignmentWire",
     into = "DesignMaterialAssignmentWire"
 )]
-#[cfg_attr(feature = "schema", schemars(with = "DesignMaterialAssignmentWire"))]
 pub struct DesignMaterialAssignment {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -2313,7 +2250,6 @@ pub struct DesignMaterialAssignment {
 
 /// One Design `BulkStream` material assignment joining a design entity to visual assets.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignMaterialAssignmentWire {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -2410,7 +2346,6 @@ pub const DESIGN_MODULE_FUSION: &str = "Fusion";
 
 /// JSON configuration payload stored in a Fusion design-configuration entry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignConfiguration {
     /// Stable identity derived from the ZIP entry name.
     pub id: String,
@@ -2427,7 +2362,6 @@ pub struct DesignConfiguration {
 
 /// Native Fusion design-configuration entry family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum DesignConfigurationKind {
     /// A `.dsgcfg` configuration table.
@@ -2440,8 +2374,6 @@ pub enum DesignConfigurationKind {
 /// a record type and lists the entities whose sibling `BulkStream` records
 /// carry it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "SegmentTypeWire"))]
 #[serde(try_from = "SegmentTypeWire", into = "SegmentTypeWire")]
 pub struct SegmentType {
     /// Globally unique deterministic identifier for this native record.
@@ -2474,7 +2406,6 @@ pub struct SegmentType {
 /// a record type and lists the entities whose sibling `BulkStream` records
 /// carry it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct SegmentTypeWire {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -2622,6 +2553,7 @@ impl DesignTimelineFrame {
     pub fn byte_offset(&self) -> u64 {
         self.byte_offset
     }
+    #[cfg(test)]
     pub fn frame_length(&self) -> u64 {
         self.frame_length
     }
@@ -2652,8 +2584,6 @@ impl DesignTimelineFrame {
 
 /// Counted Design timeline-item list that carries authored feature order.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "DesignFeatureTimelineWire"))]
 #[serde(
     try_from = "DesignFeatureTimelineWire",
     into = "DesignFeatureTimelineWire"
@@ -2675,7 +2605,6 @@ pub struct DesignFeatureTimeline {
 
 /// Counted Design timeline-item list that carries authored feature order.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignFeatureTimelineWire {
     /// Globally unique deterministic identifier for this native record.
     id: String,
@@ -2759,8 +2688,6 @@ impl From<DesignFeatureTimeline> for DesignFeatureTimelineWire {
 
 /// Self-validating entity-bound header in the Design `BulkStream`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "DesignEntityHeaderWire"))]
 #[serde(try_from = "DesignEntityHeaderWire", into = "DesignEntityHeaderWire")]
 pub struct DesignEntityHeader {
     /// Globally unique deterministic identifier for this native record.
@@ -2801,7 +2728,6 @@ impl DesignEntityHeader {
 
 /// Self-validating entity-bound header in the Design `BulkStream`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignEntityHeaderWire {
     /// Globally unique deterministic identifier for this native record.
     id: String,
@@ -2905,8 +2831,6 @@ impl From<DesignEntityHeader> for DesignEntityHeaderWire {
 
 /// Exact identity and source extent of one indexed Design mesh record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "DesignMeshRecordIdentityWire"))]
 #[serde(
     try_from = "DesignMeshRecordIdentityWire",
     into = "DesignMeshRecordIdentityWire"
@@ -2956,7 +2880,6 @@ impl DesignMeshRecordIdentity {
 
 /// Exact identity and source extent of one indexed Design mesh record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignMeshRecordIdentityWire {
     /// Source per-file dynamic three-digit ASCII class tag.
     class_tag: String,
@@ -3031,8 +2954,6 @@ impl<const LENGTH: u64> From<DesignMeshFixedRecord<LENGTH>> for DesignMeshRecord
 
 /// A hyphenated hexadecimal GUID with its original letter case.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "String"))]
 #[serde(try_from = "String", into = "String")]
 pub struct DesignGuidText(String);
 
@@ -3122,7 +3043,6 @@ impl DesignMeshTextureFile {
 
 /// One texture resource owned by a Design mesh feature.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignMeshTextureResourceWire {
     /// Zero-based position in the serialized flags map.
     ordinal: u32,
@@ -3368,7 +3288,6 @@ impl DesignMeshSceneBounds {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignMeshSceneBoundsWire {
     /// Component-wise upper corner, serialized first.
     maximum: [f64; 3],
@@ -3535,8 +3454,6 @@ impl DesignMeshSceneNode {
 
 /// A lowercase RFC 4122 version-4 UUID from the mesh registry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "String"))]
 #[serde(try_from = "String", into = "String")]
 pub struct DesignMeshUuid(DesignGuidText);
 
@@ -3715,7 +3632,6 @@ pub struct DesignMeshBody {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignMeshBodyWire {
     /// Mesh-body record carrying placement and graph references.
     body_record: DesignMeshRecordIdentity,
@@ -3930,8 +3846,6 @@ impl DesignMeshBody {
 
 /// A finite, nonsingular row-major affine map.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "[[f64; 4]; 4]"))]
 #[serde(try_from = "[[f64; 4]; 4]", into = "[[f64; 4]; 4]")]
 pub struct MeshAffineTransform([f64; 16]);
 
@@ -4161,8 +4075,6 @@ impl DesignMeshCollection {
 
 /// One complete `Base Mesh Feature` Design graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "DesignMeshFeatureWire"))]
 #[serde(try_from = "DesignMeshFeatureWire", into = "DesignMeshFeatureWire")]
 pub struct DesignMeshFeature {
     /// Globally unique deterministic identity keyed by the feature-scope record.
@@ -4245,7 +4157,6 @@ impl DesignMeshFeature {
 
 /// One complete `Base Mesh Feature` Design graph.
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignMeshFeatureWire {
     /// Globally unique deterministic identity keyed by the feature-scope record.
     id: String,
@@ -4758,8 +4669,6 @@ impl DesignCanvasScopeForm {
 
 /// Exact image-plane binding owned by one Design `Canvas` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "DesignCanvasImageWire"))]
 #[serde(try_from = "DesignCanvasImageWire", into = "DesignCanvasImageWire")]
 pub struct DesignCanvasImage {
     /// Globally unique native binding identity.
@@ -4832,7 +4741,6 @@ impl DesignCanvasImage {
 
 /// Exact image-plane binding owned by one Design `Canvas` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignCanvasImageWire {
     /// Globally unique deterministic identifier for this native binding.
     id: String,
@@ -5183,8 +5091,6 @@ impl DesignDecalAsset {
 
 /// Exact image and target binding owned by one Design `Decal` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "DesignDecalImageWire"))]
 #[serde(try_from = "DesignDecalImageWire", into = "DesignDecalImageWire")]
 pub struct DesignDecalImage {
     /// Globally unique native binding identity.
@@ -5238,7 +5144,6 @@ impl DesignDecalImage {
 
 /// Exact image and target binding owned by one Design `Decal` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct DesignDecalImageWire {
     /// Globally unique deterministic identifier for this native binding.
     id: String,
@@ -5391,7 +5296,6 @@ impl From<DesignDecalImage> for DesignDecalImageWire {
 
 /// One indexed record header in the recursive Design `BulkStream` tree.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignRecordHeader {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -5509,6 +5413,7 @@ pub struct SketchRelationMember {
 impl SketchRelationMember {
     /// An unresolved member with zero offset and no retained ordinal.
     #[must_use]
+    #[cfg(test)]
     pub fn from_index(record_index: u32) -> Self {
         Self {
             reference: SketchRelationReference::Index(record_index),
@@ -5530,6 +5435,7 @@ pub struct SketchRelationReturnMember {
 impl SketchRelationReturnMember {
     /// An unresolved return member with zero offset.
     #[must_use]
+    #[cfg(test)]
     pub fn from_index(record_index: u32) -> Self {
         Self {
             reference: SketchRelationReference::Index(record_index),
@@ -5659,8 +5565,6 @@ impl std::ops::Deref for SketchRelationReturnMembers {
 
 /// Finite row-major native glyph placement in centimetres.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "[[f64; 4]; 4]"))]
 #[serde(try_from = "[[f64; 4]; 4]", into = "[[f64; 4]; 4]")]
 pub struct SketchGlyphTransform([[f64; 4]; 4]);
 
@@ -5858,8 +5762,6 @@ impl std::error::Error for SketchRelationPayloadError {}
 
 /// Counted constraint relation owned by a sketch container.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "SketchRelationSerde"))]
 #[serde(try_from = "SketchRelationSerde", into = "SketchRelationSerde")]
 pub struct SketchRelation {
     /// Globally unique deterministic identifier for this native record.
@@ -6062,7 +5964,6 @@ fn pad_resolved(
 
 /// Wire form of [`SketchRelation`] with the historical flat field set.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct SketchRelationSerde {
     pub id: String,
     pub record_index: u32,
@@ -6102,7 +6003,6 @@ struct SketchRelationSerde {
     #[serde(default)]
     pub return_member_offsets: Vec<u32>,
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub raw_bytes: Vec<u8>,
 }
 
@@ -6224,7 +6124,6 @@ impl From<SketchRelation> for SketchRelationSerde {
 
 /// One sketch-relation reference resolved against the indexed Design record graph.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SketchRelationOperand {
     /// A sketch point.
@@ -6273,7 +6172,6 @@ impl SketchRelationOperand {
 
 /// One bit in a Fusion sketch-constraint state mask.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SketchConstraintKind {
     /// Points or endpoints occupy the same position.
@@ -6320,7 +6218,6 @@ pub enum SketchConstraintKind {
 
 /// Class-specific auxiliary payload of a pattern or text sketch relation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SketchPatternDefinition {
     /// A circular-pattern relation's auxiliary operands.
@@ -6356,7 +6253,6 @@ pub enum SketchPatternDefinition {
 
 /// One direction clause of a rectangular-pattern sketch relation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SketchPatternDirection {
     /// Evaluated instance count along this direction.
     pub evaluated_count: u32,
@@ -6374,8 +6270,6 @@ pub struct SketchPatternDirection {
 
 /// One text entity in a Fusion sketch coordinate system.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "SketchTextSerde"))]
 #[serde(try_from = "SketchTextSerde", into = "SketchTextSerde")]
 pub struct SketchText {
     /// Globally unique deterministic identifier for this native record.
@@ -6418,7 +6312,6 @@ pub struct SketchText {
     pub layout: SketchTextLayout,
     /// Complete source record bytes for native replay and rewrite.
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     pub raw_bytes: Vec<u8>,
 }
 
@@ -6468,7 +6361,6 @@ impl SketchText {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct SketchTextSerde {
     id: String,
     record_index: u32,
@@ -6502,7 +6394,6 @@ struct SketchTextSerde {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     second_reference: Option<u32>,
     #[serde(with = "cadmpeg_ir::bytes")]
-    #[cfg_attr(feature = "schema", schemars(with = "String"))]
     raw_bytes: Vec<u8>,
 }
 
@@ -6661,7 +6552,6 @@ impl SketchPointClosure {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct SketchPointClosureSerde {
     selector: u64,
     state: u8,
@@ -6811,6 +6701,7 @@ pub enum SketchPointRecordForm {
 }
 
 impl SketchPointRecordForm {
+    #[cfg(test)]
     pub(crate) fn version11(
         persistent_id: u64,
         closure: SketchPointClosure,
@@ -6917,7 +6808,6 @@ impl SketchPointRecordForm {
 
 /// Encoding of every reference owned by a point companion.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SketchPointCompanionReferenceEncoding {
     /// Target entity ID followed directly by the same-segment flags.
@@ -6944,7 +6834,6 @@ pub(crate) struct SketchPointCompanionRef<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct SketchPointCompanionWire {
     prefix_present_zero: bool,
     #[serde(default)]
@@ -6961,8 +6850,6 @@ fn sketch_point_flags_are_zero(flags: &[u8; 8]) -> bool {
 
 /// One point in a Fusion sketch coordinate system.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "SketchPointSerde"))]
 #[serde(try_from = "SketchPointSerde", into = "SketchPointSerde")]
 pub struct SketchPoint {
     /// Globally unique deterministic identifier for this native record.
@@ -7037,7 +6924,6 @@ impl SketchPoint {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum SketchPointRecordFormSerde {
     Version0,
@@ -7049,7 +6935,6 @@ enum SketchPointRecordFormSerde {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct SketchPointSerde {
     id: String,
     record_index: u32,
@@ -7293,7 +7178,6 @@ impl From<SketchPoint> for SketchPointSerde {
 
 /// Persistent identity pair attached to one source sketch-curve record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SketchCurveIdentity {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -7324,7 +7208,6 @@ pub struct SketchCurveIdentity {
 
 /// One persistent tensor-product surface owned by a spatial Fusion sketch.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SketchSurface {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -7356,9 +7239,7 @@ pub struct SketchSurface {
 
 /// Exact analytic geometry carried by a source sketch-curve record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "SketchCurveGeometryWire", into = "SketchCurveGeometryWire")]
-#[cfg_attr(feature = "schema", schemars(with = "SketchCurveGeometryWire"))]
 pub enum SketchCurveGeometry {
     /// A straight line segment.
     Line {
@@ -7411,7 +7292,6 @@ pub enum SketchCurveGeometry {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum SketchCurveGeometryWire {
     /// A straight line segment.
@@ -7655,7 +7535,6 @@ impl SketchNurbsPoles {
 
 /// One member of the Design `BulkStream` `BodiesRoot` list.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignBodyMember {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -7669,7 +7548,6 @@ pub struct DesignBodyMember {
 
 /// Triplicated axis-aligned body bounds cached in the Design stream.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignBodyBounds {
     /// Globally unique deterministic identifier for this native record set.
     pub id: String,
@@ -7694,7 +7572,6 @@ pub struct DesignBodyBounds {
 
 /// One ordered pair in a Design `BulkStream` BREP body-map record.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignBodyBinding {
     /// Globally unique deterministic identifier for this native map entry.
     pub id: String,
@@ -7723,7 +7600,6 @@ pub struct DesignBodyBinding {
 
 /// Design browser-node visibility joined to one solved ASM body.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct BodyVisibility {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -7816,8 +7692,6 @@ pub enum ActEntityMembership {
 
 /// One Fusion ACT change-version channel group and its optional inline table row.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "ActEntitySerde"))]
 #[serde(try_from = "ActEntitySerde", into = "ActEntitySerde")]
 pub struct ActEntity {
     /// Globally unique deterministic identifier for this native record.
@@ -7892,6 +7766,7 @@ impl ActEntity {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn strip_channel_group(&mut self) {
         if let ActEntityMembership::Both(row, _) = &self.membership {
             self.membership = ActEntityMembership::TableOnly(row.clone());
@@ -7900,7 +7775,6 @@ impl ActEntity {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct ActEntitySerde {
     id: String,
     record_index: u32,
@@ -8065,7 +7939,6 @@ impl From<ActEntity> for ActEntitySerde {
 
 /// One GUID in the ordered ACT stream-wide asset/change-version pool.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "ActGuidWire", into = "ActGuidWire")]
 pub struct ActGuid {
     /// Globally unique deterministic identifier for this native record.
@@ -8101,7 +7974,6 @@ impl ActGuid {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct ActGuidWire {
     id: String,
     byte_offset: u64,
@@ -8137,7 +8009,6 @@ impl From<ActGuid> for ActGuidWire {
 
 /// One reference in the ACT table run between the GUID pool and channel registry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "ActTableReferenceWire", into = "ActTableReferenceWire")]
 pub struct ActTableReference {
     /// Globally unique deterministic identifier for this native record.
@@ -8178,7 +8049,6 @@ impl ActTableReference {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct ActTableReferenceWire {
     id: String,
     ordinal: u32,
@@ -8214,7 +8084,6 @@ impl From<ActTableReference> for ActTableReferenceWire {
 
 /// One named entry in the ACT table's stream-wide channel registry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "ActRegistryChannelWire", into = "ActRegistryChannelWire")]
 pub struct ActRegistryChannel {
     pub id: String,
@@ -8261,7 +8130,6 @@ impl ActRegistryChannel {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct ActRegistryChannelWire {
     id: String,
     ordinal: u32,
@@ -8307,7 +8175,6 @@ impl From<ActRegistryChannel> for ActRegistryChannelWire {
 
 /// ACT link from the document root entity to the instance/component registries.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "ActRootComponentWire", into = "ActRootComponentWire")]
 pub struct ActRootComponent {
     /// Globally unique deterministic identifier for this native record.
@@ -8327,7 +8194,6 @@ pub struct ActRootComponent {
 }
 
 #[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct ActRootComponentWire {
     /// Globally unique deterministic identifier for this native record.
     id: String,
@@ -8529,7 +8395,6 @@ impl ActRootLayout {
 /// The first source entry describes the document itself; each further entry
 /// describes one referenced document.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct XrefDesign {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
@@ -8551,7 +8416,6 @@ pub struct XrefDesign {
 /// One outgoing XREF placement of the top-level `RedirectionsStream.dat` table
 /// ([spec §1.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#14-external-references)).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct XrefReference {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,

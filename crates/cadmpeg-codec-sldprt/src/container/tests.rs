@@ -13,13 +13,13 @@ use crate::container::{self};
 use crate::test_support::*;
 use crate::SldprtCodec;
 
-use super::{looks_like_compound_file, looks_like_sldprt};
+use super::{looks_like_sldprt, COMPOUND_FILE_MAGIC};
 
 #[test]
 fn generic_compound_prefix_is_a_weak_container_signal() {
     let prefix = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0, 0, 0, 0];
 
-    assert!(looks_like_compound_file(&prefix));
+    assert!(prefix.starts_with(&COMPOUND_FILE_MAGIC));
     assert!(!looks_like_sldprt(&prefix));
 }
 

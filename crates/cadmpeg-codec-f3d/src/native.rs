@@ -21,8 +21,6 @@ pub(crate) fn load_count() -> usize {
     LOAD_COUNT.get()
 }
 
-#[cfg(feature = "schema")]
-use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase};
@@ -1121,7 +1119,6 @@ const F3D_CATALOGUE: Catalogue<'static, F3dNative, (), cadmpeg_ir::NativeNamespa
 
 /// Autodesk Fusion records retained outside the format-neutral model.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct F3dNative {
     /// Fusion ACT change-tracking table entities.
     #[serde(default)]

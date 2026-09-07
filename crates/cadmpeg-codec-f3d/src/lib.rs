@@ -87,13 +87,11 @@
 mod act;
 pub(crate) mod brep;
 mod bytes;
-#[allow(dead_code)] // Internal container records remain available to crate tests.
 pub(crate) mod container;
 pub(crate) mod decode;
 pub(crate) mod design;
 pub(crate) mod dialect;
 mod error;
-#[allow(dead_code)] // Multi-document helpers remain behind the codec facade.
 pub(crate) mod f3z;
 pub(crate) mod history;
 mod history_records;
@@ -107,7 +105,6 @@ pub(crate) mod materials;
 mod metastream;
 mod native;
 mod paramesh;
-#[allow(dead_code)] // Native record surface remains behind the codec facade.
 pub(crate) mod records;
 mod report;
 mod tsm;
