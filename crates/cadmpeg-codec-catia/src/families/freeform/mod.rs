@@ -1402,16 +1402,7 @@ pub(crate) fn append_freeform_surface_pools(
     )
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum ConsolidatedCarrierKey {
-    Cylinder(usize),
-    EmbeddedCylinder(usize),
-    Cone(usize),
-    Sphere(usize),
-    Torus(usize),
-    Plane(usize),
-    NurbsOffset(usize, u64),
-}
+type ConsolidatedCarrierKey = (usize, Option<u64>);
 
 pub(crate) enum ConsolidatedCarrierChart<'a> {
     Identity,
@@ -1754,7 +1745,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                 let surface = if *offset == 0.0 {
                     support
                 } else {
-                    let key = ConsolidatedCarrierKey::NurbsOffset(*pos, offset.to_bits());
+                    let key = (*pos, Some(offset.to_bits()));
                     if let Some(id) = surface_ids.get(&key) {
                         id.clone()
                     } else {
@@ -1834,7 +1825,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         continue;
                     }
                     (
-                        ConsolidatedCarrierKey::Cylinder(*pos),
+                        (*pos, None),
                         carrier,
                         None,
                         ConsolidatedCarrierChart::Cylinder { radius },
@@ -1854,7 +1845,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         continue;
                     }
                     (
-                        ConsolidatedCarrierKey::EmbeddedCylinder(*pos),
+                        (*pos, None),
                         carrier,
                         Some(cgm_source("surface", value.object_id)),
                         ConsolidatedCarrierChart::Cylinder { radius },
@@ -1873,7 +1864,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         continue;
                     }
                     (
-                        ConsolidatedCarrierKey::Cone(*pos),
+                        (*pos, None),
                         crate::families::b2::records::b2_cone_geometry(cone),
                         None,
                         ConsolidatedCarrierChart::Cone { cone },
@@ -1886,7 +1877,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         continue;
                     };
                     (
-                        ConsolidatedCarrierKey::Sphere(*pos),
+                        (*pos, None),
                         crate::families::b2::records::b2_sphere_geometry(sphere),
                         None,
                         ConsolidatedCarrierChart::Identity,
@@ -1899,7 +1890,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         continue;
                     };
                     (
-                        ConsolidatedCarrierKey::Torus(*pos),
+                        (*pos, None),
                         crate::families::b2::records::b2_torus_geometry(torus),
                         None,
                         ConsolidatedCarrierChart::Torus { torus },
@@ -1916,7 +1907,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         continue;
                     };
                     (
-                        ConsolidatedCarrierKey::Plane(*pos),
+                        (*pos, None),
                         carrier,
                         None,
                         ConsolidatedCarrierChart::Identity,
@@ -1942,15 +1933,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                     annotations,
                     &id,
                     annotation_kind,
-                    match key {
-                        ConsolidatedCarrierKey::Cylinder(pos)
-                        | ConsolidatedCarrierKey::EmbeddedCylinder(pos)
-                        | ConsolidatedCarrierKey::Cone(pos)
-                        | ConsolidatedCarrierKey::Sphere(pos)
-                        | ConsolidatedCarrierKey::Torus(pos)
-                        | ConsolidatedCarrierKey::Plane(pos)
-                        | ConsolidatedCarrierKey::NurbsOffset(pos, _) => pos as u64,
-                    },
+                    key.0 as u64,
                     "resolved_pcurve_support",
                     Exactness::ByteExact,
                 );

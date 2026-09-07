@@ -91,15 +91,36 @@ struct HelixPlan {
 
 struct OwnershipPlan {
     body_kind: BodyKind,
-    components: Vec<Vec<usize>>,
     face_components: Vec<usize>,
     loop_owners: HashMap<u32, usize>,
 }
 
+impl OwnershipPlan {
+    fn components(&self) -> BTreeMap<usize, Vec<usize>> {
+        let mut components = BTreeMap::<usize, Vec<usize>>::new();
+        for (face, &component) in self.face_components.iter().enumerate() {
+            components.entry(component).or_default().push(face);
+        }
+        components
+    }
+}
+
 struct OrientedLoop {
-    member_order: Vec<usize>,
-    reversed: Vec<bool>,
-    pcurve_reversed: Vec<bool>,
+    flipped: bool,
+    members: Vec<OrientedLoopMember>,
+}
+
+#[derive(Clone, Copy)]
+struct OrientedLoopMember {
+    reversed: bool,
+    pcurve_reversed: bool,
+}
+
+impl OrientedLoop {
+    fn member_order(&self) -> impl DoubleEndedIterator<Item = usize> + '_ {
+        let n = self.members.len();
+        (0..n).map(move |i| if self.flipped { n - 1 - i } else { i })
+    }
 }
 
 /// Cross-pass id tables and resolved geometry plans shared between the emit

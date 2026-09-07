@@ -196,8 +196,8 @@ pub(crate) fn a8_nested_b5_run_start(
         parsed.pole_start.checked_add(141)?
     } else {
         let poles = crate::nurbs_surface_control_count(
-            usize::try_from(parsed.header.u_count).ok()?,
-            usize::try_from(parsed.header.v_count).ok()?,
+            usize::try_from(parsed.header.u_count()?).ok()?,
+            usize::try_from(parsed.header.v_count()?).ok()?,
         )?;
         let pole_bytes = poles.checked_mul(24)?;
         let weight_bytes = if parsed.header.rational {
@@ -405,14 +405,22 @@ pub struct A8SurfaceHeader {
     pub u_multiplicities: Vec<u32>,
     /// V multiplicities corresponding to `v_distinct_knots`.
     pub v_multiplicities: Vec<u32>,
-    /// Derived U pole count.
-    pub u_count: u32,
-    /// Derived V pole count.
-    pub v_count: u32,
     /// Whether the record selects rational weights.
     pub rational: bool,
     /// Whether poles occupy the payload or an external grid.
     pub pole_storage: PoleStorage,
+}
+
+impl A8SurfaceHeader {
+    /// U pole count derived from degree and knot multiplicities.
+    pub fn u_count(&self) -> Option<u32> {
+        pole_count(&self.u_multiplicities, self.u_degree)
+    }
+
+    /// V pole count derived from degree and knot multiplicities.
+    pub fn v_count(&self) -> Option<u32> {
+        pole_count(&self.v_multiplicities, self.v_degree)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1339,8 +1347,8 @@ pub fn a8_surface_from_external_grid(
             header.v_degree,
             expand_knots(&header.u_distinct_knots, &header.u_multiplicities)?,
             expand_knots(&header.v_distinct_knots, &header.v_multiplicities)?,
-            header.u_count,
-            header.v_count,
+            header.u_count()?,
+            header.v_count()?,
             control_points.clone(),
             weights.clone(),
             false,
@@ -1379,9 +1387,13 @@ fn a8_external_grid_candidates(
     if header.pole_storage != PoleStorage::Elided {
         return Vec::new();
     }
-    let (Ok(u_count), Ok(v_count)) = (
-        usize::try_from(header.u_count),
-        usize::try_from(header.v_count),
+    let (Some(u_count), Some(v_count)) = (
+        header
+            .u_count()
+            .and_then(|count| usize::try_from(count).ok()),
+        header
+            .v_count()
+            .and_then(|count| usize::try_from(count).ok()),
     ) else {
         return Vec::new();
     };
@@ -1636,8 +1648,6 @@ fn parse_a8_surface_header(data: &[u8], frame: A8Frame) -> Option<ParsedA8Surfac
             v_distinct_knots: v_distinct,
             u_multiplicities: u_mults,
             v_multiplicities: v_mults,
-            u_count,
-            v_count,
             rational: mode == 0x05,
             pole_storage: if elided {
                 PoleStorage::Elided
@@ -1656,6 +1666,8 @@ fn a8_surface_from_parsed(data: &[u8], parsed: ParsedA8SurfaceHeader) -> Option<
         mut pole_start,
         end,
     } = parsed;
+    let u_count = header.u_count()?;
+    let v_count = header.v_count()?;
     let A8SurfaceHeader {
         pos,
         object_id,
@@ -1665,8 +1677,6 @@ fn a8_surface_from_parsed(data: &[u8], parsed: ParsedA8SurfaceHeader) -> Option<
         v_distinct_knots,
         u_multiplicities,
         v_multiplicities,
-        u_count,
-        v_count,
         rational,
         pole_storage,
         ..

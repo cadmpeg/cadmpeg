@@ -106,14 +106,13 @@ fn e5_plane_solver_uses_known_normal_and_canonical_sign_for_rank_one_uv() {
         faces: vec![E5Face {
             record_id: 1,
             surface: 100,
-            trailer_sign: 1,
+            trailer_sign: crate::families::e5::graph::Sign::Positive,
             loops: vec![E5Loop {
                 record_id: 2,
                 surface: 100,
                 members: e5_loop_members(&[1, 2], &[3, 4], &[false, false]),
                 oriented_members: None,
                 outer: Some(true),
-                orientation_signs: Vec::new(),
                 orientation_hint: None,
             }],
         }],

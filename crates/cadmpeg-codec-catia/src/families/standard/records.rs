@@ -36,16 +36,76 @@ pub struct PlaneParams {
     pub normal: Vector3,
 }
 
-/// The `00 33 <kind>` surface kinds and their required strict-template prebyte
-/// (the byte at `marker_pos - 1`), which filters collisional signature matches.
-fn kind_prebyte(kind: u8) -> Option<u8> {
-    match kind {
-        0x32 => Some(0x02), // plane
-        0x33 => Some(0x1a), // cylinder
-        0x34 => Some(0x1a), // cone
-        0x35 => Some(0x12), // sphere
-        0x38 => Some(0x1e), // torus
-        _ => None,
+/// An analytic surface marker kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnalyticSurfaceKind {
+    /// A plane carrier.
+    Plane,
+    /// A cylinder carrier.
+    Cylinder,
+    /// A cone carrier.
+    Cone,
+    /// A sphere carrier.
+    Sphere,
+    /// A torus carrier.
+    Torus,
+}
+
+impl AnalyticSurfaceKind {
+    pub(crate) fn from_marker(marker: u8) -> Option<Self> {
+        match marker {
+            0x32 => Some(Self::Plane),
+            0x33 => Some(Self::Cylinder),
+            0x34 => Some(Self::Cone),
+            0x35 => Some(Self::Sphere),
+            0x38 => Some(Self::Torus),
+            _ => None,
+        }
+    }
+    pub(crate) const fn marker(self) -> u8 {
+        match self {
+            Self::Plane => 0x32,
+            Self::Cylinder => 0x33,
+            Self::Cone => 0x34,
+            Self::Sphere => 0x35,
+            Self::Torus => 0x38,
+        }
+    }
+    pub(crate) const fn prebyte(self) -> u8 {
+        match self {
+            Self::Plane => 0x02,
+            Self::Cylinder => 0x1a,
+            Self::Cone => 0x1a,
+            Self::Sphere => 0x12,
+            Self::Torus => 0x1e,
+        }
+    }
+    pub(crate) const fn record_len(self) -> usize {
+        match self {
+            Self::Plane => analytic_plane::LEN,
+            Self::Cylinder => analytic_cylinder::LEN,
+            Self::Cone => analytic_cone::LEN,
+            Self::Sphere => analytic_sphere::LEN,
+            Self::Torus => analytic_torus::LEN,
+        }
+    }
+    pub(crate) const fn sign_offset(self) -> usize {
+        match self {
+            Self::Plane => analytic_plane::SIGN,
+            Self::Cylinder => analytic_cylinder::SIGN,
+            Self::Cone => analytic_cone::SIGN,
+            Self::Sphere => analytic_sphere::SIGN,
+            Self::Torus => analytic_torus::SIGN,
+        }
+    }
+    pub(crate) const fn bounds_offset(self) -> usize {
+        match self {
+            Self::Plane => 3,
+            Self::Cylinder => 27,
+            Self::Cone => 27,
+            Self::Sphere => 19,
+            Self::Torus => 31,
+        }
     }
 }
 
@@ -57,7 +117,7 @@ pub struct SurfacePrefix {
     /// The little-endian u24 tag that identifies this carrier.
     pub target: u32,
     /// The kind byte (`0x32`..=`0x38`).
-    pub kind: u8,
+    pub kind: AnalyticSurfaceKind,
 }
 
 /// One face-local record in the standard `SurfacicReps` surface roster.
@@ -157,13 +217,7 @@ pub fn standard_face_bounds(
     match record {
         StandardSurfaceRecord::Freeform { bounds, .. } => Some(*bounds),
         StandardSurfaceRecord::Analytic(prefix) => {
-            let relative = match prefix.kind {
-                0x32 => 3,
-                0x33 | 0x34 => 27,
-                0x35 => 19,
-                0x38 => 31,
-                _ => return None,
-            };
+            let relative = prefix.kind.bounds_offset();
             face_bounds_at(brep, prefix.pos + relative).filter(|bounds| bounds.sphere_radius > 0.0)
         }
     }
@@ -179,17 +233,7 @@ impl StandardSurfaceRecord {
 
     fn end(&self) -> usize {
         match self {
-            Self::Analytic(prefix) => {
-                self.pos()
-                    + match prefix.kind {
-                        0x32 => analytic_plane::LEN,
-                        0x33 => analytic_cylinder::LEN,
-                        0x34 => analytic_cone::LEN,
-                        0x35 => analytic_sphere::LEN,
-                        0x38 => analytic_torus::LEN,
-                        _ => unreachable!("analytic roster kinds are filtered"),
-                    }
-            }
+            Self::Analytic(prefix) => self.pos() + prefix.kind.record_len(),
             Self::Freeform { pos, .. } => pos + freeform_core::LEN,
         }
     }
@@ -421,14 +465,7 @@ pub fn standard_surface_records(
 /// Read the trailing per-face orientation byte from a complete analytic
 /// `SurfacicReps` record. `true` means the face follows the carrier normal.
 pub fn face_sense(brep: &[u8], prefix: &SurfacePrefix) -> Option<bool> {
-    let sign = match prefix.kind {
-        0x32 => analytic_plane::SIGN,
-        0x33 => analytic_cylinder::SIGN,
-        0x34 => analytic_cone::SIGN,
-        0x35 => analytic_sphere::SIGN,
-        0x38 => analytic_torus::SIGN,
-        _ => return None,
-    };
+    let sign = prefix.kind.sign_offset();
     match *brep.get(
         prefix
             .pos
@@ -501,10 +538,10 @@ pub fn surface_prefixes(brep: &[u8]) -> Vec<SurfacePrefix> {
             continue;
         }
         let kind = brep[i + 2];
-        let Some(prebyte) = kind_prebyte(kind) else {
+        let Some(kind) = AnalyticSurfaceKind::from_marker(kind) else {
             continue;
         };
-        if brep[i - 2] != 0x00 || brep[i - 1] != prebyte {
+        if brep[i - 2] != 0x00 || brep[i - 1] != kind.prebyte() {
             continue;
         }
         out.push(SurfacePrefix {
@@ -753,7 +790,7 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
     let mut view = View::over_retained(brep);
     view.seek(prefix.pos + 3)?; // skip `00 33 <kind>`
     match prefix.kind {
-        0x35 => {
+        AnalyticSurfaceKind::Sphere => {
             // sphere: cx cy cz radius
             let (cx, cy, cz, r) = (
                 view.f32_be()?,
@@ -771,7 +808,7 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
                 radius: r as f64,
             })
         }
-        0x38 => {
+        AnalyticSurfaceKind::Torus => {
             // torus: cx cy cz ax ay signed_major minor; sign(major) carries sign(az).
             let (cx, cy, cz, ax, ay, major, minor) = (
                 view.f32_be()?,
@@ -797,7 +834,7 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
                 minor_radius: minor as f64,
             })
         }
-        0x33 => {
+        AnalyticSurfaceKind::Cylinder => {
             // cylinder: px py pz ax ay radius; sign(radius) carries sign(az).
             let (px, py, pz, ax, ay, radius) = (
                 view.f32_be()?,
@@ -821,7 +858,7 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
                 radius: radius.abs() as f64,
             })
         }
-        0x34 => {
+        AnalyticSurfaceKind::Cone => {
             // cone: apex_x apex_y apex_z ax ay semi_angle; radius at apex is 0.
             let (x, y, z, ax, ay, semi) = (
                 view.f32_be()?,
@@ -847,7 +884,7 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
                 half_angle: semi.abs() as f64,
             })
         }
-        _ => None, // plane: parameters in a separate bridged record.
+        AnalyticSurfaceKind::Plane => None, // plane: parameters in a separate bridged record.
     }
 }
 

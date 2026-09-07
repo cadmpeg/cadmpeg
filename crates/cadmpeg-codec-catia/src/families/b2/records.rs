@@ -341,24 +341,13 @@ pub struct B2OwnerChart {
     pub carrier: B2OwnerChartCarrier,
     /// Immediately following class-`0x37` bridge record.
     pub bridge: B2OwnerChartBridge,
-    /// Offset of the selector record with prefix `0x05`.
-    pub selector_05: usize,
-    /// Offset of the selector record with prefix `0x09`.
-    pub selector_09: usize,
-    /// Offset of the selector record with prefix `0x0d`.
-    pub selector_0d: usize,
-    /// Offset of the selector record with prefix `0x11`.
-    pub selector_11: usize,
+    parameter_points: [usize; 4],
 }
 
 impl B2OwnerChart {
+    /// Parameter point offsets in selector-prefix order.
     pub fn parameter_point_offsets(&self) -> [usize; 4] {
-        [
-            self.selector_05,
-            self.selector_09,
-            self.selector_0d,
-            self.selector_11,
-        ]
+        self.parameter_points
     }
 }
 
@@ -1087,18 +1076,13 @@ pub(crate) fn b2_owner_charts_from_records(
             {
                 return None;
             }
-            let [selector_05, selector_09, selector_0d, selector_11] =
-                points.map(|point| point.pos);
             Some(B2OwnerChart {
                 owner_pos: owner.pos,
                 source_index: owner.source_index,
                 carrier_pos: carrier.range.start,
                 carrier: carrier_kind,
                 bridge,
-                selector_05,
-                selector_09,
-                selector_0d,
-                selector_11,
+                parameter_points: points.map(|point| point.pos),
             })
         })
         .collect()

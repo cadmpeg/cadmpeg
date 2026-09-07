@@ -134,7 +134,7 @@ fn support_bound_surface_closure_includes_carrier_supports_and_offsets() {
             carrier_surface: 31,
             source_surface: 50,
             distance: 1.0,
-            carrier_kind: 2,
+            carrier_kind: crate::families::b5::graph::B5OffsetCarrierKind::Extrusion,
             parameter_bounds: [[0.0, 1.0], [0.0, 1.0]],
         },
     )]);
@@ -181,7 +181,7 @@ fn surface_closure_follows_aliases_to_native_constructions() {
             carrier_surface: 30,
             source_surface: 40,
             distance: 2.0,
-            carrier_kind: 2,
+            carrier_kind: crate::families::b5::graph::B5OffsetCarrierKind::Plane,
             parameter_bounds: [[0.0, 1.0], [0.0, 2.0]],
         },
     )]);
@@ -927,7 +927,7 @@ fn body_kind_requires_unique_complete_loop_ownership() {
     graph.edge_vertices.insert(7, [0, 1]);
     let ownership = ownership_plan(&graph).expect("required invariant");
     assert_eq!(ownership.face_components, vec![0, 1]);
-    assert_eq!(ownership.components.len(), 2);
+    assert_eq!(ownership.components().len(), 2);
     assert_eq!(ownership.body_kind, BodyKind::Sheet);
     assert_eq!(ownership.loop_owners.get(&2), Some(&0));
     assert_eq!(ownership.loop_owners.get(&6), Some(&1));
@@ -958,7 +958,7 @@ fn body_kind_requires_unique_complete_loop_ownership() {
     graph.loops.get_mut(&6).expect("required invariant").members[0].edge = 3;
     let ownership = ownership_plan(&graph).expect("required invariant");
     assert_eq!(ownership.face_components, vec![0, 0]);
-    assert_eq!(ownership.components.len(), 1);
+    assert_eq!(ownership.components().len(), 1);
     assert_eq!(ownership.body_kind, BodyKind::Solid);
 
     graph.faces.pop();
@@ -1005,12 +1005,43 @@ fn loop_orientation_reverses_member_order_and_rejects_frustrated_parity() {
         BTreeMap::from([(1, vec![false]), (2, vec![false; 3])]),
     )
     .expect("required invariant");
-    assert_eq!(orientation[&1].member_order, vec![0]);
-    assert_eq!(orientation[&2].member_order, vec![2, 1, 0]);
-    assert_eq!(orientation[&1].reversed, vec![false]);
-    assert_eq!(orientation[&2].reversed, vec![true; 3]);
-    assert_eq!(orientation[&1].pcurve_reversed, vec![false]);
-    assert_eq!(orientation[&2].pcurve_reversed, vec![true, false, true]);
+    assert_eq!(orientation[&1].member_order().collect::<Vec<_>>(), vec![0]);
+    assert_eq!(
+        orientation[&2].member_order().collect::<Vec<_>>(),
+        vec![2, 1, 0]
+    );
+    assert_eq!(
+        orientation[&1]
+            .members
+            .iter()
+            .map(|member| member.reversed)
+            .collect::<Vec<_>>(),
+        vec![false]
+    );
+    assert_eq!(
+        orientation[&2]
+            .members
+            .iter()
+            .map(|member| member.reversed)
+            .collect::<Vec<_>>(),
+        vec![true; 3]
+    );
+    assert_eq!(
+        orientation[&1]
+            .members
+            .iter()
+            .map(|member| member.pcurve_reversed)
+            .collect::<Vec<_>>(),
+        vec![false]
+    );
+    assert_eq!(
+        orientation[&2]
+            .members
+            .iter()
+            .map(|member| member.pcurve_reversed)
+            .collect::<Vec<_>>(),
+        vec![true, false, true]
+    );
 
     graph.loops = BTreeMap::from([
         (1, loop_(1, vec![1, 3])),

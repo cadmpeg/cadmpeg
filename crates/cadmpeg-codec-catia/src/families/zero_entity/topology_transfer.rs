@@ -47,8 +47,7 @@ struct Occurrence {
     oriented_endpoints: [Point3; 2],
     model_parameters: Option<[f64; 2]>,
     curve: CurveId,
-    oriented_curve: Option<CurveId>,
-    oriented_curve_parameter_range: Option<[f64; 2]>,
+    oriented_curve: Option<(CurveId, [f64; 2])>,
     pcurve: Option<OccurrencePcurve>,
 }
 
@@ -178,7 +177,6 @@ pub(crate) fn transfer_closed_face_topology(
                     model_parameters: support.model_parameters,
                     curve,
                     oriented_curve: None,
-                    oriented_curve_parameter_range: None,
                     pcurve,
                 });
             }
@@ -278,8 +276,7 @@ pub(crate) fn transfer_closed_face_topology(
                 annotations.derived(&occurrence.curve, "geometry");
                 (occurrence.curve.clone(), parameter_range)
             };
-        occurrence.oriented_curve = Some(oriented_curve);
-        occurrence.oriented_curve_parameter_range = Some(oriented_curve_parameter_range);
+        occurrence.oriented_curve = Some((oriented_curve, oriented_curve_parameter_range));
     }
 
     let support_count = support_runs
@@ -463,8 +460,8 @@ pub(crate) fn transfer_closed_face_topology(
             candidate.support_record_ordinals[0], candidate.support_record_ordinals[1]
         ))
         .expect("identity grammar");
-        let oriented_curve = first_occurrence.oriented_curve.as_ref()?;
-        let param_range = first_occurrence.oriented_curve_parameter_range;
+        let (oriented_curve, parameter_range) = first_occurrence.oriented_curve.as_ref()?;
+        let param_range = Some(*parameter_range);
         let oriented_vertices = &occurrence_vertex_pairs
             [*occurrence_by_support.get(&candidate.support_record_ordinals[0])?]
         .0;
@@ -623,20 +620,13 @@ pub(crate) fn transfer_closed_face_topology(
                 } else {
                     return None;
                 };
-                let use_curve = if occurrence.oriented_curve.as_ref()
-                    == first_occurrence.oriented_curve.as_ref()
-                {
-                    None
-                } else {
-                    Some(occurrence.oriented_curve.as_ref()?.clone())
-                };
-                let use_curve = match use_curve {
-                    Some(curve) => Some(cadmpeg_ir::topology::CoedgeUseCurve {
-                        curve,
-                        parameter_range: occurrence.oriented_curve_parameter_range?,
-                    }),
-                    None => None,
-                };
+                let (curve, parameter_range) = occurrence.oriented_curve.as_ref()?;
+                let (first_curve, _) = first_occurrence.oriented_curve.as_ref()?;
+                let use_curve =
+                    (curve != first_curve).then(|| cadmpeg_ir::topology::CoedgeUseCurve {
+                        curve: curve.clone(),
+                        parameter_range: *parameter_range,
+                    });
                 let pcurves = occurrence
                     .pcurve
                     .as_ref()

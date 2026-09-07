@@ -198,7 +198,6 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
         vec![false, false, false]
     );
     assert_eq!(topology.faces[0].loops[0].outer, Some(true));
-    assert_eq!(topology.faces[0].loops[0].orientation_signs, vec![1; 13]);
     assert_eq!(
         topology.faces[0].loops[0]
             .resolved_members()
@@ -217,27 +216,7 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
             .collect::<Vec<_>>(),
         vec![(0, true), (1, true), (2, true)]
     );
-    assert_eq!(
-        topology.faces[1].loops[0].orientation_signs,
-        [vec![1; 12], vec![0]].concat()
-    );
-    assert_eq!(
-        topology.bodies[0]
-            .faces
-            .iter()
-            .map(|member| member.face)
-            .collect::<Vec<_>>(),
-        vec![600, 601]
-    );
-    assert_eq!(
-        topology.bodies[0]
-            .faces
-            .iter()
-            .map(|member| member.orientation_sign)
-            .collect::<Vec<_>>(),
-        vec![1, 1]
-    );
-    assert_eq!(topology.bodies[0].extra_orientation_signs, [1, 1]);
+    assert_eq!(topology.bodies[0].faces, vec![600, 601]);
     assert_eq!(topology.pcurves.len(), 7);
     assert!(matches!(
         topology.pcurves[&400],

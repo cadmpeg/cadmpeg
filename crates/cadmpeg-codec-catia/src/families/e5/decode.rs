@@ -979,8 +979,7 @@ struct E5BoundaryPlan {
 
 /// Body/region/shell ownership resolved by [`resolve_e5_ownership`].
 struct E5Ownership {
-    body_faces: Vec<(Option<u32>, Vec<u32>)>,
-    ownership: Vec<E5BodyOwnership>,
+    bodies: Vec<E5BodyPlan>,
     face_shell: HashMap<u32, ShellId>,
 }
 
@@ -1057,11 +1056,7 @@ pub(crate) fn transfer_e5_topology(
     let Some(e5_ownership) = resolve_e5_ownership(topology) else {
         return false;
     };
-    let E5Ownership {
-        body_faces,
-        ownership,
-        face_shell,
-    } = e5_ownership;
+    let E5Ownership { bodies, face_shell } = e5_ownership;
 
     let edge_ids: HashMap<u32, EdgeId> = topology
         .edges
@@ -1084,7 +1079,7 @@ pub(crate) fn transfer_e5_topology(
         &surface_curve_plan,
     );
     emit_e5_pcurves(ir, annotations, &pcurve_plan);
-    emit_e5_bodies(ir, annotations, &body_faces, &ownership);
+    emit_e5_bodies(ir, annotations, &bodies);
     if !emit_e5_faces_loops_coedges(
         ir,
         annotations,
@@ -1463,19 +1458,14 @@ fn resolve_e5_ownership(topology: &crate::families::e5::graph::E5Topology) -> Op
         topology
             .bodies
             .iter()
-            .map(|body| {
-                (
-                    Some(body.record_id),
-                    body.faces.iter().map(|member| member.face).collect(),
-                )
-            })
+            .map(|body| (Some(body.record_id), body.faces.clone()))
             .collect()
     };
-    let Some(ownership) = e5_ownership_plan(topology, &body_faces) else {
+    let Some(bodies) = e5_ownership_plan(topology, &body_faces) else {
         return None;
     };
     let mut face_shell = HashMap::new();
-    for (body, plan) in ownership.iter().enumerate() {
+    for (body, plan) in bodies.iter().enumerate() {
         for (component, faces) in plan.components.iter().enumerate() {
             let shell = ShellId::mint(format!("catia:e5:shell#{body}-{component}"))
                 .expect("identity grammar");
@@ -1484,11 +1474,7 @@ fn resolve_e5_ownership(topology: &crate::families::e5::graph::E5Topology) -> Op
             }
         }
     }
-    Some(E5Ownership {
-        body_faces,
-        ownership,
-        face_shell,
-    })
+    Some(E5Ownership { bodies, face_shell })
 }
 
 /// Emits the boundary curve, intersection/surface-curve procedural, and edge layers.
@@ -1652,19 +1638,13 @@ fn emit_e5_pcurves(
 }
 
 /// Emits the body/region/shell layer.
-fn emit_e5_bodies(
-    ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
-    body_faces: &[(Option<u32>, Vec<u32>)],
-    ownership: &[E5BodyOwnership],
-) {
-    for (body_index, (record_id, _)) in body_faces.iter().enumerate() {
-        let body_id = BodyId::mint(record_id.map_or_else(
+fn emit_e5_bodies(ir: &mut CadIr, annotations: &mut AnnotationBuilder, bodies: &[E5BodyPlan]) {
+    for (body_index, plan) in bodies.iter().enumerate() {
+        let body_id = BodyId::mint(plan.record_id.map_or_else(
             || format!("catia:e5:body#inferred-{body_index}"),
             |id| format!("catia:e5:body#{id}"),
         ))
         .expect("identity grammar");
-        let plan = &ownership[body_index];
         let region_ids: Vec<RegionId> = (0..plan.components.len())
             .map(|component| {
                 RegionId::mint(format!("catia:e5:region#{body_index}-{component}"))
@@ -1677,7 +1657,7 @@ fn emit_e5_bodies(
             "e5_0d_03",
             0,
             "01_body",
-            if record_id.is_some() {
+            if plan.record_id.is_some() {
                 Exactness::ByteExact
             } else {
                 Exactness::Inferred
@@ -1785,7 +1765,7 @@ fn emit_e5_faces_loops_coedges(
             id: face_id.clone(),
             shell: face_shell[&face.record_id].clone(),
             surface: surface_for_ref[&face.surface].0.clone(),
-            sense: if face.trailer_sign > 0 {
+            sense: if face.trailer_sign == crate::families::e5::graph::Sign::Positive {
                 Sense::Forward
             } else {
                 Sense::Reversed
@@ -2696,15 +2676,16 @@ pub(crate) fn e5_surface_uv(
     Point2::new(raw[0] * surface.uv_scale[0], raw[1] * surface.uv_scale[1])
 }
 
-pub(crate) struct E5BodyOwnership {
+struct E5BodyPlan {
+    record_id: Option<u32>,
     kind: BodyKind,
     components: Vec<Vec<u32>>,
 }
 
-pub(crate) fn e5_ownership_plan(
+fn e5_ownership_plan(
     topology: &crate::families::e5::graph::E5Topology,
     body_faces: &[(Option<u32>, Vec<u32>)],
-) -> Option<Vec<E5BodyOwnership>> {
+) -> Option<Vec<E5BodyPlan>> {
     if body_faces.is_empty() || body_faces.iter().any(|(_, faces)| faces.is_empty()) {
         return None;
     }
@@ -2741,7 +2722,7 @@ pub(crate) fn e5_ownership_plan(
     body_faces
         .iter()
         .enumerate()
-        .map(|(body, (_, faces))| {
+        .map(|(body, (record_id, faces))| {
             let face_indices: HashMap<u32, usize> = faces
                 .iter()
                 .copied()
@@ -2804,7 +2785,11 @@ pub(crate) fn e5_ownership_plan(
             } else {
                 BodyKind::Sheet
             };
-            Some(E5BodyOwnership { kind, components })
+            Some(E5BodyPlan {
+                record_id: *record_id,
+                kind,
+                components,
+            })
         })
         .collect()
 }
@@ -2967,14 +2952,13 @@ mod route_tests {
             faces: vec![E5Face {
                 record_id: 1,
                 surface: 100,
-                trailer_sign: 1,
+                trailer_sign: crate::families::e5::graph::Sign::Positive,
                 loops: vec![E5Loop {
                     record_id: 2,
                     surface: 100,
                     members: e5_loop_members(&pcurve_refs, &edge_refs, &vec![false; segment_count]),
                     oriented_members: None,
                     outer: Some(true),
-                    orientation_signs: Vec::new(),
                     orientation_hint: None,
                 }],
             }],
@@ -3008,14 +2992,13 @@ mod route_tests {
             faces: vec![E5Face {
                 record_id: 1,
                 surface: 100,
-                trailer_sign: 1,
+                trailer_sign: crate::families::e5::graph::Sign::Positive,
                 loops: vec![E5Loop {
                     record_id: 2,
                     surface: 100,
                     members: e5_loop_members(&[20, 21], &[10, 11], &[false, false]),
                     oriented_members: None,
                     outer: Some(true),
-                    orientation_signs: Vec::new(),
                     orientation_hint: None,
                 }],
             }],
@@ -3223,7 +3206,7 @@ mod route_tests {
             faces: vec![E5Face {
                 record_id: 1,
                 surface: 100,
-                trailer_sign: 1,
+                trailer_sign: crate::families::e5::graph::Sign::Positive,
                 loops: vec![E5Loop {
                     record_id: 2,
                     surface: 100,
@@ -3233,7 +3216,6 @@ mod route_tests {
                         reversed: false,
                     }]),
                     outer: Some(true),
-                    orientation_signs: Vec::new(),
                     orientation_hint: None,
                 }],
             }],
@@ -3393,7 +3375,7 @@ mod route_tests {
                 E5Face {
                     record_id: 1,
                     surface: 100,
-                    trailer_sign: 1,
+                    trailer_sign: crate::families::e5::graph::Sign::Positive,
                     loops: vec![E5Loop {
                         record_id: 2,
                         surface: 100,
@@ -3403,14 +3385,13 @@ mod route_tests {
                             reversed: false,
                         }]),
                         outer: Some(true),
-                        orientation_signs: Vec::new(),
                         orientation_hint: None,
                     }],
                 },
                 E5Face {
                     record_id: 3,
                     surface: 100,
-                    trailer_sign: 1,
+                    trailer_sign: crate::families::e5::graph::Sign::Positive,
                     loops: vec![E5Loop {
                         record_id: 4,
                         surface: 100,
@@ -3420,7 +3401,6 @@ mod route_tests {
                             reversed: false,
                         }]),
                         outer: Some(true),
-                        orientation_signs: Vec::new(),
                         orientation_hint: None,
                     }],
                 },
@@ -3498,7 +3478,7 @@ mod route_tests {
             faces: vec![E5Face {
                 record_id: 1,
                 surface: 100,
-                trailer_sign: 1,
+                trailer_sign: crate::families::e5::graph::Sign::Positive,
                 loops: vec![E5Loop {
                     record_id: 2,
                     surface: 100,
@@ -3508,7 +3488,6 @@ mod route_tests {
                         reversed: false,
                     }]),
                     outer: Some(true),
-                    orientation_signs: Vec::new(),
                     orientation_hint: None,
                 }],
             }],
@@ -3613,7 +3592,7 @@ mod route_tests {
         let face = |record_id, edge_use| E5Face {
             record_id,
             surface: 100 + record_id,
-            trailer_sign: 1,
+            trailer_sign: crate::families::e5::graph::Sign::Positive,
             loops: vec![E5Loop {
                 record_id: 200 + record_id,
                 surface: 100 + record_id,
@@ -3623,7 +3602,6 @@ mod route_tests {
                     reversed: false,
                 }]),
                 outer: Some(true),
-                orientation_signs: Vec::new(),
                 orientation_hint: None,
             }],
         };
