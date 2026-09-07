@@ -534,10 +534,8 @@ pub(super) fn patch_line_profiles(
                         }
                     }
                 }
-                geometry @ (SketchGeometry::Circle { .. }
-                | SketchGeometry::Arc { .. }
-                | SketchGeometry::Ellipse { .. }
-                | SketchGeometry::Nurbs { .. }) => {
+                geometry => {
+                    let patch_geometry = PatchCurve::try_from(geometry)?;
                     let geometry_ref = entity.geometry_ref.as_deref().ok_or_else(|| {
                         cadmpeg_core::CodecError::Malformed(
                             "SLDPRT sketch curve lacks native carrier provenance".into(),
@@ -566,16 +564,11 @@ pub(super) fn patch_line_profiles(
                         carrier_attr,
                         start_attr,
                         end_attr,
-                        geometry: geometry.clone(),
+                        geometry: patch_geometry,
                         origin,
                         u_axis,
                         v_axis,
                     });
-                }
-                _ => {
-                    return Err(cadmpeg_core::CodecError::NotImplemented(
-                        "SLDPRT sketch write-back does not support this curve family".into(),
-                    ));
                 }
             }
         }
@@ -645,13 +638,77 @@ fn bounded_endpoints(geometry: &SketchGeometry) -> Option<[Point2; 2]> {
     }
 }
 
+enum PatchCurve {
+    Circle {
+        center: Point2,
+        radius: f64,
+    },
+    Arc {
+        center: Point2,
+        radius: f64,
+        start_angle: f64,
+        end_angle: f64,
+    },
+    Ellipse(PatchEllipse),
+    Nurbs(cadmpeg_ir::geometry::PcurveNurbs),
+}
+
+struct PatchEllipse {
+    center: Point2,
+    major_angle: f64,
+    major_radius: f64,
+    minor_radius: f64,
+    bounds: Option<[f64; 2]>,
+}
+
+impl TryFrom<&SketchGeometry> for PatchCurve {
+    type Error = cadmpeg_core::CodecError;
+
+    fn try_from(geometry: &SketchGeometry) -> Result<Self, Self::Error> {
+        match geometry {
+            SketchGeometry::Circle { center, radius } => Ok(Self::Circle {
+                center: *center,
+                radius: radius.0,
+            }),
+            SketchGeometry::Arc {
+                center,
+                radius,
+                start_angle,
+                end_angle,
+            } => Ok(Self::Arc {
+                center: *center,
+                radius: radius.0,
+                start_angle: start_angle.0,
+                end_angle: end_angle.0,
+            }),
+            SketchGeometry::Ellipse {
+                center,
+                major_angle,
+                major_radius,
+                minor_radius,
+                bounds,
+            } => Ok(Self::Ellipse(PatchEllipse {
+                center: *center,
+                major_angle: major_angle.0,
+                major_radius: major_radius.0,
+                minor_radius: minor_radius.0,
+                bounds: bounds.map(|[start, end]| [start.0, end.0]),
+            })),
+            SketchGeometry::Nurbs { curve } => Ok(Self::Nurbs(curve.clone())),
+            _ => Err(cadmpeg_core::CodecError::NotImplemented(
+                "SLDPRT sketch write-back does not support this curve family".into(),
+            )),
+        }
+    }
+}
+
 struct CurvePatch {
     lane_id: String,
     stream: usize,
     carrier_attr: u16,
     start_attr: u16,
     end_attr: u16,
-    geometry: SketchGeometry,
+    geometry: PatchCurve,
     origin: Point3,
     u_axis: Vector3,
     v_axis: Vector3,
@@ -716,28 +773,31 @@ fn patch_direct_curve_body(
     body: &mut [u8],
     request: &CurvePatch,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    if matches!(request.geometry, SketchGeometry::Nurbs { .. }) {
-        return patch_direct_nurbs(body, request);
-    }
-    let Some(CurveGeometry::Circle {
-        axis,
-        ref_direction,
-        ..
-    }) = crate::brep::curve_by_attr(body, request.carrier_attr)
-    else {
-        return patch_direct_ellipse(body, request);
-    };
-    let (center_2d, radius, angles) = match request.geometry {
-        SketchGeometry::Circle { center, radius } => (center, radius.0, None),
-        SketchGeometry::Arc {
+    let (center_2d, radius, angles) = match &request.geometry {
+        PatchCurve::Circle { center, radius } => (*center, *radius, None),
+        PatchCurve::Arc {
             center,
             radius,
             start_angle,
             end_angle,
-        } => (center, radius.0, Some((start_angle.0, end_angle.0))),
-        _ => {
+        } => (*center, *radius, Some((*start_angle, *end_angle))),
+        PatchCurve::Ellipse(ellipse) => return patch_direct_ellipse(body, request, ellipse),
+        PatchCurve::Nurbs(curve) => return patch_direct_nurbs(body, request, curve),
+    };
+    let (axis, ref_direction) = match crate::brep::curve_by_attr(body, request.carrier_attr) {
+        Some(CurveGeometry::Circle {
+            axis,
+            ref_direction,
+            ..
+        }) => (axis, ref_direction),
+        Some(CurveGeometry::Ellipse { .. }) => {
             return Err(cadmpeg_core::CodecError::Malformed(
                 "SLDPRT sketch carrier family changed".into(),
+            ));
+        }
+        _ => {
+            return Err(cadmpeg_core::CodecError::Malformed(
+                "SLDPRT sketch analytic carrier is missing".into(),
             ));
         }
     };
@@ -845,10 +905,8 @@ fn compressed_member(payload: &[u8], target: &[u8]) -> Option<(usize, usize)> {
 fn patch_direct_nurbs(
     body: &mut [u8],
     request: &CurvePatch,
+    curve: &cadmpeg_ir::geometry::PcurveNurbs,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let SketchGeometry::Nurbs { ref curve } = request.geometry else {
-        unreachable!();
-    };
     let curve =
         curve.lift(|point| lift_point(point, request.origin, request.u_axis, request.v_axis));
     if !crate::brep::patch_nurbs_by_attr(body, request.carrier_attr, &curve) {
@@ -862,38 +920,40 @@ fn patch_direct_nurbs(
 fn patch_direct_ellipse(
     body: &mut [u8],
     request: &CurvePatch,
+    ellipse: &PatchEllipse,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let Some(CurveGeometry::Ellipse { axis, .. }) =
-        crate::brep::curve_by_attr(body, request.carrier_attr)
-    else {
-        return Err(cadmpeg_core::CodecError::Malformed(
-            "SLDPRT sketch analytic carrier is missing".into(),
-        ));
+    let axis = match crate::brep::curve_by_attr(body, request.carrier_attr) {
+        Some(CurveGeometry::Ellipse { axis, .. }) => axis,
+        Some(CurveGeometry::Circle { .. }) => {
+            return Err(cadmpeg_core::CodecError::Malformed(
+                "SLDPRT sketch carrier family changed".into(),
+            ));
+        }
+        _ => {
+            return Err(cadmpeg_core::CodecError::Malformed(
+                "SLDPRT sketch analytic carrier is missing".into(),
+            ));
+        }
     };
-    let SketchGeometry::Ellipse {
+    let PatchEllipse {
         center,
         major_angle,
         major_radius,
         minor_radius,
         bounds,
-    } = request.geometry
-    else {
-        return Err(cadmpeg_core::CodecError::Malformed(
-            "SLDPRT sketch carrier family changed".into(),
-        ));
-    };
+    } = *ellipse;
     let center_3d = lift_point(center, request.origin, request.u_axis, request.v_axis);
     let major_direction = Vector3::new(
-        request.u_axis.x * major_angle.0.cos() + request.v_axis.x * major_angle.0.sin(),
-        request.u_axis.y * major_angle.0.cos() + request.v_axis.y * major_angle.0.sin(),
-        request.u_axis.z * major_angle.0.cos() + request.v_axis.z * major_angle.0.sin(),
+        request.u_axis.x * major_angle.cos() + request.v_axis.x * major_angle.sin(),
+        request.u_axis.y * major_angle.cos() + request.v_axis.y * major_angle.sin(),
+        request.u_axis.z * major_angle.cos() + request.v_axis.z * major_angle.sin(),
     );
     let curve = CurveGeometry::Ellipse {
         center: center_3d,
         axis,
         major_direction,
-        major_radius: major_radius.0,
-        minor_radius: minor_radius.0,
+        major_radius,
+        minor_radius,
     };
     let (_, values) = crate::writer::curve_values(&curve, 0.001)?;
     if !crate::brep::patch_compact_values(body, request.carrier_attr, &values) {
@@ -901,17 +961,17 @@ fn patch_direct_ellipse(
             "SLDPRT sketch ellipse carrier cannot be patched".into(),
         ));
     }
-    let parameters = bounds.map_or([0.0, 0.0], |[start, end]| [start.0, end.0]);
+    let parameters = bounds.unwrap_or([0.0, 0.0]);
     for (attr, parameter) in [request.start_attr, request.end_attr]
         .into_iter()
         .zip(parameters)
     {
         let local = Point2::new(
-            center.u + major_angle.0.cos() * major_radius.0 * parameter.cos()
-                - major_angle.0.sin() * minor_radius.0 * parameter.sin(),
+            center.u + major_angle.cos() * major_radius * parameter.cos()
+                - major_angle.sin() * minor_radius * parameter.sin(),
             center.v
-                + major_angle.0.sin() * major_radius.0 * parameter.cos()
-                + major_angle.0.cos() * minor_radius.0 * parameter.sin(),
+                + major_angle.sin() * major_radius * parameter.cos()
+                + major_angle.cos() * minor_radius * parameter.sin(),
         );
         let point = lift_point(local, request.origin, request.u_axis, request.v_axis);
         if !crate::brep::patch_point(
