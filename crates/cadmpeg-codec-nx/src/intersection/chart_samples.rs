@@ -146,7 +146,7 @@ impl SourceChartData {
     pub(crate) fn ext11(
         points: Vec<Point3>,
         parameters: Vec<f64>,
-        support_uv: super::SupportUv,
+        support_uv: [Option<Vec<[f64; 2]>>; 2],
     ) -> Result<Self, &'static str> {
         if parameters.len() != points.len() {
             return Err("native_parameters: one value per point required");
@@ -156,10 +156,16 @@ impl SourceChartData {
         {
             return Err("native_parameters: finite strictly increasing values required");
         }
+        let support_uv = support_uv.map(|lane| {
+            lane.map(|values| {
+                super::SupportUvLane::new(values, points.len())
+                    .ok_or("ext_support_uv: one pair per point required")
+            })
+            .transpose()
+        });
+        let [first, second] = support_uv;
+        let support_uv = [first?, second?];
         for lane in support_uv.iter().flatten() {
-            if lane.len() != points.len() {
-                return Err("ext_support_uv: one pair per point required");
-            }
             if !lane
                 .iter()
                 .flatten()

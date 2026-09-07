@@ -581,8 +581,8 @@ fn ext11_uv_assignment_eliminates_the_complementary_support_lane() {
     ];
     result.ir_mut().model.surfaces[1].geometry = SurfaceGeometry::Unknown { record: None };
     let lanes = [
-        Some(vec![[0.0, 0.0], [0.01, 0.0]]),
-        Some(vec![[0.0, 0.0], [0.0, 0.01]]),
+        crate::intersection::SupportUvLane::new(vec![[0.0, 0.0], [0.01, 0.0]], 2),
+        crate::intersection::SupportUvLane::new(vec![[0.0, 0.0], [0.0, 0.01]], 2),
     ];
 
     let assigned = crate::decode::support_uv::assign_ext11_support_uv_to_surfaces(

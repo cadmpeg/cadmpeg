@@ -1023,7 +1023,12 @@ mod tests {
         assert_eq!(
             boundary,
             Some(RederivationBoundary {
-                feature: Some(FeatureBoundary { id: cadmpeg_ir::features::FeatureId::mint("block").unwrap(), name: Some("BLOCK".to_string()), family: Some("block".to_string()), ordinal: 17 }),
+                feature: Some(FeatureBoundary {
+                    id: cadmpeg_ir::features::FeatureId::mint("block").unwrap(),
+                    name: Some("BLOCK".to_string()),
+                    family: Some("block".to_string()),
+                    ordinal: 17
+                }),
                 reason: "incomplete_feature_definition".to_string(),
             })
         );
@@ -1032,7 +1037,12 @@ mod tests {
     #[test]
     fn rederivation_boundary_census_groups_reason_and_feature_family() {
         let boundary = |reason: &str, family: Option<&str>| RederivationBoundary {
-            feature: family.map(|family| FeatureBoundary { id: cadmpeg_ir::features::FeatureId::mint("feature").unwrap(), name: None, family: Some(family.to_owned()), ordinal: 0 }),
+            feature: family.map(|family| FeatureBoundary {
+                id: cadmpeg_ir::features::FeatureId::mint("feature").unwrap(),
+                name: None,
+                family: Some(family.to_owned()),
+                ordinal: 0,
+            }),
             reason: reason.to_string(),
         };
         let mut fixtures = [fixture(), fixture(), fixture()];

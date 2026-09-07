@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Finite support-UV tuples with their exact packing marker.
 
-use super::SupportUv;
+use super::{SupportUv, SupportUvLane};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SupportUvPacking {
@@ -70,7 +70,7 @@ impl SupportUvValues {
         self.values
     }
 
-    pub(crate) fn support_uv(&self) -> SupportUv {
+    pub(crate) fn support_uv(&self, sample_count: usize) -> SupportUv {
         let first = self
             .values()
             .chunks_exact(self.packing.width())
@@ -85,7 +85,10 @@ impl SupportUvValues {
                     .collect(),
             ),
         };
-        [Some(first), second]
+        [
+            SupportUvLane::new(first, sample_count),
+            second.and_then(|values| SupportUvLane::new(values, sample_count)),
+        ]
     }
 }
 
@@ -104,7 +107,7 @@ mod tests {
             )
             .unwrap();
             assert_eq!(values.marker(), marker);
-            assert_eq!(values.support_uv()[1].is_some(), marker == 4);
+            assert_eq!(values.support_uv(2)[1].is_some(), marker == 4);
             for len in [0, width, width * 2 + 1] {
                 assert!(SupportUvValues::new(
                     packing,

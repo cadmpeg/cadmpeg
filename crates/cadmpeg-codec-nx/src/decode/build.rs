@@ -733,7 +733,6 @@ pub(crate) fn try_decode_geometry(
                     Some(charted.primary_support),
                     support_uv[0]
                         .as_deref()
-                        .filter(|uv| uv.len() == charted.samples.parameters().len())
                         .map(|uv| (uv, charted.samples.parameters())),
                 );
                 let second = intersection_side(
@@ -742,7 +741,6 @@ pub(crate) fn try_decode_geometry(
                     charted.secondary_support,
                     support_uv[1]
                         .as_deref()
-                        .filter(|uv| uv.len() == charted.samples.parameters().len())
                         .map(|uv| (uv, charted.samples.parameters())),
                 );
                 ProceduralCurveDefinition::Intersection {

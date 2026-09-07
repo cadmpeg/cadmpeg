@@ -29,7 +29,31 @@ const EPS_INTERSECTION_CHART_POINTS_E9: f64 = 1.0e-9;
 const INLINE_TERM_TAIL: &[u8] = b"\x00\x00\x00\x01\x01\x63\x43\x5a";
 const INLINE_UV_TAIL: &[u8] = b"\x00\x00\x00\x02\x01\x66\x01";
 /// Two ordered optional support-surface parameter lanes.
-pub type SupportUv = [Option<Vec<[f64; 2]>>; 2];
+pub type SupportUv = [Option<SupportUvLane>; 2];
+
+/// Support parameters checked against their chart sample count.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SupportUvLane(Vec<[f64; 2]>);
+
+impl SupportUvLane {
+    /// Construct one parameter pair per chart sample.
+    pub fn new(values: Vec<[f64; 2]>, sample_count: usize) -> Option<Self> {
+        (values.len() == sample_count).then_some(Self(values))
+    }
+
+    /// Ordered support parameter pairs.
+    pub fn as_slice(&self) -> &[[f64; 2]] {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for SupportUvLane {
+    type Target = [[f64; 2]];
+
+    fn deref(&self) -> &Self::Target {
+        self.as_slice()
+    }
+}
 
 /// Serialized framing of one `CHART_s` record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -508,7 +532,9 @@ fn enrich(
         construction_supports(construction, uv, bridges, graph).ok_or(Rejection::MissingSupport)?;
     let support_uv = uv
         .get(&construction.references[5])
-        .map_or([None, None], SupportUvValues::support_uv);
+        .map_or([None, None], |values| {
+            values.support_uv(chart.samples.points().len())
+        });
     Ok(IntersectionCurve {
         xmt: construction.xmt,
         references: construction.references,
