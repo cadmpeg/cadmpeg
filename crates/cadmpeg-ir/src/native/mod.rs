@@ -223,9 +223,9 @@ impl JsonSchema for NativeRecord {
 /// Source-format arena collection.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(transparent)]
 pub struct NativeNamespace {
     /// Record arenas keyed by stable arena name.
-    #[serde(default)]
     pub arenas: BTreeMap<String, Vec<NativeRecord>>,
 }
 

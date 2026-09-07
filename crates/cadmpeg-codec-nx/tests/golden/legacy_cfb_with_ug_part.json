@@ -43,13 +43,11 @@
       },
       "native": {
         "nx": {
-          "arenas": {
-            "unknowns": [
-              {
-                "id": "nx:container:parasolid#0"
-              }
-            ]
-          }
+          "unknowns": [
+            {
+              "id": "nx:container:parasolid#0"
+            }
+          ]
         }
       },
       "source": {

@@ -77,157 +77,155 @@
       },
       "native": {
         "nx": {
-          "arenas": {
-            "class_definitions": [
-              {
-                "id": "nx:om-entry-0:class#8",
-                "name": "UGS::ModlFeature",
-                "ordinal": 0,
-                "section_offset": 76,
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 84,
-                "trailing_code": 129
-              }
-            ],
-            "data_block_control_handle_pairs": [
-              {
-                "data_block": "nx:om-data-blocks-0:block#0",
-                "first_handle": 1,
-                "first_reference": "nx:om-data-block-control-references-0:reference#46",
-                "id": "nx:om-data-block-control:handle-pair#122",
-                "second_handle": 2,
-                "second_reference": "nx:om-data-block-control-references-0:reference#51",
-                "source_offset": 122
-              }
-            ],
-            "data_block_control_references": [
-              {
-                "data_block": "nx:om-data-blocks-0:block#0",
-                "id": "nx:om-data-block-control-references-0:reference#46",
-                "kind": "persistent_handle",
-                "ordinal": 0,
-                "source_offset": 122,
-                "value": 1
-              },
-              {
-                "data_block": "nx:om-data-blocks-0:block#0",
-                "id": "nx:om-data-block-control-references-0:reference#51",
-                "kind": "persistent_handle",
-                "ordinal": 1,
-                "source_offset": 127,
-                "value": 2
-              }
-            ],
-            "data_block_references": [
-              {
-                "data_block": "nx:om-data-blocks-0:block#2",
-                "id": "nx:om-data-block-references-0-2:reference#0",
-                "object_id": 42,
-                "ordinal": 0,
-                "raw_object_id": [
-                  42
-                ],
-                "source_offset": 169
-              }
-            ],
-            "data_blocks": [
-              {
-                "block_ordinal": 0,
-                "byte_len": 10,
-                "id": "nx:om-data-blocks-0:block#0",
-                "role": "control",
-                "section_offset": 76,
-                "section_ordinal": 0,
-                "sha256": "5312b038d29274ef7b1df3a55a638e376b87c81ab9eac49ae2a8e617a31bf330",
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 122,
-                "stable_identity": "nx:om:data-block:aa657b5931c90e8b73ce68c25639e2bfae5e69456958954cb824640c07070979"
-              },
-              {
-                "block_ordinal": 1,
-                "byte_len": 35,
-                "id": "nx:om-data-blocks-0:block#1",
-                "role": "column",
-                "section_offset": 76,
-                "section_ordinal": 0,
-                "sha256": "304084362d58d3d80b8759c1b886a8dfd4b5ab46cd55a6d9ff901e0bb543a045",
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 132,
-                "stable_identity": "nx:om:data-block:9464897cedc24ff34620b1a83066aa2001f2442fcbd8f2967bd60920a9eabdc6"
-              },
-              {
-                "block_ordinal": 2,
-                "byte_len": 35,
-                "id": "nx:om-data-blocks-0:block#2",
-                "role": "column",
-                "section_offset": 76,
-                "section_ordinal": 0,
-                "sha256": "6690abf98f671ca97a189957e9fe96618388bb0b8174d4fbb0685bf56b3669ef",
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 167,
-                "stable_identity": "nx:om:data-block:b7743888bdf6016d4c56711690a0228e557bed833528bbf63ee2675ca6bcda21"
-              }
-            ],
-            "expressions": [
-              {
-                "expression": "25",
-                "id": "nx:om-entry-0:expression#99",
-                "name": "length",
-                "object_id": null,
-                "parameter_index": null,
-                "qualifier": null,
-                "record": null,
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 175,
-                "source_table": "nx:om-entry-0:expression-table#72",
-                "unit": "millimeter",
-                "value": 25.0
-              }
-            ],
-            "persistent_handles": [
-              {
-                "data_blocks": [
-                  "nx:om-data-blocks-0:block#0"
-                ],
-                "external_occurrence_count": 0,
-                "id": "nx:om-persistent-handles:handle#00000001",
-                "occurrence_count": 1,
-                "records": [],
-                "value": 1
-              },
-              {
-                "data_blocks": [
-                  "nx:om-data-blocks-0:block#0"
-                ],
-                "external_occurrence_count": 0,
-                "id": "nx:om-persistent-handles:handle#00000002",
-                "occurrence_count": 1,
-                "records": [],
-                "value": 2
-              }
-            ],
-            "store_headers": [
-              {
-                "id": "nx:om-store-headers:store#0",
-                "object_id": null,
-                "section_ordinal": 0,
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 132,
-                "version": "NX 2027.3102"
-              }
-            ],
-            "unknowns": [
-              {
-                "id": "nx:om-section-0:block#0"
-              },
-              {
-                "id": "nx:om-section-0:block#1"
-              },
-              {
-                "id": "nx:om-section-0:block#2"
-              }
-            ]
-          }
+          "class_definitions": [
+            {
+              "id": "nx:om-entry-0:class#8",
+              "name": "UGS::ModlFeature",
+              "ordinal": 0,
+              "section_offset": 76,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 84,
+              "trailing_code": 129
+            }
+          ],
+          "data_block_control_handle_pairs": [
+            {
+              "data_block": "nx:om-data-blocks-0:block#0",
+              "first_handle": 1,
+              "first_reference": "nx:om-data-block-control-references-0:reference#46",
+              "id": "nx:om-data-block-control:handle-pair#122",
+              "second_handle": 2,
+              "second_reference": "nx:om-data-block-control-references-0:reference#51",
+              "source_offset": 122
+            }
+          ],
+          "data_block_control_references": [
+            {
+              "data_block": "nx:om-data-blocks-0:block#0",
+              "id": "nx:om-data-block-control-references-0:reference#46",
+              "kind": "persistent_handle",
+              "ordinal": 0,
+              "source_offset": 122,
+              "value": 1
+            },
+            {
+              "data_block": "nx:om-data-blocks-0:block#0",
+              "id": "nx:om-data-block-control-references-0:reference#51",
+              "kind": "persistent_handle",
+              "ordinal": 1,
+              "source_offset": 127,
+              "value": 2
+            }
+          ],
+          "data_block_references": [
+            {
+              "data_block": "nx:om-data-blocks-0:block#2",
+              "id": "nx:om-data-block-references-0-2:reference#0",
+              "object_id": 42,
+              "ordinal": 0,
+              "raw_object_id": [
+                42
+              ],
+              "source_offset": 169
+            }
+          ],
+          "data_blocks": [
+            {
+              "block_ordinal": 0,
+              "byte_len": 10,
+              "id": "nx:om-data-blocks-0:block#0",
+              "role": "control",
+              "section_offset": 76,
+              "section_ordinal": 0,
+              "sha256": "5312b038d29274ef7b1df3a55a638e376b87c81ab9eac49ae2a8e617a31bf330",
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 122,
+              "stable_identity": "nx:om:data-block:aa657b5931c90e8b73ce68c25639e2bfae5e69456958954cb824640c07070979"
+            },
+            {
+              "block_ordinal": 1,
+              "byte_len": 35,
+              "id": "nx:om-data-blocks-0:block#1",
+              "role": "column",
+              "section_offset": 76,
+              "section_ordinal": 0,
+              "sha256": "304084362d58d3d80b8759c1b886a8dfd4b5ab46cd55a6d9ff901e0bb543a045",
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 132,
+              "stable_identity": "nx:om:data-block:9464897cedc24ff34620b1a83066aa2001f2442fcbd8f2967bd60920a9eabdc6"
+            },
+            {
+              "block_ordinal": 2,
+              "byte_len": 35,
+              "id": "nx:om-data-blocks-0:block#2",
+              "role": "column",
+              "section_offset": 76,
+              "section_ordinal": 0,
+              "sha256": "6690abf98f671ca97a189957e9fe96618388bb0b8174d4fbb0685bf56b3669ef",
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 167,
+              "stable_identity": "nx:om:data-block:b7743888bdf6016d4c56711690a0228e557bed833528bbf63ee2675ca6bcda21"
+            }
+          ],
+          "expressions": [
+            {
+              "expression": "25",
+              "id": "nx:om-entry-0:expression#99",
+              "name": "length",
+              "object_id": null,
+              "parameter_index": null,
+              "qualifier": null,
+              "record": null,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 175,
+              "source_table": "nx:om-entry-0:expression-table#72",
+              "unit": "millimeter",
+              "value": 25.0
+            }
+          ],
+          "persistent_handles": [
+            {
+              "data_blocks": [
+                "nx:om-data-blocks-0:block#0"
+              ],
+              "external_occurrence_count": 0,
+              "id": "nx:om-persistent-handles:handle#00000001",
+              "occurrence_count": 1,
+              "records": [],
+              "value": 1
+            },
+            {
+              "data_blocks": [
+                "nx:om-data-blocks-0:block#0"
+              ],
+              "external_occurrence_count": 0,
+              "id": "nx:om-persistent-handles:handle#00000002",
+              "occurrence_count": 1,
+              "records": [],
+              "value": 2
+            }
+          ],
+          "store_headers": [
+            {
+              "id": "nx:om-store-headers:store#0",
+              "object_id": null,
+              "section_ordinal": 0,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 132,
+              "version": "NX 2027.3102"
+            }
+          ],
+          "unknowns": [
+            {
+              "id": "nx:om-section-0:block#0"
+            },
+            {
+              "id": "nx:om-section-0:block#1"
+            },
+            {
+              "id": "nx:om-section-0:block#2"
+            }
+          ]
         }
       },
       "source": {

@@ -181,18 +181,16 @@
       },
       "native": {
         "nx": {
-          "arenas": {
-            "unknowns": [
-              {
-                "id": "nx:container:parasolid#0",
-                "links": [
-                  "nx:s0:surf#0",
-                  "nx:s0:crv#0",
-                  "nx:s0:crv#1"
-                ]
-              }
-            ]
-          }
+          "unknowns": [
+            {
+              "id": "nx:container:parasolid#0",
+              "links": [
+                "nx:s0:surf#0",
+                "nx:s0:crv#0",
+                "nx:s0:crv#1"
+              ]
+            }
+          ]
         }
       },
       "source": {

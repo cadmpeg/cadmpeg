@@ -74,60 +74,58 @@
     },
     "native": {
       "rhino": {
-        "arenas": {
-          "annotation_settings": [],
-          "annotations": [],
-          "applications": [],
-          "construction_planes": [],
-          "dimension_styles": [],
-          "document_notes": [],
-          "document_settings": [
-            {
-              "archive_file_name": null,
-              "current_color": null,
-              "current_color_source": null,
-              "current_dimension_style_index": null,
-              "current_font_index": null,
-              "current_layer_index": null,
-              "current_material_index": null,
-              "current_material_source": null,
-              "current_wire_density": null,
-              "id": "rhino:document:settings#current",
-              "model_url": null,
-              "writer_version": null
-            }
-          ],
-          "embedded_images": [],
-          "external_references": [],
-          "grid_defaults": [],
-          "groups": [],
-          "hatch_patterns": [],
-          "history_records": [],
-          "layers": [],
-          "lights": [],
-          "linetypes": [],
-          "materials": [],
-          "object_presentation": [],
-          "previews": [],
-          "product_definitions": [],
-          "product_occurrences": [],
-          "render_settings": [],
-          "revisions": [],
-          "setting_records": [],
-          "text_dots": [],
-          "text_styles": [],
-          "texture_mappings": [],
-          "unknowns": [
-            {
-              "id": "rhino:object:record#000000",
-              "links": [
-                "rhino:object:curve#record-000000-offset-177"
-              ]
-            }
-          ],
-          "views": [],
-          "windows_bitmaps": []
-        }
+        "annotation_settings": [],
+        "annotations": [],
+        "applications": [],
+        "construction_planes": [],
+        "dimension_styles": [],
+        "document_notes": [],
+        "document_settings": [
+          {
+            "archive_file_name": null,
+            "current_color": null,
+            "current_color_source": null,
+            "current_dimension_style_index": null,
+            "current_font_index": null,
+            "current_layer_index": null,
+            "current_material_index": null,
+            "current_material_source": null,
+            "current_wire_density": null,
+            "id": "rhino:document:settings#current",
+            "model_url": null,
+            "writer_version": null
+          }
+        ],
+        "embedded_images": [],
+        "external_references": [],
+        "grid_defaults": [],
+        "groups": [],
+        "hatch_patterns": [],
+        "history_records": [],
+        "layers": [],
+        "lights": [],
+        "linetypes": [],
+        "materials": [],
+        "object_presentation": [],
+        "previews": [],
+        "product_definitions": [],
+        "product_occurrences": [],
+        "render_settings": [],
+        "revisions": [],
+        "setting_records": [],
+        "text_dots": [],
+        "text_styles": [],
+        "texture_mappings": [],
+        "unknowns": [
+          {
+            "id": "rhino:object:record#000000",
+            "links": [
+              "rhino:object:curve#record-000000-offset-177"
+            ]
+          }
+        ],
+        "views": [],
+        "windows_bitmaps": []
       }
     },
     "source": {

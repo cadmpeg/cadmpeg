@@ -53,12 +53,10 @@ const GRAPH_DOC: &str = r#"{
   },
   "native": {
     "rhino": {
-      "arenas": {
-        "unknowns": [
-          {"id": "n1", "kind": "curve"},
-          {"id": "n2", "kind": "other"}
-        ]
-      }
+      "unknowns": [
+        {"id": "n1", "kind": "curve"},
+        {"id": "n2", "kind": "other"}
+      ]
     }
   }
 }"#;
@@ -153,7 +151,7 @@ fn graph_json_envelope() {
         String::from_utf8_lossy(&output.stderr)
     );
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["command"], "query graph");
+    assert_eq!(value["command"], "query");
     let graph = value["graph"].as_array().unwrap();
     assert_eq!(graph.len(), 2);
     assert_eq!(graph[0]["start"], "model.features#f1");

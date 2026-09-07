@@ -97,43 +97,41 @@
     },
     "native": {
       "sat": {
-        "arenas": {
-          "body_native_keys": [
-            {
-              "body": "sat:brep:entity#1",
-              "body_ordinal": 0,
-              "id": "sat:asm:body-native-key#1",
-              "record_index": 1,
-              "source_brep": "stream"
-            }
-          ],
-          "edge_continuities": [],
-          "edge_ownerships": [],
-          "face_native_keys": [
-            {
-              "face": "sat:brep:entity#4",
-              "id": "sat:asm:face-native-key#4",
-              "record_index": 4
-            }
-          ],
-          "face_sidedness": [
-            {
-              "face": "sat:brep:entity#4",
-              "id": "sat:asm:face-sidedness#4",
-              "native_sense": "forward",
-              "normalized_sense": "forward",
-              "record_index": 4
-            }
-          ],
-          "mesh_surface_sentinels": [],
-          "tolerant_coedge_parameters": [],
-          "tolerant_edge_tails": [],
-          "tolerant_vertex_tails": [],
-          "transform_hints": [],
-          "unknowns": [],
-          "vertex_ownerships": [],
-          "wire_topologies": []
-        }
+        "body_native_keys": [
+          {
+            "body": "sat:brep:entity#1",
+            "body_ordinal": 0,
+            "id": "sat:asm:body-native-key#1",
+            "record_index": 1,
+            "source_brep": "stream"
+          }
+        ],
+        "edge_continuities": [],
+        "edge_ownerships": [],
+        "face_native_keys": [
+          {
+            "face": "sat:brep:entity#4",
+            "id": "sat:asm:face-native-key#4",
+            "record_index": 4
+          }
+        ],
+        "face_sidedness": [
+          {
+            "face": "sat:brep:entity#4",
+            "id": "sat:asm:face-sidedness#4",
+            "native_sense": "forward",
+            "normalized_sense": "forward",
+            "record_index": 4
+          }
+        ],
+        "mesh_surface_sentinels": [],
+        "tolerant_coedge_parameters": [],
+        "tolerant_edge_tails": [],
+        "tolerant_vertex_tails": [],
+        "transform_hints": [],
+        "unknowns": [],
+        "vertex_ownerships": [],
+        "wire_topologies": []
       }
     },
     "source": {

@@ -241,7 +241,7 @@ fn rhino_point_archive_inspect_decode_and_validate_expose_geometry() {
     assert_eq!(ir["model"]["points"][0]["position"]["y"], -2.5);
     assert_eq!(ir["model"]["points"][0]["position"]["z"], 3.75);
     let body_id = ir["model"]["bodies"][0]["id"].as_str().unwrap();
-    assert!(ir["native"]["rhino"]["arenas"]["unknowns"][0]["links"]
+    assert!(ir["native"]["rhino"]["unknowns"][0]["links"]
         .as_array()
         .unwrap()
         .iter()

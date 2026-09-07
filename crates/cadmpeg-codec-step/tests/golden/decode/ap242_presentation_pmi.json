@@ -108,21 +108,19 @@
     },
     "native": {
       "step": {
-        "arenas": {
-          "drawing_targets": [
-            {
-              "id": "step:data:annotation_plane#9",
-              "source_id": "#9",
-              "source_type": "ANNOTATION_PLANE"
-            },
-            {
-              "id": "step:data:geometric_representation_context_global_unit_assigned_context_representation_context#2",
-              "source_id": "#2",
-              "source_type": "GEOMETRIC_REPRESENTATION_CONTEXT+GLOBAL_UNIT_ASSIGNED_CONTEXT+REPRESENTATION_CONTEXT"
-            }
-          ],
-          "unknowns": []
-        }
+        "drawing_targets": [
+          {
+            "id": "step:data:annotation_plane#9",
+            "source_id": "#9",
+            "source_type": "ANNOTATION_PLANE"
+          },
+          {
+            "id": "step:data:geometric_representation_context_global_unit_assigned_context_representation_context#2",
+            "source_id": "#2",
+            "source_type": "GEOMETRIC_REPRESENTATION_CONTEXT+GLOBAL_UNIT_ASSIGNED_CONTEXT+REPRESENTATION_CONTEXT"
+          }
+        ],
+        "unknowns": []
       }
     },
     "source": {

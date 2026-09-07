@@ -43,9 +43,7 @@
       },
       "native": {
         "nx": {
-          "arenas": {
-            "unknowns": []
-          }
+          "unknowns": []
         }
       },
       "source": {

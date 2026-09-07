@@ -380,7 +380,7 @@ mod tests {
     fn graph_follows_links_across_arenas() {
         let document = doc(&json!({
             "model": {"features": [{"id": "f1", "links": ["n1"]}]},
-            "native": {"rhino": {"arenas": {"unknowns": [{"id": "n1", "kind": "curve"}]}}}
+            "native": {"rhino": {"unknowns": [{"id": "n1", "kind": "curve"}]}}
         }));
         let results = walk_ids(&document, "features", &["f1"], 1, None, false);
         assert_eq!(reached_ids(&results), vec!["f1", "n1"]);
@@ -394,7 +394,7 @@ mod tests {
                 "id": "f1",
                 "definition": {"parameters": {"segment_0_object": "n1"}}
             }]},
-            "native": {"rhino": {"arenas": {"unknowns": [{"id": "n1"}]}}}
+            "native": {"rhino": {"unknowns": [{"id": "n1"}]}}
         }));
         let results = walk_ids(&document, "features", &["f1"], 1, None, false);
         assert_eq!(
@@ -464,7 +464,7 @@ mod tests {
     fn graph_reverse_finds_incoming() {
         let document = doc(&json!({
             "model": {"features": [{"id": "f1", "links": ["n1"]}]},
-            "native": {"rhino": {"arenas": {"unknowns": [{"id": "n1"}]}}}
+            "native": {"rhino": {"unknowns": [{"id": "n1"}]}}
         }));
         let results = walk_ids(&document, "native.rhino.unknowns", &["n1"], 1, None, true);
         assert_eq!(reached_ids(&results), vec!["n1", "f1"]);
@@ -489,10 +489,10 @@ mod tests {
                 "links": ["n1"],
                 "native_ref": "n2"
             }]},
-            "native": {"rhino": {"arenas": {"unknowns": [
+            "native": {"rhino": {"unknowns": [
                 {"id": "n1"},
                 {"id": "n2"}
-            ]}}}
+            ]}}
         }));
         let follow = vec!["links".to_owned()];
         let results = walk_ids(&document, "features", &["f1"], 1, Some(&follow), false);

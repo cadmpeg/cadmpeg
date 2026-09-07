@@ -35,12 +35,10 @@ const JOIN_DOC: &str = r#"{
   },
   "native": {
     "rhino": {
-      "arenas": {
-        "unknowns": [
-          {"id": "n1", "kind": "curve"},
-          {"id": "n2", "kind": "other"}
-        ]
-      }
+      "unknowns": [
+        {"id": "n1", "kind": "curve"},
+        {"id": "n2", "kind": "other"}
+      ]
     }
   }
 }"#;
@@ -49,11 +47,9 @@ const RIGHT_DOC: &str = r#"{
   "ir_version": "4",
   "native": {
     "rhino": {
-      "arenas": {
-        "unknowns": [
-          {"id": "other-id", "name": "n1"}
-        ]
-      }
+      "unknowns": [
+        {"id": "other-id", "name": "n1"}
+      ]
     }
   }
 }"#;
@@ -144,7 +140,7 @@ fn join_json_envelope_matched_native_ref() {
         String::from_utf8_lossy(&output.stderr)
     );
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["command"], "query join");
+    assert_eq!(value["command"], "query");
     let rows = value["join"].as_array().unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["key"], "n1");

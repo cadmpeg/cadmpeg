@@ -2,7 +2,7 @@
 //! CADIR document index for graph, join, and inferred schema.
 //!
 //! Parses the document as JSON and inventories every array arena under
-//! `model` and `native.<codec>.arenas`. Identity lookup is exact string
+//! `model` and `native.<codec>`. Identity lookup is exact string
 //! match against each record's top-level `id`.
 
 use std::collections::BTreeMap;
@@ -59,7 +59,7 @@ impl CadirDocument {
         }
         if let Some(native) = root.get("native").and_then(Value::as_object) {
             for (codec, namespace) in native {
-                let Some(native_arenas) = namespace.get("arenas").and_then(Value::as_object) else {
+                let Some(native_arenas) = namespace.as_object() else {
                     continue;
                 };
                 for (name, value) in native_arenas {
@@ -244,7 +244,7 @@ mod tests {
                 "null_arena": null
             },
             "native": {
-                "rhino": {"arenas": {"unknowns": [{"id": "n1"}]}}
+                "rhino": {"unknowns": [{"id": "n1"}]}
             }
         }));
         let names: Vec<String> = doc.arenas.iter().map(|a| a.target.dotted()).collect();

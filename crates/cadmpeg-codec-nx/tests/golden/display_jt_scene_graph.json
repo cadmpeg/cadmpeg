@@ -143,709 +143,707 @@
       },
       "native": {
         "nx": {
-          "arenas": {
-            "display_jt_base_node_data": [
-              {
-                "attribute_object_ids": [
-                  7
-                ],
-                "element": "nx:display-jt:segment#0-row-0-0-inflated-element-0",
-                "family_data_byte_len": 6,
-                "family_data_sha256": "dbe5a5b5031b4e4883502a4b1935baf9872bc4b78416ff2444ca1652bedb2bb8",
-                "flags": 32,
-                "id": "nx:display-jt:segment#0-row-0-0-base-node-0",
-                "object_id": 1,
-                "object_type_id": [
-                  42,
-                  16,
-                  221,
-                  16,
-                  200,
-                  42,
-                  209,
-                  17,
-                  155,
-                  107,
-                  0,
-                  128,
-                  199,
-                  187,
-                  89,
-                  151
-                ],
-                "source_offset": 529,
-                "version": 1
-              },
-              {
-                "attribute_object_ids": [],
-                "element": "nx:display-jt:segment#0-row-0-0-inflated-element-1",
-                "family_data_byte_len": 18,
-                "family_data_sha256": "3154f3c14476b90752c2661c28efb4f976d6ed4bb333577af0ab6d71a00f94a6",
-                "flags": 0,
-                "id": "nx:display-jt:segment#0-row-0-0-base-node-1",
-                "object_id": 2,
-                "object_type_id": [
-                  17,
-                  17,
-                  17,
-                  17,
-                  17,
-                  17,
-                  17,
-                  17,
-                  17,
-                  17,
-                  17,
-                  17,
-                  17,
-                  17,
-                  17,
-                  17
-                ],
-                "source_offset": 529,
-                "version": 1
-              },
-              {
-                "attribute_object_ids": [],
-                "element": "nx:display-jt:segment#0-row-0-0-inflated-element-2",
-                "family_data_byte_len": 96,
-                "family_data_sha256": "283d92ea78fd4bdd1c0630e85642415a61a77edd7776080001f35c4b18b2ad45",
-                "flags": 0,
-                "id": "nx:display-jt:segment#0-row-0-0-base-node-2",
-                "object_id": 3,
-                "object_type_id": [
-                  62,
-                  16,
-                  221,
-                  16,
-                  200,
-                  42,
-                  209,
-                  17,
-                  155,
-                  107,
-                  0,
-                  128,
-                  199,
-                  187,
-                  89,
-                  151
-                ],
-                "source_offset": 529,
-                "version": 1
-              },
-              {
-                "attribute_object_ids": [],
-                "element": "nx:display-jt:segment#0-row-0-0-inflated-element-3",
-                "family_data_byte_len": 54,
-                "family_data_sha256": "172d26b4199b3aca9f3894af04ebb8cfb504f926716c2a1f9a7c243f279b746c",
-                "flags": 0,
-                "id": "nx:display-jt:segment#0-row-0-0-base-node-3",
-                "object_id": 4,
-                "object_type_id": [
-                  76,
-                  16,
-                  221,
-                  16,
-                  200,
-                  42,
-                  209,
-                  17,
-                  155,
-                  107,
-                  0,
-                  128,
-                  199,
-                  187,
-                  89,
-                  151
-                ],
-                "source_offset": 529,
-                "version": 1
-              },
-              {
-                "attribute_object_ids": [],
-                "element": "nx:display-jt:segment#0-row-0-0-inflated-element-4",
-                "family_data_byte_len": 108,
-                "family_data_sha256": "6001689929d53e766c3ff46298d543bc9776f2e0be428c283bc3285c54c0e071",
-                "flags": 32,
-                "id": "nx:display-jt:segment#0-row-0-0-base-node-4",
-                "object_id": 5,
-                "object_type_id": [
-                  119,
-                  16,
-                  221,
-                  16,
-                  200,
-                  42,
-                  209,
-                  17,
-                  155,
-                  107,
-                  0,
-                  128,
-                  199,
-                  187,
-                  89,
-                  151
-                ],
-                "source_offset": 529,
-                "version": 1
-              }
-            ],
-            "display_jt_compressed_element_sequences": [
-              {
-                "elements": [
-                  "nx:display-jt:segment#0-row-0-0-inflated-element-0",
-                  "nx:display-jt:segment#0-row-0-0-inflated-element-1",
-                  "nx:display-jt:segment#0-row-0-0-inflated-element-2",
-                  "nx:display-jt:segment#0-row-0-0-inflated-element-3",
-                  "nx:display-jt:segment#0-row-0-0-inflated-element-4",
-                  "nx:display-jt:segment#0-row-0-0-inflated-element-5"
-                ],
-                "framed_byte_len": 529,
-                "id": "nx:display-jt:segment#0-row-0-0-inflated-sequence",
-                "segment": "nx:display-jt:segment#0-row-0-0",
-                "segment_type": 1,
-                "source_offset": 529,
-                "tail": [],
-                "tail_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-              }
-            ],
-            "display_jt_compressed_elements": [
-              {
-                "body_byte_len": 20,
-                "body_sha256": "71990f5045ae6e29a3e3d9aef169e462a95c02b6741f9620d69f38b49e2b1e4f",
-                "id": "nx:display-jt:segment#0-row-0-0-inflated-element-0",
-                "inflated_offset": 0,
-                "object_base_type": 0,
-                "object_id": 1,
-                "object_type_id": [
-                  42,
-                  16,
-                  221,
-                  16,
-                  200,
-                  42,
-                  209,
-                  17,
-                  155,
-                  107,
-                  0,
-                  128,
-                  199,
-                  187,
-                  89,
-                  151
-                ],
-                "ordinal": 0,
-                "segment": "nx:display-jt:segment#0-row-0-0",
-                "segment_type": 1,
-                "source_offset": 529
-              },
-              {
-                "body_byte_len": 28,
-                "body_sha256": "4dbba4471fc9f34c2002535a085ff689acf489f5db76c824bfde6f86e78a024c",
-                "id": "nx:display-jt:segment#0-row-0-0-inflated-element-1",
-                "inflated_offset": 45,
-                "object_base_type": 1,
-                "object_id": 2,
-                "object_type_id": [
-                  17,
-                  17,
-                  17,
-                  17,
-                  17,
-                  17,
-                  17,
-                  17,
-                  17,
-                  17,
-                  17,
-                  17,
-                  17,
-                  17,
-                  17,
-                  17
-                ],
-                "ordinal": 1,
-                "segment": "nx:display-jt:segment#0-row-0-0",
-                "segment_type": 1,
-                "source_offset": 529
-              },
-              {
-                "body_byte_len": 106,
-                "body_sha256": "e8141ad9fdf8262bcdb477c3f2a11dab61031e1229ab39977a21035244967e38",
-                "id": "nx:display-jt:segment#0-row-0-0-inflated-element-2",
-                "inflated_offset": 98,
-                "object_base_type": 1,
-                "object_id": 3,
-                "object_type_id": [
-                  62,
-                  16,
-                  221,
-                  16,
-                  200,
-                  42,
-                  209,
-                  17,
-                  155,
-                  107,
-                  0,
-                  128,
-                  199,
-                  187,
-                  89,
-                  151
-                ],
-                "ordinal": 2,
-                "segment": "nx:display-jt:segment#0-row-0-0",
-                "segment_type": 1,
-                "source_offset": 529
-              },
-              {
-                "body_byte_len": 64,
-                "body_sha256": "b15bd7124bda6f35d61a50e5d9757ba0ede328409c8bd60391e4f973dedd57a6",
-                "id": "nx:display-jt:segment#0-row-0-0-inflated-element-3",
-                "inflated_offset": 229,
-                "object_base_type": 1,
-                "object_id": 4,
-                "object_type_id": [
-                  76,
-                  16,
-                  221,
-                  16,
-                  200,
-                  42,
-                  209,
-                  17,
-                  155,
-                  107,
-                  0,
-                  128,
-                  199,
-                  187,
-                  89,
-                  151
-                ],
-                "ordinal": 3,
-                "segment": "nx:display-jt:segment#0-row-0-0",
-                "segment_type": 1,
-                "source_offset": 529
-              },
-              {
-                "body_byte_len": 118,
-                "body_sha256": "c7eb6c9eb778a809c49bf866e3e07426ed117f6b33dbaa249f2e60bd671681cf",
-                "id": "nx:display-jt:segment#0-row-0-0-inflated-element-4",
-                "inflated_offset": 318,
-                "object_base_type": 2,
-                "object_id": 5,
-                "object_type_id": [
-                  119,
-                  16,
-                  221,
-                  16,
-                  200,
-                  42,
-                  209,
-                  17,
-                  155,
-                  107,
-                  0,
-                  128,
-                  199,
-                  187,
-                  89,
-                  151
-                ],
-                "ordinal": 4,
-                "segment": "nx:display-jt:segment#0-row-0-0",
-                "segment_type": 1,
-                "source_offset": 529
-              },
-              {
-                "body_byte_len": 23,
-                "body_sha256": "16f1877b61fe558e215b77cf26be14e66e6514303de8bc128d6b702be74c432e",
-                "id": "nx:display-jt:segment#0-row-0-0-inflated-element-5",
-                "inflated_offset": 461,
-                "object_base_type": 3,
-                "object_id": 6,
-                "object_type_id": [
-                  131,
-                  16,
-                  221,
-                  16,
-                  200,
-                  42,
-                  209,
-                  17,
-                  155,
-                  107,
-                  0,
-                  128,
-                  199,
-                  187,
-                  89,
-                  151
-                ],
-                "ordinal": 5,
-                "segment": "nx:display-jt:segment#0-row-0-0",
-                "segment_type": 1,
-                "source_offset": 529
-              }
-            ],
-            "display_jt_documents": [
-              {
-                "byte_order": 0,
-                "format_major": 9,
-                "format_minor": 4,
-                "id": "nx:display-jt:document#0-row-0",
-                "index_row": "nx:display-jt:index#0-row-0",
-                "lsg_segment_id": [
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1
-                ],
-                "physical_byte_len": 428,
-                "source_offset": 368,
-                "toc_entries": [
-                  {
-                    "attributes": [
-                      0,
-                      0,
-                      0,
-                      1
-                    ],
-                    "id": "nx:display-jt:toc-entry#0-row-0-0",
-                    "ordinal": 0,
-                    "segment_byte_len": 291,
-                    "segment_id": [
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2
-                    ],
-                    "segment_offset": 137,
-                    "source_offset": 477
-                  }
-                ],
-                "toc_offset": 105,
-                "version_field": "Version 9.4 JT                                                                  "
-              }
-            ],
-            "display_jt_geometric_transform_attributes": [
-              {
-                "element": "nx:display-jt:segment#0-row-0-0-inflated-element-5",
-                "field_inhibit_flags": 0,
-                "id": "nx:display-jt:segment#0-row-0-0-geometric-transform-5",
-                "matrix": [
-                  [
-                    1.0,
-                    0.0,
-                    0.0,
-                    0.0
+          "display_jt_base_node_data": [
+            {
+              "attribute_object_ids": [
+                7
+              ],
+              "element": "nx:display-jt:segment#0-row-0-0-inflated-element-0",
+              "family_data_byte_len": 6,
+              "family_data_sha256": "dbe5a5b5031b4e4883502a4b1935baf9872bc4b78416ff2444ca1652bedb2bb8",
+              "flags": 32,
+              "id": "nx:display-jt:segment#0-row-0-0-base-node-0",
+              "object_id": 1,
+              "object_type_id": [
+                42,
+                16,
+                221,
+                16,
+                200,
+                42,
+                209,
+                17,
+                155,
+                107,
+                0,
+                128,
+                199,
+                187,
+                89,
+                151
+              ],
+              "source_offset": 529,
+              "version": 1
+            },
+            {
+              "attribute_object_ids": [],
+              "element": "nx:display-jt:segment#0-row-0-0-inflated-element-1",
+              "family_data_byte_len": 18,
+              "family_data_sha256": "3154f3c14476b90752c2661c28efb4f976d6ed4bb333577af0ab6d71a00f94a6",
+              "flags": 0,
+              "id": "nx:display-jt:segment#0-row-0-0-base-node-1",
+              "object_id": 2,
+              "object_type_id": [
+                17,
+                17,
+                17,
+                17,
+                17,
+                17,
+                17,
+                17,
+                17,
+                17,
+                17,
+                17,
+                17,
+                17,
+                17,
+                17
+              ],
+              "source_offset": 529,
+              "version": 1
+            },
+            {
+              "attribute_object_ids": [],
+              "element": "nx:display-jt:segment#0-row-0-0-inflated-element-2",
+              "family_data_byte_len": 96,
+              "family_data_sha256": "283d92ea78fd4bdd1c0630e85642415a61a77edd7776080001f35c4b18b2ad45",
+              "flags": 0,
+              "id": "nx:display-jt:segment#0-row-0-0-base-node-2",
+              "object_id": 3,
+              "object_type_id": [
+                62,
+                16,
+                221,
+                16,
+                200,
+                42,
+                209,
+                17,
+                155,
+                107,
+                0,
+                128,
+                199,
+                187,
+                89,
+                151
+              ],
+              "source_offset": 529,
+              "version": 1
+            },
+            {
+              "attribute_object_ids": [],
+              "element": "nx:display-jt:segment#0-row-0-0-inflated-element-3",
+              "family_data_byte_len": 54,
+              "family_data_sha256": "172d26b4199b3aca9f3894af04ebb8cfb504f926716c2a1f9a7c243f279b746c",
+              "flags": 0,
+              "id": "nx:display-jt:segment#0-row-0-0-base-node-3",
+              "object_id": 4,
+              "object_type_id": [
+                76,
+                16,
+                221,
+                16,
+                200,
+                42,
+                209,
+                17,
+                155,
+                107,
+                0,
+                128,
+                199,
+                187,
+                89,
+                151
+              ],
+              "source_offset": 529,
+              "version": 1
+            },
+            {
+              "attribute_object_ids": [],
+              "element": "nx:display-jt:segment#0-row-0-0-inflated-element-4",
+              "family_data_byte_len": 108,
+              "family_data_sha256": "6001689929d53e766c3ff46298d543bc9776f2e0be428c283bc3285c54c0e071",
+              "flags": 32,
+              "id": "nx:display-jt:segment#0-row-0-0-base-node-4",
+              "object_id": 5,
+              "object_type_id": [
+                119,
+                16,
+                221,
+                16,
+                200,
+                42,
+                209,
+                17,
+                155,
+                107,
+                0,
+                128,
+                199,
+                187,
+                89,
+                151
+              ],
+              "source_offset": 529,
+              "version": 1
+            }
+          ],
+          "display_jt_compressed_element_sequences": [
+            {
+              "elements": [
+                "nx:display-jt:segment#0-row-0-0-inflated-element-0",
+                "nx:display-jt:segment#0-row-0-0-inflated-element-1",
+                "nx:display-jt:segment#0-row-0-0-inflated-element-2",
+                "nx:display-jt:segment#0-row-0-0-inflated-element-3",
+                "nx:display-jt:segment#0-row-0-0-inflated-element-4",
+                "nx:display-jt:segment#0-row-0-0-inflated-element-5"
+              ],
+              "framed_byte_len": 529,
+              "id": "nx:display-jt:segment#0-row-0-0-inflated-sequence",
+              "segment": "nx:display-jt:segment#0-row-0-0",
+              "segment_type": 1,
+              "source_offset": 529,
+              "tail": [],
+              "tail_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            }
+          ],
+          "display_jt_compressed_elements": [
+            {
+              "body_byte_len": 20,
+              "body_sha256": "71990f5045ae6e29a3e3d9aef169e462a95c02b6741f9620d69f38b49e2b1e4f",
+              "id": "nx:display-jt:segment#0-row-0-0-inflated-element-0",
+              "inflated_offset": 0,
+              "object_base_type": 0,
+              "object_id": 1,
+              "object_type_id": [
+                42,
+                16,
+                221,
+                16,
+                200,
+                42,
+                209,
+                17,
+                155,
+                107,
+                0,
+                128,
+                199,
+                187,
+                89,
+                151
+              ],
+              "ordinal": 0,
+              "segment": "nx:display-jt:segment#0-row-0-0",
+              "segment_type": 1,
+              "source_offset": 529
+            },
+            {
+              "body_byte_len": 28,
+              "body_sha256": "4dbba4471fc9f34c2002535a085ff689acf489f5db76c824bfde6f86e78a024c",
+              "id": "nx:display-jt:segment#0-row-0-0-inflated-element-1",
+              "inflated_offset": 45,
+              "object_base_type": 1,
+              "object_id": 2,
+              "object_type_id": [
+                17,
+                17,
+                17,
+                17,
+                17,
+                17,
+                17,
+                17,
+                17,
+                17,
+                17,
+                17,
+                17,
+                17,
+                17,
+                17
+              ],
+              "ordinal": 1,
+              "segment": "nx:display-jt:segment#0-row-0-0",
+              "segment_type": 1,
+              "source_offset": 529
+            },
+            {
+              "body_byte_len": 106,
+              "body_sha256": "e8141ad9fdf8262bcdb477c3f2a11dab61031e1229ab39977a21035244967e38",
+              "id": "nx:display-jt:segment#0-row-0-0-inflated-element-2",
+              "inflated_offset": 98,
+              "object_base_type": 1,
+              "object_id": 3,
+              "object_type_id": [
+                62,
+                16,
+                221,
+                16,
+                200,
+                42,
+                209,
+                17,
+                155,
+                107,
+                0,
+                128,
+                199,
+                187,
+                89,
+                151
+              ],
+              "ordinal": 2,
+              "segment": "nx:display-jt:segment#0-row-0-0",
+              "segment_type": 1,
+              "source_offset": 529
+            },
+            {
+              "body_byte_len": 64,
+              "body_sha256": "b15bd7124bda6f35d61a50e5d9757ba0ede328409c8bd60391e4f973dedd57a6",
+              "id": "nx:display-jt:segment#0-row-0-0-inflated-element-3",
+              "inflated_offset": 229,
+              "object_base_type": 1,
+              "object_id": 4,
+              "object_type_id": [
+                76,
+                16,
+                221,
+                16,
+                200,
+                42,
+                209,
+                17,
+                155,
+                107,
+                0,
+                128,
+                199,
+                187,
+                89,
+                151
+              ],
+              "ordinal": 3,
+              "segment": "nx:display-jt:segment#0-row-0-0",
+              "segment_type": 1,
+              "source_offset": 529
+            },
+            {
+              "body_byte_len": 118,
+              "body_sha256": "c7eb6c9eb778a809c49bf866e3e07426ed117f6b33dbaa249f2e60bd671681cf",
+              "id": "nx:display-jt:segment#0-row-0-0-inflated-element-4",
+              "inflated_offset": 318,
+              "object_base_type": 2,
+              "object_id": 5,
+              "object_type_id": [
+                119,
+                16,
+                221,
+                16,
+                200,
+                42,
+                209,
+                17,
+                155,
+                107,
+                0,
+                128,
+                199,
+                187,
+                89,
+                151
+              ],
+              "ordinal": 4,
+              "segment": "nx:display-jt:segment#0-row-0-0",
+              "segment_type": 1,
+              "source_offset": 529
+            },
+            {
+              "body_byte_len": 23,
+              "body_sha256": "16f1877b61fe558e215b77cf26be14e66e6514303de8bc128d6b702be74c432e",
+              "id": "nx:display-jt:segment#0-row-0-0-inflated-element-5",
+              "inflated_offset": 461,
+              "object_base_type": 3,
+              "object_id": 6,
+              "object_type_id": [
+                131,
+                16,
+                221,
+                16,
+                200,
+                42,
+                209,
+                17,
+                155,
+                107,
+                0,
+                128,
+                199,
+                187,
+                89,
+                151
+              ],
+              "ordinal": 5,
+              "segment": "nx:display-jt:segment#0-row-0-0",
+              "segment_type": 1,
+              "source_offset": 529
+            }
+          ],
+          "display_jt_documents": [
+            {
+              "byte_order": 0,
+              "format_major": 9,
+              "format_minor": 4,
+              "id": "nx:display-jt:document#0-row-0",
+              "index_row": "nx:display-jt:index#0-row-0",
+              "lsg_segment_id": [
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1
+              ],
+              "physical_byte_len": 428,
+              "source_offset": 368,
+              "toc_entries": [
+                {
+                  "attributes": [
+                    0,
+                    0,
+                    0,
+                    1
                   ],
-                  [
-                    0.0,
-                    1.0,
-                    0.0,
-                    0.0
+                  "id": "nx:display-jt:toc-entry#0-row-0-0",
+                  "ordinal": 0,
+                  "segment_byte_len": 291,
+                  "segment_id": [
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2
                   ],
-                  [
-                    0.0,
-                    0.0,
-                    1.0,
-                    0.0
-                  ],
-                  [
-                    1.25,
-                    -2.5,
-                    4.0,
-                    1.0
-                  ]
-                ],
-                "object_id": 6,
-                "source_offset": 529,
-                "state_flags": 8,
-                "stored_values_mask": 14
-              }
-            ],
-            "display_jt_group_node_data": [
-              {
-                "base_node": "nx:display-jt:segment#0-row-0-0-base-node-1",
-                "child_object_ids": [
-                  7,
-                  9
-                ],
-                "family_data_byte_len": 4,
-                "family_data_sha256": "ee10da4aefe61a37df1dee937ca3221afa3b2351f9ea34edbbb769573c6785f7",
-                "id": "nx:display-jt:segment#0-row-0-0-group-node-data-1",
-                "object_id": 2,
-                "source_offset": 529,
-                "version": 1
-              },
-              {
-                "base_node": "nx:display-jt:segment#0-row-0-0-base-node-2",
-                "child_object_ids": [
-                  2
-                ],
-                "family_data_byte_len": 86,
-                "family_data_sha256": "f592769b90ad61ae2b837cf9c9603a3087963ff76bb28dc3b27d293e842dce32",
-                "id": "nx:display-jt:segment#0-row-0-0-group-node-data-2",
-                "object_id": 3,
-                "source_offset": 529,
-                "version": 1
-              },
-              {
-                "base_node": "nx:display-jt:segment#0-row-0-0-base-node-3",
-                "child_object_ids": [
-                  7,
-                  9
-                ],
-                "family_data_byte_len": 40,
-                "family_data_sha256": "f1b62c7634dac33059f4857804efbc74e391c06cb9974ccdc3a1435e115d82d7",
-                "id": "nx:display-jt:segment#0-row-0-0-group-node-data-3",
-                "object_id": 4,
-                "source_offset": 529,
-                "version": 1
-              }
-            ],
-            "display_jt_indices": [
-              {
-                "declared_count": 1,
-                "id": "nx:display-jt:index#0",
-                "rows": [
-                  {
-                    "header_offset": 28,
-                    "id": "nx:display-jt:index#0-row-0",
-                    "ordinal": 0,
-                    "source_offset": 348,
-                    "value": 100
-                  }
-                ],
-                "source_offset": 340,
-                "version": 9
-              }
-            ],
-            "display_jt_instance_nodes": [
-              {
-                "base_node": "nx:display-jt:segment#0-row-0-0-base-node-0",
-                "child_object_id": 9,
-                "id": "nx:display-jt:segment#0-row-0-0-instance-node-0",
-                "object_id": 1,
-                "source_offset": 529,
-                "version": 1
-              }
-            ],
-            "display_jt_partition_nodes": [
-              {
-                "area": 6.0,
-                "base_node": "nx:display-jt:segment#0-row-0-0-base-node-2",
-                "child_object_ids": [
-                  2
-                ],
-                "file_name": "x",
-                "file_name_code_units": [
-                  120
-                ],
-                "group_version": 1,
-                "id": "nx:display-jt:segment#0-row-0-0-partition-node-2",
-                "node_count_range": [
-                  3,
-                  4
-                ],
-                "object_id": 3,
-                "partition_flags": 1,
-                "polygon_count_range": [
-                  5,
-                  6
-                ],
-                "reserved_bounds": null,
-                "source_offset": 529,
-                "transformed_bounds": [
-                  [
-                    0.0,
-                    1.0,
-                    2.0
-                  ],
-                  [
-                    3.0,
-                    4.0,
-                    5.0
-                  ]
-                ],
-                "untransformed_bounds": [
-                  [
-                    -3.0,
-                    -2.0,
-                    -1.0
-                  ],
-                  [
-                    0.0,
-                    1.0,
-                    2.0
-                  ]
-                ],
-                "vertex_count_range": [
-                  1,
-                  2
-                ]
-              }
-            ],
-            "display_jt_range_lod_nodes": [
-              {
-                "base_node": "nx:display-jt:segment#0-row-0-0-base-node-3",
-                "center": [
+                  "segment_offset": 137,
+                  "source_offset": 477
+                }
+              ],
+              "toc_offset": 105,
+              "version_field": "Version 9.4 JT                                                                  "
+            }
+          ],
+          "display_jt_geometric_transform_attributes": [
+            {
+              "element": "nx:display-jt:segment#0-row-0-0-inflated-element-5",
+              "field_inhibit_flags": 0,
+              "id": "nx:display-jt:segment#0-row-0-0-geometric-transform-5",
+              "matrix": [
+                [
                   1.0,
-                  2.0,
-                  3.0
+                  0.0,
+                  0.0,
+                  0.0
                 ],
-                "child_object_ids": [
-                  7,
-                  9
+                [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0
                 ],
-                "group_version": 1,
-                "id": "nx:display-jt:segment#0-row-0-0-range-lod-node-3",
-                "lod_version": 1,
-                "object_id": 4,
-                "range_limits": [
-                  10.0,
-                  20.0
+                [
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0
                 ],
-                "range_version": 1,
-                "reserved_value": -2,
-                "reserved_values": [
-                  0.25
-                ],
-                "source_offset": 529
-              }
-            ],
-            "display_jt_segments": [
-              {
-                "compression": {
-                  "algorithm": 2,
-                  "compressed_byte_len": 258,
-                  "compressed_data_byte_len": 259,
-                  "flag": 2,
-                  "inflated_sha256": "9664016a85340f2b4b7c84cdf59e45e428e79af680291a42eac06a4fbd28ba9c"
-                },
-                "document": "nx:display-jt:document#0-row-0",
-                "id": "nx:display-jt:segment#0-row-0-0",
-                "payload_sha256": "2b876b4edbf8dea8f01a722d1cee528865d99ec6cb7737894529cd64862bd983",
-                "segment_byte_len": 291,
-                "segment_id": [
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2
-                ],
-                "segment_type": 1,
-                "source_offset": 505,
-                "toc_entry": "nx:display-jt:toc-entry#0-row-0-0"
-              }
-            ],
-            "display_jt_tri_strip_shape_nodes": [
-              {
-                "area": 6.0,
-                "base_node": "nx:display-jt:segment#0-row-0-0-base-node-4",
-                "color_quantization_bits": 8,
-                "compression_level": 0.75,
-                "id": "nx:display-jt:segment#0-row-0-0-tri-strip-shape-node-4",
-                "memory_byte_len": 4096,
-                "node_count_range": [
-                  9,
-                  10
-                ],
-                "normal_quantization_factor": 13,
-                "object_id": 5,
-                "polygon_count_range": [
-                  11,
-                  12
-                ],
-                "reserved_bounds": [
-                  [
-                    0.0,
-                    1.0,
-                    2.0
-                  ],
-                  [
-                    3.0,
-                    4.0,
-                    5.0
-                  ]
-                ],
-                "source_offset": 529,
-                "texture_quantization_bits": 16,
-                "untransformed_bounds": [
-                  [
-                    -3.0,
-                    -2.0,
-                    -1.0
-                  ],
-                  [
-                    0.0,
-                    1.0,
-                    2.0
-                  ]
-                ],
-                "version_2_vertex_bindings": 772,
-                "vertex_bindings": 258,
-                "vertex_count_range": [
-                  7,
-                  8
-                ],
-                "vertex_quantization_bits": 24,
-                "vertex_version": 2
-              }
-            ],
-            "unknowns": [
-              {
-                "id": "nx:container:parasolid#0",
-                "links": [
-                  "nx:s0:surf#0",
-                  "nx:s0:surf#1",
-                  "nx:s0:crv#0"
+                [
+                  1.25,
+                  -2.5,
+                  4.0,
+                  1.0
                 ]
-              }
-            ]
-          }
+              ],
+              "object_id": 6,
+              "source_offset": 529,
+              "state_flags": 8,
+              "stored_values_mask": 14
+            }
+          ],
+          "display_jt_group_node_data": [
+            {
+              "base_node": "nx:display-jt:segment#0-row-0-0-base-node-1",
+              "child_object_ids": [
+                7,
+                9
+              ],
+              "family_data_byte_len": 4,
+              "family_data_sha256": "ee10da4aefe61a37df1dee937ca3221afa3b2351f9ea34edbbb769573c6785f7",
+              "id": "nx:display-jt:segment#0-row-0-0-group-node-data-1",
+              "object_id": 2,
+              "source_offset": 529,
+              "version": 1
+            },
+            {
+              "base_node": "nx:display-jt:segment#0-row-0-0-base-node-2",
+              "child_object_ids": [
+                2
+              ],
+              "family_data_byte_len": 86,
+              "family_data_sha256": "f592769b90ad61ae2b837cf9c9603a3087963ff76bb28dc3b27d293e842dce32",
+              "id": "nx:display-jt:segment#0-row-0-0-group-node-data-2",
+              "object_id": 3,
+              "source_offset": 529,
+              "version": 1
+            },
+            {
+              "base_node": "nx:display-jt:segment#0-row-0-0-base-node-3",
+              "child_object_ids": [
+                7,
+                9
+              ],
+              "family_data_byte_len": 40,
+              "family_data_sha256": "f1b62c7634dac33059f4857804efbc74e391c06cb9974ccdc3a1435e115d82d7",
+              "id": "nx:display-jt:segment#0-row-0-0-group-node-data-3",
+              "object_id": 4,
+              "source_offset": 529,
+              "version": 1
+            }
+          ],
+          "display_jt_indices": [
+            {
+              "declared_count": 1,
+              "id": "nx:display-jt:index#0",
+              "rows": [
+                {
+                  "header_offset": 28,
+                  "id": "nx:display-jt:index#0-row-0",
+                  "ordinal": 0,
+                  "source_offset": 348,
+                  "value": 100
+                }
+              ],
+              "source_offset": 340,
+              "version": 9
+            }
+          ],
+          "display_jt_instance_nodes": [
+            {
+              "base_node": "nx:display-jt:segment#0-row-0-0-base-node-0",
+              "child_object_id": 9,
+              "id": "nx:display-jt:segment#0-row-0-0-instance-node-0",
+              "object_id": 1,
+              "source_offset": 529,
+              "version": 1
+            }
+          ],
+          "display_jt_partition_nodes": [
+            {
+              "area": 6.0,
+              "base_node": "nx:display-jt:segment#0-row-0-0-base-node-2",
+              "child_object_ids": [
+                2
+              ],
+              "file_name": "x",
+              "file_name_code_units": [
+                120
+              ],
+              "group_version": 1,
+              "id": "nx:display-jt:segment#0-row-0-0-partition-node-2",
+              "node_count_range": [
+                3,
+                4
+              ],
+              "object_id": 3,
+              "partition_flags": 1,
+              "polygon_count_range": [
+                5,
+                6
+              ],
+              "reserved_bounds": null,
+              "source_offset": 529,
+              "transformed_bounds": [
+                [
+                  0.0,
+                  1.0,
+                  2.0
+                ],
+                [
+                  3.0,
+                  4.0,
+                  5.0
+                ]
+              ],
+              "untransformed_bounds": [
+                [
+                  -3.0,
+                  -2.0,
+                  -1.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  2.0
+                ]
+              ],
+              "vertex_count_range": [
+                1,
+                2
+              ]
+            }
+          ],
+          "display_jt_range_lod_nodes": [
+            {
+              "base_node": "nx:display-jt:segment#0-row-0-0-base-node-3",
+              "center": [
+                1.0,
+                2.0,
+                3.0
+              ],
+              "child_object_ids": [
+                7,
+                9
+              ],
+              "group_version": 1,
+              "id": "nx:display-jt:segment#0-row-0-0-range-lod-node-3",
+              "lod_version": 1,
+              "object_id": 4,
+              "range_limits": [
+                10.0,
+                20.0
+              ],
+              "range_version": 1,
+              "reserved_value": -2,
+              "reserved_values": [
+                0.25
+              ],
+              "source_offset": 529
+            }
+          ],
+          "display_jt_segments": [
+            {
+              "compression": {
+                "algorithm": 2,
+                "compressed_byte_len": 258,
+                "compressed_data_byte_len": 259,
+                "flag": 2,
+                "inflated_sha256": "9664016a85340f2b4b7c84cdf59e45e428e79af680291a42eac06a4fbd28ba9c"
+              },
+              "document": "nx:display-jt:document#0-row-0",
+              "id": "nx:display-jt:segment#0-row-0-0",
+              "payload_sha256": "2b876b4edbf8dea8f01a722d1cee528865d99ec6cb7737894529cd64862bd983",
+              "segment_byte_len": 291,
+              "segment_id": [
+                2,
+                2,
+                2,
+                2,
+                2,
+                2,
+                2,
+                2,
+                2,
+                2,
+                2,
+                2,
+                2,
+                2,
+                2,
+                2
+              ],
+              "segment_type": 1,
+              "source_offset": 505,
+              "toc_entry": "nx:display-jt:toc-entry#0-row-0-0"
+            }
+          ],
+          "display_jt_tri_strip_shape_nodes": [
+            {
+              "area": 6.0,
+              "base_node": "nx:display-jt:segment#0-row-0-0-base-node-4",
+              "color_quantization_bits": 8,
+              "compression_level": 0.75,
+              "id": "nx:display-jt:segment#0-row-0-0-tri-strip-shape-node-4",
+              "memory_byte_len": 4096,
+              "node_count_range": [
+                9,
+                10
+              ],
+              "normal_quantization_factor": 13,
+              "object_id": 5,
+              "polygon_count_range": [
+                11,
+                12
+              ],
+              "reserved_bounds": [
+                [
+                  0.0,
+                  1.0,
+                  2.0
+                ],
+                [
+                  3.0,
+                  4.0,
+                  5.0
+                ]
+              ],
+              "source_offset": 529,
+              "texture_quantization_bits": 16,
+              "untransformed_bounds": [
+                [
+                  -3.0,
+                  -2.0,
+                  -1.0
+                ],
+                [
+                  0.0,
+                  1.0,
+                  2.0
+                ]
+              ],
+              "version_2_vertex_bindings": 772,
+              "vertex_bindings": 258,
+              "vertex_count_range": [
+                7,
+                8
+              ],
+              "vertex_quantization_bits": 24,
+              "vertex_version": 2
+            }
+          ],
+          "unknowns": [
+            {
+              "id": "nx:container:parasolid#0",
+              "links": [
+                "nx:s0:surf#0",
+                "nx:s0:surf#1",
+                "nx:s0:crv#0"
+              ]
+            }
+          ]
         }
       },
       "source": {

@@ -247,243 +247,241 @@
     },
     "native": {
       "f3d": {
-        "arenas": {
-          "act_entities": [],
-          "act_guids": [],
-          "act_registry_channels": [],
-          "act_root_components": [],
-          "act_table_references": [],
-          "asm_bulletin_boards": [
-            {
-              "id": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-bulletin-board#0000001716:000000",
-              "byte_offset": 1803,
-              "changes": [],
-              "number": 2,
-              "owner_ref": 0,
-              "parent": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-delta-state#0000001716"
-            }
-          ],
-          "asm_delta_states": [
-            {
-              "id": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-delta-state#0000001716",
-              "bulletin_boards": [],
-              "byte_offset": 1716,
-              "next_ref": 1,
-              "node_index": 0,
-              "owner_ref": 0,
-              "parent": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-history#0000001628",
-              "records": [],
-              "state_flag": 0,
-              "state_id": 2,
-              "version_flag": 1
-            },
-            {
-              "id": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-delta-state#0000001947",
-              "bulletin_boards": [],
-              "byte_offset": 1947,
-              "node_index": 1,
-              "owner_ref": 0,
-              "parent": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-history#0000001628",
-              "previous_ref": 0,
-              "records": [],
-              "state_flag": 0,
-              "state_id": 3,
-              "version_flag": 1
-            }
-          ],
-          "asm_entity_changes": [
-            {
-              "id": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-entity-change#0000001716:000000:000000",
-              "byte_offset": 1830,
-              "kind": "update",
-              "new_ref": 1,
-              "old_ref": 1830,
-              "parent": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-bulletin-board#0000001716:000000"
-            },
-            {
-              "id": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-entity-change#0000001716:000000:000001",
-              "byte_offset": 1857,
-              "kind": "insert",
-              "new_ref": 8,
-              "parent": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-bulletin-board#0000001716:000000"
-            }
-          ],
-          "asm_histories": [
-            {
-              "id": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-history#0000001628",
-              "byte_offset": 1628,
-              "history_entry_count": 99,
-              "projection_finalized": true,
-              "states": [],
-              "stream_size": 2
-            }
-          ],
-          "asm_history_records": [
-            {
-              "id": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-history-record#0000001903",
-              "byte_offset": 1903,
-              "entity_references": [
-                1830,
-                -1
-              ],
-              "index": 0,
-              "name": "history_payload",
-              "parent": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-delta-state#0000001716",
-              "raw_bytes": "DQ9oaXN0b3J5X3BheWxvYWQEJQAAAAAAAAAMJgcAAAAAAAAM//////////8R",
-              "revision_id": 1830
-            }
-          ],
-          "body_native_keys": [
-            {
-              "id": "f3d:asm:body-native-key#1",
-              "asm_body_key": 42,
-              "body": "f3d:brep:entity#1",
-              "body_ordinal": 0,
-              "record_index": 1,
-              "source_brep": "Body1.smbh"
-            }
-          ],
-          "body_visibilities": [],
-          "construction_recipes": [],
-          "creation_timestamps": [],
-          "design_body_bindings": [],
-          "design_body_bounds": [],
-          "design_body_members": [],
-          "design_body_recipe_operands": [],
-          "design_canvas_images": [],
-          "design_component_naming_spaces": [],
-          "design_component_occurrences": [],
-          "design_configurations": [],
-          "design_construction_operand_groups": [],
-          "design_construction_operand_identities": [],
-          "design_decal_images": [],
-          "design_dimension_annotation_frames": [],
-          "design_dimension_locus_groups": [],
-          "design_dimension_locus_pairs": [],
-          "design_dimension_null_locus_pairs": [],
-          "design_dimension_presentation_frames": [],
-          "design_dimension_recipe_records": [],
-          "design_edge_identity_operands": [],
-          "design_edge_operands": [],
-          "design_edge_treatment_vertex_operands": [],
-          "design_entity_headers": [],
-          "design_entity_selection_operands": [],
-          "design_extrude_selection_groups": [],
-          "design_extrude_selection_members": [],
-          "design_face_operands": [],
-          "design_face_source_groups": [],
-          "design_feature_timelines": [],
-          "design_fillet_radius_groups": [],
-          "design_loft_legacy_body_carriers": [],
-          "design_material_assignments": [],
-          "design_mesh_features": [],
-          "design_parameter_companions": [],
-          "design_parameter_owners": [],
-          "design_parameter_scopes": [],
-          "design_parameters": [],
-          "design_record_headers": [],
-          "design_sketch_placements": [],
-          "design_surface_trim_operations": [],
-          "design_types": [],
-          "edge_continuities": [
-            {
-              "id": "f3d:asm:edge-continuity#10",
-              "continuity": "unknown",
-              "edge": "f3d:brep:entity#10",
-              "record_index": 10,
-              "sense": "forward"
-            },
-            {
-              "id": "f3d:asm:edge-continuity#11",
-              "continuity": "unknown",
-              "edge": "f3d:brep:entity#11",
-              "record_index": 11,
-              "sense": "forward"
-            },
-            {
-              "id": "f3d:asm:edge-continuity#12",
-              "continuity": "unknown",
-              "edge": "f3d:brep:entity#12",
-              "record_index": 12,
-              "sense": "forward"
-            }
-          ],
-          "edge_ownerships": [
-            {
-              "id": "f3d:asm:edge-ownership#10",
-              "edge": "f3d:brep:entity#10",
-              "record_index": 10
-            },
-            {
-              "id": "f3d:asm:edge-ownership#11",
-              "edge": "f3d:brep:entity#11",
-              "record_index": 11
-            },
-            {
-              "id": "f3d:asm:edge-ownership#12",
-              "edge": "f3d:brep:entity#12",
-              "record_index": 12
-            }
-          ],
-          "face_native_keys": [
-            {
-              "id": "f3d:asm:face-native-key#4",
-              "face": "f3d:brep:entity#4",
-              "record_index": 4
-            }
-          ],
-          "face_sidedness": [
-            {
-              "id": "f3d:asm:face-sidedness#4",
-              "face": "f3d:brep:entity#4",
-              "native_sense": "forward",
-              "normalized_sense": "forward",
-              "record_index": 4
-            }
-          ],
-          "lost_edge_references": [],
-          "mesh_surface_sentinels": [],
-          "persistent_design_links": [],
-          "persistent_references": [],
-          "persistent_subentity_tags": [],
-          "sketch_curve_identities": [],
-          "sketch_curve_links": [],
-          "sketch_points": [],
-          "sketch_relations": [],
-          "sketch_surfaces": [],
-          "sketch_texts": [],
-          "tolerant_coedge_parameters": [],
-          "tolerant_edge_tails": [],
-          "tolerant_vertex_tails": [],
-          "transform_hints": [],
-          "unknowns": [],
-          "vertex_ownerships": [
-            {
-              "id": "f3d:asm:vertex-ownership#13",
-              "endpoint_index": 0,
-              "owning_edge": "f3d:brep:entity#10",
-              "record_index": 13,
-              "vertex": "f3d:brep:entity#13"
-            },
-            {
-              "id": "f3d:asm:vertex-ownership#14",
-              "endpoint_index": 1,
-              "owning_edge": "f3d:brep:entity#10",
-              "record_index": 14,
-              "vertex": "f3d:brep:entity#14"
-            },
-            {
-              "id": "f3d:asm:vertex-ownership#15",
-              "endpoint_index": 0,
-              "owning_edge": "f3d:brep:entity#12",
-              "record_index": 15,
-              "vertex": "f3d:brep:entity#15"
-            }
-          ],
-          "wire_topologies": [],
-          "xref_designs": [],
-          "xref_references": []
-        }
+        "act_entities": [],
+        "act_guids": [],
+        "act_registry_channels": [],
+        "act_root_components": [],
+        "act_table_references": [],
+        "asm_bulletin_boards": [
+          {
+            "id": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-bulletin-board#0000001716:000000",
+            "byte_offset": 1803,
+            "changes": [],
+            "number": 2,
+            "owner_ref": 0,
+            "parent": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-delta-state#0000001716"
+          }
+        ],
+        "asm_delta_states": [
+          {
+            "id": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-delta-state#0000001716",
+            "bulletin_boards": [],
+            "byte_offset": 1716,
+            "next_ref": 1,
+            "node_index": 0,
+            "owner_ref": 0,
+            "parent": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-history#0000001628",
+            "records": [],
+            "state_flag": 0,
+            "state_id": 2,
+            "version_flag": 1
+          },
+          {
+            "id": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-delta-state#0000001947",
+            "bulletin_boards": [],
+            "byte_offset": 1947,
+            "node_index": 1,
+            "owner_ref": 0,
+            "parent": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-history#0000001628",
+            "previous_ref": 0,
+            "records": [],
+            "state_flag": 0,
+            "state_id": 3,
+            "version_flag": 1
+          }
+        ],
+        "asm_entity_changes": [
+          {
+            "id": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-entity-change#0000001716:000000:000000",
+            "byte_offset": 1830,
+            "kind": "update",
+            "new_ref": 1,
+            "old_ref": 1830,
+            "parent": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-bulletin-board#0000001716:000000"
+          },
+          {
+            "id": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-entity-change#0000001716:000000:000001",
+            "byte_offset": 1857,
+            "kind": "insert",
+            "new_ref": 8,
+            "parent": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-bulletin-board#0000001716:000000"
+          }
+        ],
+        "asm_histories": [
+          {
+            "id": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-history#0000001628",
+            "byte_offset": 1628,
+            "history_entry_count": 99,
+            "projection_finalized": true,
+            "states": [],
+            "stream_size": 2
+          }
+        ],
+        "asm_history_records": [
+          {
+            "id": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-history-record#0000001903",
+            "byte_offset": 1903,
+            "entity_references": [
+              1830,
+              -1
+            ],
+            "index": 0,
+            "name": "history_payload",
+            "parent": "f3d:FusionAssetName[Active]/Breps.BlobParts/Body1.smbh:asm-delta-state#0000001716",
+            "raw_bytes": "DQ9oaXN0b3J5X3BheWxvYWQEJQAAAAAAAAAMJgcAAAAAAAAM//////////8R",
+            "revision_id": 1830
+          }
+        ],
+        "body_native_keys": [
+          {
+            "id": "f3d:asm:body-native-key#1",
+            "asm_body_key": 42,
+            "body": "f3d:brep:entity#1",
+            "body_ordinal": 0,
+            "record_index": 1,
+            "source_brep": "Body1.smbh"
+          }
+        ],
+        "body_visibilities": [],
+        "construction_recipes": [],
+        "creation_timestamps": [],
+        "design_body_bindings": [],
+        "design_body_bounds": [],
+        "design_body_members": [],
+        "design_body_recipe_operands": [],
+        "design_canvas_images": [],
+        "design_component_naming_spaces": [],
+        "design_component_occurrences": [],
+        "design_configurations": [],
+        "design_construction_operand_groups": [],
+        "design_construction_operand_identities": [],
+        "design_decal_images": [],
+        "design_dimension_annotation_frames": [],
+        "design_dimension_locus_groups": [],
+        "design_dimension_locus_pairs": [],
+        "design_dimension_null_locus_pairs": [],
+        "design_dimension_presentation_frames": [],
+        "design_dimension_recipe_records": [],
+        "design_edge_identity_operands": [],
+        "design_edge_operands": [],
+        "design_edge_treatment_vertex_operands": [],
+        "design_entity_headers": [],
+        "design_entity_selection_operands": [],
+        "design_extrude_selection_groups": [],
+        "design_extrude_selection_members": [],
+        "design_face_operands": [],
+        "design_face_source_groups": [],
+        "design_feature_timelines": [],
+        "design_fillet_radius_groups": [],
+        "design_loft_legacy_body_carriers": [],
+        "design_material_assignments": [],
+        "design_mesh_features": [],
+        "design_parameter_companions": [],
+        "design_parameter_owners": [],
+        "design_parameter_scopes": [],
+        "design_parameters": [],
+        "design_record_headers": [],
+        "design_sketch_placements": [],
+        "design_surface_trim_operations": [],
+        "design_types": [],
+        "edge_continuities": [
+          {
+            "id": "f3d:asm:edge-continuity#10",
+            "continuity": "unknown",
+            "edge": "f3d:brep:entity#10",
+            "record_index": 10,
+            "sense": "forward"
+          },
+          {
+            "id": "f3d:asm:edge-continuity#11",
+            "continuity": "unknown",
+            "edge": "f3d:brep:entity#11",
+            "record_index": 11,
+            "sense": "forward"
+          },
+          {
+            "id": "f3d:asm:edge-continuity#12",
+            "continuity": "unknown",
+            "edge": "f3d:brep:entity#12",
+            "record_index": 12,
+            "sense": "forward"
+          }
+        ],
+        "edge_ownerships": [
+          {
+            "id": "f3d:asm:edge-ownership#10",
+            "edge": "f3d:brep:entity#10",
+            "record_index": 10
+          },
+          {
+            "id": "f3d:asm:edge-ownership#11",
+            "edge": "f3d:brep:entity#11",
+            "record_index": 11
+          },
+          {
+            "id": "f3d:asm:edge-ownership#12",
+            "edge": "f3d:brep:entity#12",
+            "record_index": 12
+          }
+        ],
+        "face_native_keys": [
+          {
+            "id": "f3d:asm:face-native-key#4",
+            "face": "f3d:brep:entity#4",
+            "record_index": 4
+          }
+        ],
+        "face_sidedness": [
+          {
+            "id": "f3d:asm:face-sidedness#4",
+            "face": "f3d:brep:entity#4",
+            "native_sense": "forward",
+            "normalized_sense": "forward",
+            "record_index": 4
+          }
+        ],
+        "lost_edge_references": [],
+        "mesh_surface_sentinels": [],
+        "persistent_design_links": [],
+        "persistent_references": [],
+        "persistent_subentity_tags": [],
+        "sketch_curve_identities": [],
+        "sketch_curve_links": [],
+        "sketch_points": [],
+        "sketch_relations": [],
+        "sketch_surfaces": [],
+        "sketch_texts": [],
+        "tolerant_coedge_parameters": [],
+        "tolerant_edge_tails": [],
+        "tolerant_vertex_tails": [],
+        "transform_hints": [],
+        "unknowns": [],
+        "vertex_ownerships": [
+          {
+            "id": "f3d:asm:vertex-ownership#13",
+            "endpoint_index": 0,
+            "owning_edge": "f3d:brep:entity#10",
+            "record_index": 13,
+            "vertex": "f3d:brep:entity#13"
+          },
+          {
+            "id": "f3d:asm:vertex-ownership#14",
+            "endpoint_index": 1,
+            "owning_edge": "f3d:brep:entity#10",
+            "record_index": 14,
+            "vertex": "f3d:brep:entity#14"
+          },
+          {
+            "id": "f3d:asm:vertex-ownership#15",
+            "endpoint_index": 0,
+            "owning_edge": "f3d:brep:entity#12",
+            "record_index": 15,
+            "vertex": "f3d:brep:entity#15"
+          }
+        ],
+        "wire_topologies": [],
+        "xref_designs": [],
+        "xref_references": []
       }
     }
   },

@@ -42,13 +42,11 @@
     },
     "native": {
       "creo": {
-        "arenas": {
-          "unknowns": [
-            {
-              "id": "creo:THMB_IMG_MAIN:section#91"
-            }
-          ]
-        }
+        "unknowns": [
+          {
+            "id": "creo:THMB_IMG_MAIN:section#91"
+          }
+        ]
       }
     },
     "source": {

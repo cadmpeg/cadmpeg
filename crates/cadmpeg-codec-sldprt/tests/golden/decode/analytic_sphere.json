@@ -385,29 +385,27 @@
     },
     "native": {
       "sldprt": {
-        "arenas": {
-          "configurations": [],
-          "feature_histories": [],
-          "feature_input_body_selections": [],
-          "feature_input_classes": [],
-          "feature_input_edge_selections": [],
-          "feature_input_generated_surface_identities": [],
-          "feature_input_lanes": [],
-          "feature_input_names": [],
-          "feature_input_references": [],
-          "feature_input_relation_bindings": [],
-          "feature_input_relation_instances": [],
-          "feature_input_scalars": [],
-          "feature_input_surface_selections": [],
-          "features": [],
-          "pmi_dimensions": [],
-          "sketch_input_entities": [],
-          "unknowns": [
-            {
-              "id": "sldprt:file:block#8"
-            }
-          ]
-        }
+        "configurations": [],
+        "feature_histories": [],
+        "feature_input_body_selections": [],
+        "feature_input_classes": [],
+        "feature_input_edge_selections": [],
+        "feature_input_generated_surface_identities": [],
+        "feature_input_lanes": [],
+        "feature_input_names": [],
+        "feature_input_references": [],
+        "feature_input_relation_bindings": [],
+        "feature_input_relation_instances": [],
+        "feature_input_scalars": [],
+        "feature_input_surface_selections": [],
+        "features": [],
+        "pmi_dimensions": [],
+        "sketch_input_entities": [],
+        "unknowns": [
+          {
+            "id": "sldprt:file:block#8"
+          }
+        ]
       }
     },
     "source": {

@@ -114,12 +114,7 @@ fn native_shape(native: &cadmpeg_ir::Native) -> serde_json::Value {
             );
         }
         counts.insert(format.clone(), serde_json::Value::Object(namespace_counts));
-        shape.insert(
-            format.clone(),
-            serde_json::json!({
-                "arenas": namespace_shape,
-            }),
-        );
+        shape.insert(format.clone(), serde_json::Value::Object(namespace_shape));
     }
     let shape = serde_json::Value::Object(shape);
     serde_json::json!({

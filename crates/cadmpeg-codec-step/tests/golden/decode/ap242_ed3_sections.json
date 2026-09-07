@@ -51,19 +51,17 @@
     },
     "native": {
       "step": {
-        "arenas": {
-          "unknowns": [
-            {
-              "id": "step:data:example_record#2",
-              "links": [
-                "step:product:product#1"
-              ]
-            },
-            {
-              "id": "step:file:signature#0"
-            }
-          ]
-        }
+        "unknowns": [
+          {
+            "id": "step:data:example_record#2",
+            "links": [
+              "step:product:product#1"
+            ]
+          },
+          {
+            "id": "step:file:signature#0"
+          }
+        ]
       }
     },
     "source": {

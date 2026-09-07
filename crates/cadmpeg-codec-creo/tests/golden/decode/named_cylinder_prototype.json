@@ -78,488 +78,486 @@
     },
     "native": {
       "creo": {
-        "arenas": {
-          "surface_parameters": [
-            {
-              "body": [
-                115,
-                114,
-                102,
-                95,
-                112,
-                114,
-                105,
-                109,
-                95,
-                112,
-                116,
-                114,
-                40,
-                99,
-                121,
-                108,
-                105,
-                110,
-                100,
-                101,
-                114,
-                41,
-                0,
-                224,
-                2,
-                108,
-                111,
-                99,
-                97,
-                108,
-                95,
-                115,
-                121,
-                115,
-                0,
-                249,
-                4,
-                3,
-                15,
-                228,
-                15,
-                15,
-                15,
-                15,
-                15,
-                15,
-                228,
-                15,
-                15,
-                24
-              ],
-              "body_offset": 112,
-              "boundary": "named_record",
-              "cone_half_angle_override": null,
-              "extrusion_direction": null,
-              "id": "creo:visibgeom:surface_parameter#7",
-              "opaque_spans": [
-                {
-                  "length": 14,
-                  "offset": 7,
-                  "raw": [
-                    109,
-                    95,
-                    112,
-                    116,
-                    114,
-                    40,
-                    99,
-                    121,
-                    108,
-                    105,
-                    110,
-                    100,
-                    101,
-                    114
-                  ]
-                },
-                {
-                  "length": 7,
-                  "offset": 24,
-                  "raw": [
-                    2,
-                    108,
-                    111,
-                    99,
-                    97,
-                    108,
-                    95
-                  ]
-                },
-                {
-                  "length": 1,
-                  "offset": 49,
-                  "raw": [
-                    24
-                  ]
-                }
-              ],
-              "positional_cone_frame": null,
-              "positional_cylinder_frame": null,
-              "positional_torus_frame": null,
-              "replayed_torus_minor_radius": null,
-              "row_offset": 106,
-              "scalar_frames": [
-                {
-                  "offset": 0,
-                  "slots": [
-                    {
-                      "length": 7,
-                      "offset": 0,
-                      "raw": [
-                        115,
-                        114,
-                        102,
-                        95,
-                        112,
-                        114,
-                        105
-                      ],
-                      "value": 0.7639648307845849
-                    }
-                  ]
-                },
-                {
-                  "offset": 21,
-                  "slots": [
-                    {
-                      "length": 3,
-                      "offset": 21,
-                      "raw": [
-                        41,
-                        0,
-                        224
-                      ],
-                      "value": 0.000032193053002450974
-                    }
-                  ]
-                },
-                {
-                  "offset": 31,
-                  "slots": [
-                    {
-                      "length": 7,
-                      "offset": 31,
-                      "raw": [
-                        115,
-                        121,
-                        115,
-                        0,
-                        249,
-                        4,
-                        3
-                      ],
-                      "value": 0.7648253458975208
-                    },
-                    {
-                      "length": 1,
-                      "offset": 38,
-                      "raw": [
-                        15
-                      ],
-                      "value": 0.0
-                    },
-                    {
-                      "length": 1,
-                      "offset": 39,
-                      "raw": [
-                        228
-                      ],
-                      "value": 1.0
-                    },
-                    {
-                      "length": 1,
-                      "offset": 40,
-                      "raw": [
-                        15
-                      ],
-                      "value": 0.0
-                    },
-                    {
-                      "length": 1,
-                      "offset": 41,
-                      "raw": [
-                        15
-                      ],
-                      "value": 0.0
-                    },
-                    {
-                      "length": 1,
-                      "offset": 42,
-                      "raw": [
-                        15
-                      ],
-                      "value": 0.0
-                    },
-                    {
-                      "length": 1,
-                      "offset": 43,
-                      "raw": [
-                        15
-                      ],
-                      "value": 0.0
-                    },
-                    {
-                      "length": 1,
-                      "offset": 44,
-                      "raw": [
-                        15
-                      ],
-                      "value": 0.0
-                    },
-                    {
-                      "length": 1,
-                      "offset": 45,
-                      "raw": [
-                        15
-                      ],
-                      "value": 0.0
-                    },
-                    {
-                      "length": 1,
-                      "offset": 46,
-                      "raw": [
-                        228
-                      ],
-                      "value": 1.0
-                    },
-                    {
-                      "length": 1,
-                      "offset": 47,
-                      "raw": [
-                        15
-                      ],
-                      "value": 0.0
-                    },
-                    {
-                      "length": 1,
-                      "offset": 48,
-                      "raw": [
-                        15
-                      ],
-                      "value": 0.0
-                    }
-                  ]
-                }
-              ],
-              "slots": [
-                {
-                  "length": 7,
-                  "offset": 0,
-                  "raw": [
-                    115,
-                    114,
-                    102,
-                    95,
-                    112,
-                    114,
-                    105
-                  ],
-                  "value": 0.7639648307845849
-                },
-                {
-                  "length": 3,
-                  "offset": 21,
-                  "raw": [
-                    41,
-                    0,
-                    224
-                  ],
-                  "value": 0.000032193053002450974
-                },
-                {
-                  "length": 7,
-                  "offset": 31,
-                  "raw": [
-                    115,
-                    121,
-                    115,
-                    0,
-                    249,
-                    4,
-                    3
-                  ],
-                  "value": 0.7648253458975208
-                },
-                {
-                  "length": 1,
-                  "offset": 38,
-                  "raw": [
-                    15
-                  ],
-                  "value": 0.0
-                },
-                {
-                  "length": 1,
-                  "offset": 39,
-                  "raw": [
-                    228
-                  ],
-                  "value": 1.0
-                },
-                {
-                  "length": 1,
-                  "offset": 40,
-                  "raw": [
-                    15
-                  ],
-                  "value": 0.0
-                },
-                {
-                  "length": 1,
-                  "offset": 41,
-                  "raw": [
-                    15
-                  ],
-                  "value": 0.0
-                },
-                {
-                  "length": 1,
-                  "offset": 42,
-                  "raw": [
-                    15
-                  ],
-                  "value": 0.0
-                },
-                {
-                  "length": 1,
-                  "offset": 43,
-                  "raw": [
-                    15
-                  ],
-                  "value": 0.0
-                },
-                {
-                  "length": 1,
-                  "offset": 44,
-                  "raw": [
-                    15
-                  ],
-                  "value": 0.0
-                },
-                {
-                  "length": 1,
-                  "offset": 45,
-                  "raw": [
-                    15
-                  ],
-                  "value": 0.0
-                },
-                {
-                  "length": 1,
-                  "offset": 46,
-                  "raw": [
-                    228
-                  ],
-                  "value": 1.0
-                },
-                {
-                  "length": 1,
-                  "offset": 47,
-                  "raw": [
-                    15
-                  ],
-                  "value": 0.0
-                },
-                {
-                  "length": 1,
-                  "offset": 48,
-                  "raw": [
-                    15
-                  ],
-                  "value": 0.0
-                }
-              ],
-              "source_section": "VisibGeom",
-              "split_cylinder_outline_bounds": null,
-              "surface_family": "cylinder",
-              "surface_id": 7,
-              "surface_type_byte": 36,
-              "tabulated_cylinder_frame": null,
-              "terminal_scalar_frame": null,
-              "torus_outline_frame": null,
-              "torus_radius_overrides": null,
-              "type26_five_coordinate_envelope": null,
-              "type26_split_coordinate_envelope": null
-            }
-          ],
-          "surface_prototypes": [
-            {
-              "declared_family": "cylinder",
-              "family": "cylinder",
-              "id": "creo:visibgeom:surface_prototype#112",
-              "offset": 112,
-              "parameters": [
-                {
-                  "body": [
-                    249,
-                    4,
-                    3,
-                    15,
-                    228,
-                    15,
-                    15,
-                    15,
-                    15,
-                    15,
-                    15,
-                    228,
-                    15,
-                    15,
-                    24
-                  ],
-                  "compact_values": [],
-                  "name": "local_sys",
-                  "offset": 135,
-                  "opaque": [],
-                  "scalar_count": 3,
-                  "scalar_dimensions": 4,
-                  "scalar_tokens": [],
-                  "scalar_values": [
-                    0.0,
-                    1.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    1.0,
-                    0.0,
-                    0.0,
-                    0.0
-                  ],
-                  "value_kind": "scalar_array",
-                  "value_offset": 147
-                },
-                {
-                  "body": [
-                    228
-                  ],
-                  "compact_values": [],
-                  "name": "radius",
-                  "offset": 162,
-                  "opaque": [],
-                  "scalar_count": null,
-                  "scalar_dimensions": null,
-                  "scalar_tokens": [],
-                  "scalar_values": [
-                    1.0
-                  ],
-                  "value_kind": "scalar_sequence",
-                  "value_offset": 171
-                }
-              ],
-              "source_section": "VisibGeom"
-            }
-          ],
-          "surface_rows": [
-            {
-              "boundary_type": 0,
-              "feature_id": 4,
-              "id": "creo:visibgeom:surface_row#7",
-              "next_surface": 0,
-              "offset": 106,
-              "reversed": false,
-              "source_section": "VisibGeom",
-              "surface_family": "cylinder",
-              "surface_id": 7,
-              "surface_variant": null,
-              "type_byte": 36
-            }
-          ],
-          "unknowns": [
-            {
-              "id": "creo:VisibGeom:section#76"
-            }
-          ]
-        }
+        "surface_parameters": [
+          {
+            "body": [
+              115,
+              114,
+              102,
+              95,
+              112,
+              114,
+              105,
+              109,
+              95,
+              112,
+              116,
+              114,
+              40,
+              99,
+              121,
+              108,
+              105,
+              110,
+              100,
+              101,
+              114,
+              41,
+              0,
+              224,
+              2,
+              108,
+              111,
+              99,
+              97,
+              108,
+              95,
+              115,
+              121,
+              115,
+              0,
+              249,
+              4,
+              3,
+              15,
+              228,
+              15,
+              15,
+              15,
+              15,
+              15,
+              15,
+              228,
+              15,
+              15,
+              24
+            ],
+            "body_offset": 112,
+            "boundary": "named_record",
+            "cone_half_angle_override": null,
+            "extrusion_direction": null,
+            "id": "creo:visibgeom:surface_parameter#7",
+            "opaque_spans": [
+              {
+                "length": 14,
+                "offset": 7,
+                "raw": [
+                  109,
+                  95,
+                  112,
+                  116,
+                  114,
+                  40,
+                  99,
+                  121,
+                  108,
+                  105,
+                  110,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "length": 7,
+                "offset": 24,
+                "raw": [
+                  2,
+                  108,
+                  111,
+                  99,
+                  97,
+                  108,
+                  95
+                ]
+              },
+              {
+                "length": 1,
+                "offset": 49,
+                "raw": [
+                  24
+                ]
+              }
+            ],
+            "positional_cone_frame": null,
+            "positional_cylinder_frame": null,
+            "positional_torus_frame": null,
+            "replayed_torus_minor_radius": null,
+            "row_offset": 106,
+            "scalar_frames": [
+              {
+                "offset": 0,
+                "slots": [
+                  {
+                    "length": 7,
+                    "offset": 0,
+                    "raw": [
+                      115,
+                      114,
+                      102,
+                      95,
+                      112,
+                      114,
+                      105
+                    ],
+                    "value": 0.7639648307845849
+                  }
+                ]
+              },
+              {
+                "offset": 21,
+                "slots": [
+                  {
+                    "length": 3,
+                    "offset": 21,
+                    "raw": [
+                      41,
+                      0,
+                      224
+                    ],
+                    "value": 0.000032193053002450974
+                  }
+                ]
+              },
+              {
+                "offset": 31,
+                "slots": [
+                  {
+                    "length": 7,
+                    "offset": 31,
+                    "raw": [
+                      115,
+                      121,
+                      115,
+                      0,
+                      249,
+                      4,
+                      3
+                    ],
+                    "value": 0.7648253458975208
+                  },
+                  {
+                    "length": 1,
+                    "offset": 38,
+                    "raw": [
+                      15
+                    ],
+                    "value": 0.0
+                  },
+                  {
+                    "length": 1,
+                    "offset": 39,
+                    "raw": [
+                      228
+                    ],
+                    "value": 1.0
+                  },
+                  {
+                    "length": 1,
+                    "offset": 40,
+                    "raw": [
+                      15
+                    ],
+                    "value": 0.0
+                  },
+                  {
+                    "length": 1,
+                    "offset": 41,
+                    "raw": [
+                      15
+                    ],
+                    "value": 0.0
+                  },
+                  {
+                    "length": 1,
+                    "offset": 42,
+                    "raw": [
+                      15
+                    ],
+                    "value": 0.0
+                  },
+                  {
+                    "length": 1,
+                    "offset": 43,
+                    "raw": [
+                      15
+                    ],
+                    "value": 0.0
+                  },
+                  {
+                    "length": 1,
+                    "offset": 44,
+                    "raw": [
+                      15
+                    ],
+                    "value": 0.0
+                  },
+                  {
+                    "length": 1,
+                    "offset": 45,
+                    "raw": [
+                      15
+                    ],
+                    "value": 0.0
+                  },
+                  {
+                    "length": 1,
+                    "offset": 46,
+                    "raw": [
+                      228
+                    ],
+                    "value": 1.0
+                  },
+                  {
+                    "length": 1,
+                    "offset": 47,
+                    "raw": [
+                      15
+                    ],
+                    "value": 0.0
+                  },
+                  {
+                    "length": 1,
+                    "offset": 48,
+                    "raw": [
+                      15
+                    ],
+                    "value": 0.0
+                  }
+                ]
+              }
+            ],
+            "slots": [
+              {
+                "length": 7,
+                "offset": 0,
+                "raw": [
+                  115,
+                  114,
+                  102,
+                  95,
+                  112,
+                  114,
+                  105
+                ],
+                "value": 0.7639648307845849
+              },
+              {
+                "length": 3,
+                "offset": 21,
+                "raw": [
+                  41,
+                  0,
+                  224
+                ],
+                "value": 0.000032193053002450974
+              },
+              {
+                "length": 7,
+                "offset": 31,
+                "raw": [
+                  115,
+                  121,
+                  115,
+                  0,
+                  249,
+                  4,
+                  3
+                ],
+                "value": 0.7648253458975208
+              },
+              {
+                "length": 1,
+                "offset": 38,
+                "raw": [
+                  15
+                ],
+                "value": 0.0
+              },
+              {
+                "length": 1,
+                "offset": 39,
+                "raw": [
+                  228
+                ],
+                "value": 1.0
+              },
+              {
+                "length": 1,
+                "offset": 40,
+                "raw": [
+                  15
+                ],
+                "value": 0.0
+              },
+              {
+                "length": 1,
+                "offset": 41,
+                "raw": [
+                  15
+                ],
+                "value": 0.0
+              },
+              {
+                "length": 1,
+                "offset": 42,
+                "raw": [
+                  15
+                ],
+                "value": 0.0
+              },
+              {
+                "length": 1,
+                "offset": 43,
+                "raw": [
+                  15
+                ],
+                "value": 0.0
+              },
+              {
+                "length": 1,
+                "offset": 44,
+                "raw": [
+                  15
+                ],
+                "value": 0.0
+              },
+              {
+                "length": 1,
+                "offset": 45,
+                "raw": [
+                  15
+                ],
+                "value": 0.0
+              },
+              {
+                "length": 1,
+                "offset": 46,
+                "raw": [
+                  228
+                ],
+                "value": 1.0
+              },
+              {
+                "length": 1,
+                "offset": 47,
+                "raw": [
+                  15
+                ],
+                "value": 0.0
+              },
+              {
+                "length": 1,
+                "offset": 48,
+                "raw": [
+                  15
+                ],
+                "value": 0.0
+              }
+            ],
+            "source_section": "VisibGeom",
+            "split_cylinder_outline_bounds": null,
+            "surface_family": "cylinder",
+            "surface_id": 7,
+            "surface_type_byte": 36,
+            "tabulated_cylinder_frame": null,
+            "terminal_scalar_frame": null,
+            "torus_outline_frame": null,
+            "torus_radius_overrides": null,
+            "type26_five_coordinate_envelope": null,
+            "type26_split_coordinate_envelope": null
+          }
+        ],
+        "surface_prototypes": [
+          {
+            "declared_family": "cylinder",
+            "family": "cylinder",
+            "id": "creo:visibgeom:surface_prototype#112",
+            "offset": 112,
+            "parameters": [
+              {
+                "body": [
+                  249,
+                  4,
+                  3,
+                  15,
+                  228,
+                  15,
+                  15,
+                  15,
+                  15,
+                  15,
+                  15,
+                  228,
+                  15,
+                  15,
+                  24
+                ],
+                "compact_values": [],
+                "name": "local_sys",
+                "offset": 135,
+                "opaque": [],
+                "scalar_count": 3,
+                "scalar_dimensions": 4,
+                "scalar_tokens": [],
+                "scalar_values": [
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "value_kind": "scalar_array",
+                "value_offset": 147
+              },
+              {
+                "body": [
+                  228
+                ],
+                "compact_values": [],
+                "name": "radius",
+                "offset": 162,
+                "opaque": [],
+                "scalar_count": null,
+                "scalar_dimensions": null,
+                "scalar_tokens": [],
+                "scalar_values": [
+                  1.0
+                ],
+                "value_kind": "scalar_sequence",
+                "value_offset": 171
+              }
+            ],
+            "source_section": "VisibGeom"
+          }
+        ],
+        "surface_rows": [
+          {
+            "boundary_type": 0,
+            "feature_id": 4,
+            "id": "creo:visibgeom:surface_row#7",
+            "next_surface": 0,
+            "offset": 106,
+            "reversed": false,
+            "source_section": "VisibGeom",
+            "surface_family": "cylinder",
+            "surface_id": 7,
+            "surface_variant": null,
+            "type_byte": 36
+          }
+        ],
+        "unknowns": [
+          {
+            "id": "creo:VisibGeom:section#76"
+          }
+        ]
       }
     },
     "source": {

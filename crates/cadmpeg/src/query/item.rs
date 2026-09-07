@@ -626,57 +626,6 @@ impl<'de> DeserializeSeed<'de> for NativeCodecSeed<'_> {
     type Value = ();
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
-        deserializer.deserialize_map(NativeCodecVisitor {
-            codec: self.codec,
-            target: self.target,
-            mode: self.mode,
-            capture: self.capture,
-        })
-    }
-}
-
-struct NativeCodecVisitor<'a> {
-    codec: &'a str,
-    target: &'a ArenaTarget,
-    mode: &'a KeepMode<'a>,
-    capture: &'a mut Capture,
-}
-
-impl<'de> Visitor<'de> for NativeCodecVisitor<'_> {
-    type Value = ();
-
-    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("a native codec object with an arenas map")
-    }
-
-    fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<(), A::Error> {
-        while let Some(key) = map.next_key::<String>()? {
-            if key == "arenas" {
-                map.next_value_seed(NativeArenasSeed {
-                    codec: self.codec,
-                    target: self.target,
-                    mode: self.mode,
-                    capture: self.capture,
-                })?;
-            } else {
-                let _ = map.next_value::<IgnoredAny>()?;
-            }
-        }
-        Ok(())
-    }
-}
-
-struct NativeArenasSeed<'a> {
-    codec: &'a str,
-    target: &'a ArenaTarget,
-    mode: &'a KeepMode<'a>,
-    capture: &'a mut Capture,
-}
-
-impl<'de> DeserializeSeed<'de> for NativeArenasSeed<'_> {
-    type Value = ();
-
-    fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
         deserializer.deserialize_map(ArenasVisitor::Native {
             codec: self.codec,
             target: self.target,

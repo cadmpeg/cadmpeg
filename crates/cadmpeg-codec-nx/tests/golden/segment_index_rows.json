@@ -43,29 +43,27 @@
       },
       "native": {
         "nx": {
-          "arenas": {
-            "segment_index_rows": [
-              {
-                "id": "nx:segment-index:row#0",
-                "ordinal": 0,
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 76,
-                "subtype_code": 9,
-                "type_code": 7,
-                "value": 11
-              },
-              {
-                "id": "nx:segment-index:row#1",
-                "ordinal": 1,
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 88,
-                "subtype_code": 1,
-                "type_code": 1,
-                "value": 28
-              }
-            ],
-            "unknowns": []
-          }
+          "segment_index_rows": [
+            {
+              "id": "nx:segment-index:row#0",
+              "ordinal": 0,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 76,
+              "subtype_code": 9,
+              "type_code": 7,
+              "value": 11
+            },
+            {
+              "id": "nx:segment-index:row#1",
+              "ordinal": 1,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 88,
+              "subtype_code": 1,
+              "type_code": 1,
+              "value": 28
+            }
+          ],
+          "unknowns": []
         }
       },
       "source": {

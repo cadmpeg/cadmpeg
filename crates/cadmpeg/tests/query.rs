@@ -48,7 +48,7 @@ const CHECK_REPORT: &str = r#"{
 const CADIR_DOC: &str = r#"{
   "ir_version": "4",
   "model": {"faces": [{"id": "f1"}, {"id": "f2"}], "edges": []},
-  "native": {"fcstd": {"arenas": {"objects": [1, 2, 3]}}}
+  "native": {"fcstd": {"objects": [1, 2, 3]}}
 }"#;
 
 const SIDECAR: &str = r#"{
@@ -465,7 +465,10 @@ fn query_json_wraps_the_projection_in_an_envelope() {
         .unwrap();
     assert!(output.status.success());
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["command"], "query findings");
+    assert_eq!(value["command"], "query");
+    assert_eq!(value["status"], "ok");
+    assert_eq!(value["refusal"], serde_json::Value::Null);
+    assert!(value["generator"].is_string());
     assert_eq!(value["findings"].as_array().unwrap().len(), 2);
     assert_eq!(value["findings"][0]["check"], "identity");
 }
@@ -581,12 +584,10 @@ const ITEM_DOC: &str = r#"{
   },
   "native": {
     "creo": {
-      "arenas": {
-        "curve_parameters": [
-          {"id": "creo:curve#818", "type_byte": 8, "feature_id": 11372},
-          {"id": "creo:curve#825", "type_byte": 1, "feature_id": 11831}
-        ]
-      }
+      "curve_parameters": [
+        {"id": "creo:curve#818", "type_byte": 8, "feature_id": 11372},
+        {"id": "creo:curve#825", "type_byte": 1, "feature_id": 11831}
+      ]
     }
   }
 }"#;
@@ -759,7 +760,7 @@ fn item_json_envelope_uses_item_payload_key() {
         .unwrap();
     assert!(output.status.success());
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["command"], "query item");
+    assert_eq!(value["command"], "query");
     assert_eq!(value["item"].as_array().unwrap().len(), 1);
     assert_eq!(
         value["item"][0]["id"],
@@ -1170,7 +1171,7 @@ fn schema_infers_native_fields_from_a_document() {
         .unwrap();
     assert!(json.status.success());
     let value: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
-    assert_eq!(value["command"], "query schema");
+    assert_eq!(value["command"], "query");
     assert_eq!(value["schema"]["inferred"], true);
     assert_eq!(value["schema"]["arena"], "native.creo.curve_parameters");
     assert_eq!(value["schema"]["records"], 2);
@@ -1256,7 +1257,7 @@ fn schema_sidecar_and_json_envelope() {
         .unwrap();
     assert!(json.status.success());
     let value: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
-    assert_eq!(value["command"], "query schema");
+    assert_eq!(value["command"], "query");
     assert_eq!(value["schema"]["element"], "Face");
     assert!(value["schema"]["defs"]
         .as_object()
@@ -1458,7 +1459,7 @@ fn fidelity_rejects_non_sidecar_kinds_and_wraps_json() {
         .unwrap();
     assert!(json.status.success());
     let value: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
-    assert_eq!(value["command"], "query fidelity");
+    assert_eq!(value["command"], "query");
     assert_eq!(value["fidelity"]["annotations"]["provenance"], 1);
     assert_eq!(
         value["fidelity"]["retained_records"][2]["data_retained"],

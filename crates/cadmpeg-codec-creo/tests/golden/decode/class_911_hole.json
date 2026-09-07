@@ -71,131 +71,129 @@
     },
     "native": {
       "creo": {
-        "arenas": {
-          "feature_operation_states": [
-            {
-              "current": true,
-              "display_name_stored": true,
-              "family": "Hole",
-              "feature_id": 4,
-              "id": "creo:mdlstatus:feature_state#4:0",
-              "identifier_keyword": "id",
-              "offset": 163,
-              "parent_feature_id": null,
-              "recipe": null,
-              "root_schema_class": null,
-              "state_offset": 163,
-              "state_ordinal": 0,
-              "stored_name": "Hole id 4",
-              "stored_name_bytes": [
-                72,
-                111,
-                108,
-                101,
-                32,
-                105,
-                100,
-                32,
-                52
-              ],
-              "stored_name_prefix": null
-            }
-          ],
-          "feature_rows": [
-            {
-              "body": [
-                235,
-                4,
-                0,
-                16,
-                1,
-                128,
-                128,
-                0,
-                228,
-                227,
-                246,
-                131,
-                143,
-                225,
-                35,
-                10
-              ],
-              "body_offset": 136,
-              "header": [
-                235,
-                4
-              ],
-              "id": "creo:allfeatur:feature_row#135",
-              "offset": 135,
-              "owner_feature_id": 4,
-              "root_schema_class": 911,
-              "source_section": "AllFeatur",
-              "stream_offset": 124
-            }
-          ],
-          "surface_parameters": [
-            {
-              "body": [
-                35,
-                10
-              ],
-              "body_offset": 122,
-              "boundary": "section_end",
-              "cone_half_angle_override": null,
-              "extrusion_direction": null,
-              "id": "creo:visibgeom:surface_parameter#7",
-              "opaque_spans": [
-                {
-                  "length": 2,
-                  "offset": 0,
-                  "raw": [
-                    35,
-                    10
-                  ]
-                }
-              ],
-              "positional_cone_frame": null,
-              "positional_cylinder_frame": null,
-              "positional_torus_frame": null,
-              "replayed_torus_minor_radius": null,
-              "row_offset": 116,
-              "scalar_frames": [],
-              "slots": [],
-              "source_section": "VisibGeom",
-              "split_cylinder_outline_bounds": null,
-              "surface_family": "cylinder",
-              "surface_id": 7,
-              "surface_type_byte": 36,
-              "tabulated_cylinder_frame": null,
-              "terminal_scalar_frame": null,
-              "torus_outline_frame": null,
-              "torus_radius_overrides": null,
-              "type26_five_coordinate_envelope": null,
-              "type26_split_coordinate_envelope": null
-            }
-          ],
-          "surface_rows": [
-            {
-              "boundary_type": 0,
-              "feature_id": 4,
-              "id": "creo:visibgeom:surface_row#7",
-              "next_surface": 0,
-              "offset": 116,
-              "reversed": false,
-              "source_section": "VisibGeom",
-              "surface_family": "cylinder",
-              "surface_id": 7,
-              "surface_variant": null,
-              "type_byte": 36
-            }
-          ],
-          "unknowns": [
-            {
-              "id": "creo:VisibGeom:section#76"
-            }
-          ]
-        }
+        "feature_operation_states": [
+          {
+            "current": true,
+            "display_name_stored": true,
+            "family": "Hole",
+            "feature_id": 4,
+            "id": "creo:mdlstatus:feature_state#4:0",
+            "identifier_keyword": "id",
+            "offset": 163,
+            "parent_feature_id": null,
+            "recipe": null,
+            "root_schema_class": null,
+            "state_offset": 163,
+            "state_ordinal": 0,
+            "stored_name": "Hole id 4",
+            "stored_name_bytes": [
+              72,
+              111,
+              108,
+              101,
+              32,
+              105,
+              100,
+              32,
+              52
+            ],
+            "stored_name_prefix": null
+          }
+        ],
+        "feature_rows": [
+          {
+            "body": [
+              235,
+              4,
+              0,
+              16,
+              1,
+              128,
+              128,
+              0,
+              228,
+              227,
+              246,
+              131,
+              143,
+              225,
+              35,
+              10
+            ],
+            "body_offset": 136,
+            "header": [
+              235,
+              4
+            ],
+            "id": "creo:allfeatur:feature_row#135",
+            "offset": 135,
+            "owner_feature_id": 4,
+            "root_schema_class": 911,
+            "source_section": "AllFeatur",
+            "stream_offset": 124
+          }
+        ],
+        "surface_parameters": [
+          {
+            "body": [
+              35,
+              10
+            ],
+            "body_offset": 122,
+            "boundary": "section_end",
+            "cone_half_angle_override": null,
+            "extrusion_direction": null,
+            "id": "creo:visibgeom:surface_parameter#7",
+            "opaque_spans": [
+              {
+                "length": 2,
+                "offset": 0,
+                "raw": [
+                  35,
+                  10
+                ]
+              }
+            ],
+            "positional_cone_frame": null,
+            "positional_cylinder_frame": null,
+            "positional_torus_frame": null,
+            "replayed_torus_minor_radius": null,
+            "row_offset": 116,
+            "scalar_frames": [],
+            "slots": [],
+            "source_section": "VisibGeom",
+            "split_cylinder_outline_bounds": null,
+            "surface_family": "cylinder",
+            "surface_id": 7,
+            "surface_type_byte": 36,
+            "tabulated_cylinder_frame": null,
+            "terminal_scalar_frame": null,
+            "torus_outline_frame": null,
+            "torus_radius_overrides": null,
+            "type26_five_coordinate_envelope": null,
+            "type26_split_coordinate_envelope": null
+          }
+        ],
+        "surface_rows": [
+          {
+            "boundary_type": 0,
+            "feature_id": 4,
+            "id": "creo:visibgeom:surface_row#7",
+            "next_surface": 0,
+            "offset": 116,
+            "reversed": false,
+            "source_section": "VisibGeom",
+            "surface_family": "cylinder",
+            "surface_id": 7,
+            "surface_variant": null,
+            "type_byte": 36
+          }
+        ],
+        "unknowns": [
+          {
+            "id": "creo:VisibGeom:section#76"
+          }
+        ]
       }
     },
     "source": {

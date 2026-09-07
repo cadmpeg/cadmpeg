@@ -143,92 +143,90 @@
       },
       "native": {
         "nx": {
-          "arenas": {
-            "class_definitions": [
-              {
-                "id": "nx:om-entry-0:class#19",
-                "layout_prefix": [
-                  129,
-                  33
-                ],
-                "layout_terminal": 6,
-                "name": "UGS::FEATURE_RECORD",
-                "ordinal": 0,
-                "registry_suffix": [
-                  129,
-                  33,
-                  1,
-                  35,
-                  69,
-                  103,
-                  137,
-                  171,
-                  205,
-                  239,
-                  6
-                ],
-                "schema_fingerprint": [
-                  1,
-                  35,
-                  69,
-                  103,
-                  137,
-                  171,
-                  205,
-                  239
-                ],
-                "section_offset": 76,
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 95,
-                "trailing_code": 160
-              },
-              {
-                "id": "nx:om-entry-0:class#51",
-                "name": "UGS::ModlUtils::BooleanComponent",
-                "ordinal": 1,
-                "section_offset": 76,
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 127,
-                "trailing_code": 101
-              }
-            ],
-            "field_definitions": [
-              {
-                "id": "nx:om-entry-0:field#85",
-                "name": "m_target",
-                "ordinal": 0,
-                "registry_owner_class": 2,
-                "registry_storage_code": 2,
-                "registry_suffix": [
-                  1,
-                  2
-                ],
-                "section_offset": 76,
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 161,
-                "trailing_code": 128
-              },
-              {
-                "id": "nx:om-entry-0:field#97",
-                "name": "m_tools",
-                "ordinal": 1,
-                "section_offset": 76,
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 173,
-                "trailing_code": 129
-              }
-            ],
-            "unknowns": [
-              {
-                "id": "nx:container:parasolid#0",
-                "links": [
-                  "nx:s0:surf#0",
-                  "nx:s0:surf#1",
-                  "nx:s0:crv#0"
-                ]
-              }
-            ]
-          }
+          "class_definitions": [
+            {
+              "id": "nx:om-entry-0:class#19",
+              "layout_prefix": [
+                129,
+                33
+              ],
+              "layout_terminal": 6,
+              "name": "UGS::FEATURE_RECORD",
+              "ordinal": 0,
+              "registry_suffix": [
+                129,
+                33,
+                1,
+                35,
+                69,
+                103,
+                137,
+                171,
+                205,
+                239,
+                6
+              ],
+              "schema_fingerprint": [
+                1,
+                35,
+                69,
+                103,
+                137,
+                171,
+                205,
+                239
+              ],
+              "section_offset": 76,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 95,
+              "trailing_code": 160
+            },
+            {
+              "id": "nx:om-entry-0:class#51",
+              "name": "UGS::ModlUtils::BooleanComponent",
+              "ordinal": 1,
+              "section_offset": 76,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 127,
+              "trailing_code": 101
+            }
+          ],
+          "field_definitions": [
+            {
+              "id": "nx:om-entry-0:field#85",
+              "name": "m_target",
+              "ordinal": 0,
+              "registry_owner_class": 2,
+              "registry_storage_code": 2,
+              "registry_suffix": [
+                1,
+                2
+              ],
+              "section_offset": 76,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 161,
+              "trailing_code": 128
+            },
+            {
+              "id": "nx:om-entry-0:field#97",
+              "name": "m_tools",
+              "ordinal": 1,
+              "section_offset": 76,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 173,
+              "trailing_code": 129
+            }
+          ],
+          "unknowns": [
+            {
+              "id": "nx:container:parasolid#0",
+              "links": [
+                "nx:s0:surf#0",
+                "nx:s0:surf#1",
+                "nx:s0:crv#0"
+              ]
+            }
+          ]
         }
       },
       "source": {

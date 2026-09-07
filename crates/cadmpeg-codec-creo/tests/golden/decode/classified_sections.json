@@ -42,16 +42,14 @@
     },
     "native": {
       "creo": {
-        "arenas": {
-          "unknowns": [
-            {
-              "id": "creo:THMB_IMG_MAIN:section#152"
-            },
-            {
-              "id": "creo:VisibGeom:section#79"
-            }
-          ]
-        }
+        "unknowns": [
+          {
+            "id": "creo:THMB_IMG_MAIN:section#152"
+          },
+          {
+            "id": "creo:VisibGeom:section#79"
+          }
+        ]
       }
     },
     "source": {

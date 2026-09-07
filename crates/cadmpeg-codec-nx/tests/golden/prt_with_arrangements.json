@@ -195,54 +195,52 @@
       },
       "native": {
         "nx": {
-          "arenas": {
-            "configuration_attribute_uses": [
-              {
-                "configuration": "nx:arrangements-1:configuration#0",
-                "id": "nx:arrangements:active-attribute-use#0",
-                "name": "Model",
-                "part_attribute": "nx:part-attributes-2:attribute#0"
-              }
-            ],
-            "configurations": [
-              {
-                "id": "nx:arrangements-1:configuration#0",
-                "is_default": true,
-                "name": "Model",
-                "source_entry": "/Root/part/arrangements",
-                "source_offset": 433
-              },
-              {
-                "id": "nx:arrangements-1:configuration#1",
-                "is_default": false,
-                "name": "Exploded",
-                "source_entry": "/Root/part/arrangements",
-                "source_offset": 474
-              }
-            ],
-            "part_attributes": [
-              {
-                "id": "nx:part-attributes-2:attribute#0",
-                "owner": "part",
-                "pdm_based": false,
-                "source_entry": "/Root/part/attrs",
-                "source_offset": 559,
-                "title": "NX_Arrangement",
-                "value": "Model",
-                "value_type": "StringAttributeType",
-                "version": 3
-              }
-            ],
-            "unknowns": [
-              {
-                "id": "nx:container:parasolid#0",
-                "links": [
-                  "nx:s0:surf#0",
-                  "nx:s0:crv#0"
-                ]
-              }
-            ]
-          }
+          "configuration_attribute_uses": [
+            {
+              "configuration": "nx:arrangements-1:configuration#0",
+              "id": "nx:arrangements:active-attribute-use#0",
+              "name": "Model",
+              "part_attribute": "nx:part-attributes-2:attribute#0"
+            }
+          ],
+          "configurations": [
+            {
+              "id": "nx:arrangements-1:configuration#0",
+              "is_default": true,
+              "name": "Model",
+              "source_entry": "/Root/part/arrangements",
+              "source_offset": 433
+            },
+            {
+              "id": "nx:arrangements-1:configuration#1",
+              "is_default": false,
+              "name": "Exploded",
+              "source_entry": "/Root/part/arrangements",
+              "source_offset": 474
+            }
+          ],
+          "part_attributes": [
+            {
+              "id": "nx:part-attributes-2:attribute#0",
+              "owner": "part",
+              "pdm_based": false,
+              "source_entry": "/Root/part/attrs",
+              "source_offset": 559,
+              "title": "NX_Arrangement",
+              "value": "Model",
+              "value_type": "StringAttributeType",
+              "version": 3
+            }
+          ],
+          "unknowns": [
+            {
+              "id": "nx:container:parasolid#0",
+              "links": [
+                "nx:s0:surf#0",
+                "nx:s0:crv#0"
+              ]
+            }
+          ]
         }
       },
       "source": {

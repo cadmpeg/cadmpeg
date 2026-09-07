@@ -143,39 +143,37 @@
       },
       "native": {
         "nx": {
-          "arenas": {
-            "parasolid_group_records": [
-              {
-                "byte_len": 24,
-                "id": "nx:s0:parasolid-group#383-10",
-                "inflated_offset": 383,
-                "linked_reference_status": 0,
-                "node_id": 7,
-                "partition_stream_ordinal": 0,
-                "references": [
-                  3,
-                  4,
-                  5,
-                  6,
-                  8
-                ],
-                "selector": 4,
-                "stream_kind": "partition",
-                "stream_ordinal": 0,
-                "xmt": 10
-              }
-            ],
-            "unknowns": [
-              {
-                "id": "nx:container:parasolid#0",
-                "links": [
-                  "nx:s0:surf#0",
-                  "nx:s0:surf#1",
-                  "nx:s0:crv#0"
-                ]
-              }
-            ]
-          }
+          "parasolid_group_records": [
+            {
+              "byte_len": 24,
+              "id": "nx:s0:parasolid-group#383-10",
+              "inflated_offset": 383,
+              "linked_reference_status": 0,
+              "node_id": 7,
+              "partition_stream_ordinal": 0,
+              "references": [
+                3,
+                4,
+                5,
+                6,
+                8
+              ],
+              "selector": 4,
+              "stream_kind": "partition",
+              "stream_ordinal": 0,
+              "xmt": 10
+            }
+          ],
+          "unknowns": [
+            {
+              "id": "nx:container:parasolid#0",
+              "links": [
+                "nx:s0:surf#0",
+                "nx:s0:surf#1",
+                "nx:s0:crv#0"
+              ]
+            }
+          ]
         }
       },
       "source": {

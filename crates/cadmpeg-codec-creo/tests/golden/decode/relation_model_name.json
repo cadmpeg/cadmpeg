@@ -161,40 +161,38 @@
     },
     "native": {
       "creo": {
-        "arenas": {
-          "curve_expressions": [
-            {
-              "assignments": [
-                {
-                  "activation": "active",
-                  "dependencies": [],
-                  "expression": "rel_model_name()",
-                  "offset": 166,
-                  "target": {
-                    "declared_unit": null,
-                    "kind": "parameter",
-                    "name": "name"
-                  },
-                  "value": "widget"
-                }
-              ],
-              "backup": false,
-              "entity_id": 7,
-              "id": "creo:depdb:curve_expression#active-7-125",
-              "lines": [
-                {
-                  "offset": 166,
-                  "text": "name=rel_model_name()"
-                }
-              ],
-              "local_system": null,
-              "prohibited_constructs": [],
-              "solve_blocks": [],
-              "unresolved_solve_control": false
-            }
-          ],
-          "unknowns": []
-        }
+        "curve_expressions": [
+          {
+            "assignments": [
+              {
+                "activation": "active",
+                "dependencies": [],
+                "expression": "rel_model_name()",
+                "offset": 166,
+                "target": {
+                  "declared_unit": null,
+                  "kind": "parameter",
+                  "name": "name"
+                },
+                "value": "widget"
+              }
+            ],
+            "backup": false,
+            "entity_id": 7,
+            "id": "creo:depdb:curve_expression#active-7-125",
+            "lines": [
+              {
+                "offset": 166,
+                "text": "name=rel_model_name()"
+              }
+            ],
+            "local_system": null,
+            "prohibited_constructs": [],
+            "solve_blocks": [],
+            "unresolved_solve_control": false
+          }
+        ],
+        "unknowns": []
       }
     },
     "source": {

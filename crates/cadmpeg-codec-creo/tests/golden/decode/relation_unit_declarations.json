@@ -168,122 +168,120 @@
     },
     "native": {
       "creo": {
-        "arenas": {
-          "curve_expressions": [
-            {
-              "assignments": [
-                {
-                  "activation": "active",
-                  "dependencies": [],
-                  "expression": "2",
-                  "offset": 143,
-                  "target": {
-                    "declared_unit": "inch",
-                    "kind": "parameter",
-                    "name": "span"
-                  },
-                  "value": 50.8
+        "curve_expressions": [
+          {
+            "assignments": [
+              {
+                "activation": "active",
+                "dependencies": [],
+                "expression": "2",
+                "offset": 143,
+                "target": {
+                  "declared_unit": "inch",
+                  "kind": "parameter",
+                  "name": "span"
                 },
-                {
-                  "activation": "active",
-                  "dependencies": [
-                    "span"
-                  ],
-                  "expression": "span+25.4[mm]",
-                  "offset": 156,
-                  "target": {
-                    "declared_unit": null,
-                    "kind": "parameter",
-                    "name": "copy"
-                  },
-                  "value": 76.19999999999999
+                "value": 50.8
+              },
+              {
+                "activation": "active",
+                "dependencies": [
+                  "span"
+                ],
+                "expression": "span+25.4[mm]",
+                "offset": 156,
+                "target": {
+                  "declared_unit": null,
+                  "kind": "parameter",
+                  "name": "copy"
                 },
-                {
-                  "activation": "active",
-                  "dependencies": [],
-                  "expression": "2",
-                  "offset": 175,
-                  "target": {
-                    "declared_unit": "N/mm^2",
-                    "kind": "parameter",
-                    "name": "stress"
-                  },
-                  "value": {
-                    "angle_power": 0,
-                    "length_power": -1,
-                    "mass_power": 1,
-                    "temperature_power": 0,
-                    "time_power": -2,
-                    "value": 2000.0
-                  }
+                "value": 76.19999999999999
+              },
+              {
+                "activation": "active",
+                "dependencies": [],
+                "expression": "2",
+                "offset": 175,
+                "target": {
+                  "declared_unit": "N/mm^2",
+                  "kind": "parameter",
+                  "name": "stress"
                 },
-                {
-                  "activation": "active",
-                  "dependencies": [
-                    "span"
-                  ],
-                  "expression": "atan2(span,25.4[mm])",
-                  "offset": 192,
-                  "target": {
-                    "declared_unit": null,
-                    "kind": "parameter",
-                    "name": "angle"
-                  },
-                  "value": 63.43494882292201
-                },
-                {
-                  "activation": "active",
-                  "dependencies": [],
-                  "expression": "0",
-                  "offset": 219,
-                  "target": {
-                    "declared_unit": "C",
-                    "kind": "parameter",
-                    "name": "freezing"
-                  },
-                  "value": {
-                    "angle_power": 0,
-                    "length_power": 0,
-                    "mass_power": 0,
-                    "temperature_power": 1,
-                    "time_power": 0,
-                    "value": 273.15
-                  }
+                "value": {
+                  "angle_power": 0,
+                  "length_power": -1,
+                  "mass_power": 1,
+                  "temperature_power": 0,
+                  "time_power": -2,
+                  "value": 2000.0
                 }
-              ],
-              "backup": false,
-              "entity_id": 7,
-              "id": "creo:depdb:curve_expression#active-7-102",
-              "lines": [
-                {
-                  "offset": 143,
-                  "text": "span[inch]=2"
+              },
+              {
+                "activation": "active",
+                "dependencies": [
+                  "span"
+                ],
+                "expression": "atan2(span,25.4[mm])",
+                "offset": 192,
+                "target": {
+                  "declared_unit": null,
+                  "kind": "parameter",
+                  "name": "angle"
                 },
-                {
-                  "offset": 156,
-                  "text": "copy=span+25.4[mm]"
+                "value": 63.43494882292201
+              },
+              {
+                "activation": "active",
+                "dependencies": [],
+                "expression": "0",
+                "offset": 219,
+                "target": {
+                  "declared_unit": "C",
+                  "kind": "parameter",
+                  "name": "freezing"
                 },
-                {
-                  "offset": 175,
-                  "text": "stress[N/mm^2]=2"
-                },
-                {
-                  "offset": 192,
-                  "text": "angle=atan2(span,25.4[mm])"
-                },
-                {
-                  "offset": 219,
-                  "text": "freezing[C]=0"
+                "value": {
+                  "angle_power": 0,
+                  "length_power": 0,
+                  "mass_power": 0,
+                  "temperature_power": 1,
+                  "time_power": 0,
+                  "value": 273.15
                 }
-              ],
-              "local_system": null,
-              "prohibited_constructs": [],
-              "solve_blocks": [],
-              "unresolved_solve_control": false
-            }
-          ],
-          "unknowns": []
-        }
+              }
+            ],
+            "backup": false,
+            "entity_id": 7,
+            "id": "creo:depdb:curve_expression#active-7-102",
+            "lines": [
+              {
+                "offset": 143,
+                "text": "span[inch]=2"
+              },
+              {
+                "offset": 156,
+                "text": "copy=span+25.4[mm]"
+              },
+              {
+                "offset": 175,
+                "text": "stress[N/mm^2]=2"
+              },
+              {
+                "offset": 192,
+                "text": "angle=atan2(span,25.4[mm])"
+              },
+              {
+                "offset": 219,
+                "text": "freezing[C]=0"
+              }
+            ],
+            "local_system": null,
+            "prohibited_constructs": [],
+            "solve_blocks": [],
+            "unresolved_solve_control": false
+          }
+        ],
+        "unknowns": []
       }
     },
     "source": {

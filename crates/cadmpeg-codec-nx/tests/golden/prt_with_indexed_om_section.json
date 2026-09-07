@@ -179,177 +179,175 @@
       },
       "native": {
         "nx": {
-          "arenas": {
-            "class_definitions": [
-              {
-                "id": "nx:om-entry-0:class#8",
-                "name": "UGS::EXP_expression",
-                "ordinal": 0,
-                "section_offset": 84,
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 84,
-                "trailing_code": 129
-              }
-            ],
-            "expression_declarations": [
-              {
-                "id": "nx:om-expression-declarations-0:declaration#1",
-                "literal": "120",
-                "name": "p8_CircularPattern_pattern_Circular_Dir_offset_angle",
-                "object_id": 258,
-                "parameter_index": 8,
-                "qualifier": "CircularPattern_pattern_Circular_Dir_offset_angle",
-                "record": "nx:om-record-directory-0:entry#1",
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 185
-              }
-            ],
-            "expressions": [
-              {
-                "declaration": "nx:om-expression-declarations-0:declaration#1",
-                "expression": "120",
-                "id": "nx:om-entry-0:expression#173",
-                "name": "p8_CircularPattern_pattern_Circular_Dir_offset_angle",
-                "object_id": 258,
-                "parameter_index": 8,
-                "qualifier": "CircularPattern_pattern_Circular_Dir_offset_angle",
-                "record": "nx:om-record-directory-0:entry#1",
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 249,
-                "source_table": "nx:om-entry-0:expression-table#90",
-                "unit": "degree",
-                "value": 120.0
-              }
-            ],
-            "field_definitions": [
-              {
-                "id": "nx:om-entry-0:field#32",
-                "name": "m_target",
-                "ordinal": 0,
-                "section_offset": 84,
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 108,
-                "trailing_code": 128
-              }
-            ],
-            "object_records": [
-              {
-                "byte_len": 35,
-                "dependents": [
-                  "nx:om-record-directory-0:entry#1"
-                ],
-                "id": "nx:om-record-directory-0:entry#0",
-                "object_id": 257,
-                "object_id_source_offset": 142,
-                "record_ordinal": 0,
-                "section_offset": 84,
-                "section_ordinal": 0,
-                "sha256": "304084362d58d3d80b8759c1b886a8dfd4b5ab46cd55a6d9ff901e0bb543a045",
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 150,
-                "stable_identity": "nx:om:object-record:76b73652054a9d2bfdda420a73903c63a98b8f9bee0069783aaa9e3f7c3c0b5d"
-              },
-              {
-                "byte_len": 172,
-                "dependencies": [
-                  "nx:om-record-directory-0:entry#0"
-                ],
-                "id": "nx:om-record-directory-0:entry#1",
-                "object_id": 258,
-                "object_id_source_offset": 146,
-                "record_ordinal": 1,
-                "section_offset": 84,
-                "section_ordinal": 0,
-                "sha256": "3d06157eb8568c2ace87089241063f2f7465af1a0e79f1f492e3a9dacd224819",
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 185,
-                "stable_identity": "nx:om:object-record:68cac55f2732f3fe5a4033d3319801c98d906b2754009d261426040c792d98a0"
-              }
-            ],
-            "object_references": [
-              {
-                "id": "nx:om-references-0-1:reference#267",
-                "kind": "persistent_handle",
-                "object_id": 258,
-                "ordinal": 0,
-                "record": "nx:om-record-directory-0:entry#1",
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 343,
-                "target_record": null,
-                "value": 305419896
-              },
-              {
-                "id": "nx:om-references-0-1:reference#272",
-                "kind": "tagged28",
-                "object_id": 258,
-                "ordinal": 1,
-                "record": "nx:om-record-directory-0:entry#1",
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 348,
-                "target_record": null,
-                "value": 180150000
-              },
-              {
-                "id": "nx:om-references-0-1:reference#278",
-                "kind": "record_ordinal16",
-                "object_id": 258,
-                "ordinal": 2,
-                "record": "nx:om-record-directory-0:entry#1",
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 354,
-                "target_record": "nx:om-record-directory-0:entry#0",
-                "value": 0
-              }
-            ],
-            "persistent_handles": [
-              {
-                "external_occurrence_count": 0,
-                "id": "nx:om-persistent-handles:handle#12345678",
-                "occurrence_count": 1,
-                "records": [
-                  "nx:om-record-directory-0:entry#1"
-                ],
-                "value": 305419896
-              }
-            ],
-            "store_headers": [
-              {
-                "id": "nx:om-store-headers:store#0",
-                "object_id": 257,
-                "section_ordinal": 0,
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 150,
-                "version": "NX 2027.3102"
-              }
-            ],
-            "string_values": [
-              {
-                "id": "nx:om-string-values-0-1:value#252",
-                "object_id": 258,
-                "ordinal": 0,
-                "record": "nx:om-record-directory-0:entry#1",
-                "source_entry": "/Root/UG_PART/UG_PART",
-                "source_offset": 328,
-                "value": "SKETCH_001"
-              }
-            ],
-            "unknowns": [
-              {
-                "id": "nx:container:parasolid#0",
-                "links": [
-                  "nx:s0:surf#0",
-                  "nx:s0:surf#1",
-                  "nx:s0:crv#0"
-                ]
-              },
-              {
-                "id": "nx:om-section-0:record#0"
-              },
-              {
-                "id": "nx:om-section-0:record#1"
-              }
-            ]
-          }
+          "class_definitions": [
+            {
+              "id": "nx:om-entry-0:class#8",
+              "name": "UGS::EXP_expression",
+              "ordinal": 0,
+              "section_offset": 84,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 84,
+              "trailing_code": 129
+            }
+          ],
+          "expression_declarations": [
+            {
+              "id": "nx:om-expression-declarations-0:declaration#1",
+              "literal": "120",
+              "name": "p8_CircularPattern_pattern_Circular_Dir_offset_angle",
+              "object_id": 258,
+              "parameter_index": 8,
+              "qualifier": "CircularPattern_pattern_Circular_Dir_offset_angle",
+              "record": "nx:om-record-directory-0:entry#1",
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 185
+            }
+          ],
+          "expressions": [
+            {
+              "declaration": "nx:om-expression-declarations-0:declaration#1",
+              "expression": "120",
+              "id": "nx:om-entry-0:expression#173",
+              "name": "p8_CircularPattern_pattern_Circular_Dir_offset_angle",
+              "object_id": 258,
+              "parameter_index": 8,
+              "qualifier": "CircularPattern_pattern_Circular_Dir_offset_angle",
+              "record": "nx:om-record-directory-0:entry#1",
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 249,
+              "source_table": "nx:om-entry-0:expression-table#90",
+              "unit": "degree",
+              "value": 120.0
+            }
+          ],
+          "field_definitions": [
+            {
+              "id": "nx:om-entry-0:field#32",
+              "name": "m_target",
+              "ordinal": 0,
+              "section_offset": 84,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 108,
+              "trailing_code": 128
+            }
+          ],
+          "object_records": [
+            {
+              "byte_len": 35,
+              "dependents": [
+                "nx:om-record-directory-0:entry#1"
+              ],
+              "id": "nx:om-record-directory-0:entry#0",
+              "object_id": 257,
+              "object_id_source_offset": 142,
+              "record_ordinal": 0,
+              "section_offset": 84,
+              "section_ordinal": 0,
+              "sha256": "304084362d58d3d80b8759c1b886a8dfd4b5ab46cd55a6d9ff901e0bb543a045",
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 150,
+              "stable_identity": "nx:om:object-record:76b73652054a9d2bfdda420a73903c63a98b8f9bee0069783aaa9e3f7c3c0b5d"
+            },
+            {
+              "byte_len": 172,
+              "dependencies": [
+                "nx:om-record-directory-0:entry#0"
+              ],
+              "id": "nx:om-record-directory-0:entry#1",
+              "object_id": 258,
+              "object_id_source_offset": 146,
+              "record_ordinal": 1,
+              "section_offset": 84,
+              "section_ordinal": 0,
+              "sha256": "3d06157eb8568c2ace87089241063f2f7465af1a0e79f1f492e3a9dacd224819",
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 185,
+              "stable_identity": "nx:om:object-record:68cac55f2732f3fe5a4033d3319801c98d906b2754009d261426040c792d98a0"
+            }
+          ],
+          "object_references": [
+            {
+              "id": "nx:om-references-0-1:reference#267",
+              "kind": "persistent_handle",
+              "object_id": 258,
+              "ordinal": 0,
+              "record": "nx:om-record-directory-0:entry#1",
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 343,
+              "target_record": null,
+              "value": 305419896
+            },
+            {
+              "id": "nx:om-references-0-1:reference#272",
+              "kind": "tagged28",
+              "object_id": 258,
+              "ordinal": 1,
+              "record": "nx:om-record-directory-0:entry#1",
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 348,
+              "target_record": null,
+              "value": 180150000
+            },
+            {
+              "id": "nx:om-references-0-1:reference#278",
+              "kind": "record_ordinal16",
+              "object_id": 258,
+              "ordinal": 2,
+              "record": "nx:om-record-directory-0:entry#1",
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 354,
+              "target_record": "nx:om-record-directory-0:entry#0",
+              "value": 0
+            }
+          ],
+          "persistent_handles": [
+            {
+              "external_occurrence_count": 0,
+              "id": "nx:om-persistent-handles:handle#12345678",
+              "occurrence_count": 1,
+              "records": [
+                "nx:om-record-directory-0:entry#1"
+              ],
+              "value": 305419896
+            }
+          ],
+          "store_headers": [
+            {
+              "id": "nx:om-store-headers:store#0",
+              "object_id": 257,
+              "section_ordinal": 0,
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 150,
+              "version": "NX 2027.3102"
+            }
+          ],
+          "string_values": [
+            {
+              "id": "nx:om-string-values-0-1:value#252",
+              "object_id": 258,
+              "ordinal": 0,
+              "record": "nx:om-record-directory-0:entry#1",
+              "source_entry": "/Root/UG_PART/UG_PART",
+              "source_offset": 328,
+              "value": "SKETCH_001"
+            }
+          ],
+          "unknowns": [
+            {
+              "id": "nx:container:parasolid#0",
+              "links": [
+                "nx:s0:surf#0",
+                "nx:s0:surf#1",
+                "nx:s0:crv#0"
+              ]
+            },
+            {
+              "id": "nx:om-section-0:record#0"
+            },
+            {
+              "id": "nx:om-section-0:record#1"
+            }
+          ]
         }
       },
       "source": {

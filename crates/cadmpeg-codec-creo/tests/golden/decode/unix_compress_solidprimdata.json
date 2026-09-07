@@ -42,19 +42,17 @@
     },
     "native": {
       "creo": {
-        "arenas": {
-          "expanded_sections": [
-            {
-              "compressed_length": 7,
-              "expanded_length": 3,
-              "id": "creo:container:expanded_section#SolidPrimdata:211",
-              "name": "SolidPrimdata",
-              "sha256": "b5d4045c3f466fa91fe2cc6abe79232a1a57cdf104f7a26e716e0a1e2789df78",
-              "source_offset": 211
-            }
-          ],
-          "unknowns": []
-        }
+        "expanded_sections": [
+          {
+            "compressed_length": 7,
+            "expanded_length": 3,
+            "id": "creo:container:expanded_section#SolidPrimdata:211",
+            "name": "SolidPrimdata",
+            "sha256": "b5d4045c3f466fa91fe2cc6abe79232a1a57cdf104f7a26e716e0a1e2789df78",
+            "source_offset": 211
+          }
+        ],
+        "unknowns": []
       }
     },
     "source": {

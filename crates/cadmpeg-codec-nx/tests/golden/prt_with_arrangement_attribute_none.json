@@ -174,33 +174,31 @@
       },
       "native": {
         "nx": {
-          "arenas": {
-            "configurations": [
-              {
-                "id": "nx:arrangements-1:configuration#0",
-                "is_default": true,
-                "name": "Model",
-                "source_entry": "/Root/part/arrangements",
-                "source_offset": 433
-              },
-              {
-                "id": "nx:arrangements-1:configuration#1",
-                "is_default": false,
-                "name": "Exploded",
-                "source_entry": "/Root/part/arrangements",
-                "source_offset": 474
-              }
-            ],
-            "unknowns": [
-              {
-                "id": "nx:container:parasolid#0",
-                "links": [
-                  "nx:s0:surf#0",
-                  "nx:s0:crv#0"
-                ]
-              }
-            ]
-          }
+          "configurations": [
+            {
+              "id": "nx:arrangements-1:configuration#0",
+              "is_default": true,
+              "name": "Model",
+              "source_entry": "/Root/part/arrangements",
+              "source_offset": 433
+            },
+            {
+              "id": "nx:arrangements-1:configuration#1",
+              "is_default": false,
+              "name": "Exploded",
+              "source_entry": "/Root/part/arrangements",
+              "source_offset": 474
+            }
+          ],
+          "unknowns": [
+            {
+              "id": "nx:container:parasolid#0",
+              "links": [
+                "nx:s0:surf#0",
+                "nx:s0:crv#0"
+              ]
+            }
+          ]
         }
       },
       "source": {

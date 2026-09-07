@@ -42,19 +42,17 @@
     },
     "native": {
       "step": {
-        "arenas": {
-          "unknowns": [
-            {
-              "id": "step:data:example_record#1",
-              "links": [
-                "step:data:opaque_target#2"
-              ]
-            },
-            {
-              "id": "step:data:opaque_target#2"
-            }
-          ]
-        }
+        "unknowns": [
+          {
+            "id": "step:data:example_record#1",
+            "links": [
+              "step:data:opaque_target#2"
+            ]
+          },
+          {
+            "id": "step:data:opaque_target#2"
+          }
+        ]
       }
     },
     "source": {

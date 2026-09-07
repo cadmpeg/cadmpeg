@@ -42,13 +42,11 @@
     },
     "native": {
       "step": {
-        "arenas": {
-          "unknowns": [
-            {
-              "id": "step:data:example_strings#1"
-            }
-          ]
-        }
+        "unknowns": [
+          {
+            "id": "step:data:example_strings#1"
+          }
+        ]
       }
     },
     "source": {

@@ -18,7 +18,7 @@ CadIr
 └── native
 ```
 
-`model` is format-neutral. `native` is a map keyed by format ID. Each value is `{ "arenas": { ... } }`. Each arena is an ID-sorted array of records with a required string `id` and codec-owned fields. The reserved `unknowns` arena stores format-specific product records. Decode-time source locations, exactness, and retained source records belong to the `SourceFidelity` sidecar. Namespace retention is settled in [native-arena-disposition.md](native-arena-disposition.md): retain every listed arena.
+`model` is format-neutral. `native` is a map keyed by format ID. Each value is a map of arena name to arena. Each arena is an ID-sorted array of records with a required string `id` and codec-owned fields. The reserved `unknowns` arena stores format-specific product records. Decode-time source locations, exactness, and retained source records belong to the `SourceFidelity` sidecar. Namespace retention is settled in [native-arena-disposition.md](native-arena-disposition.md): retain every listed arena.
 
 `source` is absent when the document has no source-container metadata. A present source block contains `format`, `attributes`, and `dialects`. `dialects` is always serialized. It is `null` for an unclassified source and otherwise contains the complete source `DialectLayers`, including the primary and every nested or carried layer. The primary dialect namespace equals `source.format`.
 

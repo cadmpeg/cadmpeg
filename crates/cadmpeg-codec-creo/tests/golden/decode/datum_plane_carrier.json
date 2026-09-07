@@ -42,13 +42,11 @@
     },
     "native": {
       "creo": {
-        "arenas": {
-          "unknowns": [
-            {
-              "id": "creo:ActDatums:section#76"
-            }
-          ]
-        }
+        "unknowns": [
+          {
+            "id": "creo:ActDatums:section#76"
+          }
+        ]
       }
     },
     "source": {

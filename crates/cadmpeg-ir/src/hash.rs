@@ -202,6 +202,7 @@ struct NormalizedNative<'a> {
 
 /// One native namespace whose arenas are borrowed in canonical record order.
 #[derive(Serialize)]
+#[serde(transparent)]
 struct NormalizedNamespace<'a> {
     arenas: BTreeMap<&'a str, Vec<&'a NativeRecord>>,
 }
@@ -380,35 +381,33 @@ mod tests {
     fn pins_pretty_printed_native_arena_bytes() {
         let expected = r#"{
   "pin": {
-    "arenas": {
-      "records": [
-        {
-          "id": "pin:record#0",
-          "alpha": [
-            -1,
-            0,
-            1.5,
-            2.0,
-            10000000000.0,
-            1e-7
-          ],
-          "beta": {
-            "empty_array": [],
-            "empty_object": {},
-            "nested": {
-              "deep": [
-                true,
-                false
-              ]
-            }
-          },
-          "delta": -9007199254740993,
-          "escaped": "quote\" backslash\\ slash/ newline\n tab\t bell\u0007 accent é",
-          "gamma": 9007199254740993,
-          "zeta": null
-        }
-      ]
-    }
+    "records": [
+      {
+        "id": "pin:record#0",
+        "alpha": [
+          -1,
+          0,
+          1.5,
+          2.0,
+          10000000000.0,
+          1e-7
+        ],
+        "beta": {
+          "empty_array": [],
+          "empty_object": {},
+          "nested": {
+            "deep": [
+              true,
+              false
+            ]
+          }
+        },
+        "delta": -9007199254740993,
+        "escaped": "quote\" backslash\\ slash/ newline\n tab\t bell\u0007 accent é",
+        "gamma": 9007199254740993,
+        "zeta": null
+      }
+    ]
   }
 }"#;
         assert_eq!(
@@ -423,7 +422,7 @@ mod tests {
     fn pins_native_arena_digest() {
         assert_eq!(
             canonical_json_sha256(&pinned_native()),
-            "086f1689fe59a0c63ce5fa05210c5ae5f4bac5343f79babae7b029b600e01b61"
+            "f5a9aa5fe14fa134b708f3cdc284f6b6fb8b1a869c9297805664a3c6e01d2003"
         );
     }
 
@@ -467,11 +466,11 @@ mod tests {
         let ir = pinned_document();
         assert_eq!(
             canonical_json_sha256(&ir),
-            "e7b7efe6b2f24df4cff3d073b2e85e0e92649b919b17d46e68308855140955f0"
+            "c0d73e255c2485e67c444e00b498d0ddd0569869491caadf15dbdd4e38943804"
         );
         assert_eq!(
             document_local_sha256(&ir, "pin", "pin:test:source-image#0"),
-            "de27fdd064bd82b015c00e867c808af4eeda13e594fab88f4c59998e49c4dab3"
+            "7ef166b92c2a9afa4a9db87a172a390f7776f1fde9ab3a830263e124200fdd67"
         );
     }
 
@@ -559,7 +558,7 @@ mod tests {
         let independently_normalized = cloned_local_digest(&ir, "pin", "pin:test:source-image#0");
         assert_eq!(
             independently_normalized,
-            "85628a0c1d2d2bc7d4c445a20a202b5826484fbefe7d32a4ba3c1f300092e8a5"
+            "2f16a97476ee6fa08027fc36330dabd10af02105432faec25c0a3ef4b0ef2e50"
         );
         assert_eq!(
             document_local_sha256(&ir, "pin", "pin:test:source-image#0"),

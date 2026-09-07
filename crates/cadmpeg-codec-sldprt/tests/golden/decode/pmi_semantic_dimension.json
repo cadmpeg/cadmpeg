@@ -253,80 +253,78 @@
     },
     "native": {
       "sldprt": {
-        "arenas": {
-          "configurations": [],
-          "feature_histories": [
-            {
-              "configurations": [],
-              "content": [
-                {
-                  "kind": "feature",
-                  "value": "sldprt:history:feature#247:0"
-                }
-              ],
-              "features": [],
-              "id": "sldprt:history:feature-history#247"
-            }
-          ],
-          "feature_input_body_selections": [],
-          "feature_input_classes": [],
-          "feature_input_edge_selections": [],
-          "feature_input_generated_surface_identities": [],
-          "feature_input_lanes": [],
-          "feature_input_names": [],
-          "feature_input_references": [],
-          "feature_input_relation_bindings": [],
-          "feature_input_relation_instances": [],
-          "feature_input_scalars": [],
-          "feature_input_surface_selections": [],
-          "features": [
-            {
-              "id": "sldprt:history:feature#247:0",
-              "kind": "ProfileFeature",
-              "name": "Sketch1",
-              "ordinal": 0,
-              "parameters": {},
-              "parent": "sldprt:history:feature-history#247",
-              "properties": {},
-              "suppressed": false,
-              "xml_tag": "Sketch"
-            }
-          ],
-          "pmi_dimensions": [
-            {
-              "basic": true,
-              "basic_offset": 184,
-              "cad_text": "D1@Sketch1",
-              "display_text": "25.000 mm",
-              "display_text_offset": 254,
-              "guid": "01234567-89ab-cdef-0123-456789abcdef",
-              "id": "sldprt:pmi:dimension#01234567-89ab-cdef-0123-456789abcdef",
-              "inspection": false,
-              "inspection_offset": 198,
-              "offset": 100,
-              "parent": "sldprt:file:block#347",
-              "precision": 3,
-              "precision_offset": 229,
-              "reference_only": true,
-              "reference_only_offset": 215,
-              "subtype": "Linear",
-              "value": 0.025,
-              "value_offset": 237
-            }
-          ],
-          "sketch_input_entities": [],
-          "unknowns": [
-            {
-              "id": "sldprt:file:block#247"
-            },
-            {
-              "id": "sldprt:file:block#347"
-            },
-            {
-              "id": "sldprt:file:block#8"
-            }
-          ]
-        }
+        "configurations": [],
+        "feature_histories": [
+          {
+            "configurations": [],
+            "content": [
+              {
+                "kind": "feature",
+                "value": "sldprt:history:feature#247:0"
+              }
+            ],
+            "features": [],
+            "id": "sldprt:history:feature-history#247"
+          }
+        ],
+        "feature_input_body_selections": [],
+        "feature_input_classes": [],
+        "feature_input_edge_selections": [],
+        "feature_input_generated_surface_identities": [],
+        "feature_input_lanes": [],
+        "feature_input_names": [],
+        "feature_input_references": [],
+        "feature_input_relation_bindings": [],
+        "feature_input_relation_instances": [],
+        "feature_input_scalars": [],
+        "feature_input_surface_selections": [],
+        "features": [
+          {
+            "id": "sldprt:history:feature#247:0",
+            "kind": "ProfileFeature",
+            "name": "Sketch1",
+            "ordinal": 0,
+            "parameters": {},
+            "parent": "sldprt:history:feature-history#247",
+            "properties": {},
+            "suppressed": false,
+            "xml_tag": "Sketch"
+          }
+        ],
+        "pmi_dimensions": [
+          {
+            "basic": true,
+            "basic_offset": 184,
+            "cad_text": "D1@Sketch1",
+            "display_text": "25.000 mm",
+            "display_text_offset": 254,
+            "guid": "01234567-89ab-cdef-0123-456789abcdef",
+            "id": "sldprt:pmi:dimension#01234567-89ab-cdef-0123-456789abcdef",
+            "inspection": false,
+            "inspection_offset": 198,
+            "offset": 100,
+            "parent": "sldprt:file:block#347",
+            "precision": 3,
+            "precision_offset": 229,
+            "reference_only": true,
+            "reference_only_offset": 215,
+            "subtype": "Linear",
+            "value": 0.025,
+            "value_offset": 237
+          }
+        ],
+        "sketch_input_entities": [],
+        "unknowns": [
+          {
+            "id": "sldprt:file:block#247"
+          },
+          {
+            "id": "sldprt:file:block#347"
+          },
+          {
+            "id": "sldprt:file:block#8"
+          }
+        ]
       }
     },
     "source": {

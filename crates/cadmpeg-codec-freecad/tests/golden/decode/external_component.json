@@ -619,7 +619,7 @@
         }
       },
       "__elided": "native arena values are omitted; structure is pinned by identity",
-      "__shape_sha256": "92ac0a8195adf4f92cf9909c9653d43a174138685908853faf463f001df4ba52"
+      "__shape_sha256": "5c8e9b1339105f30366355ea27ffc8aa0821abd112d24a4e3c9c7cdcfcdb3288"
     },
     "source": {
       "attributes": {

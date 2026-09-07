@@ -145,9 +145,7 @@
     },
     "native": {
       "step": {
-        "arenas": {
-          "unknowns": []
-        }
+        "unknowns": []
       }
     },
     "source": {

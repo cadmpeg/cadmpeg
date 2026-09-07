@@ -380,8 +380,8 @@ struct CadirProbe {
 }
 
 #[derive(Deserialize)]
+#[serde(transparent)]
 struct NativeNamespaceProbe {
-    #[serde(default)]
     arenas: BTreeMap<String, ArenaLen>,
 }
 
@@ -535,13 +535,12 @@ fn opt(text: Option<&String>) -> String {
 }
 
 fn print_json(view: &str, payload: &serde_json::Value) {
-    let envelope = serde_json::json!({
-        "command": format!("query {view}"),
-        view: payload,
-    });
+    let mut body = serde_json::Map::new();
+    body.insert(view.to_owned(), payload.clone());
     println!(
         "{}",
-        serde_json::to_string_pretty(&envelope).expect("envelope serializes")
+        crate::commands::reporting::command_report_json("query", serde_json::Value::Object(body))
+            .expect("query report serializes")
     );
 }
 

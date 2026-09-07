@@ -117,17 +117,15 @@
       },
       "native": {
         "nx": {
-          "arenas": {
-            "unknowns": [
-              {
-                "id": "nx:container:parasolid#0",
-                "links": [
-                  "nx:s0:nurbs-surf#0",
-                  "nx:s0:nurbs-crv#0"
-                ]
-              }
-            ]
-          }
+          "unknowns": [
+            {
+              "id": "nx:container:parasolid#0",
+              "links": [
+                "nx:s0:nurbs-surf#0",
+                "nx:s0:nurbs-crv#0"
+              ]
+            }
+          ]
         }
       },
       "source": {

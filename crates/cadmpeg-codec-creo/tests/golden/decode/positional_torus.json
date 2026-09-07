@@ -79,597 +79,391 @@
     },
     "native": {
       "creo": {
-        "arenas": {
-          "surface_parameters": [
-            {
-              "body": [
-                40,
-                141,
-                7,
-                27,
-                210,
-                101,
-                111,
-                108,
-                24,
-                148,
-                63,
-                2,
-                112,
-                22,
-                190,
-                252,
-                0,
-                18,
-                32,
-                71,
-                19,
-                204,
-                70,
-                49,
-                61,
-                112,
-                163,
-                215,
-                10,
-                62,
-                71,
-                19,
-                204,
-                46,
-                19,
-                204,
-                70,
-                48,
-                189,
-                112,
-                163,
-                215,
-                10,
-                62,
-                33,
-                177,
-                72,
-                10,
-                227,
-                194,
-                255,
-                45,
-                89,
-                199,
-                15,
-                241,
-                65,
-                141,
-                6,
-                220,
-                32,
-                138,
-                77,
-                219,
-                24,
-                229,
-                16,
-                40,
-                141,
-                6,
-                220,
-                32,
-                138,
-                77,
-                219,
-                194,
-                255,
-                45,
-                89,
-                199,
-                15,
-                241,
-                24,
-                228,
-                70,
-                48,
-                189,
-                112,
-                163,
-                215,
-                10,
-                62,
-                24,
-                46,
-                17,
-                204,
-                14
-              ],
-              "body_offset": 122,
-              "boundary": "compound_close",
-              "cone_half_angle_override": null,
-              "extrusion_direction": null,
-              "id": "creo:visibgeom:surface_parameter#7",
-              "opaque_spans": [
-                {
-                  "length": 1,
-                  "offset": 0,
-                  "raw": [
-                    40
-                  ]
-                },
-                {
-                  "length": 11,
-                  "offset": 8,
-                  "raw": [
-                    24,
-                    148,
-                    63,
-                    2,
-                    112,
-                    22,
-                    190,
-                    252,
-                    0,
-                    18,
-                    32
-                  ]
-                },
-                {
-                  "length": 1,
-                  "offset": 44,
-                  "raw": [
-                    33
-                  ]
-                },
-                {
-                  "length": 2,
-                  "offset": 52,
-                  "raw": [
-                    89,
-                    199
-                  ]
-                },
-                {
-                  "length": 1,
-                  "offset": 55,
-                  "raw": [
-                    241
-                  ]
-                },
-                {
-                  "length": 5,
-                  "offset": 63,
-                  "raw": [
-                    219,
-                    24,
-                    229,
-                    16,
-                    40
-                  ]
-                },
-                {
-                  "length": 2,
-                  "offset": 75,
-                  "raw": [
-                    194,
-                    255
-                  ]
-                },
-                {
-                  "length": 7,
-                  "offset": 85,
-                  "raw": [
-                    48,
-                    189,
-                    112,
-                    163,
-                    215,
-                    10,
-                    62
-                  ]
-                }
-              ],
-              "positional_cone_frame": null,
-              "positional_cylinder_frame": null,
-              "positional_torus_frame": {
-                "axis": [
-                  0.0,
-                  0.0,
-                  1.0
-                ],
-                "center": [
-                  1.0,
-                  16.740000000000002,
-                  0.0
-                ],
-                "major_radius": 4.449999999999999,
-                "minor_radius": 0.5,
-                "ref_direction": [
-                  -0.9998995545834062,
-                  0.014173240416574133,
-                  0.0
+        "surface_parameters": [
+          {
+            "body": [
+              40,
+              141,
+              7,
+              27,
+              210,
+              101,
+              111,
+              108,
+              24,
+              148,
+              63,
+              2,
+              112,
+              22,
+              190,
+              252,
+              0,
+              18,
+              32,
+              71,
+              19,
+              204,
+              70,
+              49,
+              61,
+              112,
+              163,
+              215,
+              10,
+              62,
+              71,
+              19,
+              204,
+              46,
+              19,
+              204,
+              70,
+              48,
+              189,
+              112,
+              163,
+              215,
+              10,
+              62,
+              33,
+              177,
+              72,
+              10,
+              227,
+              194,
+              255,
+              45,
+              89,
+              199,
+              15,
+              241,
+              65,
+              141,
+              6,
+              220,
+              32,
+              138,
+              77,
+              219,
+              24,
+              229,
+              16,
+              40,
+              141,
+              6,
+              220,
+              32,
+              138,
+              77,
+              219,
+              194,
+              255,
+              45,
+              89,
+              199,
+              15,
+              241,
+              24,
+              228,
+              70,
+              48,
+              189,
+              112,
+              163,
+              215,
+              10,
+              62,
+              24,
+              46,
+              17,
+              204,
+              14
+            ],
+            "body_offset": 122,
+            "boundary": "compound_close",
+            "cone_half_angle_override": null,
+            "extrusion_direction": null,
+            "id": "creo:visibgeom:surface_parameter#7",
+            "opaque_spans": [
+              {
+                "length": 1,
+                "offset": 0,
+                "raw": [
+                  40
                 ]
               },
-              "replayed_torus_minor_radius": null,
-              "row_offset": 116,
-              "scalar_frames": [
-                {
-                  "offset": 1,
-                  "slots": [
-                    {
-                      "length": 7,
-                      "offset": 1,
-                      "raw": [
-                        141,
-                        7,
-                        27,
-                        210,
-                        101,
-                        111,
-                        108
-                      ],
-                      "value": 0.00004407630756705222
-                    }
-                  ]
-                },
-                {
-                  "offset": 19,
-                  "slots": [
-                    {
-                      "length": 3,
-                      "offset": 19,
-                      "raw": [
-                        71,
-                        19,
-                        204
-                      ],
-                      "value": -4.949999999999999
-                    },
-                    {
-                      "length": 8,
-                      "offset": 22,
-                      "raw": [
-                        70,
-                        49,
-                        61,
-                        112,
-                        163,
-                        215,
-                        10,
-                        62
-                      ],
-                      "value": 17.240000000000002
-                    },
-                    {
-                      "length": 3,
-                      "offset": 30,
-                      "raw": [
-                        71,
-                        19,
-                        204
-                      ],
-                      "value": -4.949999999999999
-                    },
-                    {
-                      "length": 3,
-                      "offset": 33,
-                      "raw": [
-                        46,
-                        19,
-                        204
-                      ],
-                      "value": 4.949999999999999
-                    },
-                    {
-                      "length": 8,
-                      "offset": 36,
-                      "raw": [
-                        70,
-                        48,
-                        189,
-                        112,
-                        163,
-                        215,
-                        10,
-                        62
-                      ],
-                      "value": 16.740000000000002
-                    }
-                  ]
-                },
-                {
-                  "offset": 45,
-                  "slots": [
-                    {
-                      "length": 7,
-                      "offset": 45,
-                      "raw": [
-                        177,
-                        72,
-                        10,
-                        227,
-                        194,
-                        255,
-                        45
-                      ],
-                      "value": -0.0007337200277048039
-                    }
-                  ]
-                },
-                {
-                  "offset": 54,
-                  "slots": [
-                    {
-                      "length": 1,
-                      "offset": 54,
-                      "raw": [
-                        15
-                      ],
-                      "value": 0.0
-                    }
-                  ]
-                },
-                {
-                  "offset": 56,
-                  "slots": [
-                    {
-                      "length": 7,
-                      "offset": 56,
-                      "raw": [
-                        65,
-                        141,
-                        6,
-                        220,
-                        32,
-                        138,
-                        77
-                      ],
-                      "value": 0.014173240416573751
-                    }
-                  ]
-                },
-                {
-                  "offset": 68,
-                  "slots": [
-                    {
-                      "length": 7,
-                      "offset": 68,
-                      "raw": [
-                        141,
-                        6,
-                        220,
-                        32,
-                        138,
-                        77,
-                        219
-                      ],
-                      "value": 0.00004360174469913124
-                    }
-                  ]
-                },
-                {
-                  "offset": 77,
-                  "slots": [
-                    {
-                      "length": 8,
-                      "offset": 77,
-                      "raw": [
-                        45,
-                        89,
-                        199,
-                        15,
-                        241,
-                        24,
-                        228,
-                        70
-                      ],
-                      "value": -103.11034800940351
-                    }
-                  ]
-                },
-                {
-                  "offset": 92,
-                  "slots": [
-                    {
-                      "length": 1,
-                      "offset": 92,
-                      "raw": [
-                        24
-                      ],
-                      "value": 0.0
-                    },
-                    {
-                      "length": 3,
-                      "offset": 93,
-                      "raw": [
-                        46,
-                        17,
-                        204
-                      ],
-                      "value": 4.449999999999999
-                    },
-                    {
-                      "length": 1,
-                      "offset": 96,
-                      "raw": [
-                        14
-                      ],
-                      "value": -0.5
-                    }
-                  ]
-                }
+              {
+                "length": 11,
+                "offset": 8,
+                "raw": [
+                  24,
+                  148,
+                  63,
+                  2,
+                  112,
+                  22,
+                  190,
+                  252,
+                  0,
+                  18,
+                  32
+                ]
+              },
+              {
+                "length": 1,
+                "offset": 44,
+                "raw": [
+                  33
+                ]
+              },
+              {
+                "length": 2,
+                "offset": 52,
+                "raw": [
+                  89,
+                  199
+                ]
+              },
+              {
+                "length": 1,
+                "offset": 55,
+                "raw": [
+                  241
+                ]
+              },
+              {
+                "length": 5,
+                "offset": 63,
+                "raw": [
+                  219,
+                  24,
+                  229,
+                  16,
+                  40
+                ]
+              },
+              {
+                "length": 2,
+                "offset": 75,
+                "raw": [
+                  194,
+                  255
+                ]
+              },
+              {
+                "length": 7,
+                "offset": 85,
+                "raw": [
+                  48,
+                  189,
+                  112,
+                  163,
+                  215,
+                  10,
+                  62
+                ]
+              }
+            ],
+            "positional_cone_frame": null,
+            "positional_cylinder_frame": null,
+            "positional_torus_frame": {
+              "axis": [
+                0.0,
+                0.0,
+                1.0
               ],
-              "slots": [
-                {
-                  "length": 7,
-                  "offset": 1,
-                  "raw": [
-                    141,
-                    7,
-                    27,
-                    210,
-                    101,
-                    111,
-                    108
-                  ],
-                  "value": 0.00004407630756705222
-                },
-                {
-                  "length": 3,
-                  "offset": 19,
-                  "raw": [
-                    71,
-                    19,
-                    204
-                  ],
-                  "value": -4.949999999999999
-                },
-                {
-                  "length": 8,
-                  "offset": 22,
-                  "raw": [
-                    70,
-                    49,
-                    61,
-                    112,
-                    163,
-                    215,
-                    10,
-                    62
-                  ],
-                  "value": 17.240000000000002
-                },
-                {
-                  "length": 3,
-                  "offset": 30,
-                  "raw": [
-                    71,
-                    19,
-                    204
-                  ],
-                  "value": -4.949999999999999
-                },
-                {
-                  "length": 3,
-                  "offset": 33,
-                  "raw": [
-                    46,
-                    19,
-                    204
-                  ],
-                  "value": 4.949999999999999
-                },
-                {
-                  "length": 8,
-                  "offset": 36,
-                  "raw": [
-                    70,
-                    48,
-                    189,
-                    112,
-                    163,
-                    215,
-                    10,
-                    62
-                  ],
-                  "value": 16.740000000000002
-                },
-                {
-                  "length": 7,
-                  "offset": 45,
-                  "raw": [
-                    177,
-                    72,
-                    10,
-                    227,
-                    194,
-                    255,
-                    45
-                  ],
-                  "value": -0.0007337200277048039
-                },
-                {
-                  "length": 1,
-                  "offset": 54,
-                  "raw": [
-                    15
-                  ],
-                  "value": 0.0
-                },
-                {
-                  "length": 7,
-                  "offset": 56,
-                  "raw": [
-                    65,
-                    141,
-                    6,
-                    220,
-                    32,
-                    138,
-                    77
-                  ],
-                  "value": 0.014173240416573751
-                },
-                {
-                  "length": 7,
-                  "offset": 68,
-                  "raw": [
-                    141,
-                    6,
-                    220,
-                    32,
-                    138,
-                    77,
-                    219
-                  ],
-                  "value": 0.00004360174469913124
-                },
-                {
-                  "length": 8,
-                  "offset": 77,
-                  "raw": [
-                    45,
-                    89,
-                    199,
-                    15,
-                    241,
-                    24,
-                    228,
-                    70
-                  ],
-                  "value": -103.11034800940351
-                },
-                {
-                  "length": 1,
-                  "offset": 92,
-                  "raw": [
-                    24
-                  ],
-                  "value": 0.0
-                },
-                {
-                  "length": 3,
-                  "offset": 93,
-                  "raw": [
-                    46,
-                    17,
-                    204
-                  ],
-                  "value": 4.449999999999999
-                },
-                {
-                  "length": 1,
-                  "offset": 96,
-                  "raw": [
-                    14
-                  ],
-                  "value": -0.5
-                }
+              "center": [
+                1.0,
+                16.740000000000002,
+                0.0
               ],
-              "source_section": "VisibGeom",
-              "split_cylinder_outline_bounds": null,
-              "surface_family": "torus_or_sphere",
-              "surface_id": 7,
-              "surface_type_byte": 38,
-              "tabulated_cylinder_frame": null,
-              "terminal_scalar_frame": {
+              "major_radius": 4.449999999999999,
+              "minor_radius": 0.5,
+              "ref_direction": [
+                -0.9998995545834062,
+                0.014173240416574133,
+                0.0
+              ]
+            },
+            "replayed_torus_minor_radius": null,
+            "row_offset": 116,
+            "scalar_frames": [
+              {
+                "offset": 1,
+                "slots": [
+                  {
+                    "length": 7,
+                    "offset": 1,
+                    "raw": [
+                      141,
+                      7,
+                      27,
+                      210,
+                      101,
+                      111,
+                      108
+                    ],
+                    "value": 0.00004407630756705222
+                  }
+                ]
+              },
+              {
+                "offset": 19,
+                "slots": [
+                  {
+                    "length": 3,
+                    "offset": 19,
+                    "raw": [
+                      71,
+                      19,
+                      204
+                    ],
+                    "value": -4.949999999999999
+                  },
+                  {
+                    "length": 8,
+                    "offset": 22,
+                    "raw": [
+                      70,
+                      49,
+                      61,
+                      112,
+                      163,
+                      215,
+                      10,
+                      62
+                    ],
+                    "value": 17.240000000000002
+                  },
+                  {
+                    "length": 3,
+                    "offset": 30,
+                    "raw": [
+                      71,
+                      19,
+                      204
+                    ],
+                    "value": -4.949999999999999
+                  },
+                  {
+                    "length": 3,
+                    "offset": 33,
+                    "raw": [
+                      46,
+                      19,
+                      204
+                    ],
+                    "value": 4.949999999999999
+                  },
+                  {
+                    "length": 8,
+                    "offset": 36,
+                    "raw": [
+                      70,
+                      48,
+                      189,
+                      112,
+                      163,
+                      215,
+                      10,
+                      62
+                    ],
+                    "value": 16.740000000000002
+                  }
+                ]
+              },
+              {
+                "offset": 45,
+                "slots": [
+                  {
+                    "length": 7,
+                    "offset": 45,
+                    "raw": [
+                      177,
+                      72,
+                      10,
+                      227,
+                      194,
+                      255,
+                      45
+                    ],
+                    "value": -0.0007337200277048039
+                  }
+                ]
+              },
+              {
+                "offset": 54,
+                "slots": [
+                  {
+                    "length": 1,
+                    "offset": 54,
+                    "raw": [
+                      15
+                    ],
+                    "value": 0.0
+                  }
+                ]
+              },
+              {
+                "offset": 56,
+                "slots": [
+                  {
+                    "length": 7,
+                    "offset": 56,
+                    "raw": [
+                      65,
+                      141,
+                      6,
+                      220,
+                      32,
+                      138,
+                      77
+                    ],
+                    "value": 0.014173240416573751
+                  }
+                ]
+              },
+              {
+                "offset": 68,
+                "slots": [
+                  {
+                    "length": 7,
+                    "offset": 68,
+                    "raw": [
+                      141,
+                      6,
+                      220,
+                      32,
+                      138,
+                      77,
+                      219
+                    ],
+                    "value": 0.00004360174469913124
+                  }
+                ]
+              },
+              {
+                "offset": 77,
+                "slots": [
+                  {
+                    "length": 8,
+                    "offset": 77,
+                    "raw": [
+                      45,
+                      89,
+                      199,
+                      15,
+                      241,
+                      24,
+                      228,
+                      70
+                    ],
+                    "value": -103.11034800940351
+                  }
+                ]
+              },
+              {
                 "offset": 92,
                 "slots": [
                   {
@@ -699,43 +493,247 @@
                     "value": -0.5
                   }
                 ]
+              }
+            ],
+            "slots": [
+              {
+                "length": 7,
+                "offset": 1,
+                "raw": [
+                  141,
+                  7,
+                  27,
+                  210,
+                  101,
+                  111,
+                  108
+                ],
+                "value": 0.00004407630756705222
               },
-              "torus_outline_frame": null,
-              "torus_radius_overrides": null,
-              "type26_five_coordinate_envelope": {
+              {
+                "length": 3,
                 "offset": 19,
-                "values": [
-                  -4.949999999999999,
-                  17.240000000000002,
-                  -4.949999999999999,
-                  4.949999999999999,
-                  16.740000000000002
-                ]
+                "raw": [
+                  71,
+                  19,
+                  204
+                ],
+                "value": -4.949999999999999
               },
-              "type26_split_coordinate_envelope": null
-            }
-          ],
-          "surface_rows": [
-            {
-              "boundary_type": 0,
-              "feature_id": 4,
-              "id": "creo:visibgeom:surface_row#7",
-              "next_surface": 0,
-              "offset": 116,
-              "reversed": false,
-              "source_section": "VisibGeom",
-              "surface_family": "torus_or_sphere",
-              "surface_id": 7,
-              "surface_variant": null,
-              "type_byte": 38
-            }
-          ],
-          "unknowns": [
-            {
-              "id": "creo:VisibGeom:section#76"
-            }
-          ]
-        }
+              {
+                "length": 8,
+                "offset": 22,
+                "raw": [
+                  70,
+                  49,
+                  61,
+                  112,
+                  163,
+                  215,
+                  10,
+                  62
+                ],
+                "value": 17.240000000000002
+              },
+              {
+                "length": 3,
+                "offset": 30,
+                "raw": [
+                  71,
+                  19,
+                  204
+                ],
+                "value": -4.949999999999999
+              },
+              {
+                "length": 3,
+                "offset": 33,
+                "raw": [
+                  46,
+                  19,
+                  204
+                ],
+                "value": 4.949999999999999
+              },
+              {
+                "length": 8,
+                "offset": 36,
+                "raw": [
+                  70,
+                  48,
+                  189,
+                  112,
+                  163,
+                  215,
+                  10,
+                  62
+                ],
+                "value": 16.740000000000002
+              },
+              {
+                "length": 7,
+                "offset": 45,
+                "raw": [
+                  177,
+                  72,
+                  10,
+                  227,
+                  194,
+                  255,
+                  45
+                ],
+                "value": -0.0007337200277048039
+              },
+              {
+                "length": 1,
+                "offset": 54,
+                "raw": [
+                  15
+                ],
+                "value": 0.0
+              },
+              {
+                "length": 7,
+                "offset": 56,
+                "raw": [
+                  65,
+                  141,
+                  6,
+                  220,
+                  32,
+                  138,
+                  77
+                ],
+                "value": 0.014173240416573751
+              },
+              {
+                "length": 7,
+                "offset": 68,
+                "raw": [
+                  141,
+                  6,
+                  220,
+                  32,
+                  138,
+                  77,
+                  219
+                ],
+                "value": 0.00004360174469913124
+              },
+              {
+                "length": 8,
+                "offset": 77,
+                "raw": [
+                  45,
+                  89,
+                  199,
+                  15,
+                  241,
+                  24,
+                  228,
+                  70
+                ],
+                "value": -103.11034800940351
+              },
+              {
+                "length": 1,
+                "offset": 92,
+                "raw": [
+                  24
+                ],
+                "value": 0.0
+              },
+              {
+                "length": 3,
+                "offset": 93,
+                "raw": [
+                  46,
+                  17,
+                  204
+                ],
+                "value": 4.449999999999999
+              },
+              {
+                "length": 1,
+                "offset": 96,
+                "raw": [
+                  14
+                ],
+                "value": -0.5
+              }
+            ],
+            "source_section": "VisibGeom",
+            "split_cylinder_outline_bounds": null,
+            "surface_family": "torus_or_sphere",
+            "surface_id": 7,
+            "surface_type_byte": 38,
+            "tabulated_cylinder_frame": null,
+            "terminal_scalar_frame": {
+              "offset": 92,
+              "slots": [
+                {
+                  "length": 1,
+                  "offset": 92,
+                  "raw": [
+                    24
+                  ],
+                  "value": 0.0
+                },
+                {
+                  "length": 3,
+                  "offset": 93,
+                  "raw": [
+                    46,
+                    17,
+                    204
+                  ],
+                  "value": 4.449999999999999
+                },
+                {
+                  "length": 1,
+                  "offset": 96,
+                  "raw": [
+                    14
+                  ],
+                  "value": -0.5
+                }
+              ]
+            },
+            "torus_outline_frame": null,
+            "torus_radius_overrides": null,
+            "type26_five_coordinate_envelope": {
+              "offset": 19,
+              "values": [
+                -4.949999999999999,
+                17.240000000000002,
+                -4.949999999999999,
+                4.949999999999999,
+                16.740000000000002
+              ]
+            },
+            "type26_split_coordinate_envelope": null
+          }
+        ],
+        "surface_rows": [
+          {
+            "boundary_type": 0,
+            "feature_id": 4,
+            "id": "creo:visibgeom:surface_row#7",
+            "next_surface": 0,
+            "offset": 116,
+            "reversed": false,
+            "source_section": "VisibGeom",
+            "surface_family": "torus_or_sphere",
+            "surface_id": 7,
+            "surface_variant": null,
+            "type_byte": 38
+          }
+        ],
+        "unknowns": [
+          {
+            "id": "creo:VisibGeom:section#76"
+          }
+        ]
       }
     },
     "source": {

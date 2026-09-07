@@ -155,31 +155,29 @@
       },
       "native": {
         "nx": {
-          "arenas": {
-            "material_texture_assets": [
-              {
-                "byte_len": 10,
-                "byte_order": "little_endian",
-                "first_ifd_offset": 8,
-                "id": "nx:container:material-texture#0",
-                "name": "AISI Steel 4340",
-                "sha256": "c37e17ffad699c434f3e742e63207776cf4eab017efde278d2ee6fde02381b0d",
-                "source_entry": "/Root/materialsTif/AISI Steel 4340",
-                "source_offset": 399,
-                "version": 42
-              }
-            ],
-            "unknowns": [
-              {
-                "id": "nx:container:parasolid#0",
-                "links": [
-                  "nx:s0:surf#0",
-                  "nx:s0:surf#1",
-                  "nx:s0:crv#0"
-                ]
-              }
-            ]
-          }
+          "material_texture_assets": [
+            {
+              "byte_len": 10,
+              "byte_order": "little_endian",
+              "first_ifd_offset": 8,
+              "id": "nx:container:material-texture#0",
+              "name": "AISI Steel 4340",
+              "sha256": "c37e17ffad699c434f3e742e63207776cf4eab017efde278d2ee6fde02381b0d",
+              "source_entry": "/Root/materialsTif/AISI Steel 4340",
+              "source_offset": 399,
+              "version": 42
+            }
+          ],
+          "unknowns": [
+            {
+              "id": "nx:container:parasolid#0",
+              "links": [
+                "nx:s0:surf#0",
+                "nx:s0:surf#1",
+                "nx:s0:crv#0"
+              ]
+            }
+          ]
         }
       },
       "source": {

@@ -170,554 +170,552 @@
     },
     "native": {
       "creo": {
-        "arenas": {
-          "surface_parameters": [
-            {
-              "body": [
-                115,
-                114,
-                102,
-                95,
-                112,
-                114,
-                105,
-                109,
-                95,
-                112,
-                116,
-                114,
-                40,
-                115,
-                112,
-                108,
-                115,
-                114,
-                102,
-                41,
-                0
-              ],
-              "body_offset": 112,
-              "boundary": "named_record",
-              "cone_half_angle_override": null,
-              "extrusion_direction": null,
-              "id": "creo:visibgeom:surface_parameter#7",
-              "opaque_spans": [
-                {
-                  "length": 6,
-                  "offset": 7,
-                  "raw": [
-                    109,
-                    95,
-                    112,
-                    116,
-                    114,
-                    40
-                  ]
-                },
-                {
-                  "length": 1,
-                  "offset": 20,
-                  "raw": [
-                    0
-                  ]
-                }
-              ],
-              "positional_cone_frame": null,
-              "positional_cylinder_frame": null,
-              "positional_torus_frame": null,
-              "replayed_torus_minor_radius": null,
-              "row_offset": 106,
-              "scalar_frames": [
-                {
-                  "offset": 0,
-                  "slots": [
-                    {
-                      "length": 7,
-                      "offset": 0,
-                      "raw": [
-                        115,
-                        114,
-                        102,
-                        95,
-                        112,
-                        114,
-                        105
-                      ],
-                      "value": 0.7639648307845849
-                    }
-                  ]
-                },
-                {
-                  "offset": 13,
-                  "slots": [
-                    {
-                      "length": 7,
-                      "offset": 13,
-                      "raw": [
-                        115,
-                        112,
-                        108,
-                        115,
-                        114,
-                        102,
-                        41
-                      ],
-                      "value": 0.7637235884496408
-                    }
-                  ]
-                }
-              ],
-              "slots": [
-                {
-                  "length": 7,
-                  "offset": 0,
-                  "raw": [
-                    115,
-                    114,
-                    102,
-                    95,
-                    112,
-                    114,
-                    105
+        "surface_parameters": [
+          {
+            "body": [
+              115,
+              114,
+              102,
+              95,
+              112,
+              114,
+              105,
+              109,
+              95,
+              112,
+              116,
+              114,
+              40,
+              115,
+              112,
+              108,
+              115,
+              114,
+              102,
+              41,
+              0
+            ],
+            "body_offset": 112,
+            "boundary": "named_record",
+            "cone_half_angle_override": null,
+            "extrusion_direction": null,
+            "id": "creo:visibgeom:surface_parameter#7",
+            "opaque_spans": [
+              {
+                "length": 6,
+                "offset": 7,
+                "raw": [
+                  109,
+                  95,
+                  112,
+                  116,
+                  114,
+                  40
+                ]
+              },
+              {
+                "length": 1,
+                "offset": 20,
+                "raw": [
+                  0
+                ]
+              }
+            ],
+            "positional_cone_frame": null,
+            "positional_cylinder_frame": null,
+            "positional_torus_frame": null,
+            "replayed_torus_minor_radius": null,
+            "row_offset": 106,
+            "scalar_frames": [
+              {
+                "offset": 0,
+                "slots": [
+                  {
+                    "length": 7,
+                    "offset": 0,
+                    "raw": [
+                      115,
+                      114,
+                      102,
+                      95,
+                      112,
+                      114,
+                      105
+                    ],
+                    "value": 0.7639648307845849
+                  }
+                ]
+              },
+              {
+                "offset": 13,
+                "slots": [
+                  {
+                    "length": 7,
+                    "offset": 13,
+                    "raw": [
+                      115,
+                      112,
+                      108,
+                      115,
+                      114,
+                      102,
+                      41
+                    ],
+                    "value": 0.7637235884496408
+                  }
+                ]
+              }
+            ],
+            "slots": [
+              {
+                "length": 7,
+                "offset": 0,
+                "raw": [
+                  115,
+                  114,
+                  102,
+                  95,
+                  112,
+                  114,
+                  105
+                ],
+                "value": 0.7639648307845849
+              },
+              {
+                "length": 7,
+                "offset": 13,
+                "raw": [
+                  115,
+                  112,
+                  108,
+                  115,
+                  114,
+                  102,
+                  41
+                ],
+                "value": 0.7637235884496408
+              }
+            ],
+            "source_section": "VisibGeom",
+            "split_cylinder_outline_bounds": null,
+            "surface_family": "spline",
+            "surface_id": 7,
+            "surface_type_byte": 40,
+            "tabulated_cylinder_frame": null,
+            "terminal_scalar_frame": null,
+            "torus_outline_frame": null,
+            "torus_radius_overrides": null,
+            "type26_five_coordinate_envelope": null,
+            "type26_split_coordinate_envelope": null
+          }
+        ],
+        "surface_prototypes": [
+          {
+            "declared_family": "splsrf",
+            "family": "spline",
+            "id": "creo:visibgeom:surface_prototype#112",
+            "offset": 112,
+            "parameters": [
+              {
+                "body": [
+                  249,
+                  4,
+                  3,
+                  15,
+                  15,
+                  15,
+                  15,
+                  228,
+                  228,
+                  228,
+                  15,
+                  228,
+                  228,
+                  228,
+                  47,
+                  0,
+                  0
+                ],
+                "compact_values": [],
+                "name": "i_points",
+                "offset": 133,
+                "opaque": [],
+                "scalar_count": 3,
+                "scalar_dimensions": 4,
+                "scalar_tokens": [
+                  [
+                    15
                   ],
-                  "value": 0.7639648307845849
-                },
-                {
-                  "length": 7,
-                  "offset": 13,
-                  "raw": [
-                    115,
-                    112,
-                    108,
-                    115,
-                    114,
-                    102,
-                    41
+                  [
+                    15
                   ],
-                  "value": 0.7637235884496408
-                }
-              ],
-              "source_section": "VisibGeom",
-              "split_cylinder_outline_bounds": null,
-              "surface_family": "spline",
-              "surface_id": 7,
-              "surface_type_byte": 40,
-              "tabulated_cylinder_frame": null,
-              "terminal_scalar_frame": null,
-              "torus_outline_frame": null,
-              "torus_radius_overrides": null,
-              "type26_five_coordinate_envelope": null,
-              "type26_split_coordinate_envelope": null
-            }
-          ],
-          "surface_prototypes": [
-            {
-              "declared_family": "splsrf",
-              "family": "spline",
-              "id": "creo:visibgeom:surface_prototype#112",
-              "offset": 112,
-              "parameters": [
-                {
-                  "body": [
-                    249,
-                    4,
-                    3,
-                    15,
-                    15,
-                    15,
-                    15,
-                    228,
-                    228,
-                    228,
-                    15,
-                    228,
-                    228,
-                    228,
+                  [
+                    15
+                  ],
+                  [
+                    15
+                  ],
+                  [
+                    228
+                  ],
+                  [
+                    228
+                  ],
+                  [
+                    228
+                  ],
+                  [
+                    15
+                  ],
+                  [
+                    228
+                  ],
+                  [
+                    228
+                  ],
+                  [
+                    228
+                  ],
+                  [
                     47,
                     0,
                     0
-                  ],
-                  "compact_values": [],
-                  "name": "i_points",
-                  "offset": 133,
-                  "opaque": [],
-                  "scalar_count": 3,
-                  "scalar_dimensions": 4,
-                  "scalar_tokens": [
-                    [
-                      15
-                    ],
-                    [
-                      15
-                    ],
-                    [
-                      15
-                    ],
-                    [
-                      15
-                    ],
-                    [
-                      228
-                    ],
-                    [
-                      228
-                    ],
-                    [
-                      228
-                    ],
-                    [
-                      15
-                    ],
-                    [
-                      228
-                    ],
-                    [
-                      228
-                    ],
-                    [
-                      228
-                    ],
-                    [
-                      47,
-                      0,
-                      0
-                    ]
-                  ],
-                  "scalar_values": [
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    1.0,
-                    1.0,
-                    1.0,
-                    0.0,
-                    1.0,
-                    1.0,
-                    1.0,
-                    2.0
-                  ],
-                  "value_kind": "scalar_array",
-                  "value_offset": 144
-                },
-                {
-                  "body": [
-                    249,
-                    4,
-                    3,
-                    228,
-                    15,
-                    228,
-                    228,
-                    15,
-                    228,
-                    228,
-                    15,
-                    228,
-                    228,
-                    15,
+                  ]
+                ],
+                "scalar_values": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  1.0,
+                  1.0,
+                  1.0,
+                  0.0,
+                  1.0,
+                  1.0,
+                  1.0,
+                  2.0
+                ],
+                "value_kind": "scalar_array",
+                "value_offset": 144
+              },
+              {
+                "body": [
+                  249,
+                  4,
+                  3,
+                  228,
+                  15,
+                  228,
+                  228,
+                  15,
+                  228,
+                  228,
+                  15,
+                  228,
+                  228,
+                  15,
+                  228
+                ],
+                "compact_values": [],
+                "name": "end_u_tangts",
+                "offset": 161,
+                "opaque": [],
+                "scalar_count": 3,
+                "scalar_dimensions": 4,
+                "scalar_tokens": [
+                  [
                     228
                   ],
-                  "compact_values": [],
-                  "name": "end_u_tangts",
-                  "offset": 161,
-                  "opaque": [],
-                  "scalar_count": 3,
-                  "scalar_dimensions": 4,
-                  "scalar_tokens": [
-                    [
-                      228
-                    ],
-                    [
-                      15
-                    ],
-                    [
-                      228
-                    ],
-                    [
-                      228
-                    ],
-                    [
-                      15
-                    ],
-                    [
-                      228
-                    ],
-                    [
-                      228
-                    ],
-                    [
-                      15
-                    ],
-                    [
-                      228
-                    ],
-                    [
-                      228
-                    ],
-                    [
-                      15
-                    ],
-                    [
-                      228
-                    ]
-                  ],
-                  "scalar_values": [
-                    1.0,
-                    0.0,
-                    1.0,
-                    1.0,
-                    0.0,
-                    1.0,
-                    1.0,
-                    0.0,
-                    1.0,
-                    1.0,
-                    0.0,
-                    1.0
-                  ],
-                  "value_kind": "scalar_array",
-                  "value_offset": 176
-                },
-                {
-                  "body": [
-                    249,
-                    4,
-                    3,
-                    15,
-                    228,
-                    228,
-                    15,
-                    228,
-                    228,
-                    15,
-                    228,
-                    228,
-                    15,
-                    228,
-                    228
-                  ],
-                  "compact_values": [],
-                  "name": "end_v_tangts",
-                  "offset": 191,
-                  "opaque": [],
-                  "scalar_count": 3,
-                  "scalar_dimensions": 4,
-                  "scalar_tokens": [
-                    [
-                      15
-                    ],
-                    [
-                      228
-                    ],
-                    [
-                      228
-                    ],
-                    [
-                      15
-                    ],
-                    [
-                      228
-                    ],
-                    [
-                      228
-                    ],
-                    [
-                      15
-                    ],
-                    [
-                      228
-                    ],
-                    [
-                      228
-                    ],
-                    [
-                      15
-                    ],
-                    [
-                      228
-                    ],
-                    [
-                      228
-                    ]
-                  ],
-                  "scalar_values": [
-                    0.0,
-                    1.0,
-                    1.0,
-                    0.0,
-                    1.0,
-                    1.0,
-                    0.0,
-                    1.0,
-                    1.0,
-                    0.0,
-                    1.0,
-                    1.0
-                  ],
-                  "value_kind": "scalar_array",
-                  "value_offset": 206
-                },
-                {
-                  "body": [
-                    249,
-                    4,
-                    3,
-                    15,
-                    15,
-                    15,
-                    15,
-                    15,
-                    15,
-                    15,
-                    15,
-                    15,
-                    15,
-                    15,
+                  [
                     15
                   ],
-                  "compact_values": [],
-                  "name": "end_uv_deriv",
-                  "offset": 221,
-                  "opaque": [],
-                  "scalar_count": 3,
-                  "scalar_dimensions": 4,
-                  "scalar_tokens": [
-                    [
-                      15
-                    ],
-                    [
-                      15
-                    ],
-                    [
-                      15
-                    ],
-                    [
-                      15
-                    ],
-                    [
-                      15
-                    ],
-                    [
-                      15
-                    ],
-                    [
-                      15
-                    ],
-                    [
-                      15
-                    ],
-                    [
-                      15
-                    ],
-                    [
-                      15
-                    ],
-                    [
-                      15
-                    ],
-                    [
-                      15
-                    ]
-                  ],
-                  "scalar_values": [
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0
-                  ],
-                  "value_kind": "scalar_array",
-                  "value_offset": 236
-                },
-                {
-                  "body": [
-                    248,
-                    2,
-                    15,
+                  [
                     228
                   ],
-                  "compact_values": [],
-                  "name": "u_params",
-                  "offset": 251,
-                  "opaque": [],
-                  "scalar_count": 2,
-                  "scalar_dimensions": null,
-                  "scalar_tokens": [
-                    [
-                      15
-                    ],
-                    [
-                      228
-                    ]
-                  ],
-                  "scalar_values": [
-                    0.0,
-                    1.0
-                  ],
-                  "value_kind": "counted_scalar_array",
-                  "value_offset": 262
-                },
-                {
-                  "body": [
-                    248,
-                    2,
-                    15,
+                  [
                     228
                   ],
-                  "compact_values": [],
-                  "name": "v_params",
-                  "offset": 266,
-                  "opaque": [],
-                  "scalar_count": 2,
-                  "scalar_dimensions": null,
-                  "scalar_tokens": [
-                    [
-                      15
-                    ],
-                    [
-                      228
-                    ]
+                  [
+                    15
                   ],
-                  "scalar_values": [
-                    0.0,
-                    1.0
+                  [
+                    228
                   ],
-                  "value_kind": "counted_scalar_array",
-                  "value_offset": 277
-                }
-              ],
-              "source_section": "VisibGeom"
-            }
-          ],
-          "surface_rows": [
-            {
-              "boundary_type": 0,
-              "feature_id": 4,
-              "id": "creo:visibgeom:surface_row#7",
-              "next_surface": 0,
-              "offset": 106,
-              "reversed": false,
-              "source_section": "VisibGeom",
-              "surface_family": "spline",
-              "surface_id": 7,
-              "surface_variant": null,
-              "type_byte": 40
-            }
-          ],
-          "unknowns": [
-            {
-              "id": "creo:VisibGeom:section#76"
-            }
-          ]
-        }
+                  [
+                    228
+                  ],
+                  [
+                    15
+                  ],
+                  [
+                    228
+                  ],
+                  [
+                    228
+                  ],
+                  [
+                    15
+                  ],
+                  [
+                    228
+                  ]
+                ],
+                "scalar_values": [
+                  1.0,
+                  0.0,
+                  1.0,
+                  1.0,
+                  0.0,
+                  1.0,
+                  1.0,
+                  0.0,
+                  1.0,
+                  1.0,
+                  0.0,
+                  1.0
+                ],
+                "value_kind": "scalar_array",
+                "value_offset": 176
+              },
+              {
+                "body": [
+                  249,
+                  4,
+                  3,
+                  15,
+                  228,
+                  228,
+                  15,
+                  228,
+                  228,
+                  15,
+                  228,
+                  228,
+                  15,
+                  228,
+                  228
+                ],
+                "compact_values": [],
+                "name": "end_v_tangts",
+                "offset": 191,
+                "opaque": [],
+                "scalar_count": 3,
+                "scalar_dimensions": 4,
+                "scalar_tokens": [
+                  [
+                    15
+                  ],
+                  [
+                    228
+                  ],
+                  [
+                    228
+                  ],
+                  [
+                    15
+                  ],
+                  [
+                    228
+                  ],
+                  [
+                    228
+                  ],
+                  [
+                    15
+                  ],
+                  [
+                    228
+                  ],
+                  [
+                    228
+                  ],
+                  [
+                    15
+                  ],
+                  [
+                    228
+                  ],
+                  [
+                    228
+                  ]
+                ],
+                "scalar_values": [
+                  0.0,
+                  1.0,
+                  1.0,
+                  0.0,
+                  1.0,
+                  1.0,
+                  0.0,
+                  1.0,
+                  1.0,
+                  0.0,
+                  1.0,
+                  1.0
+                ],
+                "value_kind": "scalar_array",
+                "value_offset": 206
+              },
+              {
+                "body": [
+                  249,
+                  4,
+                  3,
+                  15,
+                  15,
+                  15,
+                  15,
+                  15,
+                  15,
+                  15,
+                  15,
+                  15,
+                  15,
+                  15,
+                  15
+                ],
+                "compact_values": [],
+                "name": "end_uv_deriv",
+                "offset": 221,
+                "opaque": [],
+                "scalar_count": 3,
+                "scalar_dimensions": 4,
+                "scalar_tokens": [
+                  [
+                    15
+                  ],
+                  [
+                    15
+                  ],
+                  [
+                    15
+                  ],
+                  [
+                    15
+                  ],
+                  [
+                    15
+                  ],
+                  [
+                    15
+                  ],
+                  [
+                    15
+                  ],
+                  [
+                    15
+                  ],
+                  [
+                    15
+                  ],
+                  [
+                    15
+                  ],
+                  [
+                    15
+                  ],
+                  [
+                    15
+                  ]
+                ],
+                "scalar_values": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "value_kind": "scalar_array",
+                "value_offset": 236
+              },
+              {
+                "body": [
+                  248,
+                  2,
+                  15,
+                  228
+                ],
+                "compact_values": [],
+                "name": "u_params",
+                "offset": 251,
+                "opaque": [],
+                "scalar_count": 2,
+                "scalar_dimensions": null,
+                "scalar_tokens": [
+                  [
+                    15
+                  ],
+                  [
+                    228
+                  ]
+                ],
+                "scalar_values": [
+                  0.0,
+                  1.0
+                ],
+                "value_kind": "counted_scalar_array",
+                "value_offset": 262
+              },
+              {
+                "body": [
+                  248,
+                  2,
+                  15,
+                  228
+                ],
+                "compact_values": [],
+                "name": "v_params",
+                "offset": 266,
+                "opaque": [],
+                "scalar_count": 2,
+                "scalar_dimensions": null,
+                "scalar_tokens": [
+                  [
+                    15
+                  ],
+                  [
+                    228
+                  ]
+                ],
+                "scalar_values": [
+                  0.0,
+                  1.0
+                ],
+                "value_kind": "counted_scalar_array",
+                "value_offset": 277
+              }
+            ],
+            "source_section": "VisibGeom"
+          }
+        ],
+        "surface_rows": [
+          {
+            "boundary_type": 0,
+            "feature_id": 4,
+            "id": "creo:visibgeom:surface_row#7",
+            "next_surface": 0,
+            "offset": 106,
+            "reversed": false,
+            "source_section": "VisibGeom",
+            "surface_family": "spline",
+            "surface_id": 7,
+            "surface_variant": null,
+            "type_byte": 40
+          }
+        ],
+        "unknowns": [
+          {
+            "id": "creo:VisibGeom:section#76"
+          }
+        ]
       }
     },
     "source": {

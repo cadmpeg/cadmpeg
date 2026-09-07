@@ -43,25 +43,23 @@
       },
       "native": {
         "nx": {
-          "arenas": {
-            "external_references": [
-              {
-                "id": "nx:external-reference:/Root/UG_PART/ExternalReferences#0",
-                "ordinal": 0,
-                "path": "child.prt",
-                "source_entry": "/Root/UG_PART/ExternalReferences",
-                "source_offset": 106
-              },
-              {
-                "id": "nx:external-reference:/Root/UG_PART/ExternalReferences#1",
-                "ordinal": 1,
-                "path": "nested/b.prt",
-                "source_entry": "/Root/UG_PART/ExternalReferences",
-                "source_offset": 117
-              }
-            ],
-            "unknowns": []
-          }
+          "external_references": [
+            {
+              "id": "nx:external-reference:/Root/UG_PART/ExternalReferences#0",
+              "ordinal": 0,
+              "path": "child.prt",
+              "source_entry": "/Root/UG_PART/ExternalReferences",
+              "source_offset": 106
+            },
+            {
+              "id": "nx:external-reference:/Root/UG_PART/ExternalReferences#1",
+              "ordinal": 1,
+              "path": "nested/b.prt",
+              "source_entry": "/Root/UG_PART/ExternalReferences",
+              "source_offset": 117
+            }
+          ],
+          "unknowns": []
         }
       },
       "source": {

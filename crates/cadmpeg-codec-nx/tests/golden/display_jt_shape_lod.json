@@ -143,174 +143,172 @@
       },
       "native": {
         "nx": {
-          "arenas": {
-            "display_jt_documents": [
-              {
-                "byte_order": 0,
-                "format_major": 9,
-                "format_minor": 4,
-                "id": "nx:display-jt:document#0-row-0",
-                "index_row": "nx:display-jt:index#0-row-0",
-                "lsg_segment_id": [
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1,
-                  1
-                ],
-                "physical_byte_len": 236,
-                "source_offset": 368,
-                "toc_entries": [
-                  {
-                    "attributes": [
-                      0,
-                      0,
-                      0,
-                      7
-                    ],
-                    "id": "nx:display-jt:toc-entry#0-row-0-0",
-                    "ordinal": 0,
-                    "segment_byte_len": 99,
-                    "segment_id": [
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2,
-                      2
-                    ],
-                    "segment_offset": 137,
-                    "source_offset": 477
-                  }
-                ],
-                "toc_offset": 105,
-                "version_field": "Version 9.4 JT                                                                  "
-              }
-            ],
-            "display_jt_indices": [
-              {
-                "declared_count": 1,
-                "id": "nx:display-jt:index#0",
-                "rows": [
-                  {
-                    "header_offset": 28,
-                    "id": "nx:display-jt:index#0-row-0",
-                    "ordinal": 0,
-                    "source_offset": 348,
-                    "value": 100
-                  }
-                ],
-                "source_offset": 340,
-                "version": 9
-              }
-            ],
-            "display_jt_segments": [
-              {
-                "compression": null,
-                "document": "nx:display-jt:document#0-row-0",
-                "id": "nx:display-jt:segment#0-row-0-0",
-                "payload_sha256": "4ac00b702e429eb296dcbc733a0b53b1306e679d24a963d66976e6cd6fa838be",
-                "segment_byte_len": 99,
-                "segment_id": [
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2,
-                  2
-                ],
-                "segment_type": 7,
-                "source_offset": 505,
-                "toc_entry": "nx:display-jt:toc-entry#0-row-0-0"
-              }
-            ],
-            "display_jt_shape_lod_elements": [
-              {
-                "body_byte_len": 24,
-                "body_sha256": "46512701be71056016dc028dc77f591646e0e290ed505b3691fe615ffce7001d",
-                "id": "nx:display-jt:segment#0-row-0-0-element-0",
-                "object_base_type": 4,
-                "object_id": 42,
-                "object_type_id": [
-                  171,
-                  16,
-                  221,
-                  16,
-                  200,
-                  42,
-                  209,
-                  17,
-                  155,
-                  107,
-                  0,
-                  128,
-                  199,
-                  187,
-                  89,
-                  151
-                ],
-                "ordinal": 0,
-                "segment": "nx:display-jt:segment#0-row-0-0",
-                "source_offset": 529
-              }
-            ],
-            "display_jt_tri_strip_lod_headers": [
-              {
-                "base_version": 1,
-                "compressed_lod_version": 1,
-                "compressed_representation_byte_len": 4,
-                "compressed_representation_sha256": "8d70d691c822d55638b6e7fd54cd94170c87d19eb1f628b757506ede5688d297",
-                "element": "nx:display-jt:segment#0-row-0-0-element-0",
-                "id": "nx:display-jt:segment#0-row-0-0-element-0-tri-strip-header",
-                "source_offset": 554,
-                "topological_mesh_version": 1,
-                "vertex_bindings": 0,
-                "vertex_records_object_id": 0,
-                "vertex_version": 1
-              }
-            ],
-            "unknowns": [
-              {
-                "id": "nx:container:parasolid#0",
-                "links": [
-                  "nx:s0:surf#0",
-                  "nx:s0:surf#1",
-                  "nx:s0:crv#0"
-                ]
-              }
-            ]
-          }
+          "display_jt_documents": [
+            {
+              "byte_order": 0,
+              "format_major": 9,
+              "format_minor": 4,
+              "id": "nx:display-jt:document#0-row-0",
+              "index_row": "nx:display-jt:index#0-row-0",
+              "lsg_segment_id": [
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1
+              ],
+              "physical_byte_len": 236,
+              "source_offset": 368,
+              "toc_entries": [
+                {
+                  "attributes": [
+                    0,
+                    0,
+                    0,
+                    7
+                  ],
+                  "id": "nx:display-jt:toc-entry#0-row-0-0",
+                  "ordinal": 0,
+                  "segment_byte_len": 99,
+                  "segment_id": [
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2,
+                    2
+                  ],
+                  "segment_offset": 137,
+                  "source_offset": 477
+                }
+              ],
+              "toc_offset": 105,
+              "version_field": "Version 9.4 JT                                                                  "
+            }
+          ],
+          "display_jt_indices": [
+            {
+              "declared_count": 1,
+              "id": "nx:display-jt:index#0",
+              "rows": [
+                {
+                  "header_offset": 28,
+                  "id": "nx:display-jt:index#0-row-0",
+                  "ordinal": 0,
+                  "source_offset": 348,
+                  "value": 100
+                }
+              ],
+              "source_offset": 340,
+              "version": 9
+            }
+          ],
+          "display_jt_segments": [
+            {
+              "compression": null,
+              "document": "nx:display-jt:document#0-row-0",
+              "id": "nx:display-jt:segment#0-row-0-0",
+              "payload_sha256": "4ac00b702e429eb296dcbc733a0b53b1306e679d24a963d66976e6cd6fa838be",
+              "segment_byte_len": 99,
+              "segment_id": [
+                2,
+                2,
+                2,
+                2,
+                2,
+                2,
+                2,
+                2,
+                2,
+                2,
+                2,
+                2,
+                2,
+                2,
+                2,
+                2
+              ],
+              "segment_type": 7,
+              "source_offset": 505,
+              "toc_entry": "nx:display-jt:toc-entry#0-row-0-0"
+            }
+          ],
+          "display_jt_shape_lod_elements": [
+            {
+              "body_byte_len": 24,
+              "body_sha256": "46512701be71056016dc028dc77f591646e0e290ed505b3691fe615ffce7001d",
+              "id": "nx:display-jt:segment#0-row-0-0-element-0",
+              "object_base_type": 4,
+              "object_id": 42,
+              "object_type_id": [
+                171,
+                16,
+                221,
+                16,
+                200,
+                42,
+                209,
+                17,
+                155,
+                107,
+                0,
+                128,
+                199,
+                187,
+                89,
+                151
+              ],
+              "ordinal": 0,
+              "segment": "nx:display-jt:segment#0-row-0-0",
+              "source_offset": 529
+            }
+          ],
+          "display_jt_tri_strip_lod_headers": [
+            {
+              "base_version": 1,
+              "compressed_lod_version": 1,
+              "compressed_representation_byte_len": 4,
+              "compressed_representation_sha256": "8d70d691c822d55638b6e7fd54cd94170c87d19eb1f628b757506ede5688d297",
+              "element": "nx:display-jt:segment#0-row-0-0-element-0",
+              "id": "nx:display-jt:segment#0-row-0-0-element-0-tri-strip-header",
+              "source_offset": 554,
+              "topological_mesh_version": 1,
+              "vertex_bindings": 0,
+              "vertex_records_object_id": 0,
+              "vertex_version": 1
+            }
+          ],
+          "unknowns": [
+            {
+              "id": "nx:container:parasolid#0",
+              "links": [
+                "nx:s0:surf#0",
+                "nx:s0:surf#1",
+                "nx:s0:crv#0"
+              ]
+            }
+          ]
         }
       },
       "source": {

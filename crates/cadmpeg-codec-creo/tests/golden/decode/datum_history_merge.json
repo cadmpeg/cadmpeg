@@ -72,77 +72,75 @@
     },
     "native": {
       "creo": {
-        "arenas": {
-          "feature_operation_states": [
-            {
-              "current": true,
-              "display_name_stored": true,
-              "family": "Round",
-              "feature_id": 3,
-              "id": "creo:mdlstatus:feature_state#3:0",
-              "identifier_keyword": "id",
-              "offset": 144,
-              "parent_feature_id": null,
-              "recipe": null,
-              "root_schema_class": null,
-              "state_offset": 144,
-              "state_ordinal": 0,
-              "stored_name": "Round id 3",
-              "stored_name_bytes": [
-                82,
-                111,
-                117,
-                110,
-                100,
-                32,
-                105,
-                100,
-                32,
-                51
-              ],
-              "stored_name_prefix": null
-            },
-            {
-              "current": true,
-              "display_name_stored": true,
-              "family": "Datum Plane",
-              "feature_id": 4,
-              "id": "creo:mdlstatus:feature_state#4:0",
-              "identifier_keyword": "id",
-              "offset": 155,
-              "parent_feature_id": null,
-              "recipe": null,
-              "root_schema_class": null,
-              "state_offset": 155,
-              "state_ordinal": 0,
-              "stored_name": "Datum Plane id 4",
-              "stored_name_bytes": [
-                68,
-                97,
-                116,
-                117,
-                109,
-                32,
-                80,
-                108,
-                97,
-                110,
-                101,
-                32,
-                105,
-                100,
-                32,
-                52
-              ],
-              "stored_name_prefix": null
-            }
-          ],
-          "unknowns": [
-            {
-              "id": "creo:ActDatums:section#76"
-            }
-          ]
-        }
+        "feature_operation_states": [
+          {
+            "current": true,
+            "display_name_stored": true,
+            "family": "Round",
+            "feature_id": 3,
+            "id": "creo:mdlstatus:feature_state#3:0",
+            "identifier_keyword": "id",
+            "offset": 144,
+            "parent_feature_id": null,
+            "recipe": null,
+            "root_schema_class": null,
+            "state_offset": 144,
+            "state_ordinal": 0,
+            "stored_name": "Round id 3",
+            "stored_name_bytes": [
+              82,
+              111,
+              117,
+              110,
+              100,
+              32,
+              105,
+              100,
+              32,
+              51
+            ],
+            "stored_name_prefix": null
+          },
+          {
+            "current": true,
+            "display_name_stored": true,
+            "family": "Datum Plane",
+            "feature_id": 4,
+            "id": "creo:mdlstatus:feature_state#4:0",
+            "identifier_keyword": "id",
+            "offset": 155,
+            "parent_feature_id": null,
+            "recipe": null,
+            "root_schema_class": null,
+            "state_offset": 155,
+            "state_ordinal": 0,
+            "stored_name": "Datum Plane id 4",
+            "stored_name_bytes": [
+              68,
+              97,
+              116,
+              117,
+              109,
+              32,
+              80,
+              108,
+              97,
+              110,
+              101,
+              32,
+              105,
+              100,
+              32,
+              52
+            ],
+            "stored_name_prefix": null
+          }
+        ],
+        "unknowns": [
+          {
+            "id": "creo:ActDatums:section#76"
+          }
+        ]
       }
     },
     "source": {

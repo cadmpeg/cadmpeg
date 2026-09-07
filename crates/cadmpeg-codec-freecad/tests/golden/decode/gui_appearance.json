@@ -2679,7 +2679,7 @@
         }
       },
       "__elided": "native arena values are omitted; structure is pinned by identity",
-      "__shape_sha256": "681eb90e83bb2830a185a084829d1965de0a05a52f5effcca7213d9ad374f100"
+      "__shape_sha256": "561c90aa0e32f7aea98e952f2b1ddd01708cac1cd5bc05e9257bc88eb7606667"
     },
     "source": {
       "attributes": {

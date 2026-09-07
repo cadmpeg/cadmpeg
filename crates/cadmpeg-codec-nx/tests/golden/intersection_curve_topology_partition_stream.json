@@ -180,43 +180,41 @@
       },
       "native": {
         "nx": {
-          "arenas": {
-            "parasolid_intersection_records": [
-              {
-                "construction_references": [
-                  6,
-                  6,
-                  1,
-                  1,
-                  1,
-                  1
-                ],
-                "delta_twin": false,
-                "header_references": [
-                  1,
-                  0,
-                  0,
-                  0,
-                  0
-                ],
-                "id": "nx:s0:intersection-record#12",
-                "inflated_offset": 470,
-                "sense": true,
-                "stream_ordinal": 0,
-                "xmt": 12
-              }
-            ],
-            "unknowns": [
-              {
-                "id": "nx:container:parasolid#0",
-                "links": [
-                  "nx:s0:surf#0",
-                  "nx:s0:crv#0",
-                  "nx:s0:intersection-crv#0"
-                ]
-              }
-            ]
-          }
+          "parasolid_intersection_records": [
+            {
+              "construction_references": [
+                6,
+                6,
+                1,
+                1,
+                1,
+                1
+              ],
+              "delta_twin": false,
+              "header_references": [
+                1,
+                0,
+                0,
+                0,
+                0
+              ],
+              "id": "nx:s0:intersection-record#12",
+              "inflated_offset": 470,
+              "sense": true,
+              "stream_ordinal": 0,
+              "xmt": 12
+            }
+          ],
+          "unknowns": [
+            {
+              "id": "nx:container:parasolid#0",
+              "links": [
+                "nx:s0:surf#0",
+                "nx:s0:crv#0",
+                "nx:s0:intersection-crv#0"
+              ]
+            }
+          ]
         }
       },
       "source": {

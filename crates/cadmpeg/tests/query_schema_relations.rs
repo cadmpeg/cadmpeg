@@ -33,11 +33,9 @@ const REL_DOC: &str = r#"{
   },
   "native": {
     "rhino": {
-      "arenas": {
-        "unknowns": [
-          {"id": "n1", "kind": "curve"}
-        ]
-      }
+      "unknowns": [
+        {"id": "n1", "kind": "curve"}
+      ]
     }
   }
 }"#;
@@ -71,7 +69,7 @@ fn schema_relation_column_marks_ref_and_refs() {
         .unwrap();
     assert!(json.status.success());
     let value: serde_json::Value = serde_json::from_slice(&json.stdout).unwrap();
-    assert_eq!(value["command"], "query schema");
+    assert_eq!(value["command"], "query");
     let fields = value["schema"]["fields"].as_array().unwrap();
     let by_path: std::collections::BTreeMap<&str, &serde_json::Value> = fields
         .iter()
