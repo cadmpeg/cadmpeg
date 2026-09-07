@@ -7411,7 +7411,7 @@ pub enum SketchCurveGeometry {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         carrier_reference: Option<u64>,
         /// Source per-file dynamic three-digit ASCII class tag naming the NURBS subtype.
-        subtype_class_tag: String,
+        subtype_class_tag: DesignClassTag,
         /// Record index of the NURBS subtype record.
         subtype_record_index: u32,
         /// Polynomial degree of the curve.
@@ -7526,7 +7526,8 @@ impl TryFrom<SketchCurveGeometryWire> for SketchCurveGeometry {
                 control_points,
             } => Self::Nurbs {
                 carrier_reference,
-                subtype_class_tag,
+                subtype_class_tag: DesignClassTag::try_from(subtype_class_tag)
+                    .map_err(|error| format!("subtype_class_tag: {error}"))?,
                 subtype_record_index,
                 degree,
                 fit_tolerance,
@@ -7586,7 +7587,7 @@ impl From<SketchCurveGeometry> for SketchCurveGeometryWire {
                 };
                 Self::Nurbs {
                     carrier_reference,
-                    subtype_class_tag,
+                    subtype_class_tag: subtype_class_tag.into(),
                     subtype_record_index,
                     degree,
                     fit_tolerance,

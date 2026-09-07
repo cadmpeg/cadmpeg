@@ -441,7 +441,7 @@ fn sketch_nurbs_poles_preserve_wire_and_reject_partial_weights() {
     }
     let empty = crate::records::SketchCurveGeometry::Nurbs {
         carrier_reference: None,
-        subtype_class_tag: "302".into(),
+        subtype_class_tag: crate::records::DesignClassTag::try_from("302".to_owned()).unwrap(),
         subtype_record_index: 7,
         degree: 1,
         fit_tolerance: 0.125,

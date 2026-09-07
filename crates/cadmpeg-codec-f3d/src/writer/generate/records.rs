@@ -717,7 +717,7 @@ fn encode_f64_sequence(out: &mut Vec<u8>, values: &[f64]) -> Result<(), CodecErr
 fn encode_sketch_nurbs(
     record: &mut Vec<u8>,
     carrier_reference: Option<u64>,
-    subtype_class_tag: &str,
+    subtype_class_tag: &crate::records::DesignClassTag,
     subtype_record_index: u32,
     degree: u32,
     fit_tolerance: f64,
@@ -725,7 +725,6 @@ fn encode_sketch_nurbs(
     knots: &[f64],
     poles: &crate::records::SketchNurbsPoles,
 ) -> Result<(), CodecError> {
-    validate_dynamic_class_tag(subtype_class_tag, "sketch NURBS subtype")?;
     if scalar_width != 8 {
         return Err(CodecError::Malformed(
             "source-less sketch NURBS requires scalar width 8 and parallel weights".into(),

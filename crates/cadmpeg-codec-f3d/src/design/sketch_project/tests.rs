@@ -425,7 +425,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         secondary_id: 0,
         geometry: Some(SketchCurveGeometry::Nurbs {
             carrier_reference: None,
-            subtype_class_tag: "304".into(),
+            subtype_class_tag: crate::records::DesignClassTag::try_from("304".to_owned()).unwrap(),
             subtype_record_index: 219,
             degree: 2,
             fit_tolerance: 1.0e-6,
@@ -822,7 +822,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         4,
         SketchCurveGeometry::Nurbs {
             carrier_reference: None,
-            subtype_class_tag: "302".into(),
+            subtype_class_tag: crate::records::DesignClassTag::try_from("302".to_owned()).unwrap(),
             subtype_record_index: 104,
             degree: 1,
             fit_tolerance: 1.0e-8,

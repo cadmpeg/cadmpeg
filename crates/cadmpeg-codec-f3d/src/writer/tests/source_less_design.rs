@@ -638,7 +638,8 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             secondary_id: 705,
             geometry: Some(SketchCurveGeometry::Nurbs {
                 carrier_reference: None,
-                subtype_class_tag: "365".into(),
+                subtype_class_tag: crate::records::DesignClassTag::try_from("365".to_owned())
+                    .unwrap(),
                 subtype_record_index: 602,
                 degree: 2,
                 fit_tolerance: 1.0e-8,

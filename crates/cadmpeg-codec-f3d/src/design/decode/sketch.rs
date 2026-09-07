@@ -3243,9 +3243,7 @@ fn decode_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveGeometry, usize)> {
     let subtype_class_tag = std::str::from_utf8(payload.get(base + 12..base + 15)?)
         .ok()?
         .to_string();
-    if !subtype_class_tag.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
-    }
+    let subtype_class_tag = crate::records::DesignClassTag::try_from(subtype_class_tag).ok()?;
     let degree = View::u32_le_at(payload, base + 90)?;
     let fit_tolerance = View::f64_le_at(payload, base + 94)?;
     let knot_count = usize::try_from(View::u32_le_at(payload, base + 102)?).ok()?;
@@ -3327,9 +3325,7 @@ pub(crate) fn decode_legacy_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveG
     let subtype_class_tag = std::str::from_utf8(payload.get(base + 12..base + 15)?)
         .ok()?
         .to_string();
-    if !subtype_class_tag.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
-    }
+    let subtype_class_tag = crate::records::DesignClassTag::try_from(subtype_class_tag).ok()?;
     let degree = View::u32_le_at(payload, base + 90)?;
     let fit_tolerance = View::f64_le_at(payload, base + 42)?;
     let knot_count = usize::try_from(View::u32_le_at(payload, base + 102)?).ok()?;
