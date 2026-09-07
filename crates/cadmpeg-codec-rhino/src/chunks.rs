@@ -753,12 +753,6 @@ pub(crate) fn checksum_children_through_class_end(
         }
         let start = reader.position();
         let child = chunk_at(data, start, reader.end(), archive, false)?;
-        if child.next_offset() <= start {
-            return Err(FramingError::structural(
-                start,
-                format!("{context} child did not advance"),
-            ));
-        }
         if children.len() >= CHECKSUM_CHILD_CAP {
             return Err(FramingError::InvalidLength {
                 offset: start,

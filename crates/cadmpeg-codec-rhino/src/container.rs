@@ -629,12 +629,6 @@ fn list_checksum_children(
     let mut children = Vec::new();
     for _ in 0..child_count {
         let child = chunk_at(data, offset, chunk.body().end, archive, false)?;
-        if child.next_offset() <= offset {
-            return Err(FramingError::structural(
-                offset,
-                "view-list child did not advance",
-            ));
-        }
         children.push(child.range());
         offset = child.next_offset();
     }
@@ -672,12 +666,6 @@ fn plugin_list_checksum_children(
             return Err(FramingError::structural(
                 start,
                 "plugin-list child must be an anonymous long chunk",
-            ));
-        }
-        if child.next_offset() <= start {
-            return Err(FramingError::structural(
-                start,
-                "plugin-list child did not advance",
             ));
         }
         children.push(child.range());

@@ -825,12 +825,6 @@ fn scan_viewport_userdata(
         }
         let start = reader.position();
         let child = chunk_at(data, start, reader.end(), archive, false)?;
-        if child.next_offset() <= start {
-            return Err(FramingError::structural(
-                start,
-                "view viewport userdata child did not advance",
-            ));
-        }
         if children.len() >= 1 << 20 {
             return Err(FramingError::InvalidLength {
                 offset: start,
