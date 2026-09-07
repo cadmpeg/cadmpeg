@@ -68,7 +68,10 @@ pub(in super::super) fn source_meta(
         let prefix = format!("section.{index}");
         attributes.insert(format!("{prefix}.name"), section.name.clone());
         attributes.insert(format!("{prefix}.raw_name"), section.raw_name.clone());
-        attributes.insert(format!("{prefix}.role"), section.role.to_string());
+        attributes.insert(
+            format!("{prefix}.role"),
+            cadmpeg_core::container::ContainerRole::from(section.role).to_string(),
+        );
         attributes.insert(format!("{prefix}.offset"), section.offset.to_string());
         attributes.insert(format!("{prefix}.length"), section.length.to_string());
     }

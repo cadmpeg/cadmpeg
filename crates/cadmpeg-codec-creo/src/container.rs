@@ -160,7 +160,29 @@ pub struct Section {
     /// Expanded payload length from the TOC, excluding the section header.
     pub expanded_length: Option<usize>,
     /// Role classification.
-    pub role: ContainerRole,
+    pub role: SectionRole,
+}
+
+/// The five payload roles admitted by a Creo section.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SectionRole {
+    PsbGeometry,
+    ModelData,
+    Thumbnail,
+    Metadata,
+    Opaque,
+}
+
+impl From<SectionRole> for ContainerRole {
+    fn from(role: SectionRole) -> Self {
+        match role {
+            SectionRole::PsbGeometry => Self::PsbGeometry,
+            SectionRole::ModelData => Self::ModelData,
+            SectionRole::Thumbnail => Self::Thumbnail,
+            SectionRole::Metadata => Self::Metadata,
+            SectionRole::Opaque => Self::Opaque,
+        }
+    }
 }
 
 /// A section payload decoded from Unix `compress` framing.
@@ -504,19 +526,19 @@ fn normalize_name(raw: &str) -> String {
 }
 
 /// Classify a normalized section name by what it carries ([spec §2.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#12-section-map)).
-fn classify(name: &str) -> ContainerRole {
+fn classify(name: &str) -> SectionRole {
     match name {
-        "VisibGeom" | "NovisGeom" | "ActDatums" => ContainerRole::PsbGeometry,
+        "VisibGeom" | "NovisGeom" | "ActDatums" => SectionRole::PsbGeometry,
         "AllFeatur" | "FeatDefs" | "FeatDefsIndex" | "FeatDefsDtm" | "Geomlists" | "GeomDepen"
         | "Model_L05_PX" | "Model_L05P" | "BasicData" | "BasBasData" | "BasFullData"
-        | "FullMData" => ContainerRole::ModelData,
-        "THMB_IMG_MAIN" => ContainerRole::Thumbnail,
+        | "FullMData" => SectionRole::ModelData,
+        "THMB_IMG_MAIN" => SectionRole::Thumbnail,
         "NeuPrtSld" | "NeuAsmSld" | "SolidPersistTable" | "SolidPrimdata" | "DEPDB_DATA"
         | "UnitSystemDef_L03" | "PDMTrail_L03" | "ActEntity" | "MdlStatus" | "MdlRefInfo"
         | "DispCntrl" | "ColorSchemeInfo" | "LargeText" | "BasicText" | "IdsGenInfoDb" => {
-            ContainerRole::Metadata
+            SectionRole::Metadata
         }
-        _ => ContainerRole::Opaque,
+        _ => SectionRole::Opaque,
     }
 }
 
@@ -1041,7 +1063,7 @@ fn native_model_name(data: &[u8], sections: &[Section]) -> Option<(String, usize
     const FIELD: &[u8] = b"model_name\0";
 
     for section in sections {
-        if section.role == ContainerRole::Thumbnail {
+        if section.role == SectionRole::Thumbnail {
             continue;
         }
         let end = section
@@ -1698,7 +1720,7 @@ fn structural_feature_ids(
     );
     for section in sections
         .iter()
-        .filter(|section| section.role == ContainerRole::PsbGeometry)
+        .filter(|section| section.role == SectionRole::PsbGeometry)
     {
         let end = (section.offset + section.length).min(data.len());
         let payload = &data[section.offset..end];
@@ -2745,7 +2767,7 @@ pub fn has_thumbnail(scan: &ContainerScan) -> bool {
     scan.framing
         .sections
         .iter()
-        .filter(|s| s.role == ContainerRole::Thumbnail)
+        .filter(|s| s.role == SectionRole::Thumbnail)
         .any(|section| {
             let end = section
                 .offset
@@ -2793,7 +2815,7 @@ pub fn summarize(
             }
             ContainerEntry {
                 name: s.name.clone(),
-                role: s.role,
+                role: s.role.into(),
                 compression: expanded
                     .map_or(EntryCompression::None, |_| EntryCompression::UnixCompress),
                 compressed_size: s.length as u64,

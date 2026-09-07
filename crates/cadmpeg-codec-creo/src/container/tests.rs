@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_core::container::ContainerRole;
+use crate::container::SectionRole;
 
 use std::io::Cursor;
 
@@ -191,10 +191,10 @@ fn scan_enumerates_and_classifies_sections() {
     assert_eq!(scan.framing.version_line, "#UGC:2 P test");
     assert_eq!(scan.framing.sections.len(), 3);
     assert_eq!(scan.framing.sections[0].name, "VisibGeom");
-    assert_eq!(scan.framing.sections[0].role, ContainerRole::PsbGeometry);
+    assert_eq!(scan.framing.sections[0].role, SectionRole::PsbGeometry);
     assert_eq!(scan.framing.sections[1].name, "AllFeatur");
-    assert_eq!(scan.framing.sections[1].role, ContainerRole::ModelData);
-    assert_eq!(scan.framing.sections[2].role, ContainerRole::Thumbnail);
+    assert_eq!(scan.framing.sections[1].role, SectionRole::ModelData);
+    assert_eq!(scan.framing.sections[2].role, SectionRole::Thumbnail);
     assert!(container::has_thumbnail(&scan));
 }
 
@@ -229,8 +229,8 @@ fn scan_enumerates_toc_backed_compound_close_section_boundaries() {
             .collect::<Vec<_>>(),
         ["DEPDB_DATA", "VisibGeom", "AllFeatur"]
     );
-    assert_eq!(scan.framing.sections[1].role, ContainerRole::PsbGeometry);
-    assert_eq!(scan.framing.sections[2].role, ContainerRole::ModelData);
+    assert_eq!(scan.framing.sections[1].role, SectionRole::PsbGeometry);
+    assert_eq!(scan.framing.sections[2].role, SectionRole::ModelData);
 }
 
 #[test]

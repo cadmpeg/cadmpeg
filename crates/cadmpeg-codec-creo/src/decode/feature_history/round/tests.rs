@@ -636,7 +636,7 @@ fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
         offset: 0,
         length: 20,
         expanded_length: None,
-        role: cadmpeg_core::container::ContainerRole::PsbGeometry,
+        role: crate::container::SectionRole::PsbGeometry,
     });
 
     let scalar = |name: &str, value: f64| crate::surface::SurfaceNamedParameter {
@@ -714,7 +714,7 @@ fn prototype_round_radius_rejects_multiple_associated_torus_prototypes() {
         offset: 20,
         length: 20,
         expanded_length: None,
-        role: cadmpeg_core::container::ContainerRole::PsbGeometry,
+        role: crate::container::SectionRole::PsbGeometry,
     });
     scan.surfaces.prototype_records.push(prototype(25));
     scan.surfaces.rows.push(row(2, 26));

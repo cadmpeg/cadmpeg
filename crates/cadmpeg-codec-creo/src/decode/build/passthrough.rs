@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Preserve passthrough PSB sections and emit legacy persistence arenas.
 
-use cadmpeg_core::container::ContainerRole;
+use crate::container::SectionRole;
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -22,7 +22,7 @@ pub(in super::super) fn preserve_passthrough_sections(
 ) -> Vec<UnknownRecord> {
     let mut unknowns = Vec::new();
     for section in scan.framing.sections.iter().filter(|section| {
-        section.role == ContainerRole::PsbGeometry || section.role == ContainerRole::Thumbnail
+        section.role == SectionRole::PsbGeometry || section.role == SectionRole::Thumbnail
     }) {
         let end = (section.offset + section.length).min(scan.framing.data.len());
         let section_bytes = &scan.framing.data[section.offset..end];
@@ -30,7 +30,7 @@ pub(in super::super) fn preserve_passthrough_sections(
         let raw_is_compressed = section_bytes
             .get(payload_start..)
             .is_some_and(|payload| payload.starts_with(container::UNIX_COMPRESS_MAGIC));
-        let (bytes, offset, tag, exactness) = if section.role == ContainerRole::Thumbnail {
+        let (bytes, offset, tag, exactness) = if section.role == SectionRole::Thumbnail {
             if raw_is_compressed {
                 let Some(expanded) = container::expanded_section_for(scan, section) else {
                     continue;

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Placed carriers, topology-bound plane transfer, and face orientations.
 
-use cadmpeg_core::container::ContainerRole;
+use crate::container::SectionRole;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -491,7 +491,7 @@ pub fn geometry_section_record(scan: &ContainerScan, offset: usize) -> Option<Un
     scan.framing
         .sections
         .iter()
-        .filter(|section| section.role == ContainerRole::PsbGeometry)
+        .filter(|section| section.role == SectionRole::PsbGeometry)
         .find(|section| {
             offset >= section.offset && offset < section.offset.saturating_add(section.length)
         })

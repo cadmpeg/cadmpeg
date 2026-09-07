@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Tests: blind circular.
 
-use cadmpeg_core::container::ContainerRole;
+use crate::container::SectionRole;
 
 use super::parameter_slot;
 use crate::decode::analytic::PlaneEquation;
@@ -646,7 +646,7 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
         offset: 0,
         length: 1_000,
         expanded_length: None,
-        role: ContainerRole::PsbGeometry,
+        role: SectionRole::PsbGeometry,
     });
     scan.surfaces.rows.extend([
         crate::surface::SurfaceRow {
