@@ -1399,8 +1399,11 @@ pub(crate) mod tests {
     fn multiple_profiles_require_exact_polycurve_count_and_outer_hole_orientation() {
         let outer = decoded_polygon(false, true);
         let inner = decoded_polygon(true, true);
-        let profile =
-            DecodedCurve::from_polycurve_parts(vec![outer, inner], vec![0.0, 1.0, 2.0], Vec::new());
+        let profile = DecodedCurve::Compound {
+            children: vec![(0.0, outer), (1.0, inner)],
+            end_parameter: 2.0,
+            warnings: Vec::new(),
+        };
         assert_eq!(
             split_profiles(profile.clone(), 2, 0)
                 .expect("required invariant")

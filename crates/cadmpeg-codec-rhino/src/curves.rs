@@ -177,19 +177,6 @@ impl DecodedCurve {
             Self::Leaf { .. } => None,
         }
     }
-
-    pub(crate) fn from_polycurve_parts(
-        children: Vec<DecodedCurve>,
-        parameters: Vec<f64>,
-        warnings: Vec<String>,
-    ) -> Self {
-        let end_parameter = *parameters.last().expect("polycurve parameters nonempty");
-        Self::Compound {
-            children: parameters.into_iter().zip(children).collect(),
-            end_parameter,
-            warnings,
-        }
-    }
 }
 
 /// A semantic geometry error.
@@ -1138,20 +1125,10 @@ fn read_polycurve_2d(
     reader.i32()?;
     reader.i32()?;
     reader.skip(48)?;
-    let parameter_count = count(reader, 8)?;
-    if parameter_count != segment_count + 1 {
-        return Err(GeometryError::malformed(
-            reader.position(),
-            "C2 polycurve parameter count mismatch",
-        ));
-    }
-    let mut parameters = Vec::with_capacity(parameter_count);
-    for _ in 0..parameter_count {
-        let value = reader.f64()?;
-        push_polycurve_parameter(&mut parameters, value, reader.position(), "C2 polycurve")?;
-    }
+    let (parameters, end_parameter) =
+        read_polycurve_parameters(reader, segment_count, "C2 polycurve")?;
     let mut children = Vec::with_capacity(segment_count);
-    for _ in 0..segment_count {
+    for parameter in parameters {
         let start = reader.position();
         let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
         let mut wrapper_warnings = Vec::new();
@@ -1176,13 +1153,13 @@ fn read_polycurve_2d(
             ));
         };
         curve.warnings_mut().splice(0..0, wrapper_warnings);
-        children.push(curve);
+        children.push((parameter, curve));
     }
-    Ok(DecodedCurve::from_polycurve_parts(
+    Ok(DecodedCurve::Compound {
         children,
-        parameters,
-        Vec::new(),
-    ))
+        end_parameter,
+        warnings: Vec::new(),
+    })
 }
 
 /// Consumes one legacy Brep C2 polycurve payload and returns its byte range.
@@ -1478,20 +1455,10 @@ fn read_polycurve(
     reader.i32()?;
     reader.i32()?;
     reader.skip(48)?;
-    let parameter_count = count(reader, 8)?;
-    if parameter_count != segment_count + 1 {
-        return Err(GeometryError::malformed(
-            reader.position(),
-            "polycurve parameter count mismatch",
-        ));
-    }
-    let mut parameters = Vec::with_capacity(parameter_count);
-    for _ in 0..parameter_count {
-        let value = reader.f64()?;
-        push_polycurve_parameter(&mut parameters, value, reader.position(), "polycurve")?;
-    }
+    let (parameters, end_parameter) =
+        read_polycurve_parameters(reader, segment_count, "polycurve")?;
     let mut children = Vec::with_capacity(segment_count);
-    for _ in 0..segment_count {
+    for parameter in parameters {
         let start = reader.position();
         let wrapper = crate::chunks::chunk_at(data, start, reader.end(), archive, false)?;
         let mut wrapper_warnings = Vec::new();
@@ -1523,19 +1490,13 @@ fn read_polycurve(
             ));
         };
         curve.warnings_mut().splice(0..0, wrapper_warnings);
-        children.push(curve);
+        children.push((parameter, curve));
     }
-    if children.len() != segment_count {
-        return Err(GeometryError::malformed(
-            reader.position(),
-            "polycurve child count changed",
-        ));
-    }
-    Ok(DecodedCurve::from_polycurve_parts(
+    Ok(DecodedCurve::Compound {
         children,
-        parameters,
-        Vec::new(),
-    ))
+        end_parameter,
+        warnings: Vec::new(),
+    })
 }
 
 /// Consumes one legacy Brep C3 polycurve payload and returns its byte range.
@@ -1550,20 +1511,47 @@ pub(crate) fn consume_legacy_polycurve(
     Ok(start..reader.position())
 }
 
-fn push_polycurve_parameter(
-    parameters: &mut Vec<f64>,
+fn read_polycurve_parameters(
+    reader: &mut BoundedReader<'_>,
+    segment_count: usize,
+    label: &str,
+) -> Result<(Vec<f64>, f64), GeometryError> {
+    let parameter_count = count(reader, 8)?;
+    if parameter_count != segment_count + 1 {
+        return Err(GeometryError::malformed(
+            reader.position(),
+            format!("{label} parameter count mismatch"),
+        ));
+    }
+    let mut parameters = Vec::with_capacity(segment_count);
+    for _ in 0..segment_count {
+        let value = reader.f64()?;
+        parameters.push(checked_polycurve_parameter(
+            parameters.last().copied(),
+            value,
+            reader.position(),
+            label,
+        )?);
+    }
+    let value = reader.f64()?;
+    let end_parameter =
+        checked_polycurve_parameter(parameters.last().copied(), value, reader.position(), label)?;
+    Ok((parameters, end_parameter))
+}
+
+fn checked_polycurve_parameter(
+    previous: Option<f64>,
     value: f64,
     offset: usize,
     label: &str,
-) -> Result<(), GeometryError> {
-    if !value.is_finite() || parameters.last().is_some_and(|previous| value <= *previous) {
+) -> Result<f64, GeometryError> {
+    if !value.is_finite() || previous.is_some_and(|previous| value <= previous) {
         return Err(GeometryError::malformed(
             offset,
             format!("{label} parameters are invalid"),
         ));
     }
-    parameters.push(value);
-    Ok(())
+    Ok(value)
 }
 
 fn arc_nurbs(
@@ -1882,14 +1870,12 @@ mod tests {
 
     #[test]
     fn top_level_polycurve_rejects_equal_adjacent_boundaries() {
-        let mut parameters = vec![1.0];
-        assert!(push_polycurve_parameter(&mut parameters, 1.0, 8, "polycurve").is_err());
+        assert!(checked_polycurve_parameter(Some(1.0), 1.0, 8, "polycurve").is_err());
     }
 
     #[test]
     fn c2_polycurve_rejects_equal_adjacent_boundaries() {
-        let mut parameters = vec![1.0];
-        assert!(push_polycurve_parameter(&mut parameters, 1.0, 8, "C2 polycurve").is_err());
+        assert!(checked_polycurve_parameter(Some(1.0), 1.0, 8, "C2 polycurve").is_err());
     }
 
     #[test]
@@ -1933,11 +1919,11 @@ mod tests {
                 Vec::new(),
             )
         };
-        let nested = DecodedCurve::from_polycurve_parts(
-            vec![line(0.0, 1.0), line(0.0, 1.0)],
-            vec![2.0, 3.0, 5.0],
-            Vec::new(),
-        );
+        let nested = DecodedCurve::Compound {
+            children: vec![(2.0, line(0.0, 1.0)), (3.0, line(0.0, 1.0))],
+            end_parameter: 5.0,
+            warnings: Vec::new(),
+        };
         let converted = exact_nurbs(&nested, 0).expect("required invariant");
         assert_eq!(converted.knots(), vec![2.0, 2.0, 3.0, 5.0, 5.0]);
         assert_eq!(converted.control_points().len(), 3);

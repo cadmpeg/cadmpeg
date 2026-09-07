@@ -780,14 +780,14 @@ fn two_bounded_regions_sharing_one_face_use_deterministic_incidence_fallback() {
 
 #[test]
 fn c2_polycurve_merges_clamped_rational_segments_in_parent_domain() {
-    let compound = crate::curves::DecodedCurve::from_polycurve_parts(
-        vec![
-            decoded_nurbs(line_nurbs(0.0, 1.0, true)),
-            decoded_nurbs(line_nurbs(-2.0, 2.0, false)),
+    let compound = crate::curves::DecodedCurve::Compound {
+        children: vec![
+            (10.0, decoded_nurbs(line_nurbs(0.0, 1.0, true))),
+            (20.0, decoded_nurbs(line_nurbs(-2.0, 2.0, false))),
         ],
-        vec![10.0, 20.0, 40.0],
-        Vec::new(),
-    );
+        end_parameter: 40.0,
+        warnings: Vec::new(),
+    };
     let merged = c2_curve_to_nurbs_join(compound, 0).expect("merge").curve;
     assert_eq!(merged.knots(), vec![10.0, 10.0, 20.0, 40.0, 40.0]);
     assert_eq!(merged.control_points().len(), 3);
@@ -797,16 +797,19 @@ fn c2_polycurve_merges_clamped_rational_segments_in_parent_domain() {
 
 #[test]
 fn recursive_c2_polycurve_preserves_nested_parent_parameterization() {
-    let nested = crate::curves::DecodedCurve::from_polycurve_parts(
-        vec![
-            decoded_nurbs(line_nurbs(0.0, 1.0, false)),
-            decoded_nurbs(line_nurbs(0.0, 1.0, false)),
+    let nested = crate::curves::DecodedCurve::Compound {
+        children: vec![
+            (0.0, decoded_nurbs(line_nurbs(0.0, 1.0, false))),
+            (1.0, decoded_nurbs(line_nurbs(0.0, 1.0, false))),
         ],
-        vec![0.0, 1.0, 2.0],
-        Vec::new(),
-    );
-    let outer =
-        crate::curves::DecodedCurve::from_polycurve_parts(vec![nested], vec![5.0, 9.0], Vec::new());
+        end_parameter: 2.0,
+        warnings: Vec::new(),
+    };
+    let outer = crate::curves::DecodedCurve::Compound {
+        children: vec![(5.0, nested)],
+        end_parameter: 9.0,
+        warnings: Vec::new(),
+    };
     let merged = c2_curve_to_nurbs_join(outer, 0)
         .expect("nested merge")
         .curve;
@@ -827,14 +830,14 @@ fn unequal_degree_c2_polycurve_elevates_lower_degree() {
         false,
     )
     .expect("valid quadratic");
-    let compound = crate::curves::DecodedCurve::from_polycurve_parts(
-        vec![
-            decoded_nurbs(line_nurbs(0.0, 1.0, false)),
-            decoded_nurbs(quadratic),
+    let compound = crate::curves::DecodedCurve::Compound {
+        children: vec![
+            (0.0, decoded_nurbs(line_nurbs(0.0, 1.0, false))),
+            (1.0, decoded_nurbs(quadratic)),
         ],
-        vec![0.0, 1.0, 2.0],
-        Vec::new(),
-    );
+        end_parameter: 2.0,
+        warnings: Vec::new(),
+    };
     let merged = c2_curve_to_nurbs_join(compound, 0)
         .expect("degree elevation")
         .curve;
