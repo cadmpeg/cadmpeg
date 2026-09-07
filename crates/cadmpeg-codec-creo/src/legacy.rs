@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroUsize;
 use std::ops::Range;
 
+use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 
 const PRINCIPAL_UNIT_NAME: &str = "principal_sys_units";
@@ -163,8 +164,7 @@ pub type UnsignedPayload = NumericPayload<u32>;
 pub type UnsignedRecord = NumericRecord<u32>;
 
 /// Structural payload of one legacy type-0 object node.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "form", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ObjectPayload {
     /// The `->` object token.
     Arrow,
@@ -178,14 +178,68 @@ pub enum ObjectPayload {
         dimensions: Vec<u32>,
         /// Direct child object identities in source order.
         elements: Vec<String>,
-        /// Whether element cardinality equals the extent product.
-        complete: bool,
     },
     /// A type-0 payload outside the defined object forms.
     Opaque {
         /// Uninterpreted payload bytes after the attribute identifier.
         bytes: Vec<u8>,
     },
+}
+
+impl ObjectPayload {
+    /// Whether an array has exactly its declared extent product of elements.
+    pub fn is_complete(&self) -> bool {
+        let Self::Array {
+            dimensions,
+            elements,
+        } = self
+        else {
+            return false;
+        };
+        dimensions
+            .iter()
+            .try_fold(1u64, |count, dimension| {
+                count.checked_mul(u64::from(*dimension))
+            })
+            .and_then(|count| usize::try_from(count).ok())
+            .is_some_and(|count| count == elements.len())
+    }
+}
+
+impl Serialize for ObjectPayload {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut wire = serializer.serialize_struct(
+            "ObjectPayload",
+            match self {
+                Self::Array { .. } => 4,
+                Self::Opaque { .. } => 2,
+                _ => 1,
+            },
+        )?;
+        wire.serialize_field(
+            "form",
+            match self {
+                Self::Arrow => "arrow",
+                Self::Inline => "inline",
+                Self::Null => "null",
+                Self::Array { .. } => "array",
+                Self::Opaque { .. } => "opaque",
+            },
+        )?;
+        match self {
+            Self::Array {
+                dimensions,
+                elements,
+            } => {
+                wire.serialize_field("dimensions", dimensions)?;
+                wire.serialize_field("elements", elements)?;
+                wire.serialize_field("complete", &self.is_complete())?;
+            }
+            Self::Opaque { bytes } => wire.serialize_field("bytes", bytes)?,
+            _ => {}
+        }
+        wire.end()
+    }
 }
 
 /// One legacy type-0 object node in the depth-defined ownership tree.
@@ -235,8 +289,7 @@ impl StringValue {
 }
 
 /// Semantic payload of one legacy byte-string value.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "form", rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StringPayload {
     /// One string or null value.
     Scalar {
@@ -247,19 +300,70 @@ pub enum StringPayload {
     Array {
         /// Declared array dimensions.
         dimensions: Vec<u32>,
-        /// Direct string elements in source order.
-        values: Vec<StringValue>,
-        /// Whether the element count equals the first extent.
-        complete: bool,
+        /// Direct source rows, retaining unsupported continuation evidence.
+        values: Vec<Result<StringValue, Continuation>>,
+        /// Continuation rows attached to the array header.
+        continuation: Option<Continuation>,
     },
 }
 
+impl Serialize for StringPayload {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut wire = serializer.serialize_struct(
+            "StringPayload",
+            match self {
+                Self::Scalar { .. } => 2,
+                Self::Array { .. } => 4,
+            },
+        )?;
+        match self {
+            Self::Scalar { value } => {
+                wire.serialize_field("form", "scalar")?;
+                wire.serialize_field("value", value)?;
+            }
+            Self::Array {
+                dimensions, values, ..
+            } => {
+                wire.serialize_field("form", "array")?;
+                wire.serialize_field("dimensions", dimensions)?;
+                wire.serialize_field(
+                    "values",
+                    &values
+                        .iter()
+                        .filter_map(|value| value.as_ref().ok())
+                        .collect::<Vec<_>>(),
+                )?;
+                wire.serialize_field("complete", &self.is_complete())?;
+            }
+        }
+        wire.end()
+    }
+}
+
 impl StringPayload {
+    /// Whether every declared string row has a supported, complete value.
+    pub fn is_complete(&self) -> bool {
+        let Self::Array {
+            dimensions,
+            values,
+            continuation,
+        } = self
+        else {
+            return false;
+        };
+        continuation.is_none()
+            && dimensions
+                .first()
+                .and_then(|dimension| usize::try_from(*dimension).ok())
+                .is_some_and(|count| count == values.len())
+            && values.iter().all(Result::is_ok)
+    }
+
     /// Number of logical string elements represented by this payload.
     pub fn element_count(&self) -> usize {
         match self {
             Self::Scalar { .. } => 1,
-            Self::Array { values, .. } => values.len(),
+            Self::Array { values, .. } => values.iter().filter(|value| value.is_ok()).count(),
         }
     }
 
@@ -269,6 +373,7 @@ impl StringPayload {
             Self::Scalar { value } => value.undecoded_encoding_count(),
             Self::Array { values, .. } => values
                 .iter()
+                .filter_map(|value| value.as_ref().ok())
                 .map(StringValue::undecoded_encoding_count)
                 .sum(),
         }
@@ -537,15 +642,15 @@ impl Persistence {
     }
 
     fn legacy_unit_array_system(&self) -> Option<PrincipalUnitSystem> {
-        let mut arrays = self.objects.iter().filter(|object| {
-            object.name == "unit_arr"
-                && matches!(object.payload, ObjectPayload::Array { complete: true, .. })
+        let mut arrays = self.objects.iter().filter_map(|object| {
+            let ObjectPayload::Array { elements, .. } = &object.payload else {
+                return None;
+            };
+            (object.name == "unit_arr" && object.payload.is_complete())
+                .then_some((object, elements))
         });
-        let array = arrays.next()?;
+        let (array, elements) = arrays.next()?;
         arrays.next().is_none().then_some(())?;
-        let ObjectPayload::Array { elements, .. } = &array.payload else {
-            unreachable!("the unit array was filtered above");
-        };
         if elements.is_empty() {
             return None;
         }
@@ -857,18 +962,12 @@ fn object_records(
                     .flatten()
                     .map(|offset| object_node_id(*offset))
                     .collect::<Vec<_>>();
-                let expected = dimensions.iter().try_fold(1u64, |count, dimension| {
-                    count.checked_mul(u64::from(*dimension))
-                });
-                let complete = expected
-                    .and_then(|count| usize::try_from(count).ok())
-                    .is_some_and(|count| count == elements.len());
-                incomplete_arrays += usize::from(!complete);
-                ObjectPayload::Array {
+                let payload = ObjectPayload::Array {
                     dimensions,
                     elements,
-                    complete,
-                }
+                };
+                incomplete_arrays += usize::from(!payload.is_complete());
+                payload
             } else {
                 unresolved += 1;
                 ObjectPayload::Opaque {
@@ -979,13 +1078,8 @@ fn string_records(
             .iter()
             .map(|declaration| (declaration.id, declaration))
             .collect::<BTreeMap<_, _>>();
-        let values_by_offset = scope
-            .values
-            .iter()
-            .map(|value| (value.offset, value))
-            .collect::<BTreeMap<_, _>>();
         let mut active_arrays = BTreeMap::<u32, (usize, u32)>::new();
-        let mut array_children = BTreeMap::<usize, Vec<usize>>::new();
+        let mut array_children = BTreeMap::<usize, Vec<&AttributeValue>>::new();
         let mut array_element_offsets = BTreeSet::new();
         for value in &scope.values {
             drop(active_arrays.split_off(&value.depth));
@@ -996,10 +1090,7 @@ fn string_records(
                     .map(|(offset, _)| *offset)
             });
             if let Some(parent_offset) = array_parent {
-                array_children
-                    .entry(parent_offset)
-                    .or_default()
-                    .push(value.offset);
+                array_children.entry(parent_offset).or_default().push(value);
                 array_element_offsets.insert(value.offset);
                 continue;
             }
@@ -1027,30 +1118,25 @@ fn string_records(
                 let children = array_children
                     .get(&value.offset)
                     .map_or(&[][..], Vec::as_slice);
-                let mut values = Vec::new();
-                for child in children
+                let values = children
                     .iter()
-                    .filter_map(|offset| values_by_offset.get(offset).copied())
-                {
-                    if child.continuation.is_none() {
-                        values.push(string_value(&data[child.payload.clone()]));
-                    } else {
-                        unresolved += 1;
-                    }
-                }
-                let expected = dimensions
-                    .first()
-                    .and_then(|dimension| usize::try_from(*dimension).ok());
-                let complete = value.continuation.is_none()
-                    && expected.is_some_and(|count| count == children.len())
-                    && values.len() == children.len();
+                    .map(|child| {
+                        if let Some(continuation) = &child.continuation {
+                            unresolved += 1;
+                            Err(continuation.clone())
+                        } else {
+                            Ok(string_value(&data[child.payload.clone()]))
+                        }
+                    })
+                    .collect();
                 unresolved += usize::from(value.continuation.is_some());
-                incomplete_arrays += usize::from(!complete);
-                StringPayload::Array {
+                let payload = StringPayload::Array {
                     dimensions,
                     values,
-                    complete,
-                }
+                    continuation: value.continuation.clone(),
+                };
+                incomplete_arrays += usize::from(!payload.is_complete());
+                payload
             } else {
                 if value.continuation.is_some() {
                     unresolved += 1;

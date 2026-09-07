@@ -236,17 +236,18 @@ fn curve_array_elements<'a>(
     let branch = branches.next()?;
     branches.next().is_none().then_some(())?;
 
-    let mut arrays = objects.iter().filter(|object| {
-        object.parent.as_deref() == Some(branch.id.as_str())
+    let mut arrays = objects.iter().filter_map(|object| {
+        let ObjectPayload::Array { elements, .. } = &object.payload else {
+            return None;
+        };
+        (object.parent.as_deref() == Some(branch.id.as_str())
             && object.name == "crv_array"
-            && matches!(object.payload, ObjectPayload::Array { complete: true, .. })
+            && object.payload.is_complete())
+        .then_some((object, elements))
     });
-    let array = arrays.next()?;
+    let (array, elements) = arrays.next()?;
     arrays.next().is_none().then_some(())?;
 
-    let ObjectPayload::Array { elements, .. } = &array.payload else {
-        unreachable!("the curve namespace array was filtered above");
-    };
     elements
         .iter()
         .map(|element_id| {
@@ -411,17 +412,18 @@ fn surface_array_elements<'a>(
     let branch = branches.next()?;
     branches.next().is_none().then_some(())?;
 
-    let mut arrays = objects.iter().filter(|object| {
-        object.parent.as_deref() == Some(branch.id.as_str())
+    let mut arrays = objects.iter().filter_map(|object| {
+        let ObjectPayload::Array { elements, .. } = &object.payload else {
+            return None;
+        };
+        (object.parent.as_deref() == Some(branch.id.as_str())
             && object.name == "srf_array"
-            && matches!(object.payload, ObjectPayload::Array { complete: true, .. })
+            && object.payload.is_complete())
+        .then_some((object, elements))
     });
-    let array = arrays.next()?;
+    let (array, elements) = arrays.next()?;
     arrays.next().is_none().then_some(())?;
 
-    let ObjectPayload::Array { elements, .. } = &array.payload else {
-        unreachable!("the namespace array was filtered above");
-    };
     elements
         .iter()
         .map(|element_id| {
@@ -930,7 +932,6 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
                 ObjectPayload::Array {
                     dimensions: vec![1],
                     elements: vec![row.to_string()],
-                    complete: true,
                 },
             ),
             object(row, "srf_array", Some(array), ObjectPayload::Arrow),
@@ -1017,7 +1018,6 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
                 ObjectPayload::Array {
                     dimensions: vec![1],
                     elements: vec![row.to_string()],
-                    complete: true,
                 },
             ),
             object(row, "srf_array", Some(array), ObjectPayload::Arrow),
@@ -1106,7 +1106,6 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
                 ObjectPayload::Array {
                     dimensions: vec![1],
                     elements: vec![row.to_string()],
-                    complete: true,
                 },
             ),
             object(row, "srf_array", Some(array), ObjectPayload::Arrow),
@@ -1493,7 +1492,6 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
                 ObjectPayload::Array {
                     dimensions: vec![2],
                     elements: vec![first.to_string(), second.to_string()],
-                    complete: true,
                 },
             ),
             object(first, "crv_array", Some(array), ObjectPayload::Arrow),

@@ -207,12 +207,10 @@ fn full_data_dimension_rows<'a>(index: &'a Index<'a>) -> Option<Vec<&'a ObjectRe
         return None;
     };
     let array = *array;
-    let ObjectPayload::Array {
-        elements,
-        complete: true,
-        ..
-    } = &array.payload
-    else {
+    if !array.payload.is_complete() {
+        return None;
+    }
+    let ObjectPayload::Array { elements, .. } = &array.payload else {
         return None;
     };
     let mut seen = BTreeSet::new();
@@ -395,7 +393,6 @@ mod tests {
             ObjectPayload::Array {
                 dimensions: vec![u32::try_from(elements.len()).expect("test extent")],
                 elements,
-                complete: true,
             },
         ));
         Persistence {

@@ -474,16 +474,17 @@ fn type_10_strings_decode_null_bytes_and_direct_element_arrays() {
         StringPayload::Array {
             dimensions: vec![2, 81],
             values: vec![
-                StringValue::Utf8 {
+                Ok(StringValue::Utf8 {
                     text: "first".to_string()
-                },
-                StringValue::Utf8 {
+                }),
+                Ok(StringValue::Utf8 {
                     text: String::new()
-                },
+                }),
             ],
-            complete: true,
+            continuation: None,
         }
     );
+    assert!(persistence.string_values[4].payload.is_complete());
     assert_eq!(persistence.string_values[4].payload.element_count(), 2);
     assert_eq!(
         persistence.string_values[3]
@@ -505,16 +506,47 @@ fn type_10_strings_retain_incomplete_arrays_and_withhold_continuations() {
 
     assert_eq!(persistence.string_values.len(), 1);
     assert_eq!(persistence.incomplete_string_array_count, 1);
+    assert!(!persistence.string_values[0].payload.is_complete());
     assert_eq!(persistence.unresolved_string_value_count, 1);
     assert_eq!(
         persistence.string_values[0].payload,
         StringPayload::Array {
             dimensions: vec![2],
-            values: vec![StringValue::Utf8 {
+            values: vec![Ok(StringValue::Utf8 {
                 text: "only".to_string()
-            }],
-            complete: false,
+            })],
+            continuation: None,
         }
+    );
+}
+
+#[test]
+fn array_completeness_wire_retains_continuation_failures() {
+    let data = b"@names 1 10\n0 1 [1]\n$header\n1 1 value\n\
+        @other 2 10\n0 2 [1]\n1 2 value\n$child\n";
+    let persistence = scan(data, std::iter::once(0..data.len()));
+    assert_eq!(persistence.incomplete_string_array_count, 2);
+    assert_eq!(persistence.unresolved_string_value_count, 2);
+    assert_eq!(
+        serde_json::to_value(&persistence.string_values[0].payload).unwrap(),
+        serde_json::json!({"form": "array", "dimensions": [1],
+            "values": [{"form": "utf8", "text": "value"}], "complete": false})
+    );
+    assert_eq!(
+        serde_json::to_value(&persistence.string_values[1].payload).unwrap(),
+        serde_json::json!({"form": "array", "dimensions": [1],
+            "values": [], "complete": false})
+    );
+    let payload = ObjectPayload::Array {
+        dimensions: vec![1, 2],
+        elements: vec!["first".into(), "second".into()],
+    };
+    assert_eq!(
+        serde_json::to_value(payload).unwrap(),
+        serde_json::json!({
+            "form": "array", "dimensions": [1, 2], "elements": ["first", "second"],
+            "complete": true
+        })
     );
 }
 
@@ -542,6 +574,7 @@ fn type_0_objects_define_scoped_ownership_and_array_elements() {
 
     assert_eq!(persistence.objects.len(), 4);
     assert_eq!(persistence.incomplete_object_array_count, 0);
+    assert!(persistence.objects[1].payload.is_complete());
     assert_eq!(persistence.unresolved_object_value_count, 0);
     assert_eq!(
         persistence.objects[1].parent.as_deref(),
@@ -555,7 +588,6 @@ fn type_0_objects_define_scoped_ownership_and_array_elements() {
                 object_node_id(first_child_offset),
                 object_node_id(second_child_offset),
             ],
-            complete: true,
         }
     );
     assert_eq!(persistence.integer_values.len(), 1);
@@ -578,13 +610,11 @@ fn type_0_objects_retain_incomplete_and_opaque_forms() {
 
     assert_eq!(persistence.objects.len(), 2);
     assert_eq!(persistence.incomplete_object_array_count, 1);
+    assert!(!persistence.objects[0].payload.is_complete());
     assert_eq!(persistence.unresolved_object_value_count, 1);
     assert!(matches!(
         persistence.objects[0].payload,
-        ObjectPayload::Array {
-            complete: false,
-            ..
-        }
+        ObjectPayload::Array { .. }
     ));
     assert_eq!(
         persistence.objects[1].payload,

@@ -235,16 +235,11 @@ fn array_elements<'a>(
     let ObjectPayload::Array {
         dimensions,
         elements,
-        complete,
     } = &array.payload
     else {
         return None;
     };
-    if !complete || dimensions.len() != 1 {
-        return None;
-    }
-    let dimension = usize::try_from(*dimensions.first()?).ok()?;
-    if dimension != elements.len() {
+    if !array.payload.is_complete() || dimensions.len() != 1 {
         return None;
     }
     elements
@@ -563,7 +558,6 @@ mod tests {
                     ObjectPayload::Array {
                         dimensions: vec![1],
                         elements: vec![item.to_string()],
-                        complete: true,
                     },
                     3,
                 ),
@@ -581,7 +575,6 @@ mod tests {
                     ObjectPayload::Array {
                         dimensions: vec![1],
                         elements: vec![instance.to_string()],
-                        complete: true,
                     },
                     5,
                 ),
@@ -600,7 +593,6 @@ mod tests {
                     ObjectPayload::Array {
                         dimensions: vec![1],
                         elements: vec![value.to_string()],
-                        complete: true,
                     },
                     8,
                 ),
