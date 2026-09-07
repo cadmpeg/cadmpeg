@@ -17,15 +17,15 @@ pub(crate) enum GroupNodeFamily {
     Region,
 }
 impl GroupNodeFamily {
-    fn kind(self) -> u8 {
+    fn kind(self) -> crate::framing::node_kind::NodeKind {
         match self {
-            Self::Body => 12,
-            Self::Shell => 13,
-            Self::Face => 14,
-            Self::Loop => 15,
-            Self::Edge => 16,
-            Self::Vertex => 18,
-            Self::Region => 19,
+            Self::Body => crate::framing::node_kind::NodeKind::Body,
+            Self::Shell => crate::framing::node_kind::NodeKind::Shell,
+            Self::Face => crate::framing::node_kind::NodeKind::Face,
+            Self::Loop => crate::framing::node_kind::NodeKind::Loop,
+            Self::Edge => crate::framing::node_kind::NodeKind::Edge,
+            Self::Vertex => crate::framing::node_kind::NodeKind::Vertex,
+            Self::Region => crate::framing::node_kind::NodeKind::Region,
         }
     }
     fn name(self) -> &'static str {

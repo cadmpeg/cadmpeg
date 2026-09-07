@@ -19,6 +19,7 @@ use support_uv_values::{SupportUvPacking, SupportUvValues};
 
 use chart_samples::{ChartPreamble, ChartSamples, SourceChartData, MISSING_PARAMETER};
 
+use crate::framing::node_kind::NodeKind;
 use crate::framing::read_xmt_width as read_xmt;
 use crate::framing::xmt_reference::NonNullXmt;
 use crate::layout::chart_s_preamble as chart_preamble;
@@ -693,9 +694,18 @@ fn blend_bound_layout(
 }
 
 fn is_surface(graph: &topology::Graph, xmt: u32) -> bool {
-    [50, 51, 52, 53, 54, 56, 60, 124]
-        .into_iter()
-        .any(|kind| graph.get(kind, xmt).is_some())
+    [
+        NodeKind::Plane,
+        NodeKind::Cylinder,
+        NodeKind::Cone,
+        NodeKind::Sphere,
+        NodeKind::Torus,
+        NodeKind::BlendSurface,
+        NodeKind::OffsetSurface,
+        NodeKind::BSurface,
+    ]
+    .into_iter()
+    .any(|kind| graph.get(kind, xmt).is_some())
 }
 
 fn chart_records(stream: &[u8], point_layout: ChartPointLayout) -> BTreeMap<u32, Chart> {

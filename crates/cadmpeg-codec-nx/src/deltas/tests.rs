@@ -5,6 +5,7 @@
 // lived at crate root; deltas.rs denies those methods for production.
 #![allow(clippy::disallowed_methods)]
 
+use crate::framing::node_kind::NodeKind;
 use crate::test_support::*;
 
 pub(crate) fn deltas_body_revision(node_id: u32) -> Vec<u8> {
@@ -1428,7 +1429,7 @@ fn deltas_procedural_wrappers_normalize_complete_record_envelopes() {
             .expect("procedural wrapper");
         assert_eq!(record.canonical_bytes.len(), byte_len);
         assert!(crate::topology::Graph::parse(&record.canonical_bytes)
-            .get(kind as u8, 12)
+            .get(NodeKind::try_from(kind as u8).unwrap(), 12)
             .is_some());
     }
 
@@ -1524,7 +1525,9 @@ fn merged_deltas_full_record_replaces_partition_node() {
     assert_eq!(points[0].position.x, 12.5);
     assert_eq!(points[0].position.y, -2.0);
     assert_eq!(points[0].position.z, 4.0);
-    assert!(crate::topology::Graph::parse(&merged).get(29, 11).is_some());
+    assert!(crate::topology::Graph::parse(&merged)
+        .get(NodeKind::Point, 11)
+        .is_some());
 }
 
 #[test]
@@ -1539,7 +1542,9 @@ fn merged_tombstone_preserves_a_topology_referenced_carrier() {
     assert_eq!(census.tombstones[0].kind.code(), 29);
     assert_eq!(census.tombstones[0].xmt, 11);
     let merged = crate::deltas::merge_full_records(&partition, &tombstone);
-    assert!(crate::topology::Graph::parse(&merged).get(29, 11).is_some());
+    assert!(crate::topology::Graph::parse(&merged)
+        .get(NodeKind::Point, 11)
+        .is_some());
     assert_eq!(crate::geometry::points(&merged)[0].position.x, 10.0);
 }
 
@@ -1550,7 +1555,9 @@ fn merged_exact_key_tombstone_removes_unreferenced_partition_node() {
     put_vec3(&mut partition, 16, [0.01, 0.02, 0.03]);
     let tombstone = [0, 29, 0, 11, 0, 1];
     let merged = crate::deltas::merge_full_records(&partition, &tombstone);
-    assert!(crate::topology::Graph::parse(&merged).get(29, 11).is_none());
+    assert!(crate::topology::Graph::parse(&merged)
+        .get(NodeKind::Point, 11)
+        .is_none());
 }
 
 #[test]
@@ -1582,12 +1589,16 @@ fn final_body_revision_scopes_deltas_overlay_events() {
     historical_delete.extend_from_slice(&known_tombstone);
     historical_delete.extend_from_slice(&deltas_body_revision(2));
     let merged = crate::deltas::merge_full_records(&partition, &historical_delete);
-    assert!(crate::topology::Graph::parse(&merged).get(29, 11).is_some());
+    assert!(crate::topology::Graph::parse(&merged)
+        .get(NodeKind::Point, 11)
+        .is_some());
 
     let mut current_delete = historical_delete;
     current_delete.extend_from_slice(&known_tombstone);
     let merged = crate::deltas::merge_full_records(&partition, &current_delete);
-    assert!(crate::topology::Graph::parse(&merged).get(29, 11).is_none());
+    assert!(crate::topology::Graph::parse(&merged)
+        .get(NodeKind::Point, 11)
+        .is_none());
 }
 
 #[test]
@@ -1603,8 +1614,8 @@ fn body_revision_scopes_keep_each_monotonic_sequence_current() {
 
     let merged = crate::deltas::merge_full_records(&[], &deltas);
     let graph = crate::topology::Graph::parse(&merged);
-    assert!(graph.get(29, 50).is_some());
-    assert!(graph.get(29, 51).is_some());
+    assert!(graph.get(NodeKind::Point, 50).is_some());
+    assert!(graph.get(NodeKind::Point, 51).is_some());
     let points = crate::geometry::points(&merged);
     assert!(points
         .iter()
@@ -1633,8 +1644,8 @@ fn body_revision_scopes_accept_reverse_serialized_counter_direction() {
 
     let merged = crate::deltas::merge_full_records(&[], &deltas);
     let graph = crate::topology::Graph::parse(&merged);
-    assert!(graph.get(29, 50).is_some());
-    assert!(graph.get(29, 51).is_some());
+    assert!(graph.get(NodeKind::Point, 50).is_some());
+    assert!(graph.get(NodeKind::Point, 51).is_some());
     let points = crate::geometry::points(&merged);
     assert!(points
         .iter()

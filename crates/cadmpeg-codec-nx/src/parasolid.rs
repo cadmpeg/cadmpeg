@@ -37,6 +37,7 @@ use entity_references::EntityReferences;
 use name_references::NameReferences;
 
 use crate::container::Container;
+use crate::framing::node_kind::NodeKind;
 use crate::framing::read_and_advance as read_xmt;
 use crate::framing::xmt_reference::{NonNullXmt, XmtTarget};
 
@@ -741,7 +742,18 @@ fn structural_stream_candidate(kind: StreamKind, inflated: &[u8]) -> bool {
         return false;
     }
     let graph = crate::topology::Graph::parse(inflated);
-    (12..=19).any(|topology_kind| graph.of_kind(topology_kind).next().is_some())
+    [
+        NodeKind::Body,
+        NodeKind::Shell,
+        NodeKind::Face,
+        NodeKind::Loop,
+        NodeKind::Edge,
+        NodeKind::Fin,
+        NodeKind::Vertex,
+        NodeKind::Region,
+    ]
+    .into_iter()
+    .any(|kind| graph.of_kind(kind).next().is_some())
 }
 
 /// Locate clear Parasolid transmit sections in a legacy `UG_PART/UG_PART`

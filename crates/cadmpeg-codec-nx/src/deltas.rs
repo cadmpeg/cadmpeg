@@ -2,6 +2,7 @@
 //! Walk status-byte-framed Parasolid deltas records.
 #![deny(clippy::disallowed_methods)]
 
+use crate::framing::node_kind::NodeKind;
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU16;
 
@@ -1951,7 +1952,10 @@ pub(crate) fn merge_full_records_with_census(
     let deletions = tombstones
         .into_iter()
         .filter(|(key, tombstone)| {
-            graph.get(key.0, key.1).is_some()
+            NodeKind::try_from(key.0)
+                .ok()
+                .and_then(|kind| graph.get(kind, key.1))
+                .is_some()
                 && !topology_carriers.contains(&key.1)
                 && replacements
                     .get(key)
@@ -1963,7 +1967,10 @@ pub(crate) fn merge_full_records_with_census(
         let mut merged = partition.to_vec();
         for &(kind, xmt) in replacements.keys().chain(deletions.keys()) {
             if included(kind) {
-                if let Some(node) = graph.get(kind, xmt) {
+                if let Some(node) = NodeKind::try_from(kind)
+                    .ok()
+                    .and_then(|kind| graph.get(kind, xmt))
+                {
                     merged[node.pos..node.end()].fill(0xff);
                 }
             }
@@ -2084,7 +2091,7 @@ fn count_unmatched_events(
         else {
             continue;
         };
-        if graph.get(kind, xmt).is_none()
+        if NodeKind::try_from(kind).ok().and_then(|kind| graph.get(kind, xmt)).is_none()
             && !events.iter().any(|event| {
                 matches!(event, MergeEvent::Full { offset: full_offset } if *full_offset < offset)
             })
@@ -2097,10 +2104,10 @@ fn count_unmatched_events(
 }
 
 fn mergeable_record(record: &Record, kind: u8) -> bool {
-    matches!(
-        kind,
-        12..=19 | 29..=32 | 38 | 50..=54 | 56 | 60 | 124 | 133 | 134 | 137
-    ) && crate::topology::Graph::parse(&record.canonical_bytes)
+    let Ok(kind) = NodeKind::try_from(kind) else {
+        return false;
+    };
+    crate::topology::Graph::parse(&record.canonical_bytes)
         .get(kind, record.xmt)
         .is_some()
 }

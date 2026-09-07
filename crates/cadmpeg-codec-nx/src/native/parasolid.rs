@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parasolid source-record extractors and their record types.
 
-#[allow(clippy::wildcard_imports)]
 use super::*;
-
+#[allow(clippy::wildcard_imports)]
 use crate::framing::xmt_reference::XmtTarget;
 use crate::parasolid::name_references::NameReferences;
 use crate::topology::blend_surface_state::BlendSurfaceState;
@@ -2611,7 +2610,7 @@ pub(crate) fn parasolid_topology_attribute_list_references(
     for (stream_ordinal, stream) in parsed.iter() {
         let graph = &stream.view_for_records().graph;
         for topology_type in TopologyAttributeKind::ALL {
-            for node in graph.of_kind(topology_type.code()) {
+            for node in graph.of_kind(topology_type.node_kind()) {
                 let attribute_list_xmt = match topology_type {
                     TopologyAttributeKind::Shell => {
                         node.shell_fields().map(|fields| fields.attributes)
@@ -4819,7 +4818,7 @@ mod tests {
         let graph = crate::topology::Graph::parse(&stream);
         assert_eq!(
             graph
-                .get(14, 4)
+                .get(crate::framing::node_kind::NodeKind::Face, 4)
                 .expect("required invariant")
                 .face_fields()
                 .expect("required invariant")
@@ -4828,7 +4827,7 @@ mod tests {
         );
         assert_eq!(
             graph
-                .get(15, 5)
+                .get(crate::framing::node_kind::NodeKind::Loop, 5)
                 .expect("required invariant")
                 .loop_fields()
                 .expect("required invariant")
@@ -4837,7 +4836,7 @@ mod tests {
         );
         assert_eq!(
             graph
-                .get(17, 7)
+                .get(crate::framing::node_kind::NodeKind::Fin, 7)
                 .expect("required invariant")
                 .fin_fields()
                 .expect("required invariant")
@@ -4846,7 +4845,7 @@ mod tests {
         );
         assert_eq!(
             graph
-                .get(16, 8)
+                .get(crate::framing::node_kind::NodeKind::Edge, 8)
                 .expect("required invariant")
                 .edge_fields()
                 .expect("required invariant")
@@ -4855,7 +4854,7 @@ mod tests {
         );
         assert_eq!(
             graph
-                .get(18, 10)
+                .get(crate::framing::node_kind::NodeKind::Vertex, 10)
                 .expect("required invariant")
                 .vertex_fields()
                 .expect("required invariant")

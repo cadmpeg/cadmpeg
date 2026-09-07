@@ -29,6 +29,7 @@ use super::pcurves::{
     surface_parameters_for_fit_with_index_and_budget, EndpointWitnesses,
 };
 use super::MISSING_TOLERANCE;
+use crate::framing::node_kind::NodeKind;
 use crate::framing::xmt_reference::NonNullXmt;
 use crate::intersection::{SupportUv, SupportUvLane};
 use crate::topology::Graph;
@@ -2185,7 +2186,7 @@ fn attach_completed_intersection_pcurves_for_sources_with_budget(
         }
         let source_offset = source
             .graph
-            .get(17, fin_xmt)
+            .get(NodeKind::Fin, fin_xmt)
             .map_or(0, |node| node.pos as u64);
         annotations
             .note(&pcurve_id, source.source_stream, source_offset)

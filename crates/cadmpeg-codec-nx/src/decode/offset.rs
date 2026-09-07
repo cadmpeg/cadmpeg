@@ -9,6 +9,7 @@ use super::geometry_work::GeometryWorkBudget;
 #[cfg(test)]
 use super::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK;
 use super::support_uv::{linear_knots, missing_support_parameter};
+use crate::framing::node_kind::NodeKind;
 use crate::native::vector::{cross_vector, dot_vector, unit_vector};
 use crate::topology::{Graph, Node};
 use cadmpeg_ir::document::CadIr;
@@ -47,7 +48,7 @@ pub(crate) fn saved_offset_carriers(
         return BTreeMap::new();
     }
     let face_surfaces = graph
-        .of_kind(14)
+        .of_kind(NodeKind::Face)
         .filter_map(Node::face_fields)
         .map(|face| face.surface)
         .collect::<BTreeSet<_>>();

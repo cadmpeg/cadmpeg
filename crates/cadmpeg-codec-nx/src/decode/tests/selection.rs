@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use crate::framing::node_kind::NodeKind;
 use std::{collections::BTreeSet, io::Cursor};
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -596,13 +597,13 @@ fn decode_tracks_fully_extended_geometry_header_shift() {
     let graph = crate::topology::Graph::parse(&stream);
     assert!(matches!(
         graph
-            .get(50, 6)
+            .get(NodeKind::Plane, 6)
             .and_then(crate::topology::Node::surface_geometry),
         Some(SurfaceGeometry::Plane { .. })
     ));
     assert!(matches!(
         graph
-            .get(30, 9)
+            .get(NodeKind::Line, 9)
             .and_then(crate::topology::Node::curve_geometry),
         Some(CurveGeometry::Line { .. })
     ));

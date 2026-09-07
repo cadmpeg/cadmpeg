@@ -107,6 +107,7 @@ pub use evaluation::{
     saved_body_census_evidence, BodyCensusEvaluation, FeatureBoundary, UnsupportedBodyCensusReason,
 };
 
+use crate::framing::node_kind::NodeKind;
 use cadmpeg_core::container::{ContainerRole, EntryCompression};
 
 use std::collections::BTreeMap;
@@ -184,14 +185,14 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
         if stream.kind().is_parasolid() {
             let graph = topology::Graph::parse(&stream.inflated);
             for (kind, name) in [
-                (12, "body"),
-                (13, "shell"),
-                (14, "face"),
-                (15, "loop"),
-                (16, "edge"),
-                (17, "fin"),
-                (18, "vertex"),
-                (19, "region"),
+                (NodeKind::Body, "body"),
+                (NodeKind::Shell, "shell"),
+                (NodeKind::Face, "face"),
+                (NodeKind::Loop, "loop"),
+                (NodeKind::Edge, "edge"),
+                (NodeKind::Fin, "fin"),
+                (NodeKind::Vertex, "vertex"),
+                (NodeKind::Region, "region"),
             ] {
                 attributes.insert(
                     format!("records.{name}"),
@@ -201,14 +202,14 @@ fn summarize(scan: &decode::Scan) -> ContainerSummary {
             if stream.kind() == parasolid::StreamKind::Partition {
                 let graph = topology::Graph::parse(&semantic_streams[si]);
                 for (kind, name) in [
-                    (12, "body"),
-                    (13, "shell"),
-                    (14, "face"),
-                    (15, "loop"),
-                    (16, "edge"),
-                    (17, "fin"),
-                    (18, "vertex"),
-                    (19, "region"),
+                    (NodeKind::Body, "body"),
+                    (NodeKind::Shell, "shell"),
+                    (NodeKind::Face, "face"),
+                    (NodeKind::Loop, "loop"),
+                    (NodeKind::Edge, "edge"),
+                    (NodeKind::Fin, "fin"),
+                    (NodeKind::Vertex, "vertex"),
+                    (NodeKind::Region, "region"),
                 ] {
                     attributes.insert(
                         format!("records.live.{name}"),

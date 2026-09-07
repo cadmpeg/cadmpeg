@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use crate::framing::node_kind::NodeKind;
 
 #[test]
 fn decode_reports_status_framed_deltas_records_and_tombstones() {
@@ -115,7 +116,7 @@ fn decode_preserves_partition_loop_topology_over_deltas_history() {
     let merged = crate::deltas::merge_full_records(&partition, &deltas);
     assert_eq!(
         crate::topology::Graph::parse(&merged)
-            .get(15, 5)
+            .get(NodeKind::Loop, 5)
             .and_then(|node| node.u32_at(4)),
         Some(0)
     );
@@ -133,7 +134,7 @@ fn decode_preserves_partition_shell_topology_over_deltas_history() {
     let merged = crate::deltas::merge_full_records(&partition, &deltas);
     assert_eq!(
         crate::topology::Graph::parse(&merged)
-            .get(13, 3)
+            .get(NodeKind::Shell, 3)
             .and_then(|node| node.u32_at(4)),
         Some(0)
     );
