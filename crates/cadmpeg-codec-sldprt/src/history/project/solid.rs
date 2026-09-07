@@ -449,17 +449,13 @@ pub(crate) fn hole_profile_construction(
 }
 
 pub(crate) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction> {
-    #[derive(Clone, Copy, PartialEq, Eq)]
-    enum DimensionRole {
-        Diameter,
-        Length,
-        Angle,
+    enum ParsedDimension {
+        Diameter(Length),
+        Length(Length),
+        Angle(Angle),
     }
 
-    let mut diameters = Vec::new();
-    let mut lengths = Vec::new();
-    let mut angles = Vec::new();
-    let mut roles = Vec::new();
+    let mut dimensions = Vec::new();
     let source_dimensions = profile
         .content
         .iter()
@@ -482,15 +478,22 @@ pub(crate) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
                 .filter(|value| *value > 0.0)
                 .map(Length)
             {
-                diameters.push(value);
-                roles.push(DimensionRole::Diameter);
+                dimensions.push(ParsedDimension::Diameter(value));
             }
         } else if let Some(value) = parse_bounded_angle_rad(expression).map(Angle) {
-            angles.push(value);
-            roles.push(DimensionRole::Angle);
+            dimensions.push(ParsedDimension::Angle(value));
         } else if let Some(value) = parse_positive_dimension_length_mm(expression).map(Length) {
-            lengths.push(value);
-            roles.push(DimensionRole::Length);
+            dimensions.push(ParsedDimension::Length(value));
+        }
+    }
+    let mut diameters = Vec::new();
+    let mut lengths = Vec::new();
+    let mut angles = Vec::new();
+    for dimension in &dimensions {
+        match dimension {
+            ParsedDimension::Diameter(value) => diameters.push(*value),
+            ParsedDimension::Length(value) => lengths.push(*value),
+            ParsedDimension::Angle(value) => angles.push(*value),
         }
     }
     diameters.sort_by(|left, right| left.0.total_cmp(&right.0));
@@ -519,15 +522,16 @@ pub(crate) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
             taper_angle: None,
         }),
         ([diameter, major_diameter], [thread_depth, drill_depth], [drill_point_angle])
-            if roles
-                == [
-                    DimensionRole::Diameter,
-                    DimensionRole::Length,
-                    DimensionRole::Diameter,
-                    DimensionRole::Length,
-                    DimensionRole::Angle,
+            if matches!(
+                dimensions.as_slice(),
+                [
+                    ParsedDimension::Diameter(_),
+                    ParsedDimension::Length(_),
+                    ParsedDimension::Diameter(_),
+                    ParsedDimension::Length(_),
+                    ParsedDimension::Angle(_),
                 ]
-                && diameter.0 < major_diameter.0
+            ) && diameter.0 < major_diameter.0
                 && thread_depth.0 < drill_depth.0 =>
         {
             Some(HoleProfileConstruction {
@@ -573,7 +577,7 @@ pub(crate) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
             })
         }
         ([diameter, entry_diameter], [entry_depth, depth], [drill_point_angle])
-            if roles.last() == Some(&DimensionRole::Diameter)
+            if matches!(dimensions.last(), Some(ParsedDimension::Diameter(_)))
                 && diameter.0 < entry_diameter.0
                 && entry_depth.0 < depth.0 =>
         {
@@ -597,16 +601,17 @@ pub(crate) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileC
             [diameter, exit_diameter, counterbore_diameter],
             [counterbore_depth, through_depth],
             [exit_angle],
-        ) if roles
-            == [
-                DimensionRole::Length,
-                DimensionRole::Diameter,
-                DimensionRole::Angle,
-                DimensionRole::Length,
-                DimensionRole::Diameter,
-                DimensionRole::Diameter,
+        ) if matches!(
+            dimensions.as_slice(),
+            [
+                ParsedDimension::Length(_),
+                ParsedDimension::Diameter(_),
+                ParsedDimension::Angle(_),
+                ParsedDimension::Length(_),
+                ParsedDimension::Diameter(_),
+                ParsedDimension::Diameter(_),
             ]
-            && diameter.0 < exit_diameter.0
+        ) && diameter.0 < exit_diameter.0
             && exit_diameter.0 < counterbore_diameter.0
             && counterbore_depth.0 < through_depth.0 =>
         {
