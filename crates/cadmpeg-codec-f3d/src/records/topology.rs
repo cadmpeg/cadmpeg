@@ -957,7 +957,7 @@ pub struct DesignConstructionOperandIdentity {
     /// Indexed-header byte offset of the record following the wrappers.
     pub following_byte_offset: u64,
     /// Per-file dynamic class tag of the record following the wrappers.
-    pub following_class_tag: String,
+    pub following_class_tag: DesignClassTag,
     /// Entity-tracking path between the outer wrappers and persistent identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tracking_path: Option<DesignConstructionTrackingPath>,
@@ -1015,7 +1015,7 @@ impl TryFrom<DesignConstructionOperandIdentityWire> for DesignConstructionOperan
             group_record_index: wire.group_record_index,
             following_record_index: wire.following_record_index,
             following_byte_offset: wire.following_byte_offset,
-            following_class_tag: wire.following_class_tag,
+            following_class_tag: wire.following_class_tag.try_into()?,
             tracking_path: wire.tracking_path,
             persistent_identity: wire.persistent_identity,
             wrappers: wire
@@ -1052,7 +1052,7 @@ impl From<DesignConstructionOperandIdentity> for DesignConstructionOperandIdenti
             group_record_index: identity.group_record_index,
             following_record_index: identity.following_record_index,
             following_byte_offset: identity.following_byte_offset,
-            following_class_tag: identity.following_class_tag,
+            following_class_tag: identity.following_class_tag.into(),
             tracking_path: identity.tracking_path,
             persistent_identity: identity.persistent_identity,
             wrapper_record_indices,

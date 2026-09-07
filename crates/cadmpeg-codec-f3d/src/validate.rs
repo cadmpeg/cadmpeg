@@ -5875,31 +5875,24 @@ fn validate_construction_operand_identities<'a>(
         } else {
             true
         };
-        let following_shape = identity.following_class_tag.len() == 3
-            && identity
-                .following_class_tag
-                .bytes()
-                .all(|byte| byte.is_ascii_digit())
-            && if let Some(path) = &identity.tracking_path {
-                identity.following_record_index == path.following_record_index
-                    && identity.following_byte_offset == path.following_byte_offset
-                    && identity.following_class_tag == path.following_class_tag
-            } else if let Some(offset) = identity.wrappers.last().map(|wrapper| wrapper.byte_offset)
-            {
-                identity.following_byte_offset == offset.saturating_add(24)
-            } else {
-                transform.is_some_and(|transform| {
-                    identity.following_record_index == transform.following_record_index
-                        && identity.following_byte_offset == transform.following_byte_offset
-                        && identity.following_class_tag == transform.following_class_tag.as_str()
-                })
-            }
-            && records_by_index
-                .get(&(native_stream, identity.following_record_index))
-                .is_some_and(|header| {
-                    header.byte_offset == identity.following_byte_offset
-                        && header.class_tag.as_str() == identity.following_class_tag
-                });
+        let following_shape = if let Some(path) = &identity.tracking_path {
+            identity.following_record_index == path.following_record_index
+                && identity.following_byte_offset == path.following_byte_offset
+                && identity.following_class_tag.as_str() == path.following_class_tag
+        } else if let Some(offset) = identity.wrappers.last().map(|wrapper| wrapper.byte_offset) {
+            identity.following_byte_offset == offset.saturating_add(24)
+        } else {
+            transform.is_some_and(|transform| {
+                identity.following_record_index == transform.following_record_index
+                    && identity.following_byte_offset == transform.following_byte_offset
+                    && identity.following_class_tag == transform.following_class_tag
+            })
+        } && records_by_index
+            .get(&(native_stream, identity.following_record_index))
+            .is_some_and(|header| {
+                header.byte_offset == identity.following_byte_offset
+                    && header.class_tag == identity.following_class_tag
+            });
         let persistent_shape = identity
             .persistent_identity
             .as_ref()

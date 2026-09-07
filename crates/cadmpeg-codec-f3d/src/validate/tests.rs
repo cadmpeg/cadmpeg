@@ -1206,7 +1206,7 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
         }],
         following_record_index: 102,
         following_byte_offset: 1_124,
-        following_class_tag: "395".into(),
+        following_class_tag: crate::records::DesignClassTag::try_from("395".to_owned()).unwrap(),
         tracking_path: None,
         persistent_identity: Some(DesignConstructionPersistentIdentity {
             local_id: 167,

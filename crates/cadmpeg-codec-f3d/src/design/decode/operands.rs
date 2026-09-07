@@ -2736,7 +2736,7 @@ pub(crate) fn parse_construction_operand_identity(
         wrappers,
         following_record_index: current_record_index,
         following_byte_offset: u64::try_from(current_at).ok()?,
-        following_class_tag: current_class_tag,
+        following_class_tag: current_class_tag.try_into().ok()?,
         tracking_path,
         persistent_identity,
     })

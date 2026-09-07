@@ -667,7 +667,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         }],
         following_record_index: 200,
         following_byte_offset: 0,
-        following_class_tag: "290".into(),
+        following_class_tag: crate::records::DesignClassTag::try_from("290".to_owned()).unwrap(),
         tracking_path: None,
         persistent_identity: Some(DesignConstructionPersistentIdentity {
             local_id: 586,
