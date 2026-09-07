@@ -265,9 +265,7 @@ pub(crate) fn section_equation_unsigned_coordinate_distance_rows(
                 return None;
             }
             let dimension_row = dimensions.rows.get(usize::try_from(dimension.key).ok()?)?;
-            if dimension_row.value_unit != crate::feature::DimensionUnit::Millimeters
-                || !matches!(dimension_row.dimension_type, 1..=5)
-            {
+            if !matches!(dimension_row.dimension_type, 1..=5) {
                 return None;
             }
             let equality_value = scalar_equality_values
@@ -278,7 +276,7 @@ pub(crate) fn section_equation_unsigned_coordinate_distance_rows(
             let value = section_equation_dimension_scalar_value(
                 dimension,
                 equality_value,
-                dimension_row.value?.abs(),
+                dimension_row.value.resolved()?.abs(),
                 false,
             )?;
             Some(SectionUnsignedCoordinateDistance {
@@ -340,7 +338,7 @@ pub(crate) fn section_equation_radius_dimensions(
                 _ => return None,
             };
             let dimension = dimensions.rows.get(usize::try_from(scalar.key).ok()?)?;
-            let dimension_value = dimension.value?;
+            let dimension_value = dimension.value.resolved()?;
             let radius_equality = scalar_equality_values
                 .get(&(radius.variable_type, radius.key))
                 .copied()
@@ -348,7 +346,6 @@ pub(crate) fn section_equation_radius_dimensions(
                 .ok()?;
             let radius_value = reconcile_equation_value(radius.value, radius_equality).ok()?;
             if dimension.dimension_type != 3
-                || dimension.value_unit != crate::feature::DimensionUnit::Millimeters
                 || radius_value.is_some_and(|value| {
                     !value.is_finite()
                         || value <= 0.0

@@ -219,10 +219,8 @@ fn dimension_identity_includes_its_feature_definition() {
     );
     let dimension = crate::feature::FeatureDimension {
         dimension_type: 2,
-        value: Some(5.0),
+        value: crate::feature::definitions::DimensionValue::Resolved(5.0),
         value_body: Vec::new(),
-        unresolved_value_token: None,
-        value_unit: crate::feature::DimensionUnit::Millimeters,
         direction_byte: 0,
         auxiliary_value: None,
         auxiliary_body: Vec::new(),
@@ -530,7 +528,7 @@ fn dimension_identity_includes_its_feature_definition() {
         })
     );
     let unresolved_dimension = crate::feature::FeatureDimension {
-        value: None,
+        value: crate::feature::definitions::DimensionValue::Undefined,
         value_body: Vec::new(),
         external_id: 4,
         ..dimension.clone()

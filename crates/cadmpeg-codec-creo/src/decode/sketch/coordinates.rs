@@ -383,6 +383,7 @@ pub(crate) fn resolved_section_coordinates(
             )?;
             let magnitude = section_relation_length_dimension(definition, relation)?
                 .value
+                .resolved()
                 .filter(|value| value.is_finite() && *value >= 0.0)?;
             matches!(relation.sign, 0 | 1 | 0xf6).then_some((
                 first,
@@ -1500,10 +1501,8 @@ mod tests {
                 entity_ref: None,
                 rows: vec![FeatureDimension {
                     dimension_type: 3,
-                    value: Some(2.0),
+                    value: crate::feature::definitions::DimensionValue::Resolved(2.0),
                     value_body: Vec::new(),
-                    unresolved_value_token: None,
-                    value_unit: crate::feature::DimensionUnit::Millimeters,
                     direction_byte: 0,
                     auxiliary_value: None,
                     auxiliary_body: Vec::new(),
@@ -1576,10 +1575,8 @@ mod tests {
                 entity_ref: None,
                 rows: vec![FeatureDimension {
                     dimension_type: 3,
-                    value: Some(2.0),
+                    value: crate::feature::definitions::DimensionValue::Resolved(2.0),
                     value_body: Vec::new(),
-                    unresolved_value_token: None,
-                    value_unit: crate::feature::DimensionUnit::Millimeters,
                     direction_byte: 0,
                     auxiliary_value: None,
                     auxiliary_body: Vec::new(),

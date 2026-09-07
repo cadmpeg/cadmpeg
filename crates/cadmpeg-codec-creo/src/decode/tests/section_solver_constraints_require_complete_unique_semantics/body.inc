@@ -370,10 +370,8 @@
             entity_ref: None,
             rows: vec![crate::feature::FeatureDimension {
                 dimension_type: 2,
-                value: Some(3.0),
+                value: crate::feature::definitions::DimensionValue::Resolved(3.0),
                 value_body: Vec::new(),
-                unresolved_value_token: None,
-                value_unit: crate::feature::DimensionUnit::Millimeters,
                 direction_byte: 0,
                 auxiliary_value: None,
                 auxiliary_body: Vec::new(),
@@ -3817,8 +3815,8 @@
         .as_mut()
         .expect("dimensions")
         .rows[0];
-    schema_dimension.value_unit = crate::feature::DimensionUnit::SchemaDefined;
-    schema_dimension.value = Some(0.0);
+    schema_dimension.dimension_type = 0;
+    schema_dimension.value = crate::feature::definitions::DimensionValue::Resolved(0.0);
     let schema_relations = schema_orientation.relations.as_mut().expect("relations");
     let relation_id = schema_relations.rows[0].relation_id;
     schema_relations.skamps = vec![crate::feature::FeatureSkamp {
@@ -3864,7 +3862,7 @@
         .as_mut()
         .expect("dimensions")
         .rows[0]
-        .value = Some(1.0);
+        .value = crate::feature::definitions::DimensionValue::Resolved(1.0);
     assert!(matches!(
         section_dimension_constraints(
             &schema_orientation,
@@ -4238,7 +4236,7 @@
         .as_mut()
         .expect("dimensions")
         .rows[0]
-        .value_unit = crate::feature::DimensionUnit::Radians;
+        .dimension_type = 10;
     assert!(matches!(
         section_dimension_constraints(&angular_distance, &SketchId("creo:model:sketch#917".into()))[0]
             .0
@@ -4651,13 +4649,13 @@
         .as_mut()
         .expect("dimensions")
         .rows[0]
-        .value = Some(0.0);
+        .value = crate::feature::definitions::DimensionValue::Resolved(0.0);
     relation_orientation
         .dimensions
         .as_mut()
         .expect("dimensions")
         .rows[0]
-        .value_unit = crate::feature::DimensionUnit::SchemaDefined;
+        .dimension_type = 0;
     let relation = relation_orientation
         .relations
         .as_mut()
@@ -4766,7 +4764,7 @@
         .as_mut()
         .expect("dimensions")
         .rows[0]
-        .value_unit = crate::feature::DimensionUnit::Radians;
+        .dimension_type = 10;
     assert!(matches!(
         section_dimension_constraints(&radius_definition, &SketchId("creo:model:sketch#917".into()))[0]
             .0
@@ -4996,7 +4994,6 @@
         .expect("dimensions")
         .rows[0];
     angle_dimension.dimension_type = 10;
-    angle_dimension.value_unit = crate::feature::DimensionUnit::Radians;
     let angle_relation = &mut angular_dimension
         .relations
         .as_mut()

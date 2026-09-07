@@ -720,12 +720,12 @@ pub(in super::super) fn section_equation_radius_dimension_constraints(
             };
             let Some(dimension_value) = dimension
                 .value
+                .resolved()
                 .filter(|value| value.is_finite() && *value > 0.0)
             else {
                 return Vec::new();
             };
             if dimension.dimension_type != 3
-                || dimension.value_unit != crate::feature::DimensionUnit::Millimeters
                 || !approximately_equal(dimension_value, equation.value)
             {
                 return Vec::new();
@@ -833,11 +833,10 @@ fn section_equation_radius_dimension_parameters(
         else {
             continue;
         };
-        let Some(dimension_value) = dimension.value else {
+        let Some(dimension_value) = dimension.value.resolved() else {
             continue;
         };
         if dimension.dimension_type != 3
-            || dimension.value_unit != crate::feature::DimensionUnit::Millimeters
             || !dimension_value.is_finite()
             || dimension_value <= 0.0
             || !approximately_equal(dimension_value, equation.value)
@@ -1437,9 +1436,8 @@ pub(in super::super) fn section_equation_axis_distance_constraints(
             dimensions,
             usize::try_from(equation.scalar.1).ok()?,
         )?;
-        let dimension_value = dimension.value?;
-        if dimension.value_unit != crate::feature::DimensionUnit::Millimeters
-            || !matches!(dimension.dimension_type, 1..=5)
+        let dimension_value = dimension.value.resolved()?;
+        if !matches!(dimension.dimension_type, 1..=5)
             || !dimension_value.is_finite()
             || dimension_value < 0.0
             || !approximately_equal(dimension_value, equation.value)
@@ -1733,7 +1731,7 @@ pub(in super::super) fn section_dimension_constraints(
                 let (dimension, _) = dimension.as_ref()?;
                 let parameter = parameter.clone()?;
                 if relation.relation_type == 1
-                    && dimension.value_unit == crate::feature::DimensionUnit::Radians
+                    && dimension.unit() == crate::feature::DimensionUnit::Radians
                 {
                     let [first, second] = section_angular_entities(
                         definition,
@@ -1750,8 +1748,8 @@ pub(in super::super) fn section_dimension_constraints(
                 }
                 if relation.relation_type == 0
                     && matches!(relation.sign, 0 | 1 | 0xf6)
-                    && dimension.value_unit == crate::feature::DimensionUnit::SchemaDefined
-                    && dimension.value == Some(0.0)
+                    && dimension.unit() == crate::feature::DimensionUnit::SchemaDefined
+                    && dimension.value.resolved() == Some(0.0)
                 {
                     let vectors = relation.operand_vectors?;
                     if section_linear_distance_vectors(vectors) {
@@ -1789,7 +1787,7 @@ pub(in super::super) fn section_dimension_constraints(
                         }
                     }
                 }
-                if dimension.value_unit != crate::feature::DimensionUnit::Millimeters {
+                if dimension.unit() != crate::feature::DimensionUnit::Millimeters {
                     return None;
                 }
                 if matches!(relation.relation_type, 5 | 6) && relation.sign == 1 {

@@ -261,10 +261,8 @@ fn saved_line_joins_through_order_table() {
         entity_ref: None,
         rows: vec![crate::feature::FeatureDimension {
             dimension_type: 1,
-            value: Some(2.0),
+            value: crate::feature::definitions::DimensionValue::Resolved(2.0),
             value_body: Vec::new(),
-            unresolved_value_token: None,
-            value_unit: crate::feature::DimensionUnit::Millimeters,
             direction_byte: 0,
             auxiliary_value: None,
             auxiliary_body: Vec::new(),

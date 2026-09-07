@@ -2440,10 +2440,10 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                 .map(|dimension| CreoSketchDimension {
                     external_id: dimension.external_id,
                     dimension_type: dimension.dimension_type,
-                    value: dimension.value,
+                    value: dimension.value.resolved(),
                     value_body: dimension.value_body.clone(),
-                    unresolved_value_token: dimension.unresolved_value_token.clone(),
-                    unit: match dimension.value_unit {
+                    unresolved_value_token: dimension.value.unresolved_token().map(<[u8]>::to_vec),
+                    unit: match dimension.unit() {
                         crate::feature::DimensionUnit::Radians => "radians",
                         crate::feature::DimensionUnit::Millimeters => "millimeters",
                         crate::feature::DimensionUnit::SchemaDefined => "schema_defined",

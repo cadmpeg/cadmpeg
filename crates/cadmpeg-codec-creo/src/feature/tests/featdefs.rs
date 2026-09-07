@@ -761,9 +761,9 @@ fn scan_decodes_featdefs_dimension_prototype_and_replay() {
     assert_eq!(dimensions.entity_ref, Some(258));
     assert_eq!(dimensions.rows.len(), 3);
     assert_eq!(dimensions.rows[0].dimension_type, 10);
-    assert_eq!(dimensions.rows[0].value, Some(1.0));
+    assert_eq!(dimensions.rows[0].value.resolved(), Some(1.0));
     assert_eq!(
-        dimensions.rows[0].value_unit,
+        dimensions.rows[0].unit(),
         crate::feature::DimensionUnit::Radians
     );
     assert_eq!(dimensions.rows[0].direction_byte, 1);
@@ -771,20 +771,20 @@ fn scan_decodes_featdefs_dimension_prototype_and_replay() {
     assert_eq!(dimensions.rows[0].value_body, [0xe4]);
     assert_eq!(dimensions.rows[0].auxiliary_body, [0x0f]);
     assert_eq!(dimensions.rows[0].external_id, 42);
-    assert_eq!(dimensions.rows[1].value, Some(3.0));
+    assert_eq!(dimensions.rows[1].value.resolved(), Some(3.0));
     assert_eq!(
         dimensions.rows[1].value_body,
         [0x46, 0x08, 0, 0, 0, 0, 0, 0]
     );
     assert_eq!(dimensions.rows[1].auxiliary_body, [0x18]);
     assert_eq!(
-        dimensions.rows[1].value_unit,
+        dimensions.rows[1].unit(),
         crate::feature::DimensionUnit::Millimeters
     );
     assert_eq!(dimensions.rows[1].auxiliary_value, Some(0.0));
     assert_eq!(dimensions.rows[1].external_id, 43);
     assert_eq!(
-        dimensions.rows[2].value,
+        dimensions.rows[2].value.resolved(),
         Some(f64::from_be_bytes([
             0x3f, 0xd5, 0xc8, 0x1e, 0x15, 0xd4, 0xaf, 0x9f
         ]))

@@ -119,6 +119,7 @@ pub(crate) fn resolved_section_radii(
             };
             let Some(value) = dimension
                 .value
+                .resolved()
                 .filter(|value| value.is_finite() && *value > 0.0)
             else {
                 continue;
@@ -159,6 +160,7 @@ pub(crate) fn resolved_section_radii(
             };
             let Some(value) = dimension
                 .value
+                .resolved()
                 .filter(|value| value.is_finite() && *value > 0.0)
             else {
                 continue;
@@ -324,9 +326,7 @@ pub(crate) fn section_relation_length_dimension<'a>(
         .filter(|table| feature_dimension_table_complete(table))?
         .rows
         .get(usize::try_from(relation.dimension_id).ok()?)?;
-    (dimension.value_unit == crate::feature::DimensionUnit::Millimeters
-        && matches!(dimension.dimension_type, 1..=5))
-    .then_some(dimension)
+    matches!(dimension.dimension_type, 1..=5).then_some(dimension)
 }
 
 pub(crate) fn section_type5_radius_arc<'a>(

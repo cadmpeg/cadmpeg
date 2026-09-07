@@ -147,7 +147,7 @@ pub fn counterbore_dimension_values<'a>(
             let [row] = rows.as_slice() else {
                 return None;
             };
-            row.value.filter(|value| value.is_finite())
+            row.value.resolved().filter(|value| value.is_finite())
         };
         let (Some(bore_radius), Some(_placement_distance), Some(depth), Some(counterbore_radius)) =
             (value(0, 2), value(1, 2), value(2, 1), value(3, 2))
@@ -270,45 +270,30 @@ pub fn counterbore_envelope_dimension_tuple(
     table: &crate::feature::FeatureDimensionTable,
 ) -> Option<(f64, f64, f64)> {
     (feature_dimension_table_complete(table) && matches!(table.rows.len(), 4 | 5)).then_some(())?;
-    let value = |external_id, dimension_type, unit| {
+    let value = |external_id, dimension_type| {
         let rows = table
             .rows
             .iter()
-            .filter(|row| {
-                row.external_id == external_id
-                    && row.dimension_type == dimension_type
-                    && row.value_unit == unit
-            })
+            .filter(|row| row.external_id == external_id && row.dimension_type == dimension_type)
             .collect::<Vec<_>>();
         let [row] = rows.as_slice() else {
             return None;
         };
-        row.value.filter(|value| value.is_finite())
+        row.value.resolved().filter(|value| value.is_finite())
     };
-    let signed_counterbore_depth = value(0, 1, crate::feature::DimensionUnit::Millimeters)?;
-    let bore_radius = value(1, 2, crate::feature::DimensionUnit::Millimeters)?;
+    let signed_counterbore_depth = value(0, 1)?;
+    let bore_radius = value(1, 2)?;
     let (counterbore_radius, _placement_distance) = if table.rows.len() == 4 {
-        let shifted = value(2, 2, crate::feature::DimensionUnit::Millimeters).zip(value(
-            3,
-            2,
-            crate::feature::DimensionUnit::Millimeters,
-        ));
-        let retained = value(3, 2, crate::feature::DimensionUnit::Millimeters).zip(value(
-            4,
-            2,
-            crate::feature::DimensionUnit::Millimeters,
-        ));
+        let shifted = value(2, 2).zip(value(3, 2));
+        let retained = value(3, 2).zip(value(4, 2));
         match (shifted, retained) {
             (Some(layout), None) | (None, Some(layout)) => layout,
             _ => return None,
         }
     } else {
-        let drill_point_angle = value(2, 10, crate::feature::DimensionUnit::Radians)?;
+        let drill_point_angle = value(2, 10)?;
         (drill_point_angle > 0.0 && drill_point_angle < std::f64::consts::PI).then_some(())?;
-        (
-            value(3, 2, crate::feature::DimensionUnit::Millimeters)?,
-            value(4, 2, crate::feature::DimensionUnit::Millimeters)?,
-        )
+        (value(3, 2)?, value(4, 2)?)
     };
     (signed_counterbore_depth != 0.0 && bore_radius > 0.0 && counterbore_radius > bore_radius)
         .then_some(())?;

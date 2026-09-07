@@ -168,10 +168,8 @@ fn radius_anchored_counterbore_accepts_signed_depth() {
         .map(
             |(dimension_type, value, external_id)| crate::feature::FeatureDimension {
                 dimension_type,
-                value: Some(value),
+                value: crate::feature::definitions::DimensionValue::Resolved(value),
                 value_body: Vec::new(),
-                unresolved_value_token: None,
-                value_unit: crate::feature::DimensionUnit::Millimeters,
                 direction_byte: 0,
                 auxiliary_value: Some(0.0),
                 auxiliary_body: Vec::new(),

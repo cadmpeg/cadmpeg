@@ -321,10 +321,8 @@ fn equation_function_two_emits_radius_dimension_constraint_with_incomplete_segme
             entity_ref: None,
             rows: vec![crate::feature::FeatureDimension {
                 dimension_type: 3,
-                value: Some(5.0),
+                value: crate::feature::definitions::DimensionValue::Resolved(5.0),
                 value_body: Vec::new(),
-                unresolved_value_token: None,
-                value_unit: crate::feature::DimensionUnit::Millimeters,
                 direction_byte: 0,
                 auxiliary_value: None,
                 auxiliary_body: Vec::new(),
@@ -1284,10 +1282,8 @@ fn equation_function_three_emits_parameterized_coordinate_distance() {
     };
     let dimension = crate::feature::FeatureDimension {
         dimension_type: 1,
-        value: Some(10.0),
+        value: crate::feature::definitions::DimensionValue::Resolved(10.0),
         value_body: Vec::new(),
-        unresolved_value_token: None,
-        value_unit: crate::feature::DimensionUnit::Millimeters,
         direction_byte: 0,
         auxiliary_value: None,
         auxiliary_body: Vec::new(),
@@ -1493,10 +1489,8 @@ fn equation_function_forty_three_emits_parameterized_axis_distance() {
             entity_ref: None,
             rows: vec![crate::feature::FeatureDimension {
                 dimension_type: 1,
-                value: Some(dimension_value),
+                value: crate::feature::definitions::DimensionValue::Resolved(dimension_value),
                 value_body: Vec::new(),
-                unresolved_value_token: None,
-                value_unit: crate::feature::DimensionUnit::Millimeters,
                 direction_byte: 0,
                 auxiliary_value: None,
                 auxiliary_body: Vec::new(),

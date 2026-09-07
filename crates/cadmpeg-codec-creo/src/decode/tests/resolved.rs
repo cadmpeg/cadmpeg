@@ -639,10 +639,8 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
             rows: vec![
                 crate::feature::FeatureDimension {
                     dimension_type: 2,
-                    value: Some(12.0),
+                    value: crate::feature::definitions::DimensionValue::Resolved(12.0),
                     value_body: Vec::new(),
-                    unresolved_value_token: None,
-                    value_unit: crate::feature::DimensionUnit::Millimeters,
                     direction_byte: 0,
                     auxiliary_value: Some(0.0),
                     auxiliary_body: Vec::new(),
@@ -652,10 +650,8 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
                 },
                 crate::feature::FeatureDimension {
                     dimension_type: 3,
-                    value: Some(4.0),
+                    value: crate::feature::definitions::DimensionValue::Resolved(4.0),
                     value_body: Vec::new(),
-                    unresolved_value_token: None,
-                    value_unit: crate::feature::DimensionUnit::Millimeters,
                     direction_byte: 0,
                     auxiliary_value: Some(0.0),
                     auxiliary_body: Vec::new(),
@@ -818,10 +814,8 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
     dimensions.declared_count = 3;
     dimensions.rows.push(crate::feature::FeatureDimension {
         dimension_type: 2,
-        value: Some(15.0),
+        value: crate::feature::definitions::DimensionValue::Resolved(15.0),
         value_body: Vec::new(),
-        unresolved_value_token: None,
-        value_unit: crate::feature::DimensionUnit::Millimeters,
         direction_byte: 0,
         auxiliary_value: Some(0.0),
         auxiliary_body: Vec::new(),

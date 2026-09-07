@@ -633,7 +633,7 @@ pub(super) fn finish_feature_transfers(
             .fold((0usize, 0usize), |(decoded, resolved), dimension| {
                 (
                     decoded + 1,
-                    resolved + usize::from(dimension.value.is_some()),
+                    resolved + usize::from(dimension.value.resolved().is_some()),
                 )
             });
         coverage.record(

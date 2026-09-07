@@ -2618,11 +2618,14 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         .filter_map(|definition| definition.dimensions.as_ref())
         .flat_map(|table| table.rows.iter())
     {
-        let value = dimension.value.map(|value| match dimension.value_unit {
-            feature::DimensionUnit::Radians => CurveExpressionValue::Angle(value.to_degrees()),
-            feature::DimensionUnit::Millimeters => CurveExpressionValue::Length(value),
-            feature::DimensionUnit::SchemaDefined => CurveExpressionValue::Number(value),
-        });
+        let value = dimension
+            .value
+            .resolved()
+            .map(|value| match dimension.unit() {
+                feature::DimensionUnit::Radians => CurveExpressionValue::Angle(value.to_degrees()),
+                feature::DimensionUnit::Millimeters => CurveExpressionValue::Length(value),
+                feature::DimensionUnit::SchemaDefined => CurveExpressionValue::Number(value),
+            });
         relation_dimension_symbols.observe(&format!("d{}", dimension.external_id), value);
     }
     curve::reevaluate_expression_records(

@@ -829,19 +829,49 @@ pub struct FeatureDimensionReferenceTable {
     pub offset: usize,
 }
 
+/// Primary dimension scalar state.
+#[derive(Debug, Clone, PartialEq)]
+pub enum DimensionValue {
+    Resolved(f64),
+    UnresolvedToken(Vec<u8>),
+    Undefined,
+}
+
+impl DimensionValue {
+    fn decoded(value: Option<f64>, body: &[u8]) -> Self {
+        match value {
+            Some(value) => Self::Resolved(value),
+            None => match body {
+                [0x00, _, _] | [0x01, _, _, _] => Self::UnresolvedToken(body.to_vec()),
+                _ => Self::Undefined,
+            },
+        }
+    }
+
+    pub fn resolved(&self) -> Option<f64> {
+        match self {
+            Self::Resolved(value) => Some(*value),
+            Self::UnresolvedToken(_) | Self::Undefined => None,
+        }
+    }
+
+    pub fn unresolved_token(&self) -> Option<&[u8]> {
+        match self {
+            Self::UnresolvedToken(token) => Some(token),
+            Self::Resolved(_) | Self::Undefined => None,
+        }
+    }
+}
+
 /// One dimension record from a gsec2d `dimtab_ptr` table.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FeatureDimension {
     /// Dimension type discriminator.
     pub dimension_type: u32,
-    /// Decoded primary scalar, when its prefix is defined.
-    pub value: Option<f64>,
+    /// Decoded primary scalar or unresolved state.
+    pub value: DimensionValue,
     /// Exact encoded scalar body of the primary value.
     pub value_body: Vec<u8>,
-    /// Exact bounded placeholder token when the primary scalar is unresolved.
-    pub unresolved_value_token: Option<Vec<u8>>,
-    /// Unit interpretation selected by the dimension type.
-    pub value_unit: DimensionUnit,
     /// Stored direction byte.
     pub direction_byte: u8,
     /// Decoded auxiliary scalar, when its prefix is defined.
@@ -854,6 +884,12 @@ pub struct FeatureDimension {
     pub references: Option<FeatureDimensionReferenceTable>,
     /// Byte offset of the row in the original stream.
     pub offset: usize,
+}
+
+impl FeatureDimension {
+    pub fn unit(&self) -> DimensionUnit {
+        dimension_unit(self.dimension_type)
+    }
 }
 
 /// Dimension table for one gsec2d section.
@@ -3825,13 +3861,6 @@ pub(crate) fn dimension_unit(dimension_type: u32) -> DimensionUnit {
     }
 }
 
-fn unresolved_dimension_value_token(bytes: &[u8]) -> Option<Vec<u8>> {
-    match bytes {
-        [0x00, _, _] | [0x01, _, _, _] => Some(bytes.to_vec()),
-        _ => None,
-    }
-}
-
 fn named_dimension_reference(
     payload: &[u8],
     start: usize,
@@ -3994,10 +4023,7 @@ fn labeled_dimension(
     let value_start = value_label + b"value\0".len();
     let (value, after_value, _) = decode_variable_scalar(payload, value_start, end, cache);
     let value_body = payload.get(value_start..after_value)?.to_vec();
-    let unresolved_value_token = value
-        .is_none()
-        .then_some(value_body.as_slice())
-        .and_then(unresolved_dimension_value_token);
+    let value = DimensionValue::decoded(value, &value_body);
     let direction_label = find_bytes(payload, b"direct\0", after_value, end)?;
     let direction_byte = *payload.get(direction_label + b"direct\0".len())?;
     let auxiliary_label = find_bytes(payload, b"aux_value\0", direction_label, end)?;
@@ -4012,8 +4038,6 @@ fn labeled_dimension(
         dimension_type,
         value,
         value_body,
-        unresolved_value_token,
-        value_unit: dimension_unit(dimension_type),
         direction_byte,
         auxiliary_value,
         auxiliary_body,
@@ -4040,10 +4064,7 @@ pub(crate) fn positional_dimension(
         _ => decode_variable_scalar(payload, cursor, end, cache),
     };
     let value_body = payload.get(value_start..cursor)?.to_vec();
-    let unresolved_value_token = value
-        .is_none()
-        .then_some(value_body.as_slice())
-        .and_then(unresolved_dimension_value_token);
+    let value = DimensionValue::decoded(value, &value_body);
     let direction_byte = *payload.get(cursor).filter(|_| cursor < end)?;
     let auxiliary_start = cursor + 1;
     let (auxiliary_value, cursor) = if payload.get(auxiliary_start) == Some(&0x18) {
@@ -4058,8 +4079,6 @@ pub(crate) fn positional_dimension(
         dimension_type,
         value,
         value_body,
-        unresolved_value_token,
-        value_unit: dimension_unit(dimension_type),
         direction_byte,
         auxiliary_value,
         auxiliary_body,

@@ -453,10 +453,8 @@ fn equation_function_two_binds_radius_row_to_dimension_row() {
             entity_ref: None,
             rows: vec![crate::feature::FeatureDimension {
                 dimension_type: 3,
-                value: Some(5.0),
+                value: crate::feature::definitions::DimensionValue::Resolved(5.0),
                 value_body: Vec::new(),
-                unresolved_value_token: None,
-                value_unit: crate::feature::DimensionUnit::Millimeters,
                 direction_byte: 0,
                 auxiliary_value: None,
                 auxiliary_body: Vec::new(),
@@ -503,7 +501,7 @@ fn equation_function_two_binds_radius_row_to_dimension_row() {
         .as_mut()
         .expect("dimension table")
         .rows[0]
-        .value = Some(6.0);
+        .value = crate::feature::definitions::DimensionValue::Resolved(6.0);
     assert!(resolved_section_radii(&mismatched).is_empty());
 }
 

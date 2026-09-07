@@ -19,7 +19,7 @@ fn positional_dimension_table_uses_the_inherited_table_class() {
     assert_eq!(dimensions.declared_count, 2);
     assert_eq!(dimensions.entity_ref, Some(88));
     assert_eq!(dimensions.rows.len(), 2);
-    assert_eq!(dimensions.rows[0].value, Some(3.0));
+    assert_eq!(dimensions.rows[0].value.resolved(), Some(3.0));
     assert_eq!(
         dimensions.rows[0].value_body,
         [0x46, 0x08, 0, 0, 0, 0, 0, 0]
@@ -97,7 +97,7 @@ fn positional_dimension_table_is_self_describing_when_multiple_rows_close() {
     assert_eq!(dimensions.entity_ref, Some(88));
     assert_eq!(dimensions.rows.len(), 4);
     assert_eq!(dimensions.rows[0].external_id, 2);
-    assert_eq!(dimensions.rows[1].value, Some(-0.5));
+    assert_eq!(dimensions.rows[1].value.resolved(), Some(-0.5));
 }
 
 #[test]
@@ -128,15 +128,15 @@ fn positional_dimension_table_retains_bounded_opaque_values() {
         .expect("positional dimtab");
 
     assert_eq!(dimensions.rows.len(), 3);
-    assert_eq!(dimensions.rows[1].value, None);
+    assert_eq!(dimensions.rows[1].value.resolved(), None);
     assert_eq!(
-        dimensions.rows[1].unresolved_value_token.as_deref(),
+        dimensions.rows[1].value.unresolved_token(),
         Some(&[0x00, 0x04, 0xa6][..])
     );
     assert_eq!(dimensions.rows[1].value_body, [0x00, 0x04, 0xa6]);
     assert_eq!(dimensions.rows[1].auxiliary_body, [0x18]);
     assert_eq!(dimensions.rows[1].external_id, 44);
-    assert_eq!(dimensions.rows[2].value, Some(-1.0));
+    assert_eq!(dimensions.rows[2].value.resolved(), Some(-1.0));
     assert_eq!(dimensions.rows[2].external_id, 45);
 }
 
@@ -152,7 +152,7 @@ fn positional_dimensions_decode_the_positive_dict_lattice_and_bounded_opaque_for
     let positive_row = positional_dimension(&positive, 0, positive.len(), &cache)
         .expect("positive dictionary dimension");
     assert_eq!(
-        positive_row.value,
+        positive_row.value.resolved(),
         Some(f64::from_be_bytes([
             0x3f, 0xc8, 0xa1, 0xca, 0xc0, 0x83, 0x12, 0x6f,
         ]))
@@ -168,16 +168,16 @@ fn positional_dimensions_decode_the_positive_dict_lattice_and_bounded_opaque_for
     ] {
         let row =
             positional_dimension(body, 0, body.len(), &cache).expect("bounded opaque dimension");
-        assert_eq!(row.value, None);
-        assert_eq!(row.unresolved_value_token.as_deref(), Some(token));
+        assert_eq!(row.value.resolved(), None);
+        assert_eq!(row.value.unresolved_token(), Some(token));
         assert_eq!(row.external_id, external_id);
     }
     let zero_row = positional_dimension(&zero, 0, zero.len(), &cache).expect("zero dimension");
-    assert_eq!(zero_row.value, Some(0.0));
+    assert_eq!(zero_row.value.resolved(), Some(0.0));
     assert_eq!(zero_row.external_id, 49);
     let negative_half_row = positional_dimension(&negative_half, 0, negative_half.len(), &cache)
         .expect("negative half dimension");
-    assert_eq!(negative_half_row.value, Some(-0.5));
+    assert_eq!(negative_half_row.value.resolved(), Some(-0.5));
     assert_eq!(negative_half_row.external_id, 50);
 }
 
@@ -188,7 +188,7 @@ fn positional_dimension_seven_byte_positive_value_preserves_field_alignment() {
         .expect("seven-byte positive dimension");
 
     assert_eq!(
-        row.value,
+        row.value.resolved(),
         Some(f64::from_be_bytes([
             0x40, 0x60, 0x07, 0x53, 0x93, 0xb5, 0xe5, 0,
         ]))
@@ -231,7 +231,7 @@ fn positional_definition_inherits_the_labeled_dimension_table_class() {
     assert_eq!(decoded[1].owner_feature_id, Some(42));
     assert_eq!(dimensions.entity_ref, Some(88));
     assert_eq!(dimensions.rows.len(), 1);
-    assert_eq!(dimensions.rows[0].value, Some(3.0));
+    assert_eq!(dimensions.rows[0].value.resolved(), Some(3.0));
     assert_eq!(dimensions.rows[0].external_id, 43);
 }
 
@@ -255,7 +255,7 @@ fn depdb_gsec2d_definition_anchors_positional_table_replay() {
         .all(|definition| definition.owner_feature_id.is_none()));
     assert_eq!(dimensions.entity_ref, Some(88));
     assert_eq!(dimensions.rows.len(), 1);
-    assert_eq!(dimensions.rows[0].value, Some(3.0));
+    assert_eq!(dimensions.rows[0].value.resolved(), Some(3.0));
     assert_eq!(dimensions.rows[0].external_id, 43);
 }
 

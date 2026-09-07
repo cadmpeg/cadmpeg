@@ -488,28 +488,22 @@ fn simple_drilled_dimensions_require_complete_agreeing_tables() {
     let table = |radius: f64, angle: f64, depth: f64| crate::feature::FeatureDimensionTable {
         declared_count: 3,
         entity_ref: Some(88),
-        rows: [
-            (2, radius, 0, crate::feature::DimensionUnit::Millimeters),
-            (10, angle, 1, crate::feature::DimensionUnit::Radians),
-            (2, depth, 2, crate::feature::DimensionUnit::Millimeters),
-        ]
-        .into_iter()
-        .map(
-            |(dimension_type, value, external_id, value_unit)| crate::feature::FeatureDimension {
-                dimension_type,
-                value: Some(value),
-                value_body: Vec::new(),
-                unresolved_value_token: None,
-                value_unit,
-                direction_byte: 0,
-                auxiliary_value: Some(0.0),
-                auxiliary_body: Vec::new(),
-                external_id,
-                references: None,
-                offset: 0,
-            },
-        )
-        .collect(),
+        rows: [(2, radius, 0), (10, angle, 1), (2, depth, 2)]
+            .into_iter()
+            .map(
+                |(dimension_type, value, external_id)| crate::feature::FeatureDimension {
+                    dimension_type,
+                    value: crate::feature::definitions::DimensionValue::Resolved(value),
+                    value_body: Vec::new(),
+                    direction_byte: 0,
+                    auxiliary_value: Some(0.0),
+                    auxiliary_body: Vec::new(),
+                    external_id,
+                    references: None,
+                    offset: 0,
+                },
+            )
+            .collect(),
         offset: 0,
     };
     let angle = 118.0_f64.to_radians();
@@ -744,20 +738,17 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
         .rows
         .extend(simple_drilled_recipe_surface_rows(9));
     let drill_point_angle = 118.0_f64.to_radians();
-    let dimension =
-        |dimension_type, external_id, value, value_unit| crate::feature::FeatureDimension {
-            dimension_type,
-            value: Some(value),
-            value_body: Vec::new(),
-            unresolved_value_token: None,
-            value_unit,
-            direction_byte: 0,
-            auxiliary_value: Some(0.0),
-            auxiliary_body: Vec::new(),
-            external_id,
-            references: None,
-            offset: 0,
-        };
+    let dimension = |dimension_type, external_id, value| crate::feature::FeatureDimension {
+        dimension_type,
+        value: crate::feature::definitions::DimensionValue::Resolved(value),
+        value_body: Vec::new(),
+        direction_byte: 0,
+        auxiliary_value: Some(0.0),
+        auxiliary_body: Vec::new(),
+        external_id,
+        references: None,
+        offset: 0,
+    };
     scan.features
         .definitions
         .push(crate::feature::FeatureDefinition {
@@ -776,14 +767,9 @@ fn class_911_simple_drilled_recipe_transfers_dimension_tuple() {
                 declared_count: 3,
                 entity_ref: Some(88),
                 rows: vec![
-                    dimension(2, 0, 4.2, crate::feature::DimensionUnit::Millimeters),
-                    dimension(
-                        10,
-                        1,
-                        drill_point_angle,
-                        crate::feature::DimensionUnit::Radians,
-                    ),
-                    dimension(2, 2, -25.0, crate::feature::DimensionUnit::Millimeters),
+                    dimension(2, 0, 4.2),
+                    dimension(10, 1, drill_point_angle),
+                    dimension(2, 2, -25.0),
                 ],
                 offset: 0,
             }),
@@ -935,10 +921,8 @@ fn counterbore_dimensions_require_complete_agreeing_radius_anchored_tables() {
         .map(
             |(dimension_type, value, external_id)| crate::feature::FeatureDimension {
                 dimension_type,
-                value: Some(value),
+                value: crate::feature::definitions::DimensionValue::Resolved(value),
                 value_body: Vec::new(),
-                unresolved_value_token: None,
-                value_unit: crate::feature::DimensionUnit::Millimeters,
                 direction_byte: 0,
                 auxiliary_value: Some(0.0),
                 auxiliary_body: Vec::new(),
@@ -974,30 +958,18 @@ fn counterbore_envelope_family_accepts_signed_depth_and_optional_drill_angle() {
         declared_count: 5,
         entity_ref: Some(88),
         rows: [
-            (
-                0,
-                1,
-                counterbore_depth,
-                crate::feature::DimensionUnit::Millimeters,
-            ),
-            (1, 2, 20.0, crate::feature::DimensionUnit::Millimeters),
-            (
-                2,
-                10,
-                118.0_f64.to_radians(),
-                crate::feature::DimensionUnit::Radians,
-            ),
-            (3, 2, 60.0, crate::feature::DimensionUnit::Millimeters),
-            (4, 2, -295.661, crate::feature::DimensionUnit::Millimeters),
+            (0, 1, counterbore_depth),
+            (1, 2, 20.0),
+            (2, 10, 118.0_f64.to_radians()),
+            (3, 2, 60.0),
+            (4, 2, -295.661),
         ]
         .into_iter()
         .map(
-            |(external_id, dimension_type, value, value_unit)| crate::feature::FeatureDimension {
+            |(external_id, dimension_type, value)| crate::feature::FeatureDimension {
                 dimension_type,
-                value: Some(value),
+                value: crate::feature::definitions::DimensionValue::Resolved(value),
                 value_body: Vec::new(),
-                unresolved_value_token: None,
-                value_unit,
                 direction_byte: 0,
                 auxiliary_value: Some(0.0),
                 auxiliary_body: Vec::new(),
@@ -1096,7 +1068,7 @@ fn counterbore_envelope_family_accepts_signed_depth_and_optional_drill_angle() {
         .iter_mut()
         .find(|row| row.external_id == 2)
         .expect("the five-row test table has a drill-angle row")
-        .value = Some(std::f64::consts::PI);
+        .value = crate::feature::definitions::DimensionValue::Resolved(std::f64::consts::PI);
     assert!(counterbore_envelope_dimension_values(
         std::iter::once(&invalid_drill_angle),
         &[Some(bore_spans), Some(counterbore_spans)],

@@ -638,13 +638,12 @@ pub(crate) fn section_relation_radius_scalar_values(
             let dimension = dimensions
                 .rows
                 .get(usize::try_from(relation.dimension_id).ok()?)?;
-            if dimension.value_unit != crate::feature::DimensionUnit::Millimeters
-                || !matches!(dimension.dimension_type, 1..=5)
-            {
+            if !matches!(dimension.dimension_type, 1..=5) {
                 return None;
             }
             let value = dimension
                 .value
+                .resolved()
                 .filter(|value| value.is_finite() && *value > 0.0)?;
             let value = if dimension.dimension_type == 4 {
                 value / 2.0

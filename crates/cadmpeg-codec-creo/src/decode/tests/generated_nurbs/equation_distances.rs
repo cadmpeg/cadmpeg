@@ -182,10 +182,8 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
         };
     let dimension = |value| crate::feature::FeatureDimension {
         dimension_type: 1,
-        value: Some(value),
+        value: crate::feature::definitions::DimensionValue::Resolved(value),
         value_body: Vec::new(),
-        unresolved_value_token: None,
-        value_unit: crate::feature::DimensionUnit::Millimeters,
         direction_byte: 0,
         auxiliary_value: None,
         auxiliary_body: Vec::new(),
@@ -304,7 +302,7 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
         .as_mut()
         .expect("dimension table")
         .rows[0]
-        .value = Some(6.0);
+        .value = crate::feature::definitions::DimensionValue::Resolved(6.0);
     assert!(!resolved_section_coordinates(&mismatched).contains_key(&2));
 }
 

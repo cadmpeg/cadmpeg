@@ -404,10 +404,8 @@ fn dimension_equations_accept_scalar_values_proved_by_equality() {
         entity_ref: None,
         rows: vec![crate::feature::FeatureDimension {
             dimension_type: 1,
-            value: Some(5.0),
+            value: crate::feature::definitions::DimensionValue::Resolved(5.0),
             value_body: Vec::new(),
-            unresolved_value_token: None,
-            value_unit: crate::feature::DimensionUnit::Millimeters,
             direction_byte: 0,
             auxiliary_value: None,
             auxiliary_body: Vec::new(),
@@ -430,7 +428,7 @@ fn dimension_equations_accept_scalar_values_proved_by_equality() {
         .as_mut()
         .expect("dimensions")
         .rows[0]
-        .value = Some(-5.0);
+        .value = crate::feature::definitions::DimensionValue::Resolved(-5.0);
     let constraints =
         section_equation_unsigned_coordinate_distance_rows(&signed_dimension, &BTreeSet::new());
     assert_eq!(constraints.len(), 1);
@@ -471,10 +469,8 @@ fn radius_dimensions_accept_radius_values_proved_by_equality() {
         entity_ref: None,
         rows: vec![crate::feature::FeatureDimension {
             dimension_type: 3,
-            value: Some(5.0),
+            value: crate::feature::definitions::DimensionValue::Resolved(5.0),
             value_body: Vec::new(),
-            unresolved_value_token: None,
-            value_unit: crate::feature::DimensionUnit::Millimeters,
             direction_byte: 0,
             auxiliary_value: None,
             auxiliary_body: Vec::new(),

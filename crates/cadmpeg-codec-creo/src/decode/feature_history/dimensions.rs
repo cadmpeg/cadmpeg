@@ -270,11 +270,11 @@ pub(in super::super) fn transfer_feature_dimensions(
         if let Some(auxiliary) = dimension.auxiliary_value {
             properties.insert("auxiliary_value".to_string(), auxiliary.to_string());
         }
-        if dimension.value.is_none() {
+        if dimension.value.resolved().is_none() {
             properties.insert("value_state".to_string(), "unresolved".to_string());
         }
-        if let Some(token) = &dimension.unresolved_value_token {
-            let encoding = match token.as_slice() {
+        if let Some(token) = dimension.value.unresolved_token() {
+            let encoding = match token {
                 [0x00, _, _] => Some("three_byte_placeholder"),
                 [0x01, _, _, _] => Some("four_byte_placeholder"),
                 _ => None,
@@ -293,12 +293,16 @@ pub(in super::super) fn transfer_feature_dimensions(
         }
         let expression = dimension
             .value
+            .resolved()
             .map_or_else(String::new, |value| value.to_string());
-        let value = dimension.value.map(|value| match dimension.value_unit {
-            crate::feature::DimensionUnit::Radians => ParameterValue::Angle(Angle(value)),
-            crate::feature::DimensionUnit::Millimeters => ParameterValue::Length(Length(value)),
-            crate::feature::DimensionUnit::SchemaDefined => ParameterValue::Real(value),
-        });
+        let value = dimension
+            .value
+            .resolved()
+            .map(|value| match dimension.unit() {
+                crate::feature::DimensionUnit::Radians => ParameterValue::Angle(Angle(value)),
+                crate::feature::DimensionUnit::Millimeters => ParameterValue::Length(Length(value)),
+                crate::feature::DimensionUnit::SchemaDefined => ParameterValue::Real(value),
+            });
         ir.model.parameters.push(DesignParameter {
             id: id.clone(),
             owner: Some(owner_id.clone()),

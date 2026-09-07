@@ -831,55 +831,39 @@ pub fn simple_drilled_hole_dimension_values<'a>(
         .collect::<Vec<_>>();
     let depth_external_id = family.depth_external_id();
     let has_simple_drilled_signature = |table: &crate::feature::FeatureDimensionTable| {
-        [
-            (0, 2, crate::feature::DimensionUnit::Millimeters),
-            (1, 10, crate::feature::DimensionUnit::Radians),
-            (
-                depth_external_id,
-                2,
-                crate::feature::DimensionUnit::Millimeters,
-            ),
-        ]
-        .into_iter()
-        .all(|(external_id, dimension_type, unit)| {
-            table
-                .rows
-                .iter()
-                .filter(|row| {
-                    row.external_id == external_id
-                        && row.dimension_type == dimension_type
-                        && row.value_unit == unit
-                })
-                .count()
-                == 1
-        })
+        [(0, 2), (1, 10), (depth_external_id, 2)].into_iter().all(
+            |(external_id, dimension_type)| {
+                table
+                    .rows
+                    .iter()
+                    .filter(|row| {
+                        row.external_id == external_id && row.dimension_type == dimension_type
+                    })
+                    .count()
+                    == 1
+            },
+        )
     };
     let candidates =
         tables
             .into_iter()
             .filter(|table| has_simple_drilled_signature(table))
             .map(|table| {
-                let value = |external_id, dimension_type, unit| {
+                let value = |external_id, dimension_type| {
                     let rows = table
                         .rows
                         .iter()
                         .filter(|row| {
-                            row.external_id == external_id
-                                && row.dimension_type == dimension_type
-                                && row.value_unit == unit
+                            row.external_id == external_id && row.dimension_type == dimension_type
                         })
                         .collect::<Vec<_>>();
                     let [row] = rows.as_slice() else {
                         return None;
                     };
-                    row.value.filter(|value| value.is_finite())
+                    row.value.resolved().filter(|value| value.is_finite())
                 };
-                let bore_radius = value(0, 2, crate::feature::DimensionUnit::Millimeters)?;
-                let signed_depth = value(
-                    depth_external_id,
-                    2,
-                    crate::feature::DimensionUnit::Millimeters,
-                )?;
+                let bore_radius = value(0, 2)?;
+                let signed_depth = value(depth_external_id, 2)?;
                 let bore_diameter = 2.0 * bore_radius;
                 (bore_diameter.is_finite() && bore_diameter > 0.0 && signed_depth != 0.0)
                     .then_some(())?;
@@ -889,7 +873,7 @@ pub fn simple_drilled_hole_dimension_values<'a>(
                 }) {
                     return Some(None);
                 }
-                let drill_point_angle = value(1, 10, crate::feature::DimensionUnit::Radians)?;
+                let drill_point_angle = value(1, 10)?;
                 (drill_point_angle > 0.0 && drill_point_angle < std::f64::consts::PI)
                     .then_some(Some((bore_diameter, drill_point_angle, blind_depth)))
             })
