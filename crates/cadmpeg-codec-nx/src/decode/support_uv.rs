@@ -1257,9 +1257,7 @@ fn complete_support_uv_wave(
                                 break;
                             }
                         }
-                        let Some((parameters, certified)) = solved else {
-                            return None;
-                        };
+                        let (parameters, certified) = solved?;
                         all_parameters_certified &= certified;
                         uv.push(parameters);
                     }

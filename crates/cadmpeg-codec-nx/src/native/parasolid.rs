@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parasolid source-record extractors and their record types.
 
-use super::*;
-#[allow(clippy::wildcard_imports)]
 use crate::framing::xmt_reference::XmtTarget;
 use crate::parasolid::name_references::NameReferences;
+use crate::parasolid::{Stream, StreamKind};
 use crate::topology::blend_surface_state::BlendSurfaceState;
 use crate::topology::offset_surface_state::OffsetSurfaceState;
+use serde::{Deserialize, Serialize};
 
 use crate::deltas::record_family::RecordFamily;
 use crate::deltas::Census;

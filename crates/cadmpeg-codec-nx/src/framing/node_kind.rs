@@ -43,17 +43,17 @@ pub enum NodeKind {
     Sphere = token::SPHERE,
     /// Torus record.
     Torus = token::TORUS,
-    /// BlendSurface record.
+    /// `BlendSurface` record.
     BlendSurface = token::BLEND_SURF,
-    /// OffsetSurface record.
+    /// `OffsetSurface` record.
     OffsetSurface = token::OFFSET_SURF,
-    /// BSurface record.
+    /// `BSurface` record.
     BSurface = token::B_SURFACE,
-    /// TrimmedCurve record.
+    /// `TrimmedCurve` record.
     TrimmedCurve = token::TRIMMED_CURVE,
-    /// BCurve record.
+    /// `BCurve` record.
     BCurve = token::B_CURVE,
-    /// SpCurve record.
+    /// `SpCurve` record.
     SpCurve = token::SP_CURVE,
 }
 

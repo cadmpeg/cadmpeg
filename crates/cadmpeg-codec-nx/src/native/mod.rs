@@ -14,7 +14,7 @@ use cadmpeg_ir::AnnotationBuilder;
 
 use crate::container::Container;
 use crate::decode::Scan;
-use crate::parasolid::{Stream, StreamKind};
+use crate::parasolid::Stream;
 
 mod attach;
 pub(crate) mod catalogue;

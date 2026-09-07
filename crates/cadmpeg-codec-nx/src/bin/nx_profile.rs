@@ -1024,7 +1024,8 @@ mod tests {
             boundary,
             Some(RederivationBoundary {
                 feature: Some(FeatureBoundary {
-                    id: cadmpeg_ir::features::FeatureId::mint("block").unwrap(),
+                    id: cadmpeg_ir::features::FeatureId::mint("block")
+                        .expect("valid block fixture identity"),
                     name: Some("BLOCK".to_string()),
                     family: Some("block".to_string()),
                     ordinal: 17
@@ -1038,7 +1039,8 @@ mod tests {
     fn rederivation_boundary_census_groups_reason_and_feature_family() {
         let boundary = |reason: &str, family: Option<&str>| RederivationBoundary {
             feature: family.map(|family| FeatureBoundary {
-                id: cadmpeg_ir::features::FeatureId::mint("feature").unwrap(),
+                id: cadmpeg_ir::features::FeatureId::mint("feature")
+                    .expect("valid feature fixture identity"),
                 name: None,
                 family: Some(family.to_owned()),
                 ordinal: 0,
